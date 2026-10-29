@@ -64,6 +64,8 @@ const MENU_CONTENT_RESET_STYLE = {
   border: 0,
   background: "transparent",
   boxShadow: "none",
+  animation: "none",
+  transition: "none",
 } as const;
 const MENU_MATERIAL_CLASS = cn(
   "rounded-[15px] p-[5px]",

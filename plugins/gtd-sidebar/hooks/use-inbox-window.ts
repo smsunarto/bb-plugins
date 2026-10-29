@@ -1,4 +1,5 @@
-import type { RefObject } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
+import { DISCLOSURE_START_EVENT, DISCLOSURE_TIMING } from "../lib/disclosure-motion";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import {
   pinnedRowIndexes,
@@ -73,6 +74,8 @@ export function useInboxWindow({
   for (const item of virtualizer.getVirtualItems()) {
     if (items[item.index]?.kind === "row") mounted.add(item.index);
   }
+  const retained = useDisclosureViewport(items, mounted, scrollRef);
+  for (const index of retained) mounted.add(index);
   const measurements = virtualizer.measurementsCache;
   return {
     mounted,
@@ -93,4 +96,64 @@ function measureWithMargins(element: Element): number {
     (Number.parseFloat(style.marginTop) || 0) +
     (Number.parseFloat(style.marginBottom) || 0)
   );
+}
+
+/** Keep the preceding viewport visible while an opening panel catches up with
+ * its final virtual height. Keys missing from the new layout (closed rows) never
+ * remain mounted. Only actual animation starts renew the deadline, including rapid reversals;
+ * unrelated roster updates do not keep extending it.
+ */
+function useDisclosureViewport(
+  items: readonly InboxWindowItem[],
+  mounted: ReadonlySet<number>,
+  scrollRef: RefObject<HTMLElement | null>,
+) {
+  const viewportKeys = [...mounted].map((index) => items[index]!.key);
+  const [previous, setPrevious] = useState(() => ({
+    items,
+    viewportKeys,
+    retainedKeys: new Set<string>(),
+    epoch: 0,
+  }));
+  if (previous.items !== items) {
+    setPrevious({
+      items,
+      viewportKeys,
+      retainedKeys: new Set([...previous.retainedKeys, ...previous.viewportKeys]),
+      epoch: previous.retainedKeys.size === 0 ? previous.epoch + 1 : previous.epoch,
+    });
+  } else if (
+    viewportKeys.length !== previous.viewportKeys.length ||
+    viewportKeys.some((key, index) => key !== previous.viewportKeys[index])
+  ) {
+    setPrevious({ ...previous, viewportKeys });
+  }
+  useEffect(() => {
+    const onStart = (event: Event) => {
+      if (event.target instanceof Node && scrollRef.current?.contains(event.target)) {
+        setPrevious((current) => ({ ...current, epoch: current.epoch + 1 }));
+      }
+    };
+    document.addEventListener(DISCLOSURE_START_EVENT, onStart);
+    return () => document.removeEventListener(DISCLOSURE_START_EVENT, onStart);
+  }, [scrollRef]);
+  useEffect(() => {
+    const epoch = previous.epoch;
+    if (epoch === 0) return;
+    const timer = setTimeout(() => {
+      setPrevious((current) =>
+        current.epoch !== epoch || current.retainedKeys.size === 0
+          ? current
+          : { ...current, retainedKeys: new Set() },
+      );
+    }, DISCLOSURE_TIMING.duration);
+    return () => clearTimeout(timer);
+  }, [previous.epoch]);
+  return useMemo(() => {
+    const indexes = new Set<number>();
+    items.forEach((item, index) => {
+      if (item.kind === "row" && previous.retainedKeys.has(item.key)) indexes.add(index);
+    });
+    return indexes;
+  }, [items, previous.retainedKeys]);
 }

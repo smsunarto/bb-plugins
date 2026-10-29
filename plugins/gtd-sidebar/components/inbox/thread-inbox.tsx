@@ -1,3 +1,4 @@
+import { SlidingDisclosure } from "./sliding-disclosure";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
@@ -1119,7 +1120,11 @@ function Shelf({
       {/* Cards need a real gap, not a hairline: their own padding is 6px, so a
           1px seam let two stacked cards read as one block. Slim rows below get
           less — a single centred line already carries its own air. */}
-      {expanded === false ? null : children}
+      {expanded === undefined ? (
+        children
+      ) : (
+        <SlidingDisclosure open={expanded}>{children}</SlidingDisclosure>
+      )}
     </section>
   );
 }
@@ -1194,11 +1199,7 @@ function ShelfHeader({
         <span className={TRAILING_GLYPH_BOX_CLASS}>
           <Icon
             name="ChevronDown"
-            className={cn(
-              "size-3 transition-transform motion-reduce:transition-none",
-              mutedClass,
-              !expanded && "-rotate-90",
-            )}
+            className={cn("size-3 gtd-chevron-motion", mutedClass, !expanded && "-rotate-90")}
           />
         </span>
       </button>

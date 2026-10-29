@@ -591,7 +591,11 @@ export function ThreadHierarchy({
         >
           <Icon
             name="ChevronDown"
-            className={cn(mobile ? "size-4" : "size-3", !expanded && "-rotate-90")}
+            className={cn(
+              "gtd-chevron-motion",
+              mobile ? "size-4" : "size-3",
+              !expanded && "-rotate-90",
+            )}
           />
         </button>
       ) : null}
@@ -619,7 +623,10 @@ export function TouchDisclosureGlyph({
       className="gtd-disclosure gtd-disclosure-touch"
       style={{ "--gtd-depth": depth } as CSSProperties}
     >
-      <Icon name="ChevronDown" className={cn("size-4", !expanded && "-rotate-90")} />
+      <Icon
+        name="ChevronDown"
+        className={cn("size-4 gtd-chevron-motion", !expanded && "-rotate-90")}
+      />
     </span>
   );
 }

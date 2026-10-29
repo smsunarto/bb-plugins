@@ -476,3 +476,14 @@
 .gtd-slim-status-slot:focus-within > .gtd-slim-status {
   opacity: 0;
 }
+
+/* Animate UI transition.disclosure: retarget folds without delaying navigation.
+   Only the glyph turns: row heights and dnd-kit transforms remain authoritative. */
+.gtd-chevron-motion {
+  transition: rotate 350ms cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .gtd-chevron-motion {
+    transition: none;
+  }
+}

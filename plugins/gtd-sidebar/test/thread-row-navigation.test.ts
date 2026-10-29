@@ -54,6 +54,11 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     });
   }
   dom.window.HTMLElement.prototype.scrollIntoView = () => {};
+  dom.window.Element.prototype.getAnimations = () => [];
+  Object.defineProperty(dom.window.Element.prototype, "animate", {
+    configurable: true,
+    value: () => ({ finished: Promise.resolve(), cancel() {} }),
+  });
   // jsdom only paints frames when it pretends to be visual; the rename
   // editor focuses on the next one.
   globalThis.requestAnimationFrame = (callback) =>
@@ -63,6 +68,38 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     observe() {}
     unobserve() {}
     disconnect() {}
+  };
+  // jsdom has no SVG geometry or compositor. Keep motion reduced here;
+  // real-browser checks exercise the transitions and OS preference changes.
+  Object.defineProperty(globalThis, "SVGGeometryElement", {
+    configurable: true,
+    value: class extends dom.window.SVGElement {},
+  });
+  dom.window.matchMedia = (query) => ({
+    matches: query === "(prefers-reduced-motion: reduce)",
+    media: query,
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent() {
+      return true;
+    },
+  });
+  // Animate UI's Fade observes visibility even for immediate entrances.
+  // These tests assert navigation; browser checks cover animation frames.
+  globalThis.IntersectionObserver = class implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = "0px";
+    readonly scrollMargin = "0px";
+    readonly thresholds = [0];
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
   };
   // jsdom lays nothing out. The list window reads its viewport from the
   // scroll container's offsetHeight and each mounted row's height from its
@@ -571,7 +608,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     });
     fireEvent.touchEnd(input);
     fireEvent.mouseUp(input);
-    assert.equal(screen.queryByRole("menu"), null);
+    assert.ok(screen.queryByRole("menu") === null);
     assert.equal(screen.getAllByRole("textbox", { name: "Thread name" }).length, 1);
     assert.equal((input as HTMLInputElement).value, draft);
     assert.equal(document.activeElement, input);
@@ -756,6 +793,80 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     );
   });
 
+  it("unmounts live rows before a disclosure exits and ignores an obsolete exit after reopening", async () => {
+    const { SlidingDisclosure } = await import("../components/inbox/sliding-disclosure");
+    const previousAnimate = Object.getOwnPropertyDescriptor(
+      dom.window.Element.prototype,
+      "animate",
+    );
+    let completeAnimation = () => {};
+    Object.defineProperty(dom.window.Element.prototype, "animate", {
+      configurable: true,
+      value: () => ({
+        finished: new Promise<void>((resolve) => {
+          completeAnimation = resolve;
+        }),
+        cancel() {},
+      }),
+    });
+    const measure = mock((_element: HTMLButtonElement | null) => {});
+    function Content({ open }: { open: boolean }) {
+      return createElement(
+        SlidingDisclosure,
+        { open },
+        createElement(
+          "button",
+          {
+            ref: measure,
+            id: "live-row",
+            "data-sidebar-thread-shortcut-target": "",
+            "data-sidebar-thread-id": "thread",
+            "data-index": "3",
+            "data-gtd-row": "thread",
+          },
+          "Thread",
+        ),
+      );
+    }
+    const slot = renderSlot({ component: Content }, { open: true });
+    try {
+      const original = slot.container.querySelector("button");
+      const panel = slot.container.querySelector<HTMLDivElement>("[data-gtd-disclosure]");
+      assert.ok(original && panel);
+      slot.lifecycle.rerender(createElement(Content, { open: false }));
+      assert.equal(original.isConnected, false);
+      assert.equal(measure.mock.calls.at(-1)?.[0], null);
+      assert.ok(panel.hasAttribute("inert"));
+      assert.equal(panel.getAttribute("aria-hidden"), "true");
+      assert.equal(panel.textContent, "Thread", "the exit still has a visual copy");
+      assert.equal(
+        panel.querySelector(
+          "[data-index], [data-gtd-row], [data-sidebar-thread-shortcut-target], [id]",
+        ),
+        null,
+      );
+      const completeExit = completeAnimation;
+      slot.lifecycle.rerender(createElement(Content, { open: true }));
+      await act(async () => completeExit());
+      assert.equal(panel.querySelectorAll("button").length, 1);
+      assert.ok(panel.querySelector("#live-row"));
+      assert.equal(panel.hasAttribute("inert"), false);
+      fireEvent.focus(panel.querySelector("button")!);
+      assert.equal(
+        panel.style.overflow,
+        "visible",
+        "keyboard focus cannot land behind the opening clip",
+      );
+      slot.lifecycle.rerender(createElement(Content, { open: false }));
+      await act(async () => completeAnimation());
+      assert.equal(panel.childElementCount, 0, "the completed exit releases its copy");
+    } finally {
+      slot.lifecycle.unmount();
+      if (previousAnimate)
+        Object.defineProperty(dom.window.Element.prototype, "animate", previousAnimate);
+    }
+  });
+
   describe("desktop right-click menus", () => {
     it("open from Shift+F10 or the Menu key on rows and project headers", async () => {
       const host = hostState([
@@ -770,14 +881,15 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       act(() => card.focus());
       // A bare F10 is not the shortcut.
       fireEvent.keyDown(card, { key: "F10" });
-      assert.equal(screen.queryByRole("menu"), null);
+      assert.ok(screen.queryByRole("menu") === null);
       fireEvent.keyDown(card, { key: "F10", shiftKey: true });
       const menu = screen.getByRole("menu", { name: "Thread actions" });
       assert.ok(within(menu).getByRole("menuitem", { name: "Rename" }));
       fireEvent.keyDown(menu, { key: "Escape" });
       // An identity check: a failing deep-equal on DOM nodes walks their React
       // internals, which stalls waitFor past the test timeout.
-      await waitFor(() => assert.ok(document.activeElement === card, "focus returns to the card"));
+      assert.ok(screen.queryByRole("menu") === null, "the menu closes without an exit animation");
+      await waitFor(() => assert.ok(document.activeElement === card, "Radix restores focus"));
 
       fireEvent.keyDown(row(view.slot, "settled"), { key: "ContextMenu" });
       assert.ok(screen.getByRole("menuitem", { name: "Un-settle" }));
@@ -803,21 +915,27 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       fireEvent.keyDown(card, { key: " ", code: "Space" });
       assert.equal(card.closest("[data-dragging]")?.getAttribute("data-dragging"), "true");
       fireEvent.keyDown(card, { key: "F10", shiftKey: true });
-      assert.equal(screen.queryByRole("menu"), null);
+      assert.ok(screen.queryByRole("menu") === null);
       fireEvent.keyDown(card, { key: "Escape", code: "Escape" });
     });
 
-    it("draw the project menu on the thread menu's surface", () => {
+    it("draw the project menu on the thread menu's surface", async () => {
       const view = mount(hostState([thread("a"), thread("b", { projectId: "two" })]));
-      const surface = (open: () => void, name: string) => {
+      const surface = async (open: () => void, name: string) => {
         open();
         const menu = screen.getByRole("menu", { name });
+        assert.equal(menu.style.animation, "none");
+        assert.equal(menu.style.transition, "none");
         const result = [menu.style.background, menu.firstElementChild?.className];
         fireEvent.keyDown(menu, { key: "Escape" });
+        await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
         return result;
       };
-      const thread_ = surface(() => fireEvent.contextMenu(row(view.slot, "a")), "Thread actions");
-      const project = surface(
+      const thread_ = await surface(
+        () => fireEvent.contextMenu(row(view.slot, "a")),
+        "Thread actions",
+      );
+      const project = await surface(
         () => fireEvent.contextMenu(view.slot.getByRole("button", { name: "Two project" })),
         "Two project actions",
       );
@@ -1477,6 +1595,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ["Empty", "Studio"],
       );
       fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
       fireEvent.click(view.slot.getByRole("button", { name: "New thread in One" }));
       assert.deepEqual(currentActions.openNewThread.mock.calls, [
         [{ projectId: "one", hostId: "host-a", focusPrompt: true }],
@@ -1485,6 +1604,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         key: "ArrowDown",
       });
       fireEvent.click(screen.getByRole("menuitem", { name: "Only Empty" }));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
       assert.deepEqual(rowIds(view.slot), ["draft"]);
       fireEvent.click(view.slot.getByRole("button", { name: "New thread in One" }));
       assert.deepEqual(currentActions.openNewThread.mock.calls[1], [
@@ -1527,6 +1647,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       fireEvent.click(last);
       assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "unknown"]));
       fireEvent.click(screen.getByRole("menuitem", { name: "All machines" }));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
       assert.deepEqual(
         new Set(rowIds(view.slot)),
         new Set(["studio", "server", "laptop", "unknown"]),
@@ -1567,6 +1688,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         { key: "ArrowDown" },
       );
       fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
       await act(async () => {});
       assert.deepEqual(new Set(rowIds(first.slot)), new Set(["studio", "unknown"]));
       assert.deepEqual(new Set(rowIds(second.slot)), new Set(["studio", "server", "unknown"]));
@@ -1623,6 +1745,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         key: "ArrowDown",
       });
       fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
       await waitFor(() => assert.deepEqual(rowIds(view.slot), ["studio"]));
       // Saved while the read is still out: the write's answer stands in for it.
       await act(async () => answer({ hiddenMachineIds: ["b"] }));
@@ -1651,6 +1774,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         key: "ArrowDown",
       });
       fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
       await waitFor(() => assert.deepEqual(rowIds(view.slot), ["studio"]));
       await act(async () => failRead(new Error("offline")));
       await act(async () => {
@@ -1717,6 +1841,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         key: "ArrowDown",
       });
       fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
       const readsBefore = reads;
       await view.slot.behavior.experimental_invalidateRpc(["machines"]);
       await waitFor(() => assert.ok(reads > readsBefore, "the refresh re-read the preference"));
@@ -1750,6 +1875,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         key: "ArrowDown",
       });
       fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
       assert.deepEqual(rowIds(view.slot), ["studio"]);
       await act(async () => {
         reject(new Error("offline"));
@@ -2051,6 +2177,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         chipGlobe.style.color,
       );
       fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
       assert.deepEqual(new Set(rowIds(view.slot)), new Set(["a", "c"]));
       const trigger = view.slot.getByRole("button", { name: "Visible machines: Studio" });
       assert.equal(
@@ -2130,6 +2257,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         key: "ArrowDown",
       });
       fireEvent.click(screen.getByRole("menuitem", { name: "Only Studio" }));
+      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
 
       assert.deepEqual(rowIds(view.slot), ["studio"]);
       assert.ok(view.slot.getByRole("button", { name: "One project" }));
@@ -2931,6 +3059,25 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           .getAttribute("data-sidebar-windowed-nav")!
           .startsWith(`${all[mounted.length]}:one `),
       );
+    });
+
+    it("keeps following rows mounted through a rapid close and reopen of a large group", async () => {
+      layout.viewport = 200;
+      layout.rowHeight = 32;
+      const host = hostState([...threads, thread("following", { projectId: "two" })]);
+      const view = mount(host);
+      fireEvent.click(view.slot.getByRole("button", { name: "One project" }));
+      assert.ok(row(view.slot, "following"));
+      // Reverse before the first transition deadline. Its old expiry must not
+      // release the following rows while the newer opening is still moving.
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 300)));
+      fireEvent.click(view.slot.getByRole("button", { name: "One project, 40 threads" }));
+      assert.ok(row(view.slot, "following"), "no empty placeholder below the unfolding group");
+      assert.ok(rowIds(view.slot).length < 25, "the whole large group is still windowed");
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 100)));
+      assert.ok(row(view.slot, "following"), "the original deadline cannot end a newer slide");
+      await act(async () => new Promise((resolve) => setTimeout(resolve, 300)));
+      assert.equal(rowIds(view.slot).includes("following"), false, "retention ends with the slide");
     });
 
     it("moves with the scroll, keeping the jump-key rows and the open thread mounted", () => {

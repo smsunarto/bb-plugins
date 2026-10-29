@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ComponentPropsWithoutRef } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import * as DropdownMenu from "@animate-ui/react/primitives/radix-ui/dropdown-menu";
 import { Icon } from "../ui/icon";
 import { usePortalScopeProps } from "../../lib/portal-scope";
 import type { MachineVisibilityChange } from "../../lib/machine-visibility";

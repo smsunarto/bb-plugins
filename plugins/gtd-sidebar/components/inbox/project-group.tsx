@@ -1,3 +1,4 @@
+import { SlidingDisclosure } from "./sliding-disclosure";
 import { useCallback, useState, type CSSProperties, type ReactNode } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -111,8 +112,10 @@ export function ProjectGroup({
       >
         <span className="gtd-disclosure gtd-project-group-chevron">
           <Icon
+            key={showChevron ? "chevron" : "folder"}
             name={showChevron ? "ChevronDown" : "Folder"}
             className={cn(
+              "gtd-chevron-motion",
               isCompactViewport ? "size-4" : "size-3",
               showChevron && !expanded && "-rotate-90",
             )}
@@ -169,7 +172,9 @@ export function ProjectGroup({
           </MenuSurface>
         </ContextMenu.Root>
       )}
-      {expanded ? <ul className="gtd-project-group-rows flex flex-col">{children}</ul> : null}
+      <SlidingDisclosure open={expanded}>
+        <ul className="gtd-project-group-rows flex flex-col">{children}</ul>
+      </SlidingDisclosure>
     </div>
   );
 }
