@@ -122,7 +122,24 @@ function PluginGroup(props: {
   );
   const prompts = plugin.files.filter((f) => f.kind === "prompt");
   const skills = plugin.files.filter((f) => f.kind === "skill");
-  const references = plugin.files.filter((f) => f.kind === "reference");
+  const skillGroups = skills.map((skill) => ({
+    skill,
+    directory: skill.path.slice(0, -"SKILL.md".length),
+    references: new Array<AgentFile>(),
+  }));
+  const references: AgentFile[] = [];
+  for (const file of plugin.files.filter((f) => f.kind === "reference")) {
+    // The nearest SKILL.md owns a reference, including nested skills.
+    const owner = skillGroups.reduce<(typeof skillGroups)[number] | undefined>(
+      (nearest, group) =>
+        file.path.startsWith(group.directory) &&
+        (!nearest || group.directory.length > nearest.directory.length)
+          ? group
+          : nearest,
+      undefined,
+    );
+    (owner?.references ?? references).push(file);
+  }
   const isSelected = (entry: Selection) =>
     selection !== null &&
     selection.pluginId === entry.pluginId &&
@@ -197,7 +214,14 @@ function PluginGroup(props: {
           {prompts.length > 0 && <h3 className="pe-label">Prompts</h3>}
           {prompts.map((file) => fileRow(file, file.path.replace(/^instructions\//, "")))}
           {skills.length > 0 && <h3 className="pe-label">Skills</h3>}
-          {skills.map((file) => fileRow(file, file.path.replace(/^skills\//, "")))}
+          {skillGroups.map(({ skill, directory, references }) => (
+            // A row group is not a form fieldset or a navigation landmark.
+            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
+            <div key={skill.path} role="group" aria-label={skill.path.replace(/^skills\//, "")}>
+              {fileRow(skill, skill.path.replace(/^skills\//, ""))}
+              {references.map((file) => fileRow(file, file.path.slice(directory.length), true))}
+            </div>
+          ))}
           {references.length > 0 && <h3 className="pe-label">Reference files</h3>}
           {references.map((file) => fileRow(file, file.path.replace(/^skills\//, "")))}
         </div>

@@ -236,3 +236,50 @@ test("reference files allow whitespace-only edits", async () => {
   expect(slot.getByRole("button", { name: "Save & reload" })).toHaveProperty("disabled", false);
   slot.unmount();
 });
+
+test("references appear under their nearest skill and keep full-path navigation", async () => {
+  const files: Plugin["files"] = [
+    { path: "skills/review/SKILL.md", kind: "skill", tool: null, chars: 12 },
+    { path: "skills/review/references/guide.md", kind: "reference", tool: null, chars: 12 },
+    { path: "skills/review/advanced/SKILL.md", kind: "skill", tool: null, chars: 12 },
+    {
+      path: "skills/review/advanced/references/guide.md",
+      kind: "reference",
+      tool: null,
+      chars: 12,
+    },
+    { path: "skills/reviewer/SKILL.md", kind: "skill", tool: null, chars: 12 },
+    { path: "skills/reviewer/references/guide.md", kind: "reference", tool: null, chars: 12 },
+    { path: "skills/shared/guide.md", kind: "reference", tool: null, chars: 12 },
+  ];
+  const selected = "skills/review/advanced/references/guide.md";
+  const tab = renderSlot(
+    await pluginsTabRegistration(),
+    { subPath: `prompts/notes/file/${selected}` },
+    { rpc: { ...rpc, plugins: () => ({ plugins: [{ ...notes, files }] }) } as never },
+  );
+  try {
+    const review = await tab.findByRole("group", { name: "review/SKILL.md" });
+    expect(
+      within(review)
+        .getAllByRole("button")
+        .map((row) => row.textContent),
+    ).toEqual(["review/SKILL.md", "references/guide.md"]);
+    const advanced = tab.getByRole("group", { name: "review/advanced/SKILL.md" });
+    const reference = within(advanced).getByRole("button", { name: "references/guide.md" });
+    expect(reference.getAttribute("aria-current")).toBe("true");
+    fireEvent.click(reference);
+    expect(tab.navigateCalls.at(-1)).toMatchObject({
+      method: "toPluginPanel",
+      path: "instructions",
+      options: { subPath: `prompts/notes/file/${selected}` },
+    });
+    expect(
+      within(tab.getByRole("group", { name: "reviewer/SKILL.md" })).getAllByRole("button"),
+    ).toHaveLength(2);
+    expect(tab.getByRole("button", { name: "shared/guide.md" })).toBeTruthy();
+    expect(tab.getAllByRole("button", { name: "references/guide.md" })).toHaveLength(3);
+  } finally {
+    tab.unmount();
+  }
+});
