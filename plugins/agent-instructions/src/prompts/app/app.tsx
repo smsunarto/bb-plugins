@@ -1,7 +1,7 @@
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
+import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import type {
   AgentFile,
   FileContent,
@@ -106,6 +106,34 @@ function PluginList(props: {
         <PluginGroup key={plugin.id} plugin={plugin} {...props} />
       ))}
     </nav>
+  );
+}
+
+function SkillGroup({
+  path,
+  selectedPath,
+  dirty,
+  children,
+}: {
+  path: string;
+  selectedPath: string | null;
+  dirty: boolean;
+  children: ReactNode;
+}) {
+  const disclosure = useRef<HTMLDetailsElement>(null);
+  useLayoutEffect(() => {
+    // Reveal a newly selected file without overriding manual collapse on refetch.
+    if (selectedPath && disclosure.current) disclosure.current.open = true;
+  }, [selectedPath]);
+  const label = path.replace(/^skills\//, "");
+  return (
+    <details ref={disclosure} className="pe-skill" aria-label={label}>
+      <summary className="pe-skill-summary">
+        {label.replace(/\/?SKILL\.md$/, "") || "Skills"}
+        {dirty && <span className="pe-dot" title="Unsaved" />}
+      </summary>
+      {children}
+    </details>
   );
 }
 
@@ -215,12 +243,23 @@ function PluginGroup(props: {
           {prompts.map((file) => fileRow(file, file.path.replace(/^instructions\//, "")))}
           {skills.length > 0 && <h3 className="pe-label">Skills</h3>}
           {skillGroups.map(({ skill, directory, references }) => (
-            // A row group is not a form fieldset or a navigation landmark.
-            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
-            <div key={skill.path} role="group" aria-label={skill.path.replace(/^skills\//, "")}>
-              {fileRow(skill, skill.path.replace(/^skills\//, ""))}
+            <SkillGroup
+              key={skill.path}
+              path={skill.path}
+              selectedPath={
+                selection?.pluginId === plugin.id &&
+                "path" in selection &&
+                [skill, ...references].some((file) => file.path === selection.path)
+                  ? selection.path
+                  : null
+              }
+              dirty={[skill, ...references].some((file) =>
+                dirty.has(draftKey(plugin.id, file.path)),
+              )}
+            >
+              {fileRow(skill, "SKILL.md", true)}
               {references.map((file) => fileRow(file, file.path.slice(directory.length), true))}
-            </div>
+            </SkillGroup>
           ))}
           {references.length > 0 && <h3 className="pe-label">Reference files</h3>}
           {references.map((file) => fileRow(file, file.path.replace(/^skills\//, "")))}

@@ -6,7 +6,7 @@ import { queryClient } from "../app/query.ts";
 import type { Plugin } from "../shared/schema.ts";
 
 installDom();
-const { fireEvent, within } = await import("@testing-library/react");
+const { fireEvent, within, waitFor } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 
 beforeEach(() => queryClient.clear());
@@ -253,30 +253,61 @@ test("references appear under their nearest skill and keep full-path navigation"
     { path: "skills/shared/guide.md", kind: "reference", tool: null, chars: 12 },
   ];
   const selected = "skills/review/advanced/references/guide.md";
+  const tabRegistration = await pluginsTabRegistration();
   const tab = renderSlot(
-    await pluginsTabRegistration(),
+    tabRegistration,
     { subPath: `prompts/notes/file/${selected}` },
     { rpc: { ...rpc, plugins: () => ({ plugins: [{ ...notes, files }] }) } as never },
   );
   try {
     const review = await tab.findByRole("group", { name: "review/SKILL.md" });
+    expect(review).toHaveProperty("open", false);
+    fireEvent.click(within(review).getByText("review"));
+    expect(review).toHaveProperty("open", true);
     expect(
       within(review)
         .getAllByRole("button")
         .map((row) => row.textContent),
-    ).toEqual(["review/SKILL.md", "references/guide.md"]);
+    ).toEqual(["SKILL.md", "references/guide.md"]);
     const advanced = tab.getByRole("group", { name: "review/advanced/SKILL.md" });
+    expect(advanced).toHaveProperty("open", true);
+    fireEvent.click(within(advanced).getByText("review/advanced"));
+    expect(advanced).toHaveProperty("open", false);
+    const editor = renderSlot(
+      await registration(),
+      { subPath: `prompts/notes/file/${selected}` },
+      { rpc: { ...rpc, plugins: () => ({ plugins: [{ ...notes, files }] }) } as never },
+    );
+    try {
+      fireEvent.change(await editor.findByRole("textbox", { name: selected }), {
+        target: { value: "Updated reference draft" },
+      });
+      await waitFor(() =>
+        expect(within(advanced.querySelector("summary")!).getByTitle("Unsaved")).toBeTruthy(),
+      );
+      expect(advanced).toHaveProperty("open", false);
+      const Tab = tabRegistration.component;
+      tab.lifecycle.rerender(<Tab subPath="prompts/notes/file/skills/review/advanced/SKILL.md" />);
+      await waitFor(() => expect(advanced).toHaveProperty("open", true));
+    } finally {
+      editor.unmount();
+    }
+    fireEvent.click(within(advanced).getByText("review/advanced"));
+    expect(advanced).toHaveProperty("open", false);
+    fireEvent.click(within(advanced).getByText("review/advanced"));
     const reference = within(advanced).getByRole("button", { name: "references/guide.md" });
-    expect(reference.getAttribute("aria-current")).toBe("true");
+    expect(
+      within(advanced).getByRole("button", { name: "SKILL.md" }).getAttribute("aria-current"),
+    ).toBe("true");
     fireEvent.click(reference);
     expect(tab.navigateCalls.at(-1)).toMatchObject({
       method: "toPluginPanel",
       path: "instructions",
       options: { subPath: `prompts/notes/file/${selected}` },
     });
-    expect(
-      within(tab.getByRole("group", { name: "reviewer/SKILL.md" })).getAllByRole("button"),
-    ).toHaveLength(2);
+    const reviewer = tab.getByRole("group", { name: "reviewer/SKILL.md" });
+    fireEvent.click(within(reviewer).getByText("reviewer"));
+    expect(within(reviewer).getAllByRole("button")).toHaveLength(2);
     expect(tab.getByRole("button", { name: "shared/guide.md" })).toBeTruthy();
     expect(tab.getAllByRole("button", { name: "references/guide.md" })).toHaveLength(3);
   } finally {
