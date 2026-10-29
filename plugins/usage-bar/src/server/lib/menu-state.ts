@@ -50,17 +50,7 @@ export function createMenuState(signal: AbortSignal, changed: () => void, now = 
         providers: (source?.providers ?? []).map((provider) =>
           Object.assign({}, provider, {
             accounts: provider.accounts.map((account) =>
-              Object.assign(
-                {},
-                account,
-                {
-                  resetCredits: null,
-                  extraUsage: null,
-                  resetNotice: null,
-                  webResetCredits: null,
-                },
-                account.status === "disabled" ? {} : extras.get(account.id)?.value,
-              ),
+              Object.assign({}, account, extras.get(account.id)?.value ?? NO_EXTRAS),
             ),
           }),
         ),

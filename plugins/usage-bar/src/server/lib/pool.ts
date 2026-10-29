@@ -1,6 +1,5 @@
 import { z } from "zod";
-import type { ExtraUsage, ResetCredits } from "./extras.ts";
-import type { WebResetCredits } from "./claude-web.ts";
+import type { AccountExtras } from "./extras.ts";
 
 /** JavaScript Date's supported epoch range also keeps native countdowns representable. */
 export const timestampSchema = z.number().min(-8.64e15).max(8.64e15).nullable().catch(null);
@@ -78,11 +77,6 @@ export interface MenuAccount {
   error: string | null;
   inFlight: number;
   windows: MenuWindow[];
-  /** Null until fetched, or when the account has none. */
-  resetCredits?: ResetCredits | null;
-  extraUsage?: ExtraUsage | null;
-  resetNotice?: string | null;
-  webResetCredits?: WebResetCredits | null;
 }
 
 export interface MenuProvider {
@@ -91,13 +85,16 @@ export interface MenuProvider {
   accounts: MenuAccount[];
 }
 
+/** A menu account joined with its observed extras: what the helper decodes. */
+export type SnapshotAccount = MenuAccount & AccountExtras;
+
 /**
  * Everything the native helper renders. Mirrored by `struct Snapshot` in
  * native/UsageBar.swift, which requires every non-optional field.
  * test/wire.test.ts decodes real snapshots with the helper.
  */
 export interface MenuSnapshot {
-  providers: MenuProvider[];
+  providers: (Omit<MenuProvider, "accounts"> & { accounts: SnapshotAccount[] })[];
   /** Why the last read failed, shown dimmed like CodexBar's stale state. */
   error: string | null;
 }
