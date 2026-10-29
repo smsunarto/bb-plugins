@@ -49,6 +49,7 @@ import {
   type GitHubTarget,
   type PullRequest,
   type Rule,
+  type RunStatus,
   type Trigger,
   type CommentTriggerEvent,
   type TriggerCommentSource,
@@ -202,6 +203,12 @@ export const rpcContract = defineRpcContract({
   },
 });
 
+/**
+ * Outcomes that need no human follow-up. Failures, empty runs, and attribution
+ * drift keep their thread open so they stay visible in the sidebar.
+ */
+const SETTLED_STATUSES: ReadonlySet<RunStatus> = new Set(["commented", "shadowed"]);
+
 function newId(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
 }
@@ -237,6 +244,13 @@ function createServices(bb: BbPluginApi) {
         "Use a section name or ID. Leave this field empty to create unsectioned review threads.",
       default: "",
     },
+    settleFinishedThreads: {
+      type: "boolean",
+      label: "Settle finished review threads",
+      description:
+        "Archive a review thread once its review is verified on GitHub or its shadow review is recorded. Failed runs, runs that posted nothing, and runs with attribution problems stay open.",
+      default: true,
+    },
   });
 
   const db = bb.storage.database();
@@ -267,6 +281,7 @@ function createServices(bb: BbPluginApi) {
       ghPath: expandHome(botGhPath) || values.ghPath.trim() || "gh",
       botGhPath,
       defaultThreadSection: values.defaultThreadSection.trim(),
+      settleFinishedThreads: values.settleFinishedThreads,
     };
   };
 
@@ -826,6 +841,30 @@ function createServices(bb: BbPluginApi) {
     bb.log.info(
       `run ${run.id} (${run.ruleName} ${run.targetKind} #${run.prNumber}) -> ${result.status}`,
     );
+    await settleThread(threadId, result.status);
+  }
+
+  /**
+   * Settles a cleanly finished review thread with bb's Archive, which the
+   * sidebar calls Settle. Verification can take seconds, so the thread is read
+   * again first: one the human resumed, or whose later turn failed, stays open.
+   * The run is already recorded, so a failed archive only leaves the thread
+   * open for the human to settle.
+   */
+  async function settleThread(threadId: string, status: RunStatus): Promise<void> {
+    if (!SETTLED_STATUSES.has(status)) return;
+    if (!(await readSettings()).settleFinishedThreads) return;
+    try {
+      const thread = await bb.sdk.threads.get({ threadId });
+      if (thread.status !== "idle" || thread.archivedAt !== null) return;
+      await bb.sdk.threads.archive({ threadId });
+    } catch (error) {
+      bb.log.warn(
+        `could not settle review thread ${threadId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
@@ -1278,6 +1317,7 @@ function createServices(bb: BbPluginApi) {
           commentCount: result.comments.length,
         });
         announce();
+        if (run.threadId !== null) await settleThread(run.threadId, result.status);
         return ok(
           json
             ? JSON.stringify(result, null, 2)

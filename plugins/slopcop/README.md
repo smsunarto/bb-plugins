@@ -75,6 +75,14 @@ bb plugin config slopcop set defaultThreadSection "Automated reviews"
 
 Clear the setting to create review threads without a section.
 
+SlopCop settles (archives) a review thread once it verifies the review on GitHub or
+records the shadow review. Failed runs, runs that posted nothing, and runs with
+attribution problems stay open for you to inspect. To keep every thread open:
+
+```sh
+bb plugin config slopcop set settleFinishedThreads false
+```
+
 ## Design notes
 
 Three decisions do most of the work.
@@ -203,7 +211,8 @@ Two consequences worth knowing:
 | `bb slopcop status`                                       | gh auth, watched repos, poll interval           |
 
 Plugin settings: `defaultThreadSection` accepts a BB thread section name or ID.
-SlopCop fails a run with a clear error if that section no longer exists. `botGhPath`
+SlopCop fails a run with a clear error if that section no longer exists.
+`settleFinishedThreads` (on by default) archives cleanly finished review threads. `botGhPath`
 switches every GitHub call to a bot identity — see above.
 
 Rule flags: `--name --repo --project --provider --model --reasoning --permission
