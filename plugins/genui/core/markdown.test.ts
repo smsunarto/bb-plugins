@@ -206,13 +206,13 @@ Form([Input($name)])`),
           kind: "node",
           type: "Snippet",
           key: "1:1",
-          props: { path: "src/app.ts", from: 3, to: 5, code: null, error: null, language: null, ...props },
+          props: { path: "src/app.ts", from: 3, to: 5, shown: { status: "loading" }, language: null, ...props },
         },
       ]);
-    expect(snippet({ code: "const a = 1;\n", language: "ts" })).toBe("`src/app.ts:3-5`\n```ts\nconst a = 1;\n```");
+    expect(snippet({ shown: { status: "ready", code: "const a = 1;\n" }, language: "ts" })).toBe("`src/app.ts:3-5`\n```ts\nconst a = 1;\n```");
     expect(snippet({})).toBe("`src/app.ts:3-5`");
     expect(snippet({ from: 7, to: 7 })).toBe("`src/app.ts:7`");
-    expect(snippet({ error: "File not found" })).toBe("`src/app.ts:3-5` _(error: File not found)_");
+    expect(snippet({ shown: { status: "error", error: "File not found" } })).toBe("`src/app.ts:3-5` _(error: File not found)_");
   });
 });
 

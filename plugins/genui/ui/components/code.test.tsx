@@ -3,17 +3,34 @@ import { act, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type * as PluginSdkApp from "@get-bb/plugin-sdk/app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SourceView } from "./code";
+import type { Value } from "../../core/types";
+import { UiRuntimeContext, type UiRuntime } from "../runtime";
+import { Snippet, SourceView } from "./code";
 
 // BB's viewer, numbered as it mounts, so a new viewer is told from the old one.
 const viewers = vi.hoisted(() => ({ mounted: 0 }));
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => ({
   ...(await importOriginal<typeof PluginSdkApp>()),
+  experimental_Icon: ({ name }: { name: string }) => <i data-icon={name} />,
   experimental_SourceCode: function SourceCode({ content }: { content: string }) {
     const [mount] = useState(() => ++viewers.mounted);
     return <pre data-mount={mount}>{content}</pre>;
   },
 }));
+
+const runtime: UiRuntime = {
+  setValue() {},
+  run: async () => {},
+  openFile: null,
+  loadImage: null,
+  holdHeight: () => () => {},
+  readText: null,
+  loadAudio: null,
+  loadAsset: null,
+  superseded: false,
+  threadId: null,
+  blockKey: null,
+};
 
 // jsdom has no layout: an element has a box unless an ancestor is `hidden`, and
 // every observed box reports when a test hides or shows it, as display:none does.
@@ -84,5 +101,47 @@ describe("SourceView", () => {
     expect(panel(false)).toBe(1);
     height = 480;
     expect(panel(false)).toBe(1);
+  });
+});
+
+describe("Snippet", () => {
+  /** A Snippet of src/app.ts lines 3–5 as the evaluator hands it over, with `shown` in one of its states. */
+  function snippet(shown: Value) {
+    act(() =>
+      root.render(
+        <UiRuntimeContext value={runtime}>
+          <Snippet props={{ path: "src/app.ts", from: 3, to: 5, shown, language: "typescript" }} />
+        </UiRuntimeContext>,
+      ),
+    );
+    return {
+      caption: container.querySelector(".font-mono")?.textContent,
+      code: container.querySelector("pre")?.textContent ?? null,
+      status: container.querySelector('[role="status"]')?.getAttribute("aria-label") ?? null,
+      copy: container.querySelector('button[aria-label="Copy code"]') !== null,
+    };
+  }
+
+  it("shows the lines it got, captioned with the range on screen, and offers to copy them", () => {
+    expect(snippet({ status: "ready", code: "const a = 1;\nconst b = 2;" })).toEqual({
+      caption: "src/app.tsL3–4",
+      code: "const a = 1;\nconst b = 2;",
+      status: null,
+      copy: true,
+    });
+  });
+
+  it("holds a loading placeholder for the range asked for while the file is read", () => {
+    expect(snippet({ status: "loading" })).toEqual({
+      caption: "src/app.tsL3–5",
+      code: null,
+      status: "Loading src/app.ts L3–5",
+      copy: false,
+    });
+  });
+
+  it("says why it cannot show the file, with nothing to copy", () => {
+    expect(snippet({ status: "error", error: "file not found" })).toMatchObject({ caption: "src/app.tsL3–5", code: null, copy: false });
+    expect(container.textContent).toContain("Couldn't show src/app.ts L3–5: file not found");
   });
 });

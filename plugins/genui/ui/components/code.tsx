@@ -10,6 +10,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Icon } from "@/components/ui/icon";
+import { snippetShown } from "../../core/data";
 import { useCodeHeight } from "../codeHeight";
 import { useUiRuntime } from "../runtime";
 import { useSketchFont } from "../sketchFont";
@@ -147,7 +148,7 @@ export function Code({ props }: { props: Props }) {
 }
 
 /**
- * Lines of a workspace file, read by reference (`code` is null while the file
+ * Lines of a workspace file, read by reference (a placeholder while the file
  * loads). BB's viewer numbers the lines it is given from 1, so the caption
  * carries the file's real line range.
  */
@@ -157,39 +158,41 @@ export function Snippet({ props }: { props: Props }) {
   const requestedFrom = finiteNumber(props.from);
   const from = requestedFrom ?? 1;
   const to = finiteNumber(props.to);
-  const code = typeof props.code === "string" ? props.code : null;
-  const error = optionalText(props.error);
-  let range: string | null;
-  if (code !== null && error === null) {
-    // What is shown, after clamping to the file and the line cap.
-    const last = from + code.split("\n").length - 1;
-    range = last === from ? `L${from}` : `L${from}–${last}`;
-  } else {
-    range = to !== null ? `L${from}–${to}` : requestedFrom !== null ? `L${from}+` : null;
-  }
-  const label = range === null ? path : `${path} ${range}`;
-
+  const shown = snippetShown(props);
+  // The range asked for, until the lines on screen (clamped to the file and the line cap) replace it.
+  const asked = to !== null ? `L${from}–${to}` : requestedFrom !== null ? `L${from}+` : null;
+  const label = asked === null ? path : `${path} ${asked}`;
+  let range = asked;
+  /** How many lines the viewer draws, for the height it holds while loading; null while unknown. */
+  let lines: number | null = null;
   let body: ReactNode;
-  if (error !== null) {
-    body = (
-      <div className="px-3 py-2.5">
-        <ErrorLine message={`Couldn't show ${label}: ${error}`} />
-      </div>
-    );
-  } else if (code === null) {
-    body = (
-      <div role="status" aria-label={`Loading ${label}`} className="flex flex-col gap-2 px-3 py-3">
-        {["w-3/5", "w-4/5", "w-2/5", "w-1/2"].map((width) => (
-          <div key={width} className={`h-3 animate-pulse rounded-sm bg-muted motion-reduce:animate-none ${width}`} />
-        ))}
-      </div>
-    );
-  } else {
-    body = <SourceView content={code} path={viewerPath(path, code)} />;
+  switch (shown.status) {
+    case "ready": {
+      lines = shown.code.split("\n").length;
+      const last = from + lines - 1;
+      range = last === from ? `L${from}` : `L${from}–${last}`;
+      body = <SourceView content={shown.code} path={viewerPath(path, shown.code)} />;
+      break;
+    }
+    case "loading":
+      // The range asked for is the best guess at the height.
+      lines = to !== null && to >= from ? to - from + 1 : null;
+      body = (
+        <div role="status" aria-label={`Loading ${label}`} className="flex flex-col gap-2 px-3 py-3">
+          {["w-3/5", "w-4/5", "w-2/5", "w-1/2"].map((width) => (
+            <div key={width} className={`h-3 animate-pulse rounded-sm bg-muted motion-reduce:animate-none ${width}`} />
+          ))}
+        </div>
+      );
+      break;
+    case "error":
+      body = (
+        <div className="px-3 py-2.5">
+          <ErrorLine message={`Couldn't show ${label}: ${shown.error}`} />
+        </div>
+      );
+      break;
   }
-
-  // The viewer draws one line per newline-separated part; while the file loads, the range asked for is the best guess.
-  const lines = error !== null ? null : code !== null ? code.split("\n").length : to !== null && to >= from ? to - from + 1 : null;
   return (
     <CodeFrame
       lines={lines}
@@ -216,7 +219,7 @@ export function Snippet({ props }: { props: Props }) {
               <Icon name="FileText" className="size-3.5" />
             </button>
           )}
-          {code === null || error !== null ? null : <CopyButton code={code} />}
+          {shown.status === "ready" ? <CopyButton code={shown.code} /> : null}
         </span>
       }
     >

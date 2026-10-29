@@ -1,7 +1,7 @@
 import type { ArrowExpr, CallExpr, Expr, Program } from "./ast";
 import { CONSTANTS, FORBIDDEN_PROPERTIES, LIMITS, type ComponentName, type ComponentSpec, type ParamSpec } from "./catalog";
 import { DiagnosticList, type Pos } from "./diagnostics";
-import { dataKey, languageOf, loadsReached, snippetLines, snippetRangeError, type LoadedData } from "./data";
+import { dataKey, languageOf, loadsReached, snippetLines, snippetRangeError, type LoadedData, type SnippetShown } from "./data";
 import { sceneErrors } from "./scene";
 import { shaderErrors } from "./shader-args";
 import type { Action, Binding, Diagnostic, FunctionValue, UiNode, UiState, Value } from "./types";
@@ -508,9 +508,9 @@ class Interpreter {
   }
 
   /**
-   * Snippet props: the requested range plus its lines from the raw file. A file
-   * still loading is `code: null` (the renderer shows a placeholder), and a
-   * file or range problem is `error`, never an Error node.
+   * Snippet props: the requested range plus what is `shown` for it (data.ts
+   * SnippetShown): its lines from the raw file, a loading state while the
+   * file is read, or a file or range problem, never an Error node.
    */
   private snippet(props: Readonly<Record<string, Value>>): Record<string, Value> {
     // `path` is a required string param and the others optional numbers, so these are the evaluated values.
@@ -519,13 +519,13 @@ class Interpreter {
     const to = typeof props.to === "number" ? props.to : null;
     const loaded = this.data.get(dataKey({ path, raw: true }));
     const rangeError = snippetRangeError(from, to);
-    let shown: { code: string | null; error: string | null };
-    if (rangeError !== null) shown = { code: null, error: rangeError };
-    else if (loaded === undefined) shown = { code: null, error: null };
-    else if (!loaded.ok) shown = { code: null, error: loaded.error };
-    else if (typeof loaded.value !== "string") shown = { code: null, error: "not a text file" };
-    else shown = snippetLines(loaded.value, from, to);
-    return { path, from, to, code: shown.code, error: shown.error, language: languageOf(path) };
+    const shown: SnippetShown =
+      rangeError !== null ? { status: "error", error: rangeError }
+      : loaded === undefined ? { status: "loading" }
+      : !loaded.ok ? { status: "error", error: loaded.error }
+      : typeof loaded.value !== "string" ? { status: "error", error: "not a text file" }
+      : snippetLines(loaded.value, from, to);
+    return { path, from, to, shown, language: languageOf(path) };
   }
 
   /** Evaluates and normalizes one argument; `undefined` means an optional param passed as null. */

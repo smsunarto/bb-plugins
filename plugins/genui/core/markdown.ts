@@ -1,6 +1,6 @@
 // A static markdown rendering of an evaluated UI for clients that cannot run
 // it (mobile app, notifications, CLI): readable on a phone, no HTML.
-import type { LoadedData } from "./data";
+import { snippetShown, type LoadedData } from "./data";
 import { acceptanceVerdict, cellsLine, checkLabel, isCellGap, isGap, needsPlaces, ownerContradiction, readAcceptance, type Check, type Evidence as AcceptanceEvidence } from "./acceptance";
 import { conditionDifferences, conditionsWarning, readCompare, type CompareImage } from "./compare";
 import { analyse, countsText, describeRegion, formatClock, formatWer, readTracks } from "./transcript";
@@ -638,9 +638,15 @@ function blockBody(node: UiNode): string {
       return fence(inline(props.code), inline(props.language));
     case "Snippet": {
       const where = location(props.path, props.from, props.to);
-      const error = inline(props.error);
-      if (error !== "") return `${where} _(error: ${error})_`;
-      return typeof props.code === "string" ? `${where}\n${fence(props.code, inline(props.language))}` : where;
+      const shown = snippetShown(props);
+      switch (shown.status) {
+        case "ready":
+          return `${where}\n${fence(shown.code, inline(props.language))}`;
+        case "loading":
+          return where;
+        case "error":
+          return `${where} _(error: ${shown.error})_`;
+      }
     }
     case "Diff":
       return fence(inline(props.patch), "diff");

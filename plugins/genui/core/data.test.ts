@@ -317,28 +317,25 @@ describe("evaluate Snippet", () => {
       path: "src/app.ts",
       from: 2,
       to: 4,
-      code: "two\nthree\nfour",
-      error: null,
+      shown: { status: "ready", code: "two\nthree\nfour" },
       language: "typescript",
     });
   });
 
   it("defaults to the whole file and drops the final newline", () => {
-    expect(snippet('Snippet("a.py")', FILE)).toMatchObject({ from: null, to: null, code: "one\ntwo\nthree\nfour\nfive" });
-    expect(snippet('Snippet("a.py", 4)', "a\r\nb\r\nc\r\nd\r\ne")).toMatchObject({ code: "d\ne" });
-    expect(snippet('Snippet("a.py", to: 2)', FILE)).toMatchObject({ code: "one\ntwo" });
+    expect(snippet('Snippet("a.py")', FILE)).toMatchObject({ from: null, to: null, shown: { code: "one\ntwo\nthree\nfour\nfive" } });
+    expect(snippet('Snippet("a.py", 4)', "a\r\nb\r\nc\r\nd\r\ne")).toMatchObject({ shown: { code: "d\ne" } });
+    expect(snippet('Snippet("a.py", to: 2)', FILE)).toMatchObject({ shown: { code: "one\ntwo" } });
   });
 
   it("clamps `to` to the end of the file", () => {
-    expect(snippet('Snippet("a.ts", 4, 99)', FILE)).toMatchObject({ to: 99, code: "four\nfive", error: null });
+    expect(snippet('Snippet("a.ts", 4, 99)', FILE)).toMatchObject({ to: 99, shown: { status: "ready", code: "four\nfive" } });
   });
 
   it(`shows at most ${MAX_SNIPPET_LINES} lines, cut at from + ${MAX_SNIPPET_LINES - 1}`, () => {
     const big = Array.from({ length: 1000 }, (_, i) => `line ${i + 1}`).join("\n");
-    const lines = (snippet('Snippet("big.go", 101)', big).code as string).split("\n");
-    expect(lines).toHaveLength(MAX_SNIPPET_LINES);
-    expect(lines[0]).toBe("line 101");
-    expect(lines.at(-1)).toBe(`line ${100 + MAX_SNIPPET_LINES}`);
+    const shown = Array.from({ length: MAX_SNIPPET_LINES }, (_, i) => `line ${101 + i}`).join("\n");
+    expect(snippet('Snippet("big.go", 101)', big)).toMatchObject({ shown: { status: "ready", code: shown } });
   });
 
   it("is a loading state, not an Error node, while the file is missing", () => {
@@ -346,8 +343,7 @@ describe("evaluate Snippet", () => {
       path: "src/app.ts",
       from: 2,
       to: 4,
-      code: null,
-      error: null,
+      shown: { status: "loading" },
       language: "typescript",
     });
   });
@@ -356,19 +352,20 @@ describe("evaluate Snippet", () => {
     const compiled = program('Card("A", [Snippet("a.json"), Text(Load("a.json").name)])');
     const data = new Map([[dataKey({ path: "a.json", raw: false }), parseDataFile("a.json", '{"name": "x"}')]]);
     const [code, text] = children(evaluate(compiled, {}, data).roots[0]);
-    expect(code.props).toMatchObject({ code: null, error: null });
+    expect(code.props).toMatchObject({ shown: { status: "loading" } });
     expect(text.props.text).toBe("x");
   });
 
   it("reports file and range problems as `error`", () => {
     const missing: LoadedData = { ok: false, error: "file not found" };
-    expect(snippet('Snippet("a.ts")', missing)).toMatchObject({ code: null, error: "file not found" });
-    expect(snippet('Snippet("a.ts", 9)', FILE)).toMatchObject({ code: null, error: "the file has 5 lines; `from` is 9" });
-    expect(snippet('Snippet("a.ts")', "")).toMatchObject({ code: null, error: "the file is empty" });
+    const failed = (error: string) => ({ shown: { status: "error", error } });
+    expect(snippet('Snippet("a.ts")', missing)).toMatchObject(failed("file not found"));
+    expect(snippet('Snippet("a.ts", 9)', FILE)).toMatchObject(failed("the file has 5 lines; `from` is 9"));
+    expect(snippet('Snippet("a.ts")', "")).toMatchObject(failed("the file is empty"));
     // Range mistakes show before the file arrives.
-    expect(snippet('Snippet("a.ts", 5, 2)')).toMatchObject({ code: null, error: "`from` (5) is after `to` (2)" });
-    expect(snippet('Snippet("a.ts", 0)', FILE).error).toBe("`from` must be a line number (1 or more), got 0");
-    expect(snippet('Snippet("a.ts", 2, 3.5)', FILE).error).toBe("`to` must be a line number (1 or more), got 3.5");
+    expect(snippet('Snippet("a.ts", 5, 2)')).toMatchObject(failed("`from` (5) is after `to` (2)"));
+    expect(snippet('Snippet("a.ts", 0)', FILE)).toMatchObject(failed("`from` must be a line number (1 or more), got 0"));
+    expect(snippet('Snippet("a.ts", 2, 3.5)', FILE)).toMatchObject(failed("`to` must be a line number (1 or more), got 3.5"));
   });
 
   it("knows languages by extension or file name", () => {

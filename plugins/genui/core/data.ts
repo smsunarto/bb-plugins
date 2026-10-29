@@ -180,8 +180,20 @@ export function loadsReached(program: Program, exprs: readonly Expr[]): string[]
   return [...paths];
 }
 
-/** The lines a Snippet shows, or a user-facing reason it cannot show them. */
-export type SnippetLines = { readonly code: string; readonly error: null } | { readonly code: null; readonly error: string };
+/** What a Snippet shows: its lines, a placeholder while its file is read, or a user-facing reason it cannot show them. */
+export type SnippetShown =
+  | { readonly status: "ready"; readonly code: string }
+  | { readonly status: "loading" }
+  | { readonly status: "error"; readonly error: string };
+
+/**
+ * A Snippet node's `shown` prop. Interpreter.snippet (core/evaluate.ts) is
+ * its only writer and builds exactly a SnippetShown, so this names that
+ * contract instead of re-checking it.
+ */
+export function snippetShown(props: Readonly<Record<string, Value>>): SnippetShown {
+  return props.shown as SnippetShown;
+}
 
 /** Why `from`/`to` cannot address lines, or null; checked before the file arrives. */
 export function snippetRangeError(from: number | null, to: number | null): string | null {
@@ -197,19 +209,19 @@ export function snippetRangeError(from: number | null, to: number | null): strin
  * `to` to the last line; `to` is clamped to the file, and at most
  * MAX_SNIPPET_LINES lines are returned.
  */
-export function snippetLines(text: string, from: number | null, to: number | null): SnippetLines {
+export function snippetLines(text: string, from: number | null, to: number | null): Exclude<SnippetShown, { status: "loading" }> {
   const rangeError = snippetRangeError(from, to);
-  if (rangeError !== null) return { code: null, error: rangeError };
+  if (rangeError !== null) return { status: "error", error: rangeError };
   const lines = text.split(/\r?\n/);
   // A final newline ends the last line; it does not start another.
   if (lines[lines.length - 1] === "") lines.pop();
-  if (lines.length === 0) return { code: null, error: "the file is empty" };
+  if (lines.length === 0) return { status: "error", error: "the file is empty" };
   const start = from ?? 1;
   if (start > lines.length) {
-    return { code: null, error: `the file has ${lines.length} line${lines.length === 1 ? "" : "s"}; \`from\` is ${start}` };
+    return { status: "error", error: `the file has ${lines.length} line${lines.length === 1 ? "" : "s"}; \`from\` is ${start}` };
   }
   const end = Math.min(to ?? lines.length, lines.length, start + MAX_SNIPPET_LINES - 1);
-  return { code: lines.slice(start - 1, end).join("\n"), error: null };
+  return { status: "ready", code: lines.slice(start - 1, end).join("\n") };
 }
 
 const LANGUAGES: Readonly<Record<string, string>> = {
