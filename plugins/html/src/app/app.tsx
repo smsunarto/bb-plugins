@@ -382,7 +382,7 @@ async function preparePage(
       injectFragmentRuntime(document, {
         token,
         theme: readBbTheme(),
-        state: widget?.state === "null" ? null : (widget?.state ?? null),
+        state: widget?.state ?? null,
         tweaks: widget?.tweaks ?? null,
       });
     }),

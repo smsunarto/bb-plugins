@@ -18,6 +18,11 @@ import { useHtmlRpc } from "./rpc.ts";
 // instance restores the same widget, otherwise initial controls overwrite edits.
 const pendingWrites = new Map<string, Promise<WidgetStateSnapshot>>();
 
+type Field = "state" | "tweaks" | "context";
+/** Whether the saved state could be read. Writes are refused until a retry reads it. */
+type ReadState = { status: "ready" } | { status: "failed"; message: string };
+const READY: ReadState = { status: "ready" };
+
 function hasSavedContext(snapshot: WidgetStateSnapshot) {
   if (snapshot.hasWidgetState) return true;
   const tweaks: unknown = JSON.parse(snapshot.tweaks ?? "[]");
@@ -120,18 +125,17 @@ export function useWidgetState(
     tweaks: null as string | null,
   });
   const mentionId = useRef<string | null>(null);
-  const readOnly = useRef(false);
   const dirty = useRef(new Set<"state" | "tweaks">());
-  const [readError, setReadError] = useState<string | null>(null);
+  const [read, setRead] = useState<ReadState>(READY);
   const [hasSavedState, setHasSavedState] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const writeCount = useRef(0);
-  const failedWrites = useRef(new Map<"state" | "tweaks" | "context", string>());
+  /** Writes still in the air. */
+  const [inFlight, setInFlight] = useState(0);
+  /** The last failure per field, oldest first. */
+  const [failed, setFailed] = useState<ReadonlyMap<Field, string>>(new Map());
 
   const persist = useCallback(
     (fields: ("state" | "tweaks")[] = [], invalidate = true) => {
-      if (readOnly.current)
+      if (read.status === "failed")
         return Promise.reject(new Error("Saved state is unavailable. Retry loading it first."));
       const input = {
         threadId,
@@ -149,8 +153,7 @@ export function useWidgetState(
         const id = mentionId.current;
         composer.replace((current) => withoutStateMention(current, pluginId, id));
       }
-      writeCount.current++;
-      setSaving(true);
+      setInFlight((count) => count + 1);
       const write = (pendingWrites.get(key) ?? Promise.resolve())
         .catch(() => {})
         .then(() => {
@@ -175,30 +178,38 @@ export function useWidgetState(
             }
             mentionId.current = snapshot.mentionId;
             setHasSavedState(hasSavedContext(snapshot) || dirty.current.size > 0);
-            for (const field of attempts) failedWrites.current.delete(field);
-            failedWrites.current.delete("context");
-            setSaveError([...failedWrites.current.values()].at(-1) ?? null);
+            setFailed((previous) => {
+              const next = new Map(previous);
+              for (const field of [...attempts, "context"] as const) next.delete(field);
+              return next;
+            });
             return snapshot;
           },
           (error: unknown) => {
             const message = error instanceof Error ? error.message : String(error);
-            for (const field of attempts) failedWrites.current.set(field, message);
-            setSaveError(message);
+            // Re-inserted, so the latest failure is the last one and the one shown.
+            setFailed((previous) => {
+              const next = new Map(previous);
+              for (const field of attempts) {
+                next.delete(field);
+                next.set(field, message);
+              }
+              return next;
+            });
             return null;
           },
         )
         .finally(() => {
           if (pendingWrites.get(key) === write) pendingWrites.delete(key);
-          writeCount.current--;
-          if (!writeCount.current) setSaving(false);
+          setInFlight((count) => count - 1);
         });
       return write;
     },
-    [rpc, composer, pluginId, key, threadId, messageId, pageId],
+    [rpc, composer, pluginId, key, threadId, messageId, pageId, read],
   );
 
   const restore = useCallback(
-    async (signal: AbortSignal) => {
+    async (signal: AbortSignal): Promise<WidgetStateSnapshot | null> => {
       await waitForWrites(key).catch(() => {});
       signal.throwIfAborted();
       let snapshot: WidgetStateSnapshot | null;
@@ -206,20 +217,25 @@ export function useWidgetState(
         ({ snapshot } = await rpc.call("readState", { threadId, messageId, pageId }));
       } catch (error) {
         signal.throwIfAborted();
-        readOnly.current = true;
-        setReadError(error instanceof Error ? error.message : String(error));
+        setRead({
+          status: "failed",
+          message: error instanceof Error ? error.message : String(error),
+        });
         setHasSavedState(false);
-        return { state: "null", modelContent: null, tweaks: null };
+        return null;
       }
       signal.throwIfAborted();
-      readOnly.current = false;
-      setReadError(null);
-      saved.current = snapshot
-        ? { state: snapshot.state, modelContent: snapshot.modelContent, tweaks: snapshot.tweaks }
-        : { state: "null", modelContent: null, tweaks: null };
+      setRead(READY);
+      // Nothing saved means nothing to take over: writes were refused while the read failed.
+      if (snapshot)
+        saved.current = {
+          state: snapshot.state,
+          modelContent: snapshot.modelContent,
+          tweaks: snapshot.tweaks,
+        };
       mentionId.current = snapshot?.mentionId ?? null;
       setHasSavedState(snapshot !== null && hasSavedContext(snapshot));
-      return saved.current;
+      return snapshot;
     },
     [rpc, key, threadId, messageId, pageId],
   );
@@ -267,7 +283,7 @@ export function useWidgetState(
 
   const updateState = useCallback(
     (state: string, modelContent: string | null) => {
-      if (readOnly.current) return;
+      if (read.status === "failed") return;
       if (
         hasSavedState &&
         saved.current.state === state &&
@@ -280,11 +296,11 @@ export function useWidgetState(
       dirty.current.add("state");
       void persist(["state"]).catch(() => {});
     },
-    [persist, hasSavedState],
+    [persist, hasSavedState, read],
   );
   const updateTweaks = useCallback(
     (groups: TweakGroup[], changed: boolean, reset?: string | null) => {
-      if (readOnly.current || (groups.length === 0 && reset === undefined)) return;
+      if (read.status === "failed" || (groups.length === 0 && reset === undefined)) return;
       // Registration can happen after fetch/import or only when a tab opens.
       // Preserve saved controls that have not registered in this frame yet.
       const next = mergeTweaks(saved.current.tweaks, groups, reset);
@@ -293,14 +309,14 @@ export function useWidgetState(
       dirty.current.add("tweaks");
       void persist(["tweaks"], changed).catch(() => {});
     },
-    [persist],
+    [persist, read],
   );
 
   return {
     hasSavedState,
-    saving,
-    saveError,
-    readError,
+    saving: inFlight > 0,
+    saveError: [...failed.values()].at(-1) ?? null,
+    readError: read.status === "failed" ? read.message : null,
     restore,
     addContext,
     updateState,
