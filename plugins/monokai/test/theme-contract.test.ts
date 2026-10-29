@@ -133,9 +133,9 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
-  test("keeps mobile composer placeholders at a readable regular weight", () => {
+  test("hides composer placeholders while preserving the editable text", () => {
     expect(theme).toContain(
-      "@media (max-width: 767px) {\n  .dark\n    [data-promptbox]\n    [data-promptbox-editor-content]\n    .ProseMirror\n    p.is-editor-empty:first-child::before {\n    font-weight: 400;\n  }\n}",
+      ".dark [data-promptbox] [data-promptbox-editor-content]::before,\n.dark\n  [data-promptbox]\n  [data-promptbox-editor-content]\n  .ProseMirror\n  p.is-editor-empty:first-child::before {\n  content: none !important;\n}",
     );
   });
 

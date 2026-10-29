@@ -203,9 +203,15 @@ Syntax rules may never borrow these for non-feedback meaning:
   fences are source code and keep 1.5.
 - The plugin setting is authoritative. Every open bb client watches it and
   updates without a plugin reload.
-- On compact layouts, composer placeholder text uses regular weight 400. The
-  host's light 300 placeholder loses too much stroke weight in SF Pro at mobile
-  scale.
+- Composer placeholder text is hidden at every width. Accessible editor labels
+  remain available, and the touch editor stays at 16px to avoid iOS focus zoom.
+
+- The composer environment selector shows a computer for providers that declare
+  the folder icon, including project checkout and personal workspace. This
+  approved CSS override depends on the host's `Environment` button label,
+  shrinkable-control attribute and `Folder` SVG marker. It preserves sizing and
+  picker behavior. Folder icons outside this trigger, other provider glyphs,
+  loading indicators and the dropdown chevron retain their artwork.
 
 ### Notifications
 
