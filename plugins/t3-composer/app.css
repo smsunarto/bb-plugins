@@ -36,7 +36,7 @@
   p.is-editor-empty:first-child::before {
   color: var(--muted-foreground);
   font-weight: 400;
-  opacity: 0.55;
+  opacity: 0.4;
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-action-row] {
