@@ -3,7 +3,7 @@ import { makeQueueEntry } from "@get-bb/plugin-sdk/testing";
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import { beforeEach, expect, test } from "bun:test";
 import { queryClient } from "../src/app/query.ts";
-import { timeoutManager } from "@tanstack/react-query";
+import { focusManager, onlineManager, timeoutManager } from "@tanstack/react-query";
 import { branchReviewRange, sharedComparisonSubPath } from "../src/shared/schema.ts";
 import { queryKey } from "../src/app/rpc.ts";
 import { localBranch, localChanges, pullRequest } from "./app-fixtures.ts";
@@ -115,6 +115,7 @@ async function card(
   paths: string[] = [],
   overrides: Record<string, (input: never) => unknown> = {},
   send: PluginBrowserBbSdk["threads"]["send"] = async () => ({ ok: true, delivery: "sent" }),
+  messageId = "msg-1",
 ) {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const directive = app.messageDirectives.find((each) => each.id === "code-review");
@@ -124,7 +125,7 @@ async function card(
     {
       attributes,
       source: "::code-review{invalid}",
-      message: { id: "msg-1", threadId: "thread-1", turnId: "turn-1", projectId: "proj-1" },
+      message: { id: messageId, threadId: "thread-1", turnId: "turn-1", projectId: "proj-1" },
       openWorkspaceFile: null,
     },
     {
@@ -692,5 +693,259 @@ test("Ship it keeps sending state when branch discovery replaces the loading car
   } finally {
     deliver?.();
     slot.lifecycle.unmount();
+  }
+});
+
+test("branch discovery keeps the card, action DOM, and keyboard focus", async () => {
+  let discover: ((value: typeof localBranch) => void) | undefined;
+  const slot = await card({ branch: localBranch.id }, [], {
+    localBranch: () =>
+      new Promise<typeof localBranch>((resolve) => {
+        discover = resolve;
+      }),
+  });
+  try {
+    const section = slot.getByRole("region", { name: "Changes for review" });
+    const action = slot.getByRole("button", { name: "Review changes" });
+    action.focus();
+    discover?.(localBranch);
+    await slot.findByText("src/limit.ts");
+    expect(slot.getByRole("region", { name: "Changes for review" })).toBe(section);
+    expect(slot.getByRole("button", { name: "Review changes" })).toBe(action);
+    expect(document.activeElement).toBe(action);
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("retrying an original comparison preserves the card and Ship it DOM", async () => {
+  let recovered = false;
+  const slot = await card(
+    { branch: localBranch.id, base: localBranch.base, head: localBranch.head },
+    [],
+    {
+      localBranch: () => {
+        if (!recovered) throw new Error("Offline");
+        return localBranch;
+      },
+      sharedComparison: () => ({
+        ...branchReviewRange(localBranch),
+        hostId: localBranch.hostId,
+        path: localBranch.path,
+      }),
+    },
+  );
+  try {
+    await slot.findByText("src/limit.ts");
+    const section = slot.getByRole("region", { name: "Changes for review" });
+    const ship = slot.getByRole("button", { name: "Ship it" });
+    recovered = true;
+    fireEvent.click(slot.getByRole("button", { name: "Check latest branch" }));
+    await slot.findByText(localBranch.branch);
+    expect(slot.getByRole("region", { name: "Changes for review" })).toBe(section);
+    expect(slot.getByRole("button", { name: "Ship it" })).toBe(ship);
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("PR account discovery preserves the card and action DOM", async () => {
+  let authenticate: ((value: unknown) => void) | undefined;
+  const slot = await card({ pr: "acme/api#42" }, [], {
+    status: () =>
+      new Promise((resolve) => {
+        authenticate = resolve;
+      }),
+  });
+  try {
+    const section = slot.getByRole("region", { name: "Changes for review" });
+    const action = slot.getByRole("button", { name: "Review changes" });
+    authenticate?.({ ok: true, login: "scott", accounts: ["scott"] });
+    await slot.findByText(pullRequest.title);
+    expect(slot.getByRole("region", { name: "Changes for review" })).toBe(section);
+    expect(slot.getByRole("button", { name: "Review changes" })).toBe(action);
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("a remounted card retains pending and queued delivery without sending twice", async () => {
+  let deliver: (() => void) | undefined;
+  let sends = 0;
+  const send: PluginBrowserBbSdk["threads"]["send"] = async () => {
+    sends++;
+    await new Promise<void>((resolve) => {
+      deliver = resolve;
+    });
+    return {
+      ok: true,
+      delivery: "queued",
+      queuedMessage: makeQueueEntry({ threadId: "thread-1" }),
+    };
+  };
+  let slot = await card({ branch: localBranch.id }, [], {}, send);
+  try {
+    fireEvent.click(await slot.findByRole("button", { name: "Ship it" }));
+    await slot.findByRole("button", { name: "Sending…" });
+    slot.lifecycle.unmount();
+    slot = await card({ branch: localBranch.id }, [], {}, send);
+    const pending = await slot.findByRole("button", { name: "Sending…" });
+    expect(pending.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(pending);
+    deliver?.();
+    await slot.findByRole("button", { name: "Queued" });
+    slot.lifecycle.unmount();
+    slot = await card({ branch: localBranch.id }, [], {}, send);
+    expect((await slot.findByRole("button", { name: "Queued" })).hasAttribute("disabled")).toBe(
+      true,
+    );
+    expect(sends).toBe(1);
+    slot.lifecycle.unmount();
+    slot = await card({ branch: localBranch.id }, [], {}, send, "another-message");
+    expect((await slot.findByRole("button", { name: "Ship it" })).hasAttribute("disabled")).toBe(
+      false,
+    );
+  } finally {
+    deliver?.();
+    slot.lifecycle.unmount();
+  }
+});
+
+test("entrances do not replay on data updates or remounts, and reduced motion stays still", async () => {
+  const animateDescriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "animate");
+  const mediaDescriptor = Object.getOwnPropertyDescriptor(window, "matchMedia");
+  const animated: HTMLElement[] = [];
+  let reduce = false;
+  let cancellations = 0;
+  Object.defineProperty(HTMLElement.prototype, "animate", {
+    configurable: true,
+    value: function (this: HTMLElement) {
+      animated.push(this);
+      return {
+        cancel() {
+          cancellations++;
+        },
+      };
+    },
+  });
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: () => ({ matches: reduce }),
+  });
+  let discover: ((value: typeof localBranch) => void) | undefined;
+  let slot = await card(
+    { branch: localBranch.id },
+    [],
+    {
+      localBranch: () =>
+        new Promise<typeof localBranch>((resolve) => {
+          discover = resolve;
+        }),
+    },
+    undefined,
+    "motion-card",
+  );
+  try {
+    expect(animated).toHaveLength(1);
+    discover?.(localBranch);
+    await slot.findByText("src/limit.ts");
+    expect(animated).toHaveLength(1);
+    slot.lifecycle.unmount();
+    slot = await card({ branch: localBranch.id }, [], {}, undefined, "motion-card");
+    await slot.findByText("src/limit.ts");
+    expect(animated).toHaveLength(1);
+    fireEvent.click(slot.getByRole("button", { name: "Ship it" })); // detail=0: keyboard/programmatic
+    await slot.findByRole("button", { name: "Sent" });
+    expect(animated).toHaveLength(1);
+    slot.lifecycle.unmount();
+    reduce = true;
+    slot = await card({ branch: localBranch.id }, [], {}, undefined, "reduced-card");
+    fireEvent.click(await slot.findByRole("button", { name: "Ship it" }), { detail: 1 });
+    await slot.findByRole("button", { name: "Sent" });
+    expect(animated).toHaveLength(1);
+    slot.lifecycle.unmount();
+    reduce = false;
+    slot = await card({ branch: localBranch.id }, [], {}, undefined, "pointer-feedback-card");
+    const beforeSend = animated.length;
+    fireEvent.click(await slot.findByRole("button", { name: "Ship it" }), { detail: 1 });
+    await slot.findByRole("button", { name: "Sent" });
+    await waitFor(() => expect(animated.length).toBeGreaterThan(beforeSend));
+    expect(animated.at(-1)?.tagName).toBe("SPAN");
+    slot.lifecycle.unmount();
+    expect(cancellations).toBe(animated.length);
+  } finally {
+    slot.lifecycle.unmount();
+    if (animateDescriptor)
+      Object.defineProperty(HTMLElement.prototype, "animate", animateDescriptor);
+    else Reflect.deleteProperty(HTMLElement.prototype, "animate");
+    if (mediaDescriptor) Object.defineProperty(window, "matchMedia", mediaDescriptor);
+    else Reflect.deleteProperty(window, "matchMedia");
+  }
+});
+
+test("a verified fallback stays Ready through warm focus and a background file refresh", async () => {
+  let reads = 0;
+  let finish: ((value: typeof localChanges) => void) | undefined;
+  const slot = await card(
+    { branch: localBranch.id, base: localBranch.base, head: localBranch.head },
+    ["src/limit.ts"],
+    {
+      localBranch: () => {
+        throw new Error("No branch");
+      },
+      sharedComparison: () => ({
+        ...branchReviewRange(localBranch),
+        hostId: localBranch.hostId,
+        path: localBranch.path,
+      }),
+      localChanges: () => {
+        if (++reads === 1) return localChanges;
+        return new Promise<typeof localChanges>((resolve) => {
+          finish = resolve;
+        });
+      },
+    },
+  );
+  try {
+    await slot.findByText("Ready");
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(reads).toBe(1);
+    void queryClient.invalidateQueries({
+      queryKey: queryKey("localChanges", {
+        hostId: localBranch.hostId,
+        path: localBranch.path,
+        base: localBranch.base,
+        head: localBranch.head,
+      }),
+    });
+    await waitFor(() => expect(reads).toBe(2));
+    expect(slot.getByText("Ready")).toBeTruthy();
+    expect(slot.queryByText("Loading")).toBeNull();
+    finish?.(localChanges);
+  } finally {
+    finish?.(localChanges);
+    slot.lifecycle.unmount();
+    focusManager.setFocused(undefined);
+  }
+});
+
+test("paused discovery keeps the checking footer instead of reporting an unavailable branch", async () => {
+  onlineManager.setOnline(false);
+  const slot = await card({
+    branch: localBranch.id,
+    base: localBranch.base,
+    head: localBranch.head,
+  });
+  try {
+    expect(
+      slot.getByText("Checking latest branch… Original comparison available below."),
+    ).toBeTruthy();
+    expect(slot.queryByText(/Latest branch unavailable/)).toBeNull();
+    expect(slot.rpcCalls.some((call) => call.method === "localChanges")).toBe(false);
+  } finally {
+    slot.lifecycle.unmount();
+    onlineManager.setOnline(true);
   }
 });

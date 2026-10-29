@@ -21,21 +21,25 @@ export function withReviewedFiles(
 }
 
 /** Shared by the chat card and Changes tab; reconnects also refetch through React Query. */
-export function useBranchReviewed(branch: BranchReviewRange) {
-  const range = branchReviewRange(branch);
+export function useBranchReviewed(branch: BranchReviewRange | null) {
+  const range = branch ? branchReviewRange(branch) : null;
   const queryKey = rpcQueryKey("branchReviewed", range);
-  const query = useRpcQuery("branchReviewed", range, { refetchInterval: 30_000 });
+  const query = useRpcQuery("branchReviewed", range, {
+    enabled: range !== null,
+    refetchInterval: 30_000,
+  });
   const connection = useRealtimeConnectionState();
   const previous = useRef(connection);
   useEffect(() => {
-    if (connection === "connected" && previous.current !== "connected") {
+    if (range && connection === "connected" && previous.current !== "connected") {
       void queryClient.invalidateQueries({ queryKey });
     }
     previous.current = connection;
-  }, [connection, queryKey]);
+  }, [connection, queryKey, range]);
   useRealtime(BRANCH_REVIEW_CHANNEL, (payload) => {
     const parsed = branchReviewRangeSchema.safeParse(payload);
     if (
+      range &&
       parsed.success &&
       parsed.data.id === range.id &&
       parsed.data.base === range.base &&

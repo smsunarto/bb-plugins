@@ -1,6 +1,6 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useRef } from "react";
 import { z } from "zod";
-import { QueryClientProvider, useMutation } from "@tanstack/react-query";
+import { QueryClientProvider, useMutation, useMutationState } from "@tanstack/react-query";
 import { queryClient } from "./query.ts";
 import { experimental_Icon as Icon, useBbNavigate, useSdk } from "@get-bb/plugin-sdk/app";
 import type { PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
@@ -14,13 +14,7 @@ import {
   sameRevision,
   sharedComparisonSubPath,
 } from "../shared/schema.ts";
-import type {
-  ChangedFile,
-  LocalBranch,
-  LocalComparison,
-  SharedComparisonInput,
-  PrRef,
-} from "../shared/schema.ts";
+import type { ChangedFile, PrRef } from "../shared/schema.ts";
 import { useBranchReviewed, withReviewedFiles } from "./branch-review.ts";
 import { Button } from "./components/ui/button.tsx";
 import { PANEL_PATH, shortSha } from "./format.ts";
@@ -31,10 +25,16 @@ import { useReconcile } from "./sync-state.tsx";
 
 const ShipContext = createContext<ReturnType<typeof useShipMutation> | null>(null);
 
-function useShipMutation(threadId: string) {
+const EmbedIdentityContext = createContext("");
+
+function useShipMutation(threadId: string, identity: string) {
   const sdk = useSdk();
-  return useMutation(
+  const mutationKey = ["embed-ship", identity];
+  const mutation = useMutation(
     {
+      mutationKey,
+      // Timeline virtualization can unmount a card while its send is in flight.
+      gcTime: Infinity,
       mutationFn: () =>
         sdk.threads.send({
           threadId,
@@ -44,6 +44,35 @@ function useShipMutation(threadId: string) {
       retry: false,
     },
     queryClient,
+  );
+  const deliveries = useMutationState(
+    {
+      filters: { mutationKey, exact: true },
+      select: ({ state }) => ({
+        status: state.status,
+        queued: isQueuedDelivery(state.data),
+        error: state.error,
+      }),
+    },
+    queryClient,
+  );
+  const latest = deliveries.at(-1);
+  return {
+    mutate: mutation.mutate,
+    isPending: latest?.status === "pending",
+    isSuccess: latest?.status === "success",
+    isError: latest?.status === "error",
+    queued: latest?.queued === true,
+    error: latest?.error,
+  };
+}
+
+function isQueuedDelivery(value: unknown) {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "delivery" in value &&
+    value.delivery === "queued"
   );
 }
 
@@ -67,27 +96,50 @@ const attributesSchema = z.union([
 
 export function ReviewEmbed({ attributes, source, message }: PluginMessageDirectiveProps) {
   useReconcile();
-  const ship = useShipMutation(message.threadId);
   const parsed = attributesSchema.safeParse(attributes);
   if (!parsed.success) return <code>{source}</code>;
+  const identity = JSON.stringify([message.threadId, message.id, parsed.data]);
   return (
     <QueryClientProvider client={queryClient}>
-      <ShipContext.Provider value={ship}>
-        {"branch" in parsed.data ? (
-          <BranchEmbed
-            id={parsed.data.branch}
-            base={parsed.data.base}
-            head={parsed.data.head}
-            threadId={message.threadId}
-          />
-        ) : (
-          <PrEmbed refValue={parsed.data.pr} account={parsed.data.account} />
-        )}
-      </ShipContext.Provider>
+      <EmbedSession
+        key={identity}
+        identity={identity}
+        target={parsed.data}
+        threadId={message.threadId}
+      />
     </QueryClientProvider>
   );
 }
 
+function EmbedSession({
+  identity,
+  target,
+  threadId,
+}: {
+  identity: string;
+  target: z.output<typeof attributesSchema>;
+  threadId: string;
+}) {
+  const ship = useShipMutation(threadId, identity);
+  return (
+    <EmbedIdentityContext value={identity}>
+      <ShipContext.Provider value={ship}>
+        {"branch" in target ? (
+          <BranchEmbed
+            id={target.branch}
+            base={target.base}
+            head={target.head}
+            threadId={threadId}
+          />
+        ) : (
+          <PrEmbed refValue={target.pr} account={target.account} />
+        )}
+      </ShipContext.Provider>
+    </EmbedIdentityContext>
+  );
+}
+
+/** Data changes update one card rather than swapping loading/fallback/ready component trees. */
 function BranchEmbed({
   id,
   base,
@@ -101,210 +153,155 @@ function BranchEmbed({
 }) {
   const branches = useLocalBranch(id, threadId);
   const branch = branches.data;
-  if (branch)
-    return (
-      <LocalCard
-        branch={branch}
-        discoveryIssue={branches.isError ? errorText(branches.error) : undefined}
-        onRetryDiscovery={() => void branches.refetch()}
-        original={base && head ? { id, base, head, threadId } : undefined}
-      />
-    );
-  if (base && head) {
-    const range = { id, base, head, threadId };
-    const branchCheck = {
+  const original = base && head ? { id, base, head, threadId } : null;
+  const fallback =
+    !branch && original !== null && (!branches.isPending || !!branches.errorUpdatedAt);
+  const shared = useRpcQuery("sharedComparison", original, {
+    enabled: fallback,
+    staleTime: Infinity,
+    retry: false,
+  });
+  const comparison = branch ?? (fallback ? shared.data : undefined);
+  const files = useRpcQuery(
+    "localChanges",
+    comparison
+      ? {
+          hostId: comparison.hostId,
+          path: comparison.path,
+          base: comparison.base,
+          head: comparison.head,
+        }
+      : null,
+    {
+      enabled: !!comparison,
+      staleTime: 30_000,
+      retry: branch ? 1 : false,
+    },
+  );
+  const comparisonKey = comparison
+    ? JSON.stringify([comparison.hostId, comparison.path, comparison.base, comparison.head])
+    : null;
+  const refetchFiles = files.refetch;
+  useEffect(() => {
+    // Verify on entry even with a warm cache, without making every focus a stale read.
+    if (fallback && comparisonKey) void refetchFiles({ cancelRefetch: false });
+  }, [fallback, comparisonKey, refetchFiles]);
+  const reviewed = useBranchReviewed(comparison ?? null);
+  const retry = () => {
+    void branches.refetch();
+    if (fallback) void shared.refetch();
+    if (comparison) {
+      void files.refetch();
+      void reviewed.refetch();
+    }
+  };
+  const data = { branches, branch, original, fallback, shared, comparison, files, reviewed };
+  return <ReviewCard {...branchCardModel(data)} onRetry={retry} />;
+}
+
+type BranchCardData = {
+  branches: ReturnType<typeof useLocalBranch>;
+  branch: ReturnType<typeof useLocalBranch>["data"];
+  original: import("../shared/schema.ts").SharedComparisonInput | null;
+  fallback: boolean;
+  shared: ReturnType<typeof useRpcQuery<"sharedComparison">>;
+  comparison:
+    | ReturnType<typeof useLocalBranch>["data"]
+    | ReturnType<typeof useRpcQuery<"sharedComparison">>["data"];
+  files: ReturnType<typeof useRpcQuery<"localChanges">>;
+  reviewed: ReturnType<typeof useBranchReviewed>;
+};
+
+type CardModel = Omit<Parameters<typeof ReviewCard>[0], "onRetry">;
+
+function queryIssue(...queries: { isError: boolean; error: unknown }[]) {
+  const failed = queries.find((query) => query.isError);
+  return failed ? errorText(failed.error) : undefined;
+}
+
+function branchCardModel(data: BranchCardData): CardModel {
+  const { branch, branches, original, files, reviewed } = data;
+  if (!branch) return originalCardModel(data);
+  return {
+    title: branch.branch,
+    detail: `${branch.repoName} · ${shortSha(branch.base)} → ${shortSha(branch.head)}`,
+    subPath: branchSubPath(branch.id, "changes"),
+    files: files.data ? withReviewedFiles(files.data.files, reviewed.data?.paths) : undefined,
+    loading: !files.data || !reviewed.data,
+    issue: queryIssue(branches, files, reviewed),
+    fallbackSubPath: branches.isError && original ? sharedComparisonSubPath(original) : undefined,
+  };
+}
+
+function originalCardModel(data: BranchCardData): CardModel {
+  const { branches, original, fallback, shared, comparison, files, reviewed } = data;
+  if (!original) {
+    const issue = queryIssue(branches);
+    return { title: "Branch changes", subPath: "", loading: !issue, unavailable: !!issue, issue };
+  }
+  return {
+    title: fallback && !branches.isFetching ? "Shared changes" : "Branch changes",
+    detail: `Original comparison · ${shortSha(original.base)} → ${shortSha(original.head)}`,
+    subPath: sharedComparisonSubPath(original),
+    actionLabel: "Review original comparison",
+    branchCheck: {
       pending: branches.isPending || branches.isFetching,
       retry: () => void branches.refetch(),
-    };
-    // Keep the original reachable during slow discovery without speculatively
-    // fetching every historical card's patches on a normal thread open.
-    if (branches.isPending && !branches.errorUpdatedAt)
-      return (
-        <ReviewCard
-          title="Branch changes"
-          detail={`Original comparison · ${shortSha(base)} → ${shortSha(head)}`}
-          subPath={sharedComparisonSubPath(range)}
-          actionLabel="Review original comparison"
-          branchCheck={branchCheck}
-          loading
-          onRetry={branchCheck.retry}
-        />
-      );
-    return <SharedCard key={branches.errorUpdatedAt} range={range} branchCheck={branchCheck} />;
-  }
-  const issue = branches.isError ? errorText(branches.error) : undefined;
-  return (
-    <ReviewCard
-      title="Branch changes"
-      subPath=""
-      unavailable={!!issue}
-      issue={issue}
-      loading={!issue}
-      onRetry={() => void branches.refetch()}
-    />
-  );
+    },
+    files:
+      comparison && files.data
+        ? withReviewedFiles(files.data.files, reviewed.data?.paths)
+        : undefined,
+    loading:
+      !comparison ||
+      !files.data ||
+      !reviewed.data ||
+      !files.isFetchedAfterMount ||
+      branches.isFetching,
+    issue: comparison ? queryIssue(files, reviewed) : fallback ? queryIssue(shared) : undefined,
+  };
 }
 
 type BranchCheck = { pending: boolean; retry: () => void };
 
-function SharedCard({
-  range,
-  branchCheck,
-}: {
-  range: SharedComparisonInput;
-  branchCheck: BranchCheck;
-}) {
-  const comparison = useRpcQuery("sharedComparison", range, { staleTime: Infinity, retry: false });
-  if (comparison.data)
-    return <SharedFilesCard comparison={comparison.data} range={range} branchCheck={branchCheck} />;
-  return (
-    <ReviewCard
-      title={branchCheck.pending ? "Branch changes" : "Shared changes"}
-      subPath={sharedComparisonSubPath(range)}
-      actionLabel="Review original comparison"
-      branchCheck={branchCheck}
-      loading={!comparison.isError}
-      issue={comparison.isError ? errorText(comparison.error) : undefined}
-      onRetry={() => {
-        branchCheck.retry();
-        void comparison.refetch();
-      }}
-    />
-  );
-}
-
-function SharedFilesCard({
-  comparison,
-  range,
-  branchCheck,
-}: {
-  comparison: LocalComparison;
-  range: SharedComparisonInput;
-  branchCheck: BranchCheck;
-}) {
-  const { id: _id, ...location } = comparison;
-  // A discovery failure may mean the checkout disconnected. Verify the pinned
-  // range on each fallback entry, even if its cached files are still fresh.
-  const files = useRpcQuery("localChanges", location, {
-    staleTime: 30_000,
-    refetchOnMount: "always",
-    retry: false,
-  });
-  const reviewed = useBranchReviewed(comparison);
-  return (
-    <ReviewCard
-      title={branchCheck.pending ? "Branch changes" : "Shared changes"}
-      detail={`Original comparison · ${shortSha(range.base)} → ${shortSha(range.head)}`}
-      subPath={sharedComparisonSubPath(range)}
-      actionLabel="Review original comparison"
-      branchCheck={branchCheck}
-      files={files.data ? withReviewedFiles(files.data.files, reviewed.data?.paths) : undefined}
-      loading={branchCheck.pending || !files.isFetchedAfterMount || !files.data || !reviewed.data}
-      issue={
-        files.isError
-          ? errorText(files.error)
-          : reviewed.isError
-            ? errorText(reviewed.error)
-            : undefined
-      }
-      onRetry={() => {
-        branchCheck.retry();
-        void files.refetch();
-        void reviewed.refetch();
-      }}
-    />
-  );
-}
-
-function LocalCard({
-  branch,
-  discoveryIssue,
-  onRetryDiscovery,
-  original,
-}: {
-  branch: LocalBranch;
-  discoveryIssue?: string;
-  onRetryDiscovery: () => void;
-  original?: SharedComparisonInput;
-}) {
-  const files = useRpcQuery(
-    "localChanges",
-    { hostId: branch.hostId, path: branch.path, base: branch.base, head: branch.head },
-    { staleTime: 30_000 },
-  );
-  const reviewed = useBranchReviewed(branch);
-  const issue =
-    discoveryIssue ??
-    (files.isError
-      ? errorText(files.error)
-      : reviewed.isError
-        ? errorText(reviewed.error)
-        : undefined);
-  const readyFiles = files.data
-    ? withReviewedFiles(files.data.files, reviewed.data?.paths)
-    : undefined;
-  return (
-    <ReviewCard
-      title={branch.branch}
-      detail={`${branch.repoName} · ${shortSha(branch.base)} → ${shortSha(branch.head)}`}
-      subPath={branchSubPath(branch.id, "changes")}
-      files={readyFiles}
-      loading={!files.data || !reviewed.data}
-      issue={issue}
-      fallbackSubPath={discoveryIssue && original ? sharedComparisonSubPath(original) : undefined}
-      onRetry={() => {
-        onRetryDiscovery();
-        void files.refetch();
-        void reviewed.refetch();
-      }}
-    />
-  );
-}
-
 function PrEmbed({ refValue, account: requested }: { refValue: PrRef; account?: string }) {
-  const status = useRpcQuery("status", null, { staleTime: 5 * 60_000 });
+  const status = useRpcQuery("status", null, { enabled: !requested, staleTime: 5 * 60_000 });
   const account = requested ?? (status.data?.ok ? status.data.login : undefined);
-  if (account) return <PrCard refValue={refValue} account={account} />;
-  const issue = status.isError
+  const input = account ? { account, ref: refValue } : null;
+  const pr = useRpcQuery("pullRequest", input, { ...REVIEW_QUERY, enabled: !!account });
+  const changed = useRpcQuery("changedFiles", input, { ...REVIEW_QUERY, enabled: !!account });
+  const issue = queryIssue(pr, changed) ?? prRevisionIssue(pr.data, changed.data);
+  const accountIssue = status.isError
     ? errorText(status.error)
     : status.data && !status.data.ok
       ? status.data.message
       : undefined;
   return (
     <ReviewCard
-      title={prKey(refValue)}
-      subPath={prSubPath(refValue, "changes")}
-      loading={!issue}
-      issue={issue}
-      onRetry={() => void status.refetch()}
+      title={pr.data?.title ?? prKey(refValue)}
+      detail={account ? prKey(refValue) : undefined}
+      subPath={prSubPath(refValue, "changes", account)}
+      files={changed.data?.files}
+      loading={!account || !pr.data || !changed.data}
+      issue={account ? issue : accountIssue}
+      onRetry={() => {
+        if (!account) void status.refetch();
+        else {
+          void pr.refetch();
+          void changed.refetch();
+        }
+      }}
     />
   );
 }
 
-function PrCard({ refValue, account }: { refValue: PrRef; account: string }) {
-  const pr = useRpcQuery("pullRequest", { account, ref: refValue }, REVIEW_QUERY);
-  const changed = useRpcQuery("changedFiles", { account, ref: refValue }, REVIEW_QUERY);
-  const issue = pr.isError
-    ? errorText(pr.error)
-    : changed.isError
-      ? errorText(changed.error)
-      : pr.data && changed.data && !sameRevision(changed.data, pr.data)
-        ? "The diff is behind the pull request. Refresh to review the latest changes."
-        : undefined;
-  return (
-    <ReviewCard
-      title={pr.data?.title ?? prKey(refValue)}
-      detail={prKey(refValue)}
-      subPath={prSubPath(refValue, "changes", account)}
-      files={changed.data?.files}
-      loading={!pr.data || !changed.data}
-      issue={issue}
-      onRetry={() => {
-        void pr.refetch();
-        void changed.refetch();
-      }}
-    />
-  );
+function prRevisionIssue(
+  pr: ReturnType<typeof useRpcQuery<"pullRequest">>["data"],
+  changed: ReturnType<typeof useRpcQuery<"changedFiles">>["data"],
+) {
+  if (pr && changed && !sameRevision(changed, pr))
+    return "The diff is behind the pull request. Refresh to review the latest changes.";
+  return undefined;
 }
 
 function ReviewCard({
@@ -333,11 +330,14 @@ function ReviewCard({
   fallbackSubPath?: string;
 }) {
   const navigate = useBbNavigate();
+  const identity = useContext(EmbedIdentityContext);
+  const entrance = useEmbedEntrance(identity);
   const count = files?.filter((file) => file.viewed === "viewed").length ?? 0;
   const total = files?.length ?? 0;
   const labels = reviewLabels({ count, total, loading, issue, unavailable });
   return (
     <section
+      ref={entrance}
       aria-label="Changes for review"
       className="not-prose my-3 w-full max-w-xl overflow-hidden rounded-lg border border-border bg-background text-xs text-foreground"
     >
@@ -414,8 +414,32 @@ function ReviewCard({
   );
 }
 
+function useShipFeedback(ship: ReturnType<typeof useShipMutation> | null) {
+  const feedback = useRef<HTMLSpanElement>(null);
+  const pointerSend = useRef(false);
+  const status = ship?.isPending
+    ? "pending"
+    : ship?.isSuccess
+      ? "success"
+      : ship?.isError
+        ? "error"
+        : "idle";
+  useLayoutEffect(() => {
+    if (!pointerSend.current) return;
+    const animation = fade(feedback.current);
+    if (status !== "pending") pointerSend.current = false;
+    return () => animation?.cancel();
+  }, [status]);
+  const send = (detail: number) => {
+    pointerSend.current = detail > 0;
+    ship?.mutate();
+  };
+  return { feedback, send };
+}
+
 function ShipItButton() {
   const ship = useContext(ShipContext);
+  const { feedback, send } = useShipFeedback(ship);
   if (!ship) return null;
   return (
     <>
@@ -424,15 +448,19 @@ function ShipItButton() {
         variant="outline"
         className="h-7 gap-1.5 text-xs"
         disabled={ship.isPending || ship.isSuccess}
-        onClick={() => ship.mutate()}
+        onClick={(event) => {
+          send(event.detail);
+        }}
       >
-        {ship.isPending
-          ? "Sending…"
-          : ship.isSuccess
-            ? ship.data.delivery === "queued"
-              ? "Queued"
-              : "Sent"
-            : "Ship it"}
+        <span ref={feedback}>
+          {ship.isPending
+            ? "Sending…"
+            : ship.isSuccess
+              ? ship.queued
+                ? "Queued"
+                : "Sent"
+              : "Ship it"}
+        </span>
         <Icon name={ship.isSuccess ? "Check" : "Send"} className="size-3" aria-hidden />
       </Button>
       {ship.isError ? (
@@ -494,4 +522,26 @@ function FilePreview({ files }: { files: readonly ChangedFile[] }) {
       ) : null}
     </ul>
   );
+}
+
+/** Once per card per plugin session: scrolling back to a virtualized reply never replays it. */
+const entered = new Set<string>();
+
+function fade(element: HTMLElement | null) {
+  if (!element?.animate || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+  return element.animate([{ opacity: 0 }, { opacity: 1 }], {
+    duration: 180,
+    easing: "cubic-bezier(0.23, 1, 0.32, 1)",
+  });
+}
+
+function useEmbedEntrance(identity: string) {
+  const element = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    if (entered.has(identity)) return;
+    entered.add(identity);
+    const animation = fade(element.current);
+    return () => animation?.cancel();
+  }, [identity]);
+  return element;
 }
