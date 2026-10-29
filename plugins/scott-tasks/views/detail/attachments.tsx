@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { attachmentDownloadUrl } from "../../shared/attachments.js";
-import type { Attachment } from "../../shared/contract.js";
+import type { Attachment, AttachmentOwner } from "../../shared/contract.js";
 import { errorMessage } from "../../shared/errors.js";
 import { formatFileSize } from "../activity/time.js";
 import { ConfirmDialog } from "../../components/confirm-dialog.js";
@@ -31,18 +31,17 @@ function pluginToken(): Promise<string> {
   return tokenPromise;
 }
 
-export type AttachmentOwnerRef = { taskId: string } | { commentId: string };
-
 export async function uploadAttachment(
   file: File,
-  owner: AttachmentOwnerRef,
+  owner: AttachmentOwner,
 ): Promise<{ attachmentId: string; url: string }> {
   const token = await pluginToken();
   const query = new URLSearchParams({
-    ...owner,
     fileName: file.name || "attachment",
     mime: file.type || "application/octet-stream",
   });
+  if (owner.kind === "task") query.set("taskId", owner.taskId);
+  else query.set("commentId", owner.commentId);
   const response = await fetch(
     `/api/v1/plugins/scott-tasks/http/attachments/upload?${query.toString()}`,
     {

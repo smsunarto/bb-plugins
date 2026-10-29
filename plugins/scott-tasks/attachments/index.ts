@@ -1,8 +1,9 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { Attachment, TasksStore } from "../db";
+import type { Attachment, Task, TasksStore } from "../db";
 import { attachmentDownloadUrl, MAX_ATTACHMENT_SIZE_BYTES } from "../shared/attachments";
+import type { AttachmentOwner } from "../shared/contract";
 import { errorMessage } from "../shared/errors";
 
 const INLINE_RASTER_MIMES = new Set([
@@ -29,14 +30,11 @@ const MIME_PATTERN =
   /^(application|audio|font|image|message|model|multipart|text|video)\/[!#$&^_.+\-A-Za-z0-9]+$/;
 const storeRoots = new WeakMap<TasksStore, string>();
 
-export type AttachmentOwner =
-  | { taskId: string; commentId?: never }
-  | { taskId?: never; commentId: string };
-
-type SaveAttachmentFromBytesOptions = AttachmentOwner & {
+interface SaveAttachmentFromBytesOptions {
+  owner: AttachmentOwner;
   fileName: string;
   mime?: string;
-};
+}
 
 interface DatabaseListRow {
   name: string;
@@ -225,14 +223,25 @@ function normalizeOwner(
   taskId: string | null | undefined,
   commentId: string | null | undefined,
 ): AttachmentOwner {
-  const normalizedTaskId = taskId?.trim() || undefined;
-  const normalizedCommentId = commentId?.trim() || undefined;
-  if (Boolean(normalizedTaskId) === Boolean(normalizedCommentId)) {
-    throw new AttachmentRequestError(400, "exactly one of taskId or commentId is required");
+  const normalizedTaskId = taskId?.trim();
+  const normalizedCommentId = commentId?.trim();
+  if (normalizedTaskId && !normalizedCommentId) return { kind: "task", taskId: normalizedTaskId };
+  if (normalizedCommentId && !normalizedTaskId) {
+    return { kind: "comment", commentId: normalizedCommentId };
   }
-  if (normalizedTaskId) return { taskId: normalizedTaskId };
-  if (normalizedCommentId) return { commentId: normalizedCommentId };
-  throw new Error("unreachable attachment owner state");
+  throw new AttachmentRequestError(400, "exactly one of taskId or commentId is required");
+}
+
+/** The task an attachment hangs off, directly or through its comment. */
+function attachmentTask(store: TasksStore, owner: AttachmentOwner): Task | undefined {
+  switch (owner.kind) {
+    case "task":
+      return store.getTask(owner.taskId);
+    case "comment": {
+      const comment = store.getComment(owner.commentId);
+      return comment && store.getTask(comment.taskId);
+    }
+  }
 }
 
 function attachmentParameters(context: PluginHttpContext): {
@@ -306,7 +315,7 @@ async function persistAttachment(
   const safeFileName = sanitizeFileName(fileName);
   const safeMime = normalizeMime(mime);
   const attachment = store.createAttachment({
-    ...owner,
+    owner,
     fileName: safeFileName,
     mime: safeMime,
     sizeBytes,
@@ -336,7 +345,7 @@ export async function saveAttachmentFromBytes(
 ): Promise<Attachment> {
   return persistAttachment(
     store,
-    normalizeOwner(options.taskId, options.commentId),
+    options.owner,
     options.fileName,
     options.mime ?? inferMimeFromBytes(bytes, options.fileName),
     bytes.byteLength,
@@ -379,10 +388,7 @@ export async function deleteAttachmentById(
   const attachment = store.getAttachment(attachmentId);
   if (!attachment) return null;
 
-  const taskId =
-    attachment.taskId ??
-    (attachment.commentId ? store.getComment(attachment.commentId)?.taskId : undefined);
-  const ownerTask = taskId ? store.getTask(taskId) : undefined;
+  const ownerTask = attachmentTask(store, attachment.owner);
   let nextDescription: string | undefined;
   if (ownerTask?.description.includes(attachmentDownloadUrl(attachment.id))) {
     if (!options.removeDescriptionReferences) {
@@ -412,10 +418,7 @@ export function publishAttachmentChanged(
   store: TasksStore,
   attachment: Attachment,
 ): void {
-  const taskId =
-    attachment.taskId ??
-    (attachment.commentId ? store.getComment(attachment.commentId)?.taskId : undefined);
-  const task = taskId ? store.getTask(taskId) : undefined;
+  const task = attachmentTask(store, attachment.owner);
   if (!task) {
     bb.log.warn(`failed to publish attachment change ${attachment.id}`);
     return;

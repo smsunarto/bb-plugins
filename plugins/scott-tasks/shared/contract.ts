@@ -143,11 +143,17 @@ const commentProviderSchema = z
   })
   .strict();
 
+/** The one task or comment an attachment belongs to. */
+const attachmentOwnerSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("task"), taskId: idSchema }).strict(),
+  z.object({ kind: z.literal("comment"), commentId: idSchema }).strict(),
+]);
+export type AttachmentOwner = z.infer<typeof attachmentOwnerSchema>;
+
 const attachmentSchema = z
   .object({
     id: idSchema,
-    taskId: idSchema.nullable(),
-    commentId: idSchema.nullable(),
+    owner: attachmentOwnerSchema,
     fileName: z.string(),
     mime: z.string(),
     sizeBytes: z.number().int().nonnegative(),

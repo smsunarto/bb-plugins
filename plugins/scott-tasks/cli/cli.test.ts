@@ -1186,14 +1186,12 @@ describe("bb tasks CLI", () => {
       expect(created.failedAttachments).toEqual([]);
       expect(created.attachments).toEqual([
         expect.objectContaining({
-          taskId: created.task.id,
-          commentId: null,
+          owner: { kind: "task", taskId: created.task.id },
           fileName: "notes.txt",
           isImage: false,
         }),
         expect.objectContaining({
-          taskId: created.task.id,
-          commentId: null,
+          owner: { kind: "task", taskId: created.task.id },
           fileName: "pixel.png",
           mime: "image/png",
           isImage: true,
@@ -1450,7 +1448,7 @@ describe("bb tasks CLI", () => {
         {
           channel: "tasks:changed",
           payload: {
-            taskId: pngAttachment.taskId,
+            taskId: pngAttachment.owner.taskId,
             projectId: expect.any(String),
           },
         },
@@ -1500,8 +1498,7 @@ describe("bb tasks CLI", () => {
         ),
       ).attachment;
       expect(commentAttachment).toMatchObject({
-        taskId: null,
-        commentId: comment.id,
+        owner: { kind: "comment", commentId: comment.id },
       });
       const listedWithCommentAttachment = JSON.parse(
         stdout(await harness.runCli(["attachment", "list", "FILE-1", "--json"])),

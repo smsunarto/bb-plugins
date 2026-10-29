@@ -1162,7 +1162,7 @@ export function registerTasksCli(
               for (const source of attachSources) {
                 try {
                   const attachment = await saveAttachmentFromBytes(store.tasks, source.bytes, {
-                    taskId: task.id,
+                    owner: { kind: "task", taskId: task.id },
                     fileName: attachmentFileName(source.path),
                   });
                   publishAttachmentChanged(bb, store.tasks, attachment);
@@ -1391,7 +1391,7 @@ export function registerTasksCli(
                   labels,
                   subtasks,
                   // Comment files stay under their comment, so each appears once.
-                  attachments: attachments.filter((attachment) => attachment.commentId === null),
+                  attachments: attachments.filter((attachment) => attachment.owner.kind === "task"),
                   taskThreads,
                   pullRequests,
                   pullRequestUnavailableThreadIds: unavailableThreadIds,
@@ -1815,14 +1815,14 @@ export function registerTasksCli(
                   code: "comment_not_found",
                 });
               }
-              const owner = comment
-                ? { commentId: comment.id }
-                : { taskId: (await resolveTask(domain, ownerAddress)).id };
+              const owner: AttachmentOwner = comment
+                ? { kind: "comment", commentId: comment.id }
+                : { kind: "task", taskId: (await resolveTask(domain, ownerAddress)).id };
               const machine = await resolveClientMachine(bb, domain, input.options.machine, ctx);
               const sourcePath = clientPath(machine, input.options.file);
               const content = await readAttachmentSource(bb, machine.hostId, sourcePath);
               const attachment = await saveAttachmentFromBytes(store.tasks, content, {
-                ...owner,
+                owner,
                 fileName: input.options.name ?? attachmentFileName(sourcePath),
               });
               publishAttachmentChanged(bb, store.tasks, attachment);

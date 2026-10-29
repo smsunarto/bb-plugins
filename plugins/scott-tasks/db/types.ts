@@ -223,8 +223,7 @@ export interface UpdateCommentInput {
 
 export interface CreateAttachmentInput {
   id?: string;
-  taskId?: string | null;
-  commentId?: string | null;
+  owner: AttachmentOwner;
   fileName: string;
   mime: string;
   sizeBytes: number;

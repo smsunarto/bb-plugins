@@ -134,7 +134,7 @@ describe("@task mention provider", () => {
       });
       store.tasks.addTaskLabel(task.id, label.id);
       store.tasks.createAttachment({
-        taskId: task.id,
+        owner: { kind: "task", taskId: task.id },
         fileName: "acceptance.md",
         mime: "text/markdown",
         sizeBytes: 42,
@@ -143,7 +143,7 @@ describe("@task mention provider", () => {
       });
       store.tasks.createComment({
         taskId: task.id,
-        kind: "user",
+        source: { kind: "user" },
         authorName: "Sawyer",
         body: "Keep the context focused.",
       });

@@ -270,6 +270,7 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
       ).comment;
       setBody("");
       const failed = await uploadStagedAttachments(staged, {
+        kind: "comment",
         commentId: comment.id,
       });
       setPendingFiles((files) => settleStagedUploads(files, staged, failed));

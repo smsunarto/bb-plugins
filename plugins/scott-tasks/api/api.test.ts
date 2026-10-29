@@ -1249,7 +1249,7 @@ describe("Tasks RPC domain API", () => {
     store.tasks.createLabel({ projectId: beta.id, name: "Docs", color: "blue" });
     for (const fileName of ["a.txt", "b.txt"]) {
       store.tasks.createAttachment({
-        taskId: first.id,
+        owner: { kind: "task", taskId: first.id },
         fileName,
         mime: "text/plain",
         sizeBytes: 1,

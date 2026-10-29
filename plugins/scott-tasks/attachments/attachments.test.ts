@@ -61,8 +61,7 @@ describe("task attachments", () => {
 
       expect(result.url).toBe(attachmentDownloadUrl(result.attachmentId));
       expect(attachment).toMatchObject({
-        taskId: task.id,
-        commentId: null,
+        owner: { kind: "task", taskId: task.id },
         fileName: "unsafe.png",
         mime: "image/png",
         sizeBytes: 9,

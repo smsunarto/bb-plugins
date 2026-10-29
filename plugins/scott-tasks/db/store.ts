@@ -1370,13 +1370,11 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createAttachment(input: CreateAttachmentInput): Attachment {
-    const taskId = input.taskId ?? null;
-    const commentId = input.commentId ?? null;
-    if ((taskId === null) === (commentId === null)) {
-      throw new Error("An attachment must belong to exactly one task or comment");
-    }
-    if (taskId !== null) requireTask(taskId);
-    if (commentId !== null) requireComment(commentId);
+    const { owner } = input;
+    if (owner.kind === "task") requireTask(owner.taskId);
+    else requireComment(owner.commentId);
+    const taskId = owner.kind === "task" ? owner.taskId : null;
+    const commentId = owner.kind === "comment" ? owner.commentId : null;
     const id = createOrValidateUlid(input.id);
     db.prepare<
       [string, string | null, string | null, string, string, number, string, number, string]
@@ -1439,17 +1437,24 @@ export function createTasksStore(db: PluginDatabase) {
       .map(attachmentFromRow);
   }
 
-  function listCommentAttachmentsForTask(taskId: string): Attachment[] {
-    return db
-      .prepare<[string], AttachmentRow>(
+  /** A task's comment attachments, keyed by the owning comment. */
+  function listCommentAttachmentsForTask(taskId: string): Map<string, Attachment[]> {
+    const rows = db
+      .prepare<[string], AttachmentRow & { comment_id: string }>(
         `
         SELECT * FROM attachments
         WHERE comment_id IN (SELECT id FROM comments WHERE task_id = ?)
         ORDER BY created_at, id
       `,
       )
-      .all(taskId)
-      .map(attachmentFromRow);
+      .all(taskId);
+    const byComment = new Map<string, Attachment[]>();
+    for (const row of rows) {
+      const list = byComment.get(row.comment_id) ?? [];
+      list.push(attachmentFromRow(row));
+      byComment.set(row.comment_id, list);
+    }
+    return byComment;
   }
 
   function updateAttachment(id: string, input: UpdateAttachmentInput): Attachment {

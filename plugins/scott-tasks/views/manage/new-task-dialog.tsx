@@ -194,6 +194,7 @@ export function NewTaskDialog({
       }
       const staged = pendingFiles.filter((entry) => entry.status === "staged");
       const failed = await uploadStagedAttachments(staged, {
+        kind: "task",
         taskId: result.task.id,
       });
       if (failed.length > 0) {

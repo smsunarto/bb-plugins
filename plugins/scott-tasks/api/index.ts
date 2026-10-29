@@ -286,8 +286,7 @@ function writeSystemComments(
 function attachmentMetadata(attachment: StoredAttachment): AttachmentMetadata {
   return {
     id: attachment.id,
-    taskId: attachment.taskId,
-    commentId: attachment.commentId,
+    owner: attachment.owner,
     fileName: attachment.fileName,
     mime: attachment.mime,
     sizeBytes: attachment.sizeBytes,
@@ -299,7 +298,7 @@ function attachmentMetadata(attachment: StoredAttachment): AttachmentMetadata {
 function attachmentsForTasks(store: TasksStore, taskIds: readonly string[]): StoredAttachment[] {
   return taskIds.flatMap((taskId) => [
     ...store.listAttachmentsForTask(taskId),
-    ...store.listCommentAttachmentsForTask(taskId),
+    ...[...store.listCommentAttachmentsForTask(taskId).values()].flat(),
   ]);
 }
 

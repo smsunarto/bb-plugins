@@ -167,7 +167,7 @@ describe("tasks storage", () => {
         title: "Legacy attachment",
       });
       const svg = store.createAttachment({
-        taskId: task.id,
+        owner: { kind: "task", taskId: task.id },
         fileName: "active.svg",
         mime: "image/svg+xml",
         sizeBytes: 1,
@@ -175,7 +175,7 @@ describe("tasks storage", () => {
         isImage: true,
       });
       const png = store.createAttachment({
-        taskId: task.id,
+        owner: { kind: "task", taskId: task.id },
         fileName: "safe.png",
         mime: "image/png",
         sizeBytes: 1,

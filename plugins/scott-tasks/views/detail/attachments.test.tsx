@@ -11,8 +11,7 @@ afterEach(() => {
 function imageAttachment(overrides: Partial<Attachment> = {}): Attachment {
   return {
     id: "01JIMAGE0000000000000000AA",
-    taskId: "01JTASK00000000000000000AA",
-    commentId: null,
+    owner: { kind: "task", taskId: "01JTASK00000000000000000AA" },
     fileName: "diagram.png",
     mime: "image/png",
     sizeBytes: 1024,
