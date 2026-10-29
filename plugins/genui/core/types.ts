@@ -46,26 +46,42 @@ export function isFunctionValue(value: unknown): value is FunctionValue {
 }
 
 /**
- * One evaluated component instance. `props` are keyed by the catalog param
+ * One evaluated catalog component. `props` are keyed by the catalog param
  * name; omitted optional params are absent (never `undefined` values).
  * `nodes` params arrive normalized as `UiNode[]`, `actions` params as
- * `Action[]`, and `binding` params as a `Binding`.
+ * `Action[]`, and `binding` params as a `Binding`. A Table, Chart or Metric
+ * without `source` whose data came from Load also has `loadedFrom: string[]`,
+ * the paths in the order its arguments reach them.
  */
-export interface UiNode {
+export interface ComponentNode {
   readonly kind: "node";
-  /** A catalog component; `"Error"` when this node failed to evaluate; `"Loading"` while a file it reads with Load is still being read. */
-  readonly type: ComponentName | "Error" | "Loading";
+  readonly type: ComponentName;
   /**
    * Stable across re-evaluations of the same program so React keeps
    * component identity: derived from the source position and list index.
    */
   readonly key: string;
-  /**
-   * For `type: "Error"`: `{ message: string }`; for `"Loading"`: `{ path: string, component: ComponentName | null }` (null for a bare expression).
-   * A Table, Chart or Metric without `source` whose data came from Load also has `loadedFrom: string[]`, the paths in the order its arguments reach them.
-   */
   readonly props: Readonly<Record<string, Value>>;
 }
+
+/** A component that failed to evaluate: an error line renders in its place. */
+export interface ErrorNode {
+  readonly kind: "node";
+  readonly type: "Error";
+  readonly key: string;
+  readonly props: Readonly<Record<string, Value>> & { readonly message: string };
+}
+
+/** A component waiting for a file it reads with Load; `component` is null for a bare expression. */
+export interface LoadingNode {
+  readonly kind: "node";
+  readonly type: "Loading";
+  readonly key: string;
+  readonly props: Readonly<Record<string, Value>> & { readonly path: string; readonly component: ComponentName | null };
+}
+
+/** What a UI evaluates to: catalog components, with Error and Loading nodes standing in where one could not. */
+export type UiNode = ComponentNode | ErrorNode | LoadingNode;
 
 /** A two-way binding to one `$state` variable. `name` excludes the `$`. */
 export interface Binding {

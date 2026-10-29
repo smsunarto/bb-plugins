@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ComponentName } from "../../core/catalog";
 import type { UiNode, Value } from "../../core/types";
 import {
   addMonths,
@@ -17,7 +18,7 @@ import {
   weekday,
 } from "./explain-logic";
 
-const node = (type: UiNode["type"], props: Record<string, Value> = {}): UiNode => ({ kind: "node", type, key: type, props });
+const node = (type: ComponentName, props: Record<string, Value> = {}): UiNode => ({ kind: "node", type, key: type, props });
 
 describe("mermaidNodeId", () => {
   const svg = "bb-mermaid-_r_2f_-1";

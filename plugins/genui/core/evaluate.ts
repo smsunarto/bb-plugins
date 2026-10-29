@@ -452,9 +452,10 @@ class Interpreter {
     throw new RuntimeError(pos, `cannot index ${describe(object)}`);
   }
 
-  private node(type: UiNode["type"], key: string, props: Record<string, Value>, pos: Pos): UiNode {
+  /** Every node is made through here, so the count against LIMITS.nodes is complete. */
+  private made<N extends UiNode>(node: N, pos: Pos): N {
     if (++this.nodes > LIMITS.nodes) throw new LimitError(pos, `the UI has more than ${LIMITS.nodes} components`);
-    return { kind: "node", type, key, props };
+    return node;
   }
 
   private component(call: CallExpr, spec: ComponentSpec, scope: Scope | null): UiNode {
@@ -480,13 +481,13 @@ class Interpreter {
         const more = problems.length > 3 ? `; and ${problems.length - 3} more` : "";
         throw new RuntimeError(call.pos, `${type}: ${problems.slice(0, 3).join("; ")}${more}`);
       }
-      return this.node(type, key, type === "Snippet" ? this.snippet(props) : props, call.pos);
+      return this.made({ kind: "node", type, key, props: type === "Snippet" ? this.snippet(props) : props }, call.pos);
     } catch (error) {
       if (!(error instanceof RuntimeError)) throw error;
       const failure = this.recover(error, depth, suffix);
       return failure instanceof LoadPending
-        ? this.node("Loading", key, { path: failure.path, component: type }, call.pos)
-        : this.node("Error", key, { message: failure.message }, call.pos);
+        ? this.made({ kind: "node", type: "Loading", key, props: { path: failure.path, component: type } }, call.pos)
+        : this.made({ kind: "node", type: "Error", key, props: { message: failure.message } }, call.pos);
     }
   }
 
@@ -592,7 +593,7 @@ class Interpreter {
     const visit = (item: Value): void => {
       if (item === null || item === false) return;
       if (typeof item === "string" || typeof item === "number") {
-        out.push(this.node("Text", `${key}.${out.length}`, { text: String(item) }, pos));
+        out.push(this.made({ kind: "node", type: "Text", key: `${key}.${out.length}`, props: { text: String(item) } }, pos));
       } else if (isList(item)) {
         for (const child of item) visit(child);
       } else if (isNode(item)) {

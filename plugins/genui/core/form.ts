@@ -1,10 +1,9 @@
 // What a Form answers: a `Label: answer` line per field, which the answer
 // sheet (ui/answerSheet.ts) puts in the user's message as they fill it in.
-import type { ComponentName } from "./catalog";
 import type { Binding, UiNode, Value } from "./types";
 
 /** The inputs a Form collects, in any layout inside it. */
-const FIELDS: Partial<Record<ComponentName, true>> = {
+const FIELDS: Partial<Record<UiNode["type"], true>> = {
   Slider: true,
   Stepper: true,
   Toggle: true,
@@ -23,7 +22,7 @@ const FIELDS: Partial<Record<ComponentName, true>> = {
 };
 
 /** Fields the user types into: their answer waits for a pause in the typing. */
-const TYPED: Partial<Record<ComponentName, true>> = { Input: true, TextArea: true, ListEditor: true, DateInput: true };
+const TYPED: Partial<Record<UiNode["type"], true>> = { Input: true, TextArea: true, ListEditor: true, DateInput: true };
 
 const NUMBER = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 
@@ -90,7 +89,7 @@ function collect(value: Value, fields: FormField[]): void {
   }
   if (!isNode(value)) return;
   const binding = value.props.value;
-  if (value.type !== "Error" && value.type !== "Loading" && FIELDS[value.type] && isBinding(binding)) {
+  if (FIELDS[value.type] && isBinding(binding)) {
     const label = typeof value.props.label === "string" ? value.props.label.trim() : "";
     // An unrated Rating holds 0: no answer, not a zero.
     const given = value.type === "Rating" && binding.value === 0 ? null : binding.value;

@@ -953,9 +953,9 @@ function blockBody(node: UiNode): string {
       return `_GPU shader (${passes} pass${passes === 1 ? "" : "es"}). Open this reply in BB to see it._`;
     }
     case "Error":
-      return `_(error: ${inline(props.message)})_`;
+      return `_(error: ${node.props.message})_`;
     case "Loading":
-      return `_(loading ${inline(props.path)})_`;
+      return `_(loading ${node.props.path})_`;
   }
 }
 
