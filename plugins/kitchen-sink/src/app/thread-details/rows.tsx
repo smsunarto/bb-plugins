@@ -79,16 +79,16 @@ export function SplitRow({
       )}
     >
       {primary}
-      <span
-        aria-hidden
-        className="h-4 w-px shrink-0 bg-transparent group-hover/split:bg-border/65 group-has-[[data-state=open]]/split:bg-border/65"
-      />
       <Menu
         trigger={
           <button
             type="button"
             aria-label={menuLabel}
-            className={cx(CONTROL, "w-8 shrink-0 justify-center rounded-s-none px-0", HOVER)}
+            className={cx(
+              CONTROL,
+              "relative w-8 shrink-0 justify-center rounded-s-none px-0 before:absolute before:-left-px before:top-1/2 before:h-4 before:w-px before:-translate-y-1/2 before:bg-transparent group-hover/split:before:bg-border/65 group-has-[[data-state=open]]/split:before:bg-border/65",
+              HOVER,
+            )}
           >
             <RowIcon name="ChevronDown" />
           </button>
