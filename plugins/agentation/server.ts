@@ -886,13 +886,13 @@ export default async function plugin(bb: BbPluginApi) {
         if (!existing) return sanitizeJson({ annotation: null });
 
         const routing = getAnnotationRouting(db, input.annotationId);
-        if (routing?.state !== "assigned" || !routing.assignedThreadId) {
+        if (routing?.state !== "assigned") {
           throw new Error("Stage and send this annotation to a thread before you reply.");
         }
 
         const context = renderAnnotation(existing);
         await bb.sdk.threads.send({
-          threadId: routing.assignedThreadId,
+          threadId: routing.threadId,
           mode: "auto",
           input: [
             {

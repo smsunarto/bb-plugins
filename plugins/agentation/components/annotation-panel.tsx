@@ -196,7 +196,7 @@ function AnnotationCard({
     }, `Could not ${action} the annotation`);
 
   const isClosed = annotation.status === "resolved" || annotation.status === "dismissed";
-  const isAssigned = routing?.state === "assigned" && routing.assignedThreadId !== null;
+  const assigned = routing?.state === "assigned" ? routing : null;
 
   return (
     <div className={cn("rounded-lg border border-border bg-card p-3", isClosed && "opacity-60")}>
@@ -205,7 +205,7 @@ function AnnotationCard({
         <Pill className={statusTone[annotation.status]}>{annotation.status}</Pill>
         {routing ? (
           <Pill>
-            {routing.state === "assigned" ? `assigned: ${routing.assignedThreadId}` : routing.state}
+            {routing.state === "assigned" ? `assigned: ${routing.threadId}` : routing.state}
           </Pill>
         ) : null}
         {annotation.severity ? <Pill>{annotation.severity}</Pill> : null}
@@ -298,16 +298,12 @@ function AnnotationCard({
         <Button size="sm" variant="ghost" disabled={isBusy} onClick={() => void mutate("delete")}>
           Delete
         </Button>
-        {routing?.assignedThreadId ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => navigate.toThread(routing.assignedThreadId as string)}
-          >
+        {assigned ? (
+          <Button size="sm" variant="ghost" onClick={() => navigate.toThread(assigned.threadId)}>
             Open assigned thread
           </Button>
         ) : null}
-        {annotation.bb.threadId && annotation.bb.threadId !== routing?.assignedThreadId ? (
+        {annotation.bb.threadId && annotation.bb.threadId !== assigned?.threadId ? (
           <Button
             size="sm"
             variant="ghost"
@@ -316,7 +312,7 @@ function AnnotationCard({
             Open source thread
           </Button>
         ) : null}
-        {!isClosed && isAssigned ? (
+        {!isClosed && assigned ? (
           <Button
             size="sm"
             variant="ghost"
@@ -354,19 +350,19 @@ function AnnotationCard({
         <Input
           value={reply}
           placeholder={
-            isAssigned
+            assigned
               ? "Reply in the assigned thread…"
               : "Send this annotation to a thread before replying"
           }
           className="h-8 text-xs"
-          disabled={!isAssigned || isBusy}
+          disabled={!assigned || isBusy}
           onChange={(event) => setReply(event.target.value)}
         />
         <Button
           size="sm"
           variant="outline"
           type="submit"
-          disabled={!isAssigned || isBusy || reply.trim().length === 0}
+          disabled={!assigned || isBusy || reply.trim().length === 0}
         >
           Reply
         </Button>

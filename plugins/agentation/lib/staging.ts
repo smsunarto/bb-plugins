@@ -12,8 +12,6 @@ import { setAnnotationStatus } from "./store.ts";
 
 type Database = DatabaseNamespace.Database;
 
-export type AnnotationRoutingState = "staged" | "sending" | "assigned";
-
 export interface ClaimedDispatch {
   id: string;
   threadId: string;
@@ -32,7 +30,7 @@ export type DiscardStagedResult =
 
 type RoutingRow = {
   annotation_id: string;
-  state: AnnotationRoutingState;
+  state: AnnotationRouting["state"];
   assigned_thread_id: string | null;
   dispatch_id: string | null;
   updated_at: string;
@@ -46,14 +44,33 @@ function readAnnotation(payload: string): StoredAnnotation {
   return JSON.parse(payload) as StoredAnnotation;
 }
 
+/**
+ * Narrow a row to the state it is in. The SQL writers in this module keep each
+ * state's ids present, so a row missing one is corrupt rather than a fourth state.
+ */
 function toRouting(row: RoutingRow): AnnotationRouting {
-  return {
-    annotationId: row.annotation_id,
-    state: row.state,
-    assignedThreadId: row.assigned_thread_id,
-    dispatchId: row.dispatch_id,
-    updatedAt: row.updated_at,
-  };
+  const identity = { annotationId: row.annotation_id, updatedAt: row.updated_at };
+  switch (row.state) {
+    case "staged":
+      return { ...identity, state: "staged" };
+    case "sending":
+      if (row.dispatch_id === null) throw corruptRoutingRow(row);
+      return { ...identity, state: "sending", dispatchId: row.dispatch_id };
+    case "assigned":
+      if (row.assigned_thread_id === null || row.dispatch_id === null) {
+        throw corruptRoutingRow(row);
+      }
+      return {
+        ...identity,
+        state: "assigned",
+        threadId: row.assigned_thread_id,
+        dispatchId: row.dispatch_id,
+      };
+  }
+}
+
+function corruptRoutingRow(row: RoutingRow): Error {
+  return new Error(`annotation_routing row ${row.annotation_id} is ${row.state} without its ids`);
 }
 
 export function listStagedAnnotations(db: Database): StoredAnnotation[] {
@@ -180,13 +197,15 @@ export function claimStagedAnnotations(
        VALUES (?, ?, 'sending', ?, NULL, ?, NULL)`,
     ).run(id, input.threadId, JSON.stringify(uniqueIds), timestamp);
 
+    // The target thread lives on the dispatch until delivery is confirmed, so
+    // a `sending` row never names a thread it has not reached.
     const update = db.prepare(
       `UPDATE annotation_routing
-       SET state = 'sending', assigned_thread_id = ?, dispatch_id = ?, updated_at = ?
+       SET state = 'sending', dispatch_id = ?, updated_at = ?
        WHERE annotation_id = ? AND state = 'staged'`,
     );
     for (const annotationId of uniqueIds) {
-      const result = update.run(input.threadId, id, timestamp, annotationId);
+      const result = update.run(id, timestamp, annotationId);
       if (result.changes !== 1) {
         throw new Error("staging claim changed during transaction");
       }
@@ -209,10 +228,12 @@ export function completeDispatch(
     const result = db
       .prepare(
         `UPDATE annotation_routing
-         SET state = 'assigned', updated_at = ?
+         SET state = 'assigned',
+             assigned_thread_id = (SELECT thread_id FROM annotation_dispatches WHERE id = ?),
+             updated_at = ?
          WHERE dispatch_id = ? AND state = 'sending'`,
       )
-      .run(timestamp, dispatchId);
+      .run(dispatchId, timestamp, dispatchId);
     db.prepare(
       `UPDATE annotation_dispatches
        SET status = 'sent', error = NULL, completed_at = ?
@@ -228,7 +249,6 @@ export function completeDispatch(
          JOIN annotations a ON a.id = r.annotation_id
          WHERE r.dispatch_id = ?
            AND r.state = 'assigned'
-           AND r.assigned_thread_id IS NOT NULL
            AND a.status IN ('pending', 'acknowledged')
          ON CONFLICT(annotation_id) DO UPDATE SET
            thread_id = excluded.thread_id,

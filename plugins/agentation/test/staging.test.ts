@@ -223,10 +223,45 @@ test("an exact staged snapshot can only be claimed once", () => {
   assert.deepEqual(getAnnotationRouting(db, "ann_1"), {
     annotationId: "ann_1",
     state: "assigned",
-    assignedThreadId: "thr_target",
+    threadId: "thr_target",
     dispatchId: first.dispatch.id,
     updatedAt: getAnnotationRouting(db, "ann_1")?.updatedAt,
   });
+});
+
+test("a claimed annotation names no thread until delivery is confirmed", () => {
+  const db = freshDb();
+  seed(db);
+
+  const claim = claimStagedAnnotations(db, {
+    annotationIds: ["ann_1"],
+    threadId: "thr_target",
+  });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+
+  assert.deepEqual(getAnnotationRouting(db, "ann_1"), {
+    annotationId: "ann_1",
+    state: "sending",
+    dispatchId: claim.dispatch.id,
+    updatedAt: getAnnotationRouting(db, "ann_1")?.updatedAt,
+  });
+});
+
+test("an assigned routing row that lost its thread is rejected when read", () => {
+  const db = freshDb();
+  seed(db);
+
+  const claim = claimStagedAnnotations(db, {
+    annotationIds: ["ann_1"],
+    threadId: "thr_target",
+  });
+  if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
+  completeDispatch(db, claim.dispatch.id);
+
+  db.prepare(`UPDATE annotation_routing SET assigned_thread_id = NULL WHERE annotation_id = ?`).run(
+    "ann_1",
+  );
+  assert.throws(() => getAnnotationRouting(db, "ann_1"));
 });
 
 test("a failed delivery returns its annotations to staging", () => {
@@ -240,8 +275,11 @@ test("a failed delivery returns its annotations to staging", () => {
   if (claim.outcome !== "claimed") assert.fail("expected a claimed dispatch");
 
   assert.equal(failDispatch(db, claim.dispatch.id, "send failed"), 1);
-  assert.equal(getAnnotationRouting(db, "ann_1")?.state, "staged");
-  assert.equal(getAnnotationRouting(db, "ann_1")?.assignedThreadId, null);
+  assert.deepEqual(getAnnotationRouting(db, "ann_1"), {
+    annotationId: "ann_1",
+    state: "staged",
+    updatedAt: getAnnotationRouting(db, "ann_1")?.updatedAt,
+  });
 });
 
 test("restart recovery returns interrupted dispatches to staging", () => {
@@ -289,8 +327,11 @@ test("an assigned annotation can be staged again", () => {
   completeDispatch(db, claim.dispatch.id);
 
   const routing = restageAnnotation(db, "ann_1");
-  assert.equal(routing?.state, "staged");
-  assert.equal(routing?.assignedThreadId, null);
+  assert.deepEqual(routing, {
+    annotationId: "ann_1",
+    state: "staged",
+    updatedAt: routing?.updatedAt,
+  });
 });
 
 test("an unresolved annotation reappears after its assigned turn", () => {

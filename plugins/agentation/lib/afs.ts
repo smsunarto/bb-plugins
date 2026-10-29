@@ -149,15 +149,23 @@ export const storedAnnotationSchema = z.looseObject({
 
 export type StoredAnnotation = z.infer<typeof storedAnnotationSchema>;
 
-export const annotationRoutingStates = ["staged", "sending", "assigned"] as const;
+const routingIdentitySchema = { annotationId: z.string(), updatedAt: z.string() };
 
-export const annotationRoutingSchema = z.object({
-  annotationId: z.string(),
-  state: z.enum(annotationRoutingStates),
-  assignedThreadId: z.string().nullable(),
-  dispatchId: z.string().nullable(),
-  updatedAt: z.string(),
-});
+/**
+ * Where an annotation is in its delivery lifecycle: staged -> sending -> assigned.
+ * Each state carries exactly the ids it has earned, so a reader that narrows on
+ * `state` gets the thread or dispatch id as a plain string.
+ */
+export const annotationRoutingSchema = z.discriminatedUnion("state", [
+  z.object({ ...routingIdentitySchema, state: z.literal("staged") }),
+  z.object({ ...routingIdentitySchema, state: z.literal("sending"), dispatchId: z.string() }),
+  z.object({
+    ...routingIdentitySchema,
+    state: z.literal("assigned"),
+    threadId: z.string(),
+    dispatchId: z.string(),
+  }),
+]);
 
 export type AnnotationRouting = z.infer<typeof annotationRoutingSchema>;
 
