@@ -243,4 +243,40 @@ describe("an app on screen", () => {
     post({ type: "openLink", url: "https://example.com/docs" });
     expect(openUrl).toHaveBeenCalledWith("https://example.com/docs");
   });
+
+  it("keeps a reopened fence's new document under the preview until that document loads", () => {
+    const stateKey = `app:${Math.random()}`;
+    const show = (html: string, ready: boolean) =>
+      act(() => root.render(<AppBlock html={html} ready={ready} stateKey={stateKey} answers={{ kind: "gallery" }} />));
+    const app = () => container.querySelector<HTMLIFrameElement>('iframe[title="App"]');
+    const preview = () => container.querySelector<HTMLIFrameElement>('iframe[title="App preview"]');
+    const hidden = () => app()!.classList.contains("invisible");
+    const drawn = () =>
+      act(() =>
+        window.dispatchEvent(
+          new MessageEvent("message", { data: { source: "genui-app", type: "height", height: 120 }, source: preview()!.contentWindow }),
+        ),
+      );
+    const loaded = () => act(() => app()!.dispatchEvent(new Event("load")));
+
+    // The fence streams: the preview draws, then the closed fence's app loads under it.
+    show("<p>one</p>", false);
+    drawn();
+    show("<p>one</p>", true);
+    expect(hidden()).toBe(true);
+    expect(preview()).not.toBeNull();
+    loaded();
+    expect(hidden()).toBe(false);
+    expect(preview()).toBeNull();
+
+    // Text resumed after a pause: the fence reopens with more markup and closes again.
+    show("<p>one</p><p>two</p>", false);
+    expect(app()).toBeNull();
+    show("<p>one</p><p>two</p>", true);
+    expect(hidden()).toBe(true);
+    expect(preview()).not.toBeNull();
+    loaded();
+    expect(hidden()).toBe(false);
+    expect(preview()).toBeNull();
+  });
 });

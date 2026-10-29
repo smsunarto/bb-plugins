@@ -126,9 +126,12 @@ export function AppBlock({
   superseded?: boolean;
 }) {
   const [previewed, setPreviewed] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  // The document whose frame has loaded, not a flag: a fence that reopens with
+  // more markup (the overlay path) mounts a new document, which starts unloaded.
+  const [loadedHtml, setLoadedHtml] = useState<string | null>(null);
+  const loaded = loadedHtml === html;
   const onPreviewContent = useCallback(() => setPreviewed(true), []);
-  const onAppLoaded = useCallback(() => setLoaded(true), []);
+  const onAppLoaded = useCallback(() => setLoadedHtml(html), [html]);
   // The preview stays over the finished app until its document loads, so the
   // reader never sees an empty frame between the two.
   const previewing = !ready || (previewed && !loaded);
