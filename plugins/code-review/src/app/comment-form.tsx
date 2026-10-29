@@ -1,9 +1,9 @@
+import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { useId, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import type { PullRequest, ReviewThread } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
-import { Textarea } from "./components/ui/textarea.tsx";
 import { threadLines } from "./format.ts";
 import { errorText } from "./notice.tsx";
 import { useAddDraft } from "./draft-sync.tsx";
@@ -58,7 +58,7 @@ export function CommentForm({
 }) {
   const id = useId();
   const ready = value.trim() !== "" && !pending && !blocked;
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       if (ready) onSubmit();
@@ -78,10 +78,11 @@ export function CommentForm({
       <label htmlFor={id} className="sr-only">
         {label}
       </label>
-      <Textarea
+      <MarkdownEditor
+        aria-label={label}
         id={id}
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={onChange}
         onKeyDown={onKeyDown}
         placeholder={placeholder}
         // Read-only, not disabled, while saving: a disabled field drops focus.
@@ -89,7 +90,6 @@ export function CommentForm({
         // The reader just asked to write, so focus follows the click.
         // oxlint-disable-next-line jsx-a11y/no-autofocus
         autoFocus
-        rows={3}
         className="min-h-16 resize-y bg-background px-2 py-1.5 text-xs"
       />
       {error ? (

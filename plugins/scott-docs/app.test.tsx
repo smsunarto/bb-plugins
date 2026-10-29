@@ -2285,12 +2285,11 @@ describe("Docs fork behavior", () => {
     await slot.findByText("One task");
     expect(slot.queryByRole("button", { name: "Add image" })).toBeNull();
     expect(slot.container.querySelector('input[type="file"]')).toBeNull();
-    const styles = document.head.querySelector("style[data-bb-simple-notes-styles]");
-    expect(styles?.textContent).not.toBe("stale editor styles");
-    expect(styles?.textContent).toContain("align-items: flex-start");
-    expect(styles?.textContent).toContain("height: 1.625em");
-    expect(styles?.textContent).toContain("cursor: pointer; margin: 0");
-    expect(styles?.textContent).toContain('ul[data-type="taskList"] li > div > p { margin: 0; }');
+    const styles = await (await import("node:fs/promises")).readFile("editor.css", "utf8");
+    expect(styles).toContain("align-items: flex-start");
+    expect(styles).toContain("height: 1.625em");
+    expect(styles).toContain("cursor: pointer");
+    expect(styles).toContain('ul[data-type="taskList"] li > div > p');
   });
   it("copies the document through the host clipboard", async () => {
     const slot = renderDocument("copy-inline.md", "Launch email", {

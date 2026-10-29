@@ -1,3 +1,4 @@
+import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { definePluginApp, useBbNavigate, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
@@ -851,16 +852,17 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
           </div>
 
           <ExecutionSettings value={request} onChange={setRequest} />
-          <label className="flex min-w-0 flex-col gap-2">
+          <div className="flex min-w-0 flex-col gap-2">
             <span className="text-sm font-semibold">Review instructions</span>
-            <textarea
+            <MarkdownEditor
+              aria-label="Review instructions"
+              readOnly={saving}
               value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              rows={7}
+              onChange={setPrompt}
               className="min-h-32 w-full resize-y rounded-md border border-input bg-background p-3 text-sm leading-relaxed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               placeholder="What should the agent check and report?"
             />
-          </label>
+          </div>
         </fieldset>
         <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center gap-2 border-t border-border bg-background px-1 py-3">
           {saveError ? (

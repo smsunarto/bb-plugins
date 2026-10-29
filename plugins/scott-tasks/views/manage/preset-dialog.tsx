@@ -1,3 +1,4 @@
+import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { useState } from "react";
 import {
   experimental_PermissionModePicker as PermissionModePicker,
@@ -27,7 +28,6 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Field } from "./shared.js";
 
 type ReasoningLevel = ExperimentalProviderModelPickerValue["reasoningLevel"];
@@ -279,10 +279,11 @@ export function PresetDialog({
             </div>
           ) : null}
           <Field label="Instructions">
-            <Textarea
+            <MarkdownEditor
+              aria-label="Preset instructions"
               value={draft.instructions}
               placeholder="Extra instructions prepended to dispatched threads"
-              onChange={(event) => set("instructions", event.target.value)}
+              onChange={(instructions) => set("instructions", instructions)}
               className="min-h-20 text-xs"
             />
           </Field>

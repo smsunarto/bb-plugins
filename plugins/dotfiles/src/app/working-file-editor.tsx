@@ -1,3 +1,4 @@
+import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { useEffect, useLayoutEffect, useRef, type ReactElement } from "react";
 import { basicSetup } from "codemirror";
 import { Annotation, EditorState, StateEffect } from "@codemirror/state";
@@ -30,13 +31,19 @@ const editorTheme = EditorView.theme({
   },
 });
 
-function SourceEditor({ path, value, onChange, onSave }: WorkingFileEditorProps): ReactElement {
+function SourceEditor({
+  path,
+  value,
+  onChange,
+  onSave,
+  onBlur = onSave,
+}: WorkingFileEditorProps & { onBlur?: () => void }): ReactElement {
   const container = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
-  const callbacks = useRef({ value, onChange, onSave });
+  const callbacks = useRef({ value, onChange, onSave, onBlur });
   useLayoutEffect(() => {
-    callbacks.current = { value, onChange, onSave };
-  }, [value, onChange, onSave]);
+    callbacks.current = { value, onChange, onSave, onBlur };
+  }, [value, onChange, onSave, onBlur]);
 
   useEffect(() => {
     if (!container.current) return;
@@ -71,7 +78,7 @@ function SourceEditor({ path, value, onChange, onSave }: WorkingFileEditorProps)
           ]),
           EditorView.domEventHandlers({
             blur: () => {
-              callbacks.current.onSave();
+              callbacks.current.onBlur();
             },
           }),
           EditorView.updateListener.of((update) => {
@@ -113,5 +120,17 @@ function SourceEditor({ path, value, onChange, onSave }: WorkingFileEditorProps)
 }
 
 export function WorkingFileEditor(props: WorkingFileEditorProps): ReactElement {
-  return <SourceEditor {...props} />;
+  if (!/\.(md|markdown)$/i.test(props.path)) return <SourceEditor {...props} />;
+  return (
+    <MarkdownEditor
+      key={props.path}
+      aria-label={`Edit ${props.path}`}
+      value={props.value}
+      onChange={props.onChange}
+      onSave={props.onSave}
+      onBlur={props.onSave}
+      className="min-h-0 flex-1 overflow-hidden"
+      renderSource={(source) => <SourceEditor path={props.path} {...source} onBlur={() => {}} />}
+    />
+  );
 }

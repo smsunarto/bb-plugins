@@ -166,7 +166,7 @@ test("the page opens what the URL names", async () => {
   code.lifecycle.unmount();
 
   const file = await page("notes/file/instructions/tools/notes_find.md");
-  const editor = await file.findByLabelText("instructions/tools/notes_find.md");
+  const editor = await file.findByLabelText("instructions/tools/notes_find.md").then(sourceTextbox);
   expect((editor as HTMLTextAreaElement).value).toBe("Find a note.");
   file.lifecycle.unmount();
 });
@@ -178,7 +178,7 @@ test("an unsaved edit on the page is marked in the tab", async () => {
   const row = await tab.findByRole("button", { name: /notes_find/ });
   expect(within(row).queryByTitle("Unsaved")).toBeNull();
 
-  const editor = await file.findByLabelText("instructions/tools/notes_find.md");
+  const editor = await file.findByLabelText("instructions/tools/notes_find.md").then(sourceTextbox);
   fireEvent.change(editor, { target: { value: "Find a note by title." } });
   expect(await within(row).findByTitle("Unsaved")).toBeTruthy();
 
@@ -230,7 +230,7 @@ test("reference files allow whitespace-only edits", async () => {
       },
     },
   );
-  fireEvent.change(await slot.findByRole("textbox", { name: filePath }), {
+  fireEvent.change(await slot.findByRole("textbox", { name: filePath }).then(sourceTextbox), {
     target: { value: "  alpha,one\n\n" },
   });
   expect(slot.getByRole("button", { name: "Save & reload" })).toHaveProperty("disabled", false);
@@ -279,7 +279,7 @@ test("references appear under their nearest skill and keep full-path navigation"
       { rpc: { ...rpc, plugins: () => ({ plugins: [{ ...notes, files }] }) } as never },
     );
     try {
-      fireEvent.change(await editor.findByRole("textbox", { name: selected }), {
+      fireEvent.change(await editor.findByRole("textbox", { name: selected }).then(sourceTextbox), {
         target: { value: "Updated reference draft" },
       });
       await waitFor(() =>
@@ -313,4 +313,54 @@ test("references appear under their nearest skill and keep full-path navigation"
   } finally {
     tab.unmount();
   }
+});
+
+// These draft/save tests explicitly exercise the optional source mode.
+function sourceTextbox(element: HTMLElement): HTMLElement {
+  if (!element.matches(".tiptap")) return element;
+  const wrapper = element.closest(".bb-markdown-editor");
+  const button = [...(wrapper?.querySelectorAll("button") ?? [])].find(
+    (candidate) => candidate.textContent === "Markdown source",
+  );
+  if (!button) throw new Error("Markdown editor has no source control");
+  fireEvent.click(button);
+  const source = wrapper?.querySelector<HTMLElement>("textarea[data-markdown-source]");
+  if (!source) throw new Error("Source mode did not open");
+  return source;
+}
+
+test("plugin skill frontmatter stays separate from its immediately rich body", async () => {
+  const filePath = "skills/notes/SKILL.md";
+  const slot = renderSlot(
+    await registration(),
+    { subPath: `prompts/notes/file/${filePath}` },
+    {
+      rpc: {
+        plugins: () => ({
+          plugins: [
+            {
+              ...notes,
+              tools: [],
+              files: [{ path: filePath, kind: "skill", tool: null, chars: 50 }],
+            },
+          ],
+        }),
+        file: () => ({
+          content: "---\nname: demo\n---\n\n# Instructions\n",
+          placeholders: [],
+          maxChars: null,
+        }),
+      },
+    },
+  );
+  const yaml = await slot.findByRole("textbox", { name: "Frontmatter" });
+  const body = slot.getByRole("textbox", { name: filePath });
+  expect(body.tagName).toBe("DIV");
+  expect(body.querySelector("h1")?.textContent).toBe("Instructions");
+  expect(slot.getByRole("button", { name: "Save & reload" })).toHaveProperty("disabled", true);
+  fireEvent.change(yaml, { target: { value: "name: [\n" } });
+  expect(slot.getByRole("textbox", { name: "Frontmatter" })).toHaveProperty("value", "name: [\n");
+  expect(slot.getByRole("textbox", { name: filePath })).toBe(body);
+  expect(slot.getByRole("button", { name: "Save & reload" })).toHaveProperty("disabled", false);
+  slot.unmount();
 });

@@ -93,10 +93,9 @@ test("a saved rule shows its scope by name", async () => {
   expect(slot.getByRole("button", { name: "Scope: Build Mac · gpt-*" }).textContent).toBe(
     "Build Mac · gpt-*",
   );
-  expect(slot.getByRole("textbox", { name: "Browser review instructions" })).toHaveProperty(
-    "value",
-    "Open the page in bb's browser.",
-  );
+  expect(
+    sourceTextbox(slot.getByRole("textbox", { name: "Browser review instructions" })),
+  ).toHaveProperty("value", "Open the page in bb's browser.");
   slot.unmount();
 });
 
@@ -143,7 +142,7 @@ test("a new rule applies everywhere until scoped", async () => {
 
 test("a save refused for a stale revision offers to discard or overwrite", async () => {
   const { slot, saves, server } = await page([browser], { conflictAt: 0 });
-  fireEvent.change(slot.getByRole("textbox", { name: "Rule name" }), {
+  fireEvent.change(sourceTextbox(slot.getByRole("textbox", { name: "Rule name" })), {
     target: { value: "Renamed" },
   });
   const alert = await slot.findByText("Rules changed elsewhere since this page loaded.");
@@ -163,7 +162,7 @@ test("a save refused for a stale revision offers to discard or overwrite", async
 
 test("leaving the page saves an edit still waiting for its pause", async () => {
   const { slot, saves } = await page([browser]);
-  fireEvent.change(slot.getByRole("textbox", { name: "Rule name" }), {
+  fireEvent.change(sourceTextbox(slot.getByRole("textbox", { name: "Rule name" })), {
     target: { value: "Renamed" },
   });
   expect(slot.getByRole("status").textContent).toBe("Saving…");
@@ -288,3 +287,17 @@ test("reopening never shows a fetch older than the last save", async () => {
   expect(again.getByRole("status").textContent).toBe("Saved");
   again.unmount();
 });
+
+// These draft/save tests explicitly exercise the optional source mode.
+function sourceTextbox(element: HTMLElement): HTMLElement {
+  if (!element.matches(".tiptap")) return element;
+  const wrapper = element.closest(".bb-markdown-editor");
+  const button = [...(wrapper?.querySelectorAll("button") ?? [])].find(
+    (candidate) => candidate.textContent === "Markdown source",
+  );
+  if (!button) throw new Error("Markdown editor has no source control");
+  fireEvent.click(button);
+  const source = wrapper?.querySelector<HTMLElement>("textarea[data-markdown-source]");
+  if (!source) throw new Error("Source mode did not open");
+  return source;
+}

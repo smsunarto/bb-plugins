@@ -41,7 +41,9 @@
     "skills",
     "README.md",
     "LICENSE",
-    "THIRD_PARTY_NOTICES.md"
+    "THIRD_PARTY_NOTICES.md",
+    "editor.css",
+    "editor.css.d.ts"
   ],
   "engines": {
     "bb": ">=0.48.0 <1.0.0",
@@ -126,6 +128,7 @@
     "diff": "^9.0.0",
     "tiptap-markdown": "^0.8.10",
     "yaml": "^2.8.2",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@bb-plugins/markdown-editor": "workspace:*"
   }
 }

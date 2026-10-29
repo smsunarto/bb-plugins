@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Editor } from "@tiptap/core";
 import { POINTER_COARSE_QUERY } from "@/components/ui/hooks/use-pointer-coarse";
@@ -636,4 +636,105 @@ describe("TasksEditor submit-on-Enter", () => {
     );
     expect(onSubmit).not.toHaveBeenCalled();
   });
+});
+
+describe("shared Markdown document boundaries", () => {
+  it("switches existing document source and rich modes with the bubble plugin installed", () => {
+    let editor: Editor | null = null;
+    const onChange = vi.fn();
+    const screen = render(
+      <TasksEditor
+        value="A description"
+        variant="doc"
+        onChange={onChange}
+        onEditorReady={(ready) => {
+          editor = ready;
+        }}
+      />,
+    );
+    expect(
+      editor!.state.plugins.some(
+        (plugin) =>
+          plugin.spec.key?.constructor.name === "PluginKey" && plugin.spec.view !== undefined,
+      ),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Markdown source" }));
+    expect(screen.getByRole("textbox", { name: "Description Markdown source" })).toHaveProperty(
+      "value",
+      "A description",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Rich text" }));
+    expect(screen.queryByRole("textbox", { name: "Description Markdown source" })).toBeNull();
+    expect(screen.container.querySelector(".tiptap")?.textContent).toBe("A description");
+    expect(onChange).not.toHaveBeenCalled();
+    screen.unmount();
+  });
+
+  it("renders frontmatter-like text in read-only activity comments", () => {
+    const screen = render(
+      <TasksEditor
+        value={"---\ntitle: comment metadata\n---\n\nBody"}
+        variant="comment"
+        readOnly
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.container.querySelector(".tiptap")?.textContent).toContain(
+      "title: comment metadata",
+    );
+    expect(screen.container.querySelector(".tiptap")?.textContent).toContain("Body");
+  });
+
+  it("retains frontmatter-like comment content when editing its body", () => {
+    let editor: Editor | null = null;
+    const onChange = vi.fn();
+    render(
+      <TasksEditor
+        value={"---\ntitle: comment metadata\n---\n\nBody"}
+        variant="comment"
+        onChange={onChange}
+        onEditorReady={(ready) => {
+          editor = ready;
+        }}
+      />,
+    );
+    editor!.commands.insertContentAt(editor!.state.doc.content.size - 1, " edited");
+    expect(onChange.mock.lastCall?.[0]).toContain("title: comment metadata");
+    expect(onChange.mock.lastCall?.[0]).toContain("Body edited");
+  });
+});
+
+it("preserves CRLF while editing a description in source mode", () => {
+  const onChange = vi.fn();
+  const screen = render(
+    <TasksEditor value={"First\r\nSecond\r\n"} variant="doc" onChange={onChange} />,
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Description Markdown source" }), {
+    target: { value: "First\nEdited\n" },
+  });
+  expect(onChange).toHaveBeenCalledWith("First\r\nEdited\r\n");
+});
+
+it("keeps a controlled Tasks description in rich mode when typing generic code", () => {
+  let editor: Editor | null = null;
+  const props = (value: string) => (
+    <TasksEditor
+      variant="doc"
+      value={value}
+      onChange={(next) => screen.rerender(props(next))}
+      onEditorReady={(ready) => {
+        editor = ready;
+      }}
+    />
+  );
+  const screen = render(props("```ts\nArray<T>\n```"));
+  const rich = screen.container.querySelector(".tiptap");
+  act(() => {
+    editor!.view.dispatch(
+      editor!.state.tr.insertText(" Array<U>", editor!.state.doc.content.size - 1),
+    );
+  });
+  expect(screen.queryByRole("textbox", { name: "Description Markdown source" })).toBeNull();
+  expect(screen.container.querySelector(".tiptap")).toBe(rich);
+  expect(editor!.getText()).toContain("Array<U>");
 });

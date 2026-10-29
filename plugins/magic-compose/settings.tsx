@@ -1,3 +1,4 @@
+import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { parseReasoningLevel } from "./lib/reasoning";
 // The Magic Compose settings page: the sections under BB's own card, which
 // holds the API keys. They are laid out by the question Jev answers, with each
@@ -198,18 +199,18 @@ function Instructions({
   const long = lines > COLLAPSED_ROWS;
   return (
     <div className="space-y-1">
-      <Textarea
+      <MarkdownEditor
         value={draft}
-        rows={all ? lines + 1 : Math.min(Math.max(lines, 2), COLLAPSED_ROWS)}
         maxLength={INSTRUCTIONS_MAX}
         placeholder={placeholder}
         aria-label={what}
+        // oxlint-disable-next-line jsx-a11y/no-autofocus
         autoFocus={open && value === ""}
-        className="font-mono text-xs"
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={() => {
+        className={all ? "max-h-none" : "max-h-64 overflow-auto"}
+        onChange={setDraft}
+        onBlur={(next) => {
           setOpen(false);
-          if (draft !== value) onSave(draft);
+          if (next !== value) onSave(next);
         }}
       />
       {long && (

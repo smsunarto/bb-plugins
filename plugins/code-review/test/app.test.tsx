@@ -401,7 +401,7 @@ test("with one account, nothing on the page talks about accounts", async () => {
 
 test("a pasted pull request link opens at once", async () => {
   const slot = await inboxTab("");
-  const input = await slot.findByLabelText("Pull request link");
+  const input = await slot.findByLabelText("Pull request link").then(sourceTextbox);
   fireEvent.paste(input, {
     clipboardData: { getData: () => "https://github.com/acme/web/pull/7/files#diff-1" },
   });
@@ -413,7 +413,7 @@ test("a pasted pull request link opens at once", async () => {
 
 test("text that names no pull request is explained, not opened", async () => {
   const slot = await inboxTab("");
-  const input = await slot.findByLabelText("Pull request link");
+  const input = await slot.findByLabelText("Pull request link").then(sourceTextbox);
   fireEvent.change(input, { target: { value: "acme/api" } });
   fireEvent.submit(input.closest("form")!);
   expect(slot.getByRole("alert").textContent).toBe(
@@ -668,7 +668,7 @@ test("submits an approval with its summary and the drafts, then confirms it", as
     },
   });
   expect(dialog.getByText("2 draft comments will be posted with this review.")).toBeTruthy();
-  fireEvent.change(dialog.getByLabelText("Review summary"), {
+  fireEvent.change(sourceTextbox(dialog.getByLabelText("Review summary")), {
     target: { value: "  Ship it.  " },
   });
   fireEvent.click(dialog.getByRole("radio", { name: /Approve/ }));
@@ -717,7 +717,9 @@ test("a review sent just before the popover closes still clears the form and ref
         answer = () => resolve({ url: null });
       }),
   });
-  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Ship it." } });
+  fireEvent.change(sourceTextbox(dialog.getByLabelText("Review summary")), {
+    target: { value: "Ship it." },
+  });
   fireEvent.click(dialog.getByRole("radio", { name: /Approve/ }));
   fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
   await dialog.findByRole("button", { name: "Submitting…" });
@@ -726,7 +728,9 @@ test("a review sent just before the popover closes still clears the form and ref
   answer();
   await waitFor(() => expect(reads.pullRequest).toBe(2));
   const reopened = await reopenSubmit(slot);
-  expect((reopened.getByLabelText("Review summary") as HTMLTextAreaElement).value).toBe("");
+  expect(
+    (sourceTextbox(reopened.getByLabelText("Review summary")) as HTMLTextAreaElement).value,
+  ).toBe("");
   expect((reopened.getByRole("radio", { name: /Comment/ }) as HTMLInputElement).checked).toBe(true);
   slot.lifecycle.unmount();
 });
@@ -744,7 +748,9 @@ test("drafts discarded just before the popover closes still clear the form and r
         answer = () => resolve({ ok: true });
       }),
   });
-  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Not yet." } });
+  fireEvent.change(sourceTextbox(dialog.getByLabelText("Review summary")), {
+    target: { value: "Not yet." },
+  });
   fireEvent.click(dialog.getByRole("button", { name: "Discard drafts" }));
   fireEvent.click(dialog.getByRole("button", { name: "Discard" }));
   await dialog.findByRole("button", { name: "Discarding…" });
@@ -753,7 +759,9 @@ test("drafts discarded just before the popover closes still clear the form and r
   answer();
   await waitFor(() => expect(reads.pullRequest).toBe(2));
   const reopened = await reopenSubmit(slot);
-  expect((reopened.getByLabelText("Review summary") as HTMLTextAreaElement).value).toBe("");
+  expect(
+    (sourceTextbox(reopened.getByLabelText("Review summary")) as HTMLTextAreaElement).value,
+  ).toBe("");
   slot.lifecycle.unmount();
 });
 
@@ -768,7 +776,9 @@ test("reopened while the review is out, the form stays busy and sends it only on
       });
     },
   });
-  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Ship it." } });
+  fireEvent.change(sourceTextbox(dialog.getByLabelText("Review summary")), {
+    target: { value: "Ship it." },
+  });
   fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
   await dialog.findByRole("button", { name: "Submitting…" });
   await closeSubmit(slot);
@@ -777,7 +787,10 @@ test("reopened while the review is out, the form stays busy and sends it only on
   const busy = reopened.getByRole("button", { name: "Submitting…" }) as HTMLButtonElement;
   expect(busy.disabled).toBe(true);
   fireEvent.click(busy);
-  fireEvent.keyDown(reopened.getByLabelText("Review summary"), { key: "Enter", metaKey: true });
+  fireEvent.keyDown(sourceTextbox(reopened.getByLabelText("Review summary")), {
+    key: "Enter",
+    metaKey: true,
+  });
 
   answer();
   expect(await reopened.findByText("Your review is on GitHub.")).toBeTruthy();
@@ -820,7 +833,10 @@ test("reopened while drafts are being discarded, the form stays busy and discard
   expect((reopened.getByRole("button", { name: "Keep" }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(busy);
   // Nor can the drafts being deleted go out in a review meanwhile.
-  fireEvent.keyDown(reopened.getByLabelText("Review summary"), { key: "Enter", metaKey: true });
+  fireEvent.keyDown(sourceTextbox(reopened.getByLabelText("Review summary")), {
+    key: "Enter",
+    metaKey: true,
+  });
 
   answer();
   await gone(() => slot.queryByRole("dialog"));
@@ -838,7 +854,9 @@ test("a review closed before the form shows it busy is still sent only once", as
       return new Promise((resolve) => answers.push(() => resolve({ url: null })));
     },
   });
-  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Ship it." } });
+  fireEvent.change(sourceTextbox(dialog.getByLabelText("Review summary")), {
+    target: { value: "Ship it." },
+  });
   fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
   // Escape lands before the render that shows the review as out.
   fireEvent.keyDown(slot.getByRole("dialog", { name: "Submit review" }), { key: "Escape" });
@@ -846,7 +864,10 @@ test("a review closed before the form shows it busy is still sent only once", as
 
   const reopened = await reopenSubmit(slot);
   fireEvent.click(reopened.getByRole("button", { name: /^Submit/ }));
-  fireEvent.keyDown(reopened.getByLabelText("Review summary"), { key: "Enter", metaKey: true });
+  fireEvent.keyDown(sourceTextbox(reopened.getByLabelText("Review summary")), {
+    key: "Enter",
+    metaKey: true,
+  });
   await waitFor(() =>
     expect(reopened.getByRole("button", { name: "Submitting…" }).hasAttribute("disabled")).toBe(
       true,
@@ -879,7 +900,7 @@ test("a page opened again while the review is out shows it busy and does not sen
     },
   };
   const first = await openSubmit(pullRequest, rpc);
-  fireEvent.change(first.dialog.getByLabelText("Review summary"), {
+  fireEvent.change(sourceTextbox(first.dialog.getByLabelText("Review summary")), {
     target: { value: "Ship it." },
   });
   fireEvent.click(first.dialog.getByRole("button", { name: "Submit review" }));
@@ -889,7 +910,10 @@ test("a page opened again while the review is out shows it busy and does not sen
   const busy = dialog.getByRole("button", { name: "Submitting…" }) as HTMLButtonElement;
   expect(busy.disabled).toBe(true);
   // The drafts alone are enough to send, so only the request that is out holds this back.
-  fireEvent.keyDown(dialog.getByLabelText("Review summary"), { key: "Enter", metaKey: true });
+  fireEvent.keyDown(sourceTextbox(dialog.getByLabelText("Review summary")), {
+    key: "Enter",
+    metaKey: true,
+  });
 
   answer();
   await dialog.findByRole("button", { name: "Submit review" });
@@ -914,7 +938,9 @@ test("the pull request opened under another casing of its URL does not send the 
   const first = await page(PR_PATH, rpc);
   fireEvent.click(await first.findByRole("button", { name: /^Submit review/ }));
   const firstDialog = within(await first.findByRole("dialog", { name: "Submit review" }));
-  fireEvent.change(firstDialog.getByLabelText("Review summary"), { target: { value: "Ship it." } });
+  fireEvent.change(sourceTextbox(firstDialog.getByLabelText("Review summary")), {
+    target: { value: "Ship it." },
+  });
   fireEvent.click(firstDialog.getByRole("button", { name: "Submit review" }));
   await firstDialog.findByRole("button", { name: "Submitting…" });
   first.lifecycle.unmount();
@@ -922,7 +948,10 @@ test("the pull request opened under another casing of its URL does not send the 
   const slot = await page("ACME/API/pull/42", rpc);
   fireEvent.click(await slot.findByRole("button", { name: /^Submit review/ }));
   const dialog = within(await slot.findByRole("dialog", { name: "Submit review" }));
-  fireEvent.keyDown(dialog.getByLabelText("Review summary"), { key: "Enter", metaKey: true });
+  fireEvent.keyDown(sourceTextbox(dialog.getByLabelText("Review summary")), {
+    key: "Enter",
+    metaKey: true,
+  });
   fireEvent.click(dialog.getByRole("button", { name: /^Submit/ }));
 
   answer();
@@ -948,7 +977,7 @@ test("a review refused after the page was opened again shows the refusal there",
       }),
   };
   const first = await openSubmit(pullRequest, rpc);
-  fireEvent.change(first.dialog.getByLabelText("Review summary"), {
+  fireEvent.change(sourceTextbox(first.dialog.getByLabelText("Review summary")), {
     target: { value: "Ship it." },
   });
   fireEvent.click(first.dialog.getByRole("button", { name: "Submit review" }));
@@ -956,7 +985,7 @@ test("a review refused after the page was opened again shows the refusal there",
   first.slot.lifecycle.unmount();
 
   const { slot, dialog } = await openSubmit(pullRequest, rpc);
-  const body = dialog.getByLabelText("Review summary") as HTMLTextAreaElement;
+  const body = sourceTextbox(dialog.getByLabelText("Review summary")) as HTMLTextAreaElement;
   fireEvent.change(body, { target: { value: "Needs work" } });
   refuse();
   expect((await dialog.findByRole("alert")).textContent).toBe(
@@ -970,9 +999,9 @@ test("a review refused after the page was opened again shows the refusal there",
   await closeSubmit(slot);
   const reopened = await reopenSubmit(slot);
   expect(reopened.queryByRole("alert")).toBeNull();
-  expect((reopened.getByLabelText("Review summary") as HTMLTextAreaElement).value).toBe(
-    "Needs work",
-  );
+  expect(
+    (sourceTextbox(reopened.getByLabelText("Review summary")) as HTMLTextAreaElement).value,
+  ).toBe("Needs work");
   slot.lifecycle.unmount();
 });
 
@@ -984,7 +1013,9 @@ test("a refusal that lands as the popover closes is kept for the next opening", 
         refuse = () => reject(new Error("Review cannot be submitted on a stale commit."));
       }),
   });
-  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Ship it." } });
+  fireEvent.change(sourceTextbox(dialog.getByLabelText("Review summary")), {
+    target: { value: "Ship it." },
+  });
   fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
   await dialog.findByRole("button", { name: "Submitting…" });
 
@@ -1023,7 +1054,7 @@ test("a discard refused after the page was opened again shows the refusal there"
   first.slot.lifecycle.unmount();
 
   const { slot, dialog } = await openSubmit(pullRequest, rpc);
-  const body = dialog.getByLabelText("Review summary") as HTMLTextAreaElement;
+  const body = sourceTextbox(dialog.getByLabelText("Review summary")) as HTMLTextAreaElement;
   fireEvent.change(body, { target: { value: "Needs work" } });
   refuse();
   expect((await dialog.findByRole("alert")).textContent).toBe(
@@ -1093,7 +1124,9 @@ test("a comment with no text and no drafts cannot be sent", async () => {
   // No pending review means nothing to discard.
   expect(dialog.queryByRole("button", { name: "Discard drafts" })).toBeNull();
 
-  fireEvent.change(dialog.getByLabelText("Review summary"), { target: { value: "Thoughts" } });
+  fireEvent.change(sourceTextbox(dialog.getByLabelText("Review summary")), {
+    target: { value: "Thoughts" },
+  });
   expect(submit.disabled).toBe(false);
   slot.lifecycle.unmount();
 });
@@ -1104,7 +1137,7 @@ test("GitHub's refusal is shown in the form, which keeps the text", async () => 
       throw new Error("Review cannot be submitted on a stale commit.");
     },
   });
-  const body = dialog.getByLabelText("Review summary") as HTMLTextAreaElement;
+  const body = sourceTextbox(dialog.getByLabelText("Review summary")) as HTMLTextAreaElement;
   fireEvent.change(body, { target: { value: "Needs work" } });
   fireEvent.click(dialog.getByRole("button", { name: "Submit review" }));
   expect((await dialog.findByRole("alert")).textContent).toBe(
@@ -1116,9 +1149,9 @@ test("GitHub's refusal is shown in the form, which keeps the text", async () => 
   await closeSubmit(slot);
   const reopened = await reopenSubmit(slot);
   expect(reopened.queryByRole("alert")).toBeNull();
-  expect((reopened.getByLabelText("Review summary") as HTMLTextAreaElement).value).toBe(
-    "Needs work",
-  );
+  expect(
+    (sourceTextbox(reopened.getByLabelText("Review summary")) as HTMLTextAreaElement).value,
+  ).toBe("Needs work");
   slot.lifecycle.unmount();
 });
 
@@ -1197,3 +1230,17 @@ test("a URL that names no pull request offers the way back", async () => {
   ]);
   slot.lifecycle.unmount();
 });
+
+// Existing draft/save scenarios use the optional source editor explicitly.
+function sourceTextbox(element: HTMLElement): HTMLElement {
+  if (!element.matches(".tiptap")) return element;
+  const wrapper = element.closest(".bb-markdown-editor");
+  const button = [...(wrapper?.querySelectorAll("button") ?? [])].find(
+    (candidate) => candidate.textContent === "Markdown source",
+  );
+  if (!button) throw new Error("Markdown editor has no source control");
+  fireEvent.click(button);
+  const source = wrapper?.querySelector<HTMLElement>("textarea[data-markdown-source]");
+  if (!source) throw new Error("Source mode did not open");
+  return source;
+}

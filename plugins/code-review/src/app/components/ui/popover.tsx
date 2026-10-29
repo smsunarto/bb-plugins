@@ -98,7 +98,7 @@ const PopoverContent = React.forwardRef<
     mobileTitle?: string;
     mobileClassName?: string;
     onMobileContentAnimationEnd?: (open: boolean) => void;
-    autoFocusRef?: React.RefObject<HTMLElement | null>;
+    autoFocusRef?: React.RefObject<{ focus(): void } | null>;
   }
 >(
   (

@@ -1,3 +1,4 @@
+import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { useBbNavigate, type PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
@@ -282,15 +283,14 @@ function LoadedDocumentEditor({
           reload();
         }}
       />
-      <textarea
+      <MarkdownEditor
         aria-label={file.path}
-        spellCheck={false}
         readOnly={!!stored.readOnly}
         value={content}
         className="min-h-48 w-full min-w-0 flex-1 resize-none rounded-md border border-input bg-background p-3 font-mono text-sm"
-        onChange={(event) =>
+        onChange={(content) =>
           setDraft(key, {
-            content: event.target.value,
+            content,
             sha256: draft ? draft.sha256 : stored.sha256,
           })
         }

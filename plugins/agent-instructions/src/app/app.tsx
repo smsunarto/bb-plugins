@@ -1,3 +1,4 @@
+import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { DocumentsPage, DocumentsTab } from "../documents/app.tsx";
 import { definePluginApp, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
@@ -7,7 +8,6 @@ import { useId, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "../../components/ui/button.tsx";
 import { Input } from "../../components/ui/input.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
-import { Textarea } from "../../components/ui/textarea.tsx";
 import {
   ANYWHERE,
   newRuleId,
@@ -196,13 +196,13 @@ export function RuleCard({
           onChange={(when) => onChange({ ...rule, when })}
         />
       )}
-      <Textarea
+      <MarkdownEditor
         aria-label={`${label} instructions`}
         value={rule.instructions}
         maxLength={MAX_INSTRUCTIONS_LENGTH}
         placeholder="Instructions for agents this rule applies to…"
         className="min-h-24 resize-y bg-background text-sm"
-        onChange={(event) => onChange({ ...rule, instructions: event.target.value })}
+        onChange={(instructions) => onChange({ ...rule, instructions })}
       />
     </div>
   );

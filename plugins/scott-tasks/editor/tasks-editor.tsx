@@ -1,5 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { Editor, isNodeSelection, type ChainedCommands } from "@tiptap/core";
+import {
+  createMarkdownEditor,
+  sourceModeReason,
+  type MarkdownSession,
+} from "@bb-plugins/markdown-editor/engine";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Editor, isNodeSelection, type EditorOptions, type ChainedCommands } from "@tiptap/core";
 import { BubbleMenuPlugin } from "@tiptap/extension-bubble-menu";
 import type { IconSvgElement } from "@hugeicons/react";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -202,6 +207,7 @@ interface TasksEditorProps {
   onSubmit?: () => void;
   onEditorReady?: (editor: Editor) => void;
   className?: string;
+  markdownDocument?: boolean;
 }
 
 export function TasksEditor({
@@ -217,11 +223,27 @@ export function TasksEditor({
   onSubmit,
   onEditorReady,
   className,
+  markdownDocument = false,
 }: TasksEditorProps) {
+  const isDocument = variant === "doc" || markdownDocument;
+  const [inspected, setInspected] = useState(() => ({
+    value,
+    reason: isDocument ? sourceModeReason(value) : null,
+  }));
+  if (isDocument && inspected.value !== value)
+    setInspected({ value, reason: sourceModeReason(value) });
+  const reason = inspected.value === value ? inspected.reason : null;
+  const [source, setSource] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<Editor | null>(null);
+  const markdownRef = useRef<MarkdownSession | null>(null);
+  const presentation = useRef({ source, reason });
+  useLayoutEffect(() => {
+    presentation.current = { source, reason };
+    if (source || reason) editorRef.current?.commands.blur();
+  }, [source, reason]);
   const lastMarkdownRef = useRef(value);
   const changeRef = useRef(onChange);
   changeRef.current = onChange;
@@ -311,7 +333,7 @@ export function TasksEditor({
         return false;
       },
     };
-    editor = new Editor({
+    const options: Partial<EditorOptions> = {
       element: rootRef.current,
       editable: !readOnly,
       extensions: createEditorExtensions({
@@ -369,8 +391,14 @@ export function TasksEditor({
           return true;
         },
       },
-    });
+    };
+    const created = isDocument
+      ? createMarkdownEditor({ ...options, value: initialValueRef.current })
+      : { editor: new Editor(options), session: null };
+    editor = created.editor;
     editorRef.current = editor;
+    const markdownSession = created.session;
+    markdownRef.current = markdownSession;
     if (!readOnly) {
       const last = editor.state.doc.lastChild;
       const paragraph = editor.state.schema.nodes.paragraph;
@@ -396,7 +424,13 @@ export function TasksEditor({
           },
           shouldShow: ({ editor: bubbleEditor, state, from, to }) => {
             const { selection } = state;
-            if (!bubbleEditor.isEditable || selection.empty) return false;
+            if (
+              presentation.current.source ||
+              presentation.current.reason ||
+              !bubbleEditor.isEditable ||
+              selection.empty
+            )
+              return false;
             if (isNodeSelection(selection)) return false;
             return state.doc.textBetween(from, to).trim().length > 0;
           },
@@ -404,8 +438,11 @@ export function TasksEditor({
       );
     }
     editor.on("update", () => {
-      const markdown = editor.storage.markdown.getMarkdown() as string;
+      const markdown = markdownSession
+        ? markdownSession.getMarkdown()
+        : editor.storage.markdown.getMarkdown();
       lastMarkdownRef.current = markdown;
+      if (isDocument) setInspected({ value: markdown, reason: null });
       changeRef.current(markdown);
     });
     editor.on("transaction", () => setRevision((current) => current + 1));
@@ -427,15 +464,17 @@ export function TasksEditor({
       setMentionRef.current(null);
       editor.destroy();
     };
-  }, [readOnly, variant]);
+  }, [readOnly, variant, isDocument]);
 
   useEffect(() => {
     initialValueRef.current = value;
     const editor = editorRef.current;
     if (!editor || value === lastMarkdownRef.current) return;
     lastMarkdownRef.current = value;
-    editor.commands.setContent(value, false);
-  }, [value]);
+    if (isDocument) {
+      markdownRef.current?.load(value);
+    } else editor.commands.setContent(value, false);
+  }, [value, isDocument]);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -495,39 +534,86 @@ export function TasksEditor({
       data-variant={variant}
       onMouseDown={variant === "doc" ? focusOnEmptyMouseDown : undefined}
     >
+      {isDocument && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          <button
+            type="button"
+            disabled={!!reason}
+            aria-pressed={!source && !reason}
+            onClick={() => setSource(false)}
+          >
+            Rich text
+          </button>
+          <button
+            type="button"
+            aria-pressed={source || !!reason}
+            onClick={() => {
+              setInspected({ value, reason: sourceModeReason(value) });
+              setSource(true);
+            }}
+          >
+            Markdown source
+          </button>
+        </div>
+      )}
+      {reason && <p className="text-xs text-muted-foreground">{reason}</p>}
+      {isDocument && (source || reason) && (
+        <textarea
+          aria-label="Description Markdown source"
+          className="min-h-24 w-full bg-background p-2 font-mono text-sm"
+          readOnly={readOnly}
+          value={value}
+          onChange={(event) => {
+            setSource(true);
+            onChange(
+              value.includes("\r\n")
+                ? event.target.value.replace(/\r?\n/g, "\r\n")
+                : event.target.value,
+            );
+          }}
+        />
+      )}
       {variant === "doc" && !readOnly ? (
-        <div
-          ref={bubbleRef}
-          role="toolbar"
-          aria-label="Formatting"
-          style={{ visibility: "hidden" }}
-          className="flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-md"
-        >
-          {BUBBLE_ACTIONS.map((action) => (
-            <Button
-              key={action.id}
-              type="button"
-              size="icon"
-              variant="ghost"
-              aria-label={action.label}
-              aria-pressed={editor ? action.isActive(editor) : false}
-              className={cn(
-                "size-7 text-muted-foreground",
-                editor && action.isActive(editor) ? "bg-accent text-accent-foreground" : undefined,
-              )}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                const current = editorRef.current;
-                if (!current) return;
-                action.run(current.chain().focus()).run();
-              }}
-            >
-              <HugeiconsIcon icon={action.icon} className="size-4" />
-            </Button>
-          ))}
+        <div className="contents">
+          <div
+            ref={bubbleRef}
+            role="toolbar"
+            aria-label="Formatting"
+            style={{ visibility: "hidden" }}
+            className="flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-md"
+          >
+            {BUBBLE_ACTIONS.map((action) => (
+              <Button
+                key={action.id}
+                type="button"
+                size="icon"
+                variant="ghost"
+                aria-label={action.label}
+                aria-pressed={editor ? action.isActive(editor) : false}
+                className={cn(
+                  "size-7 text-muted-foreground",
+                  editor && action.isActive(editor)
+                    ? "bg-accent text-accent-foreground"
+                    : undefined,
+                )}
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  const current = editorRef.current;
+                  if (!current) return;
+                  action.run(current.chain().focus()).run();
+                }}
+              >
+                <HugeiconsIcon icon={action.icon} className="size-4" />
+              </Button>
+            ))}
+          </div>
         </div>
       ) : null}
-      <div ref={rootRef} className="bb-tasks-editor-surface min-w-0" />
+      <div
+        ref={rootRef}
+        className="bb-tasks-editor-surface min-w-0"
+        hidden={isDocument && (source || !!reason)}
+      />
       {mention && mention.items.length > 0 ? (
         <div
           role="listbox"

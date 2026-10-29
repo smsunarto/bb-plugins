@@ -185,7 +185,7 @@ export function loadMarkdownBlocks(
 }
 
 export function saveMarkdownBlocks(
-  editor: Editor,
+  editor: { state: { doc: ProseMirrorNode } },
   loaded: MarkdownBlocks,
   serialize: (nodes: ProseMirrorNode[]) => string,
 ): string {
@@ -202,32 +202,58 @@ export function saveMarkdownBlocks(
     if (edited.length) parts.push({ text: serialize(edited).replace(/\n+$/, "") });
     edited = [];
   };
-  for (let index = 0; index < children.length;) {
-    const block = owner.get(children[index]!);
-    const nodes = block === undefined ? [] : blocks[block]!.nodes;
-    if (block !== undefined && nodes.every((node, offset) => children[index + offset] === node)) {
-      flush();
-      parts.push({ text: blocks[block]!.source, block });
-      index += nodes.length;
-    } else edited.push(children[index++]!);
-  }
-  flush();
   const nextShown = (from: number) => {
     let next = from + 1;
     while (blocks[next] && !blocks[next]!.nodes.length) next++;
     return next;
   };
+  let expected = nextShown(-1);
+  const liveNodes = new Set(children);
+  const reused = new Set<number>();
+  for (let index = 0; index < children.length;) {
+    const block =
+      owner.get(children[index]!) ??
+      blocks.findIndex(
+        (candidate, candidateIndex) =>
+          candidateIndex === expected &&
+          !reused.has(candidateIndex) &&
+          !candidate.nodes.some((node) => liveNodes.has(node)) &&
+          candidate.nodes.length > 0 &&
+          candidate.nodes.every((node, offset) => children[index + offset]?.eq(node)),
+      );
+    const matched = block === -1 ? undefined : block;
+    const nodes = matched === undefined ? [] : blocks[matched]!.nodes;
+    if (
+      matched !== undefined &&
+      nodes.every((node, offset) => children[index + offset]?.eq(node))
+    ) {
+      flush();
+      reused.add(matched);
+      expected = nextShown(matched);
+      parts.push({ text: blocks[matched]!.source, block: matched });
+      index += nodes.length;
+    } else edited.push(children[index++]!);
+  }
+  flush();
+  const emittedHidden = new Set<number>();
+  const hiddenText = (index: number, withSpacing: boolean) => {
+    if (emittedHidden.has(index)) return "";
+    emittedHidden.add(index);
+    const block = blocks[index]!;
+    return block.source + (withSpacing ? block.after : "");
+  };
   const between = (from: number, to: number) =>
     (from < 0 ? "" : blocks[from]!.after) +
     blocks
       .slice(from + 1, to)
-      .map((block) => block.source + block.after)
+      .map((block, offset) =>
+        block.nodes.length ? block.source + block.after : hiddenText(from + 1 + offset, true),
+      )
       .join("");
   const hidden = (from: number, to: number) =>
     blocks
       .slice(from + 1, to)
-      .filter((block) => !block.nodes.length)
-      .map((block) => block.source);
+      .map((block, offset) => (block.nodes.length ? "" : hiddenText(from + 1 + offset, false)));
   let out = loaded.leading;
   const append = (text: string) => {
     if (text) out += (out.trim() ? "\n\n" : "") + text;

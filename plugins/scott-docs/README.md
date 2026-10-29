@@ -17,6 +17,8 @@ it is enabled.
 
 Forked from [`get-bb/bb/plugins/docs`](https://github.com/get-bb/bb/tree/desktop-v0.44.0/plugins/docs).
 Last synced with upstream `main` at `3bacfac9ed69d42392076e5b3da2815bec822cd8` on 2026-10-29.
+
+The shared editor engine, block preservation, frontmatter parsing, and raw HTML extensions now live in `packages/markdown-editor/src/` (`engine.ts`, `markdown-blocks.ts`, `markdown-document.ts`, `raw-html.ts`). When syncing upstream editor changes in `app.tsx`, port those mechanisms there; keep previews, asset uploads, HTML embeds, and proposal adapters in Docs.
 The fork retains its explicit host routing, native host watchers, Trees navigation,
 and Monokai Markdown presentation. Upstream live reads now share document updates,
 keep typing stable across saves and preview renewal, and offer Keep mine / Use theirs

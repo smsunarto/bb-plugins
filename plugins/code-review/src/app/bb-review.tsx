@@ -1,3 +1,4 @@
+import { MarkdownEditor, type MarkdownEditorHandle } from "@bb-plugins/markdown-editor";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
@@ -38,7 +39,6 @@ import {
 } from "./components/ui/dialog.tsx";
 import { CONTROL_HOVER_TRANSITION } from "./components/ui/motion.ts";
 import { Skeleton } from "./components/ui/skeleton.tsx";
-import { Textarea } from "./components/ui/textarea.tsx";
 import { FindingCard, REVEAL_EVENT, sortFindings } from "./finding.tsx";
 import type { RevealDetail } from "./finding.tsx";
 import { PANEL_PATH, plural, relativeTime, shortSha } from "./format.ts";
@@ -304,7 +304,7 @@ function InstructionsForm({ onDone }: { onDone: () => void }) {
 
 function InstructionsEditor({ initial, onDone }: { initial: string; onDone: () => void }) {
   const [text, setText] = useState(initial);
-  const field = useRef<HTMLTextAreaElement>(null);
+  const field = useRef<MarkdownEditorHandle>(null);
   // The text arrives after the dialog has placed focus, so it is moved here.
   useEffect(() => field.current?.focus(), []);
   const save = useRpcMutation("setReviewInstructions", {
@@ -321,7 +321,7 @@ function InstructionsEditor({ initial, onDone }: { initial: string; onDone: () =
   };
   return (
     <form className="flex flex-col gap-3" onSubmit={submit}>
-      <Textarea
+      <MarkdownEditor
         ref={field}
         aria-label="Review instructions"
         className="h-56 resize-y font-mono text-xs leading-relaxed"
@@ -330,9 +330,12 @@ function InstructionsEditor({ initial, onDone }: { initial: string; onDone: () =
         }
         value={text}
         maxLength={INSTRUCTIONS_MAX}
-        onChange={(event) => setText(event.target.value)}
+        onChange={setText}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit();
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            submit();
+          }
         }}
       />
       {save.isError ? <Notice tone="error">{errorText(save.error)}</Notice> : null}

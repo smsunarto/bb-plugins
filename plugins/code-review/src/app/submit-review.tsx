@@ -1,3 +1,4 @@
+import { MarkdownEditor, type MarkdownEditorHandle } from "@bb-plugins/markdown-editor";
 import { useEffect, useId, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { UrlLink, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
@@ -7,7 +8,6 @@ import type { MutationKey } from "@tanstack/react-query";
 import type { PullRequest, ReviewEvent } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.tsx";
-import { Textarea } from "./components/ui/textarea.tsx";
 import { plural } from "./format.ts";
 import { cn } from "./lib/utils.ts";
 import { Notice, errorText } from "./notice.tsx";
@@ -152,7 +152,7 @@ export function SubmitReviewButton({ pr }: { pr: PullRequest }) {
       changeOpen(false);
     },
   });
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<MarkdownEditorHandle>(null);
   const titleId = useId();
   const drafts = pr.pendingReview?.draftCount ?? 0;
 
@@ -250,7 +250,7 @@ function ReviewForm({
   event: ReviewEvent;
   submit: SubmitMutation;
   discard: DiscardMutation;
-  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  textareaRef: RefObject<MarkdownEditorHandle | null>;
   onBodyChange: (body: string) => void;
   onEventChange: (event: ReviewEvent) => void;
 }) {
@@ -300,17 +300,17 @@ function ReviewForm({
         <label htmlFor={bodyId} className="sr-only">
           Review summary
         </label>
-        <Textarea
+        <MarkdownEditor
+          aria-label="Review summary"
           ref={textareaRef}
           id={bodyId}
           value={body}
           readOnly={reviewInFlight(keys)}
-          rows={4}
           placeholder="Leave a comment"
           className="min-h-20 resize-y text-xs"
           aria-describedby={empty ? hintId : undefined}
           aria-keyshortcuts="Meta+Enter Control+Enter"
-          onChange={(change) => onBodyChange(change.target.value)}
+          onChange={onBodyChange}
           onKeyDown={(key) => {
             if (key.key === "Enter" && (key.metaKey || key.ctrlKey)) {
               key.preventDefault();

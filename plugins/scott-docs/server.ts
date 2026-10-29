@@ -2,7 +2,7 @@ import { proposalSchema, type Proposal } from "./proposals.js";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { isRecord, parseMarkdownDocument } from "./markdown-document.js";
+import { isRecord, parseMarkdownDocument } from "@bb-plugins/markdown-editor/markdown-document";
 import { DOCS_PATH_LIST_LIMIT, docsHostContract, docsHostSignals } from "./host-contract.js";
 import { isExcludedDocsPath } from "./path-policy.js";
 import {

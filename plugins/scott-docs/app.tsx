@@ -1,4 +1,10 @@
 import {
+  createMarkdownEditor,
+  markdownExtensions,
+  type MarkdownSession,
+} from "@bb-plugins/markdown-editor/engine";
+import "./editor.css";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -39,21 +45,12 @@ import type { Proposal } from "./proposals.js";
 import { Icon } from "@/components/ui/icon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { docsRpcContract, errorMessage } from "./contract.js";
-import { documentHeading, isRecord, parseMarkdownDocument } from "./markdown-document.js";
-import { Editor, Extension, InputRule, Node, mergeAttributes } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
-import Link from "@tiptap/extension-link";
-import Image from "@tiptap/extension-image";
-import TaskList from "@tiptap/extension-task-list";
-import TaskItem from "@tiptap/extension-task-item";
-import Placeholder from "@tiptap/extension-placeholder";
-import Table from "@tiptap/extension-table";
-import TableCell from "@tiptap/extension-table-cell";
-import TableHeader from "@tiptap/extension-table-header";
-import TableRow from "@tiptap/extension-table-row";
-import { Markdown } from "tiptap-markdown";
-import { loadMarkdownBlocks, saveMarkdownBlocks, type MarkdownBlocks } from "./markdown-blocks.js";
-import { HtmlBlock, HtmlSource } from "./raw-html.js";
+import {
+  documentHeading,
+  isRecord,
+  parseMarkdownDocument,
+} from "@bb-plugins/markdown-editor/markdown-document";
+import { Editor, Node, mergeAttributes } from "@tiptap/core";
 import { preparePresortedFileTreeInput } from "@pierre/trees";
 import { FileTree as PierreFileTree, useFileTree } from "@pierre/trees/react";
 import { toast } from "sonner";
@@ -272,63 +269,6 @@ const HtmlEmbed = Node.create<HtmlEmbedOptions>({
   },
 });
 
-const MarkdownTaskInput = Extension.create({
-  name: "markdownTaskInput",
-  priority: 200,
-  addInputRules() {
-    return [
-      new InputRule({
-        find: /^\s*\[([ xX]?)\]\s$/,
-        handler: ({ range, match, chain }) => {
-          const commands = chain().deleteRange(range).toggleTaskList();
-          if (/[xX]/.test(match[1] ?? "")) commands.updateAttributes("taskItem", { checked: true });
-          commands.run();
-        },
-      }),
-    ];
-  },
-});
-
-const STYLE_MARKER = "data-bb-simple-notes-styles";
-const EDITOR_CSS = `
-/* Editing mechanics stay here. Markdown presentation follows BB's agent stream. */
-.bb-simple-notes-editor { container-type: inline-size; }
-.bb-simple-notes-editor .tiptap { outline: none; width: 100%; max-width: 700px; box-sizing: border-box; margin: 0 auto; padding: 48px clamp(24px, 4vw, 56px) 40vh; caret-color: var(--foreground); }
-.bb-simple-notes-editor[data-inline="true"] .tiptap { padding: 1.25rem 1.5rem; max-width: none; min-height: 8rem; }
-.bb-simple-notes-editor .tiptap a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 0.125em; }
-.bb-simple-notes-editor .tiptap pre:has(> code:is(.language-diagram, .language-patch)) { line-height: 1.3; }
-.bb-simple-notes-editor .tiptap .tableWrapper { overflow-x: auto; }
-.bb-simple-notes-editor .tiptap :is(th, td) { position: relative; min-width: 6rem; }
-.bb-simple-notes-editor .tiptap .selectedCell::after { position: absolute; inset: 0; z-index: 2; pointer-events: none; content: ""; background: color-mix(in oklab, var(--primary) 14%, transparent); }
-.bb-simple-notes-editor .tiptap .column-resize-handle { position: absolute; top: 0; right: -2px; bottom: -1px; width: 4px; z-index: 3; pointer-events: none; background: var(--primary); }
-.bb-simple-notes-editor .tiptap.resize-cursor { cursor: col-resize; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] { list-style: none; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li { display: flex; align-items: flex-start; gap: 0.5em; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > label { flex: 0 0 auto; display: inline-flex; align-items: center; height: 1.625em; user-select: none; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div { flex: 1 1 auto; min-width: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] li > div > p { margin: 0; }
-.bb-simple-notes-editor .tiptap ul[data-type="taskList"] input[type="checkbox"] { display: block; width: 14px; height: 14px; accent-color: var(--primary); cursor: pointer; margin: 0; }
-.bb-simple-notes-editor .tiptap p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: var(--muted-foreground); }
-.bb-simple-notes-editor .tiptap ::selection { background: var(--muted); }
-.simple-html-embed { margin:1.75rem 0; overflow:hidden; border:1px solid var(--border); border-radius:4px; background:var(--surface-recessed, var(--secondary)); }
-.simple-html-embed-header { border-bottom:1px solid var(--border); background:var(--secondary); padding:.45rem .7rem; color:var(--muted-foreground); font:11px var(--font-mono,monospace); }
-.simple-html-embed iframe { display:block; width:100%; border:0; background:white; }
-.bb-docs-panel .tiptap { max-width: none; padding: 1rem 0 3rem; }
-@media (max-width: 47.999rem) { .bb-simple-notes-editor .tiptap { padding-inline: 1.25rem; } }
-`;
-
-function ensureEditorStyles(): void {
-  const existing = document.head.querySelector<HTMLStyleElement>(`[${STYLE_MARKER}]`);
-  if (existing) {
-    existing.textContent = EDITOR_CSS;
-    return;
-  }
-  const style = document.createElement("style");
-  style.setAttribute(STYLE_MARKER, "");
-  style.textContent = EDITOR_CSS;
-  document.head.append(style);
-}
-
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -365,7 +305,7 @@ function TiptapEditor(props: {
   const editorRef = useRef<Editor | null>(null);
   const baselineRef = useRef<ProseMirrorNode | null>(null);
   const sourceRef = useRef(value);
-  const blocksRef = useRef<MarkdownBlocks | null>(null);
+  const sessionRef = useRef<MarkdownSession | null>(null);
   const previewRef = useRef<PreviewContext>({
     baseUrl: previewBaseUrl,
     notePath,
@@ -373,7 +313,6 @@ function TiptapEditor(props: {
   const latest = useRef(props);
   latest.current = props;
   const serializeRef = useRef<() => string>(() => "");
-  const serializeBlockRef = useRef<(nodes: ProseMirrorNode[]) => string>(() => "");
   const display = (source: string) =>
     displayMarkdown(source, previewRef.current.baseUrl, previewRef.current.notePath);
   const setBase = (editor: Editor) => {
@@ -390,10 +329,8 @@ function TiptapEditor(props: {
   };
 
   useEffect(() => {
-    ensureEditorStyles();
     if (!rootRef.current) return;
     sourceRef.current = latest.current.value;
-    const markdownDocument = parseMarkdownDocument(sourceRef.current);
     let editor: Editor;
     const upload = async (file: File) => {
       if (!file.type.startsWith("image/")) return false;
@@ -412,30 +349,16 @@ function TiptapEditor(props: {
         .run();
       return true;
     };
-    editor = new Editor({
+    const created = createMarkdownEditor({
+      value: sourceRef.current,
+      transformIn: display,
+      transformOut: (source) =>
+        storedMarkdown(source, previewRef.current.baseUrl, previewRef.current.notePath),
       element: rootRef.current,
       extensions: [
-        StarterKit,
+        ...markdownExtensions(),
         createProposalDiff({ getBaseDocument: () => baselineRef.current }),
-        Link.configure({ openOnClick: false, autolink: true }),
-        Image.configure({ allowBase64: false }),
-        TaskList,
-        TaskItem.configure({ nested: true }),
-        Table.configure({ resizable: true, lastColumnResizable: false }),
-        TableRow,
-        TableHeader,
-        TableCell,
-        MarkdownTaskInput,
-        HtmlBlock,
-        HtmlSource,
         HtmlEmbed.configure({ preview: previewRef.current }),
-        Placeholder.configure({ placeholder: "Start writing…" }),
-        Markdown.configure({
-          html: true,
-          tightLists: true,
-          bulletListMarker: "-",
-          linkify: true,
-        }),
       ],
       content: "",
       editable: !latest.current.disabled,
@@ -470,20 +393,12 @@ function TiptapEditor(props: {
         },
       },
     });
+    editor = created.editor;
     editorRef.current = editor;
-    blocksRef.current = loadMarkdownBlocks(editor, markdownDocument.body, display, false);
+    sessionRef.current = created.session;
     setBase(editor);
-    const serializeNodes = (nodes: ProseMirrorNode[]) =>
-      storedMarkdown(
-        editor.storage.markdown.serializer.serialize(editor.schema.topNodeType.create(null, nodes)),
-        previewRef.current.baseUrl,
-        previewRef.current.notePath,
-      );
-    const getMarkdown = () =>
-      parseMarkdownDocument(sourceRef.current).frontmatter +
-      saveMarkdownBlocks(editor, blocksRef.current!, serializeNodes);
+    const getMarkdown = () => created.session.getMarkdown();
     serializeRef.current = getMarkdown;
-    serializeBlockRef.current = serializeNodes;
     editor.on("update", () => latest.current.onMarkdownChange(getMarkdown()));
     return () => {
       editor.destroy();
@@ -501,17 +416,7 @@ function TiptapEditor(props: {
     preview.notePath = notePath;
     if (!editor) return;
     if (previewChanged || (value !== sourceRef.current && value !== serializeRef.current())) {
-      blocksRef.current = loadMarkdownBlocks(
-        editor,
-        parseMarkdownDocument(value).body,
-        display,
-        false,
-        blocksRef.current && {
-          loaded: blocksRef.current,
-          serialize: serializeBlockRef.current,
-          refreshMedia: previewChanged,
-        },
-      );
+      sessionRef.current?.load(value, previewChanged);
     }
     sourceRef.current = value;
     // oxlint-disable-next-line react/exhaustive-deps

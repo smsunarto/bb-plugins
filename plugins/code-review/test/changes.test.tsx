@@ -535,7 +535,7 @@ test("a reply on an outdated thread goes into the pending review", async () => {
 
   const outdated = within(slot.getByRole("region", { name: "Comment thread, line 9" }));
   fireEvent.click(outdated.getByRole("button", { name: "Reply…" }));
-  const reply = outdated.getByRole("textbox", { name: "Reply" });
+  const reply = sourceTextbox(outdated.getByRole("textbox", { name: "Reply" }));
   fireEvent.change(reply, { target: { value: "  Still true after the push.  " } });
   fireEvent.keyDown(reply, { key: "Enter", ctrlKey: true });
 
@@ -583,11 +583,13 @@ test("a failed draft edit reopens with the text that was not saved", async () =>
   ).render();
   fireEvent.click(await slot.findByRole("button", { name: "1 outdated comment" }));
   fireEvent.click(await slot.findByRole("button", { name: "Edit draft comment" }));
-  const box = slot.getByRole("textbox", { name: "Edit draft comment" });
+  const box = sourceTextbox(slot.getByRole("textbox", { name: "Edit draft comment" }));
   fireEvent.change(box, { target: { value: "My better wording" } });
   fireEvent.click(slot.getByRole("button", { name: "Save" }));
 
-  const reopened = await slot.findByRole("textbox", { name: "Edit draft comment" });
+  const reopened = await slot
+    .findByRole("textbox", { name: "Edit draft comment" })
+    .then(sourceTextbox);
   await waitFor(() => expect((reopened as HTMLTextAreaElement).value).toBe("My better wording"));
   expect(slot.getAllByText(/GitHub refused the edit/).length).toBeGreaterThan(0);
   slot.lifecycle.unmount();
@@ -945,7 +947,9 @@ test("a new comment on a range is one addDraftComment, then the form reports the
   );
   const slot = renderSlot({ component: Form }, {}, { rpc: handlers(calls) as never });
 
-  const box = slot.getByRole("textbox", { name: "Comment on lines 2 (base) to 5 of src/login.ts" });
+  const box = sourceTextbox(
+    slot.getByRole("textbox", { name: "Comment on lines 2 (base) to 5 of src/login.ts" }),
+  );
   const submit = slot.getByRole("button", { name: "Add review comment" }) as HTMLButtonElement;
   expect(submit.disabled).toBe(true);
   fireEvent.change(box, { target: { value: "  Needs a test  " } });
@@ -1020,7 +1024,9 @@ test("comment text typed as one account does not open in the form of another", (
   );
   const name = "Comment on line 5 of src/login.ts";
   const typed = renderSlot({ component: () => <Form account="scott" /> }, {}, { rpc: {} as never });
-  fireEvent.change(typed.getByRole("textbox", { name }), { target: { value: "Needs a test" } });
+  fireEvent.change(sourceTextbox(typed.getByRole("textbox", { name })), {
+    target: { value: "Needs a test" },
+  });
   typed.lifecycle.unmount();
 
   const other = renderSlot(
@@ -1028,10 +1034,28 @@ test("comment text typed as one account does not open in the form of another", (
     {},
     { rpc: {} as never },
   );
-  expect((other.getByRole("textbox", { name }) as HTMLTextAreaElement).value).toBe("");
+  expect((sourceTextbox(other.getByRole("textbox", { name })) as HTMLTextAreaElement).value).toBe(
+    "",
+  );
   other.lifecycle.unmount();
 
   const again = renderSlot({ component: () => <Form account="Scott" /> }, {}, { rpc: {} as never });
-  expect((again.getByRole("textbox", { name }) as HTMLTextAreaElement).value).toBe("Needs a test");
+  expect((sourceTextbox(again.getByRole("textbox", { name })) as HTMLTextAreaElement).value).toBe(
+    "Needs a test",
+  );
   again.lifecycle.unmount();
 });
+
+// Existing draft/save scenarios use the optional source editor explicitly.
+function sourceTextbox(element: HTMLElement): HTMLElement {
+  if (!element.matches(".tiptap")) return element;
+  const wrapper = element.closest(".bb-markdown-editor");
+  const button = [...(wrapper?.querySelectorAll("button") ?? [])].find(
+    (candidate) => candidate.textContent === "Markdown source",
+  );
+  if (!button) throw new Error("Markdown editor has no source control");
+  fireEvent.click(button);
+  const source = wrapper?.querySelector<HTMLElement>("textarea[data-markdown-source]");
+  if (!source) throw new Error("Source mode did not open");
+  return source;
+}

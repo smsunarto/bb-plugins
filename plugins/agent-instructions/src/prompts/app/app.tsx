@@ -1,3 +1,4 @@
+import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
@@ -445,26 +446,47 @@ function FileEditor(props: {
         result={save.data ?? null}
         moved={moved ? file.path : null}
       />
-      <textarea
-        className="pe-textarea"
-        aria-label={file.path}
-        spellCheck={false}
-        readOnly={readOnly !== null}
-        value={value}
-        onChange={(event) => {
-          const text = event.target.value;
-          onDraft((current) => {
-            const base = current?.base ?? loaded.data.content;
-            return text === base ? undefined : { base, text };
-          });
-        }}
-        onKeyDown={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === "s") {
-            event.preventDefault();
-            submit();
-          }
-        }}
-      />
+      {/\.(md|markdown)$/i.test(file.path) ? (
+        <MarkdownEditor
+          className="pe-textarea"
+          aria-label={file.path}
+          readOnly={readOnly !== null}
+          value={value}
+          onChange={(text) => {
+            onDraft((current) => {
+              const base = current?.base ?? loaded.data.content;
+              return text === base ? undefined : { base, text };
+            });
+          }}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+              event.preventDefault();
+              submit();
+            }
+          }}
+        />
+      ) : (
+        <textarea
+          className="pe-textarea"
+          aria-label={file.path}
+          spellCheck={false}
+          readOnly={readOnly !== null}
+          value={value}
+          onChange={(event) => {
+            const text = event.target.value;
+            onDraft((current) => {
+              const base = current?.base ?? loaded.data.content;
+              return text === base ? undefined : { base, text };
+            });
+          }}
+          onKeyDown={(event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+              event.preventDefault();
+              submit();
+            }
+          }}
+        />
+      )}
       <Footer chars={chars} over={over} loaded={loaded.data} />
     </div>
   );

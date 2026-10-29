@@ -111,6 +111,7 @@
     "cmdk": "^1.1.1",
     "tiptap-markdown": "^0.8.10",
     "zod": "^4.3.6",
-    "zustand": "^5.0.16"
+    "zustand": "^5.0.16",
+    "@bb-plugins/markdown-editor": "workspace:*"
   }
 }

@@ -48,7 +48,7 @@ const rule: Rule & { dangerous: boolean } = {
 
 async function mount(
   saveRule = vi.fn(async (_input: unknown) => ({ rule })),
-  displayedRule = rule,
+  _displayedRule = rule,
 ) {
   const app = await loadPluginApp(() => import("../app"));
   const slot = renderSlot(
@@ -70,7 +70,7 @@ async function mount(
 it("saves an instructions edit without replacing a disabled rule's execution settings", async () => {
   const { slot, saveRule } = await mount();
   expect(slot.queryByRole("button", { name: /submit/i })).toBeNull();
-  fireEvent.change(slot.getByLabelText("Review instructions"), {
+  fireEvent.change(sourceTextbox(slot.getByLabelText("Review instructions")), {
     target: { value: "Check failure handling." },
   });
   fireEvent.click(slot.getByRole("button", { name: "Save rule" }));
@@ -91,23 +91,31 @@ it("saves an instructions edit without replacing a disabled rule's execution set
 
 it("cancels without saving the draft", async () => {
   const { slot, saveRule } = await mount();
-  fireEvent.change(slot.getByLabelText("Review instructions"), { target: { value: "Unsaved" } });
+  fireEvent.change(sourceTextbox(slot.getByLabelText("Review instructions")), {
+    target: { value: "Unsaved" },
+  });
   fireEvent.click(slot.getByRole("button", { name: "Cancel" }));
   expect(saveRule).not.toHaveBeenCalled();
   fireEvent.click(await slot.findByText("Review checkout"));
-  expect(slot.getByLabelText("Review instructions")).toHaveProperty("value", rule.prompt);
+  expect(sourceTextbox(slot.getByLabelText("Review instructions"))).toHaveProperty(
+    "value",
+    rule.prompt,
+  );
 });
 
 it("keeps the draft and exposes a retry when saving fails", async () => {
   const saveRule = vi.fn().mockRejectedValue(new Error("Server unavailable"));
   const { slot } = await mount(saveRule);
-  fireEvent.change(slot.getByLabelText("Review instructions"), {
+  fireEvent.change(sourceTextbox(slot.getByLabelText("Review instructions")), {
     target: { value: "Keep this draft" },
   });
   fireEvent.click(slot.getByRole("button", { name: "Save rule" }));
   await slot.findByRole("alert");
   await slot.findByText("Server unavailable");
-  expect(slot.getByLabelText("Review instructions")).toHaveProperty("value", "Keep this draft");
+  expect(sourceTextbox(slot.getByLabelText("Review instructions"))).toHaveProperty(
+    "value",
+    "Keep this draft",
+  );
   await waitFor(() =>
     expect(slot.getByRole("button", { name: "Save rule" })).not.toHaveProperty("disabled", true),
   );
@@ -117,7 +125,7 @@ it("requires saving changed settings before running a test", async () => {
   const { slot } = await mount();
   const summary = slot.getByText("Test this rule");
   fireEvent.click(summary);
-  fireEvent.change(slot.getByLabelText("Review instructions"), {
+  fireEvent.change(sourceTextbox(slot.getByLabelText("Review instructions")), {
     target: { value: "Unsaved behavior" },
   });
   expect(slot.getByText("Save your changes before testing this rule.")).toBeTruthy();
@@ -126,7 +134,7 @@ it("requires saving changed settings before running a test", async () => {
 
 it("restores an unsaved draft when the host remounts the panel", async () => {
   const { slot } = await mount();
-  fireEvent.change(slot.getByLabelText("Review instructions"), {
+  fireEvent.change(sourceTextbox(slot.getByLabelText("Review instructions")), {
     target: { value: "Survives mobile layout" },
   });
   slot.lifecycle.unmount();
@@ -142,7 +150,7 @@ it("restores an unsaved draft when the host remounts the panel", async () => {
       },
     },
   );
-  expect(restored.getByLabelText("Review instructions")).toHaveProperty(
+  expect(sourceTextbox(restored.getByLabelText("Review instructions"))).toHaveProperty(
     "value",
     "Survives mobile layout",
   );
@@ -163,7 +171,7 @@ it("does not mark reordered saved filters as unsaved changes", async () => {
 
 it("shows actionable inline validation instead of internal error codes", async () => {
   const { slot, saveRule } = await mount();
-  fireEvent.change(slot.getByLabelText("Rule name"), { target: { value: "" } });
+  fireEvent.change(sourceTextbox(slot.getByLabelText("Rule name")), { target: { value: "" } });
   fireEvent.click(slot.getByRole("button", { name: "Save rule" }));
   expect(await slot.findByRole("alert")).toHaveProperty(
     "textContent",
@@ -171,3 +179,17 @@ it("shows actionable inline validation instead of internal error codes", async (
   );
   expect(saveRule).not.toHaveBeenCalled();
 });
+
+// Existing draft/save scenarios use the optional source editor explicitly.
+function sourceTextbox(element: HTMLElement): HTMLElement {
+  if (!element.matches(".tiptap")) return element;
+  const wrapper = element.closest(".bb-markdown-editor");
+  const button = [...(wrapper?.querySelectorAll("button") ?? [])].find(
+    (candidate) => candidate.textContent === "Markdown source",
+  );
+  if (!button) throw new Error("Markdown editor has no source control");
+  fireEvent.click(button);
+  const source = wrapper?.querySelector<HTMLElement>("textarea[data-markdown-source]");
+  if (!source) throw new Error("Source mode did not open");
+  return source;
+}
