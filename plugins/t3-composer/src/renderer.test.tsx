@@ -3,7 +3,9 @@ import { fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
+  ComposerDraftSnapshot,
   ComposerSelection,
+  ExperimentalComposerHistory,
   ExperimentalComposerInput,
   ExperimentalComposerRendererApi,
 } from "@get-bb/plugin-sdk/app";
@@ -26,7 +28,10 @@ type SlotOptions = NonNullable<Parameters<typeof renderSlot>[2]>;
 async function mountComposer(
   inputOverrides: Partial<ExperimentalComposerInput> = {},
   scope: ExperimentalComposerRendererApi["view"]["scope"] = { kind: "new-thread", projectId: "p1" },
-  options: Pick<SlotOptions, "providers" | "sdk"> & { selection?: ComposerSelection } = {},
+  options: Pick<SlotOptions, "providers" | "sdk"> & {
+    selection?: ComposerSelection;
+    text?: string;
+  } = {},
 ) {
   const run = vi.fn();
   const input: ExperimentalComposerInput = {
@@ -78,7 +83,7 @@ async function mountComposer(
     {
       composer: {
         scope,
-        text: "A draft",
+        text: options.text ?? "A draft",
         ...(options.selection ? { selection: options.selection } : {}),
       },
       composerRenderer: renderer,
@@ -153,6 +158,41 @@ describe("T3 composer SDK integration", () => {
     try {
       fireEvent.click(await slot.findByRole("button", { name: "Stop run" }));
       expect(onStop).toHaveBeenCalledOnce();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("recalls the newest entry on ArrowUp and restores the original draft on ArrowDown past it", async () => {
+    const draft = (text: string): ComposerDraftSnapshot => ({
+      text,
+      mentions: [],
+      attachments: [],
+    });
+    const selected: string[] = [];
+    // BB applies a selected entry to the composer and republishes it as the current draft.
+    const history: ExperimentalComposerHistory = {
+      currentDraft: draft(""),
+      entries: [draft("Newest prompt"), draft("Older prompt")],
+      onSelectEntry: (entry) => {
+        selected.push(entry.text);
+        history.currentDraft = entry;
+      },
+    };
+    const { slot } = await mountComposer({ history }, undefined, { text: "" });
+    try {
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
+      );
+      const editor = document.activeElement as HTMLElement;
+      fireEvent.keyDown(editor, { key: "ArrowUp" });
+      fireEvent.keyDown(editor, { key: "ArrowUp" });
+      fireEvent.keyDown(editor, { key: "ArrowDown" });
+      fireEvent.keyDown(editor, { key: "ArrowDown" });
+      expect(selected).toEqual(["Newest prompt", "Older prompt", "Newest prompt", ""]);
+      // Past the original draft there is no session left to step through.
+      fireEvent.keyDown(editor, { key: "ArrowDown" });
+      expect(selected).toHaveLength(4);
     } finally {
       slot.lifecycle.unmount();
     }

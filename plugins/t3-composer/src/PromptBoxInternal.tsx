@@ -938,6 +938,13 @@ function isIPadHardwareEnterCandidate(event: KeyboardEvent): boolean {
   return event.key === "Enter" && (event.code === "Enter" || event.code === "NumpadEnter");
 }
 
+/** An ArrowUp walk through prompt history; `original` is restored past the newest entry. */
+interface HistorySession {
+  index: number;
+  original: ComposerDraftSnapshot;
+  recalled: ComposerDraftSnapshot;
+}
+
 export function PromptBoxInternal({
   id,
   onEscape,
@@ -1119,14 +1126,7 @@ export function PromptBoxInternal({
   const commandError = commandSearch.status === "error";
   const [selectedSuggestionKey, setSelectedSuggestionKey] = useState<string | null>(null);
   const [expandedImageIndex, setExpandedImageIndex] = useState<number | null>(null);
-  const [activeHistoryIndex, setActiveHistoryIndex] = useState<number | null>(null);
-  const [temporaryHistoryDraft, setTemporaryHistoryDraft] = useState<ComposerDraftSnapshot | null>(
-    null,
-  );
-  const [recalledHistoryDraft, setRecalledHistoryDraft] = useState<ComposerDraftSnapshot | null>(
-    null,
-  );
-  const hasActiveHistorySessionRef = useRef(false);
+  const [historySession, setHistorySession] = useState<HistorySession | null>(null);
   const isVoiceRecording = voice?.state === "recording";
   const isVoiceProcessing = voice?.state === "transcribing";
   const showVoiceActionGroup = isVoiceRecording || isVoiceProcessing;
@@ -1971,46 +1971,21 @@ export function PromptBoxInternal({
     scheduleRevealEditorSelection();
   }, [minHeight, scheduleRevealEditorSelection]);
 
-  const resetHistorySession = useCallback(() => {
-    if (!hasActiveHistorySessionRef.current) return;
-    hasActiveHistorySessionRef.current = false;
-    setActiveHistoryIndex(null);
-    setTemporaryHistoryDraft(null);
-    setRecalledHistoryDraft(null);
-  }, []);
-
   useEffect(() => {
-    if (!history) {
-      resetHistorySession();
-      return;
-    }
-    if (history.entries.length === 0) {
-      resetHistorySession();
-      return;
-    }
-    if (activeHistoryIndex !== null && activeHistoryIndex >= history.entries.length) {
-      resetHistorySession();
-    }
-  }, [activeHistoryIndex, history, resetHistorySession]);
+    setHistorySession(null);
+  }, [history?.resetKey]);
 
+  // The session ends when BB changes the entry under it or the recalled draft is edited.
   useEffect(() => {
-    resetHistorySession();
-  }, [history?.resetKey, resetHistorySession]);
-
-  useEffect(() => {
-    if (!history || activeHistoryIndex === null || !recalledHistoryDraft) {
-      return;
-    }
-    const activeHistoryEntry = history.entries[activeHistoryIndex];
-    if (!activeHistoryEntry || !areDraftsEqual(activeHistoryEntry, recalledHistoryDraft)) {
-      resetHistorySession();
-      return;
-    }
-    if (areDraftsEqual(history.currentDraft, recalledHistoryDraft)) {
-      return;
-    }
-    resetHistorySession();
-  }, [activeHistoryIndex, history, recalledHistoryDraft, resetHistorySession]);
+    if (historySession === null) return;
+    const entry = history?.entries[historySession.index];
+    const intact =
+      history !== undefined &&
+      entry !== undefined &&
+      areDraftsEqual(entry, historySession.recalled) &&
+      areDraftsEqual(history.currentDraft, historySession.recalled);
+    if (!intact) setHistorySession(null);
+  }, [history, historySession]);
 
   useLayoutEffect(() => {
     const fromHeight = lastObservedHeightRef.current;
@@ -2811,14 +2786,10 @@ export function PromptBoxInternal({
         currentEditor !== undefined &&
         selection !== undefined &&
         selection.from >= currentEditor.state.doc.content.size - 1;
-      const activeHistoryEntry =
-        history && activeHistoryIndex !== null ? history.entries[activeHistoryIndex] : null;
-      const hasSelectedHistoryEntry = Boolean(
-        history &&
-        activeHistoryEntry !== null &&
-        activeHistoryEntry !== undefined &&
-        areDraftsEqual(history.currentDraft, activeHistoryEntry),
-      );
+      const hasSelectedHistoryEntry =
+        history !== undefined &&
+        historySession !== null &&
+        areDraftsEqual(history.currentDraft, historySession.recalled);
       const canNavigateHistory =
         history !== undefined &&
         !hasArrowNavigationModifier &&
@@ -2876,36 +2847,31 @@ export function PromptBoxInternal({
       if (history) {
         if (event.key === "ArrowUp" && canNavigateHistory && history.entries.length > 0) {
           event.preventDefault();
-          const nextHistoryIndex =
-            activeHistoryIndex === null
+          const index =
+            historySession === null
               ? 0
-              : Math.min(activeHistoryIndex + 1, history.entries.length - 1);
-          hasActiveHistorySessionRef.current = true;
-          if (activeHistoryIndex === null) {
-            setTemporaryHistoryDraft(history.currentDraft);
-          }
-          setActiveHistoryIndex(nextHistoryIndex);
-          const nextDraft = history.entries[nextHistoryIndex];
-          setRecalledHistoryDraft(nextDraft);
-          applyHistoryDraft(nextDraft);
+              : Math.min(historySession.index + 1, history.entries.length - 1);
+          const recalled = history.entries[index];
+          setHistorySession({
+            index,
+            original: historySession?.original ?? history.currentDraft,
+            recalled,
+          });
+          applyHistoryDraft(recalled);
           return true;
         }
 
-        if (event.key === "ArrowDown" && canNavigateHistory && activeHistoryIndex !== null) {
+        if (event.key === "ArrowDown" && canNavigateHistory && historySession !== null) {
           event.preventDefault();
-          if (activeHistoryIndex === 0) {
-            if (temporaryHistoryDraft) {
-              applyHistoryDraft(temporaryHistoryDraft);
-            }
-            resetHistorySession();
+          if (historySession.index === 0) {
+            applyHistoryDraft(historySession.original);
+            setHistorySession(null);
             return true;
           }
-
-          const nextHistoryIndex = activeHistoryIndex - 1;
-          setActiveHistoryIndex(nextHistoryIndex);
-          const nextDraft = history.entries[nextHistoryIndex];
-          setRecalledHistoryDraft(nextDraft);
-          applyHistoryDraft(nextDraft);
+          const index = historySession.index - 1;
+          const recalled = history.entries[index];
+          setHistorySession({ ...historySession, index, recalled });
+          applyHistoryDraft(recalled);
           return true;
         }
       }
@@ -2952,24 +2918,22 @@ export function PromptBoxInternal({
       return true;
     },
     [
-      activeHistoryIndex,
       activeSuggestions,
       applyHistoryDraft,
       applyTrigger,
       dispatchAppCommandKey,
       handleComposerMenuKeyDown,
       history,
+      historySession,
       isPointerCoarse,
       onEscape,
       onModifierSubmit,
       postCompositionKeyDownEvents,
-      resetHistorySession,
       selectedIndex,
       setPendingCommandSubmit,
       showTypeaheadMenu,
       submitModifierPrompt,
       submitPrompt,
-      temporaryHistoryDraft,
     ],
   );
 
