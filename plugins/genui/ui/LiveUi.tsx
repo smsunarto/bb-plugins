@@ -86,8 +86,8 @@ export function LiveUi({
   compileDiagnostics: readonly Diagnostic[];
   source: string;
   stateKey: string;
-  /** Files the spec reads with Load and Snippet, keyed by `dataKey`. */
-  data?: ReadonlyMap<string, LoadedData>;
+  /** Files the spec reads with Load and Snippet, keyed by `dataKey`; a file not in it is still being read. */
+  data: ReadonlyMap<string, LoadedData>;
   answers: AnswerTarget;
   openFile: UiRuntime["openFile"];
   loadImage: UiRuntime["loadImage"];
@@ -221,11 +221,11 @@ export function LiveUi({
   const files = useMemo(
     () =>
       collectLoads(program).map((request): SourceFile => {
-        const loaded = data?.get(dataKey(request));
+        const loaded = data.get(dataKey(request));
         return {
           path: inGallery && !request.path.startsWith("/") ? `gallery/${request.path}` : request.path,
           kind: request.raw ? "Snippet" : "Load",
-          status: data !== undefined && loaded === undefined ? "reading" : loaded === undefined || loaded.ok ? "read" : { error: loaded.error },
+          status: loaded === undefined ? "reading" : loaded.ok ? "read" : { error: loaded.error },
         };
       }),
     [program, data, inGallery],
