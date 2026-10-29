@@ -198,6 +198,9 @@ const workspaceErrorSchema = z.object({
 export type StackView = z.infer<typeof stackSchema>;
 export type StackErrorKind = z.infer<typeof errorKindSchema>;
 type StackPayload = z.infer<typeof stackPayloadSchema>;
+// One compute's answer to a waiter: the payload and the server clock it was
+// cached under, or null when it overlapped a workspace mutation (refreshStack).
+type StackRead = { payload: StackPayload; fetchedAt: number | null };
 
 const actionResultSchema = z.object({
   ok: z.boolean(),
@@ -211,6 +214,22 @@ const actionResultSchema = z.object({
 });
 
 type ActionResult = z.infer<typeof actionResultSchema>;
+
+// Result of an RPC that may have changed the workspace. `fetchedAt` is the
+// server clock once the handler has settled — past its cache invalidation —
+// so a getStack payload stamped at or after it was computed after any write
+// this call made. The panel holds its mutation controls until it sees one.
+const mutationResultSchema = actionResultSchema.extend({ fetchedAt: z.number() });
+type MutationResult = z.infer<typeof mutationResultSchema>;
+
+// Stamp a handler's result as it settles; by then its withWorkspaceMutation
+// has invalidated the caches.
+function stamped<Input>(
+  handler: (input: Input) => Promise<ActionResult>,
+): (input: Input) => Promise<MutationResult> {
+  return async (input) => ({ ...(await handler(input)), fetchedAt: Date.now() });
+}
+
 const mergeMethodSchema = z.enum(["squash", "merge", "rebase"]);
 
 // Panel settings, edited in the gear popup and stored in the plugin's kv.
@@ -288,8 +307,11 @@ export const rpcContract = defineRpcContract({
       "Read the stacked-PR view for a thread's workspace: layers, PR state, checkout, and settings. Cached; refresh forces a GitHub re-read.",
     input: z.object({ threadId: z.string(), refresh: z.boolean().optional() }).strict(),
     output: stackPayloadSchema.extend({
-      // Epoch ms of the compute that produced this payload.
-      fetchedAt: z.number(),
+      // Epoch ms of the compute that produced this payload. Null when the
+      // compute overlapped a stack operation: the payload may mix the
+      // workspace before and after it, so it verifies no write and never
+      // displaces a stamped one.
+      fetchedAt: z.number().nullable(),
     }),
   },
   setPrDraft: {
@@ -310,7 +332,7 @@ export const rpcContract = defineRpcContract({
     experimental_description:
       "Check out a visible layer of the thread's stack; refuses while the thread is running.",
     input: z.object({ threadId: z.string(), branch: z.string().min(1).max(255) }).strict(),
-    output: actionResultSchema,
+    output: mutationResultSchema,
   },
   runAction: {
     experimental_description:
@@ -321,7 +343,7 @@ export const rpcContract = defineRpcContract({
         action: z.enum(["sync", "submit", "sync-submit", "prune"]),
       })
       .strict(),
-    output: actionResultSchema,
+    output: mutationResultSchema,
   },
   mergeStack: {
     experimental_description:
@@ -335,19 +357,19 @@ export const rpcContract = defineRpcContract({
         throughPrNumber: z.number().int().positive(),
       })
       .strict(),
-    output: actionResultSchema,
+    output: mutationResultSchema,
   },
   createStack: {
     experimental_description: "Initialize a new stack on a fresh branch in the thread's workspace.",
     input: layerInputSchema,
-    output: actionResultSchema,
+    output: mutationResultSchema,
   },
   // Stack a new branch on top of the existing stack: gh stack top + add.
   addBranch: {
     experimental_description:
       "Stack a new branch on top of the thread's existing stack and check it out.",
     input: layerInputSchema,
-    output: actionResultSchema,
+    output: mutationResultSchema,
   },
   suggestStackName: {
     experimental_description:
@@ -882,7 +904,7 @@ export default async function plugin(bb: BbPluginApi) {
     }
   >();
   // One compute per thread at a time: concurrent callers share the promise.
-  const stackInflight = new Map<string, Promise<StackPayload>>();
+  const stackInflight = new Map<string, Promise<StackRead>>();
   const threadWorkspaceKeys = new Map<string, string>();
   const stackComputeWorkspaceState = new Map<string, { key: string; mutationVersion: number }>();
   const workspaceMutationVersions = new Map<string, number>();
@@ -1364,8 +1386,12 @@ export default async function plugin(bb: BbPluginApi) {
   }
 
   // Recompute one thread's stack, cache it, and announce the fresh payload so
-  // every open panel refetches. Concurrent calls share one compute.
-  function refreshStack(threadId: string): Promise<StackPayload> {
+  // every open panel refetches. Concurrent calls share one compute. The stamp
+  // is null when the compute overlapped a workspace mutation: such a payload
+  // may mix the workspace before and after the write, so its waiter gets it
+  // unstamped and it never enters the shared cache — the mutation's end
+  // announces a stable refetch.
+  function refreshStack(threadId: string): Promise<StackRead> {
     const inflight = stackInflight.get(threadId);
     if (inflight) return inflight;
     const promise = (async () => {
@@ -1388,31 +1414,24 @@ export default async function plugin(bb: BbPluginApi) {
         // computeStack read the settings when it started; a save landing
         // mid-compute would otherwise be overwritten by that older copy.
         const settings = await loadSettings();
-        const stamped: StackPayload = {
+        const withSettings: StackPayload = {
           ...payload,
           settings,
           branchPrefix: settings.branchPrefix || payload.detectedBranchPrefix,
         };
-        const fetchedAt = Date.now();
         const computeState = stackComputeWorkspaceState.get(threadId);
         const stable =
           !computeState ||
           (!activeWorkspaceMutations.has(computeState.key) &&
             (workspaceMutationVersions.get(computeState.key) ?? 0) ===
               computeState.mutationVersion);
-        // A read that overlapped a mutation may contain a mixed checkout/ref
-        // snapshot. Return it to its waiter, but never let it repopulate the
-        // shared cache; mutation completion announces a stable refetch.
-        if (!stable) return stamped;
+        if (!stable) return { payload: withSettings, fetchedAt: null };
+        const fetchedAt = Date.now();
         // A background recompute is not a read: keep the old lastReadAt.
         const lastReadAt = stackCache.get(threadId)?.lastReadAt ?? 0;
-        stackCache.set(threadId, {
-          payload: stamped,
-          fetchedAt,
-          lastReadAt,
-        });
+        stackCache.set(threadId, { payload: withSettings, fetchedAt, lastReadAt });
         bb.realtime.publish("stack-updated", { threadId, fetchedAt });
-        return stamped;
+        return { payload: withSettings, fetchedAt };
       })
       .finally(() => {
         stackInflight.delete(threadId);
@@ -1615,23 +1634,18 @@ export default async function plugin(bb: BbPluginApi) {
       // of serving the rest of that cache window.
       const workspaceKey = threadWorkspaceKeys.get(threadId);
       if (workspaceKey) prMetadataCache.delete(workspaceKey);
-      let payload = await refreshStack(threadId);
-      let entry = stackCache.get(threadId);
+      let read = await refreshStack(threadId);
       // An explicit refresh may have joined a compute that overlapped a
-      // workspace mutation. Such payloads are deliberately not cached; wait
-      // for one stable retry instead of stamping and returning stale state.
-      if (refresh === true && !entry) {
-        payload = await refreshStack(threadId);
-        entry = stackCache.get(threadId);
-      }
+      // workspace mutation. Retry once for a stable one; if the operation is
+      // still running, the payload goes out unstamped rather than dressed as
+      // a verified snapshot.
+      if (refresh === true && read.fetchedAt === null) read = await refreshStack(threadId);
+      const entry = stackCache.get(threadId);
       if (entry) entry.lastReadAt = Date.now();
-      return {
-        ...applyDraftIntents(threadId, payload),
-        fetchedAt: entry?.fetchedAt ?? Date.now(),
-      };
+      return { ...applyDraftIntents(threadId, read.payload), fetchedAt: read.fetchedAt };
     },
 
-    async checkoutBranch({ threadId, branch }) {
+    checkoutBranch: stamped(async ({ threadId, branch }) => {
       const workspace = await resolveWorkspace(threadId);
       if (workspace.error) {
         return { ok: false, message: workspace.error.message, detail: null };
@@ -1726,7 +1740,7 @@ export default async function plugin(bb: BbPluginApi) {
           blockedStashOids: blockedAutoStashOids,
         });
       });
-    },
+    }),
 
     async setPrDraft({ threadId, prNumber, draft }) {
       const workspace = await resolveWorkspace(threadId);
@@ -1851,7 +1865,7 @@ export default async function plugin(bb: BbPluginApi) {
       };
     },
 
-    async runAction({ threadId, action }) {
+    runAction: stamped(async ({ threadId, action }) => {
       const workspace = await resolveWorkspace(threadId);
       if (workspace.error) {
         return { ok: false, message: workspace.error.message, detail: null };
@@ -2146,9 +2160,9 @@ export default async function plugin(bb: BbPluginApi) {
                 : "Stack sync and submit verified in order.";
         return { ok: true, message, detail };
       });
-    },
+    }),
 
-    async mergeStack({ threadId, method, throughPrNumber }) {
+    mergeStack: stamped(async ({ threadId, method, throughPrNumber }) => {
       const workspace = await resolveWorkspace(threadId);
       if (workspace.error) return { ok: false, message: workspace.error.message, detail: null };
       return withWorkspaceMutation(workspace, async () => {
@@ -2300,9 +2314,9 @@ export default async function plugin(bb: BbPluginApi) {
           detail,
         };
       });
-    },
+    }),
 
-    async createStack({ threadId, name, branch: requested }) {
+    createStack: stamped(async ({ threadId, name, branch: requested }) => {
       // The panel sends the branch it previewed; deriving here is the
       // fallback for callers that only pass a name.
       const branch = requested ?? (await deriveWithSettings(threadId, name));
@@ -2348,9 +2362,9 @@ export default async function plugin(bb: BbPluginApi) {
           detail,
         };
       });
-    },
+    }),
 
-    async addBranch({ threadId, name, branch: requested }) {
+    addBranch: stamped(async ({ threadId, name, branch: requested }) => {
       const branch = requested ?? (await deriveWithSettings(threadId, name));
       if (!branch || !isBranchCandidate(branch)) {
         return {
@@ -2444,7 +2458,7 @@ export default async function plugin(bb: BbPluginApi) {
           detail,
         };
       });
-    },
+    }),
 
     async suggestStackName({ threadId }) {
       const thread = await bb.sdk.threads.get({ threadId });

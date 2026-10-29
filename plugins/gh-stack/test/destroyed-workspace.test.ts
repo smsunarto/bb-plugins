@@ -20,11 +20,14 @@ test("a cleaned-up workspace points at Restore workspace instead of a missing gi
     },
   });
   await plugin(bb);
-  const result = await harness.behavior.callRpc("checkoutBranch", {
+  const { fetchedAt, ...refusal } = (await harness.behavior.callRpc("checkoutBranch", {
     threadId: "thr_archived",
     branch: "feature",
-  });
-  assert.deepEqual(result, {
+  })) as { fetchedAt: unknown };
+  // Every mutation result carries the server's post-call stamp, refusals
+  // included, so the panel can verify against it uniformly.
+  assert.equal(typeof fetchedAt, "number");
+  assert.deepEqual(refusal, {
     ok: false,
     message:
       "This thread's workspace was cleaned up. Unarchive the thread if it is archived, then use Restore workspace to bring it back.",

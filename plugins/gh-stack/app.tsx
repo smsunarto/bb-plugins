@@ -28,16 +28,43 @@ import { Icon } from "@bb-plugins/icons";
 import { Input } from "@/components/ui/input";
 import { ChangedFileTree } from "@/components/stack/changed-file-tree";
 import { deriveBranchName } from "@/lib/branch-name";
+import { mergePrefix } from "@/lib/stack-actions";
 
 type Rpc = ReturnType<typeof useRpc<typeof rpcContract>>;
 type StackResult =
   Awaited<ReturnType<Rpc["call"]>> extends infer R ? Extract<R, { stack: unknown }> : never;
 type StackView = NonNullable<StackResult["stack"]>;
 type StackBranch = StackView["branches"][number];
+type StackPr = NonNullable<StackBranch["pr"]>;
+type PrLifecycle = StackPr["lifecycle"];
 type ChangeSet = NonNullable<StackResult["pending"]>;
 type Settings = StackResult["settings"];
 type MergeMethod = "squash" | "merge" | "rebase";
 type ActionTone = "success" | "warning" | "error";
+type Action =
+  | "sync"
+  | "submit"
+  | "sync-submit"
+  | "prune"
+  | "merge"
+  | "create"
+  | "magic"
+  | "checkout";
+// The getStack lifecycle. Only a fresh, user-requested read shows as
+// refreshing; cached polls and signals revalidate silently.
+type Load =
+  | { phase: "initial" }
+  | { phase: "idle" | "refreshing"; result: StackResult }
+  | { phase: "failed"; error: string; result: StackResult | null };
+// The mutation lifecycle. A write is `busy` while its call is in flight, then
+// `unverified` until a payload proves its outcome: one stamped at or past
+// `since`, the server's post-write stamp, from any source — the re-read, a
+// poll, or a stack-updated signal. When the call failed before the server
+// could stamp it, `since` is null and only a fresh read can prove anything.
+type Work =
+  | { kind: "idle" }
+  | { kind: "busy"; action: Action }
+  | { kind: "unverified"; since: number | null };
 type MergeOffer = {
   count: number;
   total: number;
@@ -115,6 +142,12 @@ const LIFECYCLE_LOOK: Record<
     label: "Closed",
     pillTone: "bg-red-600/10 text-red-600 dark:text-red-400",
   },
+  unknown: {
+    icon: OCTICONS.pr,
+    iconTone: "text-muted-foreground",
+    label: "Unknown",
+    pillTone: "bg-muted text-muted-foreground",
+  },
 };
 
 function branchIcon(branch: StackBranch): { path: string; tone: string } {
@@ -147,7 +180,11 @@ function StatusPill({
       <span
         className={pr?.metadataStale ? `${pill} opacity-60` : pill}
         title={
-          pr?.metadataStale ? "GitHub could not be read; this is the last known state." : undefined
+          pr?.lifecycle === "unknown"
+            ? "gh stack reported a PR state this panel does not recognize."
+            : pr?.metadataStale
+              ? "GitHub could not be read; this is the last known state."
+              : undefined
         }
       >
         {label}
@@ -803,26 +840,18 @@ const HEADER_MEMORY = new Map<string, { base: string | null; hadStack: boolean }
 
 function StackPanel({ threadId }: { threadId: string }) {
   const rpc = useRpc<typeof rpcContract>();
-  const [result, setResult] = useState<StackResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [busy, setBusy] = useState<
-    "sync" | "submit" | "sync-submit" | "prune" | "merge" | "create" | "magic" | "checkout" | null
-  >(null);
+  const [load, setLoad] = useState<Load>({ phase: "initial" });
+  const [work, setWork] = useState<Work>({ kind: "idle" });
+  const result = load.phase === "initial" ? null : load.result;
   // Per-PR, so draft toggles run concurrently: each pill locks only itself,
   // and only for its own round trip. A scalar here would let a second
   // toggle's cleanup re-enable a pill whose write was still in flight.
   const [prBusy, setPrBusy] = useState<Set<number>>(new Set());
   const [draftIntents, setDraftIntents] = useState<Map<number, boolean>>(new Map());
-  // Any mutation can succeed before its response or the following refresh is
-  // observed. While true, mutation controls stay locked against stale data;
-  // a successful fresh getStack is the only thing that clears it.
-  const [mutationNeedsRefresh, setMutationNeedsRefresh] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [pruneOpen, setPruneOpen] = useState(false);
   const [mergeOffer, setMergeOffer] = useState<MergeOffer | null>(null);
   const [suggesting, setSuggesting] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
   const [actionDetail, setActionDetail] = useState<string | null>(null);
   // Only the rows the reader has explicitly toggled. Everything else follows
   // the default below — the checked-out layer opens on its own, since its
@@ -840,34 +869,66 @@ function StackPanel({ threadId }: { threadId: string }) {
   // Cached mode paints instantly from the server's per-thread cache (which
   // revalidates itself in the background); fresh mode waits for a recompute —
   // used by the refresh control and after actions that change the stack.
+  // Resolves to the payload that arrived, or null when the read failed.
   const refresh = useCallback(
-    (options?: { fresh?: boolean }) => {
+    (options?: { fresh?: boolean }): Promise<StackResult | null> => {
       const fresh = options?.fresh === true;
-      if (fresh) setRefreshing(true);
-      setFetchError(null);
-      return (
-        rpc
-          .call("getStack", fresh ? { threadId, refresh: true } : { threadId })
-          // Responses can resolve out of order (an action's fresh refetch racing
-          // a signal-triggered cached one); never replace a payload with an
-          // older compute. Equal timestamps still apply — a settings save
-          // patches the cached payload without bumping fetchedAt.
-          .then((next) => {
-            setResult((current) =>
-              current && current.fetchedAt > next.fetchedAt ? current : next,
+      if (fresh) {
+        setLoad((current) =>
+          current.phase === "initial" || current.result === null
+            ? { phase: "initial" }
+            : { phase: "refreshing", result: current.result },
+        );
+      }
+      return rpc
+        .call("getStack", fresh ? { threadId, refresh: true } : { threadId })
+        .then((next) => {
+          // Responses can resolve out of order (an action's fresh refetch
+          // racing a signal-triggered cached one); a stamped payload stays
+          // over an older compute, and over an unstamped one taken during a
+          // stack operation. Equal timestamps still apply — a settings save
+          // patches the cached payload without bumping fetchedAt. A cached
+          // read landing mid-refresh leaves the spinner to the fresh one,
+          // which settles it below.
+          setLoad((current) => {
+            const held = current.phase === "initial" ? null : current.result;
+            const stays =
+              held !== null &&
+              held.fetchedAt !== null &&
+              (next.fetchedAt === null || next.fetchedAt < held.fetchedAt);
+            return {
+              phase: current.phase === "refreshing" ? "refreshing" : "idle",
+              result: stays ? held : next,
+            };
+          });
+          // A stamped payload at or past the server's post-write stamp proves
+          // the write, whoever asked for it. After a call that failed before
+          // the server could stamp it, only a fresh read does: a poll or
+          // signal may still serve a compute that began before the write.
+          setWork((current) =>
+            current.kind === "unverified" &&
+            next.fetchedAt !== null &&
+            (current.since === null ? fresh : next.fetchedAt >= current.since)
+              ? { kind: "idle" }
+              : current,
+          );
+          return next;
+        })
+        .catch((error: unknown) => {
+          setLoad((current) => ({
+            phase: "failed",
+            error: error instanceof Error ? error.message : String(error),
+            result: current.phase === "initial" ? null : current.result,
+          }));
+          return null;
+        })
+        .finally(() => {
+          if (fresh) {
+            setLoad((current) =>
+              current.phase === "refreshing" ? { phase: "idle", result: current.result } : current,
             );
-            if (fresh) setMutationNeedsRefresh(false);
-            return true;
-          })
-          .catch((error: unknown) => {
-            setFetchError(error instanceof Error ? error.message : String(error));
-            return false;
-          })
-          .finally(() => {
-            setLoading(false);
-            if (fresh) setRefreshing(false);
-          })
-      );
+          }
+        });
     },
     [rpc, threadId],
   );
@@ -927,22 +988,35 @@ function StackPanel({ threadId }: { threadId: string }) {
     });
   }, [result]);
 
+  // The call is over; keep the mutation controls held until a payload proves
+  // what it did (see refresh). `since` is the server's post-write stamp, or
+  // null when the call failed before the server could give one. The fresh
+  // re-read is the usual proof; a poll or signal may bring it first.
+  const settle = async (since: number | null) => {
+    setWork({ kind: "unverified", since });
+    await refresh({ fresh: true });
+  };
+
   const runAction = async (action: "sync" | "submit" | "sync-submit" | "prune") => {
-    setBusy(action);
-    setMutationNeedsRefresh(true);
+    setWork({ kind: "busy", action });
     setActionDetail(null);
+    let since: number | null = null;
     try {
       const outcome = await rpc.call("runAction", { threadId, action });
+      since = outcome.fetchedAt;
       setActionDetail(outcome.detail);
       showActionToast(outcome);
       if (action === "prune" && outcome.ok) {
         // The backend verified the deletion. Retire the old offer immediately
         // even if the following transport refresh has to be retried.
-        setResult((current) =>
-          current?.stack
+        setLoad((current) =>
+          current.phase !== "initial" && current.result?.stack
             ? {
                 ...current,
-                stack: { ...current.stack, prunableBranchCount: 0 },
+                result: {
+                  ...current.result,
+                  stack: { ...current.result.stack, prunableBranchCount: 0 },
+                },
               }
             : current,
         );
@@ -950,43 +1024,43 @@ function StackPanel({ threadId }: { threadId: string }) {
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
-      await refresh({ fresh: true });
-      setBusy(null);
+      await settle(since);
     }
   };
 
   const mergeStack = async (method: MergeMethod, throughPrNumber: number) => {
-    setBusy("merge");
-    setMutationNeedsRefresh(true);
+    setWork({ kind: "busy", action: "merge" });
     setActionDetail(null);
+    let since: number | null = null;
     try {
       const outcome = await rpc.call("mergeStack", {
         threadId,
         method,
         throughPrNumber,
       });
+      since = outcome.fetchedAt;
       setActionDetail(outcome.detail);
       showActionToast(outcome);
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
-      await refresh({ fresh: true });
-      setBusy(null);
+      await settle(since);
     }
   };
 
   // One entry point for both layer modes: init when there is no stack yet,
   // add on top when there is.
   const addLayer = async (name: string, branch: string, mode: "init" | "add"): Promise<boolean> => {
-    setBusy("create");
-    setMutationNeedsRefresh(true);
+    setWork({ kind: "busy", action: "create" });
     setActionDetail(null);
+    let since: number | null = null;
     try {
       const outcome = await rpc.call(mode === "init" ? "createStack" : "addBranch", {
         threadId,
         name,
         branch,
       });
+      since = outcome.fetchedAt;
       setActionDetail(outcome.detail);
       if (outcome.ok) {
         toast.success(outcome.message);
@@ -998,8 +1072,7 @@ function StackPanel({ threadId }: { threadId: string }) {
       toast.error(error instanceof Error ? error.message : String(error));
       return false;
     } finally {
-      await refresh({ fresh: true });
-      setBusy(null);
+      await settle(since);
     }
   };
 
@@ -1017,8 +1090,10 @@ function StackPanel({ threadId }: { threadId: string }) {
     }
   };
 
+  // Hands the split to the thread's agent and changes nothing itself, so the
+  // panel is busy for the call and needs no verification afterwards.
   const magicStack = async () => {
-    setBusy("magic");
+    setWork({ kind: "busy", action: "magic" });
     try {
       const outcome = await rpc.call("magicStack", { threadId });
       setActionDetail(outcome.detail);
@@ -1030,16 +1105,17 @@ function StackPanel({ threadId }: { threadId: string }) {
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
-      setBusy(null);
+      setWork({ kind: "idle" });
     }
   };
 
   const checkout = async (branch: string) => {
-    setBusy("checkout");
-    setMutationNeedsRefresh(true);
+    setWork({ kind: "busy", action: "checkout" });
     setActionDetail(null);
+    let since: number | null = null;
     try {
       const outcome = await rpc.call("checkoutBranch", { threadId, branch });
+      since = outcome.fetchedAt;
       setActionDetail(outcome.detail);
       if (outcome.ok) {
         toast.success(outcome.message);
@@ -1049,8 +1125,7 @@ function StackPanel({ threadId }: { threadId: string }) {
     } catch (error: unknown) {
       toast.error(error instanceof Error ? error.message : String(error));
     } finally {
-      await refresh({ fresh: true });
-      setBusy(null);
+      await settle(since);
     }
   };
 
@@ -1101,12 +1176,15 @@ function StackPanel({ threadId }: { threadId: string }) {
         toast.error(outcome.message ?? "Could not save the settings.");
         return false;
       }
-      setResult((current) =>
-        current
+      setLoad((current) =>
+        current.phase !== "initial" && current.result
           ? {
               ...current,
-              settings: outcome.settings,
-              branchPrefix: outcome.settings.branchPrefix || current.detectedBranchPrefix,
+              result: {
+                ...current.result,
+                settings: outcome.settings,
+                branchPrefix: outcome.settings.branchPrefix || current.result.detectedBranchPrefix,
+              },
             }
           : current,
       );
@@ -1175,8 +1253,9 @@ function StackPanel({ threadId }: { threadId: string }) {
   const layers = stack ? [...stack.branches].reverse() : [];
   // Draft toggles deliberately absent: they are GitHub-side writes that
   // reconcile in the background, so they must not lock the panel.
-  const anyBusy = busy !== null;
-  const mutationsDisabled = anyBusy || mutationNeedsRefresh || loading || refreshing;
+  const busy = work.kind === "busy" ? work.action : null;
+  const loading = load.phase === "initial" || load.phase === "refreshing";
+  const mutationsDisabled = work.kind !== "idle" || loading;
   const notAStack = result?.error?.kind === "not-a-stack";
   // The rail is the whole UI: it composes on any workspace that resolved,
   // whether or not it already holds a stack.
@@ -1256,7 +1335,9 @@ function StackPanel({ threadId }: { threadId: string }) {
         ? `#${blocker.pr.number} is closed and blocks the stack`
         : blocker?.pr?.lifecycle === "draft"
           ? `#${blocker.pr.number} is a draft and blocks the stack`
-          : "the bottom layer has no open PR — submit first";
+          : blocker?.pr?.lifecycle === "unknown"
+            ? `#${blocker.pr.number} has an unrecognized PR state and blocks the stack`
+            : "the bottom layer has no open PR — submit first";
 
   return (
     <div className="space-y-4 [&>:first-child]:mb-0">
@@ -1281,21 +1362,16 @@ function StackPanel({ threadId }: { threadId: string }) {
           <button
             type="button"
             title={
-              result
+              typeof result?.fetchedAt === "number"
                 ? `Refresh stack · Last updated ${new Date(result.fetchedAt).toLocaleTimeString()}`
                 : "Refresh stack"
             }
-            aria-label={
-              loading ? "Loading stack" : refreshing ? "Refreshing stack" : "Refresh stack"
-            }
+            aria-label={loading ? "Loading stack" : "Refresh stack"}
             onClick={() => void refresh({ fresh: true })}
-            disabled={loading || refreshing || anyBusy}
+            disabled={loading || busy !== null}
             className="inline-flex size-7 shrink-0 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-default disabled:opacity-50"
           >
-            <Icon
-              name="RotateCcw"
-              className={`size-3.5 ${loading || refreshing ? "animate-spin" : ""}`}
-            />
+            <Icon name="RotateCcw" className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
         <div className="flex shrink-0 items-center">
@@ -1322,9 +1398,11 @@ function StackPanel({ threadId }: { threadId: string }) {
         onSave={saveSettings}
       />
 
-      {fetchError ? <p className="text-sm text-destructive">{fetchError}</p> : null}
+      {load.phase === "failed" ? <p className="text-sm text-destructive">{load.error}</p> : null}
 
-      {mutationNeedsRefresh && !anyBusy ? (
+      {/* Shown once a read has had its chance: while one is in flight the
+          panel is still checking, not failing. */}
+      {work.kind === "unverified" && !loading ? (
         <div className="rounded-lg border border-amber-600/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
           The stack changed, but its latest state could not be loaded. Refresh before running
           another action.
@@ -1529,10 +1607,6 @@ function StackPanel({ threadId }: { threadId: string }) {
         <pre className="max-h-64 overflow-auto rounded-lg border border-border bg-muted/40 p-3 text-xs text-muted-foreground whitespace-pre-wrap">
           {actionDetail}
         </pre>
-      ) : null}
-
-      {!loading && !stack && !result?.error && !fetchError ? (
-        <p className="text-sm text-muted-foreground">No stack data.</p>
       ) : null}
     </div>
   );
