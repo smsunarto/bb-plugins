@@ -11,11 +11,6 @@ import {
 import { useReviewSession } from "./host/review-session.tsx";
 import { captureUiEvent } from "../../../../stubs/telemetry.ts";
 
-export type ReviewSubmissionOutcome =
-  | "approved"
-  | "changes-requested"
-  | "dismissed";
-
 export interface SoftwareMapFocusRequest {
   requestId: number;
   elementPath: string;
@@ -37,7 +32,6 @@ export interface ReviewStateValue {
   resolvedBaseRef: string | null;
   resolvedHeadRef: string | null;
   softwareMapFocusRequest: SoftwareMapFocusRequest | null;
-  submissionOutcome: ReviewSubmissionOutcome | null;
 }
 
 export type ReviewContextValue = ReviewActionsValue & ReviewStateValue;
@@ -68,11 +62,6 @@ export function ReviewProvider({
   const [softwareMapFocusRequest, setSoftwareMapFocusRequest] =
     useState<SoftwareMapFocusRequest | null>(null);
 
-  // Set once the review has been dismissed or reached a terminal decision, so
-  // the canvas can show that state instead of a live-looking document.
-  const [submissionOutcome, setSubmissionOutcome] =
-    useState<ReviewSubmissionOutcome | null>(null);
-
   const openSoftwareMapElement = useCallback(
     (elementPath: string) => {
       if (!softwareMapEnabled) return;
@@ -87,7 +76,6 @@ export function ReviewProvider({
   const dismissReview = useCallback(async () => {
     await review.dismiss();
     captureUiEvent(session, "review_dismissed", { via: "review_topbar" });
-    setSubmissionOutcome("dismissed");
   }, [review, session]);
 
   const actions = useMemo<ReviewActionsValue>(
@@ -111,9 +99,8 @@ export function ReviewProvider({
       resolvedBaseRef: review.pins?.base ?? null,
       resolvedHeadRef: review.pins?.head ?? null,
       softwareMapFocusRequest,
-      submissionOutcome,
     }),
-    [review, softwareMapFocusRequest, submissionOutcome],
+    [review, softwareMapFocusRequest],
   );
 
   return (

@@ -1,14 +1,13 @@
 // Vendored from dev.fast review/app/src/review-corner-action.tsx @4ecc570 (MIT).
 import { type ReactElement, useRef, useState } from "react";
 
-import { useReviewActions, useReviewState } from "./review-context.tsx";
+import { useReviewActions } from "./review-context.tsx";
 import { useTutorial } from "./tutorial-context.tsx";
 import { useTooltip } from "./use-tooltip.ts";
 import { useTopbarPopover } from "./use-topbar-popover.ts";
 
 export function ReviewCornerAction(): ReactElement | null {
   const { dismissReview } = useReviewActions();
-  const { submissionOutcome } = useReviewState();
   const tutorial = useTutorial();
 
   const closeTooltip = useTooltip("Close tutorial");
@@ -16,9 +15,6 @@ export function ReviewCornerAction(): ReactElement | null {
   const [failed, setFailed] = useState(false);
   const control = useRef<HTMLDivElement>(null);
   const errorPopover = useTopbarPopover<HTMLSpanElement>(failed, control);
-
-  // A finished review has nothing left to submit or dismiss.
-  if (submissionOutcome === "dismissed") return null;
 
   /* The tutorial is not in the review store, so there is no list to leave and
      nothing to reap. Closing the tab is the whole action, and it needs no

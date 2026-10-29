@@ -2755,50 +2755,6 @@
 
 /* Review actions — one deliberate decision control */
 
-:where(.review-canvas-root) .review-baton-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-family: var(--chrome-font);
-  font-size: var(--chrome-font-size-small);
-  font-weight: var(--chrome-font-weight-strong);
-  line-height: 1;
-  letter-spacing: var(--chrome-tracking);
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-
-:where(.review-canvas-root) .review-baton-chip--changes-requested {
-  color: var(--diff-modified);
-}
-
-:where(.review-canvas-root) .review-baton-chip--approved {
-  color: var(--diff-added);
-}
-
-:where(.review-canvas-root) .review-baton-chip--dismissed {
-  color: var(--diff-removed);
-}
-
-:where(.review-canvas-root) .review-baton-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: currentColor;
-}
-
-:where(.review-canvas-root) .review-baton-glyph {
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.6;
-}
-
-:where(.review-canvas-root) .review-baton-chip--dismissed .review-baton-glyph {
-  stroke-width: 1.4;
-}
-
 :where(.review-canvas-root) .topbar-actions-divider {
   flex-shrink: 0;
   width: 1px;
