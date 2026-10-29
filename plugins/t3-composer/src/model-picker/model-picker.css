@@ -1,4 +1,5 @@
 /* The model picker, then its effort word reading on from the name: "Opus 5.5 High".
+   Each is its own pill with app.css's symmetric padding and hover.
    Scoped under [data-t3-model-controls] so these rules outrank app.css's control pills,
    which load after this file. */
 [data-t3-composer-controls]
@@ -6,22 +7,6 @@
   :is([data-t3-model-picker-trigger], [data-t3-traits-trigger]) {
   display: inline-flex;
   align-items: center;
-}
-
-/* The model and effort pills touch, with about a space between the name and the word. */
-[data-t3-composer][data-promptbox]
-  [data-t3-composer-controls]
-  [data-t3-model-controls]
-  [data-t3-model-picker-trigger] {
-  padding-inline-end: 4px;
-}
-
-[data-t3-composer][data-promptbox]
-  [data-t3-composer-controls]
-  [data-t3-model-controls]
-  [data-t3-traits-trigger] {
-  margin-inline-start: -4px;
-  padding-inline-start: 4px;
 }
 
 /* Quieter than the model name. */
@@ -35,7 +20,7 @@
 [data-t3-composer][data-promptbox]
   [data-t3-composer-controls]
   [data-t3-model-controls]
-  [data-t3-traits-word]:is(:hover, [data-state="open"]) {
+  [data-t3-traits-word]:is(:hover, :focus-visible, [data-state="open"]) {
   color: var(--foreground);
 }
 
