@@ -28,7 +28,7 @@ function TasksNavigationPanelContent({ subPath }: PluginNavPanelProps) {
         projects={projects.data}
         summaries={summaries.data}
         presets={presets.data}
-        activeTasks={activeTasks.data}
+        activeTasks={activeTasks.phase === "ready" ? activeTasks.tasks : undefined}
         isLoading={
           isAwaitingFirstResult(folders) ||
           isAwaitingFirstResult(projects) ||

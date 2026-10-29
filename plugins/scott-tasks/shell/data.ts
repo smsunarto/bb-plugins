@@ -10,7 +10,7 @@ import {
   type LiveQueryKey,
   type QueryBuilder,
 } from "@tanstack/react-db";
-import type { TasksRpcContract, TaskThread } from "../shared/contract.js";
+import type { Task, TasksRpcContract, TaskThread } from "../shared/contract.js";
 import { errorMessage } from "../shared/errors.js";
 import type { MentionItem } from "../editor/extensions.js";
 import { ACTIVE_THREAD_STATUSES, taskThreadsCollection, tasksCollection } from "./collections.js";
@@ -110,11 +110,20 @@ export function useActiveThreads(): ReadonlyMap<string, TaskThread[]> {
   return useActiveThreadLinks().byTaskId;
 }
 
+/**
+ * A tasks read in exactly one phase. `closedPending` marks the list's split
+ * load: open tasks are here while closed ones are still arriving.
+ */
+export type ListTasks =
+  | { phase: "loading" }
+  | { phase: "failed"; error: string }
+  | { phase: "ready"; tasks: Task[]; closedPending: boolean };
+
 /** Tasks with a live agent thread; `topLevelOnly` leaves out sub-tasks. */
 export function useActiveTasks({
   topLevelOnly = false,
   enabled = true,
-}: { topLevelOnly?: boolean; enabled?: boolean } = {}) {
+}: { topLevelOnly?: boolean; enabled?: boolean } = {}): ListTasks & { retry: () => void } {
   const { links, byTaskId } = useActiveThreadLinks();
   const taskIds = useMemo(() => [...byTaskId.keys()].sort(), [byTaskId]);
   const runs = enabled && links.isReady;
@@ -123,17 +132,19 @@ export function useActiveTasks({
     const active = q.from({ task: tasksCollection }).where(({ task }) => inArray(task.id, taskIds));
     return topLevelOnly ? active.where(({ task }) => isNull(task.parentTaskId)) : active;
   });
-  const ready = links.isReady && tasks.isReady;
-  const failed = links.isError || tasks.isError;
-  return {
-    data: ready ? tasks.data : undefined,
-    error: failed ? tasksLoadError(links.isError ? ["taskThreads"] : ["tasks"]) : null,
-    isLoading: !failed && !ready,
-    retry: () => {
-      links.retry();
-      tasks.retry();
-    },
+  const retry = () => {
+    links.retry();
+    tasks.retry();
   };
+  if (links.isError || tasks.isError) {
+    return {
+      phase: "failed",
+      error: tasksLoadError(links.isError ? ["taskThreads"] : ["tasks"]),
+      retry,
+    };
+  }
+  if (!links.isReady || !tasks.isReady) return { phase: "loading", retry };
+  return { phase: "ready", tasks: tasks.data ?? [], closedPending: false, retry };
 }
 
 export function useMentionItems() {

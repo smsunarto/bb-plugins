@@ -33,6 +33,7 @@ import { TaskRow } from "./row.js";
 import { rowWindows, useRowWindowViewport } from "./row-window.js";
 
 const NO_LABELS: readonly Label[] = [];
+const NO_TASKS: readonly Task[] = [];
 
 /** A row with an optimistic edit the server has not confirmed yet. */
 function hasPendingWrites(task: Task): boolean {
@@ -144,11 +145,8 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
     [projects.data],
   );
 
-  const displayTasks = tasksQuery.tasks;
-  const groups = useMemo(
-    () => groupTasksByStatus(sortTasks(displayTasks ?? [], sort)),
-    [displayTasks, sort],
-  );
+  const tasks = tasksQuery.phase === "ready" ? tasksQuery.tasks : NO_TASKS;
+  const groups = useMemo(() => groupTasksByStatus(sortTasks(tasks, sort)), [tasks, sort]);
 
   const showProject = projectId === null;
   const filtered = hasActiveFilters(filters);
@@ -157,13 +155,16 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
   const scopeKey = listScrollScopeKey({ projectId, activeOnly, filters, sort });
   const settledScope = useRef(scopeKey);
   const scopeChanged = settledScope.current !== scopeKey;
+  // Rows are still arriving while the primary query loads or the closed split trails it.
+  const loading =
+    tasksQuery.phase === "loading" || (tasksQuery.phase === "ready" && tasksQuery.closedPending);
   useEffect(() => {
-    if (!tasksQuery.isLoading) settledScope.current = scopeKey;
-  }, [scopeKey, tasksQuery.isLoading, displayTasks]);
+    if (!loading) settledScope.current = scopeKey;
+  }, [scopeKey, loading, tasks]);
   useListScrollRestoration(scrollRef, scopeKey, {
-    contentReady: displayTasks !== undefined && displayTasks.length > 0,
-    loading: tasksQuery.isLoading || scopeChanged,
-    revision: displayTasks?.length ?? 0,
+    contentReady: tasks.length > 0,
+    loading: loading || scopeChanged,
+    revision: tasks.length,
   });
 
   const viewport = useRowWindowViewport(scrollRef, groups);
@@ -176,14 +177,13 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
   });
 
   let body: React.ReactNode;
-  if (displayTasks === undefined) {
-    body =
-      tasksQuery.error !== null ? (
-        <EmptyState icon="AlertCircle" title="Couldn't load tasks" description={tasksQuery.error} />
-      ) : (
-        <LoadingRows />
-      );
-  } else if (displayTasks.length === 0) {
+  if (tasksQuery.phase === "failed") {
+    body = (
+      <EmptyState icon="AlertCircle" title="Couldn't load tasks" description={tasksQuery.error} />
+    );
+  } else if (tasksQuery.phase === "loading") {
+    body = <LoadingRows />;
+  } else if (tasks.length === 0) {
     if (filtered) {
       body = (
         <EmptyState
@@ -265,7 +265,7 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
         sort={sort}
         onSortChange={setSort}
         labelOptions={labelOptions}
-        taskCount={displayTasks?.length}
+        taskCount={tasksQuery.phase === "ready" ? tasksQuery.tasks.length : undefined}
       />
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto @container">
         {body}

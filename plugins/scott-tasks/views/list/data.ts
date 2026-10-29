@@ -4,8 +4,13 @@ import {
   OPEN_TASK_STATUSES,
   tasksCollection,
 } from "../../shell/collections.js";
-import { tasksLoadError, useActiveTasks, useTasksLiveQuery } from "../../shell/data.js";
-import type { Task, TaskPriority, TaskStatus } from "../../shared/contract.js";
+import {
+  tasksLoadError,
+  useActiveTasks,
+  useTasksLiveQuery,
+  type ListTasks,
+} from "../../shell/data.js";
+import type { TaskPriority, TaskStatus } from "../../shared/contract.js";
 import { matchesFilters } from "./lib.js";
 
 interface ListTaskFilters {
@@ -40,22 +45,16 @@ function listQuery(q: InitialQueryBuilder, scope: ListScope) {
   return query;
 }
 
-export interface ListTasksResult {
-  tasks: Task[] | undefined;
-  isLoading: boolean;
-  error: string | null;
-  retry: () => void;
-}
-
 /**
  * The list's top-level tasks. Without a status filter, open tasks load
- * apart from closed ones and paint as soon as they arrive.
+ * apart from closed ones and paint as soon as they arrive, with
+ * `closedPending` set until the closed ones do.
  */
 export function useListTasks(
   projectId: string | null,
   activeOnly: boolean,
   filters: ListTaskFilters,
-): ListTasksResult {
+): ListTasks & { retry: () => void } {
   const split = !activeOnly && filters.statuses.length === 0;
   const scope = (statuses: readonly TaskStatus[]): ListScope => ({
     projectId,
@@ -76,33 +75,32 @@ export function useListTasks(
   const active = useActiveTasks({ topLevelOnly: true, enabled: activeOnly });
 
   if (activeOnly) {
+    if (active.phase !== "ready") return active;
     const { labelIds } = filters;
-    const tasks = active.data?.filter(
-      (task) =>
-        (projectId === null || task.projectId === projectId) &&
-        labelIds?.length !== 0 &&
-        matchesFilters(task, filters.statuses, filters.priorities, labelIds ?? []),
-    );
     return {
-      tasks,
-      isLoading: active.isLoading,
-      error: active.error,
-      retry: active.retry,
+      ...active,
+      tasks: active.tasks.filter(
+        (task) =>
+          (projectId === null || task.projectId === projectId) &&
+          labelIds?.length !== 0 &&
+          matchesFilters(task, filters.statuses, filters.priorities, labelIds ?? []),
+      ),
     };
   }
-  const failed = primary.isError || (split && closed.isError);
   const retry = () => {
     primary.retry();
     closed.retry();
   };
-  if (failed) return { tasks: undefined, isLoading: false, error: tasksLoadError(), retry };
-  if (!primary.isReady) return { tasks: undefined, isLoading: true, error: null, retry };
+  if (primary.isError || (split && closed.isError)) {
+    return { phase: "failed", error: tasksLoadError(), retry };
+  }
+  if (!primary.isReady) return { phase: "loading", retry };
   return {
+    phase: "ready",
     tasks: split
       ? [...(primary.data ?? []), ...(closed.isReady ? (closed.data ?? []) : [])]
-      : primary.data,
-    isLoading: split && !closed.isReady,
-    error: null,
+      : (primary.data ?? []),
+    closedPending: split && !closed.isReady,
     retry,
   };
 }

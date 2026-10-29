@@ -175,6 +175,31 @@ describe("incremental task list updates", () => {
   });
 });
 
+describe("task list split load", () => {
+  it("paints open tasks while closed tasks are still arriving", async () => {
+    const open = task("TSK-1", "todo", 1);
+    const closed = task("TSK-2", "done", 2);
+    const store = seed(open, closed);
+    const rpc = trackedRpc(store, counters()) as Record<string, (input: never) => unknown>;
+    const listTasks = rpc.listTasks!;
+    let releaseClosed = () => {};
+    const closedReleased = new Promise<void>((resolve) => {
+      releaseClosed = resolve;
+    });
+    rpc.listTasks = async (input: { statuses?: string[] }) => {
+      if (input.statuses?.includes("done")) await closedReleased;
+      return listTasks(input as never);
+    };
+    const slot = renderSlot(app.navPanels[0]!, { subPath: "all" }, { rpc: rpc as never });
+    await slot.findByText("TSK-1 title");
+    expect(slot.queryByText("TSK-2 title")).toBeNull();
+
+    releaseClosed();
+    await slot.findByText("TSK-2 title");
+    expect(slot.getByText("TSK-1 title")).toBeDefined();
+  });
+});
+
 describe("task list load failures", () => {
   it("keeps the error when open tasks arrive after closed tasks failed", async () => {
     const open = task("TSK-1", "todo", 1);
