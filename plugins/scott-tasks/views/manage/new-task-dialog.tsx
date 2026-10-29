@@ -273,7 +273,7 @@ export function NewTaskDialog({
                   key={entry.id}
                   entry={entry}
                   onRemove={() => removeFile(entry.id)}
-                  onRetry={entry.status === "failed" ? () => void retryUpload(entry) : undefined}
+                  onRetry={retryUpload}
                 />
               ))}
             </div>
@@ -305,7 +305,7 @@ export function NewTaskDialog({
             className="mt-2 min-h-16"
             onAttachFiles={stageMore}
           />
-          {pendingFiles.length > 0 ? (
+          {createdTask === null && pendingFiles.length > 0 ? (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {pendingFiles.map((entry) => (
                 <AttachmentChip
@@ -313,6 +313,7 @@ export function NewTaskDialog({
                   entry={entry}
                   disabled={submitting}
                   onRemove={() => removeFile(entry.id)}
+                  onRetry={retryUpload}
                 />
               ))}
             </div>

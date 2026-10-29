@@ -306,7 +306,7 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
               key={entry.id}
               entry={entry}
               onRemove={() => removeFile(entry.id)}
-              onRetry={entry.status === "failed" ? () => void retryUpload(entry) : undefined}
+              onRetry={retryUpload}
             />
           ))}
         </div>

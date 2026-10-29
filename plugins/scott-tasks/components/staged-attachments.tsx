@@ -4,18 +4,18 @@ import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 import File01Icon from "@hugeicons/core-free-icons/File01Icon";
 import { cn } from "@/lib/utils";
 import { MAX_ATTACHMENT_SIZE_BYTES } from "../shared/attachments.js";
+import type { AttachmentOwner } from "../shared/contract.js";
 import { errorMessage } from "../shared/errors.js";
 import { formatFileSize } from "../views/activity/time.js";
-import { uploadAttachment, type AttachmentOwnerRef } from "../views/detail/attachments.js";
+import { uploadAttachment } from "../views/detail/attachments.js";
 
-export interface StagedAttachment {
-  id: number;
-  file: File;
-  status: "staged" | "oversized" | "failed";
-  owner?: AttachmentOwnerRef;
-  error?: string;
-  busy?: boolean;
-}
+export type StagedAttachment = { id: number; file: File } & (
+  | { status: "staged" }
+  | { status: "oversized"; error: string }
+  | { status: "failed"; owner: AttachmentOwner; error: string; retrying: boolean }
+);
+
+export type FailedAttachment = Extract<StagedAttachment, { status: "failed" }>;
 
 let nextStagedId = 0;
 
@@ -34,18 +34,20 @@ export function stageFiles(files: readonly File[]): StagedAttachment[] {
 
 export async function uploadStagedAttachments(
   staged: readonly StagedAttachment[],
-  owner: AttachmentOwnerRef,
-): Promise<StagedAttachment[]> {
-  const failed: StagedAttachment[] = [];
+  owner: AttachmentOwner,
+): Promise<FailedAttachment[]> {
+  const failed: FailedAttachment[] = [];
   for (const entry of staged) {
     try {
       await uploadAttachment(entry.file, owner);
     } catch (cause) {
       failed.push({
-        ...entry,
+        id: entry.id,
+        file: entry.file,
         status: "failed",
         owner,
         error: errorMessage(cause),
+        retrying: false,
       });
     }
   }
@@ -55,7 +57,7 @@ export async function uploadStagedAttachments(
 export function settleStagedUploads(
   files: readonly StagedAttachment[],
   staged: readonly StagedAttachment[],
-  failed: readonly StagedAttachment[],
+  failed: readonly FailedAttachment[],
 ): StagedAttachment[] {
   return files.flatMap((entry) => {
     const failure = failed.find((candidate) => candidate.id === entry.id);
@@ -69,12 +71,12 @@ export function useStagedAttachmentRetry(
   onUploaded?: () => void,
 ) {
   const retryingRef = useRef(new Set<number>());
-  return async (entry: StagedAttachment) => {
-    if (entry.owner === undefined || retryingRef.current.has(entry.id)) return;
+  return async (entry: FailedAttachment) => {
+    if (retryingRef.current.has(entry.id)) return;
     retryingRef.current.add(entry.id);
     setPendingFiles((files) =>
       files.map((candidate) =>
-        candidate.id === entry.id ? { ...candidate, busy: true } : candidate,
+        candidate.id === entry.id ? { ...entry, retrying: true } : candidate,
       ),
     );
     try {
@@ -85,7 +87,7 @@ export function useStagedAttachmentRetry(
       const message = errorMessage(cause);
       setPendingFiles((files) =>
         files.map((candidate) =>
-          candidate.id === entry.id ? { ...candidate, busy: false, error: message } : candidate,
+          candidate.id === entry.id ? { ...entry, retrying: false, error: message } : candidate,
         ),
       );
     } finally {
@@ -124,10 +126,12 @@ export function AttachmentChip({
 }: {
   entry: StagedAttachment;
   onRemove: () => void;
-  onRetry?: () => void;
+  onRetry: (entry: FailedAttachment) => void;
   disabled?: boolean;
 }) {
   const broken = entry.status !== "staged";
+  const error = entry.status === "staged" ? undefined : entry.error;
+  const retrying = entry.status === "failed" && entry.retrying;
   const image = entry.file.type.startsWith("image/");
   return (
     <span
@@ -137,7 +141,7 @@ export function AttachmentChip({
           ? "border-destructive/50 bg-destructive/10 text-destructive"
           : "border-border bg-background",
       )}
-      title={entry.error}
+      title={error}
     >
       {!broken && image ? (
         <ChipThumbnail file={entry.file} />
@@ -151,23 +155,23 @@ export function AttachmentChip({
       <span className={cn("text-2xs", broken ? "text-destructive/80" : "text-muted-foreground")}>
         {formatFileSize(entry.file.size)}
       </span>
-      {entry.error ? <span className="sr-only">{entry.error}</span> : null}
-      {entry.status === "failed" && onRetry ? (
+      {error ? <span className="sr-only">{error}</span> : null}
+      {entry.status === "failed" ? (
         <button
           type="button"
           aria-label={`Retry upload of ${entry.file.name}`}
-          aria-busy={entry.busy === true}
-          disabled={disabled || entry.busy === true}
+          aria-busy={entry.retrying}
+          disabled={disabled || entry.retrying}
           className="font-medium underline underline-offset-2 disabled:opacity-60"
-          onClick={onRetry}
+          onClick={() => onRetry(entry)}
         >
-          {entry.busy ? "Retrying…" : "Retry"}
+          {entry.retrying ? "Retrying…" : "Retry"}
         </button>
       ) : null}
       <button
         type="button"
         aria-label={`Remove ${entry.file.name}`}
-        disabled={disabled || entry.busy === true}
+        disabled={disabled || retrying}
         className={cn(
           "disabled:opacity-60",
           !broken && "text-muted-foreground hover:text-foreground",
