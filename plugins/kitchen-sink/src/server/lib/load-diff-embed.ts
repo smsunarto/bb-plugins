@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { join } from "node:path";
-import type { RenderEmbedInput, RenderEmbedOutput } from "../../shared/contract.ts";
+import type { OutputFor, RenderEmbedInput } from "../../shared/contract.ts";
 import {
   gitDiffSchema,
   gitWorkspaceStatusSchema,
@@ -161,7 +161,12 @@ async function loadSource(bb: BbPluginApi, input: Input): Promise<Source> {
     source: `Recorded turn: ${input.turnId}`,
   };
 }
-function selectEvidence(input: Input, { patch, source }: Source): RenderEmbedOutput {
+function selectEvidence(input: Extract<Input, { kind: "diff" }>, source: Source): OutputFor<"diff">;
+function selectEvidence(
+  input: Extract<Input, { kind: "patch" }>,
+  source: Source,
+): OutputFor<"patch">;
+function selectEvidence(input: Input, { patch, source }: Source): OutputFor<Input["kind"]> {
   if (new TextEncoder().encode(patch).byteLength > MAX_PATCH_BYTES)
     throw new Error("This patch is too large for an inline embed.");
   const files = splitPatchFiles(patch);
@@ -186,9 +191,7 @@ function selectEvidence(input: Input, { patch, source }: Source): RenderEmbedOut
     return {
       status: "ready",
       kind: "patch",
-      path: input.file,
       label: input.file,
-      patch,
       files: matches.map(({ path, patch }) => ({ path, patch })),
       source,
       truncated: false,
@@ -207,25 +210,25 @@ function selectEvidence(input: Input, { patch, source }: Source): RenderEmbedOut
   return {
     status: "ready",
     kind: input.kind,
-    path: file.path,
     label,
-    patch,
+    files: [{ path: file.path, patch }],
     source,
     truncated: false,
   };
 }
-export async function loadDiffEmbed(bb: BbPluginApi, input: Input): Promise<RenderEmbedOutput> {
+export async function loadDiffEmbed(
+  bb: BbPluginApi,
+  input: Input,
+): Promise<OutputFor<Input["kind"]>> {
   try {
     validateInput(input);
-    const db = input.kind === "diff" ? snapshotDatabase(bb) : null;
-    if (input.kind === "diff" && db) {
-      const saved = readDiffSnapshot(db, input);
-      if (saved) return saved;
-    }
+    if (input.kind === "patch") return selectEvidence(input, await loadSource(bb, input));
+    // A diff is evidence: what its first display showed is what it keeps showing.
+    const db = snapshotDatabase(bb);
+    const saved = readDiffSnapshot(db, input);
+    if (saved) return saved;
     const output = selectEvidence(input, await loadSource(bb, input));
-    if (input.kind === "diff" && db && output.status === "ready" && output.kind === "diff")
-      return saveDiffSnapshot(db, input, { ...output, kind: "diff" });
-    return output;
+    return output.status === "ready" ? saveDiffSnapshot(db, input, output) : output;
   } catch (error) {
     bb.log.warn(`Smart diff source unavailable: ${String(error)}`);
     return {

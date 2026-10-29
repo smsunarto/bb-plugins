@@ -1,10 +1,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { z } from "zod";
 
-import { renderEmbedOutputSchema, type RenderEmbedOutput } from "../../shared/contract.ts";
+import { diffEmbedSchema, type RenderEmbedInput } from "../../shared/contract.ts";
 
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
-type DiffSnapshot = Extract<RenderEmbedOutput, { status: "ready" }> & { kind: "diff" };
+type DiffInput = Extract<RenderEmbedInput, { kind: "diff" }>;
+export type DiffSnapshot = z.output<typeof diffEmbedSchema>;
 
 export const diffSnapshotMigrations = [
   `CREATE TABLE diff_snapshots (
@@ -29,8 +31,7 @@ export function snapshotDatabase(bb: BbPluginApi): Database {
   return db;
 }
 
-export function snapshotKey(input: import("../../shared/contract.ts").RenderEmbedInput): string {
-  if (input.kind !== "diff") throw new Error("Expected diff request");
+export function snapshotKey(input: DiffInput): string {
   return JSON.stringify([
     input.threadId,
     input.messageId,
@@ -44,10 +45,7 @@ export function snapshotKey(input: import("../../shared/contract.ts").RenderEmbe
   ]);
 }
 
-export function readDiffSnapshot(
-  db: Database,
-  input: Extract<import("../../shared/contract.ts").RenderEmbedInput, { kind: "diff" }>,
-): DiffSnapshot | null {
+export function readDiffSnapshot(db: Database, input: DiffInput): DiffSnapshot | null {
   const row = db
     .prepare<[string], { payload: string }>(
       "SELECT payload FROM smart_diff_snapshots_v2 WHERE key = ?",
@@ -64,27 +62,24 @@ export function readDiffSnapshot(
   return old ? decode(old.payload, true) : null;
 }
 function decode(payload: string, legacy = false): DiffSnapshot {
-  const raw = JSON.parse(payload);
-  const value = renderEmbedOutputSchema.parse(
+  // Rows saved before `files` carried their one file as `path` and `patch`.
+  const { path, patch, files = [{ path, patch }], ...raw } = JSON.parse(payload);
+  return diffEmbedSchema.parse(
     legacy
       ? {
           status: raw.status,
           kind: raw.kind,
-          path: raw.path,
           label: raw.label,
-          patch: raw.patch,
+          files,
           truncated: raw.truncated,
           source: "Saved workspace diff",
         }
-      : raw,
+      : { ...raw, files },
   );
-  if (value.status !== "ready" || value.kind !== "diff")
-    throw new Error("Invalid saved diff snapshot.");
-  return { ...value, kind: "diff" };
 }
 export function saveDiffSnapshot(
   db: Database,
-  input: Extract<import("../../shared/contract.ts").RenderEmbedInput, { kind: "diff" }>,
+  input: DiffInput,
   value: DiffSnapshot,
 ): DiffSnapshot {
   db.prepare("INSERT OR IGNORE INTO smart_diff_snapshots_v2 (key, payload) VALUES (?, ?)").run(

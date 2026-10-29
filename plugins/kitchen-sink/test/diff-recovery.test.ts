@@ -4,7 +4,11 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { loadDiffEmbed } from "../src/server/lib/load-diff-embed.ts";
 import { splitPatchFiles } from "../src/server/lib/patch-file.ts";
 import { rangePatch } from "../src/server/lib/diff-range.ts";
-import { snapshotDatabase, diffSnapshotMigrations } from "../src/server/lib/diff-snapshot.ts";
+import {
+  snapshotDatabase,
+  snapshotKey,
+  diffSnapshotMigrations,
+} from "../src/server/lib/diff-snapshot.ts";
 
 const patch = "diff --git a/a.ts b/a.ts\n--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
 const input = {
@@ -64,7 +68,7 @@ describe("historical evidence", () => {
     const { bb, diff } = setup();
     expect(await loadDiffEmbed(bb, input)).toMatchObject({
       status: "ready",
-      patch,
+      files: [{ path: "a.ts", patch }],
       source: "Recorded turn: turn",
     });
     expect(diff).not.toHaveBeenCalled();
@@ -132,9 +136,37 @@ describe("historical evidence", () => {
         unity: { legacy: true },
       }),
     );
-    expect(await loadDiffEmbed(bb, input)).toMatchObject({ source: "Saved workspace diff", patch });
+    expect(await loadDiffEmbed(bb, input)).toMatchObject({
+      source: "Saved workspace diff",
+      files: [{ path: "a.ts", patch }],
+    });
     expect(events).not.toHaveBeenCalled();
     expect(snapshotDatabase(bb)).toBe(db);
+  });
+  test("reopens a snapshot saved before its file was listed under files", async () => {
+    const { bb, events } = setup();
+    const db = snapshotDatabase(bb);
+    db.prepare("INSERT INTO smart_diff_snapshots_v2 (key, payload) VALUES (?, ?)").run(
+      snapshotKey(input),
+      JSON.stringify({
+        status: "ready",
+        kind: "diff",
+        path: "a.ts",
+        label: "a.ts",
+        patch,
+        source: "Recorded turn: turn",
+        truncated: false,
+      }),
+    );
+    expect(await loadDiffEmbed(bb, input)).toEqual({
+      status: "ready",
+      kind: "diff",
+      label: "a.ts",
+      files: [{ path: "a.ts", patch }],
+      source: "Recorded turn: turn",
+      truncated: false,
+    });
+    expect(events).not.toHaveBeenCalled();
   });
 });
 test("proposal selects a file and confines the read to thread storage", async () => {
@@ -149,7 +181,7 @@ test("proposal selects a file and confines the read to thread storage", async ()
   });
   expect(
     await loadDiffEmbed(bb, { kind: "patch", threadId: "t", file: "p.patch", path: "b.ts" }),
-  ).toMatchObject({ status: "ready", path: "b.ts" });
+  ).toMatchObject({ status: "ready", files: [{ path: "b.ts" }] });
   expect(read).toHaveBeenCalledWith({
     hostId: "h",
     rootPath: "/storage/t",
@@ -207,7 +239,10 @@ test("recorded lookup pages and preserves the newest matching event", async () =
     event(200, "turn"),
     event(199, "turn", patch.replace("new", "older")),
   ]);
-  expect(await loadDiffEmbed(bb, input)).toMatchObject({ status: "ready", patch });
+  expect(await loadDiffEmbed(bb, input)).toMatchObject({
+    status: "ready",
+    files: [{ path: "a.ts", patch }],
+  });
   expect(events.mock.calls[1]?.[0]).toMatchObject({ beforeSeq: "201" });
 });
 test("failed and empty sources can recover on later loads", async () => {
@@ -223,7 +258,10 @@ test("failed and empty sources can recover on later loads", async () => {
     },
   ]);
   expect(await loadDiffEmbed(bb, input)).toMatchObject({ status: "empty" });
-  expect(await loadDiffEmbed(bb, input)).toMatchObject({ status: "ready", patch });
+  expect(await loadDiffEmbed(bb, input)).toMatchObject({
+    status: "ready",
+    files: [{ path: "a.ts", patch }],
+  });
 });
 test("simultaneous first loads return the same winning snapshot", async () => {
   const { bb, events } = setup();

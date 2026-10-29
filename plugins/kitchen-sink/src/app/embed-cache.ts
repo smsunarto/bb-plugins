@@ -19,9 +19,9 @@ import type { RenderEmbedOutput } from "../shared/contract.ts";
 
 export type EmbedRequest = import("../shared/contract.ts").RenderEmbedInput;
 
-export type EmbedEntry = {
+export type EmbedEntry<T extends RenderEmbedOutput = RenderEmbedOutput> = {
   /** The last output, or null while the first load is in flight. */
-  readonly value: RenderEmbedOutput | null;
+  readonly value: T | null;
   /** True when a newer load is needed. `value` stays visible meanwhile. */
   readonly stale: boolean;
 };
@@ -60,10 +60,7 @@ export function embedCacheKey(request: EmbedRequest): string {
 
 function outputBytes(value: RenderEmbedOutput): number {
   if (value.status !== "ready") return value.message.length;
-  if (value.kind !== "code")
-    return (
-      value.patch.length + (value.files?.reduce((sum, file) => sum + file.patch.length, 0) ?? 0)
-    );
+  if (value.kind !== "code") return value.files.reduce((sum, file) => sum + file.patch.length, 0);
   return value.content.length + (value.unity ? JSON.stringify(value.unity).length : 0);
 }
 

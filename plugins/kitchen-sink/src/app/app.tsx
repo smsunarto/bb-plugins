@@ -12,10 +12,11 @@ import {
   renderEmbedInputSchema,
   WORKSPACE_CHANGED_CHANNEL,
   workspaceChangedSignalSchema,
+  type OutputFor,
   type SmartEmbedsRpcContract,
   type RenderEmbedOutput,
 } from "../shared/contract.ts";
-import { embedCache, embedCacheKey, type EmbedRequest } from "./embed-cache.ts";
+import { embedCache, embedCacheKey, type EmbedEntry, type EmbedRequest } from "./embed-cache.ts";
 import { UnityCitationView } from "@bb-plugins/unity-inspector/app";
 import { CompletionSound } from "./completion-sound.tsx";
 import { DevinIcon } from "./devin-branding.tsx";
@@ -77,7 +78,16 @@ function useWorkspaceChangeSignals(): void {
   }, [connection]);
 }
 
-function useCachedEmbed(request: EmbedRequest | null) {
+type CodeRequest = Extract<EmbedRequest, { kind: "code" }>;
+type ChangeRequest = Exclude<EmbedRequest, CodeRequest>;
+
+/**
+ * The cache key carries the request's kind, so the entry it reads holds that
+ * kind's output. The one method's union is narrowed here, once.
+ */
+function useCachedEmbed<R extends EmbedRequest>(
+  request: R | null,
+): EmbedEntry<OutputFor<R["kind"]>> | null {
   const rpc = useRpc<SmartEmbedsRpcContract>();
   const key = request === null ? null : embedCacheKey(request);
   const subscribe = useCallback(
@@ -98,7 +108,7 @@ function useCachedEmbed(request: EmbedRequest | null) {
     );
   }, [entry, key, request, rpc]);
 
-  return entry;
+  return entry as EmbedEntry<OutputFor<R["kind"]>> | null;
 }
 
 function SmartCodeDirective({
@@ -117,7 +127,7 @@ function SmartCodeDirective({
   useWorkspaceChangeSignals();
   const threadId = message.threadId;
   const workspace = attributes.workspace?.trim();
-  const request = useMemo<EmbedRequest | null>(
+  const request = useMemo<CodeRequest | null>(
     () =>
       invalid
         ? null
@@ -136,7 +146,6 @@ function SmartCodeDirective({
   if (!result) return <Notice tone="muted">{`Loading ${path}…`}</Notice>;
   if (result.status !== "ready")
     return <Notice tone={result.status === "error" ? "error" : "muted"}>{result.message}</Notice>;
-  if (result.kind !== "code") return <Notice tone="error">Unexpected citation response.</Notice>;
   const raw =
     result.content.length === 0 ? (
       <Notice tone="muted">Empty source.</Notice>
@@ -202,7 +211,7 @@ function ChangeEmbed({
 }: Pick<PluginMessageDirectiveProps, "attributes" | "message"> & { kind: "diff" | "patch" }) {
   const parsed = changeRequest(attributes, message, kind);
   const serialized = parsed.success ? JSON.stringify(parsed.data) : null;
-  const request = useMemo<EmbedRequest | null>(
+  const request = useMemo<ChangeRequest | null>(
     () => (serialized ? JSON.parse(serialized) : null),
     [serialized],
   );
@@ -218,7 +227,6 @@ function ChangeEmbed({
   if (!result) return <Notice tone="muted">Loading diff…</Notice>;
   if (result.status !== "ready")
     return <Notice tone={result.status === "error" ? "error" : "muted"}>{result.message}</Notice>;
-  if (result.kind === "code") return <Notice tone="error">Unexpected diff response.</Notice>;
   return (
     <figure className="smart-embed" data-smart-embed-kind={kind}>
       <figcaption className="smart-embed-header">
@@ -233,9 +241,9 @@ function ChangeEmbed({
         </span>
       </div>
       <div className="smart-embed-body">
-        {(result.files ?? [{ path: result.path, patch: result.patch }]).map((file) => (
+        {result.files.map((file) => (
           <div key={`${file.path}:${file.patch}`}>
-            {result.files ? <div className="smart-embed-header">{file.path}</div> : null}
+            {result.files.length > 1 ? <div className="smart-embed-header">{file.path}</div> : null}
             <Diff
               patch={file.patch}
               path={file.path}

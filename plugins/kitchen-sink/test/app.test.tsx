@@ -325,9 +325,8 @@ test("smart-diff passes exact message identity and renders through BB Diff", asy
   const result = {
     status: "ready",
     kind: "diff",
-    path: "a.ts",
     label: "a.ts",
-    patch: "@@ -1 +1 @@\n-old\n+new\n",
+    files: [{ path: "a.ts", patch: "@@ -1 +1 @@\n-old\n+new\n" }],
     source: "Recorded turn: turn-1",
     truncated: false,
   };
@@ -341,7 +340,7 @@ test("smart-diff passes exact message identity and renders through BB Diff", asy
     },
     { rpc: { renderEmbed: async () => result } },
   );
-  expect((await slot.findByTestId("bb-diff")).textContent).toBe(result.patch);
+  expect((await slot.findByTestId("bb-diff")).textContent).toBe(result.files[0]!.patch);
   expect(slot.rpcCalls[0]?.input).toEqual({
     kind: "diff",
     path: "a.ts",
@@ -350,6 +349,8 @@ test("smart-diff passes exact message identity and renders through BB Diff", asy
     turnId: "turn-1",
   });
   expect(slot.getByText(result.source)).toBeDefined();
+  // One file needs no heading of its own.
+  expect(slot.container.querySelectorAll(".smart-embed-body .smart-embed-header")).toHaveLength(0);
   slot.unmount();
   embedCache.clear();
 });
@@ -373,9 +374,7 @@ test("smart-patch renders each proposal file through BB Diff", async () => {
         renderEmbed: async () => ({
           status: "ready",
           kind: "patch",
-          path: "p.patch",
           label: "p.patch",
-          patch: "",
           files,
           source: "Proposal: p.patch",
           truncated: false,
@@ -385,6 +384,11 @@ test("smart-patch renders each proposal file through BB Diff", async () => {
   );
   await waitFor(() => expect(slot.getAllByTestId("bb-diff")).toHaveLength(2));
   expect(slot.getAllByTestId("bb-diff").map((node) => node.dataset.path)).toEqual(["a.ts", "b.ts"]);
+  expect(
+    [...slot.container.querySelectorAll(".smart-embed-body .smart-embed-header")].map(
+      (node) => node.textContent,
+    ),
+  ).toEqual(["a.ts", "b.ts"]);
   slot.unmount();
   embedCache.clear();
 });
