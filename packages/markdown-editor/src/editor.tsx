@@ -47,9 +47,10 @@ export interface MarkdownEditorProps {
   renderSource?(props: { value: string; onChange(value: string): void; onSave(): void }): ReactNode;
 }
 
+const HIDDEN_CONTENT = "Source mode preserves content the rich editor cannot display.";
+
 export function MarkdownEditor(props: MarkdownEditorProps) {
   const [mode, setMode] = useState<"rich" | "source">("rich");
-  const [hiddenBody, setHiddenBody] = useState<string | null>(null);
   const [limit, setLimit] = useState(false);
   const focused = useRef(false);
   const focusOnMount = useRef(props.autoFocus ?? false);
@@ -62,16 +63,17 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
   const emitted = useRef<string | null>(null);
   const document = splitEditableDocument(props.value);
   const header = document.prefix + document.yaml + document.suffix;
-  const [inspected, setInspected] = useState(() => ({
-    body: document.body,
-    reason: sourceModeReason(document.body),
-  }));
-  const reason =
-    (inspected.body === document.body ? inspected.reason : null) ??
-    (hiddenBody === document.body
-      ? "Source mode preserves content the rich editor cannot display."
-      : null);
+  const [blocked, setBlocked] = useState<{ body: string; reason: string } | null>(() => {
+    const reason = sourceModeReason(document.body);
+    return reason ? { body: document.body, reason } : null;
+  });
+  const reason = blocked?.body === document.body ? blocked.reason : null;
   const rich = mode === "rich" && !reason;
+  /** Record why rich mode cannot show `body`: its syntax first, then content the parse dropped. */
+  const inspect = (body: string, hidden: boolean) => {
+    const reason = sourceModeReason(body) ?? (hidden ? HIDDEN_CONTENT : null);
+    setBlocked(reason ? { body, reason } : null);
+  };
   useLayoutEffect(() => {
     latest.current = props;
     current.current = props.value;
@@ -152,7 +154,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
     editorRef.current = editor;
     sessionRef.current = session;
     if (session.hasHiddenContent()) {
-      setHiddenBody(splitEditableDocument(current.current).body);
+      inspect(splitEditableDocument(current.current).body, true);
       setMode("source");
     }
     editor.on("update", () => {
@@ -180,11 +182,9 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
     sessionRef.current?.load(body);
     // Inspect external loads and source edits, never an editor's own output.
     if (!rich || props.value !== emitted.current) {
-      setInspected({ body, reason: sourceModeReason(body) });
-      if (sessionRef.current?.hasHiddenContent()) {
-        setHiddenBody(body);
-        setMode("source");
-      }
+      const hidden = sessionRef.current?.hasHiddenContent() ?? false;
+      inspect(body, hidden);
+      if (hidden) setMode("source");
     }
     // rich changes are lifetime changes, not external loads.
     // oxlint-disable-next-line react/exhaustive-deps
@@ -266,7 +266,7 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
           disabled={!!reason}
           onClick={() => {
             focusOnMount.current = true;
-            setInspected({ body: document.body, reason: sourceModeReason(document.body) });
+            inspect(document.body, false);
             setMode("rich");
             editorRef.current?.view.focus();
           }}
