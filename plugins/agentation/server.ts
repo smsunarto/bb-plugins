@@ -92,7 +92,7 @@ import {
 } from "./lib/delivery.ts";
 import { instructionFiles } from "@bb-plugins/instructions";
 
-// Agent-facing text, editable in the Prompt Editor plugin.
+// Agent-facing text, editable in Agent Instructions → Plugin prompts.
 const files = instructionFiles(import.meta.url);
 
 const openStatuses: AnnotationStatus[] = ["pending", "acknowledged"];

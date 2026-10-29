@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { FILES, plugin } from "../../../test/fixture.ts";
-import { host } from "../../../test/host.ts";
+import { FILES, plugin } from "../../test/fixture.ts";
+import { host } from "../../test/host.ts";
 
 test("lists plugins with agent text, editable ones first, then by name", async () => {
   const { call } = await host([

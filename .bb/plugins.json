@@ -60,10 +60,6 @@
       "source": "./plugins/monokai"
     },
     {
-      "name": "prompt-editor",
-      "source": "./plugins/prompt-editor"
-    },
-    {
       "name": "usage-bar",
       "source": "./plugins/usage-bar"
     },

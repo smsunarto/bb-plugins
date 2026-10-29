@@ -4,17 +4,17 @@ import { file, fileContract } from "./rpc/file.ts";
 import { plugins, pluginsContract } from "./rpc/plugins.ts";
 import { save, saveContract } from "./rpc/save.ts";
 
-export const contract = defineRpcContract({
+export const promptContract = defineRpcContract({
   plugins: pluginsContract,
   file: fileContract,
   save: saveContract,
 });
 
-export default async function plugin(bb: BbPluginApi): Promise<void> {
+export function promptHandlers(bb: BbPluginApi) {
   const ctx: PromptEditorContext = Object.freeze({ bb });
-  bb.rpc.register(contract, {
+  return {
     plugins: () => plugins(ctx),
-    file: (input) => file(ctx, input),
-    save: (input) => save(ctx, input),
-  });
+    file: (input: Parameters<typeof file>[1]) => file(ctx, input),
+    save: (input: Parameters<typeof save>[1]) => save(ctx, input),
+  };
 }

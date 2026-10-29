@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
  * Public surface of `@bb-plugins/instructions`.
  *
  * Every agent-facing string a plugin ships lives as Markdown under
- * `<plugin>/instructions/`, so the Prompt Editor plugin can show and edit
+ * `<plugin>/instructions/`, so Agent Instructions → Plugin prompts can show and edit
  * exactly the text the agent receives:
  *
  *   instructions/<name>.md                    thread instructions and prompts

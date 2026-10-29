@@ -6,7 +6,7 @@ This package is maintained in `smsunarto/bb-plugins`. It imports
 The upstream Apache-2.0 license and bundled font license are preserved.
 
 Local changes: workspace package metadata and dependency management, local
-build/test commands, and agent text stored in `instructions/` for Prompt Editor.
+build/test commands, and agent text stored in `instructions/` for Agent Instructions → Plugin prompts.
 The parser, renderer, gallery, and runtime behavior are retained from upstream.
 Repository integration adds generated icons, a gallery story, and Apache license
 checks. Lint reports inherited upstream diagnostics as warnings; the local

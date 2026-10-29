@@ -1,4 +1,4 @@
-import { definePluginApp, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
@@ -14,7 +14,7 @@ import { queryClient } from "./query.ts";
 import { queryKey, useRpcMutation, useRpcQuery } from "./rpc.ts";
 import "./prompt-editor.css";
 
-const PANEL_PATH = "prompt-editor";
+const PANEL_PATH = "instructions";
 
 /** What the editor shows: a file, or a tool whose text lives in code. */
 type Selection = { pluginId: string; path: string } | { pluginId: string; tool: string };
@@ -41,7 +41,7 @@ function parseSelection(subPath: string): Selection | null {
 function useSelect(): (selection: Selection) => void {
   const navigate = useBbNavigate();
   return (selection) =>
-    navigate.toPluginPanel(PANEL_PATH, { subPath: selectionSubPath(selection) });
+    navigate.toPluginPanel(PANEL_PATH, { subPath: `prompts/${selectionSubPath(selection)}` });
 }
 
 const KIND_LABEL: Record<FileKind, string> = {
@@ -473,7 +473,7 @@ function PromptEditor({ subPath }: { subPath: string }) {
   return <main className="pe-panel">{body}</main>;
 }
 
-function PromptEditorPage({ subPath }: PluginNavPanelProps) {
+export function PromptEditorPage({ subPath }: PluginNavPanelProps) {
   return (
     <QueryClientProvider client={queryClient}>
       <PromptEditor subPath={subPath} />
@@ -481,29 +481,10 @@ function PromptEditorPage({ subPath }: PluginNavPanelProps) {
   );
 }
 
-function PluginsTab({ subPath }: PluginNavPanelProps) {
+export function PluginsTab({ subPath }: PluginNavPanelProps) {
   return (
     <QueryClientProvider client={queryClient}>
       <PluginsTabBody subPath={subPath} />
     </QueryClientProvider>
   );
 }
-
-export default definePluginApp((app) => {
-  app.slots.navPanel({
-    id: "prompt-editor",
-    title: "Prompt Editor",
-    icon: "EditFile",
-    path: PANEL_PATH,
-    component: PromptEditorPage,
-  });
-  app.slots.experimental_tab({
-    context: { kind: "nav-panel", panelId: "prompt-editor" },
-    availability: "fixed",
-    id: "plugins",
-    title: "Plugins",
-    icon: "Puzzle",
-    component: PluginsTab,
-    layout: "flush",
-  });
-});

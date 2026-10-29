@@ -206,7 +206,7 @@ test("review editing remains reachable when the dotfiles machine is offline", as
   await slot.findByText("Local Mac is not connected.");
   assert.equal(
     slot.getByRole("link", { name: /Review workflow/ }).getAttribute("href"),
-    "/plugins/prompt-editor/prompt-editor/code-review/file/skills/review/SKILL.md",
+    "/plugins/agent-instructions/instructions/prompts/code-review/file/skills/review/SKILL.md",
   );
   slot.unmount();
 });

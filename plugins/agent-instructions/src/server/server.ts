@@ -8,7 +8,12 @@ import { rules, rulesContract } from "./rpc/rules.ts";
 import { saveRules, saveRulesContract } from "./rpc/save-rules.ts";
 import { targets, targetsContract } from "./rpc/targets.ts";
 
+import { promptContract, promptHandlers } from "../prompts/server/server.ts";
+
 export const contract = defineRpcContract({
+  plugins: promptContract.plugins,
+  file: promptContract.file,
+  save: promptContract.save,
   rules: rulesContract,
   saveRules: saveRulesContract,
   targets: targetsContract,
@@ -17,7 +22,11 @@ export const contract = defineRpcContract({
 export default async function plugin(bb: BbPluginApi): Promise<void> {
   const ctx: AgentInstructionsContext = Object.freeze({ bb, store: openStore(bb) });
   const { store } = ctx;
+  const prompts = promptHandlers(bb);
   bb.rpc.register(contract, {
+    plugins: prompts.plugins,
+    file: prompts.file,
+    save: prompts.save,
     rules: () => rules(ctx),
     saveRules: (input) => saveRules(ctx, input),
     targets: () => targets(ctx),

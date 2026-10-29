@@ -126,10 +126,10 @@ function FilesTabBody(props: PluginNavPanelProps & { workflows: boolean }): Reac
           </div>
           <UrlLink
             className="block w-full rounded-md px-2 py-1 text-left text-sm text-foreground hover:bg-accent/50"
-            href="/plugins/prompt-editor/prompt-editor/code-review/file/skills/review/SKILL.md"
+            href="/plugins/agent-instructions/instructions/prompts/code-review/file/skills/review/SKILL.md"
           >
             Review workflow
-            <span className="block text-xs text-muted-foreground">Edit in Prompt Editor</span>
+            <span className="block text-xs text-muted-foreground">Edit in Agent Instructions</span>
           </UrlLink>
         </div>
       )}

@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { FILES, plugin } from "../../../test/fixture.ts";
-import { host } from "../../../test/host.ts";
+import { FILES, plugin } from "../../test/fixture.ts";
+import { host } from "../../test/host.ts";
 
 const PATH = "instructions/tools/notes_find.md";
 

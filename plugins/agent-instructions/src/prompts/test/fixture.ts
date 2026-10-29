@@ -2,7 +2,7 @@ import { afterEach } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { InstalledPlugin } from "../src/server/lib/agent-text.ts";
+import type { InstalledPlugin } from "../server/lib/agent-text.ts";
 
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach((root) => rmSync(root, { recursive: true, force: true })));

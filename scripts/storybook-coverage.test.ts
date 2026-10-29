@@ -7,7 +7,11 @@ import { previewSurfaceClass } from "../.storybook/surfaces";
 // Explicit surface inventory. Each entry requires a particular story and its
 // production import/registration, so a lone Button story cannot satisfy coverage.
 const surfaces: Record<string, Record<string, string[]>> = {
-  "agent-instructions": { rules: ["RuleCard"], screens: ["../src/app/app"] },
+  "agent-instructions": {
+    rules: ["RuleCard"],
+    screens: ["../src/app/app"],
+    prompts: ["../src/app/app"],
+  },
   agentation: { panel: ["AnnotationPanel"] },
   amp: { oracle: ["../app"] },
   "code-review": {
@@ -39,7 +43,6 @@ const surfaces: Record<string, Record<string, string[]>> = {
       "export:SurfaceComposition",
     ],
   },
-  "prompt-editor": { editor: ["../src/app/app"] },
   "scott-docs": { documents: ["../app"], cards: ["../app"] },
   "scott-tasks": {
     views: ["ListView", "BoardView", "DetailView", "ManagePanel"],

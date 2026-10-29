@@ -66,7 +66,7 @@ const MAX_GENERATED_TITLE_LENGTH = 96;
 const MAX_REQUEST_CONTEXT_LENGTH = 1_500;
 const titleSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
-// Naming prompts, editable in the Prompt Editor plugin. Read per call so an
+// Naming prompts, editable in Agent Instructions → Plugin prompts. Read per call so an
 // edit applies to the next title without a reload.
 const files = instructionFiles(import.meta.url);
 

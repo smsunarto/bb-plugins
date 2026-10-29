@@ -135,7 +135,7 @@ since its commits are nowhere else. That review reads the branch with
 The prompts live in [`instructions/review-with-bb.md`](instructions/review-with-bb.md)
 and [`instructions/review-local-branch.md`](instructions/review-local-branch.md),
 which share [`instructions/review-criteria.md`](instructions/review-criteria.md),
-adapted from Codex's own review agent. The Prompt Editor plugin can edit them.
+adapted from Codex's own review agent. The Agent Instructions page can edit them under Plugin prompts.
 
 ## Requirements
 

@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describePlugin, readAgentFile, saveAgentFile } from "../src/server/lib/agent-text.ts";
+import { describePlugin, readAgentFile, saveAgentFile } from "../server/lib/agent-text.ts";
 import { FILES, plugin } from "./fixture.ts";
 
 test("lists every tool and agent file, and which tool text lives in code", () => {

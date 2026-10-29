@@ -792,7 +792,7 @@ function humanizeBranch(branch: string): string {
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : "";
 }
 
-// Agent-facing prompts, editable in the Prompt Editor plugin.
+// Agent-facing prompts, editable in Agent Instructions → Plugin prompts.
 const files = instructionFiles(import.meta.url);
 
 function suggestNamePrompt(conventional: boolean): string {

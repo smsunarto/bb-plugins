@@ -11,7 +11,7 @@ import { instructionFiles } from "@bb-plugins/instructions";
 import type { Session, StoredAnnotation } from "./afs.ts";
 import { pluginUiSurfacePromptContext } from "./plugin-ui-surface-map.ts";
 
-// Agent-facing text, editable in the Prompt Editor plugin.
+// Agent-facing text, editable in Agent Instructions → Plugin prompts.
 const files = instructionFiles(import.meta.url);
 
 function line(label: string, value: string | null | undefined): string {

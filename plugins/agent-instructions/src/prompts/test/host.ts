@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import type { InstalledPlugin } from "../src/server/lib/agent-text.ts";
-import plugin from "../src/server/server.ts";
+import type { InstalledPlugin } from "../server/lib/agent-text.ts";
+import plugin from "../../server/server.ts";
 
 /** The real plugin on a fake host whose bb lists `installed`. */
 export async function host(
@@ -12,7 +12,7 @@ export async function host(
 ) {
   const reloads: Array<string | undefined> = [];
   const { bb, harness } = createFakePluginHost({
-    pluginId: "prompt-editor",
+    pluginId: "agent-instructions",
     sdk: {
       plugins: {
         list: async () => ({ plugins: installed }),

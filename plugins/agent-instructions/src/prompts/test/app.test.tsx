@@ -2,8 +2,8 @@ import { installDom } from "@bb-plugins/testing";
 import { beforeEach, expect, test } from "bun:test";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import type { ComponentType } from "react";
-import { queryClient } from "../src/app/query.ts";
-import type { Plugin } from "../src/shared/schema.ts";
+import { queryClient } from "../app/query.ts";
+import type { Plugin } from "../shared/schema.ts";
 
 installDom();
 const { fireEvent, within } = await import("@testing-library/react");
@@ -41,7 +41,7 @@ const rpc = {
 };
 
 function loadApp() {
-  return loadPluginApp(() => import("../src/app/app.tsx"));
+  return loadPluginApp(() => import("../../app/app.tsx"));
 }
 
 async function registration() {
@@ -49,7 +49,11 @@ async function registration() {
 }
 
 async function page(subPath: string) {
-  return renderSlot(await registration(), { subPath }, { rpc: rpc as never });
+  return renderSlot(
+    await registration(),
+    { subPath: subPath ? `prompts/${subPath}` : "prompts" },
+    { rpc: rpc as never },
+  );
 }
 
 /** The fixed Plugins tab bb shows beside the page, ready for `renderSlot`. */
@@ -59,20 +63,24 @@ async function pluginsTabRegistration() {
       candidate.id === "plugins" &&
       candidate.availability === "fixed" &&
       candidate.context.kind === "nav-panel" &&
-      candidate.context.panelId === "prompt-editor",
+      candidate.context.panelId === "agent-instructions",
   );
   if (!tab) throw new Error("Prompt Editor declares no Plugins tab");
   return { component: tab.component as ComponentType<PluginNavPanelProps> };
 }
 
 async function pluginsTab(subPath: string) {
-  return renderSlot(await pluginsTabRegistration(), { subPath }, { rpc: rpc as never });
+  return renderSlot(
+    await pluginsTabRegistration(),
+    { subPath: subPath ? `prompts/${subPath}` : "prompts" },
+    { rpc: rpc as never },
+  );
 }
 
 test("the plugin list is the page's Plugins tab, under its saved ids", async () => {
   const app = await loadApp();
   const panel = app.navPanels[0]!;
-  expect(panel.path).toBe("prompt-editor");
+  expect(panel.path).toBe("instructions");
   expect(panel.fixedTabs).toBeUndefined();
   // Saved panel layouts find the tab by panel id and tab id.
   expect(
@@ -87,7 +95,7 @@ test("the plugin list is the page's Plugins tab, under its saved ids", async () 
     {
       id: "plugins",
       title: "Plugins",
-      context: { kind: "nav-panel", panelId: "prompt-editor" },
+      context: { kind: "nav-panel", panelId: "agent-instructions" },
       availability: "fixed",
       layout: "flush",
     },
@@ -106,8 +114,8 @@ test("choosing in the tab puts the choice in the page's URL", async () => {
   expect(tab.navigateCalls).toEqual([
     {
       method: "toPluginPanel",
-      path: "prompt-editor",
-      options: { subPath: "notes/file/instructions/tools/notes_find.md" },
+      path: "instructions",
+      options: { subPath: "prompts/notes/file/instructions/tools/notes_find.md" },
     },
   ]);
   tab.lifecycle.unmount();
@@ -121,8 +129,8 @@ test("choosing in the tab puts the choice in the page's URL", async () => {
   expect(open.navigateCalls).toEqual([
     {
       method: "toPluginPanel",
-      path: "prompt-editor",
-      options: { subPath: "notes/tool/notes_code" },
+      path: "instructions",
+      options: { subPath: "prompts/notes/tool/notes_code" },
     },
   ]);
   open.lifecycle.unmount();
@@ -136,15 +144,15 @@ test("names with spaces go to bb raw, which encodes the URL itself", async () =>
   };
   const slot = renderSlot(
     await pluginsTabRegistration(),
-    { subPath: "" },
+    { subPath: "prompts" },
     { rpc: { ...rpc, plugins: () => ({ plugins: [spaced] }) } as never },
   );
   fireEvent.click(await slot.findByRole("button", { name: /Notes/ }));
   expect(slot.navigateCalls).toEqual([
     {
       method: "toPluginPanel",
-      path: "prompt-editor",
-      options: { subPath: "notes/file/instructions/review notes.md" },
+      path: "instructions",
+      options: { subPath: "prompts/notes/file/instructions/review notes.md" },
     },
   ]);
   slot.lifecycle.unmount();
@@ -176,4 +184,26 @@ test("an unsaved edit on the page is marked in the tab", async () => {
   expect(within(row).queryByTitle("Unsaved")).toBeNull();
   tab.lifecycle.unmount();
   file.lifecycle.unmount();
+});
+
+test("the consolidated page offers both editors and only shows Plugins for prompt routes", async () => {
+  const app = await loadApp();
+  const tab = app.tabs.find(
+    (item): item is Extract<typeof item, { context: { kind: "nav-panel" } }> =>
+      item.context.kind === "nav-panel",
+  );
+  if (!tab) throw new Error("Missing Plugins tab");
+  expect(tab.useVisible?.({ subPath: "" })).toBe(false);
+  expect(tab.useVisible?.({ subPath: "prompts" })).toBe(true);
+  expect(tab.useVisible?.({ subPath: "prompts/notes/tool/notes_code" })).toBe(true);
+  const slot = await page("");
+  expect(slot.getByRole("button", { name: "Plugin prompts" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  fireEvent.click(slot.getByRole("button", { name: /^Rules$/ }));
+  expect(slot.navigateCalls.at(-1)).toMatchObject({
+    method: "toPluginPanel",
+    path: "instructions",
+  });
+  slot.lifecycle.unmount();
 });

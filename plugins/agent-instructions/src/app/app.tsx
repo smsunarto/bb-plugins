@@ -1,4 +1,6 @@
-import { definePluginApp, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
+import { definePluginApp, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
+import { PromptEditorPage, PluginsTab } from "../prompts/app/app.tsx";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useId, useLayoutEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "../../components/ui/button.tsx";
@@ -323,7 +325,7 @@ function Loaded() {
   return <RulesEditor server={rules.data} targets={targets.data} />;
 }
 
-function AgentInstructionsPage() {
+function RulesPage() {
   return (
     <QueryClientProvider client={queryClient}>
       <div className="h-full min-h-0 overflow-y-auto p-4 md:p-5">
@@ -339,6 +341,47 @@ function AgentInstructionsPage() {
   );
 }
 
+function promptSubPath(subPath: string): string | null {
+  return subPath === "prompts" ? "" : subPath.startsWith("prompts/") ? subPath.slice(8) : null;
+}
+
+function AgentInstructionsPage({ subPath }: PluginNavPanelProps) {
+  const navigate = useBbNavigate();
+  const prompts = promptSubPath(subPath);
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <nav
+        aria-label="Instruction editors"
+        className="flex shrink-0 flex-wrap gap-1 border-b border-border px-4 py-2"
+      >
+        <Button
+          variant={prompts === null ? "secondary" : "ghost"}
+          size="sm"
+          aria-pressed={prompts === null}
+          onClick={() => navigate.toPluginPanel("instructions")}
+        >
+          Rules
+        </Button>
+        <Button
+          variant={prompts !== null ? "secondary" : "ghost"}
+          size="sm"
+          aria-pressed={prompts !== null}
+          onClick={() => navigate.toPluginPanel("instructions", { subPath: "prompts" })}
+        >
+          Plugin prompts
+        </Button>
+      </nav>
+      <div className="min-h-0 min-w-0 flex-1">
+        {prompts === null ? <RulesPage /> : <PromptEditorPage subPath={prompts} />}
+      </div>
+    </div>
+  );
+}
+
+function PromptPluginsTab({ subPath }: PluginNavPanelProps) {
+  return <PluginsTab subPath={promptSubPath(subPath) ?? ""} />;
+}
+
 export default definePluginApp((app) => {
   app.slots.navPanel({
     id: "agent-instructions",
@@ -346,5 +389,15 @@ export default definePluginApp((app) => {
     icon: "FileText",
     path: "instructions",
     component: AgentInstructionsPage,
+  });
+  app.slots.experimental_tab({
+    context: { kind: "nav-panel", panelId: "agent-instructions" },
+    availability: "fixed",
+    id: "plugins",
+    title: "Plugins",
+    icon: "Puzzle",
+    component: PromptPluginsTab,
+    useVisible: ({ subPath }) => promptSubPath(subPath) !== null,
+    layout: "flush",
   });
 });

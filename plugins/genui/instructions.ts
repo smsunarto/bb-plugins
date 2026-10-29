@@ -1,4 +1,4 @@
-// Local fork: authored agent text is loaded from instructions/ for Prompt Editor.
+// Local fork: authored agent text is loaded from instructions/ for Agent Instructions → Plugin prompts.
 import { instructionFiles, TOOL_INSTRUCTIONS_MAX_CHARS } from "@bb-plugins/instructions";
 // What agents are told about ```ui blocks, in the three sections BB adds to
 // sessions whose replies a person reads (see server.ts). BB appends tool
@@ -119,7 +119,7 @@ export const WEB_LOOKUPS_OFF = instructionText.read("web-lookups-off");
 
 export const AGENT_INSTRUCTIONS_WEB_OFF = AGENT_INSTRUCTIONS.replace(MAP_EXAMPLE, WEB_LOOKUPS_OFF);
 
-/** Prompt Editor validates raw files; generated signatures must fit after expansion too. */
+/** Agent Instructions → Plugin prompts validates raw files; generated signatures must fit after expansion too. */
 export function assertInstructionLimit(name: string, text: string): void {
   if (text.length > TOOL_INSTRUCTIONS_MAX_CHARS) {
     throw new Error(

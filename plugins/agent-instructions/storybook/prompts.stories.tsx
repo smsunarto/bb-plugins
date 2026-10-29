@@ -1,6 +1,6 @@
 import { screenParameters } from "../../../.storybook/layout";
 import { ready, shows } from "../../../.storybook/ready";
-import { clearDraftsForTest } from "../src/app/app";
+import { clearDraftsForTest } from "../src/prompts/app/app";
 import { expect, within } from "storybook/test";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RegisteredSurface } from "../../../.storybook/host";
@@ -83,27 +83,28 @@ const rpc = {
 const meta = {
   beforeEach: () => clearDraftsForTest(),
   play: ready,
-  title: "Screens/Prompt Editor/Tools and files",
+  title: "Screens/Agent Instructions/Plugin prompts",
   component: RegisteredSurface,
-  args: { source, select: (app) => nav(app, "", "plugins") },
+  args: { source, select: (app) => nav(app, "prompts", "plugins") },
   parameters: {
     ...screenParameters,
-    editorContext: { placement: "page-panel", title: "Prompt Editor", tab: "Plugins" },
-    host: { pluginId: "prompt-editor", rpc },
+    editorContext: { placement: "page-panel", title: "Agent instructions", tab: "Plugins" },
+    host: { pluginId: "agent-instructions", rpc },
   },
 } satisfies Meta<typeof RegisteredSurface>;
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const ToolBrowser: Story = { play: shows("Code Review") };
 export const FileEditor: Story = {
-  parameters: { editorContext: { placement: "page", title: "Prompt Editor" } },
+  parameters: { editorContext: { placement: "page", title: "Agent instructions" } },
   args: {
-    select: (app) => nav(app, "code-review/file/instructions/tools/code_review_share_changes.md"),
+    select: (app) =>
+      nav(app, "prompts/code-review/file/instructions/tools/code_review_share_changes.md"),
   },
 };
 export const NoSelection: Story = {
-  parameters: { editorContext: { placement: "page", title: "Prompt Editor" } },
-  args: { select: (app) => nav(app) },
+  parameters: { editorContext: { placement: "page", title: "Agent instructions" } },
+  args: { select: (app) => nav(app, "prompts") },
   play: shows("Pick a tool, prompt, or skill in the Plugins tab."),
 };
 export const Empty: Story = {
@@ -111,13 +112,15 @@ export const Empty: Story = {
     const list = await within(canvasElement).findByRole("navigation", { name: "Plugins" });
     await expect(list.children.length).toBe(0);
   },
-  parameters: { host: { pluginId: "prompt-editor", rpc: { plugins: () => ({ plugins: [] }) } } },
+  parameters: {
+    host: { pluginId: "agent-instructions", rpc: { plugins: () => ({ plugins: [] }) } },
+  },
 };
 export const Error: Story = {
   play: shows("Plugin list unavailable"),
   parameters: {
     host: {
-      pluginId: "prompt-editor",
+      pluginId: "agent-instructions",
       rpc: { plugins: () => Promise.reject(new globalThis.Error("Plugin list unavailable")) },
     },
   },

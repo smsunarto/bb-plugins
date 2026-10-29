@@ -9,7 +9,7 @@ test("editor previews follow plugin placements", () => {
   expect(editorContextFor("Components/Inline Visualizations/Tweak panel")?.placement).toBe(
     "message",
   );
-  expect(editorContextFor("Components/Agent Instructions/Rule card")?.placement).toBe("settings");
+  expect(editorContextFor("Components/Agent Instructions/Rule card")?.placement).toBe("page");
   expect(editorContextFor("Components/GTD Sidebar/Thread cards")?.placement).toBe("sidebar");
   expect(editorContextFor("Screens/GitHub Stack/Stack panel")?.tab).toBe("GitHub Stack");
   expect(editorContextFor("Screens/GitButler/Workspace")?.tab).toBe("GitButler");

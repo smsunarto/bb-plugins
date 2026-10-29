@@ -152,6 +152,7 @@
       "name": "@smsunarto/bb-plugin-agent-instructions",
       "version": "0.1.0",
       "dependencies": {
+        "@bb-plugins/instructions": "workspace:*",
         "@tanstack/react-query": "^5.101.4",
         "zod": "^4.4.3",
       },
@@ -687,29 +688,6 @@
         "typescript": "^7.0.0",
         "vite": "^8.2.1",
         "zod": "^4.3.6",
-      },
-    },
-    "plugins/prompt-editor": {
-      "name": "@smsunarto/bb-plugin-prompt-editor",
-      "version": "0.1.0",
-      "dependencies": {
-        "@bb-plugins/instructions": "workspace:*",
-        "@tanstack/react-query": "^5.101.4",
-        "zod": "^4.4.3",
-      },
-      "devDependencies": {
-        "@bb-plugins/testing": "workspace:*",
-        "@get-bb/plugin-sdk": "0.6.94",
-        "@testing-library/react": "16.3.2",
-        "@types/node": "^22.0.0",
-        "@types/react": "^19.0.0",
-        "@types/react-dom": "^19.0.0",
-        "bun-types": "^1.4.0",
-        "jsdom": "25.0.1",
-        "react": "19.2.8",
-        "react-dom": "19.2.8",
-        "tsx": "4.23.12",
-        "typescript": "^6.0.0",
       },
     },
     "plugins/scott-docs": {
@@ -1830,8 +1808,6 @@
     "@smsunarto/bb-plugin-magic-compose": ["@smsunarto/bb-plugin-magic-compose@workspace:plugins/magic-compose"],
 
     "@smsunarto/bb-plugin-monokai": ["@smsunarto/bb-plugin-monokai@workspace:plugins/monokai"],
-
-    "@smsunarto/bb-plugin-prompt-editor": ["@smsunarto/bb-plugin-prompt-editor@workspace:plugins/prompt-editor"],
 
     "@smsunarto/bb-plugin-scott-docs": ["@smsunarto/bb-plugin-scott-docs@workspace:plugins/scott-docs"],
 

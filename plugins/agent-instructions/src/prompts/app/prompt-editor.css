@@ -123,6 +123,7 @@
   background: var(--primary);
 }
 .pe-editor {
+  overflow-y: auto;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -137,6 +138,7 @@
   color: var(--muted-foreground);
 }
 .pe-editor-head {
+  flex-wrap: wrap;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -211,6 +213,7 @@
   border-color: var(--ring);
 }
 .pe-editor-foot {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   justify-content: space-between;

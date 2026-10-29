@@ -1,4 +1,4 @@
-// Local fork: authored agent text is loaded from instructions/ for Prompt Editor.
+// Local fork: authored agent text is loaded from instructions/ for Agent Instructions → Plugin prompts.
 import { instructionFiles } from "@bb-plugins/instructions";
 // Worked examples for the ui_examples tool, taken from the gallery specs
 // (gallery/<Component>.ui and gallery/<Component>-<variant>.ui). They are the

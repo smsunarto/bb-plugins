@@ -163,7 +163,7 @@ where the component supports them.
 
 | Plugin                | Component coverage                                                             |
 | --------------------- | ------------------------------------------------------------------------------ |
-| Agent Instructions    | Rule editor, scopes, loading and errors                                        |
+| Agent Instructions    | Rule scopes, tool browser, file editor, loading and errors                     |
 | Agentation            | Annotation list, empty and error states                                        |
 | Amp                   | Oracle results, running trace, missing and invalid reports                     |
 | Code Review           | Review and branch status, findings, comments, file tree, refresh state         |
@@ -175,7 +175,6 @@ where the component supports them.
 | GTD Sidebar           | Thread cards, status indicators, compact layout                                |
 | Kitchen Sink          | Image comparison, annotations, invalid paths, branding                         |
 | Monokai               | Theme foundations, chrome, content palettes, surface composition               |
-| Prompt Editor         | Tool browser, file editor, empty and error states                              |
 | Docs                  | Note browser, Markdown editor, HTML card, invalid link                         |
 | Inline Visualizations | Tweak controls, saving, read-only, original and empty states                   |
 | Tasks                 | List, board, detail and activity, labels/presets/folders, controls and dialogs |

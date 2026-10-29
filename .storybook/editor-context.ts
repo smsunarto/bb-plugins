@@ -16,7 +16,7 @@ export type EditorContext = {
 /** Placements follow the plugin app registrations and BB's SplitThreadArea. */
 const placements: Record<string, EditorContext> = {
   "GTD Sidebar": { placement: "sidebar", title: "Threads" },
-  "Agent Instructions": { placement: "settings", title: "Agent instructions" },
+  "Agent Instructions": { placement: "page", title: "Agent instructions" },
   Devin: { placement: "composer", title: "Cloud session" },
   Amp: { placement: "message", title: "Amp" },
   "Kitchen Sink": { placement: "message", title: "Kitchen Sink" },
@@ -39,7 +39,6 @@ export function editorContextFor(title: string): EditorContext | undefined {
     if (title.includes("Document card")) return { placement: "message", title: "Docs" };
     return { placement: "page", title: "Docs" };
   }
-  if (plugin === "Prompt Editor") return { placement: "page", title: "Prompt Editor" };
   return plugin ? placements[plugin] : undefined;
 }
 

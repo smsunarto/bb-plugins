@@ -1,8 +1,8 @@
-# Prompt Editor
+# Agent Instructions
 
-Inspect and edit what your plugins tell agents: tool descriptions, tool thread snippets, prompts, and skills.
+Use **Rules** to manage scoped instructions. Use **Plugin prompts** to inspect and edit what your plugins tell agents: tool descriptions, tool thread snippets, prompts, and skills.
 
-Open **Prompt Editor** in the bb nav rail. Each installed plugin lists:
+Open **Agent instructions → Plugin prompts** in the bb nav rail. Each installed plugin lists:
 
 - **Tools**: every agent tool bb reports for the plugin. A tool backed by `instructions/tools/<tool>.md` is editable. A tool tagged **code** keeps its description in code and is shown read-only. A tool tagged **stale** has a file that differs from what agents currently see.
 - **Prompts**: `instructions/*.md` files the plugin reads at runtime.

@@ -1,6 +1,6 @@
 import { instructionFiles } from "@bb-plugins/instructions";
 
-// Editable in the Prompt Editor plugin.
+// Editable in Agent Instructions → Plugin prompts.
 const files = instructionFiles(import.meta.url);
 
 const oneLine = (value: string): string => value.replace(/\s+/g, " ").trim();

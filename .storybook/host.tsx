@@ -14,7 +14,7 @@ import { queryClient as devinQueries } from "../plugins/devin/src/app/query.ts";
 import { queryClient as dotfilesQueries } from "../plugins/dotfiles/src/app/query.ts";
 import { queryClient as gitbutlerQueries } from "../plugins/gitbutler/src/app/query.ts";
 import { queryClient as kitchenSinkQueries } from "../plugins/kitchen-sink/src/app/query.ts";
-import { queryClient as promptEditorQueries } from "../plugins/prompt-editor/src/app/query.ts";
+import { queryClient as promptEditorQueries } from "../plugins/agent-instructions/src/prompts/app/query.ts";
 import { queryClient as tracesQueries } from "../plugins/traces/src/app/query.ts";
 import { queryClient as whiteboardQueries } from "../plugins/whiteboard/src/app/query.ts";
 

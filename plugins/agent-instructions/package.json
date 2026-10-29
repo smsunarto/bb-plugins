@@ -2,7 +2,7 @@
   "name": "@smsunarto/bb-plugin-agent-instructions",
   "version": "0.1.0",
   "private": true,
-  "description": "Custom agent instructions as rules scoped to a machine, provider, model, or project.",
+  "description": "Manage scoped agent rules and edit plugin prompts, tool descriptions, and skills.",
   "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/agent-instructions",
@@ -13,12 +13,12 @@
   },
   "type": "module",
   "engines": {
-    "bb": ">=0.44.0 <1.0.0",
-    "bbPluginSdk": ">=0.5.26"
+    "bb": ">=0.47.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.75"
   },
   "bb": {
     "name": "Agent instructions",
-    "description": "Custom instructions for agents, as rules that apply only on a given machine, provider, model, or project.",
+    "description": "Manage scoped agent rules and edit plugin prompts, tool descriptions, and skills.",
     "branding": {
       "icon": "./assets/icon.svg",
       "logo": {
@@ -44,7 +44,8 @@
   ],
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@bb-plugins/instructions": "workspace:*"
   },
   "devDependencies": {
     "@bb-plugins/testing": "workspace:*",

@@ -8,7 +8,6 @@ import {
   CheckListIcon,
   DashboardSpeed02Icon,
   Doc01Icon,
-  FileEditIcon,
   KeyboardIcon,
   GitBranchIcon,
   GitPullRequestIcon,
@@ -247,10 +246,6 @@ const customIcons = {
   devin: {
     name: "Devin (brand mark)",
     brand: { paths: DEVIN_LOGO_PATHS, viewBox: DEVIN_LOGO_VIEW_BOX },
-  },
-  "prompt-editor": {
-    name: "EditFile",
-    nodes: FileEditIcon,
   },
   "scott-docs": {
     name: "Doc",
