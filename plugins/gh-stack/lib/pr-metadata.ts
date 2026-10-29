@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 // PR title, draft flag, and authoritative state — the fields `gh stack view
 // --json` omits. Reading them is the panel's only per-PR GitHub cost, so they
 // are read for the whole stack at once and cached per workspace.
@@ -7,11 +9,67 @@
 // to its branch name looks like a different PR. Serving the last known values,
 // marked stale, keeps the panel readable and honest.
 
+// GitHub's PullRequestState, as `gh pr list` and `gh pr view --json state`
+// emit it. A PR in the merge queue is still OPEN here.
+export const githubPrStateSchema = z.enum(["OPEN", "CLOSED", "MERGED"]);
+export type GithubPrState = z.infer<typeof githubPrStateSchema>;
+
+// What `gh stack view --json` names a PR's state: GitHub's, or QUEUED for a
+// PR it found in the merge queue. Anything else — a state a newer gh-stack
+// adds, or a missing field — parses as "unknown" at the wire, so it folds to
+// the unknown lifecycle and blocks the merge prefix instead of passing as open.
+export const stackPrStateSchema = z
+  .enum(["OPEN", "CLOSED", "MERGED", "QUEUED", "unknown"])
+  .catch("unknown");
+export type StackPrState = z.infer<typeof stackPrStateSchema>;
+
 export type PrMetadata = {
   title: string | null;
   isDraft: boolean;
-  state: string;
+  state: GithubPrState;
 };
+
+// One PR lifecycle, folded once at the server boundary (lifecycleOf) from
+// gh-stack's row and GitHub's read. "merged" never reaches the wire: the
+// panel projects merged layers away before shipping (see stack-layers).
+// "unknown" does: GitHub could not read the PR, or gh-stack named a state
+// this build does not know; nothing may act on it.
+export const VISIBLE_PR_LIFECYCLES = ["draft", "open", "queued", "closed", "unknown"] as const;
+export type VisiblePrLifecycle = (typeof VISIBLE_PR_LIFECYCLES)[number];
+export type PrLifecycle = VisiblePrLifecycle | "merged";
+
+// gh stack view can lag GitHub: its isMerged flag stays false after a PR
+// merged behind gh-stack's back, while the state it copied already says
+// MERGED. Either source saying merged wins. For raw rows only; the wire
+// carries the folded lifecycle instead.
+export function rawIsMerged(layer: {
+  isMerged: boolean;
+  pr?: { state: StackPrState } | null;
+}): boolean {
+  return layer.isMerged || layer.pr?.state === "MERGED";
+}
+
+// Fold a `gh stack view` row and GitHub's read of its PR into one lifecycle.
+// GitHub is authoritative for the terminal states; gh-stack's queued flag
+// survives while GitHub still calls the PR open; draft is GitHub's alone to
+// say, so a PR that could not be read reads as open (and stale). Only a row
+// gh-stack itself calls OPEN can read as open or draft. The PR row is passed
+// apart from the layer so callers that already checked it exists hand over
+// the narrowed value.
+export function lifecycleOf(
+  layer: { isMerged: boolean; isQueued: boolean },
+  pr: { state: StackPrState },
+  github: Pick<PrMetadata, "isDraft" | "state"> | null,
+): PrLifecycle {
+  if (layer.isMerged || pr.state === "MERGED" || github?.state === "MERGED") return "merged";
+  if (pr.state === "CLOSED" || github?.state === "CLOSED") return "closed";
+  // Neither GitHub's OPEN nor gh-stack's queue flag vouches for a state
+  // gh-stack named that this build cannot.
+  if (pr.state === "unknown") return "unknown";
+  if (layer.isQueued || pr.state === "QUEUED") return "queued";
+  if (github?.isDraft) return "draft";
+  return "open";
+}
 
 export type PrMetadataEntry = { data: PrMetadata; at: number };
 

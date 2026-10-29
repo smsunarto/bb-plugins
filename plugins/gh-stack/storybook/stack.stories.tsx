@@ -28,17 +28,14 @@ const result = {
       {
         name: "maya/offline-review-recovery",
         isCurrent: true,
-        isMerged: false,
-        isQueued: false,
         needsRebase: false,
         hasStash: false,
         stashCount: 0,
         pr: {
           number: 284,
           url: "https://github.com/example/atlas/pull/284",
-          state: "OPEN",
           title: "Keep reviews readable while the checkout reconnects",
-          isDraft: true,
+          lifecycle: "draft" as const,
           metadataStale: false,
         },
         diff: changes,
@@ -69,7 +66,7 @@ result.stack.branches.unshift({
     number: 282,
     url: "https://github.com/example/atlas/pull/282",
     title: "Store review snapshots by checkout and revision",
-    isDraft: false,
+    lifecycle: "open" as const,
   },
   diff: {
     ...changes,
@@ -97,7 +94,7 @@ result.stack.branches.push({
     number: 285,
     url: "https://github.com/example/atlas/pull/285",
     title: "Exercise reconnect while a review comment is being edited",
-    isDraft: true,
+    lifecycle: "draft" as const,
   },
   diff: {
     ...changes,

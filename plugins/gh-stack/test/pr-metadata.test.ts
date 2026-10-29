@@ -3,15 +3,65 @@ import { test } from "node:test";
 import {
   applyPrMetadataReads,
   evictAbsentPrMetadata,
+  lifecycleOf,
   partitionPrMetadata,
+  stackPrStateSchema,
+  type GithubPrState,
   type PrMetadata,
   type PrMetadataCache,
 } from "../lib/pr-metadata.ts";
 
+const row = { isMerged: false, isQueued: false };
+const github = (state: GithubPrState, isDraft = false) => ({ state, isDraft });
+
+test("the lifecycle folds gh-stack's row with GitHub's read, GitHub owning the terminal states", () => {
+  assert.equal(lifecycleOf(row, { state: "OPEN" }, null), "open");
+  assert.equal(lifecycleOf(row, { state: "OPEN" }, github("OPEN", true)), "draft");
+  // gh-stack's queue flag survives while GitHub still calls the PR open, and
+  // outranks the draft flag.
+  assert.equal(
+    lifecycleOf({ ...row, isQueued: true }, { state: "OPEN" }, github("OPEN", true)),
+    "queued",
+  );
+  assert.equal(lifecycleOf(row, { state: "QUEUED" }, null), "queued");
+  // GitHub's terminal states correct a stale OPEN; a draft flag cannot reopen them.
+  assert.equal(lifecycleOf(row, { state: "OPEN" }, github("CLOSED", true)), "closed");
+  assert.equal(lifecycleOf(row, { state: "OPEN" }, github("MERGED")), "merged");
+  // Either source saying merged wins, even over GitHub still reading OPEN.
+  assert.equal(
+    lifecycleOf({ ...row, isMerged: true }, { state: "OPEN" }, github("OPEN")),
+    "merged",
+  );
+  assert.equal(lifecycleOf(row, { state: "MERGED" }, null), "merged");
+});
+
+// The base pinned this as "queue-like states other than QUEUED block the merge
+// prefix": a DEQUEUED row with GitHub still saying OPEN must not fold to open,
+// which mergePrefix would select. The wire now names the states it knows and
+// folds the rest to unknown, which blocks.
+test("a state gh-stack names that this build does not folds to unknown, never to open", () => {
+  for (const known of ["OPEN", "CLOSED", "MERGED", "QUEUED"] as const) {
+    assert.equal(stackPrStateSchema.parse(known), known);
+  }
+  const dequeued = stackPrStateSchema.parse("DEQUEUED");
+  assert.equal(dequeued, "unknown");
+  assert.equal(stackPrStateSchema.parse(undefined), "unknown");
+
+  assert.equal(lifecycleOf(row, { state: dequeued }, github("OPEN")), "unknown");
+  assert.equal(lifecycleOf(row, { state: dequeued }, github("OPEN", true)), "unknown");
+  assert.equal(lifecycleOf(row, { state: dequeued }, null), "unknown");
+  // Neither does gh-stack's own queue flag vouch for a state it could not name.
+  assert.equal(lifecycleOf({ ...row, isQueued: true }, { state: dequeued }, null), "unknown");
+  // The terminal states still win: either source saying so settles the PR.
+  assert.equal(lifecycleOf(row, { state: dequeued }, github("MERGED")), "merged");
+  assert.equal(lifecycleOf(row, { state: dequeued }, github("CLOSED")), "closed");
+  assert.equal(lifecycleOf({ ...row, isMerged: true }, { state: dequeued }, null), "merged");
+});
+
 const FRESH_MS = 60_000;
 const MAX_AGE_MS = 30 * 60_000;
 
-const meta = (title: string, isDraft = false, state = "OPEN"): PrMetadata => ({
+const meta = (title: string, isDraft = false, state: GithubPrState = "OPEN"): PrMetadata => ({
   title,
   isDraft,
   state,

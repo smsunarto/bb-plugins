@@ -66,8 +66,6 @@ const OCTICONS = {
   prDraft:
     "M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z",
   pr: "M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z",
-  merge:
-    "M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z",
   dot: "M4 8a4 4 0 1 1 8 0 4 4 0 0 1-8 0Zm4-2.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5Z",
   plus: "M7.75 2a.75.75 0 0 1 .75.75V7h4.25a.75.75 0 0 1 0 1.5H8.5v4.25a.75.75 0 0 1-1.5 0V8.5H2.75a.75.75 0 0 1 0-1.5H7V2.75A.75.75 0 0 1 7.75 2Z",
 } as const;
@@ -87,16 +85,42 @@ function Octicon({ path, className }: { path: string; className?: string }) {
   );
 }
 
+// How each PR lifecycle reads on the rail: its octicon and its status pill.
+// Merged never appears here — the server projects merged layers away.
+const LIFECYCLE_LOOK: Record<
+  PrLifecycle,
+  { icon: string; iconTone: string; label: string; pillTone: string }
+> = {
+  open: {
+    icon: OCTICONS.pr,
+    iconTone: "text-green-600 dark:text-green-400",
+    label: "Open",
+    pillTone: "bg-green-600/10 text-green-600 dark:text-green-400",
+  },
+  draft: {
+    icon: OCTICONS.prDraft,
+    iconTone: "text-muted-foreground",
+    label: "Draft",
+    pillTone: "bg-muted text-muted-foreground",
+  },
+  queued: {
+    icon: OCTICONS.pr,
+    iconTone: "text-amber-600 dark:text-amber-400",
+    label: "Queued",
+    pillTone: "bg-amber-600/10 text-amber-600 dark:text-amber-400",
+  },
+  closed: {
+    icon: OCTICONS.pr,
+    iconTone: "text-red-600 dark:text-red-400",
+    label: "Closed",
+    pillTone: "bg-red-600/10 text-red-600 dark:text-red-400",
+  },
+};
+
 function branchIcon(branch: StackBranch): { path: string; tone: string } {
-  const pr = branch.pr;
-  if (!pr) return { path: OCTICONS.dot, tone: "text-muted-foreground" };
-  if (branch.isMerged || pr.state === "MERGED")
-    return { path: OCTICONS.merge, tone: "text-purple-600 dark:text-purple-400" };
-  if (pr.state === "CLOSED") return { path: OCTICONS.pr, tone: "text-red-600 dark:text-red-400" };
-  if (pr.state === "QUEUED")
-    return { path: OCTICONS.pr, tone: "text-amber-600 dark:text-amber-400" };
-  if (pr.isDraft) return { path: OCTICONS.prDraft, tone: "text-muted-foreground" };
-  return { path: OCTICONS.pr, tone: "text-green-600 dark:text-green-400" };
+  if (!branch.pr) return { path: OCTICONS.dot, tone: "text-muted-foreground" };
+  const look = LIFECYCLE_LOOK[branch.pr.lifecycle];
+  return { path: look.icon, tone: look.iconTone };
 }
 
 // GitHub-style status pill (h 20px, px 6px, radius full, 12px/500). For open
@@ -113,27 +137,9 @@ function StatusPill({
   syncing: boolean;
   onToggle: (() => void) | null;
 }) {
-  let label: string;
-  let tone: string;
-  if (!pr) {
-    label = "Unsubmitted";
-    tone = "bg-muted text-muted-foreground";
-  } else if (pr.state === "MERGED") {
-    label = "Merged";
-    tone = "bg-purple-600/10 text-purple-600 dark:text-purple-400";
-  } else if (pr.state === "CLOSED") {
-    label = "Closed";
-    tone = "bg-red-600/10 text-red-600 dark:text-red-400";
-  } else if (pr.state === "QUEUED") {
-    label = "Queued";
-    tone = "bg-amber-600/10 text-amber-600 dark:text-amber-400";
-  } else if (pr.isDraft) {
-    label = "Draft";
-    tone = "bg-muted text-muted-foreground";
-  } else {
-    label = "Open";
-    tone = "bg-green-600/10 text-green-600 dark:text-green-400";
-  }
+  const { label, pillTone: tone } = pr
+    ? LIFECYCLE_LOOK[pr.lifecycle]
+    : { label: "Unsubmitted", pillTone: "bg-muted text-muted-foreground" };
   const pill = `inline-flex h-5 items-center rounded-full border border-transparent px-1.5 text-xs font-medium leading-none ${tone}`;
   if (!onToggle) {
     // A stale value is dimmed and says so, rather than reading as current.
@@ -158,7 +164,7 @@ function StatusPill({
       title={
         syncing
           ? `${label} — syncing with GitHub`
-          : pr?.isDraft
+          : pr?.lifecycle === "draft"
             ? "Mark ready for review"
             : "Convert to draft"
       }
@@ -195,7 +201,7 @@ function DeltaChip({ change }: { change: ChangeSet }) {
 function BranchChips({ branch }: { branch: StackBranch }) {
   const chip =
     "shrink-0 rounded border px-1 text-[10px] font-medium uppercase leading-4 tracking-wide";
-  const settled = branch.isMerged || branch.isQueued;
+  const settled = branch.pr?.lifecycle === "queued";
   return (
     <>
       {branch.needsRebase ? (
@@ -305,7 +311,8 @@ function BranchRow({
   const title = pr?.title ?? branch.name;
   // Toggling draft over an unread PR would send the wrong direction: the
   // shown value is a guess, so the control waits for a real read.
-  const canToggle = pr !== null && pr.state === "OPEN" && !pr.metadataStale;
+  const canToggle =
+    pr !== null && (pr.lifecycle === "open" || pr.lifecycle === "draft") && !pr.metadataStale;
   const canExpand = (branch.diff?.files.length ?? 0) > 0;
   const canCheckout = !branch.isCurrent && !checkoutDisabled;
   const icon = branchIcon(branch);
@@ -1052,8 +1059,8 @@ function StackPanel({ threadId }: { threadId: string }) {
   // no fresh refetch: the server claims the new state for every payload it
   // serves and reconciles with its own background recompute, so any number
   // of toggles run at once while the sync engine catches up behind them.
-  const toggleDraft = async (pr: NonNullable<StackBranch["pr"]>) => {
-    const draft = !pr.isDraft;
+  const toggleDraft = async (pr: StackPr) => {
+    const draft = pr.lifecycle !== "draft";
     const forgetIntent = () =>
       setDraftIntents((current) => {
         const next = new Map(current);
@@ -1126,7 +1133,7 @@ function StackPanel({ threadId }: { threadId: string }) {
         const pr = branch.pr;
         if (!pr) continue;
         const intent = next.get(pr.number);
-        if (intent !== undefined && pr.isDraft === intent) {
+        if (intent !== undefined && (pr.lifecycle === "draft") === intent) {
           next.delete(pr.number);
           changed = true;
         }
@@ -1143,7 +1150,9 @@ function StackPanel({ threadId }: { threadId: string }) {
           const intent = branch.pr ? draftIntents.get(branch.pr.number) : undefined;
           return branch.pr && intent !== undefined
             ? Object.assign({}, branch, {
-                pr: Object.assign({}, branch.pr, { isDraft: intent }),
+                pr: Object.assign({}, branch.pr, {
+                  lifecycle: intent ? ("draft" as const) : ("open" as const),
+                }),
               })
             : branch;
         }),
@@ -1180,13 +1189,7 @@ function StackPanel({ threadId }: { threadId: string }) {
   };
 
   const activeBranches = stack
-    ? stack.branches.filter(
-        (branch) =>
-          !branch.isMerged &&
-          !branch.isQueued &&
-          branch.pr?.state !== "MERGED" &&
-          branch.pr?.state !== "QUEUED",
-      )
+    ? stack.branches.filter((branch) => branch.pr?.lifecycle !== "queued")
     : [];
   const rebaseCount = activeBranches.filter((branch) => branch.needsRebase).length;
   const trunkBehind = stack?.trunkBehind;
@@ -1237,28 +1240,21 @@ function StackPanel({ threadId }: { threadId: string }) {
   const submitNeeded = missingPrCount > 0 || updatePrCount > 0 || needsRestack || remoteUnknown;
   const prunableCount = stack?.prunableBranchCount;
 
-  const unmergedBranches = stack
-    ? stack.branches.filter((branch) => !branch.isMerged && branch.pr?.state !== "MERGED")
-    : [];
-  const mergeReady: StackBranch[] = [];
-  for (const branch of unmergedBranches) {
-    const pr = branch.pr;
-    if (!pr || pr.isDraft || (pr.state !== "OPEN" && pr.state !== "QUEUED")) break;
-    mergeReady.push(branch);
-  }
-  const mergeCount = unmergedBranches.length;
+  // The same bottom-up prefix the server will authorize. Every visible layer
+  // is unmerged, so the whole stack is the merge's scope.
+  const { selected: mergeReady, blocker } = mergePrefix(stack?.branches ?? []);
+  const mergeCount = stack?.branches.length ?? 0;
   const mergeReadyCount = mergeReady.length;
   const mergeThroughPr = mergeReady.at(-1)?.pr?.number ?? null;
   const mergeUnpushed = mergeReady.filter(
     (branch) => branch.aheadOfRemote !== null && branch.aheadOfRemote > 0,
   ).length;
-  const blocker = unmergedBranches[mergeReadyCount];
   const mergeSubtitle =
     mergeReadyCount > 0
       ? `merges the bottom ${mergeReadyCount} of ${mergeCount} ready layer${mergeReadyCount === 1 ? "" : "s"}`
-      : blocker?.pr?.state === "CLOSED"
+      : blocker?.pr?.lifecycle === "closed"
         ? `#${blocker.pr.number} is closed and blocks the stack`
-        : blocker?.pr?.isDraft
+        : blocker?.pr?.lifecycle === "draft"
           ? `#${blocker.pr.number} is a draft and blocks the stack`
           : "the bottom layer has no open PR — submit first";
 

@@ -8,17 +8,23 @@ import {
   type ActionBranch,
 } from "../lib/stack-actions.ts";
 
-const branch = (name: string, state = "OPEN", draft = false): ActionBranch => ({
+const branch = (
+  name: string,
+  lifecycle: NonNullable<ActionBranch["pr"]>["lifecycle"] = "open",
+): ActionBranch => ({
   name,
-  isMerged: state === "MERGED",
-  pr: { number: Number(name.slice(1)), state, isDraft: draft },
+  pr: { number: Number(name.slice(1)), lifecycle },
 });
 
-test("prune candidates select only merged metadata or direct PR state", () => {
-  const mergedFlagOnly = branch("b3");
-  mergedFlagOnly.isMerged = true;
+test("prune candidates are exactly the merged layers", () => {
   assert.deepEqual(
-    pruneCandidates([branch("b1", "MERGED"), branch("b2"), mergedFlagOnly, branch("b4", "CLOSED")]),
+    pruneCandidates([
+      branch("b1", "merged"),
+      branch("b2"),
+      branch("b3", "merged"),
+      branch("b4", "closed"),
+      { name: "b5", pr: null },
+    ]),
     ["b1", "b3"],
   );
 });
@@ -51,8 +57,8 @@ test("merge prefix stops at a missing PR", () => {
   );
 });
 
-test("merge prefix stops at CLOSED and honors a valid pin", () => {
-  const layers = [branch("b1"), branch("b2"), branch("b3", "CLOSED"), branch("b4")];
+test("merge prefix stops at a closed PR and honors a valid pin", () => {
+  const layers = [branch("b1"), branch("b2"), branch("b3", "closed"), branch("b4")];
   assert.deepEqual(
     mergePrefix(layers).selected.map((item) => item.name),
     ["b1", "b2"],
@@ -69,23 +75,25 @@ test("a missing pin selects nothing", () => {
   assert.deepEqual(mergePrefix(layers, 4).selected, []);
 });
 
-test("QUEUED layers are eligible while drafts block the prefix", () => {
+test("queued layers are eligible while drafts block the prefix", () => {
   assert.deepEqual(
-    mergePrefix([branch("b1", "QUEUED"), branch("b2", "OPEN", true)]).selected.map(
-      (item) => item.name,
-    ),
+    mergePrefix([branch("b1", "queued"), branch("b2", "draft")]).selected.map((item) => item.name),
     ["b1"],
   );
 });
 
-test("queue-like states other than QUEUED block the merge prefix", () => {
-  assert.deepEqual(mergePrefix([branch("b1", "DEQUEUED"), branch("b2")]).selected, []);
+// Unknown covers a PR GitHub could not read and a state gh-stack named that
+// this build does not; both block without counting as merged.
+test("an unknown lifecycle blocks the prefix without counting as merged", () => {
+  const prefix = mergePrefix([branch("b1", "unknown"), branch("b2")]);
+  assert.deepEqual(prefix.selected, []);
+  assert.equal(prefix.blocker?.name, "b1");
 });
 
 test("merged layers are excluded from selection", () => {
   assert.deepEqual(
-    mergePrefix([branch("b1", "MERGED"), branch("b2")]).selected.map((item) => item.name),
+    mergePrefix([branch("b1", "merged"), branch("b2")]).selected.map((item) => item.name),
     ["b2"],
   );
-  assert.equal(mergePrefix([branch("b1", "MERGED")], 1).pinned, false);
+  assert.equal(mergePrefix([branch("b1", "merged")], 1).pinned, false);
 });

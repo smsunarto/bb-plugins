@@ -1,19 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { PrLifecycle } from "../lib/pr-metadata.ts";
 import { hasExtendableLayers, projectStackLayers } from "../lib/stack-layers.ts";
 
-type Layer = { name: string; isMerged: boolean; marker: number };
+type Layer = { name: string; pr: { lifecycle: PrLifecycle } | null; marker: number };
 
-function layer(name: string, isMerged: boolean, marker: number): Layer {
-  return { name, isMerged, marker };
+function layer(name: string, lifecycle: PrLifecycle | null, marker: number): Layer {
+  return { name, pr: lifecycle === null ? null : { lifecycle }, marker };
 }
 
 test("merged layers are hidden and a merged current layer moves to the nearest active layer above", () => {
-  const bottom = layer("bottom", false, 1);
-  const current = layer("current", true, 2);
-  const mergedAbove = layer("merged-above", true, 3);
-  const next = layer("next", false, 4);
-  const top = layer("top", false, 5);
+  const bottom = layer("bottom", "open", 1);
+  const current = layer("current", "merged", 2);
+  const mergedAbove = layer("merged-above", "merged", 3);
+  const next = layer("next", "draft", 4);
+  const top = layer("top", null, 5);
 
   const projected = projectStackLayers(
     [bottom, current, mergedAbove, next, top],
@@ -30,7 +31,11 @@ test("merged layers are hidden and a merged current layer moves to the nearest a
 
 test("a merged current layer moves to the stack trunk when no active layer remains above", () => {
   const projected = projectStackLayers(
-    [layer("active-below", false, 1), layer("current", true, 2), layer("merged-top", true, 3)],
+    [
+      layer("active-below", "open", 1),
+      layer("current", "merged", 2),
+      layer("merged-top", "merged", 3),
+    ],
     "develop",
     "current",
   );
@@ -47,7 +52,7 @@ test("a merged current layer moves to the stack trunk when no active layer remai
 
 test("all merged layers disappear and the current layer moves to the trunk", () => {
   const projected = projectStackLayers(
-    [layer("bottom", true, 1), layer("top", true, 2)],
+    [layer("bottom", "merged", 1), layer("top", "merged", 2)],
     "main",
     "top",
   );
@@ -60,7 +65,11 @@ test("all merged layers disappear and the current layer moves to the trunk", () 
 });
 
 test("hiding other merged layers does not move an active or unknown current branch", () => {
-  const branches = [layer("merged", true, 1), layer("active", false, 2), layer("queued", false, 3)];
+  const branches = [
+    layer("merged", "merged", 1),
+    layer("active", "open", 2),
+    layer("queued", "queued", 3),
+  ];
 
   const active = projectStackLayers(branches, "main", "active");
   assert.deepEqual(
@@ -74,8 +83,8 @@ test("hiding other merged layers does not move an active or unknown current bran
 });
 
 test("a stack is extendable only while some layer is unmerged", () => {
-  const merged = { isMerged: true, pr: { state: "MERGED" } };
-  const open = { isMerged: false, pr: { state: "OPEN" } };
+  const merged = { isMerged: true, pr: { state: "MERGED" as const } };
+  const open = { isMerged: false, pr: { state: "OPEN" as const } };
 
   assert.equal(hasExtendableLayers([merged, open]), true);
   assert.equal(hasExtendableLayers([merged, merged]), false);
@@ -84,7 +93,7 @@ test("a stack is extendable only while some layer is unmerged", () => {
 
 test("a layer whose PR merged behind gh-stack's back is not extendable", () => {
   // gh stack view can report isMerged: false while the PR already says MERGED.
-  assert.equal(hasExtendableLayers([{ isMerged: false, pr: { state: "MERGED" } }]), false);
+  assert.equal(hasExtendableLayers([{ isMerged: false, pr: { state: "MERGED" as const } }]), false);
   // A layer with no PR yet is still somewhere to stack onto.
   assert.equal(hasExtendableLayers([{ isMerged: false, pr: null }]), true);
   assert.equal(hasExtendableLayers([{ isMerged: false }]), true);

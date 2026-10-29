@@ -36,7 +36,12 @@ import { resolveWorkspaceKey } from "./lib/workspace-key";
 import {
   applyPrMetadataReads,
   evictAbsentPrMetadata,
+  githubPrStateSchema,
+  lifecycleOf,
   partitionPrMetadata,
+  rawIsMerged,
+  stackPrStateSchema,
+  VISIBLE_PR_LIFECYCLES,
   type PrMetadata,
   type PrMetadataCache,
   type PrMetadataResolution,
@@ -46,12 +51,13 @@ import {
   pruneCandidates,
   stackMergeArgs,
   stackMergeWasQueued,
+  type ActionBranch,
 } from "./lib/stack-actions";
 
 const prSchema = z.object({
   number: z.number(),
   url: z.string(),
-  state: z.string(),
+  state: stackPrStateSchema,
 });
 
 const branchSchema = z.object({
@@ -78,15 +84,16 @@ const stackSchema = z.object({
   branches: z.array(branchSchema),
 });
 
-// Wire shape after enriching each PR with title/isDraft from GitHub
-// (gh stack view --json exposes neither).
+// Wire shape after folding each gh-stack row with GitHub's read of its PR
+// (gh stack view --json exposes neither the title nor the draft flag).
 const prOutSchema = z.object({
   number: z.number(),
   url: z.string(),
-  state: z.string(),
   title: z.string().nullable(),
-  isDraft: z.boolean(),
-  // True when GitHub could not be read for this PR, so title/isDraft are a
+  // One fold of gh-stack's flags and GitHub's PR state (lifecycleOf). Merged
+  // layers never reach the wire: projectStackLayers hides them first.
+  lifecycle: z.enum(VISIBLE_PR_LIFECYCLES),
+  // True when GitHub could not be read for this PR, so title/lifecycle are a
   // previous read or a placeholder. The panel must not present such values as
   // current, and must not offer the draft toggle over them.
   metadataStale: z.boolean(),
@@ -112,8 +119,6 @@ const changeSetSchema = z.object({
 const branchOutSchema = z.object({
   name: z.string(),
   isCurrent: z.boolean(),
-  isMerged: z.boolean(),
-  isQueued: z.boolean(),
   needsRebase: z.boolean(),
   // True while tracked changes for this branch wait in a plugin auto-stash,
   // which the plugin restores on checkout.
@@ -148,7 +153,7 @@ const stackOutSchema = z.object({
 const prEnrichSchema = z.object({
   title: z.string().catch(""),
   isDraft: z.boolean().catch(false),
-  state: z.string().catch(""),
+  state: githubPrStateSchema,
 });
 
 // One row of `gh pr list --json number,title,isDraft,state`.
@@ -156,13 +161,13 @@ const prListRowSchema = z.object({
   number: z.number(),
   title: z.string().catch(""),
   isDraft: z.boolean().catch(false),
-  state: z.string().catch(""),
+  state: githubPrStateSchema,
 });
 const prListSchema = z.array(prListRowSchema);
 
 const prMutationStateSchema = z.object({
   isDraft: z.boolean(),
-  state: z.string(),
+  state: githubPrStateSchema,
   headRefName: z.string(),
 });
 
@@ -1003,14 +1008,20 @@ export default async function plugin(bb: BbPluginApi) {
       const key = draftIntentKey(workspaceKey, branch.pr.number);
       const intent = draftIntents.get(key);
       if (!intent) return branch;
-      if (branch.pr.isDraft === intent.draft) {
+      const { lifecycle } = branch.pr;
+      // The claim is moot once the PR left the two toggleable states, and
+      // retired once GitHub agrees with it.
+      if (
+        (lifecycle !== "open" && lifecycle !== "draft") ||
+        (lifecycle === "draft") === intent.draft
+      ) {
         draftIntents.delete(key);
         return branch;
       }
       changed = true;
       return {
         ...branch,
-        pr: { ...branch.pr, isDraft: intent.draft },
+        pr: { ...branch.pr, lifecycle: intent.draft ? ("draft" as const) : ("open" as const) },
         draftReconciliationPending: true,
       };
     });
@@ -1500,7 +1511,6 @@ export default async function plugin(bb: BbPluginApi) {
       ? revListCount(cwd, rawStack.trunk, `origin/${rawStack.trunk}`)
       : Promise.resolve(null);
     const branches = await Promise.all(
-      // oxlint-disable-next-line oxc/no-map-spread -- copy-on-write over zod-parsed data
       rawBranches.map(async (branch, index) => {
         const previous = index === 0 ? null : rawBranches[index - 1];
         if (index > 0 && previous === undefined) {
@@ -1534,45 +1544,23 @@ export default async function plugin(bb: BbPluginApi) {
             : remotePresent === false
               ? Promise.resolve(0)
               : Promise.resolve(null);
-        if (!branch.pr) {
-          return {
-            ...branch,
-            hasStash: stashOwners?.has(branch.name) ?? false,
-            stashCount: stashCounts?.get(branch.name) ?? (stashCounts ? 0 : null),
-            pr: null,
-            diff: await diffPromise,
-            aheadOfRemote: await aheadPromise,
-            behindRemote: await behindPromise,
-          };
-        }
-        const enriched = prMetadata.get(branch.pr.number);
-        let title: string | null = null;
-        let isDraft = false;
-        let state = branch.pr.state;
-        let isMerged = branch.isMerged || branch.pr.state === "MERGED";
-        if (enriched) {
-          title = enriched.data.title;
-          isDraft = enriched.data.isDraft;
-          // Preserve gh-stack's queued state while GitHub still calls the
-          // PR open, but correct its false OPEN for closed/merged PRs.
-          if (enriched.data.state === "CLOSED" || enriched.data.state === "MERGED") {
-            state = enriched.data.state;
-            if (enriched.data.state === "MERGED") isMerged = true;
-          }
-        }
+        const github = branch.pr ? (prMetadata.get(branch.pr.number) ?? null) : null;
         return {
-          ...branch,
-          isMerged,
+          name: branch.name,
+          isCurrent: branch.isCurrent,
+          needsRebase: branch.needsRebase,
           hasStash: stashOwners?.has(branch.name) ?? false,
           stashCount: stashCounts?.get(branch.name) ?? (stashCounts ? 0 : null),
-          pr: {
-            ...branch.pr,
-            state,
-            title,
-            isDraft,
-            // No metadata at all, or values kept from an older read.
-            metadataStale: !enriched || enriched.stale,
-          },
+          pr: branch.pr
+            ? {
+                number: branch.pr.number,
+                url: branch.pr.url,
+                title: github?.data.title ?? null,
+                lifecycle: lifecycleOf(branch, branch.pr, github?.data ?? null),
+                // No metadata at all, or values kept from an older read.
+                metadataStale: !github || github.stale,
+              }
+            : null,
           diff: await diffPromise,
           aheadOfRemote: await aheadPromise,
           behindRemote: await behindPromise,
@@ -1675,7 +1663,7 @@ export default async function plugin(bb: BbPluginApi) {
             detail: null,
           };
         }
-        if (target.isMerged || target.pr?.state === "MERGED") {
+        if (rawIsMerged(target)) {
           return {
             ok: false,
             message: `${branch} is merged and no longer available in the stack panel.`,
@@ -1899,10 +1887,10 @@ export default async function plugin(bb: BbPluginApi) {
             return { ok: false, message: before.error.message, detail: null };
           }
 
-          const corrected = [];
+          const corrected: ActionBranch[] = [];
           for (const branch of before.stack.branches) {
             if (!branch.pr) {
-              corrected.push(branch);
+              corrected.push({ name: branch.name, pr: null });
               continue;
             }
             const direct = await readPullRequestState(cwd, branch.pr.number);
@@ -1914,12 +1902,10 @@ export default async function plugin(bb: BbPluginApi) {
               };
             }
             corrected.push({
-              ...branch,
-              isMerged: branch.isMerged || direct.state.state === "MERGED",
+              name: branch.name,
               pr: {
-                ...branch.pr,
-                state:
-                  branch.pr.state === "MERGED" || branch.isMerged ? "MERGED" : direct.state.state,
+                number: branch.pr.number,
+                lifecycle: lifecycleOf(branch, branch.pr, direct.state),
               },
             });
           }
@@ -1974,13 +1960,11 @@ export default async function plugin(bb: BbPluginApi) {
               detail,
             };
           }
-          const active = view.stack.branches.filter(
-            (branch) =>
-              !branch.isMerged &&
-              !branch.isQueued &&
-              branch.pr?.state !== "MERGED" &&
-              branch.pr?.state !== "QUEUED",
-          );
+          const active = view.stack.branches.filter((branch) => {
+            if (!branch.pr) return true;
+            const lifecycle = lifecycleOf(branch, branch.pr, null);
+            return lifecycle !== "merged" && lifecycle !== "queued";
+          });
           const unpushed = await branchesNotAtUpstream(
             cwd,
             active.map((branch) => branch.name),
@@ -2174,8 +2158,8 @@ export default async function plugin(bb: BbPluginApi) {
         // GitHub is authoritative for terminal state. Preserve gh stack's
         // QUEUED state while GitHub still reports OPEN.
         const enriched = await Promise.all(
-          raw.stack.branches.map(async (branch) => {
-            if (!branch.pr) return { ...branch, pr: null };
+          raw.stack.branches.map(async (branch): Promise<ActionBranch> => {
+            if (!branch.pr) return { name: branch.name, pr: null };
             const direct = await runGh(
               [
                 "pr",
@@ -2194,17 +2178,15 @@ export default async function plugin(bb: BbPluginApi) {
             } catch {
               // Malformed direct state fails eligibility without throwing.
             }
-            if (direct.code !== 0 || !parsed) {
-              return { ...branch, pr: { ...branch.pr, isDraft: true } };
-            }
-            const state =
-              parsed.state === "CLOSED" || parsed.state === "MERGED"
-                ? parsed.state
-                : branch.pr.state;
             return {
-              ...branch,
-              isMerged: parsed.state === "MERGED",
-              pr: { ...branch.pr, state, isDraft: parsed.isDraft },
+              name: branch.name,
+              pr: {
+                number: branch.pr.number,
+                // Unreadable on GitHub: blocks the prefix without reading as
+                // merged, and without pretending to know why.
+                lifecycle:
+                  direct.code !== 0 || !parsed ? "unknown" : lifecycleOf(branch, branch.pr, parsed),
+              },
             };
           }),
         );
@@ -2213,7 +2195,7 @@ export default async function plugin(bb: BbPluginApi) {
           return {
             ok: false,
             message:
-              "No contiguous eligible merge prefix matches that request. A closed, draft, merged, missing, or unqueued PR blocks it.",
+              "No contiguous eligible merge prefix matches that request. A closed, draft, merged, missing, unreadable, unrecognized, or unqueued PR blocks it.",
             detail: null,
           };
         }
@@ -2260,7 +2242,7 @@ export default async function plugin(bb: BbPluginApi) {
             state.baseRefName === expectedBase &&
             !state.isDraft &&
             !state.mergedAt &&
-            (state.state === "OPEN" || state.state === "QUEUED");
+            state.state === "OPEN";
           if (!authorized) {
             return {
               ok: false,
@@ -2293,9 +2275,7 @@ export default async function plugin(bb: BbPluginApi) {
           };
         }
         const count = prefix.selected.length;
-        const left =
-          enriched.filter((branch) => !branch.isMerged && branch.pr?.state !== "MERGED").length -
-          count;
+        const left = enriched.filter((branch) => branch.pr?.lifecycle !== "merged").length - count;
         const rest =
           left > 0
             ? ` The ${left} layer${left === 1 ? "" : "s"} above stay open — run Sync to restack ${left === 1 ? "it" : "them"} onto ${raw.stack.trunk}.`
