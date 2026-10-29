@@ -103,7 +103,8 @@ the single decisive reason (draft, trust gate, a specific condition).
 GitHub by marker) · `commented_partial` / `commented_unmarked` /
 `commented_unattributed` (posted but attribution degraded — the prompt contract
 slipped) · `no_comment` (thread finished without posting) · `skipped` (a rule
-matched nothing, e.g. blocked by the trust gate) · `failed`.
+matched nothing, e.g. blocked by the trust gate) · `failed` (the thread errored, or
+was archived or deleted before it reported).
 
 Every comment SlopCop posts carries a visible `🚨 SLOP COP 🚨` header and a
 hidden `<!-- slopcop:… -->` marker; verification polls GitHub for that marker

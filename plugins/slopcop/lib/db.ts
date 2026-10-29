@@ -393,10 +393,29 @@ export function createStore(db: Database) {
       db.prepare(`UPDATE runs SET ${sets.join(", ")} WHERE id = ?`).run(...params);
     },
 
-    findRunByThread(threadId: string): Run | null {
-      const row = db.prepare(`SELECT * FROM runs WHERE thread_id = ?`).get(threadId) as
-        | Row
-        | undefined;
+    /** Review threads still running, which is what the concurrency cap limits. */
+    countReviewing(): number {
+      const row = db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM runs WHERE status = 'reviewing' AND finished_at IS NULL`,
+        )
+        .get() as { n: number };
+      return row.n;
+    },
+
+    /**
+     * Records that a run's thread finished and returns the run, or null when
+     * no run owns the thread or its finish was already recorded. Any thread
+     * event may finish a run; only the first one gets to decide its outcome.
+     */
+    claimFinished(threadId: string, finishedAt: number): Run | null {
+      const row = db
+        .prepare(
+          `UPDATE runs SET finished_at = ?
+           WHERE thread_id = ? AND finished_at IS NULL
+           RETURNING *`,
+        )
+        .get(finishedAt, threadId) as Row | undefined;
       return row === undefined ? null : rowToRun(row);
     },
 

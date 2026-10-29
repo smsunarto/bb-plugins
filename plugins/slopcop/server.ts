@@ -261,7 +261,6 @@ function createServices(bb: BbPluginApi) {
 
   let gh: GhClient = createGhClient("gh");
   let ghLogin: string | null = null;
-  let inFlight = 0;
 
   const readSettings = async () => {
     const values = await settings.get();
@@ -416,7 +415,6 @@ function createServices(bb: BbPluginApi) {
       } as never);
       const threadId = (thread as { id: string }).id;
       store.updateRun(runId, { status: "reviewing", threadId });
-      inFlight += 1;
       announce();
       bb.log.info(
         `dispatched ${rule.name} for ${target.kind} ${rule.repo}#${target.number} (${rule.mode}) -> ${threadId}`,
@@ -604,7 +602,7 @@ function createServices(bb: BbPluginApi) {
         );
         continue;
       }
-      if (inFlight >= maxConcurrent) return;
+      if (store.countReviewing() >= maxConcurrent) return;
 
       await dispatch(rule, pullRequest, {
         trigger: "comment_matches",
@@ -698,7 +696,7 @@ function createServices(bb: BbPluginApi) {
                 }
                 const eventId = triggerEventId(trigger, pullRequest);
                 if (hasAlreadyRun(rule, pullRequest, eventId)) continue;
-                if (inFlight >= maxConcurrent) {
+                if (store.countReviewing() >= maxConcurrent) {
                   bb.log.info(
                     `concurrency cap reached (${maxConcurrent}); ${rule.name} will retry next poll`,
                   );
@@ -763,7 +761,7 @@ function createServices(bb: BbPluginApi) {
               }
               const alreadyRan = store.hasRunFor(rule.id, repo, "issue", issue.number, null);
               if (alreadyRan) continue;
-              if (inFlight >= maxConcurrent) {
+              if (store.countReviewing() >= maxConcurrent) {
                 retry = true;
                 bb.log.info(
                   `concurrency cap reached (${maxConcurrent}); ${rule.name} will retry next poll`,
@@ -793,16 +791,11 @@ function createServices(bb: BbPluginApi) {
     finalMessage: string | null,
     failure: string | null,
   ): Promise<void> {
-    const run = store.findRunByThread(threadId);
-    if (run === null || run.finishedAt !== null) return;
-    inFlight = Math.max(0, inFlight - 1);
+    const run = store.claimFinished(threadId, Date.now());
+    if (run === null) return;
 
     if (failure !== null) {
-      store.updateRun(run.id, {
-        status: "failed",
-        detail: failure,
-        finishedAt: Date.now(),
-      });
+      store.updateRun(run.id, { status: "failed", detail: failure });
       announce();
       return;
     }
@@ -918,6 +911,15 @@ function createServices(bb: BbPluginApi) {
     void describeThreadFailure(thread.id, error).then((detail) =>
       finishRun(thread.id, null, detail),
     );
+  });
+
+  // A review thread put away by hand ends its run too; otherwise the run sits
+  // at "reviewing" and holds a concurrency slot with nothing left to free it.
+  bb.events.on("thread.archived", ({ thread }) => {
+    void finishRun(thread.id, null, "review thread archived before it reported");
+  });
+  bb.events.on("thread.deleted", ({ thread }) => {
+    void finishRun(thread.id, null, "review thread deleted before it reported");
   });
 
   // --- shared helpers for rpc + cli ---------------------------------------

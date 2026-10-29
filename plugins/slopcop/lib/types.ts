@@ -202,6 +202,10 @@ export interface Run {
   threadId: string | null;
   commentCount: number;
   startedAt: number;
+  /**
+   * When the run's thread finished, or when a run that never got one was
+   * closed. Set once, before verification; `status` carries the outcome.
+   */
   finishedAt: number | null;
 }
 
