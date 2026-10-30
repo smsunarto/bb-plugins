@@ -37,16 +37,24 @@ async function toggleToolbar(): Promise<void> {
 
 export default definePluginApp((app) => {
   let toolbarToggle = Promise.resolve();
+  function queueToolbarToggle(): Promise<void> {
+    toolbarToggle = toolbarToggle.then(toggleToolbar);
+    return toolbarToggle;
+  }
+
+  app.commands.register({
+    id: "toggle-feedback-mode",
+    title: FEEDBACK_MODE_LABEL,
+    defaultShortcut: { key: "a", mod: true, shift: true },
+    run: queueToolbarToggle,
+  });
 
   app.experimental_sidebarFooter.register({
     kind: "action",
     id: "toggle-toolbar",
     label: FEEDBACK_MODE_LABEL,
     icon: "ChatFeedback",
-    onActivate() {
-      toolbarToggle = toolbarToggle.then(toggleToolbar);
-      return toolbarToggle;
-    },
+    onActivate: queueToolbarToggle,
   });
 
   app.slots.experimental_appOverlay({

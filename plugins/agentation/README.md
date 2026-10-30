@@ -32,6 +32,11 @@ per agent. The toolbar talks to bb's own origin, so annotating through
 
 ## What you get
 
+Toggle feedback mode with **Cmd+Shift+A** on macOS or **Ctrl+Shift+A** elsewhere.
+Rebind **Toggle Agentation feedback mode** in bb's Keyboard Shortcuts settings,
+or run it from the command palette. The toolbar's built-in Cmd/Ctrl+Shift+F
+shortcut also remains available.
+
 | Surface                    | What it does                                                      |
 | -------------------------- | ----------------------------------------------------------------- |
 | Toolbar                    | Mounts over the whole bb app, on every route.                     |
