@@ -177,7 +177,7 @@ export function documentText(snapshot: Snapshot, targetId?: string, full = false
   if (!detailed && snapshot.document.length)
     lines.push(
       "",
-      "Use targetId for one component's complete content, or full:true for the whole review.",
+      "Use targetId for one component's complete content, or full:true for the whole Whiteboard.",
     );
 
   return lines.join("\n");

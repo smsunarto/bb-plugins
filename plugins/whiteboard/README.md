@@ -1,18 +1,24 @@
 # Whiteboard
 
-[dev.fast Whiteboard](https://github.com/devdotfast/whiteboard) running inside
-bb. Agents author code walkthroughs, diagrams, sequence and call-stack views,
+Whiteboard for bb, derived from [dev.fast Whiteboard](https://github.com/devdotfast/whiteboard).
+Agents author code walkthroughs, diagrams, sequence and call-stack views,
 software maps and Diff lenses. Each session renders in the thread's side panel
 next to the conversation, and the full catalog lives under Whiteboard in the
 sidebar.
 
 ## How it fits into bb
 
-- **Agent tools.** The upstream MCP catalog is registered as raw bb agent
-  tools: `whiteboard_status` and `whiteboard_session_*` (for example
-  `whiteboard_session_create`, `whiteboard_session_edit`). Descriptions and
-  schemas come from upstream. Tool names, wording and settings pointers adapt
-  to bb, and schema references expand for bb tool registration.
+- **Agent tools.** `whiteboard_status` and `whiteboard_session_*` (for
+  example `whiteboard_session_create`, `whiteboard_session_edit`) are bb agent
+  tools with zod schemas, so bb validates their input. One registry
+  (`src/server/tools/`) runs them for agents and for `bb whiteboard tool`.
+  Descriptions live in `instructions/tools/`. `whiteboard_session_edit` and
+  `whiteboard_session_upload` advertise a flattened JSON schema, because bb
+  refuses recursive schemas, and validate the full zod schema when they run.
+- **App transport.** The panel calls one typed RPC per operation
+  (`src/server/rpc/contract.ts`). Home's list and the open session are SDK
+  live reads: the server invalidates their tags when a session changes and
+  tracks live worktrees only while a client watches one.
 - **Panels.** A thread panel shows one session. The sidebar entry shows Home
   with every session, and a full-page view of one session. In a full-page
   session, All Whiteboards at the right of bb's title bar returns to Home.
@@ -36,7 +42,7 @@ sidebar.
   registered path (for example inside its shared Git directory) is read on
   the first machine.
 - **Offline hosts.** When a repository's host is not connected or stops
-  answering, reads fail with 503 and name that machine. A cheap check (tool
+  answering, reads fail with a message that names that machine. A cheap check (tool
   probe, checkout exists, watch liveness) on a host that stopped answering
   fails after about 11 seconds: bb adds 6 seconds of grace to its 5-second
   budget. Creating a Whiteboard from a pull request URL skips checkouts on
@@ -125,77 +131,30 @@ the component reference and tool descriptions, and are read through
 `instructionFiles`. Prompts pick up edits on the next call; tool descriptions
 apply after a plugin reload. The `/whiteboard` skill loads the authoring prompt.
 
-## Deviations from upstream
+## Differences from dev.fast Whiteboard
 
-- **Tool names.** `session_*` tools are registered as `whiteboard_session_*`.
-  The same rename applies to the upstream strings that name a tool in result,
-  error and instruction text:
-  - `review-api/http.ts`: `session_get(` in a result
-  - `review-api/store.ts`: `session_get` in an error
-  - `review-api/document-text.ts`: `session_lens_edit`
-  - `review-api/instructions.ts`: one `session_get_instructions({topic:` reference
-  - Embedded scratchpad text adapts tool names at the bb boundary.
-    The vendored instruction files retain the baseline for comparison;
-    authoring and file-lens guidance comes from `instructions/` instead.
-- **Settings pointers.** User-facing pointers to Desktop settings name the
-  plugin settings in bb instead:
-  - `review-api/http.ts`: "Turn it on in Review Desktop Settings." becomes
-    "Turn it on in the Whiteboard plugin settings in bb."
-  - `review-api/instructions.ts`: "the scratchpad can be turned on in
-    Whiteboard Desktop Settings." becomes "… in the Whiteboard plugin settings
-    in bb."
-  - The disabled trace topic says capture is off in this bb plugin, with no
-    pointer to Desktop: no setting turns it on. Uploaded trace quotes remain
-    supported.
-- **Tool wording.** bb has no Whiteboard Desktop. The reader is a Whiteboard
-  tab on the calling thread. The agent boundary adapts six tool-description
-  phrases, the same way it renames tool tokens (`BB_WORDING` in
-  `src/server/lib/tools/rename.ts`). `guidance.ts` and the vendored catalog keep
-  upstream's text. Two result strings change at their source. These wording
-  changes keep tool names and the `desktopAvailable` field. The wording
-  changes are:
-  - "documents the user reads in Whiteboard Desktop" becomes
-    "documents the user reads in the thread's Whiteboard panel"
-  - "opens the new review in Desktop when it is available" becomes
-    "opens the new review as a tab in the calling bb thread"
-  - "When Desktop is available the review opens there" becomes
-    "When called from a bb thread the review opens there as a panel tab"
-  - "without taking over Desktop" becomes "without adding a thread tab"
-  - "Discover whether Desktop is available" becomes
-    "Discover whether a bb thread can show the review (desktopAvailable)"
-  - "The prepared checkout path is on the authoring server." becomes
-    "Pass the checkout's absolute path on the calling thread's machine.
-    Whiteboard runs Git there through that machine's bb host."
-  - `review-api/instructions.ts`: the scratchpad-off message drops
-    "or Whiteboard Desktop is not running". bb always supplies the panel
-    opener, so only the setting gates the scratchpad.
-  - `review-api/http.ts`: the 500 error names `server-stdio.log` in the bb
-    server's logs folder instead of Desktop's `main.log`. The browser and the
-    agent may be on other machines than the server, so it names no path.
+- **Settings pointers.** Messages that pointed to Desktop settings name the
+  Whiteboard plugin settings in bb instead.
 - **Hosts.** The server, the browser and a repository's checkout may be on
-  three machines. Authored code adapts most of this (`host-io/`,
-  `host-resolver.ts`, `status.ts`). These vendored edits remain:
-  - `review-api/http.ts`: a `HostUnavailableError` (the checkout's host is
-    not connected or did not answer) answers 503 with its message, which
-    names the machine. The stack route passes the session's repository, so
-    `gh` runs on the host that holds the checkout.
-  - `review-api/local-data.ts`: finding a checkout for a pull request URL
+  three machines (`host-io/`, `host-resolver.ts`, `status.ts`):
+  - A `HostUnavailableError` (the checkout's host is not connected or did not
+    answer) reaches the app as a `conflict` refusal and the agent as tool
+    error text, both naming the machine. The stack read passes the session's
+    repository, so `gh` runs on the host that holds the checkout.
+  - Finding a checkout for a pull request URL
     skips a candidate whose host is unavailable. When nothing matched and a
     host was unavailable, that host's error is thrown instead of the
     "No registered checkout" 404.
-  - `review-api/local-data.ts`: each worktree watch passes the repository's
+  - Each worktree watch passes the repository's
     Git common directory, so the host skips Git bookkeeping without guessing
     from a root's contents.
 - **Status.** `whiteboard_status` reports bb's public app URL as `instanceId`
   (null when none is configured) and `home: null`. The server's loopback URL
   and data directory mean nothing on the agent's machine (`status.ts`).
-- **`review_*` names stay.** A few upstream error strings still say
-  `review_open`, `review_file` and similar. They are left byte-identical.
 - **Not ported.** Sharing, telemetry, bug reports, the welcome and CLI install
   flow, trace storage, managed language workspaces and the Desktop window
-  chrome. Sharing, telemetry, bug reports and trace storage are removed.
-  Managed language workspaces keep a stub that reports nothing configured, and
-  Home's empty state replaces the welcome page.
+  chrome. Language workspace tools report nothing configured, and Home's empty
+  state replaces the welcome page.
 - **Trace capture** is off. `trace_quote` blocks and uploaded traces still
   render, and the Trace tab lists the uploaded traces.
 - **Markdown** uses Docs' TipTap extensions and shared prose styles. Raw HTML
@@ -203,10 +162,10 @@ apply after a plugin reload. The `/whiteboard` skill loads the authoring prompt.
   follow upstream Whiteboard behavior. Markdown code fences have Docs' plain
   rendering. Standalone code blocks use bb's syntax highlighting.
 - **Source trees.** Open a live file to browse it in File Editor. bb does not
-  expose a tree-only navigation API, so the session topbar hides upstream's
-  Source tree button. It also hides the dev.fast Discord button.
+  expose a tree-only navigation API, so the session topbar has no Source tree
+  button.
 - **CSS confinement.** Upstream's desktop build wraps canvas CSS in
-  `@scope (.review-canvas-root)`. The vendoring tool prefixes each rule with
+  `@scope (.review-canvas-root)`. Here each rule is prefixed with
   `:where(.review-canvas-root)` instead. It matches the same elements at the
   same specificity. The stylesheet stays cheap for WebKit recalcs in every
   thread view.
@@ -240,7 +199,7 @@ apply after a plugin reload. The `/whiteboard` skill loads the authoring prompt.
     they touched.
   - A peek that is loading or cannot resolve shows one muted row in its frame,
     styled like upstream's inline editor error. Its text names the file and
-    range (rename row on `CodePeek.tsx`).
+    range.
 - **Single-commit sessions.** When the base and head pins are the same commit,
   the header shows one copyable commit chip instead of `X ← X`.
 - **Diff tab.** In panels narrower than 900px, the Diff sidebar is capped at
@@ -253,7 +212,7 @@ apply after a plugin reload. The `/whiteboard` skill loads the authoring prompt.
   - One Tab stop
   - Arrow keys to move, expand and collapse
   - Home and End to jump
-- **Flow diagrams.** `flow-graph.tsx` is a hand-edited row:
+- **Flow diagrams.** In `flow-graph.tsx`:
   - Inline flows are sized from their ELK layout. Height runs from upstream's
     box (560px down, 420px right) up to 1400px. The drawing no longer shrinks
     into a fixed box.
@@ -272,24 +231,21 @@ apply after a plugin reload. The `/whiteboard` skill loads the authoring prompt.
     height. Sequence and database tours still hide their stage there, as
     upstream does.
 - **Diagram tours.** `flow-diagram.tsx`, `diagrams.tsx` and `database-lens.tsx`
-  import the tour shell from `src/app/components/diagram-tour.tsx` through
-  a redirect row. Opening moves focus to the active step and makes the covered
+  use the tour shell in `src/app/components/diagram-tour.tsx`. Opening moves focus to the active step and makes the covered
   document inert. Closing returns focus to what opened the tour. When that is
   gone, as for a tour restored on reload, focus goes to the canvas. The shell
-  takes Escape only from inside the tour. `review-components.tsx` (rename row)
-  makes side panels and tours ignore Escape typed outside the canvas. Escape
+  takes Escape only from inside the tour. `review-components.tsx` makes side panels and tours ignore Escape typed outside the canvas. Escape
   in bb's composer leaves them open.
 - **ELK.** `src/app/lib/elk.ts` builds one shared ELK instance on the first
-  layout. bb startup no longer boots ELK's runtime. `c4-layout-geometry.ts`
-  reaches it through a redirect row. The bundle still includes ELK.
+  layout. bb startup no longer boots ELK's runtime; `c4-layout-geometry.ts` uses it
+  too. The bundle still includes ELK.
 - **Home wording.** Home says Whiteboards where upstream says Sessions and
   reviews. This covers the heading, search, count, empty-search and
   empty-repository messages, Untitled whiteboard, Sort, Dismiss and Delete
-  labels, and the Dismissed and row-menu labels. The change is an edit row on
-  `review/app/src/review-home-view.tsx` (map `polish-home`).
+  labels, and the Dismissed and row-menu labels (`review-home-view.tsx`).
 - **Home Cmd/Ctrl+F.** Home's search shortcut listens on the canvas root, not
   the window. It fires only while focus is inside the Whiteboard. Elsewhere
-  the key stays bb's find. Same edit row.
+  the key stays bb's find.
 - **Back link.** The way back from a full-page session is an All Whiteboards
   button in bb's title bar (`navPanel` `headerContent`), not a row in the page.
 - **Narrow Home table.** `styles/home.css` drops upstream's 840px table minimum
@@ -298,53 +254,31 @@ apply after a plugin reload. The `/whiteboard` skill loads the authoring prompt.
   and narrow the dates to 120px. At 660px or less, they hide Created too. The rules
   depend on upstream's column order: PR, Title, Head branch, Created, Updated,
   actions.
-- **Empty Home.** The welcome stub's primary action starts a new bb thread
+- **Empty Home.** The welcome page's primary action starts a new bb thread
   with the selected prompt (`navigate.toCompose`). Copy prompt is secondary.
   If bb's new-thread composer already has a draft, bb keeps it and does not
   insert the prompt. Use Copy prompt instead.
 - **Add to chat.** Upstream's "Copy for Agent" copies Markdown context for an
-  agent in another app. `agent-selection.tsx` and its spec import
-  `src/app/bridge/agent-handoff.ts` instead of `copy-text.tsx`:
-  - Rename rows change "Copy for Agent" and "Copying…" to "Add to chat" and
-    "Adding…". The toasts become "Added to chat." and
-    "Could not add the selection to chat."
-  - Two more rename rows pass the route's `handoff` to the bridge, with the
-    element the selection was made in.
-  - The copy-context route (`http.ts`, hand-edited) answers `handoff` beside
-    upstream's `text`: the selection alone, session ID, displayed version and
-    title.
+  agent in another app. Here `agent-selection.tsx` uses
+  `src/app/bridge/agent-handoff.ts`:
+  - The action reads "Add to chat" ("Adding…"), and the toasts say "Added to
+    chat." or "Could not add the selection to chat."
+  - The `copyContext` RPC answers `handoff` beside `text`: the selection
+    alone, session ID, displayed version and title. The bridge receives it
+    with the element the selection was made in.
   - The bridge quotes the selection and inserts a pill from the plugin's
     `session` mention provider. The provider's search lists nothing. Resolve
     reads only the pill's `<sessionId>@<version>` ID. A send never waits on or
     fails because of the engine.
-  - Upstream's copy-context assertions in `local-data.engine.test.ts` also
-    check `handoff` through rename rows.
 - **Dismiss.** Desktop closes a canvas when its session is dismissed. The full
   page returns to Home, where the session is listed under Dismissed. A thread
   tab the server did not record shows "Whiteboard dismissed." with Undo
   instead. So does a full page beside a focused thread pane.
 - **Images.** The declared Sharp dependency decodes PNG, JPEG and WebP. A bounded
   JavaScript fallback retains PNG and JPEG support if native decoding is unavailable.
-- **Fixtures.** Upstream block and legacy-review fixtures sit at their
-  upstream-relative path under `src/shared/vendor/review/src/fixtures/`,
-  because the vendored specs read them by filesystem path.
-
-## Known check warnings
-
-`bun run check` exits 0 with these accepted warnings:
-
-- **Rule 8, type-only edges.** Vendored app and shared files import engine
-  types from `src/server/lib/vendor/` with `import type` (`Snapshot`,
-  `ActivitySnapshot`, `LeaseScope`, `ReviewProgress`, `LocalReviewData`). No
-  runtime code crosses.
-- **Rule 8, host package root.** Vendored `structural-diff.ts` in
-  `src/shared/node/vendor/` imports `src/host/lib/package-root.ts`, which finds
-  diffr. Only the host runs that file.
-- **Rule 8, fixtures.** `fixtures/blocks/fixtures.ts` imports `node:fs/promises`,
-  `node:path` and `node:url` for the specs. No app or server code imports it.
 
 ## License
 
-MIT. The vendored dev.fast code is MIT under the dev.fast copyright. See
+MIT. Code derived from dev.fast Whiteboard is MIT under the dev.fast copyright. See
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for it and the bundled npm
 assets.

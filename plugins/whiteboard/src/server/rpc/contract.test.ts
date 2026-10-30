@@ -143,7 +143,7 @@ describe("failures", () => {
   it("a deleted session is not_found, not a crash", async () => {
     await expect(call("liveSession", { sessionId: "gone" })).rejects.toMatchObject({
       code: "not_found",
-      message: "Review or version not found.",
+      message: "Whiteboard or version not found.",
     });
   });
 

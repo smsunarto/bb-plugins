@@ -123,7 +123,7 @@ export class ReviewActivity {
   assertWrite(reviewId: string, leaseId?: string, scope: LeaseScope = "document") {
     const active = this.active(reviewId, scope);
 
-    const what = scope === "lenses" ? "This review's lenses are" : "This review is";
+    const what = scope === "lenses" ? "This Whiteboard's lenses are" : "This Whiteboard is";
 
     if (active && active.lease_id !== leaseId)
       throw new ReviewInputError(
@@ -135,7 +135,7 @@ export class ReviewActivity {
       throw new ReviewInputError(
         scope === "lenses"
           ? 'No live lenses lease. Begin one with whiteboard_session_activity scope:"lenses" and reread the lenses before editing them.'
-          : "Authoring session ended or expired. Begin a new session and reread the review before editing.",
+          : "Authoring session ended or expired. Begin a new session and reread the Whiteboard before editing.",
         409,
       );
   }

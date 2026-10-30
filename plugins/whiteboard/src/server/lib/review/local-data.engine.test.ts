@@ -519,7 +519,7 @@ it("reads each version of one review at its own pins", async () => {
   expect((await local.data.commits(second)).map((item) => item.commit)).toEqual([later.head]);
   expect(await local.data.comparison(first, pins.head)).toEqual(pins);
   await expect(local.data.comparison(second, pins.head)).rejects.toThrow(
-    "The selected commit is not part of this review version.",
+    "The selected commit is not part of this Whiteboard version.",
   );
   expect(await local.data.file(first, "head", source.file)).toMatchObject({
     commit: pins.head,
@@ -814,7 +814,7 @@ it("copies a diff selection from its pinned version and selected commit, and rej
       ...selection,
       apiSource: { ...selection.apiSource, reviewId: "another-review" },
     }),
-  ).rejects.toMatchObject({ status: 400, message: "Selection belongs to another review." });
+  ).rejects.toMatchObject({ status: 400, message: "Selection belongs to another Whiteboard." });
   await expect(
     copy({
       ...selection,
@@ -892,8 +892,8 @@ it("refuses invalid copy requests, unavailable versions, and missing source file
   ).toBe(false);
 
   for (const [input, message] of [
-    [{ reviewId, version: 99 }, "Review or version not found."],
-    [{ reviewId: "missing" }, "Review or version not found."],
+    [{ reviewId, version: 99 }, "Whiteboard or version not found."],
+    [{ reviewId: "missing" }, "Whiteboard or version not found."],
     [{ reviewId }, "File is unavailable at the pinned commit."],
   ] as const)
     await expect(api.copyContext({ ...input, selection })).rejects.toMatchObject({

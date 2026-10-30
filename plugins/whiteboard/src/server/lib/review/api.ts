@@ -403,7 +403,7 @@ export function createReviewApi(deps: ReviewApiDeps) {
         };
       });
       if (store.read(id).version !== snapshot.version)
-        throw new ReviewInputError("Review changed during this update. Try again.", 409);
+        throw new ReviewInputError("The Whiteboard changed during this update. Try again.", 409);
       store.updateViewedCoverage(id, files, input.viewed);
       return reviewProgress(store, data, store.read(id, input.version), options.signal, mode);
     },
@@ -565,7 +565,7 @@ export function createReviewApi(deps: ReviewApiDeps) {
       const { selection } = input;
       const reviewId = await session(input.reviewId, "write");
       if (selection.apiSource && selection.apiSource.reviewId !== reviewId)
-        throw new ReviewInputError("Selection belongs to another review.");
+        throw new ReviewInputError("Selection belongs to another Whiteboard.");
       const snapshot = store.read(reviewId, selection.apiSource?.version ?? input.version);
       const target = selection.target;
       let excerpt = "";

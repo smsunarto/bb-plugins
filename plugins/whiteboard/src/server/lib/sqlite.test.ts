@@ -219,7 +219,7 @@ describe("ReviewStore on bb.storage.database()", () => {
     await expect(rename(other, "Taken")).rejects.toMatchObject({
       status: 409,
       message:
-        "This review is being authored by another session. Wait for it to finish or expire, then begin your own session.",
+        "This Whiteboard is being authored by another session. Wait for it to finish or expire, then begin your own session.",
     });
     vi.advanceTimersByTime(1);
     expect(store.activity.read(reviewId)).toEqual({ workingCount: 0, expiresAt: null });

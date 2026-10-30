@@ -705,7 +705,7 @@ export class ReviewStore {
   /** The 404 check alone, without loading a snapshot. */
   assertExists(id: string) {
     if (!this.db.prepare("SELECT 1 FROM reviews WHERE id=?").get(id))
-      throw new ReviewInputError("Review not found.", 404);
+      throw new ReviewInputError("Whiteboard not found.", 404);
   }
   /** The current version carries its live source state; a pinned version
    * is what was stored. */
@@ -723,7 +723,7 @@ export class ReviewStore {
             .prepare("SELECT snapshot FROM versions WHERE review_id=? AND version=?")
             .get(id, version);
 
-    if (!row) throw new ReviewInputError("Review or version not found.", 404);
+    if (!row) throw new ReviewInputError("Whiteboard or version not found.", 404);
 
     const snapshot = parseStoredSnapshot(String(row.snapshot));
 
@@ -908,7 +908,7 @@ export class ReviewStore {
     input: unknown,
     initial?: { document: Block[]; origin: SnapshotOrigin },
   ): Promise<Result> {
-    if (this.closing) return Promise.reject(new Error("Review store is closing."));
+    if (this.closing) return Promise.reject(new Error("Whiteboard store is closing."));
     const command = commandSchema.parse(input);
 
     if (initial && command.operation.type !== "create")
@@ -928,7 +928,7 @@ export class ReviewStore {
 
       if (receipt) {
         if (receipt.request === "null")
-          throw new ReviewInputError("This command's review was deleted.", 404);
+          throw new ReviewInputError("This command's Whiteboard was deleted.", 404);
 
         if (!isDeepStrictEqual(JSON.parse(String(receipt.request)), JSON.parse(request)))
           throw new ReviewInputError("Command ID was already used for different input.", 409);
@@ -981,7 +981,7 @@ export class ReviewStore {
         : fromPullRequest;
 
       if (requestedTarget && !resolvedTarget)
-        throw new ReviewInputError("Review targets are unavailable.");
+        throw new ReviewInputError("Whiteboard targets are unavailable.");
 
       if (
         op.type === "create" &&
@@ -1449,7 +1449,7 @@ export class ReviewStore {
     inputs: ImportedVersionInput[],
     options: { preserveCurrent?: Snapshot; revision?: string } = {},
   ): Promise<{ version: number; warnings: string[] }> {
-    if (this.closing) return Promise.reject(new Error("Review store is closing."));
+    if (this.closing) return Promise.reject(new Error("Whiteboard store is closing."));
 
     const reviewId = inputs[0]?.reviewId ?? options.preserveCurrent?.reviewId;
 
@@ -1459,7 +1459,7 @@ export class ReviewStore {
       inputs.some((input) => input.reviewId !== reviewId) ||
       (options.preserveCurrent && options.preserveCurrent.reviewId !== reviewId)
     )
-      return Promise.reject(new Error("Import versions of one review only."));
+      return Promise.reject(new Error("Import versions of one Whiteboard only."));
 
     const run = this.pending.then(async () => {
       this.activity.assertWrite(reviewId);
@@ -1526,7 +1526,7 @@ export class ReviewStore {
       // Keep all existing version numbers and element IDs stable.
       if (existing && options.preserveCurrent) {
         if (options.preserveCurrent.version !== Number(existing.version))
-          throw new ReviewInputError("Review changed during migration.", 409);
+          throw new ReviewInputError("Whiteboard changed during migration.", 409);
 
         const document = documentSchema.parse(
           migrateStoredDocument(options.preserveCurrent.document),

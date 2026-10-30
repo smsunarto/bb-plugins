@@ -1176,7 +1176,10 @@ export class LocalReviewData {
     const selected = (await this.commits(pins)).find((item) => item.commit === commit);
 
     if (!selected)
-      throw new ReviewInputError("The selected commit is not part of this review version.", 404);
+      throw new ReviewInputError(
+        "The selected commit is not part of this Whiteboard version.",
+        404,
+      );
 
     return {
       repositoryId: pins.repositoryId,
@@ -1330,7 +1333,7 @@ export class LocalReviewData {
       };
 
       if (pins && map.commit !== pins[map.side])
-        throw new ReviewInputError("Map does not match this review's source pins.");
+        throw new ReviewInputError("Map does not match this Whiteboard's source pins.");
 
       if (
         block.focusElementId &&

@@ -658,7 +658,7 @@ describe("an agent seeds and reads a session through the tools", () => {
 
     expect(await call("whiteboard_session_get", { sessionId: "nope" })).toEqual({
       isError: true,
-      content: [{ type: "text", text: "Review or version not found." }],
+      content: [{ type: "text", text: "Whiteboard or version not found." }],
     });
 
     const noLease = await call("whiteboard_session_lens_edit", {

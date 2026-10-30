@@ -406,7 +406,7 @@ describe("snapshot authoring", () => {
       new ReviewInputError("File is unavailable at the pinned commit.", 404),
     );
     vi.mocked(providers.validateResource).mockRejectedValue(
-      new ReviewInputError("Map does not match this review's source pins."),
+      new ReviewInputError("Map does not match this Whiteboard's source pins."),
     );
 
     const command = request({
@@ -418,7 +418,7 @@ describe("snapshot authoring", () => {
     const result = await store.execute(command);
 
     expect(result.warnings).toEqual([
-      "block-2 (software_map): Map does not match this review's source pins.",
+      "block-2 (software_map): Map does not match this Whiteboard's source pins.",
       "head/src/store.ts#L1-L5: File is unavailable at the pinned commit.",
     ]);
     expect(await store.execute(command)).toEqual(result);

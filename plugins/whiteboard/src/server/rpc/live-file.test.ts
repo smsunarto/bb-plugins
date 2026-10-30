@@ -12,7 +12,7 @@ test("historical source stays readonly and invalid RPC inputs never reach the fi
     api: {
       file: async () => {
         reads++;
-        throw new ReviewInputError("Review not found.", 404);
+        throw new ReviewInputError("Whiteboard not found.", 404);
       },
     },
     run: (_context: unknown, fn: (signal: AbortSignal) => Promise<unknown>) =>

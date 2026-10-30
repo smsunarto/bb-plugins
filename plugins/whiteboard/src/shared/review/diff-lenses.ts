@@ -90,7 +90,7 @@ export function applyLensEdit(lenses: Lens[], edit: LensEdit, allocate: () => st
 
   if (edit.type === "insert") {
     if (lenses.length >= LENS_LIMIT)
-      throw new ReviewInputError(`A review holds at most ${LENS_LIMIT} lenses.`);
+      throw new ReviewInputError(`A Whiteboard holds at most ${LENS_LIMIT} lenses.`);
     checkLensTargets(edit.targets);
 
     const lens: Lens = {

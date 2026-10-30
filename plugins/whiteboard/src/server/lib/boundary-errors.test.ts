@@ -25,13 +25,13 @@ describe("expected failures", () => {
     "ReviewInputError $status is refused as $code with its message",
     ({ status, code }) => {
       const log = vi.spyOn(console, "error").mockImplementation(() => {});
-      const error = new ReviewInputError("Review not found.", status);
+      const error = new ReviewInputError("Whiteboard not found.", status);
 
       const refused = rpcError("history", error);
 
       expect(refused).toBeInstanceOf(PluginRpcRefusal);
-      expect(refused).toMatchObject({ code, message: "Review not found." });
-      expect(toolErrorText("history", error)).toBe("Review not found.");
+      expect(refused).toMatchObject({ code, message: "Whiteboard not found." });
+      expect(toolErrorText("history", error)).toBe("Whiteboard not found.");
       expect(log).not.toHaveBeenCalled();
     },
   );
