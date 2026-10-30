@@ -259,12 +259,17 @@ async function watchFile(
   const { watchId, leaseMs } = input;
   const filePath = path.normalize(input.path);
   const expire = () => setTimeout(() => void unwatchFile(watchId), leaseMs);
-  const existing = fileWatches.get(watchId);
-  if (existing?.path === filePath) {
+  // Another call can start a watch while this one stops the old one, so
+  // check again after every wait; the new watch is set up without one.
+  let existing = fileWatches.get(watchId);
+  while (existing !== undefined && existing.path !== filePath) {
+    await unwatchFile(watchId);
+    existing = fileWatches.get(watchId);
+  }
+  if (existing) {
     clearTimeout(existing.expiry);
     existing.expiry = expire();
   } else {
-    await unwatchFile(watchId);
     // The file's own folder and not the folders under it: the daemon's
     // watcher takes a whole tree, and an opened ~/AGENTS.md would watch $HOME.
     const name = path.basename(filePath);

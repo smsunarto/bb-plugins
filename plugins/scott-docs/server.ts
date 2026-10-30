@@ -2,7 +2,23 @@ import { proposalSchema, type Proposal } from "./proposals.js";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
+import { makePluginRuntime } from "@bb-plugins/effect-bridge";
 import { isRecord, parseMarkdownDocument } from "@bb-plugins/markdown-editor/markdown-document";
+import {
+  Cache,
+  Context,
+  Effect,
+  Exit,
+  Fiber,
+  FiberMap,
+  FiberSet,
+  Layer,
+  Queue,
+  RcMap,
+  Result,
+  Schedule,
+  Semaphore,
+} from "effect";
 import { DOCS_PATH_LIST_LIMIT, docsHostContract, docsHostSignals } from "./host-contract.js";
 import { isExcludedDocsPath } from "./path-policy.js";
 import {
@@ -319,26 +335,84 @@ function parseVaultRow(value: unknown): Vault {
   };
 }
 
-function waitForDelay(ms: number, signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const finish = () => {
-      clearTimeout(timer);
-      signal.removeEventListener("abort", finish);
-      resolve();
-    };
-    const timer = setTimeout(finish, ms);
-    signal.addEventListener("abort", finish, { once: true });
-  });
-}
-
 /** How long a host keeps watching an opened file without a renewal. */
 const OPENED_FILE_LEASE_MS = 180_000;
 
 /** How long after a save the host watcher's report of it counts as its echo. */
 const OWN_WRITE_ECHO_MS = 10_000;
 
+/**
+ * How often watch-vaults checks its watches. A poll waits the same time for
+ * an arming call before it moves on, so a slow machine holds up only its own
+ * vaults.
+ */
+const VAULT_POLL_MS = 10_000;
+const VAULT_ARM_CONCURRENCY = 4;
+
+/** An opened file's failed renewal retries after 1 s, doubling to at most 30 s. */
+const openedFileRetryMs = (failures: number) => Math.min(30_000, 1_000 * 2 ** failures);
+
+type PreviewTarget = { hostId: string; rootPath: string };
+type PreviewLease = { baseUrl: string; expiresAtMs: number };
+
+/** Loads and locks that outlive any one caller, owned by the plugin's runtime. */
+class DocsShared extends Context.Service<
+  DocsShared,
+  {
+    /** Awaits shared loads for callers, so a caller that leaves does not cancel one. */
+    readonly background: FiberSet.FiberSet<unknown, unknown>;
+    /** One operation at a time per vault; a lock lives while it has users. */
+    readonly vaultLocks: RcMap.RcMap<string, Semaphore.Semaphore>;
+    /** Note summaries for mentions, keyed by the whole vault so a rebound one starts over. */
+    readonly mentionSummaries: Cache.Cache<Vault, NoteSummary[], unknown>;
+    /** One preview lease per host folder, kept until it nears expiry. */
+    readonly previewLeases: Cache.Cache<PreviewTarget, PreviewLease, unknown>;
+  }
+>()("scott-docs/DocsShared") {}
+
 export default async function plugin(bb: BbPluginApi) {
+  const runtime = await makePluginRuntime(
+    bb,
+    Layer.effect(
+      DocsShared,
+      Effect.gen(function* () {
+        return DocsShared.of({
+          background: yield* FiberSet.make(),
+          vaultLocks: yield* RcMap.make({ lookup: (_vaultId: string) => Semaphore.make(1) }),
+          // A scan owns its deadline; a failed one is not kept.
+          mentionSummaries: yield* Cache.makeWith(
+            (vault: Vault) => listNoteSummaries(vault).pipe(Effect.timeout(MENTION_SUMMARY_TTL_MS)),
+            {
+              capacity: Number.POSITIVE_INFINITY,
+              timeToLive: (exit) => (Exit.isSuccess(exit) ? MENTION_SUMMARY_TTL_MS : 0),
+            },
+          ),
+          previewLeases: yield* Cache.makeWith(
+            (target: PreviewTarget) =>
+              Effect.tryPromise({
+                try: () => bb.sdk.files.createPreview(target),
+                catch: (error) => error,
+              }),
+            {
+              capacity: Number.POSITIVE_INFINITY,
+              timeToLive: (exit) =>
+                Exit.isSuccess(exit)
+                  ? Math.max(0, exit.value.expiresAtMs - PREVIEW_RENEW_BEFORE_MS - Date.now())
+                  : 0,
+            },
+          ),
+        });
+      }),
+    ),
+  );
+  const { background, vaultLocks, mentionSummaries, previewLeases } = await runtime.run(DocsShared);
+
+  // Waits for a shared load from a fiber the plugin owns: a caller that stops
+  // waiting, such as a search past its wait or a closed page, leaves the load
+  // running for the next caller. Unloading the plugin stops it.
+  const awaitShared = <A, E>(load: Effect.Effect<A, E>) =>
+    Effect.flatMap(FiberSet.run(background, load), Fiber.join);
+
   const hostFiles = bb.hosts.experimental_client({
     contract: docsHostContract,
     experimental_signals: docsHostSignals,
@@ -533,7 +607,7 @@ export default async function plugin(bb: BbPluginApi) {
 
   function vaultHostChanged(vaultId: string): void {
     unboundCandidates.delete(vaultId);
-    mentionSummaries.delete(vaultId);
+    forgetMentions(vaultId);
     bb.realtime.publish("vault-changed", { vaultId });
     invalidate([VAULTS_TAG, vaultTag(vaultId), treeTag(vaultId)]);
   }
@@ -597,125 +671,109 @@ export default async function plugin(bb: BbPluginApi) {
 
   // Summaries survive between listings and are re-read only when a note's
   // modification time or size changes. The key includes the host and root,
-  // so a rebound or moved vault starts over.
+  // so a rebound or moved vault starts over. A note that cannot be read is
+  // tried on every pass but reported once, until it reads or leaves the vault.
   const summaryCache = new Map<
     string,
-    Map<string, { modifiedAtMs: number; sizeBytes: number; note: NoteSummary }>
+    {
+      notes: Map<string, { modifiedAtMs: number; sizeBytes: number; note: NoteSummary }>;
+      unreadable: Set<string>;
+    }
   >();
 
-  async function listNoteSummaries(
+  const listNoteSummaries = Effect.fnUntraced(function* (
     vault: Vault,
     knownEntries?: VaultEntry[],
-    signal?: AbortSignal,
-  ): Promise<NoteSummary[]> {
-    const entries = knownEntries ?? (await listEntries(vault, signal)).entries;
+  ) {
+    const entries =
+      knownEntries ??
+      (yield* Effect.tryPromise({
+        try: (signal) => listEntries(vault, signal),
+        catch: (error) => error,
+      })).entries;
     const cacheKey = JSON.stringify([vault.id, vault.hostId, vault.rootPath]);
     const previous = summaryCache.get(cacheKey);
     const next = new Map<string, { modifiedAtMs: number; sizeBytes: number; note: NoteSummary }>();
     const stale: Array<Extract<VaultEntry, { kind: "file" }>> = [];
     for (const entry of entries) {
       if (entry.kind !== "file" || !MARKDOWN_PATH.test(entry.path)) continue;
-      const cached = previous?.get(entry.path);
+      const cached = previous?.notes.get(entry.path);
       if (cached?.modifiedAtMs === entry.modifiedAtMs && cached.sizeBytes === entry.sizeBytes) {
         next.set(entry.path, cached);
       } else {
         stale.push(entry);
       }
     }
-    let nextIndex = 0;
-    // Commit even when aborted: `next` holds only verified notes, so an
-    // interrupted pass still saves the reads it finished.
-    try {
-      await Promise.all(
-        Array.from({ length: Math.min(SUMMARY_READ_CONCURRENCY, stale.length) }, async () => {
-          while (nextIndex < stale.length) {
-            signal?.throwIfAborted();
-            const entry = stale[nextIndex++]!;
-            try {
-              const file = await bb.sdk.files.read({
-                ...hostArgs(vault),
-                path: absolutePath(vault, entry.path),
-                rootPath: vault.rootPath,
-                ...(signal ? { signal } : {}),
-              });
-              const fallback = path.posix.basename(entry.path).replace(MARKDOWN_PATH, "");
-              const summary = summarizeMarkdown(file.content, fallback);
-              next.set(entry.path, {
+    // An unreadable note has no summary, so it is stale while it is listed.
+    const unreadable = new Set(
+      stale.flatMap((entry) => (previous?.unreadable.has(entry.path) ? [entry.path] : [])),
+    );
+    // A note that cannot be read is left out, not the listing. Commit even
+    // when interrupted: `next` holds only verified notes, so an interrupted
+    // pass still saves the reads it finished.
+    yield* Effect.forEach(
+      stale,
+      (entry) =>
+        Effect.tryPromise({
+          try: (signal) =>
+            bb.sdk.files.read({
+              ...hostArgs(vault),
+              path: absolutePath(vault, entry.path),
+              rootPath: vault.rootPath,
+              signal,
+            }),
+          catch: (error) => error,
+        }).pipe(
+          Effect.map((file) => {
+            const fallback = path.posix.basename(entry.path).replace(MARKDOWN_PATH, "");
+            const summary = summarizeMarkdown(file.content, fallback);
+            unreadable.delete(entry.path);
+            next.set(entry.path, {
+              modifiedAtMs: entry.modifiedAtMs,
+              sizeBytes: entry.sizeBytes,
+              note: {
+                path: entry.path,
+                title: summary.title,
+                preview: summary.preview,
                 modifiedAtMs: entry.modifiedAtMs,
-                sizeBytes: entry.sizeBytes,
-                note: {
-                  path: entry.path,
-                  title: summary.title,
-                  preview: summary.preview,
-                  modifiedAtMs: entry.modifiedAtMs,
-                },
-              });
-            } catch {}
-          }
-        }),
-      );
-    } finally {
-      summaryCache.set(cacheKey, next);
-    }
-    signal?.throwIfAborted();
+              },
+            });
+          }),
+          Effect.catch((error) => {
+            if (unreadable.has(entry.path)) return Effect.void;
+            unreadable.add(entry.path);
+            return Effect.logWarning(
+              `cannot read ${entry.path} in vault ${vault.id}: ${errorMessage(error)}`,
+            );
+          }),
+        ),
+      { concurrency: SUMMARY_READ_CONCURRENCY, discard: true },
+    ).pipe(
+      Effect.ensuring(Effect.sync(() => summaryCache.set(cacheKey, { notes: next, unreadable }))),
+    );
     return entries
       .flatMap((entry) => {
         const cached = next.get(entry.path);
         return entry.kind === "file" && cached ? [cached.note] : [];
       })
       .sort((a, b) => b.modifiedAtMs - a.modifiedAtMs);
-  }
-
-  const mentionSummaries = new Map<
-    string,
-    {
-      rootPath: string;
-      hostId: string | null;
-      expiresAt: number;
-      notes: Promise<NoteSummary[]>;
-    }
-  >();
-  const mentionLifetime = new AbortController();
-  const treeSummaries = new Map<string, Map<string, string>>();
-  bb.onDispose(() => {
-    mentionLifetime.abort();
-    mentionSummaries.clear();
   });
 
-  function mentionNoteSummaries(vault: Vault): Promise<NoteSummary[]> {
-    const cached = mentionSummaries.get(vault.id);
-    if (
-      cached &&
-      cached.rootPath === vault.rootPath &&
-      cached.hostId === vault.hostId &&
-      cached.expiresAt > Date.now()
-    ) {
-      return cached.notes;
-    }
-    const entry = {
-      rootPath: vault.rootPath,
-      hostId: vault.hostId,
-      expiresAt: Infinity,
-      notes: listNoteSummaries(
-        vault,
-        undefined,
-        AbortSignal.any([mentionLifetime.signal, AbortSignal.timeout(MENTION_SUMMARY_TTL_MS)]),
-      ),
-    };
-    entry.notes = entry.notes.then(
-      (notes) => {
-        entry.expiresAt = Date.now() + MENTION_SUMMARY_TTL_MS;
-        return notes;
-      },
-      (error: unknown) => {
-        if (mentionSummaries.get(vault.id) === entry) {
-          mentionSummaries.delete(vault.id);
-        }
-        throw error;
-      },
+  const treeSummaries = new Map<string, Map<string, string>>();
+
+  // Drops one vault's mention summaries, or every vault's.
+  function forgetMentions(vaultId?: string): void {
+    Effect.runSync(
+      vaultId === undefined
+        ? Cache.invalidateAll(mentionSummaries)
+        : Effect.flatMap(Cache.keys(mentionSummaries), (vaults) =>
+            Effect.forEach(
+              [...vaults].filter((vault) => vault.id === vaultId),
+              (vault) => Cache.invalidate(mentionSummaries, vault),
+              { discard: true },
+            ),
+          ),
     );
-    mentionSummaries.set(vault.id, entry);
-    return entry.notes;
   }
 
   async function notebookData(vaultId?: string) {
@@ -726,7 +784,7 @@ export default async function plugin(bb: BbPluginApi) {
         listEntries(vault),
         bb.sdk.hosts.list(),
       ]);
-      const notes = await listNoteSummaries(vault, entries);
+      const notes = await runtime.run(listNoteSummaries(vault, entries));
       treeSummaries.set(vault.id, new Map(notes.map((note) => [note.path, note.title])));
       return {
         vaults: listVaults(),
@@ -788,7 +846,7 @@ export default async function plugin(bb: BbPluginApi) {
           : {}),
     });
     if (result.outcome === "written") {
-      mentionSummaries.delete(vault.id);
+      forgetMentions(vault.id);
       rememberWrite(vault.id, relativePath, result.sha256);
       invalidate([
         ...pathTags(vault.id, relativePath),
@@ -828,23 +886,22 @@ export default async function plugin(bb: BbPluginApi) {
     return true;
   }
 
-  const vaultOperations = new Map<string, Promise<unknown>>();
-
-  async function serializeVault<T>(vaultId: string, work: () => Promise<T>): Promise<T> {
-    const key = vaultId;
-    const previous = vaultOperations.get(key) ?? Promise.resolve();
-    const current = previous
-      .catch(() => undefined)
-      .then(() => {
-        getVault(vaultId);
-        return work();
-      });
-    vaultOperations.set(key, current);
-    try {
-      return await current;
-    } finally {
-      if (vaultOperations.get(key) === current) vaultOperations.delete(key);
-    }
+  // Operations on one vault run one at a time, in arrival order; a failed
+  // one does not hold the next. Work queued for a vault removed meanwhile fails.
+  function serializeVault<T>(vaultId: string, work: () => Promise<T>): Promise<T> {
+    return runtime.run(
+      RcMap.get(vaultLocks, vaultId).pipe(
+        Effect.flatMap((lock) =>
+          lock.withPermit(
+            Effect.promise(async () => {
+              getVault(vaultId);
+              return work();
+            }),
+          ),
+        ),
+        Effect.scoped,
+      ),
+    );
   }
 
   function readProposal(vaultId: string, relativePath: string): Proposal | null {
@@ -1024,7 +1081,7 @@ export default async function plugin(bb: BbPluginApi) {
         insert.run(vault.id, proposal.path, JSON.stringify(proposal));
       }
     })();
-    mentionSummaries.delete(vault.id);
+    forgetMentions(vault.id);
     treeSummaries.delete(vault.id);
     invalidate([treeTag(vault.id), ...pathTags(vault.id, from), ...pathTags(vault.id, to)]);
     return { path: to };
@@ -1051,7 +1108,7 @@ export default async function plugin(bb: BbPluginApi) {
         recursive,
       });
       deleteProposals(vault.id, relativePath);
-      mentionSummaries.delete(vault.id);
+      forgetMentions(vault.id);
       treeSummaries.get(vault.id)?.delete(relativePath);
       invalidate([treeTag(vault.id), ...pathTags(vault.id, relativePath)]);
       return { ok: true };
@@ -1431,29 +1488,24 @@ export default async function plugin(bb: BbPluginApi) {
     };
   }
 
-  const previewLeases = new Map<string, Promise<{ baseUrl: string; expiresAtMs: number }>>();
-
-  function previewLease(vault: Vault) {
-    return targetPreviewLease({ hostId: vaultHostId(vault), rootPath: vault.rootPath });
+  function previewTarget(vault: Vault): PreviewTarget {
+    return { hostId: vaultHostId(vault), rootPath: vault.rootPath };
   }
 
-  async function targetPreviewLease(target: {
-    hostId: string;
-    rootPath: string;
-  }): Promise<{ baseUrl: string; expiresAtMs: number }> {
-    const key = JSON.stringify([target.hostId, target.rootPath]);
-    const cached = previewLeases.get(key);
-    if (cached) {
-      const lease = await cached.catch(() => null);
-      if (lease && lease.expiresAtMs - Date.now() > PREVIEW_RENEW_BEFORE_MS) return lease;
-      if (previewLeases.get(key) !== cached) return targetPreviewLease(target);
-    }
-    const next = bb.sdk.files.createPreview(target);
-    previewLeases.set(key, next);
-    next.catch(() => {
-      if (previewLeases.get(key) === next) previewLeases.delete(key);
-    });
-    return next;
+  function previewLease(vault: Vault) {
+    return targetPreviewLease(previewTarget(vault));
+  }
+
+  // A reader that joined a lease that then failed asks for its own: the
+  // failure is the first caller's to report.
+  const sharedPreviewLease = Effect.fnUntraced(function* (target: PreviewTarget) {
+    const joining = yield* Cache.has(previewLeases, target);
+    const lease = awaitShared(Cache.get(previewLeases, target));
+    return yield* joining ? lease.pipe(Effect.catch(() => lease)) : lease;
+  });
+
+  function targetPreviewLease(target: PreviewTarget): Promise<PreviewLease> {
+    return runtime.run(sharedPreviewLease(target));
   }
 
   function openedWatchId(target: { hostId: string; path: string }) {
@@ -1786,7 +1838,7 @@ export default async function plugin(bb: BbPluginApi) {
           db.prepare("DELETE FROM entry_order WHERE vault_id = ?").run(id);
           db.prepare("DELETE FROM vaults WHERE id = ?").run(id);
         })();
-        mentionSummaries.delete(id);
+        forgetMentions(id);
         treeSummaries.delete(id);
         invalidate([VAULTS_TAG, treeTag(id)]);
         return { ok: true as const };
@@ -1868,7 +1920,7 @@ export default async function plugin(bb: BbPluginApi) {
           : {}),
       });
       if (result.outcome === "written") {
-        mentionSummaries.clear();
+        forgetMentions();
         for (const reader of openedFileReaders.get(openedWatchId(target)) ?? []) {
           reader.sha256 = result.sha256;
           reader.revision += 1;
@@ -3274,22 +3326,24 @@ export default async function plugin(bb: BbPluginApi) {
       const vaults = listVaults().filter(
         (vault) => vault.hostId !== null && (connected === null || connected.has(vault.hostId)),
       );
-      const settled = await Promise.allSettled(
-        vaults.map(
+      // A failed scan and one past the wait both add nothing.
+      const notesByVault = await runtime.run(
+        Effect.forEach(
+          vaults,
           (vault) =>
-            new Promise<NoteSummary[]>((resolve, reject) => {
-              const timer = setTimeout(() => resolve([]), MENTION_VAULT_WAIT_MS);
-              mentionNoteSummaries(vault)
-                .then(resolve, reject)
-                .finally(() => clearTimeout(timer));
-            }),
+            awaitShared(Cache.get(mentionSummaries, vault)).pipe(
+              Effect.timeoutOrElse({
+                duration: MENTION_VAULT_WAIT_MS,
+                orElse: () => Effect.succeed([]),
+              }),
+              Effect.orElseSucceed((): NoteSummary[] => []),
+            ),
+          { concurrency: "unbounded" },
         ),
       );
       const matches = [];
       for (const [index, vault] of vaults.entries()) {
-        const result = settled[index]!;
-        if (result.status === "rejected") continue;
-        for (const note of result.value) {
+        for (const note of notesByVault[index]!) {
           if (
             needle &&
             !`${vault.name} ${note.title} ${note.preview} ${note.path}`
@@ -3345,7 +3399,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
     })();
     for (const vault of removed) {
-      mentionSummaries.delete(vault.id);
+      forgetMentions(vault.id);
       bb.realtime.publish("vault-changed", { vaultId: vault.id });
       invalidate([VAULTS_TAG, vaultTag(vault.id), treeTag(vault.id)]);
     }
@@ -3380,188 +3434,272 @@ export default async function plugin(bb: BbPluginApi) {
 
   // Each vault is watched by the native watcher on its own host. The
   // server's filesystem is not the vault's, so watching it would see nothing.
-  bb.background.service("watch-vaults", {
-    async start(signal) {
-      const armed = new Map<string, { hostId: string; rootPath: string }>();
-      const warned = new Set<string>();
-      let setupWarning: string | null = null;
-      let wake: (() => void) | null = null;
-      // `paths` names what changed when the host could; without it, anything
-      // in the vault may have.
-      const changed = (vaultId: string, paths?: string[]) => {
-        mentionSummaries.delete(vaultId);
-        bb.realtime.publish("vault-changed", { vaultId, ...(paths ? { paths } : {}) });
-        invalidate(
-          paths
-            ? [treeTag(vaultId), ...paths.flatMap((p) => pathTags(vaultId, p))]
-            : [treeTag(vaultId), vaultTag(vaultId)],
-        );
-      };
-      // Re-arming publishes a change, since changes made while unwatched are unknown.
-      const offSignal = hostFiles.experimental_onSignal("vaultChanged", ({ hostId, payload }) => {
-        if (armed.get(payload.vaultId)?.hostId !== hostId) return;
-        if (payload.kind === "watch-error") {
-          armed.delete(payload.vaultId);
-          wake?.();
-          return;
-        }
-        if (payload.changes === undefined) return changed(payload.vaultId);
-        const fresh = payload.changes.filter((change) => !isOwnEcho(payload.vaultId, change));
-        if (fresh.length > 0)
-          changed(
-            payload.vaultId,
-            fresh.map((change) => change.path),
-          );
-      });
-      // A restarted worker has lost its watches.
-      const offExit = hostFiles.experimental_onWorkerExit(({ hostId }) => {
-        for (const [vaultId, watch] of armed) if (watch.hostId === hostId) armed.delete(vaultId);
-        wake?.();
-      });
-      const unwatch = (vaultId: string, hostId: string) =>
-        void hostFiles.call("unwatchVault", { vaultId }, { hostId }).catch(() => {});
-      try {
-        while (!signal.aborted) {
-          try {
+  const watchVaults = Effect.gen(function* () {
+    const armed = new Map<string, { hostId: string; rootPath: string }>();
+    const warned = new Set<string>();
+    let setupWarning: string | null = null;
+    // A lost watch ends the wait early. One pending wake is enough, and a
+    // wake during a poll starts the next one at once.
+    const wakeups = yield* Queue.sliding<void>(1);
+    const wake = () => {
+      Queue.offerUnsafe(wakeups, undefined);
+    };
+    // `paths` names what changed when the host could; without it, anything
+    // in the vault may have.
+    const changed = (vaultId: string, paths?: string[]) => {
+      forgetMentions(vaultId);
+      bb.realtime.publish("vault-changed", { vaultId, ...(paths ? { paths } : {}) });
+      invalidate(
+        paths
+          ? [treeTag(vaultId), ...paths.flatMap((p) => pathTags(vaultId, p))]
+          : [treeTag(vaultId), vaultTag(vaultId)],
+      );
+    };
+    // Re-arming publishes a change, since changes made while unwatched are unknown.
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        hostFiles.experimental_onSignal("vaultChanged", ({ hostId, payload }) => {
+          if (armed.get(payload.vaultId)?.hostId !== hostId) return;
+          if (payload.kind === "watch-error") {
+            armed.delete(payload.vaultId);
+            wake();
+            return;
+          }
+          if (payload.changes === undefined) return changed(payload.vaultId);
+          const fresh = payload.changes.filter((change) => !isOwnEcho(payload.vaultId, change));
+          if (fresh.length > 0)
+            changed(
+              payload.vaultId,
+              fresh.map((change) => change.path),
+            );
+        }),
+      ),
+      (off) => Effect.sync(off),
+    );
+    // A restarted worker has lost its watches.
+    yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        hostFiles.experimental_onWorkerExit(({ hostId }) => {
+          for (const [vaultId, watch] of armed) if (watch.hostId === hostId) armed.delete(vaultId);
+          wake();
+        }),
+      ),
+      (off) => Effect.sync(off),
+    );
+    const unwatch = (vaultId: string, hostId: string) =>
+      void hostFiles.call("unwatchVault", { vaultId }, { hostId }).catch(() => {});
+    yield* Effect.addFinalizer(() =>
+      Effect.sync(() => {
+        for (const [vaultId, watch] of armed) unwatch(vaultId, watch.hostId);
+      }),
+    );
+
+    // Arming subscribes the vault's whole tree, and the host finishes it even
+    // after the caller stops waiting. So each vault has one arming at a time,
+    // which records its answer whenever it comes. The host may then hold a
+    // watch for a vault removed or moved meanwhile, or for an arming the
+    // service stopped; that watch is dropped, as an armed one would be.
+    const arms = yield* FiberMap.make<string>();
+    const arm = Effect.fnUntraced(function* (vault: Vault, hostId: string) {
+      const answer = yield* Effect.tryPromise({
+        try: (signal) =>
+          hostFiles.call(
+            "watchVault",
+            { vaultId: vault.id, rootPath: vault.rootPath },
+            { hostId, signal },
+          ),
+        catch: (error) => error,
+      }).pipe(
+        Effect.onInterrupt(() => Effect.sync(() => unwatch(vault.id, hostId))),
+        Effect.result,
+      );
+      const current = listVaults().find((candidate) => candidate.id === vault.id);
+      if (current?.hostId !== hostId || current.rootPath !== vault.rootPath) {
+        unwatch(vault.id, hostId);
+      } else if (Result.isSuccess(answer)) {
+        armed.set(vault.id, { hostId, rootPath: vault.rootPath });
+        warned.delete(vault.id);
+        changed(vault.id);
+      } else if (!warned.has(vault.id)) {
+        warned.add(vault.id);
+        yield* Effect.logWarning(`cannot watch vault ${vault.id}: ${errorMessage(answer.failure)}`);
+      }
+    });
+
+    const poll = Effect.gen(function* () {
+      const setUp = yield* Effect.result(
+        Effect.tryPromise({
+          try: async () => {
             await ensureDefaultVault();
             await bindLegacyVaults();
-            setupWarning = null;
-          } catch (error) {
-            const message = errorMessage(error);
-            if (message !== setupWarning) bb.log.warn(`could not set up vaults: ${message}`);
-            setupWarning = message;
-          }
-          const vaults = listVaults();
-          const hosts = await bb.sdk.hosts.list().catch(() => []);
-          const connected = new Set(
-            hosts.filter((host) => host.status === "connected").map((host) => host.id),
-          );
-          for (const [vaultId, watch] of armed) {
-            const vault = vaults.find((candidate) => candidate.id === vaultId);
-            if (vault?.hostId === watch.hostId && vault.rootPath === watch.rootPath) {
-              if (connected.has(watch.hostId)) continue;
-            } else {
-              unwatch(vaultId, watch.hostId);
-            }
-            // Signals sent while a host was away are lost: re-arm on return.
-            armed.delete(vaultId);
-          }
-          for (const vaultId of await lostWatches(armed, connected, signal)) {
-            armed.delete(vaultId);
-            changed(vaultId);
-          }
-          for (const vault of vaults) {
-            if (!vault.hostId || armed.has(vault.id) || !connected.has(vault.hostId)) continue;
-            const watch = { hostId: vault.hostId, rootPath: vault.rootPath };
-            try {
-              await hostFiles.call(
-                "watchVault",
-                { vaultId: vault.id, rootPath: vault.rootPath },
-                { hostId: vault.hostId, signal },
-              );
-              armed.set(vault.id, watch);
-              warned.delete(vault.id);
-              changed(vault.id);
-            } catch (error) {
-              if (signal.aborted) break;
-              if (!warned.has(vault.id)) {
-                warned.add(vault.id);
-                bb.log.warn(`cannot watch vault ${vault.id}: ${errorMessage(error)}`);
-              }
-            }
-          }
-          const pause = new AbortController();
-          wake = () => pause.abort();
-          await waitForDelay(10_000, AbortSignal.any([signal, pause.signal]));
-          wake = null;
+          },
+          catch: errorMessage,
+        }),
+      );
+      const setUpFailure = Result.isFailure(setUp) ? setUp.failure : null;
+      if (setUpFailure !== null && setUpFailure !== setupWarning)
+        yield* Effect.logWarning(`could not set up vaults: ${setUpFailure}`);
+      setupWarning = setUpFailure;
+      const vaults = listVaults();
+      const hosts = yield* Effect.promise(() => bb.sdk.hosts.list().catch(() => []));
+      const connected = new Set(
+        hosts.filter((host) => host.status === "connected").map((host) => host.id),
+      );
+      for (const [vaultId, watch] of armed) {
+        const vault = vaults.find((candidate) => candidate.id === vaultId);
+        if (vault?.hostId === watch.hostId && vault.rootPath === watch.rootPath) {
+          if (connected.has(watch.hostId)) continue;
+        } else {
+          unwatch(vaultId, watch.hostId);
         }
-      } finally {
-        offSignal();
-        offExit();
-        for (const [vaultId, watch] of armed) unwatch(vaultId, watch.hostId);
+        // Signals sent while a host was away are lost: re-arm on return.
+        armed.delete(vaultId);
       }
+      for (const vaultId of yield* Effect.promise((signal) =>
+        lostWatches(armed, connected, signal),
+      )) {
+        armed.delete(vaultId);
+        changed(vaultId);
+      }
+      // One slow machine must not leave the others' vaults unwatched. A vault
+      // still arming from an earlier poll keeps that call; this poll neither
+      // replaces it nor waits on it again.
+      yield* Effect.forEach(
+        vaults.flatMap((vault) =>
+          vault.hostId && !armed.has(vault.id) && connected.has(vault.hostId)
+            ? [{ vault, hostId: vault.hostId }]
+            : [],
+        ),
+        ({ vault, hostId }) =>
+          FiberMap.run(arms, vault.id, arm(vault, hostId), { onlyIfMissing: true }).pipe(
+            Effect.flatMap(Fiber.await),
+            Effect.timeoutOption(VAULT_POLL_MS),
+          ),
+        { concurrency: VAULT_ARM_CONCURRENCY, discard: true },
+      );
+      yield* Effect.raceFirst(Effect.sleep(VAULT_POLL_MS), Queue.take(wakeups));
+    });
+
+    return yield* Effect.forever(poll);
+  }).pipe(Effect.scoped);
+
+  bb.background.service("watch-vaults", { start: runtime.service(watchVaults) });
+
+  // A page renews its opened file's watch and preview while it shows the
+  // file. A failed renewal retries with backoff. A wake from a restarted
+  // worker starts over at once, cutting a wait or a backoff short.
+  const keepOpenedFileWatched = Effect.fnUntraced(function* (
+    source: OpenerSource,
+    filePath: string,
+  ) {
+    const wakeups = yield* Queue.sliding<void>(1);
+    let watchId: string | undefined;
+    let previousPreview: string | null = null;
+    const reader: OpenedFileReader = {
+      tag: openedFileTag(source, filePath),
+      sha256: undefined,
+      revision: 0,
+      wake() {
+        Queue.offerUnsafe(wakeups, undefined);
+      },
+    };
+    const detach = () => {
+      if (!watchId) return;
+      const readers = openedFileReaders.get(watchId);
+      readers?.delete(reader);
+      if (readers?.size === 0) {
+        openedFileReaders.delete(watchId);
+        openedFileWatches.delete(watchId);
+      }
+      watchId = undefined;
+    };
+    yield* Effect.addFinalizer(() => Effect.sync(detach));
+
+    // Renews once and answers how long until the next renewal.
+    const renew = Effect.gen(function* () {
+      const target = yield* Effect.tryPromise({
+        try: () => resolveOpenerFile(source, filePath),
+        catch: (error) => error,
+      });
+      const nextWatchId = openedWatchId(target);
+      if (nextWatchId !== watchId) {
+        detach();
+        watchId = nextWatchId;
+        reader.sha256 = undefined;
+        const readers = openedFileReaders.get(watchId) ?? new Set<typeof reader>();
+        readers.add(reader);
+        openedFileReaders.set(watchId, readers);
+      }
+      const revision = reader.revision;
+      const watch = yield* Effect.tryPromise({
+        try: (signal) => watchOpenedTarget(target, signal),
+        catch: (error) => error,
+      });
+      const lease = yield* sharedPreviewLease({
+        hostId: target.hostId,
+        rootPath: target.rootPath,
+      });
+      const hashChanged = reader.revision === revision && reader.sha256 !== watch.sha256;
+      if (reader.revision === revision) reader.sha256 = watch.sha256;
+      if (hashChanged || (previousPreview !== null && previousPreview !== lease.baseUrl))
+        invalidate([reader.tag]);
+      previousPreview = lease.baseUrl;
+      return Math.min(
+        watch.renewWithinMs,
+        Math.max(1_000, lease.expiresAtMs - PREVIEW_RENEW_BEFORE_MS - Date.now() + 1_000),
+      );
+    });
+
+    // A wake never interrupts a renewal's host calls: it waits in the queue
+    // and ends the wait or backoff that follows.
+    let failures = 0;
+    return yield* Effect.forever(
+      Effect.gen(function* () {
+        const renewed = yield* Effect.result(renew);
+        let delay: number;
+        if (Result.isSuccess(renewed)) {
+          delay = renewed.success;
+          failures = 0;
+        } else {
+          if (failures === 0)
+            yield* Effect.logWarning(`cannot watch opened file: ${errorMessage(renewed.failure)}`);
+          delay = openedFileRetryMs(failures);
+          failures += 1;
+        }
+        yield* Effect.raceFirst(Effect.sleep(delay), Queue.take(wakeups));
+      }),
+    );
+  }, Effect.scoped);
+
+  // While a preview is watched, its document is re-read as the lease nears
+  // expiry, so the page picks up the renewed lease.
+  const renewPreviewWhileWatched = Effect.fnUntraced(
+    function* (vaultId: string, relativePath: string) {
+      const lease = yield* Effect.try({
+        try: () => previewTarget(getVault(vaultId)),
+        catch: (error) => error,
+      }).pipe(Effect.flatMap(sharedPreviewLease), Effect.retry(Schedule.spaced("5 seconds")));
+      yield* Effect.sleep(
+        Math.max(1_000, lease.expiresAtMs - PREVIEW_RENEW_BEFORE_MS - Date.now() + 1_000),
+      );
+      invalidate([documentTag(vaultId, relativePath)]);
     },
-  });
+    (renewal) => Effect.forever(renewal),
+  );
+
+  // A watched read's producer runs until the read is no longer watched.
+  function produceWhileWatched(producer: Effect.Effect<never, unknown>, signal: AbortSignal): void {
+    runtime.run(producer, signal).catch((error: unknown) => {
+      if (!signal.aborted)
+        bb.log.error(`a watched read stopped refreshing: ${errorMessage(error)}`);
+    });
+  }
+
   bb.rpc.experimental_whileWatched("openFile", (read, signal) => {
     if (!("input" in read)) return;
     const input = docsRpcContract.openFile.input.safeParse(read.input);
     if (!input.success) return;
-    void (async () => {
-      let watchId: string | undefined;
-      let pause: AbortController | null = null;
-      let wakeRequested = false;
-      let previousPreview: string | null = null;
-      let failures = 0;
-      const reader: OpenedFileReader = {
-        tag: openedFileTag(input.data.source, input.data.path),
-        sha256: undefined,
-        revision: 0,
-        wake() {
-          wakeRequested = true;
-          pause?.abort();
-        },
-      };
-      const detach = () => {
-        if (!watchId) return;
-        const readers = openedFileReaders.get(watchId);
-        readers?.delete(reader);
-        if (readers?.size === 0) {
-          openedFileReaders.delete(watchId);
-          openedFileWatches.delete(watchId);
-        }
-        watchId = undefined;
-      };
-      signal.addEventListener("abort", detach, { once: true });
-      try {
-        while (!signal.aborted) {
-          wakeRequested = false;
-          let delay = 1_000;
-          try {
-            const target = await resolveOpenerFile(input.data.source, input.data.path);
-            signal.throwIfAborted();
-            const nextWatchId = openedWatchId(target);
-            if (nextWatchId !== watchId) {
-              detach();
-              watchId = nextWatchId;
-              reader.sha256 = undefined;
-              const readers = openedFileReaders.get(watchId) ?? new Set<typeof reader>();
-              readers.add(reader);
-              openedFileReaders.set(watchId, readers);
-            }
-            const revision = reader.revision;
-            const watch = await watchOpenedTarget(target, signal);
-            signal.throwIfAborted();
-            const lease = await targetPreviewLease({
-              hostId: target.hostId,
-              rootPath: target.rootPath,
-            });
-            signal.throwIfAborted();
-            const hashChanged = reader.revision === revision && reader.sha256 !== watch.sha256;
-            if (reader.revision === revision) reader.sha256 = watch.sha256;
-            if (hashChanged || (previousPreview !== null && previousPreview !== lease.baseUrl))
-              invalidate([reader.tag]);
-            previousPreview = lease.baseUrl;
-            failures = 0;
-            delay = Math.min(
-              watch.renewWithinMs,
-              Math.max(1_000, lease.expiresAtMs - PREVIEW_RENEW_BEFORE_MS - Date.now() + 1_000),
-            );
-          } catch (error) {
-            if (signal.aborted) break;
-            if (failures === 0) bb.log.warn(`cannot watch opened file: ${errorMessage(error)}`);
-            delay = Math.min(30_000, 1_000 * 2 ** Math.min(failures, 5));
-            failures += 1;
-          }
-          if (wakeRequested) continue;
-          pause = new AbortController();
-          await waitForDelay(delay, AbortSignal.any([signal, pause.signal]));
-          pause = null;
-        }
-      } finally {
-        signal.removeEventListener("abort", detach);
-        detach();
-      }
-    })();
+    produceWhileWatched(keepOpenedFileWatched(input.data.source, input.data.path), signal);
   });
   bb.rpc.experimental_whileWatched("preparePreview", (read, signal) => {
     if (!("input" in read)) return;
@@ -3570,7 +3708,7 @@ export default async function plugin(bb: BbPluginApi) {
     const vault = listVaults().find(
       (candidate) => input.data.vaultId === undefined || candidate.id === input.data.vaultId,
     );
-    if (vault) void renewPreviewWhileWatched(vault, input.data.path, signal);
+    if (vault) produceWhileWatched(renewPreviewWhileWatched(vault.id, input.data.path), signal);
   });
   bb.rpc.experimental_whileWatched("readDocument", (read, signal) => {
     if (!("input" in read)) return;
@@ -3578,25 +3716,8 @@ export default async function plugin(bb: BbPluginApi) {
     if (!input.success) return;
     const vault = listVaults().find((candidate) => candidate.id === input.data.vaultId);
     if (!vault) return;
-    void renewPreviewWhileWatched(vault, input.data.path, signal);
+    produceWhileWatched(renewPreviewWhileWatched(vault.id, input.data.path), signal);
   });
-
-  async function renewPreviewWhileWatched(vault: Vault, relativePath: string, signal: AbortSignal) {
-    while (!signal.aborted) {
-      let lease: { expiresAtMs: number };
-      try {
-        lease = await previewLease(getVault(vault.id));
-      } catch {
-        await waitForDelay(5_000, signal);
-        continue;
-      }
-      await waitForDelay(
-        Math.max(1_000, lease.expiresAtMs - PREVIEW_RENEW_BEFORE_MS - Date.now() + 1_000),
-        signal,
-      );
-      if (!signal.aborted) invalidate([documentTag(vault.id, relativePath)]);
-    }
-  }
 }
 
 export { docsRpcContract } from "./contract.js";

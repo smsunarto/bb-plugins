@@ -308,6 +308,25 @@ describe("Docs host opened-file watching", () => {
     expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(0);
   });
 
+  it("keeps one watch and one worker lease when two renewals of a watch overlap", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "bb-docs-host-"));
+    temporaryDirectories.push(root);
+    const filePath = path.join(root, "plan.md");
+    await writeFile(filePath, "# Plan");
+    const host = experimental_createHostEntryHarness(hostEntry);
+    const watch = { watchId: "w1", path: filePath, leaseMs: 60_000 };
+
+    await expect(
+      Promise.all([
+        host.experimental_call("watchFile", watch),
+        host.experimental_call("watchFile", watch),
+      ]),
+    ).resolves.toEqual([{ sha256: sha256("# Plan") }, { sha256: sha256("# Plan") }]);
+    expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(1);
+    await host.experimental_dispose();
+    expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(0);
+  });
+
   it("drops a watch whose lease lapses", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "bb-docs-host-"));
     temporaryDirectories.push(root);
