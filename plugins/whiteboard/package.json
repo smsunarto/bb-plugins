@@ -104,7 +104,7 @@
     "shiki": "4.4.3",
     "smol-toml": "1.8.0",
     "tiptap-markdown": "^0.8.10",
-    "zod": "4.4.3",
+    "zod": "^4.4.3",
     "zustand": "4.5.7"
   },
   "devDependencies": {

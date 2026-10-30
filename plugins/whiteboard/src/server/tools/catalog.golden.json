@@ -3113,14 +3113,7 @@
             ]
           },
           "full": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ]
+            "type": ["boolean", "null"]
           },
           "format": {
             "anyOf": [
