@@ -14,7 +14,7 @@ const PRIMARY_HOST_BB = {
 } as unknown as BbPluginApi;
 
 describe("thread title inference", () => {
-  test("sends the plain prompt to GPT-6-Luna on the primary host", async () => {
+  test("sends the plain prompt to GPT-6.1-Terra on the primary host", async () => {
     const calls: Array<{ method: string; input: unknown; options: unknown }> = [];
     const title = await createThreadTitleInference(PRIMARY_HOST_BB, {
       call: async (method, input, options) => {
@@ -27,7 +27,7 @@ describe("thread title inference", () => {
     assert.deepEqual(calls, [
       {
         method: "codex.ai.complete",
-        input: { model: "gpt-6-luna", prompt: "Generate a title", timeoutMs: 5_000 },
+        input: { model: "gpt-6.1-terra", prompt: "Generate a title", timeoutMs: 5_000 },
         options: { hostId: "host-primary", timeoutMs: 6_000 },
       },
     ]);
@@ -71,7 +71,7 @@ describe("completeWithModelFallback", () => {
     const text = await completeWithModelFallback({
       onAttempt: (attempt) => attempts.push(attempt),
       complete: async (model) =>
-        model === "gpt-6-luna"
+        model === "gpt-6.1-terra"
           ? { ok: false, code: "rate_limited", message: "slow down" }
           : { ok: true, text: "Fallback title" },
     });
@@ -80,7 +80,7 @@ describe("completeWithModelFallback", () => {
     assert.deepEqual(
       attempts.map(({ model, attempt, outcome }) => [model, attempt, outcome]),
       [
-        ["gpt-6-luna", 0, "rate_limited"],
+        ["gpt-6.1-terra", 0, "rate_limited"],
         ["gpt-5.6-luna", 1, "success"],
       ],
     );
@@ -97,7 +97,7 @@ describe("completeWithModelFallback", () => {
       },
     });
     assert.equal(text, "Named");
-    assert.deepEqual(models, ["gpt-6-luna", "gpt-5.6-luna"]);
+    assert.deepEqual(models, ["gpt-6.1-terra", "gpt-5.6-luna"]);
   });
 
   test("does not retry a login or request failure", async () => {
@@ -112,7 +112,7 @@ describe("completeWithModelFallback", () => {
         }),
         { message: `failed: ${code}` },
       );
-      assert.deepEqual(models, ["gpt-6-luna"]);
+      assert.deepEqual(models, ["gpt-6.1-terra"]);
     }
   });
 

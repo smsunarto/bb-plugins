@@ -3,7 +3,7 @@ import type { GtdSidebarCodexResult, GtdSidebarHostClient } from "./lib/host-con
 import { isKeepTitleReply } from "./lib/thread-naming.ts";
 
 // The models of bb's own Codex AI service (plugins/provider-codex/src/ai-service.ts).
-export const TITLE_MODELS = ["gpt-6-luna", "gpt-5.6-luna"] as const;
+export const TITLE_MODELS = ["gpt-6.1-terra", "gpt-5.6-luna"] as const;
 const INFERENCE_TIMEOUT_MS = 5_000;
 const HOST_CALL_GRACE_MS = 1_000;
 // bb cannot retry a timeout inside its single 5 s task deadline. GTD has no such
