@@ -110,7 +110,9 @@ function PrActionDialog({
       refetchInterval: (query) => (query.state.data?.mergeStateStatus === "UNKNOWN" ? 2000 : false),
     },
   );
-  const mutation = useRpcMutation("prAction");
+  // The refresh sits in the hook's options, not in a `mutate` callback, so it
+  // runs even when the panel closes before GitHub answers.
+  const mutation = useRpcMutation("prAction", { onSettled: () => refreshPr(pr) });
   const method = policy.data?.methods.includes(chosenMethod)
     ? chosenMethod
     : (policy.data?.methods[0] ?? chosenMethod);
@@ -193,7 +195,7 @@ function PrActionDialog({
             onClick={() =>
               mutation.mutate(
                 { account: pr.account, ref: pr.ref, action, headRefOid, baseRefName, method },
-                { onSuccess: onClose, onSettled: () => refreshPr(pr) },
+                { onSuccess: onClose },
               )
             }
           >
