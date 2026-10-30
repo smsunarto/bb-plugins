@@ -22,6 +22,14 @@
       "skills"
     ]
   },
+  "files": [
+    "dist/",
+    "assets/",
+    "src/",
+    "skills/",
+    "README.md",
+    "LICENSE"
+  ],
   "dependencies": {
     "zod": "^4.4.3"
   },
