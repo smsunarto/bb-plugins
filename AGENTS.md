@@ -2,7 +2,7 @@
 
 ## Dev Commands
 
-- Use `bb plugin dev ./plugins/<id>` for the plugin you are changing; reuse its watcher if one is running.
+- Run `bb plugin dev <test-plugin-path>` against the separate test instance described under Environment; reuse a watcher only when its instance and source path match this task.
 - Lint: `bunx oxlint --fix --format=agent`
 - Formatting: `bunx oxfmt`.
 
@@ -58,30 +58,41 @@ When you add, rename, or remove a catalog plugin, update both files in the same 
 
 ## Environment
 
-- By default, running `bb` commands points to the user's live bb instance. Run `bb --version` to see what bb version the user have installed.
-- For plugin development, use BB's own `plugin build`, `plugin install`, and `plugin dev` commands.
-- If verification needs another BB build, follow that BB checkout's `docs/debugging-and-qa.md` and `scripts/bb-dev-app` launcher. This repository does not manage BB instances.
+- Bare `bb` commands normally target the user's live instance. Use a separate BB instance for plugin development and integration testing, with its own data directory, server/host-daemon ports, and browser session. Reserve live plugin mutations for the final Handoff below.
+- Prefer the same BB version as live. Use BB's supported launcher and configuration interfaces; read the installed help and the matching BB checkout's `docs/configuration.md` and `docs/debugging-and-qa.md` before setup. For packaged BB, the documented isolation controls are `bb-app --data-dir <test-data-dir> --server-port <port> --host-daemon-port <port>`; source builds use that checkout's current launcher. Do not assume a `scripts/bb-dev-app` helper exists.
+- Record the live and test server URLs, data directories, versions, and checkout paths separately. Verify that the server URLs, data directories, and writable plugin source/build paths differ before any test install, reload, or mutation. Route every test CLI/RPC call and watcher explicitly to the test server; `BB_SERVER_URL` must be its server API URL. For a source build, use its `pnpm bb:dev` CLI.
+
+#### Seed the test instance from live
+
+- At initial setup, read the live plugin inventory, resolved sources/versions, enabled states, BB settings, and plugin settings. Recreate that configuration in the test instance using the supported CLI/SDK interfaces (`bb plugin list`, `bb plugin source`, `bb plugin config`, `bb settings`, `bb theme`, and UI-preference APIs). Include custom theme assets and reproduce browser-local appearance settings in the test browser. Read current help/contracts rather than assuming these commands export or import a complete configuration.
+- Install independent copies of the live plugins at their resolved versions, preserving enabled/disabled states and settings. Local-path plugins must use test-owned source and build-output copies, including any shared workspace dependencies; live and test must not serve bundles from a directory that test builds overwrite. Apply the task's current changes to those test sources before building or watching them.
+- Copy configuration only, not the live database or whole data directory. Keep test projects, threads, plugin runtime databases, schedules, host identities, enrollment, and Connect registration independent. Rebind host/project/path-specific settings to disposable test resources; isolate any copied configuration that would otherwise act on live resources or external services before activating its plugin.
+- Transfer required secret settings privately through supported secure inputs, without printing values or copying live HTTP tokens or machine/account session identities. Use test credentials where available. Report settings that cannot be reproduced and any deliberate test overrides; do not claim exact parity when configuration differs.
+- Compare the resulting plugin inventory, versions, enabled states, and settings with the live baseline before testing. Reuse a matching test instance without overwriting another task's work; refresh its baseline only when it is idle and owned by this task. Record test source-path substitutions and other intentional differences.
 
 ### Verification
 
 Use BB's bundled `bb-plugin-authoring` skill and its `references/testing.md` for SDK tests and the live plugin loop.
 
-- Review UI and capture visual evidence using bb in a web browser, not the desktop app. Enable the Monokai plugin, select the **bb Monokai** theme, and set appearance to **Dark**. Confirm the rendered UI uses both before evaluating it.
+- Review UI and capture visual evidence in the test instance's web browser, not the desktop app. Enable the Monokai plugin, select the **bb Monokai** theme, and set appearance to **Dark** there. Confirm the rendered UI uses both before evaluating it.
 - Run focused tests with `@get-bb/plugin-sdk/testing`, `/testing/app`, or `/testing/host` for the affected contracts.
-- Use `bb plugin dev` when the affected plugin is not already watched. Inspect its source, status, logs, or RPC with BB's plugin commands.
-- When using another BB build, read its URLs and routing from BB's launcher. Use that checkout's `pnpm bb:dev` CLI against it.
+- Use `bb plugin dev` on the test-owned source when the affected plugin is not already watched on that test instance. Inspect its source, status, logs, or RPC with commands routed to the same test server.
+- Confirm the test instance runs the intended plugin source and current task changes before exercising the flow; a successful check against the live plugin is not verification of the test build.
 - Verify the changed user flow in a browser when rendering or host integration matters. Capture and inspect evidence, remove this run's test records, and close only its browser session.
-- When a check needs separate state, use BB's own QA tooling. Stop only test resources that this task created.
+- Use disposable test state and BB's own QA tooling. Stop only test resources that this task created.
 
 For plugin UI performance investigations, read `.agents/skills/bb-plugin-performance/SKILL.md`.
 
 ### Handoff
 
-If modifying an existing plugin (after focused checks and the affected live user flow pass):
+After focused checks and the affected user flow pass on the separate test instance, promote only the validated task changes to live. Explicitly switch CLI routing back to the recorded live server and confirm its identity first.
+
+If modifying an existing plugin:
 
 - Run `bb plugin source <id>` and make sure bb is loading the plugin from the correct local path instead of NPM installation, etc. If it's not, reinstall the plugin using local path source.
 - Always use `bb plugin reload <id>` against the live bb and confirm it is running before handoff.
 - If the plugin cannot be reloaded, explicitly state that it was not reloaded and explain the blocking reason to the user. Never silently skip the reload.
+- Do not leave a development watcher targeting live; future edits belong in the test-instance loop.
 
 If creating a new plugin:
 
@@ -90,6 +101,7 @@ If creating a new plugin:
 When communicating the handoff:
 
 - Explicitly state whether your work has been committed or remains uncommitted.
+- Report the test-instance identity, configuration differences, and verification separately from the final live install/reload.
 - If a plugin was installed or reloaded: insert a heading `Plugin Reloaded` with a bullet list of target plugins.
 
 ## Traps
