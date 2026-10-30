@@ -224,17 +224,16 @@ export function resetRulesDraftForTest() {
 function useRulesDraft(server: RulesState) {
   const client = useAgentInstructionsRpc();
   rulesDraft.connect((input) => client.call("saveRules", input));
-  if (rulesDraft.snapshot() === null) rulesDraft.receive(server);
   useLayoutEffect(() => rulesDraft.receive(server), [server]);
-  const snapshot = useSyncExternalStore(rulesDraft.subscribe, rulesDraft.snapshot);
-  if (snapshot === null) throw new Error("rules draft is empty after receiving the stored rules");
-  const { base, draft, conflict, error } = snapshot;
+  const { draft, conflict, error, save } = useSyncExternalStore(rulesDraft.subscribe, () =>
+    rulesDraft.snapshotFor(server),
+  );
   return {
     draft,
     setDraft: rulesDraft.edit,
     error,
     conflict,
-    status: draft === base.rules ? "Saved" : "Saving…",
+    status: save === "idle" ? "Saved" : "Saving…",
     takeTheirs: rulesDraft.takeTheirs,
     keepMine: rulesDraft.keepMine,
   };

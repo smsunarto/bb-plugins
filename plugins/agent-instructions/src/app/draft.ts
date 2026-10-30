@@ -12,7 +12,17 @@ export type DraftSnapshot = {
   /** What is stored, after a save was refused because it was based on an old revision. */
   conflict: RulesState | null;
   error: string | null;
+  /** `scheduled` while an edit waits for its pause, `sending` while its save is in flight. */
+  save: "idle" | "scheduled" | "sending";
 };
+
+/** A draft that shows `stored` with nothing unsaved. */
+function fresh(stored: RulesState): DraftSnapshot {
+  return { base: stored, draft: stored.rules, conflict: null, error: null, save: "idle" };
+}
+
+/** What a store holds before anything was saved to it: nothing, at revision 0. */
+const emptyDraft = () => fresh({ revision: 0, rules: [] });
 
 /**
  * The editable copy of the rules. Edits autosave after a pause, one save at a
@@ -27,21 +37,16 @@ export function createRulesDraft({
   delayMs: number;
   onStored: (state: RulesState) => void;
 }) {
-  let snapshot: DraftSnapshot | null = null;
+  let snapshot = emptyDraft();
   // The newest stored state seen from any source. Revisions only move forward.
   let newest: RulesState | null = null;
-  let save: SaveRules | null = null;
-  let sending = false;
+  let saveRules: SaveRules | null = null;
   let epoch = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>();
 
-  function current(): DraftSnapshot {
-    if (snapshot === null) throw new Error("rules draft read before it received the stored rules");
-    return snapshot;
-  }
   function update(change: Partial<DraftSnapshot>) {
-    snapshot = { ...current(), ...change };
+    snapshot = { ...snapshot, ...change };
     notify();
   }
   function notify() {
@@ -52,25 +57,30 @@ export function createRulesDraft({
   }
   /** Shows the newest stored rules when nothing here is unsaved. */
   function catchUp() {
-    const { base, draft, conflict } = current();
-    if (draft !== base.rules || conflict !== null || sending) return;
+    const { base, draft, conflict, save } = snapshot;
+    if (draft !== base.rules || conflict !== null || save !== "idle") return;
     if (newest === null || newest.revision <= base.revision) return;
-    snapshot = { base: newest, draft: newest.rules, conflict: null, error: null };
+    snapshot = fresh(newest);
     notify();
   }
   function schedule() {
     clearTimeout(timer);
-    const { base, draft, conflict, error } = current();
-    if (draft === base.rules || conflict !== null || error !== null || sending) return;
+    const { base, draft, conflict, error, save } = snapshot;
+    if (save === "sending") return;
+    if (draft === base.rules || conflict !== null || error !== null) {
+      if (save !== "idle") update({ save: "idle" });
+      return;
+    }
     timer = setTimeout(() => void send(), delayMs);
+    update({ save: "scheduled" });
   }
   async function send() {
     const startedAt = epoch;
-    const { base, draft } = current();
-    if (save === null) return;
-    sending = true;
+    const { base, draft } = snapshot;
+    if (saveRules === null) return;
+    update({ save: "sending" });
     try {
-      const result = await save({ rules: draft, revision: base.revision });
+      const result = await saveRules({ rules: draft, revision: base.revision });
       if (startedAt !== epoch) return;
       if (result.saved) {
         const stored = { revision: result.revision, rules: draft };
@@ -85,11 +95,11 @@ export function createRulesDraft({
     } catch (error) {
       if (startedAt !== epoch) return;
       // A newer edit may already fix what failed, so it saves instead.
-      if (current().draft === draft) {
+      if (snapshot.draft === draft) {
         update({ error: error instanceof Error ? error.message : String(error) });
       }
     } finally {
-      if (startedAt === epoch) sending = false;
+      if (startedAt === epoch) update({ save: "idle" });
     }
     if (startedAt !== epoch) return;
     catchUp();
@@ -102,19 +112,30 @@ export function createRulesDraft({
       epoch++;
       clearTimeout(timer);
       timer = undefined;
-      snapshot = null;
+      snapshot = emptyDraft();
       newest = null;
-      save = null;
-      sending = false;
+      saveRules = null;
     },
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     snapshot: () => snapshot,
+    /**
+     * The draft as the page should show it. The first stored rules a page
+     * supplies become the base, so the page never renders before the draft
+     * has them. Later fetches go through `receive`.
+     */
+    snapshotFor(server: RulesState): DraftSnapshot {
+      if (newest === null) {
+        newest = server;
+        snapshot = fresh(server);
+      }
+      return snapshot;
+    },
     /** The latest way to reach the server. Call on every render. */
     connect(next: SaveRules) {
-      save = next;
+      saveRules = next;
     },
     /**
      * Takes in stored rules from a fetch. Only a newer revision counts, so a
@@ -122,10 +143,6 @@ export function createRulesDraft({
      */
     receive(stored: RulesState) {
       seen(stored);
-      if (snapshot === null) {
-        snapshot = { base: stored, draft: stored.rules, conflict: null, error: null };
-        notify();
-      }
       catchUp();
     },
     edit(rules: Rule[]) {
@@ -134,14 +151,14 @@ export function createRulesDraft({
     },
     /** Drop local edits and show the rules as stored. */
     takeTheirs() {
-      const { conflict } = current();
+      const { conflict } = snapshot;
       if (conflict === null) return;
       update({ base: conflict, draft: conflict.rules, conflict: null });
       catchUp();
     },
     /** Keep local edits and save them over the stored rules. */
     keepMine() {
-      const { base, conflict } = current();
+      const { base, conflict } = snapshot;
       if (conflict === null) return;
       update({ base: { ...base, revision: conflict.revision }, conflict: null });
       schedule();

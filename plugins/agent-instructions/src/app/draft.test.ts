@@ -23,7 +23,7 @@ function deferred<T>() {
 }
 
 const names = (draft: ReturnType<typeof createRulesDraft>) =>
-  draft.snapshot()?.draft.map((candidate) => candidate.id);
+  draft.snapshot().draft.map((candidate) => candidate.id);
 
 const settle = () => new Promise((done) => setTimeout(done, 5));
 
@@ -42,7 +42,28 @@ test("a newer revision fetched during a save is shown once the save lands", asyn
   await settle();
 
   expect(names(draft)).toEqual(["mine", "cli"]);
-  expect(draft.snapshot()?.base.revision).toBe(3);
+  expect(draft.snapshot().base.revision).toBe(3);
+});
+
+test("an edit is scheduled, then sending, then idle once its save lands", async () => {
+  const reply = deferred<RulesState & { saved: boolean }>();
+  const draft = createRulesDraft({ delayMs: 10, onStored: () => {} });
+  draft.connect(() => reply.promise);
+  const server = { revision: 1, rules: [rule("a")] };
+  expect(draft.snapshotFor(server)).toMatchObject({ base: server, save: "idle" });
+  const mine = [rule("mine")];
+  draft.edit(mine);
+  expect(draft.snapshot().save).toBe("scheduled");
+  await new Promise((done) => setTimeout(done, 20));
+  expect(draft.snapshot().save).toBe("sending");
+  draft.edit([rule("mine"), rule("more")]);
+  expect(draft.snapshot().save).toBe("sending");
+  reply.resolve({ revision: 2, rules: mine, saved: true });
+  await settle();
+  // The edit made during the save is waiting for its own pause.
+  expect(draft.snapshot()).toMatchObject({ base: { revision: 2 }, save: "scheduled" });
+  draft.resetForTest();
+  expect(draft.snapshot().save).toBe("idle");
 });
 
 test("discarding my edits shows the newest stored rules", async () => {
@@ -51,7 +72,7 @@ test("discarding my edits shows the newest stored rules", async () => {
   draft.receive({ revision: 1, rules: [rule("a")] });
   draft.edit([rule("mine")]);
   await settle();
-  expect(draft.snapshot()?.conflict?.revision).toBe(2);
+  expect(draft.snapshot().conflict?.revision).toBe(2);
 
   draft.receive({ revision: 3, rules: [rule("cli"), rule("later")] });
   draft.takeTheirs();
@@ -91,7 +112,7 @@ test("reset cancels a scheduled save and accepts a fresh fixture", async () => {
   draft.resetForTest();
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(calls).toBe(0);
-  expect(draft.snapshot()).toBeNull();
+  expect(names(draft)).toEqual([]);
   draft.receive({ revision: 1, rules: [rule("fresh")] });
   expect(names(draft)).toEqual(["fresh"]);
 });
@@ -126,7 +147,7 @@ test.each(["success", "conflict", "failure"] as const)(
 
     fresh.resolve({ revision: 2, rules: [rule("fresh-edit")], saved: true });
     await settle();
-    expect(draft.snapshot()?.base.revision).toBe(2);
+    expect(draft.snapshot().base.revision).toBe(2);
     expect(stored).toEqual([["fresh-edit"]]);
   },
 );
