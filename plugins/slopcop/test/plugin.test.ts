@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import { createStore } from "../lib/db";
 import type { GhClient, GhComment } from "../lib/gh";
 import { buildHeader, buildMarker } from "../lib/marker";
-import type { PullRequest, Run } from "../lib/types";
+import type { PullRequest, Run, TriggerComment } from "../lib/types";
 import plugin from "../server";
 
 // GitHub as the watcher and the verifier see it. Replaced for the whole file,
@@ -11,32 +11,37 @@ import plugin from "../server";
 const github = vi.hoisted(() => ({
   pullRequests: [] as PullRequest[],
   issueComments: [] as GhComment[],
+  /** PR conversation comments the watcher scans for review requests. */
+  recentIssueComments: [] as TriggerComment[],
+  /** How many times live verification has read the issue comments. */
+  issueCommentReads: 0,
   /** Live verification waits here first, so a test can hold a run mid-verify. */
   gate: Promise.resolve(),
 }));
 
-vi.mock("../lib/gh", () => ({
-  createGhClient: (): GhClient => ({
-    listOpenPullRequests: async () => github.pullRequests,
-    getPullRequest: async () => {
-      throw new Error("not stubbed");
-    },
-    listOpenIssueNumbers: async () => [],
-    getIssue: async () => {
-      throw new Error("not stubbed");
-    },
-    listFiles: async () => [],
-    listIssueComments: async () => {
-      await github.gate;
-      return github.issueComments;
-    },
-    listReviewComments: async () => [],
-    listReviews: async () => [],
-    listRecentIssueComments: async () => [],
-    listRecentReviewComments: async () => [],
-    authenticatedLogin: async () => "slopcop-bot",
-  }),
-}));
+vi.mock("../lib/gh", async () => {
+  const { Effect } = await import("effect");
+  return {
+    createGhClient: (): GhClient => ({
+      listOpenPullRequests: () => Effect.sync(() => github.pullRequests),
+      getPullRequest: () => Effect.die(new Error("not stubbed")),
+      listOpenIssueNumbers: () => Effect.succeed([]),
+      getIssue: () => Effect.die(new Error("not stubbed")),
+      listFiles: () => Effect.succeed([]),
+      listIssueComments: () =>
+        Effect.promise(async () => {
+          github.issueCommentReads += 1;
+          await github.gate;
+          return github.issueComments;
+        }),
+      listReviewComments: () => Effect.succeed([]),
+      listReviews: () => Effect.succeed([]),
+      listRecentIssueComments: () => Effect.sync(() => github.recentIssueComments),
+      listRecentReviewComments: () => Effect.succeed([]),
+      authenticatedLogin: () => Effect.succeed("slopcop-bot"),
+    }),
+  };
+});
 
 /** A run whose review thread is still running. */
 function makeRun(overrides: Partial<Run> = {}): Run {
@@ -395,6 +400,161 @@ it("frees concurrency slots held by review threads that finished while the plugi
   }
 });
 
+/**
+ * Starts a watcher pass whose thread spawn is held, stops the watcher while
+ * the spawn is in flight, then lets the spawn finish.
+ */
+async function stopDuringSpawn(harness: ReturnType<typeof createFakePluginHost>["harness"]) {
+  let finishSpawn = () => {};
+  harness.sdk.stub(
+    "threads.spawn",
+    () =>
+      new Promise((resolve) => {
+        finishSpawn = () => resolve({ id: "thr_first" });
+      }),
+  );
+  const service = harness.behavior.runService("watcher");
+  await vi.waitFor(() => expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1));
+  service.controller.abort();
+  finishSpawn();
+  await service.done;
+}
+
+it("records a ready PR the watcher stopped mid-dispatch, so a later push does not review it again", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
+  try {
+    await plugin(bb);
+    await harness.behavior.callRpc("saveRule", {
+      id: null,
+      rule: {
+        name: "ready",
+        repo: "example/example",
+        dedupe: "once_per_head_sha",
+        request: { projectId: "project-test", providerId: "codex", model: "test-model" },
+      },
+    });
+    const store = createStore(bb.storage.database() as never);
+    harness.sdk.stub("threads.get", ({ threadId }: { threadId: string }) =>
+      makeThreadResponse({ id: threadId, status: "active" }),
+    );
+    // The first pass records the PR while it is still a draft.
+    github.pullRequests = [makePullRequest({ isDraft: true, headRefOid: "sha_a" })];
+    let service = harness.behavior.runService("watcher");
+    await vi.waitFor(() => expect(store.isBootstrapped("example/example")).toBe(true));
+    service.controller.abort();
+    await service.done;
+
+    // Marked ready: the next pass dispatches it, and bb stops the watcher mid-spawn.
+    github.pullRequests = [makePullRequest({ headRefOid: "sha_a" })];
+    await stopDuringSpawn(harness);
+    expect(store.getSeen("example/example", 2)).toEqual({ headSha: "sha_a", wasDraft: false });
+
+    // A push is a new head, not a second ready-for-review edge.
+    github.pullRequests = [makePullRequest({ headRefOid: "sha_b" })];
+    harness.sdk.stub("threads.spawn", () => ({ id: "thr_again" }));
+    service = harness.behavior.runService("watcher");
+    await vi.waitFor(() => expect(store.getSeen("example/example", 2)?.headSha).toBe("sha_b"));
+    service.controller.abort();
+    await service.done;
+    expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
+    expect(store.listRuns()).toMatchObject([{ status: "reviewing", threadId: "thr_first" }]);
+  } finally {
+    github.pullRequests = [];
+    await harness.lifecycle.dispose();
+  }
+});
+
+it("finishes a review request the watcher stopped mid-dispatch, so a later push does not review it again", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
+  try {
+    await plugin(bb);
+    await harness.behavior.callRpc("saveRule", {
+      id: null,
+      rule: {
+        name: "on request",
+        repo: "example/example",
+        triggers: ["comment_matches"],
+        commentKeywords: ["/review"],
+        dedupe: "once_per_head_sha",
+        request: { projectId: "project-test", providerId: "codex", model: "test-model" },
+      },
+    });
+    const store = createStore(bb.storage.database() as never);
+    harness.sdk.stub("threads.get", ({ threadId }: { threadId: string }) =>
+      makeThreadResponse({ id: threadId, status: "active" }),
+    );
+    github.pullRequests = [makePullRequest({ headRefOid: "sha_a" })];
+    github.recentIssueComments = [
+      {
+        id: "c1",
+        source: "issue",
+        repo: "example/example",
+        prNumber: 2,
+        body: "/review please",
+        url: null,
+        author: "dana",
+        authorAssociation: "MEMBER",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ];
+
+    await stopDuringSpawn(harness);
+    expect(store.listPendingCommentEvents("example/example")).toEqual([]);
+
+    // GitHub still lists the comment, and the PR has a new head.
+    github.pullRequests = [makePullRequest({ headRefOid: "sha_b" })];
+    harness.sdk.stub("threads.spawn", () => ({ id: "thr_again" }));
+    const service = harness.behavior.runService("watcher");
+    await vi.waitFor(() => expect(store.isBootstrapped("example/example")).toBe(true));
+    service.controller.abort();
+    await service.done;
+    expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
+    expect(store.listRuns()).toMatchObject([{ status: "reviewing", threadId: "thr_first" }]);
+  } finally {
+    github.pullRequests = [];
+    github.recentIssueComments = [];
+    await harness.lifecycle.dispose();
+  }
+});
+
+it("archives a finished review thread when the watcher stops after recording its outcome", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
+  try {
+    await plugin(bb);
+    const store = createStore(bb.storage.database() as never);
+    // The thread finished while nothing listened, so the first pass settles it.
+    store.insertRun(makeRun({ id: "run_done", threadId: "thr_done" }));
+    // Settling reads the thread a second time before archiving it; that read is held.
+    let reads = 0;
+    let finishRead = () => {};
+    harness.sdk.stub("threads.get", ({ threadId }: { threadId: string }) => {
+      reads += 1;
+      if (reads === 1) return makeThreadResponse({ id: threadId });
+      return new Promise((resolve) => {
+        finishRead = () => resolve(makeThreadResponse({ id: threadId }));
+      });
+    });
+    harness.sdk.stub("threads.output", () => ({ output: review("done") }));
+    harness.sdk.stub("threads.archive", ({ threadId }: { threadId: string }) => ({
+      archivedThreadIds: [threadId],
+    }));
+
+    const service = harness.behavior.runService("watcher");
+    await vi.waitFor(() => expect(reads).toBe(2));
+    // The run is recorded, so no later pass takes it up again.
+    expect(store.getRun("run_done")?.status).toBe("shadowed");
+    service.controller.abort();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    finishRead();
+    await service.done;
+
+    expect(harness.sdk.callsTo("threads.archive")).toEqual([[{ threadId: "thr_done" }]]);
+  } finally {
+    await harness.lifecycle.dispose();
+  }
+});
+
 it("finishes a claimed run whose verification a reload interrupted", async () => {
   let { bb, harness } = createFakePluginHost({
     pluginId: "slopcop",
@@ -674,6 +834,62 @@ it("finishes a run whose thread is archived or deleted before it reports", async
     });
     expect(store.getRun("run_done")?.status).toBe("shadowed");
   } finally {
+    await harness.lifecycle.dispose();
+  }
+});
+
+it("reads GitHub once more, 4 s later, before believing a live run posted nothing", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "slopcop",
+    settings: { settleFinishedThreads: false },
+  });
+  try {
+    await plugin(bb);
+    // Only the timer the retry waits on is faked; the scheduler keeps running.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const store = createStore(bb.storage.database() as never);
+    /** Finishes a live run whose first read finds nothing and whose retry finds `retry`. */
+    const verify = async (name: string, retry: GhComment[]) => {
+      store.insertRun(makeRun({ id: `run_${name}`, threadId: `thr_${name}`, mode: "live" }));
+      github.issueComments = [];
+      github.issueCommentReads = 0;
+      await harness.behavior.emitThreadEvent("thread.idle", {
+        thread: makeThreadResponse({ id: `thr_${name}` }),
+        lastAssistantText: "posted",
+      });
+      await vi.waitFor(() => expect(vi.getTimerCount()).toBe(1));
+      await vi.advanceTimersByTimeAsync(3_900);
+      expect(github.issueCommentReads).toBe(1);
+      expect(store.getRun(`run_${name}`)?.status).toBe("reviewing");
+      github.issueComments = retry;
+      await vi.advanceTimersByTimeAsync(200);
+      await vi.waitFor(() => expect(store.getRun(`run_${name}`)?.status).not.toBe("reviewing"));
+      // One retry only: nothing reads GitHub again afterwards.
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(github.issueCommentReads).toBe(2);
+      return store.getRun(`run_${name}`);
+    };
+
+    const ownReview = {
+      id: "c1",
+      body: review("late"),
+      url: null,
+      author: "slopcop-bot",
+      path: null,
+      line: null,
+      createdAt: Date.now(),
+    };
+    expect(await verify("late", [ownReview])).toMatchObject({
+      status: "commented",
+      commentCount: 1,
+    });
+    expect(await verify("silent", [])).toMatchObject({
+      status: "no_comment",
+      detail: "the thread finished without posting anything to the PR",
+    });
+  } finally {
+    vi.useRealTimers();
+    github.issueComments = [];
     await harness.lifecycle.dispose();
   }
 });

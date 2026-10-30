@@ -4,8 +4,9 @@
 // GitHub's three comment surfaces and matches on the marker; in shadow mode
 // there is nothing to poll, so it asserts the agent produced a well-formed body
 // instead. Both paths converge on the same status vocabulary.
+import { Effect } from "effect";
 import { attributeBody, hasVisibleHeader, parseMarker } from "./marker";
-import type { GhClient, GhComment } from "./gh";
+import type { GhClient, GhComment, GhError } from "./gh";
 import type { CommentKind, RunComment, RunStatus, TargetKind } from "./types";
 
 /** The outcomes verification can conclude; the other statuses are set before or instead of it. */
@@ -57,9 +58,10 @@ function toRunComment(
 /**
  * Live verification. Sweeps all three surfaces because GitHub keeps top-level
  * comments, inline review comments, and review bodies in separate endpoints —
- * reading only one would under-count a normal multi-comment review.
+ * reading only one would under-count a normal multi-comment review, so one
+ * failed read fails the verification.
  */
-export async function verifyLive(options: {
+export const verifyLive = Effect.fnUntraced(function* (options: {
   gh: GhClient;
   repo: string;
   prNumber: number;
@@ -67,7 +69,7 @@ export async function verifyLive(options: {
   runId: string;
   startedAt: number;
   authenticatedLogin: string | null;
-}): Promise<VerifyResult> {
+}): Effect.fn.Return<VerifyResult, GhError> {
   const {
     gh,
     repo,
@@ -80,12 +82,15 @@ export async function verifyLive(options: {
 
   const [issueComments, reviewComments, reviews] =
     targetKind === "issue"
-      ? [await gh.listIssueComments(repo, prNumber), [], []]
-      : await Promise.all([
-          gh.listIssueComments(repo, prNumber),
-          gh.listReviewComments(repo, prNumber),
-          gh.listReviews(repo, prNumber),
-        ]);
+      ? [yield* gh.listIssueComments(repo, prNumber), [], []]
+      : yield* Effect.all(
+          [
+            gh.listIssueComments(repo, prNumber),
+            gh.listReviewComments(repo, prNumber),
+            gh.listReviews(repo, prNumber),
+          ],
+          { concurrency: 3 },
+        );
 
   const sources: { comments: GhComment[]; kind: CommentKind }[] = [
     { comments: issueComments, kind: "summary" },
@@ -161,7 +166,7 @@ export async function verifyLive(options: {
     }`,
     comments: [],
   };
-}
+});
 
 /**
  * Shadow verification. Nothing was posted, so correctness means "the agent

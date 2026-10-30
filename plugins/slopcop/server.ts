@@ -12,6 +12,8 @@ import {
   type PluginCliPositional,
   type PluginRpcHandlers,
 } from "@get-bb/plugin-sdk";
+import { makePluginRuntime, type PluginRuntime } from "@bb-plugins/effect-bridge";
+import { Cause, Duration, Effect, Layer, Schedule } from "effect";
 import { z } from "zod";
 import { createGhClient, type GhClient } from "./lib/gh";
 import {
@@ -35,7 +37,7 @@ import {
   isTrustedAuthor,
   matchesPrDescription,
 } from "./lib/matcher";
-import { verifyLive, verifyShadow, type VerifiedStatus, type VerifyResult } from "./lib/verify";
+import { verifyLive, verifyShadow, type VerifiedStatus } from "./lib/verify";
 import {
   authorTrustSchema,
   conditionSchema,
@@ -226,7 +228,44 @@ function sdkErrorCode(error: unknown): string | null {
     : null;
 }
 
-function createServices(bb: BbPluginApi) {
+/** The newest error a thread's event log recorded, as `type: message`. */
+function latestErrorDetail(result: { events?: unknown[] }): string | null {
+  const events = Array.isArray(result.events) ? result.events : [];
+  for (const raw of [...events].reverse()) {
+    const event = raw as {
+      type?: unknown;
+      message?: unknown;
+      error?: unknown;
+    };
+    const type = typeof event.type === "string" ? event.type : "";
+    if (!type.includes("error")) continue;
+    const message =
+      typeof event.message === "string"
+        ? event.message
+        : typeof event.error === "string"
+          ? event.error
+          : JSON.stringify(event).slice(0, 400);
+    if (message.length > 0) return `${type}: ${message}`;
+  }
+  return null;
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Handles whatever stopped `self`, a failure or a thrown error alike, as a
+ * try/catch would. Interruption is not handled, so a stop still ends the work.
+ */
+function recover<B, E2, R2>(onError: (error: unknown) => Effect.Effect<B, E2, R2>) {
+  return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A | B, E2, R | R2> =>
+    Effect.catchCause(self, (cause) =>
+      Cause.hasInterruptsOnly(cause) ? Effect.interrupt : onError(Cause.squash(cause)),
+    );
+}
+
+function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
   const settings = bb.settings.define({
     pollSeconds: {
       type: "string",
@@ -302,25 +341,26 @@ function createServices(bb: BbPluginApi) {
    * when a rule actually filters on paths — which keeps the common poll pass to
    * a single API call per repo.
    */
-  async function hydrateFiles(
+  const hydrateFiles = Effect.fnUntraced(function* (
     rules: Rule[],
     repo: string,
     pullRequest: PullRequest,
-  ): Promise<void> {
+  ) {
     const needsFiles = rules.some((rule) =>
       rule.conditions.some((condition) => condition.kind === "paths"),
     );
     if (!needsFiles || pullRequest.files.length > 0) return;
-    try {
-      pullRequest.files = await gh.listFiles(repo, pullRequest.number);
-    } catch (error) {
-      bb.log.warn(
-        `could not list files for ${repo}#${pullRequest.number}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
+    yield* gh.listFiles(repo, pullRequest.number).pipe(
+      Effect.map((files) => {
+        pullRequest.files = files;
+      }),
+      recover((error) =>
+        Effect.logWarning(
+          `could not list files for ${repo}#${pullRequest.number}: ${messageOf(error)}`,
+        ),
+      ),
+    );
+  });
 
   /**
    * Creates the run row and spawns the review thread. Returns the run id so a
@@ -492,11 +532,11 @@ function createServices(bb: BbPluginApi) {
     );
   }
 
-  async function ingestCommentEvents(
+  const ingestCommentEvents = Effect.fnUntraced(function* (
     repo: string,
     repoRules: Rule[],
     pullRequests: Map<number, PullRequest>,
-  ): Promise<void> {
+  ) {
     const commentRules = repoRules.filter((rule) => rule.triggers.includes("comment_matches"));
     if (commentRules.length === 0) return;
 
@@ -508,11 +548,10 @@ function createServices(bb: BbPluginApi) {
     for (const source of sources) {
       const cursor = store.getCommentCursor(repo, source) ?? earliestRule;
       const since = Math.max(0, cursor - 5_000);
-      try {
-        const comments =
-          source === "issue"
-            ? await gh.listRecentIssueComments(repo, since)
-            : await gh.listRecentReviewComments(repo, since);
+      yield* Effect.gen(function* () {
+        const listRecent =
+          source === "issue" ? gh.listRecentIssueComments : gh.listRecentReviewComments;
+        const comments = yield* listRecent(repo, since);
         for (const comment of comments) {
           if (!pullRequests.has(comment.prNumber)) continue;
           if (ghLogin !== null && comment.author?.toLowerCase() === ghLogin.toLowerCase()) {
@@ -542,22 +581,20 @@ function createServices(bb: BbPluginApi) {
           }
         }
         store.setCommentCursor(repo, source, pollStartedAt);
-      } catch (error) {
-        bb.log.warn(
-          `comment poll failed for ${repo} (${source}): ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
+      }).pipe(
+        recover((error) =>
+          Effect.logWarning(`comment poll failed for ${repo} (${source}): ${messageOf(error)}`),
+        ),
+      );
     }
-  }
+  });
 
-  async function processCommentEvents(
+  const processCommentEvents = Effect.fnUntraced(function* (
     repo: string,
     repoRules: Rule[],
     pullRequests: Map<number, PullRequest>,
     maxConcurrent: number,
-  ): Promise<void> {
+  ) {
     for (const event of store.listPendingCommentEvents(repo)) {
       const rule = repoRules.find((candidate) => candidate.id === event.ruleId);
       const pullRequest = pullRequests.get(event.prNumber);
@@ -581,7 +618,7 @@ function createServices(bb: BbPluginApi) {
         continue;
       }
 
-      await hydrateFiles([rule], repo, pullRequest);
+      yield* hydrateFiles([rule], repo, pullRequest);
       // A trusted requester can ask for a review on another person's PR. The
       // requester gate above replaces the PR-author gate for this trigger.
       const result = evaluateRule(rule, pullRequest, "comment_matches", {
@@ -613,26 +650,35 @@ function createServices(bb: BbPluginApi) {
       }
       if (store.countReviewing() >= maxConcurrent) return;
 
-      await dispatch(rule, pullRequest, {
-        trigger: "comment_matches",
-        triggerEventId: eventId,
-        triggerRequest: {
-          author: event.author,
-          keyword: event.matchedKeyword,
-          url: event.url,
-        },
-      });
-      store.finishCommentEvent(event.ruleId, event.source, event.commentId, "processed", null);
+      // A stop waits for the dispatch and its record; a request left pending
+      // would be dispatched again once the PR's head moves.
+      yield* Effect.uninterruptible(
+        Effect.promise(async () => {
+          await dispatch(rule, pullRequest, {
+            trigger: "comment_matches",
+            triggerEventId: eventId,
+            triggerRequest: {
+              author: event.author,
+              keyword: event.matchedKeyword,
+              url: event.url,
+            },
+          });
+          store.finishCommentEvent(event.ruleId, event.source, event.commentId, "processed", null);
+        }),
+      );
     }
-  }
+  });
 
   /**
    * One polling pass. It settles runs whose threads finished unobserved, then
    * detects PR edges and new issues and evaluates the applicable rules for
-   * each target.
+   * each target. A stop interrupts the pass between GitHub reads but never
+   * between a dispatch and the bookkeeping that records it: split apart, a run
+   * row could stay `dispatched` behind a thread that was spawned anyway, or
+   * the next pass could take the same trigger for new and dispatch it again.
    */
-  async function poll(maxConcurrent: number): Promise<void> {
-    await reconcileReviewing();
+  const poll = Effect.fnUntraced(function* (maxConcurrent: number) {
+    yield* reconcileReviewing();
     const rules = store.listRules().filter((rule) => rule.enabled);
     const repos = [...new Set(rules.map((rule) => rule.repo))];
 
@@ -650,11 +696,11 @@ function createServices(bb: BbPluginApi) {
       const issueRules = repoRules.filter((rule) => rule.triggers.includes("new_issue"));
 
       if (pullRequestRules.length > 0) {
-        try {
-          const pullRequests = await gh.listOpenPullRequests(repo);
+        yield* Effect.gen(function* () {
+          const pullRequests = yield* gh.listOpenPullRequests(repo);
           const repoBootstrapped = store.isBootstrapped(repo);
           if (!repoBootstrapped) {
-            bb.log.info(
+            yield* Effect.logInfo(
               `bootstrapping ${repo}: recording ${pullRequests.length} open PR(s) as backlog`,
             );
           }
@@ -662,8 +708,8 @@ function createServices(bb: BbPluginApi) {
           const pullRequestsByNumber = new Map(
             pullRequests.map((pullRequest) => [pullRequest.number, pullRequest]),
           );
-          await ingestCommentEvents(repo, repoRules, pullRequestsByNumber);
-          await processCommentEvents(repo, repoRules, pullRequestsByNumber, maxConcurrent);
+          yield* ingestCommentEvents(repo, repoRules, pullRequestsByNumber);
+          yield* processCommentEvents(repo, repoRules, pullRequestsByNumber, maxConcurrent);
 
           for (const pullRequest of pullRequests) {
             const lifecycleTriggers = computeTriggers({
@@ -685,67 +731,70 @@ function createServices(bb: BbPluginApi) {
               continue;
             }
 
-            await hydrateFiles(pullRequestRules, repo, pullRequest);
-            let deferred = false;
-            for (const rule of pullRequestRules) {
-              const triggers = lifecycleTriggers.slice();
-              if (
-                lifecycleTriggers.includes("ready_for_review") &&
-                matchesPrDescription(rule, pullRequest)
-              ) {
-                triggers.push("pr_description_matches");
-              }
-              for (const trigger of triggers) {
-                const result = evaluateRule(rule, pullRequest, trigger);
-                if (!result.matched) {
-                  if (result.blockedByTrust) {
-                    const eventId = triggerEventId(trigger, pullRequest);
-                    recordSkip(rule, pullRequest, result.reason, trigger, eventId);
-                    announce();
+            yield* hydrateFiles(pullRequestRules, repo, pullRequest);
+            // A stop waits for this PR's dispatches and the mark that records
+            // them; without the mark, the next pass sees the same edge again.
+            yield* Effect.uninterruptible(
+              Effect.gen(function* () {
+                let deferred = false;
+                for (const rule of pullRequestRules) {
+                  const triggers = lifecycleTriggers.slice();
+                  if (
+                    lifecycleTriggers.includes("ready_for_review") &&
+                    matchesPrDescription(rule, pullRequest)
+                  ) {
+                    triggers.push("pr_description_matches");
                   }
-                  continue;
+                  for (const trigger of triggers) {
+                    const result = evaluateRule(rule, pullRequest, trigger);
+                    if (!result.matched) {
+                      if (result.blockedByTrust) {
+                        const eventId = triggerEventId(trigger, pullRequest);
+                        recordSkip(rule, pullRequest, result.reason, trigger, eventId);
+                        announce();
+                      }
+                      continue;
+                    }
+                    const eventId = triggerEventId(trigger, pullRequest);
+                    if (hasAlreadyRun(rule, pullRequest, eventId)) continue;
+                    if (store.countReviewing() >= maxConcurrent) {
+                      yield* Effect.logInfo(
+                        `concurrency cap reached (${maxConcurrent}); ${rule.name} will retry next poll`,
+                      );
+                      deferred = true;
+                      break;
+                    }
+                    yield* Effect.promise(() =>
+                      dispatch(rule, pullRequest, { trigger, triggerEventId: eventId }),
+                    );
+                    break;
+                  }
+                  if (deferred) break;
                 }
-                const eventId = triggerEventId(trigger, pullRequest);
-                if (hasAlreadyRun(rule, pullRequest, eventId)) continue;
-                if (store.countReviewing() >= maxConcurrent) {
-                  bb.log.info(
-                    `concurrency cap reached (${maxConcurrent}); ${rule.name} will retry next poll`,
+                if (!deferred) {
+                  store.markSeen(
+                    repo,
+                    pullRequest.number,
+                    pullRequest.headRefOid,
+                    pullRequest.isDraft,
+                    Date.now(),
                   );
-                  deferred = true;
-                  break;
                 }
-                await dispatch(rule, pullRequest, {
-                  trigger,
-                  triggerEventId: eventId,
-                });
-                break;
-              }
-              if (deferred) break;
-            }
-            if (!deferred) {
-              store.markSeen(
-                repo,
-                pullRequest.number,
-                pullRequest.headRefOid,
-                pullRequest.isDraft,
-                Date.now(),
-              );
-            }
+              }),
+            );
           }
           store.markBootstrapped(repo, Date.now());
-        } catch (error) {
-          bb.log.warn(
-            `PR poll failed for ${repo}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
+        }).pipe(
+          recover((error) => Effect.logWarning(`PR poll failed for ${repo}: ${messageOf(error)}`)),
+        );
       }
 
       if (issueRules.length > 0) {
-        try {
-          const issueNumbers = await gh.listOpenIssueNumbers(repo);
+        yield* Effect.gen(function* () {
+          const issueNumbers = yield* gh.listOpenIssueNumbers(repo);
           const repoBootstrapped = store.isIssueBootstrapped(repo);
           if (!repoBootstrapped) {
-            bb.log.info(
+            yield* Effect.logInfo(
               `bootstrapping ${repo}: recording ${issueNumbers.length} open issue(s) as backlog`,
             );
           }
@@ -755,57 +804,50 @@ function createServices(bb: BbPluginApi) {
               seen: store.hasSeenIssue(repo, issueNumber),
               repoBootstrapped,
             });
-            let retry = false;
             if (triggers.length === 0) {
               store.markIssueSeen(repo, issueNumber, Date.now());
               continue;
             }
-            const issue = await gh.getIssue(repo, issueNumber);
-            for (const rule of issueRules) {
-              const result = evaluateRule(rule, issue, triggers[0]!);
-              if (!result.matched) {
-                if (result.blockedByTrust) {
-                  recordSkip(rule, issue, result.reason, "new_issue", null);
-                  announce();
+            const issue = yield* gh.getIssue(repo, issueNumber);
+            // A stop waits for this issue's dispatches and the mark that records them.
+            yield* Effect.uninterruptible(
+              Effect.gen(function* () {
+                let retry = false;
+                for (const rule of issueRules) {
+                  const result = evaluateRule(rule, issue, triggers[0]!);
+                  if (!result.matched) {
+                    if (result.blockedByTrust) {
+                      recordSkip(rule, issue, result.reason, "new_issue", null);
+                      announce();
+                    }
+                    continue;
+                  }
+                  const alreadyRan = store.hasRunFor(rule.id, repo, "issue", issue.number, null);
+                  if (alreadyRan) continue;
+                  if (store.countReviewing() >= maxConcurrent) {
+                    retry = true;
+                    yield* Effect.logInfo(
+                      `concurrency cap reached (${maxConcurrent}); ${rule.name} will retry next poll`,
+                    );
+                    continue;
+                  }
+                  yield* Effect.promise(() => dispatch(rule, issue, { trigger: "new_issue" }));
                 }
-                continue;
-              }
-              const alreadyRan = store.hasRunFor(rule.id, repo, "issue", issue.number, null);
-              if (alreadyRan) continue;
-              if (store.countReviewing() >= maxConcurrent) {
-                retry = true;
-                bb.log.info(
-                  `concurrency cap reached (${maxConcurrent}); ${rule.name} will retry next poll`,
-                );
-                continue;
-              }
-              await dispatch(rule, issue, { trigger: "new_issue" });
-            }
-            if (!retry) store.markIssueSeen(repo, issue.number, Date.now());
+                if (!retry) store.markIssueSeen(repo, issue.number, Date.now());
+              }),
+            );
           }
           store.markIssueBootstrapped(repo, Date.now());
-        } catch (error) {
-          bb.log.warn(
-            `issue poll failed for ${repo}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
+        }).pipe(
+          recover((error) =>
+            Effect.logWarning(`issue poll failed for ${repo}: ${messageOf(error)}`),
+          ),
+        );
       }
     }
-  }
+  });
 
   // --- verification ------------------------------------------------------
-
-  async function finishRun(
-    threadId: string,
-    finalMessage: string | null,
-    failure: string | null,
-  ): Promise<void> {
-    const run = store.claimFinished(threadId, Date.now());
-    if (run === null) return;
-    await settleClaimed(run, finalMessage, failure);
-  }
 
   /**
    * Threads whose claim this process holds, from the claim until the outcome is
@@ -814,78 +856,94 @@ function createServices(bb: BbPluginApi) {
    */
   const verifying = new Set<string>();
 
-  async function settleClaimed(
-    run: ThreadRun,
+  /**
+   * Settles the run `claim` hands over, holding it in `verifying` until its
+   * outcome is recorded. The claim and the hold are one step, so no pass can
+   * see a claim of ours that is not held.
+   */
+  const settleClaimed = (
+    claim: () => ThreadRun | null,
     finalMessage: string | null,
     failure: string | null,
-  ): Promise<void> {
-    verifying.add(run.threadId);
-    try {
-      await settleRun(run, finalMessage, failure);
-    } finally {
-      verifying.delete(run.threadId);
-    }
-  }
+  ) =>
+    Effect.acquireUseRelease(
+      Effect.sync(() => {
+        const run = claim();
+        if (run !== null) verifying.add(run.threadId);
+        return run;
+      }),
+      (run) => (run === null ? Effect.void : settleRun(run, finalMessage, failure)),
+      (run) => Effect.sync(() => run !== null && verifying.delete(run.threadId)),
+    );
+
+  const finishRun = (threadId: string, finalMessage: string | null, failure: string | null) =>
+    settleClaimed(() => store.claimFinished(threadId, Date.now()), finalMessage, failure);
 
   /** Records a claimed run's outcome: the failure, or what verification finds. */
-  async function settleRun(
+  const settleRun = Effect.fnUntraced(function* (
     run: ThreadRun,
     finalMessage: string | null,
     failure: string | null,
-  ): Promise<void> {
+  ) {
     if (failure !== null) {
       store.updateRun(run.id, { status: "failed", detail: failure });
       announce();
       return;
     }
 
-    const runVerify = () =>
-      verifyLive({
-        gh,
-        repo: run.repo,
-        prNumber: run.prNumber,
-        targetKind: run.targetKind,
-        runId: run.id,
-        startedAt: run.startedAt,
-        authenticatedLogin: ghLogin,
-      });
+    const result =
+      run.mode === "shadow"
+        ? verifyShadow({ runId: run.id, finalMessage })
+        : yield* Effect.suspend(() =>
+            verifyLive({
+              gh,
+              repo: run.repo,
+              prNumber: run.prNumber,
+              targetKind: run.targetKind,
+              runId: run.id,
+              startedAt: run.startedAt,
+              authenticatedLogin: ghLogin,
+            }),
+          ).pipe(
+            // GitHub's list endpoints can lag a just-submitted review, so a
+            // bare no_comment gets one retry before it is believed.
+            Effect.repeat({
+              schedule: Schedule.spaced("4 seconds"),
+              while: (verified) => verified.status === "no_comment",
+              times: 1,
+            }),
+            // The finish is already claimed, so no later thread event retries this
+            // run; record the failure and leave `bb slopcop verify` as the way back.
+            Effect.tapCause((cause) =>
+              Effect.sync(() => {
+                if (Cause.hasInterruptsOnly(cause)) return;
+                store.updateRun(run.id, {
+                  status: "failed",
+                  detail: `verification failed: ${messageOf(Cause.squash(cause))}`,
+                });
+                announce();
+              }),
+            ),
+          );
 
-    let result: VerifyResult;
-    try {
-      result =
-        run.mode === "shadow"
-          ? verifyShadow({ runId: run.id, finalMessage })
-          : await (async () => {
-              // GitHub's list endpoints can lag a just-submitted review, so a
-              // bare no_comment gets one retry before it is believed.
-              const first = await runVerify();
-              if (first.status !== "no_comment") return first;
-              await new Promise((resolve) => setTimeout(resolve, 4_000));
-              return runVerify();
-            })();
-    } catch (error) {
-      // The finish is already claimed, so no later thread event retries this
-      // run; record the failure and leave `bb slopcop verify` as the way back.
-      store.updateRun(run.id, {
-        status: "failed",
-        detail: `verification failed: ${error instanceof Error ? error.message : String(error)}`,
-      });
-      announce();
-      throw error;
-    }
-
-    store.replaceComments(run.id, result.comments);
-    store.updateRun(run.id, {
-      status: result.status,
-      detail: result.detail,
-      commentCount: result.comments.length,
-    });
-    announce();
-    bb.log.info(
-      `run ${run.id} (${run.ruleName} ${run.targetKind} #${run.prNumber}) -> ${result.status}`,
+    // Recording the outcome takes the run out of `reviewing`, so no later pass
+    // would come back to settle its thread; a stop waits for the settle too.
+    yield* Effect.uninterruptible(
+      Effect.gen(function* () {
+        store.replaceComments(run.id, result.comments);
+        store.updateRun(run.id, {
+          status: result.status,
+          detail: result.detail,
+          commentCount: result.comments.length,
+        });
+        announce();
+        yield* Effect.logInfo(
+          `run ${run.id} (${run.ruleName} ${run.targetKind} #${run.prNumber}) -> ${result.status}`,
+        );
+        yield* settleThread(run.threadId, result.status);
+      }),
     );
-    await settleThread(run.threadId, result.status);
-  }
+  });
 
   /**
    * Settles every run still marked `reviewing` from what its thread says now.
@@ -896,42 +954,40 @@ function createServices(bb: BbPluginApi) {
    * same way. Runs ahead of every poll pass, so the cap counts only threads
    * that are really running.
    */
-  async function reconcileReviewing(): Promise<void> {
-    await Promise.all(store.listReviewing().map(reconcileRun));
-  }
+  const reconcileReviewing = () =>
+    Effect.forEach(store.listReviewing(), reconcileRun, {
+      concurrency: "unbounded",
+      discard: true,
+    });
 
-  async function reconcileRun(run: ThreadRun): Promise<void> {
+  const reconcileRun = (run: ThreadRun) => {
     const { threadId } = run;
-    // A claim this process holds is under verification by the event that made it.
-    if (run.finishedAt !== null && verifying.has(threadId)) return;
     // An unclaimed run is claimed here, and a thread event that claims it first
     // wins; a claim no one here holds is one a reload interrupted, and stands.
     const finish = (finalMessage: string | null, failure: string | null) =>
       run.finishedAt === null
         ? finishRun(threadId, finalMessage, failure)
-        : settleClaimed(run, finalMessage, failure);
-    try {
-      const thread = await bb.sdk.threads.get({ threadId });
+        : settleClaimed(() => run, finalMessage, failure);
+    return Effect.gen(function* () {
+      // A claim this process holds is under verification by the event that made it.
+      if (run.finishedAt !== null && verifying.has(threadId)) return;
+      const thread = yield* Effect.promise(async () => bb.sdk.threads.get({ threadId }));
       if (thread.status === "idle") {
-        const { output } = await bb.sdk.threads.output({ threadId });
-        await finish(output, null);
+        const { output } = yield* Effect.promise(async () => bb.sdk.threads.output({ threadId }));
+        yield* finish(output, null);
       } else if (thread.status === "error") {
-        await finish(null, await describeThreadFailure(threadId, null));
+        yield* finish(null, yield* describeThreadFailure(threadId, null));
       } else if (thread.archivedAt !== null) {
-        await finish(null, "review thread archived before it reported");
+        yield* finish(null, "review thread archived before it reported");
       }
-    } catch (error) {
-      if (sdkErrorCode(error) === "thread_not_found") {
-        await finish(null, "review thread no longer exists");
-        return;
-      }
-      bb.log.warn(
-        `could not reconcile review thread ${threadId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
+    }).pipe(
+      recover((error) =>
+        sdkErrorCode(error) === "thread_not_found"
+          ? finish(null, "review thread no longer exists")
+          : Effect.logWarning(`could not reconcile review thread ${threadId}: ${messageOf(error)}`),
+      ),
+    );
+  };
 
   /**
    * Settles a cleanly finished review thread with bb's Archive, which the
@@ -940,39 +996,36 @@ function createServices(bb: BbPluginApi) {
    * The run is already recorded, so a failed archive only leaves the thread
    * open for the human to settle.
    */
-  async function settleThread(threadId: string, status: VerifiedStatus): Promise<void> {
+  const settleThread = Effect.fnUntraced(function* (threadId: string, status: VerifiedStatus) {
     if (!SETTLED_STATUSES.has(status)) return;
-    if (!(await readSettings()).settleFinishedThreads) return;
-    try {
-      const thread = await bb.sdk.threads.get({ threadId });
+    if (!(yield* Effect.promise(() => readSettings())).settleFinishedThreads) return;
+    yield* Effect.gen(function* () {
+      const thread = yield* Effect.promise(async () => bb.sdk.threads.get({ threadId }));
       if (thread.status !== "idle" || thread.archivedAt !== null) return;
-      await bb.sdk.threads.archive({ threadId });
-    } catch (error) {
-      bb.log.warn(
-        `could not settle review thread ${threadId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
+      yield* Effect.promise(async () => bb.sdk.threads.archive({ threadId }));
+    }).pipe(
+      recover((error) =>
+        Effect.logWarning(`could not settle review thread ${threadId}: ${messageOf(error)}`),
+      ),
+    );
+  });
 
-  /** Finishes a run from a thread event; what cannot be recorded is logged. */
-  function finishInBackground(
-    threadId: string,
-    finalMessage: string | null,
-    failure: string | null,
-  ): void {
-    void finishRun(threadId, finalMessage, failure).catch((error: unknown) => {
-      bb.log.error(
-        `could not finish the run for thread ${threadId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    });
+  /**
+   * Finishes a run from a thread event; what cannot be recorded is logged.
+   * Unloading the plugin interrupts it, and the next load reconciles the run.
+   */
+  function finishInBackground(threadId: string, finish: Effect.Effect<void, unknown>): void {
+    runtime.fork(
+      finish.pipe(
+        recover((error) =>
+          Effect.logError(`could not finish the run for thread ${threadId}: ${messageOf(error)}`),
+        ),
+      ),
+    );
   }
 
   bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
-    finishInBackground(thread.id, lastAssistantText, null);
+    finishInBackground(thread.id, finishRun(thread.id, lastAssistantText, null));
   });
 
   /**
@@ -981,52 +1034,48 @@ function createServices(bb: BbPluginApi) {
    * the run would record a useless "it failed". Recover the real message from
    * the event log, which is where provider/error actually lands.
    */
-  async function describeThreadFailure(threadId: string, reported: string | null): Promise<string> {
+  const describeThreadFailure = Effect.fnUntraced(function* (
+    threadId: string,
+    reported: string | null,
+  ) {
     if (reported !== null && reported.trim().length > 0) return reported;
-    try {
-      const result = (await bb.sdk.threads.events.list({
-        threadId,
-      } as never)) as { events?: unknown[] };
-      const events = Array.isArray(result.events) ? result.events : [];
-      for (const raw of [...events].reverse()) {
-        const event = raw as {
-          type?: unknown;
-          message?: unknown;
-          error?: unknown;
-        };
-        const type = typeof event.type === "string" ? event.type : "";
-        if (!type.includes("error")) continue;
-        const message =
-          typeof event.message === "string"
-            ? event.message
-            : typeof event.error === "string"
-              ? event.error
-              : JSON.stringify(event).slice(0, 400);
-        if (message.length > 0) return `${type}: ${message}`;
-      }
-    } catch (error) {
-      bb.log.warn(
-        `could not read failure detail for ${threadId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-    return "the review thread failed (no error detail recorded — open the thread)";
-  }
+    const detail = yield* Effect.promise(
+      async () =>
+        (await bb.sdk.threads.events.list({ threadId } as never)) as { events?: unknown[] },
+    ).pipe(
+      Effect.map(latestErrorDetail),
+      recover((error) =>
+        Effect.as(
+          Effect.logWarning(`could not read failure detail for ${threadId}: ${messageOf(error)}`),
+          null,
+        ),
+      ),
+    );
+    return detail ?? "the review thread failed (no error detail recorded — open the thread)";
+  });
 
   bb.events.on("thread.failed", ({ thread, error }) => {
-    void describeThreadFailure(thread.id, error).then((detail) =>
-      finishInBackground(thread.id, null, detail),
+    finishInBackground(
+      thread.id,
+      describeThreadFailure(thread.id, error).pipe(
+        Effect.flatMap((detail) => finishRun(thread.id, null, detail)),
+      ),
     );
   });
 
   // A review thread put away by hand ends its run too; otherwise the run sits
   // at "reviewing" and holds a concurrency slot with nothing left to free it.
   bb.events.on("thread.archived", ({ thread }) => {
-    finishInBackground(thread.id, null, "review thread archived before it reported");
+    finishInBackground(
+      thread.id,
+      finishRun(thread.id, null, "review thread archived before it reported"),
+    );
   });
   bb.events.on("thread.deleted", ({ thread }) => {
-    finishInBackground(thread.id, null, "review thread deleted before it reported");
+    finishInBackground(
+      thread.id,
+      finishRun(thread.id, null, "review thread deleted before it reported"),
+    );
   });
 
   // --- shared helpers for rpc + cli ---------------------------------------
@@ -1037,24 +1086,28 @@ function createServices(bb: BbPluginApi) {
     return rule;
   }
 
-  async function checkPr(rule: Rule, prNumber: number) {
-    const pullRequest = await gh.getPullRequest(rule.repo, prNumber);
-    await hydrateFiles([rule], rule.repo, pullRequest);
+  const checkPr = Effect.fnUntraced(function* (rule: Rule, prNumber: number) {
+    const pullRequest = yield* gh.getPullRequest(rule.repo, prNumber);
+    yield* hydrateFiles([rule], rule.repo, pullRequest);
     const result = evaluateRule(rule, pullRequest, "manual");
     return { pullRequest, result };
-  }
+  });
 
-  async function checkTarget(rule: Rule, targetKind: "pull_request" | "issue", number: number) {
+  const checkTarget = Effect.fnUntraced(function* (
+    rule: Rule,
+    targetKind: "pull_request" | "issue",
+    number: number,
+  ) {
     if (targetKind === "pull_request") {
-      const { pullRequest, result } = await checkPr(rule, number);
+      const { pullRequest, result } = yield* checkPr(rule, number);
       return { target: pullRequest as GitHubTarget, result };
     }
-    const issue = await gh.getIssue(rule.repo, number);
+    const issue = yield* gh.getIssue(rule.repo, number);
     return {
       target: issue as GitHubTarget,
       result: evaluateRule(rule, issue, "manual"),
     };
-  }
+  });
 
   function saveRule(id: string | null, input: z.infer<typeof ruleInputSchema>): Rule {
     const now = Date.now();
@@ -1122,7 +1175,7 @@ function createServices(bb: BbPluginApi) {
 
     checkPr: async ({ ruleId, prNumber }) => {
       const rule = resolveRule(ruleId);
-      const { pullRequest, result } = await checkPr(rule, prNumber);
+      const { pullRequest, result } = await runtime.run(checkPr(rule, prNumber));
       return {
         matched: result.matched,
         reason: result.matched ? null : result.reason,
@@ -1134,7 +1187,7 @@ function createServices(bb: BbPluginApi) {
 
     dispatchNow: async ({ ruleId, prNumber, targetKind, force }) => {
       const rule = resolveRule(ruleId);
-      const { target, result } = await checkTarget(rule, targetKind, prNumber);
+      const { target, result } = await runtime.run(checkTarget(rule, targetKind, prNumber));
       if (!result.matched && force !== true) {
         // Refuse rather than silently reviewing: the caller gets the reason and
         // can re-issue with force once a human has judged it.
@@ -1167,7 +1220,7 @@ function createServices(bb: BbPluginApi) {
 
   // --- cli -----------------------------------------------------------------
 
-  const runCli = async (argv: string[]) => {
+  const runCli = async (argv: string[], signal?: AbortSignal) => {
     const flag = (name: string): string | undefined => {
       const index = argv.indexOf(`--${name}`);
       return index >= 0 ? argv[index + 1] : undefined;
@@ -1410,15 +1463,18 @@ function createServices(bb: BbPluginApi) {
         if (run.mode === "shadow") {
           return fail("shadow runs post nothing, so there is nothing on GitHub to verify");
         }
-        const result = await verifyLive({
-          gh,
-          repo: run.repo,
-          prNumber: run.prNumber,
-          targetKind: run.targetKind,
-          runId: run.id,
-          startedAt: run.startedAt,
-          authenticatedLogin: ghLogin,
-        });
+        const result = await runtime.run(
+          verifyLive({
+            gh,
+            repo: run.repo,
+            prNumber: run.prNumber,
+            targetKind: run.targetKind,
+            runId: run.id,
+            startedAt: run.startedAt,
+            authenticatedLogin: ghLogin,
+          }),
+          signal,
+        );
         store.replaceComments(run.id, result.comments);
         store.updateRun(run.id, {
           status: result.status,
@@ -1426,7 +1482,8 @@ function createServices(bb: BbPluginApi) {
           commentCount: result.comments.length,
         });
         announce();
-        if (run.threadId !== null) await settleThread(run.threadId, result.status);
+        if (run.threadId !== null)
+          await runtime.run(settleThread(run.threadId, result.status), signal);
         return ok(
           json
             ? JSON.stringify(result, null, 2)
@@ -1472,7 +1529,10 @@ function createServices(bb: BbPluginApi) {
         const targetLabel = targetKind === "issue" ? "issue" : "PR";
 
         if (command === "check") {
-          const { target, result } = await checkTarget(rule, targetKind, number);
+          const { target, result } = await runtime.run(
+            checkTarget(rule, targetKind, number),
+            signal,
+          );
           const payload = {
             matched: result.matched,
             reason: result.matched ? null : result.reason,
@@ -1493,7 +1553,7 @@ function createServices(bb: BbPluginApi) {
           );
         }
 
-        const { target, result } = await checkTarget(rule, targetKind, number);
+        const { target, result } = await runtime.run(checkTarget(rule, targetKind, number), signal);
         if (!result.matched && !has("force")) {
           return fail(
             `'${rule.name}' does not match ${targetLabel} #${number}: ${result.reason}\nRe-run with --force to dispatch anyway.`,
@@ -1519,44 +1579,40 @@ function createServices(bb: BbPluginApi) {
 
   // --- watcher -------------------------------------------------------------
 
-  bb.background.service("watcher", {
-    async start(signal) {
-      const initial = await readSettings();
-      gh = createGhClient(initial.ghPath);
-      ghLogin = await gh.authenticatedLogin();
-      if (ghLogin === null) {
-        bb.status.needsConfiguration(
-          "`gh` is not authenticated on this machine. Run `gh auth login`, then reload the plugin.",
-        );
-        return;
-      }
-      bb.log.info(`gh authenticated as ${ghLogin}`);
+  /**
+   * Signs in, then polls until bb stops the service. A stop interrupts the pass
+   * wherever it is and kills any `gh` call in flight. GitHub being out of reach
+   * fails the service, so bb restarts it with backoff.
+   */
+  const watch = Effect.gen(function* () {
+    const initial = yield* Effect.promise(() => readSettings());
+    gh = createGhClient(initial.ghPath);
+    ghLogin = yield* gh.authenticatedLogin();
+    if (ghLogin === null) {
+      bb.status.needsConfiguration(
+        "`gh` is not authenticated on this machine. Run `gh auth login`, then reload the plugin.",
+      );
+      return;
+    }
+    yield* Effect.logInfo(`gh authenticated as ${ghLogin}`);
 
-      while (!signal.aborted) {
-        const values = await readSettings();
-        try {
-          await poll(values.maxConcurrent);
-        } catch (error) {
-          bb.log.error(
-            `poll pass failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        // A stop that arrived during the pass must not wait out the interval.
-        if (signal.aborted) break;
-        await new Promise((resolve) => {
-          const timer = setTimeout(resolve, values.pollSeconds * 1_000);
-          signal.addEventListener(
-            "abort",
-            () => {
-              clearTimeout(timer);
-              resolve(undefined);
-            },
-            { once: true },
-          );
-        });
-      }
-    },
+    // Each pass reads the settings afresh, and its own interval spaces it from the next.
+    const pass = Effect.gen(function* () {
+      const values = yield* Effect.promise(() => readSettings());
+      yield* poll(values.maxConcurrent).pipe(
+        recover((error) => Effect.logError(`poll pass failed: ${messageOf(error)}`)),
+      );
+      return values.pollSeconds;
+    });
+    yield* Effect.repeat(
+      pass,
+      Schedule.identity<number>().pipe(
+        Schedule.modifyDelay(({ output }) => Effect.succeed(Duration.seconds(output))),
+      ),
+    );
   });
+
+  bb.background.service("watcher", { start: runtime.service(watch) });
 
   bb.onDispose(() => {
     bb.log.info("disposed");
@@ -1621,29 +1677,33 @@ function forwardCommand(ctx: PluginContext, spec: CommandSpec) {
     description: spec.description,
     options: Object.fromEntries(spec.optionKeys.map((key) => [key, options[key]])),
     positionals,
-    run: (input) =>
-      ctx.runCli([
-        spec.name,
-        ...positionals.flatMap(({ name }) => {
-          const value = input.positionals[name];
-          return value === undefined ? [] : Array.isArray(value) ? value : [value];
-        }),
-        ...Object.entries(input.options).flatMap(([key, value]) =>
-          value === undefined || value === false
-            ? []
-            : value === true
-              ? [`--${key}`]
-              : (Array.isArray(value) ? value : [value]).flatMap((item) => [
-                  `--${key}`,
-                  String(item),
-                ]),
-        ),
-      ]),
+    run: (input, cliContext) =>
+      ctx.runCli(
+        [
+          spec.name,
+          ...positionals.flatMap(({ name }) => {
+            const value = input.positionals[name];
+            return value === undefined ? [] : Array.isArray(value) ? value : [value];
+          }),
+          ...Object.entries(input.options).flatMap(([key, value]) =>
+            value === undefined || value === false
+              ? []
+              : value === true
+                ? [`--${key}`]
+                : (Array.isArray(value) ? value : [value]).flatMap((item) => [
+                    `--${key}`,
+                    String(item),
+                  ]),
+          ),
+        ],
+        cliContext.signal,
+      ),
   });
 }
 
 export default async function plugin(bb: BbPluginApi): Promise<void> {
-  const ctx: PluginContext = Object.freeze({ bb, ...createServices(bb) });
+  const runtime = await makePluginRuntime(bb, Layer.empty);
+  const ctx: PluginContext = Object.freeze({ bb, ...createServices(bb, runtime) });
   bb.rpc.register(rpcContract, ctx.handlers);
   bb.cli.register(
     defineCli({

@@ -1,3 +1,4 @@
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { attributeBody, buildMarker, decorateBody, hasVisibleHeader, parseMarker } from "./marker";
@@ -638,19 +639,22 @@ function fakeGh(parts: {
   reviews?: GhComment[];
 }): GhClient {
   return {
-    listOpenPullRequests: async () => [],
-    getPullRequest: async () => makePr(),
-    listOpenIssueNumbers: async () => [],
-    getIssue: async () => makeIssue(),
-    listFiles: async () => [],
-    listIssueComments: async () => parts.issues ?? [],
-    listReviewComments: async () => parts.review ?? [],
-    listReviews: async () => parts.reviews ?? [],
-    listRecentIssueComments: async () => [],
-    listRecentReviewComments: async () => [],
-    authenticatedLogin: async () => "octocat",
+    listOpenPullRequests: () => Effect.succeed([]),
+    getPullRequest: () => Effect.succeed(makePr()),
+    listOpenIssueNumbers: () => Effect.succeed([]),
+    getIssue: () => Effect.succeed(makeIssue()),
+    listFiles: () => Effect.succeed([]),
+    listIssueComments: () => Effect.succeed(parts.issues ?? []),
+    listReviewComments: () => Effect.succeed(parts.review ?? []),
+    listReviews: () => Effect.succeed(parts.reviews ?? []),
+    listRecentIssueComments: () => Effect.succeed([]),
+    listRecentReviewComments: () => Effect.succeed([]),
+    authenticatedLogin: () => Effect.succeed("octocat"),
   };
 }
+
+const runVerifyLive = (options: Parameters<typeof verifyLive>[0]) =>
+  Effect.runPromise(verifyLive(options));
 
 const marked = (kind: "summary" | "inline", run = "run_1") =>
   decorateBody("a finding", kind, {
@@ -670,7 +674,7 @@ describe("live verification", () => {
   };
 
   it("collects every marked comment across all three surfaces", async () => {
-    const result = await verifyLive({
+    const result = await runVerifyLive({
       ...base,
       gh: fakeGh({
         issues: [ghComment({ id: "a", body: marked("summary") })],
@@ -694,13 +698,13 @@ describe("live verification", () => {
     const gh = fakeGh({
       issues: [ghComment({ id: "issue-comment", body: marked("summary") })],
     });
-    gh.listReviewComments = async () => {
+    gh.listReviewComments = () => {
       throw new Error("PR endpoint must not run");
     };
-    gh.listReviews = async () => {
+    gh.listReviews = () => {
       throw new Error("PR endpoint must not run");
     };
-    const result = await verifyLive({
+    const result = await runVerifyLive({
       ...base,
       targetKind: "issue",
       gh,
@@ -710,13 +714,13 @@ describe("live verification", () => {
   });
 
   it("reports no_comment rather than silently succeeding", async () => {
-    const result = await verifyLive({ ...base, gh: fakeGh({}) });
+    const result = await runVerifyLive({ ...base, gh: fakeGh({}) });
     expect(result.status).toBe("no_comment");
     expect(result.detail).toContain("without posting");
   });
 
   it("ignores another run's comments", async () => {
-    const result = await verifyLive({
+    const result = await runVerifyLive({
       ...base,
       gh: fakeGh({
         issues: [ghComment({ body: marked("summary", "run_OTHER") })],
@@ -727,7 +731,7 @@ describe("live verification", () => {
   });
 
   it("ignores comments predating the run and comments by other people", async () => {
-    const result = await verifyLive({
+    const result = await runVerifyLive({
       ...base,
       gh: fakeGh({
         issues: [
@@ -740,7 +744,7 @@ describe("live verification", () => {
   });
 
   it("ignores GitHub's empty review envelopes rather than calling them unattributed", async () => {
-    const result = await verifyLive({
+    const result = await runVerifyLive({
       ...base,
       gh: fakeGh({
         review: [ghComment({ id: "a", body: marked("inline"), path: "x.go", line: 8 })],
@@ -752,7 +756,7 @@ describe("live verification", () => {
   });
 
   it("flags a partially marked review", async () => {
-    const result = await verifyLive({
+    const result = await runVerifyLive({
       ...base,
       gh: fakeGh({
         issues: [ghComment({ id: "a", body: marked("summary") })],
@@ -764,7 +768,7 @@ describe("live verification", () => {
   });
 
   it("flags an unattributable comment from our own account", async () => {
-    const result = await verifyLive({
+    const result = await runVerifyLive({
       ...base,
       gh: fakeGh({ issues: [ghComment({ body: "plain review, no header" })] }),
     });
