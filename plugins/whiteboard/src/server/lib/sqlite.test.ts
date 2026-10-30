@@ -53,9 +53,6 @@ const scenarios: Record<string, (db: Db) => unknown> = {
   "binding undefined throws": (db) =>
     // @ts-expect-error -- deliberately unbindable: upstream must never rely on it
     outcome(() => db.prepare("SELECT ? v").get(undefined)),
-  "binding a boolean throws": (db) =>
-    // @ts-expect-error -- deliberately unbindable: upstream must never rely on it
-    outcome(() => db.prepare("SELECT ?, ? v").get(1, true)),
   "named parameters bind": (db) => ({ ...db.prepare("SELECT :a v").get({ a: 1 }) }),
   "a syntax error throws": (db) => outcome(() => db.exec("SELEC 1")),
   "a unique violation throws": (db) => {
@@ -86,6 +83,21 @@ describe("DatabaseSync over better-sqlite3", () => {
     const scenario = scenarios[name]!;
     const expected = scenario(new NodeDatabaseSync(":memory:"));
     expect(scenario(new DatabaseSync(":memory:"))).toEqual(expected);
+  });
+
+  // node:sqlite binds booleans from Node 24.21 but throws on Node 22, which bb
+  // still supports, so the adapter keeps Node 22's result on every Node.
+  it("throws Node 22's error for a boolean on every Node", () => {
+    installDatabaseOpener((path, options) => new BetterSqlite3(path, options));
+    const db = new DatabaseSync(":memory:");
+    // @ts-expect-error -- deliberately unbindable: upstream must never rely on it
+    expect(outcome(() => db.prepare("SELECT ?, ? v").get(1, true))).toEqual({
+      error: {
+        name: "TypeError",
+        message: "Provided value cannot be bound to SQLite parameter 2.",
+        code: "ERR_INVALID_ARG_TYPE",
+      },
+    });
   });
 
   it("pins the node:sqlite results the adapter reproduces", () => {
