@@ -31,6 +31,8 @@ const REQUEST_DEADLINE_MS = 15_000;
  * provider, so two composers on the same machine share one request per provider.
  */
 const catalogs = new Map<string, ProviderCatalog>();
+/** Each provider's most recently listed models, from any routing. */
+const lastListed = new Map<string, readonly CatalogModel[]>();
 const inFlight = new Set<string>();
 const listeners = new Set<() => void>();
 let version = 0;
@@ -137,6 +139,7 @@ function load(
     .then((result) => {
       const message = errorMessage(result);
       if (message && result.models.length === 0) return failed(message);
+      lastListed.set(providerId, result.models);
       return publish(key, { status: "ready", models: result.models, fetchedAt: Date.now() });
     })
     .catch((error: unknown) =>
@@ -145,9 +148,12 @@ function load(
     .finally(() => inFlight.delete(key));
 }
 
-type ThreadLookup = { status: "pending" } | { status: "ready"; environmentId: string | null };
+type ThreadLookup =
+  | { status: "pending" }
+  | { status: "failed" }
+  | { status: "ready"; environmentId: string | null };
 
-/** Thread → environment. Failed reads are dropped, so the next ask retries instead of guessing a machine. */
+/** Thread → environment. A failed read is retried on the next ask instead of guessing a machine. */
 const threadLookups = new Map<string, ThreadLookup>();
 
 function resolveThread(
@@ -159,7 +165,7 @@ function resolveThread(
   if (current?.status === "pending") return;
   // A thread without an environment yet may get one once provisioned; re-read it when asked.
   if (current?.status === "ready" && (current.environmentId !== null || !options.refresh)) return;
-  if (!current) threadLookups.set(threadId, { status: "pending" });
+  if (current?.status !== "ready") threadLookups.set(threadId, { status: "pending" });
   Promise.resolve()
     .then(() => sdk.threads.get({ threadId, signal: AbortSignal.timeout(REQUEST_DEADLINE_MS) }))
     .then((thread) => {
@@ -167,7 +173,9 @@ function resolveThread(
       return notify();
     })
     .catch(() => {
-      if (threadLookups.get(threadId)?.status === "pending") threadLookups.delete(threadId);
+      if (threadLookups.get(threadId)?.status === "pending") {
+        threadLookups.set(threadId, { status: "failed" });
+      }
       notify();
     });
 }
@@ -200,7 +208,7 @@ function newThreadRouting(selection: ComposerSelection | null): CatalogRouting {
   }
 }
 
-/** Resolves the composer's catalog routing; null while a thread's environment is still being read. */
+/** Resolves the composer's catalog routing; null while a thread's environment is unknown. */
 export function useCatalogRouting(
   composer: PluginComposerApi,
   enabled: boolean,
@@ -242,10 +250,19 @@ export function useModelCatalog(composer: PluginComposerApi, enabled: boolean): 
     if (routing && selectedProviderId) load(sdk, routing, selectedProviderId);
   }, [sdk, routing, selectedProviderId]);
 
+  // Only a failed read leaves the machine unknown; while it is pending, the machine is coming.
+  const lookupFailed = threadId !== null && threadLookups.get(threadId)?.status === "failed";
+
   return {
     providers,
-    catalogFor: (providerId) =>
-      routing ? (catalogs.get(catalogKey(routing, providerId)) ?? LOADING) : LOADING,
+    catalogFor: (providerId) => {
+      const own = routing ? catalogs.get(catalogKey(routing, providerId)) : undefined;
+      if ((own && own.status !== "loading") || lookupFailed) return own ?? LOADING;
+      // Until this machine's list arrives, show the provider's last list, so a composer that
+      // just opened, such as a thread's after the new-thread page sends, keeps its pickers.
+      const models = own?.models.length ? own.models : lastListed.get(providerId);
+      return models ? { status: "loading", models } : LOADING;
+    },
     revision: `${routing ? routingKey(routing) : "pending"}|${providers.map((p) => p.id).join(",")}`,
     loadAll: (options) => {
       if (!enabled) return;

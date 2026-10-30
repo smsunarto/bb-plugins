@@ -500,6 +500,23 @@ describe("T3 Code model picker", () => {
     }
   });
 
+  it("keeps these pickers while a new thread's machine is still being read", async () => {
+    const draft = await mountComposer({}, undefined, pickerOptions(OPUS_HIGH));
+    expect(await draft.slot.findByRole("button", { name: "Opus 5.5" })).toBeTruthy();
+    draft.slot.lifecycle.unmount();
+    const { slot } = await mountComposer(
+      {},
+      { kind: "thread", threadId: "t-just-sent" },
+      pickerOptions(OPUS_HIGH, { threads: { get: () => new Promise(() => {}) } }),
+    );
+    try {
+      expect(await slot.findByRole("button", { name: "Opus 5.5" })).toBeTruthy();
+      expect(slot.queryByText("Host model picker")).toBeNull();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
   it("falls back to BB's picker rather than another machine when a thread lookup fails", async () => {
     const { slot } = await mountComposer(
       {},

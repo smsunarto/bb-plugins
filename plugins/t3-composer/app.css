@@ -93,6 +93,13 @@
   overflow: visible;
 }
 
+/* An action whose plugin renders nothing (Agentation with no annotations) takes no
+   slot, so its gap cannot wrap the row onto a second line. */
+[data-t3-composer][data-promptbox]
+  [data-plugin-composer-action]:not(:has(> [data-bb-plugin-root] > *)) {
+  display: none;
+}
+
 [data-t3-composer][data-promptbox] [data-promptbox-expanded-only][data-promptbox-standard-actions] {
   reading-flow: flex-visual;
 }
@@ -342,7 +349,9 @@
   > :is([data-follow-up-composer-footer], [data-new-thread-footer]) {
   --t3-tray-overlap: 12px;
   position: relative;
-  min-height: 0;
+  /* One row of 28px pills, held while a new thread's machine and branch load, so the
+     tray does not collapse and regrow after the new-thread page sends. */
+  min-height: calc(36px + var(--t3-tray-overlap));
   max-height: none;
   overflow: visible;
   z-index: 0;
@@ -407,6 +416,7 @@
     )
     > [data-follow-up-composer-footer] {
     --t3-tray-overlap: 0px;
+    min-height: 0;
     max-height: 0;
     margin: 0;
     padding: 0;
