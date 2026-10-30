@@ -5,6 +5,7 @@ import { queryClient } from "../src/app/query.ts";
 import { installLocalCache, readDraftText, writeDraftText } from "../src/app/local-cache.ts";
 import { inbox, pullRequest } from "./app-fixtures.ts";
 import { inboxTabRegistration } from "./registrations.ts";
+import { sourceTextbox } from "./markdown-editor.ts";
 import { parsePrSubPath } from "../src/shared/schema.ts";
 import type { PullRequest, Inbox, ChangedFiles } from "../src/shared/schema.ts";
 
@@ -385,14 +386,9 @@ test("review submission cannot overtake an unconfirmed draft", async () => {
   });
   fireEvent.click(slot.getByText("Edit"));
   fireEvent.click(slot.getByRole("button", { name: /Submit review/ }));
-  await slot.findByRole("textbox", { name: "Review summary" });
-  fireEvent.change(slot.getByRole("textbox", { name: "Review summary" }), {
-    target: { value: "Review" },
-  });
-  fireEvent.keyDown(slot.getByRole("textbox", { name: "Review summary" }), {
-    key: "Enter",
-    ctrlKey: true,
-  });
+  const summary = await slot.findByRole("textbox", { name: "Review summary" }).then(sourceTextbox);
+  fireEvent.change(summary, { target: { value: "Review" } });
+  fireEvent.keyDown(summary, { key: "Enter", ctrlKey: true });
   expect(submits).toBe(0);
   write.reject(new Error("Denied"));
   await slot.findByText("GitHub did not save your draft");
@@ -428,7 +424,9 @@ test("successful saves clear recovery text after the form unmounts without waiti
       rpc: { addDraftComment: () => write.promise, pullRequest: () => laterRead.promise } as never,
     },
   );
-  fireEvent.change(slot.getByRole("textbox"), { target: { value: "Keep until saved" } });
+  fireEvent.change(sourceTextbox(slot.getByRole("textbox")), {
+    target: { value: "Keep until saved" },
+  });
   fireEvent.click(slot.getByRole("button", { name: "Add review comment" }));
   await waitFor(() =>
     expect(slot.rpcCalls.some((call) => call.method === "addDraftComment")).toBe(true),
@@ -685,7 +683,7 @@ test("an acknowledged old save preserves newer unsent form text", async () => {
     {},
     { rpc: { addDraftComment: () => write.promise } as never },
   );
-  fireEvent.change(slot.getByRole("textbox"), { target: { value: "First body" } });
+  fireEvent.change(sourceTextbox(slot.getByRole("textbox")), { target: { value: "First body" } });
   fireEvent.click(slot.getByRole("button", { name: "Add review comment" }));
   await waitFor(() =>
     expect(slot.rpcCalls.some((call) => call.method === "addDraftComment")).toBe(true),

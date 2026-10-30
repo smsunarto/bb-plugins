@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "../src/app/query.ts";
 import type { ChangedFiles, PullRequest, ReviewThread } from "../src/shared/schema.ts";
 import { agentActivity, checks, inbox, pullRequest } from "./app-fixtures.ts";
+import { sourceTextbox } from "./markdown-editor.ts";
 
 const { act, fireEvent, waitFor, within, configure } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -222,14 +223,14 @@ test("finishing a slow diff load preserves the reader's scroll and reserved file
   const slot = (await changesTab([], { changedFiles: () => pending })).render();
   await slot.findByText("Loading changed files…");
   const area = slot.container.querySelector<HTMLElement>("[data-cr-scroll]")!;
-  const rail = slot.getByRole("navigation", { name: "Changed files" });
+  const rail = slot.getByRole("navigation", { name: "Files and checks" });
   const toolbar = slot.getByRole("button", { name: "Split" });
   fireEvent.wheel(area);
   area.scrollTop = 350;
   finish(files);
   await slot.findByRole("article", { name: "src/login.ts" });
   expect(slot.container.querySelector("[data-cr-scroll]")).toBe(area);
-  expect(slot.getByRole("navigation", { name: "Changed files" })).toBe(rail);
+  expect(slot.getByRole("navigation", { name: "Files and checks" })).toBe(rail);
   expect(slot.getByRole("button", { name: "Split" })).toBe(toolbar);
   expect(area.scrollTop).toBe(350);
   slot.lifecycle.unmount();
@@ -273,9 +274,12 @@ test("lists every changed file with its threads inline, and folds the viewed one
   expect(diffBody(slot.getByRole("article", { name: "docs/old.md" })).hidden).toBe(true);
   expect(diffBody(slot.getByRole("article", { name: "src/login.ts" })).hidden).toBe(false);
   expect(slot.queryByRole("button", { name: "Collapse src/login.ts" })).toBeNull();
-  expect(
-    within(slot.getByRole("navigation", { name: "Changed files" })).queryByRole("checkbox"),
-  ).toBeNull();
+  // The file tree has no Viewed boxes; the failed checks above it keep their own.
+  const tree = slot
+    .getByRole("navigation", { name: "Files and checks" })
+    .querySelector("file-tree-container")!.shadowRoot!;
+  expect(tree.querySelector('[role="treeitem"]')).toBeTruthy();
+  expect(tree.querySelector('input[type="checkbox"]')).toBeNull();
   slot.lifecycle.unmount();
 });
 
@@ -1045,17 +1049,3 @@ test("comment text typed as one account does not open in the form of another", (
   );
   again.lifecycle.unmount();
 });
-
-// Existing draft/save scenarios use the optional source editor explicitly.
-function sourceTextbox(element: HTMLElement): HTMLElement {
-  if (!element.matches(".tiptap")) return element;
-  const wrapper = element.closest(".bb-markdown-editor");
-  const button = [...(wrapper?.querySelectorAll("button") ?? [])].find(
-    (candidate) => candidate.textContent === "Markdown source",
-  );
-  if (!button) throw new Error("Markdown editor has no source control");
-  fireEvent.click(button);
-  const source = wrapper?.querySelector<HTMLElement>("textarea[data-markdown-source]");
-  if (!source) throw new Error("Source mode did not open");
-  return source;
-}

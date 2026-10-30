@@ -12,6 +12,7 @@ import {
   pullRequest,
 } from "./app-fixtures.ts";
 import { inboxTabRegistration } from "./registrations.ts";
+import { sourceTextbox } from "./markdown-editor.ts";
 
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -226,12 +227,10 @@ const twoAccounts: Handlers = {
   }),
 };
 
-test("with several accounts, each row names its account and the inbox narrows to one", async () => {
+test("with several accounts, rows carry no account label and the inbox narrows to one", async () => {
   const slot = await inboxTab("", twoAccounts);
   await slot.findByText("Rate-limit the login endpoint");
-  expect(
-    within(slot.getByRole("button", { name: /Rate-limit/ })).getByText("As scott,"),
-  ).toBeTruthy();
+  expect(within(slot.getByRole("button", { name: /Rate-limit/ })).queryByText(/^As /)).toBeNull();
 
   fireEvent.click(slot.getByRole("button", { name: "Accounts: all" }));
   fireEvent.click(await slot.findByRole("radio", { name: "scott-work" }));
@@ -985,12 +984,16 @@ test("a review refused after the page was opened again shows the refusal there",
   first.slot.lifecycle.unmount();
 
   const { slot, dialog } = await openSubmit(pullRequest, rpc);
+  // The summary cannot change while the review it was sent with is out.
   const body = sourceTextbox(dialog.getByLabelText("Review summary")) as HTMLTextAreaElement;
-  fireEvent.change(body, { target: { value: "Needs work" } });
+  expect(body.readOnly).toBe(true);
   refuse();
   expect((await dialog.findByRole("alert")).textContent).toBe(
     "GitHub did not take the reviewReview cannot be submitted on a stale commit.",
   );
+  // The refused summary stays, open to edits again.
+  expect(body.value).toBe("Ship it.");
+  fireEvent.change(body, { target: { value: "Needs work" } });
   expect(body.value).toBe("Needs work");
   const submit = dialog.getByRole("button", { name: "Submit review" }) as HTMLButtonElement;
   expect(submit.disabled).toBe(false);
@@ -1048,19 +1051,25 @@ test("a discard refused after the page was opened again shows the refusal there"
       }),
   };
   const first = await openSubmit(pullRequest, rpc);
+  fireEvent.change(sourceTextbox(first.dialog.getByLabelText("Review summary")), {
+    target: { value: "Needs work" },
+  });
   fireEvent.click(first.dialog.getByRole("button", { name: "Discard drafts" }));
   fireEvent.click(first.dialog.getByRole("button", { name: "Discard" }));
   await first.dialog.findByRole("button", { name: "Discarding…" });
   first.slot.lifecycle.unmount();
 
   const { slot, dialog } = await openSubmit(pullRequest, rpc);
+  // The summary cannot change while the discard is out.
   const body = sourceTextbox(dialog.getByLabelText("Review summary")) as HTMLTextAreaElement;
-  fireEvent.change(body, { target: { value: "Needs work" } });
+  expect(body.readOnly).toBe(true);
   refuse();
   expect((await dialog.findByRole("alert")).textContent).toBe(
     "Pending review was already submitted.",
   );
+  // A refused discard keeps the summary that a finished one would clear.
   expect(body.value).toBe("Needs work");
+  expect(body.readOnly).toBe(false);
 
   // Keep dismisses the refusal, so the next confirmation starts clean.
   fireEvent.click(dialog.getByRole("button", { name: "Keep" }));
@@ -1230,17 +1239,3 @@ test("a URL that names no pull request offers the way back", async () => {
   ]);
   slot.lifecycle.unmount();
 });
-
-// Existing draft/save scenarios use the optional source editor explicitly.
-function sourceTextbox(element: HTMLElement): HTMLElement {
-  if (!element.matches(".tiptap")) return element;
-  const wrapper = element.closest(".bb-markdown-editor");
-  const button = [...(wrapper?.querySelectorAll("button") ?? [])].find(
-    (candidate) => candidate.textContent === "Markdown source",
-  );
-  if (!button) throw new Error("Markdown editor has no source control");
-  fireEvent.click(button);
-  const source = wrapper?.querySelector<HTMLElement>("textarea[data-markdown-source]");
-  if (!source) throw new Error("Source mode did not open");
-  return source;
-}

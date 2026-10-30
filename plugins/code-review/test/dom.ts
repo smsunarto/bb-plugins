@@ -23,6 +23,15 @@ class InertResizeObserver {
 }
 (globalThis as { ResizeObserver?: unknown }).ResizeObserver ??= InertResizeObserver;
 
+// Bun's expect prints a jsdom node by walking its internals out to the whole
+// window: megabytes and seconds per failed check, which starves the render a
+// `waitFor` is waiting on. Print a node as its markup instead.
+(window.Node.prototype as unknown as Record<symbol, unknown>)[
+  Symbol.for("nodejs.util.inspect.custom")
+] = function (this: Node) {
+  return this instanceof window.Element ? this.outerHTML : this.nodeName;
+};
+
 // Pierre's diff element styles its shadow root with constructed style sheets,
 // which jsdom does not implement.
 const sheet = (window as unknown as { CSSStyleSheet: { prototype: Record<string, unknown> } })

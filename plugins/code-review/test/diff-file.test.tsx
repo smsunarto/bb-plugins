@@ -5,6 +5,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "../src/app/query.ts";
 import type { ChangedFile } from "../src/shared/schema.ts";
 import { pullRequest as pr } from "./app-fixtures.ts";
+import { sourceTextbox } from "./markdown-editor.ts";
 
 const { act, fireEvent, waitFor } = await import("@testing-library/react");
 const { renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -90,7 +91,9 @@ test("a new comment is sent with the head and base its lines were picked in", as
   const { slot } = mount({ file: changed(), headRefOid: "h1", baseRefName: "main" }, calls);
   await pressPlus(slot.container);
 
-  const box = await slot.findByRole("textbox", { name: "Comment on line 3 of src/login.ts" });
+  const box = await slot
+    .findByRole("textbox", { name: "Comment on line 3 of src/login.ts" })
+    .then(sourceTextbox);
   fireEvent.change(box, { target: { value: "Why three?" } });
   fireEvent.click(slot.getByRole("button", { name: "Add review comment" }));
 
@@ -120,7 +123,9 @@ test("after a push, an open comment keeps its text and saves only once its lines
   const calls: Call[] = [];
   const { slot, show } = mount({ file: changed(), headRefOid: "h1", baseRefName: "main" }, calls);
   await pressPlus(slot.container);
-  const box = await slot.findByRole("textbox", { name: "Comment on line 3 of src/login.ts" });
+  const box = await slot
+    .findByRole("textbox", { name: "Comment on line 3 of src/login.ts" })
+    .then(sourceTextbox);
   fireEvent.change(box, { target: { value: "Why three?" } });
 
   // The push adds a line on top, so head line 3 now holds other code.
@@ -160,7 +165,9 @@ test("after a retarget, an open comment keeps its text and saves only once its l
   const calls: Call[] = [];
   const { slot, show } = mount({ file: changed(), headRefOid: "h1", baseRefName: "main" }, calls);
   await pressPlus(slot.container);
-  const box = await slot.findByRole("textbox", { name: "Comment on line 3 of src/login.ts" });
+  const box = await slot
+    .findByRole("textbox", { name: "Comment on line 3 of src/login.ts" })
+    .then(sourceTextbox);
   fireEvent.change(box, { target: { value: "Why three?" } });
 
   // Retargeted: the head stays, and the base side now counts another branch's lines.
