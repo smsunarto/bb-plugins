@@ -3,12 +3,24 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "description": "Mention installed plugins with #.",
   "engines": {
     "bb": ">=0.48.0 <1.0.0",
     "bbPluginSdk": ">=0.6.94"
   },
+  "files": [
+    "server.ts",
+    "installed-catalog.ts",
+    "mention-context.ts",
+    "mention-query.ts",
+    "plugin-icon.ts",
+    "sdk-read.ts",
+    "instructions/",
+    "assets/",
+    "README.md",
+    "LICENSE"
+  ],
   "bb": {
     "name": "Installed Plugin Mentions",
     "description": "Type # to find and mention your enabled, running plugins.",
