@@ -29,6 +29,9 @@
     "bb": ">=0.48.0 <1.0.0",
     "bbPluginSdk": ">=0.6.94"
   },
+  "bbPluginBuild": {
+    "experimental_cssScope": "owned-root-v1"
+  },
   "bb": {
     "name": "Tasks",
     "description": "Plan and track work in BB, delegate tasks to agents, and keep task context connected to worker threads.",

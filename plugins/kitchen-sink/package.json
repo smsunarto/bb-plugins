@@ -29,6 +29,9 @@
     "bb": ">=0.48.0 <1.0.0",
     "bbPluginSdk": ">=0.6.75"
   },
+  "bbPluginBuild": {
+    "experimental_cssScope": "owned-root-v1"
+  },
   "bb": {
     "name": "Kitchen Sink",
     "description": "Personal bb surfaces: composer workflows, provider branding, and Smart Embeds.",
@@ -51,6 +54,7 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
+    "dist/app.owned-root.css",
     "assets/",
     "README.md",
     "LICENSE",
