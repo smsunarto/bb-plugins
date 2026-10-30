@@ -1,4 +1,6 @@
+import type { JsonValue, PluginMachineProviderInputsChange } from "@get-bb/plugin-sdk/app";
 import type { CapturedPluginApp } from "@get-bb/plugin-sdk/testing/app";
+import { useCallback, useState } from "react";
 
 export function nav(app: CapturedPluginApp, subPath = "", tab?: string) {
   const panel = app.navPanels[0];
@@ -59,7 +61,28 @@ export function composerAction(app: CapturedPluginApp, id: string) {
   );
 }
 
+export function machineProviderInputs(app: CapturedPluginApp, machineProviderId: string) {
+  const Component = app.machineProviderInputs.find(
+    (item) => item.machineProviderId === machineProviderId,
+  )?.component;
+  if (!Component) throw new Error(`Missing machine provider inputs: ${machineProviderId}`);
+  return <MachineProviderInputsHost component={Component} />;
+}
+
+/** Holds the submitted value the way the machine picker does, so choices show. */
+function MachineProviderInputsHost({
+  component: Component,
+}: {
+  component: CapturedPluginApp["machineProviderInputs"][number]["component"];
+}) {
+  const [value, setValue] = useState<JsonValue | null>(null);
+  const onChange = useCallback((next: PluginMachineProviderInputsChange) => {
+    if (next.status === "ready") setValue(next.value);
+  }, []);
+  return <Component value={value} onChange={onChange} />;
+}
+
 /** CSS scopes required by each plugin's own presentation components. */
-export function previewSurfaceClass(title: string): string | undefined {
+export function previewSurfaceClass(_title: string): string | undefined {
   return undefined;
 }
