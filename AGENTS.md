@@ -94,5 +94,4 @@ When communicating the handoff:
 
 ## Traps
 
-- When you capture plugin screenshots, follow the `bb-plugin-screenshots` skill.
 - Do not point `BB_SERVER_URL` at the dev App port, point it the Server port.
