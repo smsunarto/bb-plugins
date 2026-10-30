@@ -157,8 +157,8 @@ export function Walkthrough({ props }: { props: Props }) {
   const [position, setPosition] = useState(0);
   const [from, setFrom] = useState(0);
   const [showAll, setShowAll] = useState(false);
-  const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
   const root = useRef<HTMLDivElement>(null);
+  const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>(root);
 
   if (steps.length === 0) {
     return list(props.steps).length === 0 ? null : <ErrorLine message="Walkthrough steps need a title, body or code" />;
@@ -571,7 +571,8 @@ export function Calendar({ props }: { props: Props }) {
   const [cursor, setCursor] = useState<string | null>(null);
   const cells = useRef(new Map<string, HTMLDivElement>());
   const moved = useRef(false);
-  const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
+  const interactionScope = useRef<HTMLDivElement>(null);
+  const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>(interactionScope);
 
   const { events, skipped } = parseEvents(props.events);
   const requested = parseMonth(props.month);
@@ -668,7 +669,7 @@ export function Calendar({ props }: { props: Props }) {
   const selectedHere = selectedDay !== null && inMonth(selected) ? selectedDay : null;
 
   return (
-    <div className="@container flex min-w-0 flex-col gap-2">
+    <div ref={interactionScope} className="@container flex min-w-0 flex-col gap-2">
       <div className="flex min-w-0 items-center justify-between gap-2">
         <h4 aria-live="polite" className="m-0 truncate text-sm font-medium leading-5 text-foreground">
           {title}

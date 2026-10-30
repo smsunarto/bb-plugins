@@ -50,6 +50,10 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => ({
 
 let container: HTMLDivElement;
 let root: Root;
+const resizeDeliveries = new Map<Element, (width: number, height: number) => void>();
+function deliverSizes(width: number, height: number): void {
+  act(() => { for (const deliver of resizeDeliveries.values()) deliver(width, height); });
+}
 
 /** Replies `replies` of thread `threadId`, each showing one ```ui block of `code`. */
 function renderBlock(threadId: string, code: string, replies: readonly number[] = [1]): void {
@@ -99,10 +103,18 @@ beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener() {}, removeEventListener() {} }));
   vi.stubGlobal(
     "ResizeObserver",
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+    class implements ResizeObserver {
+      private targets = new Set<Element>();
+      constructor(readonly callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        this.targets.add(target);
+        resizeDeliveries.set(target, (width, height) => {
+          const size = { inlineSize: width, blockSize: height };
+          this.callback([{ target, borderBoxSize: [size], contentBoxSize: [size], devicePixelContentBoxSize: [size], contentRect: new DOMRect(0, 0, width, height) }], this);
+        });
+      }
+      unobserve(target: Element) { resizeDeliveries.delete(target); this.targets.delete(target); }
+      disconnect() { for (const target of this.targets) resizeDeliveries.delete(target); this.targets.clear(); }
     },
   );
   // The column BB lays replies out in.
@@ -187,6 +199,7 @@ describe("a block BB mounts again", () => {
     // Laid out as the placeholder, until the picture decodes.
     const box = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 720, 192));
     renderBlock("page", 'Image("slow.png", "Slow")', [5]);
+    deliverSizes(720, 192);
     await act(async () => pictures.get("slow.png")?.({ ok: true, dataUrl: "data:image/png;base64,U0xPVw==" }));
     act(() => root.render(null));
     // Mounted again, it is shorter for a moment; a remembered height would be held.
@@ -196,6 +209,7 @@ describe("a block BB mounts again", () => {
 
     box.mockReturnValue(new DOMRect(0, 0, 720, 405));
     decode(container.querySelector("img")!, 720, 405);
+    deliverSizes(720, 405);
     act(() => root.render(null));
     box.mockReturnValue(new DOMRect(0, 0, 720, 0));
     renderBlock("page", 'Image("slow.png", "Slow")', [5]);

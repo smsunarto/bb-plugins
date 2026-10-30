@@ -154,7 +154,8 @@ function DetailBody({ detail }: { detail: DiagramDetail }) {
 export function DiagramDetails({ details, children }: { details: readonly DiagramDetail[]; children: ReactNode }) {
   const panelId = useId();
   const host = useRef<HTMLDivElement>(null);
-  const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
+  const interactionScope = useRef<HTMLDivElement>(null);
+  const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>(interactionScope);
   const [selected, setSelected] = useState<string | null>(null);
   const [labels, setLabels] = useState<Readonly<Record<string, string>>>({});
   const [drawn, setDrawn] = useState(false);
@@ -219,7 +220,7 @@ export function DiagramDetails({ details, children }: { details: readonly Diagra
   const title = detail === null ? "" : (labels[detail.key] ?? detail.key);
 
   return (
-    <>
+    <div ref={interactionScope} className="flex min-w-0 flex-col gap-1.5">
       <style href="genui-diagram-details" precedence="default">
         {NODE_CSS}
       </style>
@@ -285,7 +286,7 @@ export function DiagramDetails({ details, children }: { details: readonly Diagra
           </div>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 

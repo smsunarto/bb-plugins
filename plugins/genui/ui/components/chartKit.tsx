@@ -169,7 +169,6 @@ export function useWidth<T extends HTMLElement>(): [(element: T | null) => () =>
   const [width, setWidth] = useState(0);
   const ref = useCallback((element: T | null) => {
     if (element === null) return () => {};
-    setWidth(element.clientWidth);
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry !== undefined) setWidth(entry.contentRect.width);

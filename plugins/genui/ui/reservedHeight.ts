@@ -122,55 +122,64 @@ export function storedHeight(key: string, width: number | null = null): number |
  * no height is remembered, but the reservation still ends as usual.
  */
 export function useReservedHeight(key: string, loading: boolean, provisional = false) {
-  const [reserve, setReserve] = useState<number | null>(() => heights().get(key));
+  const [reservation, setReservation] = useState(() => ({ key, height: heights().get(key) }));
+  if (reservation.key !== key) setReservation({ key, height: heights().get(key) });
+  const reserve = reservation.key === key ? reservation.height : heights().get(key);
+  const setReserve = useCallback((height: number | null) => {
+    setReservation((previous) => previous.key === key && previous.height === height ? previous : { key, height });
+  }, [key]);
   const reserved = useRef(reserve);
   reserved.current = reserve;
   const unsettled = useRef(loading || provisional);
   unsettled.current = loading || provisional;
   const [node, setNode] = useState<HTMLDivElement | null>(null);
   const content = useCallback((element: HTMLDivElement | null) => setNode(element), []);
+  const measured = useRef<{ node: HTMLDivElement; key: string; width: number; height: number } | null>(null);
   const settle = useCallback(
     (width: number, height: number) => {
-      const held = reserved.current;
-      if (held !== null && height >= held - 1) setReserve(null);
-      // Heights seen while files or images arrive, while the block is provisional or under a reservation are not its own.
+      if (width <= 0 || height <= 0) return;
+      // A reservation from another width must not suppress the new measurement.
+      const held = heights().get(key, width) === null ? null : reserved.current;
+      if (held === null || height >= held - 1) setReserve(null);
       if (!unsettled.current && (held === null || height >= held - 1)) rememberHeight(key, width, height);
     },
-    [key],
+    [key, setReserve],
   );
 
   useLayoutEffect(() => {
+    measured.current = null;
     if (node === null) return;
-
-    // Laid out at another width (a narrower pane, a phone), the stored height doesn't apply.
-    const width = node.getBoundingClientRect().width;
-    if (reserved.current !== null && heights().get(key, width) === null) setReserve(null);
+    let disposed = false;
     const observer = new ResizeObserver(([entry]) => {
+      if (disposed || entry === undefined) return;
       const box = entry.borderBoxSize?.[0];
-      settle(box?.inlineSize ?? entry.contentRect.width, box?.blockSize ?? entry.contentRect.height);
+      const width = box?.inlineSize ?? entry.contentRect.width;
+      const height = box?.blockSize ?? entry.contentRect.height;
+      measured.current = { node, key, width, height };
+      settle(width, height);
     });
-    observer.observe(node);
-    return () => observer.disconnect();
+    observer.observe(node, { box: "border-box" });
+    return () => { disposed = true; observer.disconnect(); };
   }, [node, key, settle]);
 
-  // Once nothing is left arriving, what shows is the block's own height, whether or not that resized it.
+  // Loading can finish without a resize; reuse the current node's last observation.
   const settled = !loading && !provisional;
   useEffect(() => {
-    if (!settled || node === null) return;
-    const box = node.getBoundingClientRect();
-    settle(box.width, box.height);
-  }, [settled, node, settle]);
+    const size = measured.current;
+    if (settled && size !== null && size.node === node && size.key === key) settle(size.width, size.height);
+  }, [settled, node, key, settle]);
 
-  // Content that is shorter now never reaches the reservation: drop it, and remember the new height.
   useEffect(() => {
     if (reserve === null || loading || node === null) return;
     const timer = window.setTimeout(() => {
-      const box = node.getBoundingClientRect();
+      const size = measured.current;
       setReserve(null);
-      if (!unsettled.current) rememberHeight(key, box.width, box.height);
+      if (!unsettled.current && size?.node === node && size.key === key && size.width > 0 && size.height > 0) {
+        rememberHeight(key, size.width, size.height);
+      }
     }, RESERVE_MS);
     return () => clearTimeout(timer);
-  }, [reserve, loading, node, key]);
+  }, [reserve, loading, node, key, setReserve]);
 
   return { content, minHeight: reserve ?? undefined };
 }

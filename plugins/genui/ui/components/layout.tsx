@@ -229,7 +229,8 @@ export function Divider() {
 export function Tabs({ props }: { props: Props }) {
   const id = useId();
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
+  const interactionScope = useRef<HTMLDivElement>(null);
+  const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>(interactionScope);
   const [selected, setSelected] = useState(0);
   const panels = nodes(props.children);
   const labels = list(props.labels).map(text);
@@ -247,7 +248,7 @@ export function Tabs({ props }: { props: Props }) {
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-3">
+    <div ref={interactionScope} className="flex min-w-0 flex-col gap-3">
       <div
         role="tablist"
         onKeyDown={onKeyDown}

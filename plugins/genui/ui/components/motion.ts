@@ -189,12 +189,7 @@ export function useEntrance<T extends Element>(entrance: Entrance): RefObject<T 
   return ref;
 }
 
-/** When the user last pressed a pointer or a key. */
-let lastInput = Number.NEGATIVE_INFINITY;
-for (const type of ["pointerdown", "keydown"] as const) {
-  addEventListener(type, () => (lastInput = performance.now()), { capture: true, passive: true });
-}
-/** A height change this soon after an input is the user's doing. */
+/** A height change this soon after input inside its interaction scope may animate. */
 const INPUT_WINDOW_MS = 1000;
 
 /** Height keyframes may end at `auto` only where keywords interpolate. */
@@ -211,7 +206,7 @@ export const SMOOTH_HEIGHT_CLASS = "[interpolate-size:allow-keywords]";
  * conversation under the reader for its whole duration. The animation ends at
  * `height: auto`, so the box keeps following its content afterwards.
  */
-export function useSmoothHeight<O extends HTMLElement, I extends HTMLElement>(): {
+export function useSmoothHeight<O extends HTMLElement, I extends HTMLElement>(interactionScope?: RefObject<HTMLElement | null>): {
   outer: RefObject<O | null>;
   inner: RefObject<I | null>;
 } {
@@ -221,12 +216,20 @@ export function useSmoothHeight<O extends HTMLElement, I extends HTMLElement>():
     const box = outer.current;
     const content = inner.current;
     if (!SMOOTH_HEIGHT || box === null || content === null) return;
-    let last = content.offsetHeight;
+    const scope = interactionScope?.current ?? box;
+    let lastInput = Number.NEGATIVE_INFINITY;
+    const onInput = () => { lastInput = performance.now(); };
+    scope.addEventListener("pointerdown", onInput, true);
+    scope.addEventListener("keydown", onInput, true);
+    let last: number | null = null;
     let animation: Animation | null = null;
-    const observer = new ResizeObserver(() => {
-      const next = content.offsetHeight;
-      const delta = next - last;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry === undefined) return;
+      const next = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+      const previous = last;
       last = next;
+      if (previous === null) return;
+      const delta = next - previous;
       if (delta === 0 || reducedMotion() || performance.now() - lastInput > INPUT_WINDOW_MS) {
         animation?.cancel();
         animation = null;
@@ -244,11 +247,13 @@ export function useSmoothHeight<O extends HTMLElement, I extends HTMLElement>():
         { duration: 420, easing: EASE_OUT_EXPO },
       );
     });
-    observer.observe(content);
+    observer.observe(content, { box: "border-box" });
     return () => {
+      scope.removeEventListener("pointerdown", onInput, true);
+      scope.removeEventListener("keydown", onInput, true);
       observer.disconnect();
       animation?.cancel();
     };
-  }, []);
+  }, [interactionScope]);
   return { outer, inner };
 }

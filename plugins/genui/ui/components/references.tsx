@@ -563,7 +563,8 @@ export function Hotspots({ props }: { props: Props }) {
   const [scrollTo, setScrollTo] = useState<{ readonly number: number } | null>(null);
   const [natural, setNatural] = useState<{ readonly url: string; readonly ratio: number | null } | null>(null);
   const rows = useRef(new Map<number, HTMLLIElement>());
-  const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
+  const interactionScope = useRef<HTMLDivElement>(null);
+  const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>(interactionScope);
 
   // A pin opens its row; bring the row's text into view once it is laid out.
   useEffect(() => {
@@ -663,7 +664,7 @@ export function Hotspots({ props }: { props: Props }) {
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-3" onKeyDown={onKeyDown}>
+    <div ref={interactionScope} className="flex min-w-0 flex-col gap-3" onKeyDown={onKeyDown}>
       {image}
       {viewer}
       {points.length === 0 ? null : (

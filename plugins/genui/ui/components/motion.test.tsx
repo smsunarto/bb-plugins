@@ -38,7 +38,7 @@ async function load(systemReduced = false): Promise<Motion> {
 }
 
 // jsdom has no Web Animations; an entrance that plays is recorded here.
-const animate = vi.fn(() => ({ cancel() {} }));
+const animate = vi.fn((_frames?: Keyframe[], _options?: KeyframeAnimationOptions) => ({ cancel() {}, playState: "running" }));
 let container: HTMLDivElement;
 let root: Root;
 
@@ -158,5 +158,53 @@ describe("the Animations setting", () => {
     expect(animate).not.toHaveBeenCalled();
     // CSS follows the system through motion-reduce: variants; the mark is only for the setting.
     expect(block.hasAttribute("data-genui-motion")).toBe(false);
+  });
+});
+
+describe("height changes", () => {
+  it("seeds from observed size and animates only input within its interaction scope", async () => {
+    vi.stubGlobal("CSS", { supports: () => true });
+    const callbacks: { target: Element; deliver: (height: number) => void }[] = [];
+    vi.stubGlobal("ResizeObserver", class implements ResizeObserver {
+      constructor(readonly callback: ResizeObserverCallback) {}
+      observe(target: Element) {
+        callbacks.push({ target, deliver: (height) => {
+          const size = { inlineSize: 400, blockSize: height };
+          this.callback([{ target, borderBoxSize: [size], contentBoxSize: [size], devicePixelContentBoxSize: [size], contentRect: new DOMRect(0, 0, 400, height) }], this);
+        } });
+      }
+      unobserve() {}
+      disconnect() {}
+    });
+    settings.set(ON);
+    const motion = await load();
+    const { useRef } = await import("react");
+    function Panel() {
+      const scope = useRef<HTMLDivElement>(null);
+      const { outer, inner } = motion.useSmoothHeight<HTMLDivElement, HTMLDivElement>(scope);
+      return <div ref={scope} {...motion.useMotionScope()}><button>Tab</button><div ref={outer} data-panel=""><div ref={inner}>Content</div></div></div>;
+    }
+    const read = vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 400, 200));
+    act(() => root.render(<Panel />));
+    expect(read).not.toHaveBeenCalled();
+    const deliver = callbacks[0]!.deliver;
+    act(() => deliver(100));
+    expect(animate).not.toHaveBeenCalled();
+    document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    act(() => deliver(150));
+    expect(animate).not.toHaveBeenCalled();
+    container.querySelector("button")!.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    act(() => deliver(200));
+    expect(animate).toHaveBeenCalledTimes(1);
+    expect(animate.mock.calls[0]?.[0]).toEqual([{ height: "150px", overflow: "clip" }, { height: "auto", overflow: "clip" }]);
+    read.mockReturnValue(new DOMRect(0, 0, 400, 175));
+    container.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    act(() => deliver(250));
+    expect(animate).toHaveBeenCalledTimes(2);
+    expect(animate.mock.calls[1]?.[0]?.[0]).toEqual({ height: "175px", overflow: "clip" });
+    act(() => settings.set(OFF));
+    act(() => deliver(300));
+    expect(animate).toHaveBeenCalledTimes(2);
+    read.mockRestore();
   });
 });
