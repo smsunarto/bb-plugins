@@ -321,9 +321,19 @@ test("an unregistered linked checkout shows its actual branch and commit without
   await runGit(main, ["commit", "--quiet", "--allow-empty", "-m", "chore: base"], signal);
   const isolated = join(scratch, "isolated-checkouts", "performance");
   await runGit(main, ["worktree", "add", "--quiet", "-b", "scott/performance", isolated], signal);
+  // `--author` outranks an inherited GIT_AUTHOR_NAME, and differs from the
+  // repository's user.name, so the author shown is the commit's own.
   await runGit(
     isolated,
-    ["commit", "--quiet", "--allow-empty", "-m", "perf: measure connection\n\nPreserve this body."],
+    [
+      "commit",
+      "--quiet",
+      "--allow-empty",
+      "--author",
+      "Linked Author <linked@example.com>",
+      "-m",
+      "perf: measure connection\n\nPreserve this body.",
+    ],
     signal,
   );
   const head = (await runGit(isolated, ["rev-parse", "HEAD"], signal)).trim();
@@ -338,7 +348,7 @@ test("an unregistered linked checkout shows its actual branch and commit without
     head: {
       commitId: head,
       message: "perf: measure connection\n\nPreserve this body.",
-      authorName: "Test Person",
+      authorName: "Linked Author",
       createdAt: (await runGit(isolated, ["show", "-s", "--format=%aI", "HEAD"], signal)).trim(),
     },
   });
