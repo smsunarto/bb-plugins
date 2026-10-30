@@ -333,6 +333,103 @@ describe("inbox families", () => {
     assert.equal(tree[0]?.shelf, "nextAction");
   });
 
+  it("shelves SlopCop's threads apart, after Waiting, with their subthreads", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "mine" }),
+        thread({ id: "busy", indicator: "runtime" }),
+        thread({ id: "review", originPluginId: "slopcop", latestAttentionAt: 900 }),
+        thread({ id: "helper", parentThreadId: "review", indicator: "runtime" }),
+        thread({ id: "pinned-review", originPluginId: "slopcop", isPinned: true }),
+        thread({ id: "snoozed-review", originPluginId: "slopcop" }),
+        thread({ id: "other-plugin", originPluginId: "html" }),
+      ],
+      (item) => (item.id === "snoozed-review" ? "snoozed" : "active"),
+    );
+    assert.deepEqual(
+      tree.map((node) => [node.thread.id, node.shelf]),
+      [
+        ["pinned-review", "pinned"],
+        ["mine", "nextAction"],
+        ["other-plugin", "nextAction"],
+        ["busy", "waiting"],
+        ["review", "slopcop"],
+        ["snoozed-review", "snoozed"],
+      ],
+    );
+    assert.deepEqual(
+      tree[4]?.children.map((node) => node.thread.id),
+      ["helper"],
+    );
+  });
+
+  it("leaves a SlopCop thread that needs the user in Next Action", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "asking", originPluginId: "slopcop", hasPendingInteraction: true }),
+        thread({ id: "running", originPluginId: "slopcop", indicator: "runtime" }),
+      ],
+      active,
+    );
+    assert.deepEqual(
+      tree.map((node) => [node.thread.id, node.shelf]),
+      [
+        ["asking", "nextAction"],
+        ["running", "slopcop"],
+      ],
+    );
+  });
+
+  it("counts a SlopCop thread nested under the user's work like any child", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "idle-root" }),
+        thread({
+          id: "working-review",
+          parentThreadId: "idle-root",
+          originPluginId: "slopcop",
+          indicator: "runtime",
+        }),
+        thread({ id: "busy-root", indicator: "runtime" }),
+        thread({
+          id: "asking-review",
+          parentThreadId: "busy-root",
+          originPluginId: "slopcop",
+          hasPendingInteraction: true,
+        }),
+      ],
+      active,
+    );
+    assert.deepEqual(
+      tree.map((node) => [node.thread.id, node.shelf]),
+      [
+        ["busy-root", "nextAction"],
+        ["idle-root", "waiting"],
+      ],
+    );
+  });
+
+  it("lifts a SlopCop review to the top of its shelf when it finishes", () => {
+    const arrivals = createShelfArrivals();
+    const build = (now: number, aWorking: boolean) =>
+      buildInboxTree(
+        [
+          thread({
+            id: "a",
+            originPluginId: "slopcop",
+            indicator: aWorking ? "runtime" : "none",
+            updatedAt: 100,
+          }),
+          thread({ id: "b", originPluginId: "slopcop", updatedAt: 200, latestAttentionAt: 200 }),
+        ],
+        active,
+        "",
+        { arrivals, now },
+      ).map((node) => node.thread.id);
+    assert.deepEqual(build(1_000, true), ["b", "a"]);
+    assert.deepEqual(build(2_000, false), ["a", "b"]);
+  });
+
   it("keeps a family pinned when a descendant is pinned", () => {
     const tree = buildInboxTree(
       [

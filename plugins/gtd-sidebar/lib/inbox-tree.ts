@@ -2,7 +2,10 @@ import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { activeSectionFor, effectiveParentThreadId } from "./inbox.ts";
 
 export type InboxLifecycle = "active" | "snoozed" | "settled";
-export type InboxShelf = "pinned" | "nextAction" | "waiting" | "snoozed" | "settled";
+export type InboxShelf = "pinned" | "nextAction" | "waiting" | "slopcop" | "snoozed" | "settled";
+
+/** The plugin id bb stamps on threads SlopCop dispatches for its GitHub rules. */
+const SLOPCOP_PLUGIN_ID = "slopcop";
 
 export interface InboxThreadNode {
   thread: PluginSidebarThread;
@@ -218,6 +221,21 @@ function aggregateFamilies(roots: readonly InboxThreadNode[]): void {
   }
 }
 
+/**
+ * SlopCop's automated reviews and triages share one shelf, apart from the
+ * user's own work, whether they run or rest. Only the family's root decides:
+ * a SlopCop thread nested under the user's work still counts toward that
+ * family like any child. A raised hand stays in Next Action, where a folded
+ * shelf cannot hide it.
+ */
+function rootShelf(node: InboxThreadNode): InboxShelf {
+  if (node.thread.originPluginId !== SLOPCOP_PLUGIN_ID) return node.shelf;
+  if (node.shelf === "waiting") return "slopcop";
+  return node.shelf === "nextAction" && statusPriority(node.statusThread) < 5
+    ? "slopcop"
+    : node.shelf;
+}
+
 /** The earlier of two pin sort keys; a null loses to any known key. */
 function minPinOrderKey(left: string | null, right: string | null): string | null {
   if (left === null) return right;
@@ -251,8 +269,9 @@ function familyComparator() {
     pinned: 0,
     nextAction: 1,
     waiting: 2,
-    snoozed: 3,
-    settled: 4,
+    slopcop: 3,
+    snoozed: 4,
+    settled: 5,
   };
   // One comparator for every shelf: the family's shelf, then its place on
   // it — Pinned follows bb's own pin order, the rest take most recent
@@ -305,6 +324,7 @@ export function buildInboxTree(
     else roots.push(node);
   }
   aggregateFamilies(roots);
+  for (const root of roots) root.shelf = rootShelf(root);
   return roots.sort(familyComparator());
 }
 

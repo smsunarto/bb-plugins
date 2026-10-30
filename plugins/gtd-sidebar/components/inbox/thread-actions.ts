@@ -1,6 +1,6 @@
 import type { IconName } from "../ui/icon";
 
-export type ActiveThreadShelf = "pinned" | "nextAction" | "waiting";
+export type ActiveThreadShelf = "pinned" | "nextAction" | "waiting" | "slopcop";
 
 /** The snooze's name in menus and on the row's button. The toast states the time. */
 export const SNOOZE_TOMORROW_LABEL = "Snooze until tomorrow";

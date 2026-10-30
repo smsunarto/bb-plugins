@@ -201,12 +201,13 @@ function InboxList({
       pinned: groupsFor("pinned"),
       nextAction: groupsFor("nextAction"),
       waiting: groupsFor("waiting"),
+      slopcop: groupsFor("slopcop"),
       snoozed: groupsFor("snoozed"),
       settled: groupsFor("settled"),
     };
   }, [shelves, orderedProjectIds, personalProjectIds]);
-  const { pinned, nextAction, waiting } = groupedShelves;
-  const { shelfViews, windowLayout, waitingOpen } = useShelfWindow(
+  const { pinned, nextAction, waiting, slopcop } = groupedShelves;
+  const { shelfViews, windowLayout, waitingOpen, slopcopOpen } = useShelfWindow(
     groupedShelves,
     grouped,
     searching,
@@ -222,6 +223,7 @@ function InboxList({
           ["pinned", pinned],
           ["nextAction", nextAction],
           ["waiting", waitingOpen ? waiting : []],
+          ["slopcop", slopcopOpen ? slopcop : []],
         ] as const
       ).flatMap(([shelf, groups]) =>
         groups.flatMap((group) =>
@@ -230,7 +232,17 @@ function InboxList({
             : group.rows.map((row) => ({ shelf, row })),
         ),
       ),
-    [pinned, nextAction, waiting, waitingOpen, searching, grouped, isGroupCollapsed],
+    [
+      pinned,
+      nextAction,
+      waiting,
+      waitingOpen,
+      slopcop,
+      slopcopOpen,
+      searching,
+      grouped,
+      isGroupCollapsed,
+    ],
   );
   // A machine scope carries into the composer, which preselects that machine
   // for the new environment when it can host one.
@@ -597,12 +609,15 @@ function useShelfWindow(
 ) {
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
-  // Waiting is the one active shelf worth folding away: its rows are work you
-  // cannot act on, and they can outnumber Next Action several times over.
+  // Waiting and SlopCop are the active shelves worth folding away: Waiting's
+  // rows are work you cannot act on, SlopCop's are reviews no one asked for
+  // in this list, and either can outnumber Next Action several times over.
   const [showWaiting, setShowWaiting] = useState(true);
+  const [showSlopcop, setShowSlopcop] = useState(true);
   // Pinned and Next Action always show; the rest fold, and a search opens
   // them all.
   const waitingOpen = showWaiting || searching;
+  const slopcopOpen = showSlopcop || searching;
   const snoozedOpen = showSnoozed || searching;
   const settledOpen = showSettled || searching;
   // Every shelf in the order it draws.
@@ -613,6 +628,11 @@ function useShelfWindow(
       shelf: "waiting",
       label: "Waiting",
       fold: { expanded: waitingOpen, onToggle: () => setShowWaiting((open) => !open) },
+    },
+    {
+      shelf: "slopcop",
+      label: "SlopCop",
+      fold: { expanded: slopcopOpen, onToggle: () => setShowSlopcop((open) => !open) },
     },
     {
       shelf: "snoozed",
@@ -632,15 +652,25 @@ function useShelfWindow(
           { shelf: "pinned", expanded: true, groups: groupedShelves.pinned },
           { shelf: "nextAction", expanded: true, groups: groupedShelves.nextAction },
           { shelf: "waiting", expanded: waitingOpen, groups: groupedShelves.waiting },
+          { shelf: "slopcop", expanded: slopcopOpen, groups: groupedShelves.slopcop },
           { shelf: "snoozed", expanded: snoozedOpen, groups: groupedShelves.snoozed },
           { shelf: "settled", expanded: settledOpen, groups: groupedShelves.settled },
         ],
         grouped,
         (key) => searching || !isGroupCollapsed(key),
       ),
-    [groupedShelves, waitingOpen, snoozedOpen, settledOpen, grouped, searching, isGroupCollapsed],
+    [
+      groupedShelves,
+      waitingOpen,
+      slopcopOpen,
+      snoozedOpen,
+      settledOpen,
+      grouped,
+      searching,
+      isGroupCollapsed,
+    ],
   );
-  return { shelfViews, windowLayout, waitingOpen };
+  return { shelfViews, windowLayout, waitingOpen, slopcopOpen };
 }
 
 /**
@@ -951,6 +981,7 @@ function useInboxTree(
       pinned: rows("pinned"),
       nextAction: rows("nextAction"),
       waiting: rows("waiting"),
+      slopcop: rows("slopcop"),
       snoozed: rows("snoozed"),
       settled: rows("settled"),
     };
