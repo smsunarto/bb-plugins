@@ -182,3 +182,110 @@ test("a failed scoped read propagates cancellation and never falls back to other
     await harness.lifecycle.dispose();
   }
 });
+
+test("a group keeps exact checkout identities and accounts in one shipping card", async () => {
+  const branch = UNPUBLISHED.branches[1]!;
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "code-review",
+    sdk: { plugins: fakeGitButler({ unpublishedBranchesAt: () => ({ branches: [branch] }) }) },
+  });
+  await plugin(bb);
+  try {
+    const result = await harness.behavior.callAgentTool("code_review_share_changes", {
+      targets: [
+        { kind: "branch", branch: branch.branch, hostId: branch.hostId, path: branch.path },
+        { kind: "pr", reference: "https://github.com/acme/api/pull/42", account: "scott" },
+        { kind: "pr", reference: "acme/web#7" },
+      ],
+    });
+    expect(typeof result).toBe("string");
+    const encoded = String(result).match(/^::code-review\{targets="([^"]+)"\}$/)?.[1];
+    expect(encoded).toBeDefined();
+    const group = JSON.parse(decodeURIComponent(encoded!));
+    expect(group).toEqual([
+      {
+        branch: branchId(branch.hostId, branch.path, branch.branch),
+        base: branch.base,
+        head: branch.head,
+        branchName: branch.branch,
+        hostId: branch.hostId,
+        path: branch.path,
+      },
+      { pr: "acme/api#42", account: "scott" },
+      { pr: "acme/web#7" },
+    ]);
+    const prompt = await harness.behavior.callRpc("shipGroupPrompt", { targets: group });
+    expect(prompt).toContain(branch.path);
+    expect(prompt).toContain(branch.head);
+    expect(prompt).toContain("acme/web#7");
+    expect(prompt).toContain("review the new changes before shipping");
+    await expect(
+      harness.behavior.callAgentTool("code_review_share_changes", {
+        targets: [
+          { kind: "pr", reference: "acme/api#42" },
+          { kind: "pr", reference: "ACME/API#42" },
+        ],
+      }),
+    ).rejects.toThrow("distinct targets");
+    await expect(
+      harness.behavior.callAgentTool("code_review_share_changes", {
+        targets: [
+          { kind: "pr", reference: "acme/api#42", account: "scott" },
+          { kind: "pr", reference: "acme/api#42", account: "other" },
+        ],
+      }),
+    ).rejects.toThrow("distinct targets");
+    await expect(
+      harness.behavior.callAgentTool("code_review_share_changes", {
+        target: { kind: "pr", reference: "acme/api#42" },
+        targets: [
+          { kind: "pr", reference: "acme/api#1" },
+          { kind: "pr", reference: "acme/api#2" },
+        ],
+      }),
+    ).rejects.toThrow();
+    await expect(
+      harness.behavior.callAgentTool("code_review_share_changes", {
+        targets: [
+          { kind: "pr", reference: "acme/api#42" },
+          { kind: "pr", reference: "invalid" },
+        ],
+      }),
+    ).rejects.toThrow("GitHub pull request");
+  } finally {
+    await harness.lifecycle.dispose();
+  }
+});
+
+test("shipping refuses a branch whose displayed ID disagrees with its checkout", async () => {
+  const branch = UNPUBLISHED.branches[1]!;
+  const { bb, harness } = createFakePluginHost({ pluginId: "code-review" });
+  await plugin(bb);
+  try {
+    await expect(
+      harness.behavior.callRpc("shipGroupPrompt", {
+        targets: [
+          {
+            branch: branchId(branch.hostId, branch.path, branch.branch),
+            base: branch.base,
+            head: branch.head,
+            branchName: "main",
+            hostId: branch.hostId,
+            path: "/another/repository",
+          },
+          { pr: "acme/api#42" },
+        ],
+      }),
+    ).rejects.toThrow("does not match");
+    await expect(
+      harness.behavior.callRpc("shipGroupPrompt", {
+        targets: [
+          { pr: "acme/api#42", account: "scott" },
+          { pr: "https://github.com/acme/api/pull/42", account: "other" },
+        ],
+      }),
+    ).rejects.toThrow("rpc input validation failed");
+  } finally {
+    await harness.lifecycle.dispose();
+  }
+});

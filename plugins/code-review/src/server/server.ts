@@ -50,6 +50,7 @@ import { setViewed, setViewedContract } from "./rpc/set-viewed.ts";
 import { startFix, startFixContract } from "./rpc/start-fix.ts";
 import { startLocalReview, startLocalReviewContract } from "./rpc/start-local-review.ts";
 import { startReview, startReviewContract } from "./rpc/start-review.ts";
+import { shipGroupPrompt, shipGroupPromptContract } from "./rpc/ship-group-prompt.ts";
 import { status, statusContract } from "./rpc/status.ts";
 import { stopPrWatch, stopPrWatchContract } from "./rpc/stop-pr-watch.ts";
 import { submitReview, submitReviewContract } from "./rpc/submit-review.ts";
@@ -85,6 +86,7 @@ export const contract = defineRpcContract({
   localBranches: localBranchesContract,
   localChanges: localChangesContract,
   sharedComparison: sharedComparisonContract,
+  shipGroupPrompt: shipGroupPromptContract,
   branchActivity: branchActivityContract,
   branchReviewed: branchReviewedContract,
   setBranchViewed: setBranchViewedContract,
@@ -150,6 +152,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     localBranches: () => localBranches(ctx),
     localChanges: (input) => localChanges(ctx, input),
     sharedComparison: (input) => sharedComparison(ctx, input),
+    shipGroupPrompt,
     branchActivity: (input) => branchActivity(ctx, input),
     branchReviewed: (input) => branchReviewed(ctx, input),
     setBranchViewed: (input) => setBranchViewed(ctx, input),

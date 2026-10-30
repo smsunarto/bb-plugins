@@ -1,12 +1,11 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef } from "react";
 import { z } from "zod";
+import { reviewAttributesSchema, type ReviewGroup } from "../shared/review-group.ts";
 import { QueryClientProvider, useMutation, useMutationState } from "@tanstack/react-query";
 import { queryClient } from "./query.ts";
 import { experimental_Icon as Icon, useBbNavigate, useSdk } from "@get-bb/plugin-sdk/app";
 import type { PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
 import {
-  accountSchema,
-  branchIdSchema,
   branchSubPath,
   parsePrReference,
   prKey,
@@ -20,27 +19,32 @@ import { Button } from "./components/ui/button.tsx";
 import { PANEL_PATH, shortSha } from "./format.ts";
 import { useLocalBranch } from "./local-branch-query.ts";
 import { errorText } from "./notice.tsx";
-import { useRpcQuery } from "./rpc.ts";
+import { useCodeReviewRpc, useRpcQuery } from "./rpc.ts";
 import { useReconcile } from "./sync-state.tsx";
+
+const GroupContext = createContext(false);
 
 const ShipContext = createContext<ReturnType<typeof useShipMutation> | null>(null);
 
 const EmbedIdentityContext = createContext("");
 
-function useShipMutation(threadId: string, identity: string) {
+function useShipMutation(threadId: string, identity: string, targets?: ReviewGroup) {
   const sdk = useSdk();
+  const rpc = useCodeReviewRpc();
   const mutationKey = ["embed-ship", identity];
   const mutation = useMutation(
     {
       mutationKey,
       // Timeline virtualization can unmount a card while its send is in flight.
       gcTime: Infinity,
-      mutationFn: () =>
-        sdk.threads.send({
+      mutationFn: async () => {
+        const text = targets ? await rpc.call("shipGroupPrompt", { targets }) : "ship it";
+        return sdk.threads.send({
           threadId,
           mode: "queue-if-active",
-          input: [{ type: "text", text: "ship it", mentions: [] }],
-        }),
+          input: [{ type: "text", text, mentions: [] }],
+        });
+      },
       retry: false,
     },
     queryClient,
@@ -82,21 +86,9 @@ const REVIEW_QUERY = {
   refetchOnReconnect: "always",
 } as const;
 
-const sha = z.string().regex(/^[0-9a-f]{40,64}$/);
-const attributesSchema = z.union([
-  z.strictObject({ branch: branchIdSchema, base: sha.optional(), head: sha.optional() }),
-  z.strictObject({
-    pr: z
-      .string()
-      .transform(parsePrReference)
-      .refine((ref) => ref !== null),
-    account: accountSchema.optional(),
-  }),
-]);
-
 export function ReviewEmbed({ attributes, source, message }: PluginMessageDirectiveProps) {
   useReconcile();
-  const parsed = attributesSchema.safeParse(attributes);
+  const parsed = reviewAttributesSchema.safeParse(attributes);
   if (!parsed.success) return <code>{source}</code>;
   const identity = JSON.stringify([message.threadId, message.id, parsed.data]);
   return (
@@ -117,14 +109,20 @@ function EmbedSession({
   threadId,
 }: {
   identity: string;
-  target: z.output<typeof attributesSchema>;
+  target: z.output<typeof reviewAttributesSchema>;
   threadId: string;
 }) {
-  const ship = useShipMutation(threadId, identity);
+  const ship = useShipMutation(
+    threadId,
+    identity,
+    "targets" in target ? target.targets : undefined,
+  );
   return (
     <EmbedIdentityContext value={identity}>
       <ShipContext.Provider value={ship}>
-        {"branch" in target ? (
+        {"targets" in target ? (
+          <GroupEmbed targets={target.targets} threadId={threadId} />
+        ) : "branch" in target ? (
           <BranchEmbed
             id={target.branch}
             base={target.base}
@@ -137,6 +135,60 @@ function EmbedSession({
       </ShipContext.Provider>
     </EmbedIdentityContext>
   );
+}
+
+function GroupEmbed({ targets, threadId }: { targets: ReviewGroup; threadId: string }) {
+  const ship = useContext(ShipContext);
+  const identity = useContext(EmbedIdentityContext);
+  const entrance = useEmbedEntrance(identity);
+  return (
+    <section
+      ref={entrance}
+      aria-label="Review group"
+      className="not-prose my-3 w-full max-w-xl overflow-hidden rounded-lg border border-border bg-background text-xs text-foreground"
+    >
+      <div className="flex items-center gap-2 border-b border-border p-3 font-medium">
+        <Icon name="GitPullRequest" className="size-4 text-muted-foreground" aria-hidden />
+        Review {targets.length} changes
+      </div>
+      <GroupContext value={true}>
+        <ShipContext.Provider value={null}>
+          <div className="px-3">
+            {targets.map((target) =>
+              "branch" in target ? (
+                <BranchEmbed
+                  key={target.branch}
+                  id={target.branch}
+                  base={target.base}
+                  head={target.head}
+                  threadId={threadId}
+                />
+              ) : (
+                <GroupPrEmbed
+                  key={`${target.account ?? ""}:${target.pr}`}
+                  pr={target.pr}
+                  account={target.account}
+                />
+              ),
+            )}
+          </div>
+        </ShipContext.Provider>
+      </GroupContext>
+      <p className="m-0 px-3 pb-2 text-[11px] text-muted-foreground">
+        The agent checks current revisions and readiness before shipping.
+      </p>
+      <div className="flex flex-wrap justify-end gap-2 border-t border-border p-3">
+        <ShipContext.Provider value={ship}>
+          <ShipItButton label={`Ship all ${targets.length}`} />
+        </ShipContext.Provider>
+      </div>
+    </section>
+  );
+}
+
+function GroupPrEmbed({ pr, account }: { pr: string; account?: string }) {
+  const ref = parsePrReference(pr);
+  return ref ? <PrEmbed refValue={ref} account={account} /> : null;
 }
 
 /** Data changes update one card rather than swapping loading/fallback/ready component trees. */
@@ -271,11 +323,13 @@ function originalCardModel(data: BranchCardData): CardModel {
 type BranchCheck = { pending: boolean; retry: () => void };
 
 function PrEmbed({ refValue, account: requested }: { refValue: PrRef; account?: string }) {
+  const grouped = useContext(GroupContext);
+  const reviewQuery = grouped ? { ...REVIEW_QUERY, refetchInterval: 120_000 } : REVIEW_QUERY;
   const status = useRpcQuery("status", null, { enabled: !requested, staleTime: 5 * 60_000 });
   const account = requested ?? (status.data?.ok ? status.data.login : undefined);
   const input = account ? { account, ref: refValue } : null;
-  const pr = useRpcQuery("pullRequest", input, { ...REVIEW_QUERY, enabled: !!account });
-  const changed = useRpcQuery("changedFiles", input, { ...REVIEW_QUERY, enabled: !!account });
+  const pr = useRpcQuery("pullRequest", input, { ...reviewQuery, enabled: !!account });
+  const changed = useRpcQuery("changedFiles", input, { ...reviewQuery, enabled: !!account });
   const issue = queryIssue(pr, changed) ?? prRevisionIssue(pr.data, changed.data);
   const accountIssue = status.isError
     ? errorText(status.error)
@@ -335,7 +389,8 @@ function ReviewCard({
 }) {
   const navigate = useBbNavigate();
   const identity = useContext(EmbedIdentityContext);
-  const entrance = useEmbedEntrance(identity);
+  const grouped = useContext(GroupContext);
+  const entrance = useEmbedEntrance(identity, !grouped);
   const count = files?.filter((file) => file.viewed === "viewed").length ?? 0;
   const total = files?.length ?? 0;
   const labels = reviewLabels({ count, total, loading, issue });
@@ -441,7 +496,7 @@ function useShipFeedback(ship: ReturnType<typeof useShipMutation> | null) {
   return { feedback, send };
 }
 
-function ShipItButton() {
+function ShipItButton({ label = "Ship it" }: { label?: string }) {
   const ship = useContext(ShipContext);
   const { feedback, send } = useShipFeedback(ship);
   if (!ship) return null;
@@ -457,13 +512,7 @@ function ShipItButton() {
         }}
       >
         <span ref={feedback}>
-          {ship.isPending
-            ? "Sending…"
-            : ship.isSuccess
-              ? ship.queued
-                ? "Queued"
-                : "Sent"
-              : "Ship it"}
+          {ship.isPending ? "Sending…" : ship.isSuccess ? (ship.queued ? "Queued" : "Sent") : label}
         </span>
         <Icon name={ship.isSuccess ? "Check" : "Send"} className="size-3" aria-hidden />
       </Button>
@@ -535,13 +584,13 @@ function fade(element: HTMLElement | null) {
   });
 }
 
-function useEmbedEntrance(identity: string) {
+function useEmbedEntrance(identity: string, enabled = true) {
   const element = useRef<HTMLElement>(null);
   useLayoutEffect(() => {
-    if (entered.has(identity)) return;
+    if (!enabled || entered.has(identity)) return;
     entered.add(identity);
     const animation = fade(element.current);
     return () => animation?.cancel();
-  }, [identity]);
+  }, [identity, enabled]);
   return element;
 }

@@ -96,6 +96,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "setReviewInstructions",
     "setViewed",
     "sharedComparison",
+    "shipGroupPrompt",
     "startFix",
     "startLocalReview",
     "startReview",

@@ -950,3 +950,115 @@ test("paused discovery keeps the checking footer instead of reporting an unavail
     onlineManager.setOnline(true);
   }
 });
+
+test("a mixed group has independent review links and one duplicate-safe shipping request", async () => {
+  const targets = [
+    {
+      branch: localBranch.id,
+      base: localBranch.base,
+      head: localBranch.head,
+      branchName: localBranch.branch,
+      hostId: localBranch.hostId,
+      path: localBranch.path,
+    },
+    { pr: "owner/repo#7", account: "scott" },
+    { pr: "owner/other#8", account: "other-account" },
+  ];
+  const shipRequest = `Ship the listed changes after checking revisions:\n${JSON.stringify(targets)}`;
+  const attributes = { targets: encodeURIComponent(JSON.stringify(targets)) };
+  const sends: unknown[] = [];
+  let finish: (() => void) | undefined;
+  const send: PluginBrowserBbSdk["threads"]["send"] = async (input) => {
+    sends.push(input);
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    return { ok: true, delivery: "sent" };
+  };
+  const promptRpc = { shipGroupPrompt: () => shipRequest };
+  let slot = await card(attributes, [], promptRpc, send);
+  try {
+    await slot.findByText("Review 3 changes");
+    expect(slot.queryByRole("button", { name: "Ship it" })).toBeNull();
+    await waitFor(() =>
+      expect(slot.getAllByRole("button", { name: "Review changes" }).length).toBe(3),
+    );
+    fireEvent.click(slot.getAllByRole("button", { name: "Review changes" })[2]!);
+    expect(slot.navigateCalls.at(-1)).toMatchObject({
+      method: "toPluginPanel",
+      options: { subPath: expect.stringContaining("other") },
+    });
+    fireEvent.click(slot.getByRole("button", { name: "Ship all 3" }));
+    await slot.findByRole("button", { name: "Sending…" });
+    slot.lifecycle.unmount();
+    slot = await card(attributes, [], promptRpc, send);
+    const pending = await slot.findByRole("button", { name: "Sending…" });
+    expect(pending.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(pending);
+    expect(sends).toEqual([
+      {
+        threadId: "thread-1",
+        mode: "queue-if-active",
+        input: [{ type: "text", text: shipRequest, mentions: [] }],
+      },
+    ]);
+    finish?.();
+    await slot.findByRole("button", { name: "Sent" });
+  } finally {
+    finish?.();
+    slot.lifecycle.unmount();
+  }
+});
+
+test("malformed and oversized review groups render as source without an action", async () => {
+  for (const value of [
+    "%invalid",
+    JSON.stringify([]),
+    JSON.stringify({
+      targets: Array.from({ length: 26 }, () => ({ pr: "owner/repo#7" })),
+      shipRequest: "ship it",
+    }),
+  ]) {
+    const slot = await card({ targets: value });
+    try {
+      expect(slot.getByText("::code-review{invalid}")).toBeTruthy();
+      expect(slot.queryByRole("button")).toBeNull();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  }
+});
+
+test("a group never sends when its prompt cannot be built, and retries with the displayed targets", async () => {
+  const targets = [{ pr: "owner/api#1" }, { pr: "owner/web#2", account: "scott" }];
+  let fail = true;
+  const sends: unknown[] = [];
+  const slot = await card(
+    { targets: encodeURIComponent(JSON.stringify(targets)) },
+    [],
+    {
+      shipGroupPrompt: () => {
+        if (fail) throw new Error("Server offline");
+        return "Ship these two changes";
+      },
+    },
+    async (message) => {
+      sends.push(message);
+      return { ok: true, delivery: "sent" };
+    },
+  );
+  try {
+    fireEvent.click(await slot.findByRole("button", { name: "Ship all 2" }));
+    await slot.findByText("Could not send: Server offline");
+    expect(sends).toHaveLength(0);
+    expect(slot.rpcCalls.find((call) => call.method === "shipGroupPrompt")?.input).toEqual({
+      targets,
+    });
+    fail = false;
+    fireEvent.click(slot.getByRole("button", { name: "Ship all 2" }));
+    await slot.findByRole("button", { name: "Sent" });
+    expect(sends).toHaveLength(1);
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
