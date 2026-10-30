@@ -476,13 +476,6 @@
     min-width: calc(3.5rem + 32px);
   }
 
-  /* The speed bolt and its gap. */
-  [data-t3-composer][data-promptbox]
-    [data-t3-composer-controls]
-    button[data-t3-model-picker-trigger]:has([data-t3-model-picker-speed]) {
-    min-width: calc(3.5rem + 52px);
-  }
-
   [data-t3-composer][data-promptbox] [data-t3-permission] button {
     padding: 0 6px;
   }
@@ -493,7 +486,7 @@
   [data-t3-composer][data-promptbox]
     [data-t3-model-picker-trigger]
     > span
-    > :not([data-t3-model-picker-label], [data-t3-model-picker-speed]) {
+    > :not([data-t3-model-picker-label]) {
     display: none;
   }
 
@@ -507,12 +500,6 @@
     [data-t3-composer-controls]
     button[data-t3-model-picker-trigger] {
     min-width: calc(3.5rem + 8px);
-  }
-
-  [data-t3-composer][data-promptbox]
-    [data-t3-composer-controls]
-    button[data-t3-model-picker-trigger]:has([data-t3-model-picker-speed]) {
-    min-width: calc(3.5rem + 28px);
   }
 }
 
@@ -809,4 +796,38 @@
   color: color-mix(in srgb, var(--foreground) 40%, transparent);
   font-size: 12px;
   font-weight: 400;
+}
+
+/* BB's model picker, mounted out of sight while the effort panel reaches Daybreak through
+   it (bb-picker-driver.ts). */
+[data-t3-bb-picker-host] {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* BB's popover is modal and turns pointers off everywhere else while it is open. During a
+   drive the panel and page stay clickable; a click closes BB's popover, which ends the drive. */
+[data-t3-driving-bb-picker] body,
+[data-t3-driving-bb-picker] [data-t3-composer-menu] {
+  pointer-events: auto !important;
+}
+
+/* While the panel drives BB's picker, its popover, or on a phone its drawer and the
+   drawer's backdrop, opens and closes unseen. */
+[data-t3-driving-bb-picker]
+  [data-radix-popper-content-wrapper]:not(:has([data-t3-composer-menu], [role="tooltip"])),
+[data-t3-driving-bb-picker] [data-persistent-drawer-content]:not(:has([data-t3-composer-menu])),
+[data-t3-driving-bb-picker]
+  [data-persistent-drawer-backdrop]:not(
+    :has(+ [data-persistent-drawer-content] [data-t3-composer-menu])
+  ) {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }

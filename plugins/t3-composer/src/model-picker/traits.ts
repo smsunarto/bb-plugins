@@ -14,10 +14,20 @@ export type SpeedTrait =
   /** Several tiers: a "Speed" choice starting at Normal. */
   | { kind: "select"; options: TraitOption[]; current: string };
 
+/** An on/off agent option the user can switch, such as Codex's Daybreak. */
+export interface AgentSwitchTrait {
+  id: string;
+  label: string;
+  description?: string;
+}
+
 export interface Traits {
   effort: { options: TraitOption[]; current: string | null } | null;
   speed: SpeedTrait | null;
+  daybreak: AgentSwitchTrait | null;
 }
+
+export const DAYBREAK_OPTION_ID = "daybreak";
 
 export const DEFAULT_SERVICE_TIER = "default";
 
@@ -27,7 +37,7 @@ export function buildTraits(
   model: CatalogModel | undefined,
   selection: ComposerSelection,
 ): Traits {
-  if (!model) return { effort: null, speed: null };
+  if (!model) return { effort: null, speed: null, daybreak: null };
   const levelLabels = new Map((provider?.reasoningLevels ?? []).map((level) => [level.id, level]));
   const effortOptions = model.supportedReasoningEfforts.map((effort) => {
     const declared = levelLabels.get(effort.reasoningEffort);
@@ -58,6 +68,18 @@ export function buildTraits(
         ? { options: effortOptions, current: selection.reasoningLevel ?? null }
         : null,
     speed,
+    daybreak: agentSwitch(model, DAYBREAK_OPTION_ID),
+  };
+}
+
+/** The model's on/off option by id, unless the model fixes its value. */
+function agentSwitch(model: CatalogModel, id: string): AgentSwitchTrait | null {
+  const option = model.sessionOptions?.find((candidate) => candidate.id === id);
+  if (option?.type !== "boolean" || option.fixed === true) return null;
+  return {
+    id: option.id,
+    label: option.label,
+    ...(option.description ? { description: option.description } : {}),
   };
 }
 

@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { useState } from "react";
+import { createPortal } from "react-dom";
 import { fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -226,6 +228,44 @@ describe("T3 composer SDK integration", () => {
   });
 });
 
+/** BB's picker as the driver sees it: a dialog trigger and a popover with a Daybreak switch. */
+function FakeBbPicker(props: { withSwitch?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [on, setOn] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? "fake-bb-popover" : undefined}
+        onClick={() => setOpen(!open)}
+      >
+        BB picker
+      </button>
+      {open
+        ? createPortal(
+            <div id="fake-bb-popover">
+              <div role="option" aria-selected="true">
+                GPT-6-Luna
+              </div>
+              {props.withSwitch === false ? null : (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="Daybreak"
+                  aria-checked={on}
+                  onClick={() => setOn(!on)}
+                />
+              )}
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
+  );
+}
+
 const PROVIDERS = [
   {
     id: "claude-code",
@@ -278,6 +318,9 @@ const MODELS: Record<string, object[]> = {
       ],
     }),
     catalogModel("gpt-6-luna", "GPT-6-Luna", {
+      sessionOptions: [{ id: "daybreak", label: "Daybreak", type: "boolean", value: false }],
+    }),
+    catalogModel("gpt-5.6-luna", "GPT-5.6-Luna", {
       sessionOptions: [{ id: "daybreak", label: "Daybreak", type: "boolean", value: false }],
     }),
   ],
@@ -419,8 +462,8 @@ describe("T3 Code model picker", () => {
       );
       fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
       const slider = await slot.findByRole("slider", { name: "Effort" });
-      // After a pointer open the menu has focus; Right reaches the slider, and Down from the
-      // slider reaches the reset button.
+      // After a pointer open the menu has focus; Right reaches the slider, and Up from the
+      // slider reaches the header's last button, reset.
       await waitFor(() => expect(document.activeElement?.getAttribute("role")).toBe("menu"));
       fireEvent.keyDown(document.activeElement!, { key: "ArrowRight" });
       expect(document.activeElement).toBe(slider);
@@ -428,7 +471,7 @@ describe("T3 Code model picker", () => {
       await waitFor(() =>
         expect(slot.composer.selections.at(-1)).toMatchObject({ reasoningLevel: "max" }),
       );
-      fireEvent.keyDown(document.activeElement!, { key: "ArrowDown" });
+      fireEvent.keyDown(document.activeElement!, { key: "ArrowUp" });
       const reset = await slot.findByRole("menuitem", { name: "Reset effort to High" });
       expect(document.activeElement).toBe(reset);
       // Reset hides once the default applies, so it hands focus back to the slider first.
@@ -442,20 +485,72 @@ describe("T3 Code model picker", () => {
     }
   });
 
-  it("cycles the speed from the bolt beside the model search", async () => {
+  it("cycles the speed from the bolt in the effort panel", async () => {
+    window.PointerEvent ??= class extends MouseEvent {} as typeof PointerEvent;
     const { slot } = await mountComposer({}, undefined, pickerOptions(OPUS_HIGH));
     try {
-      await openModelPicker(slot);
-      fireEvent.click(slot.getByRole("button", { name: /^Speed: Normal/ }));
+      const traits = await slot.findByRole("button", { name: "Effort: High" });
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
+      );
+      fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
+      fireEvent.click(await slot.findByRole("menuitem", { name: /^Speed: Normal/ }));
       await waitFor(() =>
         expect(slot.composer.selections.at(-1)).toMatchObject({ serviceTier: "fast" }),
       );
-      // The picker stays open, the bolt now reads Fast, and the model pill names the speed.
-      expect(await slot.findByRole("button", { name: "Opus 5.5 · Fast" })).toBeTruthy();
-      fireEvent.click(await slot.findByRole("button", { name: /^Speed: Fast/ }));
+      // The panel stays open, the bolt now reads Fast, and the effort pill names the speed.
+      expect(await slot.findByRole("button", { name: "Effort: High · Fast" })).toBeTruthy();
+      fireEvent.click(await slot.findByRole("menuitem", { name: /^Speed: Fast/ }));
       await waitFor(() =>
         expect(slot.composer.selections.at(-1)).toMatchObject({ serviceTier: "default" }),
       );
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("switches Daybreak through BB's hidden picker", async () => {
+    window.PointerEvent ??= class extends MouseEvent {} as typeof PointerEvent;
+    const { slot } = await mountComposer(
+      { executionControls: <FakeBbPicker /> },
+      undefined,
+      pickerOptions({ providerId: "codex", model: "gpt-6-luna", reasoningLevel: "high" }),
+    );
+    try {
+      const traits = await slot.findByRole("button", { name: "Effort: high" });
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
+      );
+      fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
+      // The panel reads the switch from BB's picker, then sets it there.
+      fireEvent.click(await slot.findByRole("menuitem", { name: "Daybreak: off" }));
+      expect(await slot.findByRole("menuitem", { name: "Daybreak: on" })).toBeTruthy();
+      expect(await slot.findByRole("button", { name: "Effort: high · Daybreak" })).toBeTruthy();
+      // BB's popover closed again, and only the panel is open.
+      expect(document.getElementById("fake-bb-popover")).toBeNull();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("hides Daybreak where BB's picker does not offer it", async () => {
+    window.PointerEvent ??= class extends MouseEvent {} as typeof PointerEvent;
+    const { slot } = await mountComposer(
+      { executionControls: <FakeBbPicker withSwitch={false} /> },
+      undefined,
+      pickerOptions({ providerId: "codex", model: "gpt-5.6-luna", reasoningLevel: "low" }),
+    );
+    try {
+      const traits = await slot.findByRole("button", { name: "Effort: low" });
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
+      );
+      fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
+      expect(await slot.findByRole("menuitem", { name: "Daybreak: checking" })).toBeTruthy();
+      await waitFor(() => expect(slot.queryByRole("menuitem", { name: /^Daybreak/ })).toBeNull(), {
+        timeout: 4000,
+      });
+      expect(slot.queryByRole("alert")).toBeNull();
     } finally {
       slot.lifecycle.unmount();
     }

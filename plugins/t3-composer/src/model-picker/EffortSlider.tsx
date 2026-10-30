@@ -1,7 +1,7 @@
 // Codex's effort slider: the level's name above a pill track whose white fill
 // runs to a round thumb, with a dot at each stop. Drag or tap a stop, with a
-// haptic tick at each; the level applies on release. The desktop menu's header
-// also holds a reset button beside the name.
+// haptic tick at each; the level applies on release. The header holds the speed
+// and agent-option buttons at the left and, on desktop, a reset button at the right.
 import {
   useCallback,
   useRef,
@@ -24,10 +24,12 @@ export function EffortSlider(props: {
   /** Take focus on mount, after the menu places its own, when the menu was opened from the keyboard. */
   focusFromKeyboard?: boolean;
   onChange(id: string): void | Promise<unknown>;
+  /** Beside the name, at the left: the speed and agent-option buttons. */
+  leading?: ReactNode;
   /** Beside the name, at the right: the desktop panel's reset button. */
   trailing?: ReactNode;
   /** In a menu, Up and Down leave the slider for the buttons above it. */
-  onArrowUpDown?(): void;
+  onArrowUpDown?(key: "ArrowUp" | "ArrowDown"): void;
 }) {
   const { options, large, focusFromKeyboard } = props;
   const trackRef = useRef<HTMLDivElement>(null);
@@ -114,7 +116,7 @@ export function EffortSlider(props: {
     // In a menu, Up and Down move between the slider and the buttons instead.
     if (props.onArrowUpDown && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
       event.preventDefault();
-      props.onArrowUpDown();
+      props.onArrowUpDown(event.key);
       return;
     }
     const from = index ?? 0;
@@ -137,13 +139,14 @@ export function EffortSlider(props: {
 
   return (
     <div data-t3-effort-slider="" className={size.root}>
-      {large ? (
+      {large && !props.leading && !props.trailing ? (
         label
       ) : (
-        <div className="grid grid-cols-[2rem_minmax(0,1fr)_2rem] items-center gap-1">
-          <span aria-hidden />
+        // Equal side columns keep the name centred whatever each side holds.
+        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1">
+          <span className="flex min-w-0 items-center gap-0.5">{props.leading}</span>
           {label}
-          <span className="flex justify-end">{props.trailing}</span>
+          <span className="flex min-w-0 justify-end">{props.trailing}</span>
         </div>
       )}
       <div className={size.frame}>

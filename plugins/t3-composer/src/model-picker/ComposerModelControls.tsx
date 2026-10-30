@@ -113,13 +113,17 @@ export function ComposerModelControls(props: { fallback: ReactNode }) {
           catalog={catalog}
           providerId={selection.providerId}
           model={selection.model}
-          speed={traits.speed}
           onSelect={(providerId, nextModel) => void apply({ providerId, model: nextModel })}
-          onSpeedChange={(serviceTier) => void apply({ serviceTier })}
         />
         <TraitsPicker
           effort={traits.effort}
+          speed={traits.speed}
+          daybreak={traits.daybreak}
+          bbPicker={traits.daybreak ? props.fallback : null}
+          switchKey={`${composer.key}|${selection.providerId}|${selection.model ?? ""}`}
           onEffortChange={(reasoningLevel) => apply({ reasoningLevel })}
+          onSpeedChange={(serviceTier) => void apply({ serviceTier })}
+          onError={setError}
         />
         {error ? (
           <span
