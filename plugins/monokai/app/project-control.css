@@ -1,0 +1,64 @@
+.monokai-project-anchor {
+  position: absolute;
+  display: inline-block;
+  width: 0;
+  height: 0;
+  flex-shrink: 0;
+}
+[data-monokai-project-icon] {
+  visibility: hidden;
+}
+.monokai-project-clear {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.monokai-project-clear > svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.monokai-project-clear > svg:last-child {
+  visibility: hidden;
+}
+.monokai-project-clear:enabled:is(:hover, :focus-visible) > svg:first-child {
+  visibility: hidden;
+}
+.monokai-project-clear:enabled:is(:hover, :focus-visible) > svg:last-child {
+  visibility: visible;
+}
+.monokai-project-clear:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 1px;
+}
+.monokai-project-clear:disabled {
+  pointer-events: none;
+  cursor: default;
+}
+@media (pointer: coarse) {
+  .monokai-project-clear:enabled > svg:first-child {
+    visibility: hidden;
+  }
+  .monokai-project-clear:enabled > svg:last-child {
+    visibility: visible;
+  }
+}
+
+/* Only a picker opened by the clear action receives this tag. Keep it out of
+ * the painted UI while BB runs its native selection and exit animation. */
+[data-monokai-project-clearing] {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

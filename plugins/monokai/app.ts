@@ -2,6 +2,8 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 
 import "./app/monaco-syntax-tokens.css";
 import "./app/diff-header.css";
+import "./app/project-control.css";
+import { mountProjectControl } from "./app/project-control.ts";
 import "./app/secondary-panel-resize.css";
 import { mountDiffHeader } from "./app/diff-header.ts";
 
@@ -11,6 +13,7 @@ import { UiFontBridge } from "./app/ui-font-bridge.ts";
 
 export default definePluginApp((app) => {
   app.contentScripts.register({ id: "diff-header", mount: mountDiffHeader });
+  app.contentScripts.register({ id: "project-control", mount: mountProjectControl });
   app.contentScripts.register({
     id: "terminal-appearance",
     mount: mountTerminalAppearance,
