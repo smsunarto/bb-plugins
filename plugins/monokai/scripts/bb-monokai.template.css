@@ -712,8 +712,8 @@
   margin-top: auto;
 }
 
-.dark [data-testid="root-compose-compact-composer"] > .bg-background,
-.dark .chat-prompt-box {
+[data-testid="root-compose-compact-composer"] > .bg-background,
+.chat-prompt-box {
   padding-bottom: 0.5rem;
 }
 
