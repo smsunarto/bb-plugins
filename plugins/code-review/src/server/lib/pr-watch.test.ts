@@ -394,3 +394,57 @@ test("a read that changes nothing the card shows publishes nothing", async () =>
   await watcher.poll();
   expect(signals()).toBe(before);
 });
+
+test("a slow read holds up only its own pull request, not the reads after it", async () => {
+  const read: number[] = [];
+  let holding = false;
+  let release = () => {};
+  const fake = fakeGh({
+    graphql: {
+      PrWatch: async (variables) => {
+        const number = Number(variables["number"]);
+        read.push(number);
+        if (holding && number === 1) {
+          await new Promise<void>((resolve) => {
+            release = resolve;
+          });
+        }
+        return {
+          rateLimit: { remaining: 5000, resetAt: "2026-10-26T14:00:00.000Z" },
+          viewer: { login: "octocat" },
+          repository: {
+            pullRequest: {
+              url: `https://github.com/acme/api/pull/${number}`,
+              title: `Change ${number}`,
+              state: "OPEN",
+              baseRefName: "main",
+              mergeStateStatus: "CLEAN",
+              comments: { nodes: [] },
+              reviews: { nodes: [] },
+              reviewThreads: { nodes: [] },
+            },
+          },
+        };
+      },
+      Checks: () => checksData("a".repeat(40), []),
+    },
+  });
+  const host = createFakePluginHost({
+    pluginId: "code-review",
+    sdk: { threads: { get: async ({ threadId }) => makeThreadResponse({ id: threadId }) } },
+  });
+  let clock = Date.parse("2026-10-26T12:00:00.000Z");
+  const watcher = createPrWatcher({ bb: host.bb, github: fake.github, now: () => clock });
+  for (const number of [1, 2, 3, 4, 5]) await watcher.watch("thr_a", { ...REF, number });
+  holding = true;
+  read.length = 0;
+  clock += 60_000;
+
+  const polling = watcher.poll();
+  for (let i = 0; i < 300 && !read.includes(5); i++) await Bun.sleep(10);
+  const readWhileHeld = [...read];
+  release();
+  await polling;
+
+  expect(readWhileHeld.toSorted()).toEqual([1, 2, 3, 4, 5]);
+});

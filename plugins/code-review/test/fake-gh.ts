@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
+import { Effect } from "effect";
 import type { CreateFakePluginHostOptions } from "@get-bb/plugin-sdk/testing";
 import type { CodeReviewContext } from "../src/server/lib/context.ts";
 import { createBlobReader } from "../src/server/lib/blobs.ts";
+import { createBranchFinder } from "../src/server/lib/branches.ts";
 import { type GhRunner, type RunResult, createGh, createGitHub } from "../src/server/lib/gh.ts";
 import { createPrWatcher } from "../src/server/lib/pr-watch.ts";
 import { createUnityPreviews } from "../src/server/lib/unity-preview.ts";
@@ -20,6 +22,13 @@ import { createStore } from "../src/server/lib/store.ts";
  */
 
 type Variables = Record<string, unknown>;
+
+/** A `gh` runner that answers each call with what `answer` returns. */
+export function runnerFrom(
+  answer: (args: string[], stdin?: string, env?: Record<string, string>) => Promise<RunResult>,
+): GhRunner {
+  return (args, stdin, env) => Effect.promise(async () => answer(args, stdin, env));
+}
 
 /** A route answers with a value, or computes one from what was sent and the account it acts as. */
 type Answer = Record<string, unknown> | unknown[] | string | null;
@@ -136,7 +145,7 @@ export function fakeGh(routes: FakeGhRoutes = {}) {
   };
 
   const accounts = routes.accounts ?? ["octocat"];
-  const run: GhRunner = async (args, stdin, env = {}) => {
+  const run = runnerFrom(async (args, stdin, env = {}) => {
     if (args[0] === "auth") return auth(args, accounts);
     if (args[0] !== "api") {
       return { code: 1, stdout: "", stderr: `fake gh: unexpected command ${args.join(" ")}` };
@@ -146,7 +155,7 @@ export function fakeGh(routes: FakeGhRoutes = {}) {
     const as = named === undefined ? {} : { account: named };
     const account = named ?? accounts[0] ?? "";
     return args[1] === "graphql" ? graphql(stdin, account, as) : rest(args, stdin, account, as);
-  };
+  });
 
   return {
     /** Acts as gh's active account, with no token of its own. */
@@ -195,13 +204,15 @@ export function fakeContext(
   const host = createFakePluginHost({ pluginId: "code-review", sdk });
   const fake = fakeGh(routes);
   const blobs = createBlobReader({ bb: host.bb, github: fake.github });
+  const store = createStore(host.bb.storage.kv);
   const ctx: CodeReviewContext = {
     bb: host.bb,
     github: fake.github,
-    store: createStore(host.bb.storage.kv),
+    store,
     blobs,
     unity: createUnityPreviews(blobs),
     watcher: createPrWatcher({ bb: host.bb, github: fake.github }),
+    branches: createBranchFinder({ bb: host.bb, store }),
   };
   return { ctx, harness: host.harness, ...fake };
 }

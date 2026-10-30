@@ -1,4 +1,6 @@
+import { makePluginRuntime } from "@bb-plugins/effect-bridge";
 import { defineCli, defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { Context, FiberSet, Layer } from "effect";
 import { playbook } from "./command/playbook.ts";
 import { prompt } from "./command/prompt.ts";
 import threeKitSource, { THREE_KIT_ETAG } from "../../vendor/three-kit.ts";
@@ -6,12 +8,14 @@ import { BLOB_PATH, THREE_KIT_PATH } from "../shared/blob-url.ts";
 import { publishActivity } from "./lib/activity.ts";
 import { serveBlob } from "./lib/blob-route.ts";
 import { createBlobReader } from "./lib/blobs.ts";
+import { createBranchFinder } from "./lib/branches.ts";
 import type { CodeReviewContext, CodeReviewServices } from "./lib/context.ts";
-import { createGitHub } from "./lib/gh.ts";
+import { createGitHub, execGh } from "./lib/gh.ts";
 import { forgetLanded, watchLanded } from "./lib/landed.ts";
 import { createPrWatcher } from "./lib/pr-watch.ts";
 import { createStore } from "./lib/store.ts";
 import { reviewSkills } from "./lib/review-scope.ts";
+import { type Run, type Share, shareIn } from "./lib/run.ts";
 import { createUnityPreviews } from "./lib/unity-preview.ts";
 import { addDraftComment, addDraftCommentContract } from "./rpc/add-draft-comment.ts";
 import { agentActivity, agentActivityContract } from "./rpc/agent-activity.ts";
@@ -92,20 +96,33 @@ export const contract = defineRpcContract({
   landed: landedContract,
 });
 
-function createServices(bb: BbPluginApi): CodeReviewServices {
-  const github = createGitHub();
-  const blobs = createBlobReader({ bb, github });
+/** Fibers the plugin owns, for shared reads that outlive the call that started them. */
+class SharedReads extends Context.Service<SharedReads, FiberSet.FiberSet<unknown, unknown>>()(
+  "code-review/SharedReads",
+) {}
+
+/**
+ * The plugin's collaborators, whose Effects `run` runs and whose shared reads
+ * `share` awaits, so unloading the plugin stops them.
+ */
+function createServices(bb: BbPluginApi, run: Run, share: Share): CodeReviewServices {
+  const github = createGitHub(execGh, Date.now, run, share);
+  const blobs = createBlobReader({ bb, github, run, share });
+  const store = createStore(bb.storage.kv);
   return {
     github,
-    store: createStore(bb.storage.kv),
+    store,
     blobs,
-    unity: createUnityPreviews(blobs),
+    unity: createUnityPreviews(blobs, run),
     watcher: createPrWatcher({ bb, github }),
+    branches: createBranchFinder({ bb, store, run }),
   };
 }
 
 export default async function plugin(bb: BbPluginApi): Promise<void> {
-  const ctx: CodeReviewContext = Object.freeze({ bb, ...createServices(bb) });
+  const runtime = await makePluginRuntime(bb, Layer.effect(SharedReads, FiberSet.make()));
+  const share = shareIn(await runtime.run(SharedReads));
+  const ctx: CodeReviewContext = Object.freeze({ bb, ...createServices(bb, runtime.run, share) });
   const { store, blobs, watcher } = ctx;
   bb.rpc.register(contract, {
     status: () => status(ctx),
@@ -191,7 +208,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   };
   bb.events.on("thread.archived", gone);
   bb.events.on("thread.deleted", gone);
-  bb.background.service("pr-watch", { start: (signal) => watcher.run(signal) });
+  bb.background.service("pr-watch", { start: runtime.service(watcher.watching) });
   // Listed work that lands after the agent's turn still launches the thread's title.
-  bb.background.service("landed", { start: (signal) => watchLanded(ctx, signal) });
+  bb.background.service("landed", { start: runtime.service(watchLanded(ctx)) });
 }

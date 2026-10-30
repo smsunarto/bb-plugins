@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { Cache, Duration, Effect, Exit } from "effect";
 import { z } from "zod";
 import type { BlobRequest } from "../../shared/blob-url.ts";
 import { MAX_POINTER_BYTES, parseLfsPointer } from "../../shared/lfs.ts";
@@ -10,11 +11,10 @@ import {
   type LfsObject,
   lfsObjectSchema,
 } from "../../shared/schema.ts";
-import { createCache } from "./cache.ts";
-import type { GitHub } from "./gh.ts";
+import type { GhError, GitHub } from "./gh.ts";
 import { GITBUTLER_PLUGIN_ID } from "./gitbutler.ts";
-import { startDeadline, timedOut, untilAborted } from "./deadline.ts";
 import { createLimiter } from "./limiter.ts";
+import { type Run, type Share, runDetached, shareDetached } from "./run.ts";
 
 /*
  * Whole files at either side of a comparison, for previews: images, models,
@@ -68,7 +68,7 @@ export type BlobReader = {
     comparison: Comparison,
     path: string,
     previousPath: string | null,
-    signal: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<FileBlobs>;
   open(
     request: BlobRequest,
@@ -79,24 +79,27 @@ export type BlobReader = {
   text(request: BlobRequest, maxBytes: number, signal: AbortSignal): Promise<string | null>;
 };
 
+/** Why a read failed, as its source or GitHub CLI said. Anything else is rethrown as it was. */
+type ReadError = BlobError | GhError;
+
 /**
  * One request to a file's source, in one of that source's slots and under a
- * deadline until it answers. A body streams on outside both, so a paused
- * video holds neither a slot nor a timer.
+ * deadline until it answers, for the caller that asked. A body streams on
+ * outside both, so a paused video holds neither a slot nor a timer.
  */
-type Run = <T>(work: (signal: AbortSignal) => Promise<T>) => Promise<T>;
+type Read = <A>(work: Effect.Effect<A, ReadError>) => Promise<A>;
 
 type Source = {
   key: string;
-  describe(
-    sides: { base: string; head: string },
-    signal: AbortSignal,
-  ): Promise<Record<ComparisonSide, Described>>;
+  describe(sides: {
+    base: string;
+    head: string;
+  }): Effect.Effect<Record<ComparisonSide, Described>, ReadError>;
   content(
     side: ComparisonSide,
     blob: Extract<Described, { kind: "blob" }>,
     range: ByteRange,
-    run: Run,
+    read: Read,
   ): Promise<ReadableStream<Uint8Array>>;
 };
 
@@ -106,11 +109,26 @@ export function publicDescriptor(described: Described): BlobDescriptor {
     : described;
 }
 
-/** `body`, failing past `max` bytes. */
-function capped(body: ReadableStream<Uint8Array>, max: number): ReadableStream<Uint8Array> {
+/**
+ * `body`, failing past `max` bytes, or once `signal` aborts: the bytes stream
+ * on past the read that started them, until their caller leaves.
+ */
+function capped(
+  body: ReadableStream<Uint8Array>,
+  max: number,
+  signal: AbortSignal,
+): ReadableStream<Uint8Array> {
   let seen = 0;
   const reader = body.getReader();
   return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const leave = () => {
+        controller.error(signal.reason);
+        void reader.cancel(signal.reason).catch(() => undefined);
+      };
+      if (signal.aborted) leave();
+      else signal.addEventListener("abort", leave, { once: true });
+    },
     async pull(controller) {
       try {
         const { done, value } = await reader.read();
@@ -230,88 +248,127 @@ export function lfsConfigUrl(text: string): string | null {
   return null;
 }
 
+/** A pull request's merge base, and the account that reads it. */
+type MergeBaseKey = { account: string; owner: string; repo: string; base: string; head: string };
+
+/** GitHub diffs a pull request against the merge base, not the base branch's tip. */
+function mergeBase(github: GitHub, { account, owner, repo, base, head }: MergeBaseKey) {
+  return Effect.flatMap(
+    Effect.suspend(() =>
+      github.effects
+        .as(account)
+        .text([
+          "api",
+          `repos/${owner}/${repo}/compare/${base}...${head}`,
+          "--jq",
+          ".merge_base_commit.sha",
+        ]),
+    ),
+    (stdout) => {
+      const sha = stdout.trim();
+      return /^[0-9a-f]{40}$/.test(sha)
+        ? Effect.succeed(sha)
+        : Effect.fail(new BlobError(502, "GitHub did not name a merge base."));
+    },
+  );
+}
+
 function githubSource(
   comparison: Extract<Comparison, { kind: "github" }>,
   github: GitHub,
   fetcher: typeof fetch,
-  mergeBases: ReturnType<typeof createCache<string>>,
+  mergeBaseOf: (key: MergeBaseKey) => Effect.Effect<string, ReadError>,
 ): Source {
   const { account, owner, repo } = comparison;
-  const gh = () => github.as(account);
+  const gh = () => github.effects.as(account);
   const repository = `${owner}/${repo}`;
 
-  const rev = async (side: ComparisonSide) => {
-    if (side === "head") return comparison.head;
-    // GitHub diffs a pull request against the merge base, not the base branch's tip.
-    return mergeBases.read(`${repository}\0${comparison.base}\0${comparison.head}`, async () => {
-      const sha = (
-        await gh().text([
-          "api",
-          `repos/${owner}/${repo}/compare/${comparison.base}...${comparison.head}`,
-          "--jq",
-          ".merge_base_commit.sha",
-        ])
-      ).trim();
-      if (!/^[0-9a-f]{40}$/.test(sha))
-        throw new BlobError(502, "GitHub did not name a merge base.");
-      return sha;
-    });
-  };
+  const rev = (side: ComparisonSide) =>
+    side === "head"
+      ? Effect.succeed(comparison.head)
+      : mergeBaseOf({
+          account,
+          owner,
+          repo,
+          base: comparison.base,
+          head: comparison.head,
+        });
 
-  const api = async (path: string, signal: AbortSignal, accept: string) => {
-    const response = await fetcher(`https://api.github.com/${path}`, {
-      headers: {
-        authorization: `Bearer ${await github.token(account)}`,
-        accept,
-        "x-github-api-version": "2022-11-28",
-        "user-agent": "bb-code-review",
-      },
-      signal,
+  /**
+   * A GitHub answer's body, as `read` takes it. `read` runs under the
+   * request's signal, so a read that is stopped, at its deadline or for its
+   * caller, stops a body still arriving before its slot goes to the next.
+   */
+  const api = Effect.fnUntraced(function* <A>(
+    path: string,
+    accept: string,
+    read: (body: ReadableStream<Uint8Array>) => Promise<A>,
+  ) {
+    const token = yield* github.effects.token(account);
+    const answer: { read: A } | { status: number } = yield* Effect.promise(async (signal) => {
+      const response = await fetcher(`https://api.github.com/${path}`, {
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept,
+          "x-github-api-version": "2022-11-28",
+          "user-agent": "bb-code-review",
+        },
+        signal,
+      });
+      return response.ok && response.body
+        ? { read: await read(response.body) }
+        : { status: response.status };
     });
-    if (response.ok && response.body) return response.body;
-    if (response.status === 404) throw new BlobError(404, "GitHub has no such file.");
-    if (response.status === 403 || response.status === 429) {
-      throw new BlobError(503, "GitHub refused the read. Its rate limit may be spent.");
+    if ("read" in answer) return answer.read;
+    if (answer.status === 404)
+      return yield* Effect.fail(new BlobError(404, "GitHub has no such file."));
+    if (answer.status === 403 || answer.status === 429) {
+      return yield* Effect.fail(
+        new BlobError(503, "GitHub refused the read. Its rate limit may be spent."),
+      );
     }
-    throw new BlobError(502, `GitHub answered ${response.status}.`);
-  };
-  const blob = (oid: string, signal: AbortSignal) =>
-    api(`repos/${owner}/${repo}/git/blobs/${oid}`, signal, "application/vnd.github.raw+json");
+    return yield* Effect.fail(new BlobError(502, `GitHub answered ${answer.status}.`));
+  });
+  const blob = <A>(oid: string, read: (body: ReadableStream<Uint8Array>) => Promise<A>) =>
+    api(`repos/${owner}/${repo}/git/blobs/${oid}`, "application/vnd.github.raw+json", read);
 
   /** A side's descriptor, reading a small blob's text to tell a Git LFS pointer. */
-  const described = async (object: GqlObject, signal: AbortSignal): Promise<Described> => {
+  const described = Effect.fnUntraced(function* (
+    object: GqlObject,
+  ): Effect.fn.Return<Described, ReadError> {
     if (object === null) return { kind: "missing" };
     if (object.__typename === "Commit") return { kind: "submodule" };
     if (object.__typename !== "Blob" || !object.oid) return { kind: "missing" };
     const size = object.byteSize ?? 0;
     let lfs: LfsObject | null = null;
     if (size < MAX_POINTER_BYTES) {
-      const text = new TextDecoder().decode(await readAll(await blob(object.oid, signal)));
-      lfs = parseLfsPointer(text);
+      lfs = parseLfsPointer(new TextDecoder().decode(yield* blob(object.oid, readAll)));
     }
     return { kind: "blob", oid: object.oid, size, lfs };
-  };
+  });
 
-  const lfsServer = async (side: ComparisonSide) => {
-    const read = (await gh().graphql(LFS_CONFIG_QUERY, {
+  const lfsServer = Effect.fnUntraced(function* (side: ComparisonSide) {
+    const read = (yield* gh().graphql(LFS_CONFIG_QUERY, {
       owner,
       name: repo,
-      expression: `${await rev(side)}:.lfsconfig`,
+      expression: `${yield* rev(side)}:.lfsconfig`,
     })) as { repository: { object: { text?: string | null } | null } };
     const url = lfsConfigUrl(read.repository.object?.text ?? "");
     if (url && !/^https:\/\/github\.com\//i.test(url)) {
       const host = /^[a-z+]+:\/\/([^/]+)/i.exec(url)?.[1] ?? url;
-      throw new BlobError(
-        502,
-        `This repository keeps Git LFS files on ${host}, which previews cannot read.`,
+      return yield* Effect.fail(
+        new BlobError(
+          502,
+          `This repository keeps Git LFS files on ${host}, which previews cannot read.`,
+        ),
       );
     }
-  };
+  });
 
   /** The Git LFS batch API, asked of each repository that may hold the object. */
-  const lfsObject = async (side: ComparisonSide, object: LfsObject, signal: AbortSignal) => {
-    await lfsServer(side);
-    const token = await github.token(account);
+  const lfsObject = Effect.fnUntraced(function* (side: ComparisonSide, object: LfsObject) {
+    yield* lfsServer(side);
+    const token = yield* github.effects.token(account);
     const authorization = `Basic ${Buffer.from(`${account}:${token}`).toString("base64")}`;
     // A fork's pushes go to the fork's own store.
     const repositories = [
@@ -323,53 +380,69 @@ function githubSource(
     ];
     let missing = "GitHub's Git LFS store does not have this file.";
     for (const name of repositories) {
-      const response = await fetcher(`https://github.com/${name}.git/info/lfs/objects/batch`, {
-        method: "POST",
-        headers: {
-          accept: "application/vnd.git-lfs+json",
-          "content-type": "application/vnd.git-lfs+json",
-          authorization,
-          "user-agent": "bb-code-review",
-        },
-        body: JSON.stringify({ operation: "download", transfers: ["basic"], objects: [object] }),
-        signal,
+      // The answer is read under the request's signal too, so stopping the lookup stops it.
+      const batch = yield* Effect.promise(async (signal) => {
+        const response = await fetcher(`https://github.com/${name}.git/info/lfs/objects/batch`, {
+          method: "POST",
+          headers: {
+            accept: "application/vnd.git-lfs+json",
+            "content-type": "application/vnd.git-lfs+json",
+            authorization,
+            "user-agent": "bb-code-review",
+          },
+          body: JSON.stringify({ operation: "download", transfers: ["basic"], objects: [object] }),
+          signal,
+        });
+        return {
+          ok: response.ok,
+          status: response.status,
+          json: response.ok ? ((await response.json()) as unknown) : null,
+        };
       });
-      if (response.status === 404) continue;
-      if (!response.ok) throw new BlobError(502, `GitHub's Git LFS answered ${response.status}.`);
-      const found = batchSchema
-        .parse(await response.json())
-        .objects.find((each) => each.oid === object.oid);
+      if (batch.status === 404) continue;
+      if (!batch.ok) {
+        return yield* Effect.fail(new BlobError(502, `GitHub's Git LFS answered ${batch.status}.`));
+      }
+      const found = batchSchema.parse(batch.json).objects.find((each) => each.oid === object.oid);
       const download = found?.actions?.download;
       if (!download) {
         missing = found?.error?.message ?? missing;
         continue;
       }
-      const file = await fetcher(download.href, { headers: download.header ?? {}, signal });
-      if (!file.ok || !file.body)
-        throw new BlobError(502, `Git LFS storage answered ${file.status}.`);
+      const file = yield* Effect.promise(async (signal) =>
+        fetcher(download.href, { headers: download.header ?? {}, signal }),
+      );
+      if (!file.ok || !file.body) {
+        return yield* Effect.fail(new BlobError(502, `Git LFS storage answered ${file.status}.`));
+      }
       return file.body;
     }
-    throw new BlobError(502, missing);
-  };
+    return yield* Effect.fail(new BlobError(502, missing));
+  });
 
   return {
     key: `github:${repository.toLowerCase()}`,
-    async describe(paths, signal) {
-      const [base, head] = await Promise.all([rev("base"), rev("head")]);
-      const read = (await gh().graphql(
+    describe: Effect.fnUntraced(function* (paths) {
+      const [base, head] = yield* Effect.all([rev("base"), rev("head")], {
+        concurrency: "unbounded",
+      });
+      const read = (yield* gh().graphql(
         OBJECTS_QUERY,
         { owner, name: repo, base: `${base}:${paths.base}`, head: `${head}:${paths.head}` },
         { optionalRoot: () => false },
       )) as { repository: { base: GqlObject; head: GqlObject } };
-      const [baseSide, headSide] = await Promise.all([
-        described(read.repository.base, signal),
-        described(read.repository.head, signal),
-      ]);
+      const [baseSide, headSide] = yield* Effect.all(
+        [described(read.repository.base), described(read.repository.head)],
+        { concurrency: "unbounded" },
+      );
       return { base: baseSide, head: headSide };
-    },
-    async content(side, described, range, run) {
-      const body = await run((signal) =>
-        described.lfs ? lfsObject(side, described.lfs, signal) : blob(described.oid, signal),
+    }),
+    async content(side, described, range, read) {
+      // A preview's body streams on past its read; `capped` stops it for its caller.
+      const body = await read(
+        described.lfs
+          ? lfsObject(side, described.lfs)
+          : blob(described.oid, async (stream) => stream),
       );
       const size = described.lfs?.size ?? described.size;
       return range.start === 0 && range.end === size - 1 ? body : slice(body, range);
@@ -394,30 +467,25 @@ const hostDescriptors = z.object({ items: z.array(hostDescriptor) });
 const hostChunk = z.object({ size: z.number(), content: z.string() });
 
 function localSource(comparison: Extract<Comparison, { kind: "local" }>, bb: BbPluginApi): Source {
-  const call = async <T>(
-    method: string,
-    input: unknown,
-    schema: z.ZodType<T>,
-    signal: AbortSignal,
-  ) => {
-    try {
-      return await bb.sdk.plugins.callRpc({
-        pluginId: GITBUTLER_PLUGIN_ID,
-        method,
-        input: input as never,
-        outputSchema: schema,
-        signal,
-      });
-    } catch (error) {
-      if (signal.aborted) throw error;
-      const message = error instanceof Error ? error.message : String(error);
-      throw new BlobError(/not connected|offline/i.test(message) ? 503 : 502, message);
-    }
-  };
+  const call = <T>(method: string, input: unknown, schema: z.ZodType<T>) =>
+    Effect.tryPromise({
+      try: async (signal) =>
+        bb.sdk.plugins.callRpc({
+          pluginId: GITBUTLER_PLUGIN_ID,
+          method,
+          input: input as never,
+          outputSchema: schema,
+          signal,
+        }),
+      catch: (error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        return new BlobError(/not connected|offline/i.test(message) ? 503 : 502, message);
+      },
+    });
   return {
     key: `host:${comparison.hostId}`,
-    async describe(paths, signal) {
-      const read = await call(
+    describe: Effect.fnUntraced(function* (paths) {
+      const read = yield* call(
         "branchBlobs",
         {
           hostId: comparison.hostId,
@@ -428,7 +496,6 @@ function localSource(comparison: Extract<Comparison, { kind: "local" }>, bb: BbP
           ],
         },
         hostDescriptors,
-        signal,
       );
       const [base, head] = read.items.map((item): Described => {
         if (item.kind !== "blob") return item;
@@ -442,11 +509,14 @@ function localSource(comparison: Extract<Comparison, { kind: "local" }>, bb: BbP
           lfs: lfs?.success ? lfs.data : null,
         };
       });
-      if (!base || !head)
-        throw new BlobError(502, "The GitButler plugin answered without both sides.");
+      if (!base || !head) {
+        return yield* Effect.fail(
+          new BlobError(502, "The GitButler plugin answered without both sides."),
+        );
+      }
       return { base, head };
-    },
-    async content(_side, described, range, run) {
+    }),
+    async content(_side, described, range, read) {
       const object = described.lfs
         ? { kind: "lfs", oid: described.lfs.oid, size: described.lfs.size }
         : { kind: "git", oid: described.oid };
@@ -459,7 +529,7 @@ function localSource(comparison: Extract<Comparison, { kind: "local" }>, bb: BbP
             controller.close();
             return;
           }
-          const chunk = await run((signal) =>
+          const chunk = await read(
             call(
               "branchBlobChunk",
               {
@@ -470,7 +540,6 @@ function localSource(comparison: Extract<Comparison, { kind: "local" }>, bb: BbP
                 length: Math.min(CHUNK_BYTES, stop - offset),
               },
               hostChunk,
-              signal,
             ),
           );
           const bytes = Buffer.from(chunk.content, "base64").subarray(0, stop - offset);
@@ -509,62 +578,63 @@ export function createBlobReader({
   bb,
   github,
   fetch: fetcher = globalThis.fetch,
+  run = runDetached,
+  share = shareDetached,
 }: {
   bb: BbPluginApi;
   github: GitHub;
   fetch?: typeof fetch;
+  run?: Run;
+  share?: Share;
 }): BlobReader {
   const limiter = createLimiter({ perKey: 3, total: 8 });
-  const mergeBases = createCache<string>(256);
-  // Pinned to commits, so a descriptor never goes stale.
-  const descriptors = createCache<Record<ComparisonSide, Described>>(512);
+  // Pinned to commits, so an answer never goes stale. A failure is not kept, so asking again reads again.
+  const timeToLive = (exit: Exit.Exit<unknown, unknown>) =>
+    Exit.isSuccess(exit) ? Duration.infinity : Duration.zero;
+  const mergeBases = Effect.runSync(
+    Cache.makeWith((key: MergeBaseKey) => mergeBase(github, key), { capacity: 256, timeToLive }),
+  );
+  // A describe that stops waiting, at its deadline or for a caller that left,
+  // leaves the merge base to finish and be kept, so the next one reads it here.
+  const mergeBaseOf = (key: MergeBaseKey) => share(Cache.get(mergeBases, key));
 
   const source = (comparison: Comparison): Source =>
     comparison.kind === "github"
-      ? githubSource(comparison, github, fetcher, mergeBases)
+      ? githubSource(comparison, github, fetcher, mergeBaseOf)
       : localSource(comparison, bb);
+
+  /** `work` in one of `key`'s slots, failing as a 504 once it has taken `ms` to answer. */
+  const slot = <A>(key: string, ms: number, work: Effect.Effect<A, ReadError>) =>
+    limiter.run(key, work).pipe(
+      Effect.timeoutOrElse({
+        duration: ms,
+        orElse: () => Effect.fail(new BlobError(504, "Reading the file took too long.")),
+      }),
+    );
+
+  const descriptors = Effect.runSync(
+    Cache.makeWith(
+      ({
+        comparison,
+        paths,
+      }: {
+        comparison: Comparison;
+        paths: { base: string; head: string };
+      }) => {
+        const from = source(comparison);
+        // Every caller asking meanwhile shares this read, so it answers to its
+        // own deadline, not to whichever caller asked first.
+        return slot(from.key, DESCRIBE_MS, from.describe(paths));
+      },
+      { capacity: 512, timeToLive },
+    ),
+  );
 
   const describeSides = (
     comparison: Comparison,
     paths: { base: string; head: string },
-    signal: AbortSignal,
-  ) => {
-    const from = source(comparison);
-    const shared = descriptors.read(JSON.stringify([comparison, paths]), async () => {
-      // Every caller asking meanwhile shares this read, so it answers to its
-      // own deadline, not to whichever caller asked first.
-      const deadline = startDeadline(DESCRIBE_MS);
-      let release: (() => void) | undefined;
-      try {
-        release = await limiter.acquire(from.key, deadline.signal);
-        return await untilAborted(from.describe(paths, deadline.signal), deadline.signal);
-      } catch (error) {
-        if (timedOut(deadline.signal)) throw new BlobError(504, "Reading the file took too long.");
-        throw error;
-      } finally {
-        release?.();
-        deadline.lift();
-      }
-    });
-    return untilAborted(shared, signal);
-  };
-
-  const runner =
-    (key: string, signal: AbortSignal): Run =>
-    async (work) => {
-      const deadline = startDeadline(CONTENT_MS, signal);
-      let release: (() => void) | undefined;
-      try {
-        release = await limiter.acquire(key, deadline.signal);
-        return await untilAborted(work(deadline.signal), deadline.signal);
-      } catch (error) {
-        if (timedOut(deadline.signal)) throw new BlobError(504, "Reading the file took too long.");
-        throw error;
-      } finally {
-        release?.();
-        deadline.lift();
-      }
-    };
+    signal?: AbortSignal,
+  ) => run(Cache.get(descriptors, { comparison, paths }), signal);
 
   /** The base side of a renamed file reads its old path; the app names that path itself. */
   const sideOf = async ({ comparison, side, path }: BlobRequest, signal: AbortSignal) => {
@@ -593,9 +663,14 @@ export function createBlobReader({
       request.side,
       described,
       range ?? { start: 0, end: size - 1 },
-      runner(from.key, signal),
+      (work) => run(slot(from.key, CONTENT_MS, work), signal),
     );
-    return { size, lfs: described.lfs, range, body: capped(body, MAX_PREVIEW_BYTES) };
+    return {
+      size,
+      lfs: described.lfs,
+      range,
+      body: capped(body, MAX_PREVIEW_BYTES, signal),
+    };
   };
 
   return {

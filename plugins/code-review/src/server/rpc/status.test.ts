@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { fakeContext } from "../../../test/fake-gh.ts";
-import { type GhRunner, createGitHub } from "../lib/gh.ts";
+import { fakeContext, runnerFrom } from "../../../test/fake-gh.ts";
+import { createGitHub } from "../lib/gh.ts";
 import { status } from "./status.ts";
 
 test("names every signed-in account, the active one first", async () => {
@@ -14,7 +14,7 @@ test("names every signed-in account, the active one first", async () => {
 
 test("says what is wrong instead of throwing", async () => {
   const answer = (stderr: string, code?: number) => {
-    const fail: GhRunner = async () => ({ code: code ?? 1, stdout: "", stderr });
+    const fail = runnerFrom(async () => ({ code: code ?? 1, stdout: "", stderr }));
     return status({ ...fakeContext().ctx, github: createGitHub(fail) });
   };
 

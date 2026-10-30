@@ -1,58 +1,43 @@
+import { Effect, Semaphore } from "effect";
+
 /**
  * How many reads run at once, per source and in all. A machine that went to
  * sleep, or a slow Git LFS download, holds only its own source's slots, so
  * every other repository's previews keep loading.
  */
 export type Limiter = {
-  /** A slot for `key`, once one is free. Call the release once the read is done. */
-  acquire(key: string, signal: AbortSignal): Promise<() => void>;
+  /**
+   * `work` in one of `key`'s slots and one of the shared ones, first come,
+   * first served. A read waits for its source's slot before it queues for a
+   * shared one, so a full source never holds shared slots it cannot use.
+   */
+  run<A, E, R>(key: string, work: Effect.Effect<A, E, R>): Effect.Effect<A, E, R>;
 };
 
-type Waiting = { key: string; start: () => void };
-
 export function createLimiter({ perKey, total }: { perKey: number; total: number }): Limiter {
-  const active = new Map<string, number>();
-  let running = 0;
-  const queue: Waiting[] = [];
+  const shared = Semaphore.makeUnsafe(total);
+  // Each source's slots, kept while a read holds or waits for one.
+  const sources = new Map<string, { slots: Semaphore.Semaphore; users: number }>();
 
-  const free = (key: string) => running < total && (active.get(key) ?? 0) < perKey;
-  const take = (key: string) => {
-    running++;
-    active.set(key, (active.get(key) ?? 0) + 1);
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      running--;
-      const left = (active.get(key) ?? 1) - 1;
-      if (left === 0) active.delete(key);
-      else active.set(key, left);
-      // First come, first served, skipping a source that is still full.
-      const index = queue.findIndex((waiting) => free(waiting.key));
-      if (index >= 0) queue.splice(index, 1)[0]!.start();
-    };
-  };
+  const join = (key: string) =>
+    Effect.sync(() => {
+      const source = sources.get(key) ?? { slots: Semaphore.makeUnsafe(perKey), users: 0 };
+      source.users++;
+      sources.set(key, source);
+      return source.slots;
+    });
+  const leave = (key: string) =>
+    Effect.sync(() => {
+      const source = sources.get(key);
+      if (source && --source.users === 0) sources.delete(key);
+    });
 
   return {
-    async acquire(key, signal) {
-      signal.throwIfAborted();
-      if (free(key)) return take(key);
-      return new Promise<() => void>((resolve, reject) => {
-        const waiting: Waiting = {
-          key,
-          start: () => {
-            signal.removeEventListener("abort", leave);
-            resolve(take(key));
-          },
-        };
-        const leave = () => {
-          const index = queue.indexOf(waiting);
-          if (index >= 0) queue.splice(index, 1);
-          reject(signal.reason);
-        };
-        signal.addEventListener("abort", leave, { once: true });
-        queue.push(waiting);
-      });
-    },
+    run: (key, work) =>
+      Effect.acquireUseRelease(
+        join(key),
+        (slots) => slots.withPermit(shared.withPermit(work)),
+        () => leave(key),
+      ),
   };
 }

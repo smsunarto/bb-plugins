@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { GhFailure, fakeGh, fixture } from "../../../test/fake-gh.ts";
+import { GhFailure, fakeGh, fixture, runnerFrom } from "../../../test/fake-gh.ts";
 import { createGh } from "./gh.ts";
 import {
   type GqlInbox,
@@ -93,14 +93,16 @@ test("reads a recorded inbox: a review request, two authored PRs, and the one pi
 
 test("a pin in an org that now enforces SAML drops out, and the rest of the inbox loads", async () => {
   // GitHub nulls the second pin and says why, beside the answer for the rest.
-  const gh = createGh(async () => ({
-    code: 1,
-    stderr: "",
-    stdout: JSON.stringify({
-      data: fixture("inbox.json"),
-      errors: [{ type: "FORBIDDEN", path: ["p1"], message: "Resource protected by SAML." }],
-    }),
-  }));
+  const gh = createGh(
+    runnerFrom(async () => ({
+      code: 1,
+      stderr: "",
+      stdout: JSON.stringify({
+        data: fixture("inbox.json"),
+        errors: [{ type: "FORBIDDEN", path: ["p1"], message: "Resource protected by SAML." }],
+      }),
+    })),
+  );
 
   const inbox = await loadInbox(gh, PINS, "sms-yui");
 

@@ -1,5 +1,5 @@
-import { setTimeout as delay } from "node:timers/promises";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { Cause, Effect, Schedule } from "effect";
 import { z } from "zod";
 import {
   type CommitRef,
@@ -19,6 +19,7 @@ import type { CodeReviewContext } from "./context.ts";
 import { type Gh, GhError } from "./gh.ts";
 import { prState, restRepo } from "./github.ts";
 import { createLocks } from "./lock.ts";
+import { runDetached } from "./run.ts";
 
 /*
  * A thread whose listed work has not all landed is remembered, so the server
@@ -190,14 +191,19 @@ export function checkLanded(
   });
 }
 
-/** {@link checkLanded} for a caller that holds the thread's lock. */
+/**
+ * {@link checkLanded} for a caller that holds the thread's lock. Once
+ * `signal` aborts, a read it still has to make fails, so nothing is written.
+ */
 async function reconcile(
   ctx: CodeReviewContext,
   threadId: string,
   record: TrackRecord,
   read?: Landed,
+  signal?: AbortSignal,
 ) {
-  const landed = read ?? (await readLanded(ctx.github.as(record.target.account), record.target));
+  const landed =
+    read ?? (await readLanded(ctx.github.as(record.target.account, signal), record.target));
   // The merge is heard: a watch of it would only wake the thread to say so again.
   const merged = landed.prs.filter((pr) => pr.state === "merged");
   await Promise.all(merged.map((pr) => ctx.watcher.stop(threadId, pr.ref)));
@@ -222,7 +228,11 @@ export async function forgetLanded(ctx: CodeReviewContext, threadId: string): Pr
 }
 
 /** Rechecks one remembered thread, from its record as it stands once the thread's lock is held. */
-function recheckThread(ctx: CodeReviewContext, threadId: string): Promise<unknown> {
+function recheckThread(
+  ctx: CodeReviewContext,
+  threadId: string,
+  signal: AbortSignal,
+): Promise<unknown> {
   const kv = ctx.bb.storage.kv;
   const key = trackKey(threadId);
   return withLock(threadId, async () => {
@@ -233,30 +243,50 @@ function recheckThread(ctx: CodeReviewContext, threadId: string): Promise<unknow
       throw error;
     });
     if (!thread || thread.archivedAt != null || thread.deletedAt != null) return kv.delete(key);
-    return reconcile(ctx, threadId, record.data).catch(async (error: unknown) => {
-      // No later pass finds what GitHub cannot find now.
-      if (error instanceof GhError && error.code === "not-found") await kv.delete(key);
-      throw error;
-    });
+    return reconcile(ctx, threadId, record.data, undefined, signal).catch(
+      async (error: unknown) => {
+        // No later pass finds what GitHub cannot find now.
+        if (error instanceof GhError && error.code === "not-found") await kv.delete(key);
+        throw error;
+      },
+    );
   });
 }
 
-/** Checks every remembered thread once. A failed check keeps the record for the next pass. */
-export async function recheckLanded(ctx: CodeReviewContext): Promise<void> {
-  for (const key of await ctx.bb.storage.kv.list("landed:")) {
-    const threadId = key.slice("landed:".length);
-    await recheckThread(ctx, threadId).catch((error: unknown) => {
-      ctx.bb.log.warn(`Could not check what thread ${threadId} landed: ${String(error)}`);
-    });
-  }
+/**
+ * Checks every remembered thread once, one after another. A failed check
+ * keeps the record for the next pass. A pass that is stopped stops at the
+ * thread it is on, before that thread's next read.
+ */
+function rechecking(ctx: CodeReviewContext) {
+  return Effect.gen(function* () {
+    for (const key of yield* Effect.promise(async () => ctx.bb.storage.kv.list("landed:"))) {
+      const threadId = key.slice("landed:".length);
+      yield* Effect.tryPromise({
+        try: async (signal) => recheckThread(ctx, threadId, signal),
+        catch: (error) => error,
+      }).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning(`Could not check what thread ${threadId} landed: ${String(error)}`),
+        ),
+      );
+    }
+  });
 }
 
-/** Rechecks every few minutes until `signal` aborts: the body of the plugin's background service. */
-export async function watchLanded(ctx: CodeReviewContext, signal: AbortSignal): Promise<void> {
-  while (!signal.aborted) {
-    await recheckLanded(ctx).catch((error: unknown) => {
-      ctx.bb.log.warn(`Landed work check failed: ${String(error)}`);
-    });
-    await delay(RECHECK_MS, undefined, { signal }).catch(() => {});
-  }
+/** One pass, for a caller outside the plugin's background service. */
+export function recheckLanded(ctx: CodeReviewContext): Promise<void> {
+  return runDetached(rechecking(ctx));
+}
+
+/** The body of the plugin's background service: a pass every few minutes, until it stops. */
+export function watchLanded(ctx: CodeReviewContext) {
+  return rechecking(ctx).pipe(
+    Effect.catchCause((cause) =>
+      Cause.hasInterruptsOnly(cause)
+        ? Effect.failCause(cause)
+        : Effect.logWarning(`Landed work check failed: ${String(Cause.squash(cause))}`),
+    ),
+    Effect.repeat(Schedule.spaced(RECHECK_MS)),
+  );
 }

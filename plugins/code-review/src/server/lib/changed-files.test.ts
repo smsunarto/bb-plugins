@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { fakeGh, fixture, fixtureText } from "../../../test/fake-gh.ts";
+import { fakeGh, fixture, fixtureText, runnerFrom } from "../../../test/fake-gh.ts";
 import type { DiffRevision } from "../../shared/schema.ts";
 import { loadChangedFiles, mapChangedFiles } from "./changed-files.ts";
 import { createGh } from "./gh.ts";
@@ -330,46 +330,48 @@ function missingAttributesGh(
   nullAt?: "repository" | "pullRequest" | "commits",
 ) {
   let pages = 0;
-  const gh = createGh(async (args, stdin) => {
-    if (args[1] !== "graphql") {
-      return { code: 0, stdout: fixtureText("rest-files-cli-9000.ndjson"), stderr: "" };
-    }
-    const { query } = JSON.parse(stdin ?? "{}");
-    if (!query.includes("query ChangedFiles(")) {
-      return { code: 0, stdout: JSON.stringify({ data: head(CLI_HEAD) }), stderr: "" };
-    }
-    pages++;
-    const recorded = fixture<{
-      repository: {
-        pullRequest: { files: { nodes: { path: string; viewerViewedState: string }[] } };
-      };
-    }>("changed-files-cli-9000.json");
-    const nodes = recorded.repository.pullRequest.files.nodes;
-    for (const node of nodes.slice(3)) node.viewerViewedState = "VIEWED";
-    const data = {
-      repository:
-        nullAt === "repository"
-          ? null
-          : {
-              pullRequest:
-                nullAt === "pullRequest"
-                  ? null
-                  : {
-                      ...recordedMarks().repository.pullRequest,
-                      commits:
-                        nullAt === "commits" ? null : { nodes: [{ commit: { file: null } }] },
-                      files: {
-                        pageInfo: {
-                          hasNextPage: pages === 1,
-                          endCursor: pages === 1 ? "next" : null,
+  const gh = createGh(
+    runnerFrom(async (args, stdin) => {
+      if (args[1] !== "graphql") {
+        return { code: 0, stdout: fixtureText("rest-files-cli-9000.ndjson"), stderr: "" };
+      }
+      const { query } = JSON.parse(stdin ?? "{}");
+      if (!query.includes("query ChangedFiles(")) {
+        return { code: 0, stdout: JSON.stringify({ data: head(CLI_HEAD) }), stderr: "" };
+      }
+      pages++;
+      const recorded = fixture<{
+        repository: {
+          pullRequest: { files: { nodes: { path: string; viewerViewedState: string }[] } };
+        };
+      }>("changed-files-cli-9000.json");
+      const nodes = recorded.repository.pullRequest.files.nodes;
+      for (const node of nodes.slice(3)) node.viewerViewedState = "VIEWED";
+      const data = {
+        repository:
+          nullAt === "repository"
+            ? null
+            : {
+                pullRequest:
+                  nullAt === "pullRequest"
+                    ? null
+                    : {
+                        ...recordedMarks().repository.pullRequest,
+                        commits:
+                          nullAt === "commits" ? null : { nodes: [{ commit: { file: null } }] },
+                        files: {
+                          pageInfo: {
+                            hasNextPage: pages === 1,
+                            endCursor: pages === 1 ? "next" : null,
+                          },
+                          nodes: pages === 1 ? nodes.slice(0, 2) : nodes.slice(2),
                         },
-                        nodes: pages === 1 ? nodes.slice(0, 2) : nodes.slice(2),
                       },
-                    },
-            },
-    };
-    return { code: 1, stdout: JSON.stringify({ data, errors }), stderr: "" };
-  });
+              },
+      };
+      return { code: 1, stdout: JSON.stringify({ data, errors }), stderr: "" };
+    }),
+  );
   return { gh, pages: () => pages };
 }
 

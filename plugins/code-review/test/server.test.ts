@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -7,6 +7,8 @@ import {
   makePluginAgentConfigurationContext,
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
+import { prKey } from "../src/shared/schema.ts";
+import { baseline } from "../src/server/lib/pr-watch.ts";
 import { createStore } from "../src/server/lib/store.ts";
 import plugin from "../src/server/server.ts";
 
@@ -24,6 +26,7 @@ beforeAll(() => {
   writeFileSync(
     join(bin, "gh"),
     `#!/usr/bin/env bash
+echo "$*" >> "${join(bin, "calls")}"
 if [ "$1 $2" = "auth status" ]; then
   printf 'github.com\n  \xe2\x9c\x93 Logged in to github.com account octocat (keyring)\n  - Active account: true\n'
   exit 0
@@ -200,5 +203,105 @@ test("a linked thread that stops working tells open panels; any other thread doe
 
   const signal = { channel: "agent-activity", payload: { key: "cli/cli#9000" } };
   expect(harness.inspection.realtimeSignals).toEqual([signal, signal]);
+  await harness.lifecycle.dispose();
+});
+
+/** The `gh` commands run so far, oldest first. */
+const ghCalls = () =>
+  existsSync(join(bin, "calls")) ? readFileSync(join(bin, "calls"), "utf8").trim().split("\n") : [];
+
+/** Waits until `ready()` holds, failing after a few seconds. */
+async function until(ready: () => boolean): Promise<void> {
+  for (let i = 0; i < 300 && !ready(); i++) await Bun.sleep(10);
+  expect(ready()).toBe(true);
+}
+
+/** Whether `done` settles within half a second. */
+const settlesSoon = (done: Promise<void>) =>
+  Promise.race([done.then(() => true), Bun.sleep(500).then(() => false)]);
+
+/** A bb whose first `threads.get` waits for `release`, and that records what it sends and renames. */
+function heldThreads() {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const seen = { gets: 0, sent: 0, updated: 0 };
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "code-review",
+    sdk: {
+      threads: {
+        get: async ({ threadId }) => {
+          seen.gets++;
+          if (seen.gets === 1) await held;
+          return makeThreadResponse({ id: threadId, status: "idle" });
+        },
+        send: async () => {
+          seen.sent++;
+          return {} as never;
+        },
+        update: async () => {
+          seen.updated++;
+          return {} as never;
+        },
+      },
+    },
+  });
+  return { bb, harness, seen, release };
+}
+
+test("the pull request watch stops at once mid-poll, and nothing it started goes on", async () => {
+  const { bb, harness, seen, release } = heldThreads();
+  const read = {
+    url: "https://github.com/cli/cli/pull/9000",
+    title: "Fix auth",
+    state: "open" as const,
+    baseRefName: "trunk",
+    mergeState: "CLEAN",
+    checks: { headRefOid: "c".repeat(40), state: null, checks: [] },
+    activity: [],
+    pausedUntil: null,
+  };
+  // A watch that is due, with news the thread has not heard.
+  await bb.storage.kv.set(`watch:thr_a:${prKey(REF).toLowerCase()}`, {
+    ...baseline("thr_a", REF, "octocat", read, 0),
+    pending: ["Comment from alice: https://github.com/cli/cli/pull/9000#c-1"],
+    nextPollAt: 0,
+  });
+  await plugin(bb);
+  const service = harness.behavior.runService("pr-watch");
+  await until(() => seen.gets === 1);
+  const before = ghCalls().length;
+
+  service.controller.abort();
+  const stopped = await settlesSoon(service.done);
+  release();
+  await Bun.sleep(300);
+
+  expect(stopped).toBe(true);
+  expect(ghCalls().slice(before)).toEqual([]);
+  expect(seen.sent).toBe(0);
+  await harness.lifecycle.dispose();
+});
+
+test("the landed check stops at once mid-pass, and nothing it started goes on", async () => {
+  const { bb, harness, seen, release } = heldThreads();
+  await bb.storage.kv.set("landed:thr_a", {
+    target: { account: "octocat", prs: [REF], commits: [] },
+    since: Date.now(),
+  });
+  await plugin(bb);
+  const service = harness.behavior.runService("landed");
+  await until(() => seen.gets === 1);
+  const before = ghCalls().length;
+
+  service.controller.abort();
+  const stopped = await settlesSoon(service.done);
+  release();
+  await Bun.sleep(300);
+
+  expect(stopped).toBe(true);
+  expect(ghCalls().slice(before)).toEqual([]);
+  expect(seen.updated).toBe(0);
   await harness.lifecycle.dispose();
 });

@@ -3,6 +3,9 @@ import { execFile } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
+import { makePluginRuntime, type PluginRuntimeHost } from "@bb-plugins/effect-bridge";
+import { Effect, Layer } from "effect";
+import { runnerFrom } from "../../../test/fake-gh.ts";
 import {
   type GhRunner,
   type RunResult,
@@ -14,7 +17,7 @@ import {
 } from "./gh.ts";
 
 /** A `gh` that prints `result` for every call. */
-const answering = (result: RunResult) => createGh(async () => result);
+const answering = (result: RunResult) => createGh(runnerFrom(async () => result));
 
 /** What `gh api graphql` prints for a GraphQL answer: the body on stdout, exit 1 on errors. */
 const graphqlAnswer = (body: { data: unknown; errors?: unknown[] }): RunResult => ({
@@ -175,7 +178,7 @@ test("gh exiting before it reads a large stdin body answers with its exit code",
   await withFakeGh('echo "unknown flag: --input" >&2; exit 3', async () => {
     const body = "x".repeat(4 * 1024 * 1024);
 
-    expect(await execGh(["api", "graphql", "--input", "-"], body)).toEqual({
+    expect(await Effect.runPromise(execGh(["api", "graphql", "--input", "-"], body))).toEqual({
       code: 3,
       stdout: "",
       stderr: "unknown flag: --input\n",
@@ -212,12 +215,12 @@ test("reads the signed-in accounts from gh auth status, the active one first", (
 /** A gh signed in as AUTH_STATUS says, recording each call and the token it carried. */
 function signedIn() {
   const calls: { args: string[]; token?: string }[] = [];
-  const run: GhRunner = async (args, _stdin, env = {}) => {
+  const run = runnerFrom(async (args, _stdin, env = {}) => {
     calls.push({ args, ...(env["GH_TOKEN"] ? { token: env["GH_TOKEN"] } : {}) });
     if (args[1] === "status") return { code: 1, stdout: AUTH_STATUS, stderr: "" };
     if (args[1] === "token") return { code: 0, stdout: `t-${args.at(-1)}\n`, stderr: "" };
     return { code: 0, stdout: '{"login":"x"}', stderr: "" };
-  };
+  });
   return { calls, github: createGitHub(run) };
 }
 
@@ -259,18 +262,20 @@ test("refuses an account gh is not signed in to, and anything that could read as
 test("a token GitHub refuses is read again on the next call", async () => {
   let refused = true;
   const tokens: string[] = [];
-  const github = createGitHub(async (args, _stdin, env = {}) => {
-    if (args[1] === "status") return { code: 0, stdout: AUTH_STATUS, stderr: "" };
-    if (args[1] === "token") {
-      tokens.push(args.at(-1) ?? "");
-      return { code: 0, stdout: "t\n", stderr: "" };
-    }
-    if (refused && env["GH_TOKEN"]) {
-      refused = false;
-      return { code: 1, stdout: "", stderr: "gh: Bad credentials (HTTP 401)" };
-    }
-    return { code: 0, stdout: "{}", stderr: "" };
-  });
+  const github = createGitHub(
+    runnerFrom(async (args, _stdin, env = {}) => {
+      if (args[1] === "status") return { code: 0, stdout: AUTH_STATUS, stderr: "" };
+      if (args[1] === "token") {
+        tokens.push(args.at(-1) ?? "");
+        return { code: 0, stdout: "t\n", stderr: "" };
+      }
+      if (refused && env["GH_TOKEN"]) {
+        refused = false;
+        return { code: 1, stdout: "", stderr: "gh: Bad credentials (HTTP 401)" };
+      }
+      return { code: 0, stdout: "{}", stderr: "" };
+    }),
+  );
 
   await expect(github.as("smsunarto").rest("user")).rejects.toThrow("not signed in");
   await github.as("smsunarto").rest("user");
@@ -283,12 +288,12 @@ test("an account that signs out is not acted as again, though its token was read
   let status = AUTH_STATUS;
   const calls: string[] = [];
   const github = createGitHub(
-    async (args, _stdin, env = {}) => {
+    runnerFrom(async (args, _stdin, env = {}) => {
       calls.push(env["GH_TOKEN"] ? `${args.join(" ")} as ${env["GH_TOKEN"]}` : args.join(" "));
       if (args[1] === "status") return { code: 0, stdout: status, stderr: "" };
       if (args[1] === "token") return { code: 0, stdout: `t-${args.at(-1)}\n`, stderr: "" };
       return { code: 0, stdout: "{}", stderr: "" };
-    },
+    }),
     () => now,
   );
   await github.as("sms-yui").rest("user");
@@ -307,24 +312,26 @@ test("an account that signs out is not acted as again, though its token was read
 
 test("the bb server's own GH_TOKEN account is acted as with that token, not a stored one", async () => {
   const calls: { args: string[]; env: Record<string, string> }[] = [];
-  const github = createGitHub(async (args, _stdin, env = {}) => {
-    calls.push({ args, env });
-    if (args[1] === "status") {
-      return {
-        code: 0,
-        stdout: [
-          "github.com",
-          "  ✓ Logged in to github.com account ci-bot (GH_TOKEN)",
-          "  - Active account: true",
-          "  ✓ Logged in to github.com account smsunarto (keyring)",
-          "  - Active account: false",
-        ].join("\n"),
-        stderr: "",
-      };
-    }
-    if (args[1] === "token") return { code: 0, stdout: "t-stored\n", stderr: "" };
-    return { code: 0, stdout: "{}", stderr: "" };
-  });
+  const github = createGitHub(
+    runnerFrom(async (args, _stdin, env = {}) => {
+      calls.push({ args, env });
+      if (args[1] === "status") {
+        return {
+          code: 0,
+          stdout: [
+            "github.com",
+            "  ✓ Logged in to github.com account ci-bot (GH_TOKEN)",
+            "  - Active account: true",
+            "  ✓ Logged in to github.com account smsunarto (keyring)",
+            "  - Active account: false",
+          ].join("\n"),
+          stderr: "",
+        };
+      }
+      if (args[1] === "token") return { code: 0, stdout: "t-stored\n", stderr: "" };
+      return { code: 0, stdout: "{}", stderr: "" };
+    }),
+  );
 
   expect(await github.accounts()).toEqual(["ci-bot", "smsunarto"]);
   await github.as("ci-bot").rest("user");
@@ -339,18 +346,20 @@ test("the bb server's own GH_TOKEN account is acted as with that token, not a st
 
 test("an Enterprise Managed User is read and acted as by its whole login", async () => {
   const calls: string[][] = [];
-  const github = createGitHub(async (args) => {
-    calls.push(args);
-    if (args[1] === "status") {
-      return {
-        code: 0,
-        stdout: "github.com\n  ✓ Logged in to github.com account mona-cat_octo (keyring)\n",
-        stderr: "",
-      };
-    }
-    if (args[1] === "token") return { code: 0, stdout: "t\n", stderr: "" };
-    return { code: 0, stdout: "{}", stderr: "" };
-  });
+  const github = createGitHub(
+    runnerFrom(async (args) => {
+      calls.push(args);
+      if (args[1] === "status") {
+        return {
+          code: 0,
+          stdout: "github.com\n  ✓ Logged in to github.com account mona-cat_octo (keyring)\n",
+          stderr: "",
+        };
+      }
+      if (args[1] === "token") return { code: 0, stdout: "t\n", stderr: "" };
+      return { code: 0, stdout: "{}", stderr: "" };
+    }),
+  );
 
   expect(await github.accounts()).toEqual(["mona-cat_octo"]);
   await github.as("mona-cat_octo").rest("user");
@@ -369,12 +378,12 @@ test("a token replaced by signing in again is used once the accounts are read ag
   let token = "t-old";
   const used: string[] = [];
   const github = createGitHub(
-    async (args, _stdin, env = {}) => {
+    runnerFrom(async (args, _stdin, env = {}) => {
       if (args[1] === "status") return { code: 0, stdout: AUTH_STATUS, stderr: "" };
       if (args[1] === "token") return { code: 0, stdout: `${token}\n`, stderr: "" };
       used.push(env["GH_TOKEN"] ?? "");
       return { code: 0, stdout: "{}", stderr: "" };
-    },
+    }),
     () => now,
   );
 
@@ -391,10 +400,10 @@ test("the accounts list is read again after a minute", async () => {
   let now = 0;
   let reads = 0;
   const github = createGitHub(
-    async () => {
+    runnerFrom(async () => {
       reads++;
       return { code: 0, stdout: AUTH_STATUS, stderr: "" };
-    },
+    }),
     () => now,
   );
 
@@ -407,13 +416,128 @@ test("the accounts list is read again after a minute", async () => {
 });
 
 test("no signed-in account reads as unauthenticated, and a missing gh as missing", async () => {
-  const none = createGitHub(async () => ({
-    code: 1,
-    stdout: "",
-    stderr: "You are not logged into any GitHub hosts. To log in, run: gh auth login",
-  }));
+  const none = createGitHub(
+    runnerFrom(async () => ({
+      code: 1,
+      stdout: "",
+      stderr: "You are not logged into any GitHub hosts. To log in, run: gh auth login",
+    })),
+  );
   await expect(none.accounts()).rejects.toMatchObject({ code: "unauthenticated" });
 
-  const missing = createGitHub(async () => ({ code: 127, stdout: "", stderr: "ENOENT: gh" }));
+  const missing = createGitHub(
+    runnerFrom(async () => ({ code: 127, stdout: "", stderr: "ENOENT: gh" })),
+  );
   await expect(missing.accounts()).rejects.toMatchObject({ code: "gh-missing" });
+});
+
+test("calls at once share one read of the accounts and of each token", async () => {
+  const { calls, github } = signedIn();
+
+  await Promise.all([
+    github.accounts(),
+    github.as("sms-yui").rest("user"),
+    github.as("sms-yui").rest("user"),
+  ]);
+
+  expect(calls.filter((call) => call.args[0] === "auth").map((call) => call.args[1])).toEqual([
+    "status",
+    "token",
+  ]);
+});
+
+/** Waits until `ready()` holds, failing after a few seconds. */
+async function until(ready: () => boolean): Promise<void> {
+  for (let i = 0; i < 300 && !ready(); i++) await Bun.sleep(10);
+  expect(ready()).toBe(true);
+}
+
+test("a call that leaves while the accounts or a token are read leaves that read to finish for the next", async () => {
+  const calls: string[] = [];
+  const held = new Map<string, () => void>();
+  const github = createGitHub(
+    runnerFrom(async (args) => {
+      const command = args.slice(0, 2).join(" ");
+      calls.push(command);
+      // The first read of the accounts, and of a token, answers when the test says.
+      if (args[0] === "auth" && !held.has(command)) {
+        await new Promise<void>((resolve) => held.set(command, resolve));
+      }
+      if (args[1] === "status") return { code: 1, stdout: AUTH_STATUS, stderr: "" };
+      if (args[1] === "token") return { code: 0, stdout: `t-${args.at(-1)}\n`, stderr: "" };
+      return { code: 0, stdout: '{"login":"x"}', stderr: "" };
+    }),
+  );
+
+  for (const command of ["auth status", "auth token"]) {
+    const leaving = new AbortController();
+    const call = github.as("sms-yui", leaving.signal).rest("user");
+    await until(() => held.has(command));
+    leaving.abort();
+    await expect(call).rejects.toBeDefined();
+    held.get(command)!();
+  }
+  await github.as("sms-yui").rest("user");
+
+  expect(calls).toEqual(["auth status", "auth token", "api user"]);
+});
+
+test("unloading lets a GitHub write that has started run to its end, and still stops a read", async () => {
+  const unload: (() => Promise<void>)[] = [];
+  const host = {
+    log: { debug() {}, info() {}, warn() {}, error() {} },
+    onDispose: (dispose: () => Promise<void>) => unload.push(dispose),
+  } as unknown as PluginRuntimeHost;
+  const runtime = await makePluginRuntime(host, Layer.empty, { drainMs: 0 });
+  const events: string[] = [];
+  const finish = new Map<string, () => void>();
+  // Signed in at once; any other gh runs until the test finishes it, and says if it was stopped.
+  const runner: GhRunner = (args, stdin) => {
+    if (args[0] === "auth") {
+      const stdout =
+        args[1] === "status" ? "  ✓ Logged in to github.com account octocat (keyring)" : "t\n";
+      return Effect.succeed({ code: 0, stdout, stderr: "" });
+    }
+    const name =
+      args[1] === "graphql"
+        ? (JSON.parse(stdin ?? "{}") as { query: string }).query.split(" ")[1]!
+        : args.slice(0, 2).join(" ");
+    return Effect.callback<RunResult>((resume) => {
+      events.push(`start ${name}`);
+      finish.set(name, () => {
+        events.push(`end ${name}`);
+        resume(Effect.succeed({ code: 0, stdout: '{"data":{}}', stderr: "" }));
+      });
+      return Effect.sync(() => {
+        events.push(`stopped ${name}`);
+      });
+    });
+  };
+  const gh = createGitHub(runner, Date.now, runtime.run).as("octocat");
+  const writes = ["Submit", "api repos/acme/game/pulls/1/merge", "pr close"];
+  const calls = [
+    gh.graphql("query Viewer { viewer { login } }"),
+    gh.graphql("mutation Submit { submitPullRequestReview(input: {}) { clientMutationId } }"),
+    gh.rest("repos/acme/game/pulls/1/merge", { method: "PUT", body: { merge_method: "squash" } }),
+    gh.text(["pr", "close", "1", "--repo", "acme/game"]),
+  ];
+  for (const call of calls) call.catch(() => undefined);
+  await until(() => events.length === 4);
+
+  const unloading = Promise.all(unload.map((dispose) => dispose()));
+  await until(() => events.includes("stopped Viewer"));
+  const unloaded = await Promise.race([
+    unloading.then(() => true),
+    Bun.sleep(50).then(() => false),
+  ]);
+  // The read is stopped; each write that reached gh still runs, and unloading waits for it.
+  expect(events.filter((event) => event.startsWith("stopped"))).toEqual(["stopped Viewer"]);
+  expect(unloaded).toBe(false);
+
+  for (const name of writes) finish.get(name)!();
+  await unloading;
+  expect(events.filter((event) => event.startsWith("end")).toSorted()).toEqual(
+    writes.map((name) => `end ${name}`).toSorted(),
+  );
+  expect(events.filter((event) => event.startsWith("stopped"))).toEqual(["stopped Viewer"]);
 });

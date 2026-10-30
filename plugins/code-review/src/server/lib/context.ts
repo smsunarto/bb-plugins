@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { BlobReader } from "./blobs.ts";
+import type { BranchFinder } from "./branches.ts";
 import type { GitHub } from "./gh.ts";
 import type { PrWatcher } from "./pr-watch.ts";
 import type { Store } from "./store.ts";
@@ -12,6 +13,7 @@ export type CodeReviewServices = {
   blobs: BlobReader;
   unity: UnityPreviews;
   watcher: PrWatcher;
+  branches: BranchFinder;
 };
 
 /** What every RPC handler, command, and tool receives: the host plus the services. */

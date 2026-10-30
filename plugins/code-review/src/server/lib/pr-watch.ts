@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { setTimeout as delay } from "node:timers/promises";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { Cause, Effect, Exit, Result, Schedule } from "effect";
 import { z } from "zod";
 import {
   type Checks,
@@ -17,6 +17,7 @@ import { loadChecks } from "./checks.ts";
 import { type Gh, GhError, type GitHub } from "./gh.ts";
 import { type GqlActor, prState } from "./github.ts";
 import { createLocks } from "./lock.ts";
+import { runDetached } from "./run.ts";
 
 /*
  * Pull requests agents watch from their threads. A background service reads
@@ -433,55 +434,79 @@ export function createPrWatcher({
     });
   }
 
-  async function pollOne({ key, record }: { key: string; record: WatchRecord }): Promise<void> {
-    const outcome = await readPr(github.as(record.account), record.ref).then(
-      (read) => ({ read }),
-      (error: unknown) => ({ error }),
+  const pollOne = Effect.fnUntraced(function* ({
+    key,
+    record,
+  }: {
+    key: string;
+    record: WatchRecord;
+  }) {
+    const outcome = yield* Effect.result(
+      Effect.tryPromise({
+        try: async (signal) => readPr(github.as(record.account, signal), record.ref),
+        catch: (error) => error,
+      }),
     );
-    await withLock(record.threadId, async () => {
-      const current = watchRecordSchema.safeParse(await kv.get(key));
-      // Stopped, or stopped and started again, while the read was on the wire.
-      if (!current.success || current.data.ended || current.data.watchId !== record.watchId) return;
-      const next =
-        "read" in outcome
-          ? observe(current.data, outcome.read, now())
-          : failed(current.data, outcome.error, now());
-      await kv.set(key, next);
-      // Every read moves `polledAt`; clients refetch only for a change they would show.
-      if (shown(current.data) !== shown(next)) publish(record.threadId);
-    });
-  }
+    yield* Effect.promise(() =>
+      withLock(record.threadId, async () => {
+        const current = watchRecordSchema.safeParse(await kv.get(key));
+        // Stopped, or stopped and started again, while the read was on the wire.
+        if (!current.success || current.data.ended || current.data.watchId !== record.watchId) {
+          return;
+        }
+        const next = Result.isSuccess(outcome)
+          ? observe(current.data, outcome.success, now())
+          : failed(current.data, outcome.failure, now());
+        await kv.set(key, next);
+        // Every read moves `polledAt`; clients refetch only for a change they would show.
+        if (shown(current.data) !== shown(next)) publish(record.threadId);
+      }),
+    );
+  });
 
   /**
    * Reads every watch that is due, then delivers news to idle threads. A
    * thread archived or deleted while its watch was being set up, or while
-   * the plugin was not loaded to hear it, loses its watches here.
+   * the plugin was not loaded to hear it, loses its watches here. A poll
+   * that is stopped stops between its steps, and its reads stop their `gh`.
    */
-  async function poll(): Promise<void> {
-    const candidates = (await records()).filter(
+  const polling = Effect.gen(function* () {
+    const candidates = (yield* Effect.promise(() => records())).filter(
       ({ record }) => !record.ended && record.nextPollAt <= now(),
     );
     const threads = [...new Set(candidates.map(({ record }) => record.threadId))];
     const gone = new Set<string>();
-    await Promise.all(
-      threads.map(async (threadId) => {
-        // A thread bb cannot answer for right now is not gone.
-        if ((await threadState(threadId).catch(() => "busy")) !== "gone") return;
-        gone.add(threadId);
-        await forget(threadId);
-      }),
+    yield* Effect.forEach(
+      threads,
+      (threadId) =>
+        Effect.gen(function* () {
+          // A thread bb cannot answer for right now is not gone.
+          const state = yield* Effect.promise(() =>
+            threadState(threadId).catch(() => "busy" as const),
+          );
+          if (state !== "gone") return;
+          gone.add(threadId);
+          yield* Effect.promise(() => forget(threadId));
+        }),
+      { concurrency: "unbounded", discard: true },
     );
     const due = candidates.filter(({ record }) => !gone.has(record.threadId));
-    for (let i = 0; i < due.length; i += MAX_PARALLEL_POLLS) {
-      await Promise.all(due.slice(i, i + MAX_PARALLEL_POLLS).map(pollOne));
-    }
+    // Each read finishes on its own, so a slow pull request holds up only itself.
+    const polled = yield* Effect.forEach(due, (entry) => Effect.exit(pollOne(entry)), {
+      concurrency: MAX_PARALLEL_POLLS,
+    });
+    const failure = polled.find(Exit.isFailure);
+    if (failure) return yield* failure;
     const waiting = new Set(
-      (await records())
+      (yield* Effect.promise(() => records()))
         .filter(({ record }) => record.pending.length > 0)
         .map(({ record }) => record.threadId),
     );
-    await Promise.all([...waiting].map(flush));
-  }
+    yield* Effect.forEach(waiting, (threadId) => Effect.promise(() => flush(threadId)), {
+      concurrency: "unbounded",
+      discard: true,
+    });
+  });
 
   /** Writes the thread's new watch from `read`. Call with the thread's lock held. */
   async function start(
@@ -556,19 +581,20 @@ export function createPrWatcher({
         .toSorted((a, b) => a.startedAt.localeCompare(b.startedAt));
     },
 
-    poll,
+    /** One poll, for a caller outside the plugin's background service. */
+    poll: () => runDetached(polling),
     flush,
     forget,
 
-    /** Polls until `signal` aborts: the body of the plugin's background service. */
-    async run(signal: AbortSignal): Promise<void> {
-      while (!signal.aborted) {
-        await poll().catch((error: unknown) => {
-          bb.log.warn(`Pull request watch poll failed: ${String(error)}`);
-        });
-        await delay(TICK_MS, undefined, { signal }).catch(() => {});
-      }
-    },
+    /** The body of the plugin's background service: a poll every few seconds, until it stops. */
+    watching: polling.pipe(
+      Effect.catchCause((cause) =>
+        Cause.hasInterruptsOnly(cause)
+          ? Effect.failCause(cause)
+          : Effect.logWarning(`Pull request watch poll failed: ${String(Cause.squash(cause))}`),
+      ),
+      Effect.repeat(Schedule.spaced(TICK_MS)),
+    ),
   };
 }
 

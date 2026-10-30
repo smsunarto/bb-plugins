@@ -97,3 +97,35 @@ test("a read that fails is not remembered, so asking again retries", async () =>
   fail = false;
   expect(await previews.read(comparison, "P.prefab", null)).toMatchObject({ state: "objects" });
 });
+
+test("both sides that never finish reading fail at the read's deadline, as a 504", async () => {
+  const reader: BlobReader = {
+    describe: async () => ({}) as never,
+    open: async () => ({}) as never,
+    text: (_request, _maxBytes, signal) =>
+      new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      }),
+  };
+  const real = globalThis.setTimeout;
+  globalThis.setTimeout = ((handler: () => void, ms?: number) =>
+    real(handler, (ms ?? 0) >= 1000 ? 0 : ms)) as typeof setTimeout;
+  try {
+    await expect(
+      createUnityPreviews(reader).read(comparison, "P.prefab", null),
+    ).rejects.toMatchObject({ status: 504, message: "Reading the asset took too long." });
+  } finally {
+    globalThis.setTimeout = real;
+  }
+});
+
+test("an asset asked for twice at once is read once", async () => {
+  const { reader, reads } = files({ "base:P.prefab": prefab(5), "head:P.prefab": prefab(8) });
+  const previews = createUnityPreviews(reader);
+  const [a, b] = await Promise.all([
+    previews.read(comparison, "P.prefab", null),
+    previews.read(comparison, "P.prefab", null),
+  ]);
+  expect(a).toEqual(b);
+  expect(reads).toHaveLength(2);
+});
