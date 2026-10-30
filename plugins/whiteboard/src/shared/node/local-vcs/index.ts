@@ -1168,7 +1168,8 @@ function parseGitCommitRange(output: string): LocalVcsCommitSummary[] {
     if (!/^[0-9a-f]{40}$/iu.test(commit)) continue;
     const parentCommit = (fields[index++] ?? "").split(" ")[0] ?? "";
     const author = fields[index++] ?? "";
-    const authoredAt = fields[index++] ?? "";
+    // `%aI` prints UTC as `Z` from git 2.45 and as `+00:00` before it.
+    const authoredAt = (fields[index++] ?? "").replace(/\+00:00$/u, "Z");
     const subject = fields[index++] ?? "";
 
     if (fields[index] === "") index += 1;
