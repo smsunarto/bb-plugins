@@ -7,9 +7,10 @@
 //   SDK. That also sidesteps the SDK rejecting near-tied answers whose rounded
 //   probabilities put the pick second.
 // - OpenRouter serves Jev from its Decisions endpoint.
+import { Effect } from "effect";
 import { z } from "zod";
 import { DEFAULT_JEV_MODELS } from "./preferences";
-import { jevTransport } from "./transport";
+import { JevTransport, type TransportResponse } from "./transport";
 
 export type JevProvider = "vercel" | "openrouter";
 
@@ -83,7 +84,6 @@ export interface AskChoicesArgs {
    * them side by side in one request, in about the time it takes to answer one.
    */
   questions: Record<string, ChoiceQuestion>;
-  signal?: AbortSignal;
   timeoutMs?: number;
   /** Send with this fetch instead of the shared warm connection. For tests. */
   fetchImpl?: typeof fetch;
@@ -219,23 +219,32 @@ function argmax(probabilities: Record<string, number>): string | null {
   return best;
 }
 
-async function requestOnce(
+/** The gateway's raw answer, over the shared warm connection or the caller's fetch. */
+function send(
   args: AskChoicesArgs,
-  signal: AbortSignal,
-): Promise<Record<string, ChoiceAnswer>> {
-  const startedAt = Date.now();
-  const { headers, body: requestBody } = buildRequest(args);
+  headers: Record<string, string>,
+  payload: string,
+): Effect.Effect<TransportResponse, unknown, JevTransport> {
   const { url } = JEV_PROVIDERS[args.provider];
-  const payload = JSON.stringify(requestBody);
-  let status: number;
-  let body: string;
-  if (args.fetchImpl === undefined) {
-    ({ status, body } = await jevTransport.post(url, headers, payload, signal));
-  } else {
-    const response = await args.fetchImpl(url, { method: "POST", signal, headers, body: payload });
-    status = response.status;
-    body = await response.text();
+  const { fetchImpl } = args;
+  if (fetchImpl === undefined) {
+    return JevTransport.use((transport) => transport.post(url, headers, payload));
   }
+  return Effect.tryPromise({
+    try: async (signal) => {
+      const response = await fetchImpl(url, { method: "POST", signal, headers, body: payload });
+      return { status: response.status, body: await response.text() };
+    },
+    catch: (error) => error,
+  });
+}
+
+/** Jev's answers under the caller's keys, or the error the response calls for. */
+function readAnswers(
+  args: AskChoicesArgs,
+  { status, body }: TransportResponse,
+  startedAt: number,
+): Record<string, ChoiceAnswer> {
   if (status < 200 || status >= 300) {
     const error = errorForStatus(args.provider, status, body);
     // 5xx is worth one more try; everything else is the caller's to fix.
@@ -283,46 +292,67 @@ async function requestOnce(
   return result;
 }
 
+const requestOnce = Effect.fnUntraced(function* (args: AskChoicesArgs) {
+  const startedAt = Date.now();
+  const { headers, payload } = yield* Effect.try({
+    try: () => {
+      const { headers, body } = buildRequest(args);
+      return { headers, payload: JSON.stringify(body) };
+    },
+    catch: (error) => error,
+  });
+  const response = yield* send(args, headers, payload);
+  return yield* Effect.try({
+    try: () => readAnswers(args, response, startedAt),
+    catch: (error) => error,
+  });
+});
+
 /** Ask Jev every question in `questions` about `state`, in one request. */
-export async function askChoices(args: AskChoicesArgs): Promise<Record<string, ChoiceAnswer>> {
+export const askChoices = Effect.fnUntraced(function* (
+  args: AskChoicesArgs,
+): Effect.fn.Return<Record<string, ChoiceAnswer>, JevError, JevTransport> {
   if (Object.keys(args.questions).length === 0) return {};
   for (const question of Object.values(args.questions)) {
     const optionCount = Object.keys(question.options).length;
     if (optionCount === 0) {
-      throw new JevError("failed", "Jev needs at least one option to choose from.");
+      return yield* Effect.fail(
+        new JevError("failed", "Jev needs at least one option to choose from."),
+      );
     }
     if (optionCount > MAX_CHOICE_OPTIONS) {
-      throw new JevError(
-        "failed",
-        `Jev accepts at most ${MAX_CHOICE_OPTIONS} options; got ${optionCount}.`,
+      return yield* Effect.fail(
+        new JevError(
+          "failed",
+          `Jev accepts at most ${MAX_CHOICE_OPTIONS} options; got ${optionCount}.`,
+        ),
       );
     }
   }
 
   const timeoutMs = args.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const timeout = AbortSignal.timeout(timeoutMs);
-    const signal = args.signal === undefined ? timeout : AbortSignal.any([args.signal, timeout]);
-    try {
-      return await requestOnce(args, signal);
-    } catch (error) {
-      if (args.signal?.aborted) throw error;
-      if (timeout.aborted) {
-        lastError = new JevError("timeout", `Jev did not answer within ${timeoutMs / 1000}s.`);
-        continue;
-      }
-      if (error instanceof JevError) throw error;
-      lastError = error;
-    }
-  }
-  if (lastError instanceof JevError) throw lastError;
-  const message = lastError instanceof Error ? lastError.message : String(lastError);
-  throw new JevError(
-    "failed",
-    `Could not reach Jev on ${JEV_PROVIDERS[args.provider].name}: ${message}`,
+  return yield* requestOnce(args).pipe(
+    Effect.timeoutOrElse({
+      duration: timeoutMs,
+      orElse: () =>
+        Effect.fail(new JevError("timeout", `Jev did not answer within ${timeoutMs / 1000}s.`)),
+    }),
+    // A slow answer, a 5xx, or no connection is worth one more try; a JevError
+    // is a setup problem another try will not fix.
+    Effect.retry({
+      times: 1,
+      while: (error) => !(error instanceof JevError) || error.code === "timeout",
+    }),
+    Effect.mapError((error) =>
+      error instanceof JevError
+        ? error
+        : new JevError(
+            "failed",
+            `Could not reach Jev on ${JEV_PROVIDERS[args.provider].name}: ${error instanceof Error ? error.message : String(error)}`,
+          ),
+    ),
   );
-}
+});
 
 export interface JevRoute {
   provider: JevProvider;
@@ -335,51 +365,51 @@ export interface JevRoute {
  * unavailable. A rejected key or an unreadable answer is a setup problem on
  * that route, so it moves on too; only the last route's error is reported.
  */
-export async function askChoicesVia(
+export function askChoicesVia(
   routes: readonly JevRoute[],
   args: Omit<AskChoicesArgs, keyof JevRoute>,
-): Promise<Record<string, ChoiceAnswer>> {
-  let lastError: unknown = new JevError("failed", "No Jev API key is configured.");
-  for (const route of routes) {
-    try {
-      return await askChoices({ ...args, ...route });
-    } catch (error) {
-      if (args.signal?.aborted) throw error;
-      lastError = error;
-    }
+): Effect.Effect<Record<string, ChoiceAnswer>, JevError, JevTransport> {
+  if (routes.length === 0) {
+    return Effect.fail(new JevError("failed", "No Jev API key is configured."));
   }
-  throw lastError;
+  return Effect.firstSuccessOf(routes.map((route) => askChoices({ ...args, ...route })));
 }
 
 /** Ask Jev one multiple-choice question about `state`. */
-export async function askChoice(args: AskChoiceArgs): Promise<ChoiceAnswer> {
+export const askChoice = Effect.fnUntraced(function* (args: AskChoiceArgs) {
   const { question, ...rest } = args;
-  const answers = await askChoices({ ...rest, questions: { only: question } });
+  const answers = yield* askChoices({ ...rest, questions: { only: question } });
   const answer = answers.only;
-  if (answer === undefined) throw new JevError("bad_response", "Jev did not answer the question.");
+  if (answer === undefined) {
+    return yield* Effect.fail(new JevError("bad_response", "Jev did not answer the question."));
+  }
   return answer;
-}
+});
 
 /**
  * Open the connection to each route's gateway ahead of need. A new connection
  * is primed with one trivial question, a few hundred tokens, so that the slow
  * first request is not the user's.
  */
-export async function warmRoutes(routes: readonly JevRoute[]): Promise<void> {
-  await Promise.all(
-    routes.map((route) =>
-      jevTransport.warm(JEV_PROVIDERS[route.provider].url, () =>
-        askChoices({
-          ...route,
-          state: "Warming up the connection.",
-          questions: {
-            ready: {
-              instructions: "Is the connection ready?",
-              options: { yes: "Ready.", no: "Not ready." },
+export function warmRoutes(routes: readonly JevRoute[]): Effect.Effect<void, never, JevTransport> {
+  return JevTransport.use((transport) =>
+    Effect.forEach(
+      routes,
+      (route) =>
+        transport.warm(
+          JEV_PROVIDERS[route.provider].url,
+          askChoices({
+            ...route,
+            state: "Warming up the connection.",
+            questions: {
+              ready: {
+                instructions: "Is the connection ready?",
+                options: { yes: "Ready.", no: "Not ready." },
+              },
             },
-          },
-        }),
-      ),
+          }),
+        ),
+      { concurrency: "unbounded", discard: true },
     ),
   );
 }

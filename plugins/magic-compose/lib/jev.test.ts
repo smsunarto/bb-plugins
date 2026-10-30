@@ -1,5 +1,16 @@
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { askChoice, askChoices, askChoicesVia, JEV_PROVIDERS, JevError } from "./jev";
+import * as jev from "./jev";
+import { JEV_PROVIDERS, JevError } from "./jev";
+import { JevTransport } from "./transport";
+
+/** Jev as its callers run it; with `fetchImpl` the shared connection is never opened. */
+const run = <A>(effect: Effect.Effect<A, JevError, JevTransport>) =>
+  Effect.runPromise(Effect.provide(effect, JevTransport.layer));
+const askChoice = (args: jev.AskChoiceArgs) => run(jev.askChoice(args));
+const askChoices = (args: jev.AskChoicesArgs) => run(jev.askChoices(args));
+const askChoicesVia = (...args: Parameters<typeof jev.askChoicesVia>) =>
+  run(jev.askChoicesVia(...args));
 
 const question = {
   instructions: "Pick the project.",
@@ -301,5 +312,105 @@ describe("askChoices", () => {
         fetchImpl,
       }),
     ).toEqual({});
+  });
+});
+
+describe("askChoice deadlines and retries", () => {
+  const answered = () =>
+    new Response(JSON.stringify({ answers: { q0: { type: "choice", choice: "bb" } } }));
+  /** A gateway that never answers, and gives up only when the request is aborted. */
+  const hang = (init?: RequestInit) =>
+    new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+    });
+
+  it("gives each attempt its own deadline and retries once after a timeout", async () => {
+    let calls = 0;
+    const fetchImpl: typeof fetch = async (_url, init) => (++calls === 1 ? hang(init) : answered());
+    const answer = await askChoice({
+      provider: "vercel",
+      apiKey: "key",
+      model: "m",
+      state: "s",
+      question,
+      fetchImpl,
+      timeoutMs: 50,
+    });
+    expect(calls).toBe(2);
+    expect(answer.choice).toBe("bb");
+  });
+
+  it("reports a timeout when both attempts run out of time", async () => {
+    let calls = 0;
+    const error = await askChoice({
+      provider: "vercel",
+      apiKey: "key",
+      model: "m",
+      state: "s",
+      question,
+      fetchImpl: async (_url, init) => {
+        calls++;
+        return hang(init);
+      },
+      timeoutMs: 50,
+    }).catch((cause: unknown) => cause);
+    expect(calls).toBe(2);
+    expect(error).toBeInstanceOf(JevError);
+    expect(error).toMatchObject({ code: "timeout", message: "Jev did not answer within 0.05s." });
+  });
+
+  it("names the gateway when it cannot be reached or keeps failing", async () => {
+    let calls = 0;
+    const unreachable = await askChoice({
+      provider: "vercel",
+      apiKey: "key",
+      model: "m",
+      state: "s",
+      question,
+      fetchImpl: async () => {
+        calls++;
+        throw new TypeError("fetch failed");
+      },
+    }).catch((cause: unknown) => cause);
+    expect(calls).toBe(2);
+    expect(unreachable).toBeInstanceOf(JevError);
+    expect(unreachable).toMatchObject({
+      code: "failed",
+      message: "Could not reach Jev on Vercel AI Gateway: fetch failed",
+    });
+
+    const failing = await askChoice({
+      provider: "openrouter",
+      apiKey: "key",
+      model: "m",
+      state: "s",
+      question,
+      fetchImpl: respond(503, { error: { message: "overloaded" } }),
+    }).catch((cause: unknown) => cause);
+    expect(failing).toMatchObject({
+      code: "failed",
+      message:
+        "Could not reach Jev on OpenRouter: Jev request to OpenRouter failed (HTTP 503): overloaded",
+    });
+  });
+
+  it("does not retry an unreadable answer", async () => {
+    let calls = 0;
+    const error = await askChoice({
+      provider: "vercel",
+      apiKey: "key",
+      model: "m",
+      state: "s",
+      question,
+      fetchImpl: async () => {
+        calls++;
+        return new Response("not json");
+      },
+    }).catch((cause: unknown) => cause);
+    expect(calls).toBe(1);
+    expect(error).toMatchObject({
+      code: "bad_response",
+      message: "Jev returned a response Magic Compose could not read.",
+    });
   });
 });

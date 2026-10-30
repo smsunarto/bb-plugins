@@ -4,6 +4,7 @@ import { parseReasoningLevel, DEFAULT_REASONING_LEVELS, REASONING_LEVELS } from 
 // reasoning level with Jev (TypeSafe's classifier) on the Vercel AI Gateway,
 // then start the thread there. app.tsx owns the composer toggle; this file
 // gathers the candidates, asks Jev, and spawns.
+import { makePluginRuntime, type PluginRuntime } from "@bb-plugins/effect-bridge";
 import {
   cliCommand,
   defineCli,
@@ -12,6 +13,7 @@ import {
   type PluginCliPositional,
   type PluginRpcHandlers,
 } from "@get-bb/plugin-sdk";
+import { Cause, Context, Data, Effect, Exit, Fiber, FiberSet, Layer } from "effect";
 import { z } from "zod";
 import { hostContract, machineStatsSchema } from "./contract";
 import {
@@ -22,8 +24,8 @@ import {
   type JevProvider,
   type JevRoute,
 } from "./lib/jev";
-import { jevTransport } from "./lib/transport";
-import { SwrCache } from "./lib/cache";
+import { JevTransport } from "./lib/transport";
+import { makeSwrCache, type SwrCache } from "./lib/cache";
 import {
   backtestRows,
   parseMapping,
@@ -74,6 +76,13 @@ const SERVE_STALE_MS = 10 * 60_000;
  */
 const FACT_WAIT_MS = 350;
 const PROVIDER_CHECK_TIMEOUT_MS = 2_500;
+/**
+ * How long loading a project's environments or a provider's models may take.
+ * A dispatch waits only PROVIDER_CHECK_TIMEOUT_MS for them, but the load goes
+ * on and caches the answer for the next one. One still running once its
+ * answer would no longer be fresh has likely hung, so it gives way to a retry.
+ */
+const AVAILABILITY_LOAD_TIMEOUT_MS = AVAILABILITY_FRESH_MS;
 /** A fresh worktree per thread, unless the user picks otherwise. */
 const DEFAULT_ENVIRONMENTS = ["git-worktree"];
 /** Works for any project with a folder, so it backs up environments that need git. */
@@ -258,25 +267,154 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function withTimeout<T>(work: (signal: AbortSignal) => Promise<T>, ms: number): Promise<T> {
-  return work(AbortSignal.timeout(ms));
+class NoAnswer extends Data.TaggedError("NoAnswer")<{ readonly message: string }> {}
+
+/**
+ * `call`, given `ms` to answer. Past that it is aborted, and its caller moves
+ * on even if it ignores the abort.
+ */
+function deadline<A>(ms: number, call: (signal: AbortSignal) => Promise<A>) {
+  return Effect.tryPromise({ try: async (signal) => call(signal), catch: (error) => error }).pipe(
+    Effect.timeoutOrElse({
+      duration: ms,
+      orElse: () => Effect.fail(new NoAnswer({ message: `no answer within ${ms / 1000}s` })),
+    }),
+  );
 }
 
-/** `work`'s answer, or `fallback` if it has not arrived within `ms`. The work carries on. */
-function within<T>(ms: number, work: Promise<T>, fallback: T): Promise<T> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(fallback), ms);
-    work.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      () => {
-        clearTimeout(timer);
-        resolve(fallback);
-      },
-    );
+/** Past `FACT_WAIT_MS`, a dispatch goes on without the fact. */
+const unlessSlow = Effect.timeoutOrElse({
+  duration: FACT_WAIT_MS,
+  orElse: () => Effect.succeed(null),
+});
+
+/** Past a provider check, a dispatch goes on with `fallback`; the load carries on. */
+const withinProviderCheck = <B>(fallback: B) =>
+  Effect.timeoutOrElse({
+    duration: PROVIDER_CHECK_TIMEOUT_MS,
+    orElse: () => Effect.succeed(fallback),
   });
+
+/** `work` for every item at once, by the item's id. */
+function byId<T extends { id: string }, A, E, R>(
+  items: readonly T[],
+  work: (item: T) => Effect.Effect<A, E, R>,
+) {
+  return Effect.forEach(
+    items,
+    (item) => Effect.map(work(item), (value) => [item.id, value] as const),
+    {
+      concurrency: "unbounded",
+    },
+  ).pipe(Effect.map((entries) => new Map(entries)));
+}
+
+/** The plugin API, for the code that runs on the plugin's Effect runtime. */
+class Bb extends Context.Service<Bb, BbPluginApi>()("magic-compose/Bb") {}
+
+type EnvironmentProvider = Awaited<
+  ReturnType<BbPluginApi["sdk"]["environments"]["listProviders"]>
+>[number];
+type ModelCatalog = Awaited<ReturnType<BbPluginApi["sdk"]["providers"]["models"]>>;
+
+/**
+ * What a dispatch needs to know about each machine, project, and model
+ * provider. It reads them through caches, so it never waits on a machine that
+ * is slow to answer, and `warm` fills them while the user is still typing. A
+ * read never fails: it logs why, and answers with what routing does without
+ * the fact.
+ */
+class Facts extends Context.Service<
+  Facts,
+  {
+    readonly machineStats: (hostId: string) => Effect.Effect<MachineStats | null>;
+    /** Provider id → available, or null when the machine could not be asked. */
+    readonly machineProviders: (hostId: string) => Effect.Effect<Map<string, boolean> | null>;
+    /** None when the project's environments could not be read. */
+    readonly environments: (projectId: string) => Effect.Effect<EnvironmentProvider[]>;
+    /** Null when the provider's models could not be read. */
+    readonly modelCatalog: (providerId: string) => Effect.Effect<ModelCatalog | null>;
+    /** Load them again now, so a dispatch in the next moments finds them fresh. */
+    readonly refresh: (
+      hostIds: readonly string[],
+      projectIds: readonly string[],
+    ) => Effect.Effect<void>;
+  }
+>()("magic-compose/Facts") {
+  static readonly layer = Layer.effect(
+    Facts,
+    Effect.gen(function* () {
+      const bb = yield* Bb;
+      const host = bb.hosts.experimental_client({ contract: hostContract });
+      const stats = yield* makeSwrCache(
+        (hostId) =>
+          deadline(STATS_TIMEOUT_MS, (signal) => host.call("stats", null, { hostId, signal })),
+        STATS_FRESH_MS,
+        SERVE_STALE_MS,
+      );
+      const providers = yield* makeSwrCache(
+        (hostId) =>
+          Effect.map(
+            deadline(PROVIDER_CHECK_TIMEOUT_MS, (signal) =>
+              bb.sdk.providers.list({ hostId, signal }),
+            ),
+            (list) => new Map(list.map((entry) => [entry.id, entry.available] as const)),
+          ),
+        AVAILABILITY_FRESH_MS,
+        SERVE_STALE_MS,
+      );
+      const environments = yield* makeSwrCache(
+        (projectId) =>
+          deadline(AVAILABILITY_LOAD_TIMEOUT_MS, (signal) =>
+            bb.sdk.environments.listProviders({ projectId, signal }),
+          ),
+        AVAILABILITY_FRESH_MS,
+        SERVE_STALE_MS,
+      );
+      const catalogs = yield* makeSwrCache(
+        (providerId) =>
+          deadline(AVAILABILITY_LOAD_TIMEOUT_MS, (signal) =>
+            bb.sdk.providers.models({ providerId, signal }),
+          ),
+        AVAILABILITY_FRESH_MS,
+        SERVE_STALE_MS,
+      );
+
+      // A caller that stops waiting, as a dispatch does after FACT_WAIT_MS,
+      // leaves the read to finish, and to log if it fails.
+      const reads = yield* FiberSet.make();
+      const read = <A, E, B>(cache: SwrCache<A, E>, key: string, fallback: B, problem: string) =>
+        FiberSet.run(
+          reads,
+          cache
+            .get(key)
+            .pipe(
+              Effect.catch((error) =>
+                Effect.as(
+                  Effect.logWarning(`${problem} for ${key}: ${messageOf(error)}`),
+                  fallback,
+                ),
+              ),
+            ),
+        ).pipe(Effect.flatMap(Fiber.join));
+
+      return Facts.of({
+        machineStats: (hostId) => read(stats, hostId, null, "machine stats unavailable"),
+        machineProviders: (hostId) => read(providers, hostId, null, "provider check failed"),
+        environments: (projectId) => read(environments, projectId, [], "environments unavailable"),
+        modelCatalog: (providerId) => read(catalogs, providerId, null, "model catalog unavailable"),
+        refresh: (hostIds, projectIds) =>
+          Effect.forEach(
+            [
+              ...hostIds.flatMap((hostId) => [stats.refresh(hostId), providers.refresh(hostId)]),
+              ...projectIds.map((projectId) => environments.refresh(projectId)),
+            ],
+            (refresh) => Effect.ignore(refresh),
+            { concurrency: "unbounded", discard: true },
+          ),
+      });
+    }),
+  );
 }
 
 function summarizePick<T>(pick: Pick<T>): z.infer<typeof pickSchema> {
@@ -315,7 +453,7 @@ function formatDecision(decision: DecisionSummary): string {
   ].join("\n");
 }
 
-function createServices(bb: BbPluginApi) {
+function createServices(bb: BbPluginApi, runtime: PluginRuntime<Facts | JevTransport>) {
   const settings = bb.settings.define({
     gatewayApiKey: {
       type: "string",
@@ -340,10 +478,6 @@ function createServices(bb: BbPluginApi) {
       default: "auto",
     },
   });
-
-  const host = bb.hosts.experimental_client({ contract: hostContract });
-  // The warm connections to Jev belong to this load of the plugin.
-  bb.onDispose(() => jevTransport.close());
 
   async function readPreferences(): Promise<Preferences> {
     return readStoredPreferences(await bb.storage.kv.get(PREFERENCES_KEY));
@@ -403,52 +537,6 @@ function createServices(bb: BbPluginApi) {
     });
   }
 
-  type EnvironmentProvider = Awaited<ReturnType<typeof bb.sdk.environments.listProviders>>[number];
-
-  // A dispatch reads these through caches, so it never waits on a machine
-  // that is slow to answer. `warm` fills them while the user is still typing.
-  const statsCache = new SwrCache<MachineStats>(
-    (hostId) =>
-      withTimeout((signal) => host.call("stats", null, { hostId, signal }), STATS_TIMEOUT_MS),
-    STATS_FRESH_MS,
-    SERVE_STALE_MS,
-  );
-  const hostProvidersCache = new SwrCache<Map<string, boolean>>(
-    async (hostId) => {
-      const providers = await withTimeout(
-        (signal) => bb.sdk.providers.list({ hostId, signal }),
-        PROVIDER_CHECK_TIMEOUT_MS,
-      );
-      return new Map(providers.map((entry) => [entry.id, entry.available] as const));
-    },
-    AVAILABILITY_FRESH_MS,
-    SERVE_STALE_MS,
-  );
-  const environmentsCache = new SwrCache<EnvironmentProvider[]>(
-    (projectId) => bb.sdk.environments.listProviders({ projectId }),
-    AVAILABILITY_FRESH_MS,
-    SERVE_STALE_MS,
-  );
-
-  async function machineStats(hostId: string): Promise<MachineStats | null> {
-    try {
-      return await statsCache.get(hostId);
-    } catch (error) {
-      bb.log.warn(`machine stats unavailable for ${hostId}: ${messageOf(error)}`);
-      return null;
-    }
-  }
-
-  /** Provider id → available, or null when the machine could not be asked. */
-  async function machineProviders(hostId: string): Promise<Map<string, boolean> | null> {
-    try {
-      return await hostProvidersCache.get(hostId);
-    } catch (error) {
-      bb.log.warn(`provider check failed for ${hostId}: ${messageOf(error)}`);
-      return null;
-    }
-  }
-
   /** The connected machines, with how many threads each is running right now. */
   async function loadMachines() {
     const [hosts, systemConfig, running] = await Promise.all([
@@ -502,22 +590,18 @@ function createServices(bb: BbPluginApi) {
     return candidates;
   }
 
-  type ModelCatalog = Awaited<ReturnType<typeof bb.sdk.providers.models>>;
-
-  async function loadModels(rotation: RotationEntry[]): Promise<{
-    models: ModelCandidate[];
-    catalogs: Map<string, ModelCatalog>;
-  }> {
-    const catalogs = new Map<string, ModelCatalog>();
-    await Promise.all(
-      [...new Set(rotation.map((entry) => entry.providerId))].map(async (providerId) => {
-        try {
-          catalogs.set(providerId, await bb.sdk.providers.models({ providerId }));
-        } catch (error) {
-          bb.log.warn(`model catalog unavailable for ${providerId}: ${messageOf(error)}`);
-        }
-      }),
+  const loadModels = Effect.fnUntraced(function* (rotation: RotationEntry[]) {
+    const facts = yield* Facts;
+    const loaded = yield* Effect.forEach(
+      [...new Set(rotation.map((entry) => entry.providerId))],
+      (providerId) =>
+        facts.modelCatalog(providerId).pipe(
+          withinProviderCheck(null),
+          Effect.map((catalog) => (catalog === null ? [] : [[providerId, catalog] as const])),
+        ),
+      { concurrency: "unbounded" },
     );
+    const catalogs = new Map<string, ModelCatalog>(loaded.flat());
     const models = rotation.map((entry): ModelCandidate => {
       const catalog = catalogs.get(entry.providerId);
       const model = catalog?.models.find((candidate) => candidate.model === entry.model);
@@ -530,7 +614,7 @@ function createServices(bb: BbPluginApi) {
       };
     });
     return { models, catalogs };
-  }
+  });
 
   interface RoutedThread {
     decision: RouteDecision;
@@ -556,48 +640,86 @@ function createServices(bb: BbPluginApi) {
    * only, whether or not it is one Magic Compose may choose: that is for a composer
    * whose project Magic Compose has been told to leave alone.
    */
-  async function decide(text: string, projectId: string | null = null): Promise<RoutedThread> {
-    try {
-      const routed = await decideWithin(text, projectId);
-      lastAsked = { at: Date.now(), latencyMs: routed.profiler.elapsed(), error: null };
-      return routed;
-    } catch (error) {
-      lastAsked = { at: Date.now(), latencyMs: null, error: messageOf(error) };
-      throw error;
-    }
+  function decide(text: string, projectId: string | null = null) {
+    return decideWithin(text, projectId).pipe(
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          if (Exit.isSuccess(exit)) {
+            lastAsked = { at: Date.now(), latencyMs: exit.value.profiler.elapsed(), error: null };
+          } else if (!Cause.hasInterruptsOnly(exit.cause)) {
+            lastAsked = {
+              at: Date.now(),
+              latencyMs: null,
+              error: messageOf(Cause.squash(exit.cause)),
+            };
+          }
+        }),
+      ),
+    );
   }
 
-  async function decideWithin(text: string, projectId: string | null): Promise<RoutedThread> {
+  const decideWithin = Effect.fnUntraced(function* (
+    text: string,
+    projectId: string | null,
+  ): Effect.fn.Return<RoutedThread, RouteError, Facts | JevTransport> {
+    const facts = yield* Facts;
     const profiler = new Profiler();
-    const config = await profiler.time("settings", () => readConfig());
-    const routes = await profiler.time("settings.keys", () => jevRoutes());
+    const config = yield* profiler.time(
+      "settings",
+      Effect.promise(() => readConfig()),
+    );
+    const routes = yield* profiler.time(
+      "settings.keys",
+      Effect.promise(() => jevRoutes()),
+    );
     if (routes.length === 0) {
-      throw new RouteError(
-        config.jevProvider === "auto"
-          ? "Add a Vercel AI Gateway or OpenRouter API key in Magic Compose settings first."
-          : config.jevProvider === "openrouter"
-            ? "Add an OpenRouter API key in Magic Compose settings, or set the Jev provider to auto."
-            : "Add a Vercel AI Gateway API key in Magic Compose settings, or set the Jev provider to auto.",
+      return yield* Effect.fail(
+        new RouteError(
+          config.jevProvider === "auto"
+            ? "Add a Vercel AI Gateway or OpenRouter API key in Magic Compose settings first."
+            : config.jevProvider === "openrouter"
+              ? "Add an OpenRouter API key in Magic Compose settings, or set the Jev provider to auto."
+              : "Add a Vercel AI Gateway API key in Magic Compose settings, or set the Jev provider to auto.",
+        ),
       );
     }
-    const rotation = await profiler.time("kv.rotation", () => readRotation());
+    const rotation = yield* profiler.time(
+      "kv.rotation",
+      Effect.promise(() => readRotation()),
+    );
     if (rotation.length === 0) {
-      throw new RouteError("Add at least one model to the rotation in Magic Compose settings.");
+      return yield* Effect.fail(
+        new RouteError("Add at least one model to the rotation in Magic Compose settings."),
+      );
     }
 
-    const scope = await profiler.time("kv.scope", () => readScope());
-    const [projects, { models, catalogs }, { hosts, connected, candidate }] = await Promise.all([
-      profiler.time("load.projects", async () =>
-        projectId === null
-          ? loadProjects(scope)
-          : (await loadProjects({ ...scope, allProjects: true })).filter(
-              (project) => project.id === projectId,
-            ),
-      ),
-      profiler.time("load.modelCatalogs", () => loadModels(rotation)),
-      profiler.time("load.machines", () => loadMachines()),
-    ]);
-    if (connected.length === 0) throw new RouteError("No machine is connected.");
+    const scope = yield* profiler.time(
+      "kv.scope",
+      Effect.promise(() => readScope()),
+    );
+    const [projects, { models, catalogs }, { hosts, connected, candidate }] = yield* Effect.all(
+      [
+        profiler.time(
+          "load.projects",
+          Effect.promise(async () =>
+            projectId === null
+              ? loadProjects(scope)
+              : (await loadProjects({ ...scope, allProjects: true })).filter(
+                  (project) => project.id === projectId,
+                ),
+          ),
+        ),
+        profiler.time("load.modelCatalogs", loadModels(rotation)),
+        profiler.time(
+          "load.machines",
+          Effect.promise(() => loadMachines()),
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
+    if (connected.length === 0) {
+      return yield* Effect.fail(new RouteError("No machine is connected."));
+    }
     // A project checked out only on machines that are offline cannot run
     // anywhere right now, so it is not worth offering.
     const online = new Set(connected.map((entry) => entry.id));
@@ -606,54 +728,38 @@ function createServices(bb: BbPluginApi) {
         project.isPersonal || project.sources.some((source) => online.has(source.hostId)),
     );
     if (reachable.length === 0) {
-      throw new RouteError(
-        projectId !== null
-          ? "The composer's project is not on a connected machine."
-          : projects.length === 0
-            ? "Pick at least one project for Magic Compose in Magic Compose settings."
-            : "None of the projects Magic Compose may use is on a connected machine.",
+      return yield* Effect.fail(
+        new RouteError(
+          projectId !== null
+            ? "The composer's project is not on a connected machine."
+            : projects.length === 0
+              ? "Pick at least one project for Magic Compose in Magic Compose settings."
+              : "None of the projects Magic Compose may use is on a connected machine.",
+        ),
       );
     }
     // Everything code must know before Jev is asked anything: what each
     // machine is doing, which providers it runs, and which environments it can
     // create for each project. All cached, all fetched side by side.
-    const [statsByHost, providersByHost, environmentsByProject] = await Promise.all([
-      profiler.time(
-        "facts.machineStats",
-        async () =>
-          new Map(
-            await Promise.all(
-              connected.map(
-                async (entry) =>
-                  [entry.id, await within(FACT_WAIT_MS, machineStats(entry.id), null)] as const,
-              ),
-            ),
+    const [statsByHost, providersByHost, environmentsByProject] = yield* Effect.all(
+      [
+        profiler.time(
+          "facts.machineStats",
+          byId(connected, (entry) => facts.machineStats(entry.id).pipe(unlessSlow)),
+        ),
+        profiler.time(
+          "facts.machineProviders",
+          byId(connected, (entry) => facts.machineProviders(entry.id).pipe(unlessSlow)),
+        ),
+        profiler.time(
+          "facts.environments",
+          byId(reachable, (project) =>
+            facts.environments(project.id).pipe(withinProviderCheck([])),
           ),
-      ),
-      profiler.time(
-        "facts.machineProviders",
-        async () =>
-          new Map(
-            await Promise.all(
-              connected.map(
-                async (entry) =>
-                  [entry.id, await within(FACT_WAIT_MS, machineProviders(entry.id), null)] as const,
-              ),
-            ),
-          ),
-      ),
-      profiler.time(
-        "facts.environments",
-        async () =>
-          new Map(
-            await Promise.all(
-              reachable.map(
-                async (project) => [project.id, await environmentsCache.get(project.id)] as const,
-              ),
-            ),
-          ),
-      ),
-    ]);
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
 
     let permissionMode: PermissionMode =
       PERMISSION_MODES.find((mode) => mode === config.permissionMode) ?? "auto";
@@ -743,36 +849,44 @@ function createServices(bb: BbPluginApi) {
     }
 
     let requests = 0;
-    const routed = await route({
-      task: text,
-      instructions: {
-        general: config.generalInstructions,
-        projects: config.projectInstructions,
-        machines: config.machineInstructions,
-        models: config.modelInstructions,
-        environments: config.environmentInstructions,
-      },
-      projects: reachable,
-      models,
-      hostNames: new Map(hosts.map((entry) => [entry.id, entry.name] as const)),
-      reasoningLevels: scope.reasoningLevels,
-      ask: (batch) => {
-        const count = Object.keys(batch.questions).length;
-        return profiler.time(`jev.request${++requests} (${count} questions)`, () =>
-          askChoicesVia(routes, batch),
-        );
-      },
-      targetsFor,
-      reasoningFor(model): ReasoningCandidate[] {
-        const entry = catalogs
-          .get(model.providerId)
-          ?.models.find((candidate) => candidate.model === model.model);
-        return (entry?.supportedReasoningEfforts ?? []).flatMap((effort) => {
-          const level = parseReasoningLevel(effort.reasoningEffort);
-          return level === null ? [] : [{ level, description: effort.description }];
-        });
-      },
-    });
+    // The router asks through a callback; each ask runs as part of this work.
+    const run = Effect.runPromiseWith(yield* Effect.context<JevTransport>());
+    const routed = yield* Effect.promise((signal) =>
+      route({
+        task: text,
+        instructions: {
+          general: config.generalInstructions,
+          projects: config.projectInstructions,
+          machines: config.machineInstructions,
+          models: config.modelInstructions,
+          environments: config.environmentInstructions,
+        },
+        projects: reachable,
+        models,
+        hostNames: new Map(hosts.map((entry) => [entry.id, entry.name] as const)),
+        reasoningLevels: scope.reasoningLevels,
+        ask: (batch) => {
+          const count = Object.keys(batch.questions).length;
+          return run(
+            profiler.time(
+              `jev.request${++requests} (${count} questions)`,
+              askChoicesVia(routes, batch),
+            ),
+            { signal },
+          );
+        },
+        targetsFor,
+        reasoningFor(model): ReasoningCandidate[] {
+          const entry = catalogs
+            .get(model.providerId)
+            ?.models.find((candidate) => candidate.model === model.model);
+          return (entry?.supportedReasoningEfforts ?? []).flatMap((effort) => {
+            const level = parseReasoningLevel(effort.reasoningEffort);
+            return level === null ? [] : [{ level, description: effort.description }];
+          });
+        },
+      }),
+    );
 
     const chosenTargets = targetsFor(routed.project.value, routed.model.value);
     const usedFallbackEnvironment = chosenTargets.usedFallback;
@@ -805,7 +919,7 @@ function createServices(bb: BbPluginApi) {
       environmentInputs: inputsByEnvironment.get(decision.environment.value.id) ?? {},
       permissionMode,
     };
-  }
+  });
 
   function summarize(routed: RoutedThread): DecisionSummary {
     const { decision } = routed;
@@ -832,13 +946,25 @@ function createServices(bb: BbPluginApi) {
     return new Error(messageOf(error));
   }
 
-  /** Route `text` and start the thread there. What `bb magic-compose spawn` runs. */
-  async function dispatch(text: string): Promise<{ threadId: string; decision: DecisionSummary }> {
-    try {
-      const routed = await decide(text);
-      const summary = summarize(routed);
-      const projectId = summary.project.id;
-      const thread = await routed.profiler.time("threads.spawn", () =>
+  /**
+   * Route `text` and start the thread there. What `bb magic-compose spawn`
+   * runs. `signal` stops the routing. A spawn already under way runs outside
+   * it: the bridge reports any run the signal interrupts as aborted, and that
+   * thread starts whether or not anyone is still waiting for it.
+   */
+  async function dispatch(text: string, signal?: AbortSignal) {
+    const routed = await runtime.run(decide(text), signal);
+    signal?.throwIfAborted();
+    return runtime.run(startThread(routed, text));
+  }
+
+  /** Start the thread `routed` chose, and log where it went. Nothing interrupts the two. */
+  const startThread = Effect.fnUntraced(function* (routed: RoutedThread, text: string) {
+    const summary = summarize(routed);
+    const projectId = summary.project.id;
+    const thread = yield* routed.profiler.time(
+      "threads.spawn",
+      Effect.promise(async () =>
         bb.sdk.threads.spawn({
           projectId,
           providerId: summary.model.providerId,
@@ -854,25 +980,27 @@ function createServices(bb: BbPluginApi) {
           input: [{ type: "text", text, mentions: [] }],
           pluginMetadata: { decision: { ...summary, timings: [] } },
         }),
-      );
-      bb.log.info(
-        `dispatched ${thread.id}: ${summary.project.label} · ${summary.machine.label} · ${summary.model.label} · ${summary.reasoning.label} · ${summary.environment.label} (decided in ${summary.latencyMs}ms, ${routed.profiler.spans
-          .filter((span) => !span.name.startsWith("facts.") && span.endMs - span.startMs >= 20)
-          .map((span) => `${span.name} ${span.endMs - span.startMs}ms`)
-          .join(", ")})`,
-      );
-      // Summarized again so the timings cover the spawn as well.
-      return { threadId: thread.id, decision: summarize(routed) };
-    } catch (error) {
-      throw userFacing(error);
-    }
-  }
+      ),
+    );
+    yield* Effect.logInfo(
+      `dispatched ${thread.id}: ${summary.project.label} · ${summary.machine.label} · ${summary.model.label} · ${summary.reasoning.label} · ${summary.environment.label} (decided in ${summary.latencyMs}ms, ${routed.profiler.spans
+        .filter((span) => !span.name.startsWith("facts.") && span.endMs - span.startMs >= 20)
+        .map((span) => `${span.name} ${span.endMs - span.startMs}ms`)
+        .join(", ")})`,
+    );
+    // Summarized again so the timings cover the spawn as well.
+    return { threadId: thread.id, decision: summarize(routed) };
+  }, Effect.uninterruptible);
 
   /** What Jev is told about each connected machine. */
-  async function describeMachines() {
-    const { connected, candidate } = await loadMachines();
-    const machines = await Promise.all(
-      connected.map(async (entry) => candidate(entry, await machineStats(entry.id), null, [])),
+  const describeMachines = Effect.fnUntraced(function* () {
+    const facts = yield* Facts;
+    const { connected, candidate } = yield* Effect.promise(() => loadMachines());
+    const machines = yield* Effect.forEach(
+      connected,
+      (entry) =>
+        Effect.map(facts.machineStats(entry.id), (stats) => candidate(entry, stats, null, [])),
+      { concurrency: "unbounded" },
     );
     return machines.map((machine) => ({
       id: machine.id,
@@ -880,7 +1008,7 @@ function createServices(bb: BbPluginApi) {
       description: describeMachine(machine),
       stats: machine.stats,
     }));
-  }
+  });
 
   const handlers = {
     status: async () => {
@@ -896,25 +1024,31 @@ function createServices(bb: BbPluginApi) {
     preferencesSet: async ({ preferences }) => ({
       preferences: await writePreferences(preferences),
     }),
-    machines: async () => ({ machines: await describeMachines() }),
-    warm: async () => {
-      const routes = await jevRoutes();
-      if (routes.length === 0) return { warmed: false };
-      const [{ connected }, projects] = await Promise.all([
-        loadMachines(),
-        bb.sdk.projects.list({ includePersonal: true }),
-        warmRoutes(routes),
-      ]);
-      // Refreshed, not just read, so a dispatch in the next moments finds them fresh.
-      await Promise.allSettled([
-        ...connected.flatMap((entry) => [
-          statsCache.refresh(entry.id),
-          hostProvidersCache.refresh(entry.id),
-        ]),
-        ...projects.map((project) => environmentsCache.refresh(project.id)),
-      ]);
-      return { warmed: true };
-    },
+    machines: async () => ({ machines: await runtime.run(describeMachines()) }),
+    warm: () =>
+      runtime.run(
+        Effect.gen(function* () {
+          const routes = yield* Effect.promise(() => jevRoutes());
+          if (routes.length === 0) return { warmed: false };
+          const [{ connected }, projects] = yield* Effect.all(
+            [
+              Effect.promise(() => loadMachines()),
+              Effect.promise(async (signal) =>
+                bb.sdk.projects.list({ includePersonal: true, signal }),
+              ),
+              warmRoutes(routes),
+            ],
+            { concurrency: "unbounded" },
+          );
+          // Refreshed, not just read, so a dispatch in the next moments finds them fresh.
+          const facts = yield* Facts;
+          yield* facts.refresh(
+            connected.map((entry) => entry.id),
+            projects.map((project) => project.id),
+          );
+          return { warmed: true };
+        }),
+      ),
     rotationGet: async () => ({ entries: await readRotation() }),
     rotationSet: async ({ entries }) => {
       await bb.storage.kv.set(ROTATION_KEY, entries);
@@ -974,7 +1108,7 @@ function createServices(bb: BbPluginApi) {
     },
     preview: async ({ text, projectId }) => {
       try {
-        return { decision: summarize(await decide(text, projectId)) };
+        return { decision: summarize(await runtime.run(decide(text, projectId))) };
       } catch (error) {
         throw userFacing(error);
       }
@@ -989,6 +1123,7 @@ function createServices(bb: BbPluginApi) {
    */
   const COMPOSER_PLUGINS = ["quick-compose", "quick-chat"];
   const HISTORY_PROMPT_CHARS = 400;
+  type Thread = Awaited<ReturnType<typeof bb.sdk.threads.list>>[number];
   const firstTurnSchema = z.object({
     initiator: z.string().optional(),
     input: z.array(z.object({ type: z.string(), text: z.string().optional() })).optional(),
@@ -997,33 +1132,30 @@ function createServices(bb: BbPluginApi) {
       .optional(),
   });
 
-  async function inBatches<T, R>(items: readonly T[], size: number, work: (item: T) => Promise<R>) {
-    const results: R[] = [];
-    for (let at = 0; at < items.length; at += size) {
-      results.push(...(await Promise.all(items.slice(at, at + size).map(work))));
-    }
-    return results;
-  }
-
   /**
    * The model and effort the user chose for each thread they started, newest
    * first. Threads started by plugins or automations are left out, this
    * plugin's included: those choices were not the user's.
    */
-  async function loadHistory(days: number, extraOrigins: readonly string[]): Promise<HistoryRow[]> {
+  const loadHistory = Effect.fnUntraced(function* (days: number, extraOrigins: readonly string[]) {
     const userOrigins = new Set([...COMPOSER_PLUGINS, ...extraOrigins]);
     const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
-    const [projects, threads] = await Promise.all([
-      bb.sdk.projects.list({ includePersonal: true }),
-      (async () => {
-        const all: Awaited<ReturnType<typeof bb.sdk.threads.list>> = [];
-        for (let offset = 0; ; offset += 500) {
-          const page = await bb.sdk.threads.list({ limit: 500, offset });
-          all.push(...page);
-          if (page.length < 500) return all;
-        }
-      })(),
-    ]);
+    const [projects, threads] = yield* Effect.all(
+      [
+        Effect.promise(async (signal) => bb.sdk.projects.list({ includePersonal: true, signal })),
+        Effect.gen(function* () {
+          const all: Thread[] = [];
+          for (let offset = 0; ; offset += 500) {
+            const page = yield* Effect.promise(async (signal) =>
+              bb.sdk.threads.list({ limit: 500, offset, signal }),
+            );
+            all.push(...page);
+            if (page.length < 500) return all;
+          }
+        }),
+      ],
+      { concurrency: "unbounded" },
+    );
     const projectNames = new Map(
       projects.map((project) => [
         project.id,
@@ -1042,53 +1174,73 @@ function createServices(bb: BbPluginApi) {
       .sort((a, b) => b.createdAt - a.createdAt)
       .slice(0, HISTORY_MAX_THREADS);
 
-    const rows = await inBatches(started, 16, async (thread): Promise<HistoryRow | null> => {
-      try {
-        const [first] = await bb.sdk.threads.events.list({
-          threadId: thread.id,
-          limit: "1",
-          order: "asc",
-          types: ["client/turn/requested"],
-        });
-        const turn = firstTurnSchema.safeParse(first?.data);
-        if (!turn.success || turn.data.initiator !== "user") return null;
-        const { model, reasoningLevel } = turn.data.execution ?? {};
-        if (model === undefined || reasoningLevel === undefined) return null;
-        return {
-          threadId: thread.id,
-          createdAt: thread.createdAt,
-          project: projectNames.get(thread.projectId) ?? thread.projectId,
-          providerId: thread.providerId,
-          model,
-          effort: reasoningLevel,
-          prompt: (turn.data.input ?? [])
-            .map((part) => (part.type === "text" ? (part.text ?? "") : ""))
-            .join(" ")
-            .replace(/\s+/gu, " ")
-            .trim(),
-        };
-      } catch {
-        return null;
-      }
-    });
+    /** What the user chose for `thread`, from its first turn; null when it was not their choice. */
+    const historyRow = (thread: Thread, firstTurn: unknown): HistoryRow | null => {
+      const turn = firstTurnSchema.safeParse(firstTurn);
+      if (!turn.success || turn.data.initiator !== "user") return null;
+      const { model, reasoningLevel } = turn.data.execution ?? {};
+      if (model === undefined || reasoningLevel === undefined) return null;
+      return {
+        threadId: thread.id,
+        createdAt: thread.createdAt,
+        project: projectNames.get(thread.projectId) ?? thread.projectId,
+        providerId: thread.providerId,
+        model,
+        effort: reasoningLevel,
+        prompt: (turn.data.input ?? [])
+          .map((part) => (part.type === "text" ? (part.text ?? "") : ""))
+          .join(" ")
+          .replace(/\s+/gu, " ")
+          .trim(),
+      };
+    };
+    const rows = yield* Effect.forEach(
+      started,
+      (thread) =>
+        Effect.tryPromise({
+          try: async (signal) =>
+            bb.sdk.threads.events.list({
+              threadId: thread.id,
+              limit: "1",
+              order: "asc",
+              types: ["client/turn/requested"],
+              signal,
+            }),
+          catch: (error) => error,
+        }).pipe(
+          Effect.map(([first]) => historyRow(thread, first?.data)),
+          // A thread whose first turn cannot be read is left out.
+          Effect.orElseSucceed(() => null),
+        ),
+      { concurrency: 16 },
+    );
     return rows.filter((entry) => entry !== null);
-  }
+  });
 
   /**
    * Ask Jev, with the current rotation and instructions, which model and
    * effort it would pick for each past prompt. Only those two questions are
    * asked: the world is reduced to one project on one machine.
    */
-  async function backtest(rows: readonly HistoryRow[]): Promise<BacktestResult[]> {
-    const config = await readConfig();
-    const routes = await jevRoutes();
-    if (routes.length === 0)
-      throw new RouteError("Add a Jev API key in Magic Compose settings first.");
-    const [scope, { models, catalogs }] = await Promise.all([
-      readScope(),
-      readRotation().then(loadModels),
-    ]);
-    await warmRoutes(routes);
+  const backtest = Effect.fnUntraced(function* (rows: readonly HistoryRow[]) {
+    const config = yield* Effect.promise(() => readConfig());
+    const routes = yield* Effect.promise(() => jevRoutes());
+    if (routes.length === 0) {
+      return yield* Effect.fail(
+        new RouteError("Add a Jev API key in Magic Compose settings first."),
+      );
+    }
+    const [scope, { models, catalogs }] = yield* Effect.all(
+      [
+        Effect.promise(() => readScope()),
+        Effect.flatMap(
+          Effect.promise(() => readRotation()),
+          (rotation) => loadModels(rotation),
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
+    yield* warmRoutes(routes);
     const project: ProjectCandidate = {
       id: "backtest",
       name: "backtest",
@@ -1106,43 +1258,59 @@ function createServices(bb: BbPluginApi) {
       projectPath: null,
       environmentIds: ["backtest"],
     };
-    const results = await inBatches(rows, 8, async (row): Promise<BacktestResult | null> => {
-      try {
-        const decision = await route({
-          task: row.prompt,
-          instructions: {
-            general: config.generalInstructions,
-            models: config.modelInstructions,
-            projects: "",
-            machines: "",
-            environments: "",
-          },
-          projects: [project],
-          models,
-          hostNames: new Map(),
-          reasoningLevels: scope.reasoningLevels,
-          ask: (batch) => askChoicesVia(routes, batch),
-          targetsFor: () => ({
-            machines: [machine],
-            environments: [{ id: "backtest", name: "backtest", description: "" }],
-          }),
-          reasoningFor: (model) =>
-            (
-              catalogs.get(model.providerId)?.models.find((entry) => entry.model === model.model)
-                ?.supportedReasoningEfforts ?? []
-            ).flatMap((effort) => {
-              const level = parseReasoningLevel(effort.reasoningEffort);
-              return level === null ? [] : [{ level, description: effort.description }];
+    const run = Effect.runPromiseWith(yield* Effect.context<JevTransport>());
+    const results = yield* Effect.forEach(
+      rows,
+      (row) =>
+        Effect.tryPromise({
+          try: (signal) =>
+            route({
+              task: row.prompt,
+              instructions: {
+                general: config.generalInstructions,
+                models: config.modelInstructions,
+                projects: "",
+                machines: "",
+                environments: "",
+              },
+              projects: [project],
+              models,
+              hostNames: new Map(),
+              reasoningLevels: scope.reasoningLevels,
+              ask: (batch) => run(askChoicesVia(routes, batch), { signal }),
+              targetsFor: () => ({
+                machines: [machine],
+                environments: [{ id: "backtest", name: "backtest", description: "" }],
+              }),
+              reasoningFor: (model) =>
+                (
+                  catalogs
+                    .get(model.providerId)
+                    ?.models.find((entry) => entry.model === model.model)
+                    ?.supportedReasoningEfforts ?? []
+                ).flatMap((effort) => {
+                  const level = parseReasoningLevel(effort.reasoningEffort);
+                  return level === null ? [] : [{ level, description: effort.description }];
+                }),
             }),
-        });
-        return { row, model: decision.model.value.model, effort: decision.reasoning.value };
-      } catch (error) {
-        bb.log.warn(`backtest skipped ${row.threadId}: ${messageOf(error)}`);
-        return null;
-      }
-    });
+          catch: (error) => error,
+        }).pipe(
+          Effect.map((decision): BacktestResult => ({
+            row,
+            model: decision.model.value.model,
+            effort: decision.reasoning.value,
+          })),
+          Effect.catch((error) =>
+            Effect.as(
+              Effect.logWarning(`backtest skipped ${row.threadId}: ${messageOf(error)}`),
+              null,
+            ),
+          ),
+        ),
+      { concurrency: 8 },
+    );
     return results.filter((entry) => entry !== null);
-  }
+  });
 
   const VALUE_FLAGS = new Set(["--days", "--map", "--exclude", "--limit", "--include-origin"]);
   function parseArgs(argv: readonly string[]) {
@@ -1175,7 +1343,7 @@ function createServices(bb: BbPluginApi) {
     "  bb magic-compose backtest [--days 14] [--map <regex>=<model>]... [--exclude <regex>] [--limit 250] [--json]",
     "                                             Route your past prompts through Jev and score agreement with what you chose",
   ].join("\n");
-  const runCli = async (argv: string[]) => {
+  const runCli = async (argv: string[], signal?: AbortSignal) => {
     let parsedArgs: ReturnType<typeof parseArgs>;
     try {
       parsedArgs = parseArgs(argv);
@@ -1271,7 +1439,10 @@ function createServices(bb: BbPluginApi) {
       };
     }
     if (command === "history") {
-      const rows = await loadHistory(days, values.get("--include-origin") ?? []);
+      const rows = await runtime.run(
+        loadHistory(days, values.get("--include-origin") ?? []),
+        signal,
+      );
       const counts = tally(rows);
       if (json) {
         return {
@@ -1312,7 +1483,7 @@ function createServices(bb: BbPluginApi) {
         const limit = Math.min(Math.max(Number(values.get("--limit")?.[0] ?? 250) || 250, 1), 500);
         const excludeText = values.get("--exclude")?.[0];
         const selection = backtestRows(
-          await loadHistory(days, values.get("--include-origin") ?? []),
+          await runtime.run(loadHistory(days, values.get("--include-origin") ?? []), signal),
           {
             mappings: (values.get("--map") ?? []).map(parseMapping),
             exclude: excludeText === undefined ? null : new RegExp(excludeText, "iu"),
@@ -1320,7 +1491,7 @@ function createServices(bb: BbPluginApi) {
           },
         );
         const rows = selection.rows.slice(0, limit);
-        const results = await backtest(rows);
+        const results = await runtime.run(backtest(rows), signal);
         const scope = await readScope();
         const scored = score(results, new Set(scope.reasoningLevels));
         const misses = results
@@ -1358,7 +1529,7 @@ function createServices(bb: BbPluginApi) {
       }
     }
     if (command === "machines") {
-      const described = await describeMachines();
+      const described = await runtime.run(describeMachines(), signal);
       return {
         exitCode: 0,
         stdout: json
@@ -1373,13 +1544,15 @@ function createServices(bb: BbPluginApi) {
     if (!prompt.success) return { exitCode: 1, stderr: usage };
     try {
       if (command === "route") {
-        const decision = summarize(await decide(prompt.data));
+        const decision = summarize(await runtime.run(decide(prompt.data), signal));
         return {
           exitCode: 0,
           stdout: json ? JSON.stringify(decision) : formatDecision(decision) + timeline(decision),
         };
       }
-      const parsed = await dispatch(prompt.data);
+      const parsed = await dispatch(prompt.data, signal).catch((error: unknown) => {
+        throw userFacing(error);
+      });
       return {
         exitCode: 0,
         stdout: json
@@ -1440,29 +1613,37 @@ function forwardCommand(ctx: PluginContext, spec: CommandSpec) {
     description: spec.description,
     options: Object.fromEntries(spec.optionKeys.map((key) => [key, options[key]])),
     positionals,
-    run: (input) =>
-      ctx.runCli([
-        spec.name,
-        ...positionals.flatMap(({ name }) => {
-          const value = input.positionals[name];
-          return value === undefined ? [] : Array.isArray(value) ? value : [value];
-        }),
-        ...Object.entries(input.options).flatMap(([key, value]) =>
-          value === undefined || value === false
-            ? []
-            : value === true
-              ? [`--${key}`]
-              : (Array.isArray(value) ? value : [value]).flatMap((item) => [
-                  `--${key}`,
-                  String(item),
-                ]),
-        ),
-      ]),
+    run: (input, cli) =>
+      ctx.runCli(
+        [
+          spec.name,
+          ...positionals.flatMap(({ name }) => {
+            const value = input.positionals[name];
+            return value === undefined ? [] : Array.isArray(value) ? value : [value];
+          }),
+          ...Object.entries(input.options).flatMap(([key, value]) =>
+            value === undefined || value === false
+              ? []
+              : value === true
+                ? [`--${key}`]
+                : (Array.isArray(value) ? value : [value]).flatMap((item) => [
+                    `--${key}`,
+                    String(item),
+                  ]),
+          ),
+        ],
+        cli.signal,
+      ),
   });
 }
 
 export default async function plugin(bb: BbPluginApi): Promise<void> {
-  const ctx: PluginContext = Object.freeze({ bb, ...createServices(bb) });
+  // The plugin's warm connections and cached facts live until it is unloaded.
+  const runtime = await makePluginRuntime(
+    bb,
+    Layer.mergeAll(Facts.layer, JevTransport.layer).pipe(Layer.provide(Layer.succeed(Bb, bb))),
+  );
+  const ctx: PluginContext = Object.freeze({ bb, ...createServices(bb, runtime) });
   const { handlers } = ctx;
   bb.rpc.register(rpcContract, handlers);
   bb.cli.register(

@@ -1,46 +1,58 @@
 // Slow-changing facts a dispatch should not wait for: a fresh answer is
 // reused, a stale one is served at once while a refresh runs behind it, and
 // only a missing one makes the caller wait.
+import { Clock, Effect, Fiber, FiberMap, Option, type Scope } from "effect";
 
 const REFRESH_DELAY_MS = 50;
 
-export class SwrCache<T> {
-  private readonly entries = new Map<string, { value: T; at: number }>();
-  private readonly inflight = new Map<string, Promise<T>>();
+export interface SwrCache<A, E> {
+  get(key: string): Effect.Effect<A, E>;
+  /** Load `key` now, sharing the work with anyone already loading it. */
+  refresh(key: string): Effect.Effect<A, E>;
+}
 
-  constructor(
-    private readonly load: (key: string) => Promise<T>,
-    private readonly freshMs: number,
-    private readonly staleMs: number,
-  ) {}
+/**
+ * Each key has at most one load at a time, in a fiber the cache owns: a caller
+ * that stops waiting leaves it running for everyone else, and closing the
+ * cache's scope stops it.
+ */
+export const makeSwrCache = Effect.fnUntraced(function* <A, E>(
+  load: (key: string) => Effect.Effect<A, E>,
+  freshMs: number,
+  staleMs: number,
+): Effect.fn.Return<SwrCache<A, E>, never, Scope.Scope> {
+  const entries = new Map<string, { value: A; at: number }>();
+  const loads = yield* FiberMap.make<string, A, E>();
 
-  async get(key: string): Promise<T> {
-    const entry = this.entries.get(key);
-    const age = entry === undefined ? Infinity : Date.now() - entry.at;
-    if (entry !== undefined && age < this.freshMs) return entry.value;
-    if (entry !== undefined && age < this.staleMs) {
+  /** The load running for `key`, or a new one that starts after `delayMs`. */
+  const loading = (key: string, delayMs = 0) =>
+    Effect.suspend(() => {
+      const running = FiberMap.getUnsafe(loads, key);
+      if (Option.isSome(running)) return Effect.succeed(running.value);
+      const loaded = load(key).pipe(
+        Effect.tap((value) =>
+          Effect.map(Clock.currentTimeMillis, (at) => void entries.set(key, { value, at })),
+        ),
+      );
+      return FiberMap.run(loads, key, delayMs === 0 ? loaded : Effect.delay(loaded, delayMs));
+    });
+
+  const refresh = (key: string) => Effect.flatMap(loading(key), Fiber.join);
+
+  const get = Effect.fnUntraced(function* (key: string) {
+    const entry = entries.get(key);
+    const age = entry === undefined ? Infinity : (yield* Clock.currentTimeMillis) - entry.at;
+    if (entry !== undefined && age < freshMs) return entry.value;
+    if (entry !== undefined && age < staleMs) {
       // The stale value is good enough, and a failed refresh just leaves it in
       // place. The refresh starts a moment later rather than now: starting one
       // can cost synchronous work, and the caller is about to do something
       // that matters more.
-      const timer = setTimeout(() => void this.refresh(key).catch(() => {}), REFRESH_DELAY_MS);
-      timer.unref?.();
+      yield* loading(key, REFRESH_DELAY_MS);
       return entry.value;
     }
-    return this.refresh(key);
-  }
+    return yield* refresh(key);
+  });
 
-  /** Load `key` now, sharing the work with anyone already loading it. */
-  refresh(key: string): Promise<T> {
-    const running = this.inflight.get(key);
-    if (running !== undefined) return running;
-    const loading = this.load(key)
-      .then((value) => {
-        this.entries.set(key, { value, at: Date.now() });
-        return value;
-      })
-      .finally(() => this.inflight.delete(key));
-    this.inflight.set(key, loading);
-    return loading;
-  }
-}
+  return { get, refresh };
+});

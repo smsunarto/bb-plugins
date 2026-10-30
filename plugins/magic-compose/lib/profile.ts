@@ -1,5 +1,6 @@
 // Where a routing decision's time goes: named spans on one clock, so work that
 // ran in parallel shows up as overlapping bars.
+import { Effect } from "effect";
 
 export interface Span {
   name: string;
@@ -11,14 +12,15 @@ export class Profiler {
   private readonly origin = performance.now();
   readonly spans: Span[] = [];
 
-  /** Time `work` under `name`, whether it resolves or throws. */
-  async time<T>(name: string, work: () => Promise<T>): Promise<T> {
-    const startMs = this.elapsed();
-    try {
-      return await work();
-    } finally {
-      this.spans.push({ name, startMs, endMs: this.elapsed() });
-    }
+  /** Time `work` under `name`, however it ends. */
+  time<A, E, R>(name: string, work: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
+    return Effect.suspend(() => {
+      const startMs = this.elapsed();
+      return Effect.ensuring(
+        work,
+        Effect.sync(() => this.spans.push({ name, startMs, endMs: this.elapsed() })),
+      );
+    });
   }
 
   elapsed(): number {
