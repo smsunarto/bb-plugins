@@ -24,17 +24,45 @@ export interface DocumentWriter {
   refetch(): Promise<void>;
 }
 
-export interface DocumentState {
-  loaded: boolean;
-  path: string;
-  base: DocumentSnapshot | null;
+/** The document as the page shows it. `dirty` means the draft differs from what `base` shows. */
+export interface DocumentContent {
+  base: DocumentSnapshot;
   draft: string;
   dirty: boolean;
-  saving: boolean;
-  busy: boolean;
-  conflict: DocumentSnapshot | null;
-  missing: boolean;
-  error: string | null;
+}
+
+type Mode =
+  /** Edits autosave. */
+  | { mode: "editing"; saving: boolean; conflict: DocumentSnapshot | null }
+  /** A proposal action is in flight. A read that lands meanwhile waits in `held`. */
+  | { mode: "resolving"; held: DocumentSnapshot | null }
+  /** The action landed; reads older than this proposal version are ignored. */
+  | { mode: "awaiting"; version: number };
+
+type Phase<Content> =
+  | { phase: "loading" }
+  /**
+   * The document cannot be read. `last` is what the page showed before, so it
+   * can stay visible and be copied; it is null when nothing ever loaded.
+   */
+  | {
+      phase: "unavailable";
+      reason: "missing" | "unknown-vault" | "error";
+      message: string;
+      last: Content | null;
+    }
+  /** `error` is the last failed read, save, or proposal action, cleared by a retry or a good read. */
+  | ({ phase: "loaded"; error: string | null } & Content & Mode);
+
+export type DocumentState = { path: string } & Phase<DocumentContent>;
+
+/** A state whose `dirty` the session fills in, shown or retained. */
+type Uncommitted = { path: string } & Phase<Omit<DocumentContent, "dirty">>;
+
+/** The document to show, if any was ever read. */
+export function contentOf(state: DocumentState): DocumentContent | null {
+  if (state.phase === "loaded") return state;
+  return state.phase === "unavailable" ? state.last : null;
 }
 
 const RESOLVE_TIMEOUT_MS = 5_000;
@@ -50,8 +78,11 @@ function identity(snapshot: DocumentSnapshot): string {
   ]);
 }
 
-function isMissingError(message: string): boolean {
-  return /\bENOENT\b|path does not exist|not found|no such file|unknown vault/i.test(message);
+function unavailableReason(message: string): "missing" | "unknown-vault" | "error" {
+  if (/unknown vault/i.test(message)) return "unknown-vault";
+  return /\bENOENT\b|path does not exist|not found|no such file/i.test(message)
+    ? "missing"
+    : "error";
 }
 
 export function createDocumentSession(options: {
@@ -60,18 +91,7 @@ export function createDocumentSession(options: {
   delay: number;
   onRename?(from: string, to: string): void;
 }) {
-  let state: DocumentState = {
-    loaded: false,
-    path: options.path,
-    base: null,
-    draft: "",
-    dirty: false,
-    saving: false,
-    busy: false,
-    conflict: null,
-    missing: false,
-    error: null,
-  };
+  let state: DocumentState = { path: options.path, phase: "loading" };
   const listeners = new Set<() => void>();
   const pendingReadIdentities = new Map<string, number>();
   let readConfirmationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -79,17 +99,32 @@ export function createDocumentSession(options: {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let saving: Promise<void> | null = null;
   let inFlight: string | null = null;
-  let awaitingVersion: number | null = null;
   let awaitTimer: ReturnType<typeof setTimeout> | null = null;
-  let held: DocumentSnapshot | null = null;
 
   const shown = (snapshot: DocumentSnapshot) =>
     options.showsProposals && snapshot.proposal?.status === "pending"
       ? snapshot.proposal.content
       : snapshot.content;
-  const set = (patch: Partial<DocumentState>) => {
-    state = { ...state, ...patch };
-    state.dirty = state.base !== null && state.draft !== shown(state.base);
+  const filled = (content: Omit<DocumentContent, "dirty">): DocumentContent => ({
+    ...content,
+    dirty: content.draft !== shown(content.base),
+  });
+  const commit = (next: Uncommitted) => {
+    // The autosave and resolve timers belong to the modes that start them.
+    if (timer && (next.phase !== "loaded" || next.mode !== "editing")) {
+      clearTimeout(timer);
+      timer = null;
+    }
+    if (awaitTimer && (next.phase !== "loaded" || next.mode !== "awaiting")) {
+      clearTimeout(awaitTimer);
+      awaitTimer = null;
+    }
+    state =
+      next.phase === "loaded"
+        ? { ...next, ...filled(next) }
+        : next.phase === "unavailable"
+          ? { ...next, last: next.last && filled(next.last) }
+          : next;
     for (const listener of listeners) listener();
   };
   const clearReadConfirmation = () => {
@@ -112,13 +147,28 @@ export function createDocumentSession(options: {
       void writer?.refetch();
     }, READ_CONFIRMATION_MS);
   };
+  /**
+   * Shows the result of a write that landed. While the document is unavailable
+   * it goes into `last`, so a restore does not resend the hash the write replaced.
+   */
+  const landed = (from: DocumentSnapshot, next: DocumentSnapshot, path: string) => {
+    recordLocalWrite(from, next);
+    const current = state;
+    if (current.phase === "loaded") commit({ ...current, path, base: next, error: null });
+    else if (current.phase === "unavailable" && current.last)
+      commit({ ...current, path, last: { ...current.last, base: next } });
+  };
+  /** Shows `snapshot` with nothing unsaved. A save loop already running keeps going. */
   const adopt = (snapshot: DocumentSnapshot) => {
-    set({
-      loaded: true,
+    const saving = state.phase === "loaded" && state.mode === "editing" && state.saving;
+    commit({
+      path: state.path,
+      phase: "loaded",
       base: snapshot,
       draft: shown(snapshot),
+      mode: "editing",
+      saving,
       conflict: null,
-      missing: false,
       error: null,
     });
   };
@@ -131,120 +181,153 @@ export function createDocumentSession(options: {
   };
 
   const receive = (snapshot: DocumentSnapshot) => {
-    const base = state.base;
-    if (base === null) return adopt(snapshot);
+    const current = state;
+    const content = contentOf(current);
+    if (content === null) return adopt(snapshot);
+    const { base } = content;
     if (identity(snapshot) === identity(base)) {
       clearReadConfirmation();
-      if (snapshot.previewBaseUrl !== base.previewBaseUrl || state.missing || state.error)
-        set({
-          base: { ...base, previewBaseUrl: snapshot.previewBaseUrl },
-          missing: false,
+      const refreshed = { ...base, previewBaseUrl: snapshot.previewBaseUrl };
+      if (current.phase !== "loaded")
+        return commit({
+          path: current.path,
+          phase: "loaded",
+          base: refreshed,
+          draft: content.draft,
+          mode: "editing",
+          saving: false,
+          conflict: null,
           error: null,
         });
+      if (snapshot.previewBaseUrl !== base.previewBaseUrl || current.error !== null)
+        commit({ ...current, base: refreshed, error: null });
       return;
     }
     const pendingUntil = pendingReadIdentities.get(identity(snapshot));
     if (pendingUntil !== undefined && pendingUntil > Date.now()) return;
-    if (awaitingVersion !== null) {
-      if ((snapshot.proposal?.version ?? 0) < awaitingVersion) return;
-      awaitingVersion = null;
-      if (awaitTimer) clearTimeout(awaitTimer);
-      awaitTimer = null;
-      adopt(snapshot);
-      set({ busy: false });
-      return;
+    if (current.phase === "loaded" && current.mode === "awaiting") {
+      if ((snapshot.proposal?.version ?? 0) < current.version) return;
+      return adopt(snapshot);
     }
-    if (state.busy) {
-      held = snapshot;
-      return;
-    }
+    if (current.phase === "loaded" && current.mode === "resolving")
+      return commit({ ...current, held: snapshot });
     if (inFlight !== null && shown(snapshot) === inFlight) return;
     clearReadConfirmation();
-    if (
-      (!state.dirty && !state.saving && state.conflict === null) ||
-      shown(snapshot) === state.draft
-    )
-      return adopt(snapshot);
-    set({ conflict: snapshot, missing: false, error: null });
+    const settled =
+      current.phase === "loaded"
+        ? !current.dirty && !current.saving && current.conflict === null
+        : !content.dirty;
+    if (settled || shown(snapshot) === content.draft) return adopt(snapshot);
+    commit({
+      path: current.path,
+      phase: "loaded",
+      base,
+      draft: content.draft,
+      mode: "editing",
+      saving: current.phase === "loaded" && current.saving,
+      conflict: snapshot,
+      error: null,
+    });
   };
 
   const receiveError = (message: string | null) => {
+    const current = state;
     if (message === null) {
-      if (state.missing || state.error) set({ missing: false, error: null });
+      if (current.phase === "unavailable")
+        commit(
+          current.last
+            ? {
+                path: current.path,
+                phase: "loaded",
+                ...current.last,
+                mode: "editing",
+                saving: false,
+                conflict: null,
+                error: null,
+              }
+            : { path: current.path, phase: "loading" },
+        );
+      else if (current.phase === "loaded" && current.error !== null)
+        commit({ ...current, error: null });
       return;
     }
-    if (isMissingError(message)) {
-      if (timer) clearTimeout(timer);
-      timer = null;
-      set({
-        missing: true,
-        error: /unknown vault/i.test(message) ? message : null,
-      });
-    } else set({ error: message });
+    const reason = unavailableReason(message);
+    // A failed read of a loaded document is retryable; editing and proposal actions go on.
+    if (reason === "error" && current.phase === "loaded")
+      return commit({ ...current, error: message });
+    const content = contentOf(current);
+    commit({
+      path: current.path,
+      phase: "unavailable",
+      reason,
+      message,
+      last: content && { base: content.base, draft: content.draft },
+    });
   };
 
   const save = async (drain: boolean) => {
     if (timer) clearTimeout(timer);
     timer = null;
-    if (!writer || !state.loaded || state.busy) return;
-    set({ saving: true });
+    if (!writer || state.phase !== "loaded" || state.mode !== "editing") return;
+    commit({ ...state, saving: true });
     try {
-      while (state.dirty && state.base !== null && state.conflict === null && !state.missing) {
-        const base = state.base;
-        const content = state.draft;
+      for (;;) {
+        const current = state;
+        if (current.phase !== "loaded" || current.mode !== "editing") return;
+        if (!current.dirty || current.conflict !== null) return;
+        const { base, draft: content } = current;
         inFlight = content;
         const pending =
           options.showsProposals && base.proposal?.status === "pending" ? base.proposal : null;
         try {
           if (pending && writer.updateProposal) {
-            const proposal = await writer.updateProposal(state.path, content, pending.version);
-            const next = { ...base, proposal };
-            recordLocalWrite(base, next);
-            set({ base: next, error: null });
-            if (!drain && state.dirty) {
-              schedule();
-              return;
-            }
+            const proposal = await writer.updateProposal(current.path, content, pending.version);
+            landed(base, { ...base, proposal }, state.path);
           } else {
             const result = await writer.save(
-              state.path,
+              current.path,
               content,
               base.sha256,
               writer.renamesToTitle,
             );
-            const next = {
-              ...base,
-              content,
-              sha256: result.sha256,
-              previewPath: result.path === state.path ? base.previewPath : result.path,
-            };
-            recordLocalWrite(base, next);
             const from = state.path;
-            set({ base: next, path: result.path, error: null });
+            landed(
+              base,
+              {
+                ...base,
+                content,
+                sha256: result.sha256,
+                previewPath: result.path === from ? base.previewPath : result.path,
+              },
+              result.path,
+            );
             if (result.path !== from) options.onRename?.(from, result.path);
-            if (!drain && state.dirty) {
-              schedule();
-              return;
-            }
+          }
+          if (!drain && state.phase === "loaded" && state.dirty) {
+            schedule();
+            return;
           }
         } catch (error) {
-          if (state.base !== base) continue;
-          if (state.conflict !== null) return;
-          set({
-            error: error instanceof Error ? error.message : String(error),
-          });
+          const failed = state;
+          if (failed.phase !== "loaded" || failed.mode !== "editing") return;
+          if (failed.base !== base) continue;
+          if (failed.conflict !== null) return;
+          commit({ ...failed, error: error instanceof Error ? error.message : String(error) });
           void writer.refetch();
           return;
         }
       }
     } finally {
       inFlight = null;
-      set({ saving: false });
+      if (state.phase === "loaded" && state.mode === "editing") commit({ ...state, saving: false });
     }
   };
 
   const flush = (drain = true): Promise<void> => {
-    if (saving) return drain ? saving.then(() => (state.dirty ? flush(true) : undefined)) : saving;
+    if (saving)
+      return drain
+        ? saving.then(() => (state.phase === "loaded" && state.dirty ? flush(true) : undefined))
+        : saving;
     saving = save(drain).finally(() => {
       saving = null;
     });
@@ -268,52 +351,56 @@ export function createDocumentSession(options: {
     receiveError,
     flush,
     edit(draft: string) {
-      if (state.busy || state.missing || draft === state.draft) return;
-      set({ draft });
+      if (state.phase !== "loaded" || state.mode !== "editing" || draft === state.draft) return;
+      commit({ ...state, draft });
       if (state.conflict === null) schedule();
     },
     keepMine() {
-      const theirs = state.conflict;
-      if (!theirs) return;
-      set({ base: theirs, conflict: null });
+      if (state.phase !== "loaded" || state.mode !== "editing" || state.conflict === null) return;
+      commit({ ...state, base: state.conflict, conflict: null });
       return flush();
     },
     useTheirs() {
-      const theirs = state.conflict;
-      if (theirs) adopt(theirs);
+      if (state.phase === "loaded" && state.mode === "editing" && state.conflict)
+        adopt(state.conflict);
     },
     retry() {
-      set({ error: null });
+      receiveError(null);
       void writer?.refetch();
       return flush();
     },
     async resolve(action: ProposalAction) {
-      if (state.busy || !writer?.resolveProposal) return;
+      if (!writer?.resolveProposal) return;
       await flush();
-      const proposal = state.base?.proposal;
-      if (!proposal || state.conflict || state.dirty) return;
-      set({ busy: true, error: null });
+      const current = state;
+      if (current.phase !== "loaded" || current.mode !== "editing") return;
+      const proposal = current.base.proposal;
+      if (!proposal || current.conflict || current.dirty) return;
+      const { base, draft, path } = current;
+      commit({ path, phase: "loaded", base, draft, mode: "resolving", held: null, error: null });
       try {
-        const result = await writer.resolveProposal(state.path, action, proposal.version);
-        awaitingVersion = result.version;
-        if (held && (held.proposal?.version ?? 0) >= result.version) {
-          const latest = held;
-          held = null;
-          receive(latest);
-          return;
-        }
-        awaitTimer = setTimeout(() => {
-          awaitTimer = null;
-          void writer?.refetch();
-        }, RESOLVE_TIMEOUT_MS);
+        const result = await writer.resolveProposal(path, action, proposal.version);
+        const resolving = state;
+        // A read error took the document away meanwhile; its next read decides.
+        if (resolving.phase !== "loaded" || resolving.mode !== "resolving") return;
+        commit({ ...resolving, mode: "awaiting", version: result.version });
+        if (resolving.held) receive(resolving.held);
+        if (state.phase === "loaded" && state.mode === "awaiting")
+          awaitTimer = setTimeout(() => {
+            awaitTimer = null;
+            void writer?.refetch();
+          }, RESOLVE_TIMEOUT_MS);
       } catch (error) {
-        set({
-          busy: false,
+        const resolving = state;
+        if (resolving.phase !== "loaded" || resolving.mode !== "resolving") return;
+        commit({
+          ...resolving,
+          mode: "editing",
+          saving: false,
+          conflict: null,
           error: error instanceof Error ? error.message : String(error),
         });
-        const latest = held;
-        held = null;
-        if (latest) receive(latest);
+        if (resolving.held) receive(resolving.held);
       }
     },
   };
@@ -323,8 +410,14 @@ export type DocumentSession = ReturnType<typeof createDocumentSession>;
 
 const sessions = new Map<string, DocumentSession>();
 const renamedFrom = new Map<string, { session: DocumentSession; until: number }>();
-const MAX_IDLE_SESSIONS = 20;
+export const MAX_IDLE_SESSIONS = 20;
 const RENAME_ALIAS_MS = 10_000;
+
+/** No unsaved draft, shown or kept while unavailable, and no save in flight. */
+function idle(state: DocumentState): boolean {
+  if (contentOf(state)?.dirty) return false;
+  return !(state.phase === "loaded" && state.mode === "editing" && state.saving);
+}
 
 export function documentSession(
   key: (path: string) => string,
@@ -357,8 +450,7 @@ export function documentSession(
   sessions.set(key(path), session);
   for (const [cachedKey, cached] of sessions) {
     if (sessions.size <= MAX_IDLE_SESSIONS) break;
-    const cachedState = cached.getSnapshot();
-    if (cached !== session && !cached.hasSubscribers() && !cachedState.dirty && !cachedState.saving)
+    if (cached !== session && !cached.hasSubscribers() && idle(cached.getSnapshot()))
       sessions.delete(cachedKey);
   }
   return session;

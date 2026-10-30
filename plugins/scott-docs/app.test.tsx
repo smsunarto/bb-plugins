@@ -1429,6 +1429,51 @@ describe("Docs nav panel", () => {
     },
   );
 
+  it("keeps an accepted proposal accepted when the confirming read fails and is retried", async () => {
+    const pending = {
+      vaultId: "personal",
+      path: "retry-inline.md",
+      version: 1,
+      baseContent: "Original paragraph.",
+      baseSha256: "original-sha",
+      content: "Revised paragraph.",
+      status: "pending",
+      resolvedSha256: null,
+    };
+    const accepted = { ...pending, version: 2, status: "accepted", resolvedSha256: "accepted-sha" };
+    let read = deferred<ReturnType<typeof documentResult>>();
+    read.resolve(documentResult(pending.path, "Original paragraph.", "original-sha", pending));
+    let failing = false;
+    const slot = renderDocument(pending.path, "Proposal", {
+      rpc: {
+        readDocument: () => {
+          if (failing) throw new Error("fetch failed");
+          return read.promise;
+        },
+        resolveProposal: async () => accepted,
+      },
+    });
+    fireEvent.click(await slot.findByRole("button", { name: "Accept" }));
+    expect((await slot.findByRole("status")).textContent).toBe("Updating document…");
+    failing = true;
+    await slot.experimental_invalidateRpc([`doc:personal:${pending.path}`]);
+    await slot.findByText("fetch failed");
+    expect(slot.getByRole("status").textContent).toBe("Updating document…");
+    expect(slot.getByRole("button", { name: "Accept" }).hasAttribute("disabled")).toBe(true);
+    failing = false;
+    read = deferred();
+    fireEvent.click(slot.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(slot.queryByText("fetch failed")).toBeNull());
+    expect(slot.getByRole("status").textContent).toBe("Updating document…");
+    expect(slot.getByRole("button", { name: "Accept" }).hasAttribute("disabled")).toBe(true);
+    await act(async () =>
+      read.resolve(documentResult(pending.path, "Revised paragraph.", "accepted-sha", accepted)),
+    );
+    await waitFor(() => expect(slot.queryByRole("status")).toBeNull());
+    expect(slot.queryByRole("button", { name: "Accept" })).toBeNull();
+    expect(slot.getByRole("button", { name: "Undo" })).toBeTruthy();
+  });
+
   it("parses rich proposal baselines in an inert document and scopes refreshes", async () => {
     const parse = vi.spyOn(ProseMirrorDOMParser.prototype, "parse");
     const pending = {

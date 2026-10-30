@@ -35,6 +35,7 @@ import {
 import { DOMParser as ProseMirrorDOMParser, type Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { createProposalDiff, proposalDiffKey } from "./proposal-diff.js";
 import {
+  contentOf,
   documentSession,
   useDocumentSession,
   type DocumentSession,
@@ -589,9 +590,10 @@ function DocumentNotices({
 }: {
   state: DocumentState;
   session: DocumentSession;
-  onSaveCopy?(): void;
+  onSaveCopy?(draft: string): void;
 }) {
-  if (state.conflict)
+  if (state.phase === "loading") return null;
+  if (state.phase === "loaded" && state.mode === "editing" && state.conflict)
     return (
       <div
         className="flex flex-wrap items-center gap-2 border-b border-border bg-muted px-4 py-2 text-xs"
@@ -608,57 +610,60 @@ function DocumentNotices({
         </Button>
       </div>
     );
-  if (state.missing)
-    return (
-      <div
-        className="flex flex-wrap items-center gap-2 border-b border-border bg-muted px-4 py-2 text-xs"
-        role="alert"
-      >
-        <span className="min-w-0 flex-1">
-          {state.error ??
-            (state.loaded
-              ? "This document was moved or deleted elsewhere."
-              : "This document was moved or deleted.")}
-        </span>
-        {onSaveCopy && state.loaded && state.error === null ? (
-          <Button size="sm" variant="ghost" onClick={onSaveCopy}>
-            Save a copy
-          </Button>
-        ) : null}
-      </div>
-    );
-  if (state.error)
+  const failure =
+    state.phase === "loaded" ? state.error : state.reason === "error" ? state.message : null;
+  if (failure !== null)
     return (
       <div
         className="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-destructive"
         role="alert"
       >
-        <span className="min-w-0 flex-1">{state.error}</span>
+        <span className="min-w-0 flex-1">{failure}</span>
         <Button size="sm" variant="ghost" onClick={() => void session.retry()}>
           Retry
         </Button>
       </div>
     );
-  return null;
+  if (state.phase === "loaded") return null;
+  const last = state.last;
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 border-b border-border bg-muted px-4 py-2 text-xs"
+      role="alert"
+    >
+      <span className="min-w-0 flex-1">
+        {state.reason === "unknown-vault"
+          ? state.message
+          : last
+            ? "This document was moved or deleted elsewhere."
+            : "This document was moved or deleted."}
+      </span>
+      {onSaveCopy && last && state.reason === "missing" ? (
+        <Button size="sm" variant="ghost" onClick={() => onSaveCopy(last.draft)}>
+          Save a copy
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
-function useSaveCopy(vaultId: string, state: DocumentState) {
+function useSaveCopy(vaultId: string, path: string) {
   const createNote = useRpcMutation({
     contract: docsRpcContract,
     method: "createNote",
   });
-  return async () => {
+  return async (draft: string) => {
     const name =
-      state.path
+      path
         .split("/")
         .at(-1)
         ?.replace(/\.(md|markdown)$/i, "") ?? "Copy";
     try {
       const created = await createNote.mutate({
         vaultId,
-        parent: dirname(state.path),
+        parent: dirname(path),
         name: `${name} copy`,
-        content: state.draft,
+        content: draft,
       });
       toast.success(`Saved a copy as ${created.path}`);
       return created.path;
@@ -783,8 +788,14 @@ function InlineDocument({
   const { state, session } = useVaultDocument(document.vaultId, document.path, {
     showsProposals: true,
   });
-  const saveCopy = useSaveCopy(document.vaultId, state);
-  const title = (state.loaded ? documentHeading(state.draft) : null) ?? document.title;
+  const saveCopy = useSaveCopy(document.vaultId, state.path);
+  const content = contentOf(state);
+  const hasContent = content !== null;
+  const doc = state.phase === "loaded" ? state : null;
+  const busy = doc !== null && doc.mode !== "editing";
+  const saving = doc?.mode === "editing" && doc.saving;
+  const dirty = doc !== null && doc.dirty;
+  const title = (content ? documentHeading(content.draft) : null) ?? document.title;
   const rpc = useRpc<typeof docsRpcContract>();
   const composer = useComposer();
   const navigate = useBbNavigate();
@@ -800,9 +811,9 @@ function InlineDocument({
     const observer = new ResizeObserver(measure);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [state.loaded, openInTab]);
-  const proposal = state.base?.proposal ?? null;
-  const sha256 = state.base?.sha256 ?? "";
+  }, [hasContent, openInTab]);
+  const proposal = doc === null ? null : doc.base.proposal;
+  const sha256 = doc === null ? null : doc.base.sha256;
   const pending = proposal?.status === "pending" ? proposal : null;
   const stale = pending !== null && pending.baseSha256 !== sha256;
   const undo =
@@ -810,8 +821,8 @@ function InlineDocument({
     ((proposal.status === "accepted" && proposal.resolvedSha256 === sha256) ||
       (proposal.status === "rejected" && proposal.baseSha256 === sha256));
   const redo = proposal?.status === "undone" && proposal.baseSha256 === sha256;
-  const copy = async () => {
-    if (await experimental_copyToClipboard({ text: state.draft })) {
+  const copy = async (text: string) => {
+    if (await experimental_copyToClipboard({ text })) {
       toast.success("Document copied");
     } else {
       toast.error("Could not copy the document");
@@ -842,7 +853,7 @@ function InlineDocument({
     }
   };
   const baseMetadata = pending ? parseMarkdownDocument(pending.baseContent).frontmatter : "";
-  const candidateMetadata = pending ? parseMarkdownDocument(state.draft).frontmatter : "";
+  const candidateMetadata = pending && doc ? parseMarkdownDocument(doc.draft).frontmatter : "";
   return (
     <TooltipProvider delayDuration={200}>
       <section
@@ -858,7 +869,7 @@ function InlineDocument({
             <span className="shrink-0 font-semibold">Docs</span>
             <span className="truncate opacity-70">{title}</span>
           </div>
-          {(state.busy || state.saving || asking) && (
+          {(busy || saving || asking) && (
             <output className="inline-flex size-5 shrink-0 items-center justify-center">
               <Icon name="Loading" className="size-3 animate-spin" />
               <span className="sr-only">Updating document…</span>
@@ -874,44 +885,44 @@ function InlineDocument({
                 <DocumentAction
                   label="Accept"
                   icon="Check"
-                  disabled={state.busy || state.saving || stale}
+                  disabled={busy || saving || stale}
                   onClick={() => void session.resolve("accept")}
                 />
                 <DocumentAction
                   label="Reject"
                   icon="X"
-                  disabled={state.busy}
+                  disabled={busy}
                   onClick={() => void session.resolve("reject")}
                 />
               </>
             )}
-            {undo && !state.dirty && (
+            {undo && !dirty && (
               <DocumentAction
                 label="Undo"
                 icon="ArrowTurnBackward"
-                disabled={state.busy}
+                disabled={busy}
                 onClick={() => void session.resolve("undo")}
               />
             )}
-            {redo && !state.dirty && (
+            {redo && !dirty && (
               <DocumentAction
                 label="Redo"
                 icon="ArrowTurnForward"
-                disabled={state.busy}
+                disabled={busy}
                 onClick={() => void session.resolve("redo")}
               />
             )}
             <DocumentAction
               label="Ask for changes"
               icon="MessageSquare"
-              disabled={!state.loaded || state.busy || asking}
+              disabled={content === null || busy || asking}
               onClick={() => void ask()}
             />
             <DocumentAction
               label="Copy"
               icon="Copy"
-              disabled={!state.loaded}
-              onClick={() => void copy()}
+              disabled={content === null}
+              onClick={() => content && void copy(content.draft)}
             />
             {panel && (
               <DocumentAction
@@ -936,7 +947,11 @@ function InlineDocument({
             )}
           </div>
         </header>
-        <DocumentNotices state={state} session={session} onSaveCopy={() => void saveCopy()} />
+        <DocumentNotices
+          state={state}
+          session={session}
+          onSaveCopy={(draft) => void saveCopy(draft)}
+        />
         {askError && (
           <div className="flex items-center gap-2 px-4 py-2 text-xs text-destructive" role="alert">
             <span>{askError}</span>
@@ -951,10 +966,10 @@ function InlineDocument({
           className={panel ? "relative min-h-0 flex-1 overflow-y-auto" : "relative"}
           style={openInTab ? { maxHeight: 400, overflow: "clip" } : undefined}
         >
-          {!state.loaded ? (
-            state.missing || state.error ? null : (
+          {content === null ? (
+            state.phase === "loading" ? (
               <DocumentSkeleton />
-            )
+            ) : null
           ) : (
             <>
               <div
@@ -977,11 +992,11 @@ function InlineDocument({
                   </div>
                 )}
                 <TiptapEditor
-                  value={state.draft}
+                  value={content.draft}
                   baseMarkdown={pending?.baseContent ?? null}
                   inline
-                  disabled={state.busy || state.missing || truncated}
-                  previewBaseUrl={state.base?.previewBaseUrl ?? ""}
+                  disabled={state.phase !== "loaded" || state.mode !== "editing" || truncated}
+                  previewBaseUrl={content.base.previewBaseUrl}
                   notePath={state.path}
                   onMarkdownChange={session.edit}
                   onUpload={async (file) => {
@@ -1168,32 +1183,33 @@ function SavedDocumentEditor({
   state: DocumentState;
   session: DocumentSession;
   onUpload(file: File): Promise<{ markdownPath: string }>;
-  onSaveCopy?(): void;
+  onSaveCopy?(draft: string): void;
   errorHint?: string;
   active?: boolean;
 }) {
-  if (!state.loaded)
-    return state.missing ? (
-      <div className="min-w-0 flex-1">
-        <DocumentNotices state={state} session={session} />
-      </div>
-    ) : state.error ? (
+  const content = contentOf(state);
+  if (content === null)
+    return state.phase !== "unavailable" ? (
+      <DocumentSkeleton />
+    ) : state.reason === "error" ? (
       <div className="min-w-0 flex-1 p-6 text-sm text-destructive">
-        {state.error}
+        {state.message}
         {errorHint}
       </div>
     ) : (
-      <DocumentSkeleton />
+      <div className="min-w-0 flex-1">
+        <DocumentNotices state={state} session={session} />
+      </div>
     );
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <DocumentNotices state={state} session={session} onSaveCopy={onSaveCopy} />
       <TiptapEditor
-        value={state.draft}
+        value={content.draft}
         active={active}
-        disabled={state.busy || state.missing}
-        previewBaseUrl={state.base?.previewBaseUrl ?? ""}
-        notePath={state.base?.previewPath ?? state.path}
+        disabled={state.phase !== "loaded" || state.mode !== "editing"}
+        previewBaseUrl={content.base.previewBaseUrl}
+        notePath={content.base.previewPath}
         onUpload={onUpload}
         onMarkdownChange={session.edit}
       />
@@ -1223,7 +1239,7 @@ function NotePane({
     showsProposals: false,
     vaultError,
   });
-  const saveCopy = useSaveCopy(vaultId, state);
+  const saveCopy = useSaveCopy(vaultId, state.path);
   const renamed = state.path !== notePath ? state.path : null;
   const onRenamedRef = useRef(onRenamed);
   useEffect(() => {
@@ -1232,7 +1248,7 @@ function NotePane({
   useEffect(() => {
     if (renamed !== null) onRenamedRef.current(renamed);
   }, [renamed]);
-  const ready = state.loaded || state.missing || state.error !== null;
+  const ready = state.phase !== "loading";
   const onReadyRef = useRef(onReady);
   useEffect(() => {
     onReadyRef.current = onReady;
@@ -1245,8 +1261,8 @@ function NotePane({
       state={state}
       session={session}
       active={active}
-      onSaveCopy={() =>
-        void saveCopy().then((created) => {
+      onSaveCopy={(draft) =>
+        void saveCopy(draft).then((created) => {
           if (created !== null) onOpen(created);
         })
       }

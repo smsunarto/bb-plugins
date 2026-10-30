@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Proposal } from "./proposals.js";
 import {
   createDocumentSession,
+  documentSession,
+  MAX_IDLE_SESSIONS,
   type DocumentSnapshot,
   type DocumentWriter,
 } from "./document-session.js";
@@ -113,7 +115,7 @@ describe("Docs document sessions", () => {
     expect(save).not.toHaveBeenCalled();
     await session.keepMine();
     expect(save.mock.calls[0]?.slice(1, 3)).toEqual(["Line mine\n", "their-sha"]);
-    expect(session.getSnapshot().conflict).toBeNull();
+    expect(session.getSnapshot()).toMatchObject({ conflict: null });
   });
 
   it("replaces the draft with the other version when the user picks it", () => {
@@ -179,8 +181,69 @@ describe("Docs document sessions", () => {
     await session.flush();
     expect(save).not.toHaveBeenCalled();
     expect(session.getSnapshot()).toMatchObject({
-      missing: true,
+      phase: "unavailable",
+      reason: "missing",
+      last: { draft: "Unsaved\n" },
+    });
+  });
+
+  it("offers a save copy of the draft only while the file itself is gone", () => {
+    const { session } = loaded();
+    session.edit("Unsaved\n");
+    session.receiveError("unknown vault: personal");
+    expect(session.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      reason: "unknown-vault",
+      message: "unknown vault: personal",
+      last: { draft: "Unsaved\n" },
+    });
+    session.receiveError(null);
+    expect(session.getSnapshot()).toMatchObject({
+      phase: "loaded",
+      mode: "editing",
       draft: "Unsaved\n",
+      dirty: true,
+    });
+  });
+
+  it("keeps the hash and path of a save that landed while the document was unavailable", async () => {
+    const pending = deferred<{ path: string; sha256: string }>();
+    const io = writer();
+    io.save.mockImplementationOnce(() => pending.promise);
+    const { session, save } = loaded(snapshot("A\n", "a"), io);
+    session.edit("B\n");
+    const flushing = session.flush();
+    session.receiveError("Path does not exist: letter.md");
+    pending.resolve({ path: "renamed.md", sha256: "b" });
+    await flushing;
+    expect(session.getSnapshot()).toMatchObject({
+      path: "renamed.md",
+      phase: "unavailable",
+      last: { base: { sha256: "b" }, draft: "B\n", dirty: false },
+    });
+    await session.retry();
+    expect(session.getSnapshot()).toMatchObject({ path: "renamed.md", mode: "editing" });
+    session.edit("C\n");
+    await session.flush();
+    expect(save.mock.calls.at(-1)?.slice(0, 3)).toEqual(["renamed.md", "C\n", "b"]);
+    expect(session.getSnapshot()).toMatchObject({ mode: "editing", dirty: false, error: null });
+  });
+
+  it("offers the conflicting version again when a missing document comes back", () => {
+    const { session } = loaded(snapshot("Line\n", "base-sha"));
+    session.edit("Line mine\n");
+    const theirs = snapshot("Line theirs\n", "their-sha");
+    session.receive(theirs);
+    session.receiveError("Path does not exist: letter.md");
+    expect(session.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      last: { draft: "Line mine\n", dirty: true },
+    });
+    session.receive(theirs);
+    expect(session.getSnapshot()).toMatchObject({
+      mode: "editing",
+      draft: "Line mine\n",
+      conflict: theirs,
     });
   });
 
@@ -224,14 +287,38 @@ describe("Docs document sessions", () => {
     await resolving;
     expect(updateProposal).toHaveBeenCalledWith("letter.md", "Edited candidate\n", 1);
     expect(resolveProposal).toHaveBeenCalledWith("letter.md", "accept", 2);
-    expect(session.getSnapshot().busy).toBe(true);
+    expect(session.getSnapshot()).toMatchObject({ mode: "awaiting", version: 3 });
     session.receive(snapshot("Edited candidate\n", "accepted-sha", proposal("pending", 2)));
-    expect(session.getSnapshot().busy).toBe(true);
+    expect(session.getSnapshot()).toMatchObject({ mode: "awaiting" });
     session.receive(snapshot("Edited candidate\n", "accepted-sha", proposal("accepted", 3)));
     expect(session.getSnapshot()).toMatchObject({
-      busy: false,
+      mode: "editing",
       draft: "Edited candidate\n",
       dirty: false,
+    });
+  });
+
+  it("adopts a read that landed during a proposal action once the action settles", async () => {
+    const settled = deferred<Proposal>();
+    const resolveProposal = vi.fn<NonNullable<DocumentWriter["resolveProposal"]>>(
+      () => settled.promise,
+    );
+    const { session } = loaded(
+      snapshot("Original\n", "original-sha", proposal()),
+      writer({ resolveProposal }),
+      true,
+    );
+    const resolving = session.resolve("reject");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(session.getSnapshot()).toMatchObject({ mode: "resolving" });
+    session.receive(snapshot("Original\n", "original-sha", proposal("rejected", 2)));
+    expect(session.getSnapshot()).toMatchObject({ mode: "resolving", draft: "Candidate\n" });
+    settled.resolve(proposal("rejected", 2));
+    await resolving;
+    expect(session.getSnapshot()).toMatchObject({
+      mode: "editing",
+      draft: "Original\n",
+      base: { proposal: { status: "rejected", version: 2 } },
     });
   });
 
@@ -251,9 +338,69 @@ describe("Docs document sessions", () => {
     await session.resolve("accept");
     expect(resolveProposal).not.toHaveBeenCalled();
     expect(session.getSnapshot()).toMatchObject({
-      busy: false,
+      mode: "editing",
       error: "The proposal changed.",
       draft: "Edited candidate\n",
+    });
+  });
+
+  it("keeps waiting for the resolved document when a read fails after a proposal action", async () => {
+    const resolveProposal = vi.fn<NonNullable<DocumentWriter["resolveProposal"]>>(async () =>
+      proposal("accepted", 3),
+    );
+    const { session, refetch } = loaded(
+      snapshot("Original\n", "original-sha", proposal()),
+      writer({ resolveProposal }),
+      true,
+    );
+    await session.resolve("accept");
+    session.receiveError("fetch failed");
+    expect(session.getSnapshot()).toMatchObject({
+      mode: "awaiting",
+      version: 3,
+      error: "fetch failed",
+    });
+    await session.retry();
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(session.getSnapshot()).toMatchObject({ mode: "awaiting", version: 3, error: null });
+    session.receive(snapshot("Original\n", "original-sha", proposal("pending", 2)));
+    expect(session.getSnapshot()).toMatchObject({ mode: "awaiting" });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(refetch).toHaveBeenCalledTimes(2);
+    session.receive(snapshot("Candidate\n", "accepted-sha", proposal("accepted", 3)));
+    expect(session.getSnapshot()).toMatchObject({
+      mode: "editing",
+      draft: "Candidate\n",
+      base: { proposal: { status: "accepted", version: 3 } },
+    });
+  });
+
+  it("shows a read failure during a proposal action and still lands the action", async () => {
+    const settled = deferred<Proposal>();
+    const resolveProposal = vi.fn<NonNullable<DocumentWriter["resolveProposal"]>>(
+      () => settled.promise,
+    );
+    const { session } = loaded(
+      snapshot("Original\n", "original-sha", proposal()),
+      writer({ resolveProposal }),
+      true,
+    );
+    const resolving = session.resolve("reject");
+    await vi.advanceTimersByTimeAsync(0);
+    session.receiveError("fetch failed");
+    expect(session.getSnapshot()).toMatchObject({ mode: "resolving", error: "fetch failed" });
+    settled.resolve(proposal("rejected", 2));
+    await resolving;
+    expect(session.getSnapshot()).toMatchObject({
+      mode: "awaiting",
+      version: 2,
+      error: "fetch failed",
+    });
+    session.receive(snapshot("Original\n", "original-sha", proposal("rejected", 2)));
+    expect(session.getSnapshot()).toMatchObject({
+      mode: "editing",
+      error: null,
+      base: { proposal: { status: "rejected", version: 2 } },
     });
   });
 });
@@ -298,7 +445,7 @@ describe("Docs external reverts and preview paths", () => {
     session.receive({ ...snapshot("![Image](./image.png)", "a"), previewPath: "plan.md" });
     session.edit("![Image](./image.png)\nEdited");
     await session.flush();
-    expect(session.getSnapshot().base?.previewPath).toBe("plan.md");
+    expect(session.getSnapshot()).toMatchObject({ base: { previewPath: "plan.md" } });
   });
 });
 
@@ -321,5 +468,35 @@ describe("Docs local-write confirmation bounds", () => {
       conflict: null,
       base: { previewBaseUrl: "/fresh-preview" },
     });
+  });
+});
+
+describe("Docs document session cache", () => {
+  it("keeps an unavailable document's unsaved draft under cache pressure", () => {
+    const open = (path: string) =>
+      documentSession((p) => `personal:${p}`, path, { showsProposals: false, delay: 500 });
+    const opened = (path: string) => {
+      const session = open(path);
+      session.connect(writer().writer);
+      session.receive(snapshot());
+      return session;
+    };
+    const goneDirty = opened("gone-dirty.md");
+    goneDirty.edit("Unsaved\n");
+    goneDirty.receiveError("Path does not exist: gone-dirty.md");
+    const dirty = opened("dirty.md");
+    dirty.edit("Unsaved\n");
+    const goneClean = opened("gone-clean.md");
+    goneClean.receiveError("Path does not exist: gone-clean.md");
+
+    for (let i = 0; i < MAX_IDLE_SESSIONS; i += 1) open(`filler-${i}.md`);
+
+    expect(open("gone-dirty.md")).toBe(goneDirty);
+    expect(goneDirty.getSnapshot()).toMatchObject({
+      phase: "unavailable",
+      last: { draft: "Unsaved\n", dirty: true },
+    });
+    expect(open("dirty.md")).toBe(dirty);
+    expect(open("gone-clean.md")).not.toBe(goneClean);
   });
 });
