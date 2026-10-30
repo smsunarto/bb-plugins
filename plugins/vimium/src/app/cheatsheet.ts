@@ -80,9 +80,10 @@ export const CHEATSHEET: readonly CheatsheetSection[] = [
     ],
   },
   {
-    title: "Provider shortcuts",
+    title: "Escape shortcuts",
     note: "Press Escape, then the letter within 1.5 seconds. Works from the composer too.",
     entries: [
+      { keys: ["Escape", "a"], action: "Open Agentation feedback mode" },
       { keys: ["Escape", "m"], action: "Toggle Claude/Codex: Astra ↔ Fable, Sol ↔ Opus" },
       { keys: ["Escape", "r"], action: "Cycle reasoning forward" },
       { keys: ["Escape", "f"], action: "Cycle Normal / Fast / Ultrafast (supported speeds)" },

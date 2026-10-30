@@ -45,7 +45,6 @@ export default definePluginApp((app) => {
   app.commands.register({
     id: "toggle-feedback-mode",
     title: FEEDBACK_MODE_LABEL,
-    defaultShortcut: { key: "a", mod: true, shift: true },
     run: queueToolbarToggle,
   });
 

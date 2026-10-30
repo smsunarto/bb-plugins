@@ -39,6 +39,49 @@ function pressKey(
   );
 }
 
+test("Escape then A activates Agentation from the composer without consuming normal typing", () => {
+  document.body.innerHTML =
+    "<div data-app-composer><textarea></textarea></div>" +
+    '<button aria-label="Toggle Agentation feedback mode">Feedback</button>';
+  const button = document.querySelector("button")!;
+  const editor = document.querySelector("textarea")!;
+  giveRect(button, 100, 100);
+  let activations = 0;
+  button.addEventListener("click", () => activations++);
+  const controller = newController();
+  const dispose = mountLinkHints(contextWith(controller.signal));
+  try {
+    expect(pressKey("a", editor)).toBe(true);
+    expect(activations).toBe(0);
+    pressKey("Escape", editor);
+    expect(pressKey("a", editor)).toBe(false);
+    expect(activations).toBe(1);
+    expect(pressKey("a", editor, { repeat: true })).toBe(false);
+    expect(activations).toBe(1);
+    // Escape can dismiss an Agentation submenu while leaving feedback active.
+    // The open sequence must then leave it active rather than click its toggle.
+    const host = document.createElement("agentation-toolbar");
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = "<div data-agentation-toolbar></div>";
+    document.body.append(host);
+    pressKey("Escape", editor);
+    expect(pressKey("a", editor)).toBe(false);
+    expect(activations).toBe(1);
+    host.remove();
+    pressKey("Escape", editor);
+    pressKey("x", editor);
+    expect(pressKey("a", editor)).toBe(true);
+    expect(activations).toBe(1);
+    button.remove();
+    pressKey("Escape", editor);
+    expect(pressKey("a", editor)).toBe(true);
+  } finally {
+    void dispose();
+    controller.abort();
+    document.body.innerHTML = "";
+  }
+});
+
 interface ScrollFixture {
   readonly area: HTMLElement;
   readonly scrolls: Array<{ top: number; behavior: ScrollBehavior | undefined }>;

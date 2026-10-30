@@ -29,6 +29,7 @@ Outside a text field, these keys act without a hint prompt:
 - `Escape` then `m` toggles Claude/Codex, pairing Astra ↔ Fable and Sol ↔ Opus. Other models use the destination provider's default. Reasoning and speed are preserved when supported; BB reconciles unsupported values. In an existing thread, this prepares BB's normal provider handoff for the next send.
 - `Escape` then `r` cycles the current model's reasoning levels forward and wraps.
 - `Escape` then `f` cycles Normal → Fast → Ultrafast → Normal, skipping speeds the model does not offer.
+- `Escape` then `a` opens Agentation feedback mode when its sidebar footer button is available. `Escape` alone exits feedback mode.
 - These sequences work from the composer too. Press the letter within 1.5 seconds of Escape; an unrelated key, click, or window blur cancels the prefix.
 - `i` focuses the composer.
 - `?` opens the Vimium Cheatsheet page, which lists every key on this page.

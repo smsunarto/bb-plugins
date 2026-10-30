@@ -851,6 +851,17 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   let escapePrefixUntil = 0;
   let sequenceKey: string | null = null;
 
+  function openAgentation(): boolean {
+    const toolbar = document
+      .querySelector("agentation-toolbar")
+      ?.shadowRoot?.querySelector<HTMLElement>("[data-agentation-toolbar]");
+    if (toolbar && toolbar.style.display !== "none") return true;
+    return runDirectShortcut({
+      kind: "control",
+      selector: 'button[aria-label="Toggle Agentation feedback mode"]',
+    });
+  }
+
   function onKeydown(event: KeyboardEvent): void {
     const originalTarget = event.composedPath()[0] ?? event.target;
     const target = originalTarget instanceof Element ? originalTarget : document.activeElement;
@@ -880,13 +891,15 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       const prefixed = Date.now() < escapePrefixUntil;
       escapePrefixUntil = 0;
       const action =
-        event.key === "m"
-          ? "provider"
-          : event.key === "r"
-            ? "reasoning"
-            : event.key === "f"
-              ? "speed"
-              : null;
+        event.key === "a"
+          ? "agentation"
+          : event.key === "m"
+            ? "provider"
+            : event.key === "r"
+              ? "reasoning"
+              : event.key === "f"
+                ? "speed"
+                : null;
       if (
         acceptsSequence &&
         prefixed &&
@@ -895,7 +908,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         !event.metaKey &&
         !event.altKey &&
         !event.repeat &&
-        runProviderShortcut(action)
+        (action === "agentation" ? openAgentation() : runProviderShortcut(action))
       ) {
         sequenceKey = event.key;
         exitIfActive();
