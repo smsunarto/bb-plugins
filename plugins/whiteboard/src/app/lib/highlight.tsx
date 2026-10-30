@@ -77,6 +77,13 @@ function load(): { highlighter: HighlighterCore; languages: Set<string> } {
 /** Above this, tokenizing would block the frame for too long; the code renders plain. */
 const MAX_HIGHLIGHT_LENGTH = 100_000;
 
+/**
+ * Lines this long render plain, as in @pierre/diffs. This bound replaces Shiki's
+ * 500 ms per-line time limit, which also counts the grammar's first-use compile:
+ * on a slow or busy device it cut the first line short, in one token's color.
+ */
+const MAX_HIGHLIGHT_LINE_LENGTH = 1_000;
+
 export interface HighlightedCode {
   /** Spans whose text is exactly the code, or the code itself. */
   content: ReactNode;
@@ -142,7 +149,12 @@ function highlightCode(
     loadedTheme = theme;
   }
 
-  const { tokens } = loaded.highlighter.codeToTokens(code, { lang, theme: theme.name });
+  const { tokens } = loaded.highlighter.codeToTokens(code, {
+    lang,
+    theme: theme.name,
+    tokenizeMaxLineLength: MAX_HIGHLIGHT_LINE_LENGTH,
+    tokenizeTimeLimit: 0,
+  });
   // Spread children are static, so the spans need no keys.
   const nodes: ReactNode[] = [];
   for (const [index, line] of tokens.entries()) {
