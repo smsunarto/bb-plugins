@@ -133,6 +133,8 @@
     "tiptap-markdown": "^0.8.10",
     "yaml": "^2.8.2",
     "zod": "^4.3.6",
-    "@bb-plugins/markdown-editor": "workspace:*"
+    "@bb-plugins/markdown-editor": "workspace:*",
+    "effect": "4.1.0",
+    "@bb-plugins/effect-bridge": "workspace:*"
   }
 }

@@ -62,7 +62,9 @@
     "@tanstack/react-query": "^5.101.4",
     "yaml": "^2.9.0",
     "zod": "^4.4.3",
-    "@bb-plugins/markdown-editor": "workspace:*"
+    "@bb-plugins/markdown-editor": "workspace:*",
+    "effect": "4.1.0",
+    "@bb-plugins/effect-bridge": "workspace:*"
   },
   "devDependencies": {
     "@bb-plugins/testing": "workspace:*",

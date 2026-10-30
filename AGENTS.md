@@ -28,6 +28,8 @@ Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
 If you need to learn more about particular Effect apis and concepts that the
 guide doesn't cover, search through the source code in `node_modules/effect/src`.
 
+Plugin server entries bind Effect to the Plugin SDK only through `makePluginRuntime` from `@bb-plugins/effect-bridge`; read `packages/effect-bridge/src/effect-bridge.ts` before wiring a runtime. Host entries and modules the app bundle imports stay Effect-free.
+
 ## Local-first plugin design
 
 Design plugins to remain useful across slow, intermittent, and independently failing connections.

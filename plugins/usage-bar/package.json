@@ -41,7 +41,9 @@
     "src/"
   ],
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "effect": "4.1.0",
+    "@bb-plugins/effect-bridge": "workspace:*"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.6.94",

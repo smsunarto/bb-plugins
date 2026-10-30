@@ -34,7 +34,9 @@
     "clsx": "^2.1.1",
     "tailwind-merge": "^3.4.0",
     "zod": "^4.3.6",
-    "@bb-plugins/markdown-editor": "workspace:*"
+    "@bb-plugins/markdown-editor": "workspace:*",
+    "effect": "4.1.0",
+    "@bb-plugins/effect-bridge": "workspace:*"
   },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.6.94",

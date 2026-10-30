@@ -1,0 +1,23 @@
+{
+  "name": "@bb-plugins/effect-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run a plugin's Effect layer at Plugin SDK boundaries: one runtime per entry, signal-aware calls, supervised services, and bb.log logging.",
+  "type": "module",
+  "exports": {
+    ".": "./src/effect-bridge.ts"
+  },
+  "dependencies": {
+    "effect": "4.1.0"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.94",
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test src/*.test.ts",
+    "lint": "oxlint"
+  }
+}
