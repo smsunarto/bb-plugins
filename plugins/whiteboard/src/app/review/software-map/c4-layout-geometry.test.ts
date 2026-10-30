@@ -1256,6 +1256,7 @@ describe("runInlineC4Layout stability", () => {
     const collapsedNodes = nodes
       .values()
       .filter((node) => !node.id.startsWith("progressiveReview.c"))
+      // oxlint-disable-next-line oxc/no-map-spread -- test fixture copy
       .map((node) => (node.id === "progressiveReview" ? { ...node, expanded: false } : node))
       .toArray();
 
@@ -1347,6 +1348,7 @@ describe("runInlineC4Layout stability", () => {
     };
 
     const initialBbox = c4EntriesBboxForTest(
+      // oxlint-disable-next-line oxc/no-map-spread -- test fixture copy
       [...collapsedPreviousLayout.nodeBboxes.entries()].map(([id, box]) => ({
         node: { id },
         ...box,
@@ -1402,6 +1404,7 @@ describe("runInlineC4Layout stability", () => {
     const finalCenters = c4CentersById(collapsedDevFast.layout.nodes);
 
     const initialCenters = c4CentersById(
+      // oxlint-disable-next-line oxc/no-map-spread -- test fixture copy
       [...collapsedPreviousLayout.nodeBboxes.entries()].map(([id, box]) => ({
         node: { id },
         ...box,
@@ -1425,7 +1428,7 @@ describe("runInlineC4Layout stability", () => {
       { id: "canvas", label: "alpha canvas", type: "container" },
     ];
 
-    const rebuiltNodes = [...nodes.map((node) => ({ ...node }))].reverse();
+    const rebuiltNodes = nodes.map((node) => ({ ...node })).reverse();
 
     expect(c4LayoutSignature(nodes, relationships)).toBe(
       c4LayoutSignature(rebuiltNodes, [...relationships].reverse()),
@@ -1467,6 +1470,7 @@ describe("runInlineC4Layout stability", () => {
       dataStoreSchemaSections: [
         {
           ...baseNode.dataStoreSchemaSections![0]!,
+          // oxlint-disable-next-line oxc/no-map-spread -- test fixture copy
           rows: baseNode.dataStoreSchemaSections![0]!.rows.map((row) => ({
             ...row,
             state: row.state === "active" ? "inactive" : "active",
@@ -1660,6 +1664,7 @@ function c4EdgePointsForTest(data: ReactFlowEdge["data"]): Array<{ x: number; y:
   )?.sections;
 
   return (
+    // oxlint-disable-next-line oxc/no-map-spread -- test fixture copy
     sections?.flatMap((section) => [
       section.startPoint,
       ...(section.bendPoints ?? []),

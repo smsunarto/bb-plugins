@@ -84,12 +84,10 @@ export function CopyButton({
       className={className}
       aria-label={label}
       data-copied={copied ? "" : undefined}
-      onClick={() => {
+      onClick={async () => {
         // The workbench denies DOM clipboard requests; copyText falls back to
         // execCommand and reports whether anything was copied.
-        void copyText(text).then((ok) => {
-          if (ok) setCopied(true);
-        });
+        if (await copyText(text)) setCopied(true);
       }}
     >
       {copied ? <CheckIcon /> : <CopyGlyph />}

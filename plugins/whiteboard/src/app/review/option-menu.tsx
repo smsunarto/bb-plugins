@@ -29,6 +29,7 @@ export function OptionMenu<T extends string>({
   useDismissOnOutside(container, open, setOpen);
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- routes Escape from the trigger or an option back to the trigger; the buttons are the controls
     <div
       className={`review-option-menu ${className}`}
       ref={container}

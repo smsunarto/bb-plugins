@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { defineSoftwareMap } from "./software-map-model.ts";
-import { softwareModelData, softwareModelDataSchema } from "./software-map-model.ts";
+import {
+  defineSoftwareMap,
+  softwareModelData,
+  softwareModelDataSchema,
+} from "./software-map-model.ts";
 
 const model = defineSoftwareMap({
   systems: {

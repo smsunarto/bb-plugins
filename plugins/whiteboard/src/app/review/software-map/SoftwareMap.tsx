@@ -21,6 +21,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -144,6 +145,7 @@ const MIN_CODE_INSPECTOR_WIDTH = 340;
 const MAX_CODE_INSPECTOR_WIDTH = 760;
 
 const MIN_SOFTWARE_MAP_CANVAS_WIDTH = 420;
+const NO_DIFF_PEEKS: readonly SoftwareMapNodeDiffPeek[] = [];
 
 export type PinnedSoftwareMapData = SoftwareMapResolvedDataPayload & {
   side: "base" | "head";
@@ -169,7 +171,6 @@ interface SoftwareMapProps {
 }
 
 interface SoftwareMapFrameProps {
-  diagramId?: string;
   snapshot: SoftwareMapResolvedSnapshot;
   hasResolvedSnapshot: boolean;
   title: string;
@@ -341,8 +342,14 @@ function SoftwareMapWithModel({
   );
 
   const [inspectedNode, setInspectedNode] = useState<SoftwareMapNodeSnapshot | null>(null);
+  // A new model or navigation key closes the code inspector.
+  const inspectionKey = JSON.stringify([modelKey, navigationKey]);
+  const [inspectedKey, setInspectedKey] = useState(inspectionKey);
 
-  useEffect(() => setInspectedNode(null), [modelKey, navigationKey]);
+  if (inspectedKey !== inspectionKey) {
+    setInspectedKey(inspectionKey);
+    setInspectedNode(null);
+  }
 
   const softwareMapResolvedDataInput = useMemo(
     () =>
@@ -356,11 +363,6 @@ function SoftwareMapWithModel({
 
   const [viewportFocusRequest, setViewportFocusRequest] =
     useState<SoftwareMapViewportFocusRequest | null>(null);
-
-  const resolvedDataState = pinnedData ?? {
-    counts: new Map(),
-    unmappedByElementPath: new Map(),
-  };
 
   const mapRootRef = useRef<HTMLElement | null>(null);
   const previousBaseView = useRef(view);
@@ -380,6 +382,7 @@ function SoftwareMapWithModel({
   useEffect(() => {
     if (!focusRequest) return;
     const targetPath = focusRequest.elementPath;
+    // oxlint-disable-next-line react/set-state-in-effect -- applies an arriving focus request after the view-reset effect above, which may clear the same state
     setExpandedNodeIds((current) => {
       const next = new Set(current);
 
@@ -431,14 +434,14 @@ function SoftwareMapWithModel({
 
   const changeSummaries = useMemo(
     () =>
-      projectionModel
+      projectionModel && pinnedData
         ? buildSoftwareMapChangeSummaries(
             projectionModel,
-            resolvedDataReady ? resolvedDataState.counts : new Map(),
-            resolvedDataReady ? resolvedDataState.unmappedByElementPath : new Map(),
+            pinnedData.counts,
+            pinnedData.unmappedByElementPath,
           )
         : new Map(),
-    [projectionModel, resolvedDataReady, resolvedDataState],
+    [projectionModel, pinnedData],
   );
 
   const modifiedOnlyNodeIds = useMemo(
@@ -546,6 +549,7 @@ function SoftwareMapWithModel({
     });
 
     if (nextSelectedNodeId !== selectedNodeId) {
+      // oxlint-disable-next-line react/set-state-in-effect -- normalizes the selection after this commit's view-reset and focus-request effects; in render it would run before them
       setSelectedNodeId(nextSelectedNodeId);
     }
   }, [mapSnapshot.nodes, selectedNodeId]);
@@ -684,7 +688,6 @@ function SoftwareMapWithModel({
 
   const frame = (
     <SoftwareMapFrame
-      diagramId={diagramId}
       snapshot={mapSnapshot}
       hasResolvedSnapshot={hasResolvedSnapshot}
       title={frameTitle}
@@ -727,12 +730,12 @@ function SoftwareMapWithModel({
         ? createPortal(
             <div
               className={overlayClassName}
+              // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a React-rendered overlay; <dialog> would need showModal() and the top layer
               role="dialog"
               aria-modal="true"
               aria-label={`${frameTitle} expanded`}
             >
               <SoftwareMapFrame
-                diagramId={diagramId}
                 snapshot={mapSnapshot}
                 hasResolvedSnapshot={hasResolvedSnapshot}
                 title={frameTitle}
@@ -770,7 +773,6 @@ function SoftwareMapWithModel({
 
 export function SoftwareMapFrame({
   snapshot,
-  diagramId,
   hasResolvedSnapshot,
   title,
   height,
@@ -785,7 +787,7 @@ export function SoftwareMapFrame({
   onExpand,
   onClose,
   inspectedNode,
-  inspectedNodeDiffPeeks = [],
+  inspectedNodeDiffPeeks = NO_DIFF_PEEKS,
   onCloseCodeInspector,
   onSelectNode,
   onExpandNode,
@@ -1106,8 +1108,11 @@ function C4MapCanvas({
     dimensions: ReadonlyMap<string, C4NodeDimensions>;
   } | null>(null);
 
-  const measuredNodes = snapshot.nodes ?? [];
-  const measuredRelationships = snapshot.relationships ?? [];
+  const measuredNodes = useMemo(() => snapshot.nodes ?? [], [snapshot.nodes]);
+  const measuredRelationships = useMemo(
+    () => snapshot.relationships ?? [],
+    [snapshot.relationships],
+  );
 
   const displayedSnapshot = useMemo(
     () =>
@@ -1116,7 +1121,7 @@ function C4MapCanvas({
   );
 
   const layout = layoutState?.layout ?? null;
-  const nodes = displayedSnapshot.nodes ?? [];
+  const nodes = useMemo(() => displayedSnapshot.nodes ?? [], [displayedSnapshot.nodes]);
   const { theme } = useReviewDebugSettings();
 
   const reactFlowInteractionProps = c4MapReactFlowInteractionProps(interactionMode);
@@ -1150,19 +1155,13 @@ function C4MapCanvas({
     [hasMeasuredNodes, measuredNodes, measuredRelationships, nodeDimensions],
   );
 
-  const layoutInputRef = useRef({
+  // The signature decides when to lay out again; the input is whatever is current then.
+  const layoutInput = useEffectEvent(() => ({
     snapshot,
     nodes: measuredNodes,
     relationships: measuredRelationships,
     nodeDimensions,
-  });
-
-  layoutInputRef.current = {
-    snapshot,
-    nodes: measuredNodes,
-    relationships: measuredRelationships,
-    nodeDimensions,
-  };
+  }));
 
   const wasmUrl = session.wasmUrl();
 
@@ -1178,7 +1177,7 @@ function C4MapCanvas({
       relationships: layoutRelationships,
       nodeDimensions: layoutNodeDimensions,
       snapshot: layoutSnapshot,
-    } = layoutInputRef.current;
+    } = layoutInput();
 
     const previousInlineLayout = c4PreviousInlineLayoutForRelationships({
       previousLayout: previousInlineLayoutRef.current?.layout,
@@ -1353,6 +1352,7 @@ function C4MapCanvas({
     focusSoftwareMapKeyboardTarget(keyboardTargetRef.current);
   }, [flow, interactionMode]);
 
+  const flowNodes = flow?.nodes;
   const handleKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLDivElement>) => {
       if (event.defaultPrevented) return;
@@ -1390,7 +1390,7 @@ function C4MapCanvas({
 
         if (nextNode) {
           onSelectNode?.(nextNode);
-          const flowNode = flow?.nodes.find((node) => node.id === nextNode.id);
+          const flowNode = flowNodes?.find((node) => node.id === nextNode.id);
 
           if (flowNode) {
             revealC4MapNode(flowRef.current, keyboardTargetRef.current, flowNode);
@@ -1448,7 +1448,7 @@ function C4MapCanvas({
     },
     [
       layout,
-      flow?.nodes,
+      flowNodes,
       drillNode,
       nodes,
       onFocusNode,
@@ -1468,11 +1468,13 @@ function C4MapCanvas({
   );
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- the map canvas is the focus target for its keyboard navigation
     <div
       ref={keyboardTargetRef}
       className={["software-map-c4-canvas", expanded ? "software-map-c4-canvas--expanded" : ""]
         .filter(Boolean)
         .join(" ")}
+      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the map canvas is the focus target for its keyboard navigation
       tabIndex={0}
       onKeyDownCapture={handleKeyDownCapture}
       onKeyDown={handleKeyDown}
@@ -1626,11 +1628,11 @@ function C4NodeMeasurementLayer({
   onMeasure: (dimensions: ReadonlyMap<string, C4NodeDimensions>) => void;
 }) {
   const refs = useRef(new Map<string, HTMLDivElement>());
-  const nodesRef = useRef(nodes);
-  nodesRef.current = nodes;
+  // The measurement key decides when to measure; the nodes are whatever is current then.
+  const currentNodes = useEffectEvent(() => nodes);
 
   useLayoutEffect(() => {
-    const measuredNodes = nodesRef.current;
+    const measuredNodes = currentNodes();
 
     if (measuredNodes.length === 0) {
       onMeasure(new Map());
@@ -1763,6 +1765,7 @@ function SoftwareMapC4Edge(props: ReactFlowEdgeProps<ReactFlowEdge<C4MapEdgeData
           {label ? (
             data?.onOpenRelationship ? (
               <span
+                // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- an edge label in React Flow's label layer laid out as inline text; <button> brings its own box and font defaults
                 role="button"
                 tabIndex={0}
                 className={[
@@ -1811,6 +1814,7 @@ function c4PolylinePath(points: C4ElkPoint[]): string {
 
 function SoftwareMapC4GroupNode({ data }: ReactFlowNodeProps<C4MapFlowGroupNode>) {
   return (
+    // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- mouse selection of a group node; the map canvas's keyboard navigation selects nodes
     <div
       className={[
         "software-map-c4-group-shell",

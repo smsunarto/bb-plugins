@@ -9,6 +9,8 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -79,13 +81,11 @@ type UnifiedMatch =
 
 export function ReviewFindProvider({
   articleRef,
-  scrollRegionRef,
   documentKey,
   host,
   children,
 }: {
   articleRef: RefObject<HTMLElement | null>;
-  scrollRegionRef: RefObject<HTMLElement | null>;
   documentKey: string;
   host?: ReviewFindHost;
   children: ReactNode;
@@ -109,16 +109,20 @@ export function ReviewFindProvider({
   const priorFocus = useRef<HTMLElement | null>(null);
   const openRef = useRef(open);
   const matchesRef = useRef(matches);
-  const activeIndexRef = useRef(activeIndex);
-  matchesRef.current = matches;
-  activeIndexRef.current = activeIndex;
-  openRef.current = open;
+  useLayoutEffect(() => {
+    openRef.current = open;
+    matchesRef.current = matches;
+  });
 
   // Passive, not layout: a descendant's layout effect runs before the ancestor
   // host ref attaches, so the shell is not there yet; no deps because the shell
-  // remounts under this provider on route change.
-  useEffect(() => {
+  // remounts under this provider on route change. setState bails out while the
+  // shell is unchanged.
+  const syncOverlayHost = useEffectEvent(() => {
     setOverlayHost(shellRef?.current ?? null);
+  });
+  useEffect(() => {
+    syncOverlayHost();
   });
 
   const clearHighlights = useCallback(() => {
@@ -177,9 +181,13 @@ export function ReviewFindProvider({
     return () => host?.attach(null);
   }, [hideFind, host, showFind]);
 
-  useEffect(() => {
+  const resetForDocument = useEffectEvent(() => {
     setQueryText("");
     hideFind();
+  });
+  useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- an event: a new document closes find, clears its highlights and restores focus
+    resetForDocument();
   }, [documentKey]);
 
   useEffect(() => () => clearHighlights(), [clearHighlights]);
@@ -190,7 +198,6 @@ export function ReviewFindProvider({
       const wrapped = (index + currentMatches.length) % currentMatches.length;
       const match = currentMatches[wrapped]!;
       setActiveIndex(wrapped);
-      activeIndexRef.current = wrapped;
       clearActiveCssHighlight(articleRef.current?.ownerDocument);
 
       for (const registration of registrations.current) {
@@ -230,6 +237,7 @@ export function ReviewFindProvider({
 
     if (!query.text) {
       clearHighlights();
+      // oxlint-disable-next-line react/set-state-in-effect -- an emptied query clears the DOM highlights and the results together
       setSearching(false);
       setInvalid(null);
       setMatches([]);
@@ -352,6 +360,7 @@ export function ReviewFindProvider({
       {children}
       {open && overlayHost
         ? createPortal(
+            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- <search> has no implicit role before Safari 17, and bb mobile runs in WebKit
             <div className="review-find-widget" role="search" aria-label="Find in session">
               <div className="review-find-input-shell">
                 <input

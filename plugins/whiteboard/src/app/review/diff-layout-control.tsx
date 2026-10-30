@@ -2,7 +2,6 @@ import type { ReviewDiffLayout } from "../../shared/review-protocol/index.ts";
 import {
   type ReactElement,
   useCallback,
-  useEffect,
   useId,
   useRef,
   useState,
@@ -53,12 +52,11 @@ export function DiffLayoutControl(): ReactElement {
   // change event. The choice shows at once and holds until that confirmation,
   // or drops back if the write fails.
   const [pending, setPending] = useState<ReviewDiffLayout | null>(null);
+
+  if (pending !== null && layout === pending) setPending(null);
+
   const shownLayout = pending ?? layout;
   const layoutLabelId = useId();
-
-  useEffect(() => {
-    if (pending !== null && layout === pending) setPending(null);
-  }, [layout, pending]);
 
   useDismissOnOutside(controlRef, open, setOpen, true, true);
 
@@ -88,6 +86,7 @@ export function DiffLayoutControl(): ReactElement {
           ref={popoverRef}
           popover="manual"
           className="review-diff-settings-popover"
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a manual popover; <dialog> adds modal semantics and its own UA box styles
           role="dialog"
           aria-label="Diff settings"
         >
@@ -105,6 +104,7 @@ export function DiffLayoutControl(): ReactElement {
                 <button
                   key={option}
                   type="button"
+                  // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a segmented control drawn with buttons; native radios cannot take this styling
                   role="radio"
                   aria-checked={option === shownLayout}
                   className={

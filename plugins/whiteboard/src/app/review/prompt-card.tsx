@@ -51,20 +51,17 @@ export function PromptCard() {
     }
   };
 
-  const copyPrompt = () => {
-    void copyText(PROMPTS[kind]).then((ok) => {
-      if (!ok) {
-        return;
-      }
+  const copyPrompt = async () => {
+    if (!(await copyText(PROMPTS[kind]))) return;
 
-      setCopied(true);
-      clearTimeout(resetTimer.current);
-      resetTimer.current = setTimeout(() => setCopied(false), COPIED_RESET_MS);
-    });
+    setCopied(true);
+    clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setCopied(false), COPIED_RESET_MS);
   };
 
   return (
     <section className="review-home-prompt-card" aria-label="Whiteboard prompt">
+      {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a segmented button bar; <fieldset> adds form borders, padding and min-content sizing */}
       <div className="review-home-prompt-tabs" role="group" aria-label="What to review">
         {PROMPT_KINDS.map(({ kind: tab, label }) => (
           <button

@@ -3,7 +3,7 @@ import type {
   ReviewInlineEditorHeightMode,
   ReviewInlineEditorRange,
 } from "../../shared/review-protocol/index.ts";
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 
 import {
   type DiffSelection,
@@ -138,6 +138,7 @@ export function CodePeekCard({
 
   if (!ranges.length)
     return (
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
       <section className="code-peek" role="status">
         {failed
           ? `Can't show ${codePeekRangeTitle(source.file, source.start.line, source.end.line)}`
@@ -191,9 +192,6 @@ function FileSnippetCard({
 
   const subject = useMemo(() => codePeekSubject(source), [source]);
 
-  const onNativeFocusRef = useRef(onNativeFocus);
-  onNativeFocusRef.current = onNativeFocus;
-
   return (
     <section className="code-peek" data-code-rendering="inline-editor">
       <DocumentCodeView
@@ -205,7 +203,7 @@ function FileSnippetCard({
         heightMode={heightMode}
         active={active}
         lenses={lenses}
-        onFocus={() => onNativeFocusRef.current?.()}
+        onFocus={onNativeFocus}
         onOpen={() =>
           session.surface.revealAnchor(
             subject.file,
@@ -267,6 +265,7 @@ function groupedCodePeeks(peeks: readonly FileLineRange[]): GroupedCodePeek[] {
     });
   }
 
+  // oxlint-disable-next-line oxc/no-map-spread -- one small object per file side
   return [...groups.values()].map((group) => ({
     ...group,
     countRanges: group.ranges,

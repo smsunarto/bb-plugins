@@ -5,6 +5,7 @@ import {
   type ReactElement,
   type RefObject,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -30,8 +31,7 @@ import { MarkerUnderline, SettingsSlidersIcon } from "./icons.tsx";
 import { ReviewPanelHost } from "./review-components.tsx";
 import { ReviewProvider, useReview } from "./review-context.tsx";
 import { ReviewCornerAction } from "./review-corner-action.tsx";
-import { useReviewDiffFiles } from "./review-diff-files-context.tsx";
-import { ReviewDiffFilesProvider } from "./review-diff-files-context.tsx";
+import { ReviewDiffFilesProvider, useReviewDiffFiles } from "./review-diff-files-context.tsx";
 import { ReviewDocumentBoundary } from "./review-document-boundary.tsx";
 import { reportReviewDocumentRenderError } from "./review-document-error-report.ts";
 import { ReviewUnavailable } from "./review-empty-state.tsx";
@@ -63,7 +63,6 @@ import { selectActiveSoftwareMapModel } from "./software-map-selection.ts";
 import type { NormalizedSoftwareElement, NormalizedSoftwareModel } from "./software-map/model.ts";
 import { SoftwareMapTopologyUnavailable } from "./software-map/software-map-absence.tsx";
 import { SoftwareMap } from "./software-map/SoftwareMap.tsx";
-import { useTutorial } from "./tutorial-context.tsx";
 import { TutorialExperienceProvider } from "./tutorial-experience.tsx";
 
 const DEFAULT_SIDE_PEEK_WIDTH = 560;
@@ -161,8 +160,6 @@ interface ResolvedReviewDocument {
 }
 
 function useResolvedReviewDocument(documentState: ReviewDocumentAppState): ResolvedReviewDocument {
-  const session = useReviewSession();
-
   return useMemo(() => {
     const document = documentState.state === "ready" ? documentState.document : null;
 
@@ -176,7 +173,7 @@ function useResolvedReviewDocument(documentState: ReviewDocumentAppState): Resol
       revision: document?.key ?? `${documentState.state}:${routePath}`,
       diffDocumentKey: [routePath, filePath].join("\0"),
     };
-  }, [documentState, session]);
+  }, [documentState]);
 }
 
 function ReviewLayout({
@@ -211,16 +208,10 @@ function ReviewLayout({
 
   return (
     <ReviewRootsProvider roots={roots}>
-      <ReviewFindProvider
-        articleRef={articleRef}
-        scrollRegionRef={scrollRegionRef}
-        documentKey={documentRevision}
-        host={findHost}
-      >
+      <ReviewFindProvider articleRef={articleRef} documentKey={documentRevision} host={findHost}>
         <ReviewDebugSettingsProvider>
           <ReviewProvider
             key={documentRoute}
-            documentRoute={documentRoute}
             softwareMapEnabled={softwareMapEnabled}
             openTraceSession={setTraceSelection}
           >
@@ -373,13 +364,11 @@ function ReviewLayoutContent({
   const lenses = useReviewLenses();
   useEffect(() => {
     if (lenses?.active) {
+      // oxlint-disable-next-line react/set-state-in-effect -- an event: each lens activation, structural-diff toggle or session change opens the diff, and the reader may leave it while the lens stays active, so the view cannot be derived
       setDiffScope(null);
       setActiveView("diff");
     }
   }, [lenses?.active, lenses?.structuralDiffEnabled, session]);
-
-  const reviewViewsRef = useRef(reviewViews);
-  reviewViewsRef.current = reviewViews;
 
   const applyReviewView = (view: ReviewView) => {
     const normalizedView = normalizeReviewView(
@@ -399,6 +388,12 @@ function ReviewLayoutContent({
     setActiveView(normalizedView);
     viewStateSync.persistActiveView(normalizedView);
   };
+  // The next three effects turn events that arrive as props or context (a view
+  // that is no longer offered, a trace link, a map focus request) into a view
+  // change. applyReviewView also persists the view and closes the side peek,
+  // so it cannot run during render; showReviewView is this component's own
+  // effect event, not a parent callback.
+  const showReviewView = useEffectEvent(applyReviewView);
 
   useEffect(() => {
     if (
@@ -410,23 +405,25 @@ function ReviewLayoutContent({
         hasCommitRange,
       ) !== activeView
     ) {
-      applyReviewView("review");
+      // oxlint-disable-next-line react/set-state-in-effect, react-doctor/no-adjust-state-on-prop-change, react-doctor/no-pass-data-to-parent -- falls back from a view that is no longer offered (see above)
+      showReviewView("review");
     }
   }, [activeView, hasChangeRange, hasCommitRange, hasTraceSessions, softwareMapEnabled]);
   useEffect(() => {
     if (traceSelection) {
-      applyReviewView("trace");
+      // oxlint-disable-next-line react/set-state-in-effect, react-doctor/no-adjust-state-on-prop-change, react-doctor/no-pass-data-to-parent -- opens a trace session the traceSelection prop announces (see above)
+      showReviewView("trace");
     }
   }, [traceSelection]);
 
   useEffect(() => {
     if (!softwareMapEnabled || !review.softwareMapFocusRequest) return;
-    applyReviewView("map");
+    // oxlint-disable-next-line react/set-state-in-effect, react-doctor/no-adjust-state-on-prop-change, react-doctor/no-pass-data-to-parent -- each software-map focus request opens the map (see above)
+    showReviewView("map");
   }, [review.softwareMapFocusRequest, softwareMapEnabled]);
-  const applyReviewViewRef = useRef(applyReviewView);
-  applyReviewViewRef.current = applyReviewView;
-
-  const tutorial = useTutorial() !== null;
+  const showRequestedReviewView = useEffectEvent((view: ReviewView) => {
+    if (reviewViews.includes(view)) applyReviewView(view);
+  });
 
   const tocEntries =
     documentState.state === "ready" ? (documentState.document.tocEntries ?? []) : [];
@@ -435,9 +432,7 @@ function ReviewLayoutContent({
   // mounting cannot outrun the listener.
   useLayoutEffect(() => {
     return session.surface.subscribe((event) => {
-      if (event.event === "showReviewView" && reviewViewsRef.current.includes(event.view)) {
-        applyReviewViewRef.current(event.view);
-      }
+      if (event.event === "showReviewView") showRequestedReviewView(event.view);
     });
   }, [session.surface]);
 
@@ -489,6 +484,7 @@ function ReviewLayoutContent({
         <TutorialExperienceProvider shellRef={shellRef} scrollRegionRef={scrollRegionRef}>
           <header className="review-topbar">
             <div className="review-topbar-left">
+              {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a segmented button bar; <fieldset> adds form borders, padding and min-content sizing */}
               <div className="review-segmented" role="group" aria-label="Session views">
                 {reviewViews.map((view) => (
                   <button
@@ -544,6 +540,7 @@ function ReviewLayoutContent({
             </div>
           </header>
           {review.historicalRevision ? (
+            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
             <div className="review-history-banner" role="status">
               <span>You are viewing an older version of this session.</span>
               <button
@@ -830,6 +827,7 @@ function MapSettingsControl(): ReactElement {
           />
           <div
             className="review-debug-theme review-debug-theme--triple"
+            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a segmented button bar; <fieldset> adds form borders, padding and min-content sizing
             role="group"
             aria-label="Node tint"
           >

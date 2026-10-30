@@ -1,18 +1,11 @@
-import { type ReactElement, createElement } from "react";
+import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { a as ReviewMdxLink } from "./review-components.tsx";
-import { reviewSessionElement, testReviewSession } from "./review-session-test-utils.tsx";
 import { shouldCloseSidePeekForReviewView } from "./review-view-route.ts";
 import { selectActiveSoftwareMapModel } from "./software-map-selection.ts";
 import { defineSoftwareModel } from "./software-map/model.ts";
-
-const testSession = testReviewSession();
-
-function renderWithTestSession(element: ReactElement): string {
-  return renderToStaticMarkup(reviewSessionElement(testSession, element));
-}
 
 describe("review app initial view", () => {
   it("closes side peeks when leaving the rendered review document", () => {

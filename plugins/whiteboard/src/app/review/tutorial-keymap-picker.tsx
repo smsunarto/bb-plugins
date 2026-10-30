@@ -15,6 +15,7 @@ export function TutorialKeymapPicker(_props: ReviewComponentProps<"TutorialKeyma
   const [pending, setPending] = useState<ReviewKeymapChoice | null>(null);
 
   return (
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a segmented button bar; <fieldset> adds form borders, padding and min-content sizing
     <div className="tutorial-keymap-picker" role="group" aria-label="Keybindings">
       {choices.map((choice) => (
         <button

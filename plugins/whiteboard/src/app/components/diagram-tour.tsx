@@ -55,7 +55,7 @@ export function useDiagramTourShell(open: boolean, onClose: () => void) {
     if (scroller) scroller.style.overflow = "hidden";
 
     // Focusable overlay: a click on its background keeps focus (and Escape) inside.
-    overlay.tabIndex = -1;
+    overlay.setAttribute("tabindex", "-1");
     const heading = overlay.querySelector<HTMLElement>(".tour-stop.active h3");
     if (heading) heading.tabIndex = -1;
     if (inCanvas(opener)) (heading ?? overlay).focus({ preventScroll: true });

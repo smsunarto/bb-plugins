@@ -800,6 +800,7 @@ export class ReviewStore {
         ORDER BY reviews.rowid`,
       )
       .all(...(id === undefined ? [] : [id]))
+      // oxlint-disable-next-line oxc/no-map-spread -- one summary per listed review; JSON.parse dominates
       .map((row) => {
         const summary = liftStoredSource(
           // SAFETY: versions contains only snapshots validated by execute before committing.

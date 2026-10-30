@@ -1250,6 +1250,7 @@ async function readJjCommitRange(
   }
 
   return Promise.all(
+    // oxlint-disable-next-line oxc/no-map-spread -- one object per commit; the diff spawn dominates
     metadata.map(async (entry) => {
       const files = await diffFileSummariesForKind({
         rootPath,
@@ -2018,6 +2019,7 @@ export function parseGitRawNumStatSummaries(output: string): LocalVcsDiffFileSum
     throw new Error("git diff returned its counts before its raw records.");
   }
 
+  // oxlint-disable-next-line oxc/no-map-spread -- one small object per changed file
   return files.map((file) => ({
     ...file,
     ...(counts.get(file.path) ?? { additions: 0, deletions: 0 }),

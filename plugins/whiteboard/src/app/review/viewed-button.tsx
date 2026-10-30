@@ -35,6 +35,7 @@ export function ViewedButton({
       ref={empty ? undefined : tooltip}
       type="button"
       className={`review-viewed-check ${empty ? "is-empty" : ""}`}
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a tri-state toggle (aria-checked="mixed") drawn as a button; a native checkbox cannot render it
       role="checkbox"
       aria-checked={progress.state === "partial" ? "mixed" : done}
       aria-label={`${done ? "Mark unviewed" : "Mark viewed"}: ${label}`}

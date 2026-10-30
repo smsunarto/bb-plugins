@@ -71,6 +71,7 @@ function MatchedText({ text }: { text: string }) {
           // eslint-disable-next-line react/no-array-index-key
           <mark key={index}>{segment.text}</mark>
         ) : (
+          // oxlint-disable-next-line react/no-array-index-key -- positional segments (see above)
           <Fragment key={index}>{segment.text}</Fragment>
         ),
       )}
@@ -99,19 +100,9 @@ export function ReviewHome({
   const [deleteError, setDeleteError] = useState<string>();
 
   // Keep successful deletions hidden until the catalog acknowledges removal.
-  useEffect(() => {
-    setDeletions((current) => {
-      const next = new Map(current);
+  const unacknowledged = withoutAcknowledgedDeletions(deletions, reviews);
 
-      for (const [id, status] of current) {
-        if (status === "deleted" && !reviews.some((review) => review.reviewId === id)) {
-          next.delete(id);
-        }
-      }
-
-      return next.size === current.size ? current : next;
-    });
-  }, [reviews, deletions]);
+  if (unacknowledged !== deletions) setDeletions(unacknowledged);
 
   const deleteReview = useCallback(
     async (review: ReviewApiSummary) => {
@@ -473,6 +464,7 @@ function ReviewTable({
                 <td>
                   {review.origin?.pullRequestNumber ? `#${review.origin.pullRequestNumber}` : "—"}
                 </td>
+                {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- the cell's button is labelled by the review title it renders through MatchedText */}
                 <td>
                   <button
                     className="review-home-table-open"
@@ -529,6 +521,7 @@ function ReviewRowActions({ review }: { review: ReviewApiSummary }) {
   if (!onDelete) return <DismissReviewButton review={review} />;
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- only keeps clicks on the row actions from opening the row
     <div
       ref={control}
       className="review-home-row-actions"
@@ -637,6 +630,7 @@ function ScratchpadGroup({
     <section className="review-home-scratchpad" aria-label="Scratchpad">
       <div className="review-home-cards">
         <div className="review-home-card-shell">
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- labelled by the scratchpad title it renders through MatchedText */}
           <button
             type="button"
             className="review-home-card review-home-scratchpad-card"
@@ -900,4 +894,19 @@ function TrashIcon() {
       <path d="M3.5 5.5h13M8 5.5V4h4v1.5M5 5.5l.8 11h8.4l.8-11M8.3 8.5l.3 5M11.7 8.5l-.3 5" />
     </svg>
   );
+}
+
+function withoutAcknowledgedDeletions(
+  deletions: Map<string, "pending" | "deleted">,
+  reviews: readonly ReviewApiSummary[],
+): Map<string, "pending" | "deleted"> {
+  const next = new Map(deletions);
+
+  for (const [id, status] of deletions) {
+    if (status === "deleted" && !reviews.some((review) => review.reviewId === id)) {
+      next.delete(id);
+    }
+  }
+
+  return next.size === deletions.size ? deletions : next;
 }

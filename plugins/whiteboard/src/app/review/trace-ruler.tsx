@@ -333,6 +333,7 @@ export function TraceRuler({ events }: { events: readonly ReviewAgentTraceEvent[
 
   return (
     <div ref={anchorRef} className="review-trace-ruler" aria-hidden="true">
+      {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- a pointer scrubber inside the aria-hidden ruler; the trace entries are the keyboard path */}
       <div
         ref={railRef}
         className="review-trace-ruler-rail"

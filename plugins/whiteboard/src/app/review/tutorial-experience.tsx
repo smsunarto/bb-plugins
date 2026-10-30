@@ -79,7 +79,11 @@ export function TutorialExperienceProvider({
 
   const checkedKey = tutorial?.content.progress.checked.join("\u0000") ?? "";
 
-  const checked = useMemo(() => new Set(tutorial?.content.progress.checked ?? []), [checkedKey]);
+  // Keyed on the ids, not the array, so the set survives unrelated progress writes.
+  const checked = useMemo(
+    () => new Set(checkedKey ? checkedKey.split("\u0000") : []),
+    [checkedKey],
+  );
 
   const activeStep = steps.find((step) => !checked.has(step.id)) ?? null;
   const activeChapterId: TutorialChapterId = activeStep?.chapter ?? "finish";
@@ -203,6 +207,7 @@ export function TutorialExperienceProvider({
     const root = shell;
 
     if (!root || hidden || !activeStep) {
+      // oxlint-disable-next-line react/set-state-in-effect -- unmarks in the same layout pass that would query the DOM for targets
       setTargets([]);
 
       return;
@@ -481,6 +486,7 @@ function useTargetRings(
   const [rings, setRings] = useState<TutorialRing[]>([]);
   useLayoutEffect(() => {
     if (!shell || targets.length === 0) {
+      // oxlint-disable-next-line react/set-state-in-effect -- drops the old rings before paint; deriving them would show stale rings until the next measurement
       setRings([]);
 
       return;

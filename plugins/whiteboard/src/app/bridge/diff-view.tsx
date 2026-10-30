@@ -2,7 +2,15 @@ import {
   experimental_Diff as Diff,
   experimental_SourceCode as SourceCode,
 } from "@get-bb/plugin-sdk/app";
-import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import type {
   ReviewCommitScope,
   ReviewDiffFileWire,
@@ -295,8 +303,7 @@ export function CodeFile({
   const root = useRef<HTMLDivElement>(null);
   const inline = useInlineBreakpoint(root);
   const shown = useShown(root, lazyRoot, open !== false, onRevealLoad !== undefined);
-  const revealLoad = useRef(onRevealLoad);
-  revealLoad.current = onRevealLoad;
+  const revealLoaded = useEffectEvent(() => onRevealLoad?.());
   useEffect(() => {
     const listener = onDidChangeDiffLayout(setLayout);
     return () => listener.dispose();
@@ -304,12 +311,13 @@ export function CodeFile({
   useEffect(() => {
     if (!shown) return;
     let current = true;
+    // oxlint-disable-next-line react/set-state-in-effect -- clears the previous inputs' model while the next one loads asynchronously
     setLoaded({});
     loadFileModel(reader, comparison, file, ranges, side).then(
       (model) => {
         if (current) {
           setLoaded({ model });
-          revealLoad.current?.();
+          revealLoaded();
         }
         return undefined;
       },
@@ -420,6 +428,7 @@ function useShown(
     if (shown || !open || !element) return;
     // jsdom and legacy hosts lack IntersectionObserver; loading eagerly beats never loading.
     if (force || typeof IntersectionObserver === "undefined") {
+      // oxlint-disable-next-line react/set-state-in-effect -- latches the same visibility the observer below would, for a forced reveal or a host without IntersectionObserver
       setShown(true);
       return;
     }

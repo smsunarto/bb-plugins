@@ -43,6 +43,7 @@ export function ReviewDiffFilesProvider({
 
   useEffect(() => {
     const controller = new AbortController();
+    // oxlint-disable-next-line react/set-state-in-effect -- each new request reads as loading until it settles, even for the same document
     setSnapshot((current) =>
       current.documentKey === documentKey && current.state.status === "loading"
         ? current

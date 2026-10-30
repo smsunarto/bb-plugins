@@ -18,6 +18,16 @@ export function ReviewTraceView({ initialSelection }: { initialSelection?: Trace
   const [selectedKey, setSelectedKey] = useState<string | null>(() =>
     initialSelection ? makeAgentTraceKey(initialSelection.sessionId, initialSelection.trace) : null,
   );
+  // A new initial selection (a trace link) moves the picker to it.
+  const [shownInitialSelection, setShownInitialSelection] = useState(initialSelection);
+
+  if (shownInitialSelection !== initialSelection) {
+    setShownInitialSelection(initialSelection);
+
+    if (initialSelection) {
+      setSelectedKey(makeAgentTraceKey(initialSelection.sessionId, initialSelection.trace));
+    }
+  }
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement | null>(null);
@@ -37,12 +47,6 @@ export function ReviewTraceView({ initialSelection }: { initialSelection?: Trace
 
     return () => document.removeEventListener("mousedown", handleOutsideClick);
   }, [pickerOpen]);
-
-  useEffect(() => {
-    if (initialSelection) {
-      setSelectedKey(makeAgentTraceKey(initialSelection.sessionId, initialSelection.trace));
-    }
-  }, [initialSelection]);
 
   // bb lists only the traces uploaded with this document.
   const sessions = useMemo(
@@ -142,6 +146,7 @@ export function ReviewTraceView({ initialSelection }: { initialSelection?: Trace
               </span>
             </button>
             {pickerOpen && (
+              // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a custom picker whose options hold icons and two-line labels; <select> cannot
               <div className="review-trace-picker-menu" role="listbox">
                 {targets.map((target) => {
                   const isActive = target.key === activeKey;
@@ -152,6 +157,7 @@ export function ReviewTraceView({ initialSelection }: { initialSelection?: Trace
                     <button
                       key={target.key}
                       type="button"
+                      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a custom picker whose options hold icons and two-line labels; <option> cannot
                       role="option"
                       aria-selected={isActive}
                       className={

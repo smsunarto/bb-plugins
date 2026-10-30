@@ -2,7 +2,15 @@ import {
   type ReviewCanvasContent,
   resolveReviewSourceView,
 } from "../../shared/review-protocol/index.ts";
-import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useState,
+} from "react";
 
 import type { ActivitySnapshot } from "../../server/lib/review/activity.ts";
 import type { LiveSnapshot } from "../../server/lib/review/store.ts";
@@ -25,6 +33,7 @@ import { ReviewDocumentBoundary } from "./review-document-boundary.tsx";
 import { reportReviewDocumentRenderError } from "./review-document-error-report.ts";
 import type { ReviewFindHost } from "./review-find.tsx";
 import { ReviewLensesProvider } from "./review-lenses.tsx";
+import type { NormalizedSoftwareModel } from "./software-map/model.ts";
 import { TutorialProvider } from "./tutorial-context.tsx";
 
 type ApiContent = Extract<ReviewCanvasContent, { kind: "api" }>;
@@ -50,7 +59,38 @@ function DocumentBody() {
   );
 }
 
+/** New pins or diff mode hand native views fresh factories, so DiffView and
+ * DocumentCodeView recreate them. */
+function useNativeSources(
+  bridge: ApiContent["bridge"],
+  sourceKey: string | undefined,
+  structuralDiffEnabled: boolean | undefined,
+) {
+  const copy = () => ({
+    bridge,
+    sourceKey,
+    structuralDiffEnabled,
+    sources: { inlineEditors: { ...bridge.inlineEditors }, diffView: { ...bridge.diffView } },
+  });
+  const [native, setNative] = useState(copy);
+
+  if (
+    native.bridge !== bridge ||
+    native.sourceKey !== sourceKey ||
+    native.structuralDiffEnabled !== structuralDiffEnabled
+  ) {
+    setNative(copy());
+  }
+
+  return native.sources;
+}
+
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+
+function CanvasError({ message }: { message: string }) {
+  // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
+  return <p role="status">{message}</p>;
+}
 
 export function ApiCanvas({
   content,
@@ -66,20 +106,35 @@ export function ApiCanvas({
   const live = useLiveRead("liveSession", { threadId, sessionId: content.reviewId });
 
   const [version, setVersion] = useState(content.version);
+  // A new version from the panel replaces the one on screen.
+  const [panelVersion, setPanelVersion] = useState(content.version);
+  if (panelVersion !== content.version) {
+    setPanelVersion(content.version);
+    setVersion(content.version);
+  }
+
   const [coverageRevision, setCoverageRevision] = useState(0);
   const [activity, setActivity] = useState<ActivitySnapshot | "unknown">();
   const [cursor, setCursor] = useState<AuthoringCursor | null>(null);
   const [lensCursor, setLensCursor] = useState<AuthoringCursor | null>(null);
-  useEffect(() => setVersion(content.version), [content.version]);
   const [data, setData] = useState<ApiDocumentData>();
-  const dataRef = useRef(data);
-  dataRef.current = data;
-  const sourceRef = useRef<{ key: string }>(undefined);
-  const sourceVersion = sourceRef.current?.key;
+  // The pins and version the document was read at (see useNativeSources).
+  const [sourceKey, setSourceKey] = useState<string>();
   const [error, setError] = useState<string>();
+  // The panel's callbacks are not reactive: a new callback must not reload the document.
+  const publishShown = useEffectEvent((snapshot: LiveSnapshot, shown: number | undefined) => {
+    content.setSourceView?.(
+      shown === undefined
+        ? { reviewId: snapshot.reviewId, kind: "current" }
+        : { reviewId: snapshot.reviewId, kind: "version", version: shown },
+      resolveReviewSourceView(snapshot),
+    );
+    content.setTitle?.(snapshot.title);
+  });
   useEffect(() => {
     const abort = new AbortController();
     const loader = createDocumentLoader(rpc);
+    // oxlint-disable-next-line react/set-state-in-effect -- a new source or version blanks the old document until this effect's load answers
     setData(undefined);
     setActivity(undefined);
     setCursor(null);
@@ -106,17 +161,10 @@ export function ApiCanvas({
         version === undefined ? "current" : version,
       ]);
 
-      if (sourceRef.current?.key !== key) sourceRef.current = { key };
-
-      content.setSourceView?.(
-        version === undefined
-          ? { reviewId: snapshot.reviewId, kind: "current" }
-          : { reviewId: snapshot.reviewId, kind: "version", version },
-        resolveReviewSourceView(snapshot),
-      );
+      setSourceKey(key);
+      publishShown(snapshot, version);
       setData(next);
       setError(undefined);
-      content.setTitle?.(snapshot.title);
     };
 
     void (async () => {
@@ -204,13 +252,7 @@ export function ApiCanvas({
     };
   }, [rpc, live, content.reviewId, version]);
 
-  const nativeSources = useMemo(
-    () => ({
-      inlineEditors: { ...content.bridge.inlineEditors },
-      diffView: { ...content.bridge.diffView },
-    }),
-    [content.bridge, sourceVersion, content.structuralDiffEnabled],
-  );
+  const nativeSources = useNativeSources(content.bridge, sourceKey, content.structuralDiffEnabled);
 
   const baseSession = useMemo(() => {
     const bridge = {
@@ -232,11 +274,10 @@ export function ApiCanvas({
     const session = createReviewSession(bridge, {
       rpc,
       sessionId: content.reviewId,
-      version: () => dataRef.current?.snapshot.version,
+      version: () => undefined,
     });
 
-    session.softwareMapData = (model) =>
-      [...(dataRef.current?.maps.values() ?? [])].find((map) => map === model)?.pinnedData;
+    session.softwareMapData = () => undefined;
 
     return session;
   }, [content.bridge, content.reviewId, nativeSources, rpc]);
@@ -247,6 +288,9 @@ export function ApiCanvas({
 
     return {
       ...baseSession,
+      version: () => snapshot.version,
+      softwareMapData: (model: NormalizedSoftwareModel) =>
+        [...data.maps.values()].find((map) => map === model)?.pinnedData,
       review: {
         kind: snapshot.kind,
         pins: snapshot.source
@@ -283,20 +327,26 @@ export function ApiCanvas({
     };
   }, [baseSession, rpc, content.reviewId, data, version]);
 
+  const hasData = data !== undefined;
   useEffect(() => {
-    if (data) content.bridge.ready();
-  }, [Boolean(data), content.bridge]);
+    if (hasData) content.bridge.ready();
+  }, [hasData, content.bridge]);
 
-  useEffect(() => {
+  const tutorialOrigin = data?.snapshot.origin?.tutorial;
+  const publishTutorial = useEffectEvent(() => {
     if (data) content.setTutorial?.(data.snapshot.origin?.tutorial === true);
-  }, [data?.snapshot.origin?.tutorial, content.setTutorial]);
+  });
+  // Reports when the tutorial flag or the callback changes, not on every reload.
+  useEffect(() => {
+    publishTutorial();
+  }, [tutorialOrigin, content.setTutorial]);
 
   // Loads are near-instant, so stay blank until there is data or an error.
   if (!data)
     return (
       error !== undefined && (
         <>
-          <p role="status">{error}</p>
+          <CanvasError message={error} />
           {version !== undefined && (
             <button onClick={() => setVersion(undefined)}>Back to latest version</button>
           )}
@@ -317,7 +367,7 @@ export function ApiCanvas({
           structuralDiffEnabled={content.structuralDiffEnabled}
         >
           <TutorialProvider tutorial={content.tutorial}>
-            {error && <p role="status">{error}</p>}
+            {error && <CanvasError message={error} />}
             <AuthoringActivityContext.Provider value={version === undefined ? activity : undefined}>
               <DrawQueueProvider cursor={version === undefined ? cursor : undefined}>
                 <DrawQueueProvider

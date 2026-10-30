@@ -42,13 +42,11 @@ export async function renderInstructions(
 
   if (topic !== "authoring") return read(root, topic);
 
-  const more = [
-    ...(scratchpadAvailable(context)
-      ? [
-          '- Explaining code visually outside a review: `whiteboard_session_get_instructions({topic:"scratchpad"})`',
-        ]
-      : []),
-  ];
+  const more = scratchpadAvailable(context)
+    ? [
+        '- Explaining code visually outside a review: `whiteboard_session_get_instructions({topic:"scratchpad"})`',
+      ]
+    : [];
 
   return [
     await read(root, "authoring"),

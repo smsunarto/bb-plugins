@@ -46,6 +46,13 @@ export function AgentSelectionProvider({
   }, []);
 
   const [selection, setSelection] = useState<Selection | null>(null);
+  // A new revision drops the selection, which pointed into the old one.
+  const [selectionRevision, setSelectionRevision] = useState(revision);
+
+  if (selectionRevision !== revision) {
+    setSelectionRevision(revision);
+    setSelection(null);
+  }
   const [copiedSelection, setCopiedSelection] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const copying = useRef(false);
@@ -106,9 +113,6 @@ export function AgentSelectionProvider({
     [overlayHost],
   );
 
-  useEffect(() => {
-    setSelection(null);
-  }, [revision]);
   useEffect(
     () =>
       session.surface.subscribe((event) => {
@@ -180,7 +184,7 @@ export function AgentSelectionProvider({
       copying.current = false;
       setBusy(false);
     }
-  }, [selection, session, revision]);
+  }, [selection, session, revision, setToast]);
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {

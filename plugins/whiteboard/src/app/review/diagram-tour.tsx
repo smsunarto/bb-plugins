@@ -54,6 +54,7 @@ export function DiagramTourOverlay({
     <div
       ref={overlayRef}
       className={`diagram-tour-overlay review-app--theme-${theme} ${className ?? ""}`}
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a React-rendered overlay; <dialog> would need showModal() and the top layer
       role="dialog"
       aria-modal="true"
       aria-label={`${tour.title ?? "Guided"} tour`}

@@ -2,10 +2,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
   type FSWatcher,
-  existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -15,9 +13,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-import { setLocalVcsCommandObserver } from "../../../shared/node/local-vcs/index.ts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -65,41 +61,6 @@ const source = {
 const git = (...args: string[]) =>
   execFileSync("git", args, { cwd: repository, encoding: "utf8" }).trim();
 
-const spawns: string[][] = [];
-
-const recordSpawns = () => {
-  spawns.length = 0;
-  setLocalVcsCommandObserver({
-    start: ({ file, args }) => {
-      spawns.push([file, ...args]);
-
-      return () => {};
-    },
-  });
-};
-
-const batchProcesses = () =>
-  spawnSync("pgrep", ["-P", String(process.pid), "-f", "cat-file"], {
-    encoding: "utf8",
-  })
-    .stdout.split("\n")
-    .filter(Boolean);
-
-const isJjRootProbe = (spawn: string[] | undefined) => spawn?.[0] === "jj" && spawn[3] === "root";
-
-/** Detection = the jj probe followed by the git probe; a lone git probe is the fallback check. */
-const detections = () =>
-  spawns.filter(
-    (spawn, index) =>
-      isJjRootProbe(spawn) ||
-      (spawn[0] === "git" && spawn[4] === "--show-toplevel" && isJjRootProbe(spawns[index - 1])),
-  );
-
-const detectionPair = (root: string) => [
-  ["jj", "-R", root, "root", "--ignore-working-copy"],
-  ["git", "-C", root, "rev-parse", "--show-toplevel"],
-];
-
 const insert = <Content>(reviewId: string, content: Content) =>
   local.store.execute(
     command({
@@ -136,7 +97,6 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  setLocalVcsCommandObserver(null);
   await local.store.close();
   await local.data.close();
   vi.unstubAllEnvs();

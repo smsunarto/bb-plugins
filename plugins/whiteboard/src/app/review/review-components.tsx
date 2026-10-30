@@ -98,7 +98,6 @@ function ReviewPanelFrame({
       ]
         .filter(Boolean)
         .join(" ")}
-      role="complementary"
       aria-label={title ?? label}
       style={panelStyle}
     >
@@ -175,7 +174,7 @@ export function ReviewSection({
     return () => {
       sectionElement.removeEventListener("review-section-expand", expand);
     };
-  }, []);
+  }, [setCollapsed]);
 
   return (
     <section
@@ -595,11 +594,9 @@ export function GuidedTourPanel({
 
   const tailRef = useRef<HTMLDivElement | null>(null);
   const [tailHeight, setTailHeight] = useState(0);
-  const [hasScrolled, setHasScrolled] = useState(false);
-
-  useEffect(() => {
-    setHasScrolled(false);
-  }, [tour.id]);
+  // Scrolling hides the intro pill until another tour opens.
+  const [scrolledTourId, setScrolledTourId] = useState<string | null>(null);
+  const hasScrolled = scrolledTourId === tour.id;
 
   // Scroll-syncing activates a stop when its top crosses the active line, so
   // the last stop must be able to reach it: the tail spacer grants exactly
@@ -680,7 +677,7 @@ export function GuidedTourPanel({
   // The stop being read follows the shared scroll-tracking rule (see
   // scroll-active-tracking.ts), the same one the contents rail uses.
   const syncActiveStopToScroll = () => {
-    setHasScrolled(true);
+    setScrolledTourId(tour.id);
     const scroller = scrollerRef.current;
 
     if (!scroller) return;
@@ -715,7 +712,7 @@ export function GuidedTourPanel({
                 type="button"
                 className="tour-pill tour-pill--intro"
                 onClick={() => {
-                  setHasScrolled(true);
+                  setScrolledTourId(tour.id);
                   stepTo(1);
                 }}
               >
@@ -725,6 +722,7 @@ export function GuidedTourPanel({
                 </span>
               </button>
             ) : (
+              // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a segmented button bar; <fieldset> adds form borders, padding and min-content sizing
               <div className="tour-pill" role="group" aria-label="Tour steps">
                 <button
                   type="button"

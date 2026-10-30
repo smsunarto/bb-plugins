@@ -54,7 +54,11 @@ export function ReviewToc({
     if (!shell) return;
 
     const updateWidth = () => {
-      setIsWide(shell.clientWidth >= TOC_RAIL_MIN_SHELL_WIDTH);
+      const wide = shell.clientWidth >= TOC_RAIL_MIN_SHELL_WIDTH;
+      setIsWide(wide);
+
+      // The rail replaces the drawer, whose toggle is hidden while wide.
+      if (wide) setIsDrawerOpen(false);
     };
 
     updateWidth();
@@ -63,10 +67,6 @@ export function ReviewToc({
 
     return () => resizeObserver.disconnect();
   }, [shellRef]);
-
-  useEffect(() => {
-    if (isWide) setIsDrawerOpen(false);
-  }, [isWide]);
 
   useEffect(() => {
     if (!isDrawerOpen) return;
@@ -88,18 +88,12 @@ export function ReviewToc({
     };
   }, [isDrawerOpen]);
 
-  useEffect(() => {
-    setActive((current) =>
-      entries.some((entry) => entry.id === current) ? current : (entries[0]?.id ?? null),
-    );
-  }, [entries]);
+  // Scroll tracking sets the active entry; until it lands on one of these
+  // entries, the first entry is active.
+  const activeId = entries.some((entry) => entry.id === active) ? active : (entries[0]?.id ?? null);
 
   useEffect(() => {
-    if (entries.length < 2) {
-      setActive(null);
-
-      return;
-    }
+    if (entries.length < 2) return;
 
     // Entries are stable across MDX hydration and HMR remounts (same ids), so
     // this effect may never re-run after the document/scroll-root nodes are
@@ -214,12 +208,16 @@ export function ReviewToc({
 
     if (resizeObserver && article) resizeObserver.observe(article);
 
+    // updateTail writes to the region the ref holds at the time, which may
+    // have remounted since this effect ran; clear that one, not scrollRoot.
+    const clearTail = () => scrollRegionRef?.current?.style.removeProperty(TAIL_CSS_PROPERTY);
+
     return () => {
       if (frame !== null) cancelAnimationFrame(frame);
 
       if (tailFrame !== null) cancelAnimationFrame(tailFrame);
       resizeObserver?.disconnect();
-      scrollRegionRef?.current?.style.removeProperty(TAIL_CSS_PROPERTY);
+      clearTail();
       document.removeEventListener("scroll", scheduleUpdate, {
         capture: true,
       });
@@ -246,6 +244,7 @@ export function ReviewToc({
   // pinned and the glyph still in it, until it is the contents card. The rail
   // on a wide shell is the same nav without the button.
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Escape from any contents link closes the drawer; the links and toggle are the controls
     <nav
       id="review-toc"
       className={
@@ -279,7 +278,7 @@ export function ReviewToc({
               key={entry.id}
               className={
                 `review-toc-item review-toc-item--${entry.level}` +
-                (active === entry.id ? " review-toc-item--active" : "")
+                (activeId === entry.id ? " review-toc-item--active" : "")
               }
             >
               <button type="button" className="review-toc-link" onClick={() => scrollTo(entry.id)}>

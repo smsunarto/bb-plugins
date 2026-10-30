@@ -28,12 +28,10 @@ const ReviewActionsContext = createContext<ReviewActionsValue | null>(null);
 const ReviewStateContext = createContext<ReviewStateValue | null>(null);
 
 export function ReviewProvider({
-  documentRoute,
   softwareMapEnabled = false,
   openTraceSession,
   children,
 }: {
-  documentRoute?: string;
   softwareMapEnabled?: boolean;
   openTraceSession?: (input: { sessionId: string; trace?: string; eventIndex?: number }) => void;
   children: ReactNode;

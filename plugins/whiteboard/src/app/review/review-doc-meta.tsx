@@ -44,6 +44,7 @@ export function ReviewDocumentMetaLine({ children }: { children?: ReactNode }): 
   const [stackLayers, setStackLayers] = useState<ReviewStackLayer[]>([]);
 
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- reads the clock after commit, once per displayed version; render must stay pure
     setRelativeTimeNowMs(Date.now());
   }, [displayedVersion]);
 
@@ -51,6 +52,7 @@ export function ReviewDocumentMetaLine({ children }: { children?: ReactNode }): 
     const controller = new AbortController();
 
     if (!meta?.pullRequestNumber) {
+      // oxlint-disable-next-line react/set-state-in-effect -- drops the previous pull request's layers; the next ones arrive asynchronously
       setStackLayers([]);
 
       return () => controller.abort();
@@ -59,8 +61,8 @@ export function ReviewDocumentMetaLine({ children }: { children?: ReactNode }): 
     const layers = review.stack();
 
     layers
-      .then((next) => {
-        if (!controller.signal.aborted) setStackLayers(next);
+      .then((stack) => {
+        if (!controller.signal.aborted) setStackLayers(stack);
       })
       .catch(() => {});
 

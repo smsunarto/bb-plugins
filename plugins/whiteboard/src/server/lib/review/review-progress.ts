@@ -198,6 +198,7 @@ export async function reviewProgress(
   };
 
   const lenses: ReviewProgress["lenses"] = await Promise.all(
+    // oxlint-disable-next-line oxc/no-map-spread -- one small object per authored lens
     (snapshot.lenses ?? []).map(async (authored): Promise<ReviewProgress["lenses"][number]> => {
       const lens = { id: authored.id, title: authored.title };
 

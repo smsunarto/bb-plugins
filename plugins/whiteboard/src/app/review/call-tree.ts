@@ -1,6 +1,5 @@
 import { frameIdentity } from "../../shared/review/call-stack-frames.ts";
-import type { DiffSelection } from "../../shared/review/lens-selection.ts";
-import type { LensSource } from "../../shared/review/lens-selection.ts";
+import type { DiffSelection, LensSource } from "../../shared/review/lens-selection.ts";
 import type { CallStackDiffBlock } from "../../shared/review/blocks/call_stack_diff.ts";
 
 export interface CallTreeStop {

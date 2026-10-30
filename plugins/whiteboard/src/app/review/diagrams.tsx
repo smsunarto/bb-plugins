@@ -253,10 +253,13 @@ export function SequenceDiagram(block: SequenceDiagramProps) {
   const restoredTour = useTourRestore(tour);
   useTourPersist(tourOpen ? tour : null, tourAnchor);
 
-  useEffect(() => {
-    if (!restoredTour) return;
+  // A restored tour opens once, when its claim lands.
+  const [openedRestore, setOpenedRestore] = useState<typeof restoredTour>(null);
+
+  if (restoredTour && restoredTour !== openedRestore) {
+    setOpenedRestore(restoredTour);
     setTourState({ anchor: restoredTour.activeAnchor, revealRequest: 0 });
-  }, [restoredTour]);
+  }
 
   const openTour = useCallback(
     (anchor?: string) => {
@@ -540,6 +543,7 @@ function SequenceDiagramFigure({
             )
           }
         />
+        {/* oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- a click-anywhere shortcut; the Tour button is the keyboard path */}
         <div ref={sequenceScrollRef} className="sequence-diagram-body" onClick={() => openTour()}>
           <ReactFlow
             colorMode={theme}
@@ -658,6 +662,7 @@ export function sequenceSelfMessagePath(input: {
 
 function SequenceMessageEdge(props: ReactFlowEdgeProps<SequenceMessageFlowEdge>) {
   const data = props.data;
+  const stepMotion = useMotionPhase(data?.message.id);
 
   if (!data) return null;
   const isSelfLoop = props.source === props.target;
@@ -686,8 +691,6 @@ function SequenceMessageEdge(props: ReactFlowEdgeProps<SequenceMessageFlowEdge>)
   const edgeClassName = data.active
     ? "sequence-message clickable active"
     : "sequence-message clickable";
-
-  const stepMotion = useMotionPhase(data.message.id);
 
   return (
     <>
@@ -743,6 +746,7 @@ function SequenceMessageEdge(props: ReactFlowEdgeProps<SequenceMessageFlowEdge>)
           }}
         >
           <span
+            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a node label in React Flow laid out as inline text; <button> brings its own box and font defaults
             role="button"
             tabIndex={0}
             className={

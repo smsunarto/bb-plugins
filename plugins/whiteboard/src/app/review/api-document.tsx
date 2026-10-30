@@ -17,7 +17,7 @@ import type { WhiteboardRpcClient } from "../rpc.ts";
 import { type ApiHeadingIds, apiHeadingIds } from "./api-document-headings.ts";
 import { AuthoringActivityContext } from "./authoring-activity.tsx";
 import { scopeLive } from "./authoring-cursor.ts";
-import { BlockErrorBoundary, type StoredBlock, renderBlock, stored } from "./blocks.tsx";
+import { BlockErrorBoundary, renderBlock, stored } from "./blocks.tsx";
 import { AuthoringCursorContext, Courier } from "./courier.tsx";
 import { withErasedBlocks } from "./draw-queue.ts";
 import { useMotionPhase, useMotionPhases } from "./draw-queue-provider.tsx";
@@ -324,6 +324,7 @@ function DocumentBlocks({
 }) {
   const phases = useMotionPhases();
   const previous = useRef(nodes);
+  // oxlint-disable-next-line react/refs -- reads the list last committed, which the effect below records; render-time state would also record renders React discards
   const shown = withErasedBlocks(nodes, previous.current, phases);
 
   useEffect(() => {
@@ -392,6 +393,7 @@ export const DocumentNode = memo(function DocumentNode({
         onError={(error) => reportReviewDocumentRenderError(session, error)}
       >
         {stale ? (
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
           <p role="status">This source range changed. Update the reference to view it.</p>
         ) : (
           renderBlock(block.type, block, data, children)

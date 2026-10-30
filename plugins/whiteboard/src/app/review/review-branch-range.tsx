@@ -37,6 +37,7 @@ export function ReviewBranchRange({
   return (
     <div
       className="review-branch-range"
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a segmented button bar; <fieldset> adds form borders, padding and min-content sizing
       role="group"
       aria-label={`Session commits: base ${shortRef(baseRef)}, head ${shortRef(headRef)}`}
     >
@@ -83,6 +84,7 @@ function BranchRef({
       onClick={onCopy}
     >
       <span className="review-branch-name">{shortRef(name)}</span>
+      {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means */}
       <span className="review-branch-feedback" role="status">
         {copied ? "Copied" : ""}
       </span>

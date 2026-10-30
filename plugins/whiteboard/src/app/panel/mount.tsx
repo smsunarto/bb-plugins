@@ -64,6 +64,7 @@ function useStableNavigate(): BbNavigate {
   }, [navigate]);
   return useMemo(
     () =>
+      // oxlint-disable-next-line react/refs -- the get trap reads the latest navigate on each access, not while the proxy is built
       new Proxy({} as BbNavigate, {
         // Only real navigate methods: a function for every key would make the
         // proxy look thenable (`then`) and hide typos until call time.
@@ -117,6 +118,7 @@ function useRemoved(threadId: string | undefined, reviewId: string, mode: Covera
   const [removed, setRemoved] = useState<Removal>(null);
   const catalog = useLiveRead("sessions", { threadId, mode });
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect -- clears the previous catalog's verdict before following the new one
     setRemoved(null);
     const abort = new AbortController();
     // Desktop closes on the active -> dismissed transition (reviewApiCatalogService.ts:84-87).
@@ -314,8 +316,8 @@ export function WhiteboardMount({
   const setSourceView = useCallback<NonNullable<ApiContent["setSourceView"]>>((address, view) => {
     sourceViewRef.current = address.kind === "version" ? { ...view, generation: undefined } : view;
   }, []);
-  const portals = useMemo(createPortals, []);
-  const events = useMemo(createSurfaceEvents, []);
+  const portals = useMemo(() => createPortals(), []);
+  const events = useMemo(() => createSurfaceEvents(), []);
   const infoRef = useRef(info);
   useLayoutEffect(() => {
     infoRef.current = info;
@@ -323,6 +325,7 @@ export function WhiteboardMount({
 
   const bridge = useMemo(
     () =>
+      // oxlint-disable-next-line react/refs -- `info` and `sourceView` read their refs on each bridge read, not while building the bridge
       createBbBridge({
         rpc,
         ...(threadId ? { threadId } : {}),

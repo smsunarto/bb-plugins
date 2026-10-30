@@ -190,10 +190,9 @@ function coalesce(pending: DrawEntry[]): DrawEntry[] {
 
       const units = pending
         .slice(start, end)
-        .flatMap(({ cursor }) => [
-          cursor.targetId,
-          ...(cursor.edit?.linkId ? [cursor.edit.linkId] : []),
-        ]);
+        .flatMap(({ cursor }) =>
+          cursor.edit?.linkId ? [cursor.targetId, cursor.edit.linkId] : [cursor.targetId],
+        );
 
       out.push({
         cursor: {
@@ -241,6 +240,7 @@ export function arrive(
 ): DrawState {
   if (cursor.source === "standing") return { ...state, standing: cursor };
 
+  // oxlint-disable-next-line oxc/no-map-spread -- a cursor has a handful of steps
   const steps = stepsFor(cursor).map((step) =>
     reduced && step.ms !== HOLD ? { ...step, ms: 0 } : step,
   );

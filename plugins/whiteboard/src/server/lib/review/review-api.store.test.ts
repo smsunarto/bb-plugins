@@ -1,15 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DatabaseSync } from "../sqlite-testing.ts";
-import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { selectSource } from "../../../shared/review/lens-selection.ts";
-import { documentText } from "../../../shared/review/document-text.ts";
 import { ReviewInputError } from "../../../shared/review/document.ts";
 import {
   type ReviewProviders,
@@ -49,12 +46,6 @@ const create = () =>
 
 const edit = <Content>(reviewId: string, value: Content) =>
   store.execute(request({ type: "edit", reviewId, edit: value }));
-
-const writeLens = <Edit>(reviewId: string, value: Edit, leaseId?: string) =>
-  store.execute({
-    ...request({ type: "lens", reviewId, edit: value }),
-    leaseId,
-  });
 
 beforeEach(() => {
   directory = mkdtempSync(path.join(tmpdir(), "review-lean-"));

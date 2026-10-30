@@ -93,6 +93,16 @@ export function Courier({
   const live = scopeLive(activity, scope);
 
   const unknown = activity === "unknown";
+  const noActivity = activity === undefined;
+  const placed = position !== null;
+
+  // A lease that begins again brings him back.
+  if (live && gone) setGone(false);
+
+  // A new cursor is a hop; the same spot re-measured after a reflow is a
+  // slide. The first placement is neither.
+  const arrival = useRef<{ x: number; y: number } | null>(null);
+  const hopped = useRef<number>(undefined);
 
   // Follow the cursor: resolve its element, measure, and keep measuring
   // while the document reflows around it. No cursor, no courier.
@@ -100,6 +110,7 @@ export function Courier({
     const article = container === undefined ? roots?.articleRef.current : container;
 
     if (!article || !cursor || gone) {
+      // oxlint-disable-next-line react/set-state-in-effect -- no element to stand on: he leaves until the next cursor is measured
       setPosition(null);
       arrival.current = null;
 
@@ -142,11 +153,6 @@ export function Courier({
     };
   }, [roots, container, cursor, gone, find]);
 
-  // A new cursor is a hop; the same spot re-measured after a reflow is a
-  // slide. The first placement is neither.
-  const arrival = useRef<{ x: number; y: number } | null>(null);
-  const hopped = useRef<number>(undefined);
-
   useEffect(() => {
     if (!position || !cursor) return;
     const from = arrival.current;
@@ -167,6 +173,7 @@ export function Courier({
 
     if (reducedMotion()) return;
     node.current?.style.setProperty("--courier-arc", `${Math.min(72, 18 + distance * 0.28)}px`);
+    // oxlint-disable-next-line react/set-state-in-effect -- a measured move starts the hop animation its timer ends
     setIdle("none");
     setMotion("hopping");
 
@@ -181,6 +188,7 @@ export function Courier({
   // With nothing arriving he marches, then sits.
   useEffect(() => {
     if (!live || motion === "hopping" || motion === "leaving" || gone) return;
+    // oxlint-disable-next-line react/set-state-in-effect -- each quiet spell restarts the march-then-sit timer
     setIdle("march");
     const timer = setTimeout(() => setIdle("sit"), SIT_AFTER_MS);
 
@@ -189,7 +197,8 @@ export function Courier({
 
   // The lease ended: one last hop up and out, then nothing.
   useEffect(() => {
-    if (live || activity === undefined || unknown || !position || gone) return;
+    if (live || noActivity || unknown || !placed || gone) return;
+    // oxlint-disable-next-line react/set-state-in-effect -- the lease ending starts the exit animation its timer finishes
     setIdle("none");
     setMotion("leaving");
 
@@ -204,12 +213,7 @@ export function Courier({
     );
 
     return () => clearTimeout(timer);
-  }, [live, unknown, activity === undefined, Boolean(position), gone]);
-
-  // A lease that begins again brings him back.
-  useEffect(() => {
-    if (live && gone) setGone(false);
-  }, [live, gone]);
+  }, [live, unknown, noActivity, placed, gone]);
 
   const jump = () => {
     if (reducedMotion() || motion === "leaving") return;

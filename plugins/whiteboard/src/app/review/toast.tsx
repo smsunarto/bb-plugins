@@ -31,6 +31,7 @@ export function useToast(durationMs = 6_000) {
 
 function Toast({ message }: { message: ToastMessage }) {
   return (
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
     <div className={`review-toast review-toast--${message.kind}`} role="status">
       {message.text}
     </div>

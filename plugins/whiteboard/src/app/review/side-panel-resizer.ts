@@ -215,12 +215,13 @@ export function useRightPanelResize({
     [containerMetrics, maxWidth, minMainWidth, minWidth, separatorWidth],
   );
 
+  // oxlint-disable-next-line react/refs -- clamps against the container's live width; the observer below re-renders when it resizes
   const width = constrainWidth(requestedWidth);
 
   const setWidth = useCallback(
     (nextWidth: number | ((width: number) => number)) => {
       setRequestedWidth((currentWidth) =>
-        nextWidth instanceof Function ? nextWidth(constrainWidth(currentWidth)) : nextWidth,
+        typeof nextWidth === "function" ? nextWidth(constrainWidth(currentWidth)) : nextWidth,
       );
     },
     [constrainWidth, setRequestedWidth],

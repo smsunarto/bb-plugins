@@ -4,7 +4,6 @@ import type { ZodType } from "zod";
 
 import {
   REVIEW_DESKTOP_DISCOVERY_VERSION,
-  REVIEW_SCHEMA_VERSION,
   ReviewCliInstallStampSchema,
   ReviewCliInstallStatusSchema,
   ReviewDesktopDiscoverySchema,
@@ -34,45 +33,6 @@ const repository = {
   repositoryId: "repo-1",
   repositoryPath: "/tmp/repo/.jj/repo",
   worktreeRoot: "/tmp/repo",
-};
-
-const reviewRecord = {
-  schemaVersion: REVIEW_SCHEMA_VERSION,
-  uuid: "3b241101-e2bb-4255-8caf-4136c566a962",
-  repoKey: "repo-1",
-  worktreePath: "/tmp/repo",
-  baseRef: "main",
-  baseCommit: "base-commit",
-  sourceCommit: null,
-  sourceIdentity: null,
-  title: "Progressive Review",
-  sourceSession: "disabled:review",
-  status: "awaiting-review",
-  presentedDocumentRevision: null,
-  presentedSoftwareMapRevision: null,
-  createdAt: "2026-07-28T00:00:00.000Z",
-  lastPublishedAt: null,
-};
-
-const descriptor = {
-  sessionId: "session-1",
-  sessionUrl: "http://127.0.0.1:5570/sessions/session-1",
-  reviewUuid: reviewRecord.uuid,
-  routePath: "/",
-  startedAt: 1,
-};
-
-const session = {
-  sessionId: "session-1",
-  rootPath: "/tmp/repo",
-  baseRootPath: "/tmp/review-base",
-  headRootPath: "/tmp/review-head",
-  baseRef: "main",
-  routePath: "/",
-  appUrl: "http://127.0.0.1:5570/",
-  sessionUrl: "http://127.0.0.1:5570/sessions/session-1",
-  reviewPath: "/tmp/repo/review.mdx",
-  startedAt: 1,
 };
 
 const contracts: Array<[string, ZodType, JsonObject]> = [

@@ -45,6 +45,7 @@ export class ReviewDocumentBoundary extends Component<
     if (this.state.hasError) {
       return (
         <ReviewUnavailable
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- role is a ReviewUnavailable prop that its block container forwards
           role="status"
           message={
             <>

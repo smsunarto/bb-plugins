@@ -13,7 +13,6 @@ import {
   type FlowDiagramNode,
   flowEdgeSchema,
   flowNodeInsertSchema,
-  flowNodeSchema,
 } from "./blocks/flow_diagram.ts";
 import { type Block, blockSchema } from "./blocks/index.ts";
 import { type Step, stepSchema } from "./blocks/sequence.ts";
@@ -261,6 +260,7 @@ function documentReferences(
       );
 
     if (element.type === "call_stack_diff")
+      // oxlint-disable-next-line oxc/no-map-spread -- frames belong to the caller's document; copies keep it unmodified
       return [...element.base, ...element.head].flatMap((frame) => [
         { ...frame, id: frame.id!, peek: true },
         ...(frame.contextSources ?? []).map((source, index) => ({
@@ -313,6 +313,7 @@ export const lensSourceReferences = selectionReferences;
 /** Per-side read coordinates for endpoint validation and retained source quotes. */
 export function sourceReferences(document: Block[], options: { tolerant?: boolean } = {}) {
   return selectionReferences(document, options).flatMap((ref) =>
+    // oxlint-disable-next-line oxc/no-map-spread -- a reference fans out to one copy per source side
     sourceAnchors(ref.source).map((source) => ({ ...ref, source })),
   );
 }

@@ -58,7 +58,9 @@ it("clears a lens without destroying the full comparison's native state", async 
     source: {
       target: {
         kind: "commits" as const,
-        ...{ repositoryId: "r", base: "b", head: "h" },
+        repositoryId: "r",
+        base: "b",
+        head: "h",
       },
       pins: { repositoryId: "r", base: "b", head: "h" },
     },

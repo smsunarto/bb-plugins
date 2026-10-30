@@ -1,5 +1,5 @@
 import { type JsonValue, isStringValue } from "../../shared/review-protocol/index.ts";
-import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 
 import type { DatabaseLensBlockProps } from "../../shared/review/database-lens-block.ts";
@@ -287,6 +287,7 @@ export function DatabaseLens(block: DatabaseLensProps) {
       (useCase) => tourIdFor(lensId, useCase.id) === restoredTour.tour.id,
     );
 
+    // oxlint-disable-next-line react/set-state-in-effect -- opens the saved tour once the layout-effect claim lands, and again when the lens or its use cases change
     if (restoredUseCase) setActiveUseCaseId(restoredUseCase.id);
     setTourState({ anchor: restoredTour.activeAnchor, revealRequest: 0 });
   }, [lensId, restoredTour, useCases]);
@@ -497,28 +498,31 @@ function DatabaseC4UseCaseDiagram({
     () => new Set(defaultExpandedNodeIds),
   );
 
-  const seededDefaultNodeIdsRef = useRef<Set<string>>(new Set(defaultExpandedNodeIds));
-
   const defaultExpandedNodeIdKey = useMemo(
     () => [...defaultExpandedNodeIds].sort().join("\0"),
     [defaultExpandedNodeIds],
   );
 
-  const [viewportFocusNodeId, setViewportFocusNodeId] = useState<string | null>(null);
+  // Defaults new to this set expand once; one the reader collapsed stays collapsed.
+  const [seeded, setSeeded] = useState(() => ({
+    key: defaultExpandedNodeIdKey,
+    nodeIds: new Set(defaultExpandedNodeIds),
+  }));
 
-  useEffect(() => {
-    setExpandedNodeIds((current) => {
-      const next = seedDatabaseC4DefaultExpandedNodeIds({
-        expandedNodeIds: current,
-        seededDefaultNodeIds: seededDefaultNodeIdsRef.current,
-        defaultExpandedNodeIds,
-      });
-
-      seededDefaultNodeIdsRef.current = next.seededDefaultNodeIds;
-
-      return sameNodeIdSet(current, next.expandedNodeIds) ? current : next.expandedNodeIds;
+  if (seeded.key !== defaultExpandedNodeIdKey) {
+    const next = seedDatabaseC4DefaultExpandedNodeIds({
+      expandedNodeIds,
+      seededDefaultNodeIds: seeded.nodeIds,
+      defaultExpandedNodeIds,
     });
-  }, [defaultExpandedNodeIdKey, defaultExpandedNodeIds]);
+
+    setSeeded({ key: defaultExpandedNodeIdKey, nodeIds: next.seededDefaultNodeIds });
+
+    if (!sameNodeIdSet(expandedNodeIds, next.expandedNodeIds))
+      setExpandedNodeIds(next.expandedNodeIds);
+  }
+
+  const [viewportFocusNodeId, setViewportFocusNodeId] = useState<string | null>(null);
 
   const snapshot = useMemo(
     () =>

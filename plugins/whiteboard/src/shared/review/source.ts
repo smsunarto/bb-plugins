@@ -44,6 +44,7 @@ export function checkSourcePath(file: string): void {
     file.startsWith("/") ||
     file.includes("\\") ||
     file.split("/").some((part) => part === ".." || part === ".") ||
+    // oxlint-disable-next-line no-control-regex -- rejecting control characters in paths is the point
     /[\u0000-\u001f]/.test(file)
   )
     throw new SourceRangeError("Source file must be a repository-relative path.");

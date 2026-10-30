@@ -53,6 +53,7 @@ export function resolveFileLens(
   }
 
   const sources = [...groups.values()].flatMap((group) =>
+    // oxlint-disable-next-line oxc/no-map-spread -- a group yields several merged ranges, each its own copy of the source
     unionIntervals(group.map((source) => [source.fromLine - 1, source.toLine])).map(
       ([start, end]) => ({
         ...group[0],

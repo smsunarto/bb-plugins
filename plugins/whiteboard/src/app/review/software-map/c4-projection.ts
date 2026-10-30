@@ -587,6 +587,7 @@ function projectRelationships(
     buckets.set(bucketKey, bucket);
   }
 
+  // oxlint-disable-next-line oxc/no-map-spread -- one object per projected relationship
   return [...buckets.values()].map<ProjectedC4Relationship>((bucket) => ({
     id: projectedRelationshipId(bucket),
     kind: bucket.kind,

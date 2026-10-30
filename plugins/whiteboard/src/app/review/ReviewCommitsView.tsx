@@ -33,6 +33,7 @@ export function ReviewCommitsView({
   if (range.live.kind === "unavailable") {
     return (
       <ReviewUnavailable
+        // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- role is a ReviewUnavailable prop that its block container forwards
         role="status"
         title="Commits unavailable"
         message="Local checkout unavailable."

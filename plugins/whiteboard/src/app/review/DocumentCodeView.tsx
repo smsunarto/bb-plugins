@@ -7,7 +7,7 @@ import type {
   ReviewInlineEditorRange,
   ReviewSourcePins,
 } from "../../shared/review-protocol/index.ts";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
 import { coverageProgress, coverageSources } from "../../shared/review/viewed-coverage.ts";
 import { useReviewSession } from "./host/review-session.tsx";
@@ -66,6 +66,7 @@ export function DocumentCodeView({
   const progress: ReviewDiffProgress = {
     files: (pins ? [] : (lenses?.progress?.files ?? []))
       .filter((file) => file.path === path || file.previousPath === path)
+      // oxlint-disable-next-line oxc/no-map-spread -- at most this file and its rename
       .map((file) => ({
         path: file.path,
         ...coverageProgress([file], sources),
@@ -74,8 +75,6 @@ export function DocumentCodeView({
       })),
   };
 
-  const progressRef = useRef(progress);
-  progressRef.current = progress;
   const [container, setContainer] = useState<HTMLDivElement | null>(null);
 
   const handleNavigation = useCallback(
@@ -92,7 +91,13 @@ export function DocumentCodeView({
     [container, path],
   );
 
-  const [shouldMount, setShouldMount] = useState(active);
+  // jsdom and legacy hosts lack IntersectionObserver; mounting eagerly
+  // beats never mounting.
+  const [shouldMount, setShouldMount] = useState(
+    () => active || typeof IntersectionObserver === "undefined",
+  );
+  // Activation latches mounting; the editor stays once it exists.
+  if (active && !shouldMount) setShouldMount(true);
 
   const [height, setHeight] = useState(() => estimatedHeight(ranges, heightMode));
 
@@ -110,14 +115,18 @@ export function DocumentCodeView({
 
   const handleWaitersRef = useRef<Array<(handle: ReviewInlineEditorHandle | null) => void>>([]);
 
-  const onFocusRef = useRef(onFocus);
-  onFocusRef.current = onFocus;
-  const handleFocus = useCallback(() => onFocusRef.current?.(), []);
-  const onOpenRef = useRef(onOpen);
-  onOpenRef.current = onOpen;
-  const handleOpen = useCallback(() => onOpenRef.current?.(), []);
-  const collapsedRef = useRef(collapsed);
-  collapsedRef.current = collapsed;
+  const handleFocus = useEffectEvent(() => onFocus?.());
+  const handleOpen = useEffectEvent(() => onOpen?.());
+  // The editor takes these at creation; the effects below push later changes.
+  const creationInput = useEffectEvent(() => ({
+    progress,
+    pins,
+    ranges,
+    countRanges,
+    active,
+    collapsed,
+  }));
+  const latestProgress = useEffectEvent(() => progress);
   const inlineEditorFactory = session.bridge.inlineEditors;
   const inlineEditorSessionId = session.config.reviewId;
   const reviewFind = useReviewFindRegistration();
@@ -133,17 +142,14 @@ export function DocumentCodeView({
     });
   }, []);
 
-  const setFindQuery = useCallback(
-    async (query: ReviewFindQuery) => {
-      latestFindQueryRef.current = query;
-      const handle = handleRef.current;
+  const setFindQuery = useEffectEvent(async (query: ReviewFindQuery) => {
+    latestFindQueryRef.current = query;
+    const handle = handleRef.current;
 
-      if (handle) return handle.setFindQuery(query);
+    if (handle) return handle.setFindQuery(query);
 
-      return inlineEditorFactory.find({ path, side, pins, ranges }, query);
-    },
-    [inlineEditorFactory, path, rangesKey, side, pinsKey],
-  );
+    return inlineEditorFactory.find({ path, side, pins, ranges }, query);
+  });
 
   const revealFindMatch = useCallback(
     async (index: number) => {
@@ -179,22 +185,21 @@ export function DocumentCodeView({
           ?.dispatchEvent(new CustomEvent("review-section-expand"));
       },
     });
-  }, [clearFind, container, revealFindMatch, reviewFind, setFindQuery]);
-
-  useLayoutEffect(() => {
-    if (active) setShouldMount(true);
-  }, [active]);
+    // A new find target re-registers, so the host searches the new range.
+  }, [
+    clearFind,
+    container,
+    revealFindMatch,
+    reviewFind,
+    inlineEditorFactory,
+    path,
+    side,
+    pinsKey,
+    rangesKey,
+  ]);
 
   useLayoutEffect(() => {
     if (!container || shouldMount) return;
-
-    // jsdom and legacy hosts lack IntersectionObserver; mounting eagerly
-    // beats never mounting.
-    if (typeof IntersectionObserver === "undefined") {
-      setShouldMount(true);
-
-      return;
-    }
 
     // Mount a viewport-margin early so scrolling never reveals an empty host.
     const observer = new IntersectionObserver(
@@ -211,24 +216,26 @@ export function DocumentCodeView({
 
   useLayoutEffect(() => {
     if (!container || !shouldMount) return;
+    // oxlint-disable-next-line react/set-state-in-effect -- clears the previous editor's error before creating the next one
     setError(null);
     creationFailedRef.current = false;
+    const input = creationInput();
     let handle: ReviewInlineEditorHandle;
 
     try {
       handle = inlineEditorFactory.create({
-        progress: progressRef.current,
+        progress: input.progress,
         container,
         path,
         title,
         description,
         side,
-        pins,
-        ranges,
+        pins: input.pins,
+        ranges: input.ranges,
         heightMode,
-        active,
+        active: input.active,
 
-        countRanges,
+        countRanges: input.countRanges,
         onDidFocus: handleFocus,
         onDidOpen: handleOpen,
         onDidNavigate: handleNavigation,
@@ -243,7 +250,7 @@ export function DocumentCodeView({
       return;
     }
 
-    handle.setCollapsed(collapsedRef.current);
+    handle.setCollapsed(input.collapsed);
     handleRef.current = handle;
 
     for (const resolve of handleWaitersRef.current.splice(0)) resolve(handle);
@@ -265,10 +272,8 @@ export function DocumentCodeView({
     container,
     description,
     countRangesKey,
-    handleFocus,
     handleHover,
     handleNavigation,
-    handleOpen,
     heightMode,
     inlineEditorFactory,
     inlineEditorSessionId,
@@ -285,7 +290,7 @@ export function DocumentCodeView({
   }, [active]);
 
   useLayoutEffect(() => {
-    handleRef.current?.setProgress?.(progressRef.current);
+    handleRef.current?.setProgress?.(latestProgress());
   }, [lenses?.progress, countRangesKey, rangesKey, path, side]);
 
   useLayoutEffect(() => {

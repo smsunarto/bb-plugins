@@ -82,6 +82,7 @@ export function FlowGraph({
 
   useEffect(() => {
     let cancelled = false;
+    // oxlint-disable-next-line react/set-state-in-effect -- a new layout request clears the last one's error; its result lands asynchronously
     setError(undefined);
     void layoutFlow(block, direction)
       .then((result) => {
@@ -504,6 +505,7 @@ function FlowNode({ data }: NodeProps<FlowNodeType>) {
         .filter(Boolean)
         .join(" ")}
       style={{ width: SIZE.width, height: SIZE.height }}
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a React Flow node box sized by the layout; <button> brings its own box and font defaults
       role="button"
       tabIndex={unavailable ? -1 : 0}
       aria-disabled={unavailable}

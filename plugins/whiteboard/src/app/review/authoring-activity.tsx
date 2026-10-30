@@ -87,6 +87,7 @@ export function AuthoringActivityBadge({
 
   if (!working)
     return (
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
       <span className={className} role="status" aria-live="polite" ref={tooltip}>
         <CourierFigure className="host-authoring-courier" />
         <span className="host-authoring-text">{text}</span>
@@ -104,6 +105,7 @@ export function AuthoringActivityBadge({
       onClick={locate}
     >
       <CourierFigure className="host-authoring-courier" />
+      {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means */}
       <span className="host-authoring-text" role="status" aria-live="polite">
         {text}
       </span>

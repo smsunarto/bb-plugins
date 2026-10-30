@@ -295,6 +295,7 @@ export function TraceEvent({
           className="review-trace-tool review-trace-tool--expandable"
           open={Boolean(highlightQuote)}
         >
+          {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- labelled by its nested row text ("Thinking"), deeper than the rule looks */}
           <summary>
             <span className="review-trace-tool-row">
               <span className="review-trace-tool-icon">{toolIcon("Thinking")}</span>
@@ -634,6 +635,7 @@ export function ElidedMessage({
   if (event.thinking) {
     return (
       <details className="review-trace-tool review-trace-tool--expandable" open>
+        {/* oxlint-disable-next-line jsx-a11y/control-has-associated-label -- labelled by its nested row text ("Thinking"), deeper than the rule looks */}
         <summary>
           <span className="review-trace-tool-row">
             <span className="review-trace-tool-icon">{toolIcon("Thinking")}</span>

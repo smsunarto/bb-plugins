@@ -1,5 +1,5 @@
-import type { JsonObject } from "../review-protocol/index.ts";
 import {
+  type JsonObject,
   type JsonValue,
   isJsonObject,
   isStringValue,
@@ -10,7 +10,6 @@ import { z } from "zod";
 
 import {
   type AnchorRef,
-  type ReviewAuthoringComponentName,
   type ReviewDocumentComponentName,
   anchorRefSchema,
   callStackEntrySchema,
@@ -36,7 +35,6 @@ export const REVIEW_DOCUMENT_FORMAT = "review-document/1";
 export type {
   AnchorRef as DocumentAnchor,
   PeekableAnchorRef as DocumentPeekableAnchor,
-  ReviewAuthoringComponentName,
   ReviewDocumentComponentName,
 } from "./authoring.ts";
 

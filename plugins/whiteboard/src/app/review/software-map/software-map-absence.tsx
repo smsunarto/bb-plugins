@@ -65,6 +65,7 @@ export function SoftwareMapTopologyUnavailable({
   if (missingSides.length === 0) return null;
 
   return (
+    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
     <p className="software-map-topology-unavailable" role="status">
       Structural diff unavailable: no software map at {missingSides.join(" or ")}.
     </p>

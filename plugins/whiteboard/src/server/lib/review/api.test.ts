@@ -132,9 +132,8 @@ describe("scratchpad aliases", () => {
       });
 
       // Only the id's route matters; the operation may fail later on fixture source.
-      await call(api, "alias")
-        [operation]()
-        .catch(() => {});
+      const aliased = call(api, "alias");
+      await aliased[operation]().catch(() => {});
 
       const access = table[operation];
       expect(resolved).toEqual(access === "none" ? [] : [`${access} alias`]);

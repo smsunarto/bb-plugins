@@ -4,25 +4,14 @@ import type {
   ReviewDiffProgress,
   ReviewDiffViewHandle,
 } from "../../shared/review-protocol/index.ts";
-import {
-  type CSSProperties,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 
-import type { Lens } from "../../shared/review/diff-lenses.ts";
 import {
   type CoverageProgress,
   coverageProgress,
   coverageSources,
 } from "../../shared/review/viewed-coverage.ts";
-import { AuthoringActivityContext } from "./authoring-activity.tsx";
-import { scopeLive } from "./authoring-cursor.ts";
-import { Courier, LensCursorContext, lensRowElement } from "./courier.tsx";
+import { Courier, lensRowElement } from "./courier.tsx";
 import { compactDiffCount } from "./diff-count.tsx";
 import { withErasedBlocks } from "./draw-queue.ts";
 import { useMotionPhases } from "./draw-queue-provider.tsx";
@@ -97,52 +86,52 @@ export function ReviewDiffView({
   const lens = scope ? undefined : lenses?.active;
   const [lensList, setLensList] = useState<HTMLDivElement | null>(null);
   const rows = useLensRows(lenses?.lenses ?? []);
-  const lensCursor = useContext(LensCursorContext);
-
-  const lensesLive = scopeLive(useContext(AuthoringActivityContext), "lenses");
   const [fullTree, setFullTree] = useState<HTMLDivElement | null>(null);
   const [lensTree, setLensTree] = useState<HTMLDivElement | null>(null);
+  const progress = lenses?.progress;
+  const changedPaths = lenses?.changedPaths;
+  const unfoldRanges = lenses?.unfoldRanges;
 
   const fullProgress = useMemo(
     () =>
-      lenses?.progress
+      progress && changedPaths && unfoldRanges
         ? {
-            files: lenses.progress.files.map((file) => ({
+            files: progress.files.map((file) => ({
               path: file.path,
               ...coverageProgress([file]),
               viewedRanges: coverageSources(file),
               changedRanges: coverageSources(file, file.changed),
-              unfoldRanges: lenses.unfoldRanges.filter(
+              unfoldRanges: unfoldRanges.filter(
                 (source) =>
                   source.file ===
                   (source.side === "base" ? (file.previousPath ?? file.path) : file.path),
               ),
             })),
-            changedPaths: lenses.changedPaths,
+            changedPaths,
           }
         : undefined,
-    [lenses?.progress, lenses?.changedPaths, lenses?.unfoldRanges],
+    [progress, changedPaths, unfoldRanges],
   );
 
   const lensProgress = useMemo(
     () =>
-      lenses?.progress && lens
+      progress && changedPaths && unfoldRanges && lens
         ? {
-            files: lenses.progress.files.map((file) => ({
+            files: progress.files.map((file) => ({
               path: file.path,
               ...coverageProgress([file], lens.ranges),
               viewedRanges: coverageSources(file),
               changedRanges: coverageSources(file, file.changed),
-              unfoldRanges: lenses.unfoldRanges.filter(
+              unfoldRanges: unfoldRanges.filter(
                 (source) =>
                   source.file ===
                   (source.side === "base" ? (file.previousPath ?? file.path) : file.path),
               ),
             })),
-            changedPaths: lenses.changedPaths,
+            changedPaths,
           }
         : undefined,
-    [lenses?.progress, lenses?.changedPaths, lenses?.unfoldRanges, lens],
+    [progress, changedPaths, unfoldRanges, lens],
   );
 
   const markFile = (path: string, scoped: boolean) => {
@@ -189,6 +178,7 @@ export function ReviewDiffView({
           {lenses.complete && (
             <span
               className="diff-progress-ring"
+              // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a drawn progress ring with its percentage; <progress> renders a bar
               role="progressbar"
               aria-label="Changed lines viewed"
               aria-valuenow={percent}
@@ -369,23 +359,25 @@ function NativeDiffView({
   const [error, setError] = useState<string | null>(null);
   const handle = useRef<ReviewDiffViewHandle | null>(null);
 
-  const current = useRef({ progress, onToggleViewed });
-
-  current.current = { progress, onToggleViewed };
+  const toggleViewed = useEffectEvent((path: string) => onToggleViewed?.(path));
+  // Read once per view: later progress goes through setProgress, and the view
+  // keeps the scope its commit names.
+  const creationOptions = useEffectEvent(() => ({
+    scope,
+    progress,
+    onToggleViewed: onToggleViewed ? (path: string) => toggleViewed(path) : undefined,
+  }));
   useLayoutEffect(() => {
     if (!container) return;
+    // oxlint-disable-next-line react/set-state-in-effect -- a new view starts without the previous view's error
     setError(null);
 
     try {
       const view = session.bridge.diffView.create({
         container,
-        scope,
         lens,
         fileTreeContainer: treeContainer,
-        progress: current.current.progress,
-        onToggleViewed: current.current.onToggleViewed
-          ? (path) => current.current.onToggleViewed?.(path)
-          : undefined,
+        ...creationOptions(),
       });
 
       handle.current = view;
@@ -435,6 +427,7 @@ function NativeDiffView({
 function useLensRows<Item extends { id: string }>(items: Item[]) {
   const phases = useMotionPhases("lenses");
   const previous = useRef(items);
+  // oxlint-disable-next-line react/refs -- the rows from the last commit keep a removed lens on screen until its erase phase ends
   const shown = withErasedBlocks(items, previous.current, phases);
 
   useEffect(() => {

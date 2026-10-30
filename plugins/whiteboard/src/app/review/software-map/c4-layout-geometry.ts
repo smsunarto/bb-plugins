@@ -784,6 +784,7 @@ async function layoutC4LocalInflateLevel(
     c4LocalInflateAnchorId(units, context.previousExpandedNodeIds),
   );
 
+  // oxlint-disable-next-line oxc/no-map-spread -- one entry per placed node; the ELK layout dominates
   const entries = units.flatMap((unit) => {
     const placement = placements.get(unit.node.id);
 
@@ -885,6 +886,7 @@ async function c4LocalIsolatedLayout(
 
   const entries = isolated
     .filter((entry) => childIdSet.has(entry.node.id))
+    // oxlint-disable-next-line oxc/no-map-spread -- one entry per placed node; the ELK layout dominates
     .map((entry) => ({
       ...entry,
       x: entry.x + offset.x,

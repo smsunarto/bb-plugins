@@ -96,6 +96,7 @@ export function SoftwareMapHotkeysTab({
         } as CSSProperties);
 
   return (
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- only keeps keys typed in the panel from reaching the map's hotkeys
     <aside
       ref={rootRef}
       className={[
