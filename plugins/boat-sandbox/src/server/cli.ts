@@ -8,10 +8,11 @@ import {
 import type { ConnectionStatus, LaunchOptions, MachineInspection } from "../shared/schema.ts";
 import { errorMessage } from "./lib/error-message.ts";
 
+/** Each handler stops its Boat calls when the invoking CLI goes away. */
 export interface BoatCliHandlers {
-  accountInspect(): Promise<ConnectionStatus>;
-  machineInspect(hostId: string): Promise<MachineInspection>;
-  launchOptions(): Promise<LaunchOptions>;
+  accountInspect(signal?: AbortSignal): Promise<ConnectionStatus>;
+  machineInspect(hostId: string, signal?: AbortSignal): Promise<MachineInspection>;
+  launchOptions(signal?: AbortSignal): Promise<LaunchOptions>;
 }
 
 const jsonOption = {
@@ -52,9 +53,9 @@ export function registerCli(bb: BbPluginApi, handlers: BoatCliHandlers): void {
         "account inspect": cliCommand({
           summary: "Test the configured Boat API key without allocating a sandbox",
           options: jsonOption,
-          run(input) {
+          run(input, ctx) {
             return guarded(async () => {
-              const result = await handlers.accountInspect();
+              const result = await handlers.accountInspect(ctx.signal);
               return {
                 exitCode: result.available ? 0 : 1,
                 stdout: input.options.json ? JSON.stringify(result) : result.message,
@@ -72,9 +73,12 @@ export function registerCli(bb: BbPluginApi, handlers: BoatCliHandlers): void {
             },
           ],
           options: jsonOption,
-          run(input) {
+          run(input, ctx) {
             return guarded(async () => {
-              const result = await handlers.machineInspect(input.positionals["host-id"]);
+              const result = await handlers.machineInspect(
+                input.positionals["host-id"],
+                ctx.signal,
+              );
               return {
                 exitCode: 0,
                 stdout: input.options.json ? JSON.stringify(result) : result.summary,
@@ -85,9 +89,9 @@ export function registerCli(bb: BbPluginApi, handlers: BoatCliHandlers): void {
         "launch options": cliCommand({
           summary: "List the sandbox sizes and saved snapshots a new machine can use",
           options: jsonOption,
-          run(input) {
+          run(input, ctx) {
             return guarded(async () => {
-              const result = await handlers.launchOptions();
+              const result = await handlers.launchOptions(ctx.signal);
               return {
                 exitCode: 0,
                 stdout: input.options.json ? JSON.stringify(result) : describeOptions(result),

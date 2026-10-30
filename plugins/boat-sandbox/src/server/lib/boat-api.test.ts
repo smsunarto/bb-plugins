@@ -1,5 +1,6 @@
+import { Effect, Stream } from "effect";
 import { describe, expect, test, vi } from "vitest";
-import { BoatApiError, canRetry, createBoatClient } from "./boat-api.ts";
+import { BoatApiError, canRetry, createBoatClient, type BoatClient } from "./boat-api.ts";
 
 interface Recorded {
   method: string;
@@ -27,6 +28,23 @@ function fakeFetch(routes: (request: Recorded) => Response | Promise<Response>) 
     return routes(request);
   });
   return { calls, fetchImpl: fetchImpl as unknown as typeof fetch };
+}
+
+/** Every frame one attach stream sends, in order. */
+async function collectFrames(client: BoatClient, processId: number) {
+  return Effect.runPromise(
+    Stream.runCollect(client.attach("bx_abcdefgh", processId, { stdout: 0, stderr: 0 })),
+  );
+}
+
+/** A response body that arrives in exactly these byte chunks. */
+function chunkedBody(chunks: Uint8Array[]): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+      controller.close();
+    },
+  });
 }
 
 const json = (value: unknown, status = 200) =>
@@ -226,16 +244,46 @@ describe("createBoatClient", () => {
       () => new Response(lines.map((line) => JSON.stringify(line)).join("\n") + "\n"),
     );
     const client = createBoatClient(credentials, fetchImpl);
-    const frames = [];
-    for await (const frame of client.attach(
-      "bx_abcdefgh",
-      7,
-      { stdout: 0, stderr: 0 },
-      new AbortController().signal,
-    )) {
-      frames.push(frame.type);
-    }
+    const frames = (await collectFrames(client, 7)).map((frame) => frame.type);
     expect(frames).toEqual(["attached", "stdout", "heartbeat", "exit"]);
     expect(calls[0]?.url.search).toBe("?stdoutOffset=0&stderrOffset=0");
+  });
+
+  test("attach reads frames split across chunks, multi-byte text, blank lines and a last line without a newline", async () => {
+    const encoder = new TextEncoder();
+    const text = [
+      JSON.stringify({ type: "attached" }),
+      "",
+      JSON.stringify({ type: "stdout", data: "caf\u00e9", nextOffset: 5 }),
+      JSON.stringify({ type: "exit", status: "exited", exitCode: 0, signal: null }),
+    ].join("\n");
+    const bytes = encoder.encode(text);
+    // Split inside the first frame and inside the two-byte "é".
+    const accent = bytes.indexOf(0xc3);
+    const { fetchImpl } = fakeFetch(
+      () =>
+        new Response(
+          chunkedBody([bytes.slice(0, 7), bytes.slice(7, accent + 1), bytes.slice(accent + 1)]),
+        ),
+    );
+    const client = createBoatClient(credentials, fetchImpl);
+    await expect(collectFrames(client, 7)).resolves.toEqual([
+      { type: "attached" },
+      { type: "stdout", data: "caf\u00e9", nextOffset: 5 },
+      { type: "exit", status: "exited", exitCode: 0, signal: null },
+    ]);
+  });
+
+  test("attach fails with Boat's error when the stream is refused", async () => {
+    const { fetchImpl } = fakeFetch(() =>
+      json({ ok: false, error: { code: "process_not_found", message: "no such process" } }, 404),
+    );
+    const client = createBoatClient(credentials, fetchImpl);
+    const failure = await collectFrames(client, 7).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(BoatApiError);
+    expect(failure).toMatchObject({
+      status: 404,
+      message: "Boat process_not_found: no such process",
+    });
   });
 });

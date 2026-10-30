@@ -1,9 +1,11 @@
 // The only module that speaks Boat's REST API. Everything it returns is parsed
 // here, so the rest of the plugin works with typed sandboxes and frames.
 import { createHash } from "node:crypto";
+import { Effect, identity, Schedule, Stream } from "effect";
 import { z } from "zod";
 import { MACHINE_KEY_LABEL, SANDBOX_TYPES, type SandboxType } from "../../shared/constants.ts";
 import { sandboxStateSchema, sandboxTypeSchema } from "../../shared/schema.ts";
+import { call } from "./call.ts";
 
 export interface BoatCredentials {
   apiBase: string;
@@ -47,31 +49,18 @@ export function canRetry(error: unknown, call: BoatCall): boolean {
   return call === "idempotent" && error.status === 500;
 }
 
-export interface BoatRetryOptions {
-  signal: AbortSignal;
-  sleep(delayMs: number): Promise<void>;
-  attempts?: number;
-}
+/** Repeat `effect` while Boat reports a retryable failure, a bounded number of times. */
+export const retryBoat =
+  (kind: BoatCall) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.retry(effect, {
+      schedule: Schedule.spaced(RETRY_DELAY_MS),
+      times: RETRY_ATTEMPTS - 1,
+      while: (error) => canRetry(error, kind),
+    });
 
-/** Repeat `fn` while Boat reports a retryable failure, a bounded number of times. */
-export async function withBoatRetry<T>(
-  call: BoatCall,
-  fn: () => Promise<T>,
-  options: BoatRetryOptions,
-): Promise<T> {
-  const attempts = options.attempts ?? RETRY_ATTEMPTS;
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (attempt >= attempts || !canRetry(error, call)) throw error;
-      await options.sleep(RETRY_DELAY_MS);
-      options.signal.throwIfAborted();
-    }
-  }
-}
-
-const REQUEST_TIMEOUT_MS = 30_000;
+/** How long one Boat request may take before it is abandoned. */
+export const REQUEST_TIMEOUT_MS = 30_000;
 const LIST_PAGE_SIZE = 200;
 
 const sandboxSchema = z.object({
@@ -207,12 +196,12 @@ export interface BoatClient {
     processId: number,
     signal: AbortSignal,
   ): Promise<{ status: "running" | "exited" | "lost"; running: boolean; exitCode: number | null }>;
+  /** The command's output from `offsets` on, one frame per NDJSON line; ending the stream closes the request. */
   attach(
     sandboxId: string,
     processId: number,
     offsets: BoatOffsets,
-    signal: AbortSignal,
-  ): AsyncIterable<BoatAttachFrame>;
+  ): Stream.Stream<BoatAttachFrame, unknown>;
   stopCommand(sandboxId: string, processId: number): Promise<void>;
   writeFile(
     sandboxId: string,
@@ -433,32 +422,31 @@ export function createBoatClient(
         signal,
       });
     },
-    async *attach(sandboxId, processId, offsets, signal) {
+    attach(sandboxId, processId, offsets) {
       const url = new URL(`${base}${sandboxPath(sandboxId)}/commands/${processId}/stream`);
       url.searchParams.set("stdoutOffset", String(offsets.stdout));
       url.searchParams.set("stderrOffset", String(offsets.stderr));
-      const response = await fetchImpl(url, { headers: authHeaders, signal });
-      if (!response.ok) throw toApiError(response.status, await response.text());
-      if (response.body === null) return;
-      const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
-      let buffer = "";
-      try {
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += value;
-          let newline = buffer.indexOf("\n");
-          while (newline >= 0) {
-            const line = buffer.slice(0, newline).trim();
-            buffer = buffer.slice(newline + 1);
-            if (line.length > 0) yield attachFrameSchema.parse(JSON.parse(line));
-            newline = buffer.indexOf("\n");
+      return Stream.unwrap(
+        Effect.gen(function* () {
+          const response = yield* call((signal) =>
+            fetchImpl(url, { headers: authHeaders, signal }),
+          );
+          if (!response.ok) {
+            const text = yield* call(() => response.text());
+            return yield* Effect.fail(toApiError(response.status, text));
           }
-        }
-        if (buffer.trim().length > 0) yield attachFrameSchema.parse(JSON.parse(buffer));
-      } finally {
-        await reader.cancel().catch(() => {});
-      }
+          const body = response.body;
+          if (body === null) return Stream.empty;
+          return Stream.fromReadableStream({ evaluate: () => body, onError: identity }).pipe(
+            Stream.decodeText(),
+            Stream.splitLines,
+            Stream.filter((line) => line.trim().length > 0),
+            Stream.mapEffect((line) =>
+              Effect.try({ try: () => attachFrameSchema.parse(JSON.parse(line)), catch: identity }),
+            ),
+          );
+        }),
+      );
     },
     async stopCommand(sandboxId, processId) {
       await ignoreNotFound(

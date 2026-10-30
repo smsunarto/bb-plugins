@@ -8,9 +8,11 @@ import {
   makeHostResponse,
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
+import { Stream } from "effect";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { PROVIDER_ID, type SandboxState } from "../shared/constants.ts";
 import { readMachineResource } from "../shared/schema.ts";
+import { delay, settlesWithin, virtualClock } from "./test-support.ts";
 import type { BoatClient, BoatCreateRequest, BoatSandbox } from "./lib/boat-api.ts";
 import { BoatApiError } from "./lib/boat-api.ts";
 import { IDLE_SWEEP_SCHEDULE } from "./lib/idle.ts";
@@ -33,6 +35,8 @@ interface FakeSandboxState {
   deleted: boolean;
   /** Boat deletes after its 202: listings still show the sandbox for this many polls. */
   deletingPolls: number;
+  /** Boat's reason why the current stop cannot save the disk yet. */
+  stopError: string | null;
 }
 
 /** An in-memory Boat: sandboxes settle one state per poll so the waits in the plugin are exercised. */
@@ -45,6 +49,20 @@ function createFakeBoat(identity = "account-a") {
   const deletes: string[] = [];
   let nextId = 0;
   let failNextCreate: BoatApiError | null = null;
+  /** Ways this Boat misbehaves; tests set them directly. */
+  const faults = {
+    /** Nothing settles: states, stops and deletions stay where they are. */
+    stalled: false,
+    provisioningFails: false,
+    /** The next account read fails with this. */
+    accountFailure: null as Error | null,
+    /** Account reads wait for this. */
+    accountHold: null as Promise<void> | null,
+    failingGets: new Map<string, Error>(),
+    /** Reads of these sandboxes never answer; the value counts how many were sent. */
+    hungGets: new Map<string, number>(),
+  };
+  const calls = { account: 0 };
   const view = (state: FakeSandboxState): BoatSandbox => ({
     id: state.id,
     name: "bb test",
@@ -54,11 +72,18 @@ function createFakeBoat(identity = "account-a") {
     archiveAfter: state.archiveAfter,
     hydrated: true,
     dataExpiredAt: state.dataExpiredAt,
-    stop: null,
+    stop: state.stopError === null ? null : { status: "failing", error: state.stopError },
   });
   const live = () => sandboxes.filter((s) => !s.deleted);
   const client: BoatClient = {
     async account() {
+      calls.account += 1;
+      if (faults.accountHold !== null) await faults.accountHold;
+      if (faults.accountFailure !== null) {
+        const failure = faults.accountFailure;
+        faults.accountFailure = null;
+        throw failure;
+      }
       return { identity, login: "scott", activeSandboxes: 1, maxActiveSandboxes: 100 };
     },
     async machineTypes() {
@@ -90,22 +115,32 @@ function createFakeBoat(identity = "account-a") {
         dataExpiredAt: null,
         deleted: false,
         deletingPolls: 0,
+        stopError: null,
       };
       sandboxes.push(state);
       return view(state);
     },
     async get(id) {
+      const hung = faults.hungGets.get(id);
+      if (hung !== undefined) {
+        faults.hungGets.set(id, hung + 1);
+        return new Promise<never>(() => {});
+      }
+      const failure = faults.failingGets.get(id);
+      if (failure !== undefined) throw failure;
       const state = live().find((s) => s.id === id);
       if (state === undefined) return null;
       const snapshot = view(state);
+      if (faults.stalled) return snapshot;
       // Advance one step per observation.
-      if (state.state === "provisioning") state.state = "ready";
+      if (state.state === "provisioning")
+        state.state = faults.provisioningFails ? "error" : "ready";
       else if (state.state === "archiving") state.state = "archived";
       return snapshot;
     },
     async listByKey(key) {
       const listed = live().filter((s) => s.labels.bbMachineKey === key);
-      for (const state of listed) {
+      for (const state of faults.stalled ? [] : listed) {
         if (state.deletingPolls > 0) {
           state.deletingPolls -= 1;
           if (state.deletingPolls === 0) state.deleted = true;
@@ -144,8 +179,8 @@ function createFakeBoat(identity = "account-a") {
     async commandStatus() {
       return { status: "exited", running: false, exitCode: 0 };
     },
-    async *attach() {
-      yield { type: "exit", status: "exited", exitCode: 0, signal: null };
+    attach() {
+      return Stream.make({ type: "exit", status: "exited", exitCode: 0, signal: null });
     },
     async stopCommand() {},
     async writeFile() {},
@@ -162,6 +197,8 @@ function createFakeBoat(identity = "account-a") {
     failNextCreate(error: BoatApiError) {
       failNextCreate = error;
     },
+    faults,
+    calls,
     /** Boat's background deletion has finished: the sandboxes stop being listed. */
     finishDeletes() {
       for (const state of sandboxes) {
@@ -197,10 +234,12 @@ afterEach(async () => {
 
 async function setup(
   settings: Record<string, string | number> = SETTINGS,
-  options: { identity?: string } = {},
+  options: { identity?: string; liveTime?: boolean } = {},
 ) {
-  const boat = createFakeBoat(options.identity);
-  let now = 1_000_000;
+  const identity = options.identity ?? "account-a";
+  const boat = createFakeBoat(identity);
+  // Waiting moves the virtual clock, so the plugin's deadlines can pass; live time is the real one.
+  const clock = options.liveTime ? null : virtualClock(1_000_000);
   const resources = new Map<string, JsonValue>();
   const hostList: Host[] = [];
   const suspended: string[] = [];
@@ -234,7 +273,8 @@ async function setup(
           });
         },
       },
-      environments: { get: async () => ({ id: "env_1", hostId: HOST_ID }) },
+      // Answers with a plain value, as fake-host stubs may: the plugin must treat it like `await`.
+      environments: { get: () => ({ id: "env_1", hostId: HOST_ID }) },
       threads: {
         count: async (args) => ({ total: args?.status === "active" ? occupyingThreads : 0 }),
       },
@@ -254,8 +294,7 @@ async function setup(
   Object.assign(fake.bb.experimental_machines, { bootstrap });
   await createBoatSandboxPlugin({
     clientFactory: () => boat.client,
-    now: () => now,
-    sleep: async () => {},
+    ...(clock === null ? {} : { clock: clock.clock }),
     randomId: () => {
       randomIds += 1;
       return `rid-${randomIds}`;
@@ -296,14 +335,37 @@ async function setup(
     createContext,
     lifecycleContext,
     advance: (ms: number) => {
-      now += ms;
+      clock?.advance(ms);
     },
-    time: () => now,
+    time: () => clock?.now() ?? Date.now(),
     setOccupyingThreads: (count: number) => {
       occupyingThreads = count;
     },
     setCoreBusy: (busy: boolean) => {
       coreBusy = busy;
+    },
+    /** A running machine on `hostId` that core already knows, set up without the plugin's create. */
+    async seedMachine(hostId: string, key: string): Promise<string> {
+      const created = await boat.client.create({
+        key,
+        idempotencyKey: `seed-${key}`,
+        name: "seed",
+        type: "default",
+        from: null,
+        environment: null,
+        ttlSeconds: 24 * 3600,
+      });
+      boat.sandboxes.find((sandbox) => sandbox.id === created.id)!.state = "ready";
+      resources.set(hostId, {
+        key,
+        sandboxId: created.id,
+        accountIdentity: identity,
+        type: "default",
+        from: null,
+        environment: null,
+      });
+      hostList.push(host({ id: hostId }));
+      return created.id;
     },
   };
 }
@@ -528,6 +590,107 @@ describe("boat sandbox plugin", () => {
     });
   });
 
+  describe("waits and deadlines", () => {
+    test("a stop that never settles fails after 15 minutes, naming the state and Boat's last stop error once", async () => {
+      const { provider, boat, createContext, lifecycleContext } = await setup();
+      await provider.create(createContext());
+      boat.faults.stalled = true;
+      boat.sandboxes[0]!.stopError = "disk busy";
+      const logs: string[] = [];
+      await expect(
+        provider.suspend!({
+          ...lifecycleContext(),
+          report: { step() {}, log: (line) => logs.push(line) },
+        }),
+      ).rejects.toThrow(
+        "Boat sandbox bx_00000001 stayed archiving for 15 minutes; the last stop attempt failed: disk busy",
+      );
+      expect(logs.filter((line) => line.includes("could not save the disk"))).toEqual([
+        "Boat could not save the disk yet and is retrying: disk busy\n",
+      ]);
+    });
+
+    test("cleanup that Boat never finishes fails after 2 minutes", async () => {
+      const { provider, boat, createContext } = await setup();
+      await provider.create(createContext());
+      boat.faults.stalled = true;
+      await expect(
+        provider.reconcileCleanup({ key: KEY, report, signal: new AbortController().signal }),
+      ).resolves.toEqual({
+        status: "failed",
+        message: "Boat still lists 1 sandbox(es) for this machine after 2 minutes; retry cleanup.",
+      });
+    });
+
+    test("create fails with Boat's reason when the sandbox lands in error", async () => {
+      const { provider, boat, createContext } = await setup();
+      boat.faults.provisioningFails = true;
+      await expect(provider.create(createContext())).resolves.toEqual({
+        status: "failed",
+        message: "Boat sandbox bx_00000001 is in error: machine lost",
+      });
+    });
+
+    test("suspend names a sandbox deleted outside bb as missing", async () => {
+      const { provider, boat, createContext, lifecycleContext } = await setup();
+      await provider.create(createContext());
+      boat.sandboxes[0]!.deleted = true;
+      await expect(provider.suspend!(lifecycleContext())).rejects.toThrow(
+        "Boat sandbox bx_00000001 is missing: it was deleted outside bb, so there is nothing to resume. Remove the machine.",
+      );
+    });
+
+    test("an aborted stop wait settles at once", async () => {
+      const { provider, boat, lifecycleContext, seedMachine } = await setup(SETTINGS, {
+        liveTime: true,
+      });
+      await seedMachine(HOST_ID, KEY);
+      boat.faults.stalled = true;
+      const controller = new AbortController();
+      const suspending = provider.suspend!({ ...lifecycleContext(), signal: controller.signal });
+      // Boat is still saving the disk; the plugin polls again in 2 s.
+      await delay(50);
+      controller.abort(new Error("cancelled"));
+      expect(await settlesWithin(suspending, 500)).toBe("rejected");
+      await expect(suspending).rejects.toThrow("cancelled");
+    });
+  });
+
+  describe("account identity", () => {
+    test("is read once per API key, and a failed read is not remembered", async () => {
+      const { provider, boat, createContext, lifecycleContext } = await setup();
+      boat.faults.accountFailure = new Error("Boat is down");
+      await expect(provider.create(createContext())).resolves.toEqual({
+        status: "failed",
+        message: "Boat is down",
+      });
+      await provider.create(createContext());
+      await provider.suspend!(lifecycleContext());
+      await provider.resume!(lifecycleContext());
+      expect(boat.calls.account).toBe(2);
+    });
+
+    test("is read once for calls that start together, even when the first caller gives up", async () => {
+      const { provider, boat, lifecycleContext, seedMachine } = await setup();
+      const sandboxId = await seedMachine(HOST_ID, KEY);
+      let release!: () => void;
+      boat.faults.accountHold = new Promise((resolve) => {
+        release = resolve;
+      });
+      const first = new AbortController();
+      const abandoned = provider.suspend!({ ...lifecycleContext(), signal: first.signal });
+      const joined = provider.suspend!(lifecycleContext());
+      await delay(10);
+      expect(boat.calls.account).toBe(1);
+      first.abort(new Error("gave up"));
+      expect(await settlesWithin(abandoned, 500)).toBe("rejected");
+      await expect(abandoned).rejects.toThrow("gave up");
+      release();
+      await expect(joined).resolves.toMatchObject({ resource: { sandboxId } });
+      expect(boat.calls.account).toBe(1);
+    });
+  });
+
   describe("idle policy", () => {
     test("stops a machine through core after the idle window, counting thread and terminal activity", async () => {
       const { fake, provider, createContext, hostList, suspended, advance } = await setup();
@@ -622,6 +785,39 @@ describe("boat sandbox plugin", () => {
       await fake.harness.runSchedule(IDLE_SWEEP_SCHEDULE);
       expect(suspended).toEqual([]);
       expect(boat.extends).toEqual([]);
+    });
+
+    test("a host whose sweep fails does not stop the sweep of the others", async () => {
+      const { fake, provider, boat, createContext, hostList, suspended, advance, seedMachine } =
+        await setup();
+      await provider.create(createContext());
+      hostList.push(host());
+      await seedMachine("host_b", "thread-key-2");
+      await fake.harness.runSchedule(IDLE_SWEEP_SCHEDULE);
+      advance(16 * 60_000);
+      boat.faults.failingGets.set("bx_00000001", new Error("Boat is down"));
+      await fake.harness.runSchedule(IDLE_SWEEP_SCHEDULE);
+      expect(suspended).toEqual(["host_b"]);
+    });
+
+    test("a host whose Boat read hangs neither holds up the sweep nor gets a second read", async () => {
+      const { fake, provider, boat, createContext, hostList, suspended, advance, seedMachine } =
+        await setup();
+      await provider.create(createContext());
+      hostList.push(host());
+      await seedMachine("host_b", "thread-key-2");
+      await fake.harness.runSchedule(IDLE_SWEEP_SCHEDULE);
+      advance(16 * 60_000);
+      boat.faults.hungGets.set("bx_00000001", 0);
+      expect(await settlesWithin(fake.harness.runSchedule(IDLE_SWEEP_SCHEDULE), 1_000)).toBe(
+        "resolved",
+      );
+      expect(suspended).toEqual(["host_b"]);
+      advance(60_000);
+      expect(await settlesWithin(fake.harness.runSchedule(IDLE_SWEEP_SCHEDULE), 1_000)).toBe(
+        "resolved",
+      );
+      expect(boat.faults.hungGets.get("bx_00000001")).toBe(1);
     });
   });
 });

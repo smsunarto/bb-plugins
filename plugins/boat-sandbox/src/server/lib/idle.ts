@@ -2,144 +2,178 @@
 // through core, and keep Boat's own auto-stop timer from firing under active
 // work. Boat may also stop a sandbox on its own; the sweep converges core to
 // that so the machine resumes cleanly instead of sitting disconnected.
+import type { PluginRuntime } from "@bb-plugins/effect-bridge";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { Cause, Clock, Context, Effect, Fiber, FiberMap, Layer, Predicate } from "effect";
 import { z } from "zod";
 import { PROVIDER_ID, phaseOf } from "../../shared/constants.ts";
 import { readMachineResource, type MachineResource } from "../../shared/schema.ts";
-import type { BoatSandbox } from "./boat-api.ts";
+import { REQUEST_TIMEOUT_MS, type BoatSandbox } from "./boat-api.ts";
+import { call } from "./call.ts";
 import { errorMessage } from "./error-message.ts";
-import type { BoatMachine } from "./machine.ts";
+import { BoatMachine } from "./machine.ts";
 import type { SettingsResolution } from "./settings.ts";
-
-export interface IdlePolicyDeps {
-  machine: BoatMachine;
-  currentSettings(): Promise<SettingsResolution>;
-  now(): number;
-}
 
 export const IDLE_SWEEP_SCHEDULE = "stop-idle-machines";
 
 /** Thread statuses that occupy a machine, whether or not they emit events. */
 const OCCUPYING_THREAD_STATUSES = ["starting", "active"] as const;
+/** Hosts swept at once; each makes a few Boat calls, far below Boat's 1,000 requests a minute. */
+const SWEEP_CONCURRENCY = 4;
+/**
+ * How long the sweep waits for one host. bb runs every plugin's schedules in turn, so a slow host
+ * must not hold them up; its calls still finish, and the host is swept again once they have.
+ */
+const HOST_SWEEP_WAIT_MS = REQUEST_TIMEOUT_MS;
 
-function hasErrorCode(error: unknown, code: string): boolean {
-  return (
-    error instanceof Error &&
-    "code" in error &&
-    typeof error.code === "string" &&
-    error.code === code
-  );
-}
+const hasErrorCode = (error: unknown, code: string): boolean =>
+  error instanceof Error && Predicate.hasProperty(error, "code") && error.code === code;
 
 type Host = Awaited<ReturnType<BbPluginApi["sdk"]["hosts"]["list"]>>[number];
 type IdleSettings = { idleMs: number | null; ttlSeconds: number | null };
+type Thread = { id: string; environmentId: string | null };
 
-export function createIdlePolicy(bb: BbPluginApi, deps: IdlePolicyDeps) {
+export class IdlePolicy extends Context.Service<
+  IdlePolicy,
+  {
+    /** Record bb activity on a host now. */
+    bump(hostId: string): Effect.Effect<void, unknown>;
+    bumpThread(thread: Thread): Effect.Effect<void, unknown>;
+    bumpOwned(hostId: string): Effect.Effect<void, unknown>;
+    readonly sweep: Effect.Effect<void, unknown>;
+  }
+>()("boat-sandbox/IdlePolicy") {
+  static readonly layer = (bb: BbPluginApi, currentSettings: () => Promise<SettingsResolution>) =>
+    Layer.effect(IdlePolicy, make(bb, currentSettings));
+}
+
+const make = Effect.fnUntraced(function* (
+  bb: BbPluginApi,
+  currentSettings: () => Promise<SettingsResolution>,
+) {
+  const machine = yield* BoatMachine;
+  /** Each host's sweep until its calls settle, so a call that hangs is never sent a second time. */
+  const sweeps = yield* FiberMap.make<string>();
   const idleKey = (hostId: string) => `idle/${hostId}`;
 
-  async function bump(hostId: string): Promise<void> {
-    await bb.storage.kv.set(idleKey(hostId), deps.now());
-  }
+  const bump = Effect.fnUntraced(function* (hostId: string) {
+    const now = yield* Clock.currentTimeMillis;
+    yield* call(() => bb.storage.kv.set(idleKey(hostId), now));
+  });
 
-  async function lastActivity(hostId: string): Promise<number | null> {
-    const stored = await bb.storage.kv.get<unknown>(idleKey(hostId));
-    return stored === undefined ? null : z.number().finite().parse(stored);
-  }
+  const lastActivity = (hostId: string) =>
+    call(() => bb.storage.kv.get<unknown>(idleKey(hostId))).pipe(
+      Effect.map((stored) => (stored === undefined ? null : z.number().finite().parse(stored))),
+    );
 
   function owned(host: Host): boolean {
     return host.machineProviderId === PROVIDER_ID && host.lifecycle.phase === "active";
   }
 
-  async function bumpOwned(hostId: string): Promise<void> {
-    const host = await bb.sdk.hosts.get({ hostId });
-    if (owned(host)) await bump(hostId);
-  }
+  const bumpOwned = Effect.fnUntraced(function* (hostId: string) {
+    const host = yield* call(() => bb.sdk.hosts.get({ hostId }));
+    if (owned(host)) yield* bump(hostId);
+  });
 
-  async function bumpThread(thread: { id: string; environmentId: string | null }): Promise<void> {
+  const bumpThread = Effect.fnUntraced(function* (thread: Thread) {
     if (thread.environmentId === null) {
       // A thread still provisioning its machine has no environment yet; match it by allocation key.
-      for (const host of await bb.sdk.hosts.list()) {
+      for (const host of yield* call(() => bb.sdk.hosts.list())) {
         if (!owned(host)) continue;
-        const resource = await bb.experimental_machines.getResource(host.id);
+        const resource = yield* call(() => bb.experimental_machines.getResource(host.id));
         if (resource !== null && readMachineResource(resource).key === thread.id) {
-          await bump(host.id);
+          yield* bump(host.id);
           return;
         }
       }
       return;
     }
-    const environment = await bb.sdk.environments.get({ environmentId: thread.environmentId });
-    await bumpOwned(environment.hostId);
-  }
+    const { environmentId } = thread;
+    const environment = yield* call(() => bb.sdk.environments.get({ environmentId }));
+    yield* bumpOwned(environment.hostId);
+  });
 
   /** Threads running on the host right now; a long quiet turn emits no events but still needs the machine. */
-  async function occupyingThreads(hostId: string): Promise<number> {
-    const counts = await Promise.all(
-      OCCUPYING_THREAD_STATUSES.map((status) => bb.sdk.threads.count({ hostId, status })),
-    );
-    return counts.reduce((sum, count) => sum + count.total, 0);
-  }
+  const occupyingThreads = (hostId: string) =>
+    Effect.all(
+      OCCUPYING_THREAD_STATUSES.map((status) =>
+        call(() => bb.sdk.threads.count({ hostId, status })),
+      ),
+      { concurrency: "unbounded" },
+    ).pipe(Effect.map((counts) => counts.reduce((sum, count) => sum + count.total, 0)));
 
   /** Ask core to stop the machine; "deferred" means core kept it running for now. */
-  async function suspendThroughCore(host: Host, reason: string): Promise<"accepted" | "deferred"> {
-    try {
-      bb.log.info(`${reason}; asking core to stop ${host.id}`);
-      await bb.sdk.hosts.experimental_suspend({ hostId: host.id });
-      return "accepted";
-    } catch (error) {
-      if (hasErrorCode(error, "machine_busy")) return "deferred";
-      const current = await bb.sdk.hosts.get({ hostId: host.id }).catch(() => null);
-      const phase = current?.lifecycle.phase;
-      if (phase === "suspending" || phase === "suspended" || phase === "resuming")
-        return "deferred";
-      bb.log.warn(`Stopping ${host.id} failed: ${errorMessage(error)}`);
-      return "deferred";
-    }
-  }
+  const suspendThroughCore = Effect.fnUntraced(function* (
+    host: Host,
+    reason: string,
+  ): Effect.fn.Return<"accepted" | "deferred"> {
+    yield* Effect.logInfo(`${reason}; asking core to stop ${host.id}`);
+    return yield* call(() => bb.sdk.hosts.experimental_suspend({ hostId: host.id })).pipe(
+      Effect.as("accepted" as const),
+      Effect.catch((error) =>
+        Effect.gen(function* () {
+          if (hasErrorCode(error, "machine_busy")) return "deferred" as const;
+          const current = yield* call(() => bb.sdk.hosts.get({ hostId: host.id })).pipe(
+            Effect.orElseSucceed(() => null),
+          );
+          const phase = current?.lifecycle.phase;
+          if (phase === "suspending" || phase === "suspended" || phase === "resuming")
+            return "deferred" as const;
+          yield* Effect.logWarning(`Stopping ${host.id} failed: ${errorMessage(error)}`);
+          return "deferred" as const;
+        }),
+      ),
+    );
+  });
 
   /** Push Boat's auto-stop out while this plugin owns stopping and the machine stays in use. */
-  async function keepAlive(
+  const keepAlive = Effect.fnUntraced(function* (
     resource: MachineResource,
     sandbox: BoatSandbox,
     settings: IdleSettings,
-  ): Promise<void> {
+  ) {
     if (settings.idleMs === null || settings.ttlSeconds === null) return;
     if (sandbox.archiveAfter === null) return;
-    const remainingMs = Date.parse(sandbox.archiveAfter) - deps.now();
+    const remainingMs = Date.parse(sandbox.archiveAfter) - (yield* Clock.currentTimeMillis);
     if (Number.isFinite(remainingMs) && remainingMs < (settings.ttlSeconds * 1000) / 2) {
-      await deps.machine.extend(resource, settings.ttlSeconds);
-      bb.log.info(`Extended Boat auto-stop for ${resource.sandboxId} by ${settings.ttlSeconds} s`);
+      yield* machine.extend(resource, settings.ttlSeconds);
+      yield* Effect.logInfo(
+        `Extended Boat auto-stop for ${resource.sandboxId} by ${settings.ttlSeconds} s`,
+      );
     }
-  }
+  });
 
-  async function sweepHost(host: Host, settings: IdleSettings): Promise<void> {
-    const stored = await bb.experimental_machines.getResource(host.id);
+  const sweepHost = Effect.fnUntraced(function* (host: Host, settings: IdleSettings) {
+    const stored = yield* call(() => bb.experimental_machines.getResource(host.id));
     if (stored === null) return;
     const resource = readMachineResource(stored);
-    const sandbox = await deps.machine.observe(resource);
+    const sandbox = yield* machine.observe(resource);
     const phase = sandbox === null ? "missing" : phaseOf(sandbox.state);
     if (sandbox === null || phase === "gone") {
-      bb.log.warn(
+      yield* Effect.logWarning(
         `Boat sandbox ${resource.sandboxId} for ${host.id} is ${phase}; remove the machine`,
       );
       return;
     }
     if (phase === "stopped" || phase === "stopping" || phase === "error") {
-      await suspendThroughCore(
+      yield* suspendThroughCore(
         host,
         `Boat reports sandbox ${resource.sandboxId} as ${sandbox.state}`,
       );
       return;
     }
-    const last = await lastActivity(host.id);
+    const last = yield* lastActivity(host.id);
     if (last === null) {
-      await bump(host.id);
-    } else if (settings.idleMs !== null && deps.now() >= last + settings.idleMs) {
-      if ((await occupyingThreads(host.id)) > 0) {
-        await bump(host.id);
+      yield* bump(host.id);
+    } else if (
+      settings.idleMs !== null &&
+      (yield* Clock.currentTimeMillis) >= last + settings.idleMs
+    ) {
+      if ((yield* occupyingThreads(host.id)) > 0) {
+        yield* bump(host.id);
       } else {
         const minutes = Math.round(settings.idleMs / 60_000);
-        const outcome = await suspendThroughCore(
+        const outcome = yield* suspendThroughCore(
           host,
           `Machine ${host.id} idle for ${minutes} minutes`,
         );
@@ -147,30 +181,60 @@ export function createIdlePolicy(bb: BbPluginApi, deps: IdlePolicyDeps) {
       }
     }
     // Still running under core: Boat's own timer must not stop it mid-work.
-    await keepAlive(resource, sandbox, settings);
-  }
+    yield* keepAlive(resource, sandbox, settings);
+  });
 
-  async function sweep(): Promise<void> {
-    const resolved = await deps.currentSettings();
+  /** Sweep one host, unless its sweep from an earlier run is still waiting on a call. */
+  const sweepOnce = Effect.fnUntraced(function* (host: Host, settings: IdleSettings) {
+    if (yield* FiberMap.has(sweeps, host.id)) return;
+    const fiber = yield* FiberMap.run(
+      sweeps,
+      host.id,
+      sweepHost(host, settings).pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : Effect.logWarning(
+                `Idle sweep failed for ${host.id}: ${errorMessage(Cause.squash(cause))}`,
+              ),
+        ),
+      ),
+    );
+    yield* Fiber.await(fiber).pipe(
+      Effect.timeoutOrElse({
+        duration: HOST_SWEEP_WAIT_MS,
+        orElse: () =>
+          Effect.logWarning(
+            `Idle sweep for ${host.id} is still waiting on Boat or bb after ${HOST_SWEEP_WAIT_MS / 1000} s; later sweeps skip it until that call settles`,
+          ),
+      }),
+    );
+  });
+
+  const sweep = Effect.gen(function* () {
+    const resolved = yield* call(() => currentSettings());
     if (!resolved.ok) return;
-    for (const host of await bb.sdk.hosts.list()) {
-      if (!owned(host)) continue;
-      try {
-        await sweepHost(host, resolved.settings);
-      } catch (error) {
-        bb.log.warn(`Idle sweep failed for ${host.id}: ${errorMessage(error)}`);
-      }
-    }
-  }
+    const hosts = (yield* call(() => bb.sdk.hosts.list())).filter(owned);
+    yield* Effect.forEach(hosts, (host) => sweepOnce(host, resolved.settings), {
+      concurrency: SWEEP_CONCURRENCY,
+      discard: true,
+    });
+  });
 
+  return IdlePolicy.of({ bump, bumpThread, bumpOwned, sweep });
+});
+
+export function registerIdlePolicy(
+  bb: BbPluginApi,
+  policy: IdlePolicy["Service"],
+  run: PluginRuntime<never>["run"],
+): void {
   bb.events.on("experimental_thread.events", async ({ thread }) => {
     if (thread.status !== "starting" && thread.status !== "active") return;
-    await bumpThread(thread);
+    await run(policy.bumpThread(thread));
   });
   bb.events.on("experimental_terminal.input", async ({ terminal }) => {
-    await bumpOwned(terminal.hostId);
+    await run(policy.bumpOwned(terminal.hostId));
   });
-  bb.background.schedule(IDLE_SWEEP_SCHEDULE, "* * * * *", sweep);
-
-  return { bump, sweep };
+  bb.background.schedule(IDLE_SWEEP_SCHEDULE, "* * * * *", () => run(policy.sweep));
 }
