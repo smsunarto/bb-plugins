@@ -613,7 +613,7 @@ function useShelfWindow(
   // rows are work you cannot act on, SlopCop's are reviews no one asked for
   // in this list, and either can outnumber Next Action several times over.
   const [showWaiting, setShowWaiting] = useState(true);
-  const [showSlopcop, setShowSlopcop] = useState(true);
+  const [showSlopcop, setShowSlopcop] = useState(false);
   // Pinned and Next Action always show; the rest fold, and a search opens
   // them all.
   const waitingOpen = showWaiting || searching;
