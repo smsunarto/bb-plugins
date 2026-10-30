@@ -18,6 +18,16 @@
 - Before adding or changing an agent tool, or reviewing its description, read and follow [tool-descriptions](.agents/skills/tool-descriptions/SKILL.md).
 - Keep agent-facing text (thread instructions, prompts, tool descriptions) in `<plugin>/instructions/` and read it with `instructionFiles` from `@bb-plugins/instructions`. Tool descriptions go in `instructions/tools/<tool>.md`, with an optional `<tool>.instructions.md` thread snippet. Agent Instructions → Plugin prompts edits these files, so do not inline agent text in code.
 
+## Learning more about Effect
+
+This repository uses the Effect Typescript library.
+
+Before writing any Effect code, first read `node_modules/effect/AGENTS.md`
+**completely**, and follow the links in the file when required.
+
+If you need to learn more about particular Effect apis and concepts that the
+guide doesn't cover, search through the source code in `node_modules/effect/src`.
+
 ## Local-first plugin design
 
 Design plugins to remain useful across slow, intermittent, and independently failing connections.
