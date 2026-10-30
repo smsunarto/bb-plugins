@@ -1,14 +1,17 @@
 import {
   type PointerEvent,
   type ReactNode,
+  type RefObject,
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
-import { flushSync } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import {
+  type ComposerMention,
   experimental_usePluginId,
   useComposer,
   useRealtime,
@@ -77,6 +80,8 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   };
   const refreshSequence = useRef(0);
   const annotationDescriptionPrefix = useId();
+  const anchor = useRef<HTMLSpanElement>(null);
+  const chipSlot = useComposerContextSlot(anchor);
 
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current;
@@ -127,15 +132,7 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   // composer once it has closed.
   const mentionAnnotations = (items: readonly { id: string; label: string }[]) => {
     const { text, mentions } = composer.draft;
-    const present = new Set(
-      mentions.flatMap((mention) =>
-        mention.kind === "plugin" &&
-        mention.pluginId === pluginId &&
-        mention.provider === ANNOTATION_MENTION_PROVIDER
-          ? [mention.id]
-          : [],
-      ),
-    );
+    const present = annotationMentionIds(mentions, pluginId);
     const parts = items
       .map((item) => ({ ...item, id: annotationMentionItemId(item.id, threadId) }))
       .filter((item) => !present.has(item.id))
@@ -163,32 +160,59 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
     previousConnection.current = connection;
   }, [connection, refresh]);
 
-  if (batch.kind === "loading") return null;
+  // In a composer with a context row, the batch shows there as a chip beside
+  // the draft's attachments; elsewhere it stays a button in the action row.
+  const asChip = chipSlot !== null;
+  const place = (content: ReactNode) => (
+    <>
+      <span ref={anchor} hidden data-composer-context-anchor={asChip ? "portaled" : ""} />
+      {chipSlot === null || content === null
+        ? content
+        : createPortal(
+            // Plugin styles apply only under this plugin's root marker.
+            <span data-bb-plugin={pluginId} className="contents">
+              {content}
+            </span>,
+            chipSlot,
+          )}
+    </>
+  );
+
+  if (batch.kind === "loading") return place(null);
 
   if (batch.kind === "failed") {
-    return (
+    return place(
       <span className="contents" title={`Couldn't load annotations: ${batch.error}`}>
         <Button
           type="button"
           variant="ghost"
           data-agentation-staging-action=""
           aria-label="Retry loading annotations"
-          className={cn(ACTION_BUTTON_CLASS, "text-destructive")}
+          className={cn(asChip ? CHIP_CLASS : ACTION_BUTTON_CLASS, "text-destructive")}
           onClick={() => void refresh()}
         >
           <Icon name="ChatFeedback" className="size-4 shrink-0" aria-hidden="true" />
-          <span className="text-xs font-medium">Retry</span>
+          <span className={asChip ? undefined : "text-xs font-medium"}>Retry</span>
         </Button>
         <span key={batch.attempt} role="alert" className="sr-only">
           Couldn't load annotations: {batch.error}
         </span>
-      </span>
+      </span>,
     );
   }
 
-  if (batch.annotations.length === 0) return null;
+  // Beside the composer's own chip for mentioned annotations, the chip holds
+  // only the ones still waiting, so the two never count the same annotation.
+  // The action-row button keeps them all, to send or discard with their pills.
+  const mentioned = annotationMentionIds(composer.draft.mentions, pluginId);
+  const waiting = asChip
+    ? batch.annotations.filter(
+        (annotation) => !mentioned.has(annotationMentionItemId(annotation.id, threadId)),
+      )
+    : batch.annotations;
+  if (waiting.length === 0) return place(null);
 
-  const rows = batch.annotations.map((annotation) => {
+  const rows = waiting.map((annotation) => {
     const location = annotationSourceLabel(annotation.bb, batch.threadTitles);
     return {
       id: annotation.id,
@@ -300,9 +324,10 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
     action?.kind === "confirm-discard" || action?.kind === "discarding" ? action : null;
   const isDiscarding = discard?.kind === "discarding";
 
-  return (
+  return place(
     <>
       <AnnotationsAction
+        asChip={asChip}
         count={rows.length}
         renderHeader={(dismiss) => (
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-2.5 py-1.5">
@@ -416,13 +441,50 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
           ) : null}
         </DialogContent>
       </Dialog>
-    </>
+    </>,
   );
+}
+
+/** Item ids of this plugin's annotation pills in a draft. */
+function annotationMentionIds(mentions: readonly ComposerMention[], pluginId: string): Set<string> {
+  return new Set(
+    mentions.flatMap((mention) =>
+      mention.kind === "plugin" &&
+      mention.pluginId === pluginId &&
+      mention.provider === ANNOTATION_MENTION_PROVIDER
+        ? [mention.id]
+        : [],
+    ),
+  );
+}
+
+/**
+ * The composer's row of attachment-like chips, when its composer offers one
+ * (`[data-composer-context-slot]` inside the `[data-promptbox]` form, as the
+ * T3 Composer draws it). Followed as the composer switches layouts.
+ */
+function useComposerContextSlot(anchor: RefObject<HTMLElement | null>): HTMLElement | null {
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    const root = anchor.current?.closest("[data-promptbox]");
+    if (!root) return;
+    const find = () =>
+      setSlot(root.querySelector<HTMLElement>("[data-composer-context-slot]") ?? null);
+    find();
+    const observer = new MutationObserver(find);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [anchor]);
+  return slot;
 }
 
 // The host mounts each action in a 36px-high cell that clips overflow, so the
 // button keeps one height on every pointer and leaves room for its focus ring.
 const ACTION_BUTTON_CLASS = "mx-px h-8 shrink-0 px-2";
+
+// Matches the composer's attachment chips: a 32px pill with a hairline edge.
+const CHIP_CLASS =
+  "h-8 shrink-0 gap-1.5 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2.5 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]";
 
 function annotationCountLabel(count: number): string {
   return `${count} annotation${count === 1 ? "" : "s"}`;
@@ -441,10 +503,12 @@ type DismissList = (after?: () => void) => void;
  * keyboard activation opens it for interaction.
  */
 function AnnotationsAction({
+  asChip,
   count,
   renderHeader,
   renderList,
 }: {
+  asChip: boolean;
   count: number;
   renderHeader: (dismiss: DismissList) => ReactNode;
   renderList: (dismiss: DismissList) => ReactNode;
@@ -490,6 +554,10 @@ function AnnotationsAction({
     after?.();
   };
 
+  // Mentioning the last waiting annotation unmounts the chip before its list
+  // finishes closing; run the pending step (focusing the composer) anyway.
+  useEffect(() => () => runAfterClose(), []);
+
   // Compact windows show the list as a modal drawer, which opens by tap only.
   const isHover = (event: PointerEvent) => event.pointerType === "mouse" && !isCompact;
   const hoverOpen = (event: PointerEvent) => {
@@ -526,12 +594,24 @@ function AnnotationsAction({
             }
           }}
           className={cn(
-            ACTION_BUTTON_CLASS,
-            "gap-1 text-muted-foreground data-[state=open]:bg-state-active data-[state=open]:text-foreground",
+            asChip
+              ? cn(CHIP_CLASS, "data-[state=open]:bg-state-active")
+              : cn(
+                  ACTION_BUTTON_CLASS,
+                  "gap-1 text-muted-foreground data-[state=open]:bg-state-active data-[state=open]:text-foreground",
+                ),
           )}
         >
-          <Icon name="ChatFeedback" className="size-4 shrink-0" aria-hidden="true" />
-          <span className="text-xs font-medium tabular-nums">{count}</span>
+          <Icon
+            name="ChatFeedback"
+            className={cn("size-4 shrink-0", asChip && "text-muted-foreground")}
+            aria-hidden="true"
+          />
+          {asChip ? (
+            <span aria-hidden="true">{label}</span>
+          ) : (
+            <span className="text-xs font-medium tabular-nums">{count}</span>
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent

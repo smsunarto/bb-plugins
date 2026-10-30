@@ -182,7 +182,7 @@ function ContextMentionChip({ group }: { group: ContextMentionGroup }) {
         title={group.mentions.map((mention) => mention.label).join("\n")}
         className="inline-flex h-full items-center gap-1.5 rounded-[10px] pl-2.5 pr-1 disabled:cursor-default"
       >
-        <Icon name="MessageSquareText" className="size-4 shrink-0 text-muted-foreground" />
+        <Icon name="MessageSquare" className="size-4 shrink-0 text-muted-foreground" />
         {group.label}
       </button>
       <button
@@ -242,9 +242,9 @@ export function AttachmentPreview({
 
   const attachmentCount = attachments.length;
   const uploadingCount = pendingUploads.length;
-  if (attachmentCount + uploadingCount === 0 && (compact || contextGroups.length === 0)) {
-    return null;
-  }
+  // The expanded row stays mounted, empty and hidden, so other plugins can
+  // place chips in its context slot (see composer.css).
+  if (compact && attachmentCount + uploadingCount === 0) return null;
 
   return (
     <>
@@ -325,6 +325,8 @@ export function AttachmentPreview({
           {contextGroups.map((group) => (
             <ContextMentionChip key={group.key} group={group} />
           ))}
+          {/* Other plugins portal attachment-like chips here, such as Agentation's staged annotations. */}
+          <span data-composer-context-slot="" className="contents" />
         </div>
       )}
 

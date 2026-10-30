@@ -65,6 +65,21 @@
   }
 }
 
+/* These two rules stay unlayered so they override the elements' utility classes. */
+
+/* The attachment row stays mounted for plugin chips; hide it while it holds none. */
+[data-t3-composer]
+  [data-t3-attachments]:not(
+    :has(> :not([data-composer-context-slot]), > [data-composer-context-slot] > *)
+  ) {
+  display: none;
+}
+
+/* A plugin action that moved into the attachment row leaves an empty action cell. */
+[data-t3-composer] [data-plugin-composer-action]:has([data-composer-context-anchor="portaled"]) {
+  display: none;
+}
+
 @container follow-up-composer style(--follow-up-composer-container-compact: true) {
   [data-t3-composer][data-promptbox] [data-promptbox-layout] {
     height: 100%;

@@ -79,15 +79,34 @@ function annotationPill(
   };
 }
 
+// A composer that offers a context row, as the T3 Composer draws it.
+function ComposerWithContextRow() {
+  return createElement(
+    "form",
+    { "data-promptbox": "" },
+    createElement(
+      "div",
+      { "data-t3-attachments": "" },
+      createElement("span", { "data-composer-context-slot": "" }),
+    ),
+    createElement(
+      "div",
+      { "data-plugin-composer-action": "" },
+      createElement(AgentationStagedAnnotationsAction),
+    ),
+  );
+}
+
 function renderAction(options: {
   text?: string;
   mentions?: readonly ComposerMention[];
   newThread?: boolean;
   submittingBlockedReason?: string;
+  contextRow?: boolean;
   rpc: Record<string, (input: unknown) => unknown>;
 }) {
   return renderSlot(
-    { component: AgentationStagedAnnotationsAction },
+    { component: options.contextRow ? ComposerWithContextRow : AgentationStagedAnnotationsAction },
     {},
     {
       pluginId: PLUGIN_ID,
@@ -103,6 +122,75 @@ function renderAction(options: {
     },
   );
 }
+
+test("a composer's context row shows the batch as a chip of the annotations still waiting", async () => {
+  const slot = renderAction({
+    contextRow: true,
+    text: `@${annotationPill("ann_1", 0).label} `,
+    mentions: [annotationPill("ann_1", 0)],
+    rpc: {
+      listStagedAnnotations: () => ({
+        annotations: [staged("ann_1", "Save is misaligned"), staged("ann_2", "Wrong color")],
+        threadTitles: {},
+      }),
+    },
+  });
+  const chip = await slot.findByRole("button", { name: "1 annotation" });
+  expect(chip.textContent).toBe("1 annotation");
+  expect(chip.closest("[data-composer-context-slot]")).not.toBeNull();
+  // Plugin styles reach the portaled chip through its own root marker.
+  expect(chip.closest(`[data-bb-plugin="${PLUGIN_ID}"]`)).not.toBeNull();
+  const cell = slot.container.querySelector("[data-plugin-composer-action]")!;
+  expect(cell.querySelector('[data-composer-context-anchor="portaled"]')).not.toBeNull();
+  expect(cell.querySelector("[data-agentation-staging-action]")).toBeNull();
+
+  const list = await openList(slot, 1);
+  expect(
+    await list.findAllByRole("button", { name: "Mention annotation in composer" }),
+  ).toHaveLength(1);
+});
+
+test("a context row stays empty while no annotation is waiting", async () => {
+  const slot = renderAction({
+    contextRow: true,
+    text: `@${annotationPill("ann_1", 0).label} `,
+    mentions: [annotationPill("ann_1", 0)],
+    rpc: {
+      listStagedAnnotations: () => ({
+        annotations: [staged("ann_1", "Save is misaligned")],
+        threadTitles: {},
+      }),
+    },
+  });
+  const contextSlot = slot.container.querySelector("[data-composer-context-slot]")!;
+  // The composer hides its row only while the slot has no element children.
+  await waitFor(() =>
+    expect(
+      slot.container.querySelector('[data-composer-context-anchor="portaled"]'),
+    ).not.toBeNull(),
+  );
+  await act(async () => {});
+  expect(contextSlot.childElementCount).toBe(0);
+});
+
+test("mentioning every waiting annotation from the chip still focuses the composer", async () => {
+  const slot = renderAction({
+    contextRow: true,
+    text: "Fix",
+    rpc: {
+      listStagedAnnotations: () => ({
+        annotations: [staged("ann_1", "Save is misaligned"), staged("ann_2", "Wrong color")],
+        threadTitles: {},
+      }),
+    },
+  });
+  const list = await openList(slot, 2);
+  fireEvent.click(await list.findByRole("button", { name: /Mention all/ }));
+
+  await waitFor(() => expect(slot.inspection.composer.focusCount).toBe(1));
+  expect(slot.inspection.composer.draft.mentions).toHaveLength(2);
+  expect(slot.queryByRole("button", { name: "2 annotations" })).toBeNull();
+});
 
 test("the mention button appends the annotation pill after the draft and focuses it", async () => {
   const slot = renderAction({
