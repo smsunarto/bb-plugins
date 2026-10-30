@@ -1,3 +1,5 @@
+import videoPlayerSource, { VIDEO_PLAYER_ETAG } from "@bb-plugins/video-player";
+import { previewThreadVideo, checkThreadVideo } from "./video-source";
 // Local fork: tool descriptions are loaded from instructions/tools/.
 import { instructionFiles } from "@bb-plugins/instructions";
 // bb-plugin-genui backend. Agents write ```ui and ```app blocks straight into
@@ -30,6 +32,7 @@ import {
   listGallery,
   loadGalleryAsset,
   loadGalleryAudio,
+  loadGalleryVideo,
   loadGalleryFile,
   loadGalleryImage,
   loadThreadAsset,
@@ -134,6 +137,19 @@ export const rpcContract = defineRpcContract({
     input: z.object({ threadId: z.string().min(1), path: filePath }),
     output: loadedImage,
   },
+  // Same-origin SDK preview leases stream thread videos with range requests.
+  load_video: {
+    input: z.object({ threadId: z.string().min(1), path: filePath, renew: z.boolean().optional() }),
+    output: z.discriminatedUnion("ok", [
+      z.object({
+        ok: z.literal(true),
+        url: z.string(),
+        expiresAtMs: z.number(),
+        owned: z.literal(false),
+      }),
+      z.object({ ok: z.literal(false), error: z.string() }),
+    ]),
+  },
   // A recording a Transcript plays (25 MB cap), as a data URL.
   load_audio: {
     input: z.object({ threadId: z.string().min(1), path: filePath }),
@@ -162,6 +178,10 @@ export const rpcContract = defineRpcContract({
     output: loadedData,
   },
   gallery_image: {
+    input: z.object({ path: filePath }),
+    output: loadedImage,
+  },
+  gallery_video: {
     input: z.object({ path: filePath }),
     output: loadedImage,
   },
@@ -299,6 +319,7 @@ export default async function plugin(bb: BbPluginApi) {
               findImage,
               projectReader(project, environments, ctx.threadId),
               (path) => loadThreadImage(bb, ctx.threadId, path),
+              (path) => checkThreadVideo(bb, ctx.threadId, path),
             );
       return { content: [{ type: "text", text: report }], isError: !ok };
     },
@@ -351,6 +372,15 @@ export default async function plugin(bb: BbPluginApi) {
     personThreads.has(threadId) ? CODE_WORK_INSTRUCTIONS : null,
   );
 
+  bb.http.route("GET", "/video-player.js", (context) => {
+    const headers = { etag: VIDEO_PLAYER_ETAG, "cache-control": "no-cache" };
+    if (context.req.header("if-none-match") === VIDEO_PLAYER_ETAG)
+      return new Response(null, { status: 304, headers });
+    return new Response(videoPlayerSource, {
+      headers: { ...headers, "content-type": "text/javascript; charset=utf-8" },
+    });
+  });
+
   bb.rpc.register(rpcContract, {
     async get_ui({ id }) {
       const parsed = storedUiSchema.safeParse(await bb.storage.kv.get(`ui:${id}`));
@@ -359,6 +389,7 @@ export default async function plugin(bb: BbPluginApi) {
     },
     load_data: ({ threadId, path, raw }) => loadThreadFile(bb, threadId, path, { raw }),
     load_image: ({ threadId, path }) => loadThreadImage(bb, threadId, path),
+    load_video: ({ threadId, path, renew }) => previewThreadVideo(bb, threadId, path, renew),
     load_audio: ({ threadId, path }) => loadThreadAudio(bb, threadId, path),
     load_asset: ({ threadId, path }) => loadThreadAsset(bb, threadId, path),
     async render_markdown({ threadId, text }) {
@@ -374,6 +405,7 @@ export default async function plugin(bb: BbPluginApi) {
     gallery_get: async ({ name }) => ({ source: await readGallerySpec(name) }),
     gallery_data: ({ path, raw }) => loadGalleryFile(path, { raw }),
     gallery_image: ({ path }) => loadGalleryImage(path),
+    gallery_video: ({ path }) => loadGalleryVideo(path),
     gallery_audio: ({ path }) => loadGalleryAudio(path),
     gallery_asset: ({ path }) => loadGalleryAsset(path),
     sketch_font: async () => ({ dataUrl: await sketchFontDataUrl() }),

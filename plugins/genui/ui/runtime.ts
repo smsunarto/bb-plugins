@@ -10,6 +10,8 @@ export type ImageUrl =
   | { readonly ok: true; readonly url: string }
   | { readonly ok: false; readonly error: string; readonly off?: boolean };
 
+export type VideoUrl = { readonly ok: true; readonly url: string; readonly expiresAtMs: number | null; readonly owned: boolean } | { readonly ok: false; readonly error: string };
+
 /** A picture's natural size, in CSS px. */
 export interface ImageSize {
   readonly width: number;
@@ -73,6 +75,8 @@ export interface UiRuntime {
    * uncovered line. Null where the surface can't read files. Never rejects.
    */
   readText: ((path: string) => Promise<TextFile>) | null;
+  /** Streams a thread video via an SDK lease, or reads a bounded gallery blob. */
+  loadVideo: ((src: string, renew?: boolean) => Promise<VideoUrl>) | null;
   /**
    * Reads a recording of the thread (wav, mp3, m4a, aac, ogg, flac, webm or
    * caf; 25 MB cap; the gallery's own files in the gallery) as a URL an

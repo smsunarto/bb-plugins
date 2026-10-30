@@ -59,3 +59,64 @@ describe("check_ui local images", () => {
     }
   });
 });
+
+it("streams video through a confined SDK lease and renews it without reading bytes", async () => {
+  let leases = 0;
+  const host = createFakePluginHost({
+    pluginId: "genui",
+    sdk: {
+      threads: {
+        get: async () => ({
+          id: "thr_1",
+          environment: { path: "/work/repo", hostId: "checkout-host" },
+        }),
+        storageLocation: async () => ({
+          storageRootPath: "/storage/thr_1",
+          hostId: "storage-host",
+        }),
+      },
+      files: {
+        createPreview: async ({ hostId, rootPath }) => {
+          expect(hostId).toBe("storage-host");
+          expect(rootPath).toBe("/storage/thr_1");
+          return {
+            baseUrl: `/api/v1/file-previews/lease-${++leases}`,
+            expiresAtMs: Date.now() + 3600_000,
+          };
+        },
+        read: async () => {
+          throw new Error("Video must not transfer whole files through RPC");
+        },
+      },
+    },
+  });
+  try {
+    await plugin(host.bb);
+    const preview = (path: string, renew = false) =>
+      host.harness.behavior.callRpc("load_video", { threadId: "thr_1", path, renew });
+    expect(await preview("$BB_THREAD_STORAGE/demo clip.mp4")).toMatchObject({
+      ok: true,
+      url: "/api/v1/file-previews/lease-1/demo%20clip.mp4",
+      owned: false,
+    });
+    await preview("$BB_THREAD_STORAGE/other.mp4");
+    expect(leases).toBe(1);
+    await preview("$BB_THREAD_STORAGE/demo clip.mp4", true);
+    expect(leases).toBe(2);
+    for (const path of [
+      "/tmp/clip.mp4",
+      "../clip.mp4",
+      "$BB_THREAD_STORAGE/../../clip.mp4",
+      "https://example.com/clip.mp4",
+    ]) {
+      expect(await preview(path)).toMatchObject({ ok: false });
+    }
+    expect(leases).toBe(2);
+    const player = await host.harness.behavior.fetchHttp("GET", "/video-player.js");
+    expect(player.status).toBe(200);
+    expect(player.headers.get("content-type")).toContain("javascript");
+    expect(await player.text()).toContain("video-skin");
+  } finally {
+    await host.harness.lifecycle.dispose();
+  }
+});

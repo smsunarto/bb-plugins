@@ -368,6 +368,15 @@ export const COMPONENTS = {
     ],
     summary: "a credited web photo of a description, for things no file shows; wide by default",
   },
+  Video: {
+    group: "Media",
+    params: [
+      { name: "src", kind: "string" },
+      { name: "poster", kind: "string", optional: true },
+      { name: "caption", kind: "string", optional: true },
+    ],
+    summary: "play a workspace or $BB_THREAD_STORAGE video; prefer H.264 mp4; poster is an image path or https URL; controls, no autoplay. Download remote clips into $BB_THREAD_STORAGE first",
+  },
   Gallery: {
     group: "Media",
     params: [

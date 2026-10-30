@@ -33,6 +33,7 @@ const runtime: UiRuntime = {
   holdHeight: () => () => {},
   readText: null,
   loadAudio: null,
+    loadVideo: null,
   loadAsset: null,
   superseded: false,
   threadId: null,

@@ -50,7 +50,7 @@ Vanilagy, under the Mozilla Public License 2.0. Its source is available at
 
 ## Video.js
 
-`vendor/video-player.ts`, and through it the built `dist/app.js`, bundles
+`@bb-plugins/video-player`, re-exported by `vendor/video-player.ts`, bundles
 unmodified code from [Video.js](https://github.com/videojs/video.js)
 (`@videojs/html` 10.1.0), copyright 2025-present Video.js contributors,
 under the Apache License 2.0. The license text is at

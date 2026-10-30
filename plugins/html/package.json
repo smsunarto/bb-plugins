@@ -55,6 +55,7 @@
     "THIRD_PARTY_NOTICES.md"
   ],
   "dependencies": {
+    "@bb-plugins/video-player": "workspace:*",
     "@bb-plugins/instructions": "workspace:*",
     "zod": "^4.4.3"
   },

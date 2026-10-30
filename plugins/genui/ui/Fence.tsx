@@ -8,7 +8,7 @@ import { fileOpenTarget, THREAD_STORAGE_PREFIX } from "../core/file-target";
 import { useAnswerComposers } from "./answerSheet";
 import { AppBlock } from "./AppBlock";
 import { LiveUi, RenderFailure, type AnswerTarget } from "./LiveUi";
-import { useAssetLoader, useAudioLoader, useImageLoader, useLoadedData, useTextLoader } from "./useLoadedData";
+import { useVideoLoader, useAssetLoader, useAudioLoader, useImageLoader, useLoadedData, useTextLoader } from "./useLoadedData";
 import { useReplyIndex, useSuperseded } from "./useSuperseded";
 import { useMotionScope } from "./components/motion";
 
@@ -157,6 +157,7 @@ function UiFence({
   const data = useLoadedData({ threadId }, shown?.program ?? null);
   const loadImage = useImageLoader({ threadId }, stateKey);
   const readText = useTextLoader({ threadId });
+  const loadVideo = useVideoLoader({ threadId });
   const loadAudio = useAudioLoader({ threadId });
   const loadAsset = useAssetLoader({ threadId });
   const answers = useAnswerTarget(threadId, messageId, fence, actions);
@@ -187,6 +188,7 @@ function UiFence({
       openFile={openFile}
       loadImage={loadImage}
       readText={readText}
+      loadVideo={loadVideo}
       loadAudio={loadAudio}
       loadAsset={loadAsset}
       superseded={superseded}

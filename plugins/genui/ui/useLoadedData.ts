@@ -9,7 +9,7 @@ import { useRpc } from "@get-bb/plugin-sdk/app";
 import { collectLoads, dataKey, type DataRequest, type LoadedData, type Program } from "../core";
 import type { rpcContract } from "../server";
 import { persistedStore } from "./reservedHeight";
-import type { AssetBytes, ImageLoader, ImageSize, ImageUrl, TextFile } from "./runtime";
+import type { VideoUrl, AssetBytes, ImageLoader, ImageSize, ImageUrl, TextFile } from "./runtime";
 
 /** Where a spec's files come from: a thread's workspace and storage, or the gallery. */
 export type FileScope = { readonly threadId: string } | "gallery";
@@ -312,4 +312,21 @@ export function useTextLoader(scope: FileScope): (path: string) => Promise<TextF
     },
     [loaders, scopeKey],
   );
+}
+
+/** Thread recordings stream through SDK preview leases; gallery demos stay bounded blobs. */
+export function useVideoLoader(scope: FileScope): (src: string, renew?: boolean) => Promise<VideoUrl> {
+  const rpc = useRpc<typeof rpcContract>();
+  const threadId = scope === "gallery" ? null : scope.threadId;
+  return useCallback(async (src: string, renew = false): Promise<VideoUrl> => {
+    try {
+      if (threadId !== null) return await rpc.call("load_video", { threadId, path: src, renew });
+      const loaded = await rpc.call("gallery_video", { path: src });
+      if (!loaded.ok) return loaded;
+      const { bytes, type } = decodeDataUrl(loaded.dataUrl);
+      return { ok: true, url: URL.createObjectURL(new Blob([bytes], { type })), expiresAtMs: null, owned: true };
+    } catch (cause) {
+      return { ok: false, error: cause instanceof Error ? cause.message : String(cause) };
+    }
+  }, [rpc, threadId]);
 }

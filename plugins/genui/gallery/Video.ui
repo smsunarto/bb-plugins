@@ -1,0 +1,3 @@
+Card("Video playback", [
+  Video("data/video-demo.webm", caption: "A moving test pattern. Play, seek, change speed, or open fullscreen.")
+])

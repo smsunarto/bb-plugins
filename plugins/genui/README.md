@@ -161,3 +161,7 @@ bb plugin build && bb plugin install .   # then, after changes: bb plugin reload
 ## License
 
 [Apache-2.0](LICENSE). The diagram font, Excalifont, is under the SIL Open Font License ([assets/fonts/Excalifont-OFL.txt](assets/fonts/Excalifont-OFL.txt)). Every image in `gallery/` was drawn or rendered for this project.
+
+`Video(src, poster?, caption?)` plays a workspace or thread-storage recording with playback, volume, speed, fullscreen and picture-in-picture controls. Use a workspace path or `$BB_THREAD_STORAGE`; download remote clips to the thread host first. Playback requires a codec supported by the browser. Posters use the same file or HTTPS image loading as `Image`. Thread clips stream through SDK preview leases, including range requests for seeking; no full-file RPC transfer or 25 MiB cap. Prefer H.264 MP4 for portability. Gallery samples use bounded blobs. Clips wait for Play.
+
+The on-demand player uses `@bb-plugins/video-player`, shared with the HTML plugin: unmodified [Video.js](https://github.com/videojs/video.js) (`@videojs/html` 10.1.0), copyright 2025-present Video.js contributors, under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).

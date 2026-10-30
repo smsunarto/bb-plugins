@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { readFileSync } from "node:fs";
-import { loadGalleryAsset, loadThreadAudio, loadThreadFile, loadThreadImage, MAX_AUDIO_BYTES, MAX_DATA_BYTES, MAX_IMAGE_BYTES } from "./data-source";
+import { loadGalleryAsset, loadGalleryVideo,   loadThreadAudio, loadThreadFile, loadThreadImage, MAX_AUDIO_BYTES, MAX_DATA_BYTES, MAX_IMAGE_BYTES } from "./data-source";
 
 const WORKSPACE = "/work/repo";
 const STORAGE = "/home/u/.bb/thread-storage/thr_1";
@@ -205,5 +205,15 @@ describe("loadGalleryAsset", () => {
       const loaded = await loadGalleryAsset(file);
       expect(loaded).toEqual({ ok: true, dataUrl: `data:${type};base64,${readFileSync(`gallery/${file}`).toString("base64")}` });
     }
+  });
+});
+
+
+describe("video files", () => {
+  it("keeps gallery video binary and confined", async () => {
+    const result = await loadGalleryVideo("data/video-demo.webm");
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(Buffer.from(result.dataUrl.split(",")[1], "base64")).toEqual(readFileSync(new URL("./gallery/data/video-demo.webm", import.meta.url)));
+    expect(await loadGalleryVideo("../secret.mp4")).toMatchObject({ ok: false });
   });
 });

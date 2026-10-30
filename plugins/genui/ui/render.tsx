@@ -31,6 +31,7 @@ import { Json } from "./components/Json";
 import { Logs } from "./components/Logs";
 import { MapView } from "./components/Map";
 import { Gauge, SegmentedBar } from "./components/meters";
+import { Video } from "./components/Video";
 import { Image } from "./components/media";
 import { Pipeline } from "./components/Pipeline";
 import { Provenance } from "./components/Provenance";
@@ -80,6 +81,7 @@ const RENDERERS: { readonly [N in ComponentName]: ComponentType<{ props: PropsOf
   Icon,
   KeyValue,
   Image,
+  Video,
   File,
   Table,
   Chart,

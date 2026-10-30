@@ -7,7 +7,7 @@ import { compile } from "../core";
 import type { rpcContract } from "../server";
 import { useAnswerComposers } from "./answerSheet";
 import { LiveUi, RenderFailure, type AnswerTarget } from "./LiveUi";
-import { useAssetLoader, useAudioLoader, useImageLoader, useLoadedData, useTextLoader } from "./useLoadedData";
+import { useVideoLoader, useAssetLoader, useAudioLoader, useImageLoader, useLoadedData, useTextLoader } from "./useLoadedData";
 import { useReplyIndex, useSuperseded } from "./useSuperseded";
 import { useMotionScope } from "./components/motion";
 
@@ -91,6 +91,7 @@ function StoredUi({
   const data = useLoadedData({ threadId }, compiled.program);
   const loadImage = useImageLoader({ threadId }, `bb.genui.state:${id}`);
   const readText = useTextLoader({ threadId });
+  const loadVideo = useVideoLoader({ threadId });
   const loadAudio = useAudioLoader({ threadId });
   const loadAsset = useAssetLoader({ threadId });
   const superseded = useSuperseded(threadId, messageId);
@@ -126,7 +127,8 @@ function StoredUi({
           openFile={openWorkspaceFile}
           loadImage={loadImage}
           readText={readText}
-          loadAudio={loadAudio}
+          loadVideo={loadVideo}
+      loadAudio={loadAudio}
           loadAsset={loadAsset}
           superseded={superseded}
           threadId={threadId}

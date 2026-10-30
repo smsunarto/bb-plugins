@@ -14,7 +14,7 @@ import type { GalleryExample } from "./FrameFooter";
 import { GalleryHeader, groupAnchor, type GallerySelection } from "./GalleryHeader";
 import { componentsIn, GALLERY_GROUPS } from "./gallery-search";
 import { LiveUi, RenderFailure, type AnswerTarget } from "./LiveUi";
-import { useAssetLoader, useAudioLoader, useImageLoader, useLoadedData, useTextLoader } from "./useLoadedData";
+import { useVideoLoader, useAssetLoader, useAudioLoader, useImageLoader, useLoadedData, useTextLoader } from "./useLoadedData";
 import { useMotionScope } from "./components/motion";
 
 const PANEL = "gallery";
@@ -234,6 +234,7 @@ function ExampleBody({ example }: { example: GalleryExample }) {
   const data = useLoadedData("gallery", compiled.program);
   const loadImage = useImageLoader("gallery");
   const readText = useTextLoader("gallery");
+  const loadVideo = useVideoLoader("gallery");
   const loadAudio = useAudioLoader("gallery");
   const loadAsset = useAssetLoader("gallery");
 
@@ -251,6 +252,7 @@ function ExampleBody({ example }: { example: GalleryExample }) {
       openFile={null}
       loadImage={loadImage}
       readText={readText}
+      loadVideo={loadVideo}
       loadAudio={loadAudio}
       loadAsset={loadAsset}
       threadId={galleryThread()}

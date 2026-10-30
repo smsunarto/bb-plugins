@@ -63,6 +63,11 @@ const AUDIO_TYPES: Readonly<Record<string, string>> = {
 /** A recording is bigger than a picture: about 13 minutes of 16 kHz mono WAV. */
 export const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 
+export const MAX_VIDEO_BYTES = 25 * 1024 * 1024;
+const VIDEO_TYPES: Readonly<Record<string, string>> = {
+  mp4: "video/mp4", webm: "video/webm", ogv: "video/ogg", mov: "video/quicktime",
+};
+
 /** Files a Scene loads (models, environments, textures), by extension; the MIME type is ours. */
 const ASSET_TYPES: Readonly<Record<string, string>> = {
   glb: "model/gltf-binary",
@@ -94,7 +99,7 @@ function contains(root: string, target: string): boolean {
   return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-async function threadRoots(bb: BbPluginApi, threadId: string): Promise<{ workspace: Root | null; storage: Root | null }> {
+export async function threadRoots(bb: BbPluginApi, threadId: string): Promise<{ workspace: Root | null; storage: Root | null }> {
   const [thread, storage] = await Promise.all([
     bb.sdk.threads.get({ threadId, include: "environment" }),
     bb.sdk.threads.storageLocation({ threadId }).catch(() => null),
@@ -273,6 +278,7 @@ async function readGalleryFile(requested: string, maxBytes: number): Promise<Fil
     const binary =
       (Object.hasOwn(IMAGE_TYPES, extension) && extension !== "svg") ||
       Object.hasOwn(AUDIO_TYPES, extension) ||
+      Object.hasOwn(VIDEO_TYPES, extension) ||
       (Object.hasOwn(ASSET_TYPES, extension) && extension !== "gltf");
     const content = await readFile(target);
     return binary
@@ -298,4 +304,8 @@ export function loadGalleryAudio(requested: string): Promise<LoadedImage> {
 
 export function loadGalleryAsset(requested: string): Promise<LoadedImage> {
   return loadMediaWith(readGalleryFile, requested, ASSET_TYPES, MAX_ASSET_BYTES, "files");
+}
+
+export function loadGalleryVideo(requested: string): Promise<LoadedImage> {
+  return loadMediaWith(readGalleryFile, requested, VIDEO_TYPES, MAX_VIDEO_BYTES, "videos");
 }

@@ -74,6 +74,7 @@ export function LiveUi({
   openFile,
   loadImage,
   readText,
+  loadVideo,
   loadAudio,
   loadAsset,
   superseded = false,
@@ -92,6 +93,7 @@ export function LiveUi({
   openFile: UiRuntime["openFile"];
   loadImage: UiRuntime["loadImage"];
   readText: UiRuntime["readText"];
+  loadVideo: UiRuntime["loadVideo"];
   loadAudio: UiRuntime["loadAudio"];
   loadAsset: UiRuntime["loadAsset"];
   /**
@@ -183,7 +185,8 @@ export function LiveUi({
       loadImage,
       holdHeight,
       readText,
-      loadAudio,
+      loadVideo,
+  loadAudio,
       loadAsset,
       superseded: superseded === true,
       threadId,
@@ -196,7 +199,7 @@ export function LiveUi({
         }
       },
     }),
-    [setValue, openFile, loadImage, holdHeight, readText, loadAudio, loadAsset, superseded, threadId, blockKey, runAction],
+    [setValue, openFile, loadImage, holdHeight, readText, loadVideo, loadAudio, loadAsset, superseded, threadId, blockKey, runAction],
   );
 
   const blockRoot = useRef<HTMLDivElement | null>(null);

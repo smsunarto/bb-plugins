@@ -498,6 +498,8 @@ function blockBody(node: UiNode): string {
       // Two trailing spaces: a hard line break, so the pairs stay on separate lines.
       return entries.map(([key, value]) => `**${inline(key)}:** ${inline(value)}`).join("  \n");
     }
+    case "Video":
+      return `Video: ${inline(props.caption).trim() || inline(props.src)} (${inline(props.src)}). Open in BB to play.`;
     case "Image": {
       const src = inline(props.src).trim();
       const alt = inline(props.alt).trim();
@@ -1084,6 +1086,7 @@ export function localImages(roots: readonly UiNode[]): string[] {
   };
   eachNode(roots, (node) => {
     switch (node.type) {
+      case "Video": add(node.props.poster); break;
       case "Image": add(node.props.src); break;
       case "Entity":
       case "Hotspots": add(node.props.image); break;
@@ -2564,4 +2567,11 @@ function transcriptMarkdown(value: Value | undefined, audio: string): string {
     return `- ${at}${who}${describeRegion(region)}`;
   });
   return paragraphs([head, lines.length === 0 ? "" : [...lines, moreLine(shown.length, regions.length, "error")].filter((part) => part !== "").join("\n"), recording]);
+}
+
+/** Sources across every nested card/tab, for check_ui's media validation. */
+export function localVideos(roots: readonly UiNode[]): string[] {
+  const paths = new Set<string>();
+  eachNode(roots, (node) => { if (node.type === "Video") paths.add(String(node.props.src).trim()); });
+  return [...paths];
 }

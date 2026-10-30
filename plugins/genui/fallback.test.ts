@@ -154,3 +154,18 @@ Card("Evidence", [Toggle($more, "More"), Image("good.png"), $more ? Image("/home
   expect(result.report).toContain("/home/codex/scratch/missing.png: outside allowed roots");
   expect(paths).toEqual(["good.png", "/home/codex/scratch/missing.png"]);
 });
+
+
+it("checks videos after input changes and posters through the image loader", async () => {
+  const videos: string[] = [];
+  const images: string[] = [];
+  const result = await checkSpec('$clip = "a.mp4"\nCard("Demo", [Choice($clip, ["a.mp4", "missing.mp4"]), Video($clip, poster: "poster.png", caption: "Playback")])',
+    async () => ({ ok: false, error: "unused" }), undefined, undefined,
+    async (path) => { images.push(path); return { ok: true }; },
+    async (path) => { videos.push(path); return path === "missing.mp4" ? { ok: false, error: "file not found" } : { ok: true }; });
+  expect(result.ok).toBe(false);
+  expect(videos).toEqual(["a.mp4", "missing.mp4"]);
+  expect(images).toEqual(["poster.png"]);
+  expect(result.report).toContain("missing.mp4: file not found");
+  expect(result.report).toContain("Open in BB to play");
+});
