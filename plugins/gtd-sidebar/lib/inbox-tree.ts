@@ -168,7 +168,6 @@ function linkedParentIds(nodes: ReadonlyMap<string, InboxThreadNode>): Map<strin
     if (
       parentId &&
       parentId !== node.thread.id &&
-      node.lifecycle !== "settled" &&
       nodes.get(parentId)?.lifecycle === node.lifecycle
     ) {
       parents.set(node.thread.id, parentId);

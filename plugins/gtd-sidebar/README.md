@@ -162,7 +162,8 @@ the open thread moves you to the next row in its section.
 
 The **Settled** shelf lists every thread archived in the last 24 hours, whether it was
 settled here or archived from bb's own sidebar. The hover button un-settles it, which
-unarchives the thread in bb. After a day a thread stops being drawn on the shelf and
+unarchives the thread in bb. A family settled together keeps its nesting, with each
+child under its parent as it sat before. After a day a thread stops being drawn on the shelf and
 stays in bb's archive.
 
 ### Child threads

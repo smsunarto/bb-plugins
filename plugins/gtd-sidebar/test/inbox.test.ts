@@ -272,6 +272,37 @@ describe("inbox families", () => {
     assert.equal(tree.find((node) => node.thread.id === "active")?.lifecycle, "active");
   });
 
+  it("keeps settled descendants nested on the Settled shelf", () => {
+    const tree = buildInboxTree(
+      [
+        thread({ id: "root", isArchived: true, archivedAt: 100 }),
+        thread({ id: "child", parentThreadId: "root", isArchived: true, archivedAt: 100 }),
+        thread({ id: "grandchild", parentThreadId: "child", isArchived: true, archivedAt: 100 }),
+        thread({ id: "later", isArchived: true, archivedAt: 50 }),
+        thread({ id: "active" }),
+        thread({
+          id: "settled-child",
+          parentThreadId: "active",
+          isArchived: true,
+          archivedAt: 200,
+        }),
+      ],
+      active,
+    );
+    const settled = tree.filter((node) => node.shelf === "settled");
+    const rows = visibleInboxRows(settled, new Set());
+    assert.deepEqual(ids(rows), ["settled-child", "root", "child", "grandchild", "later"]);
+    assert.deepEqual(
+      rows.map((row) => row.parentId),
+      [null, null, "root", "child", null],
+    );
+    assert.deepEqual(ids(visibleInboxRows(settled, new Set(["root"]))), [
+      "settled-child",
+      "root",
+      "later",
+    ]);
+  });
+
   it("keeps forks and orphans reachable and breaks cycles", () => {
     const input = [
       thread({ id: "root" }),
