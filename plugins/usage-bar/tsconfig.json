@@ -10,5 +10,6 @@
     "noImplicitOverride": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true
-  }
+  },
+  "exclude": ["dist", "node_modules"]
 }

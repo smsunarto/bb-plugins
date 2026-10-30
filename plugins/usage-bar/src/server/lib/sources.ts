@@ -199,7 +199,7 @@ async function builtinSource(
   cache: UsageCache,
   readWeb: ClaudeWebReader,
 ): Promise<Source> {
-  const { primaryHostId } = await bb.sdk.system.config();
+  const { primaryHostId } = await bb.sdk.system.config({ signal });
   const collected: Collected[] = [];
   let failures = 0;
   for (const { pluginId } of sources) {
@@ -252,7 +252,10 @@ async function readSource(
   cache: UsageCache,
   readWeb: ClaudeWebReader,
 ): Promise<Source> {
-  const sources = await bb.sdk.plugins.experimental_discoverRpc({ method: USAGE_LIST_METHOD });
+  const sources = await bb.sdk.plugins.experimental_discoverRpc({
+    method: USAGE_LIST_METHOD,
+    signal,
+  });
   if (sources.some((source) => source.pluginId === POOL_PLUGIN_ID)) {
     const pool = await poolSource(bb, signal, readWeb);
     if (pool !== null) return pool;
