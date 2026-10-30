@@ -272,10 +272,12 @@ polling starts when the trigger becomes active, so old comments do not run it.
 
 ### Run statuses
 
-`shadowed` · `commented` · `commented_partial` / `commented_unmarked` /
-`commented_unattributed` (posted, attribution degraded) · `no_comment` (finished
-without posting) · `skipped` (matched nothing, e.g. blocked by the trust gate) ·
-`failed`.
+`shadowed` (shadow review produced, nothing posted) · `commented` (verified on
+GitHub by marker) · `commented_partial` / `commented_unmarked` /
+`commented_unattributed` (posted but attribution degraded — the prompt contract
+slipped) · `no_comment` (thread finished without posting) · `skipped` (a rule
+matched nothing, e.g. blocked by the trust gate) · `failed` (the thread errored, or
+was archived or deleted before it reported).
 
 ## Development
 

@@ -292,8 +292,12 @@ it("counts review threads that predate a reload against the concurrency cap", as
     );
     github.pullRequests = [makePullRequest({ number: 2 })];
 
-    // A reload forgets everything in memory; the row is what survives.
+    // A reload forgets everything in memory; the row is what survives, and
+    // its thread is still running.
     ({ bb, harness } = await harness.lifecycle.reload(plugin));
+    harness.sdk.stub("threads.get", ({ threadId }: { threadId: string }) =>
+      makeThreadResponse({ id: threadId, status: "active" }),
+    );
     harness.sdk.stub("threads.spawn", () => ({ id: "thr_new" }));
     const store = createStore(bb.storage.database() as never);
     const spawned = () => harness.sdk.callsTo("threads.spawn").length;
@@ -322,6 +326,124 @@ it("counts review threads that predate a reload against the concurrency cap", as
     });
   } finally {
     github.pullRequests = [];
+    await harness.lifecycle.dispose();
+  }
+});
+
+it("frees concurrency slots held by review threads that finished while the plugin was down", async () => {
+  let { bb, harness } = createFakePluginHost({
+    pluginId: "slopcop",
+    settings: { maxConcurrentReviews: "2", settleFinishedThreads: false },
+  });
+  try {
+    await plugin(bb);
+    await harness.behavior.callRpc("saveRule", {
+      id: null,
+      rule: {
+        name: "cap",
+        repo: "example/example",
+        request: { projectId: "project-test", providerId: "codex", model: "test-model" },
+      },
+    });
+    const seed = createStore(bb.storage.database() as never);
+    for (const [name, prNumber] of [
+      ["done", 1],
+      ["gone", 2],
+      ["busy", 3],
+    ] as const) {
+      seed.insertRun(makeRun({ id: `run_${name}`, threadId: `thr_${name}`, prNumber }));
+    }
+    github.pullRequests = [makePullRequest({ number: 4 }), makePullRequest({ number: 5 })];
+
+    // While no plugin was listening, one thread finished, one was deleted and
+    // one kept running. No event will ever arrive for any of them.
+    ({ bb, harness } = await harness.lifecycle.reload(plugin));
+    harness.sdk.stub("threads.get", ({ threadId }: { threadId: string }) => {
+      if (threadId === "thr_gone") {
+        throw Object.assign(new Error("HTTP 404: Thread not found"), {
+          code: "thread_not_found",
+          status: 404,
+        });
+      }
+      return makeThreadResponse({
+        id: threadId,
+        status: threadId === "thr_busy" ? "active" : "idle",
+      });
+    });
+    harness.sdk.stub("threads.output", () => ({ output: review("done") }));
+    harness.sdk.stub("threads.spawn", () => ({ id: "thr_new" }));
+    const store = createStore(bb.storage.database() as never);
+
+    const service = harness.behavior.runService("watcher");
+    await vi.waitFor(() => expect(store.isBootstrapped("example/example")).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    service.controller.abort();
+    await service.done;
+
+    expect(store.getRun("run_done")?.status).toBe("shadowed");
+    expect(store.getRun("run_gone")).toMatchObject({
+      status: "failed",
+      detail: expect.stringContaining("no longer exists"),
+    });
+    expect(store.getRun("run_busy")?.status).toBe("reviewing");
+    // Two slots, one still held by the running thread: the first pass
+    // dispatches exactly one of the two waiting PRs.
+    expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
+  } finally {
+    github.pullRequests = [];
+    await harness.lifecycle.dispose();
+  }
+});
+
+it("finishes a claimed run whose verification a reload interrupted", async () => {
+  let { bb, harness } = createFakePluginHost({
+    pluginId: "slopcop",
+    settings: { settleFinishedThreads: false },
+  });
+  try {
+    await plugin(bb);
+    createStore(bb.storage.database() as never).insertRun(
+      makeRun({ id: "run_live", threadId: "thr_live", mode: "live" }),
+    );
+    github.issueComments = [
+      {
+        id: "c1",
+        body: review("live"),
+        url: null,
+        author: "slopcop-bot",
+        path: null,
+        line: null,
+        createdAt: Date.now(),
+      },
+    ];
+    // The idle event claims the run, then GitHub never answers this incarnation.
+    github.gate = new Promise(() => {});
+    await harness.behavior.emitThreadEvent("thread.idle", {
+      thread: makeThreadResponse({ id: "thr_live" }),
+      lastAssistantText: "posted",
+    });
+
+    github.gate = Promise.resolve();
+    ({ bb, harness } = await harness.lifecycle.reload(plugin));
+    const store = createStore(bb.storage.database() as never);
+    expect(store.getRun("run_live")).toMatchObject({
+      status: "reviewing",
+      finishedAt: expect.any(Number),
+    });
+    harness.sdk.stub("threads.get", ({ threadId }: { threadId: string }) =>
+      makeThreadResponse({ id: threadId }),
+    );
+    harness.sdk.stub("threads.output", () => ({ output: "posted" }));
+
+    const service = harness.behavior.runService("watcher");
+    await vi.waitFor(() =>
+      expect(store.getRun("run_live")).toMatchObject({ status: "commented", commentCount: 1 }),
+    );
+    service.controller.abort();
+    await service.done;
+  } finally {
+    github.gate = Promise.resolve();
+    github.issueComments = [];
     await harness.lifecycle.dispose();
   }
 });
@@ -362,6 +484,146 @@ it("keeps a run under verification from being marked failed by a later thread ev
     await vi.waitFor(() =>
       expect(store.getRun("run_live")).toMatchObject({ status: "commented", commentCount: 1 }),
     );
+  } finally {
+    github.gate = Promise.resolve();
+    github.issueComments = [];
+    await harness.lifecycle.dispose();
+  }
+});
+
+it("leaves a run a thread event is still verifying to that event when a poll pass runs", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "slopcop",
+    settings: { settleFinishedThreads: false },
+  });
+  try {
+    await plugin(bb);
+    const store = createStore(bb.storage.database() as never);
+    store.insertRun(makeRun({ id: "run_live", threadId: "thr_live", mode: "live" }));
+    store.insertRun(makeRun({ id: "run_gone", threadId: "thr_gone" }));
+    let release = () => {};
+    github.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    github.issueComments = [
+      {
+        id: "c1",
+        body: review("live"),
+        url: null,
+        author: "slopcop-bot",
+        path: null,
+        line: null,
+        createdAt: Date.now(),
+      },
+    ];
+    await harness.behavior.emitThreadEvent("thread.idle", {
+      thread: makeThreadResponse({ id: "thr_live" }),
+      lastAssistantText: "posted",
+    });
+    await vi.waitFor(() =>
+      expect(store.getRun("run_live")).toMatchObject({
+        status: "reviewing",
+        finishedAt: expect.any(Number),
+      }),
+    );
+    // Every thread reads back as gone: a poll pass that took the claimed run for
+    // abandoned would fail it while its verification is still reading GitHub.
+    harness.sdk.stub("threads.get", () => {
+      throw Object.assign(new Error("HTTP 404: Thread not found"), {
+        code: "thread_not_found",
+        status: 404,
+      });
+    });
+    const service = harness.behavior.runService("watcher");
+    await vi.waitFor(() => expect(store.getRun("run_gone")?.status).toBe("failed"));
+    expect(store.getRun("run_live")?.status).toBe("reviewing");
+
+    release();
+    await vi.waitFor(() =>
+      expect(store.getRun("run_live")).toMatchObject({ status: "commented", commentCount: 1 }),
+    );
+    service.controller.abort();
+    await service.done;
+  } finally {
+    github.gate = Promise.resolve();
+    github.issueComments = [];
+    await harness.lifecycle.dispose();
+  }
+});
+
+it("keeps a run an event claimed while a poll pass was still reading its thread", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "slopcop",
+    settings: { settleFinishedThreads: false },
+  });
+  try {
+    await plugin(bb);
+    const store = createStore(bb.storage.database() as never);
+    store.insertRun(makeRun({ id: "run_live", threadId: "thr_live", mode: "live" }));
+    let release = () => {};
+    github.gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    github.issueComments = [
+      {
+        id: "c1",
+        body: review("live"),
+        url: null,
+        author: "slopcop-bot",
+        path: null,
+        line: null,
+        createdAt: Date.now(),
+      },
+    ];
+    // The first read of the live thread hangs until released; every other read
+    // says the thread is gone, which would fail a run nobody owns.
+    let releaseLookup = () => {};
+    let liveLookups = 0;
+    harness.sdk.stub("threads.get", ({ threadId }: { threadId: string }) => {
+      if (threadId === "thr_live" && ++liveLookups === 1)
+        return new Promise<ReturnType<typeof makeThreadResponse>>((resolve) => {
+          releaseLookup = () => resolve(makeThreadResponse({ id: threadId }));
+        });
+      throw Object.assign(new Error("HTTP 404: Thread not found"), {
+        code: "thread_not_found",
+        status: 404,
+      });
+    });
+    harness.sdk.stub("threads.output", () => ({ output: "posted" }));
+
+    let service = harness.behavior.runService("watcher");
+    await vi.waitFor(() => expect(liveLookups).toBe(1));
+    // While the pass waits on the thread, its idle event claims the run and
+    // starts a verification that GitHub holds.
+    await harness.behavior.emitThreadEvent("thread.idle", {
+      thread: makeThreadResponse({ id: "thr_live" }),
+      lastAssistantText: "posted",
+    });
+    await vi.waitFor(() =>
+      expect(store.getRun("run_live")).toMatchObject({
+        status: "reviewing",
+        finishedAt: expect.any(Number),
+      }),
+    );
+    releaseLookup();
+    // The pass reads the thread's output, finds the run claimed, and moves on.
+    await vi.waitFor(() => expect(harness.sdk.callsTo("threads.output")).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    service.controller.abort();
+    await service.done;
+
+    // The next pass finds the claim still held by that event, not abandoned.
+    store.insertRun(makeRun({ id: "run_gone", threadId: "thr_gone" }));
+    service = harness.behavior.runService("watcher");
+    await vi.waitFor(() => expect(store.getRun("run_gone")?.status).toBe("failed"));
+    expect(store.getRun("run_live")?.status).toBe("reviewing");
+
+    release();
+    await vi.waitFor(() =>
+      expect(store.getRun("run_live")).toMatchObject({ status: "commented", commentCount: 1 }),
+    );
+    service.controller.abort();
+    await service.done;
   } finally {
     github.gate = Promise.resolve();
     github.issueComments = [];

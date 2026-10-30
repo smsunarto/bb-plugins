@@ -20,6 +20,7 @@ import {
   repairIssueSchema,
   repairKeywordSchema,
   type Store,
+  type ThreadRun,
 } from "./lib/db";
 import { buildPrompt, buildThreadTitle } from "./lib/dispatch";
 import { resolveThreadSectionId } from "./lib/sections";
@@ -213,6 +214,16 @@ function newId(prefix: string): string {
 
 function toRuleOutput(rule: Rule) {
   return { ...rule, dangerous: isDangerousCombination(rule) };
+}
+
+/** The `code` a failed `bb.sdk` call carries, such as `thread_not_found`. */
+function sdkErrorCode(error: unknown): string | null {
+  return typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof error.code === "string"
+    ? error.code
+    : null;
 }
 
 function createServices(bb: BbPluginApi) {
@@ -616,10 +627,12 @@ function createServices(bb: BbPluginApi) {
   }
 
   /**
-   * One polling pass. It detects PR edges and new issues. It then evaluates
-   * the applicable rules for each target.
+   * One polling pass. It settles runs whose threads finished unobserved, then
+   * detects PR edges and new issues and evaluates the applicable rules for
+   * each target.
    */
   async function poll(maxConcurrent: number): Promise<void> {
+    await reconcileReviewing();
     const rules = store.listRules().filter((rule) => rule.enabled);
     const repos = [...new Set(rules.map((rule) => rule.repo))];
 
@@ -791,7 +804,35 @@ function createServices(bb: BbPluginApi) {
   ): Promise<void> {
     const run = store.claimFinished(threadId, Date.now());
     if (run === null) return;
+    await settleClaimed(run, finalMessage, failure);
+  }
 
+  /**
+   * Threads whose claim this process holds, from the claim until the outcome is
+   * recorded. Only the holder adds and removes its own entry, so reconciliation
+   * can tell a claim under verification here from one a reload interrupted.
+   */
+  const verifying = new Set<string>();
+
+  async function settleClaimed(
+    run: ThreadRun,
+    finalMessage: string | null,
+    failure: string | null,
+  ): Promise<void> {
+    verifying.add(run.threadId);
+    try {
+      await settleRun(run, finalMessage, failure);
+    } finally {
+      verifying.delete(run.threadId);
+    }
+  }
+
+  /** Records a claimed run's outcome: the failure, or what verification finds. */
+  async function settleRun(
+    run: ThreadRun,
+    finalMessage: string | null,
+    failure: string | null,
+  ): Promise<void> {
     if (failure !== null) {
       store.updateRun(run.id, { status: "failed", detail: failure });
       announce();
@@ -843,7 +884,53 @@ function createServices(bb: BbPluginApi) {
     bb.log.info(
       `run ${run.id} (${run.ruleName} ${run.targetKind} #${run.prNumber}) -> ${result.status}`,
     );
-    await settleThread(threadId, result.status);
+    await settleThread(run.threadId, result.status);
+  }
+
+  /**
+   * Settles every run still marked `reviewing` from what its thread says now.
+   * Thread events only reach a running plugin: a thread that finished, failed,
+   * was archived or was deleted while SlopCop was disabled or reloading never
+   * reports, and its run would hold a concurrency slot for good. A run a
+   * reload caught between its claim and its verification is picked up the
+   * same way. Runs ahead of every poll pass, so the cap counts only threads
+   * that are really running.
+   */
+  async function reconcileReviewing(): Promise<void> {
+    await Promise.all(store.listReviewing().map(reconcileRun));
+  }
+
+  async function reconcileRun(run: ThreadRun): Promise<void> {
+    const { threadId } = run;
+    // A claim this process holds is under verification by the event that made it.
+    if (run.finishedAt !== null && verifying.has(threadId)) return;
+    // An unclaimed run is claimed here, and a thread event that claims it first
+    // wins; a claim no one here holds is one a reload interrupted, and stands.
+    const finish = (finalMessage: string | null, failure: string | null) =>
+      run.finishedAt === null
+        ? finishRun(threadId, finalMessage, failure)
+        : settleClaimed(run, finalMessage, failure);
+    try {
+      const thread = await bb.sdk.threads.get({ threadId });
+      if (thread.status === "idle") {
+        const { output } = await bb.sdk.threads.output({ threadId });
+        await finish(output, null);
+      } else if (thread.status === "error") {
+        await finish(null, await describeThreadFailure(threadId, null));
+      } else if (thread.archivedAt !== null) {
+        await finish(null, "review thread archived before it reported");
+      }
+    } catch (error) {
+      if (sdkErrorCode(error) === "thread_not_found") {
+        await finish(null, "review thread no longer exists");
+        return;
+      }
+      bb.log.warn(
+        `could not reconcile review thread ${threadId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /**
@@ -869,12 +956,23 @@ function createServices(bb: BbPluginApi) {
     }
   }
 
-  bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
-    void finishRun(thread.id, lastAssistantText, null).catch((error: unknown) => {
+  /** Finishes a run from a thread event; what cannot be recorded is logged. */
+  function finishInBackground(
+    threadId: string,
+    finalMessage: string | null,
+    failure: string | null,
+  ): void {
+    void finishRun(threadId, finalMessage, failure).catch((error: unknown) => {
       bb.log.error(
-        `verification failed: ${error instanceof Error ? error.message : String(error)}`,
+        `could not finish the run for thread ${threadId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     });
+  }
+
+  bb.events.on("thread.idle", ({ thread, lastAssistantText }) => {
+    finishInBackground(thread.id, lastAssistantText, null);
   });
 
   /**
@@ -918,17 +1016,17 @@ function createServices(bb: BbPluginApi) {
 
   bb.events.on("thread.failed", ({ thread, error }) => {
     void describeThreadFailure(thread.id, error).then((detail) =>
-      finishRun(thread.id, null, detail),
+      finishInBackground(thread.id, null, detail),
     );
   });
 
   // A review thread put away by hand ends its run too; otherwise the run sits
   // at "reviewing" and holds a concurrency slot with nothing left to free it.
   bb.events.on("thread.archived", ({ thread }) => {
-    void finishRun(thread.id, null, "review thread archived before it reported");
+    finishInBackground(thread.id, null, "review thread archived before it reported");
   });
   bb.events.on("thread.deleted", ({ thread }) => {
-    void finishRun(thread.id, null, "review thread deleted before it reported");
+    finishInBackground(thread.id, null, "review thread deleted before it reported");
   });
 
   // --- shared helpers for rpc + cli ---------------------------------------
@@ -1443,6 +1541,8 @@ function createServices(bb: BbPluginApi) {
             `poll pass failed: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
+        // A stop that arrived during the pass must not wait out the interval.
+        if (signal.aborted) break;
         await new Promise((resolve) => {
           const timer = setTimeout(resolve, values.pollSeconds * 1_000);
           signal.addEventListener(

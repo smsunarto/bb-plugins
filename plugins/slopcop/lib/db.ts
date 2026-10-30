@@ -265,6 +265,9 @@ export function rowToRun(row: Row): Run {
  */
 const COUNTS_AS_RUN = `status NOT IN ('skipped', 'failed')`;
 
+/** A run that owns a review thread: every `reviewing` row, and every claimed one. */
+export type ThreadRun = Run & { threadId: string };
+
 export function createStore(db: Database) {
   return {
     listRules(): Rule[] {
@@ -411,19 +414,34 @@ export function createStore(db: Database) {
     },
 
     /**
+     * Runs without a recorded outcome, oldest first: the ones still running
+     * and the ones claimed by a finish that never completed.
+     */
+    listReviewing(): ThreadRun[] {
+      const rows = db
+        .prepare(
+          `SELECT * FROM runs WHERE status = 'reviewing' AND thread_id IS NOT NULL
+           ORDER BY started_at`,
+        )
+        .all() as Row[];
+      return rows.map((row) => Object.assign(rowToRun(row), { threadId: text(row, "thread_id") }));
+    },
+
+    /**
      * Records that a run's thread finished and returns the run, or null when
      * no run owns the thread or its finish was already recorded. Any thread
      * event may finish a run; only the first one gets to decide its outcome.
+     * The row is read before it is claimed, so one the store cannot parse
+     * stays unclaimed instead of claimed and lost.
      */
-    claimFinished(threadId: string, finishedAt: number): Run | null {
+    claimFinished(threadId: string, finishedAt: number): ThreadRun | null {
       const row = db
-        .prepare(
-          `UPDATE runs SET finished_at = ?
-           WHERE thread_id = ? AND finished_at IS NULL
-           RETURNING *`,
-        )
-        .get(finishedAt, threadId) as Row | undefined;
-      return row === undefined ? null : rowToRun(row);
+        .prepare(`SELECT * FROM runs WHERE thread_id = ? AND finished_at IS NULL`)
+        .get(threadId) as Row | undefined;
+      if (row === undefined) return null;
+      const run = { ...rowToRun(row), threadId, finishedAt };
+      db.prepare(`UPDATE runs SET finished_at = ? WHERE id = ?`).run(finishedAt, run.id);
+      return run;
     },
 
     /** Dedupe: has this rule already run for this target or exact PR commit? */
