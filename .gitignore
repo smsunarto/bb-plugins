@@ -21,3 +21,6 @@ __pycache__/
 !.bb/plugins.json
 .claude/
 .scratch/
+
+# One-off verification screenshots belong in .scratch/ or thread storage.
+/final-*.png
