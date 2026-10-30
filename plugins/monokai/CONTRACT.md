@@ -442,6 +442,9 @@ and composes its surfaces differently, so the adapter maps the shared roles as f
 - Both outer sidebar edges use the shared 12% ink edge. The right resize
   divider owns that edge while active, so a panel border cannot stack beneath
   it and brighten the result.
+- Desktop framed sidebar cards and the main-pane outline use 0.5 CSS px
+  strokes, retaining their existing edge colors and open sides. The title-bar
+  continuation uses the same width. Unframed layouts keep the host widths.
 - bb's native `--primary` name maps to the shared accent `#88C0D0`, not to the
   primary-button fill. Links, mentions, file accents, and search matches use
   it; component selectors map filled buttons to their neutral control roles.

@@ -454,6 +454,28 @@
   background-color: var(--terminal-background);
 }
 
+/* Desktop frame outlines use half-pixel strokes. Keep the host's absent
+ * edges absent: the sidebar body and footer form one continuous card. */
+.dark [data-framed] [data-sidebar="collapsible-body"] {
+  border-left-width: 0.5px;
+}
+
+.dark [data-framed] [data-sidebar="collapsible-body"]:not(.border-t-0) {
+  border-top-width: 0.5px;
+}
+
+.dark [data-framed] [data-sidebar="collapsible-body"]:not(.border-b-0) {
+  border-bottom-width: 0.5px;
+}
+
+.dark [data-framed] [data-sidebar="inset"]::before {
+  border-width: 0.5px;
+}
+
+.dark [data-framed] [data-sidebar="inset"]::after {
+  width: 0.5px;
+}
+
 /* Both outer sidebars spend the shared alpha edge. The active right
  * resize handle owns that boundary, so suppress the panel border beneath it
  * instead of painting the divider twice. */
