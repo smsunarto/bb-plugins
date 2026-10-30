@@ -25,6 +25,9 @@
     "bb": ">=0.47.0 <1.0.0",
     "bbPluginSdk": ">=0.6.75"
   },
+  "bbPluginBuild": {
+    "experimental_cssScope": "owned-root-v1"
+  },
   "bb": {
     "name": "Devin",
     "description": "Runs Devin threads in bb, locally or on a Devin Cloud VM",

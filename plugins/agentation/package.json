@@ -29,6 +29,9 @@
     "bb": ">=0.47.0 <1.0.0",
     "bbPluginSdk": ">=0.6.75"
   },
+  "bbPluginBuild": {
+    "experimental_cssScope": "owned-root-v1"
+  },
   "bb": {
     "name": "Agentation",
     "description": "Point at any part of the bb UI — including plugin surfaces — and turn it into structured AFS 1.1 feedback that bb agents can read, answer, and resolve.",
@@ -54,6 +57,7 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
+    "dist/app.owned-root.css",
     "assets/",
     "skills/",
     "instructions/",

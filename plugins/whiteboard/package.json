@@ -26,6 +26,9 @@
     "bb": ">=0.47.0 <1.0.0",
     "bbPluginSdk": ">=0.6.75"
   },
+  "bbPluginBuild": {
+    "experimental_cssScope": "owned-root-v1"
+  },
   "bb": {
     "name": "Whiteboard",
     "description": "Agents author code walkthroughs, diagrams, and Diff lenses that render beside the thread.",

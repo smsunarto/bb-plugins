@@ -26,6 +26,9 @@
     "bb": ">=0.47.0 <1.0.0",
     "bbPluginSdk": ">=0.6.75"
   },
+  "bbPluginBuild": {
+    "experimental_cssScope": "owned-root-v1"
+  },
   "bb": {
     "name": "Vimium",
     "description": "Press f to label every clickable element with a hint, then type the hint to click it. Single keys drive the composer controls, step between threads, and scroll the conversation.",
@@ -49,6 +52,7 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
+    "dist/app.owned-root.css",
     "assets/",
     "README.md",
     "LICENSE",

@@ -28,6 +28,9 @@
     "bb": ">=0.48.0 <1.0.0",
     "bbPluginSdk": ">=0.6.94"
   },
+  "bbPluginBuild": {
+    "experimental_cssScope": "owned-root-v1"
+  },
   "bb": {
     "name": "Amp",
     "description": "Runs Amp threads in bb through the plugin's native provider bridge",
@@ -49,6 +52,7 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
+    "dist/app.owned-root.css",
     "dist/host.js",
     "dist/host.meta.json",
     "assets/",
