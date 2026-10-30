@@ -21,8 +21,6 @@ function summary(overrides: Record<string, unknown>) {
     enabled: true,
     priority: 0,
     lastUsedAt: null,
-    fiveHourUtilization: null,
-    fiveHourResetAt: null,
     sevenDayUtilization: null,
     sevenDayResetAt: null,
     familyWeekly: NO_FAMILIES,
@@ -78,8 +76,6 @@ test.skipIf(process.platform !== "darwin")(
         subscriptionType: "max",
         rateLimitTier: "default_claude_max_20x",
         inFlight: 1,
-        fiveHourUtilization: 0.48,
-        fiveHourResetAt: NOW + 3_000,
         sevenDayUtilization: 0.52,
         sevenDayResetAt: NOW + 4_000,
         familyWeekly: { ...NO_FAMILIES, fable: { utilization: 0.58, resetAt: NOW + 5_000 } },
@@ -191,8 +187,6 @@ test.skipIf(process.platform !== "darwin")(
         provider: "claude",
         email: "carve@example.com",
         subscriptionType: "max",
-        fiveHourUtilization: 0.1,
-        fiveHourResetAt: NOW + 1_000,
         sevenDayUtilization: 0.3,
         sevenDayResetAt: NOW + 2_000,
         familyWeekly: { ...NO_FAMILIES, opus: { utilization: 1, resetAt: NOW + 3_000 } },
@@ -207,7 +201,6 @@ test.skipIf(process.platform !== "darwin")(
     await state.refresh(true);
     const snapshot = state.snapshot();
     expect(snapshot.providers[0]?.accounts[0]?.windows).toEqual([
-      { label: "Session", usedPercent: 10, resetAt: NOW + 1_000, windowMinutes: 300, model: null },
       { label: "Weekly", usedPercent: 30, resetAt: NOW + 2_000, windowMinutes: 10080, model: null },
       {
         label: "Opus weekly",

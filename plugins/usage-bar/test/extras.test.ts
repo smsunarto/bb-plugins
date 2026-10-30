@@ -113,7 +113,7 @@ const resource = {
   scope: { kind: "shared" as const },
 };
 
-test("a built-in provider's measurement becomes a menu account with labeled windows", () => {
+test("a built-in Claude measurement becomes a menu account with labeled windows, but no session", () => {
   const measurement = measurementSchema.parse({
     observedAt: 5,
     usage: {
@@ -145,13 +145,6 @@ test("a built-in provider's measurement becomes a menu account with labeled wind
     error: null,
     inFlight: 0,
     windows: [
-      {
-        label: "Session",
-        usedPercent: 40,
-        resetAt: Date.parse("2026-10-01T03:00:00Z"),
-        windowMinutes: 300,
-        model: null,
-      },
       { label: "Weekly", usedPercent: 52.5, resetAt: null, windowMinutes: 10080, model: null },
       {
         label: "Fable weekly",
@@ -162,6 +155,21 @@ test("a built-in provider's measurement becomes a menu account with labeled wind
       },
     ],
   });
+});
+
+test("a built-in Codex measurement keeps its session window", () => {
+  const measurement = measurementSchema.parse({
+    observedAt: 5,
+    usage: {
+      status: "ok",
+      windows: [{ kind: "five-hour", label: "5h", usedPercent: 40, resetsAt: null, model: null }],
+    },
+  });
+  expect(
+    builtinAccount("k", { ...resource, providerId: "codex" }, measurement, 1)?.windows,
+  ).toEqual([
+    { label: "Session", usedPercent: 40, resetAt: null, windowMinutes: 300, model: null },
+  ]);
 });
 
 test("a signed-out CLI shows as an error card and a missing CLI is skipped", () => {

@@ -25,8 +25,6 @@ const accountSummarySchema = z.object({
   enabled: z.boolean(),
   priority: z.number().int().catch(0),
   lastUsedAt: timestampSchema,
-  fiveHourUtilization: z.number().nullable(),
-  fiveHourResetAt: timestampSchema,
   sevenDayUtilization: z.number().nullable(),
   sevenDayResetAt: timestampSchema,
   familyWeekly: z.record(z.string(), quotaSchema.nullable()),
@@ -151,18 +149,12 @@ function codexWindows(account: AccountSummary): MenuWindow[] {
     );
 }
 
-/** Claude reports the shared 5h and 7d windows, then per-model weekly windows. */
+/**
+ * Claude reports the shared 7d window, then per-model weekly windows. Claude no longer
+ * enforces a session limit, so the pool's leftover 5h reading is not shown.
+ */
 function claudeWindows(account: AccountSummary): MenuWindow[] {
   const windows: MenuWindow[] = [];
-  if (account.fiveHourUtilization !== null) {
-    windows.push({
-      label: "Session",
-      usedPercent: percent(account.fiveHourUtilization),
-      resetAt: account.fiveHourResetAt,
-      windowMinutes: 300,
-      model: null,
-    });
-  }
   if (account.sevenDayUtilization !== null) {
     windows.push({
       label: "Weekly",
