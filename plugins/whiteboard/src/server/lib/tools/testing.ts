@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Engine, ThreadContextInput } from "../../../shared/contracts/engine.ts";
-import type { JsonObject } from "../../../shared/vendor/json/src/index.ts";
-import { ReviewApiClient } from "../../../shared/vendor/review/src/review-api/client.ts";
+import type { JsonObject } from "../../../shared/json/index.ts";
+import { ReviewApiClient } from "../../../shared/review/client.ts";
 
 /**
  * Test doubles for the agent tool surface. Not imported by runtime code.
@@ -18,10 +18,7 @@ export type Golden = {
 /** The upstream published catalog captured at 4ecc570 (design §4.3). */
 export function loadGolden(): Golden {
   return JSON.parse(
-    readFileSync(
-      new URL("../../../../test/vendor/generated/tool-catalog.golden.json", import.meta.url),
-      "utf8",
-    ),
+    readFileSync(new URL("./tool-catalog.golden.json", import.meta.url), "utf8"),
   ) as Golden;
 }
 

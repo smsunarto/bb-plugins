@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { BlobBatchReader } from "../../shared/node/vendor/local-vcs/src/blob-batch-reader.ts";
-import { selectSource, selectionKey } from "../../shared/vendor/review/src/lens-selection.ts";
-import { ReviewInputError } from "../../shared/vendor/review/src/review-api/document.ts";
-import { LocalReviewData } from "./vendor/review/src/review-api/local-data.ts";
-import { reviewProgress } from "./vendor/review/src/review-api/review-progress.ts";
-import { ReviewStore } from "./vendor/review/src/review-api/store.ts";
+import { BlobBatchReader } from "../../shared/node/local-vcs/blob-batch-reader.ts";
+import { selectSource, selectionKey } from "../../shared/review/lens-selection.ts";
+import { ReviewInputError } from "../../shared/review/document.ts";
+import { LocalReviewData } from "./review/local-data.ts";
+import { reviewProgress } from "./review/review-progress.ts";
+import { ReviewStore } from "./review/store.ts";
 import { gitFixture } from "./host-io/testing/git-fixture.ts";
 
 const pins = { repositoryId: "repository", base: "base", head: "head" };

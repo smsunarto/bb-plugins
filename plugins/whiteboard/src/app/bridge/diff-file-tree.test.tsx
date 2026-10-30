@@ -1,10 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type {
-  ReviewDiffFileWire,
-  ReviewDiffProgress,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+import type { ReviewDiffFileWire, ReviewDiffProgress } from "../../shared/review-protocol/index.ts";
 import { DiffFileTree } from "./diff-file-tree.tsx";
 
 const files: ReviewDiffFileWire[] = [

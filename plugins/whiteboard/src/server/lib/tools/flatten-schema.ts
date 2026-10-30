@@ -1,4 +1,4 @@
-import type { JsonObject, JsonValue } from "../../../shared/vendor/json/src/index.ts";
+import type { JsonObject, JsonValue } from "../../../shared/json/index.ts";
 
 /**
  * Cut `$ref` cycles from an upstream tool input schema so bb accepts it

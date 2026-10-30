@@ -1,5 +1,5 @@
 import type { OpenPanel, WhiteboardSettings } from "../../shared/contracts/engine.ts";
-import { ReviewInputError } from "../../shared/vendor/review/src/review-api/input-error.ts";
+import { ReviewInputError } from "../../shared/review/input-error.ts";
 import type { Realtime } from "./realtime.ts";
 import { type SessionTabs, tabTitle } from "./session-tabs.ts";
 import { currentThread } from "./thread-context.ts";

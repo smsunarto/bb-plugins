@@ -19,8 +19,8 @@ import {
   decodeWire,
   encodeWire,
 } from "../../../shared/contracts/wire.ts";
-import { LocalVcsToolsMissingError } from "../../../shared/node/vendor/local-vcs/src/index.ts";
-import { ReviewInputError } from "../../../shared/vendor/review/src/review-api/input-error.ts";
+import { LocalVcsToolsMissingError } from "../../../shared/node/local-vcs/index.ts";
+import { ReviewInputError } from "../../../shared/review/input-error.ts";
 import { isWhiteboardHostResolver } from "../host-resolver.ts";
 import { vcsProxy } from "./vcs-proxy.ts";
 

@@ -1,5 +1,5 @@
-import type { JsonValue } from "../../../shared/vendor/json/src/index.ts";
-import { authoringTools } from "../vendor/review/src/review-api/authoring-tools.ts";
+import type { JsonValue } from "../../../shared/json/index.ts";
+import { authoringTools } from "../review/authoring-tools.ts";
 
 /**
  * The one session-tool rename, applied at the agent boundary (design §3.5).

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { findPackageRoot } from "../../shared/node/vendor/generated/trace-core-index.ts";
+import { findPackageRoot } from "../../shared/node/fs/package-root.ts";
 
 /** Where Whiteboard Desktop installs its runtime, which carries `bin/diffr`. */
 export const WHITEBOARD_APP_RUNTIMES = [

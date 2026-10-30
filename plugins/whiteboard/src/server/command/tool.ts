@@ -1,5 +1,5 @@
 import { cliCommand, type PluginCliResult } from "@get-bb/plugin-sdk";
-import { isJsonObject, parseJsonText } from "../../shared/vendor/json/src/index.ts";
+import { isJsonObject, parseJsonText } from "../../shared/json/index.ts";
 import type { WhiteboardContext } from "../lib/context.ts";
 import { capOutput } from "../lib/tools/cli-output.ts";
 import { bbToolName } from "../lib/tools/rename.ts";

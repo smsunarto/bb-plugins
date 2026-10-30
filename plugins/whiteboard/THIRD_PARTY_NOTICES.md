@@ -9,15 +9,15 @@ projects below, under their own terms.
   workspace packages `json`, `local-vcs`, `review-protocol`, `trace-core`
   (five files), and `trace-protocol`.
 - Upstream commit: `4ecc570` (`chore(review-desktop): bump version to 0.1.3`).
-- Vendored roots, each file headed `Vendored from dev.fast <path> @4ecc570 (MIT).`:
-  - `src/shared/vendor/` (browser-safe model and protocol, plus the block and
-    legacy-review fixtures the vendored specs read)
-  - `src/shared/node/vendor/` (git, worktree and checkout helpers run on the bb host)
-  - `src/server/lib/vendor/` (engine: HTTP API, store, local data, tool catalog)
-  - `src/app/vendor/` (the Whiteboard canvas, Home and Diff views)
-  - `test/vendor/` (the tool catalog captured from upstream)
-- Upstream `src/server/lib/vendor/review/instructions/*.md` text ships through the
-  generated `src/server/lib/vendor/generated/instructions.ts`.
+- Derived code, modified and maintained in this repository:
+  - `src/shared/review/`, `src/shared/review-protocol/`, `src/shared/json/`,
+    `src/shared/trace-protocol/`, `src/shared/error-message.ts` (model, protocol
+    and the block and legacy-review fixtures)
+  - `src/shared/node/review/`, `src/shared/node/local-vcs/`, `src/shared/node/fs/`
+    (git, worktree and checkout helpers run on the bb host)
+  - `src/server/lib/review/` (the engine: store, local data, progress, lenses)
+  - `src/app/review/` (the Whiteboard canvas, Home and Diff views)
+  - `instructions/scratchpad.md` and parts of the other `instructions/` prompts
 
 ```
 MIT License
@@ -45,12 +45,12 @@ SOFTWARE.
 
 ## `@xyflow/react` 12.10.2 (MIT)
 
-`src/app/vendor/npm/@xyflow/react/dist/style.css` is the package stylesheet,
-scoped to `.review-canvas-root`. Copyright (c) 2019-2025 webkid GmbH.
+`src/app/review/xyflow.css` is the package stylesheet, with every rule confined
+to `.review-canvas-root`. Copyright (c) 2019-2025 webkid GmbH.
 
 ## `libavoid-js` (LGPL-2.1-or-later), through `@mr_mint/elkjs-libavoid` 0.5.0 (MIT)
 
-`src/app/vendor/generated/libavoid-wasm.ts` embeds `libavoid.wasm` from
+`src/app/lib/libavoid-wasm.ts` embeds `libavoid.wasm` from
 `@mr_mint/elkjs-libavoid@0.5.0` as base64, unmodified (its sha256 is recorded in
 the module). The WebAssembly binary is built from `libavoid-js`
 (`https://github.com/Aksem/libavoid-js`, LGPL-2.1-or-later), which compiles the

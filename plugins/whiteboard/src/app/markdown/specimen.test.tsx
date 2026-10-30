@@ -13,9 +13,9 @@ import { Markdown } from "tiptap-markdown";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProsePeekAnchor } from "../vendor/review/app/src/review-components.tsx";
-import { documentHeadings } from "../../shared/vendor/review/src/review-api/document-headings.ts";
-import type { Block } from "../../shared/vendor/review/src/review-api/document.ts";
+import { ProsePeekAnchor } from "../review/review-components.tsx";
+import { documentHeadings } from "../../shared/review/document-headings.ts";
+import type { Block } from "../../shared/review/document.ts";
 import { AgentMarkdown, MarkdownContent } from "./agent-markdown.tsx";
 import { MARKDOWN_EXTENSIONS } from "./parser.ts";
 import { preprocess } from "./preprocess.ts";
@@ -319,7 +319,7 @@ describe("parser divergence guards (audit)", () => {
   });
 });
 
-describe("vendored peek anchor", () => {
+describe("review peek anchor", () => {
   it("opens the peek from a code-labelled review-source link without nesting anchors", () => {
     const opened: string[] = [];
     const { container } = render(

@@ -3,10 +3,7 @@ import {
   type HostInput,
   type HostOutput,
 } from "../../shared/contracts/host-contract.ts";
-import {
-  type BlobBatchReader,
-  createBlobBatchReader,
-} from "../../shared/node/vendor/local-vcs/src/index.ts";
+import { type BlobBatchReader, createBlobBatchReader } from "../../shared/node/local-vcs/index.ts";
 
 /** One response carries at most this much base64 (design §3.1: split at 4 MiB). */
 export const BLOB_RESPONSE_BYTES = 4 * 1024 * 1024;

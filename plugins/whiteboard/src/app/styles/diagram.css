@@ -1,7 +1,7 @@
 /*
  * Diagram figures and the fullscreen diagram tour, fitted to bb's panels.
  * Imported by components/diagram-tour.tsx, which every diagram kind reaches.
- * Every selector adds `[data-review-theme]` to win over the vendored sheets
+ * Every selector adds `[data-review-theme]` to win over the review sheets
  * on specificity. No color values here.
  */
 

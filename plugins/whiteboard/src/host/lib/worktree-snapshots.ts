@@ -3,18 +3,14 @@ import { execFile } from "node:child_process";
 import { lstat, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import {
-  gitAt,
-  gitCommonDir,
-  type LocalVcs,
-} from "../../shared/node/vendor/local-vcs/src/index.ts";
+import { gitAt, gitCommonDir, type LocalVcs } from "../../shared/node/local-vcs/index.ts";
 import {
   inspectWorktree,
   EMPTY_SOURCE,
   workingFiles,
   localSourcePath,
-} from "../../shared/node/vendor/review/src/review-api/worktree-source.ts";
-import { ReviewInputError } from "../../shared/vendor/review/src/review-api/input-error.ts";
+} from "../../shared/node/review/worktree-source.ts";
+import { ReviewInputError } from "../../shared/review/input-error.ts";
 
 const prefix = (repositoryId: string) =>
   `refs/bb-whiteboard/worktrees/${createHash("sha256").update(repositoryId).digest("hex")}/`;

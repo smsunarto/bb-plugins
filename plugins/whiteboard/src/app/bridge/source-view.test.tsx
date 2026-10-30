@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { LiveSnapshot } from "../../server/lib/vendor/review/src/review-api/store.ts";
-import { ReviewApiClient } from "../../shared/vendor/review/src/review-api/client.ts";
-import { ApiCanvas } from "../vendor/review/app/src/api-canvas.tsx";
-import { createDocumentLoader } from "../vendor/review/app/src/api-document.tsx";
-import { testReviewBridge } from "../vendor/review/app/src/review-session-test-utils.tsx";
+import type { LiveSnapshot } from "../../server/lib/review/store.ts";
+import { ReviewApiClient } from "../../shared/review/client.ts";
+import { ApiCanvas } from "../review/api-canvas.tsx";
+import { createDocumentLoader } from "../review/api-document.tsx";
+import { testReviewBridge } from "../review/review-session-test-utils.tsx";
 
-vi.mock("../vendor/review/app/src/App.tsx", () => ({
+vi.mock("../review/App.tsx", () => ({
   App: () => <div>Canvas ready</div>,
 }));
 afterEach(() => {

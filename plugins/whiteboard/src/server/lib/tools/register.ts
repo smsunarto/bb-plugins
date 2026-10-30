@@ -4,21 +4,15 @@ import type {
   ThreadContextInput,
   WhiteboardSettings,
 } from "../../../shared/contracts/engine.ts";
-import type { JsonObject } from "../../../shared/vendor/json/src/index.ts";
+import type { JsonObject } from "../../../shared/json/index.ts";
 import { whenSettingsLoaded } from "../settings.ts";
 import { files } from "../instructions.ts";
-import {
-  type AuthoringTool,
-  toolResultText,
-} from "../vendor/review/src/review-api/agent-client.ts";
-import { authoringTools } from "../vendor/review/src/review-api/authoring-tools.ts";
-import { callPublicTool, publicTool } from "../vendor/review/src/review-api/public-tools.ts";
+import { type AuthoringTool, toolResultText } from "../review/agent-client.ts";
+import { authoringTools } from "../review/authoring-tools.ts";
+import { callPublicTool, publicTool } from "../review/public-tools.ts";
 import { flattenSchema } from "./flatten-schema.ts";
 import { mcpAuthoringGuidance } from "./guidance.ts";
 import { adaptWording, bbToolName, renameSchemaDescriptions, renameToolTokens } from "./rename.ts";
-
-/** Trace storage needs the external CLI or hosted store, so trace stays off (design Q2). */
-export const TRACE_ENABLED = false;
 
 const INSTRUCTIONS_TOOL = "session_get_instructions";
 const STATUS_TOOL = "whiteboard_status";
@@ -54,7 +48,7 @@ export function whiteboardCatalog(scratchpadEnabled: boolean): CatalogTool[] {
 
 function buildCatalog(scratchpadEnabled: boolean): CatalogTool[] {
   const published = (
-    JSON.parse(JSON.stringify(authoringTools(scratchpadEnabled, TRACE_ENABLED))) as AuthoringTool[]
+    JSON.parse(JSON.stringify(authoringTools(scratchpadEnabled))) as AuthoringTool[]
   ).map(publicTool);
   const first = [INSTRUCTIONS_TOOL, STATUS_TOOL].flatMap(
     (name) => published.find((tool) => tool.name === name) ?? [],
@@ -69,7 +63,7 @@ function buildCatalog(scratchpadEnabled: boolean): CatalogTool[] {
         : adaptWording(
             renameToolTokens(
               tool.name === INSTRUCTIONS_TOOL
-                ? `${mcpAuthoringGuidance({ scratchpadAvailable: true, traceEnabled: TRACE_ENABLED })}\n\n${tool.description}`
+                ? `${mcpAuthoringGuidance({ scratchpadAvailable: true })}\n\n${tool.description}`
                 : tool.description,
             ),
           ),

@@ -1,6 +1,6 @@
 import "@bb-plugins/markdown-prose/prose.css";
 import { type ComponentType, type ReactElement, type ReactNode, useMemo } from "react";
-import { parseMarkdown } from "../../shared/vendor/review/src/markdown.ts";
+import { parseMarkdown } from "../../shared/review/markdown.ts";
 import type { LinkRenderer } from "./link.tsx";
 import { parse } from "./parser.ts";
 import { type Footnote, preprocess } from "./preprocess.ts";

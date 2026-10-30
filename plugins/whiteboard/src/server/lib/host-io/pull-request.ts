@@ -1,5 +1,5 @@
 import { HOST_TIMEOUT_MS } from "../../../shared/contracts/host-contract.ts";
-import type * as upstream from "../../../shared/node/vendor/review/src/review-api/pull-request.ts";
+import type * as upstream from "../../../shared/node/review/pull-request.ts";
 import { type HostRoute, invokeHost } from "./client.ts";
 
 /**
@@ -14,14 +14,14 @@ export type {
   PullRequestDeps,
   PullRequestRecord,
   RunCommand,
-} from "../../../shared/node/vendor/review/src/review-api/pull-request.ts";
+} from "../../../shared/node/review/pull-request.ts";
 export {
   fetchPullRequest,
   githubRemotes,
   pullRequestAddress,
   pullRequestRefs,
   readPullRequest,
-} from "../../../shared/node/vendor/review/src/review-api/pull-request.ts";
+} from "../../../shared/node/review/pull-request.ts";
 
 /** The checkout a command names: its `cwd`, or the `--git-dir`, `-C` or `-R` argument. */
 export function commandRoute(args: readonly string[], cwd?: string): HostRoute {

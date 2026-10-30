@@ -8,7 +8,7 @@
  * diffs' min-content width. The host rule also covers the commit-scoped diff,
  * which mounts its host outside `.diff-workspace-editor`.
  *
- * Selectors add `[data-review-theme]` to beat the vendored scoped rules on
+ * Selectors add `[data-review-theme]` to beat the scoped review rules on
  * specificity, as in tokens.css.
  */
 .review-canvas-root[data-review-theme] .review-diff-view {
@@ -22,7 +22,7 @@
 }
 
 /*
- * The vendored `.diff-workspace button { background: transparent }` is
+ * The review sheet's `.diff-workspace button { background: transparent }` is
  * unlayered, so it beats Tailwind's layered `hover:bg-*` on the folder button.
  * File rows hover on their wrapper div instead.
  */

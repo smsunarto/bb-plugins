@@ -9,7 +9,7 @@ import type {
   ReviewDiffLens,
   ReviewDiffProgress,
   ReviewDiffViewSpec,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+} from "../../shared/review-protocol/index.ts";
 
 vi.mock("@get-bb/plugin-sdk/app", () => ({
   experimental_Diff: (props: DiffProps) => (
@@ -53,7 +53,7 @@ function setup(
     const url = new URL(value);
     const query = url.searchParams;
     if (failed) return Response.json({ error: "boom" }, { status: 500 });
-    // Vendored http.ts names a live path only for current head bytes without commit or pins.
+    // The file route names a live path only for current head bytes without commit or pins.
     const live =
       query.get("side") === "head" &&
       !["commit", "repositoryId", "base", "head"].some((key) => query.has(key)) &&

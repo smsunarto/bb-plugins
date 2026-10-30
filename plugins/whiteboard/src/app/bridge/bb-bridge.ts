@@ -7,10 +7,10 @@ import type {
   ReviewInlineEditorFactory,
   ReviewRuntimeConfig,
   ReviewSourceView,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+} from "../../shared/review-protocol/index.ts";
 import type { InfoOutput } from "../../shared/contracts/api-tunnel.ts";
 import type { WhiteboardRpcClient } from "../rpc.ts";
-import { LIBAVOID_WASM } from "../vendor/generated/libavoid-wasm.ts";
+import { LIBAVOID_WASM } from "../lib/libavoid-wasm.ts";
 import { createDiffView } from "./diff-view.tsx";
 import type { SurfaceEvents } from "./events.ts";
 import { createInlineEditors } from "./inline-editors.tsx";

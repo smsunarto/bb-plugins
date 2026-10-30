@@ -1,10 +1,10 @@
 import { type ReactElement, useEffect, useRef, useState } from "react";
-import { copyText } from "../vendor/review/app/src/copy-text.tsx";
+import { copyText } from "../review/copy-text.tsx";
 import {
   shortRef,
-  ReviewBranchRange as VendoredBranchRange,
-} from "../vendor/review/app/src/review-branch-range.tsx";
-import { useTooltip } from "../vendor/review/app/src/use-tooltip.ts";
+  ReviewBranchRange as CommitsBranchRange,
+} from "../review/review-branch-range.tsx";
+import { useTooltip } from "../review/use-tooltip.ts";
 
 export { shortRef };
 
@@ -12,7 +12,7 @@ export { shortRef };
  * The document header's commit range. A session pinned to one commit (plan
  * and architecture Whiteboards) shows that commit once instead of upstream's
  * `X ← X`. review-doc-meta.tsx reaches this through a redirect row; the
- * Commits view keeps the vendored range.
+ * Commits view keeps the review range.
  */
 export function ReviewBranchRange({
   baseRef,
@@ -21,7 +21,7 @@ export function ReviewBranchRange({
   baseRef: string;
   headRef: string;
 }): ReactElement {
-  if (baseRef !== headRef) return <VendoredBranchRange baseRef={baseRef} headRef={headRef} />;
+  if (baseRef !== headRef) return <CommitsBranchRange baseRef={baseRef} headRef={headRef} />;
   return <SessionCommit commit={headRef} />;
 }
 

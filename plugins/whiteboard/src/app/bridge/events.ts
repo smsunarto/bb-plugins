@@ -1,7 +1,4 @@
-import type {
-  ReviewDisposable,
-  ReviewSurfaceEvent,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+import type { ReviewDisposable, ReviewSurfaceEvent } from "../../shared/review-protocol/index.ts";
 
 /**
  * In-panel navigation events. Code selection is owned by bb viewers (§0.1).

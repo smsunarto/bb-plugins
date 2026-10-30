@@ -9,7 +9,7 @@ import {
   type ApiResponse,
 } from "../../shared/contracts/api-tunnel.ts";
 import type { Engine, WhiteboardSettings } from "../../shared/contracts/engine.ts";
-import { ReviewApiClient } from "../../shared/vendor/review-protocol/src/index.ts";
+import { ReviewApiClient } from "../../shared/review-protocol/index.ts";
 import { createHostResolver } from "./host-resolver.ts";
 import {
   HostUnavailableError,
@@ -25,14 +25,14 @@ import { migrate } from "./migrations.ts";
 import { createOpenPanel } from "./open-panel.ts";
 import { createRealtime, publishEngineChanges } from "./realtime.ts";
 import { createScratchpads } from "./scratchpads.ts";
-import { ReviewInputError } from "../../shared/vendor/review/src/review-api/input-error.ts";
+import { ReviewInputError } from "../../shared/review/input-error.ts";
 import { createSessionTabs } from "./session-tabs.ts";
 import { whenSettingsLoaded } from "./settings.ts";
 import { installDatabase } from "./sqlite.ts";
 import { PLUGIN_VERSION, createStatus } from "./status.ts";
 import { currentThread, desktopAvailable, runWithThread } from "./thread-context.ts";
-import { createReviewApi } from "./vendor/review/src/review-api/http.ts";
-import { openLocalReviewStore } from "./vendor/review/src/review-api/local-data.ts";
+import { createReviewApi } from "./review/http.ts";
+import { openLocalReviewStore } from "./review/local-data.ts";
 
 const jsonError = (status: number, error: string): ApiResponse => ({
   status,
@@ -153,13 +153,11 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
     store,
     data,
     createOpenPanel({ settings, realtime, openTab: tabs.open }),
-    undefined,
     () => ({
       desktopAvailable: desktopAvailable(),
       softwareMapEnabled: settings.softwareMapEnabled(),
     }),
     () => settings.scratchpadEnabled(),
-    async () => false,
     createStatus(bb),
   );
   const app = new Hono().route(API_PREFIX, reviewApi);

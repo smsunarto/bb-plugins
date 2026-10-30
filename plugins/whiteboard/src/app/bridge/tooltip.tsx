@@ -1,8 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type {
-  ReviewDisposable,
-  ReviewTooltipOptions,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+import type { ReviewDisposable, ReviewTooltipOptions } from "../../shared/review-protocol/index.ts";
 import {
   Tooltip,
   TooltipContent,
@@ -14,7 +11,7 @@ import type { Portals } from "./portals.tsx";
 /**
  * `ReviewCanvasBridge.setupTooltip` as one shadcn Tooltip (design §3.8).
  *
- * Targets are DOM nodes the vendored canvas owns, so the tooltip anchors to a
+ * Targets are DOM nodes the review canvas owns, so the tooltip anchors to a
  * fixed-position stand-in laid over the target's box. The stand-in lives in
  * `document.body`: `.review-canvas-root` uses container queries, which would
  * re-anchor a fixed descendant. `instant` shows at once (viewed box, diff

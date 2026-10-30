@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { API_PREFIX } from "../../shared/contracts/api-tunnel.ts";
-import { ReviewInputError } from "../../shared/vendor/review/src/review-api/input-error.ts";
+import { ReviewInputError } from "../../shared/review/input-error.ts";
 import { currentThread } from "./thread-context.ts";
 
 /** Resolve the agent-facing alias at the BB boundary; persisted ids belong to one thread. */

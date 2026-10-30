@@ -1,7 +1,7 @@
 import path from "node:path";
 import { HOST_TIMEOUT_MS } from "../../../shared/contracts/host-contract.ts";
-import type * as upstream from "../../../shared/node/vendor/local-vcs/src/index.ts";
-import type { RepoContext } from "../../../shared/node/vendor/local-vcs/src/index.ts";
+import type * as upstream from "../../../shared/node/local-vcs/index.ts";
+import type { RepoContext } from "../../../shared/node/local-vcs/index.ts";
 import { createHostBlobReader, isHostBlobReader } from "./blob-reader.ts";
 import { type HostRoute, invokeHost, invokeOn, isPayloadTooLarge, rememberPath } from "./client.ts";
 import { concatenateByPaths } from "./payload-split.ts";
@@ -22,13 +22,13 @@ export type {
   ParsedGitRemote,
   RepoContext,
   ResolvedRevision,
-} from "../../../shared/node/vendor/local-vcs/src/index.ts";
+} from "../../../shared/node/local-vcs/index.ts";
 export {
   LocalVcsToolsMissingError,
   parseGitRemote,
   parseGitRemoteSlug,
   splitGitPatchFiles,
-} from "../../../shared/node/vendor/local-vcs/src/index.ts";
+} from "../../../shared/node/local-vcs/index.ts";
 
 const at = (rootPath: string): HostRoute => ({ rootPath });
 const diffTimeout = { timeoutMs: HOST_TIMEOUT_MS.diff };

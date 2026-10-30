@@ -111,7 +111,7 @@ export const whiteboardHostContract = defineRpcContract({
     }),
     output: wireResult,
   },
-  /** Batched blob reads over the vendored blob-batch-reader. */
+  /** Batched blob reads over local-vcs's blob-batch-reader. */
   readBlobs: {
     input: z.strictObject({
       rootPath: z.string().min(1).max(4096),

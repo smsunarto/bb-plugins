@@ -1,7 +1,7 @@
 /*
  * Whiteboard tokens on bb's theme (design §3.8). Owned by WP4.
  *
- * The vendored sheets declare their palette under `:where(.review-canvas-root)`,
+ * The review sheets declare their palette under `:where(.review-canvas-root)`,
  * which adds no specificity: dark on `.review-canvas-root`, light on
  * `.review-app--theme-light` (the inner `.review-theme-host`). Every override
  * below adds `.review-canvas-root[data-review-theme]`, which the mount always
@@ -19,7 +19,7 @@
  */
 
 /*
- * Bridge: the vendored sheets read these workbench variables with literal
+ * Bridge: the review sheets read these workbench variables with literal
  * fallbacks (--bg, --ink, --rule, scrollbars, find matches, chrome). Declared
  * once on the root and inherited, as Code OSS does. Rules keep upstream's
  * ladder: --rule is bb's border, --rule-soft one step stronger. The five focus outlines
@@ -315,7 +315,7 @@
   color-scheme: inherit;
 }
 
-/* Literal colors in vendored rules (not tokens). Masks stay: they read alpha only. */
+/* Literal colors in review rules (not tokens). Masks stay: they read alpha only. */
 .review-canvas-root[data-review-theme] .review-find-widget {
   box-shadow: 0 5px 14px var(--shadow-color);
 }

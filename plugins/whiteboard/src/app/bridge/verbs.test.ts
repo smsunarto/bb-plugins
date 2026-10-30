@@ -1,7 +1,7 @@
 import type { WhiteboardRpcClient } from "../rpc.ts";
 import type { BbNavigate } from "@get-bb/plugin-sdk/app";
 import { describe, expect, it, vi } from "vitest";
-import { REVIEW_DISCORD_URL } from "../../shared/vendor/review-protocol/src/index.ts";
+import { REVIEW_DISCORD_URL } from "../../shared/review-protocol/index.ts";
 import { createSurfaceEvents } from "./events.ts";
 import {
   BASE_SOURCE_NOT_OPENABLE,

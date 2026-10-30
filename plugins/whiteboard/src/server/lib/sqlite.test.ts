@@ -10,8 +10,8 @@ import {
   installDatabase,
   installDatabaseOpener,
 } from "./sqlite.ts";
-import { ACTIVITY_TTL_MS } from "./vendor/review/src/review-api/activity.ts";
-import { type ReviewProviders, ReviewStore } from "./vendor/review/src/review-api/store.ts";
+import { ACTIVITY_TTL_MS } from "./review/activity.ts";
+import { type ReviewProviders, ReviewStore } from "./review/store.ts";
 
 type Db = InstanceType<typeof NodeDatabaseSync>;
 

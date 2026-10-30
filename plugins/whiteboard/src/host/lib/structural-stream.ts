@@ -5,7 +5,7 @@ import {
   type HostSignalPayload,
 } from "../../shared/contracts/host-contract.ts";
 import type { WireError } from "../../shared/contracts/wire.ts";
-import { structuralDiff } from "../../shared/node/vendor/review/src/server/structural-diff.ts";
+import { structuralDiff } from "../../shared/node/review/structural-diff.ts";
 import { hostError } from "./codec.ts";
 
 /** Emits one ordered `structuralEvents` batch to the server. */

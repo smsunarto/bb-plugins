@@ -4,7 +4,7 @@ import { cleanup, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentMarkdown } from "../markdown/agent-markdown.tsx";
-import { RenderedCodeBlock } from "../vendor/review/app/src/code-block.tsx";
+import { RenderedCodeBlock } from "../review/code-block.tsx";
 import { CodeThemeProvider } from "./highlight.tsx";
 
 const monokai: PluginCodeThemeData = {

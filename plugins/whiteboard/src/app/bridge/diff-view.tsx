@@ -19,9 +19,9 @@ import type {
   ReviewInlineEditorSpec,
   ReviewSourcePins,
   ReviewSourceView,
-} from "../../shared/vendor/review-protocol/src/index.ts";
-import type { CoverageProgress } from "../../shared/vendor/review/src/viewed-coverage.ts";
-import { ViewedButton } from "../vendor/review/app/src/viewed-button.tsx";
+} from "../../shared/review-protocol/index.ts";
+import type { CoverageProgress } from "../../shared/review/viewed-coverage.ts";
+import { ViewedButton } from "../review/viewed-button.tsx";
 import { Chevron, DiffFileTree, treeCounts } from "./diff-file-tree.tsx";
 import type { Portals } from "./portals.tsx";
 import { currentDiffLayout, onDidChangeDiffLayout } from "./theme.ts";
@@ -333,7 +333,7 @@ export function CodeFile({
   }, [reader, comparison, file, ranges, side, onError, shown]);
   useReportedHeight(root, onHeight, heightMode, loaded);
   const range = ranges?.find((item) => item.side === side) ?? ranges?.[0];
-  // Vendored http.ts `/:id/file` returns `localPath` only for live head bytes of
+  // The `/:id/file` route returns `localPath` only for live head bytes of
   // a worktree comparison without commit or pins. `livePath` carries that gate.
   const { canOpen, readOnly } = openability(
     loaded.model,

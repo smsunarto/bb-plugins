@@ -27,7 +27,7 @@ import {
   type ReviewCanvasContent,
   type ReviewSourceView,
   ReviewApiClient,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+} from "../../shared/review-protocol/index.ts";
 import { handoffParts, registerHandoffSink } from "../bridge/agent-handoff.ts";
 import { createBbBridge } from "../bridge/bb-bridge.ts";
 import { createSurfaceEvents } from "../bridge/events.ts";
@@ -38,10 +38,10 @@ import { UNAVAILABLE_TITLE } from "../lib/whiteboard-info.tsx";
 import { queryClient } from "../query.ts";
 import { type WhiteboardRpcClient, useWhiteboardRpc } from "../rpc.ts";
 import "../styles/index.css";
-import { ApiCanvas } from "../vendor/review/app/src/api-canvas.tsx";
-import { createReviewFindHost } from "../vendor/review/app/src/review-find.tsx";
-import { ReviewHome } from "../vendor/review/app/src/review-home-view.tsx";
-import { ReviewContainerProvider } from "../vendor/review/app/src/review-root-context.tsx";
+import { ApiCanvas } from "../review/api-canvas.tsx";
+import { createReviewFindHost } from "../review/review-find.tsx";
+import { ReviewHome } from "../review/review-home-view.tsx";
+import { ReviewContainerProvider } from "../review/review-root-context.tsx";
 import { createCatalogEdits } from "./catalog.ts";
 import { EmptyState } from "./empty-state.tsx";
 
@@ -50,7 +50,7 @@ import { EmptyState } from "./empty-state.tsx";
  * (design §3.8):
  *
  *   div.light                                      bb's light token scope, display: contents
- *     div.review-canvas-root [data-review-theme]   scope root of the vendored CSS
+ *     div.review-canvas-root [data-review-theme]   scope root of the review CSS
  *       div.review-theme-host.review-app--theme-light
  *       ReviewContainerProvider
  *         div[data-review-api].review-api-canvas > ApiCanvas   (sessionId)

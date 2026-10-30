@@ -2,7 +2,7 @@ import type {
   ReviewDiffLayout,
   ReviewDisposable,
   ReviewTheme,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+} from "../../shared/review-protocol/index.ts";
 import { DIFF_LAYOUT_STORAGE_KEY } from "../../shared/contracts/panel.ts";
 
 /**

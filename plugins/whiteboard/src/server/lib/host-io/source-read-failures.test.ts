@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { BlobBatchReader } from "../../../shared/node/vendor/local-vcs/src/blob-batch-reader.ts";
+import { BlobBatchReader } from "../../../shared/node/local-vcs/blob-batch-reader.ts";
 import * as vcs from "./local-vcs.ts";
 import { type GitFixture, gitFixture } from "./testing/git-fixture.ts";
 import { installInProcessHostIo } from "./testing/in-process.ts";

@@ -7,7 +7,7 @@ import { createPortals, PortalHost } from "./portals.tsx";
 import type {
   ReviewDiffProgressFile,
   ReviewInlineEditorSpec,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+} from "../../shared/review-protocol/index.ts";
 
 vi.mock("@get-bb/plugin-sdk/app", () => ({
   experimental_Diff: (props: DiffProps) => (

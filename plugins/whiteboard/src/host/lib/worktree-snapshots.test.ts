@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { chmodSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { detectLocalVcs, type LocalVcs } from "../../shared/node/vendor/local-vcs/src/index.ts";
-import * as source from "../../shared/node/vendor/review/src/review-api/worktree-source.ts";
+import { detectLocalVcs, type LocalVcs } from "../../shared/node/local-vcs/index.ts";
+import * as source from "../../shared/node/review/worktree-source.ts";
 import { gitFixture, type GitFixture } from "../../server/lib/host-io/testing/git-fixture.ts";
 import { inspectRetainedWorktree, retainedWorktreeTree } from "./worktree-snapshots.ts";
 

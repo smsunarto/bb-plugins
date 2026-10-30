@@ -1,6 +1,6 @@
 import type { HostInput, HostOutput } from "../../shared/contracts/host-contract.ts";
 import type { VcsHandle } from "../../shared/contracts/wire.ts";
-import { type LocalVcs, detectLocalVcs } from "../../shared/node/vendor/local-vcs/src/index.ts";
+import { type LocalVcs, detectLocalVcs } from "../../shared/node/local-vcs/index.ts";
 import { decodeArgs, failure, hostResult } from "./codec.ts";
 
 const handles = new Map<string, Promise<LocalVcs>>();

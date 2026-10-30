@@ -5,13 +5,13 @@ import type {
   HostModule,
   HostOutput,
 } from "../../shared/contracts/host-contract.ts";
-import * as localVcs from "../../shared/node/vendor/local-vcs/src/index.ts";
-import { defaultPullRequestDeps } from "../../shared/node/vendor/review/src/review-api/pull-request.ts";
-import * as worktreeSource from "../../shared/node/vendor/review/src/review-api/worktree-source.ts";
-import { resolveReviewBranchLinks } from "../../shared/node/vendor/review/src/review-branch-links.ts";
-import { ensureReviewPinnedCheckout } from "../../shared/node/vendor/review/src/review-head-checkout.ts";
-import { resolveReviewStackLayers } from "../../shared/node/vendor/review/src/review-stack.ts";
-import { diffrExecutable } from "../../shared/node/vendor/review/src/server/structural-diff.ts";
+import * as localVcs from "../../shared/node/local-vcs/index.ts";
+import { defaultPullRequestDeps } from "../../shared/node/review/pull-request.ts";
+import * as worktreeSource from "../../shared/node/review/worktree-source.ts";
+import { resolveReviewBranchLinks } from "../../shared/node/review/review-branch-links.ts";
+import { ensureReviewPinnedCheckout } from "../../shared/node/review/review-head-checkout.ts";
+import { resolveReviewStackLayers } from "../../shared/node/review/review-stack.ts";
+import { diffrExecutable } from "../../shared/node/review/structural-diff.ts";
 import { decodeArgs, failure, hostResult } from "./codec.ts";
 import { hostFs } from "./host-fs.ts";
 import {

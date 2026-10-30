@@ -1,11 +1,11 @@
 /*
  * Panel stylesheet (design §3.8). Imported once by `panel/mount.tsx`.
- * The vendored sheets are already scoped to `.review-canvas-root` by the
- * vendoring tool. Owned by WP4.
+ * Every rule in the review sheets is confined to `.review-canvas-root`
+ * with zero specificity (tokens.test.ts checks this).
  */
-@import "../vendor/review/app/src/styles.css";
-@import "../vendor/review/app/src/whiteboard.css";
-@import "../vendor/review/app/src/api-document.css";
+@import "../review/styles.css";
+@import "../review/whiteboard.css";
+@import "../review/api-document.css";
 @import "@bb-plugins/markdown-prose/prose.css";
 @import "./tokens.css";
 @import "./document.css";

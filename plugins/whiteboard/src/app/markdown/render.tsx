@@ -7,7 +7,7 @@ import {
   createElement,
 } from "react";
 import { useHighlightedCode } from "../lib/highlight.tsx";
-import { HighlightedText } from "../vendor/review/app/src/highlighted-text.tsx";
+import { HighlightedText } from "../review/highlighted-text.tsx";
 import { type LinkRenderer, MarkdownLink, scrollToFragment, urlProtocol } from "./link.tsx";
 import { type LinkTarget, placeholderIndex } from "./preprocess.ts";
 

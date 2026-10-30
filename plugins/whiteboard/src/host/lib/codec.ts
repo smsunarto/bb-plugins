@@ -8,8 +8,8 @@ import {
   type WireResult,
   type WireValue,
 } from "../../shared/contracts/wire.ts";
-import type { LocalVcs } from "../../shared/node/vendor/local-vcs/src/index.ts";
-import { ReviewInputError } from "../../shared/vendor/review/src/review-api/input-error.ts";
+import type { LocalVcs } from "../../shared/node/local-vcs/index.ts";
+import { ReviewInputError } from "../../shared/review/input-error.ts";
 import { rehydrateVcs } from "./vcs-handles.ts";
 
 /**

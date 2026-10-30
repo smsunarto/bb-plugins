@@ -8,7 +8,7 @@ import type {
   ExperimentalHostWatchOptions,
 } from "@get-bb/plugin-sdk/host";
 import type { WhiteboardHostSignals } from "../../shared/contracts/host-contract.ts";
-import { gitCommonDir } from "../../shared/node/vendor/local-vcs/src/index.ts";
+import { gitCommonDir } from "../../shared/node/local-vcs/index.ts";
 import {
   createInProcessHostClient,
   IN_PROCESS_HOST_ID,

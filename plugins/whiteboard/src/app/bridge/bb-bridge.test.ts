@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import type { BbNavigate } from "@get-bb/plugin-sdk/app";
 import { describe, expect, it, vi } from "vitest";
-import type { ReviewDiffViewHandle } from "../../shared/vendor/review-protocol/src/index.ts";
+import type { ReviewDiffViewHandle } from "../../shared/review-protocol/index.ts";
 import type { WhiteboardRpcClient } from "../rpc.ts";
 
 const inner = vi.hoisted(() => ({
@@ -25,7 +25,7 @@ vi.mock("./diff-view.tsx", () => ({
   }),
 }));
 vi.mock("./inline-editors.tsx", () => ({ createInlineEditors: () => ({}) }));
-vi.mock("../vendor/generated/libavoid-wasm.ts", () => ({ LIBAVOID_WASM: "" }));
+vi.mock("../lib/libavoid-wasm.ts", () => ({ LIBAVOID_WASM: "" }));
 
 const { createBbBridge, PLACEHOLDER_SERVER_URL } = await import("./bb-bridge.ts");
 const { createSurfaceEvents } = await import("./events.ts");

@@ -1,6 +1,6 @@
 import { skipToken } from "@tanstack/react-query";
 import { queryClient } from "../query.ts";
-import type { ReviewApiSummary } from "../../shared/vendor/review-protocol/src/index.ts";
+import type { ReviewApiSummary } from "../../shared/review-protocol/index.ts";
 
 export type CatalogAction = "dismiss" | "restore" | "delete";
 

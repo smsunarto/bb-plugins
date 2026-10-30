@@ -5,7 +5,7 @@ import {
   UI_INTEREST_TTL_MS,
   WATCH_HEARTBEAT_MS,
 } from "../../shared/contracts/api-tunnel.ts";
-import { ReviewApiClient } from "../../shared/vendor/review-protocol/src/index.ts";
+import { ReviewApiClient } from "../../shared/review-protocol/index.ts";
 import {
   SAFETY_REFETCH_MS,
   changeMatches,

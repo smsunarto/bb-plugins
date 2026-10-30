@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { HostResolver } from "../../shared/contracts/engine.ts";
-import { ReviewInputError } from "../../shared/vendor/review/src/review-api/input-error.ts";
+import { ReviewInputError } from "../../shared/review/input-error.ts";
 import { currentThread } from "./thread-context.ts";
 
 export const NO_HOST_MESSAGE =

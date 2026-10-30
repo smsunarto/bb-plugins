@@ -6,7 +6,7 @@ import {
   type ReviewSourceView,
   type ReviewVerbRequest,
   type ReviewVerbResponse,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+} from "../../shared/review-protocol/index.ts";
 import { NAV_PANEL_PATH, PANEL_ACTION_ID } from "../../shared/contracts/panel.ts";
 import type { SurfaceEvents } from "./events.ts";
 import type { ApiRequestFn } from "./tunnel.ts";

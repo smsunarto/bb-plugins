@@ -1,7 +1,7 @@
 import type {
   ReviewInlineEditorFactory,
   ReviewInlineEditorHandle,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+} from "../../shared/review-protocol/index.ts";
 import {
   CodeFile,
   createSourceReader,

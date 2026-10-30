@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { PNG } from "pngjs";
 import jpeg from "jpeg-js";
 import { afterEach, expect, test, vi } from "vitest";
-import { ReviewInputError } from "../../shared/vendor/review/src/review-api/document.ts";
+import { ReviewInputError } from "../../shared/review/document.ts";
 
 vi.mock("node:module", () => ({ createRequire: vi.fn() }));
 afterEach(() => {
@@ -16,7 +16,7 @@ const noNative = async () => {
         throw new Error("native sharp missing");
       }) as never,
   );
-  return (await import("./vendor/review/src/review-api/image-decode.ts")).decodeImage;
+  return (await import("./review/image-decode.ts")).decodeImage;
 };
 
 test("the bounded PNG/JPEG fallback preserves valid raster images when native sharp is absent", async () => {

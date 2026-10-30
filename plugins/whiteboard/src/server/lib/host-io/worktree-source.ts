@@ -1,5 +1,5 @@
-import type { LocalVcs } from "../../../shared/node/vendor/local-vcs/src/index.ts";
-import type * as upstream from "../../../shared/node/vendor/review/src/review-api/worktree-source.ts";
+import type { LocalVcs } from "../../../shared/node/local-vcs/index.ts";
+import type * as upstream from "../../../shared/node/review/worktree-source.ts";
 import { type HostRoute, invokeHost } from "./client.ts";
 import { vcsHostOf } from "./vcs-proxy.ts";
 
@@ -8,7 +8,7 @@ import { vcsHostOf } from "./vcs-proxy.ts";
  * runs whole on the checkout's host: `inspectWorktree` and `workingFiles`
  * stat every working file, which must stay one hop.
  */
-export { EMPTY_SOURCE } from "../../../shared/node/vendor/review/src/review-api/worktree-source.ts";
+export { EMPTY_SOURCE } from "../../../shared/node/review/worktree-source.ts";
 
 /** A proxy runs where it was detected; any other `LocalVcs` routes by its root. */
 const onVcs = (vcs: LocalVcs): HostRoute => {

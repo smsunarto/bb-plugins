@@ -4,13 +4,10 @@ import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ApiRequest, ApiResponse } from "../../shared/contracts/api-tunnel.ts";
 import { queryClient } from "../query.ts";
-import type {
-  ReviewCanvasContent,
-  ReviewSourceView,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+import type { ReviewCanvasContent, ReviewSourceView } from "../../shared/review-protocol/index.ts";
 
 /**
- * The mount with bb's SDK, the RPC client and the vendored canvas replaced.
+ * The mount with bb's SDK, the RPC client and the review canvas replaced.
  * What stays real: the bridge, the tunnel, live watch, ReviewApiClient, theme.
  */
 const sdk = vi.hoisted(() => ({
@@ -73,20 +70,19 @@ vi.mock("../rpc.ts", () => {
   return { useWhiteboardRpc: () => client };
 });
 
-vi.mock("../vendor/review/app/src/api-canvas.tsx", () => ({
+vi.mock("../review/api-canvas.tsx", () => ({
   ApiCanvas: ({ content }: { content: Extract<ReviewCanvasContent, { kind: "api" }> }) => {
     canvas.content = content;
     return <div data-testid="api-canvas">canvas {content.reviewId}</div>;
   },
 }));
-/** Most specs list rows with every action; `home.real` renders vendored Home and its guards. */
+/** Most specs list rows with every action; `home.real` renders the real Home and its guards. */
 const home = vi.hoisted(() => ({ real: false }));
-vi.mock("../vendor/review/app/src/review-home-view.tsx", async (importOriginal) => {
-  const vendored =
-    await importOriginal<typeof import("../vendor/review/app/src/review-home-view.tsx")>();
+vi.mock("../review/review-home-view.tsx", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../review/review-home-view.tsx")>();
   return {
-    ReviewHome: (props: Parameters<typeof vendored.ReviewHome>[0]) => {
-      if (home.real) return <vendored.ReviewHome {...props} />;
+    ReviewHome: (props: Parameters<typeof actual.ReviewHome>[0]) => {
+      if (home.real) return <actual.ReviewHome {...props} />;
       const { reviews, onDismiss, onRestore, onDelete } = props;
       return (
         <ul data-testid="review-home">
@@ -110,7 +106,7 @@ vi.mock("../vendor/review/app/src/review-home-view.tsx", async (importOriginal) 
     },
   };
 });
-vi.mock("../vendor/review/app/src/review-find.tsx", () => ({
+vi.mock("../review/review-find.tsx", () => ({
   createReviewFindHost: () => ({
     attach() {},
     showFind: (seed?: string) => find.showFind(seed),
@@ -398,7 +394,7 @@ describe("WhiteboardMount", () => {
     );
     expect(canvas.sourceView!()).toEqual({ reviewId: SESSION, version: 1, generation: undefined });
   });
-  it("renders the vendored CSS scope root in bb's light scope while bb is dark", async () => {
+  it("renders the review CSS scope root in bb's light scope while bb is dark", async () => {
     render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
     await screen.findByTestId("api-canvas");
     expect(document.documentElement.className).toBe("dark");

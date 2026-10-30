@@ -10,8 +10,8 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import * as upstreamVcs from "../../../shared/node/vendor/local-vcs/src/index.ts";
-import { ReviewInputError } from "../../../shared/vendor/review/src/review-api/input-error.ts";
+import * as upstreamVcs from "../../../shared/node/local-vcs/index.ts";
+import { ReviewInputError } from "../../../shared/review/input-error.ts";
 import { checkoutFs } from "./checkout-fs.ts";
 import { invokeHost } from "./client.ts";
 import * as hostFs from "./fs.ts";

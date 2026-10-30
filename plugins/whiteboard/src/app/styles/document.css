@@ -1,8 +1,8 @@
 /*
  * Document chrome fitted to bb's panels. Layered after tokens.css, which only
- * holds bb tokens (tokens.test.ts); these rules read the vendored --review-*
+ * holds bb tokens (tokens.test.ts); these rules read the canvas's --review-*
  * layout variables. Every selector adds `[data-review-theme]` to win over the
- * vendored sheets on specificity. No color values here.
+ * review sheets on specificity. No color values here.
  */
 
 /*
@@ -118,7 +118,7 @@
 }
 
 /*
- * Prose. Markdown runs sit in a `.bb-markdown-prose` wrapper, so the vendored
+ * Prose. Markdown runs sit in a `.bb-markdown-prose` wrapper, so the review
  * direct-child measure (api-document.css) misses their paragraphs and tables.
  * Give the wrapper the same measure so text lines up with headings and peeks.
  */

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WhiteboardHostResolver } from "../host-resolver.ts";
-import { openLocalReviewStore } from "../vendor/review/src/review-api/local-data.ts";
+import { openLocalReviewStore } from "../review/local-data.ts";
 import { HostUnavailableError, installHostClient, invokeHost } from "./client.ts";
 import { REPO_CONTEXT_RETRY_MS, resolveRepoContextSync } from "./local-vcs.ts";
 import { defaultPullRequestDeps } from "./pull-request.ts";

@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { LiveSnapshot } from "../../server/lib/vendor/review/src/review-api/store.ts";
-import { ReviewApiClient } from "../../shared/vendor/review/src/review-api/client.ts";
-import { ApiCanvas } from "../vendor/review/app/src/api-canvas.tsx";
-import { testReviewBridge } from "../vendor/review/app/src/review-session-test-utils.tsx";
+import type { LiveSnapshot } from "../../server/lib/review/store.ts";
+import { ReviewApiClient } from "../../shared/review/client.ts";
+import { ApiCanvas } from "../review/api-canvas.tsx";
+import { testReviewBridge } from "../review/review-session-test-utils.tsx";
 
 beforeEach(() => {
   localStorage.clear();
@@ -38,8 +38,6 @@ function mount(snapshot: LiveSnapshot, version?: number) {
           return Response.json([]);
         if (url.pathname.endsWith("/progress"))
           return Response.json({ files: [], lenses: [], resolvedSelections: {} });
-        if (url.pathname.endsWith("/agent-traces"))
-          return Response.json({ ok: true, configured: false, sessions: [], sources: [] });
         return Response.json(snapshot);
       },
       diffView: {

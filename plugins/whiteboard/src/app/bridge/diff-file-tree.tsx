@@ -3,8 +3,8 @@ import type {
   ReviewDiffFileWire,
   ReviewDiffProgress,
   ReviewDiffProgressFile,
-} from "../../shared/vendor/review-protocol/src/index.ts";
-import { compactDiffCount } from "../vendor/review/app/src/diff-count.tsx";
+} from "../../shared/review-protocol/index.ts";
+import { compactDiffCount } from "../review/diff-count.tsx";
 import { buildChangedTree, type ChangedTreeElement } from "./two-side.ts";
 
 /**

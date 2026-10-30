@@ -1,5 +1,5 @@
 /**
- * Viewport math for the vendored flow graph (flow-graph.tsx, an edit row).
+ * Viewport math for the review flow graph (flow-graph.tsx, an edit row).
  * Upstream fits the whole ELK drawing into a fixed box, so a deep flow lands
  * at 4px text inline and ~7px expanded. Inline, the box grows with the
  * drawing instead. Expanded, the fit stops at a readable floor and follows

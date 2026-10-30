@@ -3,8 +3,8 @@ import {
   HOST_TIMEOUT_MS,
   type HostSignalPayload,
 } from "../../../shared/contracts/host-contract.ts";
-import type { StructuralDiffRequest } from "../../../shared/node/vendor/review/src/server/structural-diff.ts";
-import type { StructuralDiffEvent } from "../../../shared/vendor/review-protocol/src/index.ts";
+import type { StructuralDiffRequest } from "../../../shared/node/review/structural-diff.ts";
+import type { StructuralDiffEvent } from "../../../shared/review-protocol/index.ts";
 import { fromWireError, hostIo, onStructuralEvents, onUninstall, onWorkerExit } from "./client.ts";
 
 /** After the run call resolves, wait this long for a `done` batch still in flight. */

@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import packageJson from "../../../package.json" with { type: "json" };
-import type { JsonObject } from "../../shared/vendor/json/src/index.ts";
+import type { JsonObject } from "../../shared/json/index.ts";
 
 /** The plugin's own version: what `appVersion` reports to agents and panels. */
 export const PLUGIN_VERSION: string = packageJson.version;

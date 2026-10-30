@@ -1,6 +1,6 @@
 import type { MouseEvent, ReactElement, ReactNode } from "react";
-import { isNumberValue, isStringValue } from "../../shared/vendor/review-protocol/src/index.ts";
-import { newTabLinkProps } from "../vendor/review/app/src/link-props.ts";
+import { isNumberValue, isStringValue } from "../../shared/review-protocol/index.ts";
+import { newTabLinkProps } from "../review/link-props.ts";
 
 export type LinkRenderer = (href: string, children: ReactNode) => ReactNode;
 

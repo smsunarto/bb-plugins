@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { FlowDiagramBlock } from "../../shared/vendor/review/src/review-api/blocks/flow_diagram.ts";
-import { BlockErrorBoundary } from "../vendor/review/app/src/blocks.tsx";
-import { ReviewDebugSettingsProvider } from "../vendor/review/app/src/debug-settings.tsx";
-import { FlowGraph } from "../vendor/review/app/src/flow-graph.tsx";
-import { ReviewSessionProvider } from "../vendor/review/app/src/host/review-session.tsx";
-import { testReviewSession } from "../vendor/review/app/src/review-session-test-utils.tsx";
+import type { FlowDiagramBlock } from "../../shared/review/blocks/flow_diagram.ts";
+import { BlockErrorBoundary } from "../review/blocks.tsx";
+import { ReviewDebugSettingsProvider } from "../review/debug-settings.tsx";
+import { FlowGraph } from "../review/flow-graph.tsx";
+import { ReviewSessionProvider } from "../review/host/review-session.tsx";
+import { testReviewSession } from "../review/review-session-test-utils.tsx";
 
 /** Each observed element's callback, so a test can resize the flow's frame. */
 const resized = new Map<Element, () => void>();

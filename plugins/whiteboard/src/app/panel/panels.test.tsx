@@ -25,7 +25,7 @@ const { SessionPanel, panelSessionId } = await import("./session-panel.tsx");
 const { HomePanel, routeSessionId } = await import("./home-panel.tsx");
 const { HomeHeader } = await import("./home-header.tsx");
 const { NO_WHITEBOARDS_DESCRIPTION, NO_WHITEBOARDS_TITLE, WelcomePage } =
-  await import("../stubs/welcome-page.tsx");
+  await import("./welcome-page.tsx");
 
 beforeEach(() => {
   vi.clearAllMocks();

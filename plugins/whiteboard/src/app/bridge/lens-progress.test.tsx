@@ -1,13 +1,13 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it } from "vitest";
-import type { ReviewProgress } from "../../server/lib/vendor/review/src/review-api/review-progress.ts";
-import type { Snapshot } from "../../server/lib/vendor/review/src/review-api/store.ts";
-import { ReviewApiClient } from "../../shared/vendor/review/src/review-api/client.ts";
-import { ReviewDiffView } from "../vendor/review/app/src/DiffView.tsx";
-import { ReviewSessionProvider } from "../vendor/review/app/src/host/review-session.tsx";
-import { ReviewLensesProvider } from "../vendor/review/app/src/review-lenses.tsx";
-import { testReviewSession } from "../vendor/review/app/src/review-session-test-utils.tsx";
+import type { ReviewProgress } from "../../server/lib/review/review-progress.ts";
+import type { Snapshot } from "../../server/lib/review/store.ts";
+import { ReviewApiClient } from "../../shared/review/client.ts";
+import { ReviewDiffView } from "../review/DiffView.tsx";
+import { ReviewSessionProvider } from "../review/host/review-session.tsx";
+import { ReviewLensesProvider } from "../review/review-lenses.tsx";
+import { testReviewSession } from "../review/review-session-test-utils.tsx";
 
 afterEach(cleanup);
 

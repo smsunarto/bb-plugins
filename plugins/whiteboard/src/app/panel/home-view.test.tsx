@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReviewApiSummary } from "../../shared/vendor/review-protocol/src/index.ts";
-import { ReviewHome } from "../vendor/review/app/src/review-home-view.tsx";
+import type { ReviewApiSummary } from "../../shared/review-protocol/index.ts";
+import { ReviewHome } from "../review/review-home-view.tsx";
 
 const summary = (index: number, title: string): ReviewApiSummary => ({
   reviewId: `s${index}`,

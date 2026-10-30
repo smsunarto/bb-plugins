@@ -3,7 +3,7 @@ import { DatabaseSync as NodeDatabaseSync } from "node:sqlite";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createRealtime, publishEngineChanges } from "./realtime.ts";
-import { ReviewStore } from "./vendor/review/src/review-api/store.ts";
+import { ReviewStore } from "./review/store.ts";
 
 vi.mock("./sqlite.ts", () => ({ DatabaseSync: NodeDatabaseSync }));
 

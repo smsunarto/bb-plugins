@@ -1,6 +1,6 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, it } from "vitest";
-import { ReviewInputError } from "../../shared/vendor/review/src/review-api/input-error.ts";
+import { ReviewInputError } from "../../shared/review/input-error.ts";
 import { NO_HOST_MESSAGE, createHostResolver } from "./host-resolver.ts";
 import { migrate } from "./migrations.ts";
 import { runWithThread } from "./thread-context.ts";

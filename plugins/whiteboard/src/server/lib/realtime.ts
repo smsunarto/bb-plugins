@@ -6,8 +6,8 @@ import {
   type OpenPayload,
   type SettingsPayload,
 } from "../../shared/contracts/channels.ts";
-import type { LocalReviewData } from "./vendor/review/src/review-api/local-data.ts";
-import type { ReviewStore } from "./vendor/review/src/review-api/store.ts";
+import type { LocalReviewData } from "./review/local-data.ts";
+import type { ReviewStore } from "./review/store.ts";
 
 /** Typed publishers for the three plugin channels (design §3.3). */
 export interface Realtime {

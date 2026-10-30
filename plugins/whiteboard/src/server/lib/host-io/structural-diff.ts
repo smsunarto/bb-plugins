@@ -1,4 +1,4 @@
-import type * as upstream from "../../../shared/node/vendor/review/src/server/structural-diff.ts";
+import type * as upstream from "../../../shared/node/review/structural-diff.ts";
 import { routeHost } from "./client.ts";
 import { lastProbedDiffr } from "./probe.ts";
 import { structuralStream } from "./structural-stream.ts";
@@ -13,7 +13,7 @@ import { structuralStream } from "./structural-stream.ts";
 export type {
   DiffComparison,
   StructuralDiffRequest,
-} from "../../../shared/node/vendor/review/src/server/structural-diff.ts";
+} from "../../../shared/node/review/structural-diff.ts";
 
 export const structuralDiff: typeof upstream.structuralDiff = async function* (input) {
   input.signal.throwIfAborted();

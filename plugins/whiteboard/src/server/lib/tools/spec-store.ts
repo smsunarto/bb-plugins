@@ -6,4 +6,4 @@
  */
 import "../sqlite-testing.ts";
 
-export { ReviewStore } from "../vendor/review/src/review-api/store.ts";
+export { ReviewStore } from "../review/store.ts";

@@ -39,10 +39,10 @@ it("boots one shared ELK for every instance's layouts", async () => {
   expect(second).toEqual({ id: "c4", width: 210, height: 62 });
 });
 
-it("loading the vendored diagram layouts boots no ELK", async () => {
+it("loading the review diagram layouts boots no ELK", async () => {
   // c4-layout-geometry.ts builds its ELK at module scope (polish-diagram.json
   // redirects its import here); flow-graph.tsx builds one per graph.
-  await import("../vendor/review/app/src/software-map/c4-layout-geometry.ts");
+  await import("../review/software-map/c4-layout-geometry.ts");
 
   expect(bundled.constructed).toBe(0);
 });

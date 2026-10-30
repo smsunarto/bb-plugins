@@ -3,20 +3,20 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
- * The CSS token report (design §3.8, WP4): every literal color the vendored
+ * The CSS token report (design §3.8, WP4): every literal color the reviewRules
  * sheets declare as a token resolves to a bb token in `tokens.css`.
  */
 const APP = path.resolve(import.meta.dirname, "..");
 const read = (file: string) => readFileSync(path.join(APP, file), "utf8");
 
-const VENDORED_SHEETS = [
-  "vendor/review/app/src/styles.css",
-  "vendor/review/app/src/whiteboard.css",
-  "vendor/review/app/src/api-document.css",
-  "vendor/review/app/src/flow-diagram.css",
-  "vendor/review/app/src/authoring-activity.css",
-  "vendor/review/app/src/software-map/styles.css",
-  "vendor/npm/@xyflow/react/dist/style.css",
+const REVIEW_SHEETS = [
+  "review/styles.css",
+  "review/whiteboard.css",
+  "review/api-document.css",
+  "review/flow-diagram.css",
+  "review/authoring-activity.css",
+  "review/software-map/styles.css",
+  "review/xyflow.css",
 ];
 
 /** bb theme tokens (bb `apps/app/src/components/ui/theme.css`). The canvas reads bb's `.light` scope. */
@@ -60,7 +60,7 @@ const COLLISIONS = {
   "--font-serif": "var(--font-sans)",
 };
 
-/** Literal colors left in vendored rules, each with the reason it is acceptable. */
+/** Literal colors left in review rules, each with the reason it is acceptable. */
 const ALLOWED_RULE_LITERALS = [
   {
     selector: /mask-image|^(from|to)$|data-motion|data-collapsed/,
@@ -79,14 +79,14 @@ const LITERAL =
 
 type Declaration = { sheet: string; selector: string; property: string; value: string };
 
-/** The vendoring tool's zero-specificity confinement of every vendored rule. */
-const VENDOR_SCOPE = ":where(.review-canvas-root) ";
+/** The zero-specificity confinement every review sheet rule carries. */
+const REVIEW_SCOPE = ":where(.review-canvas-root) ";
 
 function declarations(sheet: string, css = read(sheet)): Declaration[] {
   const out: Declaration[] = [];
   const body = css.replace(/\/\*[\s\S]*?\*\//g, "");
   for (const match of body.matchAll(/([^{};]+)\{([^{}]*)\}/g)) {
-    const selector = match[1]!.trim().replace(/\s+/g, " ").replaceAll(VENDOR_SCOPE, "");
+    const selector = match[1]!.trim().replace(/\s+/g, " ").replaceAll(REVIEW_SCOPE, "");
     for (const part of match[2]!.split(";")) {
       const colon = part.indexOf(":");
       if (colon < 0) continue;
@@ -129,10 +129,10 @@ const tokens = declarations("styles/tokens.css");
 const defined = new Set(
   tokens.filter((entry) => entry.property.startsWith("--")).map((entry) => entry.property),
 );
-const vendored = VENDORED_SHEETS.flatMap((sheet) => declarations(sheet));
+const reviewRules = REVIEW_SHEETS.flatMap((sheet) => declarations(sheet));
 /** Workbench variables upstream itself pins to `transparent` on the canvas. */
 const pinned = new Set(
-  vendored
+  reviewRules
     .filter((entry) => entry.property.startsWith("--vscode-") && entry.value === "transparent")
     .map((entry) => entry.property),
 );
@@ -176,7 +176,7 @@ const MONOKAI_DARK = monokai
 const LITERAL_FACE =
   /["']|(?<![\w-])(?:monospace|serif|sans-serif|system-ui|-apple-system)(?![\w-])/;
 
-/** Whether some tokens.css rule sets `property` on `part` (a vendored selector part). */
+/** Whether some tokens.css rule sets `property` on `part` (a review selector part). */
 function overridesPart(property: string, part: string): boolean {
   return tokens
     .filter((entry) => entry.property === property)
@@ -224,8 +224,8 @@ function focusRing(control: string, property: string): string | undefined {
 }
 
 describe("tokens.css", () => {
-  it("maps every literal-color token of the vendored sheets", () => {
-    const unmapped = vendored
+  it("maps every literal-color token of the review sheets", () => {
+    const unmapped = reviewRules
       .filter((entry) => entry.property.startsWith("--"))
       .filter((entry) => !DATA_URI_TOKENS.has(entry.property))
       .filter((entry) => LITERAL.test(withoutBridgedFallbacks(entry.value, resolvable)))
@@ -235,7 +235,7 @@ describe("tokens.css", () => {
   });
 
   it("defines every --vscode-* variable the canvas reads", () => {
-    const sources = VENDORED_SHEETS.map(read).join("\n");
+    const sources = REVIEW_SHEETS.map(read).join("\n");
     const reads = new Set(sources.match(/var\(\s*--vscode-[\w-]+/g)?.map((m) => m.slice(4).trim()));
     const missing = [...reads].filter((name) => !defined.has(name) && !pinned.has(name)).sort();
     expect(missing).toEqual([]);
@@ -257,9 +257,9 @@ describe("tokens.css", () => {
     }
   });
 
-  it("overrides every literal color in vendored rules or allowlists it", () => {
+  it("overrides every literal color in review rules or allowlists it", () => {
     const overridden = new Set(tokens.map((entry) => `${entry.property}|${entry.selector}`));
-    const unhandled = vendored
+    const unhandled = reviewRules
       .filter((entry) => !entry.property.startsWith("--"))
       .filter((entry) => LITERAL.test(withoutBridgedFallbacks(entry.value, resolvable)))
       .filter(
@@ -281,9 +281,9 @@ describe("tokens.css", () => {
     expect(unhandled).toEqual([]);
   });
 
-  it("confines vendored rules without specificity, so every override outranks them", () => {
-    const unconfined = VENDORED_SHEETS.flatMap(selectorParts).filter(
-      (part) => part !== ".review-canvas-root" && !part.startsWith(VENDOR_SCOPE),
+  it("confines review rules without specificity, so every override outranks them", () => {
+    const unconfined = REVIEW_SHEETS.flatMap(selectorParts).filter(
+      (part) => part !== ".review-canvas-root" && !part.startsWith(REVIEW_SCOPE),
     );
     const unprefixed = selectorParts("styles/tokens.css").filter(
       (part) => !part.startsWith(".review-canvas-root[data-review-theme"),
@@ -291,12 +291,12 @@ describe("tokens.css", () => {
     expect({ unconfined, unprefixed }).toEqual({ unconfined: [], unprefixed: [] });
   });
 
-  it("never wraps a vendored sheet in @scope", () => {
-    expect(VENDORED_SHEETS.filter((sheet) => /@scope/.test(read(sheet)))).toEqual([]);
+  it("never wraps a review sheet in @scope", () => {
+    expect(REVIEW_SHEETS.filter((sheet) => /@scope/.test(read(sheet)))).toEqual([]);
   });
 
-  it("sets every literal font face of the vendored rules in a bb face", () => {
-    const literal = vendored
+  it("sets every literal font face of the review rules in a bb face", () => {
+    const literal = reviewRules
       .filter((entry) => entry.property === "font-family" || entry.property === "font")
       .filter((entry) => LITERAL_FACE.test(entry.value.replace(/var\([^()]*\)/g, "")))
       .flatMap((entry) => entry.selector.split(",").map((part) => part.trim()))

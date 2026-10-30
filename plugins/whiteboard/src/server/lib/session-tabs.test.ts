@@ -16,8 +16,8 @@ import {
   sessionTab,
 } from "./session-tabs.ts";
 import { desktopAvailable, runWithThread } from "./thread-context.ts";
-import { createReviewApi } from "./vendor/review/src/review-api/http.ts";
-import { ReviewStore } from "./vendor/review/src/review-api/store.ts";
+import { createReviewApi } from "./review/http.ts";
+import { ReviewStore } from "./review/store.ts";
 
 // The real upstream store on node:sqlite, as upstream runs it. This keeps the
 // event shapes honest (attention changes reach only catalog listeners)
@@ -288,7 +288,7 @@ describe("open panel", () => {
 
   test("upstream create and open routes report opened, openError and the thread-less refusal", async () => {
     const { open, tabs, store } = setup({ t1: [] });
-    const api = createReviewApi(store, undefined, open, undefined, async () => ({
+    const api = createReviewApi(store, undefined, open, async () => ({
       desktopAvailable: desktopAvailable(),
       softwareMapEnabled: true,
     }));

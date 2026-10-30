@@ -3,7 +3,7 @@ import type {
   ReviewDiffFileWire,
   ReviewDiffLens,
   ReviewDiffSide,
-} from "../../shared/vendor/review-protocol/src/index.ts";
+} from "../../shared/review-protocol/index.ts";
 
 /**
  * File-side resolution, lens file filtering and the changed-file tree.

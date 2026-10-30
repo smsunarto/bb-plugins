@@ -1,7 +1,4 @@
-import type {
-  BlobBatchReader,
-  LocalVcsKind,
-} from "../../../shared/node/vendor/local-vcs/src/index.ts";
+import type { BlobBatchReader, LocalVcsKind } from "../../../shared/node/local-vcs/index.ts";
 import { hostIo, routeHost } from "./client.ts";
 
 /** Reads queued within this window go to the host in one `readBlobs` call. */

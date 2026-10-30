@@ -1,8 +1,8 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, test } from "vitest";
-import type { JsonObject, JsonValue } from "../../../shared/vendor/json/src/index.ts";
-import { readBlockFixtures } from "../../../shared/vendor/review/src/fixtures/blocks/fixtures.ts";
+import type { JsonObject, JsonValue } from "../../../shared/json/index.ts";
+import { readBlockFixtures } from "../../../shared/review/fixtures/blocks/fixtures.ts";
 import { CUT_DESCRIPTION, flattenSchema, UNROLL_LEVELS } from "./flatten-schema.ts";
 import { whiteboardCatalog } from "./register.ts";
 import { loadGolden } from "./testing.ts";

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { BlockErrorBoundary, type StoredBlock } from "../vendor/review/app/src/blocks.tsx";
+import { BlockErrorBoundary, type StoredBlock } from "../review/blocks.tsx";
 
 afterEach(() => {
   cleanup();

@@ -1,8 +1,4 @@
-import {
-  type MarkdownNode,
-  markdownText,
-  parseMarkdown,
-} from "../../shared/vendor/review/src/markdown.ts";
+import { type MarkdownNode, markdownText, parseMarkdown } from "../../shared/review/markdown.ts";
 import { urlProtocol } from "./link.tsx";
 
 /** What a rewritten link stands for: upstream's mdast URL, or a footnote reference. */

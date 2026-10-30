@@ -1,12 +1,9 @@
 import {
   cssIdentifier,
   scrollToReviewHeading as scrollOnly,
-} from "../vendor/review/app/src/review-heading-scroll.ts";
+} from "../review/review-heading-scroll.ts";
 
-export {
-  cssIdentifier,
-  getReviewScrollRoot,
-} from "../vendor/review/app/src/review-heading-scroll.ts";
+export { cssIdentifier, getReviewScrollRoot } from "../review/review-heading-scroll.ts";
 
 /**
  * Upstream's Contents jump, plus focus: the heading takes focus so the next

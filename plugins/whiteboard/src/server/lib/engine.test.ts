@@ -12,7 +12,7 @@ import { UI_INTEREST_TTL_MS } from "../../shared/contracts/api-tunnel.ts";
 import { CHANNELS } from "../../shared/contracts/channels.ts";
 import type { Engine, WhiteboardSettings } from "../../shared/contracts/engine.ts";
 import { panelParamsJson, panelTabId } from "../../shared/contracts/panel.ts";
-import { ReviewStore } from "./vendor/review/src/review-api/store.ts";
+import { ReviewStore } from "./review/store.ts";
 import { createEngine, collectApiResponse } from "./engine.ts";
 import { BB_PLUGIN_DATABASE } from "./sqlite.ts";
 import { forgetExists } from "./host-io/fs.ts";

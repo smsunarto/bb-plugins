@@ -7,7 +7,7 @@ import {
 } from "../../shared/contracts/selection-handoff.ts";
 
 /**
- * "Add to chat" for the vendored selection popover (agent-selection.tsx
+ * "Add to chat" for the review selection popover (agent-selection.tsx
  * imports this module in place of copy-text.tsx). Upstream copies the
  * selection's context for an agent in another app. In bb the agent sits
  * beside the canvas, so each mount registers a sink that hands the route's
@@ -27,7 +27,7 @@ export function registerHandoffSink(root: Element, sink: HandoffSink): () => voi
 }
 
 /**
- * The vendored `copyText(text)`, given the copy-context route's `handoff` and
+ * The review app's `copyText(text)`, given the copy-context route's `handoff` and
  * the element the selection was made in. The popover captures `origin` when
  * the user selects, so a reply that lands after focus moved to another pane
  * still reaches the pane that asked. Every mount registers a sink, so a miss

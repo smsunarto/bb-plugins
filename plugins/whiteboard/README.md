@@ -96,61 +96,34 @@ into a thread's pad.
 
 ## Layout
 
-Upstream files live under a `vendor/` path segment. Source files carry a
-`Vendored from dev.fast <path> @4ecc570 (MIT).` header. Fixtures and instruction
-documents retain their original bytes. Lint and format skip those paths.
-Authored code (facades, stubs, the bb bridge) lives outside them.
+Whiteboard began as a port of dev.fast Whiteboard at `4ecc570` (MIT, see
+THIRD_PARTY_NOTICES.md). The code is maintained here; nothing syncs from upstream.
 
-- `src/shared/contracts/`: frozen contracts between the server, host and app.
-- `src/shared/vendor/`: browser-safe upstream model and protocol.
-- `src/shared/node/vendor/`: upstream git and checkout helpers the host runs.
-- `src/server/lib/vendor/`: the upstream engine (Hono API, store, tool catalog).
-- `src/app/vendor/`: the upstream canvas, Home and Diff views. Their CSS uses
-  a zero-specificity `:where(.review-canvas-root)` prefix, because bb forbids
-  `@scope`.
+- `src/shared/contracts/`: contracts between the server, host and app.
+- `src/shared/review/`, `src/shared/review-protocol/`, `src/shared/json/`:
+  browser-safe document model, blocks and canvas protocol.
+- `src/shared/node/`: git, worktree and checkout helpers the host runs
+  (`review/`, `local-vcs/`, `fs/`).
+- `src/server/lib/review/`: the engine (store, local data, progress, lenses).
+- `src/server/lib/host-io/`: server facades that run git and file reads on the
+  checkout's host.
+- `src/app/review/`: the canvas, Home and Diff views. Their CSS uses a
+  zero-specificity `:where(.review-canvas-root)` prefix, because bb forbids
+  `@scope`; `src/app/styles/` holds the bb overrides and tokens.
 
-The vendoring tool (`.scratch/whiteboard-port/vendor/vendor.ts`, untracked)
-regenerates every vendored file from upstream and checks for drift. Imports are
-redirected to authored modules. These two redirects are scoped to one importer each:
-
-- `review-toc.tsx` imports `review-heading-scroll.ts` through
-  `src/app/lib/heading-scroll.ts`, which adds heading focus.
-- `review-doc-meta.tsx` imports `review-branch-range.tsx` through
-  `src/app/components/branch-range.tsx`, which adds the single-commit chip.
-  The Commits view keeps the vendored range.
-
-Mapped patches adapt source transport and rendering to bb. Regeneration
-preserves those patches. `--css` regenerates only the vendored stylesheets.
-These files have hand-edited (`edit`) rows in the vendoring map:
-
-- `review/src/review-api/local-data.ts`
-- `review/src/review-api/image-decode.ts`
-- `review/src/review-api/http.ts`
-- `review/app/src/flow-graph.tsx`
-- `review/app/src/review-home-view.tsx`
-- `review/app/src/blocks.tsx`
-- `review/src/review-api/review-progress.ts`
-- `review/src/review-api/instructions.ts`
-- `local-vcs/src/blob-batch-reader.ts`
-- `local-vcs/src/index.ts`
-
-Backports retain the pinned baseline: upstream [#634](https://github.com/devdotfast/whiteboard/pull/634)
+Backports from upstream after the port: [#634](https://github.com/devdotfast/whiteboard/pull/634)
 resets a block's render error after an edit, [#637](https://github.com/devdotfast/whiteboard/pull/637)
 keeps flow layouts matched to their block and direction, and the source-resolution
 part of [#1232](https://github.com/devdotfast/whiteboard/pull/1232) resolves code
-references when a file exists on only one side. bb retains its existing progress
-flow and error messages; upstream telemetry changes are omitted. The host preserves
-read failures and per-item size-limit failures as errors across Git and jj, so only
-absent files can resolve as one-sided context. Flow updates keep the last consistent drawing mounted while
-the new layout loads, preserving the reader's viewport and inline height.
+references when a file exists on only one side. The host preserves read failures
+and per-item size-limit failures as errors across Git and jj, so only absent files
+can resolve as one-sided context. Flow updates keep the last consistent drawing
+mounted while the new layout loads, preserving the reader's viewport and inline height.
 
-The authoring and file-lens prompts adapt upstream's
-[October instructions](https://github.com/devdotfast/whiteboard/tree/07ae51800bfefb1f2f04ef8d4b367fe3a0160d9e/packages/review/instructions)
-to BB's existing tools and source schemas. They live under `instructions/`,
-with the component reference and edit-tool description, and are read through
-`instructionFiles`. Authoring and lens prompts pick up edits on the next call;
-tool descriptions apply after a plugin reload. The `/whiteboard` skill loads
-the authoring prompt. Scratchpad and trace guidance retain the embedded baseline.
+The authoring, file-lens and scratchpad prompts live under `instructions/`, with
+the component reference and tool descriptions, and are read through
+`instructionFiles`. Prompts pick up edits on the next call; tool descriptions
+apply after a plugin reload. The `/whiteboard` skill loads the authoring prompt.
 
 ## Deviations from upstream
 
@@ -160,8 +133,8 @@ the authoring prompt. Scratchpad and trace guidance retain the embedded baseline
   - `review-api/http.ts`: `session_get(` in a result
   - `review-api/store.ts`: `session_get` in an error
   - `review-api/document-text.ts`: `session_lens_edit`
-  - `review-api/instructions.ts`: three `session_get_instructions({topic:` references
-  - Embedded scratchpad and trace text adapts tool names at the bb boundary.
+  - `review-api/instructions.ts`: one `session_get_instructions({topic:` reference
+  - Embedded scratchpad text adapts tool names at the bb boundary.
     The vendored instruction files retain the baseline for comparison;
     authoring and file-lens guidance comes from `instructions/` instead.
 - **Settings pointers.** User-facing pointers to Desktop settings name the
@@ -220,9 +193,11 @@ the authoring prompt. Scratchpad and trace guidance retain the embedded baseline
   `review_open`, `review_file` and similar. They are left byte-identical.
 - **Not ported.** Sharing, telemetry, bug reports, the welcome and CLI install
   flow, trace storage, managed language workspaces and the Desktop window
-  chrome. Their imports point at no-op stubs with the same exports.
-- **Trace capture** is off (`traceEnabled` is a constant `false`).
-  `trace_quote` blocks and uploaded traces still render.
+  chrome. Sharing, telemetry, bug reports and trace storage are removed.
+  Managed language workspaces keep a stub that reports nothing configured, and
+  Home's empty state replaces the welcome page.
+- **Trace capture** is off. `trace_quote` blocks and uploaded traces still
+  render, and the Trace tab lists the uploaded traces.
 - **Markdown** uses Docs' TipTap extensions and shared prose styles. Raw HTML
   stays literal, implicit URLs stay unlinked, code link marks and soft breaks
   follow upstream Whiteboard behavior. Markdown code fences have Docs' plain

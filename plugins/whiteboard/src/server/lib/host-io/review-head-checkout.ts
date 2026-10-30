@@ -1,5 +1,5 @@
 import { HOST_TIMEOUT_MS } from "../../../shared/contracts/host-contract.ts";
-import type * as upstream from "../../../shared/node/vendor/review/src/review-head-checkout.ts";
+import type * as upstream from "../../../shared/node/review/review-head-checkout.ts";
 import { invokeOn, rememberPath } from "./client.ts";
 
 /**

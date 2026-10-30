@@ -6,7 +6,7 @@ import {
   panelTabId,
 } from "../../shared/contracts/panel.ts";
 import { type PendingOpen, PENDING_OPEN_TTL_MS } from "../../shared/contracts/api-tunnel.ts";
-import type { ReviewStore } from "./vendor/review/src/review-api/store.ts";
+import type { ReviewStore } from "./review/store.ts";
 
 /**
  * The one owner of Whiteboard thread tabs and the `session_threads` table

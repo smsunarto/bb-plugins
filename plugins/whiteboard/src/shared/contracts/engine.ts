@@ -1,4 +1,4 @@
-import type { ReviewApiClient } from "../vendor/review-protocol/src/index.ts";
+import type { ReviewApiClient } from "../review-protocol/index.ts";
 import type { ApiRequest, ApiResponse, InfoInput, InfoOutput, PendingOpen } from "./api-tunnel.ts";
 import type { SettingsPayload } from "./channels.ts";
 
@@ -56,7 +56,7 @@ export interface HostResolver {
   ): Promise<void>;
 }
 
-/** Plugin settings (design §3.4). `traceEnabled` is a constant false, not a setting (Q2). */
+/** Plugin settings (design §3.4). */
 export interface WhiteboardSettings {
   scratchpadEnabled(): boolean;
   softwareMapEnabled(): boolean;

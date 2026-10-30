@@ -1,4 +1,4 @@
-import type * as upstream from "../../../shared/node/vendor/review/src/review-api/checkout-fs.ts";
+import type * as upstream from "../../../shared/node/review/checkout-fs.ts";
 import { lstat, readFile, readlink, realpath, stat } from "./fs.ts";
 
 /**

@@ -1,6 +1,6 @@
 import { HOST_TIMEOUT_MS, type VcsMethod } from "../../../shared/contracts/host-contract.ts";
 import type { VcsHandle } from "../../../shared/contracts/wire.ts";
-import type { LocalVcs } from "../../../shared/node/vendor/local-vcs/src/index.ts";
+import type { LocalVcs } from "../../../shared/node/local-vcs/index.ts";
 import { encodeArgs, hostIo, isPayloadTooLarge, unwrapResult } from "./client.ts";
 import { concatenateByPaths } from "./payload-split.ts";
 

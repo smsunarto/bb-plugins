@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ApiRequest, ApiResponse } from "../../shared/contracts/api-tunnel.ts";
-import { ReviewApiClient } from "../../shared/vendor/review-protocol/src/index.ts";
+import { ReviewApiClient } from "../../shared/review-protocol/index.ts";
 import { createLiveHub } from "./live-watch.ts";
 import { createTunnel, toResponse, tunnelPath } from "./tunnel.ts";
 

@@ -1,8 +1,8 @@
 import { writeFileSync } from "node:fs";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { LocalVcsToolsMissingError } from "../../../shared/node/vendor/local-vcs/src/index.ts";
-import { ReviewInputError } from "../../../shared/vendor/review/src/review-api/input-error.ts";
+import { LocalVcsToolsMissingError } from "../../../shared/node/local-vcs/index.ts";
+import { ReviewInputError } from "../../../shared/review/input-error.ts";
 import { encodeArgs, fromWireError, hostIo, installHostIo, invokeHost } from "./client.ts";
 import { watch } from "./fs.ts";
 import * as hostFs from "./fs.ts";

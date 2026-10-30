@@ -1,5 +1,5 @@
-import type { ReviewStackLayer } from "../../../shared/vendor/review-protocol/src/index.ts";
-import * as upstream from "../../../shared/node/vendor/review/src/review-stack.ts";
+import type { ReviewStackLayer } from "../../../shared/review-protocol/index.ts";
+import * as upstream from "../../../shared/node/review/review-stack.ts";
 import { type HostRoute, invokeHost } from "./client.ts";
 
 /** Server facade for `review-stack` (design §3.1). `gh api` runs on the host. */
@@ -7,7 +7,7 @@ export type {
   ReviewStackCandidate,
   ReviewStackSubject,
   RunGitHubApi,
-} from "../../../shared/node/vendor/review/src/review-stack.ts";
+} from "../../../shared/node/review/review-stack.ts";
 
 /**
  * With the default runner, the whole lookup runs on the host `route` names:

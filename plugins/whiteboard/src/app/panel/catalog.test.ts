@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { queryClient } from "../query.ts";
-import type { ReviewApiSummary } from "../../shared/vendor/review-protocol/src/index.ts";
+import type { ReviewApiSummary } from "../../shared/review-protocol/index.ts";
 import { SETTLE_LIMIT_MS, createCatalogEdits } from "./catalog.ts";
 
 const key = ["whiteboard", "catalog", "optimistic-test"];

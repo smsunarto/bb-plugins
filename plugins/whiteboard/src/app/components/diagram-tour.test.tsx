@@ -3,16 +3,13 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { type ReactNode, useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { afterEach, expect, it, vi } from "vitest";
-import { ReviewDebugSettingsProvider } from "../vendor/review/app/src/debug-settings.tsx";
-import { ReviewSessionProvider } from "../vendor/review/app/src/host/review-session.tsx";
-import { ReviewProvider } from "../vendor/review/app/src/review-context.tsx";
-import { ReviewPanelProvider } from "../vendor/review/app/src/review-panel.tsx";
-import type { GuidedTour } from "../vendor/review/app/src/review-panel-model.ts";
-import {
-  ReviewContainerProvider,
-  ReviewRootsProvider,
-} from "../vendor/review/app/src/review-root-context.tsx";
-import { testReviewSession } from "../vendor/review/app/src/review-session-test-utils.tsx";
+import { ReviewDebugSettingsProvider } from "../review/debug-settings.tsx";
+import { ReviewSessionProvider } from "../review/host/review-session.tsx";
+import { ReviewProvider } from "../review/review-context.tsx";
+import { ReviewPanelProvider } from "../review/review-panel.tsx";
+import type { GuidedTour } from "../review/review-panel-model.ts";
+import { ReviewContainerProvider, ReviewRootsProvider } from "../review/review-root-context.tsx";
+import { testReviewSession } from "../review/review-session-test-utils.tsx";
 import { DiagramTourOverlay, useDiagramTourShell } from "./diagram-tour.tsx";
 
 afterEach(cleanup);

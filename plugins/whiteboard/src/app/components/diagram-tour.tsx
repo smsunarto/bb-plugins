@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { useReviewContainer } from "../vendor/review/app/src/review-root-context.tsx";
-import { useRightPanelResize } from "../vendor/review/app/src/side-panel-resizer.ts";
+import { useReviewContainer } from "../review/review-root-context.tsx";
+import { useRightPanelResize } from "../review/side-panel-resizer.ts";
 
-export { DiagramTourOverlay } from "../vendor/review/app/src/diagram-tour.tsx";
+export { DiagramTourOverlay } from "../review/diagram-tour.tsx";
 
 /**
  * Upstream's tour shell (diagram-tour.tsx `useDiagramTourShell`) with focus
