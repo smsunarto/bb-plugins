@@ -1,11 +1,4 @@
-import {
-  type BbNavigate,
-  useBbContext,
-  useBbNavigate,
-  useComposer,
-  useRealtime,
-  useRealtimeConnectionState,
-} from "@get-bb/plugin-sdk/app";
+import { type BbNavigate, useBbContext, useBbNavigate, useComposer } from "@get-bb/plugin-sdk/app";
 import { skipToken, useQuery } from "@tanstack/react-query";
 import {
   type ReactNode,
@@ -18,23 +11,21 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { CodeThemeProvider } from "../lib/highlight.tsx";
-import type { InfoOutput } from "../../shared/contracts/api-tunnel.ts";
-import { CHANNELS, changedPayload } from "../../shared/contracts/channels.ts";
 import { NAV_PANEL_PATH, PANEL_ACTION_ID } from "../../shared/contracts/panel.ts";
-import {
-  type ReviewApiSummary,
-  type ReviewCanvasBridge,
-  type ReviewCanvasContent,
-  type ReviewSourceView,
-  ReviewApiClient,
+import type { CoverageMode, InfoOutput } from "../../shared/contracts/rpc.ts";
+import type {
+  ReviewApiSummary,
+  ReviewCanvasBridge,
+  ReviewCanvasContent,
+  ReviewSourceView,
 } from "../../shared/review-protocol/index.ts";
 import { handoffParts, registerHandoffSink } from "../bridge/agent-handoff.ts";
 import { createBbBridge } from "../bridge/bb-bridge.ts";
 import { createSurfaceEvents } from "../bridge/events.ts";
-import { type LiveHub, createLiveHub } from "../bridge/live-watch.ts";
 import { PortalHost, createPortals } from "../bridge/portals.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { UNAVAILABLE_TITLE } from "../lib/whiteboard-info.tsx";
+import { followLive, useLiveRead } from "../live.ts";
 import { queryClient } from "../query.ts";
 import { type WhiteboardRpcClient, useWhiteboardRpc } from "../rpc.ts";
 import "../styles/index.css";
@@ -57,7 +48,8 @@ import { EmptyState } from "./empty-state.tsx";
  *         ReviewHome                                         (no sessionId)
  *     PortalHost                                     code surfaces, tooltip
  *
- * One mount owns its bridge, live-watch hub, portals and find host.
+ * One mount owns its bridge, portals and find host. Its RPC client carries
+ * the panel's thread, and the catalog and the session are live reads.
  */
 export const REMOVED_TITLE = "This Whiteboard was removed.";
 
@@ -85,25 +77,6 @@ function useStableNavigate(): BbNavigate {
   );
 }
 
-/** Feed `whiteboard:changed` and reconnects into the mount's hub. */
-function useLiveHub(client: WhiteboardRpcClient): LiveHub {
-  const hub = useMemo(() => createLiveHub(client), [client]);
-  useRealtime(CHANNELS.changed, (payload) => {
-    const parsed = changedPayload.safeParse(payload);
-    if (parsed.success) hub.invalidate(parsed.data);
-  });
-  // Scratchpad visibility is a catalog change the store never publishes.
-  useRealtime(CHANNELS.settings, () => hub.invalidate({ kind: "catalog" }));
-  const state = useRealtimeConnectionState();
-  const previous = useRef(state);
-  useEffect(() => {
-    // The first connection comes from "connecting" and is not a reconnection.
-    if (previous.current === "reconnecting" && state === "connected") hub.reconnected();
-    previous.current = state;
-  }, [hub, state]);
-  return hub;
-}
-
 function isFindShortcut(event: KeyboardEvent): boolean {
   return (
     (event.metaKey || event.ctrlKey) &&
@@ -123,37 +96,34 @@ function findSeed(root: HTMLElement): string | undefined {
 }
 
 function postAttention(
-  client: ReviewApiClient,
+  rpc: WhiteboardRpcClient,
   reviewId: string,
   action: "view" | "dismiss" | "restore",
 ) {
-  return client.post("/commands", {
+  return rpc.command({
     commandId: crypto.randomUUID(),
     operation: { type: "attention", reviewId, action },
   });
 }
 
-function catalogMode(info: InfoOutput): "structural" | "textual" {
+function catalogMode(info: InfoOutput): CoverageMode {
   return info.structuralDiffEnabled ? "structural" : "textual";
 }
 
 type Removal = "deleted" | "dismissed" | null;
 
 /** Upstream closes a canvas whose session leaves the catalog or becomes dismissed. */
-function useRemoved(
-  client: ReviewApiClient,
-  reviewId: string,
-  mode: "structural" | "textual",
-): Removal {
+function useRemoved(threadId: string | undefined, reviewId: string, mode: CoverageMode): Removal {
   const [removed, setRemoved] = useState<Removal>(null);
+  const catalog = useLiveRead("sessions", { threadId, mode });
   useEffect(() => {
     setRemoved(null);
     const abort = new AbortController();
     // Desktop closes on the active -> dismissed transition (reviewApiCatalogService.ts:84-87).
     // A session opened while dismissed stays readable until it is restored and dismissed again.
     let seenActive = false;
-    void client.follow<ReviewApiSummary[]>(
-      null,
+    followLive(
+      catalog,
       abort.signal,
       (reviews) => {
         const entry = reviews.find((review) => review.reviewId === reviewId);
@@ -162,16 +132,15 @@ function useRemoved(
         else setRemoved(entry.dismissedAt && seenActive ? "dismissed" : null);
       },
       () => {},
-      mode,
     );
     return () => abort.abort();
-  }, [client, reviewId, mode]);
+  }, [catalog, reviewId]);
   return removed;
 }
 
 function CanvasView({
   bridge,
-  client,
+  rpc,
   reviewId,
   threadId,
   navigate,
@@ -180,7 +149,7 @@ function CanvasView({
   setSourceView,
 }: {
   bridge: ReviewCanvasBridge;
-  client: ReviewApiClient;
+  rpc: WhiteboardRpcClient;
   reviewId: string;
   threadId: string | undefined;
   navigate: BbNavigate;
@@ -190,11 +159,11 @@ function CanvasView({
 }) {
   // Opening marks the session viewed, so Home stops flagging it (reviewCanvasPart.ts:364).
   useEffect(() => {
-    postAttention(client, reviewId, "view").catch((error: unknown) =>
+    postAttention(rpc, reviewId, "view").catch((error: unknown) =>
       console.warn("[whiteboard] Could not mark session viewed:", error),
     );
-  }, [client, reviewId]);
-  const removed = useRemoved(client, reviewId, catalogMode(info));
+  }, [rpc, reviewId]);
+  const removed = useRemoved(threadId, reviewId, catalogMode(info));
   const content = useMemo<ApiContent>(
     () => ({
       kind: "api",
@@ -210,24 +179,22 @@ function CanvasView({
   );
   if (removed === "deleted") return <EmptyState title={REMOVED_TITLE} />;
   if (removed === "dismissed") {
-    return (
-      <Dismissed client={client} reviewId={reviewId} threadId={threadId} navigate={navigate} />
-    );
+    return <Dismissed rpc={rpc} reviewId={reviewId} threadId={threadId} navigate={navigate} />;
   }
   return (
     <div data-review-api="" className="review-api-canvas">
-      <ApiCanvas key={reviewId} content={content} findHost={findHost} />
+      <ApiCanvas key={reviewId} content={content} threadId={threadId} findHost={findHost} />
     </div>
   );
 }
 
 function Dismissed({
-  client,
+  rpc,
   reviewId,
   threadId,
   navigate,
 }: {
-  client: ReviewApiClient;
+  rpc: WhiteboardRpcClient;
   reviewId: string;
   threadId: string | undefined;
   navigate: BbNavigate;
@@ -252,7 +219,7 @@ function Dismissed({
         size="sm"
         variant="outline"
         onClick={() =>
-          postAttention(client, reviewId, "restore").catch((error: unknown) => {
+          postAttention(rpc, reviewId, "restore").catch((error: unknown) => {
             console.warn("[whiteboard] Could not restore session:", error);
             toast.error("Could not restore the Whiteboard. Try again.");
           })
@@ -265,19 +232,20 @@ function Dismissed({
 }
 
 function HomeView({
-  client,
+  rpc,
   info,
   onOpen,
   threadId,
 }: {
-  client: ReviewApiClient;
+  rpc: WhiteboardRpcClient;
   info: InfoOutput;
   onOpen(review: ReviewApiSummary): void;
   threadId: string | undefined;
 }) {
   const [error, setError] = useState<string>();
   const mode = catalogMode(info);
-  // The live stream refreshes this cache. Keep its last result across page
+  const live = useLiveRead("sessions", { threadId, mode });
+  // The live read refreshes this cache. Keep its last result across page
   // navigation, scoped to the thread whose scratchpad the server includes.
   const queryKey = useMemo(
     () => ["whiteboard", "catalog", threadId ?? null, mode],
@@ -290,21 +258,20 @@ function HomeView({
   );
   useEffect(() => {
     const abort = new AbortController();
-    void client.follow<ReviewApiSummary[]>(
-      null,
+    followLive(
+      live,
       abort.signal,
       (next) => {
         catalog.receive(next);
         setError(undefined);
       },
       (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
-      mode,
     );
     return () => abort.abort();
-  }, [client, mode, catalog]);
+  }, [live, catalog]);
   const remove = (review: ReviewApiSummary) =>
     catalog.command(review.reviewId, "delete", () =>
-      client.post("/commands", {
+      rpc.command({
         commandId: crypto.randomUUID(),
         operation: { type: "delete", reviewId: review.reviewId },
       }),
@@ -312,7 +279,7 @@ function HomeView({
   // ReviewHome reports a failed delete itself, and swallows the other two.
   const attention = (review: ReviewApiSummary, action: "dismiss" | "restore") =>
     catalog
-      .command(review.reviewId, action, () => postAttention(client, review.reviewId, action))
+      .command(review.reviewId, action, () => postAttention(rpc, review.reviewId, action))
       .catch((cause: unknown) => {
         console.warn(`[whiteboard] Could not ${action} session:`, cause);
         toast.error(`Could not ${action} the Whiteboard. Try again.`);
@@ -340,10 +307,9 @@ export function WhiteboardMount({
   threadId?: string;
   info: InfoOutput;
 }) {
-  const rpcClient = useWhiteboardRpc();
+  const rpc = useWhiteboardRpc(threadId);
   const navigate = useStableNavigate();
   const composer = useComposer();
-  const hub = useLiveHub(rpcClient);
   const sourceViewRef = useRef<ReviewSourceView>(undefined);
   const setSourceView = useCallback<NonNullable<ApiContent["setSourceView"]>>((address, view) => {
     sourceViewRef.current = address.kind === "version" ? { ...view, generation: undefined } : view;
@@ -358,7 +324,7 @@ export function WhiteboardMount({
   const bridge = useMemo(
     () =>
       createBbBridge({
-        rpc: rpcClient,
+        rpc,
         ...(threadId ? { threadId } : {}),
         ...(sessionId ? { reviewId: sessionId } : {}),
         navigate,
@@ -368,12 +334,10 @@ export function WhiteboardMount({
         },
         portals,
         events,
-        hub,
         sourceView: () => sourceViewRef.current,
       }),
-    [rpcClient, threadId, sessionId, navigate, portals, events, hub],
+    [rpc, threadId, sessionId, navigate, portals, events],
   );
-  const client = useMemo(() => new ReviewApiClient(bridge.config, bridge.request), [bridge]);
   // Panels key the mount by session, so one find host per mount is one per session.
   const [findHost] = useState(createReviewFindHost);
 
@@ -426,7 +390,7 @@ export function WhiteboardMount({
     body = sessionId ? (
       <CanvasView
         bridge={bridge}
-        client={client}
+        rpc={rpc}
         reviewId={sessionId}
         threadId={threadId}
         navigate={navigate}
@@ -435,7 +399,7 @@ export function WhiteboardMount({
         setSourceView={setSourceView}
       />
     ) : (
-      <HomeView client={client} info={info} onOpen={openSession} threadId={threadId} />
+      <HomeView rpc={rpc} info={info} onOpen={openSession} threadId={threadId} />
     );
   }
 

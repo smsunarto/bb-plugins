@@ -2,9 +2,20 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { LiveSnapshot } from "../../server/lib/review/store.ts";
-import { ReviewApiClient } from "../../shared/review/client.ts";
+import { fakeLiveRead } from "../live-test-utils.ts";
 import { ApiCanvas } from "../review/api-canvas.tsx";
 import { testReviewBridge } from "../review/review-session-test-utils.tsx";
+
+/** The canvas's RPC client and live session read, set per mount. */
+const canvas = vi.hoisted(() => ({
+  rpc: {} as object,
+  live: undefined as { read: unknown } | undefined,
+}));
+vi.mock("../rpc.ts", () => ({ useWhiteboardRpc: () => canvas.rpc }));
+vi.mock("../live.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../live.ts")>()),
+  useLiveRead: () => canvas.live!.read,
+}));
 
 beforeEach(() => {
   localStorage.clear();
@@ -23,23 +34,22 @@ afterEach(() => {
 });
 
 function mount(snapshot: LiveSnapshot, version?: number) {
-  vi.spyOn(ReviewApiClient.prototype, "follow").mockImplementation(async (_id, signal, onValue) => {
-    await onValue({ ...snapshot, activity: { workingCount: 0, expiresAt: null } } as never);
-    await new Promise<void>((resolve) =>
-      signal.addEventListener("abort", () => resolve(), { once: true }),
-    );
+  const live = fakeLiveRead<unknown>();
+  live.push({
+    ...snapshot,
+    activity: { workingCount: 0, expiresAt: null },
+    coverageRevision: 0,
   });
+  canvas.live = live;
+  canvas.rpc = {
+    sessionVersion: async () => snapshot,
+    commits: async () => [],
+    history: async () => [],
+    progress: async () => ({ files: [], lenses: [], resolvedSelections: {} }),
+  };
   const bridge = testReviewBridge(
     {},
     {
-      request: async (value) => {
-        const url = new URL(String(value));
-        if (url.pathname.endsWith("/commits") || url.pathname.endsWith("/history"))
-          return Response.json([]);
-        if (url.pathname.endsWith("/progress"))
-          return Response.json({ files: [], lenses: [], resolvedSelections: {} });
-        return Response.json(snapshot);
-      },
       diffView: {
         files: async () => [{ path: "order.ts", status: "modified", additions: 1, deletions: 1 }],
         create(spec) {

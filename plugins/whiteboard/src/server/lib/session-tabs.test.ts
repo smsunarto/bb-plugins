@@ -3,7 +3,7 @@ import { DatabaseSync as NodeDatabaseSync } from "node:sqlite";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { PENDING_OPEN_TTL_MS } from "../../shared/contracts/api-tunnel.ts";
+import { PENDING_OPEN_TTL_MS } from "../../shared/contracts/rpc.ts";
 import type { WhiteboardSettings } from "../../shared/contracts/engine.ts";
 import { MIGRATIONS } from "./migrations.ts";
 import { panelParamsJson, panelTabId } from "../../shared/contracts/panel.ts";
@@ -16,7 +16,8 @@ import {
   sessionTab,
 } from "./session-tabs.ts";
 import { desktopAvailable, runWithThread } from "./thread-context.ts";
-import { createReviewApi } from "./review/http.ts";
+import { createReviewApi } from "./review/api.ts";
+import { LocalReviewData } from "./review/local-data.ts";
 import { ReviewStore } from "./review/store.ts";
 
 // The real upstream store on node:sqlite, as upstream runs it. This keeps the
@@ -286,34 +287,33 @@ describe("open panel", () => {
     await expect(sessionTabs.claimOpen("t1")).resolves.toBeNull();
   });
 
-  test("upstream create and open routes report opened, openError and the thread-less refusal", async () => {
+  test("create and open report opened, openError and the thread-less refusal", async () => {
     const { open, tabs, store } = setup({ t1: [] });
-    const api = createReviewApi(store, undefined, open, async () => ({
-      desktopAvailable: desktopAvailable(),
-      softwareMapEnabled: true,
-    }));
-    const post = async (path: string, body: unknown) =>
-      await api.fetch(
-        new Request(`http://whiteboard.local${path}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(body),
-        }),
-      );
-    const create = (title: string) => ({
-      commandId: randomUUID(),
-      operation: {
-        type: "create",
-        source: "pins",
-        title,
-        pins: { repositoryId: "repo", base: "a", head: "b" },
-      },
+    const api = createReviewApi({
+      store,
+      data: new LocalReviewData(store),
+      open,
+      capabilities: async () => ({
+        desktopAvailable: desktopAvailable(),
+        softwareMapEnabled: true,
+      }),
     });
+    const signal = new AbortController().signal;
+    const create = (title: string) =>
+      api.command(
+        {
+          commandId: randomUUID(),
+          operation: {
+            type: "create",
+            source: "pins",
+            title,
+            pins: { repositoryId: "repo", base: "a", head: "b" },
+          },
+        },
+        { signal },
+      );
 
-    const fromThread = await runWithThread({ threadId: "t1" }, () =>
-      post("/commands", create("Plan")),
-    );
-    const created = (await fromThread.json()) as { reviewId: string; opened: boolean };
+    const created = await runWithThread({ threadId: "t1" }, () => create("Plan"));
     expect(created).toMatchObject({ opened: true, softwareMapEnabled: true });
     expect(tabs.threads.get("t1")!.tabs).toEqual([
       expect.objectContaining({
@@ -323,31 +323,29 @@ describe("open panel", () => {
       }),
     ]);
 
-    const noThread = await post("/commands", create("Elsewhere"));
-    const elsewhere = (await noThread.json()) as { reviewId: string; opened: boolean };
+    const elsewhere = await create("Elsewhere");
     expect(elsewhere).toMatchObject({ opened: false });
 
     tabs.interleave(TAB_WRITE_ATTEMPTS);
-    const conflicted = await runWithThread({ threadId: "t1" }, () =>
-      post("/commands", create("Busy")),
-    );
-    expect(await conflicted.json()).toMatchObject({
+    expect(await runWithThread({ threadId: "t1" }, () => create("Busy"))).toMatchObject({
       opened: false,
-      openError: "HTTP 409: Thread tabs changed on another client Retry with review_open.",
+      openError:
+        "HTTP 409: Thread tabs changed on another client Retry with whiteboard_session_open.",
     });
 
-    const reopen = await post(`/${created.reviewId}/open`, {});
-    expect(reopen.status).toBe(409);
-    expect(await reopen.json()).toMatchObject({ error: NO_THREAD_MESSAGE });
+    await expect(api.open({ reviewId: created.reviewId })).rejects.toMatchObject({
+      status: 409,
+      message: NO_THREAD_MESSAGE,
+    });
 
-    // Upstream Desktop reports a failed open as a 409 carrying its reason
-    // (desktop-server.ts openApiReview), not the generic 500.
+    // A failed open is a 409 carrying its reason, not a crash.
     tabs.interleave(TAB_WRITE_ATTEMPTS);
-    const busy = await runWithThread({ threadId: "t1" }, () =>
-      post(`/${elsewhere.reviewId}/open`, {}),
-    );
-    expect(busy.status).toBe(409);
-    expect(await busy.json()).toEqual({ error: "HTTP 409: Thread tabs changed on another client" });
+    await expect(
+      runWithThread({ threadId: "t1" }, () => api.open({ reviewId: elsewhere.reviewId })),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: "HTTP 409: Thread tabs changed on another client",
+    });
   });
 
   test("a title longer than bb's tab limit is cut to fit, in the tab and the focus event", async () => {

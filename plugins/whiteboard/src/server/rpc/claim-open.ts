@@ -1,10 +1,10 @@
 import type { z } from "zod";
-import { claimOpenInput, claimOpenOutput } from "../../shared/contracts/api-tunnel.ts";
+import { claimOpenInput, claimOpenOutput } from "../../shared/contracts/rpc.ts";
 import type { WhiteboardContext } from "../lib/context.ts";
 
 /**
  * A thread's header listener asks, on mount and reconnect, whether an agent
- * opened a session there while no client showed the thread (design §3.6).
+ * opened a session there while no client showed the thread.
  * After focusing an open, it calls again with `after`, so the server forgets
  * it and no other pane or window focuses it.
  */

@@ -8,7 +8,7 @@ export const PLUGIN_VERSION: string = packageJson.version;
 /**
  * The `status` callback `createReviewApi` receives: which server this is, for
  * `whiteboard_status` (design §3.7). Same keys, in the same order, as
- * upstream Desktop's status (`desktop-server.ts:260-272`); `http.ts` adds
+ * upstream Desktop's status (`desktop-server.ts:260-272`); `api.ts` adds
  * `desktopAvailable`.
  *
  * - `key` is "stable", one of the values the verbatim tool description names.

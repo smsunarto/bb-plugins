@@ -1,16 +1,5 @@
 import type { FSWatcher } from "node:fs";
-import {
-  execFile,
-  exists,
-  mkdir,
-  readFile,
-  realpath,
-  stat,
-  watch,
-  writeFile,
-  writePrivateJsonAtomic,
-} from "../host-io/fs.ts";
-import path from "node:path";
+import { execFile, exists, realpath, stat, watch } from "../host-io/fs.ts";
 
 import {
   type BlobBatchReader,
@@ -28,7 +17,6 @@ import {
   listCommitRange,
   listTrackedFilesAtCommit,
   readFileAtCommit,
-  resolveRepoContext,
   splitGitPatchFiles,
 } from "../host-io/local-vcs.ts";
 import { structuralChangeCounts } from "../../../shared/review-protocol/index.ts";
@@ -40,8 +28,6 @@ import type {
 import { z } from "zod";
 
 import { textIncludesQuote } from "../../../shared/review/evidence.ts";
-import { isMissingFileError } from "../../../shared/node/review/fs-utils.ts";
-import { reviewManagedCheckoutRoot } from "../../../shared/node/review/review-checkout-paths.ts";
 import { ensureReviewPinnedCheckout } from "../host-io/review-head-checkout.ts";
 import { StructuralComparisons } from "./structural-comparisons.ts";
 import { resolveSoftwareMapDiffCounts } from "./software-map-diff-counts.ts";
@@ -63,7 +49,6 @@ import {
   type CoverageMode,
   comparisonCoverage,
 } from "./comparison-coverage.ts";
-import { resourceReference } from "../../../shared/review/document.ts";
 import {
   type Block,
   type FileLineRange,
@@ -72,10 +57,10 @@ import {
   type ReviewTarget,
   type SourcePins,
   anchorPins,
-  elements,
   explicitPins,
   fileLineRangeSchema,
   pinsSchema,
+  resourceReference,
   sourceReferences,
 } from "../../../shared/review/document.ts";
 import { decodeImage } from "./image-decode.ts";
@@ -96,7 +81,6 @@ import {
   type SnapshotSource,
 } from "./store.ts";
 import { traceSchema } from "../../../shared/review/trace-schema.ts";
-import { ReviewWorkspaces } from "./workspaces.ts";
 import {
   EMPTY_SOURCE,
   inspectWorktree,
@@ -155,50 +139,11 @@ interface RepositoryVcs {
 
 /** Local source/resource boundary, including Desktop-only local language context. */
 export class LocalReviewData {
-  private readonly workspaceManager?: ReviewWorkspaces;
-
-  get workspaces(): ReviewWorkspaces {
-    if (!this.workspaceManager)
-      throw new ReviewInputError(
-        "Open this review in Desktop to prepare language workspaces.",
-        409,
-      );
-
-    return this.workspaceManager;
-  }
-
-  currentEnvironmentIssues(snapshot: Snapshot) {
-    if (snapshot.source?.target.kind !== "commits") return [];
-    const { pins } = snapshot.source;
-
-    return this.workspaces.list(snapshot.reviewId).flatMap((environment) => {
-      const side =
-        environment.commit === pins.head
-          ? "head"
-          : environment.commit === pins.base
-            ? "base"
-            : undefined;
-
-      return side && environment.issue ? [{ side, message: environment.issue }] : [];
-    });
-  }
-
-  async environmentIssues(snapshot: Snapshot, retryFailed = false) {
-    const issues: { side: "base" | "head"; message: string }[] = [];
-
-    if (!snapshot.source) return issues;
-    const { pins, target } = snapshot.source;
-
-    const sides: ("base" | "head")[] =
-      target.kind === "commits" && pins.base !== pins.head ? ["head", "base"] : ["head"];
-
-    for (const side of sides) {
-      const context = await this.languageEnvironment(snapshot, side, undefined, retryFailed);
-
-      if (context.issue) issues.push({ side, message: context.issue });
-    }
-
-    return issues;
+  /** What keeps the session's language checkout from being read, by side. */
+  async environmentIssues(snapshot: Snapshot) {
+    if (!snapshot.source) return [];
+    const { issue } = await this.languageEnvironment(snapshot);
+    return issue ? [{ side: "head" as const, message: issue }] : [];
   }
 
   /** Local checkout context for live worktree targets only. */
@@ -216,35 +161,15 @@ export class LocalReviewData {
 
     return undefined;
   }
-  /** Source bytes and the language workspace have independent lifetimes. */
-  async languageEnvironment(
-    snapshot: Snapshot,
-    side: "base" | "head",
-    commit?: string,
-    retryFailed = false,
-    anchor?: SourcePins,
-  ): Promise<ReviewLanguageEnvironment> {
-    // A reference with its own pins borrows that repository's registered
-    // checkout, as live worktree targets do; no pinned checkout is prepared.
-    if (!anchor && snapshot.source?.target.kind === "commits") {
-      const pins = await this.comparison(snapshot.source.pins, commit);
-
-      const environment = await this.workspaces.source(snapshot.reviewId, pins, side, retryFailed);
-
-      return {
-        rootPath:
-          environment.state === "preparing" || environment.state === "pending"
-            ? null
-            : environment.rootPath,
-        identity: environment.generation,
-        issue: environment.issue,
-      };
+  /** The registered checkout a session's language features read. bb prepares
+   * no checkout for pinned commits, so those only have their comparison checked. */
+  async languageEnvironment(snapshot: Snapshot): Promise<ReviewLanguageEnvironment> {
+    if (snapshot.source?.target.kind === "commits") {
+      await this.comparison(snapshot.source.pins);
+      return { rootPath: null, identity: "" };
     }
 
-    // Validate selected commits for both target kinds, but never prepare a live checkout.
-    if (commit && !anchor) await this.comparison(await this.documentPins(snapshot), commit);
-
-    const repositoryId = anchor?.repositoryId ?? snapshot.source?.pins.repositoryId;
+    const repositoryId = snapshot.source?.pins.repositoryId;
 
     if (!repositoryId)
       throw new ReviewInputError("This document has no source pins of its own.", 409);
@@ -286,128 +211,6 @@ export class LocalReviewData {
       : await this.comparison(await this.documentPins(snapshot), commit);
 
     return { snapshot, pins };
-  }
-
-  /** Resolve a native workspace without replacing the selected source with today's HEAD. */
-  async navigatorWorkspace(
-    snapshot: Snapshot,
-    source: {
-      side?: "base" | "head";
-      file?: string;
-      empty?: boolean;
-      commit?: string;
-      anchor?: SourcePins;
-    } = {},
-  ): Promise<{ workspacePath: string; filePath?: string }> {
-    const { pins } = await this.resolveSource(snapshot, source.commit, source.anchor);
-
-    const repository = this.store.repositoryPath(pins.repositoryId);
-    const side = source.side ?? "head";
-
-    const live =
-      !!pins.worktreeRevision && (side === "head" || (source.empty && pins[side] === EMPTY_SOURCE));
-
-    const checkoutSide = pins[side] === EMPTY_SOURCE && source.empty ? "head" : side;
-
-    const ref = pins[checkoutSide];
-
-    if (source.file) checkRelativePath(source.file);
-
-    // Browse the Review's own base/head checkout. The window opens while
-    // preparation may still be installing dependencies beside the source.
-    const rootPath = live
-      ? await realpath(repository)
-      : (await this.workspaces.source(snapshot.reviewId, pins, checkoutSide)).rootPath;
-
-    const context = await resolveRepoContext(repository);
-
-    if (!rootPath || !context)
-      throw new ReviewInputError("Could not open the selected source checkout.", 409);
-
-    if (!live) {
-      const { stdout } = await execFile("git", [
-        "-C",
-        rootPath,
-        "status",
-        "--porcelain",
-        "--untracked-files=no",
-      ]);
-
-      if (stdout.trim())
-        throw new ReviewInputError(
-          "The pinned checkout has local changes, possibly from devfast.prepare. Restore those files before browsing this pinned revision.",
-          409,
-        );
-    }
-
-    // Name the workspace after the repository, not the registered checkout:
-    // a linked worktree's directory is an arbitrary branch slug. This matches
-    // the repository label on Home.
-    const name =
-      context.githubSlug?.split("/").at(-1) ?? path.basename(path.dirname(context.commonDir));
-
-    const workspaceDirectory = path.join(
-      reviewManagedCheckoutRoot(context.commonDir, snapshot.reviewId),
-      "navigator",
-      "workspaces",
-      live ? "worktree" : ref,
-    );
-
-    // VS Code labels a saved workspace by its file name and identifies its
-    // window by the file's path, so the file name is the repository name.
-    const workspacePath = path.join(workspaceDirectory, `${name}.code-workspace`);
-
-    // A native workspace gives VS Code stable restoration, search scope and
-    // editor read-only behavior without changing files in the source checkout.
-    // Keep the preferences VS Code and the user add, carrying them over from a
-    // workspace previously named after the checkout directory. That file stays
-    // in place for any window still open on it.
-    const current = await readWorkspace(workspacePath);
-
-    if (current !== null) {
-      const previous =
-        current ??
-        (await readWorkspace(
-          path.join(workspaceDirectory, `${path.basename(repository)}.code-workspace`),
-        ));
-
-      const title = `${snapshot.title} — ${live ? "Live source" : side === "base" ? "Base source" : "Source"} — Whiteboard`;
-
-      const workspace = previous ?? {
-        folders: [],
-        settings: { "files.readonlyInclude": { "**/*": true } },
-      };
-
-      const next = {
-        ...workspace,
-        folders: [{ path: rootPath, name }, ...workspace.folders.slice(1)],
-        settings: { ...workspace.settings, "window.title": title },
-      };
-
-      if (JSON.stringify(next) !== JSON.stringify(current))
-        await writePrivateJsonAtomic(workspacePath, next);
-    }
-
-    let filePath: string | undefined;
-
-    if (source.file) {
-      if (source.empty) {
-        // Native diffs need a real empty file for an added/deleted side.
-        filePath = path.join(path.dirname(workspacePath), "empty", path.basename(source.file));
-        await mkdir(path.dirname(filePath), { recursive: true });
-        await writeFile(filePath, "", { mode: 0o600 });
-      } else {
-        try {
-          filePath = await localSourcePath(rootPath, source.file);
-        } catch (error) {
-          if (isMissingFileError(error))
-            throw new ReviewInputError("File is unavailable at the selected revision.", 404);
-          throw error;
-        }
-      }
-    }
-
-    return { workspacePath, filePath };
   }
 
   /** A document read that needs default pins; 409 when the document has none. */
@@ -459,16 +262,11 @@ export class LocalReviewData {
     private readonly store: ReviewStore,
     private readonly options: {
       blobReaderIdleTimeoutMs?: number;
-      workspaceDatabase?: string;
-      manageWorkspaces?: boolean;
       watch?: typeof watch;
       /** gh, git and GitHub API access for pull request targets. */
       pullRequests?: PullRequestDeps;
     } = {},
-  ) {
-    if (options.manageWorkspaces !== false)
-      this.workspaceManager = new ReviewWorkspaces(options.workspaceDatabase ?? ":memory:", store);
-  }
+  ) {}
 
   async *structuralChanges({
     reviewId,
@@ -593,7 +391,6 @@ export class LocalReviewData {
     this.coverageCache.clear();
     this.structuralComparisons.close();
     this.closed = true;
-    await this.workspaceManager?.close();
 
     for (const entry of this.worktrees.values())
       for (const watcher of entry.watchers) watcher.close();
@@ -933,7 +730,7 @@ export class LocalReviewData {
     throw new ReviewInputError(
       repository.id
         ? `That checkout has no GitHub remote for ${slug}. Add one, or omit repositoryId.`
-        : `No registered checkout has a GitHub remote for ${slug}. Register a checkout of ${slug} with review_register_repository first, or pass a target.`,
+        : `No registered checkout has a GitHub remote for ${slug}. Register a checkout of ${slug} with whiteboard_session_register_repository first, or pass a target.`,
       404,
     );
   }
@@ -1560,7 +1357,6 @@ export function openLocalReviewStore(
   databasePath: string,
   options: {
     blobReaderIdleTimeoutMs?: number;
-    manageWorkspaces?: boolean;
     watch?: typeof watch;
     pullRequests?: PullRequestDeps;
     scratchpadId?: () => string | undefined;
@@ -1584,10 +1380,7 @@ export function openLocalReviewStore(
   let data: LocalReviewData;
 
   try {
-    data = new LocalReviewData(store, {
-      ...options,
-      workspaceDatabase: `${databasePath}.workspaces`,
-    });
+    data = new LocalReviewData(store, options);
   } catch (error) {
     void store.close();
     throw error;
@@ -1603,30 +1396,4 @@ function pathspecMatches(spec: string, file: { path: string; previousPath?: stri
   return [file.path, file.previousPath].some(
     (path) => path !== undefined && (path === prefix || path.startsWith(prefix + "/")),
   );
-}
-
-/** The parts of a VS Code workspace file the navigator owns; everything else
- * VS Code or the user adds is kept as is. */
-const codeWorkspaceSchema = z.looseObject({
-  folders: z.array(z.json()).default([]),
-  settings: z.record(z.string(), z.json()).default({}),
-});
-
-/** A workspace file's contents, undefined when it does not exist, or null when
- * it is not plain JSON (VS Code accepts comments), which is left untouched. */
-async function readWorkspace(
-  file: string,
-): Promise<z.infer<typeof codeWorkspaceSchema> | null | undefined> {
-  const text = await readFile(file, "utf8").catch((error) => {
-    if (isMissingFileError(error)) return undefined;
-    throw error;
-  });
-
-  if (text === undefined) return undefined;
-
-  try {
-    return codeWorkspaceSchema.safeParse(JSON.parse(text)).data ?? null;
-  } catch {
-    return null;
-  }
 }

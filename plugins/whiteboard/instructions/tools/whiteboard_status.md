@@ -1,0 +1,3 @@
+Report which Whiteboard plugin version and bb instance serve this call. Use it when the user asks which Whiteboard version is running, or to include the version in a bug report. To check what a session can do before authoring, use `whiteboard_session_capabilities`.
+
+Returns JSON: `appVersion` (the Whiteboard plugin version), `channel` ("bb-plugin"), `instanceId` (the bb server's public app URL, or null when none is configured), and `desktopAvailable` (true when called from a bb thread, where sessions open as panel tabs). In bb, `key` is always "stable" and `checkout`, `cliVersion`, `url` and `home` are always null.

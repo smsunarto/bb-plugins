@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, expect, it } from "vitest";
 import type { ReviewProgress } from "../../server/lib/review/review-progress.ts";
 import type { Snapshot } from "../../server/lib/review/store.ts";
-import { ReviewApiClient } from "../../shared/review/client.ts";
+import type { WhiteboardRpcClient } from "../rpc.ts";
 import { ReviewDiffView } from "../review/DiffView.tsx";
 import { ReviewSessionProvider } from "../review/host/review-session.tsx";
 import { ReviewLensesProvider } from "../review/review-lenses.tsx";
@@ -29,23 +29,23 @@ it("marks a lens's base and head ranges, preserves other changed lines and reloa
     lenses: [{ id: "queued", title: "Queued status range", state: "ready", sources, fileCount: 1 }],
   };
   const updates: unknown[] = [];
+  const rpc: Pick<WhiteboardRpcClient, "progress" | "markProgress"> = {
+    progress: async () => progress,
+    markProgress: async (update) => {
+      updates.push(update);
+      progress = {
+        ...progress,
+        files: progress.files.map((file) => ({
+          ...file,
+          viewed: update.viewed ? { base: [[1, 2]], head: [[1, 2]] } : { base: [], head: [] },
+        })),
+      };
+      return progress;
+    },
+  };
   const session = testReviewSession(
     {},
     {
-      request: async (_url, init) => {
-        if (init?.method === "POST") {
-          const update = JSON.parse(String(init.body));
-          updates.push(update);
-          progress = {
-            ...progress,
-            files: progress.files.map((file) => ({
-              ...file,
-              viewed: update.viewed ? { base: [[1, 2]], head: [[1, 2]] } : { base: [], head: [] },
-            })),
-          };
-        }
-        return Response.json(progress);
-      },
       diffView: {
         files: async () => [],
         create: () => ({
@@ -56,7 +56,6 @@ it("marks a lens's base and head ranges, preserves other changed lines and reloa
       },
     },
   );
-  const client = new ReviewApiClient(session.config, session.bridge.request);
   const snapshot: Snapshot = {
     reviewId: "test-session",
     version: 0,
@@ -70,7 +69,7 @@ it("marks a lens's base and head ranges, preserves other changed lines and reloa
   };
   const ui = (
     <ReviewSessionProvider session={session}>
-      <ReviewLensesProvider client={client} snapshot={snapshot}>
+      <ReviewLensesProvider rpc={rpc} snapshot={snapshot}>
         <ReviewDiffView />
       </ReviewLensesProvider>
     </ReviewSessionProvider>
@@ -91,6 +90,7 @@ it("marks a lens's base and head ranges, preserves other changed lines and reloa
   ).toBe("33");
   expect(updates).toEqual([
     {
+      sessionId: "test-session",
       version: 0,
       mode: "structural",
       files: [{ path: "order.ts", fingerprint: "file-fingerprint", sources }],
@@ -115,6 +115,7 @@ it("marks a lens's base and head ranges, preserves other changed lines and reloa
     screen.getByRole("progressbar", { name: "Changed lines viewed" }).getAttribute("aria-valuenow"),
   ).toBe("0");
   expect(updates[1]).toEqual({
+    sessionId: "test-session",
     version: 0,
     mode: "structural",
     files: [{ path: "order.ts", fingerprint: "file-fingerprint", sources }],
@@ -123,34 +124,37 @@ it("marks a lens's base and head ranges, preserves other changed lines and reloa
 });
 
 it("refreshes current progress on generation changes without a version bump and retains historical progress", async () => {
-  const reads: URL[] = [];
+  const reads: Array<{ version?: number; generation?: string }> = [];
+  const rpc: Pick<WhiteboardRpcClient, "progress" | "markProgress"> = {
+    progress: async (input) => {
+      reads.push(input);
+      const fresh = input.generation === "dirty-two";
+      return {
+        files: [
+          {
+            path: "order.ts",
+            fingerprint: fresh ? "new-file" : "old-file",
+            changed: { base: [[0, fresh ? 2 : 1]], head: [[0, fresh ? 2 : 1]] },
+            viewed: fresh ? { base: [], head: [] } : { base: [[0, 1]], head: [[0, 1]] },
+          },
+        ],
+        resolvedSelections: {},
+        lenses: [],
+      };
+    },
+    markProgress: async () => {
+      throw new Error("unused");
+    },
+  };
   const session = testReviewSession(
     {},
     {
-      request: async (url) => {
-        const parsed = new URL(String(url));
-        reads.push(parsed);
-        const fresh = parsed.searchParams.get("generation") === "dirty-two";
-        return Response.json({
-          files: [
-            {
-              path: "order.ts",
-              fingerprint: fresh ? "new-file" : "old-file",
-              changed: { base: [[0, fresh ? 2 : 1]], head: [[0, fresh ? 2 : 1]] },
-              viewed: fresh ? { base: [], head: [] } : { base: [[0, 1]], head: [[0, 1]] },
-            },
-          ],
-          resolvedSelections: {},
-          lenses: [],
-        });
-      },
       diffView: {
         files: async () => [],
         create: () => ({ focus() {}, dispose() {}, onDidError: () => ({ dispose() {} }) }),
       },
     },
   );
-  const client = new ReviewApiClient(session.config, session.bridge.request);
   const snapshot: Snapshot = {
     reviewId: "test-session",
     version: 0,
@@ -164,7 +168,7 @@ it("refreshes current progress on generation changes without a version bump and 
   };
   const ui = (value: Snapshot, generation?: string) => (
     <ReviewSessionProvider session={session}>
-      <ReviewLensesProvider client={client} snapshot={value} sourceGeneration={generation}>
+      <ReviewLensesProvider rpc={rpc} snapshot={value} sourceGeneration={generation}>
         <ReviewDiffView />
       </ReviewLensesProvider>
     </ReviewSessionProvider>
@@ -204,14 +208,9 @@ it("refreshes current progress on generation changes without a version bump and 
         .getAttribute("aria-valuenow"),
     ).toBe("100"),
   );
-  expect(
-    reads.map((url) => ({
-      version: url.searchParams.get("version"),
-      generation: url.searchParams.get("generation"),
-    })),
-  ).toEqual([
-    { version: "0", generation: "dirty-one" },
-    { version: "0", generation: "dirty-two" },
-    { version: "0", generation: null },
+  expect(reads.map(({ version, generation }) => ({ version, generation }))).toEqual([
+    { version: 0, generation: "dirty-one" },
+    { version: 0, generation: "dirty-two" },
+    { version: 0, generation: undefined },
   ]);
 });

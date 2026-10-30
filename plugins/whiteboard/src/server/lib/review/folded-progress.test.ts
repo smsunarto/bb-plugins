@@ -11,10 +11,9 @@ import type {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { coverageProgress, coverageSources } from "../../../shared/review/viewed-coverage.ts";
-import { ReviewApiClient } from "../../../shared/review/client.ts";
 import { foldedChanges } from "./comparison-coverage.ts";
 import { UNCATEGORIZED_LENS_ID } from "../../../shared/review/diff-lenses.ts";
-import { createReviewApi } from "./http.ts";
+import { createReviewApi } from "./api.ts";
 import { LocalReviewData } from "./local-data.ts";
 import type { ReviewProgress } from "./review-progress.ts";
 import { type ReviewProviders, ReviewStore } from "./store.ts";
@@ -277,19 +276,13 @@ async function progressApi() {
     yield { type: "complete", succeeded: records.length, failed: 0 };
   });
 
-  const app = createReviewApi(store, data);
-
-  const client = new ReviewApiClient(
-    { serverUrl: "http://review", token: "token" },
-    async (url, init) => app.request(String(url).replace("http://review/reviews-api", ""), init),
-  );
-
-  return { reviewId, client };
+  return { reviewId, api: createReviewApi({ store, data }) };
 }
 
 it("progress counts folded changes as done, overall, per lens and uncategorized", async () => {
-  const { reviewId, client } = await progressApi();
-  const progress = await client.read<ReviewProgress>(`/${reviewId}/progress`);
+  const { reviewId, api } = await progressApi();
+  const signal = new AbortController().signal;
+  const progress = await api.progress({ reviewId }, { signal });
 
   const lens = (id: string) => resolved(progress, id).sources;
 
@@ -314,18 +307,22 @@ it("progress counts folded changes as done, overall, per lens and uncategorized"
   expect(coverageProgress([file("Cargo.lock")]).state).toBe("folded");
 
   // Viewing every unfolded line reads 100%, with the folded code unopened.
-  const viewed = await client.post<ReviewProgress>(`/${reviewId}/progress`, {
-    mode: "structural",
-    version: store.read(reviewId).version,
-    viewed: true,
-    files: ["src/api.rs", "src/main.rs", "docs/readme.md"].map((path) => ({
-      path,
-      fingerprint: file(path).fingerprint,
-      sources: coverageSources(file(path), file(path).changed).filter(
-        (source) => !(path === "src/api.rs" && source.fromLine > 1),
-      ),
-    })),
-  });
+  const viewed = await api.markProgress(
+    {
+      reviewId,
+      mode: "structural",
+      version: store.read(reviewId).version,
+      viewed: true,
+      files: ["src/api.rs", "src/main.rs", "docs/readme.md"].map((path) => ({
+        path,
+        fingerprint: file(path).fingerprint,
+        sources: coverageSources(file(path), file(path).changed).filter(
+          (source) => !(path === "src/api.rs" && source.fromLine > 1),
+        ),
+      })),
+    },
+    { signal },
+  );
 
   const after = coverageProgress(viewed.files);
   expect(after.remaining).toEqual({ additions: 0, deletions: 0 });

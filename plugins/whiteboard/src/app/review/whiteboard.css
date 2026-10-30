@@ -216,13 +216,11 @@
   }
 }
 
-:where(.review-canvas-root) .review-open-source-tree,
 :where(.review-canvas-root) .review-topbar-icon-button {
   border-radius: var(--chrome-control-radius);
   color: var(--ink-muted);
 }
 
-:where(.review-canvas-root) .review-open-source-tree:hover,
 :where(.review-canvas-root) .review-topbar-icon-button:hover {
   background: var(--well);
   color: var(--ink);

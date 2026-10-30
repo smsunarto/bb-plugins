@@ -1,7 +1,7 @@
 import { useBbNavigate, useRealtime, useRealtimeConnectionState } from "@get-bb/plugin-sdk/app";
 import type { BbNavigate, PluginThreadHeaderActionProps } from "@get-bb/plugin-sdk/app";
 import { useEffect, useLayoutEffect, useRef } from "react";
-import type { PendingOpen } from "../../shared/contracts/api-tunnel.ts";
+import type { PendingOpen } from "../../shared/contracts/rpc.ts";
 import { CHANNELS, openPayload } from "../../shared/contracts/channels.ts";
 import { PANEL_ACTION_ID } from "../../shared/contracts/panel.ts";
 import { type WhiteboardRpcClient, useWhiteboardRpc } from "../rpc.ts";
@@ -23,13 +23,8 @@ function takeFocus(threadId: string, at: number): boolean {
 }
 
 /** Focus `open`'s tab in the pane, and tell the server, so no other pane or visit does. */
-function focusOpen(
-  client: WhiteboardRpcClient,
-  navigate: BbNavigate,
-  threadId: string,
-  open: PendingOpen,
-): void {
-  client.claimOpen({ threadId, after: open.at }).catch(() => {});
+function focusOpen(client: WhiteboardRpcClient, navigate: BbNavigate, open: PendingOpen): void {
+  client.claimOpen({ after: open.at }).catch(() => {});
   navigate.openThreadPanel({
     actionId: PANEL_ACTION_ID,
     title: open.title,
@@ -51,7 +46,7 @@ function focusOpen(
  */
 export function OpenListener({ threadId, isCompactViewport }: PluginThreadHeaderActionProps): null {
   const navigate = useBbNavigate();
-  const client = useWhiteboardRpc();
+  const client = useWhiteboardRpc(threadId);
   const connected = useRealtimeConnectionState() === "connected";
   // What the pane shows, as committed, so a claim that lands after the pane
   // moved to another thread, turned compact or unmounted focuses nothing and
@@ -69,10 +64,10 @@ export function OpenListener({ threadId, isCompactViewport }: PluginThreadHeader
   useEffect(() => {
     if (isCompactViewport || !connected) return;
     const focusWaiting = async () => {
-      const { open } = await client.claimOpen({ threadId, after: focused.get(threadId) });
+      const { open } = await client.claimOpen({ after: focused.get(threadId) });
       const now = shown.current;
       if (!open || now?.threadId !== threadId || now.isCompactViewport) return;
-      if (takeFocus(threadId, open.at)) focusOpen(client, latestNavigate.current, threadId, open);
+      if (takeFocus(threadId, open.at)) focusOpen(client, latestNavigate.current, open);
     };
     // A failed claim leaves the tab where it is, as before this listener.
     focusWaiting().catch(() => {});
@@ -80,7 +75,7 @@ export function OpenListener({ threadId, isCompactViewport }: PluginThreadHeader
   useRealtime(CHANNELS.open, (payload) => {
     const event = openPayload.safeParse(payload);
     if (!event.success || event.data.threadId !== threadId || isCompactViewport) return;
-    if (takeFocus(threadId, event.data.at)) focusOpen(client, navigate, threadId, event.data);
+    if (takeFocus(threadId, event.data.at)) focusOpen(client, navigate, event.data);
   });
   return null;
 }

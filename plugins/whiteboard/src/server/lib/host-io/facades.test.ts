@@ -17,7 +17,6 @@ import { invokeHost } from "./client.ts";
 import * as hostFs from "./fs.ts";
 import * as vcs from "./local-vcs.ts";
 import { defaultPullRequestDeps, githubRemotes } from "./pull-request.ts";
-import { resolveReviewBranchLinks } from "./review-branch-links.ts";
 import { ensureReviewPinnedCheckout } from "./review-head-checkout.ts";
 import { resolveReviewStackLayers } from "./review-stack.ts";
 import { type GitFixture, gitFixture } from "./testing/git-fixture.ts";
@@ -387,26 +386,6 @@ describe("the other host modules", () => {
       ]);
     } finally {
       repo.git("remote", "remove", "upstream");
-    }
-  });
-
-  it("review-branch-links runs on the host; an injected runner runs here", async () => {
-    repo.git("remote", "add", "origin", "https://github.com/Owner/Name.git");
-    repo.git("update-ref", "refs/remotes/origin/main", repo.head);
-    try {
-      expect(
-        await resolveReviewBranchLinks({ rootPath: repo.root, baseRef: "main", headRef: "topic" }),
-      ).toEqual({ baseUrl: "https://github.com/Owner/Name/tree/main", headUrl: null });
-      const before = client.calls.length;
-      expect(
-        await resolveReviewBranchLinks(
-          { rootPath: repo.root, baseRef: "main", headRef: "topic" },
-          async () => ({ ok: false, stdout: "", stderr: "" }),
-        ),
-      ).toEqual({ baseUrl: null, headUrl: null });
-      expect(client.calls.length).toBe(before);
-    } finally {
-      repo.git("remote", "remove", "origin");
     }
   });
 

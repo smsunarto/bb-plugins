@@ -8,7 +8,6 @@ export const HOST_MODULES = [
   "worktree-source",
   "pull-request",
   "review-stack",
-  "review-branch-links",
   "review-head-checkout",
   "fs",
 ] as const;
@@ -44,7 +43,6 @@ export const HOST_FUNCTION_NAMES = {
   ],
   "pull-request": ["run"],
   "review-stack": ["resolveReviewStackLayers"],
-  "review-branch-links": ["resolveReviewBranchLinks"],
   "review-head-checkout": ["ensureReviewPinnedCheckout"],
   fs: [
     "realpath",

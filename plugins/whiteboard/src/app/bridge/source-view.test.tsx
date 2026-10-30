@@ -1,11 +1,23 @@
 // @vitest-environment jsdom
+import { experimental_PluginRpcCallError as PluginRpcCallError } from "@get-bb/plugin-sdk/app";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { LiveSnapshot } from "../../server/lib/review/store.ts";
-import { ReviewApiClient } from "../../shared/review/client.ts";
+import { fakeLiveRead } from "../live-test-utils.ts";
 import { ApiCanvas } from "../review/api-canvas.tsx";
 import { createDocumentLoader } from "../review/api-document.tsx";
 import { testReviewBridge } from "../review/review-session-test-utils.tsx";
+
+/** The canvas's RPC client and live session read. */
+const canvas = vi.hoisted(() => ({
+  rpc: {} as object,
+  live: undefined as { read: unknown } | undefined,
+}));
+vi.mock("../rpc.ts", () => ({ useWhiteboardRpc: () => canvas.rpc }));
+vi.mock("../live.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../live.ts")>()),
+  useLiveRead: () => canvas.live!.read,
+}));
 
 vi.mock("../review/App.tsx", () => ({
   App: () => <div>Canvas ready</div>,
@@ -29,76 +41,65 @@ const snapshot: LiveSnapshot = {
 };
 
 it("publishes the latest authored source version when pins do not change", async () => {
-  type FollowSnapshot = LiveSnapshot & { activity: { workingCount: number; expiresAt: null } };
-  let push: ((value: FollowSnapshot) => Promise<void>) | undefined;
-  vi.spyOn(ReviewApiClient.prototype, "follow").mockImplementation(async (_id, signal, onValue) => {
-    push = async (value) => {
-      await onValue(value as never);
-    };
-    await new Promise<void>((resolve) =>
-      signal.addEventListener("abort", () => resolve(), { once: true }),
-    );
+  const live = fakeLiveRead<unknown>();
+  canvas.live = live;
+  canvas.rpc = {
+    commits: async () => [],
+    progress: async () => ({ files: [], lenses: [], resolvedSelections: {} }),
+  };
+  const following = (version: number) => ({
+    ...snapshot,
+    version,
+    activity: { workingCount: 0, expiresAt: null },
+    coverageRevision: 0,
   });
-  const bridge = testReviewBridge(
-    {},
-    {
-      request: async (url) =>
-        Response.json(
-          String(url).includes("/commits?")
-            ? []
-            : {
-                files: [],
-                lenses: [],
-                resolvedSelections: {},
-              },
-        ),
-    },
-  );
   const setSourceView = vi.fn();
   render(
-    <ApiCanvas content={{ kind: "api", reviewId: snapshot.reviewId, bridge, setSourceView }} />,
+    <ApiCanvas
+      content={{
+        kind: "api",
+        reviewId: snapshot.reviewId,
+        bridge: testReviewBridge(),
+        setSourceView,
+      }}
+    />,
   );
-  await waitFor(() => expect(typeof push).toBe("function"));
-  await act(async () => push!({ ...snapshot, activity: { workingCount: 0, expiresAt: null } }));
+  await waitFor(() => expect(live.followers()).toBe(1));
+  await act(async () => live.push(following(0)));
   await screen.findByText("Canvas ready");
   expect(setSourceView.mock.calls.at(-1)).toEqual([
     { reviewId: "test-session", kind: "current" },
     { reviewId: "test-session", version: 0, generation: "dirty-one" },
   ]);
-  await act(async () =>
-    push!({ ...snapshot, version: 1, activity: { workingCount: 0, expiresAt: null } }),
+  await act(async () => live.push(following(1)));
+  await waitFor(() =>
+    expect(setSourceView.mock.calls.at(-1)).toEqual([
+      { reviewId: "test-session", kind: "current" },
+      { reviewId: "test-session", version: 1, generation: "dirty-one" },
+    ]),
   );
-  expect(setSourceView.mock.calls.at(-1)).toEqual([
-    { reviewId: "test-session", kind: "current" },
-    { reviewId: "test-session", version: 1, generation: "dirty-one" },
-  ]);
 });
 
 it("loads current map counts by generation and historical map counts by version", async () => {
-  const reads: URL[] = [];
-  const bridge = testReviewBridge(
-    {},
-    {
-      request: async (url) => {
-        const parsed = new URL(String(url));
-        if (parsed.pathname.endsWith("/commits")) return Response.json([]);
-        reads.push(parsed);
-        return Response.json({
-          side: "head",
-          elements: [],
-          relationships: [],
-          countsByElementPath: {
-            order: {
-              additions: parsed.searchParams.get("generation") === "dirty-two" ? 2 : 1,
-              deletions: 1,
-            },
-          },
-          unmappedByElementPath: {},
-        });
-      },
+  const reads: Array<{ version?: number; generation?: string }> = [];
+  const loader = createDocumentLoader({
+    commits: async () => [],
+    resource: async () => {
+      throw new Error("no resources in this document");
     },
-  );
-  const loader = createDocumentLoader(new ReviewApiClient(bridge.config, bridge.request));
+    map: async (input) => {
+      reads.push(input);
+      return {
+        side: "head",
+        elements: [],
+        relationships: [],
+        countsByElementPath: {
+          order: { additions: input.generation === "dirty-two" ? 2 : 1, deletions: 1 },
+        },
+        unmappedByElementPath: {},
+      } as never;
+    },
+  });
   const withMap = {
     ...snapshot,
     document: [{ type: "software_map" as const, id: "map-block", mapVersionId: "map-v1" }],
@@ -119,17 +120,95 @@ it("loads current map counts by generation and historical map counts by version"
       additions: 1,
       deletions: 1,
     });
-    expect(
-      reads.map((url) => ({
-        version: url.searchParams.get("version"),
-        generation: url.searchParams.get("generation"),
-      })),
-    ).toEqual([
-      { version: "0", generation: "dirty-one" },
-      { version: "0", generation: "dirty-two" },
-      { version: "0", generation: null },
+    expect(reads.map(({ version, generation }) => ({ version, generation }))).toEqual([
+      { version: 0, generation: "dirty-one" },
+      { version: 0, generation: "dirty-two" },
+      { version: 0, generation: undefined },
     ]);
   } finally {
     loader.dispose();
   }
+});
+
+it("applies snapshots in delivery order, skipping ones a newer answer replaced mid-load", async () => {
+  const live = fakeLiveRead<unknown>();
+  canvas.live = live;
+  const commitReads: Array<() => void> = [];
+  canvas.rpc = {
+    commits: () => new Promise<never[]>((resolve) => commitReads.push(() => resolve([]))),
+    progress: async () => ({ files: [], lenses: [], resolvedSelections: {} }),
+  };
+  // Each version pins a new head, so its document loads its own commits.
+  const at = (version: number) => ({
+    ...snapshot,
+    version,
+    source: { ...snapshot.source!, pins: { ...snapshot.source!.pins, head: `h${version}` } },
+    activity: { workingCount: 0, expiresAt: null },
+    coverageRevision: 0,
+  });
+  const setSourceView = vi.fn();
+  render(
+    <ApiCanvas
+      content={{
+        kind: "api",
+        reviewId: snapshot.reviewId,
+        bridge: testReviewBridge(),
+        setSourceView,
+      }}
+    />,
+  );
+  await waitFor(() => expect(live.followers()).toBe(1));
+  await act(async () => live.push(at(1)));
+  await waitFor(() => expect(commitReads).toHaveLength(1));
+  await act(async () => {
+    live.push(at(2));
+    live.push(at(3));
+  });
+  await act(async () => commitReads[0]!());
+  await waitFor(() => expect(commitReads).toHaveLength(2));
+  await act(async () => commitReads[1]!());
+  await waitFor(() => expect(setSourceView).toHaveBeenCalledTimes(2));
+  expect(setSourceView.mock.calls.map(([, view]) => view.version)).toEqual([1, 3]);
+});
+
+it("names a refused session, and says a dropped read is reconnecting until it answers", async () => {
+  const live = fakeLiveRead<unknown>();
+  canvas.live = live;
+  canvas.rpc = {
+    commits: async () => [],
+    progress: async () => ({ files: [], lenses: [], resolvedSelections: {} }),
+  };
+  render(
+    <ApiCanvas
+      content={{ kind: "api", reviewId: snapshot.reviewId, bridge: testReviewBridge() }}
+    />,
+  );
+  await waitFor(() => expect(live.followers()).toBe(1));
+  await act(async () =>
+    live.fail(new PluginRpcCallError({ code: "not_found", message: "Session not found." })),
+  );
+  expect(screen.getByRole("status").textContent).toBe("Session not found.");
+
+  await act(async () =>
+    live.push({
+      ...snapshot,
+      activity: { workingCount: 0, expiresAt: null },
+      coverageRevision: 0,
+    }),
+  );
+  await screen.findByText("Canvas ready");
+  await act(async () =>
+    live.fail(new PluginRpcCallError({ code: "conflict", message: "Host offline." })),
+  );
+  expect(screen.getByRole("status").textContent).toBe(
+    "Connection lost. Reconnecting… Host offline.",
+  );
+  await act(async () =>
+    live.push({
+      ...snapshot,
+      activity: { workingCount: 0, expiresAt: null },
+      coverageRevision: 0,
+    }),
+  );
+  await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
 });

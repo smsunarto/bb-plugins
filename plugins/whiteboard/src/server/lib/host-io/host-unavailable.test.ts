@@ -157,7 +157,6 @@ describe("creating a Whiteboard from a pull request URL across hosts", () => {
 
   const open = () =>
     openLocalReviewStore(path.join(directory, "reviews.db"), {
-      manageWorkspaces: false,
       pullRequests: {
         ...defaultPullRequestDeps,
         run: async (file, args, options) =>

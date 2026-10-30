@@ -10,7 +10,7 @@ export const markdown = {
     pins: sourcePinsSchema
       .optional()
       .describe(
-        "Repository and commits this block's review-source links resolve against, instead of the document's pins.",
+        "Repository and commits this block's review-source: links resolve against, instead of the session's pins.",
       ),
   }),
 } as const;

@@ -1,13 +1,13 @@
 import {
   type ReviewCanvasContent,
-  parseReviewStackResponse,
   resolveReviewSourceView,
 } from "../../shared/review-protocol/index.ts";
 import { createContext, memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ActivitySnapshot } from "../../server/lib/review/activity.ts";
-import { ReviewApiClient, ReviewApiError } from "../../shared/review/client.ts";
 import type { LiveSnapshot } from "../../server/lib/review/store.ts";
+import { followLive, isTerminalRefusal, useLiveRead } from "../live.ts";
+import { useWhiteboardRpc } from "../rpc.ts";
 import { ApiDocument, type ApiDocumentData, createDocumentLoader } from "./api-document.tsx";
 import { retainedTrace } from "./api-trace.ts";
 import { App } from "./App.tsx";
@@ -54,15 +54,16 @@ const message = (cause: unknown) => (cause instanceof Error ? cause.message : St
 
 export function ApiCanvas({
   content,
+  threadId,
   findHost,
 }: {
   content: ApiContent;
+  /** The panel's thread; absent on the Home navPanel. */
+  threadId?: string;
   findHost?: ReviewFindHost;
 }) {
-  const client = useMemo(
-    () => new ReviewApiClient(content.bridge.config, content.bridge.request),
-    [content.bridge],
-  );
+  const rpc = useWhiteboardRpc(threadId);
+  const live = useLiveRead("liveSession", { threadId, sessionId: content.reviewId });
 
   const [version, setVersion] = useState(content.version);
   const [coverageRevision, setCoverageRevision] = useState(0);
@@ -78,7 +79,7 @@ export function ApiCanvas({
   const [error, setError] = useState<string>();
   useEffect(() => {
     const abort = new AbortController();
-    const loader = createDocumentLoader(client);
+    const loader = createDocumentLoader(rpc);
     setData(undefined);
     setActivity(undefined);
     setCursor(null);
@@ -87,13 +88,16 @@ export function ApiCanvas({
     const cursorMemory: CursorMemory = {};
     const lensMemory: CursorMemory = {};
 
+    // Each load's place in delivery order: a slower older load never replaces a newer one.
+    let latestLoad = 0;
     const show = async (snapshot: LiveSnapshot) => {
+      const load = ++latestLoad;
       const next = await loader.load(
         snapshot,
         version === undefined ? snapshot.source?.pins.worktreeRevision : undefined,
       );
 
-      if (abort.signal.aborted) return;
+      if (abort.signal.aborted || load !== latestLoad) return;
 
       // Native source widgets must use these pins on their first mount.
       const key = JSON.stringify([
@@ -118,27 +122,27 @@ export function ApiCanvas({
     void (async () => {
       if (version !== undefined) {
         try {
-          await show(
-            await client.read(`/${content.reviewId}?full=true&version=${version}`, abort.signal),
-          );
+          const snapshot = await rpc.sessionVersion({ sessionId: content.reviewId, version });
+          if (abort.signal.aborted) return;
+          await show(snapshot);
         } catch (cause) {
           if (!abort.signal.aborted) setError(message(cause));
         }
       }
 
-      // The stream repeats a version whenever activity moves; the document
-      // reloads only when what it reads from changed.
+      // The live read answers the same version again whenever activity moves;
+      // the document reloads only when what it reads from changed.
       const shownKey = (snapshot: LiveSnapshot) =>
         JSON.stringify([snapshot.version, snapshot.source?.pins.worktreeRevision, snapshot.live]);
       let shownVersion: string | undefined;
-      await client.follow<LiveSnapshot & { activity: ActivitySnapshot; coverageRevision?: number }>(
-        content.reviewId,
+      followLive(
+        live,
         abort.signal,
         async (snapshot) => {
           setActivity(snapshot.activity);
           setCursor((current) => nextCursor(current, cursorMemory, snapshot));
           setLensCursor((current) => nextCursor(current, lensMemory, snapshot, "lenses"));
-          setCoverageRevision(snapshot.coverageRevision ?? 0);
+          setCoverageRevision(snapshot.coverageRevision);
 
           if (version !== undefined) return;
 
@@ -152,10 +156,10 @@ export function ApiCanvas({
             await show(snapshot);
             shownVersion = shownKey(snapshot);
           } catch (cause) {
-            // A failed resource or source fetch is a document problem. The
-            // stream and the activity signal are still healthy, so do not
-            // reconnect or report unknown activity.
-            if (!abort.signal.aborted) setError(String(cause));
+            // A failed resource or source read is a document problem. The
+            // live read and the activity signal are still healthy, so do not
+            // report unknown activity.
+            if (!abort.signal.aborted) setError(message(cause));
           }
         },
         (cause) => {
@@ -183,7 +187,7 @@ export function ApiCanvas({
               : current,
           );
 
-          if (cause instanceof ReviewApiError && [401, 403, 404].includes(cause.status)) {
+          if (isTerminalRefusal(cause)) {
             setError(cause.message);
 
             return;
@@ -198,7 +202,7 @@ export function ApiCanvas({
       abort.abort();
       loader.dispose();
     };
-  }, [client, content.reviewId, version]);
+  }, [rpc, live, content.reviewId, version]);
 
   const nativeSources = useMemo(
     () => ({
@@ -226,17 +230,16 @@ export function ApiCanvas({
     };
 
     const session = createReviewSession(bridge, {
-      jsonReview: {
-        id: content.reviewId,
-        version: () => dataRef.current?.snapshot.version,
-      },
+      rpc,
+      sessionId: content.reviewId,
+      version: () => dataRef.current?.snapshot.version,
     });
 
     session.softwareMapData = (model) =>
       [...(dataRef.current?.maps.values() ?? [])].find((map) => map === model)?.pinnedData;
 
     return session;
-  }, [content.bridge, content.reviewId, nativeSources]);
+  }, [content.bridge, content.reviewId, nativeSources, rpc]);
 
   const session = useMemo(() => {
     if (!data) return baseSession;
@@ -256,9 +259,7 @@ export function ApiCanvas({
         pullRequestUrl: snapshot.origin?.pullRequestUrl,
         traces: new Map([...data.traces].map(([id, trace]) => [id, retainedTrace(id, trace)])),
         listVersions: async () => {
-          const history = await client.read<{ version: number; createdAt: string }[]>(
-            `/${content.reviewId}/history`,
-          );
+          const history = await rpc.history({ sessionId: content.reviewId });
 
           return history.map((item) => ({
             revision: String(item.version),
@@ -266,12 +267,10 @@ export function ApiCanvas({
             isCurrent: item.version === snapshot.version,
           }));
         },
-        stack: async (signal: AbortSignal) =>
-          parseReviewStackResponse(
-            await client.read(`/${snapshot.reviewId}/stack?version=${snapshot.version}`, signal),
-          ).layers,
+        stack: async () =>
+          (await rpc.stack({ sessionId: snapshot.reviewId, version: snapshot.version })).layers,
         dismiss: async () => {
-          await client.post("/commands", {
+          await rpc.command({
             commandId: crypto.randomUUID(),
             operation: {
               type: "attention",
@@ -282,7 +281,7 @@ export function ApiCanvas({
         },
       },
     };
-  }, [baseSession, client, content.reviewId, data, version]);
+  }, [baseSession, rpc, content.reviewId, data, version]);
 
   useEffect(() => {
     if (data) content.bridge.ready();
@@ -309,7 +308,7 @@ export function ApiCanvas({
     <ReviewSessionProvider session={session}>
       <DocumentData.Provider value={data}>
         <ReviewLensesProvider
-          client={client}
+          rpc={rpc}
           snapshot={data.snapshot}
           coverageRevision={coverageRevision}
           sourceGeneration={

@@ -30,5 +30,5 @@ export const diffrExecutable: typeof upstream.diffrExecutable = () => lastProbed
 /** Upstream's message, naming the probed executable. */
 export const diffrMissingError: typeof upstream.diffrMissingError = () =>
   new Error(
-    `Cannot find diffr at ${diffrExecutable()}. Review Desktop bundles it at bin/diffr under its runtime; in a checkout, run \`pnpm --filter @dev.fast/review ensure:diffr\` or install diffr on PATH, or set REVIEW_DIFFR_BINARY to its executable.`,
+    `Cannot find diffr at ${diffrExecutable()}. Install diffr on the PATH of the bb host that holds the checkout, or set REVIEW_DIFFR_BINARY there to its executable.`,
   );

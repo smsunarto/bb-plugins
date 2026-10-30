@@ -1,16 +1,13 @@
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { ACTIVITY_TTL_MS } from "./activity.ts";
-import { type AuthoringTool, callAuthoringTool } from "./agent-client.ts";
-import { ReviewApiClient } from "../../../shared/review/client.ts";
-import { createReviewApi } from "./http.ts";
+import { createReviewApi } from "./api.ts";
+import { LocalReviewData } from "./local-data.ts";
 import { type ReviewProviders, ReviewStore } from "./store.ts";
 
 const pins = { repositoryId: "repo", base: "base", head: "head" };
@@ -47,28 +44,14 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-it("enforces session ownership through the tool adapter while allowing reads and reader attention", async () => {
-  const api = createReviewApi(a);
-
-  const client = new ReviewApiClient(
-    { serverUrl: "http://review.test", token: "test" },
-    async (url, init) => api.request(url.replace("/reviews-api", ""), init),
-  );
+it("enforces session ownership through the operations while allowing reads and reader attention", async () => {
+  const api = createReviewApi({ store: a, data: new LocalReviewData(a) });
+  const signal = new AbortController().signal;
 
   const leaseId = randomUUID(),
     other = randomUUID();
 
-  const tools = await client.read<AuthoringTool[]>("/authoring");
-
-  await callAuthoringTool(
-    client,
-    tools.find((tool) => tool.name === "review_activity")!,
-    {
-      reviewId,
-      action: "begin",
-      leaseId,
-    },
-  );
+  await api.activity({ reviewId, action: "begin", leaseId });
   expect(() => b.activity.update(reviewId, { action: "begin", leaseId: other })).toThrow(
     /another session/,
   );
@@ -104,23 +87,19 @@ it("enforces session ownership through the tool adapter while allowing reads and
   const input = {
     commandId: randomUUID(),
     leaseId,
-    reviewId,
-    edit: {
-      type: "insert",
-      content: { type: "markdown", markdown: "Owned edit" },
+    operation: {
+      type: "edit" as const,
+      reviewId,
+      edit: {
+        type: "insert" as const,
+        content: { type: "markdown" as const, markdown: "Owned edit" },
+      },
     },
   };
 
-  await callAuthoringTool(
-    client,
-    tools.find((tool) => tool.name === "review_edit")!,
-    input,
-  );
-  await callAuthoringTool(
-    client,
-    tools.find((tool) => tool.name === "review_edit")!,
-    input,
-  );
+  await api.command(input, { signal });
+  // A retried command answers its first receipt and writes nothing more.
+  await api.command(input, { signal });
   expect(b.read(reviewId)).toMatchObject({
     version: 1,
     document: [{ markdown: "Owned edit" }],

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * "Add to chat" in bb: the copy-context route (http.ts) answers this beside
+ * "Add to chat" in bb: the copyContext operation (api.ts) answers this beside
  * upstream's clipboard text, and the panel (agent-handoff.ts) puts `quote` in
  * the composer with a pill for the session. The pill's item id is the only
  * thing that reaches the server again, at send (session-mention.ts).

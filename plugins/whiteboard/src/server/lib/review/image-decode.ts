@@ -46,7 +46,7 @@ export async function decodeImage(bytes: Uint8Array): Promise<Buffer> {
   // Electron's Linux GLib conflicts with Sharp's bundled native library.
   if (process.platform === "linux" && process.versions.electron)
     throw new ReviewInputError(
-      "Image uploads and imports are unavailable in Review Desktop on Linux.",
+      "Image uploads and imports are unavailable while the bb server runs inside Electron on Linux.",
     );
   try {
     const input = Buffer.from(bytes);

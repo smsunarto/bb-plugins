@@ -18,20 +18,37 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { setLocalVcsCommandObserver } from "../../../shared/node/local-vcs/index.ts";
-import type { JsonValue } from "../../../shared/review-protocol/index.ts";
-import { Hono } from "hono";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
+import { copyContextInput } from "../../../shared/contracts/rpc.ts";
+import type { AgentSelection } from "../../../shared/review/agent-selection.ts";
 import { selectSource } from "../../../shared/review/lens-selection.ts";
-import { type AuthoringTool, ToolText, callAuthoringTool } from "./agent-client.ts";
-import { ReviewApiClient } from "../../../shared/review/client.ts";
 import type { Pins } from "../../../shared/review/document.ts";
-import { createReviewApi } from "./http.ts";
-import { openLocalReviewStore } from "./local-data.ts";
+import { type CommandInput, type DiffInput, createReviewApi } from "./api.ts";
+import { openLocalReviewStore, uploadSchema } from "./local-data.ts";
 
 let directory: string, repository: string, database: string, pins: Pins;
 
 let local: ReturnType<typeof openLocalReviewStore>;
+
+const signal = new AbortController().signal;
+
+type ReviewApi = ReturnType<typeof createReviewApi>;
+
+/** The operations over this test's store, as the engine builds them. */
+const reviewApi = (deps: Omit<Parameters<typeof createReviewApi>[0], "store" | "data"> = {}) =>
+  createReviewApi({ store: local.store, data: local.data, ...deps });
+
+/** One store command through the operation, with a fresh command ID. */
+const execute = (api: ReviewApi, operation: CommandInput["operation"], open?: boolean) =>
+  api.command({ commandId: randomUUID(), operation }, { signal, open });
+
+/** A diff read's patch text. */
+function patchText(diff: Awaited<ReturnType<ReviewApi["diff"]>>): string {
+  if (diff.format !== "patch") throw new Error(`Expected a patch, got ${diff.format}.`);
+  return diff.text;
+}
 
 const command = <Operation>(operation: Operation) => ({
   commandId: randomUUID(),
@@ -173,45 +190,36 @@ it("reads, resolves and retires a reference at its own pins in another repositor
     }),
   ).rejects.toThrow(/resolved commit IDs/);
 
-  const app = createReviewApi(local.store, local.data);
-  const anchor = `repositoryId=${own.repositoryId}&head=${own.head}`;
+  const api = reviewApi();
 
-  expect(
-    await (await app.request(`/${reviewId}/file?side=head&file=lib.ts&${anchor}`)).json(),
-  ).toMatchObject({
+  expect(await api.file({ reviewId, side: "head", file: "lib.ts", ...own })).toMatchObject({
     commit: own.head,
     text: "export const other = 1;\nexport const more = 2;\n",
   });
-  expect(
-    await (await app.request(`/${reviewId}/file?side=head&file=${source.file}`)).json(),
-  ).toMatchObject({ commit: pins.head });
-  expect(await (await app.request(`/${reviewId}/tree?side=head&${anchor}`)).json()).toEqual([
+  expect(await api.file({ reviewId, side: "head", file: source.file })).toMatchObject({
+    commit: pins.head,
+  });
+  expect(await api.tree({ reviewId, side: "head", ...own })).toEqual([
     { path: "lib.ts", kind: "file" },
   ]);
-  expect(
-    (await app.request(`/${reviewId}/file?side=head&file=lib.ts&head=${own.head}`)).status,
-  ).toBe(400);
-
-  const quoted = await app.request(`/${reviewId}/source`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      source: {
-        side: "head",
-        file: "lib.ts",
-        fromLine: 2,
-        toLine: 2,
-        pins: own,
-      },
-    }),
+  await expect(
+    api.file({ reviewId, side: "head", file: "lib.ts", head: own.head }),
+  ).rejects.toMatchObject({
+    status: 400,
+    message: "Reading at explicit pins needs both repositoryId and head.",
   });
 
-  expect(await quoted.json()).toMatchObject({
+  expect(
+    await api.source({
+      reviewId,
+      source: { side: "head", file: "lib.ts", fromLine: 2, toLine: 2, pins: own },
+    }),
+  ).toMatchObject({
     commit: own.head,
     text: "export const more = 2;",
   });
 
-  const progress = await (await app.request(`/${reviewId}/progress?mode=textual`)).json();
+  const progress = await api.progress({ reviewId, mode: "textual" }, { signal });
 
   expect(
     progress.resolvedSelections[
@@ -223,7 +231,7 @@ it("reads, resolves and retires a reference at its own pins in another repositor
     { file: "lib.ts", side: "head", fromLine: 1, toLine: 2 },
   ]);
   // The other repository's file is not one of this review's changed files.
-  expect(progress.files.map((file: { path: string }) => file.path)).not.toContain("lib.ts");
+  expect(progress.files.map((file) => file.path)).not.toContain("lib.ts");
 
   // The reference keeps its repository registered until it is gone.
   local.store.unregisterRepository(own.repositoryId);
@@ -238,111 +246,39 @@ it("reads, resolves and retires a reference at its own pins in another repositor
   expect(local.store.read(reviewId).staleSources).toBeUndefined();
 });
 
-it("resolves saved branch names and fork links for the requested review version", async () => {
-  git("remote", "add", "origin", "https://github.com/devdotfast/review.git");
-  git("remote", "add", "fork", "git@github.com:contributor/review.git");
-  git("update-ref", "refs/remotes/origin/main", pins.base);
-  git("update-ref", "refs/remotes/fork/feature", pins.head);
-  const reviewId = randomUUID();
-
-  const saved = {
-    reviewId,
-    title: "Branch labels",
-    pins,
-    document: [],
-    createdAt: new Date().toISOString(),
-  };
-
-  const first = await local.store.importVersion({
-    ...saved,
-    origin: { baseRef: "main", branch: "feature", revision: "first" },
-  });
-
-  await local.store.importVersion({
-    ...saved,
-    origin: { baseRef: "main", branch: "local-work", revision: "second" },
-  });
-  const app = createReviewApi(local.store, local.data);
-  const current = await app.request(`/${reviewId}/branch-links`);
-  expect(current.status).toBe(200);
-  expect(await current.json()).toEqual({
-    ok: true,
-    baseRef: "main",
-    headRef: "local-work",
-    baseUrl: "https://github.com/devdotfast/review/tree/main",
-    headUrl: null,
-  });
-
-  const historical = await app.request(`/${reviewId}/branch-links?version=${first.version}`);
-
-  expect(historical.status).toBe(200);
-  expect(await historical.json()).toEqual({
-    ok: true,
-    baseRef: "main",
-    headRef: "feature",
-    baseUrl: "https://github.com/devdotfast/review/tree/main",
-    headUrl: "https://github.com/contributor/review/tree/feature",
-  });
-  const missing = await app.request(`/${randomUUID()}/branch-links`);
-  expect(missing.status).toBe(404);
-});
-
-type OpenDesktop = NonNullable<Parameters<typeof createReviewApi>[2]>;
-
-const postJson = (app: Hono, route: string, body: JsonValue) =>
-  app.request(route, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+type OpenDesktop = NonNullable<Parameters<typeof createReviewApi>[0]["open"]>;
 
 it("opens a created review in Desktop unless the author opts out", async () => {
   const opened: string[] = [];
 
-  const app = createReviewApi(local.store, local.data, async ({ reviewId }) => {
-    opened.push(reviewId);
+  const api = reviewApi({
+    open: async ({ reviewId }) => {
+      opened.push(reviewId);
 
-    return { softwareMapEnabled: true };
+      return { softwareMapEnabled: true };
+    },
   });
 
-  const shown = await postJson(
-    app,
-    "/commands",
-    command({ type: "create", source: "pins", title: "Shown", pins }),
-  );
+  const shownReview = await execute(api, { type: "create", source: "pins", title: "Shown", pins });
 
-  expect(shown.status).toBe(200);
-  const shownReview = await shown.json();
   expect(shownReview).toMatchObject({
     opened: true,
     softwareMapEnabled: true,
   });
   expect(opened).toEqual([shownReview.reviewId]);
 
-  const background = command({
-    type: "create",
-    source: "pins",
-    title: "Background",
-    pins,
-    open: false,
-  });
+  const background = {
+    commandId: randomUUID(),
+    operation: { type: "create", source: "pins", title: "Background", pins },
+  } satisfies CommandInput;
 
-  const quiet = await postJson(app, "/commands", background);
+  const quietReview = await api.command(background, { signal, open: false });
 
-  expect(quiet.status).toBe(200);
-  const quietReview = await quiet.json();
   expect(quietReview).toMatchObject({ opened: false });
   expect(opened).toEqual([shownReview.reviewId]);
 
   // Opening is not part of the saved command: a retry may choose to show it.
-  const { open: _open, ...retried } = background.operation;
-
-  const retry = await postJson(app, "/commands", {
-    ...background,
-    operation: retried,
-  });
-
-  expect(await retry.json()).toMatchObject({
+  expect(await api.command(background, { signal })).toMatchObject({
     reviewId: quietReview.reviewId,
     opened: true,
   });
@@ -352,30 +288,32 @@ it("opens a created review in Desktop unless the author opts out", async () => {
 it("opens the PR's existing review that create returns instead of a new one", async () => {
   const opened: string[] = [];
 
-  const app = createReviewApi(local.store, local.data, async ({ reviewId }) => {
-    opened.push(reviewId);
+  const api = reviewApi({
+    open: async ({ reviewId }) => {
+      opened.push(reviewId);
 
-    return { softwareMapEnabled: false };
+      return { softwareMapEnabled: false };
+    },
   });
 
   const pullRequestUrl = "https://github.com/devdotfast/review/pull/452";
 
-  const first = await (
-    await postJson(
-      app,
-      "/commands",
-      command({ type: "create", source: "pins", title: "PR", pins, pullRequestUrl }),
-    )
-  ).json();
+  const first = await execute(api, {
+    type: "create",
+    source: "pins",
+    title: "PR",
+    pins,
+    pullRequestUrl,
+  });
 
-  const again = await postJson(
-    app,
-    "/commands",
-    command({ type: "create", source: "pins", title: "PR again", pins, pullRequestUrl }),
-  );
+  const body = await execute(api, {
+    type: "create",
+    source: "pins",
+    title: "PR again",
+    pins,
+    pullRequestUrl,
+  });
 
-  expect(again.status).toBe(200);
-  const body = await again.json();
   expect(body).toMatchObject({
     created: false,
     reviewId: first.reviewId,
@@ -389,44 +327,37 @@ it("opens the PR's existing review that create returns instead of a new one", as
 it("does not open a created review when Desktop is not attached", async () => {
   const open = vi.fn<OpenDesktop>(async () => ({ softwareMapEnabled: false }));
 
-  const app = createReviewApi(local.store, local.data, open, () => ({
-    desktopAvailable: false,
-    softwareMapEnabled: false,
-  }));
+  const api = reviewApi({
+    open,
+    capabilities: () => ({ desktopAvailable: false, softwareMapEnabled: false }),
+  });
 
-  const response = await postJson(
-    app,
-    "/commands",
-    command({ type: "create", source: "pins", title: "Headless", pins }),
-  );
-
-  expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({ opened: false });
-  expect(open).not.toHaveBeenCalled();
   expect(
-    (
-      await postJson(
-        app,
-        "/commands",
-        command({ type: "rename", reviewId: "x", title: "y", open: false }),
-      )
-    ).status,
-  ).toBe(400);
+    await execute(api, { type: "create", source: "pins", title: "Headless", pins }),
+  ).toMatchObject({ opened: false });
+  expect(open).not.toHaveBeenCalled();
+  // `open` is a create option, never part of a command.
+  await expect(
+    api.command(command({ type: "rename", reviewId: "x", title: "y", open: false }) as never, {
+      signal,
+    }),
+  ).rejects.toBeInstanceOf(z.ZodError);
 });
 
 it("keeps a created review when Desktop fails to open it", async () => {
-  const app = createReviewApi(local.store, local.data, async () => {
-    throw new Error("Desktop window closed.");
+  const api = reviewApi({
+    open: async () => {
+      throw new Error("Desktop window closed.");
+    },
   });
 
-  const response = await postJson(
-    app,
-    "/commands",
-    command({ type: "create", source: "pins", title: "Saved anyway", pins }),
-  );
+  const created = await execute(api, {
+    type: "create",
+    source: "pins",
+    title: "Saved anyway",
+    pins,
+  });
 
-  expect(response.status).toBe(200);
-  const created = await response.json();
   expect(created).toMatchObject({
     opened: false,
     openError: expect.stringContaining("Desktop window closed."),
@@ -438,12 +369,12 @@ it("lists the full repository path and hydrates diff counts from pinned commits"
   await local.store.execute(
     command({ type: "create", source: "pins", title: "Home metadata", pins }),
   );
-  const app = createReviewApi(local.store, local.data);
-  const first = await (await app.request("/?mode=textual")).json();
+  const api = reviewApi();
+  const first = await api.catalog({ mode: "textual" });
   expect(first[0].repositoryPath).toBe(realpathSync(repository));
   expect(first[0].diffStats).toBeNull();
   await local.data.coverage(first[0].reviewId, pins, "textual");
-  const ready = await (await app.request("/?mode=textual")).json();
+  const ready = await api.catalog({ mode: "textual" });
   expect(ready[0].diffStats).toEqual({
     fileCount: 3,
     additions: 4,
@@ -457,8 +388,8 @@ it("lists the full repository path and hydrates diff counts from pinned commits"
   expect(local.store.list("textual")[0]?.diffStats).toEqual(ready[0].diffStats);
 });
 
-it("returns map endpoint locations through HTTP and allows correcting a rejected upload", async () => {
-  const app = createReviewApi(local.store, local.data);
+it("returns map endpoint locations through an upload and allows correcting a rejected one", async () => {
+  const api = reviewApi();
   const edge = { kind: "semantic", from: "api", to: "missing" };
 
   const upload = {
@@ -478,23 +409,19 @@ it("returns map endpoint locations through HTTP and allows correcting a rejected
     },
   };
 
-  const send = () =>
-    app.request("/resources", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(upload),
-    });
+  // As the tool boundary hands it over: parsed, not yet checked against the model.
+  const send = () => api.upload(uploadSchema.parse(upload));
 
-  const rejected = await send();
-  expect(rejected.status).toBe(400);
-  const { error } = await rejected.json();
+  const rejected = await send().catch((error: unknown) => error);
+  expect(rejected).toMatchObject({ status: 400 });
+  const error = (rejected as Error).message;
   expect(error).toContain("relationships[0] at app.to");
   expect(error).toContain('"missing"');
   expect(error).toContain("does not match an element path");
   expect(() => local.store.resource(upload.id)).toThrow(/not found/);
 
   edge.to = "db";
-  expect((await send()).status).toBe(200);
+  expect(await send()).toMatchObject({ id: upload.id });
 
   const saved = JSON.parse(Buffer.from(local.store.resource(upload.id).data).toString());
 
@@ -574,54 +501,42 @@ it("lists the version's commits and reads a selected commit's diff against its p
     command({ type: "create", source: "pins", title: "Two commits", pins: updatedPins }),
   );
 
-  const app = new Hono().route("/reviews-api", createReviewApi(local.store, local.data));
+  const api = reviewApi();
+  const { reviewId } = review;
 
-  const route = `/reviews-api/${review.reviewId}`;
+  const commits = await api.commits({ reviewId, version: 0 });
 
-  const commits = await (await app.request(`${route}/commits?version=0`)).json();
-
-  expect(commits.map((item: { commit: string }) => item.commit)).toEqual([
-    updatedPins.head,
-    firstHead,
-  ]);
-  const selected = `version=0&commit=${firstHead}`;
+  expect(commits.map((item) => item.commit)).toEqual([updatedPins.head, firstHead]);
+  const selected = { reviewId, version: 0, commit: firstHead };
 
   for (const side of ["base", "head"] as const) {
-    const response = await app.request(`${route}/source`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        version: 0,
-        commit: firstHead,
-        source: { side, file: "example.ts", fromLine: 1, toLine: 1 },
-      }),
+    const quoted = await api.source({
+      ...selected,
+      source: { side, file: "example.ts", fromLine: 1, toLine: 1 },
     });
 
-    expect(response.status).toBe(200);
-    expect((await response.json()).text).toContain(side === "base" ? "value = 1" : "value = 2");
+    expect(quoted.text).toContain(side === "base" ? "value = 1" : "value = 2");
   }
 
-  const file = await (
-    await app.request(`${route}/file?${selected}&side=head&file=example.ts`)
-  ).json();
+  const file = await api.file({ ...selected, side: "head", file: "example.ts" });
 
   expect(file.text).toContain("value = 2");
 
-  const patch = await (await app.request(`${route}/diff?${selected}&file=example.ts`)).text();
+  const patch = patchText(await api.diff({ ...selected, file: "example.ts" }));
 
   expect(patch).toContain("-export const value = 1;");
   expect(patch).toContain("+export const value = 2;");
   expect(patch).not.toContain("value = 3");
-  expect((await app.request(`${route}/diff?commit=${pins.base}`)).status).toBe(404);
+  await expect(api.diff({ reviewId, commit: pins.base })).rejects.toMatchObject({ status: 404 });
   await local.store.execute(
     command({
       type: "repin",
-      reviewId: review.reviewId,
+      reviewId,
       pins: { ...updatedPins, base: firstHead },
     }),
   );
-  expect((await app.request(`${route}/diff?commit=${firstHead}`)).status).toBe(404);
-  expect((await app.request(`${route}/diff?${selected}`)).status).toBe(200);
+  await expect(api.diff({ reviewId, commit: firstHead })).rejects.toMatchObject({ status: 404 });
+  expect(await api.diff(selected)).toMatchObject({ format: "files" });
 });
 
 it("reads each version of one review at its own pins", async () => {
@@ -671,18 +586,15 @@ it("serves a historical version's file at the pins that version was saved with",
   await local.store.execute(command({ type: "repin", reviewId, pins: later }));
   expect(local.store.read(reviewId).version).toBe(2);
 
-  const app = new Hono().route("/reviews-api", createReviewApi(local.store, local.data));
+  const api = reviewApi();
 
-  const read = async (query: string) =>
-    (await app.request(`/reviews-api/${reviewId}/file?side=head&${query}`)).json();
-
-  expect(await read(`version=1&file=${source.file}`)).toEqual({
+  expect(await api.file({ reviewId, side: "head", version: 1, file: source.file })).toEqual({
     file: source.file,
     side: "head",
     commit: pins.head,
     text: "export const value = 2;\nexport const saved = true;\n",
   });
-  expect(await read(`file=${source.file}`)).toEqual({
+  expect(await api.file({ reviewId, side: "head", file: source.file })).toEqual({
     file: source.file,
     side: "head",
     commit: later.head,
@@ -705,27 +617,30 @@ it("browses committed directories, including history, without listing untracked 
   writeFileSync(path.join(repository, "untracked.ts"), "Not in the review\n");
   writeFileSync(path.join(repository, "nested", "deeper", "file.ts"), "dirty text\n");
 
-  const app = new Hono().route("/reviews-api", createReviewApi(local.store, local.data));
+  const api = reviewApi();
 
-  const route = `/reviews-api/${reviewId}/tree`;
-  const root = await (await app.request(route)).json();
+  const root = await api.tree({ reviewId });
   expect(root).toContainEqual({ path: "nested", kind: "directory" });
   expect(root).not.toContainEqual(expect.objectContaining({ path: "untracked.ts" }));
-  expect(await (await app.request(`${route}?path=nested`)).json()).toEqual([
+  expect(await api.tree({ reviewId, path: "nested" })).toEqual([
     { path: "nested/deeper", kind: "directory" },
   ]);
-  expect(await (await app.request(`${route}?path=nested/deeper`)).json()).toEqual([
+  expect(await api.tree({ reviewId, path: "nested/deeper" })).toEqual([
     { path: "nested/deeper/file.ts", kind: "file" },
   ]);
   expect(await local.data.file(nestedPins, "head", "nested/deeper/file.ts")).toMatchObject({
     text: "pinned text\n",
   });
-  expect((await app.request(`${route}?side=base&path=nested`)).status).toBe(404);
-  expect((await app.request(`${route}?path=../outside`)).status).toBe(400);
-  expect((await app.request(`${route}?path=example.ts`)).status).toBe(404);
+  await expect(api.tree({ reviewId, side: "base", path: "nested" })).rejects.toMatchObject({
+    status: 404,
+  });
+  await expect(api.tree({ reviewId, path: "../outside" })).rejects.toMatchObject({ status: 400 });
+  await expect(api.tree({ reviewId, path: "example.ts" })).rejects.toMatchObject({ status: 404 });
   await local.store.execute(command({ type: "repin", reviewId, pins }));
-  expect((await app.request(`${route}?path=nested`)).status).toBe(404);
-  expect((await app.request(`${route}?version=0&path=nested`)).status).toBe(200);
+  await expect(api.tree({ reviewId, path: "nested" })).rejects.toMatchObject({ status: 404 });
+  expect(await api.tree({ reviewId, version: 0, path: "nested" })).toEqual([
+    { path: "nested/deeper", kind: "directory" },
+  ]);
 });
 
 it("reads pinned Git objects, rejects invalid evidence before saving, and retains registrations across restart", async () => {
@@ -848,19 +763,15 @@ it("copies prose with the displayed version's title and immutable review identit
   );
 
   await local.store.execute(command({ type: "rename", reviewId, title: "Latest title" }));
-  const app = createReviewApi(local.store, local.data);
+  const api = reviewApi();
 
-  const response = await app.request(`/${reviewId}/copy-context?version=0`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      target: { kind: "text", quote: "First line\nSecond line" },
-      title: "Selection",
-    }),
+  const copied = await api.copyContext({
+    reviewId,
+    version: 0,
+    selection: { target: { kind: "text", quote: "First line\nSecond line" }, title: "Selection" },
   });
 
-  expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({
+  expect(copied).toEqual({
     text: `Selected text from Whiteboard: Original title\nSession ID: ${reviewId}\nVersion: 0\nRepository ID: ${pins.repositoryId}\nSession base: ${pins.base}\nSession head: ${pins.head}\nRead this version with whiteboard_session_get({"sessionId":"${reviewId}","version":0,"full":true}).\n\n> First line\n> Second line\n\n`,
     handoff: {
       quote: "First line\nSecond line",
@@ -879,9 +790,9 @@ it("copies code from historical pins after a repin, never from working-tree cont
   await local.store.execute(
     command({ type: "repin", reviewId, pins: { ...pins, head: pins.base } }),
   );
-  const app = createReviewApi(local.store, local.data);
+  const api = reviewApi();
 
-  const body = JSON.stringify({
+  const selection: AgentSelection = {
     target: {
       kind: "code",
       path: source.file,
@@ -891,16 +802,9 @@ it("copies code from historical pins after a repin, never from working-tree cont
     },
     title: "Value",
     detail: "Selected source",
-  });
+  };
 
-  const historical = await app.request(`/${reviewId}/copy-context?version=0`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-  });
-
-  expect(historical.status).toBe(200);
-  expect(await historical.json()).toEqual({
+  expect(await api.copyContext({ reviewId, version: 0, selection })).toEqual({
     text: `Selected code from Whiteboard: Code\nSession ID: ${reviewId}\nVersion: 0\nRepository ID: ${pins.repositoryId}\nSession base: ${pins.base}\nSession head: ${pins.head}\nRead this version with whiteboard_session_get({"sessionId":"${reviewId}","version":0,"full":true}).\n\n## Value\n\nSelected source\n\n## head: example.ts:1-1 (${pins.head})\n    export const value = 2;\n\n`,
     handoff: {
       quote: `## Value\n\nSelected source\n\n## head: example.ts:1-1 (${pins.head})\n    export const value = 2;`,
@@ -910,14 +814,9 @@ it("copies code from historical pins after a repin, never from working-tree cont
     },
   });
 
-  const latest = await app.request(`/${reviewId}/copy-context`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body,
-  });
+  const latest = await api.copyContext({ reviewId, selection });
 
-  expect(latest.status).toBe(200);
-  expect((await latest.json()).text).toContain("    export const value = 1;");
+  expect(latest.text).toContain("    export const value = 1;");
 });
 
 it("copies a diff selection from its pinned version and selected commit, and rejects another review", async () => {
@@ -928,7 +827,7 @@ it("copies a diff selection from its pinned version and selected commit, and rej
   await local.store.execute(
     command({ type: "repin", reviewId, pins: { ...pins, head: pins.base } }),
   );
-  const app = createReviewApi(local.store, local.data);
+  const api = reviewApi();
 
   const selection = {
     target: {
@@ -940,39 +839,28 @@ it("copies a diff selection from its pinned version and selected commit, and rej
     },
     title: "Selected parent",
     apiSource: { reviewId, version: 0, commit: pins.head },
-  };
+  } satisfies AgentSelection;
 
-  const copy = (payload: typeof selection) =>
-    app.request(`/${reviewId}/copy-context`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+  const copy = (payload: AgentSelection) => api.copyContext({ reviewId, selection: payload });
 
-  const response = await copy(selection);
-  expect(response.status).toBe(200);
-  const { text } = await response.json();
+  const { text } = await copy(selection);
   expect(text).toContain("Version: 0");
   expect(text).toContain(`Selected commit: ${pins.head}`);
   expect(text).toContain(`base: example.ts:1-1 (${pins.base})`);
   expect(text).toContain("export const value = 1;");
   expect(text).not.toContain("export const value = 2;");
-  expect(
-    (
-      await copy({
-        ...selection,
-        apiSource: { ...selection.apiSource, reviewId: "another-review" },
-      })
-    ).status,
-  ).toBe(400);
-  expect(
-    (
-      await copy({
-        ...selection,
-        apiSource: { ...selection.apiSource, version: 999 },
-      })
-    ).status,
-  ).toBe(404);
+  await expect(
+    copy({
+      ...selection,
+      apiSource: { ...selection.apiSource, reviewId: "another-review" },
+    }),
+  ).rejects.toMatchObject({ status: 400, message: "Selection belongs to another review." });
+  await expect(
+    copy({
+      ...selection,
+      apiSource: { ...selection.apiSource, version: 999 },
+    }),
+  ).rejects.toMatchObject({ status: 404 });
 });
 
 it("copies selected diff rows with rename paths without resolving an unavailable source", async () => {
@@ -981,12 +869,13 @@ it("copies selected diff rows with rename paths without resolving an unavailable
   );
 
   // Use selected diff rows; the new path may not exist on the base commit.
-  const app = createReviewApi(local.store);
+  const resolve = vi.spyOn(local.data, "resolveSource");
+  const quote = vi.spyOn(local.data, "quote");
 
-  const response = await app.request(`/${reviewId}/copy-context?version=0`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  const copied = await reviewApi().copyContext({
+    reviewId,
+    version: 0,
+    selection: {
       target: {
         kind: "code",
         path: "new.md",
@@ -1006,23 +895,24 @@ it("copies selected diff rows with rename paths without resolving an unavailable
           { kind: "unchanged", text: "context" },
         ],
       },
-    }),
+    },
   });
 
-  expect(response.status).toBe(200);
-  expect((await response.json()).text).toContain(
+  expect(resolve).not.toHaveBeenCalled();
+  expect(quote).not.toHaveBeenCalled();
+  expect(copied.text).toContain(
     "Base: a/old.md\nHead: b/new.md\nRange: -4,2 +7,2\n\n````diff\n-before\n+```typescript\n context\n````\n\n",
   );
 });
 
-it("reports invalid copy requests, unavailable versions, and missing source files as JSON errors", async () => {
+it("refuses invalid copy requests, unavailable versions, and missing source files", async () => {
   const { reviewId } = await local.store.execute(
     command({ type: "create", source: "pins", title: "Errors", pins }),
   );
 
-  const app = createReviewApi(local.store, local.data);
+  const api = reviewApi();
 
-  const selection = {
+  const selection: AgentSelection = {
     target: {
       kind: "code",
       path: "missing.ts",
@@ -1033,23 +923,23 @@ it("reports invalid copy requests, unavailable versions, and missing source file
     title: "Missing source",
   };
 
-  for (const [route, body, status] of [
-    [`/${reviewId}/copy-context`, "{", 400],
-    [`/${reviewId}/copy-context`, JSON.stringify({ title: "Invalid" }), 400],
-    [`/${reviewId}/copy-context?version=nope`, JSON.stringify(selection), 400],
-    [`/${reviewId}/copy-context?version=99`, JSON.stringify(selection), 404],
-    ["/missing/copy-context", JSON.stringify(selection), 404],
-    [`/${reviewId}/copy-context`, JSON.stringify(selection), 404],
-  ] as const) {
-    const response = await app.request(route, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-    });
+  // The RPC boundary refuses malformed selections and versions before any operation runs.
+  expect(
+    copyContextInput.safeParse({ sessionId: reviewId, selection: { title: "Invalid" } }).success,
+  ).toBe(false);
+  expect(
+    copyContextInput.safeParse({ sessionId: reviewId, version: "nope", selection }).success,
+  ).toBe(false);
 
-    expect(response.status).toBe(status);
-    expect(await response.json()).toMatchObject({ error: expect.any(String) });
-  }
+  for (const [input, message] of [
+    [{ reviewId, version: 99 }, "Review or version not found."],
+    [{ reviewId: "missing" }, "Review or version not found."],
+    [{ reviewId }, "File is unavailable at the pinned commit."],
+  ] as const)
+    await expect(api.copyContext({ ...input, selection })).rejects.toMatchObject({
+      status: 404,
+      message,
+    });
 });
 
 it("resolves omitted commit base once and preserves explicit parent comparisons", async () => {
@@ -1237,7 +1127,7 @@ it("keeps authored coordinates fixed as live source changes and warns only on un
 });
 
 it("reads retained checkout for an older authored version", async () => {
-  const api = createReviewApi(local.store, local.data);
+  const api = reviewApi();
   writeFileSync(path.join(repository, "example.ts"), "const generation = 1;\n");
 
   const result = await local.store.execute(
@@ -1252,18 +1142,18 @@ it("reads retained checkout for an older authored version", async () => {
   writeFileSync(path.join(repository, "example.ts"), "const generation = 2;\n");
   await new Promise((resolve) => setTimeout(resolve, 50));
 
-  const read = async (query: string) =>
-    (await api.request(`/${result.reviewId}/file?side=head&file=example.ts${query}`)).json();
+  const read = (version?: number) =>
+    api.file({ reviewId: result.reviewId, side: "head", file: "example.ts", version });
 
-  expect(await read("")).toMatchObject({ text: "const generation = 2;\n" });
+  expect(await read()).toMatchObject({ text: "const generation = 2;\n" });
 
-  expect(await read("&version=0")).toMatchObject({
+  expect(await read(0)).toMatchObject({
     text: "const generation = 1;\n",
   });
-  expect(await read("")).toMatchObject({
+  expect(await read()).toMatchObject({
     localPath: realpathSync(path.join(repository, "example.ts")),
   });
-  expect(await read("&version=0")).not.toHaveProperty("localPath");
+  expect(await read(0)).not.toHaveProperty("localPath");
 });
 
 it("keeps multiple worktrees bound to their selected directory and survives reopening the store", async () => {
@@ -1510,14 +1400,9 @@ it("does not report clean tracked symlinks and submodules as modified", async ()
     "not a regular file",
   );
 
-  const response = await createReviewApi(local.store, local.data).request(
-    `/${created.reviewId}/file?side=head&file=module`,
-  );
-
-  expect(response.status).toBe(400);
-  expect(await response.json()).toMatchObject({
-    error: "Source is not a regular file.",
-  });
+  await expect(
+    reviewApi().file({ reviewId: created.reviewId, side: "head", file: "module" }),
+  ).rejects.toMatchObject({ status: 400, message: "Source is not a regular file." });
 });
 
 it("continues capturing after watchers fail and stop emitting changes", async () => {
@@ -1574,21 +1459,20 @@ it("keeps live language identity across edits but replaces it with a checkout at
   );
 
   const saved = local.store.read(created.reviewId, created.version);
-  const before = await local.data.languageEnvironment(saved, "head");
+  const before = await local.data.languageEnvironment(saved);
   const retained = await local.data.file(saved.source!.pins, "head", source.file);
   writeFileSync(path.join(repository, "identity.ts"), "const changed = true;");
-  expect(await local.data.languageEnvironment(saved, "head")).toEqual(before);
+  expect(await local.data.languageEnvironment(saved)).toEqual(before);
   const moved = `${repository}-previous`;
   renameSync(repository, moved);
 
   try {
-    expect((await local.data.languageEnvironment(saved, "head")).rootPath).toBeNull();
+    expect((await local.data.languageEnvironment(saved)).rootPath).toBeNull();
     mkdirSync(repository);
     execFileSync("git", ["clone", "--quiet", moved, repository]);
-    const replacement = await local.data.languageEnvironment(saved, "head");
+    const replacement = await local.data.languageEnvironment(saved);
     expect(replacement.rootPath).toBe(before.rootPath);
     expect(replacement.identity).not.toBe(before.identity);
-    expect(local.data.workspaces.list(created.reviewId)).toEqual([]);
     expect(retained.text).toBeTruthy();
     await expect(local.data.file(saved.source!.pins, "head", source.file)).rejects.toThrow(
       "retained working source is unavailable",
@@ -1603,24 +1487,21 @@ it("marks a commit-pinned review unavailable while its repository is gone", asyn
     command({ type: "create", source: "pins", title: "Moved repository", pins }),
   );
 
-  const app = createReviewApi(local.store, local.data);
+  const api = reviewApi();
   const moved = `${repository}-moved`;
   renameSync(repository, moved);
 
-  const degraded = await app.request(`/${review.reviewId}?full=true`);
-
-  expect(degraded.status).toBe(200);
-  expect(await degraded.json()).toMatchObject({
+  // The live read refreshes the store first, so it sees the checkout gone.
+  expect(await api.liveSession({ reviewId: review.reviewId })).toMatchObject({
     title: "Moved repository",
     live: { kind: "unavailable" },
   });
-  // The canvas follows the watch stream, which reads the store, not ?full=true.
   await local.store.refreshWorktrees();
   expect(local.store.read(review.reviewId).live).toEqual({ kind: "unavailable" });
   // A pinned version bypasses both the refresh loop and the live overlay.
-  expect(await (await app.request(`/${review.reviewId}?full=true&version=0`)).json()).toMatchObject(
-    { live: { kind: "unavailable" } },
-  );
+  expect(await api.sessionVersion({ reviewId: review.reviewId, version: 0 })).toMatchObject({
+    live: { kind: "unavailable" },
+  });
 
   renameSync(moved, repository);
   await local.store.refreshWorktrees();
@@ -1702,14 +1583,12 @@ it("answers a source read with 404 while the checkout is gone", async () => {
     command({ type: "create", source: "pins", title: "Moved repository", pins }),
   );
 
-  const app = createReviewApi(local.store, local.data);
+  const api = reviewApi();
   renameSync(repository, `${repository}-moved`);
 
-  const response = await app.request(`/${review.reviewId}/commits`);
-
-  expect(response.status).toBe(404);
-  expect(await response.json()).toEqual({
-    error: "The selected local checkout is unavailable.",
+  await expect(api.commits({ reviewId: review.reviewId })).rejects.toMatchObject({
+    status: 404,
+    message: "The selected local checkout is unavailable.",
   });
   // Direct callers skip the snapshot check and reach the checkout itself.
   await expect(local.data.commits(pins)).rejects.toThrow(
@@ -1753,14 +1632,14 @@ it("validates grouped source ranges with one read per pinned file", async () => 
   }
 });
 
-describe("review_diff", () => {
+describe("diff", () => {
   const exampleLines = (changed: number) =>
     Array.from({ length: 12 }, (_, index) =>
       index + 1 === changed ? "changed line" : `line ${index + 1}`,
     ).join("\n") + "\n";
 
   let reviewId: string;
-  let call: (input: Record<string, JsonValue>) => Promise<JsonValue>;
+  let call: (input: Omit<DiffInput, "reviewId">) => Promise<unknown>;
 
   beforeEach(async () => {
     writeFileSync(path.join(repository, source.file), exampleLines(0));
@@ -1783,23 +1662,13 @@ describe("review_diff", () => {
       command({ type: "create", source: "pins", title: "Diff", pins: diffPins }),
     ));
 
-    const app = createReviewApi(local.store, local.data);
+    const api = reviewApi();
 
-    const client = new ReviewApiClient(
-      { serverUrl: "http://review.test", token: "test" },
-      async (url, init) => app.request(url.replace("/reviews-api", ""), init),
-    );
-
-    const tools = await client.read<AuthoringTool[]>("/authoring");
-    const tool = tools.find((item) => item.name === "review_diff")!;
-
+    // Files as a list, patches as their text, as the diff tool shows them.
     call = async (input) => {
-      const result = await callAuthoringTool(client, tool, {
-        reviewId,
-        ...input,
-      });
+      const result = await api.diff({ reviewId, ...input });
 
-      return result instanceof ToolText ? result.text : result;
+      return result.format === "files" ? result.files : result.text;
     };
   });
 
@@ -1908,7 +1777,7 @@ describe("review_diff", () => {
 });
 
 it("patches working files of a worktree review, untracked files included", async () => {
-  const api = createReviewApi(local.store, local.data);
+  const api = reviewApi();
 
   const { reviewId } = await local.store.execute(
     command({
@@ -1921,18 +1790,16 @@ it("patches working files of a worktree review, untracked files included", async
 
   writeFileSync(path.join(repository, "fresh.ts"), "fresh\n");
 
-  const list = await (await api.request(`/${reviewId}/diff`)).json();
+  const list = await api.diff({ reviewId });
 
-  expect(list).toEqual(
-    expect.arrayContaining([expect.objectContaining({ path: "fresh.ts", status: "added" })]),
+  expect(list).toEqual({
+    format: "files",
+    files: expect.arrayContaining([expect.objectContaining({ path: "fresh.ts", status: "added" })]),
+  });
+
+  const text = patchText(
+    await api.diff({ reviewId, format: "patch", paths: ["fresh.ts", source.file] }),
   );
-
-  const response = await api.request(
-    `/${reviewId}/diff?format=patch&paths=fresh.ts&paths=${source.file}`,
-  );
-
-  expect(response.headers.get("content-type")).toMatch(/^text\/plain/);
-  const text = await response.text();
 
   expect(text).toContain("diff --git a/fresh.ts b/fresh.ts\nnew file mode");
   expect(text).toContain("  1 +fresh\n");

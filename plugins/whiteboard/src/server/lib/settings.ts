@@ -66,7 +66,7 @@ function report(bb: BbPluginApi, message: string): void {
 /**
  * Declare the settings and keep a synchronous view of them for the engine and
  * the tool catalog. On a change it notifies subscribers, publishes
- * `whiteboard:settings` (the panels re-read `/capabilities` and `info`), and,
+ * `whiteboard:settings` (the panels re-read `info`), and,
  * when the scratchpad flips, schedules one `plugins.reload` of this plugin.
  * The reload is debounced, fire-and-forget and never reentrant: bb runs
  * `onChange` listeners synchronously inside the settings write, with no

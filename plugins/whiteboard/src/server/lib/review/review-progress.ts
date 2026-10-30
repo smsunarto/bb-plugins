@@ -1,12 +1,10 @@
-import { z } from "zod";
-
 import {
   type LensSource,
   comparisonKey,
   resolveDiffSelection,
   selectionKey,
 } from "../../../shared/review/lens-selection.ts";
-import { type FileLineRange, fileLineRangeSchema } from "../../../shared/review/source.ts";
+import type { FileLineRange } from "../../../shared/review/source.ts";
 import { type CoverageFile, emptyCoverage } from "../../../shared/review/viewed-coverage.ts";
 import type { ComparisonCoverage } from "./comparison-coverage.ts";
 import {
@@ -20,23 +18,6 @@ import { textualRows } from "../../../shared/review/lens-alignment.ts";
 import { resolveFileLens, uncategorizedSources } from "./file-lenses.ts";
 import type { LocalReviewData } from "./local-data.ts";
 import type { ReviewStore, Snapshot } from "./store.ts";
-
-export const coverageModeSchema = z.enum(["structural", "textual"]).default("structural");
-
-export const progressUpdateSchema = z.strictObject({
-  mode: coverageModeSchema,
-  version: z.number().int().nonnegative(),
-  files: z
-    .array(
-      z.strictObject({
-        path: z.string(),
-        fingerprint: z.string().min(1),
-        sources: z.array(fileLineRangeSchema),
-      }),
-    )
-    .max(10000),
-  viewed: z.boolean(),
-});
 
 /** How the Diff view lists a lens: resolved against complete coverage,
  * still resolving against partial coverage, or nothing to show. */

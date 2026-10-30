@@ -5,9 +5,9 @@ import type {
 import type { ReactNode } from "react";
 
 import type { Block } from "../../shared/review/document.ts";
+import type { WhiteboardRpcClient } from "../rpc.ts";
 import type { ApiDocumentData } from "./api-document.tsx";
 import { apiHeadingIds } from "./api-document-headings.ts";
-import { reviewFetchUrl } from "./host/review-client.ts";
 import {
   type ReviewSession,
   ReviewSessionProvider,
@@ -44,7 +44,6 @@ export function testReviewBridge(
         throw new Error("unused test inline editor");
       },
     },
-    request: (url, init) => reviewFetchUrl({}, url, init),
     post: async () => ({ ok: true }),
     subscribe: () => ({ dispose() {} }),
     currentTheme: () => "dark",
@@ -57,16 +56,18 @@ export function testReviewBridge(
   };
 }
 
+/** A session whose RPC client has only the methods `rpc` fakes. */
 export function testReviewSession(
   config: Partial<ReviewRuntimeConfig> = {},
   bridge: Partial<Omit<ReviewCanvasBridge, "config">> = {},
+  rpc: Partial<WhiteboardRpcClient> = {},
 ): ReviewSession {
   return {
     ...createReviewSession(testReviewBridge(config, bridge), {
-      jsonReview: {
-        id: config.reviewId ?? "test-review",
-        version: () => undefined,
-      },
+      // SAFETY: a test fakes the methods its code path calls.
+      rpc: rpc as WhiteboardRpcClient,
+      sessionId: config.reviewId ?? "test-review",
+      version: () => undefined,
     }),
     review: {
       pins: { base: "a".repeat(40), head: "b".repeat(40) },

@@ -2,7 +2,7 @@
 import type { DiffProps, SourceCodeProps } from "@get-bb/plugin-sdk/app";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createDiffView } from "./diff-view.tsx";
+import { type SourceRpc, createDiffView } from "./diff-view.tsx";
 import { createPortals, PortalHost } from "./portals.tsx";
 import { setDiffLayout } from "./theme.ts";
 import type {
@@ -40,8 +40,10 @@ const fileProgress = (path: string, state: "unread" | "viewed" | "folded" = "unr
 });
 const pathTitle = (container: HTMLElement, path: string) =>
   container.querySelector(`[data-wb-path="${path}"] .review-path-label`)?.getAttribute("title");
-const fileReads = (request: { mock: { calls: string[][] } }, path: string) =>
-  request.mock.calls.filter(([url]) => new URL(url).searchParams.get("file") === path).length;
+/** Every source read the view made, in order. */
+type Read = { method: "diffFiles" | "file" } & Partial<Parameters<SourceRpc["file"]>[0]>;
+const fileReads = (reads: Read[], path: string) =>
+  reads.filter((read) => read.method === "file" && read.path === path).length;
 function setup(
   overrides: Partial<ReviewDiffViewSpec> = {},
   { failed = false, base = "old\n", head = "new\n" } = {},
@@ -49,28 +51,31 @@ function setup(
   const container = document.body.appendChild(document.createElement("div"));
   const fileTreeContainer = document.body.appendChild(document.createElement("div"));
   const portals = createPortals();
-  const request = vi.fn(async (value: string) => {
-    const url = new URL(value);
-    const query = url.searchParams;
-    if (failed) return Response.json({ error: "boom" }, { status: 500 });
-    // The file route names a live path only for current head bytes without commit or pins.
-    const live =
-      query.get("side") === "head" &&
-      !["commit", "repositoryId", "base", "head"].some((key) => query.has(key)) &&
-      (!query.has("version") || query.has("generation"));
-    return Response.json(
-      url.pathname.endsWith("/diff")
-        ? files
-        : {
-            text: query.get("side") === "base" ? base : head,
-            ...(live ? { localPath: `/repo/${query.get("file")}` } : {}),
-          },
-    );
-  });
+  const reads: Read[] = [];
+  const rpc: SourceRpc = {
+    diffFiles: async (input) => {
+      reads.push({ method: "diffFiles", ...input });
+      if (failed) throw new Error("boom");
+      return files as never;
+    },
+    file: async (input) => {
+      reads.push({ method: "file", ...input });
+      if (failed) throw new Error("boom");
+      // `file` names a live path only for current head bytes without commit or pins.
+      const live =
+        input.side === "head" &&
+        [input.commit, input.repositoryId, input.base, input.head].every((v) => v === undefined) &&
+        (input.version === undefined || input.generation !== undefined);
+      return {
+        text: input.side === "base" ? base : head,
+        ...(live ? { localPath: `/repo/${input.path}` } : {}),
+      } as never;
+    },
+  };
   const openFile = vi.fn(async () => true);
   const toggleViewed = vi.fn();
   const factory = createDiffView({
-    request,
+    rpc,
     reviewId: "r1",
     portals,
     openFile,
@@ -84,7 +89,7 @@ function setup(
     ...overrides,
   });
   render(<PortalHost portals={portals} />);
-  return { handle, factory, request, container, fileTreeContainer, openFile, toggleViewed };
+  return { handle, factory, reads, container, fileTreeContainer, openFile, toggleViewed };
 }
 describe("bb Diffs view", () => {
   it("renders SDK viewers, counts, viewed controls, file scrolling and open actions", async () => {
@@ -121,14 +126,14 @@ describe("bb Diffs view", () => {
     expect(fileTreeContainer.innerHTML).toBe("");
   });
   it("collapses a file when it is marked viewed and on its header, and skips reading closed files", async () => {
-    const { handle, container, request, toggleViewed } = setup({
+    const { handle, container, reads, toggleViewed } = setup({
       progress: { files: [fileProgress("src/a.ts"), fileProgress("src/b.ts", "folded")] },
     });
     await screen.findByTestId("bb-diff:src/a.ts");
     const folded = screen.getByRole("button", { name: "Toggle diff: src/b.ts" });
     expect(folded.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByTestId("bb-diff:src/b.ts")).toBeNull();
-    expect(fileReads(request, "src/b.ts")).toBe(0);
+    expect(fileReads(reads, "src/b.ts")).toBe(0);
     // Unread source gives no read-only reason; a live session stays openable.
     expect(pathTitle(container, "src/b.ts")).toBe("src/b.ts");
     const box = within(container).getByRole("checkbox", { name: "Mark viewed: src/a.ts" });
@@ -153,7 +158,7 @@ describe("bb Diffs view", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     fireEvent.click(folded);
     expect(await screen.findByTestId("bb-diff:src/b.ts")).toBeTruthy();
-    expect(fileReads(request, "src/b.ts")).toBe(2);
+    expect(fileReads(reads, "src/b.ts")).toBe(2);
     expect(pathTitle(container, "src/b.ts")).toBe("src/b.ts\nOpen file in File Editor");
   });
   it("scrolls on every reveal request, including the active file again", async () => {
@@ -209,16 +214,16 @@ describe("bb Diffs view", () => {
         disconnect() {}
       },
     );
-    const { handle, container, request } = setup();
+    const { handle, container, reads } = setup();
     await screen.findByTestId("bb-diff:src/a.ts");
     expect(roots).toContain(container);
     expect(screen.queryByTestId("bb-diff:src/b.ts")).toBeNull();
-    expect(fileReads(request, "src/b.ts")).toBe(0);
+    expect(fileReads(reads, "src/b.ts")).toBe(0);
     const scroll = vi.fn();
     container.querySelector<HTMLElement>('[data-wb-path="src/b.ts"]')!.scrollIntoView = scroll;
     act(() => handle.revealFile?.("src/b.ts"));
     expect(await screen.findByTestId("bb-diff:src/b.ts")).toBeTruthy();
-    expect(fileReads(request, "src/b.ts")).toBe(2);
+    expect(fileReads(reads, "src/b.ts")).toBe(2);
     expect(scroll).toHaveBeenCalledTimes(2);
   });
   it("renders split diffs inline below Monaco's 900px breakpoint", async () => {
@@ -262,21 +267,19 @@ describe("bb Diffs view", () => {
       version: 2,
       ranges: [{ file: "src/a.ts", side: "head", fromLine: 1, toLine: 1 }],
     };
-    const { request } = setup({ lens });
+    const { reads } = setup({ lens });
     await screen.findByTestId("bb-diff:src/a.ts");
     expect(screen.queryByTestId("bb-diff:src/b.ts")).toBeNull();
     expect(screen.queryByRole("treeitem", { name: "src/b.ts" })).toBeNull();
-    expect(new URL(request.mock.calls[0]![0]).searchParams.get("version")).toBe("2");
-    expect(request.mock.calls.every(([url]) => !new URL(url).searchParams.has("generation"))).toBe(
-      true,
-    );
+    expect(reads[0]).toMatchObject({ method: "diffFiles", sessionId: "r1", version: 2 });
+    expect(reads.every((read) => read.generation === undefined)).toBe(true);
     expect(pathTitle(document.body, "src/a.ts")).toBe(
       "src/a.ts\nThis source is pinned to a commit. bb can open only live worktree files.",
     );
     expect(screen.queryByRole("button", { name: "Open file" })).toBeNull();
   });
   it("keeps commit comparison headers read only and sends commit scope to every read", async () => {
-    const { request, factory, openFile, container } = setup({ scope: { commit: "abc" } });
+    const { reads, factory, openFile, container } = setup({ scope: { commit: "abc" } });
     await screen.findByTestId("bb-diff:src/a.ts");
     expect(screen.queryByRole("button", { name: "Open file" })).toBeNull();
     expect(files.map((file) => pathTitle(container, file.path))).toEqual([
@@ -284,11 +287,9 @@ describe("bb Diffs view", () => {
       "src/b.ts\nThis source is pinned to a commit. bb can open only live worktree files.",
     ]);
     expect(openFile).not.toHaveBeenCalled();
-    expect(
-      request.mock.calls.every(([url]) => new URL(url).searchParams.get("commit") === "abc"),
-    ).toBe(true);
+    expect(reads.every((read) => read.commit === "abc")).toBe(true);
     await factory.files({ commit: "def" });
-    expect(new URL(request.mock.calls.at(-1)![0]).searchParams.get("commit")).toBe("def");
+    expect(reads.at(-1)).toMatchObject({ method: "diffFiles", commit: "def" });
   });
   it("preserves section viewed actions and grouped file progress", async () => {
     const lens: ReviewDiffLens = {

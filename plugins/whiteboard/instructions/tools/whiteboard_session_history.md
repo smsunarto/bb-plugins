@@ -1,0 +1,1 @@
+List a Whiteboard session's saved versions, oldest first, each with `version`, `title` and `createdAt`. Every accepted document, lens, title or target change saves a version. Use it to choose a `version` for `whiteboard_session_get`, `whiteboard_session_restore`, or the `version` input of the source and diff reads.

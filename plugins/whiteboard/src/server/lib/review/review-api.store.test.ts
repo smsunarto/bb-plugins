@@ -9,9 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { selectSource } from "../../../shared/review/lens-selection.ts";
-import { type AuthoringTool, callAuthoringTool } from "./agent-client.ts";
-import { authoringTools } from "./authoring-tools.ts";
-import { ReviewApiClient } from "../../../shared/review/client.ts";
 import { documentText } from "../../../shared/review/document-text.ts";
 import { ReviewInputError } from "../../../shared/review/document.ts";
 import {
@@ -1013,7 +1010,8 @@ describe("snapshot authoring", () => {
       { key: "fail", attachments: [] },
     ]);
 
-    // The published tool schema does not tell agents attachments are required.
+    // The command's input schema, which agent tools publish, does not tell
+    // agents attachments are required.
     const nodeSchemas = (schema: z.core.JSONSchema._JSONSchema): z.core.JSONSchema.JSONSchema[] =>
       schema === true || schema === false
         ? []
@@ -1027,9 +1025,7 @@ describe("snapshot authoring", () => {
             ].flatMap(nodeSchemas),
           ];
 
-    const published = nodeSchemas(
-      authoringTools().find((tool) => tool.name === "review_edit")!.inputSchema,
-    );
+    const published = nodeSchemas(z.toJSONSchema(commandSchema, { io: "input" }));
 
     expect(published.length).toBeGreaterThan(0);
 
@@ -1459,7 +1455,7 @@ describe("create for a pull request", () => {
     const moved = await createFor(url, { pins: { ...pins, head: "new-head" } });
 
     expect(moved).toMatchObject({ created: false, reviewId, headMoved: true });
-    expect(moved.note).toMatch(/review_set_target/);
+    expect(moved.note).toMatch(/whiteboard_session_set_target/);
     expect(store.read(reviewId).source?.pins).toEqual(pins);
   });
 

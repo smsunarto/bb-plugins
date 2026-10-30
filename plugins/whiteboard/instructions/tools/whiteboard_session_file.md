@@ -1,0 +1,3 @@
+Read a complete source file from a Whiteboard session's current target, for context before you cite ranges from it. `side` ("base" or "head") and a repository-relative `file` are required. `version` reads the source a saved version retained, and `commit` reads one commit from `whiteboard_session_commits`. `repositoryId` and `head` together (plus `base` for the base side) read any registered repository at explicit commits instead, which the scratchpad needs because it has no pins of its own.
+
+Returns `file`, `side`, the `commit` read, and `text`. Binary files are rejected. Use `whiteboard_session_source` for a known range and `whiteboard_session_tree` to find files.

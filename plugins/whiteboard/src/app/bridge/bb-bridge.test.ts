@@ -29,25 +29,23 @@ vi.mock("../lib/libavoid-wasm.ts", () => ({ LIBAVOID_WASM: "" }));
 
 const { createBbBridge, PLACEHOLDER_SERVER_URL } = await import("./bb-bridge.ts");
 const { createSurfaceEvents } = await import("./events.ts");
-const { createLiveHub } = await import("./live-watch.ts");
 const { createPortals } = await import("./portals.tsx");
 
 function bridgeWith(info = { softwareMapEnabled: false }) {
   const deps = {
-    rpc: { api: vi.fn(), interest: vi.fn(async () => ({})) } as unknown as WhiteboardRpcClient,
+    rpc: {} as WhiteboardRpcClient,
     threadId: "thread-1",
     reviewId: "s1",
-    navigate: { openUrl: vi.fn(() => true) } as unknown as BbNavigate,
+    navigate: {} as BbNavigate,
     info: { appVersion: "", scratchpadEnabled: false, structuralDiffEnabled: false, ...info },
     portals: createPortals(),
     events: createSurfaceEvents(),
-    hub: createLiveHub({ interest: vi.fn(async () => ({})) }),
   };
   return { bridge: createBbBridge(deps), deps };
 }
 
 describe("createBbBridge", () => {
-  it("names the session and a placeholder server the tunnel strips", () => {
+  it("names the session in the canvas config", () => {
     const { bridge } = bridgeWith();
     expect(bridge.config).toMatchObject({
       host: "desktop",

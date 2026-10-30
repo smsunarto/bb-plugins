@@ -1,0 +1,1 @@
+Report Whiteboard-managed checkouts whose removal failed, and retry one by `workspaceId`. Whiteboard in bb manages no checkouts for this tool to clean up: it returns `failures: []`, and any `workspaceId` is rejected as not found. Authoring and reading sessions never need it.

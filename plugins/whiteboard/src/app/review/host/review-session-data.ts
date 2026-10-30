@@ -18,6 +18,6 @@ export interface ReviewSessionData {
   pullRequestUrl?: string;
   traces: ReadonlyMap<string, LoadedAgentTrace>;
   listVersions(): Promise<ReviewDocumentVersionWire[]>;
-  stack(signal: AbortSignal): Promise<ReviewStackLayer[]>;
+  stack(): Promise<ReviewStackLayer[]>;
   dismiss(): Promise<void>;
 }

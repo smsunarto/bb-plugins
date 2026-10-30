@@ -2,8 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import type { ThreadContext, ThreadContextInput } from "../../shared/contracts/engine.ts";
 
 /**
- * Who is driving the current engine call (design §3.7). Set by
- * `Engine.withThread`, read by `open-panel.ts`, `capabilities()` and the
+ * Who is driving the current engine call. Set by
+ * `Engine.run`, read by `open-panel.ts`, `capabilities()` and the
  * host resolver. The host resolver may cache `hostId` on the stored object.
  */
 export const threadContext = new AsyncLocalStorage<ThreadContext>();

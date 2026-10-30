@@ -2,16 +2,21 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, test } from "vitest";
 import type { Engine } from "../../shared/contracts/engine.ts";
+import { ReviewInputError } from "../../shared/review/input-error.ts";
 import { liveFile, liveFileContract } from "./live-file.ts";
 
 test("historical source stays readonly and invalid RPC inputs never reach the file reader", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "whiteboard" });
   let reads = 0;
   const engine = {
-    request: async () => {
-      reads++;
-      return { status: 404, body: '{"error":"Review not found."}' };
+    api: {
+      file: async () => {
+        reads++;
+        throw new ReviewInputError("Review not found.", 404);
+      },
     },
+    run: (_context: unknown, fn: (signal: AbortSignal) => Promise<unknown>) =>
+      fn(new AbortController().signal),
   } as unknown as Engine;
   bb.rpc.register(defineRpcContract({ liveFile: liveFileContract }), {
     liveFile: (input) => liveFile({ bb, engine }, input),

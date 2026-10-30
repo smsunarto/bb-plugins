@@ -14,7 +14,6 @@ import {
   comparisonKey,
   selectionKey,
 } from "../../shared/review/lens-selection.ts";
-import type { ReviewApiClient } from "../../shared/review/client.ts";
 import { type Lens, UNCATEGORIZED_LENS_ID } from "../../shared/review/diff-lenses.ts";
 import type { ReviewProgress } from "../../server/lib/review/review-progress.ts";
 import type { Snapshot } from "../../server/lib/review/store.ts";
@@ -26,6 +25,8 @@ import {
   mergeCoverageProgress,
   scopedCoverage,
 } from "../../shared/review/viewed-coverage.ts";
+import { errorMessage } from "../../shared/error-message.ts";
+import type { WhiteboardRpcClient } from "../rpc.ts";
 
 /** A resolved selection, tagged with the comparison its own pins name so its
  * changed lines are counted there and not in the document's comparison. */
@@ -65,14 +66,15 @@ const Context = createContext<Lenses | null>(null);
 export const useReviewLenses = () => useContext(Context);
 
 export function ReviewLensesProvider({
-  client,
+  rpc,
   snapshot,
   structuralDiffEnabled = true,
   coverageRevision = 0,
   sourceGeneration,
   children,
 }: {
-  client: ReviewApiClient;
+  /** The panel's client, bound to its thread. */
+  rpc: Pick<WhiteboardRpcClient, "progress" | "markProgress">;
   snapshot: Snapshot;
   structuralDiffEnabled?: boolean;
   coverageRevision?: number;
@@ -90,7 +92,7 @@ export function ReviewLensesProvider({
   const generation = useRef(0);
   const pending = useRef(false);
   const mode = structuralDiffEnabled ? "structural" : "textual";
-  const route = `/${snapshot.reviewId}/progress`;
+  const sessionId = snapshot.reviewId;
   useEffect(() => {
     generation.current++;
     pending.current = false;
@@ -104,25 +106,24 @@ export function ReviewLensesProvider({
     return () => {
       generation.current++;
     };
-  }, [client, route, snapshot.version, mode, sourceGeneration]);
+  }, [rpc, sessionId, snapshot.version, mode, sourceGeneration]);
+  // Coverage without waiting: a pending comparison answers its partial
+  // progress. A coverage change re-reads it.
   useEffect(() => {
     const abort = new AbortController();
-    void client
-      .read<ReviewProgress>(
-        `${route}?version=${snapshot.version}&mode=${mode}&wait=false${sourceGeneration ? `&generation=${encodeURIComponent(sourceGeneration)}` : ""}`,
-        abort.signal,
-      )
+    void rpc
+      .progress({ sessionId, version: snapshot.version, mode, generation: sourceGeneration })
       .then((value) => {
         if (abort.signal.aborted) return;
         setProgress(value);
         setError(null);
       })
       .catch((error) => {
-        if (!abort.signal.aborted) setError(String(error));
+        if (!abort.signal.aborted) setError(errorMessage(error));
       });
 
     return () => abort.abort();
-  }, [client, route, snapshot.version, mode, coverageRevision, sourceGeneration]);
+  }, [rpc, sessionId, snapshot.version, mode, coverageRevision, sourceGeneration]);
 
   // Before the first answer, the authored lenses are listed as still resolving.
   const lenses: ReviewProgress["lenses"] = progress?.lenses ?? [
@@ -191,7 +192,8 @@ export function ReviewLensesProvider({
       }));
 
     try {
-      const next = await client.post<ReviewProgress>(route, {
+      const next = await rpc.markProgress({
+        sessionId,
         version: snapshot.version,
         mode,
         files,
@@ -209,7 +211,7 @@ export function ReviewLensesProvider({
 
       if (collapseLens && viewed) setActiveId(undefined);
     } catch (error) {
-      if (generation.current === currentGeneration) setError(String(error));
+      if (generation.current === currentGeneration) setError(errorMessage(error));
     } finally {
       if (generation.current === currentGeneration) {
         pending.current = false;
@@ -292,8 +294,8 @@ export function ReviewLensesProvider({
       busy,
       error,
       structuralDiffEnabled,
-      client,
-      route,
+      rpc,
+      sessionId,
       snapshot,
     ],
   );

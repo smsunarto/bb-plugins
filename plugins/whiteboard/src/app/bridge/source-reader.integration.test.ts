@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
-import { API_PREFIX } from "../../shared/contracts/api-tunnel.ts";
 import { createEngine } from "../../server/lib/engine.ts";
 import { gitFixture } from "../../server/lib/host-io/testing/git-fixture.ts";
 import {
   createInProcessHostClient,
   IN_PROCESS_HOST_ID,
 } from "../../server/lib/host-io/testing/in-process.ts";
+import { registerRpc } from "../../server/rpc/contract.ts";
+import { type Output, wire } from "../rpc.ts";
 import { createSourceReader, loadFileModel } from "./diff-view.tsx";
 
 vi.mock("@get-bb/plugin-sdk/app", () => ({
@@ -38,25 +39,34 @@ function setup() {
     softwareMapEnabled: () => false,
     subscribe: () => () => {},
   });
-  const request = async (path: string, body?: unknown) => {
-    const result = await engine.request({
-      method: body === undefined ? "GET" : "POST",
-      path,
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    return { status: result.status, body: JSON.parse(result.body) };
-  };
-  const reader = createSourceReader(async (url) => {
-    const parsed = new URL(url);
-    const result = await engine.request({
-      method: "GET",
-      path: `${parsed.pathname.slice(API_PREFIX.length)}${parsed.search}`,
-    });
-    return new Response(result.body, { status: result.status });
+  registerRpc({ bb, engine });
+  // The panel's calls, through the registered methods' input schemas.
+  const call = <T>(method: string, input: unknown) =>
+    host.harness.behavior.callRpc(method, wire(input)) as Promise<T>;
+  const register = async () =>
+    (await engine.run({}, () => engine.api.registerRepository({ path: repo.root }))).id;
+  const create = async (repositoryId: string, title: string) =>
+    (
+      await call<{ reviewId: string }>("command", {
+        commandId: randomUUID(),
+        operation: {
+          type: "create",
+          source: "target",
+          title,
+          target: { kind: "worktree", repositoryId },
+        },
+      })
+    ).reviewId;
+  const current = (sessionId: string) => call<Output<"liveSession">>("liveSession", { sessionId });
+  const reader = createSourceReader({
+    diffFiles: (input) => call("diffFiles", input),
+    file: (input) => call("file", input),
   });
   return {
     repo,
-    request,
+    register,
+    create,
+    current,
     reader,
     async dispose() {
       await engine.dispose();
@@ -69,27 +79,16 @@ function setup() {
 
 it("refreshes dirty worktree source at the same authored version and retains historical source", async () => {
   const fixture = setup();
-  const { repo, request, reader } = fixture;
+  const { repo, register, create, current: read, reader } = fixture;
   try {
-    const registered = await request("/repositories", { path: repo.root });
-    expect(registered.status).toBe(200);
+    const repositoryId = await register();
     repo.write("src/a.ts", "export const state = 'queued';\n");
-    const created = await request("/commands", {
-      commandId: randomUUID(),
-      operation: {
-        type: "create",
-        source: "target",
-        title: "Dirty source",
-        target: { kind: "worktree", repositoryId: registered.body.id },
-      },
-    });
-    expect(created.status).toBe(200);
-    const reviewId: string = created.body.reviewId;
-    const first = (await request(`/${reviewId}?full=true`)).body;
+    const reviewId = await create(repositoryId, "Dirty source");
+    const first = await read(reviewId);
     expect(first.version).toBe(0);
     expect(
       await reader.file(
-        { reviewId, version: 0, generation: first.source.pins.worktreeRevision },
+        { reviewId, version: 0, generation: first.source!.pins.worktreeRevision },
         "head",
         "src/a.ts",
       ),
@@ -98,13 +97,13 @@ it("refreshes dirty worktree source at the same authored version and retains his
     let next = first;
     await vi.waitFor(
       async () => {
-        next = (await request(`/${reviewId}?full=true`)).body;
-        expect(next.source.pins.worktreeRevision).not.toBe(first.source.pins.worktreeRevision);
+        next = await read(reviewId);
+        expect(next.source!.pins.worktreeRevision).not.toBe(first.source!.pins.worktreeRevision);
       },
       { timeout: 5_000 },
     );
     expect(next.version).toBe(0);
-    const current = { reviewId, version: 0, generation: next.source.pins.worktreeRevision };
+    const current = { reviewId, version: 0, generation: next.source!.pins.worktreeRevision };
     expect(await reader.file(current, "head", "src/a.ts")).toMatchObject({
       text: "export const state = 'processing';\nexport const count = 2;\n",
       localPath: `${repo.root}/src/a.ts`,
@@ -129,7 +128,7 @@ it.each(["clean filter", "CRLF"])(
   "uses Git's %s projection for native Diff and preserves exact raw source",
   async (kind) => {
     const fixture = setup();
-    const { repo, request, reader } = fixture;
+    const { repo, register, create, current: read, reader } = fixture;
     try {
       if (kind === "clean filter") {
         repo.git("config", "filter.upper.clean", "tr '[:lower:]' '[:upper:]'");
@@ -150,24 +149,12 @@ it.each(["clean filter", "CRLF"])(
           : "export const a = 11;\nexport const a2 = 20;\n";
       repo.write("src/a.ts", raw);
       expect(repo.git("diff", "--numstat", "HEAD")).toBe("1\t1\tsrc/a.ts\n");
-      const registered = await request("/repositories", { path: repo.root });
-      expect(registered.status).toBe(200);
-      const created = await request("/commands", {
-        commandId: randomUUID(),
-        operation: {
-          type: "create",
-          source: "target",
-          title: "Filtered dirty source",
-          target: { kind: "worktree", repositoryId: registered.body.id },
-        },
-      });
-      expect(created.status).toBe(200);
-      const reviewId: string = created.body.reviewId;
-      const snapshot = (await request(`/${reviewId}?full=true`)).body;
+      const reviewId = await create(await register(), "Filtered dirty source");
+      const snapshot = await read(reviewId);
       const current = {
         reviewId,
         version: snapshot.version,
-        generation: snapshot.source.pins.worktreeRevision,
+        generation: snapshot.source!.pins.worktreeRevision,
       };
       const files = await reader.files(current);
       expect(files).toEqual([{ path: "src/a.ts", status: "modified", additions: 1, deletions: 1 }]);

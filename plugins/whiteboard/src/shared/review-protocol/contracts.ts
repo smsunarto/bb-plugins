@@ -5,7 +5,7 @@ import {
 } from "../trace-protocol/index.ts";
 import { z } from "zod";
 
-import type { ReviewApiSummary, ReviewApiTarget } from "./review-api-client.ts";
+import type { ReviewApiSummary, ReviewApiTarget } from "./review-summary.ts";
 
 // Version 3: the desktop serves prebuilt revisions instead of building them.
 // (Version 2 added the bundled-CLI discovery fields.)
@@ -298,7 +298,6 @@ export interface ReviewCanvasBridge {
   readonly config: ReviewRuntimeConfig;
   readonly inlineEditors: ReviewInlineEditorFactory;
   readonly diffView: ReviewDiffViewFactory;
-  request(url: string, init?: RequestInit): Promise<Response>;
   post(request: ReviewVerbRequest): Promise<ReviewVerbResponse>;
   subscribe(listener: (event: ReviewSurfaceEvent) => void): ReviewDisposable;
   currentTheme(): ReviewTheme;
@@ -620,9 +619,6 @@ export type ReviewCanvasContent =
       // not support them.
       dismissReview?(uuid: string): Promise<void>;
       restoreReview?(uuid: string): Promise<void>;
-      // Opens the review and pins its read-only source tree open. Absent when
-      // the host cannot show the tree.
-      openSourceTree?(uuid: string): void;
       // With no reviews, Home renders the Welcome rail instead of a zero
       // state of its own, so it needs what Welcome needs. Both absent when
       // the install status endpoint is unavailable.
@@ -1088,8 +1084,6 @@ const revealArgsSchema = z
     }
   });
 
-export const REVIEW_DISCORD_URL = "https://discord.gg/wYvd2cpMQg";
-
 /** The one scratchpad's fixed review id. */
 export const SCRATCHPAD_REVIEW_ID = "scratchpad";
 
@@ -1104,14 +1098,9 @@ export const ReviewVerbRequestSchema = z.discriminatedUnion("name", [
     name: z.literal("authoringCapabilities"),
     args: z.strictObject({}),
   }),
-  z.strictObject({ name: z.literal("joinDiscord"), args: z.strictObject({}) }),
   z.strictObject({
     name: z.literal("showReviewView"),
     args: z.strictObject({ view: reviewViewSchema }),
-  }),
-  z.strictObject({
-    name: z.literal("openSourceTree"),
-    args: z.strictObject({}),
   }),
   z.strictObject({
     name: z.literal("openDiff"),
@@ -1123,10 +1112,6 @@ export const ReviewVerbRequestSchema = z.discriminatedUnion("name", [
   z.strictObject({ name: z.literal("reveal"), args: revealArgsSchema }),
   z.strictObject({ name: z.literal("focusCanvas"), args: z.strictObject({}) }),
   z.strictObject({ name: z.literal("focusWindow"), args: z.strictObject({}) }),
-  z.strictObject({
-    name: z.literal("captureScreenshot"),
-    args: z.strictObject({}),
-  }),
   z.strictObject({
     name: z.literal("openReviewRevision"),
     args: z.strictObject({

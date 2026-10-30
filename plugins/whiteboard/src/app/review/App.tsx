@@ -26,7 +26,7 @@ import {
 import { DiffLayoutControl } from "./diff-layout-control.tsx";
 import { ReviewDiffView } from "./DiffView.tsx";
 import { useReviewSession } from "./host/review-session.tsx";
-import { DiscordIcon, MarkerUnderline, SettingsSlidersIcon } from "./icons.tsx";
+import { MarkerUnderline, SettingsSlidersIcon } from "./icons.tsx";
 import { ReviewPanelHost } from "./review-components.tsx";
 import { ReviewProvider, useReview } from "./review-context.tsx";
 import { ReviewCornerAction } from "./review-corner-action.tsx";
@@ -65,7 +65,6 @@ import { SoftwareMapTopologyUnavailable } from "./software-map/software-map-abse
 import { SoftwareMap } from "./software-map/SoftwareMap.tsx";
 import { useTutorial } from "./tutorial-context.tsx";
 import { TutorialExperienceProvider } from "./tutorial-experience.tsx";
-import { useTooltip } from "./use-tooltip.ts";
 
 const DEFAULT_SIDE_PEEK_WIDTH = 560;
 
@@ -293,11 +292,8 @@ function ReviewLayoutContent({
 }): ReactElement {
   const session = useReviewSession();
   const review = useReview();
-  // The scratchpad is a document and nothing else: no source tree to browse,
-  // nothing to share, nothing to dismiss.
+  // The scratchpad is a document and nothing else: nothing to dismiss.
   const scratchpad = session.review?.kind === "scratchpad";
-  const discordTooltip = useTooltip("Join our Discord community");
-  const sourceTreeTooltip = useTooltip("Open full read-only source");
   const panelStore = useReviewPanelStore();
   useSuppressPanelMotionOnCanvasResume(appRef);
   const activePanel = useReviewPanel((state) => state.active);
@@ -534,40 +530,12 @@ function ReviewLayoutContent({
             </div>
             <div className="review-topbar-actions">
               <div className="review-topbar-context">
-                {!scratchpad && (
-                  <button
-                    type="button"
-                    className="review-open-source-tree"
-                    aria-label="Source tree ↗"
-                    ref={sourceTreeTooltip}
-                    onClick={() => {
-                      session.surface.post({
-                        name: "openSourceTree",
-                        args: {},
-                      });
-                    }}
-                  >
-                    <span className="review-open-source-tree-label">Source tree</span>
-                    <span aria-hidden="true">↗</span>
-                  </button>
-                )}
                 <AuthoringActivityBadge
                   onLocate={(view) => {
                     applyReviewView(view);
                   }}
                 />
               </div>
-              <button
-                type="button"
-                className="review-topbar-icon-button"
-                ref={discordTooltip}
-                aria-label="Join our Discord community"
-                onClick={() => {
-                  session.surface.post({ name: "joinDiscord", args: {} });
-                }}
-              >
-                <DiscordIcon />
-              </button>
               <DiffLayoutControl />
               {!scratchpad && !review.historicalRevision && (
                 <div className="topbar-actions-divider" />

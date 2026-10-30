@@ -2,17 +2,15 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ApiRequest, ApiResponse } from "../../shared/contracts/api-tunnel.ts";
 import { queryClient } from "../query.ts";
 import type { ReviewCanvasContent, ReviewSourceView } from "../../shared/review-protocol/index.ts";
 
 /**
- * The mount with bb's SDK, the RPC client and the review canvas replaced.
- * What stays real: the bridge, the tunnel, live watch, ReviewApiClient, theme.
+ * The mount with bb's SDK, the RPC client, the live catalog read and the
+ * review canvas replaced. What stays real: the bridge, `followLive`, the
+ * catalog's pending edits, theme.
  */
 const sdk = vi.hoisted(() => ({
-  realtime: new Map<string, (payload: unknown) => void>(),
-  connection: "connected" as "connected" | "connecting" | "reconnecting",
   context: { projectId: null as string | null, threadId: null as string | null },
   composer: { insert: (_parts: unknown, _options?: unknown) => {}, focus: () => {} },
   navigate: {
@@ -25,7 +23,10 @@ const sdk = vi.hoisted(() => ({
 }));
 const rpcState = vi.hoisted(() => ({
   catalog: [] as Array<{ reviewId: string; title: string; dismissedAt: string | null }>,
-  calls: [] as ApiRequest[],
+  /** Every RPC and live read, with the thread the client was bound to. */
+  calls: [] as Array<{ method: string; threadId?: string; input: unknown }>,
+  /** The mounted catalog reads. Each answers the catalog at mount and when it changes. */
+  reads: new Set<() => Promise<void>>(),
   failCommands: false,
   readGate: undefined as (() => Promise<void>) | undefined,
   commandGate: undefined as (() => Promise<void>) | undefined,
@@ -39,10 +40,6 @@ const canvas = vi.hoisted(() => ({
 vi.mock("@get-bb/plugin-sdk/app", () => ({
   useBbContext: () => sdk.context,
   useBbNavigate: () => sdk.navigate,
-  useRealtime: (channel: string, handler: (payload: unknown) => void) => {
-    sdk.realtime.set(channel, handler);
-  },
-  useRealtimeConnectionState: () => sdk.connection,
   useComposer: () => sdk.composer,
   experimental_useCodeTheme: () => ({ mode: "light", name: "light", theme: null }),
   experimental_Icon: ({ name }: { name: string }) => <svg data-icon={name} />,
@@ -53,21 +50,47 @@ vi.mock("@get-bb/plugin-sdk/app", () => ({
 }));
 
 vi.mock("../rpc.ts", () => {
-  const api = async (request: ApiRequest): Promise<ApiResponse> => {
-    rpcState.calls.push(request);
-    const catalog = rpcState.catalog;
-    if (request.path.startsWith("/watch")) await rpcState.readGate?.();
-    if (request.path === "/commands") await rpcState.commandGate?.();
-    if (rpcState.failCommands && request.path === "/commands") {
-      return { status: 500, contentType: "application/json", encoding: "utf8", body: "{}" };
-    }
-    const body = request.path.startsWith("/watch")
-      ? `${JSON.stringify([{ value: catalog }])}\n`
-      : "{}";
-    return { status: 200, contentType: "application/json", encoding: "utf8", body };
+  const clients = new Map<string | undefined, object>();
+  const clientFor = (threadId: string | undefined) => ({
+    command: async (input: unknown) => {
+      rpcState.calls.push({ method: "command", threadId, input });
+      await rpcState.commandGate?.();
+      if (rpcState.failCommands) throw new Error("Whiteboard operation failed (command).");
+      return {};
+    },
+  });
+  return {
+    useWhiteboardRpc: (threadId: string | undefined) => {
+      if (!clients.has(threadId)) clients.set(threadId, clientFor(threadId));
+      return clients.get(threadId);
+    },
   };
-  const client = { api };
-  return { useWhiteboardRpc: () => client };
+});
+
+vi.mock("../live.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../live.ts")>();
+  const { fakeLiveRead } = await import("../live-test-utils.ts");
+  const { useEffect, useMemo } = await import("react");
+  return {
+    ...actual,
+    useLiveRead: (method: string, input: unknown) => {
+      // One fake read per input, as the SDK keys reads.
+      const key = JSON.stringify([method, input]);
+      const live = useMemo(() => ({ key, ...fakeLiveRead<unknown>() }), [key]);
+      useEffect(() => {
+        const [method, input] = JSON.parse(live.key) as [string, unknown];
+        const read = async () => {
+          rpcState.calls.push({ method, input });
+          await rpcState.readGate?.();
+          live.push(rpcState.catalog.map((row) => ({ ...row })));
+        };
+        rpcState.reads.add(read);
+        void read();
+        return () => void rpcState.reads.delete(read);
+      }, [live]);
+      return live.read;
+    },
+  };
 });
 
 vi.mock("../review/api-canvas.tsx", () => ({
@@ -137,13 +160,12 @@ beforeEach(() => {
   document.documentElement.className = "dark";
   rpcState.catalog = [{ reviewId: SESSION, title: "Auth walkthrough", dismissedAt: null }];
   rpcState.calls = [];
+  rpcState.reads.clear();
   rpcState.failCommands = false;
   rpcState.readGate = undefined;
   rpcState.commandGate = undefined;
   home.real = false;
   queryClient.removeQueries({ queryKey: ["whiteboard", "catalog"] });
-  sdk.realtime.clear();
-  sdk.connection = "connected";
   sdk.context = { projectId: null, threadId: null };
   canvas.content = undefined;
   canvas.sourceView = undefined;
@@ -158,13 +180,14 @@ afterEach(() => {
 
 const root = () => document.querySelector<HTMLElement>(".review-canvas-root")!;
 const themeHost = () => root().querySelector<HTMLElement>(".review-theme-host")!;
-const watchCalls = () => rpcState.calls.filter((call) => call.path.startsWith("/watch")).length;
+const commandCalls = () => rpcState.calls.filter((call) => call.method === "command");
 const commands = () =>
-  rpcState.calls
-    .filter((call) => call.path === "/commands")
-    .map((call) => JSON.parse(call.body!).operation);
+  commandCalls().map((call) => (call.input as { operation: unknown }).operation);
+/** The server invalidated the catalog: every mounted catalog read answers again. */
 const catalogChanged = () =>
-  act(() => sdk.realtime.get("whiteboard:changed")!({ kind: "catalog" }));
+  act(() => {
+    for (const read of rpcState.reads) void read();
+  });
 const catalogEntry = (dismissedAt: string | null) => [
   { reviewId: SESSION, title: "Auth walkthrough", dismissedAt },
 ];
@@ -404,19 +427,21 @@ describe("WhiteboardMount", () => {
     expect(root().contains(screen.getByTestId("api-canvas"))).toBe(true);
   });
 
-  it("marks the session viewed when it opens", async () => {
+  it("marks the session viewed when it opens, as the panel's thread", async () => {
     render(<WhiteboardMount sessionId={SESSION} threadId="thread-1" info={INFO} />);
-    await waitFor(() =>
-      expect(rpcState.calls.some((call) => call.path === "/commands")).toBe(true),
-    );
-    const post = rpcState.calls.find((call) => call.path === "/commands")!;
-    expect(post.method).toBe("POST");
-    expect(post.threadId).toBe("thread-1");
-    expect(JSON.parse(post.body!).operation).toEqual({
-      type: "attention",
-      reviewId: SESSION,
-      action: "view",
+    await waitFor(() => expect(commandCalls()).toHaveLength(1));
+    expect(commandCalls()[0]).toMatchObject({
+      threadId: "thread-1",
+      input: { operation: { type: "attention", reviewId: SESSION, action: "view" } },
     });
+  });
+
+  it("reads the catalog of the panel's thread in the coverage mode its host supports", async () => {
+    render(<WhiteboardMount threadId="thread-1" info={{ ...INFO, structuralDiffEnabled: true }} />);
+    await screen.findByText("Auth walkthrough");
+    expect(rpcState.calls.filter((call) => call.method === "sessions")).toEqual([
+      { method: "sessions", input: { threadId: "thread-1", mode: "structural" } },
+    ]);
   });
 
   it("opens Whiteboard find on Cmd+F only inside the panel", async () => {
@@ -579,32 +604,5 @@ describe("WhiteboardMount", () => {
       [["> from the full page\n", pill, " "], atEnd],
     ]);
     expect(toCompose.mock.calls).toEqual([[{ focusPrompt: true }]]);
-  });
-
-  it("refetches live streams after a realtime reconnect", async () => {
-    const view = render(<WhiteboardMount info={INFO} />);
-    await screen.findByText("Auth walkthrough");
-    const before = watchCalls();
-
-    sdk.connection = "reconnecting";
-    view.rerender(<WhiteboardMount info={INFO} />);
-    rpcState.catalog = [
-      ...rpcState.catalog,
-      { reviewId: "22222222-2222-4222-8222-222222222222", title: "Billing", dismissedAt: null },
-    ];
-    sdk.connection = "connected";
-    view.rerender(<WhiteboardMount info={INFO} />);
-
-    expect(await screen.findByText("Billing")).toBeTruthy();
-    expect(watchCalls()).toBe(before + 1);
-  });
-
-  it("ignores malformed realtime payloads", async () => {
-    render(<WhiteboardMount info={INFO} />);
-    await screen.findByText("Auth walkthrough");
-    const before = watchCalls();
-    act(() => sdk.realtime.get("whiteboard:changed")!({ kind: "nope" }));
-    await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(watchCalls()).toBe(before);
   });
 });

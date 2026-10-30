@@ -29,7 +29,7 @@ export function HomePanel({ subPath }: PluginNavPanelProps) {
           <WhiteboardMount
             key={sessionId ?? ""}
             info={info}
-            {...(sessionId ? { sessionId } : {})}
+            {...((info.sessionId ?? sessionId) ? { sessionId: info.sessionId ?? sessionId } : {})}
           />
         )}
       </WhiteboardInfo>

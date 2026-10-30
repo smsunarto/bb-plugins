@@ -12,47 +12,65 @@ import {
 import { useMemo } from "react";
 import type { contract } from "../server/server.ts";
 
-type Contract = typeof contract;
-type Method = keyof Contract & string;
-type Input<M extends Method> = StandardSchemaV1InferInput<Contract[M]["input"]>;
-type Output<M extends Method> = StandardSchemaV1InferOutput<Contract[M]["output"]>;
+export type Contract = typeof contract;
+export type Method = keyof Contract & string;
+export type Input<M extends Method> = StandardSchemaV1InferInput<Contract[M]["input"]>;
+export type Output<M extends Method> = StandardSchemaV1InferOutput<Contract[M]["output"]>;
+
+/** An input as a panel writes it: its client adds the panel's `threadId`. */
+type PanelInput<M extends Method> = Omit<Input<M>, "threadId">;
 
 /**
- * The imperative client the bridge holds, one per mount: a method per RPC
- * over the SDK client's `call`. Written out rather than proxied, so a test
- * fake is a plain `{ api, interest }` object.
+ * The client a panel holds: one method per RPC, each call carrying the
+ * panel's thread, which scopes its scratchpad. Session inputs name the
+ * canonical session id (`info.sessionId`), never the "scratchpad" alias. A
+ * test fake is a plain object of the methods it uses.
  */
 export type WhiteboardRpcClient = {
-  api(input: Input<"api">): Promise<Output<"api">>;
-  claimOpen(input: Input<"claimOpen">): Promise<Output<"claimOpen">>;
-  info(input: Input<"info">): Promise<Output<"info">>;
-  interest(): Promise<Output<"interest">>;
-  liveFile(input: Input<"liveFile">): Promise<Output<"liveFile">>;
+  [M in Method]: (input: PanelInput<M>) => Promise<Output<M>>;
 };
 
 /**
  * The wire input for a call: `null` for none, and keys holding `undefined`
- * dropped, so `{ threadId, after: undefined }` passes a strict schema.
+ * dropped, so `{ threadId, after: undefined }` passes a strict schema and
+ * is valid JSON for a live read's key.
  */
-function wire<T>(input: T | null | undefined): T | null {
+export function wire<T>(input: T | null | undefined): T | null {
   if (input === undefined || input === null) return null;
   if (typeof input !== "object") return input;
   return Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as T;
 }
 
-/** Stable for as long as the SDK's client is, so hubs and bridges keyed on it stay put. */
-export function useWhiteboardRpc(): WhiteboardRpcClient {
+/** Stable for as long as the SDK's client and the thread are, so bridges keyed on it stay put. */
+export function useWhiteboardRpc(threadId: string | undefined): WhiteboardRpcClient {
   const client = useRpc<Contract>();
-  return useMemo(
-    () => ({
-      api: (input) => client.call("api", wire(input)!),
-      claimOpen: (input) => client.call("claimOpen", wire(input)!),
-      info: (input) => client.call("info", wire(input)!),
-      interest: () => client.call("interest"),
-      liveFile: (input) => client.call("liveFile", wire(input)!),
-    }),
-    [client],
-  );
+  return useMemo(() => {
+    // SAFETY: `wire` only drops undefined keys from an input typed for `method`.
+    const send = client.call as <M extends Method>(method: M, input: unknown) => Promise<Output<M>>;
+    const call =
+      <M extends Method>(method: M) =>
+      (input: PanelInput<M>): Promise<Output<M>> =>
+        send(method, wire({ ...input, threadId }));
+    return {
+      info: call("info"),
+      claimOpen: call("claimOpen"),
+      liveFile: call("liveFile"),
+      sessions: call("sessions"),
+      liveSession: call("liveSession"),
+      sessionVersion: call("sessionVersion"),
+      history: call("history"),
+      stack: call("stack"),
+      commits: call("commits"),
+      map: call("map"),
+      resource: call("resource"),
+      progress: call("progress"),
+      markProgress: call("markProgress"),
+      copyContext: call("copyContext"),
+      diffFiles: call("diffFiles"),
+      file: call("file"),
+      command: call("command"),
+    } satisfies WhiteboardRpcClient;
+  }, [client, threadId]);
 }
 
 /** `[method]` for no input, else `[method, input]` with undefined-valued keys removed. */

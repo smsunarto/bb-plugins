@@ -15,7 +15,7 @@ import { lensRangesFor } from "./two-side.ts";
 
 /** Code peeks host bb viewers. Monaco-only find/selection/folding stay inert (§0.1). */
 export function createInlineEditors(deps: CodeSurfaceDeps): ReviewInlineEditorFactory {
-  const reader = createSourceReader(deps.request);
+  const reader = createSourceReader(deps.rpc);
   return {
     find: async () => ({ matchCount: 0 }),
     create(spec): ReviewInlineEditorHandle {

@@ -5,14 +5,10 @@ import type {
 } from "../../../shared/review-protocol/index.ts";
 import { type ReactNode, createContext, useContext } from "react";
 
+import type { WhiteboardRpcClient } from "../../rpc.ts";
 import type { NormalizedSoftwareModel } from "../software-map/model.ts";
 import type { PinnedSoftwareMapData } from "../software-map/SoftwareMap.tsx";
-import {
-  type ReviewRequestOptions,
-  jsonReviewApiUrl,
-  reviewStorageKey,
-  reviewWasmUrl,
-} from "./review-client.ts";
+import { reviewStorageKey, reviewWasmUrl } from "./review-client.ts";
 import { type ReviewSurface, createReviewSurface } from "./review-host.tsx";
 import type { ReviewSessionData } from "./review-session-data.ts";
 
@@ -21,15 +17,13 @@ export interface ReviewSession {
   bridge: ReviewCanvasBridge;
   config: ReviewRuntimeConfig;
   surface: ReviewSurface;
+  /** The panel's client: every call carries the panel's thread. */
+  rpc: WhiteboardRpcClient;
+  /** The canonical id of the session shown. */
+  sessionId: string;
+  /** The version on screen; undefined before the first document loads. */
+  version(): number | undefined;
   softwareMapData?(model: NormalizedSoftwareModel): PinnedSoftwareMapData | undefined;
-  apiUrl(endpoint: `/${string}`, options?: ReviewRequestOptions): string;
-  fetch: (
-    endpoint: `/${string}`,
-    init?: RequestInit,
-    options?: ReviewRequestOptions,
-  ) => Promise<Response>;
-  fetchUrl(url: string | URL, init?: RequestInit): Promise<Response>;
-  beaconUrl(endpoint: `/${string}`): string;
   wasmUrl(): string;
   storageKey(namespace: string, ...parts: Array<string | number | undefined>): string;
   theme(): ReviewRuntimeConfig["theme"];
@@ -39,32 +33,17 @@ export interface ReviewSession {
 
 export function createReviewSession(
   bridge: ReviewCanvasBridge,
-  options: { jsonReview: { id: string; version(): number | undefined } },
+  options: Pick<ReviewSession, "rpc" | "sessionId" | "version">,
 ): ReviewSession {
   const config = bridge.config;
-
-  const request = (url: string | URL, init: RequestInit = {}) => {
-    const headers = new Headers(init.headers);
-
-    if (config.token) headers.set("x-review-token", config.token);
-
-    return bridge.request(String(url), { ...init, headers });
-  };
-
-  const apiUrl = (endpoint: `/${string}`, requestOptions?: ReviewRequestOptions) =>
-    jsonReviewApiUrl(config, options.jsonReview.id, endpoint, {
-      version: options.jsonReview.version(),
-      tokenInQuery: requestOptions?.tokenInQuery,
-    });
 
   return {
     bridge,
     config,
     surface: createReviewSurface(bridge),
-    apiUrl,
-    fetch: (endpoint, init, options) => request(apiUrl(endpoint, options), init),
-    fetchUrl: request,
-    beaconUrl: (endpoint) => apiUrl(endpoint, { tokenInQuery: true }),
+    rpc: options.rpc,
+    sessionId: options.sessionId,
+    version: options.version,
     wasmUrl: () => reviewWasmUrl(config),
     storageKey: (namespace, ...parts) => reviewStorageKey(config, namespace, ...parts),
     theme: () => bridge.currentTheme(),

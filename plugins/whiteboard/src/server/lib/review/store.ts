@@ -81,7 +81,7 @@ const reuseExisting = z
   .boolean()
   .optional()
   .describe(
-    "Default true: return the existing review for pullRequestUrl. false creates a separate review.",
+    "Default true: return the existing Whiteboard session for pullRequestUrl instead of creating one. false creates a separate session.",
   );
 
 /** What a new review shows. `source` picks the variant; each names only the
@@ -117,7 +117,7 @@ const createOperation = z.discriminatedUnion("source", [
       .min(1)
       .optional()
       .describe(
-        "The registered checkout to fetch the PR into. Default: the existing review's, else the first registered checkout with a remote for the PR's repository.",
+        "The registered checkout to fetch the PR into. Default: the existing session's checkout, else the first registered checkout with a GitHub remote for the PR's repository.",
       ),
     reuseExisting,
   }),
@@ -1347,11 +1347,11 @@ export class ReviewStore {
     const ownedBy = this.activity.heldByAnother(reviewId, leaseId);
 
     const note = [
-      "Returned the existing review for this PR instead of creating one; the requested title and target were not applied. Update it in place (read it with whiteboard_session_get first), or pass reuseExisting:false to create a separate review.",
+      "Returned the existing Whiteboard session for this PR instead of creating one; the requested title and target were not applied. Update it in place (read it with whiteboard_session_get first), or pass reuseExisting:false to create a separate session.",
       headMoved &&
-        "The PR head moved since this review's target was set, and the target was NOT changed: call review_set_target to move it, then repair the source references it reports.",
+        "The PR head moved since this session's target was set, and the target was NOT changed: call whiteboard_session_set_target to move it, then repair the source references it reports.",
       ownedBy && "Another session is authoring it now; wait for its lease to end before editing.",
-      others.length > 0 && "Older reviews also name this PR; see otherReviewIds.",
+      others.length > 0 && "Older sessions also name this PR; see otherReviewIds.",
     ]
       .filter(Boolean)
       .join(" ");

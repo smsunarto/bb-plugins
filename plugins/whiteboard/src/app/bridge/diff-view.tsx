@@ -3,7 +3,6 @@ import {
   experimental_SourceCode as SourceCode,
 } from "@get-bb/plugin-sdk/app";
 import { type RefObject, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { API_ORIGIN, API_PREFIX } from "../../shared/contracts/api-tunnel.ts";
 import type {
   ReviewCommitScope,
   ReviewDiffFileWire,
@@ -21,6 +20,7 @@ import type {
   ReviewSourceView,
 } from "../../shared/review-protocol/index.ts";
 import type { CoverageProgress } from "../../shared/review/viewed-coverage.ts";
+import type { WhiteboardRpcClient } from "../rpc.ts";
 import { ViewedButton } from "../review/viewed-button.tsx";
 import { Chevron, DiffFileTree, treeCounts } from "./diff-file-tree.tsx";
 import type { Portals } from "./portals.tsx";
@@ -36,8 +36,6 @@ import {
   sourcePatch,
   type SourceRange,
 } from "./two-side.ts";
-
-export type Request = (url: string, init?: RequestInit) => Promise<Response>;
 
 export interface Comparison {
   reviewId: string;
@@ -58,8 +56,12 @@ export type OpenSourceFile = (input: {
   endLine?: number;
 }) => Promise<boolean>;
 
+/** The reads code surfaces make. */
+export type SourceRpc = Pick<WhiteboardRpcClient, "diffFiles" | "file">;
+
 export interface CodeSurfaceDeps {
-  request: Request;
+  /** The panel's client, bound to its thread. */
+  rpc: SourceRpc;
   reviewId?: string;
   portals: Portals;
   sourceView?: () => ReviewSourceView | undefined;
@@ -76,49 +78,41 @@ export interface SourceReader {
   ): Promise<{ text: string; localPath?: string }>;
 }
 
+/** The source a comparison names, as the read methods take it. */
+const selector = (comparison: Comparison) => ({
+  sessionId: comparison.reviewId,
+  version: comparison.version,
+  generation: comparison.generation,
+  commit: comparison.commit,
+  repositoryId: comparison.pins?.repositoryId,
+  base: comparison.pins?.base,
+  head: comparison.pins?.head,
+});
+
 /** Immutable versions share reads. Unversioned worktree reads never cache stale text. */
-export function createSourceReader(request: Request): SourceReader {
+export function createSourceReader(rpc: SourceRpc): SourceReader {
   const cache = new Map<string, Promise<unknown>>();
-  const read = <T,>(comparison: Comparison, route: string, extra: Record<string, string>) => {
-    const params = new URLSearchParams(extra);
-    for (const [key, value] of Object.entries({
-      version: comparison.version,
-      generation: comparison.generation,
-      commit: comparison.commit,
-      repositoryId: comparison.pins?.repositoryId,
-      base: comparison.pins?.base,
-      head: comparison.pins?.head,
-    }))
-      if (value !== undefined) params.set(key, String(value));
-    const url = `${API_ORIGIN}${API_PREFIX}/${encodeURIComponent(comparison.reviewId)}${route}?${params}`;
-    const key =
-      comparison.version === undefined ? undefined : `${comparison.generation ?? ""}:${url}`;
-    const cached = key && cache.get(key);
-    if (cached) return cached as Promise<T>;
-    const promise = readJson<T>(request, url);
-    if (key) {
-      cache.set(key, promise);
-      promise.catch(() => cache.delete(key));
-      if (cache.size > 256) cache.delete(cache.keys().next().value!);
-    }
+  const cached = <T,>(comparison: Comparison, key: unknown, read: () => Promise<T>) => {
+    if (comparison.version === undefined) return read();
+    const id = JSON.stringify(key);
+    const hit = cache.get(id);
+    if (hit) return hit as Promise<T>;
+    const promise = read();
+    cache.set(id, promise);
+    promise.catch(() => cache.delete(id));
+    if (cache.size > 256) cache.delete(cache.keys().next().value!);
     return promise;
   };
   return {
-    files: (comparison) => read(comparison, "/diff", { format: "files" }),
-    file: (comparison, side, path, projection) =>
-      read(comparison, "/file", { side, file: path, ...(projection ? { projection } : {}) }),
+    files: (comparison) => {
+      const input = selector(comparison);
+      return cached(comparison, ["diffFiles", input], () => rpc.diffFiles(input));
+    },
+    file: (comparison, side, path, projection) => {
+      const input = { ...selector(comparison), side, path, projection };
+      return cached(comparison, ["file", input], () => rpc.file(input));
+    },
   };
-}
-
-async function readJson<T>(request: Request, url: string): Promise<T> {
-  const response = await request(url);
-  if (!response.ok) {
-    const body = await response.json().catch(() => undefined);
-    throw new Error(
-      typeof body?.error === "string" ? body.error : `Could not read source (${response.status}).`,
-    );
-  }
-  return response.json() as Promise<T>;
 }
 
 export interface FileModel {
@@ -696,7 +690,7 @@ function fileFolds() {
 type FileFolds = ReturnType<typeof fileFolds>;
 
 export function createDiffView(deps: CodeSurfaceDeps): ReviewDiffViewFactory {
-  const reader = createSourceReader(deps.request);
+  const reader = createSourceReader(deps.rpc);
   const comparison = (scope?: ReviewCommitScope): Comparison => {
     const view = deps.sourceView?.();
     const reviewId = view?.reviewId ?? deps.reviewId;

@@ -8,7 +8,6 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { z } from "zod";
 
 import type { AgentSelection } from "../../shared/review/agent-selection.ts";
 import { copyText } from "../bridge/agent-handoff.ts";
@@ -157,17 +156,11 @@ export function AgentSelectionProvider({
     } = selection;
 
     try {
-      const response = await session.fetch("/copy-context", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...payload, revision }),
+      const { text, handoff } = await session.rpc.copyContext({
+        sessionId: session.sessionId,
+        version: session.version(),
+        selection: { ...payload, revision },
       });
-
-      if (!response.ok) throw new Error("Context unavailable");
-
-      const { text, handoff } = z
-        .object({ text: z.string(), handoff: z.unknown().optional() })
-        .parse(await response.json());
 
       if (!(await copyText(text, handoff, selection.anchorContainer)))
         throw new Error("Clipboard unavailable");

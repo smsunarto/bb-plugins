@@ -185,7 +185,6 @@ describe("creating a review from a pull request URL alone", () => {
     pr = { number: 7, title: "Add widgets", baseRefName: "main" };
     ghCalls = 0;
     local = openLocalReviewStore(path.join(directory, "reviews.db"), {
-      manageWorkspaces: false,
       pullRequests: {
         ...defaultPullRequestDeps,
         run: async (file, args, options) => {

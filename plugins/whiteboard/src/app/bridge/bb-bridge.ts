@@ -8,13 +8,13 @@ import type {
   ReviewRuntimeConfig,
   ReviewSourceView,
 } from "../../shared/review-protocol/index.ts";
-import type { InfoOutput } from "../../shared/contracts/api-tunnel.ts";
+import type { InfoOutput } from "../../shared/contracts/rpc.ts";
 import type { WhiteboardRpcClient } from "../rpc.ts";
+import { base64Bytes } from "../lib/base64.ts";
 import { LIBAVOID_WASM } from "../lib/libavoid-wasm.ts";
 import { createDiffView } from "./diff-view.tsx";
 import type { SurfaceEvents } from "./events.ts";
 import { createInlineEditors } from "./inline-editors.tsx";
-import type { LiveHub } from "./live-watch.ts";
 import type { Portals } from "./portals.tsx";
 import {
   currentDiffLayout,
@@ -24,11 +24,11 @@ import {
   setDiffLayout,
 } from "./theme.ts";
 import { createTooltips } from "./tooltip.tsx";
-import { createTunnel } from "./tunnel.ts";
 import { createLiveFileOpener, createVerbs } from "./verbs.ts";
 
 /** What a mount hands the bridge. */
 export type BbBridgeDeps = {
+  /** The panel's client, bound to `threadId`. */
   rpc: WhiteboardRpcClient;
   /** The panel's thread; absent on the Home navPanel. */
   threadId?: string;
@@ -37,15 +37,10 @@ export type BbBridgeDeps = {
   info: InfoOutput;
   portals: Portals;
   events: SurfaceEvents;
-  /** Realtime invalidations for live watch streams. */
-  hub: LiveHub;
   sourceView?: () => ReviewSourceView | undefined;
 };
 
-/**
- * Satisfies the runtime-config schema shape. Nothing parses it at runtime and
- * the tunnel strips the origin (design §3.8).
- */
+/** Satisfies the runtime-config schema shape. Nothing reads it: the canvas calls RPC methods. */
 export const PLACEHOLDER_SERVER_URL = "http://127.0.0.1:1";
 
 let wasmUrl: string | undefined;
@@ -53,10 +48,9 @@ let wasmUrl: string | undefined;
 /** `bb plugin build` has no wasm loader, so libavoid ships as base64 and becomes a blob URL once. */
 export function libavoidWasmUrl(): string {
   if (wasmUrl) return wasmUrl;
-  const binary = atob(LIBAVOID_WASM);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
-  wasmUrl = URL.createObjectURL(new Blob([bytes], { type: "application/wasm" }));
+  wasmUrl = URL.createObjectURL(
+    new Blob([base64Bytes(LIBAVOID_WASM)], { type: "application/wasm" }),
+  );
   return wasmUrl;
 }
 
@@ -71,15 +65,14 @@ function lazy<T>(create: () => T): () => T {
 
 /** The bb implementation of upstream `ReviewCanvasBridge` (design §3.8). */
 export function createBbBridge(deps: BbBridgeDeps): ReviewCanvasBridge {
-  const { rpc, threadId, reviewId, navigate, portals, events, hub } = deps;
-  const request = createTunnel({ rpc, threadId, hub });
+  const { rpc, threadId, reviewId, navigate, portals, events } = deps;
 
   const notify: NonNullable<ReviewCanvasBridge["notify"]> = (message) => {
     if (message.kind === "error") toast.error(message.text);
     else toast.success(message.text);
   };
   const openFile = createLiveFileOpener({ rpc, navigate, notify });
-  const surfaces = { request, reviewId, portals, sourceView: deps.sourceView, openFile };
+  const surfaces = { rpc, reviewId, portals, sourceView: deps.sourceView, openFile };
 
   const inlineEditorFactory = lazy(() => createInlineEditors(surfaces));
   const inlineEditors: ReviewInlineEditorFactory = {
@@ -137,12 +130,11 @@ export function createBbBridge(deps: BbBridgeDeps): ReviewCanvasBridge {
     config,
     inlineEditors,
     diffView,
-    request,
     post: createVerbs({
       navigate,
       threadId,
       reviewId,
-      request,
+      rpc,
       events,
       notify,
       revealDiffFile(path) {

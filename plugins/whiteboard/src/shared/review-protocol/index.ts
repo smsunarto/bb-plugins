@@ -48,7 +48,7 @@ export * from "../json/index.ts";
 
 export * from "./contracts.ts";
 
-export * from "./review-api-client.ts";
+export * from "./review-summary.ts";
 
 export {
   type ByCommitEntry,

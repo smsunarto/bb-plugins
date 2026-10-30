@@ -1,14 +1,11 @@
 import type { WhiteboardRpcClient } from "../rpc.ts";
 import type { BbNavigate } from "@get-bb/plugin-sdk/app";
 import { describe, expect, it, vi } from "vitest";
-import { REVIEW_DISCORD_URL } from "../../shared/review-protocol/index.ts";
 import { createSurfaceEvents } from "./events.ts";
 import {
   BASE_SOURCE_NOT_OPENABLE,
   PINNED_SOURCE_NOT_OPENABLE,
   SESSION_NOT_FOUND,
-  SOURCE_TREE_UNAVAILABLE,
-  UNAVAILABLE_IN_BB,
   type VerbDeps,
   createVerbs,
   createLiveFileOpener,
@@ -18,25 +15,28 @@ function navigateMock() {
   return {
     toPluginPanel: vi.fn(),
     openThreadPanel: vi.fn(() => true),
-    openUrl: vi.fn(() => true),
     experimental_openFilePreview: vi.fn(() => true),
   };
 }
 
-function setup(overrides: Partial<VerbDeps> = {}, routes: Record<string, unknown> = {}) {
+/** `catalog` answers the `sessions` read; without it the read fails. */
+function setup(
+  overrides: Partial<VerbDeps> = {},
+  catalog?: Array<{ reviewId: string; title: string }>,
+) {
   const navigate = navigateMock();
   const events = createSurfaceEvents();
   const emitted: unknown[] = [];
   events.subscribe((event) => emitted.push(event));
-  const request = vi.fn(async (url: string) => {
-    const route = Object.keys(routes).find((prefix) => url.startsWith(prefix));
-    return route ? Response.json(routes[route]) : Response.json({ error: "no" }, { status: 404 });
+  const sessions = vi.fn(async (_input: { mode: string }) => {
+    if (!catalog) throw new Error("Whiteboard operation failed (sessions).");
+    return catalog as never;
   });
   const deps: VerbDeps = {
     navigate: navigate as unknown as BbNavigate,
     threadId: "thread-1",
     reviewId: "session-1",
-    request,
+    rpc: { sessions },
     events,
     notify: vi.fn(),
     revealDiffFile: vi.fn(),
@@ -52,7 +52,7 @@ function setup(overrides: Partial<VerbDeps> = {}, routes: Record<string, unknown
     softwareMapEnabled: () => true,
     ...overrides,
   };
-  return { post: createVerbs(deps), deps, navigate, emitted, request };
+  return { post: createVerbs(deps), deps, navigate, emitted, sessions };
 }
 
 describe("createVerbs", () => {
@@ -82,11 +82,11 @@ describe("createVerbs", () => {
   });
 
   it("opens a live worktree file in bb's file preview", async () => {
-    const { post, navigate, request } = setup();
+    const { post, navigate, sessions } = setup();
     expect(
       await post({ name: "reveal", args: { path: "src/a.ts", startLine: 3, endLine: 9 } }),
     ).toEqual({ ok: true });
-    expect(request).not.toHaveBeenCalled();
+    expect(sessions).not.toHaveBeenCalled();
     expect(navigate.experimental_openFilePreview).toHaveBeenCalledWith({
       target: { kind: "host", hostId: "host-1", path: "/repo/src/a.ts" },
       location: { kind: "range", startLine: 3, endLine: 9 },
@@ -94,7 +94,7 @@ describe("createVerbs", () => {
   });
 
   it("explains that a pinned source cannot open", async () => {
-    const { post, navigate, deps, request } = setup({ openFile: vi.fn(async () => false) });
+    const { post, navigate, deps, sessions } = setup({ openFile: vi.fn(async () => false) });
     expect(
       await post({
         name: "reveal",
@@ -106,7 +106,7 @@ describe("createVerbs", () => {
         },
       }),
     ).toEqual({ ok: false, error: PINNED_SOURCE_NOT_OPENABLE });
-    expect(request).not.toHaveBeenCalled();
+    expect(sessions).not.toHaveBeenCalled();
     expect(navigate.experimental_openFilePreview).not.toHaveBeenCalled();
     expect(deps.openFile).toHaveBeenCalledWith({
       reviewId: "session-1",
@@ -119,7 +119,7 @@ describe("createVerbs", () => {
 
   it("keeps a base-side reveal read only instead of opening its lines in the live head", async () => {
     const openFile = vi.fn(async () => true);
-    const { post, navigate, deps, request } = setup({ openFile });
+    const { post, navigate, deps, sessions } = setup({ openFile });
     expect(
       await post({
         name: "reveal",
@@ -127,16 +127,13 @@ describe("createVerbs", () => {
       }),
     ).toEqual({ ok: false, error: BASE_SOURCE_NOT_OPENABLE });
     expect(openFile).not.toHaveBeenCalled();
-    expect(request).not.toHaveBeenCalled();
+    expect(sessions).not.toHaveBeenCalled();
     expect(navigate.experimental_openFilePreview).not.toHaveBeenCalled();
     expect(deps.notify).toHaveBeenCalledWith({ kind: "error", text: BASE_SOURCE_NOT_OPENABLE });
   });
 
   it("opens a session in the thread panel with its catalog title", async () => {
-    const { post, navigate } = setup(
-      {},
-      { "/reviews-api?mode=textual": [{ reviewId: "s2", title: "Auth walkthrough" }] },
-    );
+    const { post, navigate } = setup({}, [{ reviewId: "s2", title: "Auth walkthrough" }]);
     expect(await post({ name: "openReview", args: { reviewUuid: "s2", active: true } })).toEqual({
       ok: true,
     });
@@ -148,10 +145,7 @@ describe("createVerbs", () => {
   });
 
   it("refuses a session the catalog does not list, as upstream does", async () => {
-    const { post, navigate } = setup(
-      {},
-      { "/reviews-api?mode=textual": [{ reviewId: "s2", title: "Auth walkthrough" }] },
-    );
+    const { post, navigate } = setup({}, [{ reviewId: "s2", title: "Auth walkthrough" }]);
     expect(await post({ name: "openReview", args: { reviewUuid: "gone", active: true } })).toEqual({
       ok: false,
       error: SESSION_NOT_FOUND,
@@ -169,26 +163,15 @@ describe("createVerbs", () => {
     expect(navigate.openThreadPanel).not.toHaveBeenCalled();
   });
 
-  it("answers unavailable verbs without navigating", async () => {
-    const { post, navigate, deps } = setup();
-    expect(await post({ name: "openSourceTree", args: {} })).toEqual({
-      ok: false,
-      error: SOURCE_TREE_UNAVAILABLE,
-    });
-    expect(deps.notify).toHaveBeenCalledWith({ kind: "error", text: SOURCE_TREE_UNAVAILABLE });
-    expect(await post({ name: "captureScreenshot", args: {} })).toEqual({
-      ok: false,
-      error: UNAVAILABLE_IN_BB,
-    });
-    expect(navigate.toPluginPanel).not.toHaveBeenCalled();
-  });
-
-  it("opens the Discord link through bb", async () => {
+  it("opens a session without a title when the catalog cannot be read", async () => {
     const { post, navigate } = setup();
-    expect(await post({ name: "joinDiscord", args: {} })).toEqual({
+    expect(await post({ name: "openReview", args: { reviewUuid: "s2", active: true } })).toEqual({
       ok: true,
     });
-    expect(navigate.openUrl).toHaveBeenCalledWith(REVIEW_DISCORD_URL);
+    expect(navigate.openThreadPanel).toHaveBeenCalledWith({
+      actionId: "whiteboard",
+      params: { sessionId: "s2" },
+    });
   });
 });
 

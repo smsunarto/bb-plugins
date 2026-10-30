@@ -7,11 +7,8 @@ import { DatabaseSync } from "../sqlite-testing.ts";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { selectSource } from "../../../shared/review/lens-selection.ts";
-import { type AuthoringTool, callAuthoringTool } from "./agent-client.ts";
-import { authoringTools } from "./authoring-tools.ts";
-import { ReviewApiClient } from "../../../shared/review/client.ts";
 import { documentText } from "../../../shared/review/document-text.ts";
-import { createReviewApi } from "./http.ts";
+import { createReviewApi } from "./api.ts";
 import { LocalReviewData } from "./local-data.ts";
 import { type ReviewProviders, ReviewStore } from "./store.ts";
 
@@ -400,32 +397,24 @@ it("reports the changed lines no lens selects after each lens write", async () =
     text: file === "src/api.ts" ? api.text : readme.text,
   }));
 
-  const app = createReviewApi(store, data);
+  const app = createReviewApi({ store, data });
+  const signal = new AbortController().signal;
 
-  const client = new ReviewApiClient(
-    { serverUrl: "http://review", token: "token" },
-    async (url, init) => app.request(String(url).replace("http://review/reviews-api", ""), init),
-  );
-
-  const tools = await client.read<AuthoringTool[]>("/authoring");
-
-  const call = (name: string, input: Parameters<typeof callAuthoringTool>[2]) =>
-    callAuthoringTool(
-      client,
-      tools.find((tool) => tool.name === name)!,
+  const lensEdit = (title: string, ...patterns: string[]) =>
+    app.command(
       {
-        reviewId,
-        ...input,
+        commandId: randomUUID(),
+        operation: {
+          type: "lens",
+          reviewId,
+          edit: { type: "insert", title, targets: [{ kind: "files", patterns }] },
+        },
       },
+      { signal },
     );
 
   try {
-    expect(
-      await call("review_lens_edit", {
-        commandId: randomUUID(),
-        edit: { type: "insert", title: "API", targets: files("src/**") },
-      }),
-    ).toMatchObject({
+    expect(await lensEdit("API", "src/**")).toMatchObject({
       targetId: "lens-1",
       type: "lens",
       uncategorized: {
@@ -443,14 +432,11 @@ it("reports the changed lines no lens selects after each lens write", async () =
       },
     });
 
-    expect(
-      await call("review_lens_edit", {
-        commandId: randomUUID(),
-        edit: { type: "insert", title: "Docs", targets: files("docs/**") },
-      }),
-    ).toMatchObject({ uncategorized: { lines: 0, files: [] } });
+    expect(await lensEdit("Docs", "docs/**")).toMatchObject({
+      uncategorized: { lines: 0, files: [] },
+    });
 
-    expect(await call("review_lens_get", {})).toMatchObject({
+    expect(await app.lenses({ reviewId }, { signal })).toMatchObject({
       lenses: [
         { id: "lens-1", title: "API", fileCount: 1 },
         { id: "lens-2", title: "Docs", fileCount: 1 },

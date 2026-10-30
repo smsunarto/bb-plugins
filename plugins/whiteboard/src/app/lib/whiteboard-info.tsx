@@ -1,7 +1,7 @@
 import { useRealtime } from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { InfoOutput } from "../../shared/contracts/api-tunnel.ts";
+import type { InfoOutput } from "../../shared/contracts/rpc.ts";
 import { CHANNELS } from "../../shared/contracts/channels.ts";
 import { Button } from "../components/ui/button.tsx";
 import { EmptyState } from "../panel/empty-state.tsx";

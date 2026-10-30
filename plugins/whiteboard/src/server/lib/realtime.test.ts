@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync as NodeDatabaseSync } from "node:sqlite";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createRealtime, publishEngineChanges } from "./realtime.ts";
+import { INVALIDATE_COALESCE_MS, createRealtime, publishEngineChanges } from "./realtime.ts";
 import { ReviewStore } from "./review/store.ts";
 
 vi.mock("./sqlite.ts", () => ({ DatabaseSync: NodeDatabaseSync }));
@@ -16,78 +16,72 @@ afterEach(() => {
 
 function host() {
   const { bb, harness } = createFakePluginHost({ pluginId: "whiteboard" });
-  return { realtime: createRealtime(bb), signals: harness.inspection.realtimeSignals, harness };
+  return { realtime: createRealtime(bb), inspection: harness.inspection, harness };
 }
 
 describe("createRealtime", () => {
-  test("coalesces changes per key over 50 ms and publishes the latest payload", () => {
-    const { realtime, signals } = host();
+  test("coalesces invalidations over 50 ms into one call carrying every tag once", () => {
+    const { realtime, inspection } = host();
 
-    realtime.changed({ kind: "review", reviewId: "r1", version: 1 });
-    realtime.changed({ kind: "review", reviewId: "r1", version: 2 });
-    realtime.changed({ kind: "review", reviewId: "r2", version: 7 });
-    realtime.changed({ kind: "catalog" });
-    realtime.changed({ kind: "catalog" });
-    realtime.changed({ kind: "activity", reviewId: "r1" });
-    vi.advanceTimersByTime(49);
-    expect(signals).toEqual([]);
+    realtime.invalidate(["session:r1"]);
+    realtime.invalidate(["session:r1"]);
+    realtime.invalidate(["session:r2"]);
+    realtime.invalidate(["catalog", "live-session"]);
+    vi.advanceTimersByTime(INVALIDATE_COALESCE_MS - 1);
+    expect(inspection.experimental_rpcInvalidations).toEqual([]);
 
     vi.advanceTimersByTime(1);
-    expect(signals).toEqual([
-      { channel: "whiteboard:changed", payload: { kind: "review", reviewId: "r1", version: 2 } },
-      { channel: "whiteboard:changed", payload: { kind: "review", reviewId: "r2", version: 7 } },
-      { channel: "whiteboard:changed", payload: { kind: "catalog" } },
-      { channel: "whiteboard:changed", payload: { kind: "activity", reviewId: "r1" } },
+    expect(inspection.experimental_rpcInvalidations).toEqual([
+      ["session:r1", "session:r2", "catalog", "live-session"],
     ]);
 
-    realtime.changed({ kind: "review", reviewId: "r1", version: 3 });
-    vi.advanceTimersByTime(50);
-    expect(signals.at(-1)).toEqual({
-      channel: "whiteboard:changed",
-      payload: { kind: "review", reviewId: "r1", version: 3 },
-    });
-    expect(signals).toHaveLength(5);
+    realtime.invalidate(["session:r1"]);
+    vi.advanceTimersByTime(INVALIDATE_COALESCE_MS);
+    expect(inspection.experimental_rpcInvalidations).toEqual([
+      ["session:r1", "session:r2", "catalog", "live-session"],
+      ["session:r1"],
+    ]);
+    // Live data never travels on a realtime channel.
+    expect(inspection.realtimeSignals).toEqual([]);
   });
 
-  test("open and settings publish at once", () => {
-    const { realtime, signals } = host();
+  test("open publishes at once", () => {
+    const { realtime, inspection } = host();
 
     realtime.open({ threadId: "t1", sessionId: "s1", title: "Plan", at: 1 });
-    realtime.settings({ scratchpadEnabled: true, softwareMapEnabled: false });
 
-    expect(signals).toEqual([
+    expect(inspection.realtimeSignals).toEqual([
       {
         channel: "whiteboard:open",
         payload: { threadId: "t1", sessionId: "s1", title: "Plan", at: 1 },
       },
-      {
-        channel: "whiteboard:settings",
-        payload: { scratchpadEnabled: true, softwareMapEnabled: false },
-      },
     ]);
   });
 
-  test("dispose drops pending changes and ignores later calls", async () => {
-    const { realtime, signals, harness } = host();
+  test("dispose drops pending invalidations and ignores later calls", async () => {
+    const { realtime, inspection, harness } = host();
 
-    realtime.changed({ kind: "coverage" });
+    realtime.invalidate(["catalog"]);
     expect(vi.getTimerCount()).toBe(1);
     realtime.dispose();
     // The pending coalescing timer is cleared, not left to fire into a stale handle.
     expect(vi.getTimerCount()).toBe(0);
     realtime.dispose();
     await harness.lifecycle.dispose();
-    realtime.changed({ kind: "catalog" });
+    realtime.invalidate(["catalog"]);
     realtime.open({ threadId: "t1", sessionId: "s1", title: "Plan", at: 1 });
     vi.advanceTimersByTime(1_000);
 
-    expect(signals).toEqual([]);
+    expect(inspection.experimental_rpcInvalidations).toEqual([]);
+    expect(inspection.realtimeSignals).toEqual([]);
     expect(vi.getTimerCount()).toBe(0);
   });
 });
 
 describe("publishEngineChanges", () => {
-  test("maps the upstream store's events and stops on unsubscribe", async () => {
+  const flush = () => new Promise((resolve) => setTimeout(resolve, INVALIDATE_COALESCE_MS + 10));
+
+  async function start() {
     vi.useRealTimers();
     const store = new ReviewStore(":memory:", {
       validatePins: async () => {},
@@ -106,8 +100,6 @@ describe("publishEngineChanges", () => {
       },
     };
     const stop = publishEngineChanges(realtime, { store, data });
-    const flush = () => new Promise((resolve) => setTimeout(resolve, 60));
-
     const created = await store.execute({
       commandId: randomUUID(),
       operation: {
@@ -117,32 +109,80 @@ describe("publishEngineChanges", () => {
         pins: { repositoryId: "repo", base: "a", head: "b" },
       },
     });
-    const leaseId = randomUUID();
-    store.activity.update(created.reviewId, { action: "begin", leaseId });
-    coverage?.();
+    await flush();
+    const invalidations = harness.inspection.experimental_rpcInvalidations;
+    invalidations.length = 0;
+    return {
+      store,
+      realtime,
+      stop,
+      invalidations,
+      reviewId: created.reviewId,
+      coverage: () => coverage?.(),
+      subscribed: () => coverage !== undefined,
+    };
+  }
+
+  test.each([
+    {
+      change: "a document write",
+      act: async ({ store, reviewId }: Awaited<ReturnType<typeof start>>) => {
+        await store.execute({
+          commandId: randomUUID(),
+          operation: { type: "rename", reviewId, title: "Renamed" },
+        });
+      },
+      // A rename also changes the catalog row.
+      tags: (id: string) => [`session:${id}`, "catalog"],
+    },
+    {
+      change: "an activity lease",
+      act: async ({ store, reviewId }: Awaited<ReturnType<typeof start>>) => {
+        store.activity.update(reviewId, { action: "begin", leaseId: randomUUID() });
+      },
+      tags: (id: string) => [`session:${id}`],
+    },
+    {
+      change: "attention, a catalog-only change",
+      act: async ({ store, reviewId }: Awaited<ReturnType<typeof start>>) => {
+        await store.execute({
+          commandId: randomUUID(),
+          operation: { type: "attention", reviewId, action: "dismiss" },
+        });
+      },
+      tags: () => ["catalog"],
+    },
+    {
+      change: "new coverage",
+      act: async ({ coverage }: Awaited<ReturnType<typeof start>>) => coverage(),
+      tags: () => ["catalog", "live-session"],
+    },
+  ])("$change invalidates the live reads it changes", async ({ act, tags }) => {
+    const engine = await start();
+
+    await act(engine);
     await flush();
 
-    expect(harness.inspection.realtimeSignals).toEqual([
-      {
-        channel: "whiteboard:changed",
-        payload: { kind: "review", reviewId: created.reviewId, version: 0 },
-      },
-      { channel: "whiteboard:changed", payload: { kind: "catalog" } },
-      { channel: "whiteboard:changed", payload: { kind: "activity", reviewId: created.reviewId } },
-      { channel: "whiteboard:changed", payload: { kind: "coverage" } },
-    ]);
+    expect(engine.invalidations).toEqual([tags(engine.reviewId)]);
+    engine.realtime.dispose();
+    engine.stop();
+    await engine.store.close();
+  });
 
-    stop();
-    stop();
-    expect(coverage).toBeUndefined();
-    await store.execute({
+  test("stops on unsubscribe", async () => {
+    const engine = await start();
+
+    engine.stop();
+    engine.stop();
+    expect(engine.subscribed()).toBe(false);
+    await engine.store.execute({
       commandId: randomUUID(),
-      leaseId,
-      operation: { type: "rename", reviewId: created.reviewId, title: "Renamed" },
+      operation: { type: "rename", reviewId: engine.reviewId, title: "Renamed" },
     });
     await flush();
-    expect(harness.inspection.realtimeSignals).toHaveLength(4);
-    realtime.dispose();
-    await store.close();
+
+    expect(engine.invalidations).toEqual([]);
+    engine.realtime.dispose();
+    await engine.store.close();
   });
 });

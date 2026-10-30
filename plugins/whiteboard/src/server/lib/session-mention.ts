@@ -3,7 +3,6 @@ import {
   SESSION_MENTION_PROVIDER,
   parseSessionMentionId,
 } from "../../shared/contracts/selection-handoff.ts";
-import { bbToolName } from "./tools/rename.ts";
 
 /**
  * The pill "Add to chat" puts beside a quote. Only a selection inserts it, so
@@ -20,7 +19,7 @@ export function registerSessionMention(bb: BbPluginApi): void {
       if (!reference) throw new Error(`Unknown Whiteboard reference: ${itemId}`);
       const read = JSON.stringify({ ...reference, full: true });
       return {
-        context: `The user quoted Whiteboard session ${reference.sessionId}, version ${reference.version}. Read that version with ${bbToolName("session_get")}(${read}).`,
+        context: `The user quoted Whiteboard session ${reference.sessionId}, version ${reference.version}. Read that version with whiteboard_session_get(${read}).`,
       };
     },
   });

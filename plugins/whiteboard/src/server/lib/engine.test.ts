@@ -1,19 +1,18 @@
-import { api, apiContract } from "../rpc/api.ts";
-import { liveFile, liveFileContract } from "../rpc/live-file.ts";
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { PNG } from "pngjs";
 import jpeg from "jpeg-js";
-import { UI_INTEREST_TTL_MS } from "../../shared/contracts/api-tunnel.ts";
-import { CHANNELS } from "../../shared/contracts/channels.ts";
 import type { Engine, WhiteboardSettings } from "../../shared/contracts/engine.ts";
 import { panelParamsJson, panelTabId } from "../../shared/contracts/panel.ts";
-import { ReviewStore } from "./review/store.ts";
-import { createEngine, collectApiResponse } from "./engine.ts";
+import { CATALOG_TAG, sessionTag } from "../../shared/contracts/rpc.ts";
+import { registerRpc } from "../rpc/contract.ts";
+import type { ReviewApi } from "./review/api.ts";
+import { ReviewStore, commandSchema } from "./review/store.ts";
+import { createEngine } from "./engine.ts";
 import { BB_PLUGIN_DATABASE } from "./sqlite.ts";
 import { forgetExists } from "./host-io/fs.ts";
 import { forgetRepoContext } from "./host-io/local-vcs.ts";
@@ -44,22 +43,24 @@ const settings: WhiteboardSettings = {
   softwareMapEnabled: () => false,
   subscribe: () => () => {},
 };
-const post = async (path: string, body: unknown, threadId?: string) => {
-  const response = await engine.request({
-    method: "POST",
-    path,
-    body: JSON.stringify(body),
-    threadId,
-  });
-  return { status: response.status, body: JSON.parse(response.body) };
-};
-const get = async (path: string, threadId?: string) => {
-  const response = await engine.request({ method: "GET", path, threadId });
-  return { status: response.status, body: JSON.parse(response.body) };
-};
+/** Run operations as the engine's callers do: as `threadId` when given. */
+const as = <T>(
+  threadId: string | undefined,
+  fn: (api: ReviewApi, signal: AbortSignal) => Promise<T>,
+) => engine.run({ threadId }, (signal) => fn(engine.api, signal));
+/** A command as the RPC methods and tools send it, parsed at their boundary. */
+const command = (body: unknown, threadId?: string) =>
+  as(threadId, (api, signal) => api.command(commandSchema.parse(body), { signal }));
+const liveSession = (reviewId: string, threadId?: string) =>
+  as(threadId, (api) => api.liveSession({ reviewId }));
+const readFile = (
+  reviewId: string,
+  file: string,
+  at: { version?: number; generation?: string } = {},
+) => as(undefined, (api) => api.file({ reviewId, file, side: "head", ...at }));
+const changedFiles = (reviewId: string) => as(undefined, (api) => api.changedFiles({ reviewId }));
 const create = async (threadId?: string, live = false) => {
-  const result = await post(
-    "/commands",
+  const result = await command(
     {
       commandId: randomUUID(),
       operation: {
@@ -72,8 +73,8 @@ const create = async (threadId?: string, live = false) => {
     },
     threadId,
   );
-  expect(result.status).toBe(200);
-  return result.body as { reviewId: string; version: number; opened: boolean };
+  if (!("opened" in result)) throw new Error("A create answers whether it opened.");
+  return result;
 };
 
 beforeEach(async () => {
@@ -134,13 +135,14 @@ beforeEach(async () => {
     },
   } as unknown as BbPluginApi;
   engine = createEngine(bb, settings);
-  bb.rpc.register(defineRpcContract({ api: apiContract, liveFile: liveFileContract }), {
-    api: (input) => api({ bb, engine }, input),
-    liveFile: (input) => liveFile({ bb, engine }, input),
+  // Tests replace `engine` after a dispose; the handlers read the current one.
+  registerRpc({
+    bb,
+    get engine() {
+      return engine;
+    },
   });
-  const registered = await post("/repositories", { path: repo.root });
-  expect(registered.status).toBe(200);
-  repositoryId = registered.body.id;
+  repositoryId = (await as(undefined, (api) => api.registerRepository({ path: repo.root }))).id;
 });
 
 afterEach(async () => {
@@ -155,9 +157,9 @@ test("the real store validates pinned source through the host and keeps opaque a
   const created = await create();
   expect(created.opened).toBe(false);
   const leaseId = randomUUID();
-  expect(await post(`/${created.reviewId}/activity`, { action: "begin", leaseId })).toMatchObject({
-    status: 200,
-  });
+  await as(undefined, (api) =>
+    api.activity({ reviewId: created.reviewId, action: "begin", leaseId }),
+  );
   const input = {
     commandId: randomUUID(),
     leaseId,
@@ -170,34 +172,28 @@ test("the real store validates pinned source through the host and keeps opaque a
       },
     },
   };
-  const changed = await post("/commands", input);
-  expect(changed).toMatchObject({ status: 200, body: { version: 1 } });
-  expect(await post("/commands", input)).toEqual(changed);
-  const snapshot = await get(`/${created.reviewId}?full=true`);
-  expect(snapshot.body.document).toEqual([
+  const changed = await command(input);
+  expect(changed).toMatchObject({ version: 1 });
+  expect(await command(input)).toEqual(changed);
+  expect((await liveSession(created.reviewId)).document).toEqual([
     { type: "markdown", id: "block-1", markdown: "Keep session_edit byte-for-byte." },
   ]);
-  const file = await get(`/${created.reviewId}/file?file=src/a.ts&side=head`);
-  expect(file).toEqual({
-    status: 200,
-    body: {
-      text: "export const a = 10;\nexport const a2 = 20;\n",
-      commit: repo.head,
-      file: "src/a.ts",
-      side: "head",
-    },
+  expect(await readFile(created.reviewId, "src/a.ts")).toEqual({
+    text: "export const a = 10;\nexport const a2 = 20;\n",
+    commit: repo.head,
+    file: "src/a.ts",
+    side: "head",
   });
   expect(client.calls.some((call) => call.method === "vcsCall")).toBe(true);
-  expect(await post(`/${created.reviewId}/environment`, {})).toEqual({
-    status: 200,
-    body: { issues: [] },
+  expect(await as(undefined, (api) => api.environment({ reviewId: created.reviewId }))).toEqual({
+    issues: [],
   });
-  expect(await post("/workspace-cleanup", {})).toEqual({ status: 200, body: { failures: [] } });
+  expect(await as(undefined, (api) => api.workspaceCleanup({}))).toEqual({ failures: [] });
 });
 
-test("loopback calls retain thread context, create durable tabs, and follow rename/dismiss", async () => {
-  const created = await engine.withThread({ threadId: "t1" }, () =>
-    engine.client().post<{ reviewId: string; opened: boolean }>("/commands", {
+test("calls from a thread keep its context, create durable tabs, and follow rename/dismiss", async () => {
+  const created = await command(
+    {
       commandId: randomUUID(),
       operation: {
         type: "create",
@@ -205,9 +201,10 @@ test("loopback calls retain thread context, create durable tabs, and follow rena
         title: "First",
         pins: { repositoryId, base: repo.base, head: repo.head },
       },
-    }),
+    },
+    "t1",
   );
-  expect(created.opened).toBe(true);
+  expect(created).toMatchObject({ opened: true });
   expect(tabs.get("t1")!.tabs).toMatchObject([
     {
       kind: "plugin-panel",
@@ -222,12 +219,12 @@ test("loopback calls retain thread context, create durable tabs, and follow rena
       payload: expect.objectContaining({ threadId: "t1", sessionId: created.reviewId }),
     }),
   );
-  await post("/commands", {
+  await command({
     commandId: randomUUID(),
     operation: { type: "rename", reviewId: created.reviewId, title: "Renamed" },
   });
   await vi.waitFor(() => expect(tabs.get("t1")!.tabs[0]?.title).toBe("Renamed"));
-  await post("/commands", {
+  await command({
     commandId: randomUUID(),
     operation: { type: "attention", reviewId: created.reviewId, action: "dismiss" },
   });
@@ -259,76 +256,53 @@ test("a thread panel's info records the tab it shows once, so a dismissal closes
 
   expect(sessionRows()).toEqual([{ thread_id: "t1" }]);
   await expect(engine.claimOpen("t1")).resolves.toBeNull();
-  await post("/commands", {
+  await command({
     commandId: randomUUID(),
     operation: { type: "attention", reviewId: created.reviewId, action: "dismiss" },
   });
   await vi.waitFor(() => expect(tabs.get("t1")!.tabs).toEqual([]));
-  expect(sessionRows()).toEqual([]);
+  // The record goes once the tab write lands.
+  await vi.waitFor(() => expect(sessionRows()).toEqual([]));
 });
 
-test("watch snapshots cancel their subscriptions and refetch fresh state", async () => {
+test("live sessions read fresh state, a change invalidates its session's reads, and dispose refuses", async () => {
   const created = await create();
-  let watchSubscriptions = 0;
-  const subscribe = ReviewStore.prototype.subscribe;
-  const spy = vi
-    .spyOn(ReviewStore.prototype, "subscribe")
-    .mockImplementation(function (this: ReviewStore, listener) {
-      watchSubscriptions++;
-      const off = subscribe.call(this, listener);
-      return () => {
-        watchSubscriptions--;
-        off();
-      };
-    });
-  expect(
-    bb.storage
-      .database()
-      .prepare("SELECT host_id FROM repository_hosts WHERE repository_id=?")
-      .get(repositoryId),
-  ).toEqual({ host_id: IN_PROCESS_HOST_ID });
-  const response = await engine.request({ method: "GET", path: `/${created.reviewId}/watch` });
-  expect(response.contentType).toContain("application/x-ndjson");
-  expect(response.body.split("\n")).toHaveLength(2);
-  expect(JSON.parse(response.body).version).toBe(0);
-  expect(watchSubscriptions).toBe(0);
-  await post("/commands", {
+  expect(await liveSession(created.reviewId)).toMatchObject({
+    reviewId: created.reviewId,
+    version: 0,
+    title: "Walkthrough",
+    activity: expect.objectContaining({ workingCount: 0 }),
+    coverageRevision: expect.any(Number),
+  });
+  await command({
     commandId: randomUUID(),
     operation: { type: "rename", reviewId: created.reviewId, title: "Latest" },
   });
-  const refreshed = await engine.request({ method: "GET", path: `/${created.reviewId}/watch` });
-  expect(JSON.parse(refreshed.body).title).toBe("Latest");
+  expect((await liveSession(created.reviewId)).title).toBe("Latest");
   await vi.waitFor(() =>
-    expect(host.harness.inspection.realtimeSignals).toContainEqual(
-      expect.objectContaining({
-        channel: "whiteboard:changed",
-        payload: expect.objectContaining({ kind: "review", reviewId: created.reviewId }),
-      }),
+    expect(host.harness.inspection.experimental_rpcInvalidations).toContainEqual(
+      expect.arrayContaining([sessionTag(created.reviewId)]),
     ),
   );
   await engine.dispose();
-  expect((await engine.request({ method: "GET", path: "/capabilities" })).status).toBe(503);
-  await expect(engine.client().read("/capabilities")).rejects.toThrow(
-    "Whiteboard is shutting down.",
-  );
-  expect(UI_INTEREST_TTL_MS).toBe(150_000);
-  spy.mockRestore();
+  await expect(as(undefined, (api) => api.capabilities())).rejects.toMatchObject({
+    status: 409,
+    message: "Whiteboard is shutting down.",
+  });
 });
 
-test("live worktree /file exposes only contained current files and commits remain read-only", async () => {
+test("live worktree files expose only contained current files and commits remain read-only", async () => {
   const live = await create(undefined, true);
-  expect(await get(`/${live.reviewId}/file?file=src/a.ts&side=head`)).toMatchObject({
-    status: 200,
-    body: { localPath: `${repo.root}/src/a.ts`, localRoot: repo.root },
+  expect(await readFile(live.reviewId, "src/a.ts")).toMatchObject({
+    localPath: `${repo.root}/src/a.ts`,
+    localRoot: repo.root,
   });
   const old = await create();
-  expect((await get(`/${old.reviewId}/file?file=src/a.ts&side=head`)).body).not.toHaveProperty(
-    "localPath",
-  );
-  expect((await get(`/${live.reviewId}/file?file=../outside.ts&side=head`)).status).toBe(400);
+  expect(await readFile(old.reviewId, "src/a.ts")).not.toHaveProperty("localPath");
+  await expect(readFile(live.reviewId, "../outside.ts")).rejects.toMatchObject({ status: 400 });
 });
 
-test("valid PNG, JPEG and WebP uploads are stored as PNG and binary tunnel responses are base64", async () => {
+test("valid PNG, JPEG and WebP uploads are stored as PNG and reach the panel as base64", async () => {
   const data = Buffer.from([255, 0, 0, 255, 0, 255, 0, 255]);
   const png = PNG.sync.write({ width: 2, height: 1, data } as PNG);
   const encoded = jpeg.encode({ width: 2, height: 1, data }, 90).data;
@@ -336,78 +310,24 @@ test("valid PNG, JPEG and WebP uploads are stored as PNG and binary tunnel respo
     "UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoCAAEAAUAmJaACdLoB+AADsAD+8ut//NgVzXPv9//S4P0uD9Lg/9KQAAA=",
     "base64",
   );
+  const upload = (base64: string, id = randomUUID()) =>
+    as(undefined, (api) => api.upload({ id, repositoryId, kind: "image", base64 }));
   for (const input of [png, encoded, webp]) {
     const id = randomUUID();
-    expect(
-      await post("/resources", {
-        id,
-        repositoryId,
-        kind: "image",
-        base64: input.toString("base64"),
-      }),
-    ).toMatchObject({ status: 200, body: { id } });
+    expect(await upload(input.toString("base64"), id)).toMatchObject({ id });
     const created = await create();
-    const response = await engine.request({
-      method: "GET",
-      path: `/${created.reviewId}/resources/${id}`,
-    });
-    expect(response).toMatchObject({ status: 200, contentType: "image/png", encoding: "base64" });
-    const image = PNG.sync.read(Buffer.from(response.body, "base64"));
+    const resource = (await host.harness.behavior.callRpc("resource", {
+      sessionId: created.reviewId,
+      resourceId: id,
+    })) as { contentType: string; base64: string };
+    expect(resource.contentType).toBe("image/png");
+    const image = PNG.sync.read(Buffer.from(resource.base64, "base64"));
     expect([image.width, image.height]).toEqual([2, 1]);
   }
-  expect(
-    await post("/resources", {
-      id: randomUUID(),
-      repositoryId,
-      kind: "image",
-      base64: Buffer.from("invalid").toString("base64"),
-    }),
-  ).toEqual({
+  await expect(upload(Buffer.from("invalid").toString("base64"))).rejects.toMatchObject({
     status: 400,
-    body: { error: "Provide a valid single PNG, JPEG, or WebP image (at most 20 megapixels)." },
+    message: "Provide a valid single PNG, JPEG, or WebP image (at most 20 megapixels).",
   });
-});
-
-test("finite NDJSON is complete, watches return exactly one line, and every collector cancels", async () => {
-  let cancellations = 0;
-  const stream = () =>
-    new Response(
-      new ReadableStream({
-        start(controller) {
-          controller.enqueue(new TextEncoder().encode('{"n":1}\n{"n":2}\n'));
-        },
-        cancel() {
-          cancellations++;
-        },
-      }),
-      { headers: { "content-type": "application/x-ndjson" } },
-    );
-  expect((await collectApiResponse(stream(), true)).body).toBe('{"n":1}\n');
-  expect(cancellations).toBe(1);
-  const complete = new Response(
-    new ReadableStream({
-      start(controller) {
-        controller.enqueue(new TextEncoder().encode('{"n":1}\n'));
-        controller.enqueue(new TextEncoder().encode('{"n":2}\n'));
-        controller.close();
-      },
-    }),
-    { headers: { "content-type": "application/x-ndjson" } },
-  );
-  expect((await collectApiResponse(complete, false)).body).toBe('{"n":1}\n{"n":2}\n');
-  const tooLarge = new Response(
-    new ReadableStream({
-      start(controller) {
-        controller.enqueue(new Uint8Array(8 * 1024 * 1024 + 1));
-      },
-      cancel() {
-        cancellations++;
-      },
-    }),
-    { headers: { "content-type": "application/x-ndjson" } },
-  );
-  expect(await collectApiResponse(tooLarge, false)).toMatchObject({ status: 413 });
-  expect(cancellations).toBe(2);
 });
 
 test("RPC live-file targets use the repository host and keep explicit/historical source read-only", async () => {
@@ -439,35 +359,31 @@ test("RPC live-file targets use the repository host and keep explicit/historical
       path: "../outside.ts",
     }),
   ).toEqual({ target: null });
-  const selected = (await get(`/${live.reviewId}?full=true`)).body;
+  const selected = await liveSession(live.reviewId);
   const leaseId = randomUUID();
-  expect((await post(`/${live.reviewId}/activity`, { action: "begin", leaseId })).status).toBe(200);
-  expect(
-    (
-      await post("/commands", {
-        commandId: randomUUID(),
-        leaseId,
-        operation: {
-          type: "set_target",
-          reviewId: live.reviewId,
-          target: { kind: "commits", repositoryId, base: repo.base, head: repo.head },
-        },
-      })
-    ).status,
-  ).toBe(200);
+  await as(undefined, (api) => api.activity({ reviewId: live.reviewId, action: "begin", leaseId }));
+  await command({
+    commandId: randomUUID(),
+    leaseId,
+    operation: {
+      type: "set_target",
+      reviewId: live.reviewId,
+      target: { kind: "commits", repositoryId, base: repo.base, head: repo.head },
+    },
+  });
   expect(
     await host.harness.behavior.callRpc("liveFile", {
       sessionId: live.reviewId,
       path: "src/a.ts",
       version: selected.version,
-      generation: selected.source.pins.worktreeRevision,
+      generation: selected.source!.pins.worktreeRevision,
     }),
   ).toEqual({ target: null });
 });
 
 test("host watching eventually invalidates cached working state after a real commit", async () => {
   repo.write("src/a.ts", "export const live = 1;\n");
-  const { body: live } = await post("/commands", {
+  const live = await command({
     commandId: randomUUID(),
     operation: {
       type: "create",
@@ -476,39 +392,35 @@ test("host watching eventually invalidates cached working state after a real com
       target: { kind: "worktree", repositoryId },
     },
   });
-  expect((await get(`/${live.reviewId}/diff?format=files`)).body).toContainEqual(
+  expect(await changedFiles(live.reviewId)).toContainEqual(
     expect.objectContaining({ path: "src/a.ts" }),
   );
   repo.commit("Save working files");
-  await vi.waitFor(
-    async () => expect((await get(`/${live.reviewId}/diff?format=files`)).body).toEqual([]),
-    { timeout: 5_000 },
-  );
+  await vi.waitFor(async () => expect(await changedFiles(live.reviewId)).toEqual([]), {
+    timeout: 5_000,
+  });
 });
 
-test("interest expires after 150 seconds and dispose leaves no engine timers", async () => {
-  const created = await create();
+test("worktree holds keep the refresh timer until the last release, and dispose leaves no engine timers", async () => {
+  await create();
   await engine.dispose();
   vi.useFakeTimers();
   engine = createEngine(bb, settings);
-  await engine.withThread({}, async () => {});
+  await engine.run({}, async () => {});
   const baseline = vi.getTimerCount();
   expect(baseline).toBeGreaterThan(0);
-  await engine.request({ method: "GET", path: `/${created.reviewId}/watch` });
-  expect(vi.getTimerCount()).toBeGreaterThan(baseline);
-  await vi.advanceTimersByTimeAsync(UI_INTEREST_TTL_MS);
+  // Two watched reads: one refresh loop, held until both leave.
+  const first = engine.watchWorktrees();
+  const second = engine.watchWorktrees();
+  expect(vi.getTimerCount()).toBe(baseline + 1);
+  first();
+  expect(vi.getTimerCount()).toBe(baseline + 1);
+  second();
   expect(vi.getTimerCount()).toBe(baseline);
-  // The panels' heartbeat renews the same lease without reading a snapshot.
-  await engine.renewInterest();
-  expect(vi.getTimerCount()).toBeGreaterThan(baseline);
-  await vi.advanceTimersByTimeAsync(UI_INTEREST_TTL_MS - 1);
-  await engine.renewInterest();
-  await vi.advanceTimersByTimeAsync(UI_INTEREST_TTL_MS - 1);
-  expect(vi.getTimerCount()).toBeGreaterThan(baseline);
-  await vi.advanceTimersByTimeAsync(1);
-  expect(vi.getTimerCount()).toBe(baseline);
+  // A read still watched at dispose, and one that arrives after it.
+  engine.watchWorktrees();
   await engine.dispose();
-  await engine.renewInterest();
+  engine.watchWorktrees();
   expect(vi.getTimerCount()).toBe(0);
   vi.useRealTimers();
 });
@@ -531,12 +443,11 @@ test("repository registration reads the path on the caller's host and names both
   vi.spyOn(bb.sdk.environments, "get").mockResolvedValue({ hostId: "second-host" } as never);
   twoHosts();
   const before = client.calls.length;
-  const registered = await post("/repositories", { path: repo.root }, "t2");
-  expect(registered).toEqual({
+  await expect(
+    as("t2", (api) => api.registerRepository({ path: repo.root })),
+  ).rejects.toMatchObject({
     status: 409,
-    body: {
-      error: `${repo.root} is already registered from another bb host (Local Mac), and this call comes from Build Mac. Whiteboard keys checkouts by path, so one path can belong to one host. Work on this checkout from a thread on Local Mac, or register a checkout at a different path on Build Mac.`,
-    },
+    message: `${repo.root} is already registered from another bb host (Local Mac), and this call comes from Build Mac. Whiteboard keys checkouts by path, so one path can belong to one host. Work on this checkout from a thread on Local Mac, or register a checkout at a different path on Build Mac.`,
   });
   // The checkout at this path on the bound host is never read for a Build Mac caller.
   expect(
@@ -578,35 +489,36 @@ test("loading asks no host; the repo-contexts service then primes each repositor
   await new Promise((resolve) => setImmediate(resolve));
   expect(early).toEqual([]);
   activated = true;
-  const signals = host.harness.inspection.realtimeSignals;
-  const seen = signals.length;
+  const invalidations = host.harness.inspection.experimental_rpcInvalidations;
+  const seen = invalidations.length;
   await services.get("repo-contexts")!.start(new AbortController().signal);
   await vi.waitFor(() =>
-    expect(signals.slice(seen)).toContainEqual({
-      channel: CHANNELS.changed,
-      payload: { kind: "catalog" },
-    }),
+    expect(invalidations.slice(seen)).toContainEqual(expect.arrayContaining([CATALOG_TAG])),
   );
-  const catalog = (await get("")).body as Array<{ repositoryGroup?: unknown }>;
+  const catalog = await as(undefined, (api) => api.catalog({}));
   expect(catalog.map((review) => review.repositoryGroup)).toEqual([
     { key: `git:${repo.root}/.git`, label: path.basename(repo.root) },
   ]);
   vi.restoreAllMocks();
 });
 
-test("a repository host that is not connected answers 503 naming that machine", async () => {
+test("a repository host that is not connected is refused naming that machine, not as a crash", async () => {
   const created = await create();
   twoHosts();
   // Past the memoized root check: the next read asks the host.
   forgetExists();
   vi.spyOn(client, "call").mockRejectedValue(hostNotConnected());
-  expect(await get(`/${created.reviewId}/file?file=src/a.ts&side=head`)).toEqual({
-    status: 503,
-    body: {
-      error:
-        "Local Mac is not connected to bb. Whiteboard reads this checkout on Local Mac. Reconnect it, then retry.",
-    },
-  });
+  const message =
+    "Local Mac is not connected to bb. Whiteboard reads this checkout on Local Mac. Reconnect it, then retry.";
+  await expect(readFile(created.reviewId, "src/a.ts")).rejects.toThrow(message);
+  // The panel sees a conflict it can retry, which bb does not record as a plugin crash.
+  await expect(
+    host.harness.behavior.callRpc("file", {
+      sessionId: created.reviewId,
+      side: "head",
+      path: "src/a.ts",
+    }),
+  ).rejects.toMatchObject({ code: "conflict", message });
   vi.restoreAllMocks();
 });
 
@@ -681,7 +593,7 @@ test("Home's info logs a host that is not connected at debug, not as a warning",
 });
 
 test("a thread-less stack read asks the host of the session's repository", async () => {
-  const { body: created } = await post("/commands", {
+  const created = await command({
     commandId: randomUUID(),
     operation: {
       type: "create",
@@ -708,9 +620,8 @@ test("a thread-less stack read asks the host of the session's repository", async
     asked.push(options.hostId);
     return Promise.resolve({ ok: true, value: [layer] });
   }) as typeof client.call);
-  expect(await get(`/${created.reviewId}/stack`)).toEqual({
-    status: 200,
-    body: { layers: [layer] },
+  expect(await as(undefined, (api) => api.stack({ reviewId: created.reviewId }))).toEqual({
+    layers: [layer],
   });
   expect(asked).toEqual([IN_PROCESS_HOST_ID]);
   vi.restoreAllMocks();
@@ -718,7 +629,7 @@ test("a thread-less stack read asks the host of the session's repository", async
 
 test("arms the checkout and its common directory with the repository's resolved common directory", async () => {
   const live = await create(undefined, true);
-  await get(`/${live.reviewId}/diff?format=files`);
+  await changedFiles(live.reviewId);
   const common = path.join(repo.root, ".git");
   await vi.waitFor(() =>
     expect(
@@ -743,7 +654,7 @@ test("with no panel open, a watch the host dropped without a worker exit is arme
   repo.write("src/a.ts", "export const live = 1;\n");
   const live = await create(undefined, true);
   // An agent's read: nothing renews UI interest.
-  await get(`/${live.reviewId}/diff?format=files`);
+  await changedFiles(live.reviewId);
   const arms = () => client.calls.filter((entry) => entry.method === "watchWorktree");
   await vi.waitFor(() => expect(arms().length).toBeGreaterThan(0));
   const watched = arms().map((entry) => (entry.input as { watchId: string }).watchId);
@@ -763,31 +674,18 @@ test("with no panel open, a watch the host dropped without a worker exit is arme
   );
 });
 
-test("source bytes containing tool names survive the real loopback transport unchanged", async () => {
+test("source bytes containing tool names reach the panel unchanged", async () => {
   const text = "export const session_edit = 'session_get';\n";
   repo.write("src/opaque.ts", text);
   repo.head = repo.commit("Opaque tool names");
   const created = await create();
   expect(
-    await engine.client().read(`/${created.reviewId}/file?file=src/opaque.ts&side=head`),
-  ).toEqual({ text, file: "src/opaque.ts", side: "head", commit: repo.head });
-});
-
-test("legacy navigator workspace writes still run atomically on the repository host", async () => {
-  const live = await create(undefined, true);
-  const result = await post(`/${live.reviewId}/navigator?file=src/a.ts&side=head`, {});
-  expect(result.status).toBe(200);
-  expect(result.body.filePath).toBe(`${repo.root}/src/a.ts`);
-  expect(JSON.parse(readFileSync(result.body.workspacePath, "utf8")).folders).toEqual([
-    { path: repo.root, name: repo.root.split("/").at(-1) },
-  ]);
-  expect(client.calls).toContainEqual(
-    expect.objectContaining({
-      method: "invoke",
-      hostId: IN_PROCESS_HOST_ID,
-      input: expect.objectContaining({ module: "fs", fn: "writePrivateJsonAtomic" }),
+    await host.harness.behavior.callRpc("file", {
+      sessionId: created.reviewId,
+      side: "head",
+      path: "src/opaque.ts",
     }),
-  );
+  ).toEqual({ text, file: "src/opaque.ts", side: "head", commit: repo.head });
 });
 
 test("dispose waits for an in-flight source read before closing the shared database", async () => {
@@ -805,9 +703,7 @@ test("dispose waits for an in-flight source read before closing the shared datab
     }
     return original(method, input, options);
   }) as typeof client.call;
-  const read = expect(
-    engine.request({ method: "GET", path: `/${live.reviewId}/file?side=head&file=src/a.ts` }),
-  ).rejects.toMatchObject({ name: "AbortError" });
+  const read = readFile(live.reviewId, "src/a.ts");
   await expect.poll(() => suspended).toBe(true);
   let closed = false;
   const shutdown = engine.dispose().then(() => {
@@ -818,33 +714,17 @@ test("dispose waits for an in-flight source read before closing the shared datab
   await Promise.resolve();
   expect(closed).toBe(false);
   release!();
-  await read;
+  // The read finishes on the open database; only then does it close.
+  await expect(read).resolves.toMatchObject({
+    file: "src/a.ts",
+    text: "export const a = 10;\nexport const a2 = 20;\n",
+  });
   await shutdown;
   expect(closed).toBe(true);
-  expect((await engine.request({ method: "GET", path: "/capabilities" })).status).toBe(503);
+  await expect(as(undefined, (api) => api.capabilities())).rejects.toThrow(
+    "Whiteboard is shutting down.",
+  );
 });
-
-test.skipIf(!HAS_DIFFR)(
-  "the assembled structural-diff tunnel returns every event through completion",
-  async () => {
-    const created = await create();
-    const info = await engine.info({ sessionId: created.reviewId });
-    expect(info.structuralDiffEnabled).toBe(true);
-    const response = await engine.request({
-      method: "GET",
-      path: `/${created.reviewId}/structural-diff`,
-    });
-    expect(response.status).toBe(200);
-    const events = response.body
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(events[0]).toMatchObject({ type: "start" });
-    expect(events.at(-1)).toEqual({ type: "complete", succeeded: 3, failed: 0 });
-    expect(events.filter((event) => event.type === "file")).toHaveLength(3);
-    expect(client.calls.some((call) => call.method === "structuralDiff")).toBe(true);
-  },
-);
 
 test.skipIf(!HAS_DIFFR)(
   "dirty worktree source, structural counts and lenses retain their selected generation",
@@ -860,7 +740,7 @@ test.skipIf(!HAS_DIFFR)(
     const index = repo.git("ls-files", "--stage");
     const staged = repo.git("diff", "--cached");
     const working = repo.git("status", "--porcelain=v1");
-    const created = await post("/commands", {
+    const { reviewId: id } = await command({
       commandId: randomUUID(),
       operation: {
         type: "create",
@@ -869,20 +749,18 @@ test.skipIf(!HAS_DIFFR)(
         target: { kind: "worktree", repositoryId },
       },
     });
-    expect(created.status).toBe(200);
-    const id = created.body.reviewId;
-    const saved = (await get(`/${id}?full=true&version=0`)).body;
-    expect(saved.source.pins.base).toBe(repo.head);
-    expect(saved.source.pins.head).toBe(repo.head);
-    expect((await get(`/${id}/diff?format=files`)).body).toEqual([
+    const saved = await as(undefined, (api) => api.sessionVersion({ reviewId: id, version: 0 }));
+    expect(saved.source!.pins.base).toBe(repo.head);
+    expect(saved.source!.pins.head).toBe(repo.head);
+    expect(await changedFiles(id)).toEqual([
       { path: "note.ts", status: "added", additions: 1, deletions: 0 },
       { path: "order.ts", status: "modified", additions: 1, deletions: 1 },
     ]);
     const leaseId = randomUUID();
-    expect(
-      (await post(`/${id}/activity`, { action: "begin", leaseId, scope: "lenses" })).status,
-    ).toBe(200);
-    const lens = await post("/commands", {
+    await as(undefined, (api) =>
+      api.activity({ reviewId: id, action: "begin", leaseId, scope: "lenses" }),
+    );
+    const lens = await command({
       commandId: randomUUID(),
       leaseId,
       operation: {
@@ -895,20 +773,19 @@ test.skipIf(!HAS_DIFFR)(
         },
       },
     });
-    expect(lens.status).toBe(200);
-    const report = (await get(`/${id}/lenses`)).body;
+    const report = await as(undefined, (api, signal) => api.lenses({ reviewId: id }, { signal }));
     expect(report.lenses).toContainEqual(
-      expect.objectContaining({ id: lens.body.targetId, fileCount: 1 }),
+      expect.objectContaining({ id: lens.targetId, fileCount: 1 }),
     );
-    const progress = (await get(`/${id}/progress`)).body;
-    expect(progress.files.map((file: { path: string }) => file.path).sort()).toEqual([
-      "note.ts",
-      "order.ts",
-    ]);
-    expect(
-      progress.files.find((file: { path: string }) => file.path === "order.ts").changed,
-    ).toEqual({ base: [[0, 1]], head: [[0, 1]] });
-    const catalog = await engine.client().read<Array<{ reviewId: string; diffStats: unknown }>>("");
+    const progress = await as(undefined, (api, signal) =>
+      api.progress({ reviewId: id }, { signal }),
+    );
+    expect(progress.files.map((file) => file.path).sort()).toEqual(["note.ts", "order.ts"]);
+    expect(progress.files.find((file) => file.path === "order.ts")!.changed).toEqual({
+      base: [[0, 1]],
+      head: [[0, 1]],
+    });
+    const catalog = await as(undefined, (api) => api.catalog({}));
     expect(catalog.find((session) => session.reviewId === id)!.diffStats).toEqual({
       fileCount: 2,
       additions: 2,
@@ -917,62 +794,37 @@ test.skipIf(!HAS_DIFFR)(
     expect(repo.git("ls-files", "--stage")).toBe(index);
     expect(repo.git("diff", "--cached")).toBe(staged);
     expect(repo.git("status", "--porcelain=v1")).toBe(working);
-    const structural = await engine.request({
-      method: "GET",
-      path: `/${id}/structural-diff?version=0&file=order.ts`,
-    });
-    const selected = structural.body
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(selected.find((event) => event.type === "file").diff.rhs.text).toBe(
-      'export const status = "processing";\n',
-    );
-    expect(selected.at(-1)).toEqual({ type: "complete", succeeded: 1, failed: 0 });
 
     for (let revision = 2; revision <= 5; revision++) {
-      const previous = (await get(`/${id}?full=true`)).body;
+      const previous = await liveSession(id);
       repo.write(
         "order.ts",
         `export const status = "revision ${revision}";\nexport const count = ${revision};\n`,
       );
       await vi.waitFor(
-        async () =>
-          expect((await get(`/${id}/file?side=head&file=order.ts`)).body.text).toContain(
-            `revision ${revision}`,
-          ),
+        async () => expect((await readFile(id, "order.ts")).text).toContain(`revision ${revision}`),
         { timeout: 5_000 },
       );
       expect(
         (
-          await get(
-            `/${id}/file?side=head&file=order.ts&version=0&generation=${previous.source.pins.worktreeRevision}`,
-          )
-        ).body.text,
+          await readFile(id, "order.ts", {
+            version: 0,
+            generation: previous.source!.pins.worktreeRevision,
+          })
+        ).text,
       ).toContain(revision === 2 ? "processing" : `revision ${revision - 1}`);
     }
-    const current = (await get(`/${id}?full=true`)).body;
-    expect(current.source.pins.worktreeRevision).not.toBe(saved.source.pins.worktreeRevision);
-    expect((await get(`/${id}/file?side=head&file=order.ts&version=0`)).body).toMatchObject({
+    const current = await liveSession(id);
+    const generation = current.source!.pins.worktreeRevision;
+    expect(generation).not.toBe(saved.source!.pins.worktreeRevision);
+    expect(await readFile(id, "order.ts", { version: 0 })).toMatchObject({
       text: 'export const status = "processing";\n',
     });
-    expect((await get(`/${id}/file?side=head&file=order.ts&version=0`)).body).not.toHaveProperty(
-      "localPath",
+    expect(await readFile(id, "order.ts", { version: 0 })).not.toHaveProperty("localPath");
+    expect((await readFile(id, "order.ts", { version: 1, generation })).text).toContain(
+      "revision 5",
     );
-    expect(
-      (
-        await get(
-          `/${id}/file?side=head&file=order.ts&version=1&generation=${current.source.pins.worktreeRevision}`,
-        )
-      ).body.text,
-    ).toContain("revision 5");
-    expect(
-      (
-        await get(
-          `/${id}/file?side=head&file=order.ts&version=0&generation=${current.source.pins.worktreeRevision}`,
-        )
-      ).body,
-    ).toMatchObject({
+    expect(await readFile(id, "order.ts", { version: 0, generation })).toMatchObject({
       text: 'export const status = "revision 5";\nexport const count = 5;\n',
       localPath: `${repo.root}/order.ts`,
     });
@@ -981,7 +833,7 @@ test.skipIf(!HAS_DIFFR)(
         sessionId: id,
         path: "order.ts",
         version: 1,
-        generation: current.source.pins.worktreeRevision,
+        generation,
       }),
     ).toEqual({
       target: { kind: "host", hostId: IN_PROCESS_HOST_ID, path: `${repo.root}/order.ts` },
@@ -998,19 +850,16 @@ test.skipIf(!HAS_DIFFR)(
         sessionId: id,
         path: "order.ts",
         version: 0,
-        generation: saved.source.pins.worktreeRevision,
+        generation: saved.source!.pins.worktreeRevision,
       }),
     ).toEqual({ target: null });
-    expect((await get(`/${id}/progress?version=0`)).body.files).toEqual(progress.files);
-    const older = await engine.request({
-      method: "GET",
-      path: `/${id}/structural-diff?version=0&file=order.ts`,
-    });
-    expect(older.body).toBe(structural.body);
     expect(
-      (await get(`/${id}/file?side=head&file=order.ts&version=1&generation=${"0".repeat(64)}`))
-        .status,
-    ).toBe(409);
+      (await as(undefined, (api, signal) => api.progress({ reviewId: id, version: 0 }, { signal })))
+        .files,
+    ).toEqual(progress.files);
+    await expect(
+      readFile(id, "order.ts", { version: 1, generation: "0".repeat(64) }),
+    ).rejects.toMatchObject({ status: 409 });
     const refs = repo
       .git("for-each-ref", "--format=%(refname)", "refs/bb-whiteboard/worktrees")
       .trim()
@@ -1019,7 +868,7 @@ test.skipIf(!HAS_DIFFR)(
     await engine.dispose();
     repo.git("gc", "--prune=now");
     engine = createEngine(bb, settings);
-    expect((await get(`/${id}/file?side=head&file=order.ts&version=0`)).body.text).toBe(
+    expect((await readFile(id, "order.ts", { version: 0 })).text).toBe(
       'export const status = "processing";\n',
     );
   },
@@ -1036,7 +885,7 @@ test.each(["assume-unchanged", "skip-worktree", "split-index"])(
     const source = "export const raw = 1;\r\nexport const next = 2;\r\n";
     repo.write("src/a.ts", source);
     const live = await create(undefined, true);
-    expect((await get(`/${live.reviewId}/file?side=head&file=src/a.ts`)).body.text).toBe(source);
+    expect((await readFile(live.reviewId, "src/a.ts")).text).toBe(source);
     expect(readFileSync(indexPath)).toEqual(before);
   },
 );
@@ -1049,7 +898,7 @@ test.skipIf(!HAS_DIFFR)(
     const raw = "export const a = 10;\r\nexport const a2 = 20;\r\n";
     repo.write("src/a.ts", raw);
     expect(repo.git("diff", "--name-only")).toBe("");
-    const created = await post("/commands", {
+    const { reviewId: id } = await command({
       commandId: randomUUID(),
       operation: {
         type: "create",
@@ -1058,130 +907,98 @@ test.skipIf(!HAS_DIFFR)(
         target: { kind: "worktree", repositoryId },
       },
     });
-    expect(created.status).toBe(200);
-    const id = created.body.reviewId;
-    expect((await get(`/${id}/file?side=head&file=src/a.ts`)).body).toMatchObject({
+    expect(await readFile(id, "src/a.ts")).toMatchObject({
       text: raw,
       localPath: `${repo.root}/src/a.ts`,
     });
-    expect((await get(`/${id}/diff?format=files`)).body).toEqual([]);
-    expect((await get(`/${id}/progress`)).body.files).toEqual([]);
-    const structural = await engine.request({
-      method: "GET",
-      path: `/${id}/structural-diff?file=src/a.ts`,
-    });
-    expect(structural.status).toBe(200);
-    const events = structural.body
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    expect(events[0]).toMatchObject({ type: "start", files: [] });
-    expect(events).not.toContainEqual(expect.objectContaining({ type: "file" }));
-    expect(events.at(-1)).toEqual({ type: "complete", succeeded: 0, failed: 0 });
+    expect(await changedFiles(id)).toEqual([]);
+    expect(
+      (await as(undefined, (api, signal) => api.progress({ reviewId: id }, { signal }))).files,
+    ).toEqual([]);
   },
 );
 
 test("scratchpad aliases isolate each thread's document, leases, catalog, and restored tab", async () => {
   scratchpadEnabled = true;
   const [first, second] = await Promise.all([
-    get("/scratchpad?full=true", "t1"),
-    get("/scratchpad?full=true", "t2"),
+    liveSession("scratchpad", "t1"),
+    liveSession("scratchpad", "t2"),
   ]);
-  expect(first.status).toBe(200);
-  expect(second.status).toBe(200);
-  expect(first.body).toMatchObject({
-    kind: "scratchpad",
-    title: "Scratchpad",
-    document: [],
-  });
-  expect(second.body).toMatchObject({
-    kind: "scratchpad",
-    title: "Scratchpad",
-    document: [],
-  });
-  expect(first.body.reviewId).not.toBe(second.body.reviewId);
+  expect(first).toMatchObject({ kind: "scratchpad", title: "Scratchpad", document: [] });
+  expect(second).toMatchObject({ kind: "scratchpad", title: "Scratchpad", document: [] });
+  expect(first.reviewId).not.toBe(second.reviewId);
   const lease1 = randomUUID();
-  const lease2 = randomUUID();
-  expect(
-    (await post("/scratchpad/activity", { action: "begin", leaseId: lease1 }, "t1")).status,
-  ).toBe(200);
-  expect(
-    (await post("/scratchpad/activity", { action: "begin", leaseId: lease2 }, "t2")).status,
-  ).toBe(200);
-  expect(
-    (
-      await post(
-        "/commands",
-        {
-          commandId: randomUUID(),
-          leaseId: lease1,
-          operation: {
-            type: "edit",
-            reviewId: "scratchpad",
-            edit: {
-              type: "insert",
-              content: { type: "markdown", markdown: "Only thread one's design" },
-            },
-          },
+  await as("t1", (api) =>
+    api.activity({ reviewId: "scratchpad", action: "begin", leaseId: lease1 }),
+  );
+  await as("t2", (api) =>
+    api.activity({ reviewId: "scratchpad", action: "begin", leaseId: randomUUID() }),
+  );
+  await command(
+    {
+      commandId: randomUUID(),
+      leaseId: lease1,
+      operation: {
+        type: "edit",
+        reviewId: "scratchpad",
+        edit: {
+          type: "insert",
+          content: { type: "markdown", markdown: "Only thread one's design" },
         },
-        "t1",
-      )
-    ).status,
-  ).toBe(200);
-  expect((await get("/scratchpad?full=true", "t1")).body.document).toEqual([
+      },
+    },
+    "t1",
+  );
+  expect((await liveSession("scratchpad", "t1")).document).toEqual([
     expect.objectContaining({ type: "markdown", markdown: "Only thread one's design" }),
   ]);
-  expect((await get("/scratchpad?full=true", "t2")).body.document).toEqual([]);
-  expect((await get("", "t1")).body.map((r: { reviewId: string }) => r.reviewId)).toEqual([
-    first.body.reviewId,
-  ]);
-  expect((await get("", "t2")).body.map((r: { reviewId: string }) => r.reviewId)).toEqual([
-    second.body.reviewId,
-  ]);
+  expect((await liveSession("scratchpad", "t2")).document).toEqual([]);
+  const catalog = async (threadId?: string) =>
+    (await as(threadId, (api) => api.catalog({}))).map((row) => row.reviewId);
+  expect(await catalog("t1")).toEqual([first.reviewId]);
+  expect(await catalog("t2")).toEqual([second.reviewId]);
   expect(await engine.info({ threadId: "t2", sessionId: "scratchpad" })).toMatchObject({
-    sessionId: second.body.reviewId,
+    sessionId: second.reviewId,
   });
   await engine.dispose();
   engine = createEngine(bb, settings);
-  expect((await get("/scratchpad?full=true", "t1")).body).toMatchObject({
-    reviewId: first.body.reviewId,
+  expect(await liveSession("scratchpad", "t1")).toMatchObject({
+    reviewId: first.reviewId,
     document: [expect.objectContaining({ markdown: "Only thread one's design" })],
   });
-  expect((await get("/scratchpad?full=true", "t2")).body).toMatchObject({
-    reviewId: second.body.reviewId,
+  expect(await liveSession("scratchpad", "t2")).toMatchObject({
+    reviewId: second.reviewId,
     document: [],
   });
 });
 
 test("another thread cannot read, open, lease, edit, or restore a scratchpad by its canonical id", async () => {
   scratchpadEnabled = true;
-  const own = await get("/scratchpad?full=true", "t1");
-  expect(own.status).toBe(200);
-  const id = own.body.reviewId;
-  const ownVersion = own.body.version;
-  for (const suffix of ["", "/history", "/watch"])
-    expect((await get(`/${id}${suffix}`, "t2")).status).toBe(404);
-  expect(
-    (await post(`/${id}/activity`, { action: "begin", leaseId: randomUUID() }, "t2")).status,
-  ).toBe(404);
-  expect((await post(`/${id}/open`, {}, "t2")).status).toBe(404);
-  const subscriptions = encodeURIComponent(JSON.stringify([{ reviewId: id, mode: "structural" }]));
-  expect((await get(`/watch?subscriptions=${subscriptions}`, "t2")).status).toBe(404);
+  const own = await liveSession("scratchpad", "t1");
+  const id = own.reviewId;
+  const notFound = { status: 404 };
+  await expect(liveSession(id, "t2")).rejects.toMatchObject(notFound);
+  await expect(as("t2", (api) => api.history({ reviewId: id }))).rejects.toMatchObject(notFound);
+  await expect(as("t2", (api) => api.inspect({ reviewId: id }))).rejects.toMatchObject(notFound);
+  await expect(
+    as("t2", (api) => api.activity({ reviewId: id, action: "begin", leaseId: randomUUID() })),
+  ).rejects.toMatchObject(notFound);
+  await expect(as("t2", (api) => api.open({ reviewId: id }))).rejects.toMatchObject(notFound);
   for (const operation of [
     {
       type: "edit",
       reviewId: id,
       edit: { type: "insert", content: { type: "markdown", markdown: "Wrong thread" } },
     },
-    { type: "restore", reviewId: id, version: ownVersion },
+    { type: "restore", reviewId: id, version: own.version },
   ])
-    expect((await post("/commands", { commandId: randomUUID(), operation }, "t2")).status).toBe(
-      404,
+    await expect(command({ commandId: randomUUID(), operation }, "t2")).rejects.toMatchObject(
+      notFound,
     );
   await expect(engine.info({ threadId: "t2", sessionId: id })).rejects.toThrow("another BB thread");
-  expect((await get("/scratchpad?full=true", "t1")).body.document).toEqual([]);
-  expect((await get("/scratchpad?full=true")).status).toBe(409);
-  expect((await get("")).body).toEqual([]);
+  expect((await liveSession("scratchpad", "t1")).document).toEqual([]);
+  await expect(liveSession("scratchpad")).rejects.toMatchObject({ status: 409 });
+  expect(await as(undefined, (api) => api.catalog({}))).toEqual([]);
 });
 
 test("legacy shared scratchpad content is preserved but never seeds or lists in a thread", async () => {
@@ -1203,39 +1020,36 @@ test("legacy shared scratchpad content is preserved but never seeds or lists in 
     },
   });
   scratchpadEnabled = true;
-  const fresh = await get("/scratchpad?full=true", "t1");
-  expect(fresh.body).toMatchObject({ title: "Scratchpad", kind: "scratchpad", document: [] });
-  expect((await get("", "t1")).body.map((row: { reviewId: string }) => row.reviewId)).toEqual([
-    fresh.body.reviewId,
-  ]);
+  const fresh = await liveSession("scratchpad", "t1");
+  expect(fresh).toMatchObject({ title: "Scratchpad", kind: "scratchpad", document: [] });
+  const catalog = (threadId?: string) => as(threadId, (api) => api.catalog({}));
+  expect((await catalog("t1")).map((row) => row.reviewId)).toEqual([fresh.reviewId]);
   expect(legacy.read("scratchpad").document).toEqual([
     expect.objectContaining({ markdown: "Old shared JetStream explanation" }),
   ]);
-  expect((await get("")).body).toEqual([
+  expect(await catalog()).toEqual([
     expect.objectContaining({
       reviewId: "scratchpad",
       title: "Legacy shared scratchpad (read-only)",
     }),
   ]);
-  expect((await get("/scratchpad?full=true")).body.document).toEqual([
+  expect((await liveSession("scratchpad")).document).toEqual([
     expect.objectContaining({ markdown: "Old shared JetStream explanation" }),
   ]);
-  expect(
-    (
-      await post("/commands", {
-        commandId: randomUUID(),
-        operation: {
-          type: "edit",
-          reviewId: "scratchpad",
-          edit: {
-            type: "insert",
-            content: { type: "markdown", markdown: "Do not change old content" },
-          },
+  await expect(
+    command({
+      commandId: randomUUID(),
+      operation: {
+        type: "edit",
+        reviewId: "scratchpad",
+        edit: {
+          type: "insert",
+          content: { type: "markdown", markdown: "Do not change old content" },
         },
-      })
-    ).status,
-  ).toBe(409);
+      },
+    }),
+  ).rejects.toMatchObject({ status: 409 });
   await legacy.close();
   scratchpadEnabled = false;
-  expect((await get(`/${fresh.body.reviewId}?full=true`, "t1")).status).toBe(409);
+  await expect(liveSession(fresh.reviewId, "t1")).rejects.toMatchObject({ status: 409 });
 });

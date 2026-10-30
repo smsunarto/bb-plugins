@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { API_PREFIX } from "../../shared/contracts/api-tunnel.ts";
 import { ReviewInputError } from "../../shared/review/input-error.ts";
 import { currentThread } from "./thread-context.ts";
 
@@ -21,7 +20,8 @@ export function createScratchpads(bb: BbPluginApi) {
     }
     return row.session_id;
   };
-  const resolve = (id: string): string => {
+  /** Reads: "scratchpad" names this thread's pad, or the legacy shared pad outside a thread. */
+  const resolveId = (id: string): string => {
     if (id === "scratchpad") {
       const scoped = currentId();
       if (!scoped && db.prepare("SELECT id FROM reviews WHERE id='scratchpad'").get())
@@ -43,8 +43,9 @@ export function createScratchpads(bb: BbPluginApi) {
       );
     return id;
   };
-  const writable = (id: string): string => {
-    const resolved = resolve(id);
+  /** Writes: as reads, and the legacy shared pad is read-only. */
+  const writableId = (id: string): string => {
+    const resolved = resolveId(id);
     if (resolved === "scratchpad")
       throw new ReviewInputError(
         "The legacy shared scratchpad is read-only. Open a BB thread to use its own scratchpad.",
@@ -52,53 +53,5 @@ export function createScratchpads(bb: BbPluginApi) {
       );
     return resolved;
   };
-  const rewriteSubscriptions = (parsed: URL) => {
-    if (parsed.pathname !== `${API_PREFIX}/watch` || !parsed.searchParams.has("subscriptions"))
-      return;
-    let subscriptions;
-    try {
-      subscriptions = JSON.parse(parsed.searchParams.get("subscriptions")!);
-    } catch {
-      return;
-    }
-    if (Array.isArray(subscriptions)) {
-      for (const item of subscriptions) {
-        if (item && typeof item.reviewId === "string") item.reviewId = resolve(item.reviewId);
-      }
-      parsed.searchParams.set("subscriptions", JSON.stringify(subscriptions));
-    }
-  };
-  const request = (url: string, init?: RequestInit): { url: string; init?: RequestInit } => {
-    const parsed = new URL(url);
-    const segments = parsed.pathname.slice(API_PREFIX.length).split("/");
-    if (segments[1]) {
-      const id = decodeURIComponent(segments[1]);
-      const resolved = init?.method === "POST" ? writable(id) : resolve(id);
-      if (resolved !== id) {
-        segments[1] = encodeURIComponent(resolved);
-        parsed.pathname = `${API_PREFIX}${segments.join("/")}`;
-      }
-    }
-    rewriteSubscriptions(parsed);
-    if (parsed.pathname === `${API_PREFIX}/commands` && typeof init?.body === "string") {
-      let body;
-      try {
-        body = JSON.parse(init.body);
-      } catch {
-        return { url: parsed.href, init };
-      }
-      // Upstream owns command validation; only the session identity is translated here.
-      if (
-        body &&
-        typeof body === "object" &&
-        body.operation &&
-        typeof body.operation.reviewId === "string"
-      ) {
-        body.operation.reviewId = writable(body.operation.reviewId);
-        return { url: parsed.href, init: { ...init, body: JSON.stringify(body) } };
-      }
-    }
-    return { url: parsed.href, init };
-  };
-  return { currentId, resolve, request };
+  return { currentId, resolveId, writableId };
 }

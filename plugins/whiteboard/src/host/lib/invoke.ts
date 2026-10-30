@@ -8,7 +8,6 @@ import type {
 import * as localVcs from "../../shared/node/local-vcs/index.ts";
 import { defaultPullRequestDeps } from "../../shared/node/review/pull-request.ts";
 import * as worktreeSource from "../../shared/node/review/worktree-source.ts";
-import { resolveReviewBranchLinks } from "../../shared/node/review/review-branch-links.ts";
 import { ensureReviewPinnedCheckout } from "../../shared/node/review/review-head-checkout.ts";
 import { resolveReviewStackLayers } from "../../shared/node/review/review-stack.ts";
 import { diffrExecutable } from "../../shared/node/review/structural-diff.ts";
@@ -68,10 +67,6 @@ export const HOST_FUNCTIONS = {
   "review-stack": {
     // Upstream default `runGitHubApi` (`gh api` on this host).
     resolveReviewStackLayers: ([subject, reviews]) => resolveReviewStackLayers(subject, reviews),
-  },
-  "review-branch-links": {
-    // Upstream default runner (`git` on this host).
-    resolveReviewBranchLinks: ([input]) => resolveReviewBranchLinks(input),
   },
   "review-head-checkout": {
     ensureReviewPinnedCheckout: plain(ensureReviewPinnedCheckout),

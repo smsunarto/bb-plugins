@@ -3,7 +3,6 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
 
-import { ReviewApiClient } from "../../shared/review/client.ts";
 import type { Snapshot } from "../../server/lib/review/store.ts";
 import { ReviewDiffView } from "./DiffView.tsx";
 import { ReviewSessionProvider } from "./host/review-session.tsx";
@@ -13,22 +12,27 @@ import { testReviewSession } from "./review-session-test-utils.tsx";
 it("clears a lens without destroying the full comparison's native state", async () => {
   const disposed: string[] = [];
 
+  const rpc = {
+    progress: async () =>
+      ({
+        files: [],
+        lenses: [
+          {
+            id: "diagram",
+            title: "Path",
+            state: "ready",
+            sources: [{ side: "head", file: "a.ts", fromLine: 1, toLine: 8 }],
+            fileCount: 1,
+          },
+        ],
+      }) as never,
+    markProgress: async () => {
+      throw new Error("unused");
+    },
+  };
   const session = testReviewSession(
     {},
     {
-      request: async () =>
-        Response.json({
-          files: [],
-          lenses: [
-            {
-              id: "diagram",
-              title: "Path",
-              state: "ready",
-              sources: [{ side: "head", file: "a.ts", fromLine: 1, toLine: 8 }],
-              fileCount: 1,
-            },
-          ],
-        }),
       diffView: {
         files: async () => [],
         create(spec) {
@@ -46,8 +50,6 @@ it("clears a lens without destroying the full comparison's native state", async 
       },
     },
   );
-
-  const client = new ReviewApiClient(session.config, session.bridge.request);
 
   const snapshot: Snapshot = {
     reviewId: "test-session",
@@ -72,7 +74,7 @@ it("clears a lens without destroying the full comparison's native state", async 
     await act(async () =>
       root.render(
         <ReviewSessionProvider session={session}>
-          <ReviewLensesProvider client={client} snapshot={snapshot}>
+          <ReviewLensesProvider rpc={rpc} snapshot={snapshot}>
             <ReviewDiffView />
           </ReviewLensesProvider>
         </ReviewSessionProvider>,

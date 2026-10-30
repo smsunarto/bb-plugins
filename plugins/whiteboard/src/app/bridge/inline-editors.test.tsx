@@ -2,6 +2,7 @@
 import type { DiffProps, SourceCodeProps } from "@get-bb/plugin-sdk/app";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SourceRpc } from "./diff-view.tsx";
 import { createInlineEditors } from "./inline-editors.tsx";
 import { createPortals, PortalHost } from "./portals.tsx";
 import type {
@@ -30,6 +31,10 @@ afterEach(cleanup);
 const pathTitle = () => document.querySelector(".review-path-label")?.getAttribute("title");
 const header = () => document.querySelector(".review-multidiff-header")?.textContent;
 
+/** Every source read the peek made, in order. */
+type Read = { method: "diffFiles" | "file" } & Partial<Parameters<SourceRpc["file"]>[0]>;
+const fileReads = (log: Read[]) => log.filter((read) => read.method === "file");
+
 function setup(
   input: {
     path?: string;
@@ -53,35 +58,34 @@ function setup(
     deletions: 1,
     ...(input.status === "renamed" ? { previousPath: "src/old.ts" } : {}),
   };
-  const request = vi.fn(async (value: string) => {
-    const url = new URL(value);
-    const comparison = url.searchParams.get("projection") === "comparison";
-    return Response.json(
-      url.pathname.endsWith("/diff")
-        ? // The comparison omits unchanged files; the lens adds them as context.
-          input.status === "unchanged"
-          ? []
-          : [file]
-        : {
-            localPath:
-              input.pins ||
-              input.live === false ||
-              (comparison &&
-                input.comparisonHead !== undefined &&
-                input.comparisonHead !== input.head)
-                ? undefined
-                : "/repo/src/a.ts",
-            text:
-              url.searchParams.get("side") === "base"
-                ? (input.base ?? "a\nb\n")
-                : ((comparison ? input.comparisonHead : undefined) ?? input.head ?? "a\nB\n"),
-          },
-    );
-  });
+  const log: Read[] = [];
+  const rpc: SourceRpc = {
+    diffFiles: async (read) => {
+      log.push({ method: "diffFiles", ...read });
+      // The comparison omits unchanged files; the lens adds them as context.
+      return (input.status === "unchanged" ? [] : [file]) as never;
+    },
+    file: async (read) => {
+      log.push({ method: "file", ...read });
+      const comparison = read.projection === "comparison";
+      return {
+        localPath:
+          input.pins ||
+          input.live === false ||
+          (comparison && input.comparisonHead !== undefined && input.comparisonHead !== input.head)
+            ? undefined
+            : "/repo/src/a.ts",
+        text:
+          read.side === "base"
+            ? (input.base ?? "a\nb\n")
+            : ((comparison ? input.comparisonHead : undefined) ?? input.head ?? "a\nB\n"),
+      } as never;
+    },
+  };
   const portals = createPortals();
   const openFile = vi.fn(async () => true);
   const factory = createInlineEditors({
-    request,
+    rpc,
     portals,
     reviewId: "r1",
     openFile,
@@ -99,7 +103,7 @@ function setup(
   };
   const handle = factory.create(spec);
   render(<PortalHost portals={portals} />);
-  return { handle, factory, spec, request, openFile, container };
+  return { handle, factory, spec, log, openFile, container };
 }
 
 describe("bb code peeks", () => {
@@ -163,9 +167,9 @@ describe("bb code peeks", () => {
     );
   });
   it("shows the peek's lens progress counts and hides counts without progress", async () => {
-    const { handle, request } = setup();
+    const { handle, log } = setup();
     const diff = await screen.findByTestId("bb-diff");
-    const reads = request.mock.calls.length;
+    const reads = log.length;
     expect(header()).not.toMatch(/[+−]\d/);
     const progress: ReviewDiffProgressFile = {
       path: "src/a.ts",
@@ -179,11 +183,11 @@ describe("bb code peeks", () => {
     expect(header()).toContain("+2 −1");
     // Progress re-renders the header only: the source neither reloads nor remounts.
     expect(screen.getByTestId("bb-diff")).toBe(diff);
-    expect(request).toHaveBeenCalledTimes(reads);
+    expect(log).toHaveLength(reads);
     act(() => handle.setProgress?.({ files: [] }));
     expect(header()).not.toMatch(/[+−]\d/);
     expect(screen.getByTestId("bb-diff")).toBe(diff);
-    expect(request).toHaveBeenCalledTimes(reads);
+    expect(log).toHaveLength(reads);
   });
   it("frames every range of a multi-range peek in its own context hunk", async () => {
     const head = Array.from({ length: 100 }, (_, line) => `line ${line + 1}`).join("\n") + "\n";
@@ -202,7 +206,7 @@ describe("bb code peeks", () => {
     ]);
   });
   it("uses canonical comparison rows and keeps transformed Diff source read only", async () => {
-    const { request } = setup({
+    const { log } = setup({
       base: "EXPORT CONST A = 10;\nEXPORT CONST A2 = 20;\n",
       head: "export const a = 11;\nexport const a2 = 20;\n",
       comparisonHead: "EXPORT CONST A = 11;\nEXPORT CONST A2 = 20;\n",
@@ -219,18 +223,14 @@ describe("bb code peeks", () => {
       "src/a.ts:2\nThis source is pinned to a commit. bb can open only live worktree files.",
     );
     expect(screen.queryByRole("button", { name: "Open file" })).toBeNull();
-    expect(
-      request.mock.calls
-        .filter(([url]) => url.includes("/file?"))
-        .every(([url]) => new URL(url).searchParams.get("projection") === "comparison"),
-    ).toBe(true);
+    expect(fileReads(log).every((read) => read.projection === "comparison")).toBe(true);
   });
   it("uses exact raw source for unchanged files and peeks outside canonical hunks", async () => {
     const baseline =
       Array.from({ length: 15 }, (_, line) => `EXPORT CONST A${line} = 10;`).join("\n") + "\n";
     const canonical = baseline.replace("A0 = 10", "A0 = 11");
     const raw = canonical.toLowerCase();
-    const { request, openFile, handle } = setup({
+    const { log, openFile, handle } = setup({
       base: baseline,
       head: raw,
       comparisonHead: canonical,
@@ -251,25 +251,21 @@ describe("bb code peeks", () => {
       startLine: 15,
       endLine: 15,
     });
-    expect(
-      request.mock.calls
-        .filter(([url]) => url.includes("/file?"))
-        .map(([url]) => new URL(url).searchParams.get("projection")),
-    ).toEqual(["comparison", "comparison", null]);
+    expect(fileReads(log).map((read) => read.projection)).toEqual([
+      "comparison",
+      "comparison",
+      undefined,
+    ]);
     act(() => handle.dispose());
     cleanup();
     const unchanged = setup({ status: "unchanged", head: raw, comparisonHead: canonical });
     const context = await screen.findByTestId("bb-diff");
     expect(JSON.parse(context.dataset.full!).new).toEqual({ path: "src/a.ts", content: raw });
     expect(context.textContent).toContain("@@ -1,5 +1,5 @@\n export const a0 = 11;\n");
-    expect(
-      unchanged.request.mock.calls
-        .filter(([url]) => url.includes("/file?"))
-        .map(([url]) => new URL(url).searchParams.get("projection")),
-    ).toEqual([null]);
+    expect(fileReads(unchanged.log).map((read) => read.projection)).toEqual([undefined]);
   });
   it("keeps explicit commit pins read only and skips the diff request without a base", async () => {
-    const { request, openFile } = setup({ pins: { repositoryId: "repo1", head: "commit" } });
+    const { log, openFile } = setup({ pins: { repositoryId: "repo1", head: "commit" } });
     expect((await screen.findByTestId("bb-diff")).dataset.view).toBe("unified");
     expect(screen.queryByRole("button", { name: "Open file" })).toBeNull();
     expect(pathTitle()).toBe(
@@ -277,8 +273,8 @@ describe("bb code peeks", () => {
     );
     expect(header()).not.toMatch(/[+−]\d/);
     expect(openFile).not.toHaveBeenCalled();
-    expect(request.mock.calls.every(([url]) => !url.includes("/diff?"))).toBe(true);
-    expect(new URL(request.mock.calls[0]![0]).searchParams.get("head")).toBe("commit");
+    expect(log.every((read) => read.method !== "diffFiles")).toBe(true);
+    expect(log[0]!.head).toBe("commit");
   });
   it("keeps retained-only source read only when the file response has no live path", async () => {
     setup({ live: false });
@@ -299,25 +295,21 @@ describe("bb code peeks", () => {
     expect(openFile).not.toHaveBeenCalled();
   });
   it("keeps Monaco find methods inert without requesting additional source", async () => {
-    const { factory, handle, spec, request } = setup();
+    const { factory, handle, spec, log } = setup();
     await screen.findByTestId("bb-diff");
-    const reads = request.mock.calls.length;
+    const reads = log.length;
     const query = { text: "B", matchCase: false, wholeWord: false, isRegex: false };
     expect(await factory.find(spec, query)).toEqual({ matchCount: 0 });
     expect(await handle.setFindQuery(query)).toEqual({ matchCount: 0 });
     handle.revealFindMatch(0);
     handle.clearActiveFindMatch();
     handle.clearFind();
-    expect(request).toHaveBeenCalledTimes(reads);
+    expect(log).toHaveLength(reads);
   });
   it("reads only the existing side of additions and deletions, and the prior rename path", async () => {
     const added = setup({ status: "added" });
     await screen.findByTestId("bb-diff");
-    expect(
-      added.request.mock.calls
-        .filter(([url]) => url.includes("/file?"))
-        .map(([url]) => new URL(url).searchParams.get("side")),
-    ).toEqual(["head"]);
+    expect(fileReads(added.log).map((read) => read.side)).toEqual(["head"]);
     act(() => added.handle.dispose());
     cleanup();
     const deleted = setup({
@@ -327,23 +319,15 @@ describe("bb code peeks", () => {
     await screen.findByTestId("bb-diff");
     // A deletion has no live file, so its title gives no read-only reason.
     expect(pathTitle()).toBe("src/a.ts:2");
-    expect(
-      deleted.request.mock.calls
-        .filter(([url]) => url.includes("/file?"))
-        .map(([url]) => new URL(url).searchParams.get("side")),
-    ).toEqual(["base"]);
+    expect(fileReads(deleted.log).map((read) => read.side)).toEqual(["base"]);
     act(() => deleted.handle.dispose());
     cleanup();
     const renamed = setup({ status: "renamed" });
     await screen.findByTestId("bb-diff");
-    expect(
-      renamed.request.mock.calls
-        .filter(([url]) => url.includes("/file?"))
-        .map(
-          ([url]) =>
-            `${new URL(url).searchParams.get("side")}:${new URL(url).searchParams.get("file")}`,
-        ),
-    ).toEqual(["head:src/a.ts", "base:src/old.ts"]);
+    expect(fileReads(renamed.log).map((read) => `${read.side}:${read.path}`)).toEqual([
+      "head:src/a.ts",
+      "base:src/old.ts",
+    ]);
   });
   it("reports measured height changes and respects the cap", async () => {
     let observer: (() => void) | undefined;

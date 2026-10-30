@@ -2,18 +2,18 @@ import type { ReviewCommitSummary } from "../../shared/review-protocol/index.ts"
 import { memo, useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import type { DiffSelection } from "../../shared/review/lens-selection.ts";
-import type { ReviewApiClient } from "../../shared/review/client.ts";
 import {
   type Block,
   elements,
   resourceReferences,
   selectionReferences,
 } from "../../shared/review/document.ts";
-import type { LocalReviewData } from "../../server/lib/review/local-data.ts";
 import type { LiveSnapshot } from "../../server/lib/review/store.ts";
 import type { DocumentPeekableAnchor } from "../../shared/review/review-document-data.ts";
 import type { NormalizedSoftwareModel } from "../../shared/review/software-map-model.ts";
+import { base64Bytes } from "../lib/base64.ts";
 import { markdownHasTitle } from "../markdown/agent-markdown.tsx";
+import type { WhiteboardRpcClient } from "../rpc.ts";
 import { type ApiHeadingIds, apiHeadingIds } from "./api-document-headings.ts";
 import { AuthoringActivityContext } from "./authoring-activity.tsx";
 import { scopeLive } from "./authoring-cursor.ts";
@@ -63,7 +63,9 @@ export interface ApiDocumentData {
 }
 
 /** Cache only immutable resources and commit-addressed quotes, for this canvas. */
-export function createDocumentLoader(client: ReviewApiClient) {
+export function createDocumentLoader(
+  rpc: Pick<WhiteboardRpcClient, "commits" | "map" | "resource">,
+) {
   const cache = new Map<string, Promise<unknown>>();
   const urls = new Set<string>();
   let disposed = false;
@@ -97,9 +99,7 @@ export function createDocumentLoader(client: ReviewApiClient) {
           snapshot.live.kind === "unavailable" || !snapshot.source
             ? []
             : await once(`commits:${JSON.stringify(snapshot.source.pins)}`, () =>
-                client.read<ReviewCommitSummary[]>(
-                  `/${snapshot.reviewId}/commits?version=${snapshot.version}`,
-                ),
+                rpc.commits({ sessionId: snapshot.reviewId, version: snapshot.version }),
               ),
         anchors: new Map(),
         images: new Map(),
@@ -121,14 +121,15 @@ export function createDocumentLoader(client: ReviewApiClient) {
         resourceReferences(snapshot.document).map(async (node) => {
           if (node.type === "image") {
             const url = await once(`image:${node.assetId}`, async () => {
-              const blob = await (
-                await client.response(
-                  `/${encodeURIComponent(snapshot.reviewId)}/resources/${encodeURIComponent(node.assetId)}`,
-                )
-              ).blob();
+              const { contentType, base64 } = await rpc.resource({
+                sessionId: snapshot.reviewId,
+                resourceId: node.assetId,
+              });
 
               if (disposed) throw new Error("Canvas closed.");
-              const url = URL.createObjectURL(blob);
+              const url = URL.createObjectURL(
+                new Blob([base64Bytes(base64)], { type: contentType }),
+              );
               urls.add(url);
 
               return url;
@@ -139,11 +140,14 @@ export function createDocumentLoader(client: ReviewApiClient) {
 
           // A trace that cannot be loaded leaves its quote to render as text.
           if (node.type === "trace_quote") {
-            const loaded = await once(`trace:${node.traceId}`, () =>
-              client.read<Trace>(
-                `/${encodeURIComponent(snapshot.reviewId)}/resources/${encodeURIComponent(node.traceId)}`,
-              ),
-            ).catch(() => undefined);
+            const loaded = await once(`trace:${node.traceId}`, async () => {
+              const { base64 } = await rpc.resource({
+                sessionId: snapshot.reviewId,
+                resourceId: node.traceId,
+              });
+              // SAFETY: a trace resource is the JSON trace its upload stored.
+              return JSON.parse(new TextDecoder().decode(base64Bytes(base64))) as Trace;
+            }).catch(() => undefined);
 
             if (loaded) data.traces.set(node.traceId, loaded);
           }
@@ -152,9 +156,12 @@ export function createDocumentLoader(client: ReviewApiClient) {
             const model = await once(
               `map:${node.mapVersionId}:${JSON.stringify(snapshot.source?.pins ?? null)}:${generation ?? ""}`,
               async () => {
-                const saved = await client.read<Awaited<ReturnType<LocalReviewData["map"]>>>(
-                  `/${snapshot.reviewId}/maps/${encodeURIComponent(node.mapVersionId)}?version=${snapshot.version}${generation ? `&generation=${encodeURIComponent(generation)}` : ""}`,
-                );
+                const saved = await rpc.map({
+                  sessionId: snapshot.reviewId,
+                  resourceId: node.mapVersionId,
+                  version: snapshot.version,
+                  generation,
+                });
 
                 return {
                   ...saved,

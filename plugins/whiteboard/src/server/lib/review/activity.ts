@@ -22,7 +22,7 @@ export const activitySchema = z.strictObject({
   scope: leaseScopeSchema
     .optional()
     .describe(
-      'What the lease covers. Default "document": review_edit and every other document write. "lenses": review_lens_edit writes only.',
+      'What the lease covers. Default "document": whiteboard_session_edit and every other session write except lens edits. "lenses": whiteboard_session_lens_edit only.',
     ),
   focus: focusSchema.nullable().optional(),
 });
@@ -134,7 +134,7 @@ export class ReviewActivity {
     if (leaseId && !active)
       throw new ReviewInputError(
         scope === "lenses"
-          ? 'No live lenses lease. Begin one with review_activity scope:"lenses" and reread the lenses before editing them.'
+          ? 'No live lenses lease. Begin one with whiteboard_session_activity scope:"lenses" and reread the lenses before editing them.'
           : "Authoring session ended or expired. Begin a new session and reread the review before editing.",
         409,
       );

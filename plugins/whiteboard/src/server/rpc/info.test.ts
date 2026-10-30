@@ -1,8 +1,9 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, test } from "vitest";
-import type { InfoInput } from "../../shared/contracts/api-tunnel.ts";
+import type { InfoInput } from "../../shared/contracts/rpc.ts";
 import type { Engine } from "../../shared/contracts/engine.ts";
+import { ReviewInputError } from "../../shared/review/input-error.ts";
 import { info, infoContract } from "./info.ts";
 
 async function start() {
@@ -49,4 +50,26 @@ test("rejects unknown input keys before reaching the engine", async () => {
     "rpc input validation failed",
   );
   expect(inputs).toEqual([]);
+});
+
+test("an engine refusal reaches the panel as its refusal code", async () => {
+  const engine = {
+    info: async () => {
+      throw new ReviewInputError(
+        "This scratchpad belongs to another BB thread. Open this thread's scratchpad instead.",
+        404,
+      );
+    },
+  } as unknown as Engine;
+  const { bb, harness } = createFakePluginHost({ pluginId: "whiteboard" });
+  bb.rpc.register(defineRpcContract({ info: infoContract }), {
+    info: (input) => info({ bb, engine }, input),
+  });
+
+  await expect(
+    harness.behavior.callRpc("info", { threadId: "t2", sessionId: "pad" }),
+  ).rejects.toMatchObject({
+    code: "not_found",
+    message: "This scratchpad belongs to another BB thread. Open this thread's scratchpad instead.",
+  });
 });

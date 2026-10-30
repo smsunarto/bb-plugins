@@ -4,8 +4,8 @@ import { DatabaseSync } from "../sqlite-testing.ts";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { ACTIVITY_TTL_MS, ReviewActivity } from "./activity.ts";
-import { ReviewApiClient } from "../../../shared/review/client.ts";
-import { createReviewApi } from "./http.ts";
+import { createReviewApi } from "./api.ts";
+import { LocalReviewData } from "./local-data.ts";
 import { ReviewStore } from "./store.ts";
 
 const databases: DatabaseSync[] = [];
@@ -56,19 +56,14 @@ it("renews reported work, expires abandoned work, and does not end another autho
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it("streams activity separately from document versions and closes the stream on deletion", async () => {
+it("reports activity beside the live document without versioning it, and refuses it once deleted", async () => {
   const store = new ReviewStore(":memory:", {
     validatePins: async () => {},
     validateSource: async () => {},
     validateResource: async () => {},
   });
 
-  const api = createReviewApi(store);
-
-  const client = new ReviewApiClient(
-    { serverUrl: "http://review.test", token: "test" },
-    async (url, init) => api.request(url.replace("/reviews-api", ""), init),
-  );
+  const api = createReviewApi({ store, data: new LocalReviewData(store) });
 
   const command = <Operation>(operation: Operation) =>
     store.execute({ commandId: randomUUID(), operation });
@@ -82,45 +77,37 @@ it("streams activity separately from document versions and closes the stream on 
 
   const changed = vi.fn<Parameters<ReviewStore["subscribe"]>[0]>();
   store.subscribe(changed);
-  const abort = new AbortController();
-  const stream = client.watch(reviewId, abort.signal);
+  const activityChanged = vi.fn<Parameters<ReviewStore["activity"]["subscribe"]>[0]>();
+  store.activity.subscribe(activityChanged);
 
   try {
-    expect((await stream.next()).value).toMatchObject({
+    expect(await api.liveSession({ reviewId })).toMatchObject({
       activity: { workingCount: 0 },
     });
 
     const input = {
-      action: "begin",
+      action: "begin" as const,
       leaseId: randomUUID(),
       focus: { description: "Drafting outline" },
     };
 
-    await client.post(`/${reviewId}/activity`, input);
-    expect((await stream.next()).value).toMatchObject({
+    await api.activity({ reviewId, ...input });
+    expect(activityChanged).toHaveBeenCalledWith(reviewId);
+    expect(await api.liveSession({ reviewId })).toMatchObject({
+      version: 0,
       activity: { workingCount: 1, focuses: [input.focus] },
     });
     expect(changed).not.toHaveBeenCalled();
     expect(store.history(reviewId)).toHaveLength(1);
-    const reconnect = client.watch(reviewId, abort.signal);
-    expect((await reconnect.next()).value).toMatchObject({
-      activity: { workingCount: 1, focuses: [input.focus] },
-    });
-    await reconnect.return(undefined);
     await store.execute({
       commandId: randomUUID(),
       leaseId: input.leaseId,
       operation: { type: "delete", reviewId },
     });
-    // A reader may already have buffered a pre-deletion snapshot.
-    await expect(async () => {
-      for await (const _snapshot of stream) {
-      }
-    }).rejects.toThrow(Error);
-    await expect(client.post(`/${reviewId}/activity`, input)).rejects.toThrow(/not found/i);
+    await expect(api.liveSession({ reviewId })).rejects.toMatchObject({ status: 404 });
+    await expect(api.activity({ reviewId, ...input })).rejects.toThrow(/not found/i);
     expect(store.activity.read(reviewId).workingCount).toBe(0);
   } finally {
-    abort.abort();
     await store.close();
   }
 });

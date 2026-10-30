@@ -10,18 +10,12 @@ import { testReviewSession } from "./review-session-test-utils.tsx";
 
 it("copies only on click or Shift+Cmd+C, reports failures, and clears on revision changes", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const session = testReviewSession();
+  const handoff = { quote: "selected", sessionId: "test-review", version: 1, title: "Prose" };
+  const copyContext = vi.fn(async () => ({ text: "Review: /review.mdx\n\nselected", handoff }));
+  const session = testReviewSession({}, {}, { copyContext });
   const notify = vi.fn<NonNullable<typeof session.bridge.notify>>();
   session.bridge.notify = notify;
 
-  const fetch = vi
-    .spyOn(session, "fetch")
-    .mockResolvedValue(new Response(JSON.stringify({ text: "Review: /review.mdx\n\nselected" })));
-
-  // Each copy gets a fresh response body.
-  fetch.mockImplementation(
-    async () => new Response(JSON.stringify({ text: "Review: /review.mdx\n\nselected" })),
-  );
   const write = vi.spyOn(clipboard, "copyText").mockResolvedValue(true);
   const container = document.createElement("div");
   container.className = "review-canvas-root";
@@ -73,7 +67,7 @@ it("copies only on click or Shift+Cmd+C, reports failures, and clears on revisio
   try {
     await act(async () => render("one"));
     await act(async () => container.querySelector("button")!.click());
-    expect(fetch).not.toHaveBeenCalled();
+    expect(copyContext).not.toHaveBeenCalled();
     expect(container.querySelector('[aria-label="Add to chat"]')).not.toBeNull();
 
     const popover = () => container.querySelector<HTMLButtonElement>('[aria-label="Add to chat"]')!;
@@ -96,16 +90,27 @@ it("copies only on click or Shift+Cmd+C, reports failures, and clears on revisio
     // Its article-relative position stays constant: scrolling is browser-owned.
     expect(popover().style.position).toBe("absolute");
     expect(popover().style.top).toBe("82px");
-    expect(fetch).not.toHaveBeenCalled();
+    expect(copyContext).not.toHaveBeenCalled();
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Add to chat"]')!.click(),
     );
     expect(write).toHaveBeenLastCalledWith(
       "Review: /review.mdx\n\nselected",
-      undefined,
+      handoff,
       expect.objectContaining({ className: "review-document" }),
     );
-    expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).not.toHaveProperty("anchorElement");
+    // The selection as the server reads it, without the popover's DOM anchors.
+    expect(copyContext.mock.calls[0]).toEqual([
+      {
+        sessionId: "test-review",
+        version: undefined,
+        selection: {
+          title: "Prose",
+          target: { kind: "text", quote: "selected" },
+          revision: "one",
+        },
+      },
+    ]);
     expect(notify).toHaveBeenLastCalledWith({
       kind: "success",
       text: expect.stringContaining("Added to chat."),

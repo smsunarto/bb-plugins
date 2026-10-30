@@ -1,17 +1,14 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { PassThrough } from "node:stream";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { type AuthoringTool, callAuthoringTool } from "./agent-client.ts";
-import { authoringTools } from "./authoring-tools.ts";
-import { ReviewApiClient } from "../../../shared/review/client.ts";
-import { createReviewApi } from "./http.ts";
-import { INSTRUCTION_TOPICS, instructionsQuerySchema, renderInstructions } from "./instructions.ts";
-import { serveReviewMcp } from "../tools/excluded-adapters.ts";
-import { ReviewStore } from "../tools/spec-store.ts";
+import "../sqlite-testing.ts";
+import { createReviewApi } from "./api.ts";
+import { INSTRUCTION_TOPICS, renderInstructions } from "./instructions.ts";
+import { LocalReviewData } from "./local-data.ts";
+import { ReviewStore } from "./store.ts";
 
 const live = {
   desktopAvailable: true,
@@ -79,455 +76,69 @@ describe("renderInstructions", () => {
       expect(await renderInstructions(topic, context, root)).toBe(marker);
     }
   });
-
-  describe("trace-archaeology (bb never captures traces)", () => {
-    const off = {
-      desktopAvailable: true,
-      scratchpadEnabled: false,
-    };
-
-    it("omits trace guidance from authoring", async () => {
-      for (const context of [off, live]) {
-        const text = await renderInstructions("authoring", context, root);
-        expect(text).not.toContain("trace-archaeology");
-        expect(text).not.toContain("check if traces are available");
-      }
-    });
-
-    it("answers the trace-archaeology topic with an off message", async () => {
-      expect(await renderInstructions("trace-archaeology", off, root)).toBe(
-        "Trace capture is off in this bb plugin, so no agent traces are available. Uploaded trace quotes are supported.",
-      );
-    });
-  });
-
-  it("accepts only named topics, defaulting to authoring", () => {
-    expect(instructionsQuerySchema.parse({})).toEqual({ topic: "authoring" });
-
-    for (const topic of INSTRUCTION_TOPICS) {
-      expect(instructionsQuerySchema.parse({ topic })).toEqual({ topic });
-    }
-
-    expect(instructionsQuerySchema.safeParse({ topic: "../secrets" }).success).toBe(false);
-    expect(
-      instructionsQuerySchema.safeParse({
-        topic: "authoring",
-        file: "secret.md",
-      }).success,
-    ).toBe(false);
-  });
 });
 
-describe("tool descriptions", () => {
-  it("never mention trace-archaeology", () => {
-    for (const scratchpad of [false, true]) {
-      const tool = authoringTools(scratchpad).find(
-        (entry) => entry.name === "review_get_instructions",
-      );
-
-      expect(tool?.description).not.toContain("trace-archaeology");
-    }
-  });
-});
-
-describe("review_get_instructions", () => {
+describe("the instructions operation", () => {
   const stores: ReviewStore[] = [];
 
-  afterEach(() => {
-    for (const store of stores) store.close();
+  afterEach(async () => {
+    for (const store of stores) await store.close();
     stores.length = 0;
   });
 
-  const api = (desktopAvailable = false, scratchpadEnabled = false) => {
+  const api = (deps: Omit<Parameters<typeof createReviewApi>[0], "store" | "data"> = {}) => {
     const store = new ReviewStore(":memory:", {
       validatePins: async () => {},
       validateSource: async () => {},
       validateResource: async () => {},
     });
-
     stores.push(store);
-
-    const app = createReviewApi(
-      store,
-      undefined,
-      desktopAvailable ? async () => ({ softwareMapEnabled: false }) : undefined,
-      () => ({ desktopAvailable, softwareMapEnabled: false }),
-      () => scratchpadEnabled,
-    );
-
-    const client = new ReviewApiClient(
-      {
-        serverUrl: "http://review.test",
-        token: "test",
-      },
-      async (url, init) => app.request(url.replace("/reviews-api", ""), init),
-    );
-
-    return { app, client };
+    return createReviewApi({ store, data: new LocalReviewData(store), ...deps });
   };
 
-  it("offers the tool and exposes the scratchpad prompt only when Desktop has it enabled", async () => {
-    const tool = authoringTools().find((entry) => entry.name === "review_get_instructions");
-
-    expect(tool).toMatchObject({ method: "GET", path: "/instructions" });
-    expect(tool?.description).not.toContain('topic:"scratchpad"');
-
-    for (const [desktopAvailable, scratchpadEnabled, expected] of [
-      [true, true, true],
-      [false, true, false],
-      [true, false, false],
-    ] as const) {
-      const { client } = api(desktopAvailable, scratchpadEnabled);
-
-      const catalog = await client.read<ReturnType<typeof authoringTools>>("/authoring");
-
-      const tool = catalog.find((entry) => entry.name === "review_get_instructions");
-
-      expect(tool).toBeDefined();
-      expect(tool!.description.includes('topic:"scratchpad"')).toBe(expected);
-    }
-  });
-
-  it("serves the workflow and rejects invalid or extra query fields with 400", async () => {
-    const { app, client } = api();
-
-    const catalog = await client.read<AuthoringTool[]>("/authoring");
-
-    const tool = catalog.find((entry) => entry.name === "review_get_instructions")!;
-
-    const guidance = await callAuthoringTool(client, tool, {});
+  it("serves the authoring workflow by default and each named topic", async () => {
+    const reviews = api();
+    const guidance = await reviews.instructions({});
 
     expect(guidance).toBe(
-      await renderInstructions("authoring", {
+      await renderInstructions("authoring", { desktopAvailable: false, scratchpadEnabled: false }),
+    );
+    expect(await reviews.instructions({ topic: "authoring" })).toBe(guidance);
+    expect(await reviews.instructions({ topic: "file-lenses" })).toBe(
+      await renderInstructions("file-lenses", {
         desktopAvailable: false,
         scratchpadEnabled: false,
       }),
     );
-    expect(guidance).toBe(await client.read("/instructions"));
-    expect(guidance).toBe(await client.read("/instructions?topic=authoring"));
-    expect(await callAuthoringTool(client, tool, { topic: "file-lenses" })).toBe(
-      await client.read("/instructions?topic=file-lenses"),
-    );
-
-    for (const query of ["topic=../../etc/passwd", "topic=authoring&file=secret.md"]) {
-      const response = await app.request(`/instructions?${query}`);
-      expect(response.status).toBe(400);
-    }
   });
 
-  it("lists tools and serves instructions without querying renderer capabilities", async () => {
-    const store = new ReviewStore(":memory:", {
-      validatePins: async () => {},
-      validateSource: async () => {},
-      validateResource: async () => {},
-    });
-
-    try {
-      const app = createReviewApi(
-        store,
-        undefined,
-        async () => ({ softwareMapEnabled: false }),
-        async () => {
-          throw new Error("renderer unavailable");
-        },
-        () => true,
-      );
-
-      const response = await app.request("/authoring");
-      expect(response.status).toBe(200);
-      expect(
-        (await response.json()).find(
-          (tool: AuthoringTool) => tool.name === "review_get_instructions",
-        ).description,
-      ).toContain('topic:"scratchpad"');
-
-      for (const topic of ["authoring", "scratchpad", "trace-archaeology"]) {
-        const instructions = await app.request(`/instructions?topic=${topic}`);
-        expect(instructions.status).toBe(200);
-      }
-
-      expect(await (await app.request("/instructions?topic=scratchpad")).json()).toContain(
-        "# Scratchpad",
-      );
-    } finally {
-      store.close();
-    }
-  });
-
-  it("answers trace-archaeology with the off message", async () => {
-    const store = new ReviewStore(":memory:", {
-      validatePins: async () => {},
-      validateSource: async () => {},
-      validateResource: async () => {},
-    });
-
-    try {
-      const app = createReviewApi(store);
-
-      expect(await (await app.request("/instructions?topic=trace-archaeology")).json()).toMatch(
-        /^Trace capture is off/,
-      );
-    } finally {
-      store.close();
-    }
-  });
-});
-
-async function startMcp(connect: () => Promise<ReviewApiClient>) {
-  const stdin = new PassThrough();
-  const stdout = new PassThrough();
-  const stderr = new PassThrough();
-
-  const server = await serveReviewMcp(
-    async () => ({ client: await connect() }),
-    stdin,
-    stdout,
-    stderr,
-    true,
-  );
-
-  let output = "";
-
-  stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-
-  const request = async <Params>(id: number, method: string, params: Params) => {
-    stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-    await expect
-      .poll(() =>
-        output
-          .split("\n")
-          .filter(Boolean)
-          .map((line) => JSON.parse(line))
-          .find((reply) => reply.id === id),
-      )
-      .toBeTruthy();
-
-    return output
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => JSON.parse(line))
-      .find((reply) => reply.id === id);
-  };
-
-  return { request, close: () => server.close() };
-}
-
-const initialize = {
-  protocolVersion: "2025-06-18",
-  capabilities: {},
-  clientInfo: { name: "test", version: "1" },
-};
-
-describe.skip("review mcp instructions", () => {
-  it("lists and answers while down, then serves guidance through a restart", async () => {
-    let up = false;
-    let connections = 0;
-
-    const store = new ReviewStore(":memory:", {
-      validatePins: async () => {},
-      validateSource: async () => {},
-      validateResource: async () => {},
-    });
-
-    const app = createReviewApi(store);
-
-    const client = new ReviewApiClient(
-      {
-        serverUrl: "http://review.test",
-        token: "test",
+  it("serves every topic without querying renderer capabilities", async () => {
+    const reviews = api({
+      open: async () => ({ softwareMapEnabled: false }),
+      capabilities: async () => {
+        throw new Error("renderer unavailable");
       },
-      async (url, init) => app.request(url.replace("/reviews-api", ""), init),
-    );
-
-    const mcp = await startMcp(async () => {
-      connections++;
-
-      if (!up) throw new Error("No Whiteboard Desktop server is ready.");
-
-      return client;
+      scratchpadEnabled: () => true,
     });
 
-    try {
-      expect(connections).toBe(0);
-
-      const init = await mcp.request(1, "initialize", initialize);
-      expect(init.result.instructions).toBeUndefined();
-      const list = await mcp.request(2, "tools/list", {});
-      expect(list.result.tools.map((tool: { name: string }) => tool.name)).toEqual([
-        "session_get_instructions",
-        "whiteboard_status",
-      ]);
-      const guidance = list.result.tools[0].description;
-      expect(guidance).toContain("session_get_instructions");
-      expect(guidance).toContain("trace-archaeology");
-      expect(guidance).toContain('topic:"scratchpad"');
-
-      const down = await mcp.request(3, "tools/call", {
-        name: "session_get_instructions",
-        arguments: {},
-      });
-
-      expect(down.result.isError).toBeFalsy();
-      expect(down.result.content[0].text).toMatch(/^Whiteboard is not running/);
-
-      up = true;
-
-      const live = await mcp.request(4, "tools/call", {
-        name: "session_get_instructions",
-        arguments: {},
-      });
-
-      expect(live.result.content[0].text).toContain("rfc-style whiteboard");
-      const liveList = await mcp.request(5, "tools/list", {});
-      expect(liveList.result.tools[0].name).toBe("session_get_instructions");
-      const preamble = guidance.split("\n\n")[0];
-      expect(liveList.result.tools[0].description).toContain(preamble);
-
-      for (const tool of liveList.result.tools.slice(1))
-        expect(tool.description).not.toContain(preamble);
-      expect(
-        liveList.result.tools.filter(
-          (tool: { name: string }) => tool.name === "session_get_instructions",
-        ),
-      ).toHaveLength(1);
-
-      up = false;
-
-      const restartedDown = await mcp.request(6, "tools/call", {
-        name: "session_get_instructions",
-        arguments: {},
-      });
-
-      expect(restartedDown.result.content[0].text).toMatch(/^Whiteboard is not running/);
-      up = true;
-
-      const restarted = await mcp.request(7, "tools/call", {
-        name: "session_get_instructions",
-        arguments: { topic: "trace-archaeology" },
-      });
-
-      expect(restarted.result.content[0].text).toContain("trace");
-    } finally {
-      await mcp.close();
-      store.close();
-    }
+    for (const topic of INSTRUCTION_TOPICS)
+      expect((await reviews.instructions({ topic })).length).toBeGreaterThan(0);
+    expect(await reviews.instructions({ topic: "scratchpad" })).toContain("# Scratchpad");
+    expect(await reviews.instructions({})).toContain('topic:"scratchpad"');
   });
 
-  it("tells a session that listed tools while down to reload them", async () => {
-    let up = false;
-
-    const store = new ReviewStore(":memory:", {
-      validatePins: async () => {},
-      validateSource: async () => {},
-      validateResource: async () => {},
-    });
-
-    const app = createReviewApi(store);
-
-    const client = new ReviewApiClient(
-      {
-        serverUrl: "http://review.test",
-        token: "test",
-      },
-      async (url, init) => app.request(url.replace("/reviews-api", ""), init),
-    );
-
-    const mcp = await startMcp(async () => {
-      if (!up) throw new Error("No Whiteboard Desktop server is ready.");
-
-      return client;
-    });
-
-    const instructions = async (id: number) =>
-      (
-        await mcp.request(id, "tools/call", {
-          name: "session_get_instructions",
-          arguments: {},
-        })
-      ).result.content[0].text as string;
-
-    try {
-      await mcp.request(1, "initialize", initialize);
-      await mcp.request(2, "tools/list", {});
-
-      up = true;
-
-      const stale = await instructions(3);
-      expect(stale).toMatch(/^Whiteboard is running now/);
-      expect(stale).toContain("reload");
-      expect(stale).toContain("rfc-style whiteboard");
-
-      await mcp.request(4, "tools/list", {});
-
-      expect(await instructions(5)).not.toMatch(/^Whiteboard is running now/);
-    } finally {
-      await mcp.close();
-      store.close();
-    }
-  });
-
-  it("uses the live scratchpad catalog description and preserves tool errors", async () => {
-    const store = new ReviewStore(":memory:", {
-      validatePins: async () => {},
-      validateSource: async () => {},
-      validateResource: async () => {},
-    });
-
-    const app = createReviewApi(
-      store,
-      undefined,
-      async () => ({ softwareMapEnabled: false }),
-      () => ({ desktopAvailable: true, softwareMapEnabled: false }),
-      () => true,
-    );
-
-    let failInstruction = false;
-
-    const client = new ReviewApiClient(
-      {
-        serverUrl: "http://review.test",
-        token: "test",
-      },
-      async (url, init) => {
-        if (failInstruction && url.includes("/instructions"))
-          return new Response(JSON.stringify({ error: "server failed" }), {
-            status: 500,
-          });
-
-        return app.request(url.replace("/reviews-api", ""), init);
-      },
-    );
-
-    const mcp = await startMcp(async () => client);
-
-    try {
-      await mcp.request(1, "initialize", initialize);
-
-      const list = await mcp.request(2, "tools/list", {});
-      expect(list.result.tools[0].description).toContain('topic:"scratchpad"');
-
-      const invalid = await mcp.request(3, "tools/call", {
-        name: "session_get_instructions",
-        arguments: { topic: "../secrets" },
+  it("offers the scratchpad only where a thread can show it and the setting is on", async () => {
+    for (const [open, scratchpadEnabled, expected] of [
+      [true, true, true],
+      [false, true, false],
+      [true, false, false],
+    ] as const) {
+      const reviews = api({
+        open: open ? async () => ({ softwareMapEnabled: false }) : undefined,
+        scratchpadEnabled: () => scratchpadEnabled,
       });
 
-      expect(invalid.result.isError).toBe(true);
-      expect(invalid.result.content[0].text).not.toMatch(/^Whiteboard is not running/);
-
-      failInstruction = true;
-
-      const failed = await mcp.request(4, "tools/call", {
-        name: "session_get_instructions",
-        arguments: {},
-      });
-
-      expect(failed.result.isError).toBe(true);
-      expect(failed.result.content[0].text).toBe("server failed");
-    } finally {
-      await mcp.close();
-      store.close();
+      expect((await reviews.instructions({})).includes('topic:"scratchpad"')).toBe(expected);
     }
   });
 });

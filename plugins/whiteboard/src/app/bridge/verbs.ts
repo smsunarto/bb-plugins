@@ -1,15 +1,13 @@
 import type { BbNavigate } from "@get-bb/plugin-sdk/app";
 import type { WhiteboardRpcClient } from "../rpc.ts";
 import type { OpenSourceFile } from "./diff-view.tsx";
-import {
-  REVIEW_DISCORD_URL,
-  type ReviewSourceView,
-  type ReviewVerbRequest,
-  type ReviewVerbResponse,
+import type {
+  ReviewSourceView,
+  ReviewVerbRequest,
+  ReviewVerbResponse,
 } from "../../shared/review-protocol/index.ts";
 import { NAV_PANEL_PATH, PANEL_ACTION_ID } from "../../shared/contracts/panel.ts";
 import type { SurfaceEvents } from "./events.ts";
-import type { ApiRequestFn } from "./tunnel.ts";
 
 /**
  * `ReviewCanvasBridge.post` mapped onto bb navigation and panels (design §3.8).
@@ -18,9 +16,7 @@ import type { ApiRequestFn } from "./tunnel.ts";
  *   openDiff        Diffs view + revealFile
  *   openReview      thread: openThreadPanel({sessionId}); Home: toPluginPanel(subPath)
  *   showReviewView  in-panel route (surface event)
- *   openSourceTree  unavailable in bb
  */
-export const SOURCE_TREE_UNAVAILABLE = "Source tree is unavailable in bb.";
 export const UNAVAILABLE_IN_BB = "Unavailable in bb.";
 export const PINNED_SOURCE_NOT_OPENABLE =
   "This source is pinned to a commit. bb can open only live worktree files.";
@@ -31,7 +27,8 @@ export type VerbDeps = {
   /** The panel's thread; absent on the Home navPanel. */
   threadId?: string;
   reviewId?: string;
-  request: ApiRequestFn;
+  /** The panel's client, bound to `threadId`. */
+  rpc: Pick<WhiteboardRpcClient, "sessions">;
   events: SurfaceEvents;
   notify(message: { kind: "success" | "error"; text: string }): void;
   /** Scroll the Diffs view to a file once it is mounted. */
@@ -46,12 +43,6 @@ const ok = (result?: unknown): ReviewVerbResponse =>
 
 const fail = (error: string): ReviewVerbResponse => ({ ok: false, error });
 
-async function readJson(request: ApiRequestFn, path: string): Promise<unknown> {
-  const response = await request(path);
-  if (!response.ok) throw new Error(`Review request failed (${response.status}).`);
-  return response.json();
-}
-
 /** Upstream's wording when `openReview` names a session the catalog lacks (reviewVerbs.ts). */
 export const SESSION_NOT_FOUND = "Session not found.";
 
@@ -60,27 +51,15 @@ export const SESSION_NOT_FOUND = "Session not found.";
  * `undefined` when the catalog could not be read (open without a title).
  */
 async function sessionTitle(
-  request: ApiRequestFn,
+  rpc: VerbDeps["rpc"],
   reviewId: string,
 ): Promise<string | null | undefined> {
-  let catalog: unknown;
   try {
-    catalog = await readJson(request, "/reviews-api?mode=textual");
+    const catalog = await rpc.sessions({ mode: "textual" });
+    return catalog.find((entry) => entry.reviewId === reviewId)?.title ?? null;
   } catch {
     return undefined;
   }
-  if (!Array.isArray(catalog)) return undefined;
-  const entry: unknown = catalog.find(
-    (item: unknown) =>
-      typeof item === "object" && item !== null && "reviewId" in item && item.reviewId === reviewId,
-  );
-  if (entry === undefined) return null;
-  return typeof entry === "object" &&
-    entry !== null &&
-    "title" in entry &&
-    typeof entry.title === "string"
-    ? entry.title
-    : undefined;
 }
 
 function openSession(deps: VerbDeps, sessionId: string, title: string | undefined): boolean {
@@ -97,7 +76,7 @@ function openSession(deps: VerbDeps, sessionId: string, title: string | undefine
 
 /** The server owns repository/host routing and whether a pinned source has a live copy. */
 export function createLiveFileOpener(deps: {
-  rpc: WhiteboardRpcClient;
+  rpc: Pick<WhiteboardRpcClient, "liveFile">;
   navigate: BbNavigate;
   notify(message: { kind: "success" | "error"; text: string }): void;
 }): OpenSourceFile {
@@ -174,7 +153,7 @@ export function createVerbs(
       case "reveal":
         return reveal(deps, request.args);
       case "openReview": {
-        const title = await sessionTitle(deps.request, request.args.reviewUuid);
+        const title = await sessionTitle(deps.rpc, request.args.reviewUuid);
         if (title === null) return fail(SESSION_NOT_FOUND);
         return openSession(deps, request.args.reviewUuid, title) ? ok() : fail(UNAVAILABLE_IN_BB);
       }
@@ -182,18 +161,11 @@ export function createVerbs(
         return openSession(deps, request.args.reviewId, request.args.title)
           ? ok({ softwareMapEnabled: deps.softwareMapEnabled() })
           : fail(UNAVAILABLE_IN_BB);
-      case "openSourceTree":
-        deps.notify({ kind: "error", text: SOURCE_TREE_UNAVAILABLE });
-        return fail(SOURCE_TREE_UNAVAILABLE);
-      case "joinDiscord":
-        return deps.navigate.openUrl(REVIEW_DISCORD_URL) ? ok() : fail(UNAVAILABLE_IN_BB);
       case "focusCanvas":
       case "focusWindow":
       case "openReviewRevision":
         // api-canvas consumes openReviewRevision before the bridge sees it.
         return ok();
-      case "captureScreenshot":
-        return fail(UNAVAILABLE_IN_BB);
     }
   };
 }

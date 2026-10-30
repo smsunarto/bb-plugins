@@ -65,21 +65,6 @@
   }
 }
 
-/*
- * Topbar. bb has no source-tree navigation (verbs.ts answers with an error
- * toast) and dev.fast's Discord is not bb's, so both buttons are hidden. The
- * context divider stays only while something else (the authoring badge) shows.
- */
-.review-canvas-root[data-review-theme] .review-open-source-tree,
-.review-canvas-root[data-review-theme] .review-topbar-icon-button:has(> .ui-icon--discord) {
-  display: none;
-}
-
-.review-canvas-root[data-review-theme]
-  .review-topbar-context:not(:has(> :not(.review-open-source-tree)))::before {
-  display: none;
-}
-
 /* Phone widths: tighter tabs and an icon-only Dismiss, so every action fits
    without the strip scrolling. The label stays as the button's name. */
 @container review-content (max-width: 520px) {

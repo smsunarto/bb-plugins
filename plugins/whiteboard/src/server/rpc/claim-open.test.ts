@@ -1,7 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, test } from "vitest";
-import type { PendingOpen } from "../../shared/contracts/api-tunnel.ts";
+import type { PendingOpen } from "../../shared/contracts/rpc.ts";
 import type { Engine } from "../../shared/contracts/engine.ts";
 import { claimOpen, claimOpenContract } from "./claim-open.ts";
 

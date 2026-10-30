@@ -39,7 +39,6 @@ export function ReviewProvider({
   children: ReactNode;
 }) {
   const session = useReviewSession();
-  const reviewFetch = session.fetch;
   const review = session.review!;
 
   const [softwareMapFocusRequest, setSoftwareMapFocusRequest] =

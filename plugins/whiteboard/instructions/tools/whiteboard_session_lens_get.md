@@ -1,0 +1,3 @@
+Read a Whiteboard session's Diff-view lenses and the changed lines no lens selects yet. Use it before writing lenses and after the last one, to check what remains.
+
+Returns `version`; `lenses` as authored (`id`, `title`, `targets`), each with its resolved `fileCount` and, when it cannot resolve, an `unavailable` reason; and `uncategorized`: the remaining changed lines as `lines` and per-file `files` with `ranges`, plus `moreFiles` when the file list is cut. Group what remains with `whiteboard_session_lens_edit`, and read a file's patch with `whiteboard_session_diff` when the listing is not enough.

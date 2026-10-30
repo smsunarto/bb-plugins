@@ -5,7 +5,7 @@ import {
   panelParamsJson,
   panelTabId,
 } from "../../shared/contracts/panel.ts";
-import { type PendingOpen, PENDING_OPEN_TTL_MS } from "../../shared/contracts/api-tunnel.ts";
+import { type PendingOpen, PENDING_OPEN_TTL_MS } from "../../shared/contracts/rpc.ts";
 import type { ReviewStore } from "./review/store.ts";
 
 /**

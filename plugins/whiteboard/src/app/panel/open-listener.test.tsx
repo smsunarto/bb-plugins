@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { afterEach, expect, test, vi } from "vitest";
-import type { PendingOpen } from "../../shared/contracts/api-tunnel.ts";
+import type { PendingOpen } from "../../shared/contracts/rpc.ts";
 import { OpenListener } from "./open-listener.tsx";
 
 const registration = { component: OpenListener };

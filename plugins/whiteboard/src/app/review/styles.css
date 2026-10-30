@@ -2225,45 +2225,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-:where(.review-canvas-root) .review-open-source-tree {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 4px;
-  height: var(--chrome-control-height);
-  padding: 0 10px;
-  border: 0;
-  border-radius: var(--chrome-control-radius);
-  background: var(--transparent);
-  color: var(--chrome-fg-muted);
-  font-family: var(--chrome-font);
-  font-size: var(--chrome-font-size);
-  font-weight: var(--chrome-font-weight);
-  white-space: nowrap;
-}
-
-:where(.review-canvas-root) .review-open-source-tree:hover {
-  background: var(--chrome-hover-bg);
-  color: var(--chrome-fg);
-}
-
-:where(.review-canvas-root) .review-open-source-tree:focus-visible {
-  outline: 2px solid var(--chrome-fg);
-  outline-offset: -1px;
-}
-
-@container review-content (max-width: 720px) {
-  :where(.review-canvas-root) .review-open-source-tree-label {
-    display: none;
-  }
-
-  :where(.review-canvas-root) .review-open-source-tree {
-    width: var(--chrome-control-height);
-    justify-content: center;
-    padding: 0;
-  }
-}
-
 :where(.review-canvas-root) .review-view-region {
   position: relative;
   min-width: 0;
@@ -2440,11 +2401,6 @@
 :where(.review-canvas-root) .review-topbar-icon-button:focus-visible {
   outline: 1px solid var(--chrome-fg);
   outline-offset: -1px;
-}
-
-:where(.review-canvas-root) .ui-icon.ui-icon--discord {
-  fill: currentColor;
-  stroke: none;
 }
 
 :where(.review-canvas-root) .review-history-banner {

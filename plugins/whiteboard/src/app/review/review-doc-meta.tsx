@@ -33,7 +33,6 @@ interface ReviewDocumentMetaState {
  */
 export function ReviewDocumentMetaLine({ children }: { children?: ReactNode }): ReactElement {
   const session = useReviewSession();
-  const reviewFetch = session.fetch;
   const displayedVersion = useContext(DisplayedReviewVersionContext);
   const diffFiles = useReviewDiffFiles();
 
@@ -57,7 +56,7 @@ export function ReviewDocumentMetaLine({ children }: { children?: ReactNode }): 
       return () => controller.abort();
     }
 
-    const layers = review.stack(controller.signal);
+    const layers = review.stack();
 
     layers
       .then((next) => {
@@ -66,7 +65,7 @@ export function ReviewDocumentMetaLine({ children }: { children?: ReactNode }): 
       .catch(() => {});
 
     return () => controller.abort();
-  }, [meta?.pullRequestNumber, meta?.pullRequestUrl, reviewFetch, review, displayedVersion]);
+  }, [meta?.pullRequestNumber, meta?.pullRequestUrl, review, displayedVersion]);
 
   const diff = diffFiles.status === "loaded" ? reviewDiffStats(diffFiles) : null;
 
