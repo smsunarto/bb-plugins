@@ -9,6 +9,7 @@ import {
   type ExperimentalThreadActionTabProps,
   type PluginThreadActionTarget,
 } from "@get-bb/plugin-sdk/app";
+import { makeHostResponse } from "@get-bb/plugin-sdk/testing";
 import type { RenderSlotOptions, RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { ComponentType } from "react";
 import { machineColors } from "../src/app/machine-colors.ts";
@@ -120,6 +121,7 @@ async function panel(rpc: Fakes, options: Omit<RenderSlotOptions, "rpc" | "conte
     { threadId: "thread-1", params: null, environment: null },
     {
       ...options,
+      sdk: { ...options.sdk, hosts: { list: async () => [], ...options.sdk?.hosts } },
       rpc: answeringWithBoard(rpc) as never,
       context: { threadId: "thread-1", projectId: "project-1" },
     },
@@ -3353,6 +3355,44 @@ const laptopCheckout: Checkout = {
   stacks: workspace.stacks.slice(0, 1),
 };
 
+test("shows Boat checkouts with a neutral bot icon", async () => {
+  const slot = await panel(
+    {
+      ...baseRpc,
+      otherMachines: () => ({
+        checkouts: [
+          {
+            hostId: "boat-host",
+            machine: "Sandbox",
+            path: "/work/repo",
+            state: "ready",
+            reason: null,
+            stacks: [],
+            gitBranch: { name: "main", head: null },
+          },
+        ],
+        reason: null,
+        environmentId: "env-1",
+      }),
+    },
+    {
+      sdk: {
+        hosts: {
+          list: async () => [
+            makeHostResponse({ id: "boat-host", machineProviderId: "boat-sandbox" }),
+          ],
+        },
+      },
+    },
+  );
+  const region = await slot.findByRole("region", { name: "On Sandbox" });
+  await waitFor(() => {
+    const machine = region.querySelector<HTMLElement>('[data-machine-id="boat-host"]');
+    expect(machine?.querySelector('[data-icon="Bot"]')).toBeTruthy();
+    expect(machine?.style.color).toBe("var(--muted-foreground)");
+  });
+});
+
 test("shows an isolated checkout's actual branch, path, and latest commit with a control to open its workspace", async () => {
   const checkout = {
     hostId: "laptop",
@@ -3367,7 +3407,7 @@ test("shows an isolated checkout's actual branch, path, and latest commit with a
       createdAt: "2026-10-15T12:00:00.000Z",
     },
   };
-  // build-box hashes to laptop's slot and sorts first, so only a roster-aware color moves laptop.
+  // Colliding IDs keep their ID-based color regardless of roster membership.
   const roster = ["build-box", "laptop"];
   const slot = await panel(
     {
@@ -3381,7 +3421,7 @@ test("shows an isolated checkout's actual branch, path, and latest commit with a
   const machine = region.querySelector<HTMLElement>("[data-machine-id]");
   expect(machine?.getAttribute("data-machine-id")).toBe("laptop");
   expect(machine?.style.color).toBe(machineColors(roster)("laptop"));
-  expect(machine?.style.color).not.toBe(machineColors(roster)("build-box"));
+  expect(machine?.style.color).toBe(machineColors(roster)("build-box"));
   expect(card.getByText("bb-plugins-isolated").title).toBe(checkout.path);
   expect(card.getByText(checkout.path).textContent).toBe(checkout.path);
   const branch = within(card.getByRole("listitem", { name: "Branch scott/isolated-feature" }));

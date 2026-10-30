@@ -7,28 +7,15 @@ const rosterOf = (size: number, seed: number) =>
 const fixtureRoster = rosterOf(6, 42);
 
 describe("machine colors", () => {
-  test("gives each of six fixture machines its own color", () => {
-    const colorOf = machineColors(fixtureRoster);
-    expect(new Set(fixtureRoster.map(colorOf)).size).toBe(6);
-  });
-
-  test("never repeats a color until the roster outgrows the palette", () => {
+  test("keeps every ID stable when machines join or leave, including colliding IDs", () => {
     for (let seed = 0; seed < 200; seed++) {
-      for (let size = 1; size <= 6; size++) {
-        const roster = rosterOf(size, seed);
-        const colorOf = machineColors(roster);
-        expect(new Set(roster.map(colorOf)).size).toBe(size);
-      }
+      const roster = rosterOf(14, seed);
+      const alone = machineColors([]);
+      const together = machineColors(roster);
+      expect(roster.map(together)).toEqual(roster.map(alone));
+      for (const id of roster) expect(machineColors([id])(id)).toBe(alone(id));
     }
-  });
-
-  test("spreads a larger roster evenly over the palette", () => {
-    const roster = rosterOf(14, 3);
-    const colorOf = machineColors(roster);
-    const uses = new Map<string, number>();
-    for (const hostId of roster) uses.set(colorOf(hostId), (uses.get(colorOf(hostId)) ?? 0) + 1);
-    expect(uses.size).toBe(6);
-    expect(Math.max(...uses.values())).toBe(3);
+    expect(machineColors(["host-a", "host-g"])("host-g")).toBe(machineColors(["host-g"])("host-g"));
   });
 
   test("ignores roster order and duplicates", () => {
@@ -50,7 +37,7 @@ describe("machine colors", () => {
   });
 
   test("names theme identity tokens with fallbacks for other themes", () => {
-    expect(new Set(fixtureRoster.map(machineColors(fixtureRoster)))).toEqual(
+    expect(new Set(rosterOf(100, 42).map(machineColors([])))).toEqual(
       new Set([
         "var(--machine-1, light-dark(#0c7cf4, #2987f8))",
         "var(--machine-2, light-dark(#358793, #07c3de))",

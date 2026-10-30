@@ -137,6 +137,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
   interface HostState {
     naming?: ReadonlySet<string>;
+    listHosts?: () => Promise<{ id: string; machineProviderId: string }[]>;
     /** bb's primary host. Unset leaves the read unanswered, as at startup. */
     primaryHostId?: string | null;
     sidebar: PluginSidebarThreadsState;
@@ -169,7 +170,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     // bb's client is stable for the plugin's lifetime; effects keyed on it
     // must not refire on every render here either.
     useSdk: () => {
-      const { unarchive, primaryHostId, actions } = useHost();
+      const { unarchive, primaryHostId, actions, listHosts } = useHost();
       const rename = useRef(actions.rename);
       rename.current = actions.rename;
       return useMemo(
@@ -180,6 +181,10 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
               rename.current(threadId, title),
             list: async () => [],
           },
+          hosts: {
+            list:
+              listHosts ?? (async () => [{ id: "host-boat", machineProviderId: "boat-sandbox" }]),
+          },
           subscribe: () => () => {},
           system: {
             config: () =>
@@ -188,7 +193,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
                 : Promise.resolve({ primaryHostId }),
           },
         }),
-        [unarchive, primaryHostId],
+        [unarchive, primaryHostId, listHosts],
       );
     },
     useBbNavigate: () => {
@@ -2209,7 +2214,54 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       });
     }
 
-    it("draws machines whose IDs hash alike in different colors", async () => {
+    it("uses a neutral bot for Boat machines in rows and the machine picker", async () => {
+      const host = hostState([thread("boat", { host: { id: "host-boat", name: "Sandbox" } })]);
+      host.primaryHostId = null;
+      const view = mount(host, {}, true);
+      await waitFor(() => {
+        const glyph = view.slot.container.querySelector<HTMLElement>(
+          '.gtd-host-lead [data-machine-id="host-boat"]',
+        );
+        assert.ok(glyph);
+        assert.ok(glyph.querySelector('[data-icon="Bot"]'));
+        assert.equal(glyph.style.color, "var(--muted-foreground)");
+      });
+      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
+        key: "ArrowDown",
+      });
+      const option = screen.getByRole("menuitemcheckbox", { name: "Sandbox" });
+      assert.ok(option.querySelector('[data-icon="Bot"]'));
+      assert.equal(
+        option.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
+        "var(--muted-foreground)",
+      );
+    });
+
+    it("recovers Boat identity after a failed lookup and reconnect with the same roster", async () => {
+      const host = hostState([thread("boat", { host: { id: "host-boat", name: "Sandbox" } })]);
+      host.primaryHostId = null;
+      let calls = 0;
+      host.listHosts = async () => {
+        calls++;
+        if (calls === 1) throw new Error("offline");
+        return [{ id: "host-boat", machineProviderId: "boat-sandbox" }];
+      };
+      const view = mount(host, {}, true);
+      await waitFor(() => assert.equal(calls, 1));
+      await view.slot.behavior.setRealtimeConnectionState("reconnecting");
+      await view.slot.behavior.setRealtimeConnectionState("connected");
+      await waitFor(() => {
+        const glyph = view.slot.container.querySelector<HTMLElement>(
+          '.gtd-host-lead [data-machine-id="host-boat"]',
+        );
+        assert.ok(glyph);
+        assert.ok(glyph.querySelector('[data-icon="Bot"]'));
+        assert.equal(glyph.style.color, "var(--muted-foreground)");
+      });
+      assert.equal(calls, 2);
+    });
+
+    it("keeps ID colors stable even when hashes collide", async () => {
       const host = hostState([
         thread("a", { host: { id: "host-a", name: "Studio" } }),
         thread("g", { host: { id: "host-g", name: "Server" } }),
@@ -2223,7 +2275,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       };
       host.primaryHostId = null;
       const colors = await globeColors(mount(host, {}, true), ["host-a", "host-g"]);
-      assert.notEqual(colors[0], colors[1]);
+      assert.equal(colors[0], colors[1]);
     });
 
     it("colors machines from bb's machine list, as GitButler does", async () => {
@@ -2236,7 +2288,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       host.sidebar = { ...host.sidebar, experimental_hosts: [{ id: "host-g", name: "Server" }] };
       host.primaryHostId = null;
       const [server] = await globeColors(mount(host, {}, true), ["host-g"]);
-      assert.notEqual(
+      assert.equal(
         machineColors(["host-a", "host-g"])("host-g"),
         machineColors(["host-g"])("host-g"),
       );

@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useSdk, type PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import { machineColors, useRosterColors } from "../../lib/machine-colors";
+import { machineColors, useRosterColors, useBoatMachineIds } from "../../lib/machine-colors";
 import type { SidebarMachine } from "../../lib/machines";
 
 /** The machine whose threads go unmarked; null while settings or bb's primary host load. */
 const LocalMachineContext = createContext<string | null>("");
-/** Globe colors, assigned across bb's machine list so no two share one. */
+/** Machine colors depend only on identity. */
+const BoatMachineContext = createContext<ReadonlySet<string>>(new Set());
 const MachineColorContext = createContext(machineColors([]));
 
 export function MachineAppearanceProvider({
@@ -17,8 +18,7 @@ export function MachineAppearanceProvider({
   localMachineId: unknown;
   settingsLoading: boolean;
   /**
-   * bb's machine list, not the picker's thread-derived roster, so a globe
-   * matches GitButler's even while a thread names a machine bb dropped.
+   * bb's machine list triggers provider metadata refreshes when hosts join or leave.
    */
   knownMachines: readonly SidebarMachine[] | undefined;
   children: ReactNode;
@@ -44,9 +44,12 @@ export function MachineAppearanceProvider({
     return () => controller.abort();
   }, [sdk, setting]);
   const colorOf = useRosterColors(knownMachines);
+  const boatIds = useBoatMachineIds(knownMachines);
   return (
     <LocalMachineContext.Provider value={settingsLoading ? null : setting || primaryHostId}>
-      <MachineColorContext.Provider value={colorOf}>{children}</MachineColorContext.Provider>
+      <BoatMachineContext.Provider value={boatIds}>
+        <MachineColorContext.Provider value={colorOf}>{children}</MachineColorContext.Provider>
+      </BoatMachineContext.Provider>
     </LocalMachineContext.Provider>
   );
 }
@@ -58,4 +61,8 @@ export function useRemoteMachine(host: PluginSidebarThread["host"]): boolean {
 
 export function useMachineColors(): (hostId: string) => string {
   return useContext(MachineColorContext);
+}
+
+export function useIsBoatMachine(hostId: string | undefined): boolean {
+  return useContext(BoatMachineContext).has(hostId ?? "");
 }

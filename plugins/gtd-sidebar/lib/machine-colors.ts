@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
+import { useSdk, useRealtimeConnectionState } from "@get-bb/plugin-sdk/app";
 
 // GTD Sidebar (lib/) and GitButler (src/app/) each carry this file byte for
-// byte, so a machine's globe matches across both plugins. Edit both copies;
+// byte, so machine appearance matches across both plugins. Edit both copies;
 // plugins/gitbutler/test/machine-colors.test.ts fails when they differ.
 
 // A globe sits beside status glyphs, so no entry may read as error, attention,
@@ -24,35 +25,56 @@ function hashedSlot(hostId: string): number {
   return hash % PALETTE.length;
 }
 
-/**
- * Colors each machine in `roster` by host ID. Machines never share a color
- * until the roster outgrows the palette, and past that each color repeats as
- * few times as possible. In ID order, a machine takes its hashed slot or, when
- * an earlier ID holds it, the next free one. Renames and display order never
- * change a color. Adding or removing a machine can move only machines whose
- * IDs sort after it, since one probe can push the next. An ID outside the
- * roster gets its hashed slot.
- */
-export function machineColors(roster: Iterable<string>): (hostId: string) => string {
-  const slots = new Map<string, number>();
-  let taken = new Set<number>();
-  for (const hostId of [...new Set(roster)].sort()) {
-    if (taken.size === PALETTE.length) taken = new Set();
-    let slot = hashedSlot(hostId);
-    while (taken.has(slot)) slot = (slot + 1) % PALETTE.length;
-    taken.add(slot);
-    slots.set(hostId, slot);
-  }
-  return (hostId) => PALETTE[slots.get(hostId) ?? hashedSlot(hostId)]!;
+/** An ID always gets the same palette slot, regardless of the machine roster. */
+export function machineColor(hostId: string): string {
+  return PALETTE[hashedSlot(hostId)]!;
 }
 
-/**
- * `machineColors` over bb's machine list, kept stable until a machine joins or
- * leaves so context consumers skip re-rendering.
- */
+export function machineColors(_roster: Iterable<string>): (hostId: string) => string {
+  return machineColor;
+}
+
 export function useRosterColors(
-  hosts: readonly { id: string }[] | undefined,
+  _hosts: readonly { id: string }[] | undefined,
 ): (hostId: string) => string {
-  const rosterKey = [...new Set(hosts?.map((host) => host.id))].sort().join("\n");
-  return useMemo(() => machineColors(rosterKey ? rosterKey.split("\n") : []), [rosterKey]);
+  return machineColor;
+}
+
+/** Sidebar summaries omit provider identity; read it from the server's host catalog. */
+export function useBoatMachineIds(
+  hosts: readonly { id: string }[] | undefined,
+): ReadonlySet<string> {
+  const sdk = useSdk();
+  const connection = useRealtimeConnectionState();
+  const [ids, setIds] = useState<ReadonlySet<string>>(() => new Set());
+  const rosterKey =
+    hosts
+      ?.map((host) => host.id)
+      .sort()
+      .join("\n") ?? "";
+  useEffect(() => {
+    if (connection !== "connected") return;
+    const controller = new AbortController();
+    void Promise.resolve()
+      .then(() => sdk.hosts.list({ signal: controller.signal }))
+      .then(
+        (machines) => {
+          if (!controller.signal.aborted) {
+            setIds(
+              new Set(
+                machines
+                  .filter((machine) => machine.machineProviderId === "boat-sandbox")
+                  .map((machine) => machine.id),
+              ),
+            );
+          }
+          return undefined;
+        },
+        () => {},
+      );
+    return () => controller.abort();
+    // Refresh provider identity when machines join/leave or the server reconnects.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sdk, rosterKey, connection]);
+  return ids;
 }

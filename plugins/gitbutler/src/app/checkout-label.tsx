@@ -3,14 +3,21 @@ import {
   experimental_Icon as Icon,
   experimental_useSidebarThreads as useSidebarThreads,
 } from "@get-bb/plugin-sdk/app";
-import { machineColors, useRosterColors } from "./machine-colors.ts";
+import { machineColors, useRosterColors, useBoatMachineIds } from "./machine-colors.ts";
 
+const BoatMachineContext = createContext<ReadonlySet<string>>(new Set());
 const MachineColorContext = createContext(machineColors([]));
 
-/** Reads bb's machine list once per panel, the list GTD Sidebar colors from, so a globe matches there. */
+/** Resolves Boat provider identity once per panel and refreshes as machines join or leave. */
 export function MachineColorProvider({ children }: { children: ReactNode }) {
-  const colorOf = useRosterColors(useSidebarThreads().experimental_hosts);
-  return <MachineColorContext.Provider value={colorOf}>{children}</MachineColorContext.Provider>;
+  const hosts = useSidebarThreads().experimental_hosts;
+  const colorOf = useRosterColors(hosts);
+  const boatIds = useBoatMachineIds(hosts);
+  return (
+    <BoatMachineContext.Provider value={boatIds}>
+      <MachineColorContext.Provider value={colorOf}>{children}</MachineColorContext.Provider>
+    </BoatMachineContext.Provider>
+  );
 }
 
 /** Checkout and machine share a row; the full path stays available in the tooltip. */
@@ -24,6 +31,7 @@ export function CheckoutLabel({
   hostId: string;
 }) {
   const name = path.split(/[\\/]/).findLast(Boolean) ?? path;
+  const isBoat = useContext(BoatMachineContext).has(hostId);
   const color = useContext(MachineColorContext)(hostId);
   return (
     <span className="flex min-w-0 flex-1 items-center gap-2">
@@ -36,11 +44,11 @@ export function CheckoutLabel({
       >
         <span
           className="inline-flex shrink-0 items-center"
-          style={{ color }}
+          style={{ color: isBoat ? "var(--muted-foreground)" : color }}
           data-machine-id={hostId}
           aria-hidden="true"
         >
-          <Icon name="Globe" className="size-3" aria-hidden />
+          <Icon name={isBoat ? "Bot" : "Globe"} className="size-3" aria-hidden />
         </span>
         <span className="min-w-0 truncate" title={machine}>
           {machine}
