@@ -40,6 +40,7 @@ import {
   threadIdFromPath,
   type DirectShortcut,
 } from "./direct-shortcuts.ts";
+import { runProviderShortcut } from "./provider-shortcuts.ts";
 import { createScroller } from "./scroller.ts";
 import { mountArchiveUndo } from "./archive-undo.ts";
 import {
@@ -614,6 +615,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     refocusComposer: boolean,
     scopeKind: ScopedKind,
   ): void {
+    escapePrefixUntil = 0;
     const layer = document.createElement("div");
     layer.className = "vimium-hint-layer";
     const hints = targets.map((target, index): Hint => {
@@ -678,7 +680,9 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     return true;
   }
 
+  let dismissingLayer = false;
   function dispatchEscape(): void {
+    dismissingLayer = true;
     document.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "Escape",
@@ -687,6 +691,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         cancelable: true,
       }),
     );
+    dismissingLayer = false;
   }
 
   // A click outside or an app-level Escape unmounts the popup without any key
@@ -843,7 +848,62 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     }
   }
 
+  let escapePrefixUntil = 0;
+  let sequenceKey: string | null = null;
+
   function onKeydown(event: KeyboardEvent): void {
+    const originalTarget = event.composedPath()[0] ?? event.target;
+    const target = originalTarget instanceof Element ? originalTarget : document.activeElement;
+    const acceptsSequence =
+      !target?.closest(".xterm") &&
+      (!isEditableEvent(event) || target?.closest(COMPOSER_SELECTOR) !== null);
+    if (!acceptsSequence) escapePrefixUntil = 0;
+    if (acceptsSequence && event.repeat && event.key === sequenceKey) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (!event.repeat) sequenceKey = null;
+    if (
+      !dismissingLayer &&
+      acceptsSequence &&
+      mode.kind === "idle" &&
+      nativePickerPopups().length === 0 &&
+      event.key === "Escape" &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey &&
+      !event.repeat
+    ) {
+      escapePrefixUntil = Date.now() + 1500;
+    } else if (!["Shift", "Control", "Meta", "Alt"].includes(event.key)) {
+      const prefixed = Date.now() < escapePrefixUntil;
+      escapePrefixUntil = 0;
+      const action =
+        event.key === "m"
+          ? "provider"
+          : event.key === "r"
+            ? "reasoning"
+            : event.key === "f"
+              ? "speed"
+              : null;
+      if (
+        acceptsSequence &&
+        prefixed &&
+        action &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.repeat &&
+        runProviderShortcut(action)
+      ) {
+        sequenceKey = event.key;
+        exitIfActive();
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+    }
     scroller.noteKeydown({ code: event.code, repeat: event.repeat });
     if (mode.kind === "idle" && !isForceChord(event) && nativePickerPopups().length > 0) {
       followModelEnter(event);
@@ -1062,6 +1122,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   }
 
   function onClick(event: MouseEvent): void {
+    escapePrefixUntil = 0;
     if (!(event.target instanceof Element)) return;
     const modelTrigger = modelTriggers().find((trigger) =>
       trigger.contains(event.target instanceof Node ? event.target : null),
@@ -1097,10 +1158,13 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   }
 
   function onKeyup(event: KeyboardEvent): void {
+    if (sequenceKey === event.key) sequenceKey = null;
     scroller.noteKeyup(event.code);
   }
 
   function onBlur(): void {
+    escapePrefixUntil = 0;
+    sequenceKey = null;
     scroller.cancel();
     exitIfActive();
   }

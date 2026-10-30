@@ -6,7 +6,7 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 
 - Press `f` anywhere outside a text field. Every clickable element on screen gets a small yellow hint label.
 - Native input autofocus is preserved. Press `i`, click the composer, or Tab to it to focus it manually.
-- Press `Cmd+Shift+F` anywhere, including bb's composer. `Escape` also leaves the composer, so `Escape` then `f` works too.
+- Press `Cmd+Shift+F` anywhere, including bb's composer. `Escape` also leaves the composer. Press plain `f` for hints; `Escape` then `f` changes speed.
 - Type a label's letters to click that element. Already-typed letters dim, and non-matching labels disappear.
 - `Backspace` drops the last typed letter. `Escape`, any other key, scrolling, or resizing exits hint mode. In the model and project pickers, `Escape` also closes the picker.
 - A hint on a text field focuses it instead of clicking, so `f` can drop you straight into typing.
@@ -26,6 +26,10 @@ Outside a text field, these keys act without a hint prompt:
 - `]` next thread and `[` previous thread, stepping through the sidebar's rows in list order, including rows BB has temporarily unmounted while virtualizing a long list. Rows the sidebar keeps in its More popover are skipped, as BB's own previous/next commands skip them. The list wraps. Off any thread, `]` starts at the top and `[` at the bottom.
 - `e` settles the focused thread, including a child in a split pane. This needs a sidebar with a settle button on each row, such as gtd-sidebar. If the focused split thread's row is collapsed, expand it before settling.
 - `E` (Shift+e) undoes the newest archive notification while it is visible and opens the restored thread. Clicking that notification's Undo button also opens the thread.
+- `Escape` then `m` toggles Claude/Codex, pairing Astra ↔ Fable and Sol ↔ Opus. Other models use the destination provider's default. Reasoning and speed are preserved when supported; BB reconciles unsupported values. In an existing thread, this prepares BB's normal provider handoff for the next send.
+- `Escape` then `r` cycles the current model's reasoning levels forward and wraps.
+- `Escape` then `f` cycles Normal → Fast → Ultrafast → Normal, skipping speeds the model does not offer.
+- These sequences work from the composer too. Press the letter within 1.5 seconds of Escape; an unrelated key, click, or window blur cancels the prefix.
 - `i` focuses the composer.
 - `?` opens the Vimium Cheatsheet page, which lists every key on this page.
 
