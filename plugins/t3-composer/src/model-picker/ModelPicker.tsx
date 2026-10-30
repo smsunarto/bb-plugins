@@ -1,5 +1,6 @@
 // Adapted from T3 Code's ProviderModelPicker.tsx, ModelPickerContent.tsx,
-// ModelPickerSidebar.tsx and ModelListRow.tsx.
+// ModelPickerSidebar.tsx and ModelListRow.tsx. On a phone the picker opens as a bottom sheet,
+// like the effort panel, without the search box, whose keyboard would cover the list.
 import {
   useEffect,
   useEffectEvent,
@@ -11,9 +12,11 @@ import {
   type ReactNode,
 } from "react";
 import { experimental_ProviderIcon as ProviderIcon } from "@get-bb/plugin-sdk/app";
+import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { Icon } from "@/components/ui/icon";
 import { useCloseWhenAnchorDetaches } from "@/components/ui/overlay-anchor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { MobileTrigger, ResponsiveDrawerShell } from "@/components/ui/responsive-overlay";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import {
@@ -71,7 +74,17 @@ export function ModelPicker(props: {
   onSelect(providerId: string, model: string): void;
 }) {
   const { catalog } = props;
+  // The same breakpoint at which the effort panel renders as a bottom sheet.
+  const isSheet = useIsCompactViewport();
   const [open, setOpen] = useState(false);
+  // The sheet keeps its contents mounted after it first opens; a new key per opening starts
+  // each one on the current provider's tab, as the popover does.
+  const [openings, setOpenings] = useState(0);
+  const setOpenUnlessDisabled = (next: boolean) => {
+    const opening = next && !props.disabled;
+    if (opening && !open) setOpenings((count) => count + 1);
+    setOpen(opening);
+  };
   // Close when BB hides the composer, as it does while the agent waits on a question.
   const triggerRef = useCloseWhenAnchorDetaches<HTMLButtonElement>(null, open, setOpen);
   const activeProvider = catalog.providers.find((provider) => provider.id === props.providerId);
@@ -85,34 +98,62 @@ export function ModelPicker(props: {
     if (open) loadAll();
   }, [open, catalog.revision]);
 
+  const trigger = (
+    <button
+      ref={triggerRef}
+      type="button"
+      disabled={props.disabled}
+      aria-label={triggerLabel}
+      data-t3-model-picker-trigger=""
+      className="min-w-0 max-w-48 shrink justify-between whitespace-nowrap sm:max-w-56"
+    >
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        {activeProvider ? (
+          <ProviderIcon
+            providerKind="agent"
+            provider={activeProvider}
+            className="size-4 shrink-0"
+            aria-hidden
+          />
+        ) : null}
+        <span className="min-w-0 flex-1 truncate" data-t3-model-picker-label="">
+          {triggerLabel}
+        </span>
+      </span>
+    </button>
+  );
+  const content = (
+    <ModelPickerContent
+      key={isSheet ? openings : undefined}
+      catalog={catalog}
+      providerId={props.providerId}
+      model={activeModel?.model ?? props.model}
+      sheet={isSheet}
+      onSelect={(providerId, model) => {
+        props.onSelect(providerId, model);
+        setOpen(false);
+      }}
+    />
+  );
+
+  if (isSheet) {
+    return (
+      <>
+        <MobileTrigger asChild open={open} onOpenChange={setOpenUnlessDisabled} haspopup="dialog">
+          {trigger}
+        </MobileTrigger>
+        <ResponsiveDrawerShell open={open} onOpenChange={setOpen} srLabel="Model">
+          {content}
+        </ResponsiveDrawerShell>
+      </>
+    );
+  }
+
   return (
-    <Popover open={open} onOpenChange={(next) => setOpen(next && !props.disabled)}>
+    <Popover open={open} onOpenChange={setOpenUnlessDisabled}>
       <Tooltip>
         <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <button
-              ref={triggerRef}
-              type="button"
-              disabled={props.disabled}
-              aria-label={triggerLabel}
-              data-t3-model-picker-trigger=""
-              className="min-w-0 max-w-48 shrink justify-between whitespace-nowrap sm:max-w-56"
-            >
-              <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                {activeProvider ? (
-                  <ProviderIcon
-                    providerKind="agent"
-                    provider={activeProvider}
-                    className="size-4 shrink-0"
-                    aria-hidden
-                  />
-                ) : null}
-                <span className="min-w-0 flex-1 truncate" data-t3-model-picker-label="">
-                  {triggerLabel}
-                </span>
-              </span>
-            </button>
-          </PopoverTrigger>
+          <PopoverTrigger asChild>{trigger}</PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent side="top">{triggerLabel}</TooltipContent>
       </Tooltip>
@@ -125,15 +166,7 @@ export function ModelPicker(props: {
             ?.focus({ preventScroll: true });
         }}
       >
-        <ModelPickerContent
-          catalog={catalog}
-          providerId={props.providerId}
-          model={activeModel?.model ?? props.model}
-          onSelect={(providerId, model) => {
-            props.onSelect(providerId, model);
-            setOpen(false);
-          }}
-        />
+        {content}
       </PopoverContent>
     </Popover>
   );
@@ -143,9 +176,11 @@ function ModelPickerContent(props: {
   catalog: ModelCatalog;
   providerId: string | undefined;
   model: string | undefined;
+  /** The phone sheet: no search box or jump keys, taller rows, and a fixed height. */
+  sheet: boolean;
   onSelect(providerId: string, model: string): void;
 }) {
-  const { catalog } = props;
+  const { catalog, sheet } = props;
   const { favorites, toggle } = useFavoriteModels();
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>(() =>
@@ -205,6 +240,11 @@ function ModelPickerContent(props: {
     0,
     visibleItems.findIndex((item) => item.key === highlightedKey),
   );
+  // The sheet's Tab stop: the chosen model, or the first row.
+  const tabStopIndex = Math.max(
+    0,
+    visibleItems.findIndex((item) => item.key === activeKey),
+  );
   const tabCatalog = !isSearching && tab !== "favorites" ? catalog.catalogFor(tab) : null;
 
   const [resetFor, setResetFor] = useState(`${tab}\u0000${query}`);
@@ -225,7 +265,8 @@ function ModelPickerContent(props: {
 
   // Capture gives the jump shortcuts priority over the composer underneath.
   const onJumpKey = useEffectEvent((event: KeyboardEvent) => {
-    if (event.repeat || event.altKey || event.shiftKey) return;
+    // The sheet shows no jump keys, and stays mounted while closed.
+    if (sheet || event.repeat || event.altKey || event.shiftKey) return;
     if (!(isMacPlatform() ? event.metaKey : event.ctrlKey)) return;
     const index = Number(event.key) - 1;
     if (!Number.isInteger(index) || index < 0 || index >= JUMP_KEY_COUNT) return;
@@ -291,58 +332,72 @@ function ModelPickerContent(props: {
     <TooltipProvider delayDuration={0}>
       <div
         data-t3-model-picker=""
-        className="relative flex max-h-[346px] w-screen max-w-[360px] flex-row overflow-hidden"
-        style={{ minHeight: `calc(${minHeightUnits} * 4px + 1px)` }}
+        className={cn(
+          "relative flex flex-row overflow-hidden",
+          // A fixed height, so switching tabs never resizes the sheet under the thumb.
+          sheet ? "h-[min(28rem,70dvh)] w-full" : "max-h-[346px] w-screen max-w-[360px]",
+        )}
+        style={sheet ? undefined : { minHeight: `calc(${minHeightUnits} * 4px + 1px)` }}
       >
         {!isSearching && catalog.providers.length > 0 ? (
           <ProviderRail
             providers={catalog.providers}
+            sheet={sheet}
             tab={tab}
             onSelectTab={selectTab}
-            onFocusSearch={() => searchRef.current?.focus()}
+            onFocusSearch={() =>
+              (
+                searchRef.current ??
+                listRef.current?.querySelector<HTMLElement>('[role="option"][tabindex="0"]')
+              )?.focus()
+            }
           />
         ) : null}
         <div
           className={cn(
-            "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-muted/40",
+            "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden",
+            // The sheet keeps its own background, as the effort sheet does.
+            !sheet && "bg-muted/40",
             !isSearching && "border-l border-border/70",
           )}
         >
-          <div className="min-w-0 shrink-0 px-3 pt-2.5">
-            <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
-              <Icon
-                name="Search"
-                aria-hidden
-                className="pointer-events-none absolute left-0 top-1.5 size-4 shrink-0 text-muted-foreground/55"
-              />
-              <input
-                ref={searchRef}
-                data-t3-model-search=""
-                type="text"
-                role="combobox"
-                aria-label="Search models"
-                aria-expanded="true"
-                aria-haspopup="listbox"
-                aria-autocomplete="list"
-                aria-controls={listId}
-                aria-activedescendant={
-                  visibleItems[highlightIndex] ? optionId(highlightIndex) : undefined
-                }
-                aria-describedby={hintId}
-                autoComplete="off"
-                spellCheck={false}
-                placeholder="Search models..."
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                onKeyDown={onSearchKeyDown}
-                className="h-[26px] w-full bg-transparent ps-5 font-sans text-sm leading-[26px] text-foreground outline-none placeholder:text-muted-foreground/70"
-              />
-              <span id={hintId} className="sr-only">
-                Up and Down to move, Enter to choose, {isMacPlatform() ? "Command" : "Control"}+D to
-                add or remove a favorite.
-              </span>
+          {sheet ? null : (
+            <div className="min-w-0 shrink-0 px-3 pt-2.5">
+              <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
+                <Icon
+                  name="Search"
+                  aria-hidden
+                  className="pointer-events-none absolute left-0 top-1.5 size-4 shrink-0 text-muted-foreground/55"
+                />
+                <input
+                  ref={searchRef}
+                  data-t3-model-search=""
+                  type="text"
+                  role="combobox"
+                  aria-label="Search models"
+                  aria-expanded="true"
+                  aria-haspopup="listbox"
+                  aria-autocomplete="list"
+                  aria-controls={listId}
+                  aria-activedescendant={
+                    visibleItems[highlightIndex] ? optionId(highlightIndex) : undefined
+                  }
+                  aria-describedby={hintId}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="Search models..."
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={onSearchKeyDown}
+                  className="h-[26px] w-full bg-transparent ps-5 font-sans text-sm leading-[26px] text-foreground outline-none placeholder:text-muted-foreground/70"
+                />
+                <span id={hintId} className="sr-only">
+                  Up and Down to move, Enter to choose, {isMacPlatform() ? "Command" : "Control"}+D
+                  to add or remove a favorite.
+                </span>
+              </div>
             </div>
-          </div>
+          )}
           {/* A native <select> cannot show provider lines, jump keys or stars; the search box drives this listbox through aria-activedescendant. */}
           <div
             ref={listRef}
@@ -352,6 +407,7 @@ function ModelPickerContent(props: {
             aria-label="Models"
             className={cn(
               "min-h-0 overflow-y-auto overscroll-y-contain py-1.5 pl-2 pr-px [scrollbar-gutter:stable]",
+              sheet && "pb-3",
               visibleItems.length > 0 ? "flex-1" : "h-0",
             )}
           >
@@ -362,11 +418,15 @@ function ModelPickerContent(props: {
                   id={optionId(index)}
                   index={index}
                   item={item}
-                  highlighted={index === highlightIndex}
+                  // Touch has no keyboard highlight to show; a press shows instead.
+                  highlighted={!sheet && index === highlightIndex}
                   selected={item.key === activeKey}
+                  tabStop={index === tabStopIndex}
                   showProvider={rowsMixProviders}
-                  jumpLabel={index < JUMP_KEY_COUNT ? jumpLabel(index) : null}
-                  onHighlight={() => setHighlightedKey(item.key)}
+                  large={sheet}
+                  jumpLabel={!sheet && index < JUMP_KEY_COUNT ? jumpLabel(index) : null}
+                  // A touch scroll moves the pointer too; following it would scroll the list.
+                  onHighlight={sheet ? undefined : () => setHighlightedKey(item.key)}
                   onSelect={() => select(item)}
                   onToggleFavorite={() => toggle(item.provider.id, item.model.model)}
                 />
@@ -423,8 +483,12 @@ function ModelRow(props: {
   highlighted: boolean;
   selected: boolean;
   showProvider: boolean;
+  /** A touch-sized row, for the phone sheet. */
+  large: boolean;
+  /** The sheet's one Tab stop in the list; arrow keys move between rows from there. */
+  tabStop: boolean;
   jumpLabel: string | null;
-  onHighlight(): void;
+  onHighlight?(): void;
   onSelect(): void;
   onToggleFavorite(): void;
 }) {
@@ -436,7 +500,8 @@ function ModelRow(props: {
       id={props.id}
       // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a native <option> cannot hold the star and jump key.
       role="option"
-      tabIndex={-1}
+      // Without the search box, the sheet's rows take focus themselves.
+      tabIndex={props.large && props.tabStop ? 0 : -1}
       aria-selected={props.selected}
       data-index={props.index}
       data-highlighted={props.highlighted ? "" : undefined}
@@ -444,13 +509,27 @@ function ModelRow(props: {
       onMouseDown={(event) => event.preventDefault()}
       onClick={props.onSelect}
       onKeyDown={(event) => {
-        // Reached only if an assistive tool focuses the option itself.
+        // Reached in the sheet, or if an assistive tool focuses the option itself.
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          const sibling =
+            event.key === "ArrowDown"
+              ? event.currentTarget.nextElementSibling
+              : event.currentTarget.previousElementSibling;
+          if (sibling instanceof HTMLElement) {
+            event.preventDefault();
+            sibling.focus();
+          }
+          return;
+        }
         if (event.key !== "Enter" && event.key !== " ") return;
         event.preventDefault();
         props.onSelect();
       }}
       className={cn(
-        "group relative flex min-h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-2 py-1 text-sm",
+        "group relative flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-sm",
+        props.large
+          ? "min-h-11 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-ring active:bg-foreground/[0.09]"
+          : "min-h-7 py-1",
         props.selected && "bg-foreground/[0.06] text-foreground",
         props.highlighted && "bg-foreground/[0.09] text-accent-foreground",
       )}
@@ -519,6 +598,7 @@ function ModelRow(props: {
 
 function ProviderRail(props: {
   providers: readonly CatalogProvider[];
+  sheet: boolean;
   tab: Tab;
   onSelectTab(tab: Tab): void;
   onFocusSearch(): void;
@@ -551,7 +631,10 @@ function ProviderRail(props: {
   };
 
   return (
-    <div data-t3-model-picker-rail="" className="w-11 shrink-0 overflow-hidden bg-muted/30">
+    <div
+      data-t3-model-picker-rail=""
+      className={cn("w-11 shrink-0 overflow-hidden", !props.sheet && "bg-muted/30")}
+    >
       <div className="h-full overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div ref={contentRef} className="relative flex min-h-full flex-col gap-1 p-1">
           {indicatorTop !== null ? (

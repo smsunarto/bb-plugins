@@ -451,6 +451,55 @@ describe("T3 Code model picker", () => {
     }
   });
 
+  it("opens as a bottom sheet without a search box on a phone", async () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(max-width: 767px)",
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    })) as unknown as typeof window.matchMedia;
+    const { slot } = await mountComposer({}, undefined, pickerOptions(OPUS_HIGH));
+    try {
+      // After the composer's mount-time editor autofocus, which would take focus from the sheet.
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
+      );
+      fireEvent.click(await slot.findByRole("button", { name: "Opus 5.5" }));
+      const sheet = await slot.findByRole("dialog", { name: "Model" });
+      await slot.findByRole("option", { name: /Sonnet 5\.5/ });
+      expect(slot.queryByPlaceholderText("Search models...")).toBeNull();
+      expect(sheet.querySelector("kbd")).toBeNull();
+      // Rows take focus, since no search box drives them.
+      fireEvent.click(slot.getByRole("button", { name: "Claude Code" }));
+      await slot.findByRole("option", { name: /Opus 5\.5/ });
+      // One Tab stop in the list, on the chosen model.
+      const stops = sheet.querySelectorAll('[role="option"][tabindex="0"]');
+      expect([...stops].map((row) => row.getAttribute("aria-selected"))).toEqual(["true"]);
+      const first = slot.getAllByRole("option")[0]!;
+      first.focus();
+      fireEvent.keyDown(first, { key: "ArrowDown" });
+      expect(document.activeElement).toBe(slot.getAllByRole("option")[1]);
+      // Another provider's tab does not outlive the sheet.
+      fireEvent.click(slot.getByRole("button", { name: "Codex" }));
+      expect(await slot.findByRole("option", { name: /GPT-6-Luna/ })).toBeTruthy();
+      fireEvent.keyDown(sheet, { key: "Escape" });
+      await waitFor(() => expect(sheet.getAttribute("data-state")).toBe("closed"));
+      // The closed sheet stays mounted, but its jump keys do not pick models.
+      fireEvent.keyDown(window, { key: "1", ctrlKey: true, metaKey: true });
+      expect(slot.composer.selections).toHaveLength(0);
+      fireEvent.click(slot.getByRole("button", { name: "Opus 5.5" }));
+      fireEvent.click(await slot.findByRole("option", { name: /Sonnet 5\.5/ }));
+      await waitFor(() =>
+        expect(slot.composer.selections.at(-1)).toMatchObject({ model: "claude-sonnet-5-5" }),
+      );
+      await waitFor(() => expect(sheet.dataset.state).toBe("closed"));
+    } finally {
+      slot.lifecycle.unmount();
+      window.matchMedia = original;
+    }
+  });
+
   it("sets effort from the effort panel", async () => {
     // jsdom has no PointerEvent, and Radix opens menus on a primary-button pointerdown.
     window.PointerEvent ??= class extends MouseEvent {} as typeof PointerEvent;
