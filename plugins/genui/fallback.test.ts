@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { DataRequest, LoadedData } from "./core";
 import { checkSpec, renderReplyMarkdown } from "./fallback";
+import { compile, evaluate, initialState } from "./core";
+import { localImages } from "./core/markdown";
 
 const reply = [
   "Pro costs **$290** a month for 10 seats.",
@@ -112,4 +114,43 @@ describe("checkSpec", () => {
     expect(report).not.toContain("big.hdr");
     expect(requested).toEqual([{ path: "chair.glb", raw: true }, { path: "big.hdr", raw: true }]);
   });
+});
+
+
+describe("local image preflight sources", () => {
+  it("covers nested image components and evidence using their renderer input shapes", () => {
+    const compiled = compile(`$picked = "a"
+Card("Evidence", [
+  Image("image.png"), Image("image.png"), Image("https://example.com/web.png"),
+  Gallery(["gallery.png", {src: "gallery-object.png"}, {query: "forest"}]),
+  Compare(["before.png", {path: "after.png"}]),
+  Entity("Device", image: "entity.png"), Hotspots("hotspots.png", []),
+  OptionCards($picked, [{value: "a", image: "option.png"}]),
+  Acceptance([{name: "Visual", status: "passed", evidence: "acceptance.png"}]),
+  Provenance([{name: "Build", status: "done", evidence: "provenance.png"}])
+])`);
+    expect(compiled.diagnostics).toEqual([]);
+    if (compiled.program === null) throw new Error("compile failed");
+    const evaluated = evaluate(compiled.program, initialState(compiled.program));
+    expect(evaluated.diagnostics).toEqual([]);
+    expect(localImages(evaluated.roots)).toEqual([
+      "image.png", "gallery.png", "gallery-object.png", "before.png", "after.png",
+      "entity.png", "hotspots.png", "option.png", "acceptance.png", "provenance.png",
+    ]);
+  });
+});
+
+
+it("checks a local image revealed by a toggle, deduplicating shared images", async () => {
+  const paths: string[] = [];
+  const result = await checkSpec(`$more = false
+Card("Evidence", [Toggle($more, "More"), Image("good.png"), $more ? Image("/home/codex/scratch/missing.png") : Image("good.png")])`,
+    async () => ({ok: false, error: "unused"}), undefined, undefined,
+    async (path) => {
+      paths.push(path);
+      return path === "good.png" ? {ok: true} : {ok: false, error: "outside allowed roots"};
+    });
+  expect(result.ok).toBe(false);
+  expect(result.report).toContain("/home/codex/scratch/missing.png: outside allowed roots");
+  expect(paths).toEqual(["good.png", "/home/codex/scratch/missing.png"]);
 });

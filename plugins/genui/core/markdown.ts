@@ -1074,6 +1074,51 @@ function eachNode(roots: readonly UiNode[], found: (node: UiNode) => void): void
   roots.forEach(visit);
 }
 
+/** Explicit local images shown by components, deduplicated for preflight. Web lookups stay separate. */
+export function localImages(roots: readonly UiNode[]): string[] {
+  const paths = new Set<string>();
+  const add = (value: Value | undefined) => {
+    if (typeof value !== "string") return;
+    const src = value.trim();
+    if (src !== "" && (!/^[a-z][a-z0-9+.-]*:/i.test(src) || /^[a-z]:[\\/]/i.test(src))) paths.add(src);
+  };
+  eachNode(roots, (node) => {
+    switch (node.type) {
+      case "Image": add(node.props.src); break;
+      case "Entity":
+      case "Hotspots": add(node.props.image); break;
+      case "Gallery":
+        for (const item of list(node.props.images)) add(fields(item, "src").src);
+        break;
+      case "Compare": {
+        const compared = readCompare(node.props.images);
+        if (compared.ok) for (const image of compared.images) add(image.src);
+        break;
+      }
+      case "OptionCards":
+        for (const item of list(node.props.options)) add(fields(item, "value").image);
+        break;
+      case "Provenance": {
+        const read = readProvenance(node.props.stages, node.props.expected);
+        if (read.ok) for (const stage of read.provenance.stages) {
+          for (const evidence of stage.evidence) if (evidence.kind === "image") add(evidence.src);
+        }
+        break;
+      }
+      case "Acceptance": {
+        const read = readAcceptance(node.props.criteria, node.props.columns);
+        if (read.ok) for (const criterion of read.report.criteria) {
+          for (const check of [criterion.own, ...(criterion.cells ?? [])]) {
+            for (const evidence of check.evidence) if (evidence.kind === "image") add(evidence.src);
+          }
+        }
+        break;
+      }
+    }
+  });
+  return [...paths];
+}
+
 /** The image searches in evaluated nodes (ImageSearch queries, Gallery `{query}` items), in order, without repeats. */
 export function imageSearches(roots: readonly UiNode[]): string[] {
   const queries = new Set<string>();

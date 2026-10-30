@@ -136,7 +136,7 @@ async function readThreadFile(bb: BbPluginApi, threadId: string, requested: stri
     attempts = root === null ? [] : inside(root, path.resolve(root.path, requested));
   }
   if (attempts.length === 0) {
-    return { ok: false, error: "only files in this thread's workspace, its thread storage or /tmp can be loaded" };
+    return { ok: false, error: "only files in this thread's workspace, its thread storage or /tmp can be loaded. Copy the artifact into $BB_THREAD_STORAGE on the thread's host and reference $BB_THREAD_STORAGE/<filename>; files on other machines must be transferred first" };
   }
   let first: FileContent | undefined;
   for (const attempt of attempts) {

@@ -33,6 +33,8 @@ export interface ProbeReport {
   /** Interactions tried, at most MAX_PROBES. */
   readonly tried: number;
   readonly failures: readonly ProbeFailure[];
+  /** Evaluated interaction states, for checking resources revealed by inputs. */
+  readonly interactionRoots: readonly (readonly UiNode[])[];
 }
 
 /**
@@ -49,12 +51,14 @@ export function probeInteractions(
   const baseline = new Set(initial.diagnostics.map(diagnosticKey));
   const probes = interactions(initial.roots, state).slice(0, MAX_PROBES);
   const failures: ProbeFailure[] = [];
+  const interactionRoots: (readonly UiNode[])[] = [];
   for (const probe of probes) {
-    const { diagnostics } = evaluate(program, { ...state, [probe.name]: probe.value }, data);
+    const { roots, diagnostics } = evaluate(program, { ...state, [probe.name]: probe.value }, data);
+    interactionRoots.push(roots);
     const added = diagnostics.filter((d) => d.severity === "error" && !baseline.has(diagnosticKey(d)));
     if (added.length > 0) failures.push({ probe, diagnostics: added });
   }
-  return { tried: probes.length, failures };
+  return { tried: probes.length, failures, interactionRoots };
 }
 
 /** The distinct interactions the inputs in `roots` offer, minus ones that change nothing. */

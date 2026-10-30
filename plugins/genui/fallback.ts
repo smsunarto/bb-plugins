@@ -21,7 +21,7 @@ import {
   wikiPhotos,
 } from "./core";
 import { checkShader } from "./core/glsl-check";
-import { projectRequests, toMarkdownWithProject } from "./core/markdown";
+import { localImages, projectRequests, toMarkdownWithProject } from "./core/markdown";
 import { projectRequestKey, type ProjectRequest, type ProjectResult } from "./core/project";
 import { readScene, sceneAssets } from "./core/scene";
 import { shaderInputNames, shaderPasses } from "./core/shader-args";
@@ -187,6 +187,7 @@ export async function checkSpec(
   load: Loader,
   find?: ImageFinder,
   project?: ProjectReader,
+  loadImage?: (path: string) => Promise<{ readonly ok: true } | { readonly ok: false; readonly error: string }>,
 ): Promise<{ readonly ok: boolean; readonly report: string }> {
   const compiled = compile(spec);
   if (compiled.program === null) {
@@ -199,7 +200,16 @@ export async function checkSpec(
   const initial = evaluate(compiled.program, state, data);
   const { roots, diagnostics } = initial;
   const probed = probeInteractions(compiled.program, state, initial, data);
+  const imageProblems: string[] = [];
+  if (loadImage !== undefined) {
+    const paths = new Set([roots, ...probed.interactionRoots].flatMap(localImages));
+    for (const path of paths) {
+      const result = await loadImage(path);
+      if (!result.ok) imageProblems.push(`${path}: ${result.error}`);
+    }
+  }
   const problems = [
+    ...imageProblems,
     ...loaded.flatMap(([request, result]) => (result.ok ? [] : [`${request.path}: ${result.error}`])),
     ...(diagnostics.length > 0 ? [formatDiagnostics(diagnostics)] : []),
     ...(await gpuProblems(roots, load)),

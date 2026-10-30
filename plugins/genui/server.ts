@@ -298,6 +298,7 @@ export default async function plugin(bb: BbPluginApi) {
               (request) => loadThreadFile(bb, ctx.threadId, request.path, request),
               findImage,
               projectReader(project, environments, ctx.threadId),
+              (path) => loadThreadImage(bb, ctx.threadId, path),
             );
       return { content: [{ type: "text", text: report }], isError: !ok };
     },
