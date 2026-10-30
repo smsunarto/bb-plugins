@@ -17,16 +17,13 @@ it("shows missing pinned source as unavailable rather than zero commits", () => 
         headRef: "feature",
         baseCommit: "a".repeat(40),
         headCommit: "b".repeat(40),
-        sourceUnavailable:
-          "The pinned source commits are unavailable: missing head",
+        live: { kind: "unavailable" },
       }}
       onOpenDiff={() => {}}
     />,
   );
 
-  expect(html).toContain(
-    "The pinned source commits are unavailable: missing head",
-  );
+  expect(html).toContain("Local checkout unavailable.");
   expect(html).not.toContain("0 commits");
 });
 

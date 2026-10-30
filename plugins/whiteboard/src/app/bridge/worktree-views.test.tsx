@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { Snapshot } from "../../server/lib/vendor/review/src/review-api/store.ts";
+import type { LiveSnapshot } from "../../server/lib/vendor/review/src/review-api/store.ts";
 import { ReviewApiClient } from "../../shared/vendor/review/src/review-api/client.ts";
 import { ApiCanvas } from "../vendor/review/app/src/api-canvas.tsx";
 import { testReviewBridge } from "../vendor/review/app/src/review-session-test-utils.tsx";
@@ -22,7 +22,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function mount(snapshot: Snapshot, version?: number) {
+function mount(snapshot: LiveSnapshot, version?: number) {
   vi.spyOn(ReviewApiClient.prototype, "follow").mockImplementation(async (_id, signal, onValue) => {
     await onValue({ ...snapshot, activity: { workingCount: 0, expiresAt: null } } as never);
     await new Promise<void>((resolve) =>
@@ -64,15 +64,18 @@ it.each([undefined, 0])(
         reviewId: "test-session",
         version: 0,
         title: "Dirty order",
-        target: { kind: "worktree", repositoryId: "r" },
-        pins: {
-          repositoryId: "r",
-          base: "same-head",
-          head: "same-head",
-          worktreeRevision: "retained-dirty-tree",
+        source: {
+          target: { kind: "worktree", repositoryId: "r" },
+          pins: {
+            repositoryId: "r",
+            base: "same-head",
+            head: "same-head",
+            worktreeRevision: "retained-dirty-tree",
+          },
         },
         document: [],
         createdAt: "2026-09-17",
+        live: { kind: "available", unavailableAnchors: [] },
       },
       version,
     );
@@ -93,10 +96,13 @@ it("keeps Diff and Commits available for an ordinary commit comparison", async (
     reviewId: "test-session",
     version: 0,
     title: "Committed order",
-    target: { kind: "commits", repositoryId: "r", base: "base", head: "head" },
-    pins: { repositoryId: "r", base: "base", head: "head" },
+    source: {
+      target: { kind: "commits", repositoryId: "r", base: "base", head: "head" },
+      pins: { repositoryId: "r", base: "base", head: "head" },
+    },
     document: [],
     createdAt: "2026-09-17",
+    live: { kind: "available", unavailableAnchors: [] },
   });
   fireEvent.click(await screen.findByRole("button", { name: "Diff" }));
   expect(container.querySelector(".review-diff-view")?.getAttribute("aria-hidden")).toBe("false");

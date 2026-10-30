@@ -61,8 +61,10 @@ it("marks a lens's base and head ranges, preserves other changed lines and reloa
     reviewId: "test-session",
     version: 0,
     title: "Order",
-    target: { kind: "commits", repositoryId: "r", base: "b", head: "h" },
-    pins: { repositoryId: "r", base: "b", head: "h" },
+    source: {
+      target: { kind: "commits", repositoryId: "r", base: "b", head: "h" },
+      pins: { repositoryId: "r", base: "b", head: "h" },
+    },
     document: [],
     createdAt: "2026-09-17",
   };
@@ -153,8 +155,10 @@ it("refreshes current progress on generation changes without a version bump and 
     reviewId: "test-session",
     version: 0,
     title: "Order",
-    target: { kind: "worktree", repositoryId: "r" },
-    pins: { repositoryId: "r", base: "b", head: "h", worktreeRevision: "dirty-one" },
+    source: {
+      target: { kind: "worktree", repositoryId: "r" },
+      pins: { repositoryId: "r", base: "b", head: "h", worktreeRevision: "dirty-one" },
+    },
     document: [],
     createdAt: "2026-09-17",
   };
@@ -174,7 +178,16 @@ it("refreshes current progress on generation changes without a version bump and 
     ).toBe("100"),
   );
   rendered.rerender(
-    ui({ ...snapshot, pins: { ...snapshot.pins!, worktreeRevision: "dirty-two" } }, "dirty-two"),
+    ui(
+      {
+        ...snapshot,
+        source: {
+          ...snapshot.source!,
+          pins: { ...snapshot.source!.pins, worktreeRevision: "dirty-two" },
+        },
+      },
+      "dirty-two",
+    ),
   );
   await waitFor(() =>
     expect(

@@ -388,7 +388,7 @@ it("reports the changed lines no lens selects after each lens write", async () =
   const data = new LocalReviewData(store);
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
 
   const changed = (path: string, text: string) => ({

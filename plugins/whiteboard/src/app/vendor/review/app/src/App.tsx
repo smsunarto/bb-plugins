@@ -369,7 +369,7 @@ function ReviewLayoutContent({
 
   const viewStateSync = useReviewViewStateSync({ scrollRegionRef, panelStore });
   const hasCommitRange = range.baseCommit !== range.headCommit;
-  const hasChangeRange = hasCommitRange || range.hasWorktreeSource === true;
+  const hasChangeRange = hasCommitRange || range.target?.kind === "worktree";
 
   const [activeView, setActiveView] = useState<ReviewView>(() =>
     normalizeReviewView(

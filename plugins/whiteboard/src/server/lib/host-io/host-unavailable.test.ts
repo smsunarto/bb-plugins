@@ -184,7 +184,7 @@ describe("creating a Whiteboard from a pull request URL across hosts", () => {
       const created = await createFromUrl(local);
       expect(local.store.read(created.reviewId)).toMatchObject({
         title: "Add widgets",
-        pins: { repositoryId: reachable.id },
+        source: { pins: { repositoryId: reachable.id } },
       });
     } finally {
       await local.store.close();

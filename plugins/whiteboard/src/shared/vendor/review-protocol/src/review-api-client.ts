@@ -1,6 +1,10 @@
 // Vendored from dev.fast review-protocol/src/review-api-client.ts @4ecc570 (MIT).
 import type { JsonValue } from "../../json/src/index.ts";
 
+export type ReviewApiTarget =
+  | { kind: "worktree"; repositoryId: string; base?: string }
+  | { kind: "commits"; repositoryId: string; head: string; base?: string };
+
 /** List metadata for the authenticated local catalog; document contents stay in snapshots. */
 export interface ReviewApiSummary {
   reviewId: string;
@@ -11,15 +15,15 @@ export interface ReviewApiSummary {
   /** What is on the scratchpad, for its Home card; absent for a review. */
   contents?: { blocks: number; diagrams: number };
   /** Absent for a document whose references all carry their own pins. */
-  pins?: {
-    repositoryId: string;
-    base: string;
-    head: string;
-    worktreeRevision?: string;
+  source?: {
+    pins: {
+      repositoryId: string;
+      base: string;
+      head: string;
+      worktreeRevision?: string;
+    };
+    target: ReviewApiTarget;
   };
-  target?:
-    | { kind: "worktree"; repositoryId: string; base?: string }
-    | { kind: "commits"; repositoryId: string; head: string; base?: string };
   createdAt: string;
   /** Timestamp of the earliest retained review version, when known. */
   firstCreatedAt?: string;

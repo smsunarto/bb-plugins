@@ -268,7 +268,7 @@ async function progressApi() {
   const data = new LocalReviewData(store);
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
   vi.spyOn(data, "structuralChanges").mockImplementation(async function* () {
     yield {

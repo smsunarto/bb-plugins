@@ -101,7 +101,7 @@ it("enforces session ownership through the tool adapter while allowing reads and
   await expect(
     b.importVersion({
       ...b.read(reviewId),
-      pins: b.read(reviewId).pins!,
+      pins: b.read(reviewId).source!.pins,
       title: "Blocked import",
     }),
   ).rejects.toMatchObject({ status: 409 });

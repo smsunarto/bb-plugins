@@ -253,7 +253,7 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
         // diffr runs on the repository's host. Home (no pinned session) lists
         // every repository, so it asks every host that holds one. The first
         // host with diffr decides, so a silent host does not hold Home up.
-        const repositoryId = snapshot?.pins?.repositoryId;
+        const repositoryId = snapshot?.source?.pins.repositoryId;
         const hosts: Array<string | Promise<string>> = repositoryId
           ? [resolver.hostFor({ repositoryId })]
           : resolver.boundHosts();

@@ -217,7 +217,7 @@ it("keeps reference coverage apart by pins: one path, changed under one comparis
   const same = { repositoryId: pins.repositoryId, head: "other-head" };
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
   vi.spyOn(data, "structuralChanges").mockImplementation(async function* ({
     pins: at,
@@ -321,7 +321,7 @@ it("preserves unchanged partial file coverage across pins and rejects stale writ
   let base = "first\nold\ncontext";
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
   vi.spyOn(data, "structuralChanges").mockImplementation(async function* () {
     yield {
@@ -442,7 +442,7 @@ it("textual coverage uses Git ranges without launching diffr", async () => {
   const data = new LocalReviewData(store);
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
   vi.spyOn(data, "changes").mockImplementation((async (
     _pins: typeof pins,
@@ -553,7 +553,7 @@ it("resolves file lenses to whole changed files, preserves empty groups, and sha
   const data = new LocalReviewData(store);
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
   vi.spyOn(data, "structuralChanges").mockImplementation(async function* () {
     yield {
@@ -673,7 +673,7 @@ it("validates range lens evidence and scopes progress and Uncategorized to disti
   const data = new LocalReviewData(store);
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
   vi.spyOn(data, "structuralChanges").mockImplementation(async function* () {
     yield {
@@ -806,7 +806,7 @@ it("returns coverage and lenses after initial files without requesting summary e
   const data = new LocalReviewData(store);
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
   const file = { rhs: { path: "a.ts", oid: "head", mode: "100644" } };
   vi.spyOn(data, "structuralChanges").mockImplementation(async function* () {
@@ -855,7 +855,7 @@ it("returns pending progress without waiting for coverage and signals completion
 
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
   vi.spyOn(data, "changes").mockImplementation((async (
     _pins: typeof pins,
@@ -908,7 +908,7 @@ it("reports failed background coverage instead of leaving progress pending", asy
   const data = new LocalReviewData(store);
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
   vi.spyOn(data, "changes").mockRejectedValue(new Error("comparison failed"));
   const api = createReviewApi(store, data);
@@ -929,7 +929,7 @@ it("logs a provider failure and names its kind without returning its local detai
   const data = new LocalReviewData(store);
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
 
   const failure = Object.assign(
@@ -991,7 +991,7 @@ it("makes a diagram step's selection usable before an unrelated file finishes co
 
   vi.spyOn(data, "resolveSource").mockImplementation(async (snapshot) => ({
     snapshot,
-    pins: snapshot.pins!,
+    pins: snapshot.source!.pins,
   }));
   vi.spyOn(data, "changes").mockImplementation((async (
     _pins: typeof pins,

@@ -8,6 +8,7 @@ import { resolveRepoContextSync } from "../../../../host-io/local-vcs.ts";
 import {
   type ReviewApiSummary,
   SCRATCHPAD_REVIEW_ID,
+  type ReviewLiveSource,
 } from "../../../../../../shared/vendor/review-protocol/src/index.ts";
 import { z } from "zod";
 
@@ -181,19 +182,26 @@ export interface SnapshotOrigin {
   revision?: string;
 }
 
+/** The default source for references that name none: the target as the
+ * author asked for it, and the pins it resolved to. */
+export interface SnapshotSource {
+  pins: Pins;
+  target: ReviewTarget;
+}
+
 export interface Snapshot {
   shared?: { login?: string; sharedAt?: number; cloneUrl?: string };
   reviewId: string;
   version: number;
   title: string;
-  /** Absent for a review. The scratchpad has no pins, target or lifecycle. */
+  /** Absent for a review. The scratchpad has no source or lifecycle. */
   kind?: "scratchpad";
-  /** The default pins for references that name none. A document whose
-   * references all carry their own pins has neither pins nor target. */
-  pins?: Pins;
-  target?: ReviewTarget;
+  /** Absent for the scratchpad and for a document whose references all
+   * carry their own pins. */
+  source?: SnapshotSource;
+  /** References whose authored range no longer exists at the document's
+   * pins, as diagnosed at the write; the canvas does not resolve them. */
   staleSources?: string[];
-  sourceUnavailable?: boolean;
   document: Block[];
   /** The Diff view's lenses, beside the document and versioned with it.
    * Absent on a version with none. */
@@ -204,6 +212,16 @@ export interface Snapshot {
    * rename, repin, restore or import, which the canvas does not draw. */
   lastEdit?: EditSummary;
 }
+
+/** The current version as the server reads it now: what it stored, and how
+ * its source is doing. Only `read(id)` without a version returns one; a write
+ * starts from the Snapshot underneath. */
+export type LiveSnapshot = Snapshot & { live: ReviewLiveSource };
+
+const liveReady = (): ReviewLiveSource => ({
+  kind: "available",
+  unavailableAnchors: [],
+});
 
 /** A whole version written by legacy import: ids are assigned here, sources
  * are checked tolerantly, and attention is applied only for a new review. */
@@ -253,7 +271,9 @@ export interface ReviewProviders {
   /** Host-scoped identity; undefined means this surface has no scratchpad. */
   scratchpadId?(): string | undefined;
   headBranch?(pins: Pins, headRef?: string): Promise<string | undefined>;
-  projectSource?(snapshot: Snapshot, pins: Pins): Promise<Snapshot>;
+  /** A worktree document as its checkout reads now: these pins, and the
+   * references whose ranges no longer exist marked stale. */
+  projectSource?(snapshot: Snapshot, source: SnapshotSource): Promise<Snapshot>;
   /** Fetch a PR into a registered checkout: the named one, else the first
    * preferred one that still matches, else any whose remote is the PR's. */
   resolvePullRequest?(
@@ -292,7 +312,7 @@ export class ReviewStore {
   private readonly db: DatabaseSync;
   private pending: Promise<unknown> = Promise.resolve();
   private closing = false;
-  private readonly liveSources = new Map<string, Snapshot>();
+  private readonly liveSources = new Map<string, LiveSnapshot>();
   private refreshTimer?: ReturnType<typeof setInterval>;
   private refreshSubscribers = 0;
 
@@ -311,44 +331,48 @@ export class ReviewStore {
     };
   }
 
+  /** The stored version as its source reads now; `current` when nothing changed. */
   private async projectLiveSource(
     snapshot: Snapshot,
-    current = snapshot,
-  ): Promise<Snapshot> {
-    if (snapshot.target?.kind !== "worktree") {
+    current: LiveSnapshot,
+  ): Promise<LiveSnapshot> {
+    if (snapshot.source?.target.kind !== "worktree") {
       await this.providers.sourcePins?.(snapshot);
 
       // References with their own pins go unavailable one at a time.
-      const unavailable =
-        (await this.providers.unavailableAnchors?.(snapshot)) ?? [];
+      const live: ReviewLiveSource = {
+        kind: "available",
+        unavailableAnchors:
+          (await this.providers.unavailableAnchors?.(snapshot)) ?? [],
+      };
 
-      const stale = [
-        ...new Set([...(snapshot.staleSources ?? []), ...unavailable]),
-      ];
-
-      const staleChanged =
-        JSON.stringify(stale) !== JSON.stringify(current.staleSources ?? []);
-
-      if (!current.sourceUnavailable && !staleChanged) return current;
-      const projected = { ...current, sourceUnavailable: undefined };
-
-      if (stale.length) projected.staleSources = stale;
-      else delete projected.staleSources;
-
-      return projected;
+      return isDeepStrictEqual(current.live, live)
+        ? current
+        : { ...snapshot, live };
     }
 
-    const { pins } = await this.providers.resolveTarget!(snapshot.target);
+    const { pins } = await this.providers.resolveTarget!(snapshot.source.target);
 
     if (
-      JSON.stringify(current.pins) === JSON.stringify(pins) &&
-      !current.sourceUnavailable
+      current.live.kind === "available" &&
+      JSON.stringify(current.source?.pins) === JSON.stringify(pins)
     )
       return current;
 
+    return {
+      ...(await this.projectWorktree(snapshot, { ...snapshot.source, pins })),
+      live: liveReady(),
+    };
+  }
+
+  /** A worktree document at these pins, its vanished ranges marked stale. */
+  private projectWorktree(
+    snapshot: Snapshot,
+    source: SnapshotSource,
+  ): Promise<Snapshot> {
     return this.providers.projectSource
-      ? this.providers.projectSource(snapshot, pins)
-      : { ...snapshot, pins, sourceUnavailable: undefined };
+      ? this.providers.projectSource(snapshot, source)
+      : Promise.resolve({ ...snapshot, source });
   }
 
   private refreshPending: Promise<void> | undefined;
@@ -362,40 +386,35 @@ export class ReviewStore {
     const run = this.pending.then(async () => {
       for (const summary of this.list()) {
         const snapshot = this.read(summary.reviewId, summary.version);
+        const live = this.liveSources.get(summary.reviewId);
+        const last: LiveSnapshot =
+          live?.version === snapshot.version
+            ? live
+            : { ...snapshot, live: liveReady() };
 
         try {
-          const live = this.liveSources.get(summary.reviewId);
-          const last = live?.version === snapshot.version ? live : snapshot;
-          const previous = last.pins;
           const projected = await this.projectLiveSource(snapshot, last);
 
           if (projected === last) continue;
           this.liveSources.set(snapshot.reviewId, projected);
-
+          this.notify({
+            reviewId: snapshot.reviewId,
+            version: snapshot.version,
+          });
+        } catch (error) {
           if (
-            JSON.stringify(previous) !== JSON.stringify(projected.pins) ||
-            JSON.stringify(last.staleSources ?? []) !==
-              JSON.stringify(projected.staleSources ?? []) ||
-            last.sourceUnavailable
-          )
+            error instanceof ReviewInputError &&
+            error.status === 404 &&
+            last.live.kind !== "unavailable"
+          ) {
+            this.liveSources.set(snapshot.reviewId, {
+              ...last,
+              live: { kind: "unavailable" },
+            });
             this.notify({
               reviewId: snapshot.reviewId,
               version: snapshot.version,
             });
-        } catch (error) {
-          if (error instanceof ReviewInputError && error.status === 404) {
-            const last = this.read(snapshot.reviewId);
-
-            if (!last.sourceUnavailable) {
-              this.liveSources.set(snapshot.reviewId, {
-                ...last,
-                sourceUnavailable: true,
-              });
-              this.notify({
-                reviewId: snapshot.reviewId,
-                version: snapshot.version,
-              });
-            }
           }
         }
       }
@@ -740,7 +759,11 @@ export class ReviewStore {
     if (!this.db.prepare("SELECT 1 FROM reviews WHERE id=?").get(id))
       throw new ReviewInputError("Review not found.", 404);
   }
-  read(id: string, version?: number): Snapshot {
+  /** The current version carries its live source state; a pinned version
+   * is what was stored. */
+  read(id: string): LiveSnapshot;
+  read(id: string, version: number | undefined): Snapshot;
+  read(id: string, version?: number): Snapshot | LiveSnapshot {
     const row =
       version === undefined
         ? this.db
@@ -756,8 +779,7 @@ export class ReviewStore {
 
     if (!row) throw new ReviewInputError("Review or version not found.", 404);
 
-    // SAFETY: versions contains only snapshots validated by execute before committing.
-    const snapshot = JSON.parse(String(row.snapshot)) as Snapshot;
+    const snapshot = parseStoredSnapshot(String(row.snapshot));
 
     // SAFETY: stored blocks were validated on write; migration only replaces
     // retired attachment representations with their canonical equivalent and
@@ -774,18 +796,12 @@ export class ReviewStore {
     if (lenses.length)
       snapshot.lenses = [...(snapshot.lenses ?? []), ...lenses];
 
-    if (snapshot.pins)
-      snapshot.target ??= {
-        kind: "commits",
-        repositoryId: snapshot.pins.repositoryId,
-        base: snapshot.pins.base,
-        head: snapshot.pins.head,
-      };
-    const live = version === undefined ? this.liveSources.get(id) : undefined;
+    if (version !== undefined) return snapshot;
+    const live = this.liveSources.get(id);
 
-    if (live?.version === snapshot.version) return structuredClone(live);
-
-    return snapshot;
+    return live?.version === snapshot.version
+      ? structuredClone(live)
+      : { ...snapshot, live: liveReady() };
   }
   setDiffStats(
     pins: Pins,
@@ -847,27 +863,14 @@ export class ReviewStore {
       )
       .all(...(id === undefined ? [] : [id]))
       .map((row) => {
-        // SAFETY: versions contains only snapshots validated by execute before committing.
-        const summary = JSON.parse(String(row.summary)) as Omit<
-          Snapshot,
-          "document"
-        >;
-
-        if (summary.pins)
-          summary.target ??= {
-            kind: "commits",
-            repositoryId: summary.pins.repositoryId,
-            base: summary.pins.base,
-            head: summary.pins.head,
-          };
+        const summary = liftStoredSource(
+          // SAFETY: versions contains only snapshots validated by execute before committing.
+          JSON.parse(String(row.summary)) as Omit<StoredSnapshotRow, "document">,
+        );
 
         const live = this.liveSources.get(summary.reviewId);
 
-        if (
-          live?.version === summary.version &&
-          summary.target?.kind === "worktree"
-        )
-          summary.pins = live.pins;
+        if (live?.version === summary.version) summary.source = live.source;
 
         const listed: ReviewApiSummary = {
           ...summary,
@@ -882,7 +885,7 @@ export class ReviewStore {
             : undefined,
           repositoryName: row.repository_name
             ? String(row.repository_name)
-            : (summary.pins?.repositoryId ?? ""),
+            : (summary.source?.pins.repositoryId ?? ""),
           viewedAt: row.viewed_at ? String(row.viewed_at) : null,
           dismissedAt: row.dismissed_at ? String(row.dismissed_at) : null,
         };
@@ -916,8 +919,8 @@ export class ReviewStore {
 
     return reviews.map((review) => ({
       ...review,
-      diffStats: review.pins
-        ? (stats.get(JSON.stringify([review.pins, mode])) ?? null)
+      diffStats: review.source
+        ? (stats.get(JSON.stringify([review.source.pins, mode])) ?? null)
         : null,
     }));
   }
@@ -1168,10 +1171,8 @@ export class ReviewStore {
       let snapshot: Snapshot =
         op.type === "create"
           ? createdSnapshot(id, op, resolvedTarget, fromPullRequest)
-          : structuredClone(previous!);
+          : storedVersion(structuredClone(previous!));
 
-      // Overlay state: a degraded read must not persist unavailability.
-      delete snapshot.sourceUnavailable;
       // Each version describes only its own edit.
       delete snapshot.lastEdit;
 
@@ -1193,7 +1194,7 @@ export class ReviewStore {
       ) {
         const pins =
           resolvedTarget?.pins ??
-          (op.type === "repin" ? op.pins : snapshot.pins);
+          (op.type === "repin" ? op.pins : snapshot.source?.pins);
 
         if (pins) {
           const headRef =
@@ -1226,26 +1227,31 @@ export class ReviewStore {
         case "rename":
           snapshot.title = op.title;
           break;
-        case "set_target":
-          if (snapshot.pins?.repositoryId !== resolvedTarget!.pins.repositoryId)
+        case "set_target": {
+          // Resolved above: a requested target without a resolver already threw.
+          const { pins, target } = resolvedTarget!;
+
+          if (snapshot.source?.pins.repositoryId !== pins.repositoryId)
             setPullRequest(snapshot, null);
           snapshot.staleSources = [];
-          snapshot.target = resolvedTarget!.target;
-          snapshot.pins = resolvedTarget!.pins;
+          snapshot.source = { pins, target };
           break;
+        }
         case "repin":
           setPullRequest(
             snapshot,
             op.pullRequestUrl ??
               (op.pullRequestUrl === null ||
-              snapshot.pins?.repositoryId !== op.pins.repositoryId
+              snapshot.source?.pins.repositoryId !== op.pins.repositoryId
                 ? null
                 : undefined),
           );
 
           snapshot.staleSources = [];
-          snapshot.pins = op.pins;
-          snapshot.target = { kind: "commits", ...op.pins };
+          snapshot.source = {
+            pins: op.pins,
+            target: { kind: "commits", ...op.pins },
+          };
           break;
         case "restore":
           snapshot = this.read(id, op.version);
@@ -1320,11 +1326,19 @@ export class ReviewStore {
       }
 
       if (
-        snapshot.target?.kind === "worktree" &&
+        snapshot.source?.target.kind === "worktree" &&
         op.type !== "restore" &&
         !resolvedTarget
       ) {
-        snapshot = await this.projectLiveSource(snapshot);
+        const { pins } = await this.providers.resolveTarget!(
+          snapshot.source.target,
+        );
+
+        if (JSON.stringify(snapshot.source.pins) !== JSON.stringify(pins))
+          snapshot = await this.projectWorktree(snapshot, {
+            ...snapshot.source,
+            pins,
+          });
       }
 
       // Component shapes were checked at entry (or when merging a field patch).
@@ -1332,11 +1346,12 @@ export class ReviewStore {
       checkReferences(snapshot.document);
 
       if (
-        snapshot.pins &&
+        snapshot.source &&
         (!previous ||
-          JSON.stringify(previous.pins) !== JSON.stringify(snapshot.pins))
+          JSON.stringify(previous.source?.pins) !==
+            JSON.stringify(snapshot.source.pins))
       )
-        await this.providers.validatePins(snapshot.pins);
+        await this.providers.validatePins(snapshot.source.pins);
 
       const warnings = await this.validateExternal(
         snapshot,
@@ -1378,7 +1393,7 @@ export class ReviewStore {
             .prepare(
               "INSERT INTO versions(review_id,version,snapshot) VALUES(?,?,?)",
             )
-            .run(id, snapshot.version, JSON.stringify(snapshot));
+            .run(id, snapshot.version, storedSnapshotJson(snapshot));
         },
         previous
           ? () =>
@@ -1428,7 +1443,7 @@ export class ReviewStore {
 
     return this.providers.resolvePullRequest(op.pullRequestUrl, {
       id: op.repositoryId,
-      preferred: existing && this.read(existing).pins?.repositoryId,
+      preferred: existing && this.read(existing).source?.pins.repositoryId,
     });
   }
   /** Reviews whose PR is this one, newest version first. Summaries only. */
@@ -1455,8 +1470,8 @@ export class ReviewStore {
     const snapshot = this.read(reviewId);
 
     const headMoved =
-      snapshot.pins?.repositoryId !== requested.repositoryId ||
-      snapshot.pins?.head !== requested.head;
+      snapshot.source?.pins.repositoryId !== requested.repositoryId ||
+      snapshot.source?.pins.head !== requested.head;
 
     const ownedBy = this.activity.heldByAnother(reviewId, leaseId);
 
@@ -1477,7 +1492,7 @@ export class ReviewStore {
       note,
       reviewId,
       version: snapshot.version,
-      target: snapshot.target,
+      target: snapshot.source?.target,
       headMoved,
       ...(ownedBy && { ownedBy: "another session" as const }),
       ...(others.length > 0 && { otherReviewIds: others }),
@@ -1639,8 +1654,10 @@ export class ReviewStore {
           reviewId,
           version,
           title: input.title,
-          pins: input.pins,
-          target: { kind: "commits", ...input.pins },
+          source: {
+            pins: input.pins,
+            target: { kind: "commits", ...input.pins },
+          },
           document,
           createdAt: input.createdAt,
         };
@@ -1685,7 +1702,7 @@ export class ReviewStore {
             .prepare(
               "INSERT INTO versions(review_id,version,snapshot) VALUES(?,?,?)",
             )
-            .run(reviewId, snapshot.version, JSON.stringify(snapshot));
+            .run(reviewId, snapshot.version, storedSnapshotJson(snapshot));
 
         if (!existing && attention)
           this.db
@@ -1765,9 +1782,11 @@ export class ReviewStore {
     // current rules reject.
     const pinsChanged =
       previous &&
-      JSON.stringify(previous.pins) !== JSON.stringify(snapshot.pins);
+      JSON.stringify(previous.source?.pins) !==
+        JSON.stringify(snapshot.source?.pins);
 
-    const worktreeMoved = pinsChanged && snapshot.target?.kind === "worktree";
+    const worktreeMoved =
+      pinsChanged && snapshot.source?.target.kind === "worktree";
 
     const retained = references(
       previous?.document ?? [],
@@ -1799,7 +1818,7 @@ export class ReviewStore {
       if ((pinsChanged && !source.pins) || !kept || (peek && !kept.peek))
         checks.push(
           this.providers
-            .validateSource(anchorPins(source, snapshot.pins), source, {
+            .validateSource(anchorPins(source, snapshot.source?.pins), source, {
               peek,
             })
             .then(
@@ -1827,7 +1846,7 @@ export class ReviewStore {
       if (pinsChanged || !retained.resources.has(key))
         checks.push(
           this.providers
-            .validateResource(snapshot.pins, block)
+            .validateResource(snapshot.source?.pins, block)
             .catch((error) => {
               if (
                 (!repin && !(worktreeMoved && retained.resources.has(key))) ||
@@ -1845,8 +1864,70 @@ export class ReviewStore {
 }
 
 /** Lens writes need the lenses lease; every other write needs the document's. */
+/** What a live read's version stored: a write starts from here. */
+function storedVersion({ live: _live, ...snapshot }: LiveSnapshot): Snapshot {
+  return snapshot;
+}
+
 function scopeOf(operation: { type: string }): LeaseScope {
   return operation.type === "lens" ? "lenses" : "document";
+}
+
+/** A `versions` row keeps `pins` and `target` as the separate keys they have
+ * always been. Rows from before targets stored pins alone: a commits target. */
+type StoredSnapshotRow = Omit<Snapshot, "source"> & {
+  pins?: Pins;
+  target?: ReviewTarget;
+};
+
+function liftStoredSource<T extends Pick<StoredSnapshotRow, "pins" | "target">>(
+  row: T,
+): Omit<T, "pins" | "target"> & Pick<Snapshot, "source"> {
+  const { pins, target } = row;
+
+  // The source takes the place of the pins key, so the row's order is kept.
+  return Object.fromEntries(
+    Object.entries(row).flatMap(([key, value]): [string, unknown][] =>
+      key === "target"
+        ? []
+        : key === "pins" && pins
+          ? [
+              [
+                "source",
+                {
+                  pins,
+                  target: target ?? {
+                    kind: "commits",
+                    repositoryId: pins.repositoryId,
+                    base: pins.base,
+                    head: pins.head,
+                  },
+                },
+              ],
+            ]
+          : [[key, value]],
+    ),
+  ) as Omit<T, "pins" | "target"> & Pick<Snapshot, "source">;
+}
+
+function parseStoredSnapshot(text: string): Snapshot {
+  // SAFETY: versions contains only snapshots validated by execute before committing.
+  return liftStoredSource(JSON.parse(text) as StoredSnapshotRow);
+}
+
+function storedSnapshotJson(snapshot: Snapshot): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.entries(snapshot).flatMap(([key, value]): [string, unknown][] =>
+        key === "source" && snapshot.source
+          ? [
+              ["pins", snapshot.source.pins],
+              ["target", snapshot.source.target],
+            ]
+          : [[key, value]],
+      ),
+    ),
+  );
 }
 
 /** A new document's first version, before its initial content. Field order
@@ -1868,14 +1949,15 @@ function createdSnapshot(
     };
 
   const title = op.source === "pull-request" ? (op.title ?? pullRequest!.title) : op.title;
-  const pins = op.source === "pins" ? op.pins : resolved!.pins;
 
   return {
     reviewId: id,
     version: 0,
     title,
-    pins,
-    target: op.source === "pins" ? { kind: "commits", ...pins } : resolved!.target,
+    source:
+      op.source === "pins"
+        ? { pins: op.pins, target: { kind: "commits", ...op.pins } }
+        : { pins: resolved!.pins, target: resolved!.target },
     document: [],
     createdAt: "",
   };

@@ -84,6 +84,7 @@ import {
   type ResolvedPullRequest,
   ReviewStore,
   type Snapshot,
+  type SnapshotSource,
 } from "./store.ts";
 import { traceSchema } from "../../../../../../shared/vendor/review/src/review-api/trace-schema.ts";
 import { ReviewWorkspaces } from "../../../../stubs/workspaces.ts";
@@ -163,8 +164,8 @@ export class LocalReviewData {
   }
 
   currentEnvironmentIssues(snapshot: Snapshot) {
-    if (snapshot.target?.kind !== "commits" || !snapshot.pins) return [];
-    const pins = snapshot.pins;
+    if (snapshot.source?.target.kind !== "commits") return [];
+    const { pins } = snapshot.source;
 
     return this.workspaces.list(snapshot.reviewId).flatMap((environment) => {
       const side =
@@ -183,11 +184,11 @@ export class LocalReviewData {
   async environmentIssues(snapshot: Snapshot, retryFailed = false) {
     const issues: { side: "base" | "head"; message: string }[] = [];
 
-    if (!snapshot.pins) return issues;
+    if (!snapshot.source) return issues;
+    const { pins, target } = snapshot.source;
 
     const sides: ("base" | "head")[] =
-      snapshot.target?.kind === "commits" &&
-      snapshot.pins.base !== snapshot.pins.head
+      target.kind === "commits" && pins.base !== pins.head
         ? ["head", "base"]
         : ["head"];
 
@@ -230,8 +231,8 @@ export class LocalReviewData {
   ): Promise<ReviewLanguageEnvironment> {
     // A reference with its own pins borrows that repository's registered
     // checkout, as live worktree targets do; no pinned checkout is prepared.
-    if (!anchor && snapshot.target?.kind === "commits" && snapshot.pins) {
-      const pins = await this.comparison(snapshot.pins, commit);
+    if (!anchor && snapshot.source?.target.kind === "commits") {
+      const pins = await this.comparison(snapshot.source.pins, commit);
 
       const environment = await this.workspaces.source(
         snapshot.reviewId,
@@ -254,7 +255,7 @@ export class LocalReviewData {
     if (commit && !anchor)
       await this.comparison(await this.documentPins(snapshot), commit);
 
-    const repositoryId = anchor?.repositoryId ?? snapshot.pins?.repositoryId;
+    const repositoryId = anchor?.repositoryId ?? snapshot.source?.pins.repositoryId;
 
     if (!repositoryId)
       throw new ReviewInputError(
@@ -630,7 +631,7 @@ export class LocalReviewData {
       if (entry.inspection) keep.add(entry.inspection.revision);
       for (const review of this.store.list())
         for (const version of this.store.history(review.reviewId)) {
-          const saved = this.store.read(review.reviewId, version.version).pins;
+          const saved = this.store.read(review.reviewId, version.version).source?.pins;
           if (saved?.repositoryId === repositoryId && saved.worktreeRevision)
             keep.add(saved.worktreeRevision);
         }
@@ -781,9 +782,8 @@ export class LocalReviewData {
 
     return repository;
   }
-  async projectSource(snapshot: Snapshot, pins: Pins): Promise<Snapshot> {
-    const projected: Snapshot = { ...snapshot, pins, staleSources: [] };
-    delete projected.sourceUnavailable;
+  async projectSource(snapshot: Snapshot, source: SnapshotSource): Promise<Snapshot> {
+    const projected: Snapshot = { ...snapshot, source, staleSources: [] };
 
     // Live references retain their authored coordinates. Only diagnose ranges
     // that no longer exist; the author decides how to update changed source.
@@ -791,7 +791,7 @@ export class LocalReviewData {
       tolerant: true,
     })) {
       try {
-        await this.quote(anchorPins(reference.source, pins), reference.source);
+        await this.quote(anchorPins(reference.source, source.pins), reference.source);
       } catch (error) {
         if (!(error instanceof ReviewInputError)) throw error;
         projected.staleSources!.push(reference.id);
@@ -803,26 +803,27 @@ export class LocalReviewData {
   /** Throws 404 when the checkout behind the snapshot is gone. Undefined
    * for a document without default pins. */
   async sourcePins(snapshot: Snapshot): Promise<Pins | undefined> {
-    if (!snapshot.pins) return undefined;
+    if (!snapshot.source) return undefined;
 
-    if (!(await exists(this.store.repositoryPath(snapshot.pins.repositoryId))))
+    if (!(await exists(this.store.repositoryPath(snapshot.source.pins.repositoryId))))
       throw unavailableCheckout();
 
-    return snapshot.pins;
+    return snapshot.source.pins;
   }
   async sourceAtGeneration(snapshot: Snapshot, generation: string): Promise<Snapshot> {
-    if (snapshot.target?.kind !== "worktree" || !snapshot.pins)
+    if (snapshot.source?.target.kind !== "worktree")
       throw new ReviewInputError("This document has no working source generation.", 409);
-    const vcs = await this.vcs(snapshot.pins.repositoryId);
+    const { pins, target } = snapshot.source;
+    const vcs = await this.vcs(pins.repositoryId);
     if (!vcs) throw unavailableCheckout();
     let head: string | null;
     try {
-      head = await retainedWorktreeHead(snapshot.pins.repositoryId, generation, vcs);
+      head = await retainedWorktreeHead(pins.repositoryId, generation, vcs);
     } catch (error) {
       if (!(error instanceof ReviewInputError) || error.status !== 404) throw error;
       throw new ReviewInputError("The selected working source generation has expired. Refresh the Whiteboard source.", 409);
     }
-    return { ...snapshot, pins: { ...snapshot.pins, head: head ?? snapshot.pins.head, base: snapshot.target.base ?? head ?? snapshot.pins.base, worktreeRevision: generation } };
+    return { ...snapshot, source: { target, pins: { ...pins, head: head ?? pins.head, base: target.base ?? head ?? pins.base, worktreeRevision: generation } } };
   }
   /** Capture a label only when its ref still resolves to these exact pins. */
   async headBranch(pins: Pins, headRef?: string): Promise<string | undefined> {

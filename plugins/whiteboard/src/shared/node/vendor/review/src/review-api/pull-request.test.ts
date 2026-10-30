@@ -249,16 +249,18 @@ describe("creating a review from a pull request URL alone", () => {
     expect(created).toMatchObject({ created: true });
     expect(snapshot).toMatchObject({
       title: "Add widgets",
-      pins: { repositoryId, base: fork, head: upstreamHead() },
-      target: {
-        kind: "commits",
-        repositoryId,
-        base: fork,
-        head: upstreamHead(),
+      source: {
+        pins: { repositoryId, base: fork, head: upstreamHead() },
+        target: {
+          kind: "commits",
+          repositoryId,
+          base: fork,
+          head: upstreamHead(),
+        },
       },
       origin: { pullRequestUrl: url, pullRequestNumber: 7 },
     });
-    expect(await local.data.changes(snapshot.pins!, "feature.ts")).toContain(
+    expect(await local.data.changes(snapshot.source!.pins, "feature.ts")).toContain(
       "+export const feature = 1;",
     );
     expect(userRefs(path.join(checkout, ".git"))).toBe(before);
@@ -304,7 +306,7 @@ describe("creating a review from a pull request URL alone", () => {
 
     const { reviewId } = await createFromUrl();
 
-    expect(local.store.read(reviewId).pins).toMatchObject({
+    expect(local.store.read(reviewId).source?.pins).toMatchObject({
       base: fork,
       head: upstreamHead(),
     });
@@ -320,7 +322,7 @@ describe("creating a review from a pull request URL alone", () => {
 
     const { reviewId } = await createFromUrl();
 
-    expect(local.store.read(reviewId).pins).toMatchObject({
+    expect(local.store.read(reviewId).source?.pins).toMatchObject({
       base: fork,
       head: upstreamHead(),
     });
@@ -355,7 +357,7 @@ describe("creating a review from a pull request URL alone", () => {
     expect(ghCalls).toBe(0);
     expect(local.store.read(reviewId)).toMatchObject({
       title: "Mine",
-      pins: { base: head, head },
+      source: { pins: { base: head, head } },
     });
   });
 
@@ -377,7 +379,7 @@ describe("creating a review from a pull request URL alone", () => {
 
       const { reviewId } = await createFromUrl();
 
-      const pins = local.store.read(reviewId).pins!;
+      const pins = local.store.read(reviewId).source!.pins;
       expect(pins).toMatchObject({
         repositoryId,
         base: fork,

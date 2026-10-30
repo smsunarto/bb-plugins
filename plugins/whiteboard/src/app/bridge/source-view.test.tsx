@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { Snapshot } from "../../server/lib/vendor/review/src/review-api/store.ts";
+import type { LiveSnapshot } from "../../server/lib/vendor/review/src/review-api/store.ts";
 import { ReviewApiClient } from "../../shared/vendor/review/src/review-api/client.ts";
 import { ApiCanvas } from "../vendor/review/app/src/api-canvas.tsx";
 import { createDocumentLoader } from "../vendor/review/app/src/api-document.tsx";
@@ -15,18 +15,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const snapshot: Snapshot = {
+const snapshot: LiveSnapshot = {
   reviewId: "test-session",
   version: 0,
   title: "Order",
-  target: { kind: "worktree", repositoryId: "r" },
-  pins: { repositoryId: "r", base: "b", head: "h", worktreeRevision: "dirty-one" },
+  source: {
+    target: { kind: "worktree", repositoryId: "r" },
+    pins: { repositoryId: "r", base: "b", head: "h", worktreeRevision: "dirty-one" },
+  },
   document: [],
   createdAt: "2026-09-17",
+  live: { kind: "available", unavailableAnchors: [] },
 };
 
 it("publishes the latest authored source version when pins do not change", async () => {
-  type FollowSnapshot = Snapshot & { activity: { workingCount: number; expiresAt: null } };
+  type FollowSnapshot = LiveSnapshot & { activity: { workingCount: number; expiresAt: null } };
   let push: ((value: FollowSnapshot) => Promise<void>) | undefined;
   vi.spyOn(ReviewApiClient.prototype, "follow").mockImplementation(async (_id, signal, onValue) => {
     push = async (value) => {

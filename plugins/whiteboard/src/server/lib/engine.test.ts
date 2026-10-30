@@ -460,7 +460,7 @@ test("RPC live-file targets use the repository host and keep explicit/historical
       sessionId: live.reviewId,
       path: "src/a.ts",
       version: selected.version,
-      generation: selected.pins.worktreeRevision,
+      generation: selected.source.pins.worktreeRevision,
     }),
   ).toEqual({ target: null });
 });
@@ -872,8 +872,8 @@ test.skipIf(!HAS_DIFFR)(
     expect(created.status).toBe(200);
     const id = created.body.reviewId;
     const saved = (await get(`/${id}?full=true&version=0`)).body;
-    expect(saved.pins.base).toBe(repo.head);
-    expect(saved.pins.head).toBe(repo.head);
+    expect(saved.source.pins.base).toBe(repo.head);
+    expect(saved.source.pins.head).toBe(repo.head);
     expect((await get(`/${id}/diff?format=files`)).body).toEqual([
       { path: "note.ts", status: "added", additions: 1, deletions: 0 },
       { path: "order.ts", status: "modified", additions: 1, deletions: 1 },
@@ -946,13 +946,13 @@ test.skipIf(!HAS_DIFFR)(
       expect(
         (
           await get(
-            `/${id}/file?side=head&file=order.ts&version=0&generation=${previous.pins.worktreeRevision}`,
+            `/${id}/file?side=head&file=order.ts&version=0&generation=${previous.source.pins.worktreeRevision}`,
           )
         ).body.text,
       ).toContain(revision === 2 ? "processing" : `revision ${revision - 1}`);
     }
     const current = (await get(`/${id}?full=true`)).body;
-    expect(current.pins.worktreeRevision).not.toBe(saved.pins.worktreeRevision);
+    expect(current.source.pins.worktreeRevision).not.toBe(saved.source.pins.worktreeRevision);
     expect((await get(`/${id}/file?side=head&file=order.ts&version=0`)).body).toMatchObject({
       text: 'export const status = "processing";\n',
     });
@@ -962,14 +962,14 @@ test.skipIf(!HAS_DIFFR)(
     expect(
       (
         await get(
-          `/${id}/file?side=head&file=order.ts&version=1&generation=${current.pins.worktreeRevision}`,
+          `/${id}/file?side=head&file=order.ts&version=1&generation=${current.source.pins.worktreeRevision}`,
         )
       ).body.text,
     ).toContain("revision 5");
     expect(
       (
         await get(
-          `/${id}/file?side=head&file=order.ts&version=0&generation=${current.pins.worktreeRevision}`,
+          `/${id}/file?side=head&file=order.ts&version=0&generation=${current.source.pins.worktreeRevision}`,
         )
       ).body,
     ).toMatchObject({
@@ -981,7 +981,7 @@ test.skipIf(!HAS_DIFFR)(
         sessionId: id,
         path: "order.ts",
         version: 1,
-        generation: current.pins.worktreeRevision,
+        generation: current.source.pins.worktreeRevision,
       }),
     ).toEqual({
       target: { kind: "host", hostId: IN_PROCESS_HOST_ID, path: `${repo.root}/order.ts` },
@@ -998,7 +998,7 @@ test.skipIf(!HAS_DIFFR)(
         sessionId: id,
         path: "order.ts",
         version: 0,
-        generation: saved.pins.worktreeRevision,
+        generation: saved.source.pins.worktreeRevision,
       }),
     ).toEqual({ target: null });
     expect((await get(`/${id}/progress?version=0`)).body.files).toEqual(progress.files);

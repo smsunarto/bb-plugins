@@ -16,7 +16,7 @@ import {
 
 import type { ActivitySnapshot } from "../../../../../server/lib/vendor/review/src/review-api/activity.ts";
 import { ReviewApiClient, ReviewApiError } from "../../../../../shared/vendor/review/src/review-api/client.ts";
-import type { Snapshot } from "../../../../../server/lib/vendor/review/src/review-api/store.ts";
+import type { LiveSnapshot } from "../../../../../server/lib/vendor/review/src/review-api/store.ts";
 import {
   ApiDocument,
   type ApiDocumentData,
@@ -61,7 +61,7 @@ function DocumentBody() {
   return (
     <ReviewDocumentBoundary
       session={session}
-      revision={`${data.snapshot.reviewId}:${data.snapshot.version}:${data.snapshot.pins?.worktreeRevision ?? ""}`}
+      revision={`${data.snapshot.reviewId}:${data.snapshot.version}:${data.snapshot.source?.pins.worktreeRevision ?? ""}`}
       onError={(_revision, error) =>
         reportReviewDocumentRenderError(session, error)
       }
@@ -109,10 +109,10 @@ export function ApiCanvas({
     const cursorMemory: CursorMemory = {};
     const lensMemory: CursorMemory = {};
 
-    const show = async (snapshot: Snapshot) => {
+    const show = async (snapshot: LiveSnapshot) => {
       const next = await loader.load(
         snapshot,
-        version === undefined ? snapshot.pins?.worktreeRevision : undefined,
+        version === undefined ? snapshot.source?.pins.worktreeRevision : undefined,
       );
 
       if (abort.signal.aborted) return;
@@ -120,7 +120,7 @@ export function ApiCanvas({
       // Native source widgets must use these pins on their first mount.
       const key = JSON.stringify([
         snapshot.reviewId,
-        snapshot.pins,
+        snapshot.source?.pins,
         version === undefined ? "current" : version,
       ]);
 
@@ -152,9 +152,17 @@ export function ApiCanvas({
         }
       }
 
+      // The stream repeats a version whenever activity moves; the document
+      // reloads only when what it reads from changed.
+      const shownKey = (snapshot: LiveSnapshot) =>
+        JSON.stringify([
+          snapshot.version,
+          snapshot.source?.pins.worktreeRevision,
+          snapshot.live,
+        ]);
       let shownVersion: string | undefined;
       await client.follow<
-        Snapshot & { activity: ActivitySnapshot; coverageRevision?: number }
+        LiveSnapshot & { activity: ActivitySnapshot; coverageRevision?: number }
       >(
         content.reviewId,
         abort.signal,
@@ -168,10 +176,7 @@ export function ApiCanvas({
 
           if (version !== undefined) return;
 
-          if (
-            shownVersion ===
-            `${snapshot.version}:${snapshot.pins?.worktreeRevision ?? ""}:${snapshot.sourceUnavailable ?? false}`
-          ) {
+          if (shownVersion === shownKey(snapshot)) {
             setError(undefined);
 
             return;
@@ -179,7 +184,7 @@ export function ApiCanvas({
 
           try {
             await show(snapshot);
-            shownVersion = `${snapshot.version}:${snapshot.pins?.worktreeRevision ?? ""}:${snapshot.sourceUnavailable ?? false}`;
+            shownVersion = shownKey(snapshot);
           } catch (cause) {
             // A failed resource or source fetch is a document problem. The
             // stream and the activity signal are still healthy, so do not
@@ -283,8 +288,8 @@ export function ApiCanvas({
       ...baseSession,
       review: {
         kind: snapshot.kind,
-        pins: snapshot.pins
-          ? { base: snapshot.pins.base, head: snapshot.pins.head }
+        pins: snapshot.source
+          ? { base: snapshot.source.pins.base, head: snapshot.source.pins.head }
           : undefined,
         historicalRevision: version === undefined ? null : String(version),
         updatedAtMs: Date.parse(snapshot.createdAt),
@@ -370,7 +375,7 @@ export function ApiCanvas({
             client={client}
             snapshot={data.snapshot}
             coverageRevision={coverageRevision}
-            sourceGeneration={version === undefined ? data.snapshot.pins?.worktreeRevision : undefined}
+            sourceGeneration={version === undefined ? data.snapshot.source?.pins.worktreeRevision : undefined}
             structuralDiffEnabled={content.structuralDiffEnabled}
           >
             <TutorialProvider tutorial={content.tutorial}>
@@ -453,14 +458,12 @@ const CanvasDocument = memo(function CanvasDocument({
       softwareMapEnabled={softwareMapEnabled && data.maps.size > 0}
       // Worktree source enables Diff independently of an actual commit range.
       range={{
-        sourceUnavailable: snapshot.sourceUnavailable
-          ? "Local checkout unavailable."
-          : undefined,
-        baseRef: snapshot.pins?.base ?? "",
-        headRef: snapshot.pins?.head ?? "",
-        baseCommit: snapshot.pins?.base ?? "",
-        headCommit: snapshot.pins?.head ?? "",
-        hasWorktreeSource: Boolean(snapshot.pins?.worktreeRevision),
+        live: snapshot.live,
+        target: snapshot.source?.target,
+        baseRef: snapshot.source?.pins.base ?? "",
+        headRef: snapshot.source?.pins.head ?? "",
+        baseCommit: snapshot.source?.pins.base ?? "",
+        headCommit: snapshot.source?.pins.head ?? "",
       }}
       commits={data.commits}
       findHost={findHost}

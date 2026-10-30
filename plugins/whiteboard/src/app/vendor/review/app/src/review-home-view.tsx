@@ -921,7 +921,7 @@ function repositoryLabel(review: ReviewApiSummary): string {
 
   return (
     review.repositoryName ??
-    worktreeLabel(review.repositoryPath ?? review.pins?.repositoryId ?? "")
+    worktreeLabel(review.repositoryPath ?? review.source?.pins.repositoryId ?? "")
   );
 }
 

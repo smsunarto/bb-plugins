@@ -117,7 +117,7 @@ describe("snapshot authoring", () => {
     const bound = await store.execute(rebinding);
     expect(await store.execute(rebinding)).toEqual(bound);
     expect(store.read(reviewId).document).toEqual(authored.document);
-    expect(store.read(reviewId).pins).toEqual(pins);
+    expect(store.read(reviewId).source?.pins).toEqual(pins);
     expect(store.read(reviewId).origin?.pullRequestNumber).toBe(311);
     expect(
       store.read(reviewId, authored.version).origin?.pullRequestNumber,
@@ -420,12 +420,12 @@ describe("snapshot authoring", () => {
     );
     expect(store.read(first.reviewId)).toMatchObject({
       document: beforeRepin.document,
-      pins: { head: "new-head" },
+      source: { pins: { head: "new-head" } },
     });
     expect(store.read(second.reviewId)).toMatchObject({
       document: [],
       version: 0,
-      pins,
+      source: { pins },
     });
     expect(store.list()).toHaveLength(2);
   });
@@ -440,7 +440,8 @@ describe("snapshot authoring", () => {
       type: "insert",
       content: { type: "software_map", mapVersionId: "map" },
     });
-    const original = store.read(reviewId);
+    // The stored version, which a repin retains as it was written.
+    const original = store.read(reviewId, store.read(reviewId).version);
     vi.mocked(providers.validateSource).mockRejectedValue(
       new ReviewInputError("File is unavailable at the pinned commit.", 404),
     );
@@ -1303,8 +1304,7 @@ describe("snapshot authoring", () => {
     await store.ensureScratchpad();
     const pad = store.read(SCRATCHPAD_ID);
     expect(pad).toMatchObject({ kind: "scratchpad", title: "Scratchpad" });
-    expect(pad.pins).toBeUndefined();
-    expect(pad.target).toBeUndefined();
+    expect(pad.source).toBeUndefined();
     expect(store.list()).toMatchObject([
       { reviewId: SCRATCHPAD_ID, kind: "scratchpad" },
     ]);
@@ -1537,7 +1537,7 @@ describe("create for a pull request", () => {
 
     expect(moved).toMatchObject({ created: false, reviewId, headMoved: true });
     expect(moved.note).toMatch(/review_set_target/);
-    expect(store.read(reviewId).pins).toEqual(pins);
+    expect(store.read(reviewId).source?.pins).toEqual(pins);
   });
 
   it("compares a requested target by the head it resolves to", async () => {
@@ -1702,7 +1702,7 @@ describe("create for a pull request", () => {
 
     expect(store.read(untitled.reviewId)).toMatchObject({
       title: "From GitHub",
-      pins,
+      source: { pins },
       origin: { pullRequestUrl: url },
     });
     expect(store.read(titled.reviewId).title).toBe("Mine");

@@ -6,7 +6,7 @@ import {
 } from "../../trace-protocol/src/index.ts";
 import { z } from "zod";
 
-import type { ReviewApiSummary } from "./review-api-client.ts";
+import type { ReviewApiSummary, ReviewApiTarget } from "./review-api-client.ts";
 
 // Version 3: the desktop serves prebuilt revisions instead of building them.
 // (Version 2 added the bundled-CLI discovery fields.)
@@ -559,12 +559,12 @@ export interface ReviewSourceView {
 export function resolveReviewSourceView(snapshot: {
   reviewId: string;
   version: number;
-  pins?: { worktreeRevision?: string };
+  source?: { pins: { worktreeRevision?: string } };
 }): ReviewSourceView {
   return Object.freeze({
     reviewId: snapshot.reviewId,
     version: snapshot.version,
-    generation: snapshot.pins?.worktreeRevision,
+    generation: snapshot.source?.pins.worktreeRevision,
   });
 }
 
@@ -696,10 +696,18 @@ export type ReviewCanvasContent =
       settings: ReviewCanvasSettingsContent;
     };
 
+/** How a document's source reads now, beside what its version stored. Never
+ * persisted: a write starts from the stored version alone. */
+export type ReviewLiveSource =
+  /** References whose own checkout is gone are listed; the rest resolve. */
+  | { kind: "available"; unavailableAnchors: string[] }
+  /** The document's own checkout is gone; retained source still renders. */
+  | { kind: "unavailable" };
+
 export interface ReviewCanvasRange {
-  sourceUnavailable?: string;
-  /** Worktree snapshots can differ even when their commit pins are equal. */
-  hasWorktreeSource?: boolean;
+  live: ReviewLiveSource;
+  /** Worktree source enables Diff independently of an actual commit range. */
+  target?: ReviewApiTarget;
   baseRef: string;
   headRef: string;
   baseCommit: string;

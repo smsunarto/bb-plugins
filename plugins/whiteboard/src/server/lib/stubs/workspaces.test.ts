@@ -52,7 +52,7 @@ afterEach(async () => {
 });
 
 it("reports no environment issues for both sides of a commits target", async () => {
-  expect(store.read(reviewId).target).toEqual({
+  expect(store.read(reviewId).source?.target).toEqual({
     kind: "commits",
     repositoryId: "repo",
     base: "base-commit",

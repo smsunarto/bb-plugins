@@ -89,7 +89,7 @@ it("refreshes dirty worktree source at the same authored version and retains his
     expect(first.version).toBe(0);
     expect(
       await reader.file(
-        { reviewId, version: 0, generation: first.pins.worktreeRevision },
+        { reviewId, version: 0, generation: first.source.pins.worktreeRevision },
         "head",
         "src/a.ts",
       ),
@@ -99,12 +99,12 @@ it("refreshes dirty worktree source at the same authored version and retains his
     await vi.waitFor(
       async () => {
         next = (await request(`/${reviewId}?full=true`)).body;
-        expect(next.pins.worktreeRevision).not.toBe(first.pins.worktreeRevision);
+        expect(next.source.pins.worktreeRevision).not.toBe(first.source.pins.worktreeRevision);
       },
       { timeout: 5_000 },
     );
     expect(next.version).toBe(0);
-    const current = { reviewId, version: 0, generation: next.pins.worktreeRevision };
+    const current = { reviewId, version: 0, generation: next.source.pins.worktreeRevision };
     expect(await reader.file(current, "head", "src/a.ts")).toMatchObject({
       text: "export const state = 'processing';\nexport const count = 2;\n",
       localPath: `${repo.root}/src/a.ts`,
@@ -167,7 +167,7 @@ it.each(["clean filter", "CRLF"])(
       const current = {
         reviewId,
         version: snapshot.version,
-        generation: snapshot.pins.worktreeRevision,
+        generation: snapshot.source.pins.worktreeRevision,
       };
       const files = await reader.files(current);
       expect(files).toEqual([{ path: "src/a.ts", status: "modified", additions: 1, deletions: 1 }]);

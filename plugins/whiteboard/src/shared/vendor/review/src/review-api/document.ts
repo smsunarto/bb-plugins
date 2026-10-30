@@ -68,8 +68,9 @@ export const pinsSchema = z.strictObject({
   head: label,
 });
 
-/** Source identity retained internally for a saved worktree generation. */
-/** worktreeRevision is a refresh token, never an address for stored source. */
+/** worktreeRevision names the retained working-tree generation a worktree
+ * document's version reads at; commit pins have none. Commands never carry
+ * it: the schema above is what they accept. */
 export type Pins = z.infer<typeof pinsSchema> & { worktreeRevision?: string };
 
 export { sourcePinsSchema };

@@ -11,7 +11,7 @@ import {
   selectionReferences,
 } from "../../../../../shared/vendor/review/src/review-api/document.ts";
 import type { LocalReviewData } from "../../../../../server/lib/vendor/review/src/review-api/local-data.ts";
-import type { Snapshot } from "../../../../../server/lib/vendor/review/src/review-api/store.ts";
+import type { LiveSnapshot } from "../../../../../server/lib/vendor/review/src/review-api/store.ts";
 import type { DocumentPeekableAnchor } from "../../../../../shared/vendor/review/src/review-document-data.ts";
 import type { NormalizedSoftwareModel } from "../../../../../shared/vendor/review/src/software-map-model.ts";
 import { markdownHasTitle } from "../../../../markdown/agent-markdown.tsx";
@@ -41,8 +41,18 @@ interface Trace {
   events: { id: string; role: string; text: string }[];
 }
 
+/** A reference the canvas does not resolve: its authored range no longer
+ * exists, or its own checkout is gone for now. */
+function staleReference(snapshot: LiveSnapshot, id: string) {
+  return (
+    snapshot.staleSources?.includes(id) === true ||
+    (snapshot.live.kind === "available" &&
+      snapshot.live.unavailableAnchors.includes(id))
+  );
+}
+
 export interface ApiDocumentData {
-  snapshot: Snapshot;
+  snapshot: LiveSnapshot;
   headings: ApiHeadingIds;
   commits: ReviewCommitSummary[];
   anchors: Map<string, DocumentPeekableAnchor>;
@@ -86,14 +96,14 @@ export function createDocumentLoader(client: ReviewApiClient) {
       for (const url of urls) URL.revokeObjectURL(url);
       cache.clear();
     },
-    async load(snapshot: Snapshot, generation?: string): Promise<ApiDocumentData> {
+    async load(snapshot: LiveSnapshot, generation?: string): Promise<ApiDocumentData> {
       const data: ApiDocumentData = {
         snapshot,
         headings: apiHeadingIds(snapshot.document),
         commits:
-          snapshot.sourceUnavailable || !snapshot.pins
+          snapshot.live.kind === "unavailable" || !snapshot.source
             ? []
-            : await once(`commits:${JSON.stringify(snapshot.pins)}`, () =>
+            : await once(`commits:${JSON.stringify(snapshot.source.pins)}`, () =>
                 client.read<ReviewCommitSummary[]>(
                   `/${snapshot.reviewId}/commits?version=${snapshot.version}`,
                 ),
@@ -108,7 +118,7 @@ export function createDocumentLoader(client: ReviewApiClient) {
         snapshot.document,
         { tolerant: true },
       )) {
-        if (snapshot.staleSources?.includes(id)) continue;
+        if (staleReference(snapshot, id)) continue;
         data.anchors.set(
           id,
           sourceAnchor(
@@ -152,7 +162,7 @@ export function createDocumentLoader(client: ReviewApiClient) {
 
           if (node.type === "software_map") {
             const model = await once(
-              `map:${node.mapVersionId}:${JSON.stringify(snapshot.pins ?? null)}:${generation ?? ""}`,
+              `map:${node.mapVersionId}:${JSON.stringify(snapshot.source?.pins ?? null)}:${generation ?? ""}`,
               async () => {
                 const saved = await client.read<
                   Awaited<ReturnType<LocalReviewData["map"]>>
@@ -225,10 +235,10 @@ export function ApiDocument({
       {!hasTitle && !scratchpad && (
         <ReviewDocumentTitle>{data.snapshot.title}</ReviewDocumentTitle>
       )}
-      {(data.snapshot.target?.kind === "worktree" ||
-        data.snapshot.sourceUnavailable) && (
+      {(data.snapshot.source?.target.kind === "worktree" ||
+        data.snapshot.live.kind === "unavailable") && (
         <p className="review-source-context">
-          {data.snapshot.sourceUnavailable
+          {data.snapshot.live.kind === "unavailable"
             ? "Local checkout unavailable. Showing retained source."
             : "Working tree"}
         </p>
@@ -393,7 +403,7 @@ export const DocumentNode = memo(function DocumentNode({
   const stale =
     block.type !== "section" &&
     selectionReferences([block], { tolerant: true }).some((reference) =>
-      data.snapshot.staleSources?.includes(reference.id),
+      staleReference(data.snapshot, reference.id),
     );
 
   return (

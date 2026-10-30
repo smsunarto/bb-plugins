@@ -36,12 +36,12 @@ export function ReviewCommitsView({
   range: import("../../../../../shared/vendor/review-protocol/src/index.ts").ReviewCanvasRange;
   onOpenDiff: OpenCommitDiff;
 }) {
-  if (range.sourceUnavailable) {
+  if (range.live.kind === "unavailable") {
     return (
       <ReviewUnavailable
         role="status"
         title="Commits unavailable"
-        message={range.sourceUnavailable}
+        message="Local checkout unavailable."
       />
     );
   }

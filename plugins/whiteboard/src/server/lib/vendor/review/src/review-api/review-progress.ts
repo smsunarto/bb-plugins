@@ -82,7 +82,7 @@ export async function reviewProgress(
     ? new Map()
     : store.viewedCoverage(snapshot.reviewId);
 
-  const pins = snapshot.pins
+  const pins = snapshot.source
     ? (await data.resolveSource(snapshot)).pins
     : undefined;
 
