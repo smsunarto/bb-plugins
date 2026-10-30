@@ -807,7 +807,7 @@ test("the host owns responsive header placement and no legacy header is register
   const action = app.threadActions.find((entry) => entry.id === "open")!;
   expect(action.placement).toBe("header");
   expect(action.group).toBe("workspace");
-  expect(action.icon).toBe("GitBranch");
+  expect(action.icon).toBe("gitbutler/plugin");
 });
 
 test("the header draws nothing outside a GitButler workspace", async () => {

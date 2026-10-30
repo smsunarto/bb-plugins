@@ -1717,7 +1717,7 @@ export default definePluginApp((app) => {
   app.slots.experimental_threadAction({
     id: "open",
     title: "GitButler",
-    icon: "GitBranch",
+    icon: "gitbutler/plugin",
     group: "workspace",
     order: 10,
     placement: "header",
@@ -1726,7 +1726,7 @@ export default definePluginApp((app) => {
       data?.[thread.id]
         ? {
             label: HEADER_LABEL,
-            icon: "GitBranch",
+            icon: "gitbutler/plugin",
             run: () => {
               experimental_panel.openTab({ tab: GITBUTLER_TAB });
             },
@@ -1736,7 +1736,7 @@ export default definePluginApp((app) => {
   app.slots.experimental_tab({
     ...GITBUTLER_TAB,
     title: "GitButler",
-    icon: "GitBranch",
+    icon: "gitbutler/plugin",
     component: GitButlerApp,
     layout: "flush",
   });

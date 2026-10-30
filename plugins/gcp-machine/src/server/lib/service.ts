@@ -263,7 +263,7 @@ export function createService(bb: BbPluginApi, now = Date.now) {
     bb.experimental_machines.register({
       id: PROVIDER_ID,
       displayName: "GCP Machine",
-      icon: "Server",
+      icon: "./assets/icon.svg",
       ephemeral: false,
       description:
         "Use the configured existing Compute Engine VM; wake on work and stop after one hour idle.",
