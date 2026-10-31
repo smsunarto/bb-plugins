@@ -40,7 +40,6 @@ interface SlimRowProps {
   isUnread: boolean;
   isActive: boolean;
   isNaming?: boolean;
-  compactThreads: boolean;
   projectName: string | null;
   branchName: string | null;
   provider?: ProviderGlyphInfo;
@@ -70,8 +69,7 @@ export const SlimRow = memo(function SlimRow(props: SlimRowProps) {
 });
 
 /**
- * A parked thread: one line instead of a card. Density comes from the user
- * actually parking work, never from the sidebar guessing what still matters.
+ * A parked thread: a muted line whose one action restores it.
  *
  * Same structure as the card — a full-bleed anchor under the restore button,
  * because a `<button>` inside an `<a>` is invalid interactive nesting.
@@ -79,7 +77,6 @@ export const SlimRow = memo(function SlimRow(props: SlimRowProps) {
 const SlimRowBody = memo(function SlimRowBody({
   thread,
   isUnread,
-  compactThreads,
   projectName,
   branchName,
   provider,
@@ -122,12 +119,10 @@ const SlimRowBody = memo(function SlimRowBody({
     if (!isCompactViewport) setMenuOpen(false);
   }, [isCompactViewport]);
 
-  const compact = compactThreads && !isCompactViewport;
   const shortcut = useSidebarThreadShortcut(thread.id);
   const { rowClassName, rowStyle, titleClassName } = slimRowPresentation({
     isCompactViewport,
     isActive,
-    compact,
     isPressing,
     isMenuOpen,
     depth,
@@ -193,7 +188,7 @@ const SlimRowBody = memo(function SlimRowBody({
             projectName={projectName}
             branchName={branchName}
             provider={provider}
-            enabled={compact}
+            enabled={!isCompactViewport}
           >
             {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
              anchor: the shortcut-target contract and modifier-click
@@ -290,13 +285,11 @@ const SlimRowBody = memo(function SlimRowBody({
 function slimRowPresentation({
   isCompactViewport,
   isActive,
-  compact,
   isPressing,
   isMenuOpen,
   depth,
   childCount,
 }: Pick<SlimRowProps, "isCompactViewport" | "isActive" | "depth" | "childCount"> & {
-  compact: boolean;
   isPressing: boolean;
   isMenuOpen: boolean;
 }) {
@@ -309,7 +302,6 @@ function slimRowPresentation({
     rowClassName: cn(
       "group/slim relative flex items-center gap-1.5 rounded-xl px-2.5 text-xs",
       !isCompactViewport && "gtd-thread-row gtd-parked-row",
-      compact && "gtd-compact-row",
       LIST_HOVER_TRANSITION,
       isCompactViewport ? "h-11" : "h-8 rounded-md",
       isActive ? "bg-state-active" : "hover:bg-sidebar-accent",

@@ -4,6 +4,10 @@
 
 ### Minor Changes
 
+- Every thread row is one line. The two-line card is gone, along with the
+  **Compact thread rows** and **Show agent icons** settings it needed. Project,
+  branch and agent show in the row's hover details.
+
 - Choose visible machines from a persistent checkbox menu. Use **Only** to focus
   one machine or **All machines** to reset; open windows stay in sync. New
   machines and threads without a known host remain visible.

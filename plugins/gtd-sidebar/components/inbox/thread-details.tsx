@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactElement } from "react";
+import { useLayoutEffect, useRef, type ReactElement } from "react";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { ProviderGlyph, type ProviderGlyphInfo } from "./provider-glyph";
@@ -64,7 +64,6 @@ export function ThreadDetails({
   provider,
   relation,
   enabled,
-  when = "always",
   children,
 }: {
   thread: PluginSidebarThread;
@@ -73,41 +72,19 @@ export function ThreadDetails({
   provider?: ProviderGlyphInfo;
   relation?: string;
   enabled: boolean;
-  /**
-   * "overflow" opens only while the row's title is clipped: a two-line card
-   * already shows everything else, so a short title gets no tooltip at all.
-   */
-  when?: "always" | "overflow";
   children: ReactElement;
 }) {
   const portalScope = usePortalScopeProps();
-  const [open, setOpen] = useState(false);
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  // Rows show a remote machine only as a globe, so the details name it.
+  const remote = useRemoteMachine(thread.host);
   if (!enabled) return children;
-  const titleClipped = () => {
-    const title = triggerRef.current
-      ?.closest(".gtd-thread-row")
-      ?.querySelector<HTMLElement>(".gtd-thread-title .gtd-fading-text");
-    return title != null && title.scrollWidth > title.clientWidth + 1;
-  };
   return (
-    // No skip-delay: a provider per row only ever skipped for this same row,
-    // and an open refused below never reports a close, so the provider would
-    // open every later hover instantly, even after the title starts to clip.
-    <Tooltip.Provider delayDuration={550} skipDelayDuration={0}>
-      <Tooltip.Root
-        open={open}
-        // Measured at open time, so no row subscribes to its own overflow.
-        // Not read from FadingText's flag: keyboard focus shows Snooze and
-        // Settle, which narrows the title before the observer reports.
-        onOpenChange={(next) => setOpen(next && (when === "always" || titleClipped()))}
-      >
+    <Tooltip.Provider delayDuration={550}>
+      <Tooltip.Root>
         {/* asChild keeps the anchor a direct child of the row, which the
-            row's focus-visible selectors in app.css depend on. Radix types
-            the ref as a button; it lands on that anchor. */}
+            row's focus-visible selectors in app.css depend on. */}
         <Tooltip.Trigger
           asChild
-          ref={triggerRef}
           // Focus opens the details only where it draws the focus ring. A menu
           // handing focus back after a mouse pick would otherwise pin them open
           // beside the row until the next click.
@@ -126,7 +103,9 @@ export function ThreadDetails({
           >
             <div className="font-medium">{thread.displayTitle}</div>
             <div className="mt-1 text-muted-foreground">
-              {[projectName, branchName].filter(Boolean).join(" · ")}
+              {[projectName, branchName, remote ? thread.host?.name : null]
+                .filter(Boolean)
+                .join(" · ")}
             </div>
             {relation ? <div className="mt-1 text-muted-foreground">{relation}</div> : null}
             <div className="mt-1.5 flex items-center gap-1.5 text-muted-foreground">

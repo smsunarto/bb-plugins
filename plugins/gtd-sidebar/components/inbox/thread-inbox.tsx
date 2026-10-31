@@ -149,8 +149,6 @@ function InboxList({
   const visibility = useMachineVisibility(machines);
   // Optional enhancements stay off until the SDK confirms an explicit opt-in.
   const { values: settingValues, isLoading: settingsLoading } = useSettings();
-  const showProviderIcon = settingValues?.showProviderIcon === true;
-  const compactThreads = settingValues?.compactThreads === true;
   const repositoryGroupsEnabled = settingValues?.groupThreadsByProject !== false;
 
   const gitButlerLabels = useGitButlerLabels(threads, settingValues?.gitButlerBranches === true);
@@ -183,7 +181,7 @@ function InboxList({
   const searching = searchQuery.trim().length > 0;
   // An active machine filter keeps its repository header even when only one
   // repository remains. The header is the only visible repository identity on
-  // compact rows, and is useful context when scanning one machine's work.
+  // a row, and is useful context when scanning one machine's work.
   const grouped = repositoryGroupsEnabled && (visibility.active || shouldGroupByProject(shelves));
   const { isGroupCollapsed, toggleGroup } = useCollapsedGroups();
   // A dropped group draws in its new slot before bb's write lands: the order
@@ -332,7 +330,6 @@ function InboxList({
           isUnread={row.isUnread}
           isNaming={namingThreads.has(thread.id)}
           thread={thread}
-          compactThreads={compactThreads}
           projectName={projectNameById.get(thread.projectId) ?? null}
           provider={providerInfoById.get(thread.providerId)}
           branchName={branchName}
@@ -357,8 +354,6 @@ function InboxList({
         thread={thread}
         shelf={shelf}
         provider={providerInfoById.get(thread.providerId)}
-        showProviderIcon={showProviderIcon}
-        compactThreads={compactThreads}
         depth={row.depth}
         parentId={row.parentId}
         parentTitle={row.parentTitle}
@@ -466,7 +461,7 @@ function InboxList({
   const inboxWindow = useInboxWindow({
     layout: windowLayout,
     scrollRef,
-    estimateSize: (item) => estimateInboxItemSize(item, { isCompactViewport, compactThreads }),
+    estimateSize: (item) => estimateInboxItemSize(item, isCompactViewport),
     pinnedThreadIds: [
       activeThreadId,
       focusedRow.focusedThreadId,
@@ -1145,9 +1140,6 @@ function Shelf({
         measureRef={measureRef}
         measureIndex={measureIndex}
       />
-      {/* Cards need a real gap, not a hairline: their own padding is 6px, so a
-          1px seam let two stacked cards read as one block. Slim rows below get
-          less — a single centred line already carries its own air. */}
       {fold === undefined ? (
         children
       ) : (

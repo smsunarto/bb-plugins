@@ -13,10 +13,9 @@ export type ProviderGlyphInfo = Pick<
 /**
  * The agent a thread runs on, drawn with bb's own provider artwork.
  *
- * Always rendered, so the card's third line has a fixed right edge even when a
- * thread has no branch. bb resolves a plugin's icon override, then the served
- * logo, then the agent's glyph, then a fallback, so a provider id bb has never
- * heard of still gets a mark.
+ * bb resolves a plugin's icon override, then the served logo, then the agent's
+ * glyph, then a fallback, so a provider id bb has never heard of still gets a
+ * mark.
  *
  * The record goes in without `strings`, which is where bb reads a brand tint:
  * every glyph takes the same muted colour, so Amp's saturated red does not

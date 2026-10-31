@@ -60,20 +60,6 @@ export default async function plugin(bb: BbPluginApi) {
       description: "Organize each sidebar shelf into project groups.",
       default: true,
     },
-    compactThreads: {
-      type: "boolean",
-      label: "Compact thread rows",
-      description:
-        "Show desktop threads on one line. Subthreads and mobile rows always use compact rows.",
-      default: false,
-    },
-    showProviderIcon: {
-      type: "boolean",
-      label: "Show agent icons",
-      description:
-        "Show icons on two-line cards. Compact rows use tooltips; mobile rows use the long-press menu.",
-      default: false,
-    },
     automaticallyNameThreads: {
       type: "boolean",
       label: "Automatically name threads",

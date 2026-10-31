@@ -145,10 +145,7 @@ export function pinnedRowIndexes(
  * mounted yet. The numbers mirror the stylesheet (app.css, the row
  * components); a mounted item is measured and its real height replaces this.
  */
-export function estimateInboxItemSize(
-  item: InboxWindowItem,
-  { isCompactViewport, compactThreads }: { isCompactViewport: boolean; compactThreads: boolean },
-): number {
+export function estimateInboxItemSize(item: InboxWindowItem, isCompactViewport: boolean): number {
   // Rows and project headers sit 2px below whatever precedes them.
   const gap = 2;
   switch (item.kind) {
@@ -159,8 +156,7 @@ export function estimateInboxItemSize(
     case "row": {
       const slim = item.shelf === "snoozed" || item.shelf === "settled";
       if (isCompactViewport) return (slim ? 44 : 40) + gap;
-      if (slim || compactThreads || item.row.depth > 0) return 32 + gap;
-      return 52 + gap;
+      return 32 + gap;
     }
   }
 }

@@ -31,10 +31,9 @@ import {
   type DispatchRowCommand,
   type ThreadActionPlan,
 } from "./thread-actions";
-import { ProviderGlyph, type ProviderGlyphInfo } from "./provider-glyph";
+import type { ProviderGlyphInfo } from "./provider-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime, rowDescribedBy } from "./status-slot";
 import { FadingText, HostLead, ThreadDetails } from "./thread-details";
-import { useRemoteMachine } from "./machine-appearance";
 import { snoozeUntilTomorrow } from "../../lib/lifecycle";
 import { useIosLongPress } from "../../hooks/use-ios-long-press";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
@@ -51,7 +50,6 @@ interface ThreadCardProps {
   thread: PluginSidebarThread;
   isUnread: boolean;
   shelf: ActiveThreadShelf;
-  compactThreads: boolean;
   depth: number;
   parentId: string | null;
   parentTitle: string | null;
@@ -69,8 +67,6 @@ interface ThreadCardProps {
   isNaming?: boolean;
   /** False while the thread is working or blocked on the user. */
   canPark: boolean;
-  /** The `showProviderIcon` setting, on by default. */
-  showProviderIcon: boolean;
   isCompactViewport: boolean;
   command: DispatchRowCommand;
   /** Sidebar drag state; absent on compact viewports, where there is no drag. */
@@ -122,10 +118,10 @@ export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
 });
 
 /**
- * One thread as a two-line card: title and status, then project, branch and
- * activity. Status stays in the row while section placement answers the larger
- * question: whether the user or the agent can act next. The compact viewport
- * folds the card to its first line.
+ * One thread on one line: title, then activity, PR and status-or-age, with
+ * project, branch and agent in the hover details. Status stays in the row
+ * while section placement answers the larger question: whether the user or
+ * the agent can act next.
  *
  * The row is a positioned container with a full-bleed anchor UNDER the
  * controls, the way bb's own thread row does it: a `<button>` inside an `<a>`
@@ -135,7 +131,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
   thread,
   isUnread,
   shelf,
-  compactThreads,
   depth,
   parentId,
   parentTitle,
@@ -151,7 +146,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
   isActive,
   isNaming = false,
   canPark,
-  showProviderIcon,
   isCompactViewport,
   command,
   drag,
@@ -206,7 +200,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
     [setNestRef],
   );
 
-  const compact = !isCompactViewport && (compactThreads || depth > 0);
   const shortcut = useSidebarThreadShortcut(thread.id);
   const showActions = shelf === "nextAction" || canPark;
   const relation = parentTitle
@@ -214,8 +207,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
     : childCount > 0
       ? `${childCount} subthreads`
       : undefined;
-  // The metadata line starts under the title, past the globe HostLead draws.
-  const remote = useRemoteMachine(thread.host);
   const unreadId = useId();
   const statusId = useId();
   const describedBy = rowDescribedBy(statusId, unreadId, {
@@ -227,7 +218,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
     depth,
     childCount,
     isCompactViewport,
-    compact,
     isActive,
     isOpenInSplit,
     isPressing,
@@ -302,7 +292,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
             provider={provider}
             relation={relation}
             showDetails={!isCompactViewport}
-            detailsWhen={compact ? "always" : "overflow"}
             shortcut={shortcut}
             threadId={thread.id}
             title={titleText}
@@ -349,8 +338,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
           <div
             className={cn(
               "pointer-events-none relative flex items-center gap-1.5",
-              summaryHeight(isCompactViewport, compact),
-              !isCompactViewport && "gtd-summary",
+              isCompactViewport ? "h-10" : "gtd-summary h-8",
             )}
           >
             {isCompactViewport ? (
@@ -362,7 +350,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
                 isUnread={isUnread}
                 shortcut={shortcut}
                 plan={plan}
-                compact={compact}
                 showActions={showActions}
                 canPark={canPark}
                 activity={thread.activity}
@@ -371,17 +358,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
               />
             )}
           </div>
-          {isCompactViewport || compact ? null : (
-            <ThreadMetadata
-              thread={thread}
-              remote={remote}
-              provider={provider}
-              projectName={projectName}
-              branchName={branchName}
-              pullRequest={pullRequest}
-              showProviderIcon={showProviderIcon}
-            />
-          )}
         </div>
       </div>
     </RowContextMenu>
@@ -392,13 +368,11 @@ function threadCardPresentation({
   depth,
   childCount,
   isCompactViewport,
-  compact,
   isActive,
   isOpenInSplit,
   isPressing,
   isMenuOpen,
 }: Pick<ThreadCardProps, "depth" | "childCount" | "isCompactViewport" | "isActive"> & {
-  compact: boolean;
   isOpenInSplit: boolean;
   isPressing: boolean;
   isMenuOpen: boolean;
@@ -411,7 +385,6 @@ function threadCardPresentation({
     className: cn(
       "group/card relative rounded-xl px-2.5",
       !isCompactViewport && "gtd-thread-row",
-      compact && "gtd-compact-row",
       LIST_HOVER_TRANSITION,
       isCompactViewport ? "min-h-10 py-0" : "rounded-md",
       isActive ? "bg-state-active" : "hover:bg-sidebar-accent",
@@ -435,11 +408,6 @@ export function compactRowPaddingLeft(depth: number, childCount: number): string
   return depth > 0 || childCount > 0
     ? `calc(${MOBILE_DISCLOSURE_WIDTH + 8 + depth * DEPTH_STEP}px + var(--gtd-group-indent, 0px))`
     : "calc(22px + var(--gtd-leaf-group-indent, 0px))";
-}
-
-function summaryHeight(mobile: boolean, compact: boolean) {
-  if (mobile) return "h-10";
-  return compact ? "h-8" : "h-5";
 }
 
 function ThreadTitle({
@@ -492,8 +460,7 @@ function ThreadTitle({
 }
 
 /**
- * The compact viewport's row: the same line a compact desktop row draws,
- * project chip, title, then activity, PR and status-or-age, minus the hover
+ * The compact viewport's row: the line a desktop row draws, minus the hover
  * affordances a touch screen cannot reach. The long-press menu stands in for
  * the tooltip and the trailing actions.
  */
@@ -639,7 +606,6 @@ function ThreadRowLink({
   provider,
   relation,
   showDetails,
-  detailsWhen,
   shortcut,
   threadId,
   title,
@@ -664,8 +630,6 @@ function ThreadRowLink({
   provider?: ProviderGlyphInfo;
   relation: string | undefined;
   showDetails: boolean;
-  /** Two-line cards show their details only while the title is clipped. */
-  detailsWhen: "always" | "overflow";
   shortcut: PluginSidebarThreadShortcut | null;
   threadId: string;
   title: string;
@@ -692,7 +656,6 @@ function ThreadRowLink({
       provider={provider}
       relation={relation}
       enabled={showDetails}
-      when={detailsWhen}
     >
       {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
              anchor: the shortcut-target contract below and modifier-click
@@ -761,7 +724,6 @@ function DesktopThreadSummary({
   isUnread,
   shortcut,
   plan,
-  compact,
   showActions,
   canPark,
   activity,
@@ -773,7 +735,6 @@ function DesktopThreadSummary({
   isUnread: boolean;
   shortcut: PluginSidebarThreadShortcut | null;
   plan: ThreadActionPlan;
-  compact: boolean;
   showActions: boolean;
   canPark: boolean;
   activity: PluginSidebarThread["activity"];
@@ -787,10 +748,8 @@ function DesktopThreadSummary({
     <>
       {title}
       <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
-        {compact ? <ActivityCounts activity={activity} isCompactViewport={false} /> : null}
-        {compact && pullRequest ? (
-          <PullRequestNumber pullRequest={pullRequest} interactive />
-        ) : null}
+        <ActivityCounts activity={activity} isCompactViewport={false} />
+        {pullRequest ? <PullRequestNumber pullRequest={pullRequest} interactive /> : null}
         <span id={statusId} className={STATUS_SLOT_CLASS}>
           <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} />
         </span>
@@ -813,75 +772,6 @@ function DesktopThreadSummary({
         </span>
       ) : null}
     </>
-  );
-}
-
-function ThreadMetadata({
-  thread,
-  remote,
-  provider,
-  projectName,
-  branchName,
-  pullRequest,
-  showProviderIcon,
-}: {
-  thread: PluginSidebarThread;
-  remote: boolean;
-  provider?: ProviderGlyphInfo;
-  projectName: string | null;
-  branchName: string | null;
-  pullRequest: RowPullRequest | null;
-  showProviderIcon: boolean;
-}) {
-  return (
-    /* One step below the title, not half a step: at 10px the size drop
-       alone does not carry the hierarchy, so the line also starts at the
-       tint the provider glyph already uses. Segments that rank below the
-       project dim further from here. */
-    <div
-      className={cn(
-        "gtd-thread-metadata pointer-events-none relative mt-1 flex h-4 items-center gap-1.5 text-2xs text-muted-foreground/70",
-        remote && "gtd-thread-metadata-remote",
-      )}
-    >
-      {/* The project holds its full name and the branch yields: which
-         repository a thread belongs to outranks which branch it sits
-         on, and the branch is the one that grows without bound. The
-         wrapper is the flexible cell either way, so a card missing
-         both still holds the line's right side still. */}
-      <span className="flex min-w-0 flex-1 items-center gap-1">
-        {projectName ? <span className="min-w-0 truncate">{projectName}</span> : null}
-        {projectName && (branchName || (remote && thread.host)) ? (
-          <span aria-hidden className="shrink-0 text-muted-foreground/40">
-            ·
-          </span>
-        ) : null}
-        {/* Weighted rather than capped, so the project keeps its full
-           name whenever the line has room for both and only starts
-           truncating once this one has already given up everything.
-           A thread without a worktree on another machine names that
-           machine in the branch's place. The local machine goes
-           unnamed, the same as its missing globe. */}
-        {branchName ? (
-          <span className="min-w-0 shrink-[9999] truncate font-mono text-muted-foreground/50">
-            {branchName}
-          </span>
-        ) : remote && thread.host ? (
-          <span className="min-w-0 shrink-[9999] truncate text-muted-foreground/50">
-            {thread.host.name}
-          </span>
-        ) : null}
-      </span>
-      <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
-        <ActivityCounts activity={thread.activity} isCompactViewport={false} />
-        {pullRequest ? <PullRequestNumber pullRequest={pullRequest} interactive /> : null}
-        {/* Drawn for every card or for none, never per thread, so the line
-         keeps a fixed right edge whichever way the setting is set. */}
-        {showProviderIcon ? (
-          <ProviderGlyph providerId={thread.providerId} provider={provider} />
-        ) : null}
-      </span>
-    </div>
   );
 }
 

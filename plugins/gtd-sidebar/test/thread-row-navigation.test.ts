@@ -502,7 +502,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   function mount(
     host: HostState,
     inbox: Partial<PluginThreadListProps> = {},
-    compactThreads = false,
     localMachineId = "",
     options: NonNullable<Parameters<typeof renderSlot>[2]> = {},
     expandFamilies = true,
@@ -519,7 +518,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       },
     };
     const settings = {
-      compactThreads,
       localMachineId,
       groupThreadsByProject: true,
       ...options.settings,
@@ -633,15 +631,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     );
   }
 
-  /** jsdom lays nothing out, so a row's title is clipped by giving it widths. */
-  function clipTitle(slot: RenderedSlot, id: string) {
-    const title = row(slot, id).parentElement!.querySelector<HTMLElement>(
-      ".gtd-thread-title .gtd-fading-text",
-    )!;
-    Object.defineProperty(title, "scrollWidth", { configurable: true, value: 200 });
-    Object.defineProperty(title, "clientWidth", { configurable: true, value: 100 });
-  }
-
   function rowButton(slot: RenderedSlot, id: string, name: string): HTMLElement {
     return within(row(slot, id).parentElement!).getByRole("button", { name });
   }
@@ -666,49 +655,48 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   });
 
   describe("unread activity in the status slot", () => {
-    it.each([
-      { mobile: false, compact: false },
-      { mobile: false, compact: true },
-      { mobile: true, compact: false },
-    ])("shows unread dots on every shelf with %j and clears on read", ({ mobile, compact }) => {
-      const unread = { isUnread: true, indicator: "unread-success" as const };
-      const threads = [
-        thread("finished", unread),
-        thread("snoozed", unread),
-        { ...settledThread("settled"), ...unread },
-        thread("working", { isUnread: true, indicator: "runtime", indicatorLabel: "Working" }),
-      ];
-      const host = { ...hostState(threads), lifecycle: lifecycle(["snoozed"]) };
-      const view = mount(host, { isCompactViewport: mobile }, compact);
-      expandParked(view.slot);
-      for (const id of ["finished", "snoozed", "settled"]) {
-        const container = row(view.slot, id).parentElement!;
-        const dot = within(container).getByRole("img", { name: "Unread response" });
-        assert.ok(dot.closest(".w-7"));
-        // Said once: the slot's dot is the whole description.
-        assert.equal(description(view.slot, id), "Unread response");
-      }
-      assert.ok(within(row(view.slot, "working").parentElement!).getByLabelText("Working"));
-      // The glyph takes the slot, so the note follows it.
-      assert.equal(description(view.slot, "working"), "Working Unread response");
-      assert.equal(
-        within(row(view.slot, "working").parentElement!).queryByRole("img", {
-          name: "Unread response",
-        }),
-        null,
-      );
-      view.update({
-        host: {
-          ...host,
-          sidebar: {
-            ...host.sidebar,
-            threads: threads.map((entry) => Object.assign({}, entry, { isUnread: false })),
+    it.each([false, true])(
+      "shows unread dots on every shelf with mobile=%s and clears on read",
+      (mobile) => {
+        const unread = { isUnread: true, indicator: "unread-success" as const };
+        const threads = [
+          thread("finished", unread),
+          thread("snoozed", unread),
+          { ...settledThread("settled"), ...unread },
+          thread("working", { isUnread: true, indicator: "runtime", indicatorLabel: "Working" }),
+        ];
+        const host = { ...hostState(threads), lifecycle: lifecycle(["snoozed"]) };
+        const view = mount(host, { isCompactViewport: mobile });
+        expandParked(view.slot);
+        for (const id of ["finished", "snoozed", "settled"]) {
+          const container = row(view.slot, id).parentElement!;
+          const dot = within(container).getByRole("img", { name: "Unread response" });
+          assert.ok(dot.closest(".w-7"));
+          // Said once: the slot's dot is the whole description.
+          assert.equal(description(view.slot, id), "Unread response");
+        }
+        assert.ok(within(row(view.slot, "working").parentElement!).getByLabelText("Working"));
+        // The glyph takes the slot, so the note follows it.
+        assert.equal(description(view.slot, "working"), "Working Unread response");
+        assert.equal(
+          within(row(view.slot, "working").parentElement!).queryByRole("img", {
+            name: "Unread response",
+          }),
+          null,
+        );
+        view.update({
+          host: {
+            ...host,
+            sidebar: {
+              ...host.sidebar,
+              threads: threads.map((entry) => Object.assign({}, entry, { isUnread: false })),
+            },
           },
-        },
-      });
-      assert.equal(view.slot.queryAllByRole("img", { name: "Unread response" }).length, 0);
-      assert.ok(within(row(view.slot, "working").parentElement!).getByLabelText("Working"));
-    });
+        });
+        assert.equal(view.slot.queryAllByRole("img", { name: "Unread response" }).length, 0);
+        assert.ok(within(row(view.slot, "working").parentElement!).getByLabelText("Working"));
+      },
+    );
 
     it("lifts age labels to the readback tint on a phone, keeping desktop's ghost tint", () => {
       // An hour clear of the bucket edge: the age reads a minute-quantized clock.
@@ -1319,7 +1307,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         thread("child", { parentThreadId: "root" }),
         thread("grandchild", { parentThreadId: "child" }),
       ]);
-      const { slot } = mount(host, {}, false, "", {}, false);
+      const { slot } = mount(host, {}, "", {}, false);
       assert.deepEqual(rowIds(slot), ["root"]);
       fireEvent.click(rowButton(slot, "root", "Expand children of root"));
       assert.deepEqual(rowIds(slot), ["root", "child"]);
@@ -1364,7 +1352,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         splitThreads: ["root", "child"],
         focusedSplitThread: "child",
       };
-      const view = mount(host, { activeThreadId: "root" }, true);
+      const view = mount(host, { activeThreadId: "root" });
       const focused = (id: string) =>
         row(view.slot, id).parentElement!.getAttribute("data-sidebar-thread-focused");
       assert.equal(focused("root"), "false");
@@ -1377,74 +1365,60 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(focused("child"), null);
     });
 
-    it.each([false, true])(
-      "navigates nested families with desktop compact=%s",
-      (compactThreads) => {
-        const host = hostState([
-          thread("root"),
-          thread("child", { parentThreadId: "root" }),
-          thread("grandchild", { parentThreadId: "child" }),
-          thread("sibling", { parentThreadId: "root" }),
-        ]);
-        const view = mount(host, {}, compactThreads);
-        assert.deepEqual(rowIds(view.slot), ["root", "child", "grandchild", "sibling"]);
-        act(() => row(view.slot, "root").focus());
-        fireEvent.keyDown(row(view.slot, "root"), { key: "ArrowRight" });
-        assert.equal(document.activeElement, row(view.slot, "child"));
-        fireEvent.keyDown(row(view.slot, "child"), { key: "ArrowLeft" });
-        assert.deepEqual(rowIds(view.slot), ["root", "child", "sibling"]);
-        assert.equal(document.activeElement, row(view.slot, "child"));
-        fireEvent.keyDown(row(view.slot, "child"), { key: "ArrowLeft" });
-        assert.equal(document.activeElement, row(view.slot, "root"));
-        fireEvent.keyDown(row(view.slot, "root"), { key: "ArrowLeft" });
-        assert.deepEqual(rowIds(view.slot), ["root"]);
-        fireEvent.keyDown(row(view.slot, "root"), { key: "ArrowRight" });
-        assert.deepEqual(rowIds(view.slot), ["root", "child", "sibling"]);
-        fireEvent.click(rowButton(view.slot, "child", "Expand children of child"));
-        assert.deepEqual(rowIds(view.slot), ["root", "child", "grandchild", "sibling"]);
-        assert.equal(
-          (host.actions.open as ReturnType<typeof actions>["open"]).mock.calls.length,
-          0,
-        );
-      },
-    );
+    it("navigates nested families from the keyboard", () => {
+      const host = hostState([
+        thread("root"),
+        thread("child", { parentThreadId: "root" }),
+        thread("grandchild", { parentThreadId: "child" }),
+        thread("sibling", { parentThreadId: "root" }),
+      ]);
+      const view = mount(host);
+      assert.deepEqual(rowIds(view.slot), ["root", "child", "grandchild", "sibling"]);
+      act(() => row(view.slot, "root").focus());
+      fireEvent.keyDown(row(view.slot, "root"), { key: "ArrowRight" });
+      assert.equal(document.activeElement, row(view.slot, "child"));
+      fireEvent.keyDown(row(view.slot, "child"), { key: "ArrowLeft" });
+      assert.deepEqual(rowIds(view.slot), ["root", "child", "sibling"]);
+      assert.equal(document.activeElement, row(view.slot, "child"));
+      fireEvent.keyDown(row(view.slot, "child"), { key: "ArrowLeft" });
+      assert.equal(document.activeElement, row(view.slot, "root"));
+      fireEvent.keyDown(row(view.slot, "root"), { key: "ArrowLeft" });
+      assert.deepEqual(rowIds(view.slot), ["root"]);
+      fireEvent.keyDown(row(view.slot, "root"), { key: "ArrowRight" });
+      assert.deepEqual(rowIds(view.slot), ["root", "child", "sibling"]);
+      fireEvent.click(rowButton(view.slot, "child", "Expand children of child"));
+      assert.deepEqual(rowIds(view.slot), ["root", "child", "grandchild", "sibling"]);
+      assert.equal((host.actions.open as ReturnType<typeof actions>["open"]).mock.calls.length, 0);
+    });
 
-    it.each([false, true])(
-      "groups roots by project and keeps a cross-project child under its parent with desktop compact=%s",
-      (compactThreads) => {
-        const host = hostState([
-          thread("root"),
-          thread("child", { parentThreadId: "root" }),
-          thread("cross-project", { parentThreadId: "root", projectId: "two" }),
-          thread("other", { projectId: "two", latestAttentionAt: 50 }),
-        ]);
-        const view = mount(host, {}, compactThreads);
-        assert.deepEqual(rowIds(view.slot), ["root", "child", "cross-project", "other"]);
-        const root = row(view.slot, "root").parentElement!;
-        const child = row(view.slot, "child").parentElement!;
-        const crossProject = row(view.slot, "cross-project").parentElement!;
-        assert.equal(root.classList.contains("gtd-compact-row"), compactThreads);
-        assert.ok(child.classList.contains("gtd-compact-row"));
-        assert.ok(crossProject.classList.contains("gtd-compact-row"));
-        // The project lives in the group header, never on the title line.
-        assert.equal(view.slot.container.querySelector(".gtd-project-chip"), null);
-        const groups = Array.from(
-          view.slot.container.querySelectorAll<HTMLElement>(".gtd-project-group"),
-          (group) => group.dataset.projectId,
-        );
-        assert.deepEqual(groups, ["one", "two"]);
-        assert.equal(
-          crossProject.closest(".gtd-project-group")?.getAttribute("data-project-id"),
-          "one",
-        );
-        assert.ok(view.slot.getByRole("button", { name: "One project" }));
-        assert.ok(view.slot.getByRole("button", { name: "Two project" }));
-        fireEvent.click(row(view.slot, "cross-project"), { ctrlKey: true });
-        assert.deepEqual((host.actions.open as ReturnType<typeof actions>["open"]).mock.calls, [
-          ["cross-project", { split: true }],
-        ]);
-      },
-    );
+    it("groups roots by project and keeps a cross-project child under its parent", () => {
+      const host = hostState([
+        thread("root"),
+        thread("child", { parentThreadId: "root" }),
+        thread("cross-project", { parentThreadId: "root", projectId: "two" }),
+        thread("other", { projectId: "two", latestAttentionAt: 50 }),
+      ]);
+      const view = mount(host);
+      assert.deepEqual(rowIds(view.slot), ["root", "child", "cross-project", "other"]);
+      const crossProject = row(view.slot, "cross-project").parentElement!;
+      // The project lives in the group header, never on the title line.
+      assert.equal(view.slot.container.querySelector(".gtd-project-chip"), null);
+      const groups = Array.from(
+        view.slot.container.querySelectorAll<HTMLElement>(".gtd-project-group"),
+        (group) => group.dataset.projectId,
+      );
+      assert.deepEqual(groups, ["one", "two"]);
+      assert.equal(
+        crossProject.closest(".gtd-project-group")?.getAttribute("data-project-id"),
+        "one",
+      );
+      assert.ok(view.slot.getByRole("button", { name: "One project" }));
+      assert.ok(view.slot.getByRole("button", { name: "Two project" }));
+      fireEvent.click(row(view.slot, "cross-project"), { ctrlKey: true });
+      assert.deepEqual((host.actions.open as ReturnType<typeof actions>["open"]).mock.calls, [
+        ["cross-project", { split: true }],
+      ]);
+    });
 
     it("draws no project headers while every root shares one project", () => {
       const view = mount(
@@ -1683,8 +1657,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           },
         },
       };
-      const first = mount(host, {}, false, "", options);
-      const second = mount(host, {}, false, "", options);
+      const first = mount(host, {}, "", options);
+      const second = mount(host, {}, "", options);
       await act(async () => {});
       fireEvent.keyDown(
         within(first.slot.container).getByRole("button", {
@@ -1703,7 +1677,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       );
       first.slot.lifecycle.unmount();
       second.slot.lifecycle.unmount();
-      const remounted = mount(host, {}, false, "", options);
+      const remounted = mount(host, {}, "", options);
       await waitFor(() =>
         assert.deepEqual(new Set(rowIds(remounted.slot)), new Set(["studio", "unknown"])),
       );
@@ -1720,7 +1694,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const saved = new Promise<{ hiddenMachineIds: string[] }>((done) => {
         resolve = done;
       });
-      const view = mount(host, {}, false, "", {
+      const view = mount(host, {}, "", {
         rpc: { listMachineVisibility: () => saved },
       });
       await act(async () => {});
@@ -1737,7 +1711,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         thread("server", { host: { id: "b", name: "Server" } }),
       ]);
       let answer!: (value: { hiddenMachineIds: string[] }) => void;
-      const view = mount(host, {}, false, "", {
+      const view = mount(host, {}, "", {
         rpc: {
           listMachineVisibility: () => new Promise(() => {}),
           changeMachineVisibility: () =>
@@ -1769,7 +1743,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const read = new Promise<never>((_resolve, reject) => {
         failRead = reject;
       });
-      const view = mount(host, {}, false, "", {
+      const view = mount(host, {}, "", {
         rpc: {
           listMachineVisibility: () => read,
           changeMachineVisibility: () => ({ hiddenMachineIds: ["b"] }),
@@ -1796,7 +1770,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       ]);
       const sent: unknown[] = [];
       const answers: ((value: { hiddenMachineIds: string[] }) => void)[] = [];
-      const view = mount(host, {}, false, "", {
+      const view = mount(host, {}, "", {
         rpc: {
           listMachineVisibility: () => ({ hiddenMachineIds: [] }),
           changeMachineVisibility: (change: unknown) => {
@@ -1832,7 +1806,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const write = new Promise<{ hiddenMachineIds: string[] }>((done) => {
         resolve = done;
       });
-      const view = mount(host, {}, false, "", {
+      const view = mount(host, {}, "", {
         rpc: {
           listMachineVisibility: () => {
             reads += 1;
@@ -1869,7 +1843,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const pending = new Promise<never>((_, fail) => {
         reject = fail;
       });
-      const view = mount(host, {}, false, "", {
+      const view = mount(host, {}, "", {
         rpc: {
           listMachineVisibility: () => ({ hiddenMachineIds: [] }),
           changeMachineVisibility: () => pending,
@@ -1891,78 +1865,74 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.ok(view.slot.getByRole("button", { name: "Visible machines: All machines" }));
     });
 
-    it.each([false, true])(
-      "leads remote rows with the machine globe and local rows with an empty slot, compact=%s",
-      (compactThreads) => {
-        const localHost = { id: "local-host", name: "Local computer" };
-        const remoteHost = { id: "remote-host", name: "Remote computer" };
-        const view = mount(
-          hostState([
-            thread("root", { host: localHost }),
-            thread("local-child", { parentThreadId: "root", host: localHost }),
-            thread("remote-child", { parentThreadId: "root", host: remoteHost }),
-          ]),
-          {},
-          compactThreads,
-          localHost.id,
-        );
-        const root = row(view.slot, "root").parentElement!;
-        const localChild = row(view.slot, "local-child").parentElement!;
-        const remoteChild = row(view.slot, "remote-child").parentElement!;
-        assert.equal(root.querySelector(".gtd-project-chip"), null);
-        assert.equal(root.querySelector(".gtd-host-lead"), null);
-        assert.equal(localChild.querySelector(".gtd-host-lead"), null);
-        assert.ok(
-          remoteChild.querySelector(
-            '.gtd-host-lead [data-machine-id="remote-host"] [data-icon="Globe"]',
-          ),
-        );
-        fireEvent.keyDown(
-          view.slot.getByRole("button", { name: "Visible machines: All machines" }),
-          { key: "ArrowDown" },
-        );
-        assert.ok(
-          screen
-            .getByRole("menuitemcheckbox", { name: "Local computer" })
-            .querySelector('[data-icon="Globe"]'),
-        );
-      },
-    );
+    it("leads remote rows with the machine globe and local rows with an empty slot", () => {
+      const localHost = { id: "local-host", name: "Local computer" };
+      const remoteHost = { id: "remote-host", name: "Remote computer" };
+      const view = mount(
+        hostState([
+          thread("root", { host: localHost }),
+          thread("local-child", { parentThreadId: "root", host: localHost }),
+          thread("remote-child", { parentThreadId: "root", host: remoteHost }),
+        ]),
+        {},
+        localHost.id,
+      );
+      const root = row(view.slot, "root").parentElement!;
+      const localChild = row(view.slot, "local-child").parentElement!;
+      const remoteChild = row(view.slot, "remote-child").parentElement!;
+      assert.equal(root.querySelector(".gtd-project-chip"), null);
+      assert.equal(root.querySelector(".gtd-host-lead"), null);
+      assert.equal(localChild.querySelector(".gtd-host-lead"), null);
+      assert.ok(
+        remoteChild.querySelector(
+          '.gtd-host-lead [data-machine-id="remote-host"] [data-icon="Globe"]',
+        ),
+      );
+      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
+        key: "ArrowDown",
+      });
+      assert.ok(
+        screen
+          .getByRole("menuitemcheckbox", { name: "Local computer" })
+          .querySelector('[data-icon="Globe"]'),
+      );
+    });
 
     // The first paint lands before bb's primary host does. It must not draw a
     // globe it then takes away.
     it.each([
-      ["", [], ["remote"], ["One", "One·Remote computer"]],
-      ["remote-host", ["primary"], ["primary"], ["One·Primary computer", "One"]],
+      ["", [], ["remote"]],
+      ["remote-host", ["primary"], ["primary"]],
     ])(
       "names only machines other than bb's primary host or localMachineId=%p",
-      async (localMachineId, firstPaint, globed, metadata) => {
+      async (localMachineId, firstPaint, globed) => {
         const host = hostState([
           thread("primary", { host: { id: "primary-host", name: "Primary computer" } }),
           thread("remote", { host: { id: "remote-host", name: "Remote computer" } }),
         ]);
         host.primaryHostId = "primary-host";
-        const view = mount(host, {}, false, localMachineId);
+        const view = mount(host, {}, localMachineId);
         const card = (id: string) => row(view.slot, id).parentElement!;
         const globes = () =>
           ["primary", "remote"].filter((id) => card(id).querySelector(".gtd-host-lead"));
         assert.deepEqual(globes(), firstPaint);
         await waitFor(() => assert.deepEqual(globes(), globed));
-        assert.deepEqual(
-          ["primary", "remote"].map(
-            (id) => card(id).querySelector(".gtd-thread-metadata")?.textContent,
-          ),
-          metadata,
-        );
+        // A globe's machine is named in the row's details, a local one never.
+        for (const [id, name] of [
+          ["primary", "Primary computer"],
+          ["remote", "Remote computer"],
+        ] as const) {
+          act(() => row(view.slot, id).focus());
+          const details = (await screen.findByRole("tooltip")).textContent!;
+          assert.equal(details.includes(name), globed.includes(id), id);
+          act(() => row(view.slot, id).blur());
+          await waitFor(() => assert.equal(screen.queryByRole("tooltip"), null));
+        }
       },
     );
 
-    it("opens compact thread details from the keyboard navigation anchor", async () => {
-      const view = mount(
-        hostState([thread("root"), thread("child", { parentThreadId: "root" })]),
-        {},
-        true,
-      );
+    it("opens thread details from the keyboard navigation anchor", async () => {
+      const view = mount(hostState([thread("root"), thread("child", { parentThreadId: "root" })]));
       act(() => row(view.slot, "child").focus());
       const tooltip = await screen.findByRole("tooltip");
       assert.match(tooltip.textContent ?? "", /child/);
@@ -1972,24 +1942,35 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       act(() => row(view.slot, "child").blur());
     });
 
-    it("shows a two-line card's details only while its title is clipped", async () => {
-      const view = mount(hostState([thread("clipped"), thread("short")]));
-      clipTitle(view.slot, "clipped");
-
+    it("shows a root row's details even while its title fits", async () => {
+      const view = mount(hostState([thread("short")]));
       act(() => row(view.slot, "short").focus());
-      await act(async () => {});
-      assert.equal(screen.queryByRole("tooltip"), null);
-
-      act(() => row(view.slot, "clipped").focus());
       const tooltip = await screen.findByRole("tooltip");
-      assert.equal(tooltip.firstElementChild?.textContent, "clipped");
-      act(() => row(view.slot, "clipped").blur());
+      assert.equal(tooltip.firstElementChild?.textContent, "short");
+      act(() => row(view.slot, "short").blur());
     });
 
-    it("keeps a clipped card's details closed when a mouse-picked menu hands focus back", async () => {
+    it.each([false, true])(
+      "shows a parked row's details on desktop only, mobile=%s",
+      async (isCompactViewport) => {
+        const host = { ...hostState([thread("snoozed")]), lifecycle: lifecycle(["snoozed"]) };
+        const view = mount(host, { isCompactViewport });
+        fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
+        act(() => row(view.slot, "snoozed").focus());
+        if (isCompactViewport) {
+          await act(async () => {});
+          assert.equal(screen.queryByRole("tooltip"), null);
+        } else {
+          const tooltip = await screen.findByRole("tooltip");
+          assert.equal(tooltip.firstElementChild?.textContent, "snoozed");
+        }
+        act(() => row(view.slot, "snoozed").blur());
+      },
+    );
+
+    it("keeps a row's details closed when a mouse-picked menu hands focus back", async () => {
       const view = mount(hostState([thread("a")]));
       const anchor = row(view.slot, "a");
-      clipTitle(view.slot, "a");
       // jsdom rings every focus. A browser draws no ring for a click's focus,
       // nor for the focus a menu hands back after a mouse pick.
       const matches = anchor.matches.bind(anchor);
@@ -2002,25 +1983,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       await waitFor(() => assert.ok(document.activeElement === anchor));
       await act(async () => {});
       assert.equal(screen.queryByRole("tooltip"), null);
-    });
-
-    it("still waits out the hover delay once a quietly hovered title clips", async () => {
-      const view = mount(hostState([thread("a")]));
-      const anchor = row(view.slot, "a");
-      const dwell = () => act(() => new Promise((resolve) => setTimeout(resolve, 600)));
-      fireEvent.pointerMove(anchor);
-      await dwell();
-      assert.equal(screen.queryByRole("tooltip"), null);
-      fireEvent.pointerLeave(anchor);
-
-      // The sidebar narrows, or the agent renames the thread, and the title clips.
-      clipTitle(view.slot, "a");
-      fireEvent.pointerMove(anchor);
-      await act(async () => {});
-      assert.equal(screen.queryByRole("tooltip"), null);
-      await dwell();
-      assert.equal(screen.getByRole("tooltip").firstElementChild?.textContent, "a");
-      fireEvent.pointerDown(anchor);
     });
 
     it("reveals a matching descendant through a collapsed family without changing collapse state", () => {
@@ -2051,7 +2013,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ]),
         actions: currentActions,
       };
-      const view = mount(host, { activeThreadId: "child" }, true);
+      const view = mount(host, { activeThreadId: "child" });
       fireEvent.click(rowButton(view.slot, "child", "Collapse children of child"));
       assert.deepEqual(rowIds(view.slot), ["next", "root", "child"]);
       const section = row(view.slot, "child").closest("section");
@@ -2165,7 +2127,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       ]);
       // bb names no primary host, so every machine is remote once it answers.
       host.primaryHostId = null;
-      const view = mount(host, {}, true);
+      const view = mount(host, {});
       const chipGlobe = await waitFor(() => {
         const globe = view.slot.container.querySelector<HTMLElement>(
           '.gtd-host-lead [data-machine-id="host-a"]',
@@ -2217,7 +2179,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     it("uses a neutral bot for Boat machines in rows and the machine picker", async () => {
       const host = hostState([thread("boat", { host: { id: "host-boat", name: "Sandbox" } })]);
       host.primaryHostId = null;
-      const view = mount(host, {}, true);
+      const view = mount(host, {});
       await waitFor(() => {
         const glyph = view.slot.container.querySelector<HTMLElement>(
           '.gtd-host-lead [data-machine-id="host-boat"]',
@@ -2246,7 +2208,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         if (calls === 1) throw new Error("offline");
         return [{ id: "host-boat", machineProviderId: "boat-sandbox" }];
       };
-      const view = mount(host, {}, true);
+      const view = mount(host, {});
       await waitFor(() => assert.equal(calls, 1));
       await view.slot.behavior.setRealtimeConnectionState("reconnecting");
       await view.slot.behavior.setRealtimeConnectionState("connected");
@@ -2274,7 +2236,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ],
       };
       host.primaryHostId = null;
-      const colors = await globeColors(mount(host, {}, true), ["host-a", "host-g"]);
+      const colors = await globeColors(mount(host, {}), ["host-a", "host-g"]);
       assert.equal(colors[0], colors[1]);
     });
 
@@ -2287,7 +2249,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       ]);
       host.sidebar = { ...host.sidebar, experimental_hosts: [{ id: "host-g", name: "Server" }] };
       host.primaryHostId = null;
-      const [server] = await globeColors(mount(host, {}, true), ["host-g"]);
+      const [server] = await globeColors(mount(host, {}), ["host-g"]);
       assert.equal(
         machineColors(["host-a", "host-g"])("host-g"),
         machineColors(["host-g"])("host-g"),
@@ -2590,7 +2552,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         settledThread("settled"),
       ]);
       host.lifecycle = lifecycle(["snoozed"]);
-      const view = mount(host, {}, false, "", {
+      const view = mount(host, {}, "", {
         sidebarShortcuts: {
           a: { label: "⌃1", ariaKeyshortcuts: "Control+1" },
           snoozed: { label: "⌃3", ariaKeyshortcuts: "Control+3" },
@@ -2608,7 +2570,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       );
     });
 
-    it("asks GitButler about plain checkouts only and prefers its label on the card", async () => {
+    it("asks GitButler about plain checkouts only and prefers its label in the row's details", async () => {
       const environment = (id: string, isWorktree: boolean | null) => ({
         id,
         name: id,
@@ -2623,7 +2585,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         thread("worktree", { environment: environment("env-worktree", true) }),
         thread("unknown", { environment: environment("env-unknown", null) }),
       ]);
-      const view = mount(host, {}, false, "", {
+      const view = mount(host, {}, "", {
         settings: { gitButlerBranches: true },
         rpc: {
           listEnvironmentBranches: async () => ({
@@ -2631,17 +2593,26 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           }),
         },
       });
-      await waitFor(() => assert.ok(view.slot.container.textContent!.includes("scott/feature")));
+      const details = () => screen.getByRole("tooltip").textContent!;
+      const close = async (id: string) => {
+        act(() => row(view.slot, id).blur());
+        await waitFor(() => assert.equal(screen.queryByRole("tooltip"), null));
+      };
+      act(() => row(view.slot, "plain").focus());
+      await waitFor(() => assert.ok(details().includes("scott/feature")));
+      assert.ok(!details().includes("env-plain-branch"));
+      await close("plain");
+      for (const id of ["worktree", "unknown"]) {
+        act(() => row(view.slot, id).focus());
+        await waitFor(() => assert.ok(details().includes(`env-${id}-branch`)));
+        await close(id);
+      }
       assert.deepEqual(
         view.slot.rpcCalls
           .filter((call) => call.method === "listEnvironmentBranches")
           .map((call) => call.input),
         [{ environmentIds: ["env-plain"] }],
       );
-      const text = view.slot.container.textContent!;
-      assert.ok(!text.includes("env-plain-branch"));
-      assert.ok(text.includes("env-worktree-branch"));
-      assert.ok(text.includes("env-unknown-branch"));
     });
 
     it("uses current lifecycle actions and general navigation for settled mobile rows", () => {
@@ -2704,7 +2675,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         });
         Object.defineProperty(prototype, "scrollHeight", { configurable: true, get: () => 400 });
         try {
-          const view = mount(hostState([thread("a")]), { isCompactViewport: true }, false, "", {
+          const view = mount(hostState([thread("a")]), { isCompactViewport: true }, "", {
             settings: { mobileHaptics: true },
           });
           await openMenu(row(view.slot, "a"), true);
@@ -3103,8 +3074,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const placeholder = view.slot.container.querySelector<HTMLElement>(
         "[data-sidebar-windowed-nav]",
       )!;
-      // Unmounted cards stand in at their estimated 52px plus the 2px gap.
-      assert.equal(placeholder.style.height, `${(40 - mounted.length) * 54}px`);
+      // Unmounted rows stand in at their estimated 32px plus the 2px gap.
+      assert.equal(placeholder.style.height, `${(40 - mounted.length) * 34}px`);
       assert.equal(placeholder.getAttribute("aria-hidden"), "true");
       assert.ok(
         placeholder

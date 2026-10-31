@@ -59,7 +59,6 @@ const meta = {
     statusThread: thread,
     isUnread: false,
     shelf: "nextAction",
-    compactThreads: false,
     depth: 0,
     parentId: null,
     parentTitle: null,
@@ -72,7 +71,6 @@ const meta = {
     branchName: "maya/offline-review-recovery",
     isActive: false,
     canPark: true,
-    showProviderIcon: true,
     isCompactViewport: false,
     command: fn(),
     dropAllowed: false,
@@ -103,7 +101,7 @@ export const NeedsInput: Story = {
   },
 };
 export const WithChildren: Story = { args: { childCount: 3, expanded: true } };
-export const Compact: Story = { args: { compactThreads: true, isCompactViewport: true } };
+export const CompactViewport: Story = { args: { isCompactViewport: true } };
 export const LongTitle: Story = {
   args: {
     thread: {

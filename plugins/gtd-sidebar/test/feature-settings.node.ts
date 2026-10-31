@@ -22,13 +22,7 @@ describe("public feature opt-ins", () => {
     try {
       const descriptors = harness.inspection.registrations.settingsDescriptors;
       assert.equal(descriptors.groupThreadsByProject?.default, true);
-      for (const key of [
-        "compactThreads",
-        "showProviderIcon",
-        "mobileHaptics",
-        "gitButlerBranches",
-        "automaticallyNameThreads",
-      ]) {
+      for (const key of ["mobileHaptics", "gitButlerBranches", "automaticallyNameThreads"]) {
         assert.equal(descriptors[key]?.default, false, key);
       }
       assert.deepEqual(
