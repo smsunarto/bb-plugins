@@ -1,5 +1,32 @@
 # @smsunarto/bb-plugin-monokai
 
+## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.5.0...monokai/v0.6.0) (2026-10-31)
+
+
+### Features
+
+* **branding:** give every plugin a distinct BB-style icon ([e6a07fe](https://github.com/smsunarto/bb-plugins/commit/e6a07fe24cfd954203fc3007c3e9817de4b9376e))
+* **monokai:** add native project clear control ([a2349c6](https://github.com/smsunarto/bb-plugins/commit/a2349c65c22dca489c940ca1c1d27e95a28aa83f))
+* **plugins:** adopt BB 0.48 SDK APIs ([7fcbe74](https://github.com/smsunarto/bb-plugins/commit/7fcbe74366553e460c2992080af34533c7642649))
+* **plugins:** replace plugin icons with Lucide via better-icons ([765f389](https://github.com/smsunarto/bb-plugins/commit/765f38988bcf8107889ec51890377f85c00dcdf3))
+* **storybook:** add workspace catalog and project MCP ([21a1973](https://github.com/smsunarto/bb-plugins/commit/21a1973d2d47fd6f4bef1e36e48d2849cfe4194b))
+
+
+### Bug Fixes
+
+* **monokai:** align the thread composer with the new-thread one in light mode ([382f061](https://github.com/smsunarto/bb-plugins/commit/382f061a01be774de091c39760d18de1a0d7f0e4))
+* **monokai:** hide composer placeholders and refine selector icon ([11e5eea](https://github.com/smsunarto/bb-plugins/commit/11e5eeaadb55c9fa37c7aefb191cbdd2db856389))
+* **monokai:** keep the new-thread composer at the bottom ([9c3d77d](https://github.com/smsunarto/bb-plugins/commit/9c3d77dd38fa9fc1cde164c48b339449e976f5d2))
+* **monokai:** make theme authoring checkout independent ([7b47a13](https://github.com/smsunarto/bb-plugins/commit/7b47a1366e66329e49729ee572a64924c2ac92bc))
+* **monokai:** match YAML colors in bundled Monaco ([f3c270f](https://github.com/smsunarto/bb-plugins/commit/f3c270fa9909b06fec944543350b91f4bb8b3861))
+* **monokai:** preserve stream spacing with virtualized rows ([f092a2c](https://github.com/smsunarto/bb-plugins/commit/f092a2ca7a5456d6bf8beac18a9b155a861e56aa))
+* **monokai:** render desktop pane outlines as hairlines ([fa7ba4a](https://github.com/smsunarto/bb-plugins/commit/fa7ba4abd893676f15024fa6570a89ea5a507114))
+
+
+### Performance Improvements
+
+* **plugins:** narrow audited remaining utility scopes ([aeb6f69](https://github.com/smsunarto/bb-plugins/commit/aeb6f6993dd798316aab5eb83ae8bc106386bf63))
+
 ## [0.5.0](https://github.com/smsunarto/bb-plugins/compare/monokai/v0.4.0...monokai/v0.5.0) (2026-10-21)
 
 
