@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/gitbutler/v0.2.0...gitbutler/v0.3.0) (2026-10-31)
+
+
+### Features
+
+* **branding:** give every plugin a distinct BB-style icon ([e6a07fe](https://github.com/smsunarto/bb-plugins/commit/e6a07fe24cfd954203fc3007c3e9817de4b9376e))
+* **gitbutler:** list workspace branches in the thread Info panel ([45dbc78](https://github.com/smsunarto/bb-plugins/commit/45dbc7881700d067308224d62d7e93d23faee3d3))
+* **gitbutler:** read branch files and Git LFS objects by range ([9681dec](https://github.com/smsunarto/bb-plugins/commit/9681decf9cfdfc7e3853243c9a7be62d9f41f3a1))
+* **plugins:** adopt BB 0.48 SDK APIs ([7fcbe74](https://github.com/smsunarto/bb-plugins/commit/7fcbe74366553e460c2992080af34533c7642649))
+* **plugins:** replace plugin icons with Lucide via better-icons ([765f389](https://github.com/smsunarto/bb-plugins/commit/765f38988bcf8107889ec51890377f85c00dcdf3))
+* **storybook:** catalog custom components across browser plugins ([1345a92](https://github.com/smsunarto/bb-plugins/commit/1345a926b6b281ae7ab0c6d7fcc6f1807130d77b))
+* **storybook:** populate realistic review and workflow scenarios ([b58f4e7](https://github.com/smsunarto/bb-plugins/commit/b58f4e7b9865f3997da18c886de76aac7652db20))
+
+
+### Bug Fixes
+
+* **code-review:** share from the calling checkout by default ([7fdcae3](https://github.com/smsunarto/bb-plugins/commit/7fdcae39d93331ee84c1744acee2ff5ccb250516))
+* **gtd-sidebar,gitbutler:** resolve core from the local workspace ([e89b7cc](https://github.com/smsunarto/bb-plugins/commit/e89b7ccbb3ba90c11b1e1e99fe9b8f9e6b7e6a4f))
+* **machines:** use neutral Boat icons and stable ID colors ([29ca753](https://github.com/smsunarto/bb-plugins/commit/29ca7537feaf11e984be20a96a868be218be98c1))
+* **storybook:** size component previews to content ([471d888](https://github.com/smsunarto/bb-plugins/commit/471d888914696829ee59ff1a84701fe2354fef90))
+
+
+### Performance Improvements
+
+* **code-review:** load branch cards from their checkout ([413b563](https://github.com/smsunarto/bb-plugins/commit/413b563d3fc5bc8814698d9c196c2f89f2ca1f4d))
+
 ## [0.2.0](https://github.com/smsunarto/bb-plugins/compare/gitbutler/v0.1.0...gitbutler/v0.2.0) (2026-10-21)
 
 
