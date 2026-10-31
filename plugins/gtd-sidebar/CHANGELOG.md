@@ -163,6 +163,35 @@
   time this version loads. Provider names and marks now come from bb's own cached
   roster instead of a plugin round trip.
 
+## [0.7.0](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.6.0...gtd-sidebar/v0.7.0) (2026-10-31)
+
+
+### Features
+
+* **branding:** give every plugin a distinct BB-style icon ([e6a07fe](https://github.com/smsunarto/bb-plugins/commit/e6a07fe24cfd954203fc3007c3e9817de4b9376e))
+* **gtd-sidebar:** animate sidebar disclosures and menus ([570a5a4](https://github.com/smsunarto/bb-plugins/commit/570a5a46d96a19dd4535139e1bb6d00b153ce41b))
+* **gtd-sidebar:** fill row menus from bb's thread-action registry ([0bf50f3](https://github.com/smsunarto/bb-plugins/commit/0bf50f3b2d2652bcbca0eec0ee3aeb301fd5e5b2))
+* **gtd-sidebar:** keep thread families nested on the Settled shelf ([1ca8f16](https://github.com/smsunarto/bb-plugins/commit/1ca8f1662e16519ecdf555413b1ef0feab78f760))
+* **gtd-sidebar:** shelve SlopCop threads in their own section ([c82a410](https://github.com/smsunarto/bb-plugins/commit/c82a410d40ce4103d96761aa5d88f78526a026f7))
+* **plugins:** adopt BB 0.48 SDK APIs ([7fcbe74](https://github.com/smsunarto/bb-plugins/commit/7fcbe74366553e460c2992080af34533c7642649))
+* **plugins:** replace plugin icons with Lucide via better-icons ([765f389](https://github.com/smsunarto/bb-plugins/commit/765f38988bcf8107889ec51890377f85c00dcdf3))
+* **storybook:** catalog custom components across browser plugins ([1345a92](https://github.com/smsunarto/bb-plugins/commit/1345a926b6b281ae7ab0c6d7fcc6f1807130d77b))
+* **storybook:** populate realistic review and workflow scenarios ([b58f4e7](https://github.com/smsunarto/bb-plugins/commit/b58f4e7b9865f3997da18c886de76aac7652db20))
+
+
+### Bug Fixes
+
+* **gtd-sidebar,gitbutler:** resolve core from the local workspace ([e89b7cc](https://github.com/smsunarto/bb-plugins/commit/e89b7ccbb3ba90c11b1e1e99fe9b8f9e6b7e6a4f))
+* **gtd-sidebar:** collapse SlopCop shelf by default ([1b064f2](https://github.com/smsunarto/bb-plugins/commit/1b064f287ff15c39201eb16d865652942da01e48))
+* **gtd-sidebar:** collapse subthreads by default ([5fb0507](https://github.com/smsunarto/bb-plugins/commit/5fb0507a35be0b29055e534591bfb7b6de59aee6))
+* **gtd-sidebar:** use GPT-6.1-Terra for thread titles ([6a3f6d3](https://github.com/smsunarto/bb-plugins/commit/6a3f6d39a0e04a4f839e9c232b7bde4974400a9b))
+* **machines:** use neutral Boat icons and stable ID colors ([29ca753](https://github.com/smsunarto/bb-plugins/commit/29ca7537feaf11e984be20a96a868be218be98c1))
+
+
+### Performance Improvements
+
+* **plugins:** opt audited portals into owned-root CSS ([730f664](https://github.com/smsunarto/bb-plugins/commit/730f6647c8c2aa46967eec4ae572a2135fee71c4))
+
 ## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.5.1...gtd-sidebar/v0.6.0) (2026-10-21)
 
 
