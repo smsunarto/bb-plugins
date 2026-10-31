@@ -9,7 +9,9 @@ import { cn } from "@/lib/utils";
 import { finiteNumber, isObject, list, optionalText, text, type Props } from "../values";
 import { useImageSearch, type FoundImage } from "../webLookups";
 import { ErrorLine } from "./display";
-import { useImageUrl, WebOffLine } from "./media";
+import { useUiRuntime, type ImageSize } from "../runtime";
+import { croppable, singleBox, tileLayout, type TileLayout } from "./gallery-logic";
+import { decodedSize, imageSource, imageTarget, useImageUrl, WebOffLine } from "./media";
 import { RISE, useEntrance } from "./motion";
 import { useViewer, type Viewable } from "./viewer";
 
@@ -55,8 +57,20 @@ const FRAME = "relative block w-full overflow-hidden rounded-lg border border-bo
 const ZOOM_BUTTON =
   "block w-full cursor-zoom-in p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
 
-/** A picture filling its box (cropped to it), faded in once decoded. */
-export function Fill({ url, alt, onFailed }: { url: string; alt: string; onFailed: () => void }) {
+/** A picture filling its box (cropped to it, or whole with `contain`), faded in once decoded. */
+export function Fill({
+  url,
+  alt,
+  onFailed,
+  onDecoded,
+  contain = false,
+}: {
+  url: string;
+  alt: string;
+  onFailed: () => void;
+  onDecoded?: (picture: HTMLImageElement) => void;
+  contain?: boolean;
+}) {
   const [decoded, setDecoded] = useState<string | null>(null);
   const ready = decoded === url;
   return (
@@ -67,10 +81,14 @@ export function Fill({ url, alt, onFailed }: { url: string; alt: string; onFaile
         alt={alt}
         decoding="async"
         draggable={false}
-        onLoad={() => setDecoded(url)}
+        onLoad={(event) => {
+          setDecoded(url);
+          onDecoded?.(event.currentTarget);
+        }}
         onError={onFailed}
         className={cn(
-          "absolute inset-0 size-full object-cover transition-opacity duration-300 motion-reduce:transition-none",
+          "absolute inset-0 size-full transition-opacity duration-300 motion-reduce:transition-none",
+          contain ? "object-contain" : "object-cover",
           ready ? "opacity-100" : "opacity-0",
         )}
       />
@@ -160,21 +178,48 @@ function entry(item: unknown): Entry | null {
 const STRIP_AFTER = 9;
 const GRID_GAP = "0.5rem";
 
+/**
+ * The natural size `picture` (a path or an https URL) decoded at, and the
+ * callback that records it. Remembered from an earlier decode, so a remounted
+ * grid lays out at its final size on the first frame.
+ */
+function usePictureSize(picture: string | null): { size: ImageSize | null; onDecoded: (element: HTMLImageElement) => void } {
+  const { loadImage } = useUiRuntime();
+  const target = picture === null ? null : imageTarget(imageSource(picture.trim()));
+  const [decoded, setDecoded] = useState<{ readonly target: string; readonly size: ImageSize } | null>(null);
+  const size = target === null ? null : decoded?.target === target ? decoded.size : (loadImage?.size(target) ?? null);
+  const onDecoded = (element: HTMLImageElement) => {
+    const natural = decodedSize(element);
+    if (target === null || natural === null) return;
+    loadImage?.rememberSize(target, natural);
+    setDecoded((previous) =>
+      previous?.target === target && previous.size.width === natural.width && previous.size.height === natural.height
+        ? previous
+        : { target, size: natural },
+    );
+  };
+  return { size, onDecoded };
+}
+
 type TileState = { readonly status: "ready"; readonly view: TilePicture } | { readonly status: "pending" } | { readonly status: "off" };
 
 function Tile({
   entry: { src, query, caption, alt },
+  layout,
   onState,
   onOpen,
 }: {
   entry: Entry;
+  layout: TileLayout;
   onState: (state: TileState) => void;
   onOpen: (opener: HTMLButtonElement) => void;
 }) {
   const rise = useEntrance<HTMLElement>(RISE);
   const found = useImageSearch(query ?? "");
   const credit = found?.ok ? found.image : null;
-  const image = useImageUrl(src ?? credit?.url ?? null);
+  const picture = src ?? credit?.url ?? null;
+  const image = useImageUrl(picture);
+  const { size, onDecoded } = usePictureSize(picture);
   const [broken, setBroken] = useState<string | null>(null);
   const url = image.status === "ready" && broken !== image.url ? image.url : null;
   const off = (found !== null && !found.ok && found.off === true) || (image.status === "failed" && image.off);
@@ -192,9 +237,11 @@ function Tile({
   }, [url, alt, caption, credit, off, onState]);
 
   const label = caption ?? alt;
+  // A strip or grid keeps uniform 4:3 thumbnails; the only column takes its picture's shape.
+  const box = layout === "single" ? singleBox(size) : null;
   return (
-    <figure ref={rise} className="m-0 flex min-w-0 flex-col gap-1.5">
-      <div className={cn(FRAME, "aspect-[4/3]")}>
+    <figure ref={rise} className="m-0 flex w-full min-w-0 flex-col gap-1.5" style={box === null ? undefined : { maxWidth: box.maxWidth }}>
+      <div className={cn(FRAME, box === null && "aspect-[4/3]")} style={box === null ? undefined : { aspectRatio: box.aspectRatio }}>
         {url !== null ? (
           <button
             type="button"
@@ -202,7 +249,7 @@ function Tile({
             onClick={(event) => onOpen(event.currentTarget)}
             className={cn(ZOOM_BUTTON, "absolute inset-0")}
           >
-            <Fill url={url} alt={alt} onFailed={() => setBroken(url)} />
+            <Fill url={url} alt={alt} contain={box !== null || !croppable(size, credit !== null)} onDecoded={onDecoded} onFailed={() => setBroken(url)} />
           </button>
         ) : off || failure !== null ? (
           <span className="absolute inset-0 flex items-center justify-center p-3 text-center text-[11px] leading-4 text-muted-foreground">
@@ -287,6 +334,7 @@ export function Gallery({ props }: { props: Props }) {
           <div role="listitem" key={index} className={strip ? "w-44 shrink-0 snap-start @md:w-52" : "min-w-0"}>
             <Tile
               entry={item}
+              layout={tileLayout(strip, columns ?? auto)}
               onState={reporter(index)}
               onOpen={(button) => open(views.findIndex((view) => view.index === index), button)}
             />

@@ -36,7 +36,7 @@ export type ImageState =
   | { readonly status: "failed"; readonly error: string; readonly off: boolean };
 
 /** What the runtime reads for `source`: its URL or its path; null when there is nothing to read. */
-function imageTarget(source: Source | null): string | null {
+export function imageTarget(source: Source | null): string | null {
   return source?.kind === "url" ? source.url : source?.kind === "file" ? source.path : null;
 }
 

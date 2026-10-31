@@ -39,7 +39,7 @@ function searchKey(query: string): string {
   return query.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-/** The photo found for `query`; null while searching or when `query` is empty. */
+/** The photo found for `query`; null while searching or when `query` is empty. A photo this page already found is there on the first render. */
 export function useImageSearch(query: string): SearchResult | null {
   const rpc = useRpc<typeof rpcContract>();
   const key = searchKey(query);
@@ -55,7 +55,10 @@ export function useImageSearch(query: string): SearchResult | null {
       live = false;
     };
   }, [rpc, key]);
-  return result !== null && result.key === key ? result.result : null;
+  if (result !== null && result.key === key) return result.result;
+  // So a remounted Gallery knows its pictures, and their remembered sizes, from the first frame.
+  const known = key === "" ? undefined : found.get(key);
+  return known === undefined ? null : { ok: true, image: known };
 }
 
 /** The photos this page already found for `queries`, by query as written; searches not answered yet are left out. */
