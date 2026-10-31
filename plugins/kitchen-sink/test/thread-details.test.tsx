@@ -6,12 +6,6 @@ installDom();
 for (const name of ["Event", "CustomEvent", "FocusEvent", "KeyboardEvent", "PointerEvent"] as const)
   if (name in window)
     Object.defineProperty(globalThis, name, { configurable: true, value: window[name as "Event"] });
-// jsdom has no layout, so nothing resizes; the docked card only needs the observer to exist.
-globalThis.ResizeObserver ??= class {
-  observe() {}
-  unobserve() {}
-  disconnect() {}
-};
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { createElement } = await import("react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -69,7 +63,9 @@ async function renderCard(options: CardOptions) {
   if (panel)
     document.body.appendChild = function <T extends Node>(node: T) {
       document.body.appendChild = append;
-      return panel.appendChild(node);
+      const header = document.createElement("header");
+      panel.appendChild(header);
+      return header.appendChild(node);
     };
   const slot = renderSlot(
     registration,
@@ -226,13 +222,11 @@ test("a thread outside the active list shows a message, not an endless load", as
 
 const PINNED = "kitchen-sink:thread-details:pinned";
 
-/** bb's stream panel as react-resizable-panels renders it, with jsdom given a width. */
+/** Model the owning panel and its collapsed state; layout is left to CSS. */
 function streamPanel(width: number) {
   const panel = document.createElement("div");
   panel.dataset.panelId = "thread-detail-timeline-panel";
   panel.dataset.panelSize = width === 0 ? "0.0" : "100.0";
-  panel.getBoundingClientRect = () =>
-    ({ x: 0, y: 0, top: 0, left: 0, width, height: 600, right: width, bottom: 600 }) as DOMRect;
   document.body.append(panel);
   return panel;
 }
@@ -361,19 +355,18 @@ test("split-pane cards stay within their own pane", async () => {
   const left = streamPanel(500);
   left.removeAttribute("data-panel-id");
   left.dataset.splitPaneId = "left";
+  left.dataset.focused = "true";
   const first = await renderCard({ panel: left });
   const firstCard = docked()!;
-  expect(firstCard.style.right).toBe(`${window.innerWidth - 500 + 12}px`);
-  expect(firstCard.style.maxHeight).toBe("120px");
+  expect(firstCard.parentElement).toBe(left);
   const right = streamPanel(500);
   right.removeAttribute("data-panel-id");
   right.dataset.splitPaneId = "right";
-  right.getBoundingClientRect = () =>
-    ({ top: 0, left: 500, right: 1000, bottom: 600, width: 500, height: 600 }) as DOMRect;
+  right.dataset.focused = "true";
   const second = await renderCard({ panel: right });
   const cards = document.body.querySelectorAll<HTMLElement>('section[aria-label="Thread details"]');
-  expect(cards[1]?.style.right).toBe(`${Math.max(12, window.innerWidth - 1000 + 12)}px`);
-  expect(cards[1]?.style.right).not.toBe(firstCard.style.right);
+  expect(cards[1]?.parentElement).toBe(right);
+  expect(firstCard.parentElement).not.toBe(cards[1]?.parentElement);
   first.slot.unmount();
   second.slot.unmount();
   left.remove();
@@ -387,9 +380,11 @@ test("a shared right panel hides only its owning split pane's card", async () =>
   const first = streamPanel(500);
   first.removeAttribute("data-panel-id");
   first.dataset.splitPaneId = "pane-1";
+  first.dataset.focused = "true";
   const second = streamPanel(500);
   second.removeAttribute("data-panel-id");
   second.dataset.splitPaneId = "pane-2";
+  second.dataset.focused = "true";
   group.append(first, second);
   const firstSlot = await renderCard({ panel: first });
   const firstCard = docked()!;
@@ -417,4 +412,26 @@ test("the header keyboard link focuses the card without toggling it", async () =
   fireEvent.click(within(slot.container).getByRole("link", { name: "Go to thread details" }));
   expect(document.activeElement).toBe(card);
   slot.unmount();
+});
+
+test("mounting the dock does not synchronously measure its panel or header", async () => {
+  const panel = streamPanel(900);
+  panel.getBoundingClientRect = () => {
+    throw new Error("Unexpected layout read");
+  };
+  const { slot } = await renderCard({ panel });
+  await waitFor(() => expect(docked()).toBeTruthy());
+  expect(docked()!.parentElement).toBe(panel.querySelector("header"));
+  slot.unmount();
+  panel.remove();
+});
+
+test("the ordinary thread wrapper uses its header rather than the unpositioned split marker", async () => {
+  const panel = streamPanel(900);
+  panel.dataset.splitPaneId = "single";
+  const { slot } = await renderCard({ panel });
+  await waitFor(() => expect(docked()).toBeTruthy());
+  expect(docked()!.parentElement).toBe(panel.querySelector("header"));
+  slot.unmount();
+  panel.remove();
 });

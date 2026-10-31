@@ -50,7 +50,7 @@ import {
   cx,
 } from "./rows.tsx";
 import { ScriptDialog, type ScriptDraft } from "./script-dialog.tsx";
-import { useStreamDock, type StreamDockLayout } from "./stream-dock.ts";
+import { useStreamDock } from "./stream-dock.ts";
 
 export const THREAD_DETAILS_TITLE = "Thread details";
 
@@ -346,7 +346,7 @@ function DockedCard({
   cardRef,
 }: {
   id: string;
-  layout: StreamDockLayout;
+  layout: HTMLElement;
   children: ReactNode;
   cardRef: RefObject<HTMLElement | null>;
 }) {
@@ -357,20 +357,19 @@ function DockedCard({
       tabIndex={-1}
       id={id}
       aria-label={THREAD_DETAILS_TITLE}
-      style={{
-        width: layout.width,
-        top: layout.top,
-        right: layout.right,
-        maxHeight: layout.maxHeight,
-      }}
       className={cx(
         CARD_CLASS,
-        "fixed z-30 flex origin-top-right flex-col animate-in fade-in-0 zoom-in-95",
+        "z-30 flex select-text w-[280px] max-w-[calc(100%-24px)] flex-col overflow-hidden origin-top-right animate-in fade-in-0 zoom-in-95 [app-region:no-drag]",
+        layout.hasAttribute("data-split-pane-id")
+          ? "absolute right-3 top-[calc(var(--bb-app-chrome-row-height,48px)+12px)] max-h-[min(400px,calc(100%_-_var(--bb-app-chrome-row-height,48px)_-_24px))]"
+          : layout === document.body
+            ? "fixed right-3 top-14 max-h-[min(400px,50dvh)]"
+            : "absolute right-3 top-[calc(100%+12px)] max-h-[min(400px,50dvh)]",
       )}
     >
       <div className="min-h-0 overflow-y-auto">{children}</div>
     </section>,
-    document.body,
+    layout,
   );
 }
 
