@@ -391,6 +391,12 @@ transfer to these surfaces.
 
 ## bb adapter
 
+Monaco YAML keys use `type.yaml` in green and boolean/null literals use
+`keyword.yaml` in purple, matching the source theme's YAML and constant rules.
+`comment.yaml` uses the opaque composite of `text.comment60` over the content
+ground (`#7C7865`), because older BB Monaco adapters discard token alpha.
+The generic TextMate `comment` rule retains its alpha for other viewers.
+
 The bb Monokai plugin is another adapter for this contract. This local snapshot
 keeps its palette policy available without an editor-theme checkout. Updates
 to the upstream contract require an explicit copy and review here. bb names
