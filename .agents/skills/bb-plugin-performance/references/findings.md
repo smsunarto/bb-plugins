@@ -75,6 +75,25 @@ Its reads can overlap. Replacing that behavior with an unlimited single-flight w
 
 The [Monokai template](../../../../plugins/monokai/scripts/bb-monokai.template.css) contains explicit state tags replacing broad relational selectors. [BB's utility scoper](../../../../../bb/packages/plugin-build/src/scope-plugin-utilities.ts) confines plugin styles with `:where()` selector roots. Measure style recalculation and layout during resize or streaming even when React render counts fall.
 
+## Owned-root scoping narrows plugin CSS
+
+October 2026 investigations (@thread:thr_se9qyngs5r, @thread:thr_4v44w32c6m) traced thread-switch style recalculation to the combined plugin stylesheets. Each plugin re-emits Tailwind utilities the host already supplies, and the builder's default scope prefix also matches anonymous roots: `[data-bb-plugin-root]` elements without a `data-bb-plugin` id. Every plugin's selectors therefore test against roots it does not own. Disabling one sheet at a time found no single culprit; deduplicating rules or dropping the anonymous-root branch in the browser roughly halved blocking time.
+
+Plugins opt into narrower matching with `bbPluginBuild.experimental_cssScope: "owned-root-v1"` in `package.json`. Before opting in, every mount and portal root must carry the plugin's named `data-bb-plugin` identity. Opted-in plugins use a local `lib/portal-scope.ts` helper (`usePortalScopeProps`) for portaled overlays. Audit body portals and shadow roots first, since an unnamed root loses its styles.
+
+- Serving the narrower variant needs BB-core builder, server, and client support. That core change was unmerged when the investigations ended; check whether the installed BB serves it before claiming a live improvement.
+- An explicit `files` allowlist in a plugin's `package.json` silently drops new build outputs. Check a pack dry-run of every opted-in plugin.
+- Plugin-side volume levers remain: use host components and utilities instead of re-emitting them, and keep generated, vendored, or copied output out of the plugin root, because the builder scans it for class candidates.
+- Rank selector cost with a selector-stats trace. A CSSOM rewrite that won in the browser did not repeat once built and loaded normally, because the diagnostic rewrote rules the builder skipped.
+
+## Pin bundle identity during comparisons
+
+Concurrent rollouts changed several plugin bundles in the middle of these experiments. Hash the served JavaScript and CSS before and after each arm and discard arms whose hashes changed.
+
+`bb plugin reload` rebuilds from the registered source when source files look newer than the built bundle. Copying theme or source files after `app.js` therefore triggers a rebuild from that source, and a reinstall from a manifest without the opt-in drops its owned-root output. Copy source assets first and built artifacts last, then verify hashes after reload.
+
+Launch test servers from a process that outlives the agent's turn. Stopping a turn to deliver a message killed services started inside it.
+
 ## Instrumentation changed the observed workload
 
 The earlier thread reported that a custom DevTools fiber hook increased measured long-task work by about three times in one comparison. CPU profiler startup also introduced noise. Neither observation is a universal overhead multiplier.

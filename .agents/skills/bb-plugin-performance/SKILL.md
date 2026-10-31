@@ -1,6 +1,6 @@
 ---
 name: bb-plugin-performance
-description: Investigate and improve BB plugin UI performance, including slow thread switches, sidebar rendering, panel mounts, request bursts, and style or layout work. Use when measuring a regression or changing plugin rendering, subscriptions, or caching for speed.
+description: Investigate and improve BB plugin performance, including slow thread switches, sidebar rendering, panel mounts, request bursts, style or layout work, slow agent tools or RPCs that fan out across hosts, and server memory or heap growth. Use when measuring a regression or changing plugin rendering, subscriptions, requests, or caching for speed.
 ---
 
 # Measure and improve BB plugin performance
@@ -24,6 +24,10 @@ Measure cold and warm destinations separately. Define what you cleared for a col
 
 Compare closed-to-closed, closed-to-open, and open-to-open thread switches as separate cases. Keep the destination and starting state fixed within each comparison. Alternate baseline and changed runs when possible.
 
+Gate every timed block on CPU headroom. Record host CPU and renderer CPU separately for each block, and treat blocks on a saturated host as inconclusive rather than explaining them away afterwards. Attribute variation to host contention only with load data captured during that block.
+
+Confirm each fixture renders the target content before trusting its baseline. Archived threads, malformed events, and empty or failed timelines produce fast numbers that measure nothing.
+
 Use realistic list sizes and persisted state. Empty localStorage and a small sidebar can hide costs that scale with saved layouts or threads. Use disposable fixtures; use BB's QA tooling when fixture setup would disturb existing data or another active check.
 
 For a reported slowdown in the live app, first record its version, plugin configuration, and affected path. Confirm the development reproduction matches those conditions. A source frontend against the same server can help identify component names, but its development timings are a separate result. Account for server caches and avoid HMR reloads during measurement.
@@ -39,6 +43,10 @@ Collect the metrics that explain the delay:
 - Actual component renders, mounts, and commits
 - DOM node counts, plugin request counts, and request queueing or response times
 
+End the sample when the slowest surface the change touches has settled, not at the first readiness marker. Removing a forced read often moves the same layout later: the editor appears sooner while a dependent card mounts later, and the complete interaction is no faster.
+
+Keep readiness probes free of layout reads. Detect markers with a `MutationObserver` and `textContent`, not `innerText` or `getBoundingClientRect` in a polling loop, and confirm a stall persists in an observer-only control run.
+
 A DOM quiet window is supporting evidence. Animated content can prevent quiet, and an empty shell can appear quiet before data arrives. A `requestAnimationFrame` followed by a timer does not prove the destination painted.
 
 Separate diagnostic runs from timing runs. A React DevTools hook, fiber traversal, console logging, or CPU profiler can add work. Time the ordinary path with those probes removed. Start recording before the navigation action.
@@ -46,6 +54,8 @@ Separate diagnostic runs from timing runs. A React DevTools hook, fiber traversa
 If concurrent builds make timing unstable, report render, mount, node, or request counts and state that elapsed-time improvement remains unmeasured. Fewer renders alone do not prove a faster interaction.
 
 ## Attribute the repeated work
+
+Separate host cost from plugin cost before blaming either. Run a plugins-off control early, such as serving the test browser an empty plugin list, and report its delta next to any BB-core attribution. When the control removes half the cost, that half belongs to plugins even if a core component triggers the layout.
 
 Trace the affected plugin's `app.tsx` registration through its component, hook, RPC, and server implementation. Use the trace to decide which layer owns the cost:
 
@@ -56,6 +66,10 @@ Trace the affected plugin's `app.tsx` registration through its component, hook, 
 | Mount cost repeats on each thread switch                        | Host key, component initialization, and cache lifetime            |
 | Scripting is small but style or layout dominates                | Theme selectors, DOM size, and layout reads                       |
 | Requests start late or arrive in bursts                         | Initiators, query enablement, event invalidation, and server work |
+| A tool or RPC waits on every connected host                     | Default scope, per-host deadlines, and fan-out callers            |
+| Server heap grows or a process runs out of memory               | Event and payload sizes, and repeated large parses                |
+
+For server memory, reproduce in an isolated process before instrumenting the live server. A fatal out-of-memory report can name the failing operation without its JavaScript caller, and patching prototypes in a running server can leave wrappers that cannot be removed.
 
 A React commit can contain descendant work while a parent bails out. Visiting a fiber in a commit callback does not prove its component rendered. Validate any render-count probe with a known unchanged parent and changed child before using its counts. Temporary counters inside the affected component functions are another diagnostic option.
 
@@ -73,13 +87,15 @@ Apply the finding that the evidence supports:
 - **Requests:** reuse the plugin's typed RPC queries and supported SDK realtime hooks. Filter irrelevant signals and coalesce redundant reads only when freshness and failure recovery remain correct. A debounce must not postpone updates forever under a continuous stream.
 - **Layout:** batch geometry reads before writes. Reuse the sidebar's shared overflow observer pattern instead of measuring each row while mounting it.
 - **DOM size:** consider the sidebar's existing windowing pattern for measured list costs. Preserve keyboard navigation, active or focused rows, sticky headers, and scroll position.
-- **CSS:** inspect style invalidation during thread updates and panel resize. Prefer explicit state attributes for measured broad relational selectors. Avoid indiscriminately deleting every `:has()` selector. Follow BB's prohibition on CSS `@scope`.
+- **CSS:** cost scales with the selectors of every loaded plugin, so one sheet rarely looks guilty alone. See [owned-root scoping](references/findings.md#owned-root-scoping-narrows-plugin-css) for the plugin-side levers. Inspect style invalidation during thread updates and panel resize. Prefer explicit state attributes for measured broad relational selectors. Avoid indiscriminately deleting every `:has()` selector. Follow BB's prohibition on CSS `@scope`.
 
 For host rendering, verify the loaded build's React Compiler output. A successful host build does not prove a particular component compiled. Use compiler logger events for the target function, following BB's existing compiler guard test. Do not treat this host check as a plugin compilation guarantee.
 
 Use the public SDK's `useRealtime` and `useRealtimeConnectionState` hooks when realtime delivery fits the feature. `onPluginSignal` is a host implementation detail. Realtime notifications do not eliminate the reads needed to retrieve data.
 
 ## Verify behavior and performance together
+
+Keep a change only when an alternating comparison repeats its gain: baseline, change, baseline, change, baseline. Restoring the baseline must bring the slowdown back; a run where the restored baseline also speeds up is inconclusive. Treat a CSSOM or other in-browser ablation as a candidate only. Build the real artifact with the exact transform the builder will ship, load it through the normal plugin loader, and time it again before retaining it.
 
 Repeat the original comparison with the same content, cache conditions, panel states, theme, viewport, and instrumentation. Inspect the resulting UI. Match static checks to the changed plugin rather than rebuilding unrelated packages for a documentation-only change.
 
