@@ -43,6 +43,20 @@ Design plugins to remain useful across slow, intermittent, and independently fai
 - **Consistency:** Share canonical, revision-aware data between cards, lists, and detail views. Preserve authoritative ownership of writes and show pending or failed outcomes; cached state alone must not imply a successful write or completed review.
 - **Verification:** Verify relevant server and checkout-host behavior on both macOS and Ubuntu, including mixed-OS connections; report any untested platform. Exercise supported connection topologies with cold and warm caches, latency, disconnection, and reconnect. Assert that the selected resource becomes usable while an unrelated host stays pending, and that stale responses cannot replace newer data. Measure the complete user interaction and distinguish client-to-server latency from server-to-host work.
 
+## Performance and resource use
+
+Every enabled plugin shares BB's page, server, and host daemon, so plugin costs add up. Choose the implementation that keeps BB responsive and its CPU, memory, network, and disk use low while staying reliable. When the cheaper design would weaken correctness or failure recovery, keep reliability and state the tradeoff. To measure or attribute a slowdown, read [bb-plugin-performance](.agents/skills/bb-plugin-performance/SKILL.md).
+
+These patterns slowed BB or were implicated in this repository's performance investigations. Check new and changed code for them:
+
+- **Stylesheet weight:** BB matches every loaded plugin stylesheet against the whole document on each thread switch and panel toggle, so the cost is aggregate and no single sheet looks guilty. Use host UI components and utilities instead of re-emitting them, and keep generated, vendored, or copied files out of the plugin root, which the builder scans for Tailwind classes. Give every mount and portal root the plugin's named `data-bb-plugin` identity and opt into `bbPluginBuild.experimental_cssScope: "owned-root-v1"`; audit body portals and shadow roots first.
+- **Invisible surfaces:** A registered slot that renders `null` still mounts on every instance and keeps the plugin's stylesheet attached. Register visual slots for visible UI only.
+- **Forced layout on mount:** Synchronous geometry reads such as `getBoundingClientRect` or `offsetHeight` during mount or navigation force pending style and layout. Take sizes from `ResizeObserver` entries, check cheap state before measuring, and batch reads before writes. Scope pointer and keyboard listeners to the component rather than the document.
+- **Unstable identities:** Plugin bundles get no React Compiler. Rebuilding derived arrays, item objects, or handlers on each render re-renders every memoized child, as on a canvas re-rendering all cards per keystroke. Reuse unchanged item objects and pass stable callbacks across list and canvas item boundaries.
+- **Remount churn:** Hidden UI torn down and recreated on each navigation repeats its mount cost. Mount on first activation and keep the instance, preserving shortcuts and focus return.
+- **Fleet fan-out on a default path:** A tool or RPC that queries every host and waits for all of them runs at the slowest host's speed. Default to the calling thread's environment and host, matching canonical paths; make wider discovery an explicit argument. When fixing one caller, audit the other callers of the shared discovery helper.
+- **Heavy payloads:** Inline media or large blobs in thread events, startup context, or turn input bloat BB's database and every reader that parses them. Pass files or attachment references, and parse large JSON once rather than on every poll.
+
 ## Resizable thread side-panel tabs
 
 - Every UI in a Thread side-panel tab (`thread-panel`) must adapt continuously to its container's available width and height as the user resizes it. Use container-aware layouts; browser viewport breakpoints alone do not describe the panel's size.
