@@ -19,6 +19,41 @@
 - Reopen the toolbar's event stream when it closes for good (a plugin reload, a server restart, the tunnel's offline page) or goes silent past two heartbeats, instead of polling every 4 seconds until the page reloads. The healthy safety-net poll drops from 30 seconds to 5 minutes, toolbars skip pulls for other pages' changes, and an unchanged pull no longer carries the annotation list.
 - The review panel, its header, and every staged-annotation banner share one request per change and skip changes that cannot affect them. Panel actions show their result at once instead of waiting for a refetch.
 
+## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.3.0...agentation/v0.4.0) (2026-10-31)
+
+
+### Features
+
+* **agentation,t3-composer:** show staged annotations as a chip beside attachments ([c7dc505](https://github.com/smsunarto/bb-plugins/commit/c7dc505865c2b7ebd90815fa06fdae4c0a9f8b57))
+* **agentation:** add configurable feedback mode shortcut ([0d7af64](https://github.com/smsunarto/bb-plugins/commit/0d7af648e476014311f4e9e76d158f72fa220886))
+* **agentation:** launch feedback from the footer and send new-thread batches ([673173c](https://github.com/smsunarto/bb-plugins/commit/673173ce2f95666538b1909316a09d8600b32620))
+* **agentation:** move toolbar toggle to sidebar footer ([cfaf107](https://github.com/smsunarto/bb-plugins/commit/cfaf107d35d644ffba86f5ab1d9578eaae68dd5a))
+* **agentation:** open feedback with Escape then A ([baf92ae](https://github.com/smsunarto/bb-plugins/commit/baf92aee4ae09beddfe7e8818555534cf616e329))
+* **agentation:** show staged annotations as a Codex-style composer pill ([ae93eb7](https://github.com/smsunarto/bb-plugins/commit/ae93eb7ed637c5b451ce02909c67260edd66d849))
+* **agentation:** show staged annotations as a composer action button ([9a60c92](https://github.com/smsunarto/bb-plugins/commit/9a60c9275838d8a0fba8fe9611b2abbd9d694d76))
+* **agentation:** show staged annotations in the new-thread composer ([78d255b](https://github.com/smsunarto/bb-plugins/commit/78d255b72bd15b7c8c2c3af56ca25cb547465312))
+* **branding:** give every plugin a distinct BB-style icon ([e6a07fe](https://github.com/smsunarto/bb-plugins/commit/e6a07fe24cfd954203fc3007c3e9817de4b9376e))
+* **plugins:** adopt BB 0.48 SDK APIs ([7fcbe74](https://github.com/smsunarto/bb-plugins/commit/7fcbe74366553e460c2992080af34533c7642649))
+* **plugins:** replace plugin icons with Lucide via better-icons ([765f389](https://github.com/smsunarto/bb-plugins/commit/765f38988bcf8107889ec51890377f85c00dcdf3))
+* **storybook:** catalog custom components across browser plugins ([1345a92](https://github.com/smsunarto/bb-plugins/commit/1345a926b6b281ae7ab0c6d7fcc6f1807130d77b))
+* **storybook:** populate realistic review and workflow scenarios ([b58f4e7](https://github.com/smsunarto/bb-plugins/commit/b58f4e7b9865f3997da18c886de76aac7652db20))
+
+
+### Bug Fixes
+
+* **agentation:** record the assigned thread only once delivery is confirmed ([882c261](https://github.com/smsunarto/bb-plugins/commit/882c261299a05a99c749e65d2ae64a952f198097))
+* **branding:** use plugin icons in navbar ([38236dc](https://github.com/smsunarto/bb-plugins/commit/38236dc575513313b4241661c25886d23144a1eb))
+* **gtd-sidebar,gitbutler:** resolve core from the local workspace ([e89b7cc](https://github.com/smsunarto/bb-plugins/commit/e89b7ccbb3ba90c11b1e1e99fe9b8f9e6b7e6a4f))
+* **kitchen-sink,agentation:** play the completion sound in the browser and resolve embeds on the thread's host ([21b4bce](https://github.com/smsunarto/bb-plugins/commit/21b4bce93fdc4395d0ac6c8e72eb31ce1e16412a))
+* **scott-engineering:** stop Arena rewrites repeating card labels ([69a5eb8](https://github.com/smsunarto/bb-plugins/commit/69a5eb8eaafc43c3d44c61e05bcc24ea6c6d2776))
+* **storybook:** size component previews to content ([471d888](https://github.com/smsunarto/bb-plugins/commit/471d888914696829ee59ff1a84701fe2354fef90))
+
+
+### Performance Improvements
+
+* **agentation:** supervise the toolbar event stream and share snapshot reads ([2fb9621](https://github.com/smsunarto/bb-plugins/commit/2fb962155dacabace068273264ad0111eb8e8fed))
+* **plugins:** narrow audited remaining utility scopes ([aeb6f69](https://github.com/smsunarto/bb-plugins/commit/aeb6f6993dd798316aab5eb83ae8bc106386bf63))
+
 ## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/agentation/v0.2.3...agentation/v0.3.0) (2026-09-15)
 
 ### Features
