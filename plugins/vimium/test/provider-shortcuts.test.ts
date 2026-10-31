@@ -94,13 +94,16 @@ test("Escape sequences work while editing, suppress repeats, and cancel on anoth
     actions.push(action);
     return true;
   });
-  for (const key of ["m", "r", "f"]) {
+  for (const key of ["m", "r", ";"]) {
     expect(press(key, editor)).toBe(true);
     press("Escape", editor);
     expect(press(key, editor)).toBe(false);
     expect(press(key, editor, true)).toBe(false);
   }
   expect(actions).toEqual(["provider", "reasoning", "speed"]);
+  press("Escape", editor);
+  expect(press("f", editor)).toBe(true);
+  expect(actions).toHaveLength(3);
   press("Escape", editor);
   press("x", editor);
   press("m", editor);
@@ -269,7 +272,7 @@ test("terminal and unrelated text inputs retain Escape commands", () => {
     return true;
   });
   for (const input of document.querySelectorAll("textarea, input")) {
-    for (const key of ["f", "r", "m"]) {
+    for (const key of [";", "r", "m"]) {
       press("Escape", input);
       expect(press(key, input)).toBe(true);
     }

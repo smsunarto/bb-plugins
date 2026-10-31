@@ -897,7 +897,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
             ? "provider"
             : event.key === "r"
               ? "reasoning"
-              : event.key === "f"
+              : event.key === ";"
                 ? "speed"
                 : null;
       if (
