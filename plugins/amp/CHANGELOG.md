@@ -1,5 +1,30 @@
 # @smsunarto/bb-plugin-amp
 
+## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/amp/v0.5.0...amp/v0.6.0) (2026-10-31)
+
+
+### Features
+
+* **amp,devin:** move Orb and Cloud toggles to composer banners ([f089b9e](https://github.com/smsunarto/bb-plugins/commit/f089b9ecdfa046f47baf8244ac0701c1cf6c5b29))
+* **branding:** give every plugin a distinct BB-style icon ([e6a07fe](https://github.com/smsunarto/bb-plugins/commit/e6a07fe24cfd954203fc3007c3e9817de4b9376e))
+* **plugins:** adopt BB 0.48 SDK APIs ([7fcbe74](https://github.com/smsunarto/bb-plugins/commit/7fcbe74366553e460c2992080af34533c7642649))
+* **plugins:** replace plugin icons with Lucide via better-icons ([765f389](https://github.com/smsunarto/bb-plugins/commit/765f38988bcf8107889ec51890377f85c00dcdf3))
+* **storybook:** catalog custom components across browser plugins ([1345a92](https://github.com/smsunarto/bb-plugins/commit/1345a926b6b281ae7ab0c6d7fcc6f1807130d77b))
+* **storybook:** populate realistic review and workflow scenarios ([b58f4e7](https://github.com/smsunarto/bb-plugins/commit/b58f4e7b9865f3997da18c886de76aac7652db20))
+
+
+### Bug Fixes
+
+* **amp:** keep every console method callable after the stderr guard ([ad2cd0c](https://github.com/smsunarto/bb-plugins/commit/ad2cd0c37154b2cfa7e62b22aa892e7c398c0db3))
+* **amp:** read Oracle reports and route Orb and CLI lookups on the thread's host ([f4ae658](https://github.com/smsunarto/bb-plugins/commit/f4ae658f67d47caf74917995043829b34b4638aa))
+* **scott-engineering:** stop Arena rewrites repeating card labels ([69a5eb8](https://github.com/smsunarto/bb-plugins/commit/69a5eb8eaafc43c3d44c61e05bcc24ea6c6d2776))
+
+
+### Performance Improvements
+
+* **amp:** refresh Orb usage and Oracle reports on thread events, drop the 5 s poll ([903c960](https://github.com/smsunarto/bb-plugins/commit/903c960b634aabb49fa5bea3e933874edb9a256a))
+* **plugins:** narrow audited remaining utility scopes ([aeb6f69](https://github.com/smsunarto/bb-plugins/commit/aeb6f6993dd798316aab5eb83ae8bc106386bf63))
+
 ## [0.5.0](https://github.com/smsunarto/bb-plugins/compare/amp/v0.4.1...amp/v0.5.0) (2026-09-15)
 
 
