@@ -507,7 +507,7 @@ describe("bb Monokai code theme", () => {
     expect(parsed.tokenColors.length).toBeGreaterThan(0);
   });
 
-  test("it maps Monaco CSS tokens onto the matching TextMate roles", () => {
+  test("it maps Monaco tokens onto the matching TextMate roles", () => {
     const parsed = JSON.parse(codeTheme) as ReturnType<typeof renderCodeTheme>;
     const foregroundByScope = new Map(
       parsed.tokenColors.flatMap((rule) => {
@@ -516,6 +516,10 @@ describe("bb Monokai code theme", () => {
       }),
     );
 
+    expect(foregroundByScope.get("type.yaml")).toBe("#9ddd54");
+    expect(foregroundByScope.get("keyword.yaml")).toBe("#a895fe");
+    expect(foregroundByScope.get("comment.yaml")).toBe("#7c7865");
+    expect(foregroundByScope.get("comment")).toBe("#beb89999");
     expect(foregroundByScope.get("tag")).toBe("#fe5d86");
     expect(foregroundByScope.get("attribute.name")).toBe("#51dae9");
     expect(foregroundByScope.get("attribute.value")).toBe("#f7d05c");

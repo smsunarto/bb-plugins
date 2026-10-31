@@ -60,6 +60,9 @@ const MONACO_REGEXP_TOKENS = ["regexp"] as const;
 const MONACO_ESCAPE_TOKENS = ["regexp.escape", "regexp.escape.control", "string.escape"] as const;
 
 const MONACO_TOKEN_RULES: readonly CodeThemeRule[] = [
+  { scope: ["type.yaml"], foreground: "code.entity", fontStyle: "" },
+  { scope: ["keyword.yaml"], foreground: "code.constant", fontStyle: "" },
+  { scope: ["comment.yaml"], foreground: "text.commentOpaque", fontStyle: "" },
   { scope: ["tag"], foreground: "code.keyword", fontStyle: "" },
   { scope: ["attribute.name"], foreground: "code.type", fontStyle: "" },
   { scope: ["attribute.value"], foreground: "code.string", fontStyle: "" },
