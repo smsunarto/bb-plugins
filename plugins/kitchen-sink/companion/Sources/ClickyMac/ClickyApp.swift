@@ -17,6 +17,8 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
     private var panel: CompanionPanel?
     private var statusItem: NSStatusItem?
     private var notch: NSPanel?
+    private var visualWindow: VisualWindowController?
+    private var previousApplication: NSRunningApplication?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -46,22 +48,14 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         }
         panel.setFrameAutosaveName("ClickyPanel")
         self.panel = panel
-        let notch = CompanionPanel(contentRect: NSRect(x: 0, y: 0, width: 290, height: 40), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let notch = VisualOutputPanel(contentRect: NSRect(x: 0, y: 0, width: 290, height: 40), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         notch.level = .floating
         notch.isOpaque = false
         notch.backgroundColor = .clear
         notch.hasShadow = true
         notch.hidesOnDeactivate = false
         notch.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        notch.contentView = NSHostingView(rootView: Button { [weak self] in self?.show() } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "cursorarrow.rays").foregroundStyle(Palette.accent)
-                Text("Clicky").font(.system(size: 12, weight: .semibold))
-                Spacer()
-                Text("⌘ ⇧ Space").font(.system(size: 10)).foregroundStyle(.secondary)
-            }.padding(.horizontal, 20).frame(width: 290, height: 40)
-                .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 16, bottomTrailingRadius: 16))
-        }.buttonStyle(.plain).foregroundStyle(.white).preferredColorScheme(.dark))
+        notch.contentView = NotchHostingView(rootView: AnyView(NotchView(model: model, open: { [weak self] in self?.show() })))
         self.notch = notch
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "cursorarrow.rays", accessibilityDescription: "Clicky for BB")
@@ -70,16 +64,26 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         statusItem = item
         do {
             try model.desktop.registerShortcut(action: { [weak self] in self?.toggle() }, onVoicePress: { [weak self] in
-                self?.show(); Task { await self?.model.beginRecording() }
+                self?.hide(); Task { await self?.model.beginRecording(autoSend: true) }
             }, onVoiceRelease: { [weak self] in Task { await self?.model.endRecording() } })
         } catch { model.error = error.localizedDescription }
-        show()
+        let visualWindow = VisualWindowController(model: model)
+        self.visualWindow = visualWindow
+        model.onVisualPresentation = { [weak self, weak visualWindow] in
+            if visualWindow?.isPresented != true { self?.hide() }
+            visualWindow?.present()
+        }
+        model.onVisualDismiss = { [weak visualWindow] in visualWindow?.close() }
+        if model.settingsVisible { show() } else { hide() }
         Task { await model.connect() }
     }
     @objc func toggle() { if panel?.isVisible == true { hide() } else { show() } }
-    func show() { notch?.orderOut(nil); model.panelVisible = true; Task { await model.refresh() }; panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+    func show() {
+        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApplication = front }
+        notch?.orderOut(nil); model.panelVisible = true; Task { await model.refresh() }; panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
     func hide() {
         model.panelVisible = false; model.desktop.clearPoints(); panel?.orderOut(nil)
+        if NSApp.isActive, let previousApplication, !previousApplication.isTerminated { previousApplication.activate() }
         if let screen = NSScreen.main {
             notch?.setFrameOrigin(NSPoint(x: screen.frame.midX - 145, y: screen.visibleFrame.maxY - 40))
             notch?.orderFrontRegardless()
@@ -87,6 +91,43 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { hide(); return false }
     func applicationWillTerminate(_ notification: Notification) { model.shutdown() }
+}
+
+private final class NotchHostingView: NSHostingView<AnyView> {
+    override var isOpaque: Bool { false }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
+private struct NotchView: View {
+    @Bindable var model: CompanionModel
+    let open: () -> Void
+    private var status: String {
+        if model.recording { return "Listening…" }
+        if model.transcribing { return "Transcribing…" }
+        if model.error != nil || model.visualWarning != nil { return "Needs attention" }
+        if model.selected?.phase.busy == true { return model.selected?.phase.label ?? "Thinking…" }
+        return "Clicky"
+    }
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: open) {
+                HStack(spacing: 9) {
+                    Image(systemName: model.recording ? "waveform" : "cursorarrow.rays").foregroundStyle(Palette.accent)
+                    Text(status).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+            }.buttonStyle(.plain).accessibilityLabel("Open Clicky: \(status)")
+                .help(model.error ?? model.visualWarning ?? "Open conversation and settings")
+            if model.visualDocument != nil {
+                Button { model.dismissVisuals() } label: { Image(systemName: "xmark") }
+                    .buttonStyle(.plain).help("Clear drawing").accessibilityLabel("Clear drawing")
+            } else {
+                Text("⌃ ⌥ Space").font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+        }.padding(.horizontal, 20).frame(width: 290, height: 40)
+            .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 16, bottomTrailingRadius: 16))
+            .foregroundStyle(.white).preferredColorScheme(.dark)
+    }
 }
 
 // These colors mirror bb Monokai's background, foreground, cyan, and purple palette.
@@ -113,6 +154,7 @@ struct CompanionView: View {
                     Circle().fill(model.connected ? Palette.accent : .orange).frame(width: 6, height: 6)
                     Text(model.connected ? "Connected to BB" : "Offline").font(.caption).foregroundStyle(.secondary)
                 }
+                if model.canReopenVisual { Button("Show drawing") { hide(); model.openVisuals() }.buttonStyle(.plain).foregroundStyle(Palette.accent).disabled(model.sending) }
                 iconButton("Settings", "gearshape") { model.settingsVisible.toggle() }.disabled(model.sending)
                 iconButton("Hide companion", "minus") { hide() }
             }.padding(.horizontal, 22).padding(.top, 32).padding(.bottom, 18)
@@ -124,7 +166,7 @@ struct CompanionView: View {
                     Divider().opacity(0.4)
                     VStack(spacing: 0) {
                         conversation
-                        if let error = model.error { errorBanner(error) }
+                        if let error = model.error ?? model.visualWarning { errorBanner(error) }
                         composer
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
@@ -271,7 +313,7 @@ struct CompanionView: View {
                     }
                     Toggle("Read replies aloud", isOn: $model.preferences.speakReplies)
                 }.padding(18).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
-                Text("⌘ ⇧ Space opens Clicky. Hold ⌃ ⌥ Space to record, then review your transcript before sending. Screen capture is always your choice. BB retains messages and attachments; your configured voice service receives recorded audio.")
+                Text("⌘ ⇧ Space opens Clicky. Hold ⌃ ⌥ Space to talk; release to send. The chat microphone records a draft. Screen capture is always your choice. BB retains messages and attachments; your configured voice service receives recorded audio.")
                     .font(.caption).foregroundStyle(.secondary).lineSpacing(4)
                 Text("For a remote BB connection, enter its authenticated local proxy URL. If BB’s host daemon restarts, that URL may change; update it here and check the connection again.").font(.caption).foregroundStyle(.secondary)
                 Text("Agents use BB’s approval flow. When a task needs permission, open its conversation in BB to continue.").font(.caption).foregroundStyle(.secondary)

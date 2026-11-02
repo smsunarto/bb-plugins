@@ -97,6 +97,8 @@ public struct BBEvent: Decodable, Sendable, Identifiable {
     public let id: String
     public let seq: Int
     public let turnID: String?
+    /// The server request ID recorded with a user message, distinct from its eventual provider turn.
+    public let clientRequestID: String?
     public let kind: Kind
 
     public enum Kind: Sendable, Equatable {
@@ -104,13 +106,14 @@ public struct BBEvent: Decodable, Sendable, Identifiable {
         case assistantDelta(itemID: String, text: String)
         case assistantMessage(itemID: String, text: String)
         case turnStarted(isRoot: Bool)
+        case turnInputAccepted(clientRequestID: String)
         case turnCompleted(status: String, error: String?)
         case threadInterrupted(reason: String, cause: String?)
         case other
     }
 
     private enum Keys: String, CodingKey { case id, seq, scope, type, data }
-    private enum DataKeys: String, CodingKey { case input, item, itemId, delta, status, error, parentToolCallId, reason, cause }
+    private enum DataKeys: String, CodingKey { case input, item, itemId, delta, status, error, parentToolCallId, reason, cause, requestId, clientRequestId }
     private struct Scope: Decodable { let turnId: String? }
     private struct Input: Decodable { let type: String; let text: String? }
     private struct ItemHeader: Decodable { let type: String }
@@ -129,16 +132,19 @@ public struct BBEvent: Decodable, Sendable, Identifiable {
         turnID = try fields.decodeIfPresent(Scope.self, forKey: .scope)?.turnId
         let type = try fields.decode(String.self, forKey: .type)
         // Tool output and reasoning can have arbitrary data. Do not decode them.
-        guard ["client/turn/requested", "item/agentMessage/delta", "item/completed", "turn/started", "turn/completed", "system/thread/interrupted"].contains(type) else {
+        guard ["client/turn/requested", "item/agentMessage/delta", "item/completed", "turn/started", "turn/input/accepted", "turn/completed", "system/thread/interrupted"].contains(type) else {
+            clientRequestID = nil
             kind = .other
             return
         }
         let data = try fields.nestedContainer(keyedBy: DataKeys.self, forKey: .data)
         let parentToolCallID = try data.decodeIfPresent(String.self, forKey: .parentToolCallId)
         guard type == "turn/started" || parentToolCallID == nil else {
+            clientRequestID = nil
             kind = .other
             return
         }
+        clientRequestID = type == "client/turn/requested" ? try data.decodeIfPresent(String.self, forKey: .requestId) : nil
         switch type {
         case "client/turn/requested":
             let input = try data.decode([Input].self, forKey: .input)
@@ -159,6 +165,8 @@ public struct BBEvent: Decodable, Sendable, Identifiable {
             }
         case "turn/started":
             kind = .turnStarted(isRoot: parentToolCallID == nil)
+        case "turn/input/accepted":
+            kind = .turnInputAccepted(clientRequestID: try data.decode(String.self, forKey: .clientRequestId))
         case "turn/completed":
             kind = .turnCompleted(status: try data.decode(String.self, forKey: .status), error: try data.decodeIfPresent(TurnError.self, forKey: .error)?.message)
         case "system/thread/interrupted":

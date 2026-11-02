@@ -296,3 +296,38 @@ func threadQueuedWorkUsesQueueStateInsteadOfFieldPresence(state: String, expecte
     let thread = try JSONDecoder().decode(BBThread.self, from: Data(json.utf8))
     #expect(!thread.hasQueuedWork)
 }
+
+@Test func requestAcceptanceCorrelatesTheSubmittedMessageToItsActualTurn() throws {
+    let json = #"""
+    [
+      {"id":"request","seq":101,"scope":{"kind":"thread"},"type":"client/turn/requested","data":{"direction":"outbound","requestId":"req_clicky","source":"tell","initiator":"user","senderThreadId":null,"input":[{"type":"text","text":"Visual request nonce: clicky-42\nExplain this screen"}],"target":{"kind":"new-turn"},"request":{"method":"turn/start","params":{}},"execution":{}}},
+      {"id":"unrelatedStart","seq":102,"scope":{"kind":"turn","turnId":"turn_other"},"type":"turn/started","data":{"providerThreadId":"provider"}},
+      {"id":"unrelatedAcceptance","seq":103,"scope":{"kind":"turn","turnId":"turn_other"},"type":"turn/input/accepted","data":{"providerThreadId":"provider","clientRequestId":"req_other"}},
+      {"id":"actualAcceptance","seq":104,"scope":{"kind":"turn","turnId":"turn_actual"},"type":"turn/input/accepted","data":{"providerThreadId":"provider","clientRequestId":"req_clicky"}}
+    ]
+    """#
+    let events = try JSONDecoder().decode([BBEvent].self, from: Data(json.utf8))
+    #expect(events[0].kind == .userMessage("Visual request nonce: clicky-42\nExplain this screen"))
+    #expect(events[0].clientRequestID == "req_clicky")
+    #expect(events[0].turnID == nil)
+    #expect(events[1].kind == .turnStarted(isRoot: true))
+    #expect(events[1].clientRequestID == nil)
+    #expect(events[2].kind == .turnInputAccepted(clientRequestID: "req_other"))
+    #expect(events[3].kind == .turnInputAccepted(clientRequestID: "req_clicky"))
+    #expect(events[3].turnID == "turn_actual")
+    #expect(events[3].clientRequestID == nil)
+}
+
+@Test func requestWithoutCorrelationIDDoesNotInventOne() throws {
+    let json = #"{"id":"legacy","seq":12,"scope":{"kind":"thread"},"type":"client/turn/requested","data":{"input":[{"type":"text","text":"Older request"}]}}"#
+    let event = try JSONDecoder().decode(BBEvent.self, from: Data(json.utf8))
+    #expect(event.kind == .userMessage("Older request"))
+    #expect(event.clientRequestID == nil)
+}
+
+@Test func inputAcceptanceRequiresItsServerRequestID() {
+    let json = #"{"id":"invalidAcceptance","seq":13,"scope":{"kind":"turn","turnId":"turn_x"},"type":"turn/input/accepted","data":{"requestId":"wrong-field"}}"#
+    #expect(throws: DecodingError.self) {
+        _ = try JSONDecoder().decode(BBEvent.self, from: Data(json.utf8))
+    }
+}

@@ -36,6 +36,8 @@ struct Conversation: Codable, Identifiable {
     var rootTurnID: String? = nil
     var sentAfterSequence: Int? = nil
     var completionStatus: String? = nil
+    var visualRequest: VisualRequest? = nil
+    var speakReplyForCurrentTurn: Bool? = nil
 }
 
 struct Preferences: Codable {
@@ -64,8 +66,28 @@ struct SavedCompanion: Codable {
     var panelVisible = true
     var recording = false
     var requestingMicrophone = false
-    private var voiceRequest = UUID()
+    private struct VoiceRequestContext {
+        let id = UUID()
+        let autoSend: Bool
+        let sessionID: String?
+        let connectionGeneration: UUID
+    }
+    private var voiceRequest: VoiceRequestContext?
+    private var recordingStartedAt: Date?
     var sending = false
+    var visualDocument: VisualDocument?
+    var visualWarning: String?
+    var visualIsComplete = false
+    var selectedVisualNodeID: String?
+    var visualRevision = 0
+    @ObservationIgnored var onVisualPresentation: (() -> Void)?
+    @ObservationIgnored var onVisualDismiss: (() -> Void)?
+    private var visualStreams: [String: VisualStream] = [:]
+    private var assistantText: [String: [String: String]] = [:]
+    private let visualStore = VisualSnapshotStore()
+    private var dismissedVisualRequestIDs: Set<String> = []
+    private var reopenableVisual: VisualDocument?
+
     private var connectionGeneration = UUID()
     var transcribing = false
     var capture: CapturedScreen?
@@ -97,9 +119,11 @@ struct SavedCompanion: Codable {
             sessions = saved.sessions
             for i in sessions.indices where sessions[i].phase == .sending { sessions[i].phase = .deliveryUnknown }
             selectedID = sessions.first?.id
+            dismissedVisualRequestIDs = Set(sessions.compactMap { $0.visualRequest?.id })
         }
         settingsVisible = preferences.hostID.isEmpty
         if sessions.isEmpty { newConversation() }
+        loadSavedVisualForSelection()
     }
 
     func save() {
@@ -112,6 +136,8 @@ struct SavedCompanion: Codable {
     }
 
     func connectionChanged() {
+        dismissVisuals()
+        reopenableVisual = nil
         connectionGeneration = UUID()
         retryCount = 0
         connected = false
@@ -140,28 +166,37 @@ struct SavedCompanion: Codable {
     }
 
     func newConversation(job: Bool = false, preservingDraft: Bool = false) {
+        dismissVisuals()
         desktop.stopSpeaking(); desktop.clearPoints()
         if !preservingDraft { clearCapture(); draft = "" }
         let id = UUID().uuidString
         let session = Conversation(id: id, title: job ? "New agent job" : "New conversation", remoteTitle: "Clicky [\(id)]", hostID: preferences.hostID, serverURL: preferences.serverURL, isJob: job)
         sessions.insert(session, at: 0)
-        selectedID = id; save()
+        selectedID = id; reopenableVisual = nil; save()
     }
 
     func select(_ id: String) {
+        dismissVisuals()
         selectedID = id; draft = ""; clearCapture(); desktop.clearPoints(); desktop.stopSpeaking()
+        if let requestID = selected?.visualRequest?.id { dismissedVisualRequestIDs.insert(requestID) }
+        loadSavedVisualForSelection()
         Task { await refresh() }
     }
 
-    func send() async {
+    func send(speakReply: Bool = false) async {
         guard canSend, !sending else { return }
         sending = true
         defer { sending = false }
         while refreshing { try? await Task.sleep(for: .milliseconds(100)); if Task.isCancelled { return } }
-        guard !preferences.hostID.isEmpty else { settingsVisible = true; return }
+        guard !preferences.hostID.isEmpty else {
+            error = "Choose the machine that will run your assistant in Settings."
+            settingsVisible = true
+            return
+        }
         if selected == nil { newConversation(preservingDraft: true) }
         guard let id = selectedID, let index = sessions.firstIndex(where: { $0.id == id }) else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let display = capture.map(VisualDisplayContext.init(capture:)) ?? VisualDisplayContext.current
         let sentCapture = capture
         let generation = connectionGeneration
         let transport = client
@@ -171,6 +206,13 @@ struct SavedCompanion: Codable {
         } catch { self.error = error.localizedDescription; return }
         guard generation == connectionGeneration, selectedID == id else { return }
         guard let current = sessions.firstIndex(where: { $0.id == id }), !sessions[current].phase.busy else { return }
+        dismissVisuals()
+        reopenableVisual = nil
+        sessions[current].visualRequest = VisualRequest(id: UUID().uuidString, afterSequence: sessions[current].sequence,
+            display: display, hadScreenshot: sentCapture != nil)
+        visualStreams[id] = VisualStream()
+        assistantText[id] = [:]
+        sessions[current].speakReplyForCurrentTurn = speakReply
         sessions[current].sentAfterSequence = sessions[current].sequence
         sessions[current].rootTurnID = nil
         sessions[current].completionStatus = nil
@@ -190,7 +232,12 @@ struct SavedCompanion: Codable {
         let prompt: String
         do {
             guard let url = Bundle.main.url(forResource: "companion", withExtension: "md") else { throw CocoaError(.fileNoSuchFile) }
-            let instructions = try String(contentsOf: url, encoding: .utf8)
+            var instructions = try String(contentsOf: url, encoding: .utf8)
+            if let request = record.visualRequest {
+                guard let visualURL = Bundle.main.url(forResource: "companion-visuals", withExtension: "md") else { throw CocoaError(.fileNoSuchFile) }
+                instructions += "\n\n" + (try String(contentsOf: visualURL, encoding: .utf8))
+                instructions += "\nClicky request: \(request.id)"
+            }
             prompt = "\(instructions)\n\nMode: \(record.isJob ? "Agent job" : "Conversation").\nScreen attached to this message: \(sentCapture == nil ? "no" : "yes").\n\nUser request:\n\(text)"
         } catch {
             update(id) { $0.phase = .failed }; self.error = "Companion instructions are missing. Rebuild the app bundle."; save(); return
@@ -269,14 +316,26 @@ struct SavedCompanion: Codable {
         for _ in 0..<100 {
             guard let session = sessions.first(where: { $0.id == id }) else { return }
             let events = try await transport.events(threadID: threadID, afterSequence: session.sequence)
-            for event in events {
+            var groupedVisualDelta = ""
+            for (offset, event) in events.enumerated() {
                 update(id) { $0.sequence = max($0.sequence, event.seq) }
                 switch event.kind {
                 case let .turnStarted(isRoot):
-                    if isRoot, let turnID = event.turnID { update(id) { $0.rootTurnID = turnID; $0.phase = .running } }
+                    if isRoot, let turnID = event.turnID {
+                        let boundTurnID = sessions.first(where: { $0.id == id })?.visualRequest?.turnID
+                        if boundTurnID == nil || boundTurnID == turnID {
+                            update(id) { $0.rootTurnID = turnID; $0.phase = .running }
+                        }
+                    }
+                case let .turnInputAccepted(clientRequestID):
+                    if let request = sessions.first(where: { $0.id == id })?.visualRequest,
+                       request.clientRequestID == clientRequestID, let turnID = event.turnID, event.seq > request.afterSequence {
+                        update(id) { $0.visualRequest?.binding.observe(event); $0.rootTurnID = turnID; $0.phase = .running }
+                    }
                 case .threadInterrupted:
                     update(id) { $0.phase = .failed; $0.completionStatus = "interrupted" }
                 case let .userMessage(text):
+                    update(id) { $0.visualRequest?.binding.observe(event) }
                     let visible = text.components(separatedBy: "\n\nUser request:\n").last ?? text
                     guard !visible.isEmpty else { continue }
                     update(id) { s in
@@ -287,26 +346,35 @@ struct SavedCompanion: Codable {
                         }
                     }
                 case let .assistantDelta(itemID, text):
-                    guard event.turnID == sessions.first(where: { $0.id == id })?.rootTurnID else { continue }
-                    update(id) { s in
-                        if let i = s.entries.firstIndex(where: { $0.id == itemID }) { s.entries[i].text += text }
-                        else { s.entries.append(ChatEntry(id: itemID, role: "assistant", text: text, turnID: event.turnID)) }
+                    guard let turnID = event.turnID, turnID == sessions.first(where: { $0.id == id })?.rootTurnID else { continue }
+                    if sessions.first(where: { $0.id == id })?.visualRequest?.turnID == turnID {
+                        groupedVisualDelta += text
+                        if offset + 1 < events.count, events[offset + 1].turnID == turnID,
+                           case let .assistantDelta(nextItemID, _) = events[offset + 1].kind, nextItemID == itemID { continue }
+                        let group = groupedVisualDelta; groupedVisualDelta = ""
+                        if ingestVisual(id: id, event: event, itemID: itemID, text: group, authoritative: false) { continue }
                     }
+                    recordAssistantText(id: id, event: event, itemID: itemID, text: text, authoritative: false)
                 case let .assistantMessage(itemID, text):
-                    guard event.turnID == sessions.first(where: { $0.id == id })?.rootTurnID else { continue }
-                    update(id) { s in
-                        if let i = s.entries.firstIndex(where: { $0.id == itemID }) { s.entries[i].text = text }
-                        else { s.entries.append(ChatEntry(id: itemID, role: "assistant", text: text, turnID: event.turnID)) }
-                    }
+                    guard let turnID = event.turnID, turnID == sessions.first(where: { $0.id == id })?.rootTurnID else { continue }
+                    if ingestVisual(id: id, event: event, itemID: itemID, text: text, authoritative: true) { continue }
+                    recordAssistantText(id: id, event: event, itemID: itemID, text: text, authoritative: true)
                 case let .turnCompleted(status, message):
                     guard let current = sessions.first(where: { $0.id == id }), let turnID = event.turnID, turnID == current.rootTurnID else { continue }
                     update(id) { $0.phase = status == "completed" ? .ready : .failed; $0.completionStatus = status }
                     if let message, !message.isEmpty { error = message }
+                    if let request = current.visualRequest, request.turnID == turnID {
+                        finishVisual(id: id, successful: status == "completed")
+                    }
                     if status == "completed", let baseline = current.sentAfterSequence, event.seq > baseline,
                        let reply = current.entries.last(where: { $0.role == "assistant" && $0.turnID == turnID })?.text {
                         if turnCaptures[id] != nil { guideReplies[id] = reply }
                         if id == selectedID, current.serverURL == preferences.serverURL, lastSpoken[id] != event.seq {
-                            if preferences.speakReplies { desktop.speak(reply) }
+                            if preferences.speakReplies || current.speakReplyForCurrentTurn == true {
+                                let spokenReply = reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? (visualStreams[id]?.completedDocument?.summary ?? "") : reply
+                                if !spokenReply.isEmpty { desktop.speak(spokenReply) }
+                            }
                             lastSpoken[id] = event.seq
                         }
                     }
@@ -320,6 +388,106 @@ struct SavedCompanion: Codable {
 
     private func update(_ id: String, _ mutation: (inout Conversation) -> Void) {
         if let i = sessions.firstIndex(where: { $0.id == id }) { mutation(&sessions[i]) }
+    }
+
+    var canReopenVisual: Bool { reopenableVisual != nil }
+
+    private func loadSavedVisualForSelection() {
+        guard let session = selected, let request = session.visualRequest else { reopenableVisual = nil; return }
+        let saved = visualStore.load(sessionID: session.id, requestID: request.id)
+        reopenableVisual = saved?.kind == .overlay && (turnCaptures[session.id] == nil || request.display?.matchingScreen == nil) ? nil : saved
+    }
+
+    func openVisuals() {
+        guard let document = reopenableVisual, !document.nodes.isEmpty else { return }
+        visualDocument = document
+        visualIsComplete = true
+        visualWarning = nil
+        if let requestID = selected?.visualRequest?.id { dismissedVisualRequestIDs.remove(requestID) }
+        onVisualPresentation?()
+    }
+
+    func dismissVisuals() {
+        if let requestID = selected?.visualRequest?.id { dismissedVisualRequestIDs.insert(requestID) }
+        visualDocument = nil; selectedVisualNodeID = nil; visualWarning = nil; visualIsComplete = false
+        onVisualDismiss?()
+    }
+
+    var visualDisplay: VisualDisplayContext? { selected?.visualRequest?.display }
+    private func recordAssistantText(id: String, event: BBEvent, itemID: String, text: String, authoritative: Bool) {
+        let persisted = sessions.first(where: { $0.id == id })?.entries.first(where: { $0.id == itemID })?.text ?? ""
+        let raw = authoritative ? text : (assistantText[id]?[itemID] ?? persisted) + text
+        assistantText[id, default: [:]][itemID] = raw
+        let readable = VisualStream.visibleText(raw)
+        update(id) { session in
+            if let i = session.entries.firstIndex(where: { $0.id == itemID }) { session.entries[i].text = readable }
+            else { session.entries.append(ChatEntry(id: itemID, role: "assistant", text: readable, turnID: event.turnID)) }
+        }
+    }
+
+    private func ingestVisual(id: String, event: BBEvent, itemID: String, text: String, authoritative: Bool) -> Bool {
+        guard let session = sessions.first(where: { $0.id == id }), let request = session.visualRequest,
+              request.binding.matches(event) else { return false }
+        if !authoritative, visualStreams[id] == nil, session.entries.contains(where: { $0.id == itemID }) {
+            // Raw protocol is not persisted. Keep the saved readable prefix until
+            // the authoritative full item arrives instead of exposing an unframed tail.
+            return true
+        }
+        var stream = visualStreams[id] ?? VisualStream()
+        if authoritative { stream.replace(text: text, itemID: itemID) } else { stream.append(delta: text, itemID: itemID) }
+        visualStreams[id] = stream
+        let readable = stream.displayText(for: itemID)
+        update(id) { s in
+            if let i = s.entries.firstIndex(where: { $0.id == itemID }) { s.entries[i].text = readable }
+            else { s.entries.append(ChatEntry(id: itemID, role: "assistant", text: readable, turnID: event.turnID)) }
+        }
+        guard id == selectedID, session.serverURL == preferences.serverURL,
+              !dismissedVisualRequestIDs.contains(request.id) else { return true }
+        let preview = stream.preview.flatMap { try? $0.validated() }
+        if authoritative, preview == nil { clearReplacedVisual() }
+        visualWarning = stream.warning
+        if let document = preview, visualDocument != document {
+            guard document.kind != .overlay || (request.hadScreenshot && request.display?.matchingScreen != nil) else {
+                visualWarning = "Screen marks need a capture from the current display."
+                return true
+            }
+            visualDocument = document; visualRevision += 1
+            if !document.nodes.contains(where: { $0.id == selectedVisualNodeID }) { selectedVisualNodeID = nil }
+            onVisualPresentation?()
+        }
+        return true
+    }
+
+    /// An authoritative response can retract its streamed graphics without
+    /// dismissing the request: a later message may still supply a new visual.
+    private func clearReplacedVisual() {
+        let wasPresented = visualDocument != nil
+        visualDocument = nil; selectedVisualNodeID = nil; visualWarning = nil; visualIsComplete = false
+        reopenableVisual = nil
+        if wasPresented { onVisualDismiss?() }
+    }
+
+    private func finishVisual(id: String, successful: Bool) {
+        guard let session = sessions.first(where: { $0.id == id }), let request = session.visualRequest,
+              let stream = visualStreams[id] else { return }
+        let isSelected = id == selectedID && session.serverURL == preferences.serverURL
+        let isPresented = isSelected && !dismissedVisualRequestIDs.contains(request.id) && visualDocument != nil
+        guard stream.hasVisualContent else {
+            // Plain text is a complete answer. An optional visual is not a missing result.
+            if isSelected { clearReplacedVisual() }
+            return
+        }
+        if successful, let document = stream.completedDocument,
+           document.kind != .overlay || (request.hadScreenshot && request.display?.matchingScreen != nil) {
+            do {
+                try visualStore.save(document, sessionID: id, requestID: request.id)
+                if isSelected { reopenableVisual = document }
+            } catch { if isPresented { visualWarning = "Could not save this visual: \(error.localizedDescription)" } }
+            if isPresented { visualIsComplete = true }
+        } else if isPresented {
+            visualIsComplete = false
+            visualWarning = successful ? (stream.warning ?? "BB did not finish a valid visual. Ask a follow-up or open the conversation in BB.") : "Generation stopped. This is an unfinished preview."
+        }
     }
 
     func showGuides() {
@@ -352,28 +520,65 @@ struct SavedCompanion: Codable {
     }
     func clearCapture() { if let capture { desktop.discardCapture(capture) }; capture = nil }
 
-    func beginRecording() async {
-        guard !recording, !requestingMicrophone, !transcribing, !(selected?.phase.busy ?? false) else { return }
-        let request = UUID(); voiceRequest = request; requestingMicrophone = true
+    func beginRecording(autoSend: Bool = false) async {
+        guard !recording, !requestingMicrophone, !transcribing, !sending, !(selected?.phase.busy ?? false) else { return }
+        if autoSend, !connected { error = "Connect to BB before asking a voice question."; settingsVisible = true; return }
+        if autoSend {
+            clearCapture()
+            if selected == nil { newConversation(preservingDraft: true) }
+        }
+        let request = VoiceRequestContext(autoSend: autoSend, sessionID: selectedID, connectionGeneration: connectionGeneration)
+        voiceRequest = request; requestingMicrophone = true
         defer { requestingMicrophone = false }
         do {
             try await desktop.startRecording()
-            guard voiceRequest == request else { desktop.cancelRecording(); return }
-            recording = true
-            recordingLimit = Task { try? await Task.sleep(for: .seconds(119)); if !Task.isCancelled { await endRecording() } }
+            guard voiceRequest?.id == request.id else { desktop.cancelRecording(); return }
+            recording = true; recordingStartedAt = Date()
+            recordingLimit = Task {
+                try? await Task.sleep(for: .seconds(119))
+                guard !Task.isCancelled else { return }
+                recordingLimit = nil
+                await endRecording(autoSendAllowed: false)
+            }
         } catch is CancellationError { }
-        catch { self.error = error.localizedDescription }
+        catch { voiceRequest = nil; self.error = error.localizedDescription }
     }
-    func endRecording() async {
-        voiceRequest = UUID()
-        if requestingMicrophone { desktop.cancelRecording(); return }
-        guard recording else { return }
-        recording = false; transcribing = true; recordingLimit?.cancel()
+
+    func endRecording(autoSendAllowed: Bool = true) async {
+        if requestingMicrophone { voiceRequest = nil; desktop.cancelRecording(); return }
+        guard recording, let request = voiceRequest else { return }
+        voiceRequest = nil
+        let duration = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+        recordingStartedAt = nil
+        recording = false; recordingLimit?.cancel()
+        if request.autoSend, duration < 0.3 { desktop.cancelRecording(); return }
+        transcribing = true
         defer { transcribing = false }
+        let transport = client
         do {
             let audio = try desktop.stopRecording()
             defer { try? FileManager.default.removeItem(at: audio) }
-            draft = try await client.transcribe(audioURL: audio)
+            let text = try await transport.transcribe(audioURL: audio)
+            guard request.connectionGeneration == connectionGeneration, request.sessionID == selectedID else {
+                error = "The conversation changed while transcribing. Ask your question again."
+                return
+            }
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                error = "No speech was detected. Hold the shortcut and ask again."
+                return
+            }
+            let preservedDraft = draft
+            transcribing = false
+            if request.autoSend, autoSendAllowed {
+                draft = text
+                await send(speakReply: true)
+                guard request.connectionGeneration == connectionGeneration, request.sessionID == selectedID else { return }
+                if draft.isEmpty { draft = preservedDraft }
+                else if draft == text, !preservedDraft.isEmpty { draft = preservedDraft + "\n\n" + text }
+            } else {
+                draft = preservedDraft.isEmpty ? text : preservedDraft + "\n\n" + text
+                if !autoSendAllowed { error = "Recording reached two minutes. Review the transcript before sending." }
+            }
         } catch { self.error = error.localizedDescription }
     }
     private func connectionFailed(_ message: String) {
@@ -394,5 +599,5 @@ struct SavedCompanion: Codable {
             }
         }
     }
-    func shutdown() { monitor?.cancel(); recordingLimit?.cancel(); clearCapture(); desktop.shutdown(); save() }
+    func shutdown() { onVisualDismiss?(); monitor?.cancel(); recordingLimit?.cancel(); clearCapture(); desktop.shutdown(); save() }
 }
