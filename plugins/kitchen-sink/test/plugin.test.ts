@@ -5,9 +5,6 @@ import { fileURLToPath } from "node:url";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 
 import plugin from "../src/server/server.ts";
-import { files } from "../src/server/lib/instructions.ts";
-
-const SMART_EMBED_INSTRUCTIONS = files.read("smart-embeds");
 import { mentionProviders } from "../src/server/mentions.ts";
 import { WORKSPACE_CHANGED_CHANNEL } from "../src/shared/contract.ts";
 
@@ -19,41 +16,15 @@ test("the plugin loads against the fake host and registers every mention provide
   await plugin(bb);
 
   expect(harness.registrations.rpcMethods).toEqual([
-    "renderEmbed",
     "projectScripts",
     "saveProjectScript",
-    "askAgent",
     "exportUnityClaims",
     "getRpivTodos",
   ]);
   expect(
-    harness.registrations.experimental_publishedRpcMethods.map((entry) => [
-      entry.method,
-      entry.registrationDescription,
-      entry.methodDescription,
-    ]),
-  ).toEqual([
-    [
-      "renderEmbed",
-      "Smart Embed citations and thread details actions.",
-      "Render a Smart Embed: a source citation, a recorded turn or commit diff, or a saved patch.",
-    ],
-    [
-      "projectScripts",
-      "Smart Embed citations and thread details actions.",
-      "List the project scripts the thread details card runs.",
-    ],
-    [
-      "saveProjectScript",
-      "Smart Embed citations and thread details actions.",
-      "Add, replace, or delete one project script the thread details card runs.",
-    ],
-    [
-      "askAgent",
-      "Smart Embed citations and thread details actions.",
-      "Ask a thread's agent to commit, push, or open its pull request.",
-    ],
-  ]);
+    harness.registrations.experimental_publishedRpcMethods.map((entry) => entry.method),
+  ).toEqual(["projectScripts", "saveProjectScript"]);
+  expect(harness.registrations.instructionProvider).toBeNull();
   expect(harness.registrations.mentionProviders.map((provider) => provider.id)).toEqual(
     mentionProviders.map((provider) => provider.id),
   );
@@ -73,14 +44,7 @@ test("the manifest declares the skills root that holds every composer command", 
 
 test("each skill directory carries a SKILL.md whose frontmatter name matches the directory", async () => {
   const directories = (await readdir(skillsRoot)).sort();
-  expect(directories).toEqual([
-    "project-scripts",
-    "ship-it",
-    "smart-embeds",
-    "subthread",
-    "sync",
-    "test-remotely",
-  ]);
+  expect(directories).toEqual(["project-scripts", "subthread", "test-remotely"]);
   for (const directory of directories) {
     const path = join(skillsRoot, directory, "SKILL.md");
     expect((await stat(path)).isFile()).toBe(true);
@@ -94,47 +58,11 @@ test("each skill directory carries a SKILL.md whose frontmatter name matches the
         .map(([key, value]) => [key, value ?? ""]),
     );
     expect(fields.name).toBe(directory);
-    if (directory === "ship-it") {
-      expect(fields.description).toBe("Ship it");
-      expect(fields["disable-model-invocation"]).toBe("true");
-    } else {
-      expect(fields.description?.length ?? 0).toBeGreaterThan(40);
-    }
+    expect(fields.description?.length ?? 0).toBeGreaterThan(40);
   }
 });
 
-test("sync routes GitButler repositories through the gitbutler skill", async () => {
-  const skill = await readFile(join(skillsRoot, "sync", "SKILL.md"), "utf8");
-  expect(skill).toContain("`gitbutler` skill");
-  expect(skill).toContain("but status");
-});
-
-test("the measured baseline prompt is the shipped Smart Embed text", async () => {
-  const baseline = await readFile(new URL("../eval/prompts/baseline.md", import.meta.url), "utf8");
-  expect(baseline).toBe(`${SMART_EMBED_INSTRUCTIONS}\n`);
-});
-
-test("injects Smart Embed skill routing within the host's per-plugin character limit", async () => {
-  const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
-  await plugin(bb);
-
-  const instructions = harness.registrations.instructionProvider?.({
-    threadId: "thread-1",
-    projectId: "project-1",
-  });
-  expect(instructions).toBe(SMART_EMBED_INSTRUCTIONS);
-  // BB truncates contributeInstructions output after 4096 characters.
-  expect(instructions?.length).toBeLessThanOrEqual(4096);
-  const routedSkills = [...(instructions?.matchAll(/read the `([^`]+)` skill/g) ?? [])].map(
-    (match) => match[1],
-  );
-  expect(routedSkills).toEqual(["smart-embeds"]);
-  for (const name of routedSkills) {
-    expect((await stat(join(skillsRoot, name!, "SKILL.md"))).isFile()).toBe(true);
-  }
-});
-
-test("publishes a workspace-changed signal when a thread settles, fails, or goes away", async () => {
+test("publishes completion signals only when a thread becomes idle", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
   await plugin(bb);
   const thread = makeThreadResponse({ id: "thread-9" });
@@ -152,22 +80,10 @@ test("publishes a workspace-changed signal when a thread settles, fails, or goes
       channel: WORKSPACE_CHANGED_CHANNEL,
       payload: { threadId: "thread-9", parentThreadId: null, reason: "idle" },
     },
-    {
-      channel: WORKSPACE_CHANGED_CHANNEL,
-      payload: { threadId: "thread-9", parentThreadId: null, reason: "failed" },
-    },
-    {
-      channel: WORKSPACE_CHANGED_CHANNEL,
-      payload: { threadId: "thread-9", parentThreadId: null, reason: "archived" },
-    },
-    {
-      channel: WORKSPACE_CHANGED_CHANNEL,
-      payload: { threadId: "thread-9", parentThreadId: null, reason: "deleted" },
-    },
   ]);
 });
 
-test("subthread completion still refreshes embeds and carries its parent ID", async () => {
+test("subthread completion carries its parent ID so the browser can keep it silent", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
   await plugin(bb);
   const thread = makeThreadResponse({ id: "child", parentThreadId: "parent" });

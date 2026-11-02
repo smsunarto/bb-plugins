@@ -264,3 +264,18 @@ test("a submit from the thread composer re-reads a live Cloud session", async ()
   expect(slot.inspection.composer.submits).toHaveLength(1);
   expect(reads()).toBe(2);
 });
+
+test("Devin owns its provider icon and uses the shared brand geometry", async () => {
+  const { DEVIN_LOGO_VIEW_BOX, DEVIN_LOGO_PATHS } = await import("../shared/devin-brand.ts");
+  const app = await loadPluginApp(() => import("./app.tsx"));
+  expect(
+    app.providerIcons.map(({ providerKind, providerId }) => ({ providerKind, providerId })),
+  ).toEqual([{ providerKind: "agent", providerId: "acp-devin" }]);
+  const icon = renderSlot({ component: app.providerIcons[0]!.icon }, { className: "size-4" });
+  const svg = icon.container.querySelector("svg");
+  expect(svg?.getAttribute("class")).toBe("size-4");
+  expect(svg?.getAttribute("viewBox")).toBe(DEVIN_LOGO_VIEW_BOX);
+  expect(svg?.querySelector("path")?.getAttribute("d")).toBe(DEVIN_LOGO_PATHS[0]);
+  expect(svg?.querySelector("path")?.getAttribute("fill")).toBe("currentColor");
+  icon.unmount();
+});
