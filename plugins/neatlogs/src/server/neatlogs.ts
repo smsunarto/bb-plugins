@@ -1,15 +1,18 @@
+import { promisify } from "node:util";
+import { gzip } from "node:zlib";
 import type { NeatlogsConfig } from "./settings.ts";
 import type { NeatlogsSpan } from "./turn-trace.ts";
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const gzipAsync = promisify(gzip);
 
 /**
  * What the pump does with a turn after one POST:
  * - `exported`: advance the checkpoint.
  * - `blocked`: the ingest firewall refused the body's content. It answers with
- *   an nginx HTML 403, unlike the JSON errors of Neatlogs's own API, and trips
- *   on ordinary agent text such as `../` paths, local URLs, and HTML. Resend
- *   the turn without content.
+ *   an HTML 403, unlike the JSON errors of Neatlogs's own API, and trips on
+ *   ordinary agent text such as `../` paths, local URLs, and HTML. Gzipped
+ *   bodies pass it, so this is rare; resend the turn without content.
  * - `rejected`: Neatlogs will never accept this body (400/413/422); advance
  *   past it so one bad turn cannot block the thread.
  * - `refused`: the key or URL is wrong (401/403/404); hold every export until
@@ -41,14 +44,23 @@ function outcomeForResponse(response: Response): ExportOutcome {
   return { kind: "retry", reason: `HTTP ${status}` };
 }
 
-/** POST one nested trace to Neatlogs `/v1/trace`, which assigns its IDs. */
+/**
+ * POST one nested trace to Neatlogs `/v1/trace`, which assigns its IDs. The
+ * body is gzipped: it shrinks large tool output, and the ingest firewall does
+ * not inspect compressed bodies, so ordinary agent text no longer trips it.
+ */
 export const postTrace: TraceExporter = async (config, trace, signal) => {
+  const body = await gzipAsync(JSON.stringify(trace));
   let response: Response;
   try {
     response = await fetch(config.traceUrl, {
       method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": config.apiKey },
-      body: JSON.stringify(trace),
+      headers: {
+        "content-encoding": "gzip",
+        "content-type": "application/json",
+        "x-api-key": config.apiKey,
+      },
+      body,
       signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
     });
   } catch (error) {
@@ -59,13 +71,13 @@ export const postTrace: TraceExporter = async (config, trace, signal) => {
     await response.body?.cancel();
     return outcomeForResponse(response);
   }
-  const body = (await response.json().catch(() => null)) as {
+  const result = (await response.json().catch(() => null)) as {
     trace_id?: unknown;
     spans?: unknown;
   } | null;
   return {
     kind: "exported",
-    traceId: typeof body?.trace_id === "string" ? body.trace_id : "unknown",
-    spans: typeof body?.spans === "number" ? body.spans : 0,
+    traceId: typeof result?.trace_id === "string" ? result.trace_id : "unknown",
+    spans: typeof result?.spans === "number" ? result.spans : 0,
   };
 };

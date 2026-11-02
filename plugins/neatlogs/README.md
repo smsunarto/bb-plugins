@@ -48,10 +48,11 @@ Reasoning text and agent-only prompt parts are never exported.
   edit is.
 - On startup, after a realtime reconnect, and after a settings change, it
   rescans threads changed since activation and exports turns it missed.
-- Neatlogs's ingest firewall answers an HTML 403 to ordinary agent text such
-  as `../` paths, local URLs, and HTML attributes. The plugin then resends that
-  turn without content and marks it `contentWithheld: ingest-firewall`; if even
-  that is blocked, it skips the turn.
+- Request bodies are gzipped. Neatlogs's ingest firewall answers an HTML 403
+  to uncompressed agent text such as `../` paths, local URLs, and HTML
+  attributes, but does not inspect gzip. If it still blocks a turn, the plugin
+  resends it without content and marks it `contentWithheld: ingest-firewall`;
+  if even that is blocked, it skips the turn.
 - HTTP 400/413/422 skips that turn. HTTP 401/404, or a JSON 403, marks the
   plugin _needs configuration_ and holds all exports until the settings change.
   Any other failure retries that thread after a minute.

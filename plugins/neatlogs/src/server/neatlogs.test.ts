@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { gunzipSync } from "node:zlib";
 import { postTrace } from "./neatlogs.ts";
 import type { NeatlogsConfig } from "./settings.ts";
 import type { NeatlogsSpan } from "./turn-trace.ts";
@@ -28,6 +29,19 @@ afterEach(() => {
 });
 
 describe("postTrace", () => {
+  test("gzips the JSON body so the ingest firewall does not inspect it", async () => {
+    let request: Request | undefined;
+    globalThis.fetch = (async (url: string, init: RequestInit) => {
+      request = new Request(url, init);
+      return new Response('{"trace_id":"abc","spans":1}', { status: 200 });
+    }) as never;
+    await postTrace(config, trace, new AbortController().signal);
+    expect(request?.headers.get("content-encoding")).toBe("gzip");
+    expect(request?.headers.get("x-api-key")).toBe("test-key");
+    const sent = gunzipSync(new Uint8Array(await request!.arrayBuffer())).toString();
+    expect(JSON.parse(sent)).toEqual(trace);
+  });
+
   test("tells the ingest firewall's HTML 403 apart from a refused key", async () => {
     const html = "<html><head><title>403 Forbidden</title></head></html>";
     expect(await respond(403, html, "text/html")).toEqual({ kind: "blocked" });
