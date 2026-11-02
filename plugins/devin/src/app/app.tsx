@@ -94,9 +94,9 @@ function useCloudSession(threadId: string | null) {
   return session.data;
 }
 
-function DevinLogo() {
+export function DevinIcon({ className = "devin-cloud-logo" }: { className?: string }) {
   return (
-    <svg aria-hidden="true" className="devin-cloud-logo" viewBox={DEVIN_LOGO_VIEW_BOX}>
+    <svg aria-hidden="true" className={className} viewBox={DEVIN_LOGO_VIEW_BOX}>
       {DEVIN_LOGO_PATHS.map((path) => (
         <path d={path} fill="currentColor" key={path} />
       ))}
@@ -168,7 +168,7 @@ function CloudToggle() {
         title="Run this thread on a Devin Cloud VM"
         type="button"
       >
-        <DevinLogo />
+        <DevinIcon />
         Cloud
       </button>
     </div>
@@ -202,7 +202,7 @@ function CloudBanner() {
     <div className="mb-2 rounded-lg border border-border bg-card p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
-          <DevinLogo />
+          <DevinIcon />
           <span className="shrink-0 text-sm font-medium text-foreground">Devin Cloud</span>
           {active === null ? (
             <span className="truncate text-xs">Starting a cloud session…</span>
@@ -264,6 +264,11 @@ function CloudSessionBanner() {
 }
 
 export default definePluginApp((app) => {
+  app.slots.experimental_providerIcon({
+    providerKind: "agent",
+    providerId: "acp-devin",
+    icon: DevinIcon,
+  });
   // Cloud is chosen at thread creation, so the toggle lives on the new-thread
   // composer only; the banner covers the thread after that.
   app.composer.customize({

@@ -3,10 +3,18 @@
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM"],
-    "types": ["node", "bun-types/test"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "types": [
+      "node",
+      "bun-types/test"
+    ],
     "skipLibCheck": false
   },
-  "include": ["src", "test", "eval"],
-  "exclude": ["eval/cases"]
+  "include": [
+    "src",
+    "test"
+  ]
 }

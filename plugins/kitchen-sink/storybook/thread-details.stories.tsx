@@ -21,20 +21,7 @@ const thread = {
   },
   host: { id: "host_mac", name: "Scott's MacBook Pro (2)" },
 };
-const status = {
-  outcome: "available",
-  workspace: {
-    branch: { currentBranch: "gitbutler/workspace", defaultBranch: "main" },
-    checkout: { kind: "branch", branchName: "gitbutler/workspace", headSha: null },
-    mergeBase: null,
-    workingTree: { insertions: 2765, deletions: 161, fileCount: 12, files: [] },
-  },
-};
-
-function host(options: {
-  scripts?: Array<{ id: string; name: string; command: string }>;
-  pullRequest?: { number: number; state: "open" | "draft"; title: string; url: string };
-}) {
+function host(options: { scripts?: Array<{ id: string; name: string; command: string }> }) {
   return {
     pluginId: "kitchen-sink",
     sidebarThreads: {
@@ -42,22 +29,7 @@ function host(options: {
       threads: [thread],
       projects: [{ id: "proj_story", name: "bb-plugins" }],
     },
-    sdk: {
-      subscribe: () => () => {},
-      environments: { status: async () => status },
-    },
-    rpc: {
-      projectScripts: () => ({ scripts: options.scripts ?? [] }),
-      pullRequests: ({ keys }: { keys: string[] }) =>
-        Object.fromEntries(
-          keys.map((key) => [
-            key,
-            options.pullRequest
-              ? { outcome: "available", pullRequest: options.pullRequest }
-              : { outcome: "absent" },
-          ]),
-        ),
-    },
+    rpc: { projectScripts: () => ({ scripts: options.scripts ?? [] }) },
   };
 }
 
@@ -88,17 +60,11 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const NoPullRequest: Story = {};
-export const WithScriptAndPullRequest: Story = {
+export const Workspace: Story = {};
+export const WithScript: Story = {
   parameters: {
     host: host({
       scripts: [{ id: "dev", name: "Dev server", command: "bun run dev" }],
-      pullRequest: {
-        number: 482,
-        state: "open",
-        title: "Add the thread details card",
-        url: "https://github.com/smsunarto/bb-plugins/pull/482",
-      },
     }),
   },
 };

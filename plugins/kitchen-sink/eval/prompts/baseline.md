@@ -1,1 +1,0 @@
-For project code/Unity citations, existing commit diffs, proposed patches, or before/after image comparisons, read the `smart-embeds` skill before emitting a directive. Use worktree-relative paths for Smart Embeds. Hand off committed changes through the Review plugin's `code_review_share_changes` tool when available, and show relevant file diffs from a verified commit.

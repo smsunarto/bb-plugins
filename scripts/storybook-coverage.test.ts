@@ -23,7 +23,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
     status: ["PrStateBadge", "ReviewStateBadge", "BranchStatusChip"],
     sync: ["SyncState"],
   },
-  devin: { cloud: ["../src/app/app"] },
+  devin: { cloud: ["../src/app/app"], branding: ["DevinIcon"] },
   dotfiles: { editor: ["WorkingFileEditor", "HostPicker"], screens: ["DotfilesPage"] },
   "gh-stack": { files: ["ChangedFileTree"], stack: ["../app"] },
   gitbutler: {
@@ -34,7 +34,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
   "gtd-sidebar": { threads: ["ThreadCard", "RenameProvider"], indicators: ["StatusGlyph"] },
   html: { tweaks: ["TweakPanel"] },
   genui: { gallery: ["../app", "nav"] },
-  "kitchen-sink": { comparison: ["SmartImageCompareDirective", "DevinIcon"] },
+  "kitchen-sink": { "thread-details": ["../src/app/app"] },
   "magic-compose": { composer: ["../app", "composerAction"] },
   slopcop: { rules: ["../app", "nav"] },
   monokai: {

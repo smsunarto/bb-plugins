@@ -33,22 +33,8 @@ const thread = {
   host: { id: "host_mac", name: "Scott's MacBook Pro" },
 };
 
-function workspaceStatus(insertions: number, deletions: number) {
-  return {
-    outcome: "available",
-    workspace: {
-      branch: { currentBranch: "scott/details", defaultBranch: "main" },
-      checkout: { kind: "branch", branchName: "scott/details", headSha: null },
-      mergeBase: null,
-      workingTree: { insertions, deletions, fileCount: 3, files: [] },
-    },
-  };
-}
-
 type CardOptions = {
   scripts?: Array<{ id: string; name: string; command: string }> | Error;
-  pullRequest?: { number: number; state: "open" | "draft" } | "unavailable" | "pending";
-  status?: unknown;
   threads?: unknown[];
   compact?: boolean;
   /** Mount inside this element, as bb mounts the header inside its stream panel. */
@@ -60,9 +46,7 @@ async function renderCard(options: CardOptions) {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const registration = app.threadHeaderActions.find((action) => action.id === "thread-details");
   if (!registration) throw new Error("thread-details is not registered");
-  const send = mock(async (_input: unknown) => ({ ok: true }));
   const create = mock(async (_args: unknown) => ({ id: "term_1" }));
-  const statusRead = mock(async () => (options.status ?? workspaceStatus(2765, 161)) as never);
   // renderSlot appends its container to the body; route that one append into the panel.
   const { panel } = options;
   const append = document.body.appendChild;
@@ -82,7 +66,6 @@ async function renderCard(options: CardOptions) {
         projects: [{ id: "proj_1", name: "bb-plugins" } as never],
       },
       sdk: {
-        plugins: { callRpc: statusRead },
         terminals: { create: create as never },
       },
       rpc: {
@@ -90,27 +73,6 @@ async function renderCard(options: CardOptions) {
           if (options.scripts instanceof Error) throw options.scripts;
           return { scripts: options.scripts ?? [] };
         },
-        askAgent: send,
-        pullRequests: ({ keys }: { keys: string[] }) =>
-          options.pullRequest === "pending"
-            ? new Promise(() => {})
-            : Object.fromEntries(
-                keys.map((key) => [
-                  key,
-                  options.pullRequest === "unavailable"
-                    ? { outcome: "unavailable", message: "gh is not signed in" }
-                    : options.pullRequest
-                      ? {
-                          outcome: "available",
-                          pullRequest: {
-                            ...(options.pullRequest as object),
-                            title: "Add thread details",
-                            url: "https://github.com/o/r/pull/7",
-                          },
-                        }
-                      : { outcome: "absent" },
-                ]),
-              ),
       } as never,
     },
   );
@@ -122,11 +84,11 @@ async function renderCard(options: CardOptions) {
         isCompactViewport: compact,
       }),
     );
-  return { slot, send, create, statusRead, setCompact };
+  return { slot, create, setCompact };
 }
 
 async function mountCard(options: CardOptions) {
-  const { slot, send, create, statusRead, setCompact } = await renderCard(options);
+  const { slot, create, setCompact } = await renderCard(options);
   const card = await waitFor(() => {
     const element = document.body.querySelector<HTMLElement>(
       'section[aria-label="Thread details"]',
@@ -134,34 +96,18 @@ async function mountCard(options: CardOptions) {
     if (!element) throw new Error("card not open");
     return element;
   });
-  return { slot, card, send, create, statusRead, setCompact };
+  return { slot, card, create, setCompact };
 }
 
-test("the card shows the machine, script, branch, PR, and change rows", async () => {
+test("the card retains machine and script rows without Git workflows", async () => {
   const { slot, card } = await mountCard({});
   const view = within(card);
   expect(view.getByText("Scott's MacBook Pro")).toBeTruthy();
   expect(view.queryByRole("button", { name: "Open in editor" })).toBeNull();
   await waitFor(() => expect(view.getByText("Add project script")).toBeTruthy());
-  expect(view.getByText("scott/details")).toBeTruthy();
-  await waitFor(() => expect(view.getByText("+2,765")).toBeTruthy());
-  expect(view.getByText("-161")).toBeTruthy();
-  expect(view.getByText("Push & create PR")).toBeTruthy();
-  slot.unmount();
-});
-
-test("Push & create PR asks the thread's agent", async () => {
-  const { slot, card, send } = await mountCard({});
-  fireEvent.click(within(card).getByText("Push & create PR"));
-  await waitFor(() => expect(send).toHaveBeenCalled());
-  expect(send.mock.calls[0]?.[0]).toEqual({ threadId: "thr_1", action: "push-and-create-pr" });
-  slot.unmount();
-});
-
-test("an open pull request replaces the push row", async () => {
-  const { slot, card } = await mountCard({ pullRequest: { number: 7, state: "open" } });
-  await waitFor(() => expect(within(card).getByText("View PR #7")).toBeTruthy());
-  expect(within(card).queryByText("Push & create PR")).toBeNull();
+  expect(view.queryByText("scott/details")).toBeNull();
+  expect(view.queryByText("Version control")).toBeNull();
+  expect(view.queryByText("Push & create PR")).toBeNull();
   slot.unmount();
 });
 
@@ -176,36 +122,6 @@ test("a saved script runs in a thread terminal", async () => {
     scope: { kind: "thread", threadId: "thr_1" },
     start: { mode: "command", command: "bun run dev" },
   });
-  slot.unmount();
-});
-
-test("a pending or failed pull request lookup never offers to create one", async () => {
-  const pending = await mountCard({ pullRequest: "pending" });
-  await waitFor(() =>
-    expect(within(pending.card).getByText("Checking pull request…")).toBeTruthy(),
-  );
-  expect(within(pending.card).queryByText("Push & create PR")).toBeNull();
-  pending.slot.unmount();
-  const failed = await mountCard({ pullRequest: "unavailable" });
-  await waitFor(() =>
-    expect(within(failed.card).getByText("Pull request status unavailable")).toBeTruthy(),
-  );
-  expect(within(failed.card).queryByText("Push & create PR")).toBeNull();
-  failed.slot.unmount();
-});
-
-test("an unreadable checkout says so instead of reporting no changes", async () => {
-  const { slot, card } = await mountCard({
-    status: {
-      outcome: "unavailable",
-      failure: { code: "path_not_found", message: "gone", workspacePath: "/x" },
-    },
-  });
-  // Earlier tests cached counts for this checkout, which stay visible marked stale.
-  await waitFor(() =>
-    expect(within(card).getByText(/^(Changes unavailable|Changes \(stale\))$/)).toBeTruthy(),
-  );
-  expect(within(card).queryByText("No changes")).toBeNull();
   slot.unmount();
 });
 
@@ -312,32 +228,18 @@ test("narrow desktop streams show the card; mobile and collapsed streams hide it
     [900, true],
   ] as const) {
     const panel = streamPanel(width);
-    const { slot, statusRead } = await renderCard({ panel, compact });
+    const { slot } = await renderCard({ panel, compact });
     if (width === 0 || compact) expect(docked()).toBeNull();
     else await waitFor(() => expect(docked()).toBeTruthy());
     if (compact) {
       expect(
         within(slot.container).queryByRole("link", { name: "Go to thread details" }),
       ).toBeNull();
-      expect(statusRead).not.toHaveBeenCalled();
     }
     expect(within(slot.container).queryByRole("button", { name: "Thread details" })).toBeNull();
     slot.unmount();
     panel.remove();
   }
-});
-
-test("checkout status can refresh while the card stays visible", async () => {
-  const { slot, card, statusRead } = await mountCard({});
-  const refresh = within(card).getByRole("button", { name: "Refresh checkout status" });
-  await waitFor(() => expect(refresh.hasAttribute("disabled")).toBe(false));
-  const before = statusRead.mock.calls.length;
-  statusRead.mockImplementation(async () => workspaceStatus(42, 7) as never);
-  fireEvent.click(refresh);
-  await waitFor(() => expect(within(card).getByText("+42")).toBeTruthy());
-  expect(statusRead.mock.calls.length).toBeGreaterThan(before);
-  expect(document.body.contains(card)).toBe(true);
-  slot.unmount();
 });
 
 test("resizing to mobile hides the card without losing an open script draft", async () => {

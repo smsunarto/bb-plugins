@@ -29,12 +29,3 @@ export const saveProjectScriptInputSchema = z.strictObject({
 export function projectScriptsKey(projectId: string): string {
   return `project-scripts:${projectId}`;
 }
-
-/** Git work the card hands to the thread's agent; each names a prompt in `instructions/thread-details/`. */
-export const AGENT_GIT_ACTIONS = ["push-and-create-pr", "commit", "push", "update-pr"] as const;
-export type AgentGitAction = (typeof AGENT_GIT_ACTIONS)[number];
-export const askAgentInputSchema = z.strictObject({
-  threadId: z.string().min(1).max(200),
-  action: z.enum(AGENT_GIT_ACTIONS),
-});
-export const askAgentOutputSchema = z.strictObject({ ok: z.literal(true) });
