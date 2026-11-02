@@ -60,3 +60,17 @@ stays silent.
   shown and the agent is not interrupted. Safari allows sound only from audio
   that a click or key press started, so the tab unlocks its audio on your first
   click or key press, and again after any refusal.
+
+## Clicky desktop companion
+
+The optional [native macOS companion](companion/) gives BB a floating chat panel, a compact notch launcher, voice drafts, screen attachments, spoken replies, and agent jobs. It uses your installed BB CLI and its existing connection. Installing or reloading the Kitchen Sink plugin does not launch it.
+
+Build with `companion/build-app.sh`, then open `companion/build/Clicky for BB.app`. Choose the machine that should run your agents in Settings. The companion discovers BB’s raw CLI and runs it through the packaged BB runtime, avoiding login-shell dependencies. Enter your authenticated local proxy URL for a remote BB connection. Its port changes when BB’s host daemon restarts; update the URL in Settings afterward. Current BB APIs do not expose automatic discovery of that port. Requires macOS 14 or later and Swift 6.2 or later to build. The app is locally ad-hoc signed, not notarized for distribution.
+
+Press **⌘⇧Space** to show or hide the panel. Hold **⌃⌥Space** or click the microphone to record a question, then review the transcript before sending. Click **Capture screen** to preview an attachment. Microphone and screen recording access are requested only when you use those features. BB retains sent messages and attachments; recordings go to BB's configured transcription service.
+
+Each conversation or job runs in a fresh BB personal workspace on the selected machine with user-reviewed escalation. **Open conversation in BB** handles permissions and richer tools or artifacts. **Stop agent** requests cancellation through BB. Cached transcripts stay visible offline; a failed send is marked unconfirmed and is never retried automatically. Refresh recovers an uncertain creation by its unique title when BB returns it in the personal thread list. If it cannot be recovered, inspect BB before starting another copy of the task.
+
+This is an independent HeyClicky-inspired implementation. It supports one attached display per message and optional point guides. It does not reproduce HeyClicky's 2D/3D drawing engine, dictation into other apps, routines editor, Chrome extension, or automatic desktop control. Tasks can use the tools available to their BB agent. Native UI and capture are macOS-only; a BB server or execution host can be remote.
+
+Run the companion's tests with `swift test --package-path companion`. Its native prompt is kept in `instructions/companion.md` and copied into the app bundle by the build script.
