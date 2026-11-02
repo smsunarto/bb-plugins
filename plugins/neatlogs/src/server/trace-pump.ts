@@ -4,6 +4,7 @@ import type { NeatlogsConfig } from "./settings.ts";
 import {
   assembleTurnTrace,
   ZERO_USAGE,
+  type ContentMode,
   type ThreadEventRow,
   type TokenUsage,
   type TraceThread,
@@ -416,15 +417,30 @@ export class TracePump {
     // Settings can change while a backlog drains; each turn uses the current ones.
     const config = this.getConfig();
     if (config === null || this.refused) return null;
-    const { trace, usageTotal } = assembleTurnTrace({
-      contentMode: config.contentMode,
-      events: window,
-      thread: await thread(),
-      usageBaseline: checkpoint.usage,
-    });
+    const snapshot = await thread();
+    const assemble = (contentMode: ContentMode) =>
+      assembleTurnTrace({
+        contentMode,
+        events: window,
+        thread: snapshot,
+        usageBaseline: checkpoint.usage,
+      });
+    const { trace, usageTotal } = assemble(config.contentMode);
     if (trace !== null) {
-      const outcome = await this.exporter(config, trace, signal);
-      if (!this.settle(threadId, String(trace.metadata?.turnId), outcome)) return null;
+      const turnId = String(trace.metadata?.turnId);
+      let outcome = await this.exporter(config, trace, signal);
+      const withheld =
+        outcome.kind === "blocked" && config.contentMode === "full"
+          ? assemble("metadata").trace
+          : null;
+      if (withheld !== null) {
+        this.bb.log.warn(
+          `Neatlogs's ingest firewall blocked the content of thread ${threadId} turn ${turnId}; exporting it without content.`,
+        );
+        withheld.metadata = { ...withheld.metadata, contentWithheld: "ingest-firewall" };
+        outcome = await this.exporter(config, withheld, signal);
+      }
+      if (!this.settle(threadId, turnId, outcome)) return null;
     }
     const next: ThreadCheckpoint = {
       version: 1,
@@ -443,6 +459,9 @@ export class TracePump {
         this.bb.log.info(
           `Exported ${turn} as Neatlogs trace ${outcome.traceId} (${outcome.spans} spans).`,
         );
+        return true;
+      case "blocked":
+        this.bb.log.error(`Neatlogs's ingest firewall blocked ${turn} (HTTP 403); skipping it.`);
         return true;
       case "rejected":
         this.bb.log.error(`Neatlogs rejected ${turn} with HTTP ${outcome.status}; skipping it.`);

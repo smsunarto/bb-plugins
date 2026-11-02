@@ -49,7 +49,7 @@ function createRuntime(threads: FakeThread[]) {
       .toSorted((a, b) => (order === "desc" ? b.seq - a.seq : a.seq - b.seq))
       .slice(0, Number(limit ?? 100));
   };
-  const { bb } = createFakePluginHost({
+  const { bb, harness } = createFakePluginHost({
     pluginId: "neatlogs",
     sdk: {
       subscribe: ((args: SubscribeArgs) => {
@@ -91,6 +91,7 @@ function createRuntime(threads: FakeThread[]) {
   const exported: Array<{ threadId: string; turnId: string; at: number; trace: NeatlogsSpan }> = [];
   return {
     bb,
+    harness,
     exported,
     /** Records each export; the default outcome accepts it. */
     exporter(
@@ -337,6 +338,49 @@ describe("TracePump", () => {
 
     expect(runtime.exported.map((entry) => `${entry.threadId}/${entry.turnId}`).toSorted()).toEqual(
       ["one/t1", "one/t2", "one/t2", "two/t1"],
+    );
+  });
+
+  test("resends a firewall-blocked turn without content and keeps exporting", async () => {
+    const thread = {
+      id: "one",
+      createdAt: 20_000,
+      updatedAt: 20_000,
+      events: new TurnEvents("one"),
+    };
+    const runtime = createRuntime([thread]);
+    const blocked: ExportOutcome = { kind: "blocked" };
+    const outcomes: Record<string, ExportOutcome[]> = {
+      t1: [blocked],
+      t2: [blocked, blocked],
+    };
+    const run = start(
+      runtime,
+      runtime.exporter((trace) => outcomes[String(trace.metadata?.turnId)]?.shift() ?? accepted),
+    );
+    await settle();
+
+    turn(thread.events, "t1", 21_000);
+    runtime.emit("one", ["turn/completed"]);
+    await waitFor(() => runtime.exported.length === 2, "t1 resent without content");
+    turn(thread.events, "t2", 22_000);
+    runtime.emit("one", ["turn/completed"]);
+    await waitFor(() => runtime.exported.length === 4, "t2 blocked twice");
+    turn(thread.events, "t3", 23_000);
+    runtime.emit("one", ["turn/completed"]);
+    await waitFor(() => runtime.exported.length === 5, "t3 after a skipped turn");
+    await settle();
+    await run.stop();
+
+    const [full, bare] = runtime.exported.map((entry) => entry.trace);
+    expect(full?.input).toBe("prompt t1");
+    expect(bare?.input).toBeUndefined();
+    expect(bare?.output).toBeUndefined();
+    expect(bare?.metadata?.contentWithheld).toBe("ingest-firewall");
+    expect(runtime.exported.map((entry) => entry.turnId)).toEqual(["t1", "t1", "t2", "t2", "t3"]);
+    expect(runtime.harness.inspection.needsConfigurationMessages).toEqual([]);
+    expect(runtime.harness.inspection.logEntries.map((entry) => entry.message)).toContainEqual(
+      expect.stringContaining("blocked thread one turn t2"),
     );
   });
 

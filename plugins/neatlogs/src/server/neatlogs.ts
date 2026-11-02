@@ -6,6 +6,10 @@ const REQUEST_TIMEOUT_MS = 30_000;
 /**
  * What the pump does with a turn after one POST:
  * - `exported`: advance the checkpoint.
+ * - `blocked`: the ingest firewall refused the body's content. It answers with
+ *   an nginx HTML 403, unlike the JSON errors of Neatlogs's own API, and trips
+ *   on ordinary agent text such as `../` paths, local URLs, and HTML. Resend
+ *   the turn without content.
  * - `rejected`: Neatlogs will never accept this body (400/413/422); advance
  *   past it so one bad turn cannot block the thread.
  * - `refused`: the key or URL is wrong (401/403/404); hold every export until
@@ -14,6 +18,7 @@ const REQUEST_TIMEOUT_MS = 30_000;
  */
 export type ExportOutcome =
   | { kind: "exported"; traceId: string; spans: number }
+  | { kind: "blocked" }
   | { kind: "rejected"; status: number }
   | { kind: "refused"; status: number }
   | { kind: "retry"; reason: string };
@@ -27,7 +32,10 @@ export type TraceExporter = (
   signal: AbortSignal,
 ) => Promise<ExportOutcome>;
 
-function outcomeForStatus(status: number): ExportOutcome {
+function outcomeForResponse(response: Response): ExportOutcome {
+  const { status } = response;
+  const json = response.headers.get("content-type")?.includes("json") ?? false;
+  if (status === 403 && !json) return { kind: "blocked" };
   if (REJECTED_STATUSES.has(status)) return { kind: "rejected", status };
   if (REFUSED_STATUSES.has(status)) return { kind: "refused", status };
   return { kind: "retry", reason: `HTTP ${status}` };
@@ -49,7 +57,7 @@ export const postTrace: TraceExporter = async (config, trace, signal) => {
   }
   if (!response.ok) {
     await response.body?.cancel();
-    return outcomeForStatus(response.status);
+    return outcomeForResponse(response);
   }
   const body = (await response.json().catch(() => null)) as {
     trace_id?: unknown;

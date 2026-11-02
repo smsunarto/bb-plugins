@@ -10,9 +10,11 @@ description: Configure or diagnose the Neatlogs plugin that exports each complet
   commit the key.
 - **Diagnose:** run `bb plugin list` for the plugin's status, then
   `bb plugin logs neatlogs -n 50`. Each export logs its Neatlogs trace ID.
-  Warnings name the HTTP status: 401/403/404 means a wrong key or ingest URL
-  and holds exports until the settings change; 400/413/422 skips that turn;
-  anything else retries after a minute.
+  Warnings name the HTTP status: 401/404 or a JSON 403 means a wrong key or
+  ingest URL and holds exports until the settings change; 400/413/422 skips
+  that turn; anything else retries after a minute. "Ingest firewall blocked"
+  means Neatlogs refused the turn's text, so it was exported without content
+  (`contentWithheld` in its metadata); this is not a configuration problem.
 - **Verify a turn reached Neatlogs:** match the thread and turn in the log line
   to a trace ID, then read that trace in Neatlogs. A logged export confirms
   ingest acceptance, not how the dashboard renders it.
