@@ -27,6 +27,8 @@ export class ButMissingError extends Error {}
 export class ButSetupRequiredError extends Error {}
 /** `but` ran and refused: bad target, locked repository, broken project. */
 export class ButFailedError extends Error {}
+/** The GitHub CLI is missing on this host. */
+export class GhMissingError extends Error {}
 
 function searchPath(env: NodeJS.ProcessEnv): string {
   const existing = (env["PATH"] ?? "").split(delimiter).filter((entry) => entry !== "");
@@ -107,6 +109,9 @@ async function spawnFailure(program: string, cwd: string): Promise<Error> {
     await access(cwd);
   } catch {
     return new ButFailedError("The repository directory is no longer available.");
+  }
+  if (program === "gh") {
+    return new GhMissingError("The GitHub CLI (gh) is not installed on this environment's host.");
   }
   return program === "but"
     ? // No backticks: the panel renders this message as plain text, so Markdown
@@ -338,5 +343,26 @@ export async function runGitCommand(
   if (result.spawnFailed) throw await spawnFailure("git", cwd);
   // History is read a page at a time, so only a diff grows this large.
   if (result.overflowed) throw new ButFailedError("This diff is too large to show.");
+  return result;
+}
+
+/**
+ * Run `gh` and return how it ended. It never prompts: a pull request lookup
+ * runs unattended, on whatever machine holds the checkout and its `gh` login.
+ */
+export async function runGh(
+  cwd: string,
+  args: readonly string[],
+  signal: AbortSignal,
+): Promise<{ stdout: string; stderr: string; code: number | null }> {
+  const result = await run("gh", args, cwd, signal, undefined, {
+    ...process.env,
+    GH_PROMPT_DISABLED: "1",
+    GH_NO_UPDATE_NOTIFIER: "1",
+  });
+  if (signal.aborted) throw new Error("aborted");
+  if (result.spawnFailed) {
+    throw await spawnFailure("gh", cwd);
+  }
   return result;
 }

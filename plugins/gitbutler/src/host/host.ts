@@ -16,6 +16,7 @@ import { readBaseHistory, readCheckoutHead } from "./history.ts";
 import { prepareGitCheckoutChild, runGitAction } from "./git-actions.ts";
 import { readGitCheckout, readGitPatches, readGitWorkspace } from "./git-workspace.ts";
 import { readOrigin } from "./origin.ts";
+import { actOnPullRequest, lookupBranch, lookupBranches, refusalOf } from "./pull-requests.ts";
 import { changed, forget, keepWatching, remember, share } from "./repository-state.ts";
 import { readUnpublished } from "./unpublished.ts";
 import { compareWithRemotes } from "./upstream.ts";
@@ -512,6 +513,49 @@ export default experimental_defineHostEntry({
         if (context.signal.aborted) throw error;
         return { reviews: [], reason: unavailable(error).reason };
       }
+    },
+
+    async pullRequests(input, context) {
+      const { branches, fallback } = input;
+      const repository = await resolveHostRepository(input, context.signal);
+      if ((await checkoutOf(repository.path, context.signal)).kind === "git")
+        return { workspace: false as const };
+      let fallbackBranch: string | null = null;
+      if (fallback) {
+        // The board's own read, shared with an open panel. Its review ids are
+        // GitButler's: a branch whose review it has not seen is not offered.
+        const board = await boardOf(repository, context.signal);
+        const reviewed =
+          board.state === "ready"
+            ? board.stacks.flatMap((stack) =>
+                stack.branches.filter((branch) => branch.reviewId !== null),
+              )
+            : [];
+        fallbackBranch = reviewed.length === 1 ? reviewed[0]!.name : null;
+      }
+      const wanted = [...new Set(fallbackBranch ? [...branches, fallbackBranch] : branches)];
+      const lookups = await lookupBranches(repository.path, wanted, context.signal);
+      return { workspace: true as const, fallbackBranch, lookups };
+    },
+
+    async pullRequestAction(input, context) {
+      const { branch, action, expectedUrl, expectedHeadOid } = input;
+      const repository = await resolveHostRepository(input, context.signal);
+      const lookup = await lookupBranch(repository.path, branch, context.signal);
+      if (lookup.outcome === "unavailable") return { ok: false as const, message: lookup.message };
+      if (lookup.outcome === "none")
+        return { ok: false as const, message: `${branch} has no pull request.` };
+      const { pullRequest } = lookup;
+      const refusal = refusalOf(pullRequest, input);
+      if (refusal) return { ok: false as const, message: refusal };
+      const result = await actOnPullRequest(
+        repository.path,
+        pullRequest.url,
+        expectedHeadOid,
+        action,
+        context.signal,
+      );
+      return result.ok ? { ok: true as const, number: pullRequest.number } : result;
     },
 
     async oplog(input, context) {

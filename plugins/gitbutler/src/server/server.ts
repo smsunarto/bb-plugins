@@ -25,6 +25,8 @@ import {
 } from "./rpc/unpublished-branches-at.ts";
 import { unpublishedBranches, unpublishedBranchesContract } from "./rpc/unpublished-branches.ts";
 import { workspace, workspaceContract } from "./rpc/workspace.ts";
+import { createThreadPullRequests } from "./rpc/thread-pull-requests.ts";
+import { pullRequestContract } from "../shared/pull-request-contract.ts";
 
 export const contract = defineRpcContract({
   repositories: repositoriesContract,
@@ -48,10 +50,15 @@ export const contract = defineRpcContract({
   branchPatches: branchPatchesContract,
   branchBlobs: branchBlobsContract,
   branchBlobChunk: branchBlobChunkContract,
+  // The pull request of each thread's GitButler branch, read by the composer
+  // and Info surfaces and by other plugins (GTD Sidebar).
+  ...pullRequestContract,
 });
 
 export default async function plugin(bb: BbPluginApi): Promise<void> {
   const ctx: GitButlerContext = Object.freeze({ bb });
+  const pullRequests = createThreadPullRequests(bb);
+  bb.onDispose(() => pullRequests.dispose());
   bb.rpc.register(contract, {
     repositories: (input) => repositories(ctx, input),
     workspace: (input) => workspace(ctx, input),
@@ -73,11 +80,27 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     branchPatches: (input) => branchPatches(ctx, input),
     branchBlobs: (input) => branchBlobs(ctx, input),
     branchBlobChunk: (input) => branchBlobChunk(ctx, input),
+    threadPullRequests: ({ keys }) => pullRequests.read(keys),
+    refreshThreadPullRequest: async ({ threadId }) => {
+      await pullRequests.refresh(threadId);
+      return { ok: true as const };
+    },
+    threadPullRequestAction: ({ threadId, action, url, headRefOid }) =>
+      pullRequests.act(threadId, action, { url, headRefOid }),
+  });
+  bb.rpc.experimental_whileWatched("threadPullRequests", (read, signal) => {
+    if ("key" in read) pullRequests.watch(read.key, signal);
   });
 
   bb.onDispose(relayRepositoryChanges(bb));
-  bb.events.on("thread.idle", ({ thread }) => publishWorkspaceChanged(bb, thread));
-  bb.events.on("thread.failed", ({ thread }) => publishWorkspaceChanged(bb, thread));
+  for (const event of ["thread.idle", "thread.failed"] as const) {
+    bb.events.on(event, ({ thread }) => {
+      void pullRequests.turnEnded(thread.id, thread.environmentId).catch((error: unknown) => {
+        bb.log.debug(`Could not read the branch of ${thread.id}: ${String(error)}`);
+      });
+      return publishWorkspaceChanged(bb, thread);
+    });
+  }
   // `active` rather than `created`: a new thread's environment is still
   // provisioning when it is created, so there is no workspace to check yet.
   bb.events.on("thread.active", async ({ thread }) => {

@@ -28,6 +28,11 @@ import {
   reviewsSchema,
   reviewUrlSchema,
 } from "./schema.ts";
+import {
+  hostPullRequestLookupSchema,
+  pullRequestActionSchema,
+  THREAD_PULL_REQUESTS_MAX_KEYS,
+} from "./pull-request.ts";
 
 const target = z.object({
   environmentPath: environmentPathSchema,
@@ -129,6 +134,50 @@ export const gitbutlerHostContract = defineRpcContract({
     output: reviewUrlSchema,
   },
   reviews: { input: target.strict(), output: reviewsSchema },
+  /**
+   * Each branch's pull request, read with `gh pr view` in the checkout, or
+   * `workspace: false` outside a GitButler workspace, where bb's bundled
+   * GitHub PR Status already reads the checked-out branch. With `fallback`,
+   * also the one applied branch GitButler knows a review for, if exactly one.
+   */
+  pullRequests: {
+    experimental_retryable: true,
+    input: target
+      .extend({
+        branches: z.array(branchNameSchema).max(THREAD_PULL_REQUESTS_MAX_KEYS),
+        fallback: z.boolean(),
+      })
+      .strict(),
+    output: z.discriminatedUnion("workspace", [
+      z.object({ workspace: z.literal(false) }).strict(),
+      z
+        .object({
+          workspace: z.literal(true),
+          fallbackBranch: z.string().nullable(),
+          lookups: z.record(z.string(), hostPullRequestLookupSchema),
+        })
+        .strict(),
+    ]),
+  },
+  /** Marks a branch's pull request ready or draft, or merges it, after reading it again. */
+  pullRequestAction: {
+    input: target
+      .extend({
+        branch: branchNameSchema,
+        action: pullRequestActionSchema,
+        /** The pull request's URL, which names its repository as well as its number. */
+        expectedUrl: z.string().url(),
+        expectedHeadOid: z
+          .string()
+          .regex(/^[0-9a-f]{40,64}$/)
+          .nullable(),
+      })
+      .strict(),
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), number: z.number().int().positive() }).strict(),
+      z.object({ ok: z.literal(false), message: z.string().min(1) }).strict(),
+    ]),
+  },
   oplog: { experimental_retryable: true, input: target.strict(), output: oplogSchema },
   parkedBranches: {
     experimental_retryable: true,

@@ -48,6 +48,43 @@ and history.
   reviews, since BB's own Branch row shows only `gitbutler/workspace`. Selecting
   a branch opens the GitButler tab.
 
+## Pull request status
+
+bb's bundled GitHub PR Status reads a checkout's checked-out branch, which in
+a GitButler workspace is `gitbutler/workspace` and never has a pull request.
+Every thread on that checkout shares it, each working on its own branch. This
+plugin shows each thread the pull request of its own branch instead, with the
+bundled plugin's look and actions:
+
+- Above the composer: state, checks, the next step it waits on, and **Mark
+  ready** for a draft or **Merge** (merge, squash, or rebase, plus **Convert
+  to draft**) for an open pull request GitHub reports as mergeable. An action
+  runs on the pull request shown, by its URL, and is refused when the
+  thread's branch now has another pull request, and a merge when the branch
+  has commits newer than the ones shown.
+- In the Info tab: a **Pull request** row.
+- In [GTD Sidebar](../gtd-sidebar): the badge on the thread's card.
+
+A thread's branch is the last one its own `but` commands named in its
+checkout: `commit -b`, `branch new`, `pr new`, `push`, `land`, and a `reword`
+that renames it. A `but` command run after `cd` or with `-C` into another
+directory names nothing. A thread that left its Git work to subthreads on the
+same checkout takes the branch they named last, under any name a later
+`reword` gave it, unless it named one itself. A thread that named none shows the checkout's only applied branch with a
+review, when there is exactly one. Each thread's branch is kept in the
+plugin's storage per checkout with the last event read, so a thread moved to
+another checkout starts over there. Its first read goes newest-first to the
+latest branch named; later reads take only newer events, a few thousand at a
+time, and at most three threads' histories are read at once.
+
+The pull request comes from `gh pr view <branch>` in the checkout on its own
+machine. Reads answer from what the server has and recheck in the background:
+open and draft pull requests after 30 seconds while checks run and after 5
+minutes otherwise, merged and closed ones after an hour. Opening a thread and
+finishing a turn on it recheck it at once. A first read waits at most 3
+seconds for the checkout's machine before answering, so one slow machine
+never holds up the sidebar.
+
 ## Branch actions
 
 The commands below describe GitButler workspaces. Ordinary Git checkouts expose
@@ -176,6 +213,10 @@ inbox.
   it is stacked on), parent branch, and commits.
 - `branchPatches`: `{ hostId, path, base, head }` to that range's per-file
   git patches, read on the branch's machine.
+- `threadPullRequests`: keyed by thread id, each thread's row in the shape
+  of the bundled plugin's `pullRequests`: `available` with its
+  `pullRequest`, `absent`, or `unavailable`. [GTD Sidebar](../gtd-sidebar)
+  reads it before the bundled plugin's environment row.
 
 ## Requirements
 
@@ -186,6 +227,8 @@ inbox.
 - Ordinary checkouts work without `but setup`; linked worktrees are never
   converted into GitButler workspaces by the panel.
 - Create PR in ordinary checkouts requires an authenticated forge CLI on that host.
+- Pull request status requires the GitHub CLI (`gh`), logged in, on the
+  checkout's host.
 
 ## Repository selection
 

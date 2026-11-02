@@ -19,6 +19,7 @@ import {
   experimental_InfoList as InfoList,
   experimental_InfoListRow as InfoListRow,
   experimental_InfoSection as InfoSection,
+  experimental_THREAD_INFO_ROW_GROUPS,
   experimental_THREAD_INFO_SECTION_GROUPS,
   experimental_useAppPanel,
   useBbContext,
@@ -100,6 +101,12 @@ import {
   stackKeys,
 } from "./workspace-lane.tsx";
 import type { CommitExpansion, CommitRef } from "./workspace-lane.tsx";
+import {
+  PullRequestInfoRow,
+  PullRequestSegmentAction,
+  PullRequestSegmentSummary,
+  usePullRequestSegmentVisible,
+} from "./pull-request/pull-request.tsx";
 import "./gitbutler.css";
 
 const REPOSITORY_STORAGE_PREFIX = "bb-plugin-gitbutler:repository:";
@@ -1789,5 +1796,23 @@ export default definePluginApp((app) => {
     // Before bb's Commits (10): the branches name what those commits are on.
     order: 5,
     component: BranchesInfoSection,
+  });
+  // The pull request of the thread's own GitButler branch, where bb's bundled
+  // GitHub PR Status shows a checked-out branch's: it reads
+  // gitbutler/workspace here, which has none, so the two never both show.
+  app.slots.experimental_threadContextSegment({
+    id: "pull-request",
+    title: "Pull request",
+    group: "2_pullRequest",
+    order: 11,
+    summary: PullRequestSegmentSummary,
+    action: PullRequestSegmentAction,
+    useVisible: usePullRequestSegmentVisible,
+  });
+  app.slots.experimental_threadInfoRow({
+    id: "pull-request",
+    group: experimental_THREAD_INFO_ROW_GROUPS.pullRequest,
+    order: 11,
+    component: PullRequestInfoRow,
   });
 });
