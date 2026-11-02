@@ -32,6 +32,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
     workspace: ["StackLane", "BranchActions", "Conflicts"],
     history: ["OperationHistory"],
   },
+  grokbot: { panel: ["../src/app/app", "nav"] },
   "gtd-sidebar": { threads: ["ThreadCard", "RenameProvider"], indicators: ["StatusGlyph"] },
   html: { tweaks: ["TweakPanel"] },
   genui: { gallery: ["../app", "nav"] },

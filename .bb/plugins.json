@@ -90,6 +90,10 @@
     {
       "name": "at-plugin",
       "source": "./plugins/at-plugin"
+    },
+    {
+      "name": "grokbot",
+      "source": "./plugins/grokbot"
     }
   ]
 }

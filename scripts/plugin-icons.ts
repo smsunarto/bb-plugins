@@ -99,6 +99,13 @@ const customIcons = new Map<string, { name: string; body: string; solid?: boolea
     },
   ],
   [
+    "grokbot",
+    {
+      name: "Grok Bot",
+      body: '<rect x="4" y="8" width="16" height="12" rx="4"/><path d="M12 8V5"/><circle cx="12" cy="3.5" r="1.5"/><path d="M9 13h.01M15 13h.01M9.5 16.5h5"/>',
+    },
+  ],
+  [
     "html",
     {
       name: "HTML visualizations",

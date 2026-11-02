@@ -106,6 +106,26 @@
       }
     },
     {
+      "id": "grokbot",
+      "displayName": "Grok Bot",
+      "description": "Send messages, a thread's context, and pings to a Grok Bot webhook from a bb panel or the CLI. The webhook URL and key stay in a mode-600 file on the server.",
+      "icon": {
+        "url": "plugins/grokbot/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/grokbot",
+          "range": "*",
+          "tagPrefix": "grokbot/"
+        }
+      }
+    },
+    {
       "id": "gtd-sidebar",
       "displayName": "GTD Sidebar",
       "description": "An action-oriented sidebar that groups threads by who can act next.",
