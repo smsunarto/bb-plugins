@@ -228,13 +228,19 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       };
     },
     // GitHub PR Status's keyed read, answered from the host's rows. The
-    // stored row keeps its identity, as the shared query cache's does.
+    // stored row keeps its identity, as the shared query cache's does. The
+    // GitButler plugin's thread-keyed read has no rows here.
     experimental_useRpcKeyedQuery: (options: {
       pluginId?: string;
       method: string;
       keys: readonly string[];
     }) => {
       const { pullRequests } = useHost();
+      if (options.pluginId === "gitbutler") {
+        assert.equal(options.method, "threadPullRequests");
+        const data = Object.fromEntries(options.keys.map((key) => [key, { outcome: "absent" }]));
+        return { data, error: null, isLoading: false, isFetching: false, refetch: async () => {} };
+      }
       assert.equal(options.pluginId, "bb--github-pr-status");
       assert.equal(options.method, "pullRequests");
       const data = Object.fromEntries(

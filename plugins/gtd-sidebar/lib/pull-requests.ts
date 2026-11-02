@@ -15,21 +15,31 @@ const rowPullRequestSchema = z.object({
 /** A row's pull request: the fields the card draws. */
 export type RowPullRequest = z.infer<typeof rowPullRequestSchema>;
 
+const rowsSchema = z.record(
+  z.string(),
+  z.discriminatedUnion("outcome", [
+    z.object({ outcome: z.literal("available"), pullRequest: rowPullRequestSchema }),
+    z.object({ outcome: z.literal("absent") }),
+    z.object({ outcome: z.literal("unavailable"), message: z.string() }),
+  ]),
+);
+
+/**
+ * The GitButler plugin's pull request of each thread's own GitButler branch,
+ * keyed by thread. In a GitButler checkout every thread shares one
+ * environment on `gitbutler/workspace`, which GitHub PR Status reads.
+ */
+export const GITBUTLER_PLUGIN_ID = "gitbutler";
+
+export const gitbutlerPullRequestsContract = defineRpcContract({
+  threadPullRequests: { input: z.object({ keys: z.array(z.string()) }), output: rowsSchema },
+});
+
 /**
  * The part of GitHub PR Status's `pullRequests` read this sidebar draws. Each
  * key is an environment id; `absent` and `unavailable` (machine offline, `gh`
  * failed) both mean nothing to show.
  */
 export const githubPrStatusContract = defineRpcContract({
-  pullRequests: {
-    input: z.object({ keys: z.array(z.string()) }),
-    output: z.record(
-      z.string(),
-      z.discriminatedUnion("outcome", [
-        z.object({ outcome: z.literal("available"), pullRequest: rowPullRequestSchema }),
-        z.object({ outcome: z.literal("absent") }),
-        z.object({ outcome: z.literal("unavailable"), message: z.string() }),
-      ]),
-    ),
-  },
+  pullRequests: { input: z.object({ keys: z.array(z.string()) }), output: rowsSchema },
 });

@@ -44,7 +44,9 @@ if (process.env.GTD_PULL_REQUEST_TEST_CHILD !== "1") {
   const { useRowPullRequest } = await import("../hooks/use-row-pull-request.ts");
 
   function PullRequestRow({ environmentId }: { environmentId: string | null }) {
-    const pullRequest = useRowPullRequest(environmentId);
+    // Each row's thread is named after its environment.
+    const threadId = `thr-${environmentId ?? "none"}`;
+    const pullRequest = useRowPullRequest(threadId, environmentId);
     return createElement(
       "span",
       { "data-row": environmentId ?? "none" },
@@ -108,6 +110,44 @@ if (process.env.GTD_PULL_REQUEST_TEST_CHILD !== "1") {
       assert.deepEqual(
         [...new Set(reads.flatMap((call) => (call.input as { keys: string[] }).keys))].sort(),
         ["env-absent", "env-offline", "env-open"],
+      );
+    });
+
+    it("prefers the GitButler plugin's row for the thread's own branch", async () => {
+      const own = { ...pullRequest, number: 34, state: "draft" };
+      const slot = renderSlot(
+        { component: PullRequestProbe },
+        { environmentIds: ["env-shared", "env-plain"] },
+        {
+          rpc: {
+            threadPullRequests: (input: unknown) =>
+              Object.fromEntries(
+                (input as { keys: string[] }).keys.map((key) => [
+                  key,
+                  key === "thr-env-shared"
+                    ? { outcome: "available", pullRequest: own }
+                    : { outcome: "absent" },
+                ]),
+              ),
+            pullRequests: (input: unknown) =>
+              Object.fromEntries(
+                (input as { keys: string[] }).keys.map((key) => [
+                  key,
+                  { outcome: "available", pullRequest },
+                ]),
+              ),
+          },
+        },
+      );
+      await waitFor(() => assert.equal(rowText(slot, "env-shared"), "#34 draft"));
+      // Without a GitButler row, the environment's pull request shows.
+      await waitFor(() => assert.equal(rowText(slot, "env-plain"), "#12 open"));
+      const threadReads = slot.inspection.rpcCalls.filter(
+        (call) => call.method === "threadPullRequests",
+      );
+      assert.deepEqual(
+        [...new Set(threadReads.flatMap((call) => (call.input as { keys: string[] }).keys))].sort(),
+        ["thr-env-plain", "thr-env-shared"],
       );
     });
 

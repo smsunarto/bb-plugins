@@ -77,7 +77,7 @@ interface ThreadCardProps {
 
 export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
   const { splitProps, layout } = useSidebarThreadSplit(props.thread.id);
-  const pullRequest = useRowPullRequest(props.thread.environment?.id ?? null);
+  const pullRequest = useRowPullRequest(props.thread.id, props.thread.environment?.id ?? null);
   const onSplitPointerDown = useCommittedEvent((event: PointerEvent<HTMLElement>) => {
     splitProps.onPointerDown?.(event);
   });
