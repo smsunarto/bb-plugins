@@ -60,6 +60,10 @@
       "source": "./plugins/monokai"
     },
     {
+      "name": "neatlogs",
+      "source": "./plugins/neatlogs"
+    },
+    {
       "name": "usage-bar",
       "source": "./plugins/usage-bar"
     },

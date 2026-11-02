@@ -147,6 +147,13 @@ const customIcons = new Map<string, { name: string; body: string }>([
     },
   ],
   [
+    "neatlogs",
+    {
+      name: "Neatlogs",
+      body: '<path d="M4 4v16h16"/><path d="M8 7h6M10 11h8M12 15h5"/>',
+    },
+  ],
+  [
     "t3-composer",
     {
       name: "T3 Composer",

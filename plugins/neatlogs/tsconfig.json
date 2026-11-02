@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "bun-types/test"],
+    "useUnknownInCatchVariables": true,
+    "noImplicitReturns": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

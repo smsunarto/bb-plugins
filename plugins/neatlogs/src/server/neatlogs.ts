@@ -1,0 +1,63 @@
+import type { NeatlogsConfig } from "./settings.ts";
+import type { NeatlogsSpan } from "./turn-trace.ts";
+
+const REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * What the pump does with a turn after one POST:
+ * - `exported`: advance the checkpoint.
+ * - `rejected`: Neatlogs will never accept this body (400/413/422); advance
+ *   past it so one bad turn cannot block the thread.
+ * - `refused`: the key or URL is wrong (401/403/404); hold every export until
+ *   the settings change.
+ * - `retry`: keep the checkpoint and try again shortly (any other failure).
+ */
+export type ExportOutcome =
+  | { kind: "exported"; traceId: string; spans: number }
+  | { kind: "rejected"; status: number }
+  | { kind: "refused"; status: number }
+  | { kind: "retry"; reason: string };
+
+const REJECTED_STATUSES = new Set([400, 413, 422]);
+const REFUSED_STATUSES = new Set([401, 403, 404]);
+
+export type TraceExporter = (
+  config: NeatlogsConfig,
+  trace: NeatlogsSpan,
+  signal: AbortSignal,
+) => Promise<ExportOutcome>;
+
+function outcomeForStatus(status: number): ExportOutcome {
+  if (REJECTED_STATUSES.has(status)) return { kind: "rejected", status };
+  if (REFUSED_STATUSES.has(status)) return { kind: "refused", status };
+  return { kind: "retry", reason: `HTTP ${status}` };
+}
+
+/** POST one nested trace to Neatlogs `/v1/trace`, which assigns its IDs. */
+export const postTrace: TraceExporter = async (config, trace, signal) => {
+  let response: Response;
+  try {
+    response = await fetch(config.traceUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": config.apiKey },
+      body: JSON.stringify(trace),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]),
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { kind: "retry", reason: error instanceof Error ? error.name : "network error" };
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    return outcomeForStatus(response.status);
+  }
+  const body = (await response.json().catch(() => null)) as {
+    trace_id?: unknown;
+    spans?: unknown;
+  } | null;
+  return {
+    kind: "exported",
+    traceId: typeof body?.trace_id === "string" ? body.trace_id : "unknown",
+    spans: typeof body?.spans === "number" ? body.spans : 0,
+  };
+};

@@ -755,6 +755,19 @@
         "zod": "^4.3.6",
       },
     },
+    "plugins/neatlogs": {
+      "name": "@smsunarto/bb-plugin-neatlogs",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.6.94",
+        "@types/node": "^22.0.0",
+        "bun-types": "^1.4.0",
+        "typescript": "^6.0.0",
+      },
+    },
     "plugins/scott-docs": {
       "name": "@smsunarto/bb-plugin-scott-docs",
       "version": "0.2.3",
@@ -1923,6 +1936,8 @@
     "@smsunarto/bb-plugin-magic-compose": ["@smsunarto/bb-plugin-magic-compose@workspace:plugins/magic-compose"],
 
     "@smsunarto/bb-plugin-monokai": ["@smsunarto/bb-plugin-monokai@workspace:plugins/monokai"],
+
+    "@smsunarto/bb-plugin-neatlogs": ["@smsunarto/bb-plugin-neatlogs@workspace:plugins/neatlogs"],
 
     "@smsunarto/bb-plugin-scott-docs": ["@smsunarto/bb-plugin-scott-docs@workspace:plugins/scott-docs"],
 
