@@ -10,11 +10,10 @@
  * row keeps its own spacing.
  */
 
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, type ReactNode } from "react";
 import {
   experimental_useSidebarThreads as useSidebarThreads,
   useSettings,
-  type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
 import { SMOOTH_SCROLL_SETTING } from "../../shared/timeline-motion.ts";
 import { isThreadWorking, PROBE_ATTRIBUTE, PROBE_WORKING_ATTRIBUTE } from "./thread-activity.ts";
@@ -22,7 +21,16 @@ import { setTimelineMotionEnabled } from "./timeline-motion.ts";
 
 export const PROBE_GROUP_TITLE = "Thread scroll activity";
 
-export function ThreadActivityProbe({ threadId }: PluginThreadHeaderActionProps) {
+/** bb still mounts the legacy thread-header slot; SDK 0.6.92 dropped its types. */
+export interface LegacyThreadHeaderActionSlots {
+  experimental_threadHeaderAction(registration: {
+    id: string;
+    title: string;
+    component: (props: { threadId: string }) => ReactNode;
+  }): void;
+}
+
+export function ThreadActivityProbe({ threadId }: { threadId: string }) {
   const { threads } = useSidebarThreads();
   const thread = threads.find((candidate) => candidate.id === threadId);
   // Unknown (still loading) reads as the setting's default: on. Layout timing

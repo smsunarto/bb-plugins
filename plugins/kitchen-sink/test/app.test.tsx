@@ -5,5 +5,5 @@ test("Kitchen Sink leaves evidence rendering and provider branding to their owni
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   expect(app.messageDirectives).toEqual([]);
   expect(app.providerIcons).toEqual([]);
-  expect(app.threadHeaderActions.map((row) => row.id)).toContain("thread-details");
+  expect(app.threadContextCardRows.map((row) => row.id)).toEqual(["workspace"]);
 });

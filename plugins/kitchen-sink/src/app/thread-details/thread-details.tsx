@@ -1,59 +1,34 @@
 import {
+  experimental_ThreadContextCardRow as CardRow,
   experimental_copyToClipboard as copyToClipboard,
   experimental_useSidebarThreads as useSidebarThreads,
   useBbNavigate,
   useSdk,
+  type ExperimentalThreadContextCardProps,
   type PluginSidebarThread,
-  type PluginThreadHeaderActionProps,
 } from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider } from "@tanstack/react-query";
-import {
-  useId,
-  useRef,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
-import { createPortal } from "react-dom";
+import { useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
 
 import type { ProjectScript, ProjectScriptEdit } from "../../shared/thread-details.ts";
 import { queryClient } from "../query.ts";
 import { queryKey, useRpcMutation as usePluginMutation, useRpcQuery } from "../rpc.ts";
-import {
-  InfoRow,
-  MenuItem,
-  MenuLabel,
-  MenuSeparator,
-  Row,
-  RowIcon,
-  RowLabel,
-  Section,
-  SelectRow,
-  SplitPrimary,
-  SplitRow,
-  PORTAL_SCOPE,
-  cx,
-} from "./rows.tsx";
+import { MenuItem, MenuLabel, MenuSeparator, RowMenu } from "./rows.tsx";
 import { ScriptDialog, type ScriptDraft } from "./script-dialog.tsx";
-import { useStreamDock } from "./stream-dock.ts";
-
-export const THREAD_DETAILS_TITLE = "Thread details";
-
-const CARD_CLASS =
-  "w-[min(280px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-foreground/10 bg-popover/95 text-popover-foreground backdrop-blur-xl outline-none";
 
 type ThreadEnvironment = NonNullable<PluginSidebarThread["environment"]>;
 
-export function ThreadDetailsHeaderAction(props: PluginThreadHeaderActionProps) {
+type CardProps = ExperimentalThreadContextCardProps;
+
+/** bb's thread context card rows for the thread's machine and the project's scripts. */
+export function WorkspaceRows(props: CardProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThreadDetails key={props.threadId} {...props} />
+      <Workspace key={props.threadId} {...props} />
     </QueryClientProvider>
   );
 }
-
-type ScriptEditor = { script: ProjectScript | null } | null;
 
 /** What the card knows about the project's scripts; edits are offered only from a confirmed list. */
 export type ScriptsState =
@@ -61,176 +36,140 @@ export type ScriptsState =
   | { state: "failed"; message: string; retry(): void }
   | { state: "ready"; scripts: readonly ProjectScript[] };
 
-function ThreadDetails({ threadId, projectId, isCompactViewport }: PluginThreadHeaderActionProps) {
-  const anchor = useRef<HTMLSpanElement>(null);
-  const card = useRef<HTMLElement>(null);
-  const cardId = useId();
-  const layout = useStreamDock(anchor);
-  const open = layout !== null && !isCompactViewport;
-  const [editor, setEditor] = useState<ScriptEditor>(null);
-  // Keep the last run across card layout changes.
-  const [lastRunId, setLastRunId] = useState<string | null>(null);
+function useSidebarThread(threadId: string) {
   const sidebar = useSidebarThreads();
-  const thread = sidebar.threads.find((candidate) => candidate.id === threadId) ?? null;
-  const project = sidebar.projects.find((candidate) => candidate.id === projectId) ?? null;
-  const { scriptsState, saveEdit, saving } = useProjectScripts(
-    projectId,
-    open || editor !== null,
-    () => setEditor(null),
-  );
-  const details = thread ? (
-    <DetailsCard
-      threadId={threadId}
-      thread={thread}
-      scripts={scriptsState}
-      lastRunId={lastRunId}
-      onRunScript={setLastRunId}
-      onEditScript={(script) => {
-        setEditor({ script });
-      }}
-    />
-  ) : (
-    <ThreadMissing status={sidebar.status} />
-  );
+  return {
+    thread: sidebar.threads.find((candidate) => candidate.id === threadId) ?? null,
+    projects: sidebar.projects,
+  };
+}
+
+/*
+ * bb unmounts the card's rows whenever its narrow-pane popover closes, which a
+ * row click does, and when the pane crosses the wide/narrow breakpoint. State
+ * that must outlive one mount lives here, keyed by thread, and the script
+ * editor renders from an app overlay rather than from the rows.
+ */
+const lastRunByThread = new Map<string, string>();
+
+interface ScriptEditorRequest {
+  threadId: string;
+  projectId: string;
+  projectName: string | null;
+  /** The script being edited, or null to add one. */
+  script: ProjectScript | null;
+  /** Focus target after closing, when it is still in the document. */
+  returnFocus: HTMLElement | null;
+}
+
+let editorRequest: ScriptEditorRequest | null = null;
+const editorListeners = new Set<() => void>();
+function setEditorRequest(request: ScriptEditorRequest | null) {
+  editorRequest = request;
+  for (const listener of editorListeners) listener();
+}
+function subscribeEditor(listener: () => void) {
+  editorListeners.add(listener);
+  return () => editorListeners.delete(listener);
+}
+
+function Workspace({ threadId, projectId }: CardProps) {
+  const { thread, projects } = useSidebarThread(threadId);
+  const checkout = thread?.environment?.id ? thread.environment : null;
+  const [lastRunId, setLastRunId] = useState(() => lastRunByThread.get(threadId) ?? null);
+  const scriptsMenu = useRef<HTMLButtonElement>(null);
+  const scriptsState = useProjectScripts(projectId, checkout !== null);
+  if (!thread) return null;
+  const projectName = projects.find((candidate) => candidate.id === projectId)?.name ?? null;
   return (
     <>
-      <span ref={anchor} className="inline-block h-7 w-0">
-        {open ? (
-          <a
-            href={`#${cardId}`}
-            className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:rounded-md focus:bg-popover focus:p-2"
-            onClick={(event) => {
-              event.preventDefault();
-              card.current?.focus();
-            }}
-          >
-            Go to thread details
-          </a>
-        ) : null}
-      </span>
-      {layout && open ? (
-        <DockedCard id={cardId} layout={layout} cardRef={card}>
-          {details}
-        </DockedCard>
-      ) : null}
-      {editor ? (
-        <ScriptDialog
-          script={editor.script}
-          projectName={project?.name ?? null}
-          pending={saving}
-          returnFocus={card}
-          onClose={() => setEditor(null)}
-          onDelete={() => {
-            const target = editor.script;
-            if (target) saveEdit({ kind: "delete", scriptId: target.id }, `Deleted ${target.name}`);
+      <MachineRow thread={thread} checkout={checkout} threadId={threadId} />
+      {checkout ? (
+        <ScriptsRow
+          threadId={threadId}
+          scripts={scriptsState}
+          lastRunId={lastRunId}
+          menuRef={scriptsMenu}
+          onRun={(scriptId) => {
+            lastRunByThread.set(threadId, scriptId);
+            setLastRunId(scriptId);
           }}
-          onSave={(draft: ScriptDraft) => {
-            const target = editor.script;
-            saveEdit(
-              { kind: "upsert", script: { id: target?.id ?? crypto.randomUUID(), ...draft } },
-              target ? `Saved ${draft.name}` : `Added ${draft.name}`,
-            );
-          }}
+          onEdit={(script) =>
+            setEditorRequest({
+              threadId,
+              projectId,
+              projectName,
+              script,
+              // The menu's trigger after an edit; the clicked row after Add.
+              returnFocus:
+                scriptsMenu.current ??
+                (document.activeElement instanceof HTMLElement ? document.activeElement : null),
+            })
+          }
         />
       ) : null}
     </>
   );
 }
 
-/** The project's scripts, read while the card or the script editor needs them. */
-function useProjectScripts(projectId: string, enabled: boolean, onSaved: () => void) {
-  const scriptsInput = { projectId };
-  const scripts = useRpcQuery("projectScripts", scriptsInput, { enabled, staleTime: 30_000 });
+/** The project's scripts, read while the rows need them. */
+function useProjectScripts(projectId: string, enabled: boolean): ScriptsState {
+  const scripts = useRpcQuery("projectScripts", { projectId }, { enabled, staleTime: 30_000 });
+  return scripts.isSuccess
+    ? { state: "ready", scripts: scripts.data.scripts }
+    : scripts.isError
+      ? { state: "failed", message: scripts.error.message, retry: () => void scripts.refetch() }
+      : { state: "loading" };
+}
+
+/** App overlay: the open script editor, which outlives the card rows that opened it. */
+export function ScriptEditorOverlay() {
+  const request = useSyncExternalStore(subscribeEditor, () => editorRequest);
+  if (!request) return null;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ScriptEditor key={`${request.threadId}:${request.script?.id ?? "new"}`} request={request} />
+    </QueryClientProvider>
+  );
+}
+
+function ScriptEditor({ request }: { request: ScriptEditorRequest }) {
+  const { projectId, script } = request;
+  const returnFocus = useRef(request.returnFocus);
   const save = usePluginMutation("saveProjectScript", {
     onSuccess: (result) =>
-      queryClient.setQueryData(queryKey("projectScripts", scriptsInput), result),
+      queryClient.setQueryData(queryKey("projectScripts", { projectId }), result),
   });
+  const close = () => setEditorRequest(null);
   const saveEdit = (edit: ProjectScriptEdit, done: string) =>
     save.mutate(
       { projectId, edit },
       {
         onSuccess: () => {
-          onSaved();
+          close();
           toast.success(done);
         },
         onError: (error) =>
           toast.error("Could not save the script", { description: error.message }),
       },
     );
-  const scriptsState: ScriptsState = scripts.isSuccess
-    ? { state: "ready", scripts: scripts.data.scripts }
-    : scripts.isError
-      ? { state: "failed", message: scripts.error.message, retry: () => void scripts.refetch() }
-      : { state: "loading" };
-  return { scriptsState, saveEdit, saving: save.isPending };
-}
-
-/** The card floating over the top right of bb's thread stream, below the header. */
-function DockedCard({
-  id,
-  layout,
-  children,
-  cardRef,
-}: {
-  id: string;
-  layout: HTMLElement;
-  children: ReactNode;
-  cardRef: RefObject<HTMLElement | null>;
-}) {
-  return createPortal(
-    <section
-      {...PORTAL_SCOPE}
-      ref={cardRef}
-      tabIndex={-1}
-      id={id}
-      aria-label={THREAD_DETAILS_TITLE}
-      className={cx(
-        CARD_CLASS,
-        "z-30 flex select-text w-[280px] max-w-[calc(100%-24px)] flex-col overflow-hidden origin-top-right animate-in fade-in-0 zoom-in-95 [app-region:no-drag]",
-        layout.hasAttribute("data-split-pane-id")
-          ? "absolute right-3 top-[calc(var(--bb-app-chrome-row-height,48px)+12px)] max-h-[min(400px,calc(100%_-_var(--bb-app-chrome-row-height,48px)_-_24px))]"
-          : layout === document.body
-            ? "fixed right-3 top-14 max-h-[min(400px,50dvh)]"
-            : "absolute right-3 top-[calc(100%+12px)] max-h-[min(400px,50dvh)]",
-      )}
-    >
-      <div className="min-h-0 overflow-y-auto">{children}</div>
-    </section>,
-    layout,
-  );
-}
-
-function DetailsCard({
-  threadId,
-  thread,
-  scripts,
-  lastRunId,
-  onRunScript,
-  onEditScript,
-}: {
-  threadId: string;
-  thread: PluginSidebarThread;
-  scripts: ScriptsState;
-  lastRunId: string | null;
-  onRunScript(scriptId: string): void;
-  onEditScript(script: ProjectScript | null): void;
-}) {
-  const environment = thread.environment?.id ? thread.environment : null;
   return (
-    <>
-      <Section label="Workspace" separated={false}>
-        <MachineRow thread={thread} environment={environment} threadId={threadId} />
-        {environment ? (
-          <ScriptsRow
-            threadId={threadId}
-            scripts={scripts}
-            lastRunId={lastRunId}
-            onRun={onRunScript}
-            onEdit={onEditScript}
-          />
-        ) : null}
-      </Section>
-    </>
+    <ScriptDialog
+      script={script}
+      projectName={request.projectName}
+      pending={save.isPending}
+      returnFocus={returnFocus}
+      onClose={close}
+      onDelete={() => {
+        if (script) saveEdit({ kind: "delete", scriptId: script.id }, `Deleted ${script.name}`);
+      }}
+      onSave={(draft: ScriptDraft) =>
+        saveEdit(
+          { kind: "upsert", script: { id: script?.id ?? crypto.randomUUID(), ...draft } },
+          script ? `Saved ${draft.name}` : `Added ${draft.name}`,
+        )
+      }
+    />
   );
 }
 
@@ -268,44 +207,44 @@ function useThreadTerminal(threadId: string) {
 
 function MachineRow({
   thread,
-  environment,
+  checkout,
   threadId,
 }: {
   thread: PluginSidebarThread;
-  environment: ThreadEnvironment | null;
+  checkout: ThreadEnvironment | null;
   threadId: string;
 }) {
   const terminal = useThreadTerminal(threadId);
   const machine = thread.host?.name ?? "No machine";
-  const icon = <RowIcon name="Laptop" />;
-  if (!environment) {
-    return (
-      <InfoRow>
-        {icon}
-        <RowLabel>{machine}</RowLabel>
-      </InfoRow>
-    );
-  }
   return (
-    <SelectRow icon={icon} label={machine}>
-      <MenuLabel>{environment.isWorktree ? "Worktree" : "Checkout"}</MenuLabel>
-      {environment.path ? (
-        <MenuItem
-          icon="Copy"
-          detail={environment.path}
-          onSelect={() => void copy(environment.path!, "Copied the path")}
-        >
-          Copy path
-        </MenuItem>
-      ) : null}
-      <MenuItem
-        icon="Terminal"
-        disabled={terminal.pending}
-        onSelect={() => void terminal.open({}, "Could not open a terminal")}
-      >
-        Open terminal
-      </MenuItem>
-    </SelectRow>
+    <CardRow
+      icon="Laptop"
+      label={machine}
+      title={checkout?.path ?? machine}
+      action={
+        checkout ? (
+          <RowMenu label="Checkout actions">
+            <MenuLabel>{checkout.isWorktree ? "Worktree" : "Checkout"}</MenuLabel>
+            {checkout.path ? (
+              <MenuItem
+                icon="Copy"
+                detail={checkout.path}
+                onSelect={() => void copy(checkout.path!, "Copied the path")}
+              >
+                Copy path
+              </MenuItem>
+            ) : null}
+            <MenuItem
+              icon="Terminal"
+              disabled={terminal.pending}
+              onSelect={() => void terminal.open({}, "Could not open a terminal")}
+            >
+              Open terminal
+            </MenuItem>
+          </RowMenu>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -313,33 +252,28 @@ function ScriptsRow({
   threadId,
   scripts: state,
   lastRunId,
+  menuRef,
   onRun,
   onEdit,
 }: {
   threadId: string;
   scripts: ScriptsState;
   lastRunId: string | null;
+  menuRef: RefObject<HTMLButtonElement | null>;
   onRun(scriptId: string): void;
   onEdit(script: ProjectScript | null): void;
 }) {
   const terminal = useThreadTerminal(threadId);
-  if (state.state === "loading") {
-    return (
-      <InfoRow className="text-muted-foreground">
-        <RowIcon name="Play" />
-        <RowLabel>Loading scripts…</RowLabel>
-      </InfoRow>
-    );
-  }
+  if (state.state === "loading") return <CardRow icon="Play" label="Loading scripts…" />;
   if (state.state === "failed") {
     return (
-      <Row title={state.message} onClick={state.retry}>
-        <RowIcon name="Play" />
-        <RowLabel>
-          <span className="text-muted-foreground">Scripts unavailable</span>
-        </RowLabel>
-        <span className="shrink-0 text-xs text-muted-foreground">Retry</span>
-      </Row>
+      <CardRow
+        icon="Play"
+        label={<Muted>Scripts unavailable</Muted>}
+        title={state.message}
+        trailing="Retry"
+        onClick={state.retry}
+      />
     );
   }
   const { scripts } = state;
@@ -352,24 +286,17 @@ function ScriptsRow({
   };
   const preferred = scripts.find((script) => script.id === lastRunId) ?? scripts[0];
   if (!preferred) {
-    return (
-      <Row onClick={() => onEdit(null)}>
-        <RowIcon name="Plus" />
-        <RowLabel>Add project script</RowLabel>
-      </Row>
-    );
+    return <CardRow icon="Plus" label="Add project script" onClick={() => onEdit(null)} />;
   }
   return (
-    <SplitRow
-      primary={
-        <SplitPrimary disabled={terminal.pending} onClick={() => run(preferred)}>
-          <RowIcon name="Play" />
-          <RowLabel>Run {preferred.name}</RowLabel>
-        </SplitPrimary>
-      }
-      menuLabel="Project scripts"
-      menu={
-        <>
+    <CardRow
+      icon="Play"
+      label={`Run ${preferred.name}`}
+      title={preferred.command}
+      disabled={terminal.pending}
+      onClick={() => run(preferred)}
+      action={
+        <RowMenu label="Project scripts" triggerRef={menuRef}>
           <MenuLabel>Run</MenuLabel>
           {scripts.map((script) => (
             <MenuItem
@@ -391,20 +318,14 @@ function ScriptsRow({
           <MenuItem icon="Plus" onSelect={() => onEdit(null)}>
             Add project script
           </MenuItem>
-        </>
+        </RowMenu>
       }
     />
   );
 }
 
-function ThreadMissing({ status }: { status: string }) {
-  const text =
-    status === "error"
-      ? "Could not load this thread's details."
-      : status === "loading"
-        ? "Loading…"
-        : "Details are shown for active threads.";
-  return <p className="px-4 py-3 text-[13px] text-muted-foreground">{text}</p>;
+function Muted({ children }: { children: ReactNode }) {
+  return <span className="text-muted-foreground">{children}</span>;
 }
 
 async function copy(text: string, done: string) {

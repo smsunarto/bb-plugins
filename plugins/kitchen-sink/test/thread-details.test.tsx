@@ -2,21 +2,19 @@ import { expect, mock, test } from "bun:test";
 import { installDom } from "@bb-plugins/testing";
 
 installDom();
-// installDom keeps node's Event classes; radix overlays dispatch theirs on jsdom nodes.
 for (const name of ["Event", "CustomEvent", "FocusEvent", "KeyboardEvent", "PointerEvent"] as const)
   if (name in window)
     Object.defineProperty(globalThis, name, { configurable: true, value: window[name as "Event"] });
-const { fireEvent, waitFor, within } = await import("@testing-library/react");
-const { createElement } = await import("react");
+const { act, fireEvent, waitFor } = await import("@testing-library/react");
+const { createElement, Fragment } = await import("react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { queryClient } = await import("../src/app/query.ts");
 
-const ENV = "env_1";
 const thread = {
   id: "thr_1",
   projectId: "proj_1",
   environment: {
-    id: ENV,
+    id: "env_1",
     name: "bb-plugins",
     branchName: "scott/details",
     path: "/Users/scott/git/bb-plugins",
@@ -27,92 +25,87 @@ const thread = {
   host: { id: "host_mac", name: "Scott's MacBook Pro" },
 };
 
-type CardOptions = {
-  scripts?: Array<{ id: string; name: string; command: string }> | Error;
-  threads?: unknown[];
-  compact?: boolean;
-  /** Mount inside this element, as bb mounts the header inside its stream panel. */
-  panel?: HTMLElement;
-};
+type Scripts = Array<{ id: string; name: string; command: string }>;
 
-async function renderCard(options: CardOptions) {
+/**
+ * bb's card around the workspace rows, plus the plugin's app overlays. `rows:
+ * false` models bb unmounting the rows, as its narrow-pane popover does on close.
+ */
+async function renderWorkspace(scripts: Scripts | Error = []) {
   queryClient.clear();
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
-  const registration = app.threadHeaderActions.find((action) => action.id === "thread-details");
-  if (!registration) throw new Error("thread-details is not registered");
+  const registration = app.threadContextCardRows.find((row) => row.id === "workspace");
+  const overlay = app.appOverlays.find((entry) => entry.id === "script-editor");
+  if (!registration || !overlay) throw new Error("Missing workspace rows or script editor");
   const create = mock(async (_args: unknown) => ({ id: "term_1" }));
-  // renderSlot appends its container to the body; route that one append into the panel.
-  const { panel } = options;
-  const append = document.body.appendChild;
-  if (panel)
-    document.body.appendChild = function <T extends Node>(node: T) {
-      document.body.appendChild = append;
-      const header = document.createElement("header");
-      panel.appendChild(header);
-      return header.appendChild(node);
-    };
+  const gitRead = mock(async () => {
+    throw new Error("Workspace rows must not query Git");
+  });
+  const save = mock(async (_input: unknown) => ({ scripts: [] as Scripts }));
+  const props = {
+    threadId: thread.id,
+    projectId: thread.projectId,
+    // bb hands rows only the environment id.
+    environment: { id: thread.environment.id },
+  };
+  const Host = ({ rows = true }: { rows?: boolean }) =>
+    createElement(
+      Fragment,
+      null,
+      rows ? createElement(registration.component, props) : null,
+      createElement(overlay.component as never),
+    );
   const slot = renderSlot(
-    registration,
-    { threadId: "thr_1", projectId: "proj_1", isCompactViewport: options.compact ?? false },
+    { id: "host", component: Host } as never,
+    {},
     {
       pluginId: "kitchen-sink",
       sidebarThreads: {
         status: "ready",
-        threads: (options.threads ?? [thread]) as never,
-        projects: [{ id: "proj_1", name: "bb-plugins" } as never],
+        threads: [thread] as never,
+        projects: [{ id: "proj_1", name: "bb-plugins" }] as never,
       },
-      sdk: {
-        terminals: { create: create as never },
-      },
+      sdk: { plugins: { callRpc: gitRead }, terminals: { create: create as never } },
       rpc: {
         projectScripts: () => {
-          if (options.scripts instanceof Error) throw options.scripts;
-          return { scripts: options.scripts ?? [] };
+          if (scripts instanceof Error) throw scripts;
+          return { scripts };
         },
+        saveProjectScript: save,
       } as never,
     },
   );
-  const setCompact = (compact: boolean) =>
-    slot.rerender(
-      createElement(registration.component, {
-        threadId: "thr_1",
-        projectId: "proj_1",
-        isCompactViewport: compact,
-      }),
-    );
-  return { slot, create, setCompact };
+  const showRows = (rows: boolean) => slot.rerender(createElement(Host, { rows }));
+  return { slot, create, gitRead, save, showRows };
 }
 
-async function mountCard(options: CardOptions) {
-  const { slot, create, setCompact } = await renderCard(options);
-  const card = await waitFor(() => {
-    const element = document.body.querySelector<HTMLElement>(
-      'section[aria-label="Thread details"]',
+/**
+ * Open a Radix menu the way a pointer does. jsdom has no PointerEvent to carry
+ * `button`, and keyboard navigation hangs Radix menus there.
+ */
+function openMenu(trigger: HTMLElement) {
+  act(() => {
+    trigger.dispatchEvent(
+      new window.MouseEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }),
     );
-    if (!element) throw new Error("card not open");
-    return element;
   });
-  return { slot, card, create, setCompact };
 }
 
-test("the card retains machine and script rows without Git workflows", async () => {
-  const { slot, card } = await mountCard({});
-  const view = within(card);
-  expect(view.getByText("Scott's MacBook Pro")).toBeTruthy();
-  expect(view.queryByRole("button", { name: "Open in editor" })).toBeNull();
-  await waitFor(() => expect(view.getByText("Add project script")).toBeTruthy());
-  expect(view.queryByText("scott/details")).toBeNull();
-  expect(view.queryByText("Version control")).toBeNull();
-  expect(view.queryByText("Push & create PR")).toBeNull();
+test("workspace rows retain machine and scripts without Git reads or actions", async () => {
+  const { slot, gitRead } = await renderWorkspace();
+  expect(slot.getByText("Scott's MacBook Pro")).toBeTruthy();
+  await waitFor(() => expect(slot.getByText("Add project script")).toBeTruthy());
+  expect(slot.queryByText("scott/details")).toBeNull();
+  expect(slot.queryByText("Push & create PR")).toBeNull();
+  expect(gitRead).not.toHaveBeenCalled();
   slot.unmount();
 });
 
-test("a saved script runs in a thread terminal", async () => {
-  const { slot, card, create } = await mountCard({
-    scripts: [{ id: "s1", name: "Dev server", command: "bun run dev" }],
-  });
-  const run = await waitFor(() => within(card).getByText("Run Dev server"));
-  fireEvent.click(run);
+test("a saved script still runs in the owning thread's terminal", async () => {
+  const { slot, create } = await renderWorkspace([
+    { id: "s1", name: "Dev server", command: "bun run dev" },
+  ]);
+  fireEvent.click(await slot.findByText("Run Dev server"));
   await waitFor(() => expect(create).toHaveBeenCalled());
   expect(create.mock.calls[0]?.[0]).toMatchObject({
     scope: { kind: "thread", threadId: "thr_1" },
@@ -121,219 +114,64 @@ test("a saved script runs in a thread terminal", async () => {
   slot.unmount();
 });
 
-test("scripts that fail to load cannot be overwritten from an empty list", async () => {
-  const { slot, card } = await mountCard({ scripts: new Error("server unreachable") });
-  await waitFor(() => expect(within(card).getByText("Scripts unavailable")).toBeTruthy(), {
-    timeout: 4000,
+test("failed script reads offer retry without an empty-list edit action", async () => {
+  queryClient.setDefaultOptions({ queries: { retry: false } });
+  const { slot } = await renderWorkspace(new Error("host unavailable"));
+  await waitFor(() => expect(slot.getByText("Scripts unavailable")).toBeTruthy());
+  expect(slot.queryByText("Add project script")).toBeNull();
+  slot.unmount();
+});
+
+test("the script editor and its draft outlive the rows that opened it", async () => {
+  const { slot, showRows, save } = await renderWorkspace();
+  fireEvent.click(await slot.findByText("Add project script"));
+  const name = await slot.findByRole("textbox", { name: "Name" });
+  fireEvent.change(name, { target: { value: "Dev server" } });
+  fireEvent.change(slot.getByRole("textbox", { name: "Command" }), {
+    target: { value: "bun run dev" },
   });
-  expect(within(card).queryByText("Add project script")).toBeNull();
-  slot.unmount();
-});
-
-test("a thread outside the active list shows a message, not an endless load", async () => {
-  const { slot, card } = await mountCard({ threads: [] });
-  expect(within(card).getByText("Details are shown for active threads.")).toBeTruthy();
-  slot.unmount();
-});
-
-const PINNED = "kitchen-sink:thread-details:pinned";
-
-/** Model the owning panel and its collapsed state; layout is left to CSS. */
-function streamPanel(width: number) {
-  const panel = document.createElement("div");
-  panel.dataset.panelId = "thread-detail-timeline-panel";
-  panel.dataset.panelSize = width === 0 ? "0.0" : "100.0";
-  document.body.append(panel);
-  return panel;
-}
-
-const docked = () =>
-  document.body.querySelector<HTMLElement>('section[aria-label="Thread details"]');
-test("the card ignores the old hidden preference and stays visible while resizing", async () => {
-  localStorage.setItem(PINNED, "false");
-  const panel = streamPanel(900);
-  const { slot } = await renderCard({ panel });
-  await waitFor(() => expect(docked()).toBeTruthy());
-  expect(within(slot.container).queryByRole("button", { name: "Thread details" })).toBeNull();
-  panel.dataset.panelSize = "60.0";
-  await waitFor(() => expect(docked()).toBeTruthy());
-  fireEvent.keyDown(docked()!, { key: "Escape" });
-  expect(docked()).toBeTruthy();
-  slot.unmount();
-  panel.remove();
-  localStorage.removeItem(PINNED);
-});
-
-test("opening the right panel hides the card and closing it restores it", async () => {
-  const panel = streamPanel(900);
-  const group = document.createElement("div");
-  group.setAttribute("data-panel-group", "");
-  document.body.append(group);
-  group.append(panel);
-  const secondary = document.createElement("div");
-  secondary.id = "thread-detail-secondary-panel";
-  const aside = document.createElement("aside");
-  aside.setAttribute("aria-hidden", "true");
-  secondary.append(aside);
-  group.append(secondary);
-  const { slot } = await renderCard({ panel });
-  await waitFor(() => expect(docked()).toBeTruthy());
-  aside.setAttribute("aria-hidden", "false");
-  await waitFor(() => expect(docked()).toBeNull());
-  aside.setAttribute("aria-hidden", "true");
-  await waitFor(() => expect(docked()).toBeTruthy());
-  slot.unmount();
-  group.remove();
-});
-
-test("an initially open right panel and a compact drawer hide the card", async () => {
-  const panel = streamPanel(900);
-  const group = document.createElement("div");
-  group.setAttribute("data-panel-group", "");
-  document.body.append(group);
-  group.append(panel);
-  const secondary = document.createElement("div");
-  secondary.id = "thread-detail-secondary-panel";
-  secondary.innerHTML = '<aside aria-hidden="false"></aside>';
-  group.append(secondary);
-  const { slot } = await renderCard({ panel });
-  expect(docked()).toBeNull();
-  secondary.remove();
-  await waitFor(() => expect(docked()).toBeTruthy());
-  const drawer = document.createElement("div");
-  drawer.setAttribute("role", "dialog");
-  drawer.setAttribute("data-state", "full");
-  document.body.append(drawer);
-  // BB opens the drawer with a fallback before its real panel arrives.
-  await waitFor(() => expect(docked()).toBeTruthy());
-  drawer.innerHTML = '<aside aria-hidden="false"></aside>';
-  await waitFor(() => expect(docked()).toBeNull());
-  drawer.setAttribute("data-state", "closed");
-  await waitFor(() => expect(docked()).toBeTruthy());
-  slot.unmount();
-  drawer.remove();
-  group.remove();
-});
-
-test("narrow desktop streams show the card; mobile and collapsed streams hide it", async () => {
-  for (const [width, compact] of [
-    [300, false],
-    [0, false],
-    [900, true],
-  ] as const) {
-    const panel = streamPanel(width);
-    const { slot } = await renderCard({ panel, compact });
-    if (width === 0 || compact) expect(docked()).toBeNull();
-    else await waitFor(() => expect(docked()).toBeTruthy());
-    if (compact) {
-      expect(
-        within(slot.container).queryByRole("link", { name: "Go to thread details" }),
-      ).toBeNull();
-    }
-    expect(within(slot.container).queryByRole("button", { name: "Thread details" })).toBeNull();
-    slot.unmount();
-    panel.remove();
-  }
-});
-
-test("resizing to mobile hides the card without losing an open script draft", async () => {
-  const { slot, card, setCompact } = await mountCard({});
-  const add = await waitFor(() => within(card).getByText("Add project script"));
-  fireEvent.click(add);
-  const dialog = within(document.body).getByRole("dialog", { name: "Add project script" });
-  fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "My script" } });
-  fireEvent.change(within(dialog).getByLabelText("Command"), { target: { value: "bun run dev" } });
-  setCompact(true);
-  expect(docked()).toBeNull();
-  expect(document.body.contains(dialog)).toBe(true);
-  setCompact(false);
-  expect(docked()).toBeTruthy();
-  expect(within(dialog).getByLabelText<HTMLInputElement>("Name").value).toBe("My script");
-  expect(within(dialog).getByLabelText<HTMLTextAreaElement>("Command").value).toBe("bun run dev");
-  slot.unmount();
-});
-
-test("split-pane cards stay within their own pane", async () => {
-  const left = streamPanel(500);
-  left.removeAttribute("data-panel-id");
-  left.dataset.splitPaneId = "left";
-  left.dataset.focused = "true";
-  const first = await renderCard({ panel: left });
-  const firstCard = docked()!;
-  expect(firstCard.parentElement).toBe(left);
-  const right = streamPanel(500);
-  right.removeAttribute("data-panel-id");
-  right.dataset.splitPaneId = "right";
-  right.dataset.focused = "true";
-  const second = await renderCard({ panel: right });
-  const cards = document.body.querySelectorAll<HTMLElement>('section[aria-label="Thread details"]');
-  expect(cards[1]?.parentElement).toBe(right);
-  expect(firstCard.parentElement).not.toBe(cards[1]?.parentElement);
-  first.slot.unmount();
-  second.slot.unmount();
-  left.remove();
-  right.remove();
-});
-
-test("a shared right panel hides only its owning split pane's card", async () => {
-  const group = document.createElement("div");
-  group.setAttribute("data-panel-group", "");
-  document.body.append(group);
-  const first = streamPanel(500);
-  first.removeAttribute("data-panel-id");
-  first.dataset.splitPaneId = "pane-1";
-  first.dataset.focused = "true";
-  const second = streamPanel(500);
-  second.removeAttribute("data-panel-id");
-  second.dataset.splitPaneId = "pane-2";
-  second.dataset.focused = "true";
-  group.append(first, second);
-  const firstSlot = await renderCard({ panel: first });
-  const firstCard = docked()!;
-  const secondSlot = await renderCard({ panel: second });
-  const secondary = document.createElement("div");
-  secondary.id = "thread-detail-secondary-panel-pane-2";
-  secondary.innerHTML = '<aside aria-hidden="false"></aside>';
-  group.append(secondary);
-  await waitFor(() =>
-    expect(document.querySelectorAll('section[aria-label="Thread details"]').length).toBe(1),
+  // bb's popover closes on a row click, unmounting the rows; a breakpoint change remounts them.
+  showRows(false);
+  expect(slot.getByRole("dialog")).toBeTruthy();
+  showRows(true);
+  expect((slot.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(
+    "Dev server",
   );
-  expect(firstCard.isConnected).toBe(true);
-  const replacement = secondary.cloneNode(true) as HTMLElement;
-  replacement.id = "thread-detail-secondary-panel-pane-1";
-  secondary.replaceWith(replacement);
-  await waitFor(() => expect(firstCard.isConnected).toBe(false));
-  expect(document.querySelectorAll('section[aria-label="Thread details"]').length).toBe(1);
-  firstSlot.slot.unmount();
-  secondSlot.slot.unmount();
-  group.remove();
-});
-
-test("the header keyboard link focuses the card without toggling it", async () => {
-  const { slot, card } = await mountCard({});
-  fireEvent.click(within(slot.container).getByRole("link", { name: "Go to thread details" }));
-  expect(document.activeElement).toBe(card);
+  fireEvent.click(slot.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(save).toHaveBeenCalled());
+  expect(save.mock.calls[0]?.[0]).toMatchObject({
+    projectId: "proj_1",
+    edit: { kind: "upsert", script: { name: "Dev server", command: "bun run dev" } },
+  });
+  await waitFor(() => expect(slot.queryByRole("dialog")).toBeNull());
   slot.unmount();
 });
 
-test("mounting the dock does not synchronously measure its panel or header", async () => {
-  const panel = streamPanel(900);
-  panel.getBoundingClientRect = () => {
-    throw new Error("Unexpected layout read");
-  };
-  const { slot } = await renderCard({ panel });
-  await waitFor(() => expect(docked()).toBeTruthy());
-  expect(docked()!.parentElement).toBe(panel.querySelector("header"));
+test("the last script run stays preferred when the rows remount", async () => {
+  const { slot, showRows } = await renderWorkspace([
+    { id: "s1", name: "Dev server", command: "bun run dev" },
+    { id: "s2", name: "Storybook", command: "bun run storybook" },
+  ]);
+  await slot.findByText("Run Dev server");
+  openMenu(slot.getByRole("button", { name: "Project scripts" }));
+  fireEvent.click(await slot.findByRole("menuitem", { name: /^Storybook/ }));
+  await waitFor(() => expect(slot.getByText("Run Storybook")).toBeTruthy());
+  showRows(false);
+  showRows(true);
+  expect(await slot.findByText("Run Storybook")).toBeTruthy();
   slot.unmount();
-  panel.remove();
 });
 
-test("the ordinary thread wrapper uses its header rather than the unpositioned split marker", async () => {
-  const panel = streamPanel(900);
-  panel.dataset.splitPaneId = "single";
-  const { slot } = await renderCard({ panel });
-  await waitFor(() => expect(docked()).toBeTruthy());
-  expect(docked()!.parentElement).toBe(panel.querySelector("header"));
+test("closing the editor returns focus to the scripts menu button", async () => {
+  const { slot } = await renderWorkspace([
+    { id: "s1", name: "Dev server", command: "bun run dev" },
+  ]);
+  await slot.findByText("Run Dev server");
+  const trigger = slot.getByRole("button", { name: "Project scripts" });
+  openMenu(trigger);
+  fireEvent.click(await slot.findByRole("menuitem", { name: "Edit Dev server" }));
+  fireEvent.click(await slot.findByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(slot.queryByRole("dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(trigger));
   slot.unmount();
-  panel.remove();
 });

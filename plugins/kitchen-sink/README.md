@@ -15,7 +15,7 @@
 
 ## What it does
 
-Kitchen Sink adds machine and checkout details, terminal access, and saved project scripts to a floating thread details card. Scripts can be added, edited, and run from the card.
+Kitchen Sink adds machine and checkout details, terminal access, and saved project scripts to BB's thread context card. Scripts can be added, edited, and run from the card. The card needs BB 0.48.1 or later with the `threadContextCard` experiment on; without it, these rows do not show.
 
 Its composer skills are `/project-scripts`, `/subthread`, and `/test-remotely`.
 

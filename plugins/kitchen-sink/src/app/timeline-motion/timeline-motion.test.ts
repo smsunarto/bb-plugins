@@ -102,6 +102,7 @@ function sidebarThread(overrides: Partial<PluginSidebarThread> = {}): PluginSide
     updatedAt: 1_700_000_000_000,
     lastReadAt: null,
     latestAttentionAt: 1_700_000_000_000,
+    parentNotifications: "auto",
     ...overrides,
   };
 }
