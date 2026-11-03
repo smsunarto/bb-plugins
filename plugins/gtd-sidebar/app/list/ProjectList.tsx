@@ -408,11 +408,7 @@ interface HeaderMenuOptions {
   /** Items below the shared Organize, Sort, and Filter entries. */
   menuItems?: ReactNode;
   onCloseAutoFocus?: (event: Event) => void;
-  newThreadLast?: boolean;
 }
-
-/** A shelf header shows its menu first and New thread at the edge. */
-const SHELF_HEADER_MENU: HeaderMenuOptions = { newThreadLast: true };
 
 interface ShelfBodyProps extends ShelfRenderState {
   items: ShelfItems;
@@ -817,14 +813,13 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
       menuId: string,
       label: string,
       onNewThread: (() => void) | undefined,
-      { menuItems, onCloseAutoFocus, newThreadLast }: HeaderMenuOptions = {},
+      { menuItems, onCloseAutoFocus }: HeaderMenuOptions = {},
     ) => {
       const id = `displayOptions:${menuId}` as const;
       return (
         <SidebarHeaderControls
           label={label}
           onNewThread={onNewThread}
-          newThreadLast={newThreadLast}
           open={openSidebarMenu === id}
           onOpenChange={(open) => setSidebarMenuOpen(id, open)}
           onCloseAutoFocus={onCloseAutoFocus}
@@ -1171,11 +1166,8 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
                   onToggleCollapsed={() => toggleShelf("pinned")}
                   isReorderPending={isPinnedReorderPending}
                   onReorderPinnedRoot={handleReorderPinnedRoot}
-                  actions={renderMenu(
-                    "pinned",
-                    SHELF_LABELS.pinned,
-                    () => createThread({ pinned: true }),
-                    SHELF_HEADER_MENU,
+                  actions={renderMenu("pinned", SHELF_LABELS.pinned, () =>
+                    createThread({ pinned: true }),
                   )}
                   actionsOpen={isMenuOpen("pinned")}
                 />
@@ -1188,7 +1180,7 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
                     <TopLevelSidebarSection
                       sectionId={`shelf:${shelf}`}
                       label={label}
-                      actions={renderMenu(shelf, label, () => createThread({}), SHELF_HEADER_MENU)}
+                      actions={renderMenu(shelf, label, () => createThread({}))}
                       actionsOpen={isMenuOpen(shelf)}
                       actionsMobileAlways
                       collapsedActivity={getCollapsedChildActivity(threads)}

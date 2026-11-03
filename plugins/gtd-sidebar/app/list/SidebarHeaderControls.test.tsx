@@ -33,7 +33,6 @@ function setup(
   compact = false,
   experiments: string[] = [],
   filters: GtdFilterState | null = null,
-  newThreadLast = false,
 ) {
   const store = createStore();
   store.set(sidebarOrganizationModeAtom, organization);
@@ -48,11 +47,7 @@ function setup(
       <CompactViewportOverrideProvider isCompactViewport={compact}>
         <TooltipProvider>
           <GtdFilterProvider value={filters}>
-            <SidebarHeaderControls
-              label={label}
-              onNewThread={newThread}
-              newThreadLast={newThreadLast}
-            >
+            <SidebarHeaderControls label={label} onNewThread={newThread}>
               {section && (
                 <ActionMenuItem surface="dropdown" icon="Edit" onSelect={rename}>
                   Rename
@@ -124,13 +119,14 @@ describe("sidebar header controls", () => {
     });
   });
 
-  it("keeps the primary before overflow and applies the shared control state", async () => {
+  it("puts the menu first and New thread at the edge, with the shared control state", async () => {
     const { newThread } = setup("Pinned", false, "chronological");
     const primary = screen.getByRole("button", {
       name: "New thread in Pinned",
     });
-    expect(primary.nextElementSibling?.getAttribute("aria-label")).toBe("Pinned actions");
-    for (const control of [primary, primary.nextElementSibling]) {
+    const menu = screen.getByRole("button", { name: "Pinned actions" });
+    expect(menu.nextElementSibling).toBe(primary);
+    for (const control of [primary, menu]) {
       for (const token of SIDEBAR_CONTROL_STATE_CLASS.split(" ")) {
         expect(control?.classList.contains(token)).toBe(true);
       }
@@ -141,18 +137,12 @@ describe("sidebar header controls", () => {
       expect(control?.className).not.toMatch(/focus-visible:(bg-|ring-[02]\b)/);
     }
     expect(primary.classList.contains("max-md:pointer-coarse:w-8")).toBe(true);
-    expect(primary.nextElementSibling?.classList.contains("max-md:pointer-coarse:w-9")).toBe(true);
+    expect(menu.classList.contains("max-md:pointer-coarse:w-9")).toBe(true);
     expect(primary.parentElement?.classList.contains("max-md:pointer-coarse:gap-0")).toBe(true);
     fireEvent.click(primary);
     expect(newThread).toHaveBeenCalledOnce();
     await openMenu();
-    expect(primary.nextElementSibling?.getAttribute("data-state")).toBe("open");
-  });
-
-  it("puts a shelf's menu first and New thread at the edge", () => {
-    setup("Waiting", false, "project", false, [], null, true);
-    const menu = screen.getByRole("button", { name: "Waiting actions" });
-    expect(menu.nextElementSibling?.getAttribute("aria-label")).toBe("New thread in Waiting");
+    expect(menu.getAttribute("data-state")).toBe("open");
   });
 
   it("lists the view pages, then the header's own items", async () => {

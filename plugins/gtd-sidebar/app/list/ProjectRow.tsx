@@ -3,7 +3,11 @@ import {
   useThreadCreationPlacement,
 } from "./ThreadCreationPlacement.js";
 import { SidebarHeaderControls } from "./SidebarHeaderControls.js";
-import { SidebarRowControls, SidebarControlButton } from "../rows/SidebarRowControls.js";
+import {
+  SidebarRowControls,
+  SidebarControlButton,
+  useMenuPastControls,
+} from "../rows/SidebarRowControls.js";
 import {
   SIDEBAR_CONTROL_BUTTON_CLASS,
   SIDEBAR_CONTROL_PAIR_SIZE_CLASS,
@@ -589,8 +593,11 @@ function EnvironmentThreadGroupHeaderActions({
   onOpenChange,
   onCloseAutoFocus,
 }: EnvironmentThreadGroupHeaderActionsProps) {
+  const { trigger, sideOffset, measure } = useMenuPastControls();
   return (
+    // Menu first, like the folder header above it.
     <SidebarRowControls
+      primaryLast
       primaryAction={
         <SidebarControlButton
           label="New thread in environment"
@@ -599,9 +606,15 @@ function EnvironmentThreadGroupHeaderActions({
         />
       }
     >
-      <DropdownMenu onOpenChange={onOpenChange}>
+      <DropdownMenu
+        onOpenChange={(open) => {
+          if (open) measure();
+          onOpenChange(open);
+        }}
+      >
         <DropdownMenuTrigger asChild>
           <Button
+            ref={trigger}
             type="button"
             variant="ghost"
             size="icon"
@@ -615,7 +628,7 @@ function EnvironmentThreadGroupHeaderActions({
         <DropdownMenuContent
           side="right"
           align="start"
-          sideOffset={8}
+          sideOffset={sideOffset}
           mobileTitle="Environment actions"
           onCloseAutoFocus={onCloseAutoFocus}
         >

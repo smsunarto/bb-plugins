@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,27 @@ import {
   SIDEBAR_CONTROL_PAIR_GAP_CLASS,
   SIDEBAR_CONTROL_PRIMARY_BUTTON_CLASS,
 } from "@/components/ui/sidebar-row-classes";
+
+const MENU_SIDE_OFFSET = 8;
+
+/**
+ * A menu whose trigger comes before the primary action opens past the row's
+ * edge, clear of the button after it. Call `measure` as the menu opens.
+ */
+export function useMenuPastControls() {
+  const trigger = useRef<HTMLButtonElement>(null);
+  const [sideOffset, setSideOffset] = useState(MENU_SIDE_OFFSET);
+  const measure = () => {
+    const button = trigger.current;
+    const controls = button?.closest("[data-sidebar-row-controls]");
+    const after =
+      button && controls
+        ? controls.getBoundingClientRect().right - button.getBoundingClientRect().right
+        : 0;
+    setSideOffset(MENU_SIDE_OFFSET + Math.max(0, after));
+  };
+  return { trigger, sideOffset, measure };
+}
 
 export function SidebarRowControls({
   primaryAction,

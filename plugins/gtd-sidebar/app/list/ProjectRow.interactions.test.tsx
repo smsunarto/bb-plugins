@@ -815,9 +815,9 @@ describe("ProjectRow interactions", () => {
       });
       const actions = createButton.closest(".bb-sidebar-hover-actions");
       expect(actions?.getAttribute("data-sidebar-hover-actions-mobile")).toBe("always");
-      expect(actions?.contains(screen.getByRole("button", { name: "Environment actions" }))).toBe(
-        true,
-      );
+      const menu = screen.getByRole("button", { name: "Environment actions" });
+      expect(actions?.contains(menu)).toBe(true);
+      expect(menu.nextElementSibling).toBe(createButton);
       fireEvent.click(createButton);
       expect(navigateCalls).toEqual([
         {
