@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useId,
   type CSSProperties,
   type KeyboardEventHandler,
   type MouseEvent,
@@ -43,6 +44,8 @@ import {
   usePluginThreadRowStatusForThreads,
 } from "./groupRollups.js";
 import { SplitPaneMiniMap } from "@/components/ui/split-pane-mini-map";
+import { SlidingDisclosure } from "../ui/SlidingDisclosure.js";
+import { spokenFoldCount, type FoldCount } from "../gtd/fold-count.js";
 import {
   COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS,
   COARSE_POINTER_GLYPH_BOX_CLASS,
@@ -71,6 +74,11 @@ export interface TopLevelSidebarSectionProps {
   tier?: "label" | "project";
   /** The group row's leading icon; "project" tier only. */
   icon?: string;
+  /**
+   * A folded group's footprint, shown at its right edge as GTD's folders
+   * did: `needs you / families`, or the families alone. "project" tier only.
+   */
+  foldCount?: FoldCount;
   labelEditor?: ReactNode;
   onRename?: () => void;
   children: ReactNode;
@@ -96,6 +104,7 @@ export function TopLevelSidebarSection({
   label,
   tier = "label",
   icon,
+  foldCount,
   labelEditor,
   onRename,
   children,
@@ -122,6 +131,10 @@ export function TopLevelSidebarSection({
     collapseControl?.isCollapsed === true,
   );
   const pluginStatus = usePluginThreadRowStatusForThreads(collapsedThreads);
+  const isFolder = tier === "project";
+  const isCollapsed = collapseControl?.isCollapsed === true;
+  const showFoldCount =
+    isFolder && isCollapsed && foldCount !== undefined && foldCount.families > 0 && !status;
   const showCollapsedActivity =
     !status &&
     collapseControl?.isCollapsed === true &&
@@ -152,6 +165,37 @@ export function TopLevelSidebarSection({
       ) : null}
     </span>
   ) : null;
+  // GTD's folded count sits beside bb's collapsed activity, which keeps the
+  // split mini map, work, drafts, and plugin status the count leaves out.
+  const foldCountIndicator = showFoldCount ? (
+    <span
+      data-gtd-fold-count=""
+      data-sidebar-hover-actions-open={actionsOpen ? "true" : undefined}
+      aria-hidden="true"
+      className={cn(
+        "pointer-events-none absolute top-1/2 z-20 -translate-y-1/2 whitespace-nowrap text-[10px] font-medium tabular-nums max-md:static max-md:mr-2 max-md:translate-y-0",
+        showCollapsedActivity ? "right-8 max-md:pointer-coarse:right-10" : "right-2",
+        foldCount.attention > 0 ? "text-attention" : "text-muted-foreground",
+        actions && SIDEBAR_HOVER_ACTIONS_FADE_CLASS,
+      )}
+    >
+      {foldCount.attention > 0
+        ? `${foldCount.attention} / ${foldCount.families}`
+        : `${foldCount.families}`}
+    </span>
+  ) : null;
+  const handleFolderClick = useCallback<MouseEventHandler<HTMLDivElement>>(
+    (event) => {
+      if (event.defaultPrevented) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-sidebar-trailing-controls]")
+      )
+        return;
+      collapseControl?.onToggleCollapsed();
+    },
+    [collapseControl],
+  );
   const handleClickCapture = useCallback<MouseEventHandler<HTMLDivElement>>(
     (event) => {
       if (labelEditor || !consumeClickSuppression?.()) {
@@ -203,35 +247,45 @@ export function TopLevelSidebarSection({
       <SidebarStickyTier
         ref={dragBindings?.setActivatorNodeRef}
         tier={tier}
+        data-gtd-folder={isFolder ? "" : undefined}
         className={cn(
           SIDEBAR_HOVER_ACTIONS_ROW_CLASS,
-          tier === "label"
-            ? [CHROME_SECTION_LABEL_CLASS, SIDEBAR_STANDARD_ROW_PADDING_CLASS]
-            : [SIDEBAR_ROW_BASE_CLASS, COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS],
-          SIDEBAR_GROUP_TEXT_CLASS,
-          "rounded-md pr-0 transition-colors",
+          isFolder
+            ? [
+                "gtd-folder-header flex w-full items-center rounded-md pr-0",
+                // bb's sticky tiers place the rows below on this height.
+                COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS,
+                collapseControl && !labelEditor && "cursor-pointer",
+              ]
+            : [
+                CHROME_SECTION_LABEL_CLASS,
+                SIDEBAR_STANDARD_ROW_PADDING_CLASS,
+                SIDEBAR_GROUP_TEXT_CLASS,
+                "rounded-md pr-0 transition-colors",
+              ],
           !stickyHeader && "relative top-auto",
           dragBindings && !dragBindings.disabled && "select-none",
         )}
-        style={tier === "project" ? { paddingLeft: getSidebarThreadRowPaddingLeft(0) } : undefined}
+        onClick={isFolder && collapseControl && !labelEditor ? handleFolderClick : undefined}
         {...dragBindings?.attributes}
         {...(dragBindings?.listeners ?? {})}
       >
-        {tier === "project" && icon ? (
-          <span
-            className={cn(
-              "pointer-events-none relative z-10 inline-flex shrink-0 items-center justify-center",
-              COARSE_POINTER_GLYPH_BOX_CLASS,
-            )}
-            aria-hidden="true"
-          >
-            <Icon name={icon} className={COARSE_POINTER_ICON_SIZE_CLASS} aria-hidden="true" />
-          </span>
+        {isFolder ? (
+          <FolderGlyph
+            icon={icon ?? "Folder"}
+            label={label}
+            collapseControl={collapseControl}
+            foldCount={foldCount}
+            disabled={Boolean(labelEditor)}
+            onClick={handleCollapseControlClick}
+            onPointerDown={stopCollapseControlPointerDown}
+            onKeyDown={stopCollapseControlKeyDown}
+          />
         ) : null}
         <span
           className={cn(
             "relative z-10 flex min-w-0 flex-1 items-center text-left",
-            tier === "label" ? "gap-1" : "gap-1.5",
+            isFolder ? "gtd-folder-name" : "gap-1",
           )}
         >
           {labelEditor ?? (
@@ -239,7 +293,9 @@ export function TopLevelSidebarSection({
               className="min-w-0 truncate"
               title={label}
               onDoubleClick={
-                onRename
+                // A folder toggles on a click, so its double-click would fold
+                // twice; folders rename from their menus.
+                onRename && !isFolder
                   ? (event) => {
                       event.preventDefault();
                       event.stopPropagation();
@@ -251,7 +307,7 @@ export function TopLevelSidebarSection({
               {label}
             </span>
           )}
-          {collapseControl ? (
+          {collapseControl && !isFolder ? (
             <button
               type="button"
               disabled={Boolean(labelEditor)}
@@ -275,17 +331,17 @@ export function TopLevelSidebarSection({
               onKeyDown={stopCollapseControlKeyDown}
             >
               <Icon
-                name="ChevronRight"
+                name="ChevronDown"
                 className={cn(
-                  "size-3 transition-transform duration-150",
-                  !collapseControl.isCollapsed && "rotate-90",
+                  "gtd-chevron-motion size-3",
+                  collapseControl.isCollapsed && "-rotate-90",
                 )}
                 aria-hidden="true"
               />
             </button>
           ) : null}
         </span>
-        {status || actions || collapsedActivityIndicator ? (
+        {status || actions || collapsedActivityIndicator || foldCountIndicator ? (
           <span
             data-sidebar-trailing-controls=""
             className={cn(
@@ -296,6 +352,7 @@ export function TopLevelSidebarSection({
             onClick={status || actions ? stopActionsClick : undefined}
           >
             {status}
+            {foldCountIndicator}
             {collapsedActivityIndicator}
             {actions ? (
               <span
@@ -316,11 +373,91 @@ export function TopLevelSidebarSection({
           </span>
         ) : null}
       </SidebarStickyTier>
-      {collapseControl?.isCollapsed || children == null ? null : tier === "project" ? (
-        <div data-gtd-group-content="">{children}</div>
-      ) : (
-        <div className="mt-1">{children}</div>
+      {children == null ? null : (
+        <SlidingDisclosure open={!isCollapsed}>
+          {isFolder ? (
+            <div data-gtd-group-content="">{children}</div>
+          ) : (
+            <div className="mt-1">{children}</div>
+          )}
+        </SlidingDisclosure>
       )}
     </SidebarStickyGroup>
+  );
+}
+
+/**
+ * A folder's leading glyph in the tree's 24px disclosure column: its icon at
+ * rest, the fold chevron while the header is hovered or the toggle has
+ * keyboard focus (shelves.css), as GTD's own folders drew it.
+ */
+function FolderGlyph({
+  icon,
+  label,
+  collapseControl,
+  foldCount,
+  disabled,
+  onClick,
+  onPointerDown,
+  onKeyDown,
+}: {
+  icon: string;
+  label: string;
+  collapseControl?: TopLevelSidebarSectionCollapseControl;
+  foldCount?: FoldCount;
+  disabled: boolean;
+  onClick: MouseEventHandler<HTMLButtonElement>;
+  onPointerDown: PointerEventHandler<HTMLButtonElement>;
+  onKeyDown: KeyboardEventHandler<HTMLButtonElement>;
+}) {
+  const descriptionId = useId();
+  const glyphs = (
+    <>
+      <Icon
+        name={icon}
+        className="gtd-folder-icon size-3 max-md:pointer-coarse:size-4"
+        aria-hidden="true"
+      />
+      {collapseControl ? (
+        <Icon
+          name="ChevronDown"
+          className={cn(
+            "gtd-folder-chevron gtd-chevron-motion size-3 max-md:pointer-coarse:size-4",
+            collapseControl.isCollapsed && "-rotate-90",
+          )}
+          aria-hidden="true"
+        />
+      ) : null}
+    </>
+  );
+  if (!collapseControl) {
+    return (
+      <span className="gtd-folder-glyph" aria-hidden="true">
+        {glyphs}
+      </span>
+    );
+  }
+  const folded = collapseControl.isCollapsed;
+  const spoken = folded && foldCount ? spokenFoldCount(foldCount) : null;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      data-sidebar-rename-anchor=""
+      aria-expanded={!folded}
+      aria-label={folded ? `Expand ${label} section` : `Collapse ${label} section`}
+      aria-describedby={spoken === null ? undefined : descriptionId}
+      className="gtd-folder-glyph"
+      onClick={onClick}
+      onPointerDown={onPointerDown}
+      onKeyDown={onKeyDown}
+    >
+      {glyphs}
+      {spoken === null ? null : (
+        <span id={descriptionId} className="sr-only">
+          {spoken}
+        </span>
+      )}
+    </button>
   );
 }

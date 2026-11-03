@@ -9,6 +9,7 @@ import {
   SIDEBAR_CONTROL_PAIR_SIZE_CLASS,
   SIDEBAR_GROUP_TEXT_CLASS,
   SIDEBAR_ROW_BASE_CLASS,
+  getSidebarThreadDisclosureLeft,
   getSidebarThreadGroupLineLeft,
   getSidebarThreadRowPaddingLeft,
 } from "@/components/ui/sidebar-row-classes";
@@ -86,6 +87,8 @@ import {
   CollapsedThreadStatusGlyph,
   REORDER_PLACEMENT_CLASS,
   ThreadRow,
+  TreeGuides,
+  childTreeGuides,
   type ThreadRowOptions,
 } from "../rows/ThreadRow.js";
 import {
@@ -147,8 +150,12 @@ import {
   useSidebarThreadDragOverlayModifiers,
   SidebarThreadDragChip,
 } from "../dnd/sidebarThreadDragChip.js";
+import { SlidingDisclosure } from "../ui/SlidingDisclosure.js";
+import { foldCount } from "../gtd/fold-count.js";
 
 const SIDEBAR_STICKY_PARENT_DEPTH_CAP = 4;
+/** A 16px icon centred in the 24px disclosure column. */
+const ENVIRONMENT_ICON_INSET_PX = 4;
 
 export type ProjectThreadListState =
   | {
@@ -229,7 +236,13 @@ interface ProjectThreadTreeGroupProps {
   onClickCapture?: ProjectThreadListClickCaptureHandler;
 }
 
-interface ThreadTreeNodeRowProps {
+interface TreePositionProps {
+  /** See `ThreadRowOptions.treeGuides`. */
+  treeGuides?: string;
+  isLastChild?: boolean;
+}
+
+interface ThreadTreeNodeRowProps extends TreePositionProps {
   projectId: string;
   node: ProjectThreadNode;
   depthOffset: number;
@@ -247,7 +260,7 @@ interface ThreadTreeNodeRowProps {
   sortableStyle?: CSSProperties;
 }
 
-interface ThreadTreeItemRowProps {
+interface ThreadTreeItemRowProps extends TreePositionProps {
   isEnvGrouped?: boolean;
   projectId: string | null;
   item: ProjectThreadItem;
@@ -281,7 +294,7 @@ function getItemProjectId(item: ProjectThreadItem): string | null {
   }
 }
 
-interface EnvironmentThreadGroupRowProps {
+interface EnvironmentThreadGroupRowProps extends TreePositionProps {
   sectionDnd?: SectionThreadDndState;
   dragBindings?: SidebarSortableDragBindings;
   sortableRef?: (element: HTMLDivElement | null) => void;
@@ -298,12 +311,8 @@ interface EnvironmentThreadGroupRowProps {
   onToggleEnvironmentCollapsed: (environmentId: string) => void;
 }
 
-interface ThreadTreeGroupLineProps {
-  parentRowDepth: number;
-}
-
-interface ThreadTreeLineContinuationProps {
-  parentRowDepth: number;
+interface ThreadTreeChildrenProps {
+  children: ReactNode;
 }
 
 interface GetThreadNodeStickyLevelArgs {
@@ -318,7 +327,9 @@ interface EnvironmentThreadGroupHeaderProps {
   representativeThread: SidebarThread;
   rowDepth: number;
   stickyLevel?: number;
-  parentLineDepth?: number;
+  /** See `ThreadRowOptions.treeGuides`. */
+  treeGuides?: string;
+  isLastChild?: boolean;
   childActivity: CollapsedChildActivity;
   isCollapsed: boolean;
   archiveThreadsPending: boolean;
@@ -362,10 +373,16 @@ function getThreadRowOptions({
   nodeDepth,
   onToggleThreadCollapsed,
   stickyLevel,
+  treeGuides,
+  isLastChild,
+  hasOpenChildren,
 }: GetThreadRowOptionsArgs): ThreadRowOptions {
   const depth = getThreadRowDepth({ depthOffset, nodeDepth });
   const baseOptions = {
     depth,
+    ...(treeGuides ? { treeGuides } : {}),
+    ...(isLastChild ? { isLastChild } : {}),
+    ...(hasOpenChildren ? { hasOpenChildren } : {}),
     isCompact: nodeDepth > 0 || isEnvGrouped,
     ...(consumeClickSuppression ? { consumeClickSuppression } : {}),
     ...(dragBindings ? { dragBindings } : {}),
@@ -390,7 +407,7 @@ function getThreadRowOptions({
   };
 }
 
-interface GetThreadRowOptionsArgs {
+interface GetThreadRowOptionsArgs extends TreePositionProps {
   childActivity: CollapsedChildActivity;
   childCount: number;
   consumeClickSuppression?: ConsumeDragClickSuppression;
@@ -403,6 +420,7 @@ interface GetThreadRowOptionsArgs {
   nodeDepth: number;
   onToggleThreadCollapsed: (threadId: string) => void;
   stickyLevel?: number;
+  hasOpenChildren?: boolean;
 }
 
 interface GetThreadRowDepthArgs {
@@ -418,24 +436,11 @@ function getThreadNodeStickyLevel({
   return level < SIDEBAR_STICKY_PARENT_DEPTH_CAP ? level : undefined;
 }
 
-function ThreadTreeGroupLine({ parentRowDepth }: ThreadTreeGroupLineProps) {
-  return (
-    <span
-      className="pointer-events-none absolute bottom-0 top-0 z-30 w-px bg-border-hairline opacity-70"
-      style={{ left: getSidebarThreadGroupLineLeft(parentRowDepth) }}
-      aria-hidden="true"
-    />
-  );
-}
-
-function ThreadTreeLineContinuation({ parentRowDepth }: ThreadTreeLineContinuationProps) {
-  return (
-    <span
-      className="pointer-events-none absolute -bottom-0.5 top-0 z-[1] w-px bg-border-hairline opacity-70"
-      style={{ left: getSidebarThreadGroupLineLeft(parentRowDepth) }}
-      aria-hidden="true"
-    />
-  );
+/** The rows under a parent; each row draws its own tree guides (ThreadRow). */
+// The gap above the first child sits inside the fold, so a folded parent
+// keeps the 1px rhythm of its siblings and the tree guides one gap to span.
+function ThreadTreeChildren({ children }: ThreadTreeChildrenProps) {
+  return <div className="relative space-y-px pt-0.5">{children}</div>;
 }
 
 function ProjectThreadTreeGroup({ children, onClickCapture }: ProjectThreadTreeGroupProps) {
@@ -647,7 +652,8 @@ function EnvironmentThreadGroupHeader({
   representativeThread,
   rowDepth,
   stickyLevel,
-  parentLineDepth,
+  treeGuides,
+  isLastChild,
   childActivity,
   isCollapsed,
   archiveThreadsPending,
@@ -714,14 +720,19 @@ function EnvironmentThreadGroupHeader({
     SIDEBAR_ROW_BASE_CLASS,
     COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS,
   );
+  // The icon sits centred in the row's disclosure column, as a folder's
+  // does, so the name lands on the title column.
   const style = {
-    paddingLeft: getSidebarThreadRowPaddingLeft(rowDepth),
+    paddingLeft: getSidebarThreadDisclosureLeft(rowDepth) + ENVIRONMENT_ICON_INSET_PX,
   };
   const content = (
     <>
-      {parentLineDepth === undefined ? null : (
-        <ThreadTreeLineContinuation parentRowDepth={parentLineDepth} />
-      )}
+      <TreeGuides
+        depth={rowDepth}
+        guides={treeGuides ?? ""}
+        isLast={isLastChild ?? false}
+        hasOpenChildren={!isCollapsed}
+      />
       <span
         className={cn(
           "pointer-events-none relative z-10 inline-flex shrink-0 items-center justify-center",
@@ -848,6 +859,8 @@ const EnvironmentThreadGroupRow = memo(function EnvironmentThreadGroupRow({
   collapsedEnvironmentIds,
   onToggleThreadCollapsed,
   onToggleEnvironmentCollapsed,
+  treeGuides,
+  isLastChild,
 }: EnvironmentThreadGroupRowProps) {
   const { environmentId, environmentProviderId, nodes, stats } = environmentThreadGroup;
   const representativeNode = nodes[0];
@@ -857,13 +870,6 @@ const EnvironmentThreadGroupRow = memo(function EnvironmentThreadGroupRow({
     depthOffset,
     nodeDepth,
   });
-  const parentLineDepth =
-    nodeDepth > 0
-      ? getThreadRowDepth({
-          depthOffset,
-          nodeDepth: nodeDepth - 1,
-        })
-      : undefined;
   const navigate = useBbNavigate();
   const sectionWhenUnpinned = nodes.every(
     (node) => node.thread.sectionId === representativeThread.sectionId,
@@ -897,7 +903,7 @@ const EnvironmentThreadGroupRow = memo(function EnvironmentThreadGroupRow({
 
   return (
     <>
-      <SidebarStickyGroup ref={sortableRef} style={sortableStyle} className="space-y-0.5">
+      <SidebarStickyGroup ref={sortableRef} style={sortableStyle}>
         <EnvironmentThreadGroupHeader
           dragBindings={dragBindings}
           environmentId={environmentId}
@@ -908,7 +914,8 @@ const EnvironmentThreadGroupRow = memo(function EnvironmentThreadGroupRow({
             depthOffset,
             node: representativeNode,
           })}
-          parentLineDepth={parentLineDepth}
+          treeGuides={treeGuides}
+          isLastChild={isLastChild}
           childActivity={stats.childActivity}
           isCollapsed={isCollapsed}
           archiveThreadsPending={archiveThreadsPending}
@@ -916,9 +923,8 @@ const EnvironmentThreadGroupRow = memo(function EnvironmentThreadGroupRow({
           onCreateNewThread={handleCreateNewThread}
           onToggleCollapsed={onToggleEnvironmentCollapsed}
         />
-        {!isCollapsed ? (
-          <div className="relative space-y-px">
-            <ThreadTreeGroupLine parentRowDepth={rowDepth} />
+        <SlidingDisclosure open={!isCollapsed}>
+          <ThreadTreeChildren>
             <SidebarWindowedItems
               itemKeys={itemKeys}
               estimateRows={estimateRows}
@@ -934,6 +940,8 @@ const EnvironmentThreadGroupRow = memo(function EnvironmentThreadGroupRow({
                     key={node.thread.id}
                     projectId={projectId}
                     item={nodeItems[index]}
+                    treeGuides={childTreeGuides(rowDepth, treeGuides ?? "", isLastChild ?? false)}
+                    isLastChild={index === nodes.length - 1}
                     sectionDnd={sectionDnd}
                     depthOffset={depthOffset + 1}
                     isEnvGrouped
@@ -947,8 +955,8 @@ const EnvironmentThreadGroupRow = memo(function EnvironmentThreadGroupRow({
                 );
               }}
             />
-          </div>
-        ) : null}
+          </ThreadTreeChildren>
+        </SlidingDisclosure>
       </SidebarStickyGroup>
     </>
   );
@@ -1023,6 +1031,8 @@ const ThreadTreeItemRow = memo(function ThreadTreeItemRow({
   sectionDnd,
   sortableRef,
   sortableStyle,
+  treeGuides,
+  isLastChild,
 }: ThreadTreeItemRowProps) {
   // GTD draws no custom sections, so a tree never holds a section item.
   if (item.kind === "section") return null;
@@ -1045,12 +1055,16 @@ const ThreadTreeItemRow = memo(function ThreadTreeItemRow({
         sectionDnd={sectionDnd}
         sortableRef={sortableRef}
         sortableStyle={sortableStyle}
+        treeGuides={treeGuides}
+        isLastChild={isLastChild}
       />
     );
   }
 
   return (
     <EnvironmentThreadGroupRow
+      treeGuides={treeGuides}
+      isLastChild={isLastChild}
       projectId={projectId ?? item.group.nodes[0].thread.projectId}
       environmentThreadGroup={item.group}
       sectionDnd={sectionDnd}
@@ -1078,19 +1092,36 @@ function getNestDropPreviewRowStyle(depth: number): CSSProperties {
   };
 }
 
-export function NestDropPreviewRow({ depth, thread }: { depth: number; thread: SidebarThread }) {
+interface NestDropPreviewRowProps {
+  depth: number;
+  thread: SidebarThread;
+  /** The preview's place among its new siblings, for its tree guides. */
+  treeGuides?: string;
+  isLastChild?: boolean;
+  className?: string;
+}
+
+export function NestDropPreviewRow({
+  depth,
+  thread,
+  treeGuides = "",
+  isLastChild = false,
+  className,
+}: NestDropPreviewRowProps) {
   return (
-    <div
-      aria-hidden="true"
-      data-sidebar-nest-drop-preview="true"
-      style={getNestDropPreviewRowStyle(depth)}
-      className={cn(
-        SIDEBAR_ROW_BASE_CLASS,
-        COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS,
-        "pointer-events-none overflow-hidden text-sidebar-foreground opacity-50",
-      )}
-    >
-      <span className="min-w-0 flex-1 truncate">{thread.displayTitle}</span>
+    <div aria-hidden="true" className={cn("relative", className)}>
+      <TreeGuides depth={depth} guides={treeGuides} isLast={isLastChild} hasOpenChildren={false} />
+      <div
+        data-sidebar-nest-drop-preview="true"
+        style={getNestDropPreviewRowStyle(depth)}
+        className={cn(
+          SIDEBAR_ROW_BASE_CLASS,
+          COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS,
+          "pointer-events-none overflow-hidden text-sidebar-foreground opacity-50",
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate">{thread.displayTitle}</span>
+      </div>
     </div>
   );
 }
@@ -1129,6 +1160,8 @@ export const ThreadTreeNodeRow = memo(function ThreadTreeNodeRow({
   sectionDnd,
   sortableRef,
   sortableStyle,
+  treeGuides,
+  isLastChild,
 }: ThreadTreeNodeRowProps) {
   const isCollapsed = collapsedThreadIds.has(node.thread.id);
   const hasChildren = node.children.length > 0;
@@ -1185,9 +1218,16 @@ export const ThreadTreeNodeRow = memo(function ThreadTreeNodeRow({
         nodeDepth: node.depth,
         onToggleThreadCollapsed,
         stickyLevel: hasChildren ? getThreadNodeStickyLevel({ depthOffset, node }) : undefined,
+        treeGuides,
+        isLastChild,
+        hasOpenChildren: showChildren || nestPreviewThread !== null,
       }),
     [
       consumeClickSuppression,
+      treeGuides,
+      isLastChild,
+      showChildren,
+      nestPreviewThread,
       depthOffset,
       dragBindings,
       isCollapsed,
@@ -1222,53 +1262,74 @@ export const ThreadTreeNodeRow = memo(function ThreadTreeNodeRow({
     return row;
   }
 
+  const guidesBelow = childTreeGuides(parentRowDepth, treeGuides ?? "", isLastChild ?? false);
+  const previewIsLast = nestPreviewThread !== null && nestPreviewBeforeKey === null;
+  const childRows = (
+    <ThreadTreeChildren>
+      {showChildren ? (
+        <SidebarWindowedItems
+          itemKeys={itemKeys}
+          estimateRows={estimateRows}
+          getNavigationEntries={getNavigationEntries}
+          alwaysMountedKeys={alwaysMountedKeys}
+          renderItem={(index) => {
+            const item = node.children[index];
+            if (!item) {
+              return null;
+            }
+            const itemKey = getSidebarItemKey(item);
+            return (
+              <Fragment key={itemKey}>
+                {nestPreviewThread !== null && nestPreviewBeforeKey === itemKey ? (
+                  // It shares the row's windowed slot, so it keeps the tree's
+                  // 1px gap itself.
+                  <NestDropPreviewRow
+                    depth={parentRowDepth + 1}
+                    thread={nestPreviewThread}
+                    treeGuides={guidesBelow}
+                    className="mb-px"
+                  />
+                ) : null}
+                <SectionDndItemRow
+                  projectId={rowProjectId}
+                  item={item}
+                  treeGuides={guidesBelow}
+                  isLastChild={index === node.children.length - 1 && !previewIsLast}
+                  depthOffset={depthOffset}
+                  selectedThreadId={selectedThreadIdWithin(item, selectedThreadId)}
+                  collapsedThreadIds={collapsedThreadIds}
+                  collapsedEnvironmentIds={collapsedEnvironmentIds}
+                  onProjectSelect={onProjectSelect}
+                  onToggleThreadCollapsed={onToggleThreadCollapsed}
+                  onToggleEnvironmentCollapsed={onToggleEnvironmentCollapsed}
+                  sectionDnd={sectionDnd ?? undefined}
+                />
+              </Fragment>
+            );
+          }}
+        />
+      ) : null}
+      {previewIsLast ? (
+        <NestDropPreviewRow
+          depth={parentRowDepth + 1}
+          thread={nestPreviewThread}
+          treeGuides={guidesBelow}
+          isLastChild
+        />
+      ) : null}
+    </ThreadTreeChildren>
+  );
+
   return (
     <SidebarStickyGroup
       style={sortableStyle}
-      className={cn("relative space-y-0.5", afterSubtree && REORDER_PLACEMENT_CLASS.after)}
+      className={cn("relative", afterSubtree && REORDER_PLACEMENT_CLASS.after)}
     >
       {row}
-      {showChildren || nestPreviewThread !== null ? (
-        <div className="relative space-y-px">
-          <ThreadTreeGroupLine parentRowDepth={parentRowDepth} />
-          {showChildren ? (
-            <SidebarWindowedItems
-              itemKeys={itemKeys}
-              estimateRows={estimateRows}
-              getNavigationEntries={getNavigationEntries}
-              alwaysMountedKeys={alwaysMountedKeys}
-              renderItem={(index) => {
-                const item = node.children[index];
-                if (!item) {
-                  return null;
-                }
-                const itemKey = getSidebarItemKey(item);
-                return (
-                  <Fragment key={itemKey}>
-                    {nestPreviewThread !== null && nestPreviewBeforeKey === itemKey ? (
-                      <NestDropPreviewRow depth={parentRowDepth + 1} thread={nestPreviewThread} />
-                    ) : null}
-                    <SectionDndItemRow
-                      projectId={rowProjectId}
-                      item={item}
-                      depthOffset={depthOffset}
-                      selectedThreadId={selectedThreadIdWithin(item, selectedThreadId)}
-                      collapsedThreadIds={collapsedThreadIds}
-                      collapsedEnvironmentIds={collapsedEnvironmentIds}
-                      onProjectSelect={onProjectSelect}
-                      onToggleThreadCollapsed={onToggleThreadCollapsed}
-                      onToggleEnvironmentCollapsed={onToggleEnvironmentCollapsed}
-                      sectionDnd={sectionDnd ?? undefined}
-                    />
-                  </Fragment>
-                );
-              }}
-            />
-          ) : null}
-          {nestPreviewThread !== null && nestPreviewBeforeKey === null ? (
-            <NestDropPreviewRow depth={parentRowDepth + 1} thread={nestPreviewThread} />
-          ) : null}
-        </div>
+      {hasChildren ? (
+        <SlidingDisclosure open={showChildren}>{childRows}</SlidingDisclosure>
+      ) : nestPreviewThread !== null ? (
+        childRows
       ) : null}
     </SidebarStickyGroup>
   );
@@ -1559,6 +1620,10 @@ function ProjectRowComponent({
       })
       .finally(() => setIsRemovePending(false));
   }, [project.id, sdk]);
+  const projectFoldCount = useMemo(
+    () => (isCollapsed ? foldCount(projectThreads) : undefined),
+    [isCollapsed, projectThreads],
+  );
   const projectActivity = useMemo<CollapsedChildActivity>(() => {
     if (!isCollapsed || threadListState.status !== "ready") {
       return NO_COLLAPSED_CHILD_ACTIVITY;
@@ -1598,6 +1663,7 @@ function ProjectRowComponent({
             label={project.name}
             tier={tier}
             icon="Folder"
+            foldCount={projectFoldCount}
             dropParentKey={buildSidebarEntitySectionId("project", project.id)}
             labelEditor={rename.editor}
             onRename={rename.startEditingFromDoubleClick}

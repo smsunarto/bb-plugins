@@ -13,7 +13,6 @@ import {
   sidebarOrganizationModeAtom,
   sidebarEnvironmentGroupingAtom,
   sidebarSortDirectionAtom,
-  sidebarShowProviderIconsAtom,
   sidebarShowRowMetadataAtom,
 } from "../preferences/atoms.js";
 import type { OrganizationMode } from "../../shared/preferences.js";
@@ -40,7 +39,6 @@ function setup(
   store.set(sidebarChronologicalSortAtom, "updated");
   store.set(sidebarSortDirectionAtom, "default");
   store.set(sidebarEnvironmentGroupingAtom, "auto");
-  store.set(sidebarShowProviderIconsAtom, false);
   store.set(sidebarShowRowMetadataAtom, false);
   const newThread = vi.fn();
   const rename = vi.fn();
@@ -209,25 +207,13 @@ describe("sidebar header controls", () => {
     expect(screen.queryByRole("menuitem", { name: /^Reset/ })).toBeNull();
   });
 
-  it("toggles provider icons in the Organize Rows group", async () => {
-    const { store } = setup();
-    await openMenu();
-    await openSubmenu("Organize");
-    const toggle = await screen.findByRole("menuitemcheckbox", {
-      name: "Provider icons",
-    });
-    expect(screen.getByRole("group", { name: "Rows" })).toBeTruthy();
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
-    fireEvent.click(toggle);
-    expect(store.get(sidebarShowProviderIconsAtom)).toBe(true);
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
-  });
-
-  it("offers row metadata only while its experiment is on", async () => {
+  it("drops the Rows group while row metadata's experiment is off", async () => {
     setup();
     await openMenu();
     await openSubmenu("Organize");
-    await screen.findByRole("menuitemcheckbox", { name: "Provider icons" });
+    await screen.findByRole("menuitemcheckbox", { name: "By read status" });
+    expect(screen.queryByRole("group", { name: "Rows" })).toBeNull();
+    expect(screen.queryByRole("menuitemcheckbox", { name: "Provider icons" })).toBeNull();
     expect(screen.queryByRole("menuitemcheckbox", { name: "Metadata" })).toBeNull();
   });
 

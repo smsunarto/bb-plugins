@@ -20,7 +20,6 @@ import {
   sidebarGroupThreadsByEnvironmentAtom,
   sidebarEnvironmentGroupingAtom,
   sidebarGroupByReadStatusAtom,
-  sidebarShowProviderIconsAtom,
   sidebarShowRowMetadataAtom,
   THREAD_ROW_METADATA_EXPERIMENT,
 } from "../preferences/atoms.js";
@@ -123,7 +122,6 @@ function SidebarViewItems({ page }: { page: SidebarViewPage }) {
   const setEnvironmentGrouping = useSetAtom(sidebarEnvironmentGroupingAtom);
   const groupByEnvironment = useAtomValue(sidebarGroupThreadsByEnvironmentAtom);
   const [groupByReadStatus, setGroupByReadStatus] = useAtom(sidebarGroupByReadStatusAtom);
-  const [showProviderIcons, setShowProviderIcons] = useAtom(sidebarShowProviderIconsAtom);
   const [showRowMetadata, setShowRowMetadata] = useAtom(sidebarShowRowMetadataAtom);
   const rowMetadataEnabled = experimental_useExperiment(THREAD_ROW_METADATA_EXPERIMENT);
   const selectedSort = sort === "none" ? "updated" : sort;
@@ -183,38 +181,27 @@ function SidebarViewItems({ page }: { page: SidebarViewPage }) {
             </span>
           </DropdownMenuItem>
         </DropdownMenuGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuGroup aria-label="Rows">
-          <DropdownMenuLabel>Rows</DropdownMenuLabel>
-          <DropdownMenuItem
-            role="menuitemcheckbox"
-            aria-checked={showProviderIcons}
-            onSelect={(event) => {
-              event.preventDefault();
-              setShowProviderIcons(!showProviderIcons);
-            }}
-          >
-            Provider icons
-            <span className="ml-auto inline-flex size-4 shrink-0 items-center justify-center">
-              {showProviderIcons && <Icon name="Check" className="size-4" />}
-            </span>
-          </DropdownMenuItem>
-          {rowMetadataEnabled ? (
-            <DropdownMenuItem
-              role="menuitemcheckbox"
-              aria-checked={showRowMetadata}
-              onSelect={(event) => {
-                event.preventDefault();
-                setShowRowMetadata(!showRowMetadata);
-              }}
-            >
-              Metadata
-              <span className="ml-auto inline-flex size-4 shrink-0 items-center justify-center">
-                {showRowMetadata && <Icon name="Check" className="size-4" />}
-              </span>
-            </DropdownMenuItem>
-          ) : null}
-        </DropdownMenuGroup>
+        {rowMetadataEnabled ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup aria-label="Rows">
+              <DropdownMenuLabel>Rows</DropdownMenuLabel>
+              <DropdownMenuItem
+                role="menuitemcheckbox"
+                aria-checked={showRowMetadata}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  setShowRowMetadata(!showRowMetadata);
+                }}
+              >
+                Metadata
+                <span className="ml-auto inline-flex size-4 shrink-0 items-center justify-center">
+                  {showRowMetadata && <Icon name="Check" className="size-4" />}
+                </span>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+          </>
+        ) : null}
       </>
     );
   }

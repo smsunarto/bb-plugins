@@ -42,6 +42,7 @@ function emitIntersections(
     target: Element;
     isIntersecting: boolean;
     boundingClientRect?: DOMRectReadOnly;
+    rootBounds?: DOMRectReadOnly;
   }[],
 ) {
   const observer = observerInstances.at(-1);
@@ -55,6 +56,7 @@ function emitIntersections(
           target: entry.target,
           isIntersecting: entry.isIntersecting,
           boundingClientRect: entry.boundingClientRect ?? OFFSCREEN_ROW_RECT,
+          rootBounds: entry.rootBounds ?? null,
         }) as unknown as IntersectionObserverEntry,
     ),
     observer as unknown as IntersectionObserver,
@@ -317,6 +319,35 @@ describe("SidebarWindowedItems", () => {
     expect(screen.getAllByTestId(/^real-item-/)).toHaveLength(3);
 
     act(() => leaveAll(new DOMRect()));
+    expect(screen.getAllByTestId(/^real-item-/)).toHaveLength(3);
+
+    act(() => leaveAll(OFFSCREEN_ROW_RECT));
+    expect(screen.queryAllByTestId(/^real-item-/)).toHaveLength(0);
+  });
+
+  it("keeps rows a sliding fold clips inside the window and unmounts them once scrolled away", () => {
+    const leaveAll = (boundingClientRect: DOMRectReadOnly) =>
+      emitIntersections(
+        Array.from(document.querySelectorAll("[data-sidebar-windowed-item]"), (target) => ({
+          target,
+          isIntersecting: false,
+          boundingClientRect,
+          rootBounds: VIEWPORT_RECT,
+        })),
+      );
+    renderList({ current: scrollElement });
+    act(() =>
+      emitIntersections(
+        Array.from(document.querySelectorAll("[data-sidebar-windowed-item]"), (target) => ({
+          target,
+          isIntersecting: true,
+        })),
+      ),
+    );
+    expect(screen.getAllByTestId(/^real-item-/)).toHaveLength(3);
+
+    // Below the opening clip's edge, but inside the window.
+    act(() => leaveAll(new DOMRect(0, 200, 300, 30)));
     expect(screen.getAllByTestId(/^real-item-/)).toHaveLength(3);
 
     act(() => leaveAll(OFFSCREEN_ROW_RECT));

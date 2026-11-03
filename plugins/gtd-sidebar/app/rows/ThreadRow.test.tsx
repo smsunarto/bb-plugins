@@ -14,7 +14,6 @@ import type {
   PluginSidebarSplitLayout,
   PluginSidebarThread,
   PluginSidebarThreadRowStatus,
-  PluginProvidersState,
   PluginThreadActionEntry,
 } from "@get-bb/plugin-sdk/app";
 import {
@@ -27,7 +26,7 @@ import {
 } from "@get-bb/plugin-sdk/testing/app";
 import { NO_COLLAPSED_CHILD_ACTIVITY } from "../model/thread-activity.js";
 import { makeSidebarEnvironment, makeSidebarThread, makePluginProject } from "../model/fixtures.js";
-import { sidebarShowProviderIconsAtom, sidebarShowRowMetadataAtom } from "../preferences/atoms.js";
+import { sidebarShowRowMetadataAtom } from "../preferences/atoms.js";
 import { SidebarProjectsContext } from "../model/use-sidebar-data.js";
 import type { ThreadRowOptions } from "./ThreadRow.js";
 import {
@@ -43,8 +42,7 @@ installTestPluginRuntime();
 const { SidebarDraftPresenceSync } = await import("../list/sidebarDraftPresence.js");
 const { ThreadRowNavigationProvider } = await import("./threadRowNavigation.js");
 const { ThreadSelectionProvider } = await import("../selection/threadSelection.js");
-const { resetSidebarTitleDoubleClickForTest, SidebarProvidersContext, ThreadRow } =
-  await import("./ThreadRow.js");
+const { resetSidebarTitleDoubleClickForTest, ThreadRow } = await import("./ThreadRow.js");
 
 const DEFAULT_OPTIONS: ThreadRowOptions = {
   kind: "default",
@@ -72,7 +70,6 @@ function activity(
 interface HarnessProps {
   thread: PluginSidebarThread;
   projects?: PluginSidebarProject[];
-  providers?: PluginProvidersState["providers"];
   isCompactViewport?: boolean;
   crossProjectId?: string | null;
   isActive?: boolean;
@@ -87,7 +84,6 @@ function ThreadRowHarness({
   thread,
   siblings = [],
   projects = [],
-  providers = [],
   isCompactViewport,
   crossProjectId = null,
   isActive = false,
@@ -106,42 +102,40 @@ function ThreadRowHarness({
   );
   const content = (
     <SidebarProjectsContext.Provider value={projects}>
-      <SidebarProvidersContext.Provider value={providers}>
-        <TooltipProvider>
-          <SidebarDraftPresenceSync />
-          <ThreadRowNavigationProvider>
-            <ThreadSelectionProvider activeThreadId={null}>
-              <SidebarRenameProvider>
-                <CustomizeRowActionsContext.Provider value={onCustomizeRowActions ?? null}>
-                  <ThreadRowActionsCustomizingContext.Provider
-                    value={
-                      onFinishCustomizingRowActions
-                        ? {
-                            threadId: thread.id,
-                            onDone: onFinishCustomizingRowActions,
-                          }
-                        : null
-                    }
-                  >
-                    <div onPointerDown={onRowEvent} onKeyDown={onRowEvent} onClick={onRowEvent}>
-                      {row}
-                      {siblings.map((sibling) => (
-                        <ThreadRow
-                          key={sibling.id}
-                          thread={sibling}
-                          crossProjectId={crossProjectId}
-                          isActive={false}
-                          options={options}
-                        />
-                      ))}
-                    </div>
-                  </ThreadRowActionsCustomizingContext.Provider>
-                </CustomizeRowActionsContext.Provider>
-              </SidebarRenameProvider>
-            </ThreadSelectionProvider>
-          </ThreadRowNavigationProvider>
-        </TooltipProvider>
-      </SidebarProvidersContext.Provider>
+      <TooltipProvider>
+        <SidebarDraftPresenceSync />
+        <ThreadRowNavigationProvider>
+          <ThreadSelectionProvider activeThreadId={null}>
+            <SidebarRenameProvider>
+              <CustomizeRowActionsContext.Provider value={onCustomizeRowActions ?? null}>
+                <ThreadRowActionsCustomizingContext.Provider
+                  value={
+                    onFinishCustomizingRowActions
+                      ? {
+                          threadId: thread.id,
+                          onDone: onFinishCustomizingRowActions,
+                        }
+                      : null
+                  }
+                >
+                  <div onPointerDown={onRowEvent} onKeyDown={onRowEvent} onClick={onRowEvent}>
+                    {row}
+                    {siblings.map((sibling) => (
+                      <ThreadRow
+                        key={sibling.id}
+                        thread={sibling}
+                        crossProjectId={crossProjectId}
+                        isActive={false}
+                        options={options}
+                      />
+                    ))}
+                  </div>
+                </ThreadRowActionsCustomizingContext.Provider>
+              </CustomizeRowActionsContext.Provider>
+            </SidebarRenameProvider>
+          </ThreadSelectionProvider>
+        </ThreadRowNavigationProvider>
+      </TooltipProvider>
     </SidebarProjectsContext.Provider>
   );
   return isCompactViewport === undefined ? (
@@ -161,7 +155,6 @@ interface RenderThreadRowArgs extends Omit<HarnessProps, "thread"> {
   pluginStatus?: PluginSidebarThreadRowStatus;
   splitLayout?: PluginSidebarSplitLayout;
   projects?: PluginSidebarProject[];
-  providers?: PluginProvidersState["providers"];
   sdk?: PluginSdkTestFakes;
   threadActions?: TestThreadActionsResolver;
   threadBulkActions?: TestThreadBulkActionsResolver;
@@ -176,7 +169,6 @@ function renderThreadRow({
   pluginStatus,
   splitLayout,
   projects = [],
-  providers = [],
   sdk,
   threadActions = hostThreadActions(),
   threadBulkActions,
@@ -187,13 +179,12 @@ function renderThreadRow({
 } {
   const slot = renderSlot(
     { component: ThreadRowHarness },
-    { thread, projects, providers, ...harness },
+    { thread, projects, ...harness },
     {
       sidebarThreads: {
         threads: [thread, ...(harness.siblings ?? [])],
         projects,
       },
-      providers: { providers },
       sidebarDraftThreadIds: [...(hasComposerDraft ? [thread.id] : []), ...hiddenDraftThreadIds],
       sidebarRowStatuses: pluginStatus ? { [thread.id]: pluginStatus } : {},
       sidebarShortcuts: shortcutKey
@@ -214,12 +205,7 @@ function renderThreadRow({
   return Object.assign(slot, {
     rerenderThreadRow(nextThread: PluginSidebarThread) {
       slot.lifecycle.rerender(
-        <ThreadRowHarness
-          thread={nextThread}
-          projects={projects}
-          providers={providers}
-          {...harness}
-        />,
+        <ThreadRowHarness thread={nextThread} projects={projects} {...harness} />,
       );
     },
   });
@@ -265,12 +251,6 @@ function statusGlyph(): HTMLElement {
     throw new Error("Expected a thread status glyph");
   }
   return glyph;
-}
-
-function openActionsMenu() {
-  fireEvent.pointerDown(screen.getByRole("button", { name: "Thread actions" }), {
-    button: 0,
-  });
 }
 
 function deferred() {
@@ -345,47 +325,12 @@ afterEach(() => {
 });
 
 describe("ThreadRow", () => {
-  it("shows the registered provider icon by default and keeps it visible during inline rename", async () => {
-    const provider: PluginProvidersState["providers"][number] = {
-      id: "provider-test",
-      pluginId: "provider-test",
-      displayName: "Test Provider",
-      logoUrl: "/provider-test.svg",
-      available: true,
-      maintenance: { health: false, usage: false, installation: false },
-      capabilities: {
-        supportsThreadArchive: true,
-        supportsThreadRename: true,
-        supportsServiceTier: false,
-        supportsNativeUserQuestion: false,
-        supportsFork: true,
-        supportsSessionRewind: false,
-        modelCatalogScope: "workspace",
-        permissionModes: ["accept-edits", "auto", "full"],
-      },
-      composerActions: [],
-      completedTurnDisplay: "collapse",
-    };
-    const slot = renderThreadRow({ providers: [provider] });
-    expect(screen.getByRole("img", { name: "Test Provider" })).toBeTruthy();
-    expect(slot.container.querySelector('[data-provider-logo="/provider-test.svg"]')).toBeTruthy();
-
-    fireEvent.doubleClick(screen.getByText("Thread"));
-    const input = await screen.findByRole("textbox", { name: "Thread name" });
-    expect(screen.getByRole("img", { name: "Test Provider" })).toBeTruthy();
-    fireEvent.change(input, { target: { value: "Scratch name" } });
-    fireEvent.keyDown(input, { key: "Escape" });
-    expect(screen.queryByRole("textbox", { name: "Thread name" })).toBeNull();
-    expect(screen.getByRole("img", { name: "Test Provider" })).toBeTruthy();
-    expect(slot.inspection.navigateCalls).toEqual([]);
-
-    slot.rerenderThreadRow(createThread({ providerId: "missing" }));
-    expect(screen.queryByRole("img", { name: "Test Provider" })).toBeNull();
+  it("draws no provider icon and no actions button; the context menu keeps the actions", async () => {
+    const slot = renderThreadRow({ thread: createThread({ providerId: "codex" }) });
     expect(slot.container.querySelector("[data-sidebar-thread-provider]")).toBeNull();
-
-    slot.rerenderThreadRow(createThread());
-    act(() => getDefaultStore().set(sidebarShowProviderIconsAtom, false));
-    expect(slot.container.querySelector("[data-sidebar-thread-provider]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Thread actions" })).toBeNull();
+    fireEvent.contextMenu(screen.getByRole("link", { name: "Open Thread" }));
+    expect(await screen.findByRole("menuitem", { name: "Rename" })).toBeTruthy();
   });
 
   it("links the row to the thread href and leaves a plain click to the host", () => {
@@ -489,12 +434,7 @@ describe("ThreadRow", () => {
       document.body.append(menu);
       try {
         fireEvent.click(link, { metaKey: true, shiftKey: true });
-        for (const keepingTarget of [
-          row,
-          link,
-          screen.getByRole("button", { name: "Thread actions" }),
-          menu,
-        ]) {
+        for (const keepingTarget of [row, link, menu]) {
           fireEvent.pointerDown(keepingTarget);
           expect(row.hasAttribute("data-sidebar-thread-selected")).toBe(true);
         }
@@ -585,14 +525,18 @@ describe("ThreadRow", () => {
       Array.from(controls?.querySelectorAll("button") ?? []).map((button) =>
         button.getAttribute("aria-label"),
       ),
-    ).toEqual(["Pin", "Copy link", "Archive", "Thread actions"]);
+    ).toEqual(["Pin", "Copy link", "Archive"]);
+    // The last button covers the status slot, so the title gives up two.
     expect(
       document
         .querySelector<HTMLElement>(".bb-sidebar-hover-actions-inset")
         ?.style.getPropertyValue("--bb-sidebar-hover-actions-inset"),
-    ).toBe("calc(var(--spacing) * 22.5)");
+    ).toBe("calc(var(--spacing) * 15)");
     fireEvent.click(screen.getByRole("button", { name: "Pin" }));
     await waitFor(() => expect(ran).toEqual([{ key: "bb--core/pin", threadId: "thr_test" }]));
+    expect(
+      document.querySelector("[data-sidebar-thread-trailing] .bb-sidebar-hover-actions-fade"),
+    ).not.toBeNull();
   });
 
   it("skips row action keys that have no action for the thread", () => {
@@ -610,23 +554,27 @@ describe("ThreadRow", () => {
       document
         .querySelector<HTMLElement>(".bb-sidebar-hover-actions-inset")
         ?.style.getPropertyValue("--bb-sidebar-hover-actions-inset"),
-    ).toBe("calc(var(--spacing) * 7.5)");
+    ).toBe("calc(var(--spacing) * 0)");
   });
 
-  it("shows only the actions menu when every row action is turned off", () => {
+  it("shows no row buttons when every row action is turned off", () => {
     getDefaultStore().set(preferenceValueAtom("rowActions"), []);
     renderThreadRow();
     expect(screen.queryByRole("button", { name: "Archive" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Thread actions" })).toBeTruthy();
+    expect(document.querySelectorAll("[data-sidebar-row-controls] button")).toHaveLength(0);
     expect(
       document
         .querySelector<HTMLElement>(".bb-sidebar-hover-actions-inset")
         ?.style.getPropertyValue("--bb-sidebar-hover-actions-inset"),
     ).toBe("calc(var(--spacing) * 0)");
+    // Nothing takes the trailing slot on hover, so the status stays in view.
+    expect(
+      document.querySelector("[data-sidebar-thread-trailing] .bb-sidebar-hover-actions-fade"),
+    ).toBeNull();
   });
 
   it.each([[[]], [["bb--core/pin", "bb--core/copyLink", "bb--core/archive"]]] as const)(
-    "reserves one action for an archived row whatever the row actions (%j)",
+    "reserves no width for an archived row's restore, whatever the row actions (%j)",
     (rowActions) => {
       getDefaultStore().set(preferenceValueAtom("rowActions"), [...rowActions]);
       renderThreadRow({
@@ -636,7 +584,7 @@ describe("ThreadRow", () => {
         document
           .querySelector<HTMLElement>(".bb-sidebar-hover-actions-inset")
           ?.style.getPropertyValue("--bb-sidebar-hover-actions-inset"),
-      ).toBe("calc(var(--spacing) * 7.5)");
+      ).toBe("calc(var(--spacing) * 0)");
     },
   );
 
@@ -650,24 +598,17 @@ describe("ThreadRow", () => {
     );
   });
 
-  it.each(["dropdown", "context"] as const)(
-    "adds Customize actions to the %s menu",
-    async (surface) => {
-      const customize = vi.fn();
-      renderThreadRow({ onCustomizeRowActions: customize });
-      if (surface === "dropdown") {
-        fireEvent.click(screen.getByRole("button", { name: "Thread actions" }));
-      } else {
-        fireEvent.contextMenu(screen.getByRole("link", { name: "Open Thread" }));
-      }
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Customize actions" }));
-      expect(customize).toHaveBeenCalledWith("thr_test");
-    },
-  );
+  it("adds Customize actions to the context menu", async () => {
+    const customize = vi.fn();
+    renderThreadRow({ onCustomizeRowActions: customize });
+    fireEvent.contextMenu(screen.getByRole("link", { name: "Open Thread" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Customize actions" }));
+    expect(customize).toHaveBeenCalledWith("thr_test");
+  });
 
   it("leaves Customize actions out when the list cannot customize", async () => {
     renderThreadRow();
-    fireEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+    fireEvent.contextMenu(screen.getByRole("link", { name: "Open Thread" }));
     await screen.findByRole("menuitem", { name: "Rename" });
     expect(screen.queryByRole("menuitem", { name: "Customize actions" })).toBeNull();
   });
@@ -684,20 +625,13 @@ describe("ThreadRow", () => {
     expect(finish).toHaveBeenCalledWith(true);
   });
 
-  it.each(["dropdown", "context"] as const)(
-    "starts an inline rename once the %s menu has closed",
-    async (surface) => {
-      renderThreadRow();
-      if (surface === "dropdown") {
-        fireEvent.click(screen.getByRole("button", { name: "Thread actions" }));
-      } else {
-        fireEvent.contextMenu(screen.getByRole("link", { name: "Open Thread" }));
-      }
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
-      const input = await screen.findByRole("textbox", { name: "Thread name" });
-      expect(input).toHaveProperty("value", "Thread");
-    },
-  );
+  it("starts an inline rename once the context menu has closed", async () => {
+    renderThreadRow();
+    fireEvent.contextMenu(screen.getByRole("link", { name: "Open Thread" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Rename" }));
+    const input = await screen.findByRole("textbox", { name: "Thread name" });
+    expect(input).toHaveProperty("value", "Thread");
+  });
 
   it("suppresses the context menu while the title is being edited", async () => {
     renderThreadRow();
@@ -1089,7 +1023,7 @@ describe("ThreadRow", () => {
   });
 
   it.each([true, false])(
-    "reserves quick-action space after parent disclosure (collapsed: %s)",
+    "puts a parent's chevron in its disclosure column, ahead of the row actions (collapsed: %s)",
     (isCollapsed) => {
       // GTD's default quick actions (Snooze, Settle) are not registered here.
       getDefaultStore().set(preferenceValueAtom("rowActions"), ["bb--core/archive"]);
@@ -1115,15 +1049,18 @@ describe("ThreadRow", () => {
       const link = screen.getByRole("link", {
         name: "Open Nested discussion with enough text to fill the sidebar width",
       });
-      expect(link.parentElement?.classList.contains("pr-(--bb-sidebar-hover-actions-inset)")).toBe(
-        true,
+      expect(link.parentElement?.classList.contains("bb-sidebar-hover-actions-inset")).toBe(true);
+      // Depth 1: the column starts one 16px step in, and the title 28px past that.
+      expect(toggle.style.left).toBe("16px");
+      expect(link.closest<HTMLElement>("[data-sidebar-rename-row]")?.style.paddingLeft).toBe(
+        "44px",
       );
       const row = link.closest("[data-sidebar-rename-row]");
       expect(
         Array.from(row?.querySelectorAll("button") ?? [], (button) =>
           button.getAttribute("aria-label"),
         ),
-      ).toEqual([toggle.getAttribute("aria-label"), "Archive", "Thread actions"]);
+      ).toEqual([toggle.getAttribute("aria-label"), "Archive"]);
       fireEvent.click(toggle);
       expect(onToggleCollapsed).toHaveBeenCalledWith("thr_test");
     },
@@ -1199,36 +1136,9 @@ describe("ThreadRow", () => {
     expect(clickLink).not.toHaveBeenCalled();
   });
 
-  it("keeps the parent-thread disclosure caret visible on mobile", () => {
-    renderThreadRow({
-      thread: createThread({
-        title: "Parent thread",
-        displayTitle: "Parent thread",
-      }),
-      options: {
-        kind: "parent",
-        depth: 1,
-        isCompact: false,
-        isCollapsed: false,
-        childCount: 1,
-        childActivity: NO_COLLAPSED_CHILD_ACTIVITY,
-        onToggleCollapsed: vi.fn(),
-      },
-    });
-
-    expect(
-      screen
-        .getByRole("button", { name: "Collapse Parent thread threads" })
-        .getAttribute("data-sidebar-hover-actions-mobile"),
-    ).toBe("always");
-  });
-
-  it.each([
-    { isCollapsed: true, expectedHoverReveal: false },
-    { isCollapsed: false, expectedHoverReveal: true },
-  ])(
-    "sets parent-thread disclosure hover reveal to $expectedHoverReveal when collapsed is $isCollapsed",
-    ({ expectedHoverReveal, isCollapsed }) => {
+  it.each([true, false])(
+    "keeps a parent's chevron in view, turned for the fold (collapsed: %s)",
+    (isCollapsed) => {
       renderThreadRow({
         thread: createThread({
           title: "Parent thread",
@@ -1244,19 +1154,25 @@ describe("ThreadRow", () => {
           onToggleCollapsed: vi.fn(),
         },
       });
-
       const toggle = screen.getByRole("button", {
         name: `${isCollapsed ? "Expand" : "Collapse"} Parent thread threads`,
       });
-      expect(toggle.classList.contains("bb-sidebar-hover-actions")).toBe(expectedHoverReveal);
+      expect(toggle.classList.contains("bb-sidebar-hover-actions")).toBe(false);
+      expect(toggle.getAttribute("aria-expanded")).toBe(String(!isCollapsed));
+      expect(toggle.querySelector(".gtd-chevron-motion")?.classList.contains("-rotate-90")).toBe(
+        isCollapsed,
+      );
     },
   );
 
-  it("renders a sticky parent tier with its guide line", () => {
+  it("renders a sticky parent tier that carries its tree guides", () => {
     const { container } = renderThreadRow({
       options: {
         kind: "parent",
         depth: 2,
+        treeGuides: "1",
+        isLastChild: true,
+        hasOpenChildren: true,
         isCompact: false,
         isCollapsed: false,
         childCount: 1,
@@ -1268,8 +1184,18 @@ describe("ThreadRow", () => {
     const tier = container.querySelector<HTMLElement>('[data-sidebar-sticky-tier="parent"]');
     expect(tier).not.toBeNull();
     expect(tier?.style.getPropertyValue("--bb-sidebar-sticky-parent-level")).toBe("1");
-    expect(tier?.style.paddingLeft).toBe("56px");
-    expect(tier?.querySelector('[aria-hidden="true"].w-px')).not.toBeNull();
+    expect(tier?.style.paddingLeft).toBe("60px");
+    // Drawn inside the opaque tier, so its guides stay in view while it
+    // sticks; its open children's line starts in the gap below it.
+    const lines = [
+      ...(tier?.querySelectorAll<HTMLElement>("[data-gtd-tree-guides] .gtd-tree-line") ?? []),
+    ];
+    expect(lines.map((line) => line.style.left)).toEqual(["12px", "28px", "44px"]);
+    expect(lines.map((line) => line.className)).toEqual([
+      "gtd-tree-line",
+      "gtd-tree-line gtd-tree-line-last",
+      "gtd-tree-line gtd-tree-line-below",
+    ]);
   });
 
   it("shows its Command shortcut in place of an active indicator", () => {

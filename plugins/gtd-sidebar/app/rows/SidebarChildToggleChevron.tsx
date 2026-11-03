@@ -53,9 +53,10 @@ export function SidebarChildToggleChevron({
         className,
       )}
     >
+      {/* GTD's chevron, turning on the fold's own ease (shelves.css). */}
       <Icon
-        name="ChevronRight"
-        className={cn("size-3 transition-transform duration-150", !isCollapsed && "rotate-90")}
+        name="ChevronDown"
+        className={cn("gtd-chevron-motion size-3", isCollapsed && "-rotate-90")}
         aria-hidden="true"
       />
     </button>

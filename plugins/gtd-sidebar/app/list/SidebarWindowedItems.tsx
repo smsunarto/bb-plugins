@@ -38,6 +38,18 @@ function hasLayoutBox(rect: DOMRectReadOnly): boolean {
   return rect.width > 0 || rect.height > 0;
 }
 
+/**
+ * A row leaves the window only once it scrolls past the observer's margin.
+ * An ancestor's clip, such as a fold sliding open, also reports a row as not
+ * intersecting while it sits in the window; that row stays mounted.
+ */
+function liesOutsideRoot(entry: IntersectionObserverEntry): boolean {
+  const root = entry.rootBounds;
+  if (!root) return true;
+  const box = entry.boundingClientRect;
+  return box.bottom <= root.top || box.top >= root.bottom;
+}
+
 function mergeRealizedKeys(
   previous: ReadonlySet<string>,
   {
@@ -237,7 +249,8 @@ export function SidebarWindowedItems({
               intended.set(key, true);
             } else if (
               !alwaysMountedKeysRef.current.has(key) &&
-              hasLayoutBox(entry.boundingClientRect)
+              hasLayoutBox(entry.boundingClientRect) &&
+              liesOutsideRoot(entry)
             ) {
               intended.set(key, false);
               recordMeasuredHeight(key, entry.boundingClientRect.height);

@@ -152,6 +152,27 @@ function renderPinnedParentWithChild({
   return container;
 }
 
+function rowOfThread(container: ParentNode, id: string): Element | null | undefined {
+  return container
+    .querySelector(`[data-sidebar-thread-id="${id}"]`)
+    ?.closest(".bb-sidebar-hover-actions-row");
+}
+
+/** A row's tree guides as "<left>[ last][ below]", in drawing order. */
+function renderedGuides(row: Element | null | undefined): string[] {
+  return [
+    ...(row?.querySelectorAll<HTMLElement>("[data-gtd-tree-guides] .gtd-tree-line") ?? []),
+  ].map((line) =>
+    [
+      line.style.left,
+      line.classList.contains("gtd-tree-line-last") ? "last" : null,
+      line.classList.contains("gtd-tree-line-below") ? "below" : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  );
+}
+
 function renderProjectRow(
   onToggleProjectCollapsed = vi.fn(),
   threadListState: ProjectThreadListState = { status: "ready", threads: [] },
@@ -165,6 +186,8 @@ function renderProjectRow(
   store.set(sidebarOrganizationModeAtom, "project");
   const result = renderTree(
     <ProjectRow
+      // GTD draws every project as a folder under its shelf.
+      tier="project"
       project={makeSidebarProject()}
       threadListState={threadListState}
       isActive={isActive}
@@ -247,6 +270,11 @@ describe("ProjectRow interactions", () => {
     expect(
       rows.map((row) => row.getAttribute("data-sidebar-thread-id") ?? row.textContent),
     ).toEqual(["thr_parent", "Dragged", "thr_child"]);
+    // The preview carries the parent's line on to the child below it.
+    expect(
+      renderedGuides(container.querySelector("[data-sidebar-nest-drop-preview]")?.parentElement),
+    ).toEqual(["12px"]);
+    expect(renderedGuides(rowOfThread(container, "thr_child"))).toEqual(["12px last"]);
   });
 
   it("previews the dragged thread after the last child when it sorts last", () => {
@@ -264,6 +292,39 @@ describe("ProjectRow interactions", () => {
     expect(
       rows.map((row) => row.getAttribute("data-sidebar-thread-id") ?? row.textContent),
     ).toEqual(["thr_parent", "thr_child", "Dragged"]);
+    // The parent's line runs past its last child to end at the preview.
+    expect(renderedGuides(rowOfThread(container, "thr_child"))).toEqual(["12px"]);
+    expect(
+      renderedGuides(container.querySelector("[data-sidebar-nest-drop-preview]")?.parentElement),
+    ).toEqual(["12px last"]);
+  });
+
+  it("starts a line under a childless nest target for its preview", () => {
+    const target = makeThread({ id: "thr_target", title: "Target", pinnedAt: 1 });
+    const node = buildPinnedSidebarState({ threads: [target] }).rootNodes[0];
+    const { container } = renderTree(
+      <ThreadTreeNodeRow
+        projectId="proj_test"
+        node={node}
+        depthOffset={0}
+        isEnvGrouped={false}
+        collapsedThreadIds={new Set()}
+        collapsedEnvironmentIds={new Set()}
+        onToggleThreadCollapsed={vi.fn()}
+        onToggleEnvironmentCollapsed={vi.fn()}
+        sectionDnd={makeSectionDnd({
+          nestTarget: { threadId: "thr_target", state: "valid" },
+          nestPreviewBeforeKey: null,
+        })}
+        sortableRef={() => undefined}
+      />,
+      { threads: [target] },
+    );
+
+    expect(renderedGuides(rowOfThread(container, "thr_target"))).toEqual(["12px below"]);
+    expect(
+      renderedGuides(container.querySelector("[data-sidebar-nest-drop-preview]")?.parentElement),
+    ).toEqual(["12px last"]);
   });
 
   it("leaves a blocked nest target without a child preview", () => {
@@ -389,7 +450,7 @@ describe("ProjectRow interactions", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
-  it("places the project disclosure after its label and keeps root threads flush", () => {
+  it("puts the folder toggle in the tree's disclosure column and root titles on the title column", () => {
     const result = renderProjectRow(vi.fn(), {
       status: "ready",
       threads: [makeThread()],
@@ -402,12 +463,13 @@ describe("ProjectRow interactions", () => {
     const threadLink = result.container.querySelector('[data-sidebar-thread-id="thr_test"]');
     const projectGroup = result.container.querySelector("[data-sidebar-sticky-project-item]");
 
-    expect(label.compareDocumentPosition(disclosure) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+    expect(label.compareDocumentPosition(disclosure) & Node.DOCUMENT_POSITION_PRECEDING).not.toBe(
       0,
     );
+    expect(disclosure.classList.contains("gtd-folder-glyph")).toBe(true);
     expect(
       threadLink?.closest<HTMLElement>(".bb-sidebar-hover-actions-row")?.style.paddingLeft,
-    ).toBe("8px");
+    ).toBe("28px");
     expect(projectGroup?.getAttribute("data-sidebar-project-id")).toBe("proj_test");
     expect(projectGroup?.hasAttribute("data-sidebar-section-id")).toBe(false);
   });
@@ -441,16 +503,54 @@ describe("ProjectRow interactions", () => {
       .closest("[data-sidebar-sticky-group]");
     const header = group?.querySelector<HTMLElement>(".bb-sidebar-hover-actions-row");
     const child = group?.querySelector<HTMLElement>('[data-sidebar-thread-id="thr_child_a"]');
-    const guide = group?.querySelector<HTMLElement>(
-      ":scope > div.relative > span.bg-border-hairline",
-    );
 
     expect(container.querySelector('[data-sidebar-thread-id="thr_parent"]')).not.toBeNull();
-    expect(header?.style.paddingLeft).toBe("32px");
-    expect(guide?.style.left).toBe("40px");
+    // Depth 1: the icon sits in the column 16px in, the name on the 44px title
+    // column, and the children a step in. The header carries its parent's
+    // guide down the root column; each child its stretch of the header's
+    // guide, the last ending at its middle.
+    expect(header?.style.paddingLeft).toBe("20px");
+    const rowOf = (id: string) =>
+      group
+        ?.querySelector(`[data-sidebar-thread-id="${id}"]`)
+        ?.closest(".bb-sidebar-hover-actions-row");
+    expect(renderedGuides(header)).toEqual(["12px last", "28px below"]);
+    // Its chevron turns on GTD's fold ease.
+    expect(
+      screen
+        .getByRole("button", { name: "Collapse Nested workspace threads" })
+        .querySelector(".gtd-chevron-motion"),
+    ).not.toBeNull();
+    expect(renderedGuides(rowOf("thr_child_a"))).toEqual(["28px"]);
+    expect(renderedGuides(rowOf("thr_child_b"))).toEqual(["28px last"]);
     expect(child?.closest<HTMLElement>(".bb-sidebar-hover-actions-row")?.style.paddingLeft).toBe(
-      "56px",
+      "60px",
     );
+  });
+
+  it("runs a parent's guide past an open grandchild to its last child", () => {
+    const { container } = renderProjectRow(vi.fn(), {
+      status: "ready",
+      threads: [
+        makeThread({ id: "thr_root", title: "Root" }),
+        makeThread({ id: "thr_first", parentThreadId: "thr_root", title: "First" }),
+        makeThread({ id: "thr_grandchild", parentThreadId: "thr_first", title: "Grandchild" }),
+        makeThread({ id: "thr_last", parentThreadId: "thr_root", title: "Last" }),
+      ],
+    });
+    const guides = (id: string) =>
+      renderedGuides(
+        container
+          .querySelector(`[data-sidebar-thread-id="${id}"]`)
+          ?.closest(".bb-sidebar-hover-actions-row"),
+      );
+
+    // An open parent starts its children's line in the gap below it; Root's
+    // line passes the grandchild on its way to Last.
+    expect(guides("thr_root")).toEqual(["12px below"]);
+    expect(guides("thr_first")).toEqual(["12px", "28px below"]);
+    expect(guides("thr_grandchild")).toEqual(["12px", "28px last"]);
+    expect(guides("thr_last")).toEqual(["12px last"]);
   });
 
   it("shows generic runtime activity before a named workflow rollup", () => {
@@ -580,21 +680,29 @@ describe("ProjectRow interactions", () => {
     expect(renderedIndicators()).toEqual(["working-draft"]);
   });
 
-  it("surfaces named activity when the project is collapsed", () => {
+  it("folds a folder from anywhere on its row but not from its actions", () => {
+    const { onToggleProjectCollapsed } = renderProjectRow(vi.fn(), {
+      status: "ready",
+      threads: [makeThread()],
+    });
+
+    fireEvent.click(screen.getByTitle("Test project"));
+    expect(onToggleProjectCollapsed).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse Test project section" }));
+    expect(onToggleProjectCollapsed).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Test project actions" }));
+    expect(onToggleProjectCollapsed).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a folded folder's family count in place of its rows", () => {
     renderProjectRow(
       vi.fn(),
       {
         status: "ready",
         threads: [
-          makeThread({
-            activity: {
-              workflows: 0,
-              backgroundAgents: 0,
-              backgroundCommands: 0,
-              planMode: 0,
-              goals: 1,
-            },
-          }),
+          makeThread({ id: "thr_parent", isUnread: false }),
+          makeThread({ id: "thr_child", parentThreadId: "thr_parent", isUnread: false }),
+          makeThread({ id: "thr_other", isUnread: false }),
         ],
       },
       false,
@@ -603,30 +711,62 @@ describe("ProjectRow interactions", () => {
     );
 
     expect(screen.queryByText("Test thread")).toBeNull();
-    expect(renderedIndicators()).toEqual(["goal"]);
-    expectCollapsedActivityAtSidebarEdge("goal");
+    expect(renderedIndicators()).toEqual([]);
+    const count = document.querySelector("[data-gtd-fold-count]");
+    expect(count?.textContent).toBe("2");
+    expect(count?.classList.contains("text-muted-foreground")).toBe(true);
+    expect(
+      screen
+        .getByRole("button", { name: "Expand Test project section" })
+        .getAttribute("aria-describedby"),
+    ).not.toBeNull();
+    expect(screen.getByText("2 threads").classList.contains("sr-only")).toBe(true);
   });
 
-  it("shows unread success before an idle draft for a collapsed project", () => {
+  it("keeps a folded folder's work glyph beside its family count", () => {
     renderProjectRow(
       vi.fn(),
       {
         status: "ready",
         threads: [
           makeThread({
-            id: "thr_project_draft",
-            lastReadAt: 100,
-            latestAttentionAt: 200,
+            id: "thr_working",
+            status: "active",
+            runtimeStatus: "active",
+            queuedWork: "none",
+            isUnread: false,
           }),
         ],
       },
       false,
       new Set(),
       true,
-      { draftThreadIds: ["thr_project_draft"] },
     );
 
-    expect(renderedIndicators()).toEqual(["unread-success"]);
+    expect(document.querySelector("[data-gtd-fold-count]")?.textContent).toBe("1");
+    expect(
+      document.querySelector("[data-sidebar-collapsed-activity-edge] [data-thread-status-glyph]"),
+    ).not.toBeNull();
+  });
+
+  it("counts the families that need the user in a folded folder", () => {
+    renderProjectRow(
+      vi.fn(),
+      {
+        status: "ready",
+        threads: [
+          makeThread({ id: "thr_unread", lastReadAt: 100, latestAttentionAt: 200 }),
+          makeThread({ id: "thr_quiet", isUnread: false }),
+        ],
+      },
+      false,
+      new Set(),
+      true,
+    );
+
+    const count = document.querySelector("[data-gtd-fold-count]");
+    expect(count?.textContent).toBe("1 / 2");
+    expect(count?.classList.contains("text-attention")).toBe(true);
   });
 
   it("excludes hidden side-chat activity from a collapsed project", () => {

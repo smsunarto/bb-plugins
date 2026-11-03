@@ -9,6 +9,11 @@
   bb's Pinned section comes first; Next Action, Waiting, SlopCop, Snoozed, and
   Settled follow as sticky shelves grouped by project or machine. Requires bb
   0.48.1.
+- Folders and thread families keep GTD's own look: a 16px tree step with the
+  chevron in a left column, hairline guides, and folder rows that fold on a click
+  and show their `needs you / total` count while folded. Shelves, folders, and
+  families slide open and closed again. Rows drop the provider icon and the
+  actions button; right-click a row for its menu.
 - Settle, Un-settle, Snooze until tomorrow, and Wake now are bb thread actions:
   they show in every bb thread menu and can be row quick actions. bb's Archive
   shows beside Settle.

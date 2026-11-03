@@ -26,17 +26,23 @@ Every forked file had its imports rewritten for this package. GTD changed
 behavior in these files:
 
 - `app/list/`: `ProjectList.tsx` (shelves replace bb's sections),
-  `ProjectRow.tsx`, `TopLevelSidebarSection.tsx` (a project-row tier), `SidebarHeaderControls.tsx`,
+  `ProjectRow.tsx` (GTD's tree guides and folds), `TopLevelSidebarSection.tsx`
+  (GTD's folder row and folds), `SidebarHeaderControls.tsx`,
   `SidebarViewItems.tsx`, `SidebarSectionOrderList.tsx`,
-  `ReorderableSidebarSectionOrderList.tsx`, `useReadStatusGrouping.ts`, and
+  `ReorderableSidebarSectionOrderList.tsx`, `SidebarWindowedItems.tsx` (keeps
+  rows a sliding fold clips), `useReadStatusGrouping.ts`, and
   `useSidebarThreadReveal.ts`
-- `app/rows/ThreadRow.tsx` (GTD's row extras)
+- `app/rows/ThreadRow.tsx` (GTD's row extras and disclosure column; no provider
+  icon or actions button), `SidebarRowControls.tsx`, and
+  `SidebarChildToggleChevron.tsx` (GTD's chevron motion)
+- `components/ui/sidebar-row-classes.ts` (GTD's tree geometry)
 - `app/preferences/` and `shared/preferences.ts` (GTD's layout preferences, in
   this plugin's storage)
 - `app/model/use-sidebar-data.ts` (always reads active and archived threads)
 
 GTD removed bb's custom sections, the section visibility controls, the Move
-action, and machine thread groups. `app/gtd/` is GTD's own code.
+action, and machine thread groups. `app/gtd/` and `app/ui/SlidingDisclosure.tsx`
+are GTD's own code.
 
 ---
 

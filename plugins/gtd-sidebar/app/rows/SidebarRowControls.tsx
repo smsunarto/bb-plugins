@@ -14,7 +14,7 @@ export function SidebarRowControls({
   children,
 }: {
   primaryAction: ReactNode;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <span

@@ -1,8 +1,6 @@
 import {
   memo,
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -36,14 +34,12 @@ import {
 } from "../model/thread-activity.js";
 import {
   experimental_ThreadActionsContextMenu as ThreadActionsContextMenu,
-  experimental_ThreadActionsMenu as ThreadActionsMenu,
   experimental_ThreadStatusGlyph as ThreadStatusGlyph,
   experimental_ThreadRowMetadata as ThreadRowMetadata,
   experimental_THREAD_ACTION_GROUPS,
   experimental_useExperiment,
   experimental_useThreadActions,
   experimental_useSidebarThreadSplit,
-  experimental_ProviderIcon as ProviderIcon,
   ThreadTitle,
   useSidebarSplitLayout,
   useSidebarThreadDraft,
@@ -53,15 +49,12 @@ import {
   type PluginSidebarSplitPane,
   type PluginThreadActionsContextMenuProps,
   type PluginThreadActionsInlineItem,
-  type PluginThreadActionsTriggerProps,
   type PluginSidebarThreadRowStatus,
-  type PluginProvidersState,
 } from "@get-bb/plugin-sdk/app";
 import type { SidebarThread } from "../model/sidebar-thread.js";
 import { NO_THREAD_IDS, useThreadsHaveDraft } from "../list/sidebarDraftPresence.js";
 import { useSidebarProjectName } from "../model/use-sidebar-data.js";
 import {
-  sidebarShowProviderIconsAtom,
   sidebarShowRowMetadataAtom,
   THREAD_ROW_METADATA_EXPERIMENT,
   threadRowActionsAtom,
@@ -75,7 +68,6 @@ import {
   SIDEBAR_HOVER_ACTIONS_ROW_CLASS,
 } from "@/components/ui/sidebar-hover-actions";
 import type { ConsumeDragClickSuppression } from "@/components/ui/use-drag-click-suppression";
-import { SidebarChildToggleChevron } from "./SidebarChildToggleChevron.js";
 import { useSidebarRename } from "./SidebarInlineRename.js";
 import { SidebarRowControls } from "./SidebarRowControls.js";
 import {
@@ -87,6 +79,7 @@ import {
   SIDEBAR_ROW_OPEN_IN_SPLIT_STATE_CLASS,
   SIDEBAR_ROW_SELECTED_STATE_CLASS,
   SIDEBAR_STATUS_GLYPH_BOX_CLASS,
+  getSidebarThreadDisclosureLeft,
   getSidebarThreadGroupLineLeft,
   getSidebarThreadRowPaddingLeft,
 } from "@/components/ui/sidebar-row-classes";
@@ -127,8 +120,6 @@ import {
 
 const SIDEBAR_TITLE_DOUBLE_CLICK_MS = 400;
 
-export const SidebarProvidersContext = createContext<PluginProvidersState["providers"]>([]);
-
 let lastSidebarTitleClick: { at: number; threadId: string } | null = null;
 
 function consumeSidebarTitleDoubleClick(threadId: string): boolean {
@@ -148,6 +139,15 @@ export function resetSidebarTitleDoubleClickForTest(): void {
 
 interface ThreadRowBaseOptions {
   depth: number;
+  /**
+   * GTD's tree guides: one flag per ancestor column (`"1"` where that
+   * column's line runs on past this row), as in `TreeGuides`.
+   */
+  treeGuides?: string;
+  /** The row ends its parent's line at its middle. */
+  isLastChild?: boolean;
+  /** Children, or a nest preview, show below: the row starts their line. */
+  hasOpenChildren?: boolean;
   isCompact: boolean;
   consumeClickSuppression?: ConsumeDragClickSuppression;
   dragBindings?: SidebarSortableDragBindings;
@@ -322,28 +322,117 @@ function ThreadTrailingIndicator({
 const ARCHIVED_ROW_ACTION_KEYS = ["bb--core/archive"];
 const CUSTOMIZE_ROW_ACTIONS_KEY = "gtd-sidebar/customizeRowActions";
 
-function renderThreadActionsTrigger(props: PluginThreadActionsTriggerProps) {
+/**
+ * GTD's tree guides, drawn inside the row so a sticky parent row keeps them:
+ * a hairline down each ancestor column whose line runs on past the row, and
+ * the row's own stretch of its parent's line, which the last child ends at
+ * its middle. Each stretch runs from the row's top across the gap below it,
+ * where an open parent also starts its children's line: bb's sticky parent
+ * rows shield that gap above deeper rows, so a line drawn up from the next
+ * row would break there.
+ */
+export function TreeGuides({
+  depth,
+  guides,
+  isLast,
+  hasOpenChildren,
+}: {
+  depth: number;
+  guides: string;
+  isLast: boolean;
+  hasOpenChildren: boolean;
+}) {
+  if (depth <= 0 && !hasOpenChildren) return null;
+  const lines: ReactNode[] = [];
+  for (let level = 0; level < depth - 1; level += 1) {
+    if (guides[level] !== "1") continue;
+    lines.push(
+      <span
+        key={level}
+        className="gtd-tree-line"
+        style={{ left: getSidebarThreadGroupLineLeft(level) }}
+      />,
+    );
+  }
+  if (depth > 0) {
+    lines.push(
+      <span
+        key="parent"
+        className={cn("gtd-tree-line", isLast && "gtd-tree-line-last")}
+        style={{ left: getSidebarThreadGroupLineLeft(depth - 1) }}
+      />,
+    );
+  }
+  if (hasOpenChildren) {
+    lines.push(
+      <span
+        key="children"
+        className="gtd-tree-line gtd-tree-line-below"
+        style={{ left: getSidebarThreadGroupLineLeft(depth) }}
+      />,
+    );
+  }
   return (
-    <Button
-      {...props}
+    <span
+      aria-hidden="true"
+      data-gtd-tree-guides=""
+      data-gtd-open-children={hasOpenChildren ? "" : undefined}
+      className="gtd-tree-guides"
+    >
+      {lines}
+    </span>
+  );
+}
+
+/** The guides for a row's children, from the row's own place in the tree. */
+export function childTreeGuides(depth: number, guides: string, isLast: boolean): string {
+  if (depth <= 0) return "";
+  return `${guides.padEnd(depth - 1, "0").slice(0, depth - 1)}${isLast ? "0" : "1"}`;
+}
+
+/**
+ * A parent row's fold toggle, in the row's 24px disclosure column at its
+ * depth: GTD's own tree. The chevron turns on the fold's 350ms ease
+ * (shelves.css) while the children slide.
+ */
+function ThreadDisclosureToggle({
+  depth,
+  isCollapsed,
+  disabled,
+  label,
+  onToggle,
+}: {
+  depth: number;
+  isCollapsed: boolean;
+  disabled: boolean;
+  label: string;
+  onToggle: () => void;
+}) {
+  return (
+    <button
       type="button"
-      variant="ghost"
-      size="icon"
-      className={cn(
-        props.className,
-        "rounded-md p-0",
-        "data-[state=open]:bg-state-active data-[state=open]:text-foreground",
-        SIDEBAR_CONTROL_BUTTON_CLASS,
-      )}
-      aria-label="Thread actions"
-      data-thread-actions-trigger=""
+      disabled={disabled}
+      data-sidebar-rename-anchor=""
+      aria-expanded={!isCollapsed}
+      aria-label={isCollapsed ? `Expand ${label} threads` : `Collapse ${label} threads`}
+      className={cn("gtd-disclosure", disabled && "invisible")}
+      style={{ left: getSidebarThreadDisclosureLeft(depth) }}
+      onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => {
-        props.onClick?.(event);
+        event.preventDefault();
         event.stopPropagation();
+        onToggle();
       }}
     >
-      <Icon name="MoreHorizontal" className={COARSE_POINTER_ICON_SIZE_CLASS} />
-    </Button>
+      <Icon
+        name="ChevronDown"
+        className={cn(
+          "gtd-chevron-motion size-3 max-md:pointer-coarse:size-4",
+          isCollapsed && "-rotate-90",
+        )}
+        aria-hidden="true"
+      />
+    </button>
   );
 }
 
@@ -377,13 +466,8 @@ function ThreadRowComponent({
   const selectionHidesActive = useIsSelectionHidingActiveRow(isActive);
   const multiSelection = useMultiSelectionContaining(thread.id);
   const selectionMenu = useThreadSelectionMenu(multiSelection);
-  const showProviderIcons = useAtomValue(sidebarShowProviderIconsAtom);
   const rowMetadataEnabled = experimental_useExperiment(THREAD_ROW_METADATA_EXPERIMENT);
   const showRowMetadata = useAtomValue(sidebarShowRowMetadataAtom) && rowMetadataEnabled;
-  const providers = useContext(SidebarProvidersContext);
-  const provider = showProviderIcons
-    ? providers.find((candidate) => candidate.id === thread.providerId)
-    : undefined;
   const shortcut = useSidebarThreadShortcut(thread.id);
   const pluginThreadRowStatus = useSidebarThreadRowStatus(thread.id);
   const { hasUnsubmittedDraft: hasComposerDraft } = useSidebarThreadDraft(thread.id);
@@ -440,6 +524,9 @@ function ThreadRowComponent({
       startEditing();
     },
   });
+  // With no quick actions nothing takes the trailing slot on hover, so the
+  // status and wake time stay in view.
+  const hasQuickActions = quickActions.length > 0;
   const customizeRowActions = useCustomizeThreadRowActions();
   const isCompactViewport = useIsCompactViewport();
   const pendingMenuCustomize = useRef<(() => void) | null>(null);
@@ -470,7 +557,7 @@ function ThreadRowComponent({
   const childCount = parentOptions?.childCount ?? 0;
   const childActivity = parentOptions?.childActivity ?? NO_COLLAPSED_CHILD_ACTIVITY;
   const hasChildren = childCount > 0;
-  const reserveActionSpace = crossProjectLabel !== null || (isParentRow && hasChildren);
+  const reserveActionSpace = crossProjectLabel !== null;
   const hasHiddenChildren = isParentRow && isParentCollapsed && hasChildren;
   const hiddenChildrenHaveDraft = useThreadsHaveDraft(
     hasHiddenChildren ? childActivity.threadIds : NO_THREAD_IDS,
@@ -543,8 +630,6 @@ function ThreadRowComponent({
     isCustomizingActions && "bg-sidebar-accent",
   );
   const rowStyle = getThreadRowStyle(options.depth);
-  const parentGuideLeft =
-    options.depth > 0 ? getSidebarThreadGroupLineLeft(options.depth - 1) : null;
   const handleRowClickCapture = useCallback<ThreadRowClickCaptureHandler>(
     (event) => {
       if (!options.consumeClickSuppression?.()) {
@@ -590,11 +675,19 @@ function ThreadRowComponent({
 
   const rowContent = (
     <>
-      {parentOptions?.stickyLevel !== undefined && parentGuideLeft !== null ? (
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute -bottom-0.5 top-0 z-[1] w-px bg-border-hairline opacity-70"
-          style={{ left: parentGuideLeft }}
+      <TreeGuides
+        depth={options.depth}
+        guides={options.treeGuides ?? ""}
+        isLast={options.isLastChild ?? false}
+        hasOpenChildren={options.hasOpenChildren ?? false}
+      />
+      {parentOptions && hasChildren ? (
+        <ThreadDisclosureToggle
+          depth={options.depth}
+          isCollapsed={isParentCollapsed}
+          disabled={isEditing}
+          label={labelTitle}
+          onToggle={() => parentOptions.onToggleCollapsed(thread.id)}
         />
       ) : null}
       <span
@@ -610,7 +703,7 @@ function ThreadRowComponent({
               ? "pr-(--bb-sidebar-hover-actions-inset) [@media(hover:none)]:pr-0"
               : SIDEBAR_HOVER_ACTIONS_INSET_CLASS),
         )}
-        style={getHoverActionsInsetStyle(quickActions.length)}
+        style={getHoverActionsInsetStyle(Math.max(0, quickActions.length - 1))}
       >
         <a
           ref={rowLinkRef}
@@ -657,30 +750,9 @@ function ThreadRowComponent({
           <span
             className={cn(
               "pointer-events-none relative flex min-w-0 items-center self-stretch",
-              ((crossProjectLabel === null && (!parentOptions || !hasChildren)) || isEditing) &&
-                "flex-1",
+              (crossProjectLabel === null || isEditing) && "flex-1",
             )}
           >
-            {provider ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span
-                    data-sidebar-thread-provider={provider.id}
-                    role="img"
-                    aria-label={provider.displayName}
-                    className="pointer-events-auto relative z-[31] flex size-4 shrink-0 items-center justify-center mr-2 text-muted-foreground"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      rowLinkRef.current?.click();
-                    }}
-                  >
-                    <ProviderIcon providerKind="agent" provider={provider} className="size-3.5" />
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent side="top">{provider.displayName}</TooltipContent>
-              </Tooltip>
-            ) : null}
             <GtdMachineGlobe host={thread.host} />
             {isEditing ? (
               <span className="pointer-events-auto relative z-10 min-w-0 flex-1 overflow-visible">
@@ -721,20 +793,9 @@ function ThreadRowComponent({
               <TooltipContent side="top">{crossProjectLabel}</TooltipContent>
             </Tooltip>
           ) : null}
-          {parentOptions && hasChildren ? (
-            <SidebarChildToggleChevron
-              disabled={isEditing}
-              className={isEditing ? "hidden" : undefined}
-              isCollapsed={isParentCollapsed}
-              expandLabel={`Expand ${labelTitle} threads`}
-              collapseLabel={`Collapse ${labelTitle} threads`}
-              onToggle={() => parentOptions.onToggleCollapsed(thread.id)}
-              revealOnHover={!isParentCollapsed}
-            />
-          ) : null}
         </span>
         {!showRowMetadata || isEditing || isCustomizingActions ? null : (
-          <span className={cn("mt-px flex min-w-0 basis-full", provider !== undefined && "pl-6")}>
+          <span className="mt-px flex min-w-0 basis-full">
             <ThreadRowMetadata thread={thread} />
           </span>
         )}
@@ -757,7 +818,7 @@ function ThreadRowComponent({
         <span
           data-sidebar-hover-actions-open={isActionsOpen ? "true" : undefined}
           className={cn(
-            SIDEBAR_HOVER_ACTIONS_FADE_CLASS,
+            hasQuickActions && SIDEBAR_HOVER_ACTIONS_FADE_CLASS,
             "flex shrink-0 items-center gap-1.5 empty:hidden",
           )}
         >
@@ -766,25 +827,6 @@ function ThreadRowComponent({
         </span>
         {thread.archivedAt !== null ? (
           <span className="relative flex items-center [@media(hover:none)]:hidden">
-            <div
-              data-sidebar-hover-actions-open={isActionsOpen ? "true" : undefined}
-              className={cn(
-                SIDEBAR_HOVER_ACTIONS_CLASS,
-                "absolute right-full z-10 [@media(hover:none)]:hidden",
-              )}
-            >
-              <ThreadActionsMenu
-                thread={actionTarget}
-                trigger={renderThreadActionsTrigger}
-                inline={inlineMenuActions}
-                requestRename={requestRenameFromMenu}
-                side="right"
-                align="start"
-                sideOffset={8}
-                onOpenChange={setIsDropdownActionsOpen}
-                onCloseAutoFocus={handleActionsMenuCloseAutoFocus}
-              />
-            </div>
             <span
               className="relative z-10 pointer-events-auto"
               onPointerDown={(event) => event.stopPropagation()}
@@ -809,7 +851,7 @@ function ThreadRowComponent({
               <span
                 data-sidebar-hover-actions-open={isActionsOpen ? "true" : undefined}
                 className={cn(
-                  SIDEBAR_HOVER_ACTIONS_FADE_CLASS,
+                  hasQuickActions && SIDEBAR_HOVER_ACTIONS_FADE_CLASS,
                   "absolute inset-0 flex items-center justify-center",
                 )}
               >
@@ -848,19 +890,7 @@ function ThreadRowComponent({
                       onMenuOpenChange={setIsDropdownActionsOpen}
                     />
                   }
-                >
-                  <ThreadActionsMenu
-                    thread={actionTarget}
-                    trigger={renderThreadActionsTrigger}
-                    inline={inlineMenuActions}
-                    requestRename={requestRenameFromMenu}
-                    side="right"
-                    align="start"
-                    sideOffset={8}
-                    onOpenChange={setIsDropdownActionsOpen}
-                    onCloseAutoFocus={handleActionsMenuCloseAutoFocus}
-                  />
-                </SidebarRowControls>
+                />
               </div>
             </span>
           </span>

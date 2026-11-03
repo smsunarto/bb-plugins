@@ -112,8 +112,12 @@ pages. GTD adds two choices to them:
 - **Organize** groups each shelf **By project**, **By machine**, or **Flat**.
 
 Groups draw only once a shelf view holds two or more projects or machines, or
-while a machine filter is on. A group header sticks under its shelf header and
-folds its group. Settled's groups start folded.
+while a machine filter is on. A group header sticks under its shelf header. It
+keeps GTD's own folder look: the folder icon sits in the tree's disclosure column
+and turns into the fold chevron on hover, and a click anywhere on the header folds
+the group. A folded group shows how many thread families it holds, as
+`needs you / total` when any of them asks for you. Shelves, groups, and thread
+families slide open and closed. Settled's groups start folded.
 
 ### Project groups
 
@@ -138,9 +142,10 @@ The **Filter** page holds GTD's two filters:
 
 ### Rows
 
-Every row is bb's thread row: unread titles, the status glyph, provider icons, the
-split mini map, shortcut pills, hover quick actions, inline rename, multi-select,
-and bb's optional metadata line. GTD adds:
+Every row is bb's thread row: unread titles, the status glyph, the split mini
+map, shortcut pills, hover quick actions, inline rename, multi-select, and bb's
+optional metadata line. Rows leave out bb's provider icon and its actions button;
+right-click a row (long-press on touch) for its menu. GTD adds:
 
 - A globe before the title when the thread runs on another machine, in that
   machine's color. A Boat sandbox shows a bot instead.
@@ -171,11 +176,12 @@ thread** command in bb's palette settles the open thread.
 
 ### Child threads
 
-A child sits under its parent with bb's disclosure chevron, including a fork bb
-files as a child. A family folds until you open it, and the choice persists across
-reloads. Drag a row onto another to nest it, or onto a group header to lift it back
-to the top level. Rows on a shelf follow its sort; only Pinned reorders by drag. A
-drag out to the main area opens a split.
+A child sits under its parent in GTD's own tree, including a fork bb files as a
+child: each level steps in 16px, a parent's chevron sits in the column at its left,
+and a hairline guide runs down to its last child. A family folds until you open
+it, and the choice persists across reloads. Drag a row onto another to nest it,
+or onto a group header to lift it back to the top level. Rows on a shelf follow
+its sort; only Pinned reorders by drag. A drag out to the main area opens a split.
 
 ### Thread names
 
@@ -320,9 +326,6 @@ The thread list is a fork of bb's built-in Thread list (`plugins/thread-list`) a
 the component registry items it imports, at `desktop-v0.48.1`. GTD's shelves, row
 extras, and filters sit on top of it. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 lists the fork base and the files GTD changed.
-
-Provider icons are bb's own artwork, drawn through `experimental_ProviderIcon`
-in one muted tint rather than in brand color — by design.
 
 ## Develop from source
 

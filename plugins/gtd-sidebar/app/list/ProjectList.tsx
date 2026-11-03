@@ -16,14 +16,13 @@ import {
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { toast } from "sonner";
 import type { SidebarThread } from "../model/sidebar-thread.js";
-import { experimental_useProviders, useBbNavigate, useSdk } from "@get-bb/plugin-sdk/app";
+import { useBbNavigate, useSdk } from "@get-bb/plugin-sdk/app";
 import {
   SidebarRenameProvider,
   useSidebarRename,
   useSidebarRenameState,
 } from "../rows/SidebarInlineRename.js";
 import { ThreadRowNavigationProvider } from "../rows/threadRowNavigation.js";
-import { SidebarProvidersContext } from "../rows/ThreadRow.js";
 import {
   buildProjectThreadGroups,
   collectProjectThreadItemNavigationEntries,
@@ -52,6 +51,7 @@ import type { ProjectThreadListState } from "./ProjectRow.js";
 import { buildPinnedSidebarState } from "../model/pinned-sidebar-threads.js";
 import type { SidebarSectionId } from "../model/sidebar-section-id.js";
 import { SortableProjectRow } from "./ProjectListProjects.js";
+import { foldCount } from "../gtd/fold-count.js";
 import { PinnedThreadTree, type PinnedThreadTreeProps } from "./PinnedThreadTree.js";
 import { TopLevelSidebarSection } from "./TopLevelSidebarSection.js";
 import type { ProjectActionsMenuSurface } from "./ProjectActionsMenu.js";
@@ -592,6 +592,7 @@ function ShelfBody({
           actionsMobileAlways: true,
           collapsedActivity: item.group.activity,
           collapsedThreads: group.threads,
+          foldCount: isCollapsed ? foldCount(group.threads) : undefined,
           collapseControl: {
             isCollapsed,
             onToggleCollapsed: () => onToggleGroup(view.shelf, group.key),
@@ -737,7 +738,6 @@ function noop() {}
 function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListProps) {
   const sdk = useSdk();
   const navigate = useBbNavigate();
-  const { providers } = experimental_useProviders();
   const [prediction, setPrediction] = useState<ProjectOrderPrediction | null>(null);
   const gtd = useGtdShelves(prediction);
   const { data, layout, lifecycle } = gtd;
@@ -1217,11 +1217,7 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
     </GtdFilterProvider>
   );
   return (
-    <SidebarProjectsContext.Provider value={projects}>
-      <SidebarProvidersContext.Provider value={providers}>
-        {content}
-      </SidebarProvidersContext.Provider>
-    </SidebarProjectsContext.Provider>
+    <SidebarProjectsContext.Provider value={projects}>{content}</SidebarProjectsContext.Provider>
   );
 }
 

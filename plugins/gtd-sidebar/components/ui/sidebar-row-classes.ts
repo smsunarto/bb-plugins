@@ -25,9 +25,12 @@ export const SIDEBAR_SUCCESS_STATUS_COLOR_CLASS = "text-success-foreground";
 export const SIDEBAR_SUCCESS_STATUS_DOT_CLASS =
   "size-[5px] rounded-full bg-muted-foreground/60 max-md:pointer-coarse:size-1.5";
 
-const SIDEBAR_THREAD_ROW_BASE_PADDING_PX = 8;
-const SIDEBAR_THREAD_ROW_DEPTH_STEP_PX = 24;
-const SIDEBAR_THREAD_ROW_GLYPH_CENTER_OFFSET_PX = 8;
+// GTD's tree geometry, kept from its own sidebar: each level owns a 24px
+// disclosure column, 16px in from its parent's, and a title starts 4px past
+// its column (28px at the root, where a folder's icon shares the column).
+const SIDEBAR_THREAD_ROW_TITLE_INSET_PX = 28;
+const SIDEBAR_THREAD_ROW_DEPTH_STEP_PX = 16;
+const SIDEBAR_THREAD_DISCLOSURE_CENTER_PX = 12;
 
 export const SIDEBAR_STANDARD_ROW_PADDING_CLASS = "pl-2";
 
@@ -52,11 +55,17 @@ export const SIDEBAR_CONTROL_PAIR_SIZE_CLASS =
   "h-7 w-[3.625rem] max-md:pointer-coarse:h-9 max-md:pointer-coarse:w-[4.25rem]";
 
 export function getSidebarThreadRowPaddingLeft(depth: number): number {
-  return SIDEBAR_THREAD_ROW_BASE_PADDING_PX + depth * SIDEBAR_THREAD_ROW_DEPTH_STEP_PX;
+  return SIDEBAR_THREAD_ROW_TITLE_INSET_PX + depth * SIDEBAR_THREAD_ROW_DEPTH_STEP_PX;
 }
 
+/** The left edge of a row's 24px disclosure column. */
+export function getSidebarThreadDisclosureLeft(depth: number): number {
+  return depth * SIDEBAR_THREAD_ROW_DEPTH_STEP_PX;
+}
+
+/** The tree guide under a row at `depth`: the centre of its disclosure column. */
 export function getSidebarThreadGroupLineLeft(depth: number): number {
-  return getSidebarThreadRowPaddingLeft(depth) + SIDEBAR_THREAD_ROW_GLYPH_CENTER_OFFSET_PX;
+  return getSidebarThreadDisclosureLeft(depth) + SIDEBAR_THREAD_DISCLOSURE_CENTER_PX;
 }
 
 export const SIDEBAR_ROW_INTERACTIVE_STATE_CLASS = `cursor-pointer ${SIDEBAR_ROW_TEXT_CLASS} hover:bg-sidebar-accent hover:text-sidebar-accent-foreground`;
