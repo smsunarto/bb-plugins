@@ -9,7 +9,9 @@ const stringListSchema = z.array(listItemSchema).max(LIST_MAX_LENGTH);
 export const organizationModeSchema = z.enum(["project", "chronological", "machine"]);
 export type OrganizationMode = z.infer<typeof organizationModeSchema>;
 
-export const chronologicalSortSchema = z.enum(["updated", "created", "alpha", "none"]);
+// "arrival" is GTD's order: newest arrival on its shelf first, and a thread
+// keeps its place while it stays on that shelf.
+export const chronologicalSortSchema = z.enum(["arrival", "updated", "created", "alpha", "none"]);
 export type ChronologicalSort = z.infer<typeof chronologicalSortSchema>;
 
 export const sortDirectionSchema = z.enum(["default", "ascending", "descending"]);
@@ -23,7 +25,6 @@ const LEGACY_THREAD_ROW_ACTION_KEYS = {
   copyLink: "bb--core/copyLink",
   read: "bb--core/read",
   pin: "bb--core/pin",
-  move: "thread-list/move",
   rename: "bb--core/rename",
   archive: "bb--core/archive",
 } as const;
@@ -50,20 +51,29 @@ export const threadRowActionKeySchema = z
     }),
   );
 
-const collapsibleSectionIdSchema = z.enum(["pinned", "threads"]);
+export const SHELF_IDS = [
+  "pinned",
+  "nextAction",
+  "waiting",
+  "slopcop",
+  "snoozed",
+  "settled",
+] as const;
+export type ShelfId = (typeof SHELF_IDS)[number];
 
-const hiddenGroupsSchema = z
-  .array(z.union([z.literal("threads"), listItemSchema.regex(/^(project|section|machine):\S+$/)]))
-  .max(LIST_MAX_LENGTH)
-  .transform((value) => [...new Set(value)]);
+const shelfFoldsSchema = z.partialRecord(z.enum(SHELF_IDS), z.boolean());
+const groupFoldsSchema = z
+  .record(listItemSchema, z.boolean())
+  .refine((value) => Object.keys(value).length <= LIST_MAX_LENGTH, {
+    message: `At most ${LIST_MAX_LENGTH} folds`,
+  });
 
 function definePreference<Schema extends z.ZodTypeAny>(
   schema: Schema,
   defaultValue: z.infer<Schema>,
   description: string,
-  legacyKey: string | null,
 ) {
-  return { schema, defaultValue, description, legacyKey };
+  return { schema, defaultValue, description };
 }
 
 export const preferenceDefinitions = {
@@ -71,77 +81,36 @@ export const preferenceDefinitions = {
     z.boolean(),
     true,
     "Show each thread's agent provider icon before its title.",
-    null,
   ),
   showRowMetadata: definePreference(
     z.boolean(),
     false,
     "Show plugin metadata, such as pull request status, on each thread row.",
-    null,
-  ),
-  threadLifecycles: definePreference(
-    z
-      .array(z.enum(["active", "archived"]))
-      .min(1)
-      .max(2)
-      .refine((value) => new Set(value).size === value.length),
-    ["active"],
-    "Thread lifecycles shown in the list: active, archived, or both. At least one is required.",
-    null,
   ),
   organizationMode: definePreference(
     organizationModeSchema,
-    "chronological",
-    "How the list groups threads: by project, chronologically with custom sections, or by machine.",
-    "sidebar.organizationMode",
+    "project",
+    "How each shelf groups its threads: by project, by machine, or chronological (one list per shelf). A family follows its root thread's project or machine.",
   ),
   environmentGrouping: definePreference(
     environmentGroupingSchema,
     "auto",
     "Whether sibling threads sharing a worktree collapse into one row. auto groups them in every organization except chronological.",
-    "sidebar.threadGrouping.environment",
   ),
   groupByReadStatus: definePreference(
     z.boolean(),
     false,
     "List threads that show an unread dot above the rest, keeping the selected sort within each group. The open thread keeps its place until another thread is opened.",
-    null,
   ),
   chronologicalSort: definePreference(
     chronologicalSortSchema,
-    "updated",
-    "Sort field for the chronological organization.",
-    "sidebar.chronologicalSort",
+    "arrival",
+    "Sort field within each shelf: arrival (newest arrival on the shelf first), updated, created, or alpha.",
   ),
   sortDirection: definePreference(
     sortDirectionSchema,
     "default",
     "Sort direction; default keeps the field's natural direction.",
-    "sidebar.sortDirection",
-  ),
-  sectionOrder: definePreference(
-    stringListSchema,
-    ["pinned", "projects", "threads"],
-    "Top-level order when organized by project.",
-    "sidebar.sectionOrder",
-  ),
-  manualSectionOrder: definePreference(
-    stringListSchema,
-    ["pinned", "sections", "threads"],
-    "Top-level order when organized chronologically.",
-    "sidebar.manualSectionOrder",
-  ),
-  machineSectionOrder: definePreference(
-    stringListSchema,
-    ["pinned", "machines", "threads"],
-    "Top-level order when organized by machine.",
-    "sidebar.machineSectionOrder",
-  ),
-  hiddenGroups: definePreference(
-    hiddenGroupsSchema,
-    [],
-    "Groups moved into More: threads, project:<id>, section:<id>, or machine:<id>.",
-    "sidebar.hiddenGroups",
   ),
   rowActions: definePreference(
     z
@@ -151,45 +120,28 @@ export const preferenceDefinitions = {
       .refine((value) => value.length <= THREAD_ROW_ACTION_LIMIT, {
         message: `Choose at most ${THREAD_ROW_ACTION_LIMIT} row actions`,
       }),
-    ["bb--core/archive"],
-    `Up to ${THREAD_ROW_ACTION_LIMIT} quick actions shown on a thread row's hover, left to right before its actions menu, as thread action keys: bb--core/split, bb--core/copyLink, bb--core/read, bb--core/pin, thread-list/move, bb--core/rename, bb--core/archive, or a plugin's <pluginId>/<actionId>. Bare legacy ids such as archive and core/<id> keys are accepted. An empty list shows only the menu.`,
-    null,
+    ["gtd-sidebar/snooze", "gtd-sidebar/settle"],
+    `Up to ${THREAD_ROW_ACTION_LIMIT} quick actions shown on a thread row's hover, left to right before its actions menu, as thread action keys: gtd-sidebar/settle, gtd-sidebar/snooze, gtd-sidebar/wake, gtd-sidebar/unsettle, bb--core/split, bb--core/copyLink, bb--core/read, bb--core/pin, bb--core/rename, bb--core/archive, or a plugin's <pluginId>/<actionId>. Bare legacy ids such as archive and core/<id> keys are accepted. An empty list shows only the menu.`,
   ),
-  collapsedSections: definePreference(
-    z.array(collapsibleSectionIdSchema).max(LIST_MAX_LENGTH),
-    [],
-    "Built-in sections (pinned, threads) that are collapsed.",
-    null,
+  shelfFolds: definePreference(
+    shelfFoldsSchema,
+    {},
+    "Shelves folded (true) or unfolded (false) against their default. SlopCop, Snoozed, and Settled start folded; the rest start open.",
   ),
-  collapsedProjects: definePreference(
+  groupFolds: definePreference(
+    groupFoldsSchema,
+    {},
+    "Project or machine groups folded (true) or unfolded (false) against their default, keyed '<shelf> <group key>'. Settled groups start folded.",
+  ),
+  expandedThreads: definePreference(
     stringListSchema,
     [],
-    "Project ids whose rows are collapsed.",
-    null,
-  ),
-  collapsedThreads: definePreference(
-    stringListSchema,
-    [],
-    "Thread ids whose child threads are collapsed.",
-    null,
+    "Parent thread ids whose child threads show. Families start folded.",
   ),
   collapsedEnvironments: definePreference(
     stringListSchema,
     [],
     "Environment ids whose rows are collapsed.",
-    null,
-  ),
-  collapsedThreadSections: definePreference(
-    stringListSchema,
-    [],
-    "Custom section ids that are collapsed.",
-    null,
-  ),
-  collapsedMachines: definePreference(
-    stringListSchema,
-    [],
-    "Machine ids whose rows are collapsed.",
-    null,
   ),
 } as const;
 

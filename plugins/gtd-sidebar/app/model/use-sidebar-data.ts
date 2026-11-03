@@ -1,6 +1,4 @@
 import { createContext, useContext, useMemo } from "react";
-import { useAtomValue } from "jotai";
-import { sidebarThreadLifecyclesAtom } from "../preferences/atoms.js";
 import {
   experimental_useSidebarThreads,
   type PluginSidebarProject,
@@ -181,10 +179,12 @@ export function useSidebarProjectName(projectId: string | null): string | undefi
     : projects.find((project) => project.id === projectId)?.name;
 }
 
+// GTD shelves need both: Settled lists the threads archived in the last day.
+const SIDEBAR_LIFECYCLES = ["active", "archived"] as const;
+
 export function useSidebarData() {
-  const lifecycles = useAtomValue(sidebarThreadLifecyclesAtom);
   const state = experimental_useSidebarThreads({
-    experimental_lifecycles: lifecycles,
+    experimental_lifecycles: SIDEBAR_LIFECYCLES,
   });
   return useMemo(
     () => ({ ...getSidebarData(state), archived: state.experimental_archived }),

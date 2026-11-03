@@ -1,0 +1,12 @@
+/* A shelf's project or machine group row pins on bb's sticky "project" tier,
+   under the shelf label. bb's trees pin their parent rows from the project
+   tier's slot, which on a shelf holds that group row, so a group's content
+   starts the parent tiers one row lower. */
+[data-sidebar-sticky-stack] [data-gtd-group-content] {
+  --bb-sidebar-sticky-project-top: calc(
+    var(--bb-sidebar-sticky-label-top) + var(--bb-sidebar-sticky-label-height) +
+      var(--bb-sidebar-sticky-label-gap) + var(--bb-sidebar-sticky-row-height) +
+      var(--bb-sidebar-sticky-row-gap)
+  );
+  margin-top: var(--bb-sidebar-sticky-row-gap);
+}

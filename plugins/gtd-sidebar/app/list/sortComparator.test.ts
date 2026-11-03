@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { getSidebarThreadComparator } from "./ProjectList.js";
-import { getThreadSidebarExpansion } from "./useSidebarThreadReveal.js";
 import {
   CHRONOLOGICAL_CONTAINER_ID,
   type ProjectThreadNode,
@@ -14,8 +13,6 @@ import {
   type SidebarThreadOverrides,
 } from "../model/fixtures.js";
 import type { SidebarThread } from "../model/sidebar-thread.js";
-
-const PERSONAL_PROJECT_ID = "proj_personal";
 
 function thread(overrides: SidebarThreadOverrides): SidebarThread {
   return makeSidebarThread({
@@ -298,111 +295,5 @@ describe("getSidebarThreadComparator", () => {
         .sort(comparator.compareItems)
         .map((item) => (item.kind === "thread" ? item.node.thread.id : "unexpected")),
     ).toEqual(["thr_a", "thr_z"]);
-  });
-});
-
-describe("getThreadSidebarExpansion", () => {
-  it("expands the personal threads section in project mode", () => {
-    expect(
-      getThreadSidebarExpansion({
-        organizationMode: "project",
-        isPinned: false,
-        sidebarProjectId: PERSONAL_PROJECT_ID,
-        personalProjectId: PERSONAL_PROJECT_ID,
-        thread: thread({ projectId: PERSONAL_PROJECT_ID }),
-      }),
-    ).toEqual({ sidebarSectionId: "threads" });
-  });
-
-  it("expands the owning project in project mode", () => {
-    expect(
-      getThreadSidebarExpansion({
-        organizationMode: "project",
-        isPinned: false,
-        sidebarProjectId: "proj_app",
-        personalProjectId: PERSONAL_PROJECT_ID,
-        thread: thread({ projectId: "proj_app" }),
-      }),
-    ).toEqual({ projectId: "proj_app" });
-  });
-
-  it("expands the root ancestor's project for a cross-project child in project mode", () => {
-    expect(
-      getThreadSidebarExpansion({
-        organizationMode: "project",
-        isPinned: false,
-        sidebarProjectId: "proj_app",
-        personalProjectId: PERSONAL_PROJECT_ID,
-        thread: thread({
-          projectId: "proj_web",
-          parentThreadId: "thr_parent",
-        }),
-      }),
-    ).toEqual({ projectId: "proj_app" });
-  });
-
-  it("expands the threads section for unsectioned project threads in sections mode", () => {
-    expect(
-      getThreadSidebarExpansion({
-        organizationMode: "chronological",
-        isPinned: false,
-        sidebarProjectId: "proj_app",
-        personalProjectId: PERSONAL_PROJECT_ID,
-        thread: thread({ sectionId: null, projectId: "proj_app" }),
-      }),
-    ).toEqual({ sidebarSectionId: "threads" });
-  });
-
-  it("expands the containing section for sectioned threads in sections mode", () => {
-    expect(
-      getThreadSidebarExpansion({
-        organizationMode: "chronological",
-        isPinned: false,
-        sidebarProjectId: "proj_app",
-        personalProjectId: PERSONAL_PROJECT_ID,
-        thread: thread({
-          sectionId: "sec_work",
-          projectId: "proj_app",
-        }),
-      }),
-    ).toEqual({
-      sectionKey: `${CHRONOLOGICAL_CONTAINER_ID}::sec_work`,
-    });
-  });
-
-  it("expands the owning machine group in machine mode", () => {
-    expect(
-      getThreadSidebarExpansion({
-        organizationMode: "machine",
-        isPinned: false,
-        sidebarProjectId: "proj_app",
-        personalProjectId: PERSONAL_PROJECT_ID,
-        thread: thread({
-          projectId: "proj_app",
-          host: { id: "host_a", name: "host_a" },
-        }),
-      }),
-    ).toEqual({ machineKey: "host_a" });
-    expect(
-      getThreadSidebarExpansion({
-        organizationMode: "machine",
-        isPinned: false,
-        sidebarProjectId: "proj_app",
-        personalProjectId: PERSONAL_PROJECT_ID,
-        thread: thread({ projectId: "proj_app" }),
-      }),
-    ).toEqual({ machineKey: "no-machine" });
-  });
-
-  it("expands the pinned section for pinned threads", () => {
-    expect(
-      getThreadSidebarExpansion({
-        organizationMode: "chronological",
-        isPinned: true,
-        sidebarProjectId: "proj_app",
-        personalProjectId: PERSONAL_PROJECT_ID,
-        thread: thread({ sectionId: null, projectId: "proj_app" }),
-      }),
-    ).toEqual({ sidebarSectionId: "pinned" });
   });
 });

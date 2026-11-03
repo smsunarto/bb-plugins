@@ -1,14 +1,10 @@
 import { atom } from "jotai";
 import { createSyncedPreferenceAtom } from "./synced-preference-atom.js";
 
-export const collapsedProjectIdsAtom = createSyncedPreferenceAtom("collapsedProjects");
-export const collapsedThreadIdsAtom = createSyncedPreferenceAtom("collapsedThreads");
+export const expandedThreadIdsAtom = createSyncedPreferenceAtom("expandedThreads");
 export const collapsedEnvironmentIdsAtom = createSyncedPreferenceAtom("collapsedEnvironments");
-export const collapsedSidebarSectionIdsAtom = createSyncedPreferenceAtom("collapsedSections");
-export const sidebarSectionOrderAtom = createSyncedPreferenceAtom("sectionOrder");
-export const sidebarManualSectionOrderAtom = createSyncedPreferenceAtom("manualSectionOrder");
-export const sidebarMachineSectionOrderAtom = createSyncedPreferenceAtom("machineSectionOrder");
-export const sidebarHiddenGroupsAtom = createSyncedPreferenceAtom("hiddenGroups");
+export const shelfFoldsAtom = createSyncedPreferenceAtom("shelfFolds");
+export const groupFoldsAtom = createSyncedPreferenceAtom("groupFolds");
 export const threadRowActionsAtom = createSyncedPreferenceAtom("rowActions");
 export const sidebarOrganizationModeAtom = createSyncedPreferenceAtom("organizationMode");
 export const sidebarEnvironmentGroupingAtom = createSyncedPreferenceAtom("environmentGrouping");
@@ -21,11 +17,10 @@ export const sidebarGroupThreadsByEnvironmentAtom = atom((get) => {
 });
 export const sidebarChronologicalSortAtom = createSyncedPreferenceAtom("chronologicalSort");
 export const sidebarSortDirectionAtom = createSyncedPreferenceAtom("sortDirection");
-export const sidebarCollapsedThreadSectionsAtom =
-  createSyncedPreferenceAtom("collapsedThreadSections");
-export const sidebarCollapsedMachinesAtom = createSyncedPreferenceAtom("collapsedMachines");
+// bb's custom thread sections have no place on a GTD shelf, so their folds are
+// never stored; the drag engine still reads this atom for a section drop.
+export const sidebarCollapsedThreadSectionsAtom = atom<string[]>([]);
 
-export const sidebarThreadLifecyclesAtom = createSyncedPreferenceAtom("threadLifecycles");
 export const sidebarShowProviderIconsAtom = createSyncedPreferenceAtom("showProviderIcons");
 export const sidebarShowRowMetadataAtom = createSyncedPreferenceAtom("showRowMetadata");
 export const THREAD_ROW_METADATA_EXPERIMENT = "threadRowMetadata";

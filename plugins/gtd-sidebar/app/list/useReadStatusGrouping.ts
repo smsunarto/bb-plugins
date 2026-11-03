@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { atom, useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import type { SidebarThread } from "../model/sidebar-thread.js";
 import type { ThreadComparator } from "../model/project-thread-groups.js";
 import {
-  collapseParentThreads,
   createThreadUnreadPredicate,
   groupComparatorByReadStatus,
   rememberHeldReadStatus,
@@ -11,9 +10,8 @@ import {
   restoreHeldReadStatus,
   type HeldReadStatus,
 } from "../model/read-status-grouping.js";
-import { collapsedThreadIdsAtom, sidebarGroupByReadStatusAtom } from "../preferences/atoms.js";
-
-const threadsExpandedWhileGroupedAtom = atom<readonly string[]>([]);
+import { expandedThreadIdsAtom, sidebarGroupByReadStatusAtom } from "../preferences/atoms.js";
+import { collapsedParents, toggleExpanded } from "../gtd/folds.js";
 
 function useHeldReadStatus(
   threads: readonly SidebarThread[],
@@ -32,10 +30,6 @@ function useHeldReadStatus(
   return next;
 }
 
-function toggleId(ids: readonly string[], id: string): string[] {
-  return ids.includes(id) ? ids.filter((current) => current !== id) : [...ids, id];
-}
-
 export function useReadStatusGrouping({
   threads,
   selectedThreadId,
@@ -47,8 +41,7 @@ export function useReadStatusGrouping({
 }) {
   const groupByReadStatus = useAtomValue(sidebarGroupByReadStatusAtom);
   const heldReadStatus = useHeldReadStatus(threads, selectedThreadId);
-  const [collapsedThreadIdList, setCollapsedThreadIdList] = useAtom(collapsedThreadIdsAtom);
-  const [expandedWhileGrouped, setExpandedWhileGrouped] = useAtom(threadsExpandedWhileGroupedAtom);
+  const [expandedThreadIdList, setExpandedThreadIdList] = useAtom(expandedThreadIdsAtom);
   const groupedComparator = useMemo(
     () =>
       groupByReadStatus
@@ -56,22 +49,18 @@ export function useReadStatusGrouping({
         : comparator,
     [comparator, groupByReadStatus, heldReadStatus],
   );
+  // GTD: families start folded whatever the grouping; the preference holds
+  // the ones the user opened.
   const collapsedThreadIds = useMemo(
-    () =>
-      groupByReadStatus
-        ? collapseParentThreads(threads, expandedWhileGrouped)
-        : new Set(collapsedThreadIdList),
-    [collapsedThreadIdList, expandedWhileGrouped, groupByReadStatus, threads],
+    () => collapsedParents(threads, expandedThreadIdList),
+    [expandedThreadIdList, threads],
   );
   const toggleThreadCollapsed = useCallback(
     (threadId: string) => {
-      if (groupByReadStatus) {
-        setExpandedWhileGrouped((current) => toggleId(current, threadId));
-      } else {
-        setCollapsedThreadIdList((current) => toggleId(current, threadId));
-      }
+      const listed = new Set(threads.map((thread) => thread.id));
+      setExpandedThreadIdList((current) => toggleExpanded(current, threadId, listed));
     },
-    [groupByReadStatus, setCollapsedThreadIdList, setExpandedWhileGrouped],
+    [setExpandedThreadIdList, threads],
   );
   return {
     comparator: groupedComparator,
@@ -81,25 +70,15 @@ export function useReadStatusGrouping({
 }
 
 export function useExpandThreadAncestors() {
-  const groupByReadStatus = useAtomValue(sidebarGroupByReadStatusAtom);
-  const setCollapsedThreadIdList = useSetAtom(collapsedThreadIdsAtom);
-  const setExpandedWhileGrouped = useSetAtom(threadsExpandedWhileGroupedAtom);
+  const setExpandedThreadIdList = useSetAtom(expandedThreadIdsAtom);
   return useCallback(
-    (threadIds: ReadonlySet<string>, fromNavigation: boolean) => {
-      if (!groupByReadStatus) {
-        setCollapsedThreadIdList((current) =>
-          current.some((id) => threadIds.has(id))
-            ? current.filter((id) => !threadIds.has(id))
-            : current,
-        );
-      } else if (fromNavigation) {
-        setExpandedWhileGrouped((current) =>
-          [...threadIds].every((id) => current.includes(id))
-            ? current
-            : [...new Set([...current, ...threadIds])],
-        );
-      }
+    (threadIds: ReadonlySet<string>) => {
+      setExpandedThreadIdList((current) =>
+        [...threadIds].every((id) => current.includes(id))
+          ? current
+          : [...new Set([...current, ...threadIds])],
+      );
     },
-    [groupByReadStatus, setCollapsedThreadIdList, setExpandedWhileGrouped],
+    [setExpandedThreadIdList],
   );
 }

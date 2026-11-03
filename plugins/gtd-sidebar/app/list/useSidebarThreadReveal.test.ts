@@ -4,11 +4,10 @@ import {
   makeSidebarThread,
   type SidebarThreadOverrides,
 } from "../model/fixtures.js";
-import { buildPinnedSidebarState } from "../model/pinned-sidebar-threads.js";
 import type { SidebarThread } from "../model/sidebar-thread.js";
 import {
   INITIAL_SIDEBAR_THREAD_REVEAL_STATE,
-  resolveThreadRevealExpansion,
+  resolveThreadRevealAncestors,
   stepSidebarThreadReveal,
 } from "./useSidebarThreadReveal.js";
 
@@ -135,7 +134,7 @@ describe("useSidebarThreadReveal", () => {
     expect(reveal({ threads: [thread("first")] })).toEqual(["first"]);
   });
 
-  it("reveals the pinned ancestors and environment when navigating to a child", () => {
+  it("reveals the ancestors and environments when navigating to a child", () => {
     const parent = thread("parent", {
       pinnedAt: 1,
       environment: makeSidebarEnvironment({ id: "env_parent" }),
@@ -147,16 +146,12 @@ describe("useSidebarThreadReveal", () => {
     });
     const threads = [thread("first"), parent, child];
 
-    const { threadIdsToExpand, environmentIdsToExpand, expansion } = resolveThreadRevealExpansion({
-      thread: child,
-      threadById: new Map(threads.map((item) => [item.id, item])),
-      effectivePinnedThreadIds: buildPinnedSidebarState({ threads }).effectivePinnedThreadIds,
-      organizationMode: "chronological",
-      personalProjectId: "proj_personal",
-    });
+    const { threadIdsToExpand, environmentIdsToExpand } = resolveThreadRevealAncestors(
+      child,
+      new Map(threads.map((item) => [item.id, item])),
+    );
 
     expect([...threadIdsToExpand]).toEqual(["parent"]);
     expect([...environmentIdsToExpand].sort()).toEqual(["env_child", "env_parent"]);
-    expect(expansion).toEqual({ sidebarSectionId: "pinned" });
   });
 });

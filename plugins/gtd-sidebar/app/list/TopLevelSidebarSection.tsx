@@ -24,6 +24,8 @@ import {
   SIDEBAR_STANDARD_ROW_PADDING_CLASS,
   SIDEBAR_CONTROL_STATE_CLASS,
   SIDEBAR_GROUP_TEXT_CLASS,
+  SIDEBAR_ROW_BASE_CLASS,
+  getSidebarThreadRowPaddingLeft,
 } from "@/components/ui/sidebar-row-classes";
 import {
   SectionDropTargetOverlay,
@@ -41,7 +43,12 @@ import {
   usePluginThreadRowStatusForThreads,
 } from "./groupRollups.js";
 import { SplitPaneMiniMap } from "@/components/ui/split-pane-mini-map";
-import { COARSE_POINTER_ROW_ACTION_SIZE_CLASS } from "@/components/ui/coarse-pointer-sizing";
+import {
+  COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS,
+  COARSE_POINTER_GLYPH_BOX_CLASS,
+  COARSE_POINTER_ICON_SIZE_CLASS,
+  COARSE_POINTER_ROW_ACTION_SIZE_CLASS,
+} from "@/components/ui/coarse-pointer-sizing";
 
 const EMPTY_SPLIT_INDICATOR_THREADS: readonly ThreadSplitIndicatorTarget[] = [];
 
@@ -56,6 +63,14 @@ interface TopLevelSidebarSectionCollapseControl {
 
 export interface TopLevelSidebarSectionProps {
   label: string;
+  /**
+   * GTD: "label" is a section label (a shelf). "project" is a group row
+   * inside one, drawn like bb's worktree group row and pinned on the sticky
+   * project tier under its shelf's label.
+   */
+  tier?: "label" | "project";
+  /** The group row's leading icon; "project" tier only. */
+  icon?: string;
   labelEditor?: ReactNode;
   onRename?: () => void;
   children: ReactNode;
@@ -79,6 +94,8 @@ export interface TopLevelSidebarSectionProps {
 
 export function TopLevelSidebarSection({
   label,
+  tier = "label",
+  icon,
   labelEditor,
   onRename,
   children,
@@ -185,20 +202,38 @@ export function TopLevelSidebarSection({
       {threadDropState ? <SectionDropTargetOverlay state={threadDropState} /> : null}
       <SidebarStickyTier
         ref={dragBindings?.setActivatorNodeRef}
-        tier="label"
+        tier={tier}
         className={cn(
           SIDEBAR_HOVER_ACTIONS_ROW_CLASS,
-          CHROME_SECTION_LABEL_CLASS,
+          tier === "label"
+            ? [CHROME_SECTION_LABEL_CLASS, SIDEBAR_STANDARD_ROW_PADDING_CLASS]
+            : [SIDEBAR_ROW_BASE_CLASS, COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS],
           SIDEBAR_GROUP_TEXT_CLASS,
-          SIDEBAR_STANDARD_ROW_PADDING_CLASS,
           "rounded-md pr-0 transition-colors",
           !stickyHeader && "relative top-auto",
           dragBindings && !dragBindings.disabled && "select-none",
         )}
+        style={tier === "project" ? { paddingLeft: getSidebarThreadRowPaddingLeft(0) } : undefined}
         {...dragBindings?.attributes}
         {...(dragBindings?.listeners ?? {})}
       >
-        <span className="relative z-10 flex min-w-0 flex-1 items-center gap-1 text-left">
+        {tier === "project" && icon ? (
+          <span
+            className={cn(
+              "pointer-events-none relative z-10 inline-flex shrink-0 items-center justify-center",
+              COARSE_POINTER_GLYPH_BOX_CLASS,
+            )}
+            aria-hidden="true"
+          >
+            <Icon name={icon} className={COARSE_POINTER_ICON_SIZE_CLASS} aria-hidden="true" />
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            "relative z-10 flex min-w-0 flex-1 items-center text-left",
+            tier === "label" ? "gap-1" : "gap-1.5",
+          )}
+        >
           {labelEditor ?? (
             <span
               className="min-w-0 truncate"
@@ -281,7 +316,9 @@ export function TopLevelSidebarSection({
           </span>
         ) : null}
       </SidebarStickyTier>
-      {collapseControl?.isCollapsed || children == null ? null : (
+      {collapseControl?.isCollapsed || children == null ? null : tier === "project" ? (
+        <div data-gtd-group-content="">{children}</div>
+      ) : (
         <div className="mt-1">{children}</div>
       )}
     </SidebarStickyGroup>

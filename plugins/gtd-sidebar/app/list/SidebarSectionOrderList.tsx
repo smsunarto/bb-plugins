@@ -9,6 +9,7 @@ interface SidebarSectionOrderListProps {
   dndContextProps?: ReorderDndContextProps;
   order: readonly SidebarSectionId[];
   trailing?: ReactNode;
+  className?: string;
 }
 
 export function SidebarSectionOrderList({
@@ -16,10 +17,11 @@ export function SidebarSectionOrderList({
   dndContextProps,
   order,
   trailing,
+  className = "space-y-4 max-md:pointer-coarse:space-y-8",
 }: SidebarSectionOrderListProps) {
   const content = (
     <SortableContext items={[...order]} strategy={verticalListSortingStrategy}>
-      <div className="space-y-4 max-md:pointer-coarse:space-y-8">{order.map(children)}</div>
+      <div className={className}>{order.map(children)}</div>
     </SortableContext>
   );
 

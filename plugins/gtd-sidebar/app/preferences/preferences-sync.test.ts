@@ -110,7 +110,7 @@ describe("preferences sync", () => {
     const store = getDefaultStore();
     expect(hydratePreferencesFromMirror()).toBe(true);
     expect(store.get(createSyncedPreferenceAtom("organizationMode"))).toBe("project");
-    expect(store.get(createSyncedPreferenceAtom("chronologicalSort"))).toBe("updated");
+    expect(store.get(createSyncedPreferenceAtom("chronologicalSort"))).toBe("arrival");
     mirror.setItem(MIRROR_KEY, "{not json");
     expect(hydratePreferencesFromMirror()).toBe(false);
   });
@@ -133,7 +133,7 @@ describe("preferences sync", () => {
     const rpc = fakeRpc();
     await hydratePreferences(rpc);
     const store = getDefaultStore();
-    const collapsedAtom = createSyncedPreferenceAtom("collapsedProjects");
+    const collapsedAtom = createSyncedPreferenceAtom("collapsedEnvironments");
     store.set(collapsedAtom, ["proj_a"]);
     store.set(collapsedAtom, (current) => [...current, "proj_b"]);
     store.set(collapsedAtom, (current) => current.filter((id) => id !== "proj_a"));
@@ -145,7 +145,7 @@ describe("preferences sync", () => {
       {
         method: "setPreference",
         input: {
-          key: "collapsedProjects",
+          key: "collapsedEnvironments",
           value: ["proj_b"],
           origin: expect.any(String),
         },
@@ -198,7 +198,7 @@ describe("preferences sync", () => {
     const rpc = deferredRpc();
     await hydratePreferences(rpc);
     const store = getDefaultStore();
-    const collapsedAtom = createSyncedPreferenceAtom("collapsedProjects");
+    const collapsedAtom = createSyncedPreferenceAtom("collapsedEnvironments");
     const seen: string[][] = [];
     store.sub(collapsedAtom, () => seen.push(store.get(collapsedAtom)));
 
@@ -220,7 +220,7 @@ describe("preferences sync", () => {
     const rpc = deferredRpc();
     await hydratePreferences(rpc);
     const store = getDefaultStore();
-    const collapsedAtom = createSyncedPreferenceAtom("collapsedProjects");
+    const collapsedAtom = createSyncedPreferenceAtom("collapsedEnvironments");
 
     store.set(collapsedAtom, ["proj_a"]);
     vi.advanceTimersByTime(150);
@@ -231,7 +231,7 @@ describe("preferences sync", () => {
     await rpc.settleNextWrite();
     expect(rpc.writes.map((write) => write.value)).toEqual([["proj_a"], []]);
     applyRemotePreferenceSignal({
-      key: "collapsedProjects",
+      key: "collapsedEnvironments",
       value: ["proj_b"],
       origin: "other-window",
     });
@@ -239,7 +239,7 @@ describe("preferences sync", () => {
 
     await rpc.settleNextWrite();
     applyRemotePreferenceSignal({
-      key: "collapsedProjects",
+      key: "collapsedEnvironments",
       value: ["proj_b"],
       origin: "other-window",
     });
@@ -251,7 +251,7 @@ describe("preferences sync", () => {
     await hydratePreferences(rpc);
     const store = getDefaultStore();
     const modeAtom = createSyncedPreferenceAtom("organizationMode");
-    store.set(modeAtom, "chronological");
+    store.set(modeAtom, "project");
     vi.advanceTimersByTime(200);
     await flushPreferenceWritesForTest();
     expect(rpc.calls.filter((call) => call.method === "setPreference")).toHaveLength(0);

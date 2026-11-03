@@ -9,6 +9,7 @@ export default defineConfig({
     silent: "passed-only",
     name: "gtd-sidebar",
     include: ["app/**/*.test.{ts,tsx}"],
+    setupFiles: ["./vitest.setup.ts"],
     exclude: ["node_modules/**"],
   },
 });

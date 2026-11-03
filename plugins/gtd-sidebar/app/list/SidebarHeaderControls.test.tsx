@@ -7,8 +7,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { CompactViewportOverrideProvider } from "@/components/ui/hooks/use-compact-viewport";
 import { installTestPluginRuntime, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { SIDEBAR_CONTROL_STATE_CLASS } from "@/components/ui/sidebar-row-classes";
+import { ActionMenuItem } from "@/components/ui/action-menu-items";
 import {
-  sidebarThreadLifecyclesAtom,
   sidebarChronologicalSortAtom,
   sidebarOrganizationModeAtom,
   sidebarEnvironmentGroupingAtom,
@@ -17,10 +17,11 @@ import {
   sidebarShowRowMetadataAtom,
 } from "../preferences/atoms.js";
 import type { OrganizationMode } from "../../shared/preferences.js";
+import { GtdFilterProvider, type GtdFilterState } from "../gtd/GtdFilters.js";
+import { projectScopeAtom } from "../gtd/useGtdShelves.js";
 
 installTestPluginRuntime();
-const { SidebarHeaderActionsProvider, SidebarHeaderControls, SidebarSectionMenuItems } =
-  await import("./SidebarHeaderControls.js");
+const { SidebarHeaderControls } = await import("./SidebarHeaderControls.js");
 
 afterEach(() => {
   cleanup();
@@ -32,9 +33,9 @@ function setup(
   organization: OrganizationMode = "project",
   compact = false,
   experiments: string[] = [],
+  filters: GtdFilterState | null = null,
 ) {
   const store = createStore();
-  store.set(sidebarThreadLifecyclesAtom, ["active"]);
   store.set(sidebarOrganizationModeAtom, organization);
   store.set(sidebarChronologicalSortAtom, "updated");
   store.set(sidebarSortDirectionAtom, "default");
@@ -42,22 +43,26 @@ function setup(
   store.set(sidebarShowProviderIconsAtom, false);
   store.set(sidebarShowRowMetadataAtom, false);
   const newThread = vi.fn();
-  const newSection = vi.fn();
+  const rename = vi.fn();
   const Harness = () => (
     <Provider store={store}>
       <CompactViewportOverrideProvider isCompactViewport={compact}>
         <TooltipProvider>
-          <SidebarHeaderActionsProvider value={{ onNewSection: newSection }}>
+          <GtdFilterProvider value={filters}>
             <SidebarHeaderControls label={label} onNewThread={newThread}>
-              {section && <SidebarSectionMenuItems onRename={vi.fn()} onRemove={vi.fn()} />}
+              {section && (
+                <ActionMenuItem surface="dropdown" icon="Edit" onSelect={rename}>
+                  Rename
+                </ActionMenuItem>
+              )}
             </SidebarHeaderControls>
-          </SidebarHeaderActionsProvider>
+          </GtdFilterProvider>
         </TooltipProvider>
       </CompactViewportOverrideProvider>
     </Provider>
   );
   renderSlot({ component: Harness }, {}, { experiments });
-  return { store, newThread, newSection };
+  return { store, newThread, rename };
 }
 
 async function openMenu(label = "Pinned") {
@@ -69,7 +74,7 @@ async function openMenu(label = "Pinned") {
       key: "Enter",
     },
   );
-  await screen.findByRole("menuitem", { name: "New section" });
+  await screen.findByRole("menuitem", { name: "Organize" });
 }
 
 async function openSubmenu(label: string) {
@@ -82,9 +87,9 @@ describe("sidebar header controls", () => {
   it("supports keyboard selection when the menu first loads", async () => {
     const { store } = setup("Pinned", false, "chronological");
     await openMenu();
-    const newSection = screen.getByRole("menuitem", { name: "New section" });
-    fireEvent.keyDown(newSection.closest('[role="menu"]')!, { key: "Home" });
-    await waitFor(() => expect(document.activeElement).toBe(newSection));
+    const organize = screen.getByRole("menuitem", { name: "Organize" });
+    fireEvent.keyDown(organize.closest('[role="menu"]')!, { key: "Home" });
+    await waitFor(() => expect(document.activeElement).toBe(organize));
     await openSubmenu("Organize");
     const project = await screen.findByRole("menuitemradio", {
       name: "By project",
@@ -112,7 +117,7 @@ describe("sidebar header controls", () => {
     fireEvent.click(document.body);
     await waitFor(() => {
       expect(screen.queryByRole("menuitemcheckbox", { name: "By environment" })).toBeNull();
-      expect(screen.queryByRole("menuitem", { name: "New section" })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: "Organize" })).toBeNull();
     });
   });
 
@@ -141,36 +146,18 @@ describe("sidebar header controls", () => {
     expect(primary.nextElementSibling?.getAttribute("data-state")).toBe("open");
   });
 
-  it("preserves creation callbacks and separates section editing/removal", async () => {
-    const { newSection } = setup("Review", true);
+  it("lists the view pages, then the header's own items", async () => {
+    const { rename } = setup("Review", true);
     await openMenu("Review");
     expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-      "New section",
       "Organize",
       "Sort by",
       "Filter",
       "Rename",
-      "Remove",
     ]);
-    expect(screen.getAllByRole("separator")).toHaveLength(3);
-    fireEvent.click(screen.getByRole("menuitem", { name: "New section" }));
-    expect(newSection).toHaveBeenCalledOnce();
-    await waitFor(() => expect(screen.queryByRole("menuitem", { name: "New section" })).toBeNull());
-  });
-
-  it("disables New section without a creation handler", async () => {
-    const store = createStore();
-    render(
-      <Provider store={store}>
-        <TooltipProvider>
-          <SidebarHeaderControls label="Pinned" onNewThread={vi.fn()} />
-        </TooltipProvider>
-      </Provider>,
-    );
-    await openMenu();
-    expect(
-      screen.getByRole("menuitem", { name: "New section" }).getAttribute("aria-disabled"),
-    ).toBe("true");
+    expect(screen.getAllByRole("separator")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    expect(rename).toHaveBeenCalledOnce();
   });
 
   it("keeps Organize open and exclusive across selections", async () => {
@@ -195,12 +182,12 @@ describe("sidebar header controls", () => {
       screen.getByRole("menuitemradio", { name: "By project" }).getAttribute("aria-checked"),
     ).toBe("false");
 
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Custom" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Flat" }));
     expect(store.get(sidebarOrganizationModeAtom)).toBe("chronological");
     await waitFor(() =>
-      expect(
-        screen.getByRole("menuitemradio", { name: "Custom" }).getAttribute("aria-checked"),
-      ).toBe("true"),
+      expect(screen.getByRole("menuitemradio", { name: "Flat" }).getAttribute("aria-checked")).toBe(
+        "true",
+      ),
     );
   });
 
@@ -306,40 +293,58 @@ describe("sidebar header controls", () => {
     ).toBe("true");
     fireEvent.click(screen.getByRole("menuitem", { name: "Back" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Organize" }));
-    fireEvent.click(screen.getByRole("menuitemradio", { name: "Custom" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Flat" }));
     expect(store.get(sidebarOrganizationModeAtom)).toBe("chronological");
-    expect(screen.getByRole("menuitemradio", { name: "Custom" }).getAttribute("aria-checked")).toBe(
+    expect(screen.getByRole("menuitemradio", { name: "Flat" }).getAttribute("aria-checked")).toBe(
       "true",
     );
     fireEvent.click(screen.getByRole("button", { name: /^Pinned actions(?:;|$)/ }));
     await waitFor(() => expect(screen.queryByRole("menuitem", { name: "Back" })).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: /^Pinned actions(?:;|$)/ }));
-    expect(await screen.findByRole("menuitem", { name: "New section" })).toBeTruthy();
+    expect(await screen.findByRole("menuitem", { name: "Organize" })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "Back" })).toBeNull();
   });
 });
 
-it.each([false, true])(
-  "keeps at least one lifecycle selected in the filter (compact=%s)",
-  async (compact) => {
-    const { store } = setup("Pinned", false, "project", compact);
-    if (compact) {
-      fireEvent.click(screen.getByRole("button", { name: /^Pinned actions(?:;|$)/ }));
-      fireEvent.click(await screen.findByRole("menuitem", { name: "Filter" }));
-    } else {
-      await openMenu();
-      await openSubmenu("Filter");
-    }
-    const active = await screen.findByRole("menuitemcheckbox", {
-      name: "Active",
-    });
-    fireEvent.click(active);
-    expect(store.get(sidebarThreadLifecyclesAtom)).toEqual(["active"]);
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Archived" }));
-    expect(store.get(sidebarThreadLifecyclesAtom)).toEqual(["active", "archived"]);
-    fireEvent.click(active);
-    expect(store.get(sidebarThreadLifecyclesAtom)).toEqual(["archived"]);
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Archived" }));
-    expect(store.get(sidebarThreadLifecyclesAtom)).toEqual(["archived"]);
-  },
-);
+it.each([false, true])("filters by project and machine (compact=%s)", async (compact) => {
+  const changeMachines = vi.fn();
+  const filters: GtdFilterState = {
+    projects: [
+      { id: "proj_a", name: "Alpha" },
+      { id: "proj_b", name: "Beta" },
+    ],
+    scope: null,
+    machines: [
+      { id: "host_a", name: "Laptop" },
+      { id: "host_b", name: "Server" },
+    ],
+    hiddenMachineIds: new Set(["host_b"]),
+    changeMachines,
+  };
+  const { store } = setup("Pinned", false, "project", compact, [], filters);
+  if (compact) {
+    fireEvent.click(screen.getByRole("button", { name: /^Pinned actions(?:;|$)/ }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Filter" }));
+  } else {
+    await openMenu();
+    await openSubmenu("Filter");
+  }
+  const all = await screen.findByRole("menuitemradio", { name: "All projects" });
+  expect(all.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Beta" }));
+  expect(store.get(projectScopeAtom)).toBe("proj_b");
+
+  const laptop = screen.getByRole("menuitemcheckbox", { name: "Laptop" });
+  expect(laptop.getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(laptop);
+  expect(changeMachines).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Server" }));
+  expect(changeMachines).toHaveBeenLastCalledWith({
+    kind: "set",
+    machineId: "host_b",
+    visible: true,
+    machineIds: ["host_a", "host_b"],
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Show all machines" }));
+  expect(changeMachines).toHaveBeenLastCalledWith({ kind: "all" });
+});

@@ -12,11 +12,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
-import type { SidebarSectionId } from "../model/sidebar-section-id.js";
-import type { HeaderCreationActions } from "./SidebarHeaderControls.js";
-import { ThreadListVisibilityMenuItems } from "./ThreadListVisibility.js";
+import { GtdFilterItems } from "../gtd/GtdFilters.js";
 import {
-  sidebarThreadLifecyclesAtom,
   sidebarOrganizationModeAtom,
   sidebarChronologicalSortAtom,
   sidebarSortDirectionAtom,
@@ -31,10 +28,11 @@ import {
 const SIDEBAR_ORGANIZE_OPTIONS = [
   { label: "By project", mode: "project" },
   { label: "By machine", mode: "machine" },
-  { label: "Custom", mode: "chronological" },
+  { label: "Flat", mode: "chronological" },
 ] as const;
 
 const SIDEBAR_SORT_OPTIONS = [
+  { label: "Arrival", sort: "arrival", direction: "descending" },
   { label: "Updated at", sort: "updated", direction: "descending" },
   { label: "Created at", sort: "created", direction: "descending" },
   { label: "Alphabetical", sort: "alpha", direction: "ascending" },
@@ -43,15 +41,11 @@ const SIDEBAR_SORT_OPTIONS = [
 type SidebarViewPage = "organize" | "sort" | "filter";
 
 export function SidebarHeaderMenuContents({
-  creation,
-  anchorSectionId,
   compact,
   page,
   onPageChange,
   children,
 }: {
-  creation: HeaderCreationActions;
-  anchorSectionId?: SidebarSectionId;
   compact: boolean;
   page: SidebarViewPage | null;
   onPageChange: (page: SidebarViewPage | null) => void;
@@ -76,14 +70,6 @@ export function SidebarHeaderMenuContents({
   }
   return (
     <>
-      <DropdownMenuItem
-        disabled={!creation.onNewSection || creation.isCreatingSection}
-        onSelect={() => creation.onNewSection?.(anchorSectionId)}
-      >
-        <Icon name="SectionAdd" />
-        New section
-      </DropdownMenuItem>
-      <DropdownMenuSeparator />
       {(
         [
           { page: "organize", label: "Organize", icon: "Layers" },
@@ -125,15 +111,12 @@ export function SidebarHeaderMenuContents({
           <DropdownMenuSeparator />
           {children}
         </>
-      ) : (
-        <ThreadListVisibilityMenuItems />
-      )}
+      ) : null}
     </>
   );
 }
 
 function SidebarViewItems({ page }: { page: SidebarViewPage }) {
-  const [lifecycles, setLifecycles] = useAtom(sidebarThreadLifecyclesAtom);
   const [organization, setOrganization] = useAtom(sidebarOrganizationModeAtom);
   const [sort, setSort] = useAtom(sidebarChronologicalSortAtom);
   const [savedDirection, setDirection] = useAtom(sidebarSortDirectionAtom);
@@ -145,36 +128,7 @@ function SidebarViewItems({ page }: { page: SidebarViewPage }) {
   const rowMetadataEnabled = experimental_useExperiment(THREAD_ROW_METADATA_EXPERIMENT);
   const selectedSort = sort === "none" ? "updated" : sort;
   if (page === "filter") {
-    return (
-      <DropdownMenuGroup aria-label="Filter">
-        {(["active", "archived"] as const).map((lifecycle) => {
-          const checked = lifecycles.includes(lifecycle);
-          const required = checked && lifecycles.length === 1;
-          return (
-            <DropdownMenuItem
-              key={lifecycle}
-              role="menuitemcheckbox"
-              aria-checked={checked}
-              title={required ? "Keep at least one filter selected" : undefined}
-              onSelect={(event) => {
-                event.preventDefault();
-                if (required) return;
-                setLifecycles(
-                  checked
-                    ? lifecycles.filter((value) => value !== lifecycle)
-                    : [...lifecycles, lifecycle],
-                );
-              }}
-            >
-              {lifecycle === "active" ? "Active" : "Archived"}
-              <span className="ml-auto inline-flex size-4 items-center justify-center">
-                {checked && <Icon name="Check" className="size-4" />}
-              </span>
-            </DropdownMenuItem>
-          );
-        })}
-      </DropdownMenuGroup>
-    );
+    return <GtdFilterItems />;
   }
   if (page === "organize") {
     return (

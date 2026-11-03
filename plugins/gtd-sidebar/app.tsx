@@ -6,14 +6,13 @@ import { definePluginApp, type PluginThreadListProps } from "@get-bb/plugin-sdk/
 import { CompactViewportOverrideProvider } from "@/components/ui/hooks/use-compact-viewport";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import "./naming.css";
+import "./shelves.css";
 import { PreferencesSync } from "./app/preferences/PreferencesSync.js";
 import { ProjectList } from "./app/list/ProjectList.js";
-import { useSidebarThreadReveal } from "./app/list/useSidebarThreadReveal.js";
 import { ThreadSelectionProvider } from "./app/selection/threadSelection.js";
-import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";
+import { GTD_THREAD_ACTIONS, currentGtdListActions } from "./app/gtd/gtd-actions.js";
 
 function ThreadInbox({ activeThreadId, isCompactViewport, onNavigate }: PluginThreadListProps) {
-  useSidebarThreadReveal();
   return (
     <CompactViewportOverrideProvider isCompactViewport={isCompactViewport}>
       <TooltipProvider>
@@ -44,12 +43,14 @@ export default definePluginApp((app) => {
     component: ThreadInbox,
   });
 
+  for (const action of GTD_THREAD_ACTIONS) app.slots.experimental_threadAction(action);
+
   app.slots.commandPaletteAction({
     id: "settle-thread",
     title: "GTD Sidebar: settle thread",
-    isAvailable: ({ threadId }) => threadId !== null && hasSidebarActions(),
+    isAvailable: ({ threadId }) => threadId !== null && currentGtdListActions() !== null,
     run: ({ threadId }) => {
-      if (threadId !== null) archiveThread(threadId);
+      if (threadId !== null) currentGtdListActions()?.settle(threadId);
     },
   });
 });

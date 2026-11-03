@@ -1091,6 +1091,8 @@ describe("ThreadRow", () => {
   it.each([true, false])(
     "reserves quick-action space after parent disclosure (collapsed: %s)",
     (isCollapsed) => {
+      // GTD's default quick actions (Snooze, Settle) are not registered here.
+      getDefaultStore().set(preferenceValueAtom("rowActions"), ["bb--core/archive"]);
       const onToggleCollapsed = vi.fn();
       renderThreadRow({
         thread: createThread({

@@ -1,103 +1,18 @@
-import { useEffect, useMemo, useRef } from "react";
-import { useAtomValue, useSetAtom } from "jotai";
+// GTD: opening a thread unfolds the way to it: its shelf, its project or
+// machine group, its family, and its worktree group. bb's reveal state
+// machine (one reveal per navigation, once threads and preferences load) is
+// kept as it was.
+import { useEffect, useRef } from "react";
+import { useSetAtom } from "jotai";
+import type { ShelfId } from "../../shared/preferences.js";
 import type { SidebarThread } from "../model/sidebar-thread.js";
-import { NO_MACHINE_GROUP_KEY } from "../model/machine-thread-groups.js";
-import { buildPinnedSidebarState } from "../model/pinned-sidebar-threads.js";
-import {
-  CHRONOLOGICAL_CONTAINER_ID,
-  resolveSidebarProjectId,
-} from "../model/project-thread-groups.js";
-import { sectionKeyForThreadSection } from "../model/section-keys.js";
-import type { CollapsibleSidebarSectionId } from "../model/sidebar-section-id.js";
-import { useBbContext } from "@get-bb/plugin-sdk/app";
-import type { OrganizationMode as SidebarOrganizationMode } from "../../shared/preferences.js";
-import { useSidebarData } from "../model/use-sidebar-data.js";
 import {
   collapsedEnvironmentIdsAtom,
-  collapsedProjectIdsAtom,
-  collapsedSidebarSectionIdsAtom,
-  sidebarCollapsedMachinesAtom,
-  sidebarCollapsedThreadSectionsAtom,
-  sidebarOrganizationModeAtom,
+  groupFoldsAtom,
+  shelfFoldsAtom,
 } from "../preferences/atoms.js";
-import { usePreferencesReady } from "../preferences/PreferencesSync.js";
+import { groupFoldKey, groupStartsFolded, shelfStartsFolded, withFold } from "../gtd/folds.js";
 import { useExpandThreadAncestors } from "./useReadStatusGrouping.js";
-
-interface ThreadSidebarExpansionArgs {
-  organizationMode: SidebarOrganizationMode;
-  isPinned: boolean;
-  thread: SidebarThread;
-  sidebarProjectId: string;
-  personalProjectId: string | null;
-}
-
-interface ThreadSidebarExpansion {
-  sectionKey?: string;
-  machineKey?: string;
-  projectId?: string;
-  sidebarSectionId?: CollapsibleSidebarSectionId;
-}
-
-function removeCollapsedIds<T extends string>(current: T[], idsToRemove: ReadonlySet<string>): T[] {
-  if (idsToRemove.size === 0) {
-    return current;
-  }
-  let removed = false;
-  const next = current.filter((id) => {
-    if (!idsToRemove.has(id)) {
-      return true;
-    }
-    removed = true;
-    return false;
-  });
-  return removed ? next : current;
-}
-
-export function getThreadSidebarExpansion({
-  organizationMode,
-  isPinned,
-  thread,
-  sidebarProjectId,
-  personalProjectId,
-}: ThreadSidebarExpansionArgs): ThreadSidebarExpansion {
-  if (isPinned) {
-    return { sidebarSectionId: "pinned" };
-  }
-
-  if (organizationMode === "machine") {
-    return {
-      machineKey: thread.host?.id ?? NO_MACHINE_GROUP_KEY,
-    };
-  }
-
-  if (organizationMode === "chronological") {
-    const sectionKey = sectionKeyForThreadSection(CHRONOLOGICAL_CONTAINER_ID, thread.sectionId);
-    return sectionKey ? { sectionKey } : { sidebarSectionId: "threads" };
-  }
-
-  if (sidebarProjectId === personalProjectId) {
-    return { sidebarSectionId: "threads" };
-  }
-
-  return { projectId: sidebarProjectId };
-}
-
-export function useSidebarThreadReveal(): void {
-  const { threadId: routedThreadId } = useBbContext();
-  const { status, projects, personalProject } = useSidebarData();
-  const preferencesReady = usePreferencesReady();
-  const threads = useMemo<SidebarThread[]>(
-    () => projects.flatMap((project) => project.threads),
-    [projects],
-  );
-  useSidebarThreadRevealCore({
-    selectedThreadId: routedThreadId ?? undefined,
-    threads,
-    threadsReady: status === "ready",
-    preferencesReady,
-    personalProjectId: personalProject?.id ?? null,
-  });
-}
 
 export interface SidebarThreadRevealState {
   previousThreadId: string | undefined;
@@ -157,21 +72,17 @@ export function stepSidebarThreadReveal(
   };
 }
 
-interface ThreadRevealExpansionArgs {
-  thread: SidebarThread;
-  threadById: ReadonlyMap<string, SidebarThread>;
-  effectivePinnedThreadIds: ReadonlySet<string>;
-  organizationMode: SidebarOrganizationMode;
-  personalProjectId: string | null;
+export interface ThreadRevealPath {
+  shelf: ShelfId;
+  /** The group header the thread draws under, when headers show. */
+  groupKey: string | null;
 }
 
-export function resolveThreadRevealExpansion({
-  thread,
-  threadById,
-  effectivePinnedThreadIds,
-  organizationMode,
-  personalProjectId,
-}: ThreadRevealExpansionArgs) {
+/** The parents and worktree groups between a thread and its family's root. */
+export function resolveThreadRevealAncestors(
+  thread: SidebarThread,
+  threadById: ReadonlyMap<string, SidebarThread>,
+) {
   const threadIdsToExpand = new Set<string>();
   const environmentIdsToExpand = new Set<string>();
   let currentThread: SidebarThread | undefined = thread;
@@ -193,49 +104,37 @@ export function resolveThreadRevealExpansion({
     currentThread = parentThread;
     remainingHops -= 1;
   }
-  const expansion = getThreadSidebarExpansion({
-    organizationMode,
-    isPinned: effectivePinnedThreadIds.has(thread.id),
-    thread,
-    sidebarProjectId: resolveSidebarProjectId(thread, threadById),
-    personalProjectId,
-  });
-  return { threadIdsToExpand, environmentIdsToExpand, expansion };
+  return { threadIdsToExpand, environmentIdsToExpand };
 }
 
-interface SidebarThreadRevealInputs {
-  selectedThreadId: string | undefined;
-  threads: readonly SidebarThread[];
-  threadsReady: boolean;
-  preferencesReady: boolean;
-  personalProjectId: string | null;
+function removeCollapsedIds(current: string[], idsToRemove: ReadonlySet<string>): string[] {
+  return current.some((id) => idsToRemove.has(id))
+    ? current.filter((id) => !idsToRemove.has(id))
+    : current;
 }
 
-function useSidebarThreadRevealCore({
+export function useSidebarThreadReveal({
   selectedThreadId,
   threads,
   threadsReady,
   preferencesReady,
-  personalProjectId,
-}: SidebarThreadRevealInputs): void {
-  const organizationMode = useAtomValue(sidebarOrganizationModeAtom);
+  pathOf,
+}: {
+  selectedThreadId: string | undefined;
+  /** The threads the list draws. */
+  threads: readonly SidebarThread[];
+  threadsReady: boolean;
+  preferencesReady: boolean;
+  pathOf: (threadId: string) => ThreadRevealPath | null;
+}): void {
   const expandThreadAncestors = useExpandThreadAncestors();
   const setCollapsedEnvironmentIdList = useSetAtom(collapsedEnvironmentIdsAtom);
-  const setCollapsedProjectIdList = useSetAtom(collapsedProjectIdsAtom);
-  const setCollapsedMachineKeyList = useSetAtom(sidebarCollapsedMachinesAtom);
-  const setCollapsedSectionList = useSetAtom(sidebarCollapsedThreadSectionsAtom);
-  const setCollapsedSidebarSectionIdList = useSetAtom(collapsedSidebarSectionIdsAtom);
-  const threadById = useMemo(
-    () => new Map(threads.map((thread) => [thread.id, thread])),
-    [threads],
-  );
-  const effectivePinnedThreadIds = useMemo(
-    () => buildPinnedSidebarState({ threads }).effectivePinnedThreadIds,
-    [threads],
-  );
+  const setShelfFolds = useSetAtom(shelfFoldsAtom);
+  const setGroupFolds = useSetAtom(groupFoldsAtom);
   const revealState = useRef(INITIAL_SIDEBAR_THREAD_REVEAL_STATE);
 
   useEffect(() => {
+    const threadById = new Map(threads.map((thread) => [thread.id, thread]));
     const step = stepSidebarThreadReveal(revealState.current, {
       selectedThreadId,
       threadById,
@@ -245,39 +144,30 @@ function useSidebarThreadRevealCore({
     revealState.current = step.state;
     for (const threadId of step.revealIds) {
       const thread = threadById.get(threadId);
-      if (!thread || thread.isHidden) {
+      const path = pathOf(threadId);
+      if (!thread || thread.isHidden || path === null) {
         continue;
       }
-      const { threadIdsToExpand, environmentIdsToExpand, expansion } = resolveThreadRevealExpansion(
-        {
-          thread,
-          threadById,
-          effectivePinnedThreadIds,
-          organizationMode,
-          personalProjectId,
-        },
+      const { threadIdsToExpand, environmentIdsToExpand } = resolveThreadRevealAncestors(
+        thread,
+        threadById,
       );
-
-      expandThreadAncestors(threadIdsToExpand, threadId === step.navigationRevealId);
+      expandThreadAncestors(threadIdsToExpand);
       setCollapsedEnvironmentIdList((current) =>
         removeCollapsedIds(current, environmentIdsToExpand),
       );
-      if (expansion.machineKey) {
-        const machineKey = expansion.machineKey;
-        setCollapsedMachineKeyList((current) => removeCollapsedIds(current, new Set([machineKey])));
-      }
-      if (expansion.sectionKey) {
-        const sectionKey = expansion.sectionKey;
-        setCollapsedSectionList((current) => removeCollapsedIds(current, new Set([sectionKey])));
-      }
-      if (expansion.projectId) {
-        const projectId = expansion.projectId;
-        setCollapsedProjectIdList((current) => removeCollapsedIds(current, new Set([projectId])));
-      }
-      if (expansion.sidebarSectionId) {
-        const sidebarSectionId = expansion.sidebarSectionId;
-        setCollapsedSidebarSectionIdList((current) =>
-          removeCollapsedIds(current, new Set([sidebarSectionId])),
+      setShelfFolds((current) =>
+        withFold(current, path.shelf, false, shelfStartsFolded(path.shelf)),
+      );
+      const { groupKey } = path;
+      if (groupKey !== null) {
+        setGroupFolds((current) =>
+          withFold(
+            current,
+            groupFoldKey(path.shelf, groupKey),
+            false,
+            groupStartsFolded(path.shelf),
+          ),
         );
       }
     }
@@ -285,16 +175,11 @@ function useSidebarThreadRevealCore({
     selectedThreadId,
     threadsReady,
     preferencesReady,
-    personalProjectId,
-    organizationMode,
     threads,
-    threadById,
-    effectivePinnedThreadIds,
+    pathOf,
     expandThreadAncestors,
     setCollapsedEnvironmentIdList,
-    setCollapsedProjectIdList,
-    setCollapsedMachineKeyList,
-    setCollapsedSectionList,
-    setCollapsedSidebarSectionIdList,
+    setShelfFolds,
+    setGroupFolds,
   ]);
 }
