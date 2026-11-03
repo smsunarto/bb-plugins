@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseGitButlerBranchSummary, resolveSidebarBranchLabel } from "../lib/gitbutler.ts";
+import { parseGitButlerBranchSummary } from "../lib/gitbutler.ts";
 
 describe("parseGitButlerBranchSummary", () => {
   it("uses the real name when one virtual branch is applied", () => {
@@ -40,31 +40,6 @@ describe("parseGitButlerBranchSummary", () => {
     assert.equal(
       parseGitButlerBranchSummary(JSON.stringify({ stacks: [{ branches: [{ name: " " }] }] })),
       null,
-    );
-  });
-});
-
-describe("resolveSidebarBranchLabel", () => {
-  const labels = new Map([["env_local", "scott/show-gitbutler-branch"]]);
-
-  it("replaces GitButler's synthetic workspace branch", () => {
-    assert.equal(
-      resolveSidebarBranchLabel("gitbutler/workspace", "env_local", labels),
-      "scott/show-gitbutler-branch",
-    );
-  });
-
-  it("replaces stale branch metadata after a checkout adopts GitButler", () => {
-    assert.equal(
-      resolveSidebarBranchLabel("old-local-branch", "env_local", labels),
-      "scott/show-gitbutler-branch",
-    );
-  });
-
-  it("keeps the workspace label until the host probe resolves", () => {
-    assert.equal(
-      resolveSidebarBranchLabel("gitbutler/workspace", "env_unknown", labels),
-      "gitbutler/workspace",
     );
   });
 });

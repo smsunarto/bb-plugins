@@ -99,6 +99,7 @@ import {
   type GtdListActions,
 } from "../gtd/gtd-actions.js";
 import { GtdFilterProvider } from "../gtd/GtdFilters.js";
+import { GtdRowExtrasProvider } from "../gtd/row-extras.js";
 import { useSettle } from "../gtd/useSettle.js";
 import { useUnsettle } from "../../hooks/use-settled-threads.js";
 import { snoozeUntilTomorrow } from "../../lib/lifecycle.js";
@@ -1124,68 +1125,70 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
   const content = (
     <GtdFilterProvider value={filters}>
       {runners}
-      <ProjectListShell>
-        <SidebarDraftPresenceSync />
-        {!hasPinned && shelfItems.length === 0 ? (
-          <ThreadListEmptyState
-            message={gtd.status === "error" ? "Threads unavailable" : undefined}
-            className="px-2 py-0.5"
-          />
-        ) : (
-          <div className="space-y-4 max-md:pointer-coarse:space-y-8">
-            {hasPinned ? (
-              <PinnedShelf
-                {...renderState}
-                pinnedState={pinnedState}
-                pinnedThreads={gtd.pinnedThreads}
-                isCollapsed={isShelfFolded(shelfFolds, "pinned")}
-                onToggleCollapsed={() => toggleShelf("pinned")}
-                isReorderPending={isPinnedReorderPending}
-                onReorderPinnedRoot={handleReorderPinnedRoot}
-                actions={renderMenu("pinned", SHELF_LABELS.pinned, () =>
-                  createThread({ pinned: true }),
-                )}
-                actionsOpen={isMenuOpen("pinned")}
-              />
-            ) : null}
-            {shelfItems.map((items) => {
-              const { shelf, threads } = items.view;
-              const label = SHELF_LABELS[shelf];
-              return (
-                <TopLevelSidebarSection
-                  key={shelf}
-                  sectionId={`shelf:${shelf}`}
-                  label={label}
-                  actions={renderMenu(shelf, label, () => createThread({}))}
-                  actionsOpen={isMenuOpen(shelf)}
-                  actionsMobileAlways
-                  collapsedActivity={getCollapsedChildActivity(threads)}
-                  collapsedThreads={threads}
-                  collapseControl={{
-                    isCollapsed: isShelfFolded(shelfFolds, shelf),
-                    onToggleCollapsed: () => toggleShelf(shelf),
-                  }}
-                >
-                  <ShelfBody
-                    {...renderState}
-                    items={items}
-                    projectsById={projectsById}
-                    hostNames={hostNames}
-                    groupFolds={groupFolds}
-                    onToggleGroup={toggleGroup}
-                    onCreateThread={createThread}
-                    onReorderGroups={handleReorderGroups}
-                    onMoveProject={handleMoveProject}
-                    canReorderProject={canReorderProject}
-                    renderMenu={renderMenu}
-                    isMenuOpen={isMenuOpen}
-                  />
-                </TopLevelSidebarSection>
-              );
-            })}
-          </div>
-        )}
-      </ProjectListShell>
+      <GtdRowExtrasProvider hosts={gtd.machines} wakeAtFor={lifecycle.wakeAtFor}>
+        <ProjectListShell>
+          <SidebarDraftPresenceSync />
+          {!hasPinned && shelfItems.length === 0 ? (
+            <ThreadListEmptyState
+              message={gtd.status === "error" ? "Threads unavailable" : undefined}
+              className="px-2 py-0.5"
+            />
+          ) : (
+            <div className="space-y-4 max-md:pointer-coarse:space-y-8">
+              {hasPinned ? (
+                <PinnedShelf
+                  {...renderState}
+                  pinnedState={pinnedState}
+                  pinnedThreads={gtd.pinnedThreads}
+                  isCollapsed={isShelfFolded(shelfFolds, "pinned")}
+                  onToggleCollapsed={() => toggleShelf("pinned")}
+                  isReorderPending={isPinnedReorderPending}
+                  onReorderPinnedRoot={handleReorderPinnedRoot}
+                  actions={renderMenu("pinned", SHELF_LABELS.pinned, () =>
+                    createThread({ pinned: true }),
+                  )}
+                  actionsOpen={isMenuOpen("pinned")}
+                />
+              ) : null}
+              {shelfItems.map((items) => {
+                const { shelf, threads } = items.view;
+                const label = SHELF_LABELS[shelf];
+                return (
+                  <TopLevelSidebarSection
+                    key={shelf}
+                    sectionId={`shelf:${shelf}`}
+                    label={label}
+                    actions={renderMenu(shelf, label, () => createThread({}))}
+                    actionsOpen={isMenuOpen(shelf)}
+                    actionsMobileAlways
+                    collapsedActivity={getCollapsedChildActivity(threads)}
+                    collapsedThreads={threads}
+                    collapseControl={{
+                      isCollapsed: isShelfFolded(shelfFolds, shelf),
+                      onToggleCollapsed: () => toggleShelf(shelf),
+                    }}
+                  >
+                    <ShelfBody
+                      {...renderState}
+                      items={items}
+                      projectsById={projectsById}
+                      hostNames={hostNames}
+                      groupFolds={groupFolds}
+                      onToggleGroup={toggleGroup}
+                      onCreateThread={createThread}
+                      onReorderGroups={handleReorderGroups}
+                      onMoveProject={handleMoveProject}
+                      canReorderProject={canReorderProject}
+                      renderMenu={renderMenu}
+                      isMenuOpen={isMenuOpen}
+                    />
+                  </TopLevelSidebarSection>
+                );
+              })}
+            </div>
+          )}
+        </ProjectListShell>
+      </GtdRowExtrasProvider>
     </GtdFilterProvider>
   );
   return (

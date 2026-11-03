@@ -11,6 +11,7 @@ import { PreferencesSync } from "./app/preferences/PreferencesSync.js";
 import { ProjectList } from "./app/list/ProjectList.js";
 import { ThreadSelectionProvider } from "./app/selection/threadSelection.js";
 import { GTD_THREAD_ACTIONS, currentGtdListActions } from "./app/gtd/gtd-actions.js";
+import { gitButlerBranchMetadata } from "./app/gtd/gitbutler-branch-metadata.js";
 
 function ThreadInbox({ activeThreadId, isCompactViewport, onNavigate }: PluginThreadListProps) {
   return (
@@ -44,6 +45,7 @@ export default definePluginApp((app) => {
   });
 
   for (const action of GTD_THREAD_ACTIONS) app.slots.experimental_threadAction(action);
+  app.slots.experimental_threadRowMetadata(gitButlerBranchMetadata);
 
   app.slots.commandPaletteAction({
     id: "settle-thread",

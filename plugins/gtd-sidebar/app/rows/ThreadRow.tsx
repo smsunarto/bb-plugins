@@ -117,6 +117,13 @@ import {
   ThreadRowActionsEditor,
   focusFirstRowActionSlot,
 } from "../list/ThreadRowActionsCustomize.js";
+import {
+  GtdMachineGlobe,
+  GtdPullRequestNumber,
+  GtdWakeTime,
+  useGtdMenuHaptic,
+  useGtdNamingProps,
+} from "../gtd/row-extras.js";
 
 const SIDEBAR_TITLE_DOUBLE_CLICK_MS = 400;
 
@@ -313,7 +320,7 @@ function ThreadTrailingIndicator({
 }
 
 const ARCHIVED_ROW_ACTION_KEYS = ["bb--core/archive"];
-const CUSTOMIZE_ROW_ACTIONS_KEY = "thread-list/customizeRowActions";
+const CUSTOMIZE_ROW_ACTIONS_KEY = "gtd-sidebar/customizeRowActions";
 
 function renderThreadActionsTrigger(props: PluginThreadActionsTriggerProps) {
   return (
@@ -511,6 +518,12 @@ function ThreadRowComponent({
     options.nestDrop?.setNodeRef,
   );
   const isActionsOpen = isDropdownActionsOpen || isContextActionsOpen;
+  const playMenuHaptic = useGtdMenuHaptic();
+  const handleContextActionsOpenChange = (open: boolean) => {
+    playMenuHaptic(open);
+    setIsContextActionsOpen(open);
+  };
+  const namingProps = useGtdNamingProps(thread.id);
   const rowClassName = cn(
     SIDEBAR_HOVER_ACTIONS_ROW_CLASS,
     "group/thread-row cursor-pointer",
@@ -668,13 +681,19 @@ function ThreadRowComponent({
                 <TooltipContent side="top">{provider.displayName}</TooltipContent>
               </Tooltip>
             ) : null}
+            <GtdMachineGlobe host={thread.host} />
             {isEditing ? (
               <span className="pointer-events-auto relative z-10 min-w-0 flex-1 overflow-visible">
                 {editor}
               </span>
             ) : (
               <span
-                className={cn("bb-thread-title", crossProjectLabel !== null && "min-w-0 truncate")}
+                data-gtd-naming={namingProps["data-gtd-naming"]}
+                className={cn(
+                  "bb-thread-title",
+                  namingProps.className,
+                  crossProjectLabel !== null && "min-w-0 truncate",
+                )}
                 title={labelTitle}
                 onDoubleClick={startTitleEditing}
               >
@@ -735,6 +754,16 @@ function ThreadRowComponent({
           (isEditing || isCustomizingActions) && "hidden",
         )}
       >
+        <span
+          data-sidebar-hover-actions-open={isActionsOpen ? "true" : undefined}
+          className={cn(
+            SIDEBAR_HOVER_ACTIONS_FADE_CLASS,
+            "flex shrink-0 items-center gap-1.5 empty:hidden",
+          )}
+        >
+          <GtdWakeTime thread={thread} />
+          {showRowMetadata ? null : <GtdPullRequestNumber thread={thread} />}
+        </span>
         {thread.archivedAt !== null ? (
           <span className="relative flex items-center [@media(hover:none)]:hidden">
             <div
@@ -875,7 +904,7 @@ function ThreadRowComponent({
       thread={actionTarget}
       inline={selectionMenu?.inline ?? inlineMenuActions}
       requestRename={requestRenameFromMenu}
-      onOpenChange={setIsContextActionsOpen}
+      onOpenChange={handleContextActionsOpenChange}
       onCloseAutoFocus={selectionMenu?.onCloseAutoFocus ?? handleActionsMenuCloseAutoFocus}
       disabled={isEditing}
       dragging={rowDragBindings?.isDragging ?? false}

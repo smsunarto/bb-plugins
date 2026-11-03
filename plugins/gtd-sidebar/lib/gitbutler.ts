@@ -41,16 +41,6 @@ export function parseGitButlerBranchSummary(stdout: string): GitButlerBranchSumm
   };
 }
 
-/** Prefer a confirmed GitButler label over bb's possibly stale branch metadata. */
-export function resolveSidebarBranchLabel(
-  branchName: string | null,
-  environmentId: string | null,
-  gitButlerLabels: ReadonlyMap<string, string>,
-): string | null {
-  if (environmentId === null) return branchName;
-  return gitButlerLabels.get(environmentId) ?? branchName;
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
