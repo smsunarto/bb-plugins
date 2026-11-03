@@ -1,13 +1,30 @@
-// @smsunarto/bb-plugin-gtd-sidebar — an action-oriented replacement for bb's
-// sidebar thread list, and a reference for `app.slots.experimental_threadList`.
-//
-// Active threads are grouped by who acts next. Every section orders by when
-// each thread arrived on it, most recent first.
-import { definePluginApp } from "@get-bb/plugin-sdk/app";
-import "./app.css";
+// @smsunarto/bb-plugin-gtd-sidebar — bb's built-in Thread list, forked, with
+// its sections replaced by GTD shelves: Pinned, Next Action, Waiting, SlopCop,
+// Snoozed, and Settled. Rows, menus, drag, rename, quick actions, and styling
+// are the built-in's own (app/, forked from bb desktop-v0.48.1).
+import { definePluginApp, type PluginThreadListProps } from "@get-bb/plugin-sdk/app";
+import { CompactViewportOverrideProvider } from "@/components/ui/hooks/use-compact-viewport";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./naming.css";
-import { ThreadInbox } from "./components/inbox/thread-inbox";
+import { PreferencesSync } from "./app/preferences/PreferencesSync.js";
+import { ProjectList } from "./app/list/ProjectList.js";
+import { useSidebarThreadReveal } from "./app/list/useSidebarThreadReveal.js";
+import { ThreadSelectionProvider } from "./app/selection/threadSelection.js";
 import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";
+
+function ThreadInbox({ activeThreadId, isCompactViewport, onNavigate }: PluginThreadListProps) {
+  useSidebarThreadReveal();
+  return (
+    <CompactViewportOverrideProvider isCompactViewport={isCompactViewport}>
+      <TooltipProvider>
+        <PreferencesSync />
+        <ThreadSelectionProvider activeThreadId={activeThreadId}>
+          <ProjectList activeThreadId={activeThreadId} onProjectSelect={onNavigate} />
+        </ThreadSelectionProvider>
+      </TooltipProvider>
+    </CompactViewportOverrideProvider>
+  );
+}
 
 export default definePluginApp((app) => {
   // Versions up to 0.4.x cached the shelves and provider marks in web storage,

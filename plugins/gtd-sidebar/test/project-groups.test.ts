@@ -22,6 +22,7 @@ function thread(id: string, overrides: Partial<PluginSidebarThread> = {}): Plugi
     title: id,
     titleFallback: null,
     parentThreadId: null,
+    parentNotifications: "auto",
     sectionId: null,
     originKind: null,
     originPluginId: null,

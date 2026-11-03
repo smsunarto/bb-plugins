@@ -3,9 +3,25 @@
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",
-    "lib": ["ES2022", "DOM"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "types": ["node", "bun-types/test", "bun-types/sqlite"],
-    "skipLibCheck": false
+    "skipLibCheck": true,
+    "paths": {
+      "@/*": ["./*"]
+    },
+    "noUncheckedIndexedAccess": false
   },
-  "include": ["server.ts", "host.ts", "app.tsx", "types", "components", "hooks", "lib", "test"]
+  "include": [
+    "server.ts",
+    "host.ts",
+    "app.tsx",
+    "types",
+    "app",
+    "shared",
+    "components",
+    "hooks",
+    "lib",
+    "test",
+    "vitest.config.ts"
+  ]
 }
