@@ -9,7 +9,7 @@
 
 **A thread list organized by who can act next.**
 
-![bb 0.47+](https://img.shields.io/badge/bb-0.47%2B-88C0D0?style=flat-square)
+![bb 0.48.1+](https://img.shields.io/badge/bb-0.48.1%2B-88C0D0?style=flat-square)
 ![any platform](https://img.shields.io/badge/platform-any-3FA266?style=flat-square)
 ![experimental slot](https://img.shields.io/badge/uses-experimental%20SDK%20slot-F1B467?style=flat-square)
 
@@ -19,14 +19,16 @@
 <picture><img src="docs/media/hero.png" alt="The GTD Sidebar inbox beside its shelf model: Pinned, Next Action, Waiting, and Snoozed" width="100%" /></picture>
 </div>
 
-GTD Sidebar replaces the scrolling thread list in bb's left sidebar with an inbox.
+GTD Sidebar is bb's own Thread list with its sections replaced by an inbox. Rows,
+menus, drag and drop, rename, quick actions, and styling are bb's; the shelves are
+GTD's.
 
-Active threads split into **Next Action** when the user can act and **Waiting** while
-the agent works. Every section shows the most recently updated thread first.
+Active threads split into **Next Action** when you can act and **Waiting** while
+the agent works. Each shelf puts the newest arrival first.
 
 You clear the list with two email verbs: **snooze** a thread until a wake time, or
 **settle** it when you are done. Settle archives the thread in bb, and bb's Undo toast
-brings it back. The Snoozed and Settled shelves collapse to one counted header each.
+brings it back. The SlopCop, Snoozed, and Settled shelves start folded.
 
 ## Install
 
@@ -59,7 +61,7 @@ reinstall.
 
 ## Requirements
 
-- bb 0.47.0+
+- bb 0.48.1+
 - Sidebar organization needs nothing else.
 - Thread naming needs an existing Codex login on bb's primary host.
 
@@ -74,117 +76,105 @@ Appearance → Sidebar**, choose **GTD Sidebar (inbox)** there.
 bb's own Thread list comes back the moment you pick it there or disable the
 plugin.
 
-### Active and parked sections
+### Shelves
 
-- **Pinned** — the user's explicit priority, kept in its own shelf above active work.
-- **Next Action** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet.
-- **Waiting** — foreground or background agent work is live, in the thread, any of its subthreads, or the hidden Review and Arena workers it launched. A family moves back to Next Action only when one of its threads asks you something.
-- **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
+The list draws bb's **Pinned** section first, then one sticky shelf header per
+GTD shelf that holds a thread:
 
-Pinned follows bb's own pinned order — the same order the built-in sidebar
-drags by — so a pin moved there lands in the same place here. Every other
-section orders threads by when they arrived on it, newest first, and a
-thread keeps its spot while it stays put: a turn starting, a read, a rename, or
-child activity never reshuffles it. Only a shelf change moves it, to the top of
-the new shelf. Snoozed sorts by the moment you snoozed and Settled by the
-moment it settled; expand Snoozed to see that order.
+- **Pinned**: bb's own section and rule. A pinned thread shows here with
+  everything under it, in bb's pinned order. A pinned thread you settle or snooze
+  moves to that shelf instead.
+- **Next Action**: the agent turn is done, an interaction needs input, or the
+  thread is otherwise quiet.
+- **Waiting**: foreground or background agent work is live, in the thread, any of
+  its subthreads, or the hidden Review and Arena workers it launched. A family
+  moves back to Next Action only when one of its threads asks you something.
+- **SlopCop**: SlopCop's automated pull request reviews and issue triages, kept
+  apart from your own work.
+- **Snoozed**: hidden until the wake time you chose. A snoozed thread comes back
+  early if it starts working or asks you something.
+- **Settled**: every thread archived in the last 24 hours, whether you settled it
+  here or archived it from bb's own sidebar.
 
-An empty section disappears. A pending interaction stays in **Next Action** even if
-background work is also live, because the user can act now.
+A family always sits on its root's shelf. A pending interaction keeps a family in
+**Next Action** even while background work is live, because you can act now.
 
-### Visible machines
+### Sort and organize
 
-The globe menu chooses which machines appear in the thread list. Check several
-machines without closing the menu, use **Only** to see one, or **All machines**
-to reset. The last visible machine stays checked. Choices persist across reloads
-and update other open windows and devices connected to the same bb.
-New machines appear by default; threads without a known machine stay visible.
-When the filter leaves exactly one machine visible, new threads opened from a
-project header preselect that machine.
+Open the list header's menu for bb's own **Organize**, **Sort by**, and **Filter**
+pages. GTD adds two choices to them:
+
+- **Sort by → Arrival** is the default. A family's root keeps the place it took
+  when it arrived on its shelf, so a turn starting, a read, a rename, or child
+  activity never reshuffles it. Only a shelf change moves it, to the top of the new
+  shelf. Snoozed sorts by when you snoozed and Settled by when it settled. bb's
+  **Updated at**, **Created at**, and **Alphabetical** sorts still work.
+- **Organize** groups each shelf **By project**, **By machine**, or **Flat**.
+
+Groups draw only once a shelf view holds two or more projects or machines, or
+while a machine filter is on. A group header sticks under its shelf header and
+folds its group. Settled's groups start folded.
 
 ### Project groups
 
-Once threads from two or more projects are in view, every shelf splits into
-project groups: a header naming the project, then that project's threads. A
-machine filter keeps these headers visible even when the visible machines have threads
-in only one project, so the repository context is not lost. Use **Settings → Plugins → GTD Sidebar → Group threads by project**
-to hide or restore project groups. The choice persists across reloads. The project selector stays available with
-repository grouping on or off, and toggling groups preserves the selected project. The
-header folds the group; a folded header shows `needs-you / total` while
-something inside asks for you, and the total alone otherwise. The header's
-**+** opens the project's new-thread screen. It appears on hover or keyboard
-focus on desktop and stays visible on mobile and touch screens. Shelf and
-group headers stay pinned while their rows scroll.
+Project groups follow bb's project order in every shelf, with your personal project
+last. Drag a project header onto another to reorder the project in bb itself, or
+open its menu for **Move up** and **Move down**. Every shelf agrees, and bb's own
+project lists follow. The personal project's group never drags.
 
-Groups follow bb's project order in every shelf, with your personal project
-last. Drag a group header onto another group to drop its project in that
-slot — or right-click it, or focus it and press Shift+F10, for **Move up**
-and **Move down**, the keyboard path. Both reorder the project in bb itself,
-so every shelf agrees and bb's own project lists follow along. The personal
-project's group never drags and nothing lands after it.
+A project header's menu and its **+** create a thread in that project. With a
+project scope set, the list header's **+** does the same.
 
-The shelf still comes first: the same project appears under Next Action and
-under Waiting when it has work in both, and folding it in one shelf leaves it
-open in the other. A subthread stays under its parent even when it belongs to another
-project. With a single project in view there are no headers at all.
+### Filters
 
-A thread's title never shares its line with a project name. Remote threads
-lead with a globe in their machine's colour instead.
+The **Filter** page holds GTD's two filters:
+
+- **Project** scopes the list to one project for this session. **All projects**
+  clears it.
+- **Machines** appears once threads run on two or more machines. Check the
+  machines to show; the last visible machine stays checked. Choices persist across
+  reloads and sync to other open windows and devices. New machines appear by
+  default, and threads without a known machine stay visible.
 
 ### Rows
 
-One line: the title in bold when unread, activity counts, the PR number, and a
-status slot. The status slot shows what the thread needs — failed, waiting on you,
-working, or finished while you were away — and its age (`now`, `7m`, `3d`) when it
-needs nothing. Hovering swaps that slot for the park buttons. Resting on a row
-shows its project, branch, machine, and agent.
+Every row is bb's thread row: unread titles, the status glyph, provider icons, the
+split mini map, shortcut pills, hover quick actions, inline rename, multi-select,
+and bb's optional metadata line. GTD adds:
 
-### A working thread can never be snoozed
+- A globe before the title when the thread runs on another machine, in that
+  machine's color. A Boat sandbox shows a bot instead.
+- A shimmer on the title while GTD names the thread.
+- On a snoozed row, the time left until it wakes, with the wake time on hover.
+- The pull request number, colored by what it needs, while bb's metadata line is
+  off. With the line on, bb's own pull request badge shows there instead.
+- The GitButler branch on bb's metadata line, with **Show GitButler branches** on.
 
-Workflows, background agents, background commands, plan mode, and goals all count as
-live work. Any of them blocks snoozing and wakes a snoozed thread, so running work is
-never hidden.
+### Thread actions
 
-### Snoozing
+GTD's verbs are bb thread actions, so they appear in every thread menu bb draws:
+the row menu, right-click, the compact long-press menu, and the thread header. You
+can also pick them as row quick actions under **Customize actions**:
 
-The hover button snoozes until **09:00 tomorrow**. Snoozing a parent also
-snoozes its children and deeper descendants until the same time. They stay
-nested under the parent on the Snoozed shelf. Waking the parent wakes the
-family together. A family with live work or a pending interaction cannot be
-snoozed.
+- **Settle** archives the thread in bb. bb's Undo toast brings it back. Settling the
+  open thread moves you to the next row on its shelf. A thread with subthreads waits
+  for bb's confirmation first.
+- **Un-settle** unarchives a thread on the Settled shelf.
+- **Snooze until tomorrow** parks the whole family until 09:00 tomorrow. Live work
+  or a pending interaction anywhere in the family hides it, so running work is never
+  hidden. Workflows, background agents, background commands, plan mode, and goals
+  all count as live work.
+- **Wake now** brings a snoozed family back.
 
-### Settling
-
-The check button, the card menu, and the **GTD Sidebar: settle thread** row in bb's
-quick palette all archive the thread in bb. bb's Undo toast brings it back. Settling
-the open thread moves you to the next row in its section.
-
-The **Settled** shelf lists every thread archived in the last 24 hours, whether it was
-settled here or archived from bb's own sidebar. The hover button un-settles it, which
-unarchives the thread in bb. A family settled together keeps its nesting, with each
-child under its parent as it sat before. After a day a thread stops being drawn on the shelf and
-stays in bb's archive.
+bb's own **Archive** stays in the menu beside Settle. The **GTD Sidebar: settle
+thread** command in bb's palette settles the open thread.
 
 ### Child threads
 
-A child sits under its parent with a disclosure chevron. Families start collapsed,
-including existing families the first time this default is applied;
-expanding or collapsing one saves that choice across reloads. Folding a family uses the
-`collapsedThreads` preference of bb's built-in Thread list plugin, so a family folded
-here is folded in bb's built-in sidebar too, and the fold survives a reload. A fold
-made in bb's sidebar shows here within a few seconds. Folded project groups stay
-session state.
-
-Drag a row onto another row to nest it there, or onto a project group header
-to lift it back to the top level. The move is bb's own parent change, so bb's
-sidebar follows it. A row never drops onto itself, its current parent, anything
-inside its own family, or a thread in another project; a row that cannot take
-the drop shows no highlight. With the keyboard, Space picks the focused row up,
-the arrows move it between targets, Space drops, and Escape cancels.
-
-The same drag is still bb's drag-to-split gesture: a drag that stays in the
-sidebar nests, a drag out to the main area splits. Nothing needs a modifier.
-Desktop only.
+A child sits under its parent with bb's disclosure chevron, including a fork. A
+family folds until you open it, and the choice persists across reloads. Drag a row
+onto another to nest it, or between rows to reorder or lift it out, with bb's own
+drag and drop. A drag out to the main area opens a split.
 
 ### Thread names
 
@@ -234,75 +224,64 @@ To replace a title by hand, run `bb gtd-sidebar rename [<threadId>]`. The comman
 uses the current thread when you omit the id. Explicit regeneration can replace a title even when
 the task has not changed.
 
-### The rest
-
-- A project scope picker — the one control the plugin adds.
-- Right-click a row for Settle and Snooze first, followed by every action in bb's own
-  thread menu: split, copy link, pin, read/unread, section moves, rename, delete, and
-  the actions other plugins add, such as per-thread notifications. Settle replaces
-  Archive. Settling a thread with subthreads waits for bb's confirmation before moving on.
-- Rename a thread in place: choose Rename, or double-click its title. Enter saves,
-  Escape cancels, and a failed save keeps your text for another try.
-  Moving to a section also unpins the thread, as in bb's normal sidebar.
-- On a phone, hold a row for half a second (iOS's own long-press timing) for the same
-  menu, drawn as an iOS-style frosted sheet. A choice list, such as notification
-  levels, opens in place with Back. Menu taps can play a haptic on iOS when enabled
-  in settings.
-- Drag a card to a split pane, or Cmd/Ctrl-click to open one.
-- Drag a card onto another to nest it, or onto a project header to un-nest it.
-- Drag a project group header onto another group to reorder the project in bb.
-- bb's search, its thread shortcuts, and modifier-click split-open all keep working.
-
 ## Configuration
 
-Choose preferences in **Settings → Plugins → GTD Sidebar**. Project grouping
-defaults **on**. Optional enhancements default **off**, including while settings are loading. The SDK stores
-these preferences on the server and updates open clients when they change.
+Choose plugin settings in **Settings → Plugins → GTD Sidebar**. Optional
+enhancements default **off**, including while settings load. Layout preferences
+(organize, sort, folds, row actions) live in the plugin's own storage and sync to
+every open client. Read or change them with `bb gtd-sidebar prefs list|get|set|reset`.
 
 ### Feature catalog
 
-Core means available while GTD Sidebar is your sidebar. Core actions run
-only when you use them, apart from reads and clocks needed to keep the inbox
-accurate. Normal inbox behavior does not invoke an AI model or poll external
-services. The explicit naming command below is a separate user-requested inference.
+Core means available while GTD Sidebar is your sidebar. Normal inbox behavior
+does not call an AI model or poll external services. The explicit naming command
+below is a separate, user-requested inference.
 
-| Core sidebar feature    | What it does                                                                                                                                                                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Action shelves          | Pinned, Next Action, Waiting, Snoozed, and the last 24 hours of Settled. Running work and pending interactions stay visible.                                                               |
-| Repository groups       | Group shelves by BB repository, keep repository context under machine filters, toggle groups from plugin settings, fold groups, create a thread from a group, and reorder groups.          |
-| Thread families         | Fold using BB's shared preference. Desktop drag or keyboard drag nests/un-nests threads using BB's parent relation.                                                                        |
-| Thread actions          | Pin, snooze until tomorrow at 09:00, settle/archive with native Undo, restore, delete, and insert a thread reference into the composer.                                                    |
-| Navigation              | Row click, search, repository scope and persistent machine visibility pickers, Cmd/Ctrl-click split-open, and drag-to-split. Preserve BB/Vimium thread shortcut anchors.                   |
-| Status and details      | Unread titles, activity indicators/counts, time, native branch and PR information, provider tooltips, machine globe/color and host identity. These make thread state and location visible. |
-| Row layout              | Every thread takes one line; project, branch and agent show in its hover details. On mobile, long-press opens the action sheet without requiring haptics.                                  |
-| Explicit naming command | `bb gtd-sidebar rename [<threadId>]` is an explicit request for Codex title inference even with automatic naming off.                                                                      |
+| Core sidebar feature    | What it does                                                                                                                       |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Action shelves          | bb's Pinned, then Next Action, Waiting, SlopCop, Snoozed, and the last 24 hours of Settled. Running work and questions stay shown. |
+| Groups                  | Group shelves by project or machine, fold groups, create a thread from a project, and reorder projects in bb.                      |
+| Thread families         | Fold families, nest and reorder with bb's drag and drop.                                                                           |
+| Thread actions          | Settle, Un-settle, Snooze until tomorrow, and Wake now, in every bb thread menu and as row quick actions.                          |
+| Navigation              | bb's row click, shortcuts, multi-select, split-open, and drag-to-split, plus the project scope and machine filters.                |
+| Status and details      | bb's row status and metadata line, plus the machine globe, naming shimmer, wake countdown, and pull request number.                |
+| Explicit naming command | `bb gtd-sidebar rename [<threadId>]` asks Codex for a title even with automatic naming off.                                        |
 
-| Optional setting (key)                                  | Default | Effect when enabled                                                                                                                                                                                            |
-| ------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Group threads by project (`groupThreadsByProject`)      | On      | Organize each shelf into project groups. Turning it off keeps project and machine filters available.                                                                                                           |
-| Enable mobile haptics (`mobileHaptics`)                 | Off     | Attach iOS tactile menu-tap switches. Turning off removes those switches, including from an open menu.                                                                                                         |
-| Show GitButler branches (`gitButlerBranches`)           | Off     | Periodically read GitButler branches on primary checkouts through the host CLI. Off stops refreshes and server host reads, restoring BB's native labels.                                                       |
-| Automatically name threads (`automaticallyNameThreads`) | Off     | Infer titles on user requests through the existing Codex login. Sends request context and naming rules. Off skips automatic context reads/inference and prevents an in-flight result from renaming the thread. |
+| Optional setting (key)                                  | Default | Effect when enabled                                                                                                                            |
+| ------------------------------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enable mobile haptics (`mobileHaptics`)                 | Off     | Play bb's iOS haptic when a row's menu opens.                                                                                                  |
+| Show GitButler branches (`gitButlerBranches`)           | Off     | Read GitButler's applied branches on plain checkouts every 30s through the host CLI, and show them on bb's row metadata line.                  |
+| Automatically name threads (`automaticallyNameThreads`) | Off     | Infer titles on your requests through the existing Codex login. Sends request context and naming rules. Off stops reads and in-flight renames. |
 
-| Supporting preference            | Default           | Purpose                                                                                                   |
-| -------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------- |
-| Local machine (`localMachineId`) | bb's primary host | Choose which machine's threads omit the globe. This does not move threads or change their execution host. |
+| Supporting preference            | Default           | Purpose                                                                                   |
+| -------------------------------- | ----------------- | ----------------------------------------------------------------------------------------- |
+| Local machine (`localMachineId`) | bb's primary host | Choose which machine's threads omit the globe. This doesn't change where any thread runs. |
+
+### What changed in the bb Thread list rewrite
+
+This version rebuilds the list on bb's Thread list at `desktop-v0.48.1`. Moving
+to bb's components changes a few behaviors:
+
+- Pinned follows bb's rule: a pinned thread shows with every thread under it.
+- A fork nests under the thread it came from.
+- Custom sections, **Move to section**, the **More** overflow, hiding threads, and
+  the Active/Archived filter are gone. Settled replaces the archive view.
+- A drag between Pinned and another shelf doesn't move the thread. Pin or unpin it
+  from its menu.
+- bb's **Archive** shows beside Settle.
+- Folds are GTD's own. They no longer sync with bb's built-in Thread list.
+- **Organize** replaces the `groupThreadsByProject` setting. A saved value for it
+  is ignored.
+- Rows show no age, and project, branch, and agent hover details are gone. bb's
+  optional metadata line shows row details instead.
 
 ### Opt-in and migration behavior
 
 - Existing **explicit saved values** keep their meaning, including saved `true`
-  for automatic naming. We retain the original keys and use SDK effective
-  values. We do not infer consent from a token or existing data.
-- Previously implicit defaults for automatic naming become **off**.
-  GitButler branch lookups and haptics now require an explicit opt-in.
-  No migration writes `true` on an existing or new installation.
-- Thread rows are always one line. The former `compactThreads` and
-  `showProviderIcon` settings are gone, and saved values for them are ignored.
-- Cursor Projects coordination has been removed. Existing native threads appear
-  in the ordinary inbox. Legacy project data is retained but unused, and project
-  subscription polling and delivery no longer run.
+  for automatic naming. No migration writes `true` on an existing or new
+  installation.
 - Settings take effect without a plugin reload. The selected sidebar itself stays
-  BB's explicit Appearance preference.
+  bb's explicit Appearance preference.
 
 ## Troubleshooting
 
@@ -335,11 +314,10 @@ Thread naming adapts the lifecycle design from
 [`suiramdev/bb-plugin-thread-namer`](https://github.com/suiramdev/bb-plugin-thread-namer)
 at commit `023d1229db020330a940e4bff060e23bd4b278d8`.
 
-The in-place rename editor, and the compact-viewport hooks it reads, are ported
-from bb's forkable built-in Thread list (`plugins/thread-list`) and its component
-registry at `desktop-v0.44.0` (`0baa605b32a00619c1d7e3f32be6553ebcf8244a`). GTD
-Sidebar is not a fork of that plugin: its t3sidebar lineage has no upstream to merge
-from, so features are ported one at a time.
+The thread list is a fork of bb's built-in Thread list (`plugins/thread-list`) and
+the component registry items it imports, at `desktop-v0.48.1`. GTD's shelves, row
+extras, and filters sit on top of it. [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+lists the fork base and the files GTD changed.
 
 Provider icons are bb's own artwork, drawn through `experimental_ProviderIcon`
 in one muted tint rather than in brand color — by design.

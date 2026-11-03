@@ -4,6 +4,26 @@
 
 ### Minor Changes
 
+- Rebuild the list on bb's own Thread list (`desktop-v0.48.1`), so rows, menus,
+  drag and drop, rename, quick actions, windowing, and styling match bb's sidebar.
+  bb's Pinned section comes first; Next Action, Waiting, SlopCop, Snoozed, and
+  Settled follow as sticky shelves grouped by project or machine. Requires bb
+  0.48.1.
+- Settle, Un-settle, Snooze until tomorrow, and Wake now are bb thread actions:
+  they show in every bb thread menu and can be row quick actions. bb's Archive
+  shows beside Settle.
+- bb's **Organize** menu chooses By project, By machine, or Flat, replacing the
+  **Group threads by project** setting. **Sort by** gains Arrival, the default.
+  The project scope and machine filters move to bb's **Filter** page.
+- Rows keep the machine globe, naming shimmer, and pull request number, and a
+  snoozed row counts down to its wake time. The GitButler branch moves to bb's row
+  metadata line. Row ages and hover details are gone.
+- Pinned follows bb's rule, a pinned thread with every thread under it, and forks
+  nest under their source. Custom sections, Move to section, the More overflow,
+  hiding threads, and the Active/Archived filter are gone. A drag between Pinned
+  and another shelf no longer moves the thread. Folds no longer sync with bb's
+  built-in Thread list.
+
 - Every thread row is one line. The two-line card is gone, along with the
   **Compact thread rows** and **Show agent icons** settings it needed. Project,
   branch and agent show in the row's hover details.
