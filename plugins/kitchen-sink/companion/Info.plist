@@ -10,7 +10,7 @@
 <key>CFBundleVersion</key><string>1</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
-<key>NSMicrophoneUsageDescription</key><string>Record your question when you press Talk. Audio is sent to your configured BB transcription service.</string>
+<key>NSMicrophoneUsageDescription</key><string>Stream your question to ElevenLabs while you hold Talk. Only the resulting transcript is sent to BB.</string>
 <key>NSScreenCaptureUsageDescription</key><string>Attach a preview of your screen to a BB conversation when you choose Capture screen.</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

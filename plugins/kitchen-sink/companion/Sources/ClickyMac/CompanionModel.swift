@@ -46,6 +46,7 @@ struct Preferences: Codable {
     var serverURL = ""
     var hostID = ""
     var speakReplies = false
+    var elevenLabsVoiceID: String? = nil
 }
 
 struct SavedCompanion: Codable {
@@ -71,6 +72,7 @@ struct SavedCompanion: Codable {
         let autoSend: Bool
         let sessionID: String?
         let connectionGeneration: UUID
+        var releaseAllowed: Bool? = nil
     }
     private var voiceRequest: VoiceRequestContext?
     private var recordingStartedAt: Date?
@@ -93,6 +95,14 @@ struct SavedCompanion: Codable {
     var capture: CapturedScreen?
     var capturing = false
     let desktop = DesktopServices()
+    let voice = ElevenLabsVoice()
+    var voiceKeyStatus = "Key not checked"
+    private var speechOwner: (sessionID: String, requestID: String)?
+    private var speechRaw: [String: String] = [:]
+    private var speechOrder: [String] = []
+    private var speechAccumulator = SpeechAccumulator()
+    private var speechStarted = false
+    private var speechFailed = false
     private var monitor: Task<Void, Never>?
     private var recordingLimit: Task<Void, Never>?
     private var turnCaptures: [String: CapturedScreen] = [:]
@@ -100,12 +110,11 @@ struct SavedCompanion: Codable {
     private var refreshing = false
     private var retryCount = 0
     private var nextRetryAt = Date.distantPast
-    private var lastSpoken: [String: Int] = [:]
     private let saveURL: URL
     private var client: BBClient { BBClient(configuration: BBConfiguration(executablePath: preferences.executable, serverURL: preferences.serverURL.isEmpty ? nil : preferences.serverURL, runtimeExecutablePath: preferences.runtimeExecutable)) }
     var visibleSessions: [Conversation] { sessions.filter { $0.serverURL == preferences.serverURL } }
     var selected: Conversation? { visibleSessions.first { $0.id == selectedID } }
-    var canSend: Bool { connected && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !(selected?.phase.busy ?? false) && !recording && !transcribing && !capturing }
+    var canSend: Bool { connected && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !(selected?.phase.busy ?? false) && !recording && !requestingMicrophone && !transcribing && !capturing }
 
     init() {
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ClickyBB")
@@ -124,6 +133,17 @@ struct SavedCompanion: Codable {
         settingsVisible = preferences.hostID.isEmpty
         if sessions.isEmpty { newConversation() }
         loadSavedVisualForSelection()
+        voice.onInputFailure = { [weak self] message, partial in
+            guard let self else { return }
+            if let request = voiceRequest, request.sessionID == selectedID, request.connectionGeneration == connectionGeneration, !partial.isEmpty {
+                draft = draft.isEmpty ? partial : draft + "\n\n" + partial
+            }
+            voiceRequest = nil; recording = false; requestingMicrophone = false; transcribing = false; recordingLimit?.cancel()
+            error = message + (partial.isEmpty ? "" : " The partial transcript is in your draft; review it before sending.")
+        }
+        voice.onSpeechFailure = { [weak self] message in
+            self?.speechFailed = true; self?.error = "Speech stopped. " + message
+        }
     }
 
     func save() {
@@ -136,6 +156,7 @@ struct SavedCompanion: Codable {
     }
 
     func connectionChanged() {
+        cancelVoiceInput(); stopSpeaking()
         dismissVisuals()
         reopenableVisual = nil
         connectionGeneration = UUID()
@@ -166,8 +187,9 @@ struct SavedCompanion: Codable {
     }
 
     func newConversation(job: Bool = false, preservingDraft: Bool = false) {
+        cancelVoiceInput()
         dismissVisuals()
-        desktop.stopSpeaking(); desktop.clearPoints()
+        stopSpeaking(); desktop.clearPoints()
         if !preservingDraft { clearCapture(); draft = "" }
         let id = UUID().uuidString
         let session = Conversation(id: id, title: job ? "New agent job" : "New conversation", remoteTitle: "Clicky [\(id)]", hostID: preferences.hostID, serverURL: preferences.serverURL, isJob: job)
@@ -176,8 +198,9 @@ struct SavedCompanion: Codable {
     }
 
     func select(_ id: String) {
+        cancelVoiceInput()
         dismissVisuals()
-        selectedID = id; draft = ""; clearCapture(); desktop.clearPoints(); desktop.stopSpeaking()
+        selectedID = id; draft = ""; clearCapture(); desktop.clearPoints(); stopSpeaking()
         if let requestID = selected?.visualRequest?.id { dismissedVisualRequestIDs.insert(requestID) }
         loadSavedVisualForSelection()
         Task { await refresh() }
@@ -185,6 +208,7 @@ struct SavedCompanion: Codable {
 
     func send(speakReply: Bool = false) async {
         guard canSend, !sending else { return }
+        stopSpeaking()
         sending = true
         defer { sending = false }
         while refreshing { try? await Task.sleep(for: .milliseconds(100)); if Task.isCancelled { return } }
@@ -213,6 +237,10 @@ struct SavedCompanion: Codable {
         visualStreams[id] = VisualStream()
         assistantText[id] = [:]
         sessions[current].speakReplyForCurrentTurn = speakReply
+        if preferences.speakReplies || speakReply, let requestID = sessions[current].visualRequest?.id {
+            speechOwner = (id, requestID)
+            speechRaw = [:]; speechOrder = []; speechAccumulator = SpeechAccumulator(); speechStarted = false; speechFailed = false
+        }
         sessions[current].sentAfterSequence = sessions[current].sequence
         sessions[current].rootTurnID = nil
         sessions[current].completionStatus = nil
@@ -296,6 +324,13 @@ struct SavedCompanion: Codable {
             guard generation == connectionGeneration else { return }
             for session in visible {
                 if let remote = statuses.first(where: { $0.id == session.threadID }) {
+                    if remote.status == "idle", speechOwner?.sessionID == session.id,
+                       sessions.first(where: { $0.id == session.id })?.completionStatus == nil, let threadID = session.threadID {
+                        // Completion can land between log and status reads. Consume
+                        // its final text before treating idle as an interruption.
+                        try await readEvents(id: session.id, threadID: threadID, transport: transport)
+                        guard generation == connectionGeneration else { return }
+                    }
                     update(session.id) {
                         $0.phase = $0.phase.reconciled(remoteStatus: remote.status, needsApproval: remote.hasPendingInteraction == true,
                             queued: remote.hasQueuedWork, observedRoot: $0.rootTurnID != nil, completionStatus: $0.completionStatus)
@@ -303,6 +338,11 @@ struct SavedCompanion: Codable {
                 } else {
                     update(session.id) { $0.phase = .failed }
                     error = "This conversation is no longer available in BB."
+                }
+                if speechOwner?.sessionID == session.id,
+                   let phase = sessions.first(where: { $0.id == session.id })?.phase, !phase.busy {
+                    // Interruption can settle through thread status without a completion event.
+                    stopSpeaking()
                 }
             }
             save()
@@ -333,6 +373,7 @@ struct SavedCompanion: Codable {
                         update(id) { $0.visualRequest?.binding.observe(event); $0.rootTurnID = turnID; $0.phase = .running }
                     }
                 case .threadInterrupted:
+                    if speechOwner?.sessionID == id { stopSpeaking() }
                     update(id) { $0.phase = .failed; $0.completionStatus = "interrupted" }
                 case let .userMessage(text):
                     update(id) { $0.visualRequest?.binding.observe(event) }
@@ -347,6 +388,7 @@ struct SavedCompanion: Codable {
                     }
                 case let .assistantDelta(itemID, text):
                     guard let turnID = event.turnID, turnID == sessions.first(where: { $0.id == id })?.rootTurnID else { continue }
+                    feedSpeech(id: id, itemID: itemID, text: text, authoritative: false)
                     if sessions.first(where: { $0.id == id })?.visualRequest?.turnID == turnID {
                         groupedVisualDelta += text
                         if offset + 1 < events.count, events[offset + 1].turnID == turnID,
@@ -357,6 +399,7 @@ struct SavedCompanion: Codable {
                     recordAssistantText(id: id, event: event, itemID: itemID, text: text, authoritative: false)
                 case let .assistantMessage(itemID, text):
                     guard let turnID = event.turnID, turnID == sessions.first(where: { $0.id == id })?.rootTurnID else { continue }
+                    feedSpeech(id: id, itemID: itemID, text: text, authoritative: true)
                     if ingestVisual(id: id, event: event, itemID: itemID, text: text, authoritative: true) { continue }
                     recordAssistantText(id: id, event: event, itemID: itemID, text: text, authoritative: true)
                 case let .turnCompleted(status, message):
@@ -369,14 +412,9 @@ struct SavedCompanion: Codable {
                     if status == "completed", let baseline = current.sentAfterSequence, event.seq > baseline,
                        let reply = current.entries.last(where: { $0.role == "assistant" && $0.turnID == turnID })?.text {
                         if turnCaptures[id] != nil { guideReplies[id] = reply }
-                        if id == selectedID, current.serverURL == preferences.serverURL, lastSpoken[id] != event.seq {
-                            if preferences.speakReplies || current.speakReplyForCurrentTurn == true {
-                                let spokenReply = reply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                    ? (visualStreams[id]?.completedDocument?.summary ?? "") : reply
-                                if !spokenReply.isEmpty { desktop.speak(spokenReply) }
-                            }
-                            lastSpoken[id] = event.seq
-                        }
+                    }
+                    if speechOwner?.sessionID == id {
+                        finishSpeech(successful: status == "completed", summary: visualStreams[id]?.completedDocument?.summary)
                     }
                 case .other: break
                 }
@@ -384,6 +422,55 @@ struct SavedCompanion: Codable {
             if events.isEmpty { return }
         }
         throw BBClientError.responseTooLarge
+    }
+
+    func saveVoiceKey(_ key: String) {
+        do { try VoiceKeychain.save(key); voiceKeyStatus = "Key saved in Keychain"; error = nil }
+        catch { voiceKeyStatus = "Keychain access failed"; self.error = error.localizedDescription }
+    }
+    func checkVoiceKey() {
+        do { voiceKeyStatus = try VoiceKeychain.read(allowInteraction: true) == nil ? "No key saved" : "Key available in Keychain" }
+        catch { voiceKeyStatus = "Keychain access denied"; self.error = error.localizedDescription }
+    }
+    func removeVoiceKey() {
+        cancelVoiceInput(); stopSpeaking()
+        do { try VoiceKeychain.remove(); voiceKeyStatus = "No key saved" }
+        catch { self.error = error.localizedDescription }
+    }
+    func stopSpeaking() {
+        speechOwner = nil; speechRaw = [:]; speechOrder = []
+        voice.stopSpeaking()
+    }
+    private func feedSpeech(id: String, itemID: String, text: String, authoritative: Bool) {
+        guard let owner = speechOwner, owner.sessionID == id, id == selectedID,
+              let current = selected, owner.requestID == current.visualRequest?.id else { return }
+        if speechRaw[itemID] == nil { speechOrder.append(itemID) }
+        let raw = authoritative ? text : (speechRaw[itemID] ?? "") + text
+        speechRaw[itemID] = raw
+        for chunk in speechAccumulator.consume(itemID: itemID, text: raw, complete: authoritative) { speakChunk(chunk) }
+    }
+    private func speakChunk(_ text: String) {
+        guard !speechFailed else { return }
+        do {
+            if !speechStarted {
+                try voice.startSpeaking(voiceID: preferences.elevenLabsVoiceID ?? RealtimeVoiceProtocol.defaultVoiceID)
+                speechStarted = true
+            }
+            voice.appendSpeech(text)
+        } catch { speechFailed = true; self.error = "Could not speak the reply. " + error.localizedDescription }
+    }
+    private func finishSpeech(successful: Bool, summary: String?) {
+        guard successful else { stopSpeaking(); return }
+        for item in speechOrder {
+            for chunk in speechAccumulator.consume(itemID: item, text: speechRaw[item] ?? "", complete: true) { speakChunk(chunk) }
+        }
+        if speechAccumulator.charactersSent == 0, let summary, !summary.isEmpty { speakChunk(String(summary.prefix(RealtimeVoiceProtocol.maxSpokenCharacters))) }
+        if speechStarted, !speechFailed { voice.finishSpeech() }
+        speechOwner = nil; speechRaw = [:]; speechOrder = []
+    }
+    private func cancelVoiceInput() {
+        voiceRequest = nil; recording = false; requestingMicrophone = false; transcribing = false
+        recordingLimit?.cancel(); voice.cancelInput()
     }
 
     private func update(_ id: String, _ mutation: (inout Conversation) -> Void) {
@@ -500,7 +587,7 @@ struct SavedCompanion: Codable {
     }
 
     func stop() async {
-        desktop.stopSpeaking(); desktop.clearPoints()
+        cancelVoiceInput(); stopSpeaking(); desktop.clearPoints()
         guard let s = selected, let threadID = s.threadID else { return }
         do { try await client.stop(threadID: threadID); update(s.id) { $0.phase = .failed }; save() }
         catch { self.error = "Could not confirm stop. Open BB to check the running task. \(error.localizedDescription)" }
@@ -521,55 +608,57 @@ struct SavedCompanion: Codable {
     func clearCapture() { if let capture { desktop.discardCapture(capture) }; capture = nil }
 
     func beginRecording(autoSend: Bool = false) async {
-        guard !recording, !requestingMicrophone, !transcribing, !sending, !(selected?.phase.busy ?? false) else { return }
+        // A new hold always silences the previous answer, including a running BB turn.
+        stopSpeaking()
+        guard !recording, !requestingMicrophone, !transcribing, !sending else { return }
         if autoSend, !connected { error = "Connect to BB before asking a voice question."; settingsVisible = true; return }
         if autoSend {
             clearCapture()
             if selected == nil { newConversation(preservingDraft: true) }
         }
         let request = VoiceRequestContext(autoSend: autoSend, sessionID: selectedID, connectionGeneration: connectionGeneration)
-        voiceRequest = request; requestingMicrophone = true
-        defer { requestingMicrophone = false }
+        voiceRequest = request; requestingMicrophone = true; error = nil
+        recordingStartedAt = Date()
+        recordingLimit = Task {
+            try? await Task.sleep(for: .seconds(30))
+            guard !Task.isCancelled else { return }
+            recordingLimit = nil
+            await endRecording(autoSendAllowed: false)
+        }
+        defer { if voiceRequest?.id == request.id { requestingMicrophone = false } }
         do {
-            try await desktop.startRecording()
-            guard voiceRequest?.id == request.id else { desktop.cancelRecording(); return }
-            recording = true; recordingStartedAt = Date()
-            recordingLimit = Task {
-                try? await Task.sleep(for: .seconds(119))
-                guard !Task.isCancelled else { return }
-                recordingLimit = nil
-                await endRecording(autoSendAllowed: false)
-            }
+            try await voice.startListening()
+            guard voiceRequest?.id == request.id else { return }
+            recording = true; requestingMicrophone = false
+            if let allowed = voiceRequest?.releaseAllowed { await endRecording(autoSendAllowed: allowed) }
         } catch is CancellationError { }
-        catch { voiceRequest = nil; self.error = error.localizedDescription }
+        catch {
+            if voiceRequest?.id == request.id { cancelVoiceInput(); self.error = error.localizedDescription; settingsVisible = true }
+        }
     }
 
     func endRecording(autoSendAllowed: Bool = true) async {
-        if requestingMicrophone { voiceRequest = nil; desktop.cancelRecording(); return }
+        if requestingMicrophone {
+            // A quick question can finish before the WebSocket handshake. Stop
+            // capture now, then drain its buffered audio after session_started.
+            if voice.hasLiveCapture { voiceRequest?.releaseAllowed = autoSendAllowed; voice.releaseCapture() }
+            else { cancelVoiceInput() }
+            return
+        }
         guard recording, let request = voiceRequest else { return }
-        voiceRequest = nil
         let duration = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         recordingStartedAt = nil
         recording = false; recordingLimit?.cancel()
-        if request.autoSend, duration < 0.3 { desktop.cancelRecording(); return }
+        if request.autoSend, duration < 0.3 { cancelVoiceInput(); return }
         transcribing = true
-        defer { transcribing = false }
-        let transport = client
+        defer { if voiceRequest?.id == request.id { voiceRequest = nil; transcribing = false } }
         do {
-            let audio = try desktop.stopRecording()
-            defer { try? FileManager.default.removeItem(at: audio) }
-            let text = try await transport.transcribe(audioURL: audio)
-            guard request.connectionGeneration == connectionGeneration, request.sessionID == selectedID else {
-                error = "The conversation changed while transcribing. Ask your question again."
-                return
-            }
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                error = "No speech was detected. Hold the shortcut and ask again."
-                return
-            }
+            let text = try await voice.finishListening()
+            guard voiceRequest?.id == request.id, request.connectionGeneration == connectionGeneration, request.sessionID == selectedID else { return }
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw VoiceProtocolError.noSpeech }
             let preservedDraft = draft
             transcribing = false
-            if request.autoSend, autoSendAllowed {
+            if request.autoSend, autoSendAllowed, selected?.phase.busy != true {
                 draft = text
                 await send(speakReply: true)
                 guard request.connectionGeneration == connectionGeneration, request.sessionID == selectedID else { return }
@@ -577,9 +666,11 @@ struct SavedCompanion: Codable {
                 else if draft == text, !preservedDraft.isEmpty { draft = preservedDraft + "\n\n" + text }
             } else {
                 draft = preservedDraft.isEmpty ? text : preservedDraft + "\n\n" + text
-                if !autoSendAllowed { error = "Recording reached two minutes. Review the transcript before sending." }
+                if !autoSendAllowed { error = "Recording reached 30 seconds. Review the transcript before sending." }
+                else if request.autoSend { error = "Your question is in the draft. BB is still working; send it when ready, or stop the current task." }
             }
-        } catch { self.error = error.localizedDescription }
+        } catch is CancellationError { }
+        catch { if voiceRequest?.id == request.id { self.error = error.localizedDescription } }
     }
     private func connectionFailed(_ message: String) {
         connected = false; error = message
@@ -599,5 +690,5 @@ struct SavedCompanion: Codable {
             }
         }
     }
-    func shutdown() { onVisualDismiss?(); monitor?.cancel(); recordingLimit?.cancel(); clearCapture(); desktop.shutdown(); save() }
+    func shutdown() { cancelVoiceInput(); stopSpeaking(); voice.shutdown(); onVisualDismiss?(); monitor?.cancel(); recordingLimit?.cancel(); clearCapture(); desktop.shutdown(); save() }
 }

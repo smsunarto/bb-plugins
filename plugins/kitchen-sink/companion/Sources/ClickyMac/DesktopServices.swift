@@ -1,5 +1,4 @@
 import AppKit
-import AVFoundation
 import Carbon
 import ClickyCore
 import ScreenCaptureKit
@@ -15,9 +14,6 @@ struct CapturedScreen {
 enum DesktopServiceError: LocalizedError {
     case microphoneDenied
     case screenCaptureDenied
-    case recordingUnavailable
-    case recordingInProgress
-    case notRecording
     case displayUnavailable
     case imageEncodingFailed
     case shortcutUnavailable(OSStatus)
@@ -28,9 +24,6 @@ enum DesktopServiceError: LocalizedError {
             "Allow microphone access for Clicky in System Settings → Privacy & Security → Microphone."
         case .screenCaptureDenied:
             "Allow Clicky in System Settings → Privacy & Security → Screen & System Audio Recording, then reopen the app."
-        case .recordingUnavailable: "The microphone could not start recording. Check the selected audio input."
-        case .recordingInProgress: "A recording is already in progress."
-        case .notRecording: "There is no recording to transcribe."
         case .displayUnavailable: "The selected display is no longer connected. Capture your screen again."
         case .imageEncodingFailed: "The screenshot could not be saved."
         case let .shortcutUnavailable(status):
@@ -39,17 +32,9 @@ enum DesktopServiceError: LocalizedError {
     }
 }
 
-/// Owns native resources; captures and recordings never leave the Mac through this service.
+/// Owns native resources; captures never leave the Mac through this service.
 @MainActor
 final class DesktopServices {
-    private enum Recording {
-        case idle
-        case requesting(UUID)
-        case active(AVAudioRecorder, URL)
-    }
-
-    private var recording: Recording = .idle
-    private let speech = AVSpeechSynthesizer()
     private var overlay: NSPanel?
     private var overlayExpiry: Task<Void, Never>?
     private var hotKeys: [EventHotKeyRef] = []
@@ -61,60 +46,6 @@ final class DesktopServices {
     private var voiceKeyDown = false
     private let temporaryDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("bb-clicky-\(UUID().uuidString)", isDirectory: true)
-
-    var isRecording: Bool {
-        if case let .active(recorder, _) = recording { return recorder.isRecording }
-        return false
-    }
-
-    func startRecording() async throws {
-        guard case .idle = recording else { throw DesktopServiceError.recordingInProgress }
-        stopSpeaking()
-        let requestID = UUID()
-        recording = .requesting(requestID)
-        let allowed = await AVCaptureDevice.requestAccess(for: .audio)
-        guard case let .requesting(currentID) = recording, currentID == requestID else { throw CancellationError() }
-        recording = .idle
-        try Task.checkCancellation()
-        guard allowed else { throw DesktopServiceError.microphoneDenied }
-
-        let url = try temporaryFile(extension: "m4a")
-        do {
-            let recorder = try AVAudioRecorder(url: url, settings: [
-                AVFormatIDKey: kAudioFormatMPEG4AAC,
-                AVSampleRateKey: 24_000,
-                AVNumberOfChannelsKey: 1,
-                AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-            ])
-            guard recorder.prepareToRecord(), recorder.record(forDuration: 120) else {
-                throw DesktopServiceError.recordingUnavailable
-            }
-            recording = .active(recorder, url)
-        } catch {
-            try? FileManager.default.removeItem(at: url)
-            throw error
-        }
-    }
-
-    /// Caller owns the returned file and removes it after transcription finishes.
-    func stopRecording() throws -> URL {
-        guard case let .active(recorder, url) = recording else { throw DesktopServiceError.notRecording }
-        recording = .idle
-        recorder.stop()
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw DesktopServiceError.recordingUnavailable
-        }
-        return url
-    }
-
-    func cancelRecording() {
-        let previous = recording
-        recording = .idle
-        if case let .active(recorder, url) = previous {
-            recorder.stop()
-            try? FileManager.default.removeItem(at: url)
-        }
-    }
 
     /// Captures the display under the pointer once; callers preview this exact image before sending.
     func captureScreen() async throws -> CapturedScreen {
@@ -162,19 +93,6 @@ final class DesktopServices {
         try? FileManager.default.removeItem(at: capture.url)
     }
 
-    func speak(_ text: String) {
-        stopSpeaking()
-        let spoken = ScreenPoint.parse(in: text).text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !spoken.isEmpty else { return }
-        let utterance = AVSpeechUtterance(string: String(spoken.prefix(6_000)))
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate
-        speech.speak(utterance)
-    }
-
-    func stopSpeaking() {
-        speech.stopSpeaking(at: .immediate)
-    }
-
     /// Explicit UI action only: a captured screen may be stale by the time the answer arrives.
     func showPoints(in response: String, for capture: CapturedScreen) {
         clearPoints()
@@ -208,7 +126,7 @@ final class DesktopServices {
         overlay = nil
     }
 
-    /// Cmd+Shift+Space toggles the panel; hold Cmd+Shift+V for voice.
+    /// Cmd+Shift+Space toggles the panel; hold Control+Option+Space for voice.
     func registerShortcut(
         action: @escaping @MainActor () -> Void,
         onVoicePress: (@MainActor () -> Void)? = nil,
@@ -261,8 +179,6 @@ final class DesktopServices {
     }
 
     func shutdown() {
-        cancelRecording()
-        stopSpeaking()
         clearPoints()
         unregisterShortcuts()
         try? FileManager.default.removeItem(at: temporaryDirectory)

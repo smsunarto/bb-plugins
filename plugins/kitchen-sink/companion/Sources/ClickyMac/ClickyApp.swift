@@ -25,6 +25,16 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        // Secure bootstrap: the key itself is never passed in argv or logged.
+        if let flag = CommandLine.arguments.firstIndex(of: "--import-elevenlabs-key-file"), flag + 1 < CommandLine.arguments.count {
+            let url = URL(fileURLWithPath: CommandLine.arguments[flag + 1])
+            do {
+                let key = try String(contentsOf: url, encoding: .utf8)
+                defer { try? FileManager.default.removeItem(at: url) }
+                try VoiceKeychain.save(key)
+                model.voiceKeyStatus = "Key saved in Keychain"
+            } catch { model.error = "Could not import the voice key. " + error.localizedDescription }
+        }
         let panel = CompanionPanel(contentRect: NSRect(x: 0, y: 0, width: 820, height: 610), styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         panel.title = "Clicky for BB"
         panel.titleVisibility = .hidden
@@ -106,7 +116,7 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         guard !positioningWindows, let screen = NotchPlacement.screen else { return }
         positioningWindows = true
         defer { positioningWindows = false }
-        let active = model.recording || model.transcribing || model.error != nil || model.visualWarning != nil || model.visualDocument != nil || model.selected?.phase.busy == true
+        let active = model.recording || model.requestingMicrophone || model.transcribing || model.voice.speaking || model.error != nil || model.visualWarning != nil || model.visualDocument != nil || model.selected?.phase.busy == true
         let placement = NotchPlacement(screen: screen, expanded: notchHovered || model.panelVisible || active)
         notch?.level = placement.cutoutWidth > 0 ? .statusBar : .floating
         notch?.setFrame(placement.frame, display: true)
@@ -160,9 +170,11 @@ private struct NotchView: View {
     let open: () -> Void
     let activityChanged: () -> Void
     private var placement: NotchPlacement { layout.placement }
-    private var active: Bool { model.recording || model.transcribing || model.error != nil || model.visualWarning != nil || model.visualDocument != nil || model.selected?.phase.busy == true }
+    private var active: Bool { model.recording || model.requestingMicrophone || model.transcribing || model.voice.speaking || model.error != nil || model.visualWarning != nil || model.visualDocument != nil || model.selected?.phase.busy == true }
     private var status: String {
+        if model.requestingMicrophone { return "Connecting voice…" }
         if model.recording { return "Listening…" }
+        if model.voice.speaking { return "Speaking…" }
         if model.transcribing { return "Transcribing…" }
         if model.error != nil || model.visualWarning != nil { return "Needs attention" }
         if model.selected?.phase.busy == true { return model.selected?.phase.label ?? "Thinking…" }
@@ -217,6 +229,7 @@ struct CompanionView: View {
     @Bindable var model: CompanionModel
     var hide: () -> Void
     @FocusState private var inputFocused: Bool
+    @State private var voiceKeyDraft = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -237,7 +250,7 @@ struct CompanionView: View {
             if model.settingsVisible { settings }
             else {
                 HStack(spacing: 0) {
-                    sidebar.disabled(model.sending || model.recording || model.transcribing)
+                    sidebar.disabled(model.sending || model.recording || model.requestingMicrophone || model.transcribing)
                     Divider().opacity(0.4)
                     VStack(spacing: 0) {
                         conversation
@@ -337,6 +350,9 @@ struct CompanionView: View {
     }
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if (model.recording || model.requestingMicrophone || model.transcribing), !model.voice.preview.isEmpty {
+                Text(model.voice.preview).font(.callout).foregroundStyle(.secondary).lineLimit(4).textSelection(.enabled)
+            }
             if let capture = model.capture {
                 HStack(spacing: 10) {
                     Image(nsImage: capture.image).resizable().scaledToFit().frame(width: 80, height: 50).clipShape(RoundedRectangle(cornerRadius: 5))
@@ -346,7 +362,7 @@ struct CompanionView: View {
                 }.padding(8).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
             VStack(spacing: 12) {
-                TextField(model.recording ? "Listening…" : model.transcribing ? "Transcribing with BB…" : "Ask anything, or give me a task…", text: $model.draft, axis: .vertical)
+                TextField(model.recording ? "Listening…" : model.transcribing ? "Finishing transcript…" : "Ask anything, or give me a task…", text: $model.draft, axis: .vertical)
                     .textFieldStyle(.plain).font(.system(size: 13)).lineLimit(2...5).focused($inputFocused)
                     .disabled(model.sending)
                     .onSubmit { if model.canSend { Task { await model.send() } } }
@@ -355,7 +371,7 @@ struct CompanionView: View {
                         Task { if model.recording { await model.endRecording() } else { await model.beginRecording() } }
                     }.foregroundStyle(model.recording ? .red : Palette.foreground).disabled(model.transcribing || model.sending)
                     iconButton("Capture screen", "viewfinder") { Task { await model.takeCapture() } }.disabled(model.capturing || model.sending)
-                    iconButton("Stop speaking and clear guides", "speaker.slash") { model.desktop.stopSpeaking(); model.desktop.clearPoints() }
+                    iconButton("Stop speaking and clear guides", "speaker.slash") { model.stopSpeaking(); model.desktop.clearPoints() }
                     Spacer()
                     if model.hasGuides { iconButton("Show screen guides", "scope") { model.showGuides() } }
                     if model.selected?.threadID != nil { iconButton("Open conversation in BB", "arrow.up.forward.app") { Task { await model.openInBB() } } }
@@ -386,9 +402,21 @@ struct CompanionView: View {
                         Text("Choose a machine").tag("")
                         ForEach(model.hosts, id: \.id) { host in Text(host.name).tag(host.id) }
                     }
-                    Toggle("Read replies aloud", isOn: $model.preferences.speakReplies)
+                    Divider()
+                    Text("ElevenLabs realtime voice").font(.headline)
+                    SecureField("ElevenLabs API key", text: $voiceKeyDraft).textFieldStyle(.roundedBorder)
+                    HStack {
+                        Button("Save key") { model.saveVoiceKey(voiceKeyDraft); voiceKeyDraft = "" }.disabled(voiceKeyDraft.isEmpty)
+                        Button("Check key") { model.checkVoiceKey() }
+                        Button("Remove key") { model.removeVoiceKey() }
+                    }
+                    Text(model.voiceKeyStatus).font(.caption).foregroundStyle(.secondary)
+                    field("Voice ID", text: Binding(get: { model.preferences.elevenLabsVoiceID ?? RealtimeVoiceProtocol.defaultVoiceID },
+                        set: { model.preferences.elevenLabsVoiceID = $0.isEmpty ? nil : $0 }))
+                    Toggle("Read typed replies aloud", isOn: $model.preferences.speakReplies)
+                    Text("Voice questions get spoken replies. Hold to interrupt speech; release to send. Each hold is limited to 30 seconds. Only the beginning of long replies is read aloud.").font(.caption).foregroundStyle(.secondary)
                 }.padding(18).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
-                Text("⌘ ⇧ Space opens Clicky. Hold ⌃ ⌥ Space to talk; release to send. The chat microphone records a draft. Screen capture is always your choice. BB retains messages and attachments; your configured voice service receives recorded audio.")
+                Text("⌘ ⇧ Space opens Clicky. Hold ⌃ ⌥ Space to talk; release to send. The chat microphone records a draft. Screen capture is always your choice. BB retains messages and attachments. ElevenLabs receives microphone audio and the text spoken aloud. Your API key stays in macOS Keychain.")
                     .font(.caption).foregroundStyle(.secondary).lineSpacing(4)
                 Text("For a remote BB connection, enter its authenticated local proxy URL. If BB’s host daemon restarts, that URL may change; update it here and check the connection again.").font(.caption).foregroundStyle(.secondary)
                 Text("Agents use BB’s approval flow. When a task needs permission, open its conversation in BB to continue.").font(.caption).foregroundStyle(.secondary)
@@ -409,7 +437,11 @@ struct CompanionView: View {
             Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
             Text(text).font(.caption).textSelection(.enabled).lineLimit(5)
             Spacer(minLength: 0)
-            Button("Retry connection") { Task { await model.connect() } }.font(.caption)
+            if !model.connected {
+                Button("Retry connection") { Task { await model.connect() } }.font(.caption)
+            } else if !model.settingsVisible {
+                Button("Settings") { model.settingsVisible = true }.font(.caption)
+            }
         }.padding(12).background(.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 8)).padding(.horizontal, 12)
     }
     private func iconButton(_ label: String, _ symbol: String, action: @escaping () -> Void) -> some View {
