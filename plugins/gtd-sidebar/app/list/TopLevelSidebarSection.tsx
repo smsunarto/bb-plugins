@@ -332,12 +332,7 @@ export function TopLevelSidebarSection({
               </span>
             ))}
         </span>
-        {!isFolder ? (
-          <span
-            aria-hidden="true"
-            className="gtd-shelf-rule h-px min-w-2 flex-1 bg-sidebar-border"
-          />
-        ) : null}
+        {!isFolder ? <span aria-hidden="true" className="gtd-shelf-rule" /> : null}
         {status || actions || collapsedActivityIndicator || foldCountIndicator ? (
           <span
             data-sidebar-trailing-controls=""

@@ -152,11 +152,25 @@
 
 /* Pre-rewrite ShelfHeader: 8px inset, 8px above and 2px below. */
 .gtd-shelf-header {
-  padding: 8px 10px 2px 8px;
+  padding: 8px 0 2px 8px;
   gap: 8px;
+}
+/* The previous shelf's hairline stays inline beside the label. */
+.gtd-shelf-rule {
+  height: 1px;
+  min-width: 0;
+  flex: 1;
+  background: var(--sidebar-border);
+  pointer-events: none;
 }
 .gtd-shelf-header > span:first-child {
   flex: 0 1 auto;
+  font-size: 10px;
+  font-weight: 500;
+}
+/* Titles keep the previous desktop density; touch retains its 14px type. */
+[data-bb-plugin="gtd-sidebar"] .gtd-thread-title-container {
+  font-size: 12px;
 }
 /* Align the folder's leading edge with the shelf label's 8px inset. */
 .gtd-folder-glyph {
@@ -165,6 +179,9 @@
 @media (max-width: 767px) and (pointer: coarse) {
   [data-bb-plugin="gtd-sidebar"] [data-sidebar-sticky-stack] {
     --bb-sidebar-sticky-label-height: 40px;
+  }
+  [data-bb-plugin="gtd-sidebar"] .gtd-thread-title-container {
+    font-size: 14px;
   }
   .gtd-folder-glyph {
     transform: translateX(4px);
@@ -179,4 +196,29 @@
   [data-bb-plugin="gtd-sidebar"] [data-icon="Loading"].animate-spin {
     animation-duration: 2s;
   }
+}
+
+/* Hidden shelf actions must not reserve space in the inline hairline.
+   Their existing hover/focus/touch visibility rules still own interaction;
+   visible controls paint over the line at the trailing edge. */
+.gtd-shelf-header > [data-sidebar-trailing-controls] {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 8px;
+  bottom: 2px;
+  height: auto;
+}
+.gtd-shelf-header > [data-sidebar-trailing-controls] > * {
+  background-color: var(--sidebar);
+}
+
+/* Empty status slots should not shorten idle titles. Keep the controls
+   mounted so keyboard focus restores their space using the host's rules. */
+.gtd-thread-empty-trailing:not(:hover):not(:has(:focus-visible)) .gtd-thread-status-slot {
+  width: 0;
+}
+.gtd-thread-empty-trailing:not(:hover):not(:has(:focus-visible)):not(
+    :has([data-gtd-pull-request], [data-gtd-wake])
+  ) {
+  column-gap: 0;
 }

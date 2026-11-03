@@ -614,8 +614,16 @@ function ThreadRowComponent({
     setIsContextActionsOpen(open);
   };
   const namingProps = useGtdNamingProps(thread.id);
+  const emptyTrailingSlot =
+    thread.archivedAt === null &&
+    !shortcut &&
+    (!showContext ||
+      (miniMap === null &&
+        trailingIndicatorKind === "none" &&
+        !trailingIndicatorResolution.rowStatusIsVisible));
   const rowClassName = cn(
     SIDEBAR_HOVER_ACTIONS_ROW_CLASS,
+    emptyTrailingSlot && !isActionsOpen && "gtd-thread-empty-trailing",
     "group/thread-row cursor-pointer",
     SIDEBAR_ROW_BASE_CLASS,
     LIST_HOVER_TRANSITION,
@@ -752,7 +760,7 @@ function ThreadRowComponent({
         >
           <span
             className={cn(
-              "pointer-events-none relative flex min-w-0 items-center self-stretch",
+              "gtd-thread-title-container pointer-events-none relative flex min-w-0 items-center self-stretch",
               (crossProjectLabel === null || isEditing) && "flex-1",
             )}
           >
@@ -850,7 +858,12 @@ function ThreadRowComponent({
               COARSE_POINTER_COMPACT_ROW_HEIGHT_CLASS,
             )}
           >
-            <span className={cn("relative shrink-0", COARSE_POINTER_ROW_ACTION_SIZE_CLASS)}>
+            <span
+              className={cn(
+                "gtd-thread-status-slot relative shrink-0",
+                COARSE_POINTER_ROW_ACTION_SIZE_CLASS,
+              )}
+            >
               <span
                 data-sidebar-hover-actions-open={isActionsOpen ? "true" : undefined}
                 className={cn(
