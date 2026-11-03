@@ -610,6 +610,12 @@
   background-clip: padding-box;
 }
 
+/* Match T3 Composer's opaque fill. The label comes from Kitchen Sink's
+ * THREAD_DETAILS_TITLE in src/app/thread-details/thread-details.tsx. */
+.dark section[aria-label="Thread details"] {
+  background: color-mix(in srgb, var(--foreground) 14%, var(--background));
+}
+
 .dark [data-promptbox] [data-promptbox-editor-scroll] {
   background-color: transparent;
   border-radius: 11px 11px 0 0;
