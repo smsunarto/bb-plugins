@@ -259,14 +259,19 @@ private func voiceMessage(_ message: URLSessionWebSocketTask.Message) throws -> 
     var speaking: Bool { speech != nil }
     var hasLiveCapture: Bool { capture != nil }
     func releaseCapture() { capture?.finish() }
-    private func key() throws -> String {
-        guard let key = try VoiceKeychain.read() else { throw VoiceProtocolError.provider("missing_key") }
+    private func key(allowInteraction: Bool = false) throws -> String {
+        guard let key = try VoiceKeychain.read(allowInteraction: allowInteraction) else { throw VoiceProtocolError.provider("missing_key") }
         return key
     }
+    @ObservationIgnored var authorizeKey: @Sendable () async throws -> String? = { try await VoiceKeychain.authorize() }
     func startListening() async throws {
         cancelInput(); stopSpeaking()
         let generation = inputGeneration
-        let key = try key()
+        // Invoked only by the user's voice gesture. Re-signed local builds can
+        // request OS authorization here without sending the user to a panel.
+        let authorizedKey = try await authorizeKey()
+        guard generation == inputGeneration else { throw CancellationError() }
+        guard let key = authorizedKey else { throw VoiceProtocolError.provider("missing_key") }
         state = .connecting; preview = ""
         let allowed = await AVCaptureDevice.requestAccess(for: .audio)
         guard generation == inputGeneration else { throw CancellationError() }

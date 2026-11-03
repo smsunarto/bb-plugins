@@ -4,249 +4,272 @@ import Testing
 import ClickyCore
 @testable import ClickyMac
 
-@MainActor struct InitialContextTests {
+@MainActor struct RequestWorkflowTests {
+    @Test func cancelledAuthorizationCannotResumeMicrophoneCapture() async throws {
+        let voice = ElevenLabsVoice()
+        voice.authorizeKey = { try? await Task.sleep(for: .milliseconds(100)); return "fixture-key" }
+        let pending = Task { try await voice.startListening() }
+        try await Task.sleep(for: .milliseconds(20)); voice.cancelInput()
+        do { try await pending.value; Issue.record("Cancelled voice gesture resumed") }
+        catch is CancellationError { }
+        #expect(!voice.hasLiveCapture)
+        voice.shutdown()
+    }
     @Test func stalledCaptureReturnsAndDiscardsItsLateResult() async {
         var discarded = false
         let start = ContinuousClock.now
         let result = await boundedContextWait(timeout: .milliseconds(20), operation: {
-            // Deliberately ignore cancellation, like a stalled platform API.
-            try? await Task.sleep(for: .milliseconds(100))
-            return "late capture"
+            try? await Task.sleep(for: .milliseconds(100)); return "late capture"
         }, discard: { _ in discarded = true })
         #expect(result == nil)
         #expect(start.duration(to: .now) < .milliseconds(200))
-        try? await Task.sleep(for: .milliseconds(120))
-        #expect(discarded)
+        try? await Task.sleep(for: .milliseconds(120)); #expect(discarded)
     }
 
-    @Test func initialPayloadIsAttachedAndNeverStoredInLocalChatText() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let script = root.appendingPathComponent("bb")
-        try Self.cli.write(to: script, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
-        let model = CompanionModel(storageRoot: root.appendingPathComponent("state"))
-        model.preferences.executable = script.path; model.preferences.runtimeExecutable = nil
-        model.preferences.serverURL = "http://127.0.0.1:1"; model.preferences.hostID = "host_fixture"
-        model.instructionsLoader = { ("Fixture instructions", "Fixture visual instructions") }
+    @Test func everyQuestionSpawnsFreshWithContextAndRecentTranscript() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
         var captures = 0
-        let image = root.appendingPathComponent("screen.jpg"); try Data([1]).write(to: image)
-        model.contextCapture = { manual in
-            captures += 1
-            var context = DesktopContext(application: "ContextFixture", accessibility: .available)
-            context.window = "Private context label"
-            let captured = manual ?? CapturedScreen(url: image, image: NSImage(size: CGSize(width: 2, height: 2)), displayID: 1, frame: CGRect(x: 0, y: 0, width: 100, height: 100), capturedAt: Date())
-            return InitialDesktopContext(context: context, capture: captured)
-        }
-        model.connected = true; model.draft = "Question one"
-        await model.send()
-        #expect(captures == 1)
-        let first = try String(contentsOf: root.appendingPathComponent("prompt"), encoding: .utf8)
-        #expect(first.contains("Private context label"))
-        #expect(first.contains("Screen attached to this message: yes"))
-        #expect(model.selected?.visualRequest?.hadScreenshot == true)
-        #expect(!FileManager.default.fileExists(atPath: image.path))
-        #expect(!model.selected!.entries.contains { $0.text.contains("Private context label") })
-        #expect(model.selected?.phase == .ready)
-        model.draft = "Question two"; await model.send()
-        #expect(captures == 1)
-        let followup = try String(contentsOf: root.appendingPathComponent("prompt"), encoding: .utf8)
-        #expect(!followup.contains("Desktop context snapshot"))
-        #expect(model.selected?.phase == .ready)
-        model.shutdown()
-    }
-
-    @Test(arguments: ["disabled", "skip"]) func optedOutContextDoesNotCollect(mode: String) async throws {
-        let (root, model) = try Self.fixture()
-        defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
-        model.preferences.includeInitialContext = mode != "disabled"; model.skipInitialContext = mode == "skip"
-        var collected = false
-        model.contextCapture = { _ in collected = true; return InitialDesktopContext(context: DesktopContext(application: "Fixture", accessibility: .available), capture: nil) }
-        await model.send()
-        #expect(!collected)
-        let prompt = try String(contentsOf: root.appendingPathComponent("prompt"), encoding: .utf8)
-        #expect(!prompt.contains("Desktop context snapshot"))
-        #expect(model.selected?.phase == .ready)
-    }
-
-    @Test func missingPermissionsStillSendsTheQuestion() async throws {
-        let (root, model) = try Self.fixture()
-        defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
         model.contextCapture = { _ in
-            var context = DesktopContext(application: "Fixture", accessibility: .permissionDenied)
-            context.screenshot = .permissionDenied
-            return InitialDesktopContext(context: context, capture: nil)
+            captures += 1
+            return InitialDesktopContext(context: DesktopContext(application: "Fixture screen", accessibility: .permissionDenied), capture: nil)
         }
-        await model.send()
-        let prompt = try String(contentsOf: root.appendingPathComponent("prompt"), encoding: .utf8)
-        #expect(prompt.contains("permissionDenied"))
-        #expect(prompt.hasSuffix("User request:\nFixture question"))
-        #expect(model.selected?.phase == .ready)
-        #expect(model.contextNotice?.contains("permission is needed") == true)
+        await model.ask("First question")
+        let firstID = try #require(model.currentRequest?.threadID)
+        await model.ask("Second question")
+        #expect(model.currentRequest?.threadID != firstID)
+        #expect(captures == 2)
+        let prompts = try promptFiles(root)
+        #expect(prompts.count == 2)
+        let second = try #require(prompts.first { $0.hasSuffix("User request:\nSecond question") })
+        #expect(second.contains("First question") && second.contains("Fixture answer"))
+        #expect(second.contains("Fixture screen") && second.contains(firstID))
+        #expect(!second.contains("Mode: Conversation"))
+        #expect(model.requests.allSatisfy { $0.phase == .ready })
     }
 
-    @Test func manualImageIsTheSingleAttachmentAndIsCleanedAfterRejection() async throws {
-        let (root, model) = try Self.fixture()
-        defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
-        let image = root.appendingPathComponent("manual.jpg"); try Data([1]).write(to: image)
-        model.capture = CapturedScreen(url: image, image: NSImage(), displayID: 1, frame: .zero, capturedAt: Date())
-        model.contextCapture = { manual in
-            #expect(manual?.url == image)
-            return InitialDesktopContext(context: DesktopContext(application: "Fixture", accessibility: .unavailable), capture: manual)
-        }
-        try Data().write(to: root.appendingPathComponent("reject"))
-        await model.send()
-        let args = try JSONDecoder().decode([String].self, from: Data(contentsOf: root.appendingPathComponent("args")))
-        #expect(args.filter { $0 == image.path }.count == 1)
-        #expect(!FileManager.default.fileExists(atPath: image.path))
-        #expect(model.draft == "Fixture question")
-        #expect(model.selected?.phase == .failed)
-        #expect(model.contextNotice?.contains("was not sent") == true)
-        #expect(model.contextNotice?.contains("saved in the BB thread") == false)
+    @Test func busyAndUnconfirmedRequestsNeverBlockTheNextAsk() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        await model.ask("First")
+        let id = try #require(model.outputRequestID)
+        let i = try #require(model.requests.firstIndex { $0.id == id })
+        model.requests[i].phase = .deliveryUnknown
+        model.requests[i].rootTurnID = nil; model.requests[i].completionStatus = nil
+        await model.ask("Next")
+        #expect(model.outputRequestID != id)
+        #expect(try promptFiles(root).count == 2)
+        #expect(model.currentRequest?.phase == .ready)
     }
 
-    @Test func changingConnectionDuringCaptureDoesNotSpawn() async throws {
-        let (root, model) = try Self.fixture()
-        defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+    @Test func captureAndSpawnDoNotSerializeQuestions() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        var calls = 0
+        model.contextCapture = { _ in
+            calls += 1
+            if calls == 1 { try? await Task.sleep(for: .milliseconds(200)) }
+            return InitialDesktopContext(context: DesktopContext(application: "Fixture", accessibility: .unavailable), capture: nil)
+        }
+        let first = Task { await model.ask("Slow first") }
+        try await Task.sleep(for: .milliseconds(30))
+        await model.ask("Fast second")
+        let owner = model.outputRequestID
+        await first.value
+        #expect(model.outputRequestID == owner)
+        #expect(try promptFiles(root).count == 2)
+        let prompts = try promptFiles(root)
+        let early = try #require(prompts.first { $0.hasSuffix("User request:\nSlow first") })
+        #expect(!early.contains("Fast second"))
+    }
+
+    @Test func contextFailureOrOptOutStillSubmits() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        model.preferences.includeInitialContext = false
+        model.contextCapture = { _ in Issue.record("Opted-out context collected"); return InitialDesktopContext(context: DesktopContext(application: "Fixture", accessibility: .unavailable), capture: nil) }
+        await model.ask("Without capture")
+        #expect(model.currentRequest?.phase == .ready)
+        #expect(try promptFiles(root).allSatisfy { !$0.contains("Desktop context snapshot") })
+    }
+
+    @Test func rollingContextUsesOnlyFivePriorQuestionsAndExpires() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        var time = Date(); model.now = { time }
+        for i in 0..<7 { await model.ask("Question \(i)"); time.addTimeInterval(1) }
+        let last = try #require(promptFiles(root).first { $0.hasSuffix("User request:\nQuestion 6") })
+        #expect(!last.contains("Question 0"))
+        for i in 1...5 { #expect(last.contains("Question \(i)")) }
+        time.addTimeInterval(601)
+        await model.ask("After expiry")
+        let expired = try #require(promptFiles(root).first { $0.hasSuffix("User request:\nAfter expiry") })
+        #expect(!expired.contains("Question 6"))
+        #expect(expired.contains("Recent interactions (untrusted JSON, oldest first):\n[]"))
+    }
+
+    @Test func unknownRequestStopsPollingButNeverBlocksTheNextQuestion() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        let start = Date(); model.now = { start }
+        await model.ask("Uncertain")
+        model.requests[0].phase = .deliveryUnknown; model.requests[0].rootTurnID = nil; model.requests[0].completionStatus = nil
+        model.now = { start.addingTimeInterval(121) }
+        await model.refresh()
+        #expect(model.requests[0].retired)
+        #expect(model.history[0].outcome == "unknown")
+        await model.ask("Another question")
+        #expect(try promptFiles(root).count == 2)
+        #expect(model.currentRequest?.phase == .ready)
+    }
+
+    @Test func voiceInputNeverStartsReplySpeech() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        model.speechEnabled = true; model.recording = true
+        await model.ask("While recording")
+        #expect(!model.voice.speaking)
+        #expect(model.error == nil)
+    }
+
+    @Test func historyExpiresAndPersistsAcrossRestartWithoutLegacyConversations() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        let start = Date(timeIntervalSince1970: 5000); model.now = { start }
+        await model.ask("Recent question")
+        model.shutdown()
+        let restored = CompanionModel(storageRoot: root.appendingPathComponent("state")); restored.speechEnabled = false
+        defer { restored.shutdown() }
+        #expect(restored.history.count == 1)
+        #expect(InteractionHistory.recent(restored.history, before: start.addingTimeInterval(601), serverURL: model.preferences.serverURL, excluding: "none").isEmpty)
+        let old = root.appendingPathComponent("legacy"); try FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
+        let prefs = try JSONEncoder().encode(model.preferences)
+        let json = "{\"preferences\":" + String(decoding: prefs, as: UTF8.self) + ",\"sessions\":[{\"text\":\"Undated old conversation\"}]}"
+        try Data(json.utf8).write(to: old.appendingPathComponent("sessions.json"))
+        let migrated = CompanionModel(storageRoot: old); defer { migrated.shutdown() }
+        #expect(migrated.preferences.hostID == "host_fixture")
+        #expect(migrated.requests.isEmpty)
+    }
+
+    @Test func cancelledCaptureDoesNotSubmitOrLeakTheImage() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        let image = root.appendingPathComponent("image.jpg"); try Data([1]).write(to: image)
         model.contextCapture = { _ in
             model.connectionChanged()
-            return InitialDesktopContext(context: DesktopContext(application: "Fixture", accessibility: .unavailable), capture: nil)
+            return InitialDesktopContext(context: DesktopContext(application: "Fixture", accessibility: .unavailable), capture: CapturedScreen(url: image, image: NSImage(), displayID: 1, frame: .zero, capturedAt: Date()))
         }
-        await model.send()
-        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("prompt").path))
-        #expect(model.selected?.threadID == nil)
-        #expect(model.selected?.phase == .ready)
-        #expect(model.draft == "Fixture question")
-    }
-
-    @Test func returningToTheSameConversationCannotReviveASupersededSend() async throws {
-        let (root, model) = try Self.fixture()
-        defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
-        let original = try #require(model.selectedID)
-        model.contextCapture = { _ in
-            model.newConversation()
-            model.select(original)
-            model.draft = "Replacement draft"
-            return InitialDesktopContext(context: DesktopContext(application: "Fixture", accessibility: .unavailable), capture: nil)
-        }
-        await model.send()
-        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("prompt").path))
-        #expect(model.selected?.threadID == nil)
-        #expect(model.selected?.entries.isEmpty == true)
-        #expect(model.draft == "Replacement draft")
-    }
-
-    @Test(arguments: ["idle-empty", "idle-existing", "active", "log-error"])
-    func archivedConversationReleasesUnconfirmedDeliveryAndPreservesTheQuestion(state: String) async throws {
-        let (root, model) = try Self.fixture()
-        defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
-        model.preferences.includeInitialContext = false
-        await model.send()
-        let index = try #require(model.sessions.firstIndex(where: { $0.id == model.selectedID }))
-        model.sessions[index].phase = .deliveryUnknown
-        model.sessions[index].rootTurnID = nil; model.sessions[index].completionStatus = nil
-        model.sessions[index].entries.append(ChatEntry(id: "pending-rejected", role: "user", text: "My unsent question"))
-        model.draft = state == "idle-existing" ? "My newer draft" : ""
-        try Data().write(to: root.appendingPathComponent("archived"))
-        if state == "active" { try Data().write(to: root.appendingPathComponent("active")) }
-        if state == "log-error" { try Data().write(to: root.appendingPathComponent("fail-log")) }
-        await model.refresh()
-        if state == "active" || state == "log-error" {
-            #expect(model.selected?.phase == .deliveryUnknown)
-            #expect(model.draft.isEmpty)
-            if state == "log-error" { #expect(model.error?.contains("Could not refresh") == true) }
-        } else {
-            #expect(model.selected?.phase == .failed)
-            #expect(model.draft == (state == "idle-existing" ? "My newer draft" : "My unsent question"))
-            #expect(model.error?.contains("archived") == true)
-        }
-        #expect(try String(contentsOf: root.appendingPathComponent("turn"), encoding: .utf8) == "1")
-    }
-
-    @Test(arguments: [false, true])
-    func completedArchivedConversationIsNotFailedOrRestoredAsADraft(completesDuringRefresh: Bool) async throws {
-        let (root, model) = try Self.fixture()
-        defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
-        model.preferences.includeInitialContext = false
-        await model.send()
-        let index = try #require(model.sessions.firstIndex(where: { $0.id == model.selectedID }))
-        if completesDuringRefresh {
-            let request = VisualRequest(id: UUID().uuidString, afterSequence: model.sessions[index].sequence, display: .current, hadScreenshot: false)
-            model.sessions[index].visualRequest = request
-            model.sessions[index].phase = .deliveryUnknown
-            model.sessions[index].rootTurnID = nil; model.sessions[index].completionStatus = nil
-            model.sessions[index].sentAfterSequence = model.sessions[index].sequence
-            model.sessions[index].entries.append(ChatEntry(id: "pending-accepted", role: "user", text: "Accepted question"))
-            try "Clicky request: \(request.id)\n\nUser request:\nAccepted question".write(to: root.appendingPathComponent("prompt"), atomically: true, encoding: .utf8)
-            try "2".write(to: root.appendingPathComponent("turn"), atomically: true, encoding: .utf8)
-        }
-        model.draft = ""
-        try Data().write(to: root.appendingPathComponent("archived"))
-        await model.refresh()
-        #expect(model.selected?.phase == .ready)
-        #expect(model.error == nil)
-        #expect(model.draft.isEmpty)
-    }
-
-    @Test func switchingConversationsDuringCaptureCannotSendOrKeepAnAutoImage() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let model = CompanionModel(storageRoot: root)
-        model.preferences.hostID = "host_fixture"; model.connected = true
-        let image = root.appendingPathComponent("screen.jpg"); try Data([1]).write(to: image)
-        model.contextCapture = { _ in
-            try? await Task.sleep(for: .milliseconds(100))
-            return InitialDesktopContext(context: DesktopContext(application: "Fixture", accessibility: .permissionDenied), capture: CapturedScreen(url: image, image: NSImage(), displayID: 1, frame: .zero, capturedAt: Date()))
-        }
-        model.draft = "Old conversation"
-        let pending = Task { await model.send() }
-        try await Task.sleep(for: .milliseconds(20)); model.newConversation(); model.draft = "New draft"
-        await pending.value
-        #expect(model.draft == "New draft")
-        #expect(model.selected?.threadID == nil)
-        #expect(model.selected?.entries.isEmpty == true)
+        await model.ask("Cancelled question")
+        #expect(try promptFiles(root).isEmpty)
         #expect(!FileManager.default.fileExists(atPath: image.path))
-        model.shutdown()
+        #expect(model.currentRequest?.phase == .failed)
     }
 
-    private static func fixture() throws -> (URL, CompanionModel) {
+    @Test func completionOnAFastTickDoesNotInventAMissingThread() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        try Data().write(to: root.appendingPathComponent("hold-completion"))
+        await model.ask("Finishes between status polls")
+        #expect(model.currentRequest?.phase == .running)
+        try FileManager.default.removeItem(at: root.appendingPathComponent("hold-completion"))
+        await model.refresh(reconcileStatus: false)
+        #expect(model.currentRequest?.phase == .ready)
+        #expect(model.error == nil)
+    }
+
+    @Test func everyBackgroundReplyIsEventuallyDrained() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        try Data().write(to: root.appendingPathComponent("hold-completion"))
+        for i in 0..<5 { await model.ask("Pending \(i)") }
+        try FileManager.default.removeItem(at: root.appendingPathComponent("hold-completion"))
+        for _ in 0..<4 { await model.refresh() }
+        #expect(model.requests.allSatisfy { $0.phase == .ready })
+        #expect(model.history.allSatisfy { $0.answer == "Fixture answer" })
+    }
+
+    @Test func failedStopKeepsTrackingTheRequest() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        try Data().write(to: root.appendingPathComponent("hold-completion"))
+        await model.ask("Keep tracking if stop fails")
+        await model.stop()
+        #expect(model.currentRequest?.phase == .running)
+        #expect(model.currentRequest?.retired == false)
+        try FileManager.default.removeItem(at: root.appendingPathComponent("hold-completion"))
+        // A periodic refresh may already own the event reader. Observe the
+        // eventual completion rather than assuming this call acquires it.
+        for _ in 0..<50 {
+            await model.refresh()
+            if model.currentRequest?.phase == .ready { break }
+            try await Task.sleep(for: .milliseconds(40))
+        }
+        #expect(model.currentRequest?.phase == .ready)
+    }
+
+    @Test func slowNonterminalReadDoesNotInventAMissingThread() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        try Data().write(to: root.appendingPathComponent("hold-completion"))
+        await model.ask("Slow stream")
+        try Data().write(to: root.appendingPathComponent("slow-events"))
+        await model.refresh(reconcileStatus: false)
+        #expect(model.currentRequest?.phase == .running)
+        #expect(model.error == nil)
+    }
+
+    @Test func stoppingSpeechAfterCompletionPreservesCompletedHistory() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        await model.ask("Completed answer")
+        await model.stop()
+        #expect(model.currentRequest?.phase == .ready)
+        #expect(model.history.first?.outcome == "completed")
+        #expect(!FileManager.default.fileExists(atPath: root.appendingPathComponent("stops").path))
+    }
+
+    @Test func cancellationSurvivesLostSpawnResponseAndIsAttemptedOnce() async throws {
+        let (root, model) = try fixture(); defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        for flag in ["fail-spawn-response", "hide-recovery", "stop-success"] { try Data().write(to: root.appendingPathComponent(flag)) }
+        await model.ask("Cancel unknown delivery")
+        #expect(model.currentRequest?.threadID == nil)
+        await model.stop()
+        try FileManager.default.removeItem(at: root.appendingPathComponent("hide-recovery"))
+        await model.refresh()
+        #expect(model.currentRequest?.phase == .failed)
+        #expect(model.currentRequest?.retired == true)
+        await model.refresh()
+        #expect(try String(contentsOf: root.appendingPathComponent("stops"), encoding: .utf8) == "stop\n")
+    }
+
+    private func promptFiles(_ root: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).filter { $0.pathExtension == "prompt" }.map { try String(contentsOf: $0, encoding: .utf8) }
+    }
+    private func fixture() throws -> (URL, CompanionModel) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let script = root.appendingPathComponent("bb")
-        try cli.write(to: script, atomically: true, encoding: .utf8)
+        let script = root.appendingPathComponent("bb"); try Self.cli.write(to: script, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
-        let model = CompanionModel(storageRoot: root.appendingPathComponent("state"))
+        let model = CompanionModel(storageRoot: root.appendingPathComponent("state")); model.speechEnabled = false
         model.preferences.executable = script.path; model.preferences.runtimeExecutable = nil
         model.preferences.serverURL = "http://127.0.0.1:1"; model.preferences.hostID = "host_fixture"
         model.instructionsLoader = { ("Fixture instructions", "Fixture visual instructions") }
-        model.newConversation(); model.connected = true; model.draft = "Fixture question"
+        model.contextCapture = { _ in InitialDesktopContext(context: DesktopContext(application: "Fixture", accessibility: .unavailable), capture: nil) }
+        model.connected = true
         return (root, model)
     }
-
     private static let cli = #"""
 #!/usr/bin/python3
-import sys,json,re
+import sys,json,re,time
 from pathlib import Path
 root=Path(__file__).parent;a=sys.argv[1:]
-if a[:2] in (['thread','spawn'],['thread','tell']):
- flag='--prompt-file' if a[1]=='spawn' else '--message-file'
- text=Path(a[a.index(flag)+1]).read_text();(root/'prompt').write_text(text)
- (root/'args').write_text(json.dumps(a))
- if (root/'reject').exists():
-  print(json.dumps({'ok':False,'error':{'code':'unauthorized','message':'Fixture rejection'}}));sys.exit(1)
- turn=int((root/'turn').read_text())+1 if (root/'turn').exists() else 1
- (root/'turn').write_text(str(turn))
- print(json.dumps({'id':'thr_fixture','threadId':'thr_fixture','ok':True,'projectId':'proj_personal','status':'idle'}))
+if a[:2]==['thread','spawn']:
+ text=Path(a[a.index('--prompt-file')+1]).read_text()
+ nonce=re.search(r'Clicky request: ([^\n]+)',text).group(1);tid='thr_'+nonce
+ (root/(tid+'.prompt')).write_text(text)
+ if (root/'fail-spawn-response').exists():
+  print(json.dumps({'ok':False,'error':{'code':'error','message':'Lost spawn response'}}));sys.exit(1)
+ print(json.dumps({'id':tid,'projectId':'proj_personal','status':'idle','title':a[a.index('--title')+1]}))
+elif a[:2]==['thread','tell']:sys.exit('Unexpected thread reuse')
 elif a[:2]==['thread','log']:
- if (root/'fail-log').exists():
-  print(json.dumps({'ok':False,'error':{'code':'error','message':'Fixture event read failed'}}));sys.exit(1)
- text=(root/'prompt').read_text();base=(int((root/'turn').read_text())-1)*4
- def row(seq,kind,data,turn=None):return {'id':str(seq),'seq':seq,'type':kind,'scope':{'turnId':turn} if turn else {},'data':data}
- rows=[row(base+1,'client/turn/requested',{'requestId':str(base),'input':[{'type':'text','text':text}]}),row(base+2,'turn/started',{},str(base)),row(base+3,'turn/input/accepted',{'clientRequestId':str(base)},str(base)),row(base+4,'turn/completed',{'status':'completed'},str(base))]
+ if (root/'slow-events').exists():time.sleep(2.1)
+ tid=a[2];text=(root/(tid+'.prompt')).read_text()
+ def row(seq,kind,data,turn=None):return {'id':tid+str(seq),'seq':seq,'type':kind,'scope':{'turnId':turn} if turn else {},'data':data}
+ rows=[row(1,'client/turn/requested',{'requestId':tid,'input':[{'type':'text','text':text}]}),row(2,'turn/started',{},tid),row(3,'turn/input/accepted',{'clientRequestId':tid},tid),row(4,'item/completed',{'item':{'id':'reply-'+tid,'type':'agentMessage','text':'Fixture answer'}},tid),row(5,'turn/completed',{'status':'completed'},tid)]
+ if (root/'hold-completion').exists():rows=rows[:3]
  after=int(a[a.index('--after-seq')+1]);print(json.dumps([x for x in rows if x['seq']>after]))
-elif a[:2]==['thread','list']:print(json.dumps([{'id':'thr_fixture','projectId':'proj_personal','status':'active' if (root/'active').exists() else 'idle','queuedWork':'none','archivedAt':1 if (root/'archived').exists() else None}]))
+elif a[:2]==['thread','list']:
+ print(json.dumps([{'id':p.stem,'projectId':'proj_personal','title':'Clicky request ['+p.stem[4:]+']','status':'active' if (root/'hold-completion').exists() else 'idle','queuedWork':'none'} for p in root.glob('*.prompt') if not (root/'hide-recovery').exists()]))
+elif a[:2]==['thread','stop']:
+ with (root/'stops').open('a') as f:f.write('stop\n')
+ if (root/'stop-success').exists():print(json.dumps({'ok':True}));sys.exit(0)
+ print(json.dumps({'ok':False,'error':{'code':'error','message':'Fixture stop failed'}}));sys.exit(1)
 else:print('{}')
 """#
 }

@@ -2,14 +2,14 @@ import AppKit
 import ClickyCore
 import Observation
 
-struct ChatEntry: Codable, Identifiable {
+struct TranscriptEntry: Codable, Identifiable {
     var id: String
     var role: String
     var text: String
     var turnID: String? = nil
 }
 
-extension ConversationPhase {
+extension RequestPhase {
     var label: String {
         switch self {
         case .ready: "Ready"
@@ -17,12 +17,12 @@ extension ConversationPhase {
         case .running: "Working in BB…"
         case .needsApproval: "Needs your approval in BB"
         case .failed: "Stopped or failed in BB"
-        case .deliveryUnknown: "Delivery unconfirmed. Refresh before sending again."
+        case .deliveryUnknown: "Checking request delivery…"
         }
     }
 }
 
-struct Conversation: Codable, Identifiable {
+struct InteractionRequest: Codable, Identifiable {
     var id = UUID().uuidString
     var title: String
     var remoteTitle: String
@@ -30,14 +30,20 @@ struct Conversation: Codable, Identifiable {
     var hostID: String
     var serverURL: String = ""
     var sequence = 0
-    var entries: [ChatEntry] = []
-    var phase: ConversationPhase = .ready
-    var isJob = false
+    var entries: [TranscriptEntry] = []
+    var phase: RequestPhase = .ready
+    var requestedAt = Date()
+    var contextSummary: String? = nil
+    var retired = false
+    var lastRemoteUpdateAt: Double? = nil
+    var lastEventReadAt: Date = .distantPast
+    var submissionStarted = false
+    var cancelRequested: Bool? = nil
+    var stopAttempted: Bool? = nil
     var rootTurnID: String? = nil
     var sentAfterSequence: Int? = nil
     var completionStatus: String? = nil
     var visualRequest: VisualRequest? = nil
-    var speakReplyForCurrentTurn: Bool? = nil
 }
 
 struct Preferences: Codable {
@@ -45,39 +51,34 @@ struct Preferences: Codable {
     var runtimeExecutable: String? = BBConfiguration.defaultRuntimeExecutablePath
     var serverURL = ""
     var hostID = ""
-    var speakReplies = false
     var elevenLabsVoiceID: String? = nil
     var includeInitialContext: Bool? = nil
 }
 
-struct SavedCompanion: Codable {
+struct SavedInteractions: Codable {
     var preferences: Preferences
-    var sessions: [Conversation]
+    var requests: [InteractionRequest]
 }
 
 @Observable final class CompanionModel {
     var preferences = Preferences()
-    var sessions: [Conversation] = []
-    var selectedID: String?
-    var draft = ""
+    var requests: [InteractionRequest] = []
+    var outputRequestID: String?
     var hosts: [BBHost] = []
     var error: String?
     var connected = false
     var connecting = false
     var settingsVisible = false
-    var panelVisible = true
+    var panelVisible = false
     var recording = false
     var requestingMicrophone = false
     private struct VoiceRequestContext {
         let id = UUID()
-        let autoSend: Bool
-        let sessionID: String?
         let connectionGeneration: UUID
         var releaseAllowed: Bool? = nil
     }
     private var voiceRequest: VoiceRequestContext?
     private var recordingStartedAt: Date?
-    var sending = false
     var visualDocument: VisualDocument?
     var visualWarning: String?
     var visualIsComplete = false
@@ -87,16 +88,10 @@ struct SavedCompanion: Codable {
     @ObservationIgnored var onVisualDismiss: (() -> Void)?
     private var visualStreams: [String: VisualStream] = [:]
     private var assistantText: [String: [String: String]] = [:]
-    private let visualStore = VisualSnapshotStore()
     private var dismissedVisualRequestIDs: Set<String> = []
-    private var reopenableVisual: VisualDocument?
 
     private var connectionGeneration = UUID()
-    private var selectionGeneration = UUID()
     var transcribing = false
-    var capture: CapturedScreen?
-    var capturing = false
-    var skipInitialContext = false
     var contextNotice: String?
     var accessibilityAllowed = false
     var screenCaptureAllowed = false
@@ -122,35 +117,39 @@ struct SavedCompanion: Codable {
     private var lastSavedAt = Date.distantPast
     private let saveURL: URL
     private var client: BBClient { BBClient(configuration: BBConfiguration(executablePath: preferences.executable, serverURL: preferences.serverURL.isEmpty ? nil : preferences.serverURL, runtimeExecutablePath: preferences.runtimeExecutable)) }
-    var visibleSessions: [Conversation] { sessions.filter { $0.serverURL == preferences.serverURL } }
-    var selected: Conversation? { visibleSessions.first { $0.id == selectedID } }
-    var canSend: Bool { connected && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !(selected?.phase.busy ?? false) && !recording && !requestingMicrophone && !transcribing && !capturing }
+    var serverRequests: [InteractionRequest] { requests.filter { $0.serverURL == preferences.serverURL } }
+    var currentRequest: InteractionRequest? { serverRequests.first { $0.id == outputRequestID } }
+    @ObservationIgnored var speechEnabled = true
+    @ObservationIgnored var now: () -> Date = Date.init
+    var pendingApprovals: [InteractionRequest] { serverRequests.filter { $0.phase == .needsApproval && !$0.retired } }
+    var acceptingVoice: Bool { !recording && !requestingMicrophone && !transcribing }
 
     init(storageRoot: URL? = nil) {
         let root = storageRoot ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ClickyBB")
-        saveURL = root.appendingPathComponent("sessions.json")
-        if let data = try? Data(contentsOf: saveURL), let saved = try? JSONDecoder().decode(SavedCompanion.self, from: data) {
+        saveURL = root.appendingPathComponent("interactions.json")
+        if let data = try? Data(contentsOf: saveURL), let saved = try? JSONDecoder().decode(SavedInteractions.self, from: data) {
             preferences = saved.preferences
             if preferences.executable.hasSuffix("/.bb/bin/bb"), BBConfiguration.defaultExecutablePath != preferences.executable {
                 preferences.executable = BBConfiguration.defaultExecutablePath
                 preferences.runtimeExecutable = BBConfiguration.defaultRuntimeExecutablePath
             }
-            sessions = saved.sessions
-            for i in sessions.indices where sessions[i].phase == .sending { sessions[i].phase = .deliveryUnknown }
-            selectedID = sessions.first?.id
-            dismissedVisualRequestIDs = Set(sessions.compactMap { $0.visualRequest?.id })
+            requests = saved.requests
+            for i in requests.indices where requests[i].phase == .sending { requests[i].phase = requests[i].submissionStarted ? .deliveryUnknown : .failed }
+            outputRequestID = requests.first?.id
+            dismissedVisualRequestIDs = Set(requests.compactMap { $0.visualRequest?.id })
+        }
+        if !FileManager.default.fileExists(atPath: saveURL.path) {
+            struct LegacySettings: Decodable { let preferences: Preferences }
+            if let data = try? Data(contentsOf: root.appendingPathComponent("sessions.json")),
+               let legacy = try? JSONDecoder().decode(LegacySettings.self, from: data) { preferences = legacy.preferences }
         }
         refreshContextPermissions()
-        settingsVisible = preferences.hostID.isEmpty
-        if sessions.isEmpty { newConversation() }
-        loadSavedVisualForSelection()
+        settingsVisible = false
+        pruneRequests()
         voice.onInputFailure = { [weak self] message, partial in
             guard let self else { return }
-            if let request = voiceRequest, request.sessionID == selectedID, request.connectionGeneration == connectionGeneration, !partial.isEmpty {
-                draft = draft.isEmpty ? partial : draft + "\n\n" + partial
-            }
             voiceRequest = nil; recording = false; requestingMicrophone = false; transcribing = false; recordingLimit?.cancel()
-            error = message + (partial.isEmpty ? "" : " The partial transcript is in your draft; review it before sending.")
+            error = message + " Hold the voice shortcut to ask again."
         }
         voice.onSpeechFailure = { [weak self] message in
             self?.speechFailed = true; self?.error = "Speech stopped. " + message
@@ -161,16 +160,15 @@ struct SavedCompanion: Codable {
         lastSavedAt = Date()
         do {
             try FileManager.default.createDirectory(at: saveURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let data = try JSONEncoder().encode(SavedCompanion(preferences: preferences, sessions: sessions))
+            let data = try JSONEncoder().encode(SavedInteractions(preferences: preferences, requests: requests))
             try data.write(to: saveURL, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: saveURL.path)
-        } catch { self.error = "Could not save conversation state: \(error.localizedDescription)" }
+        } catch { self.error = "Could not save request state: \(error.localizedDescription)" }
     }
 
     func connectionChanged() {
         cancelVoiceInput(); stopSpeaking()
         dismissVisuals()
-        reopenableVisual = nil
         connectionGeneration = UUID()
         retryCount = 0
         connected = false
@@ -180,7 +178,7 @@ struct SavedCompanion: Codable {
 
     func connect() async {
         guard !connecting else { return }
-        guard !preferences.serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "Enter an explicit BB server URL so conversations stay tied to the right backend."; settingsVisible = true; return }
+        guard !preferences.serverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { error = "Enter an explicit BB server URL so requests stay tied to the right backend."; return }
         connecting = true
         let generation = connectionGeneration
         let transport = client
@@ -198,227 +196,205 @@ struct SavedCompanion: Codable {
         } catch { if connectionGeneration == generation { connectionFailed(error.localizedDescription) } }
     }
 
-    func newConversation(job: Bool = false, preservingDraft: Bool = false) {
-        selectionGeneration = UUID()
-        cancelVoiceInput()
-        skipInitialContext = false; contextNotice = nil
-        dismissVisuals()
-        stopSpeaking(); desktop.clearPoints()
-        if !preservingDraft { clearCapture(); draft = "" }
+    /// Every question owns a fresh backend request. No previous thread or busy
+    /// phase can gate a new ask; only output ownership moves to the latest ask.
+    func ask(_ question: String) async {
+        let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        stopSpeaking(); dismissVisuals()
+        turnCaptures.removeAll(); guideReplies.removeAll()
         let id = UUID().uuidString
-        let session = Conversation(id: id, title: job ? "New agent job" : "New conversation", remoteTitle: "Clicky [\(id)]", hostID: preferences.hostID, serverURL: preferences.serverURL, isJob: job)
-        sessions.insert(session, at: 0)
-        selectedID = id; reopenableVisual = nil; save()
-    }
-
-    func select(_ id: String) {
-        selectionGeneration = UUID()
-        cancelVoiceInput()
-        skipInitialContext = false; contextNotice = nil
-        dismissVisuals()
-        selectedID = id; draft = ""; clearCapture(); desktop.clearPoints(); stopSpeaking()
-        if let requestID = selected?.visualRequest?.id { dismissedVisualRequestIDs.insert(requestID) }
-        loadSavedVisualForSelection()
-        Task { await refresh() }
-    }
-
-    func send(speakReply: Bool = false) async {
-        guard canSend, !sending else { return }
-        stopSpeaking()
-        sending = true
-        defer { sending = false }
-        while refreshing { try? await Task.sleep(for: .milliseconds(100)); if Task.isCancelled { return } }
-        guard !preferences.hostID.isEmpty else {
-            error = "Choose the machine that will run your assistant in Settings."
-            settingsVisible = true
-            return
-        }
-        if selected == nil { newConversation(preservingDraft: true) }
-        guard let id = selectedID, let index = sessions.firstIndex(where: { $0.id == id }) else { return }
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let generation = connectionGeneration
-        let selection = selectionGeneration
         let transport = client
-        let manualCapture = capture
-        var sentCapture = manualCapture
-        var automaticCapture: CapturedScreen?
-        var contextJSON: String?
-        var contextSummary: String?
-        defer { if let automaticCapture { desktop.discardCapture(automaticCapture) } }
-        if DesktopContextPolicy.include(threadID: sessions[index].threadID, enabled: preferences.includeInitialContext ?? true, skip: skipInitialContext) {
-            capturing = true
-            let snapshot: InitialDesktopContext
-            if let contextCapture { snapshot = await contextCapture(manualCapture) }
-            else { snapshot = await desktop.initialContext(manual: manualCapture) }
-            capturing = false
-            if manualCapture == nil { automaticCapture = snapshot.capture }
-            guard generation == connectionGeneration, selection == selectionGeneration, selectedID == id, !Task.isCancelled,
-                  let current = sessions.first(where: { $0.id == id }), !current.phase.busy, current.threadID == nil else { return }
-            sentCapture = snapshot.capture
-            contextJSON = try? snapshot.context.promptJSON()
-            contextSummary = snapshot.context.statusDescription
-            contextNotice = "Preparing initial context. " + (contextSummary ?? "")
-            refreshContextPermissions()
+        let server = preferences.serverURL
+        let host = preferences.hostID
+        let requestedAt = now()
+        let record = InteractionRequest(id: id, title: String(text.prefix(52)), remoteTitle: "Clicky request [\(id)]", hostID: host,
+            serverURL: server, phase: .sending, requestedAt: requestedAt)
+        requests.insert(record, at: 0); outputRequestID = id
+        update(id) { $0.entries = [TranscriptEntry(id: "pending-\(id)", role: "user", text: text)] }
+        error = nil; contextNotice = nil
+        pruneRequests(); save()
+        guard !host.isEmpty, !server.isEmpty else {
+            update(id) { $0.phase = .failed }
+            error = "BB is not configured. Set the server and machine in the menu's Settings."
+            save(); return
         }
-        let display = sentCapture.map(VisualDisplayContext.init(capture:)) ?? VisualDisplayContext.current
-        // Reconcile all existing events before starting a new turn. A previous final answer is never reused.
-        do {
-            if let threadID = sessions.first(where: { $0.id == id })?.threadID { try await readEvents(id: id, threadID: threadID, transport: transport) }
-        } catch { self.error = error.localizedDescription; return }
-        guard generation == connectionGeneration, selection == selectionGeneration, selectedID == id else { return }
-        guard let current = sessions.firstIndex(where: { $0.id == id }), !sessions[current].phase.busy else { return }
-        dismissVisuals()
-        reopenableVisual = nil
-        sessions[current].visualRequest = VisualRequest(id: UUID().uuidString, afterSequence: sessions[current].sequence,
-            display: display, hadScreenshot: sentCapture != nil)
-        visualStreams[id] = VisualStream()
-        assistantText[id] = [:]
-        sessions[current].speakReplyForCurrentTurn = speakReply
-        if preferences.speakReplies || speakReply, let requestID = sessions[current].visualRequest?.id {
-            speechOwner = (id, requestID)
+        var sentCapture: CapturedScreen?
+        defer { if let sentCapture { desktop.discardCapture(sentCapture) } }
+        var contextJSON: String?
+        if preferences.includeInitialContext ?? true {
+            let snapshot = if let contextCapture { await contextCapture(nil) } else { await desktop.initialContext(manual: nil) }
+            sentCapture = snapshot.capture
+            guard generation == connectionGeneration, requests.contains(where: { $0.id == id && !$0.retired }), !Task.isCancelled else { update(id) { $0.phase = .failed }; save(); return }
+            contextJSON = try? snapshot.context.promptJSON()
+            update(id) { $0.contextSummary = [snapshot.context.application, snapshot.context.window].compactMap { $0 }.joined(separator: " · ") }
+        }
+        guard generation == connectionGeneration, requests.contains(where: { $0.id == id && !$0.retired }), !Task.isCancelled else { update(id) { $0.phase = .failed }; save(); return }
+        let request = VisualRequest(id: id, afterSequence: 0,
+            display: sentCapture.map(VisualDisplayContext.init(capture:)) ?? VisualDisplayContext.current, hadScreenshot: sentCapture != nil)
+        update(id) { $0.visualRequest = request; $0.sentAfterSequence = 0 }
+        visualStreams[id] = VisualStream(); assistantText[id] = [:]
+        if speechEnabled, id == outputRequestID, !recording, !requestingMicrophone, !transcribing {
+            speechOwner = (id, request.id)
             speechRaw = [:]; speechOrder = []; speechAccumulator = SpeechAccumulator(); speechStarted = false; speechFailed = false
         }
-        sessions[current].sentAfterSequence = sessions[current].sequence
-        sessions[current].rootTurnID = nil
-        sessions[current].completionStatus = nil
-        sessions[current].phase = .sending
-        sessions[current].entries.append(ChatEntry(id: "pending-\(UUID().uuidString)", role: "user", text: text))
-        if sessions[current].threadID == nil {
-            sessions[current].hostID = preferences.hostID
-            sessions[current].title = String(text.prefix(52))
-            sessions[current].remoteTitle = "Clicky · \(String(text.prefix(38))) [\(id)]"
-        }
-        draft = ""; capture = nil; error = nil
-        defer { if automaticCapture == nil, let sentCapture { desktop.discardCapture(sentCapture) } }
-        // This durable record is also the recovery key if spawn succeeds but its response is lost.
-        save()
-        turnCaptures.removeValue(forKey: id)
-        guideReplies.removeValue(forKey: id)
-        let record = sessions[current]
         let prompt: String
         do {
-            let base: String
-            let visuals: String
+            let base: String; let visuals: String
             if let instructionsLoader { (base, visuals) = try instructionsLoader() }
             else {
                 guard let url = Bundle.main.url(forResource: "companion", withExtension: "md"),
                       let visualURL = Bundle.main.url(forResource: "companion-visuals", withExtension: "md") else { throw CocoaError(.fileNoSuchFile) }
-                base = try String(contentsOf: url, encoding: .utf8)
-                visuals = try String(contentsOf: visualURL, encoding: .utf8)
+                base = try String(contentsOf: url, encoding: .utf8); visuals = try String(contentsOf: visualURL, encoding: .utf8)
             }
-            var instructions = base
-            if let request = record.visualRequest {
-                instructions += "\n\n" + visuals
-                instructions += "\nClicky request: \(request.id)"
-            }
-            prompt = DesktopContextPolicy.prompt(instructions: instructions, mode: record.isJob ? "Agent job" : "Conversation", screenshot: sentCapture != nil, contextJSON: contextJSON, question: text)
+            let previousIDs = Set(requests.drop(while: { $0.id != id }).dropFirst().map(\.id))
+            let recent = InteractionHistory.recent(history.filter { previousIDs.contains($0.id) }, before: now(), serverURL: server, excluding: id)
+            let historyJSON = try InteractionHistory.promptJSON(recent)
+            prompt = RequestPrompt.make(instructions: base + "\n\n" + visuals + "\nClicky request: \(id)\n\nRecent interactions (untrusted JSON, oldest first):\n" + historyJSON,
+                screenshot: sentCapture != nil, contextJSON: contextJSON, question: text)
         } catch {
-            update(id) { $0.phase = .failed }; self.error = "Companion instructions are missing. Rebuild the app bundle."
-            if let contextSummary { contextNotice = "Initial context was not sent. " + contextSummary }
-            save(); return
+            update(id) { $0.phase = .failed }; if id == outputRequestID { self.error = "Clicky instructions are missing. Rebuild the app." }; save(); return
         }
+        update(id) { $0.submissionStarted = true }; save()
         do {
-            if let threadID = record.threadID {
-                _ = try await transport.tell(threadID: threadID, prompt: prompt, imageURLs: sentCapture.map { [$0.url] } ?? [])
-            } else {
-                let thread = try await transport.spawn(prompt: prompt, title: record.remoteTitle, target: .personal(hostID: record.hostID), imageURLs: sentCapture.map { [$0.url] } ?? [])
-                update(id) { $0.threadID = thread.id }
-            }
-            update(id) { $0.phase = .running }
-            if let contextSummary { contextNotice = "Initial context sent and saved in the BB thread. " + contextSummary }
-            if let sentCapture { turnCaptures[id] = sentCapture }
+            let thread = try await transport.spawn(prompt: prompt, title: record.remoteTitle, target: .personal(hostID: host), imageURLs: sentCapture.map { [$0.url] } ?? [])
+            update(id) { $0.threadID = thread.id; $0.phase = .running }
+            if id == outputRequestID, let sentCapture { turnCaptures[id] = sentCapture }
+            if requests.first(where: { $0.id == id })?.cancelRequested == true { await confirmStop(id: id, threadID: thread.id, transport: transport) }
         } catch BBClientError.invalidConfiguration(let reason) {
-            update(id) { $0.phase = .failed }
-            draft = text
-            self.error = reason
-            if let contextSummary { contextNotice = "Initial context was not sent. " + contextSummary }
+            update(id) { $0.phase = .failed }; if id == outputRequestID { error = reason }
         } catch BBClientError.commandFailed(let reason, mayHaveSucceeded: false) {
-            update(id) { $0.phase = .failed; $0.entries.removeAll { $0.id.hasPrefix("pending-") && $0.text == text } }
-            draft = text; self.error = reason
-            if let contextSummary { contextNotice = "Initial context was not sent. " + contextSummary }
+            update(id) { $0.phase = .failed }; if id == outputRequestID { error = reason }
         } catch {
             update(id) { $0.phase = .deliveryUnknown }
-            self.error = "Delivery could not be confirmed. Refresh to recover the BB thread; do not resend automatically. \(error.localizedDescription)"
-            if let contextSummary { contextNotice = "Initial context delivery is unconfirmed. " + contextSummary }
+            if id == outputRequestID { self.error = "Request delivery is unconfirmed. You can ask another question; Clicky will check this request without resending it." }
         }
-        save(); sending = false; startMonitoring(restart: true); await refresh()
+        save(); startMonitoring(restart: true); await refresh()
+    }
+
+    var history: [RecentInteraction] {
+        requests.map { request in
+            let question = request.entries.first(where: { $0.role == "user" })?.text ?? ""
+            let reply = request.entries.filter { $0.role == "assistant" && $0.turnID == request.rootTurnID }.map(\.text).joined(separator: "\n")
+            let outcome: String
+            if !request.submissionStarted { outcome = "notSent" }
+            else if request.retired && request.phase.busy { outcome = "unknown" }
+            else {
+                outcome = switch request.phase {
+                case .ready: "completed"
+                case .sending, .running: "pending"
+                case .needsApproval: "needsApproval"
+                case .failed: "failed"
+                case .deliveryUnknown: "deliveryUnknown"
+                }
+            }
+            return RecentInteraction(id: request.id, requestedAt: request.requestedAt, serverURL: request.serverURL, threadID: request.threadID,
+                question: question, answer: reply, outcome: outcome, context: request.contextSummary)
+        }
+    }
+
+    private func pruneRequests() {
+        let time = now()
+        for i in requests.indices {
+            let age = time.timeIntervalSince(requests[i].requestedAt)
+            if requests[i].phase == .deliveryUnknown && age > 120 || requests[i].phase.busy && age > 1800 { requests[i].retired = true }
+        }
+        let active = requests.filter { $0.phase.busy && !$0.retired }.map(\.id)
+        for id in active.dropFirst(32) { update(id) { $0.retired = true } }
+        let recentIDs = Set(requests.filter { time.timeIntervalSince($0.requestedAt) <= 600 }.prefix(6).map(\.id))
+        requests.removeAll { $0.id != outputRequestID && (!$0.phase.busy || $0.retired) && !recentIDs.contains($0.id) }
+        let retained = Set(requests.map(\.id))
+        assistantText = assistantText.filter { retained.contains($0.key) }; visualStreams = visualStreams.filter { retained.contains($0.key) }
+        turnCaptures = turnCaptures.filter { retained.contains($0.key) }; guideReplies = guideReplies.filter { retained.contains($0.key) }
     }
 
     func refresh(reconcileStatus: Bool = true) async {
-        guard connected, !refreshing, !sending else { return }
+        guard connected, !refreshing else { return }
+        pruneRequests()
         refreshing = true
         defer { refreshing = false }
         let transport = client
         let generation = connectionGeneration
         let server = preferences.serverURL
-        let statusDue = reconcileStatus || ConversationPolling.statusDue(elapsed: Date().timeIntervalSince(lastStatusRefreshAt))
+        let statusDue = reconcileStatus || RequestPolling.statusDue(elapsed: Date().timeIntervalSince(lastStatusRefreshAt))
         do {
-            let pending = sessions.filter { $0.serverURL == server && $0.threadID == nil && $0.phase == .deliveryUnknown }
+            let pending = requests.filter { $0.serverURL == server && $0.threadID == nil && $0.phase == .deliveryUnknown && !$0.retired }
             if statusDue, !pending.isEmpty {
                 let candidates = try await transport.listThreads(projectID: "proj_personal")
                 guard generation == connectionGeneration else { return }
                 for session in pending {
                     let matches = candidates.filter { $0.title == session.remoteTitle }
-                    if matches.count == 1, let match = matches.first { update(session.id) { $0.threadID = match.id; $0.phase = .running } }
+                    if matches.count == 1, let match = matches.first {
+                        update(session.id) { $0.threadID = match.id; $0.phase = .running }
+                        if session.cancelRequested == true, session.stopAttempted != true { await confirmStop(id: session.id, threadID: match.id, transport: transport) }
+                    }
                 }
             }
             let fastID = fastSessionID
-            let visible = sessions.filter {
-                $0.serverURL == server && $0.threadID != nil && ($0.phase.busy || $0.id == selectedID) && (statusDue || $0.id == fastID)
+            let visible = requests.filter {
+                $0.serverURL == server && $0.threadID != nil && (!$0.retired && ($0.phase.busy || $0.id == outputRequestID)) && (statusDue || $0.id == fastID)
             }.sorted { $0.id == fastID && $1.id != fastID }
-            guard !visible.isEmpty else { return }
-            var failedEventReads = Set<String>()
-            for session in visible {
+            guard !visible.isEmpty else { if statusDue { lastStatusRefreshAt = Date() }; return }
+            var statusRows: [BBThread]
+            if statusDue {
+                statusRows = try await transport.listThreads(ids: visible.compactMap(\.threadID))
+                lastStatusRefreshAt = Date()
+            } else { statusRows = [] }
+            let background = visible.filter { $0.id != fastID }
+            // Always read the output owner first; at most two background event
+            // streams per status tick keep old jobs from starving live speech.
+            let changed = background.filter { request in
+                let remote = statusRows.first { $0.id == request.threadID }
+                return remote?.updatedAt == nil || remote?.updatedAt != request.lastRemoteUpdateAt
+            }.sorted { $0.lastEventReadAt < $1.lastEventReadAt }.prefix(2)
+            var drainedIDs = Set<String>()
+            for session in visible.filter({ $0.id == fastID }) + changed {
                 guard let threadID = session.threadID else { continue }
-                do { try await readEvents(id: session.id, threadID: threadID, transport: transport) }
-                catch { failedEventReads.insert(session.id); self.error = "Could not refresh \(session.title). Open it in BB. \(error.localizedDescription)" }
+                do {
+                    try await readEvents(id: session.id, threadID: threadID, transport: transport)
+                    drainedIDs.insert(session.id)
+                    update(session.id) { $0.lastRemoteUpdateAt = statusRows.first(where: { $0.id == threadID })?.updatedAt; $0.lastEventReadAt = now() }
+                } catch { if session.id == outputRequestID { self.error = "Could not refresh this request. " + error.localizedDescription } }
                 guard generation == connectionGeneration else { return }
             }
             let becameTerminal = visible.contains { prior in
-                prior.phase.busy && sessions.first(where: { $0.id == prior.id })?.phase.busy == false
+                prior.phase.busy && requests.first(where: { $0.id == prior.id })?.phase.busy == false
             }
-            guard statusDue || ConversationPolling.statusDue(elapsed: Date().timeIntervalSince(lastStatusRefreshAt), becameTerminal: becameTerminal) else {
-                if Date().timeIntervalSince(lastSavedAt) >= ConversationPolling.checkpointInterval,
-                   visible.contains(where: { prior in sessions.first(where: { $0.id == prior.id })?.sequence != prior.sequence }) { save() }
+            guard statusDue || RequestPolling.statusDue(elapsed: Date().timeIntervalSince(lastStatusRefreshAt), becameTerminal: becameTerminal) else {
+                if Date().timeIntervalSince(lastSavedAt) >= RequestPolling.checkpointInterval,
+                   visible.contains(where: { prior in requests.first(where: { $0.id == prior.id })?.sequence != prior.sequence }) { save() }
                 return
             }
+            if !statusDue {
+                statusRows = try await transport.listThreads(ids: visible.compactMap(\.threadID))
+            }
             // Read current state after the event page, so historical completion cannot override a newer active turn.
-            let statuses = try await transport.listThreads(ids: visible.compactMap(\.threadID))
+            let statuses = statusRows
             guard generation == connectionGeneration else { return }
             lastStatusRefreshAt = Date()
             for session in visible {
                 if let remote = statuses.first(where: { $0.id == session.threadID }) {
+                    // Idle is not a terminal result until this event stream
+                    // has been drained. Skipped/failed reads stay pollable.
+                    if remote.status == "idle", !drainedIDs.contains(session.id) { continue }
                     if remote.status == "idle", speechOwner?.sessionID == session.id,
-                       sessions.first(where: { $0.id == session.id })?.completionStatus == nil, let threadID = session.threadID {
+                       requests.first(where: { $0.id == session.id })?.completionStatus == nil, let threadID = session.threadID {
                         // Completion can land between log and status reads. Consume
                         // its final text before treating idle as an interruption.
                         try await readEvents(id: session.id, threadID: threadID, transport: transport)
                         guard generation == connectionGeneration else { return }
                     }
-                    if !failedEventReads.contains(session.id), let current = sessions.first(where: { $0.id == session.id }), current.phase == .deliveryUnknown,
-                       remote.archivedAt != nil, remote.displayStatus == "idle", !remote.hasQueuedWork, remote.hasPendingInteraction != true {
-                        // An archived, settled thread cannot accept this request.
-                        // Release legacy uncertain state without resubmitting it.
-                        if session.id == selectedID {
-                            if draft.isEmpty,
-                               let pending = current.entries.last(where: { $0.role == "user" && $0.id.hasPrefix("pending-") }) {
-                                draft = pending.text
-                            }
-                            error = "This conversation is archived in BB. Start a new conversation, or unarchive it in BB before sending again."
-                        }
-                        update(session.id) { $0.phase = .failed }
-                    } else {
-                        update(session.id) {
-                            $0.phase = $0.phase.reconciled(remoteStatus: remote.status, needsApproval: remote.hasPendingInteraction == true,
-                                queued: remote.hasQueuedWork, observedRoot: $0.rootTurnID != nil, completionStatus: $0.completionStatus)
-                        }
+                    update(session.id) {
+                        $0.phase = $0.phase.reconciled(remoteStatus: remote.status, needsApproval: remote.hasPendingInteraction == true,
+                            queued: remote.hasQueuedWork, observedRoot: $0.rootTurnID != nil, completionStatus: $0.completionStatus)
                     }
                 } else {
                     update(session.id) { $0.phase = .failed }
-                    error = "This conversation is no longer available in BB."
+                    error = "This request is no longer available in BB."
                 }
                 if speechOwner?.sessionID == session.id,
-                   let phase = sessions.first(where: { $0.id == session.id })?.phase, !phase.busy {
+                   let phase = requests.first(where: { $0.id == session.id })?.phase, !phase.busy {
                     // Interruption can settle through thread status without a completion event.
                     stopSpeaking()
                 }
@@ -426,13 +402,13 @@ struct SavedCompanion: Codable {
             save()
         } catch {
             guard generation == connectionGeneration else { return }
-            connectionFailed("BB is unavailable. Your conversation is saved. \(error.localizedDescription)")
+            connectionFailed("BB is unavailable. Your request is saved. \(error.localizedDescription)")
         }
     }
 
     private func readEvents(id: String, threadID: String, transport: BBClient) async throws {
         for _ in 0..<100 {
-            guard let session = sessions.first(where: { $0.id == id }) else { return }
+            guard let session = requests.first(where: { $0.id == id }) else { return }
             let events = try await transport.events(threadID: threadID, afterSequence: session.sequence)
             var groupedVisualDelta = ""
             for (offset, event) in events.enumerated() {
@@ -440,13 +416,13 @@ struct SavedCompanion: Codable {
                 switch event.kind {
                 case let .turnStarted(isRoot):
                     if isRoot, let turnID = event.turnID {
-                        let boundTurnID = sessions.first(where: { $0.id == id })?.visualRequest?.turnID
+                        let boundTurnID = requests.first(where: { $0.id == id })?.visualRequest?.turnID
                         if boundTurnID == nil || boundTurnID == turnID {
                             update(id) { $0.rootTurnID = turnID; $0.phase = .running }
                         }
                     }
                 case let .turnInputAccepted(clientRequestID):
-                    if let request = sessions.first(where: { $0.id == id })?.visualRequest,
+                    if let request = requests.first(where: { $0.id == id })?.visualRequest,
                        request.clientRequestID == clientRequestID, let turnID = event.turnID, event.seq > request.afterSequence {
                         update(id) { $0.visualRequest?.binding.observe(event); $0.rootTurnID = turnID; $0.phase = .running }
                     }
@@ -461,13 +437,13 @@ struct SavedCompanion: Codable {
                         if let i = s.entries.firstIndex(where: { $0.id.hasPrefix("pending-") && $0.text == visible }) {
                             s.entries[i].id = event.id; s.entries[i].turnID = event.turnID
                         } else if !s.entries.contains(where: { $0.id == event.id }) {
-                            s.entries.append(ChatEntry(id: event.id, role: "user", text: visible, turnID: event.turnID))
+                            s.entries.append(TranscriptEntry(id: event.id, role: "user", text: visible, turnID: event.turnID))
                         }
                     }
                 case let .assistantDelta(itemID, text):
-                    guard let turnID = event.turnID, turnID == sessions.first(where: { $0.id == id })?.rootTurnID else { continue }
+                    guard let turnID = event.turnID, turnID == requests.first(where: { $0.id == id })?.rootTurnID else { continue }
                     feedSpeech(id: id, itemID: itemID, text: text, authoritative: false)
-                    if sessions.first(where: { $0.id == id })?.visualRequest?.turnID == turnID {
+                    if requests.first(where: { $0.id == id })?.visualRequest?.turnID == turnID {
                         groupedVisualDelta += text
                         if offset + 1 < events.count, events[offset + 1].turnID == turnID,
                            case let .assistantDelta(nextItemID, _) = events[offset + 1].kind, nextItemID == itemID { continue }
@@ -476,20 +452,20 @@ struct SavedCompanion: Codable {
                     }
                     recordAssistantText(id: id, event: event, itemID: itemID, text: text, authoritative: false)
                 case let .assistantMessage(itemID, text):
-                    guard let turnID = event.turnID, turnID == sessions.first(where: { $0.id == id })?.rootTurnID else { continue }
+                    guard let turnID = event.turnID, turnID == requests.first(where: { $0.id == id })?.rootTurnID else { continue }
                     feedSpeech(id: id, itemID: itemID, text: text, authoritative: true)
                     if ingestVisual(id: id, event: event, itemID: itemID, text: text, authoritative: true) { continue }
                     recordAssistantText(id: id, event: event, itemID: itemID, text: text, authoritative: true)
                 case let .turnCompleted(status, message):
-                    guard let current = sessions.first(where: { $0.id == id }), let turnID = event.turnID, turnID == current.rootTurnID else { continue }
+                    guard let current = requests.first(where: { $0.id == id }), let turnID = event.turnID, turnID == current.rootTurnID else { continue }
                     update(id) { $0.phase = status == "completed" ? .ready : .failed; $0.completionStatus = status }
-                    if let message, !message.isEmpty { error = message }
+                    if id == outputRequestID, let message, !message.isEmpty { error = message }
                     if let request = current.visualRequest, request.turnID == turnID {
                         finishVisual(id: id, successful: status == "completed")
                     }
                     if status == "completed", let baseline = current.sentAfterSequence, event.seq > baseline,
                        let reply = current.entries.last(where: { $0.role == "assistant" && $0.turnID == turnID })?.text {
-                        if turnCaptures[id] != nil { guideReplies[id] = reply }
+                        if turnCaptures[id] != nil { guideReplies[id] = reply; if id == outputRequestID { showGuides() } }
                     }
                     if speechOwner?.sessionID == id {
                         finishSpeech(successful: status == "completed", summary: visualStreams[id]?.completedDocument?.summary)
@@ -520,15 +496,15 @@ struct SavedCompanion: Codable {
         voice.stopSpeaking()
     }
     private func feedSpeech(id: String, itemID: String, text: String, authoritative: Bool) {
-        guard let owner = speechOwner, owner.sessionID == id, id == selectedID,
-              let current = selected, owner.requestID == current.visualRequest?.id else { return }
+        guard !recording, !requestingMicrophone, !transcribing, let owner = speechOwner, owner.sessionID == id, id == outputRequestID,
+              let current = currentRequest, owner.requestID == current.visualRequest?.id else { return }
         if speechRaw[itemID] == nil { speechOrder.append(itemID) }
         let raw = authoritative ? text : (speechRaw[itemID] ?? "") + text
         speechRaw[itemID] = raw
         for chunk in speechAccumulator.consume(itemID: itemID, text: raw, complete: authoritative) { speakChunk(chunk) }
     }
     private func speakChunk(_ text: String) {
-        guard !speechFailed else { return }
+        guard !recording, !requestingMicrophone, !transcribing, !speechFailed else { return }
         do {
             if !speechStarted {
                 try voice.startSpeaking(voiceID: preferences.elevenLabsVoiceID ?? RealtimeVoiceProtocol.defaultVoiceID)
@@ -551,47 +527,31 @@ struct SavedCompanion: Codable {
         recordingLimit?.cancel(); voice.cancelInput()
     }
 
-    private func update(_ id: String, _ mutation: (inout Conversation) -> Void) {
-        if let i = sessions.firstIndex(where: { $0.id == id }) { mutation(&sessions[i]) }
-    }
-
-    var canReopenVisual: Bool { reopenableVisual != nil }
-
-    private func loadSavedVisualForSelection() {
-        guard let session = selected, let request = session.visualRequest else { reopenableVisual = nil; return }
-        let saved = visualStore.load(sessionID: session.id, requestID: request.id)
-        reopenableVisual = saved?.kind == .overlay && (turnCaptures[session.id] == nil || request.display?.matchingScreen == nil) ? nil : saved
-    }
-
-    func openVisuals() {
-        guard let document = reopenableVisual, !document.nodes.isEmpty else { return }
-        visualDocument = document
-        visualIsComplete = true
-        visualWarning = nil
-        if let requestID = selected?.visualRequest?.id { dismissedVisualRequestIDs.remove(requestID) }
-        onVisualPresentation?()
+    private func update(_ id: String, _ mutation: (inout InteractionRequest) -> Void) {
+        if let i = requests.firstIndex(where: { $0.id == id }) { mutation(&requests[i]) }
     }
 
     func dismissVisuals() {
-        if let requestID = selected?.visualRequest?.id { dismissedVisualRequestIDs.insert(requestID) }
+        if let requestID = currentRequest?.visualRequest?.id { dismissedVisualRequestIDs.insert(requestID) }
         visualDocument = nil; selectedVisualNodeID = nil; visualWarning = nil; visualIsComplete = false
+        desktop.clearPoints()
         onVisualDismiss?()
     }
 
-    var visualDisplay: VisualDisplayContext? { selected?.visualRequest?.display }
+    var visualDisplay: VisualDisplayContext? { currentRequest?.visualRequest?.display }
     private func recordAssistantText(id: String, event: BBEvent, itemID: String, text: String, authoritative: Bool) {
-        let persisted = sessions.first(where: { $0.id == id })?.entries.first(where: { $0.id == itemID })?.text ?? ""
+        let persisted = requests.first(where: { $0.id == id })?.entries.first(where: { $0.id == itemID })?.text ?? ""
         let raw = authoritative ? text : (assistantText[id]?[itemID] ?? persisted) + text
         assistantText[id, default: [:]][itemID] = raw
         let readable = VisualStream.visibleText(raw)
         update(id) { session in
             if let i = session.entries.firstIndex(where: { $0.id == itemID }) { session.entries[i].text = readable }
-            else { session.entries.append(ChatEntry(id: itemID, role: "assistant", text: readable, turnID: event.turnID)) }
+            else { session.entries.append(TranscriptEntry(id: itemID, role: "assistant", text: readable, turnID: event.turnID)) }
         }
     }
 
     private func ingestVisual(id: String, event: BBEvent, itemID: String, text: String, authoritative: Bool) -> Bool {
-        guard let session = sessions.first(where: { $0.id == id }), let request = session.visualRequest,
+        guard let session = requests.first(where: { $0.id == id }), let request = session.visualRequest,
               request.binding.matches(event) else { return false }
         if !authoritative, visualStreams[id] == nil, session.entries.contains(where: { $0.id == itemID }) {
             // Raw protocol is not persisted. Keep the saved readable prefix until
@@ -604,9 +564,9 @@ struct SavedCompanion: Codable {
         let readable = stream.displayText(for: itemID)
         update(id) { s in
             if let i = s.entries.firstIndex(where: { $0.id == itemID }) { s.entries[i].text = readable }
-            else { s.entries.append(ChatEntry(id: itemID, role: "assistant", text: readable, turnID: event.turnID)) }
+            else { s.entries.append(TranscriptEntry(id: itemID, role: "assistant", text: readable, turnID: event.turnID)) }
         }
-        guard id == selectedID, session.serverURL == preferences.serverURL,
+        guard id == outputRequestID, session.serverURL == preferences.serverURL,
               !dismissedVisualRequestIDs.contains(request.id) else { return true }
         let preview = stream.preview.flatMap { try? $0.validated() }
         if authoritative, preview == nil { clearReplacedVisual() }
@@ -628,14 +588,13 @@ struct SavedCompanion: Codable {
     private func clearReplacedVisual() {
         let wasPresented = visualDocument != nil
         visualDocument = nil; selectedVisualNodeID = nil; visualWarning = nil; visualIsComplete = false
-        reopenableVisual = nil
         if wasPresented { onVisualDismiss?() }
     }
 
     private func finishVisual(id: String, successful: Bool) {
-        guard let session = sessions.first(where: { $0.id == id }), let request = session.visualRequest,
+        guard let session = requests.first(where: { $0.id == id }), let request = session.visualRequest,
               let stream = visualStreams[id] else { return }
-        let isSelected = id == selectedID && session.serverURL == preferences.serverURL
+        let isSelected = id == outputRequestID && session.serverURL == preferences.serverURL
         let isPresented = isSelected && !dismissedVisualRequestIDs.contains(request.id) && visualDocument != nil
         guard stream.hasVisualContent else {
             // Plain text is a complete answer. An optional visual is not a missing result.
@@ -644,35 +603,47 @@ struct SavedCompanion: Codable {
         }
         if successful, let document = stream.completedDocument,
            document.kind != .overlay || (request.hadScreenshot && request.display?.matchingScreen != nil) {
-            do {
-                try visualStore.save(document, sessionID: id, requestID: request.id)
-                if isSelected { reopenableVisual = document }
-            } catch { if isPresented { visualWarning = "Could not save this visual: \(error.localizedDescription)" } }
+            if !document.summary.isEmpty, requests.first(where: { $0.id == id })?.entries.contains(where: { $0.role == "assistant" && !$0.text.isEmpty }) != true {
+                update(id) { $0.entries.append(TranscriptEntry(id: "summary-" + id, role: "assistant", text: document.summary, turnID: $0.rootTurnID)) }
+            }
             if isPresented { visualIsComplete = true }
         } else if isPresented {
             visualIsComplete = false
-            visualWarning = successful ? (stream.warning ?? "BB did not finish a valid visual. Ask a follow-up or open the conversation in BB.") : "Generation stopped. This is an unfinished preview."
+            visualWarning = successful ? (stream.warning ?? "BB did not finish a valid visual. Ask a follow-up or open the request in BB.") : "Generation stopped. This is an unfinished preview."
         }
     }
 
     func showGuides() {
-        guard let id = selectedID, let screen = turnCaptures[id], let reply = guideReplies[id] else { return }
+        guard let id = outputRequestID, let request = currentRequest?.visualRequest,
+              !dismissedVisualRequestIDs.contains(request.id), let screen = turnCaptures[id], let reply = guideReplies[id] else { return }
         desktop.showPoints(in: reply, for: screen)
     }
     var hasGuides: Bool {
-        guard let id = selectedID, turnCaptures[id] != nil, let reply = guideReplies[id] else { return false }
+        guard let id = outputRequestID, turnCaptures[id] != nil, let reply = guideReplies[id] else { return false }
         return !ScreenPoint.parse(in: reply).points.isEmpty
     }
 
     func stop() async {
         cancelVoiceInput(); stopSpeaking(); desktop.clearPoints()
-        guard let s = selected, let threadID = s.threadID else { return }
-        do { try await client.stop(threadID: threadID); update(s.id) { $0.phase = .failed }; save() }
-        catch { self.error = "Could not confirm stop. Open BB to check the running task. \(error.localizedDescription)" }
+        guard let s = currentRequest else { return }
+        guard s.phase.busy else { return }
+        update(s.id) { $0.cancelRequested = true; $0.stopAttempted = false }
+        guard let threadID = s.threadID else {
+            if !s.submissionStarted { update(s.id) { $0.retired = true; $0.phase = .failed } }
+            save(); return
+        }
+        await confirmStop(id: s.id, threadID: threadID, transport: client)
     }
 
-    func openInBB() async {
-        guard let id = selected?.threadID else { return }
+    private func confirmStop(id: String, threadID: String, transport: BBClient) async {
+        guard requests.first(where: { $0.id == id })?.stopAttempted != true else { return }
+        update(id) { $0.stopAttempted = true }; save()
+        do { try await transport.stop(threadID: threadID); update(id) { $0.phase = .failed; $0.retired = true }; save() }
+        catch { if id == outputRequestID { self.error = "Could not confirm stop. This request is still tracked in BB. \(error.localizedDescription)" } }
+    }
+
+    func openInBB(requestID: String? = nil) async {
+        guard let request = requests.first(where: { $0.id == (requestID ?? outputRequestID) }), request.serverURL == preferences.serverURL, let id = request.threadID else { return }
         do { try await client.open(threadID: id) } catch { self.error = error.localizedDescription }
     }
 
@@ -682,81 +653,55 @@ struct SavedCompanion: Codable {
     }
     func requestAccessibility() { desktop.requestAccessibility(); refreshContextPermissions() }
     func requestScreenCapture() { desktop.requestScreenCapture(); refreshContextPermissions() }
-    var offersInitialContext: Bool {
-        selected?.threadID == nil && (preferences.includeInitialContext ?? true)
-    }
-
-    func takeCapture() async {
-        guard !capturing else { return }
-        capturing = true
-        defer { capturing = false }
-        do { clearCapture(); capture = try await desktop.captureScreen() }
-        catch { self.error = error.localizedDescription }
-    }
-    func clearCapture() { if let capture { desktop.discardCapture(capture) }; capture = nil }
-
-    func beginRecording(autoSend: Bool = false) async {
+    func beginRecording() async {
         // A new hold always silences the previous answer, including a running BB turn.
         stopSpeaking()
-        guard !recording, !requestingMicrophone, !transcribing, !sending else { return }
-        if autoSend, !connected { error = "Connect to BB before asking a voice question."; settingsVisible = true; return }
-        if autoSend {
-            clearCapture()
-            if selected == nil { newConversation(preservingDraft: true) }
-        }
-        let request = VoiceRequestContext(autoSend: autoSend, sessionID: selectedID, connectionGeneration: connectionGeneration)
+        guard acceptingVoice else { return }
+        let request = VoiceRequestContext(connectionGeneration: connectionGeneration)
         voiceRequest = request; requestingMicrophone = true; error = nil
+        if !connected { await connect() }
+        guard connected, voiceRequest?.id == request.id else { cancelVoiceInput(); return }
         recordingStartedAt = Date()
         recordingLimit = Task {
             try? await Task.sleep(for: .seconds(30))
             guard !Task.isCancelled else { return }
             recordingLimit = nil
-            await endRecording(autoSendAllowed: false)
+            await endRecording()
         }
         defer { if voiceRequest?.id == request.id { requestingMicrophone = false } }
         do {
             try await voice.startListening()
             guard voiceRequest?.id == request.id else { return }
             recording = true; requestingMicrophone = false
-            if let allowed = voiceRequest?.releaseAllowed { await endRecording(autoSendAllowed: allowed) }
+            if voiceRequest?.releaseAllowed == true { await endRecording() }
         } catch is CancellationError { }
         catch {
-            if voiceRequest?.id == request.id { cancelVoiceInput(); self.error = error.localizedDescription; settingsVisible = true }
+            if voiceRequest?.id == request.id { cancelVoiceInput(); self.error = error.localizedDescription }
         }
     }
 
-    func endRecording(autoSendAllowed: Bool = true) async {
+    func endRecording() async {
         if requestingMicrophone {
             // A quick question can finish before the WebSocket handshake. Stop
             // capture now, then drain its buffered audio after session_started.
-            if voice.hasLiveCapture { voiceRequest?.releaseAllowed = autoSendAllowed; voice.releaseCapture() }
-            else { cancelVoiceInput() }
+            if voice.hasLiveCapture { voiceRequest?.releaseAllowed = true; voice.releaseCapture() }
+            else { cancelVoiceInput(); error = "Voice is not ready yet. Hold to ask again after macOS finishes authorization." }
             return
         }
         guard recording, let request = voiceRequest else { return }
         let duration = recordingStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         recordingStartedAt = nil
         recording = false; recordingLimit?.cancel()
-        if request.autoSend, duration < 0.3 { cancelVoiceInput(); return }
+        if duration < 0.3 { cancelVoiceInput(); return }
         transcribing = true
         defer { if voiceRequest?.id == request.id { voiceRequest = nil; transcribing = false } }
         do {
             let text = try await voice.finishListening()
-            guard voiceRequest?.id == request.id, request.connectionGeneration == connectionGeneration, request.sessionID == selectedID else { return }
+            guard voiceRequest?.id == request.id, request.connectionGeneration == connectionGeneration else { return }
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw VoiceProtocolError.noSpeech }
-            let preservedDraft = draft
             transcribing = false
-            if request.autoSend, autoSendAllowed, selected?.phase.busy != true {
-                draft = text
-                await send(speakReply: true)
-                guard request.connectionGeneration == connectionGeneration, request.sessionID == selectedID else { return }
-                if draft.isEmpty { draft = preservedDraft }
-                else if draft == text, !preservedDraft.isEmpty { draft = preservedDraft + "\n\n" + text }
-            } else {
-                draft = preservedDraft.isEmpty ? text : preservedDraft + "\n\n" + text
-                if !autoSendAllowed { error = "Recording reached 30 seconds. Review the transcript before sending." }
-                else if request.autoSend { error = "Your question is in the draft. BB is still working; send it when ready, or stop the current task." }
-            }
+            voiceRequest = nil
+            await ask(text)
         } catch is CancellationError { }
         catch { if voiceRequest?.id == request.id { self.error = error.localizedDescription } }
     }
@@ -767,8 +712,8 @@ struct SavedCompanion: Codable {
         startMonitoring()
     }
     private var fastSessionID: String? {
-        visibleSessions.first(where: {
-            ConversationPolling.isFast(phase: $0.phase, foreground: $0.id == selectedID || $0.id == speechOwner?.sessionID, isJob: $0.isJob)
+        serverRequests.first(where: {
+            !$0.retired && RequestPolling.isFast(phase: $0.phase, foreground: $0.id == outputRequestID || $0.id == speechOwner?.sessionID, isJob: false)
         })?.id
     }
     func startMonitoring(restart: Bool = false) {
@@ -776,15 +721,15 @@ struct SavedCompanion: Codable {
         guard monitor == nil else { return }
         monitor = Task { [weak self] in
             while !Task.isCancelled {
-                let interval = self?.fastSessionID != nil ? ConversationPolling.fastInterval : ConversationPolling.statusInterval
+                let interval = self?.fastSessionID != nil ? RequestPolling.fastInterval : RequestPolling.statusInterval
                 try? await Task.sleep(for: .seconds(interval))
                 guard !Task.isCancelled, let self else { return }
-                let stillBusy = self.visibleSessions.contains(where: { $0.phase.busy })
+                let stillBusy = self.serverRequests.contains(where: { $0.phase.busy && !$0.retired })
                 if self.connected && stillBusy {
                     await self.refresh(reconcileStatus: false)
                 } else if !self.connected && self.retryCount > 0 && self.retryCount <= 3 && Date() >= self.nextRetryAt && (self.panelVisible || stillBusy) { await self.connect() }
             }
         }
     }
-    func shutdown() { cancelVoiceInput(); stopSpeaking(); voice.shutdown(); onVisualDismiss?(); monitor?.cancel(); recordingLimit?.cancel(); clearCapture(); desktop.shutdown(); save() }
+    func shutdown() { cancelVoiceInput(); stopSpeaking(); voice.shutdown(); onVisualDismiss?(); monitor?.cancel(); recordingLimit?.cancel(); desktop.shutdown(); save() }
 }

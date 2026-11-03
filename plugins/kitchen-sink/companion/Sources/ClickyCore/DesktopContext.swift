@@ -95,10 +95,9 @@ public struct DesktopContext: Codable, Equatable, Sendable {
     }
 }
 
-public enum DesktopContextPolicy {
-    public static func include(threadID: String?, enabled: Bool, skip: Bool) -> Bool { threadID == nil && enabled && !skip }
-    public static func prompt(instructions: String, mode: String, screenshot: Bool, contextJSON: String?, question: String) -> String {
+public enum RequestPrompt {
+    public static func make(instructions: String, screenshot: Bool, contextJSON: String?, question: String) -> String {
         let context = contextJSON.map { "\n\nDesktop context snapshot (JSON):\n" + $0 } ?? ""
-        return "\(instructions)\n\nMode: \(mode).\nScreen attached to this message: \(screenshot ? "yes" : "no").\(context)\n\nUser request:\n\(question)"
+        return "\(instructions)\n\nScreen attached to this message: \(screenshot ? "yes" : "no").\(context)\n\nUser request:\n\(question)"
     }
 }

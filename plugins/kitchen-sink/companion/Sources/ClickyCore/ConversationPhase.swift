@@ -1,4 +1,4 @@
-public enum ConversationPhase: String, Codable, Sendable {
+public enum RequestPhase: String, Codable, Sendable {
     case ready, sending, running, needsApproval, failed, deliveryUnknown
 
     public var busy: Bool {
@@ -31,12 +31,12 @@ public enum ConversationPhase: String, Codable, Sendable {
 
 /// Low latency is useful only for the foreground conversation's live reply.
 /// Approval waits, uncertain delivery and background jobs retain a slow cadence.
-public enum ConversationPolling {
+public enum RequestPolling {
     public static let fastInterval = 0.25
     public static let statusInterval = 2.0
     public static let checkpointInterval = 1.0
 
-    public static func isFast(phase: ConversationPhase, foreground: Bool, isJob: Bool) -> Bool {
+    public static func isFast(phase: RequestPhase, foreground: Bool, isJob: Bool) -> Bool {
         foreground && !isJob && (phase == .running || phase == .sending)
     }
     public static func statusDue(elapsed: Double, becameTerminal: Bool = false) -> Bool {

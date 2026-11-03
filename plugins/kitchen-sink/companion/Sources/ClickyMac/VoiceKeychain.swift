@@ -2,7 +2,8 @@ import Foundation
 import LocalAuthentication
 import Security
 
-enum VoiceKeychain {
+nonisolated enum VoiceKeychain {
+    @concurrent static func authorize() async throws -> String? { try read(allowInteraction: true) }
     private static var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: "app.getbb.clicky-companion.elevenlabs",
@@ -44,8 +45,8 @@ enum VoiceKeychain {
     struct KeychainError: LocalizedError {
         let status: OSStatus
         var errorDescription: String? {
-            if status == errSecInteractionNotAllowed || status == errSecAuthFailed {
-                return "Keychain needs authorization for this Clicky build. Open Settings and check or save your ElevenLabs key again."
+            if status == errSecInteractionNotAllowed || status == errSecAuthFailed || status == errSecUserCanceled {
+                return "macOS Keychain did not authorize this Clicky build. Ask again and approve its Keychain request."
             }
             return "Could not access Clicky’s ElevenLabs key in macOS Keychain (\(status))."
         }

@@ -13,11 +13,7 @@ struct DesktopContextTests {
         #expect(ContextRect(x: .nan, y: 0, width: 5, height: 5) == nil)
         #expect(ContextRect(x: 0, y: 0, width: 0, height: 5) == nil)
     }
-    @Test func initialPolicyRespectsFollowupsAndSkipping() {
-        #expect(DesktopContextPolicy.include(threadID: nil, enabled: true, skip: false))
-        #expect(!DesktopContextPolicy.include(threadID: "thread", enabled: true, skip: false))
-        #expect(!DesktopContextPolicy.include(threadID: nil, enabled: false, skip: false))
-        #expect(!DesktopContextPolicy.include(threadID: nil, enabled: true, skip: true))
+    @Test func secureRolesAreRecognized() {
         #expect(AccessibleContextNode.isSecure(role: "AXTextField", subrole: "AXSecureTextField"))
         #expect(AccessibleContextNode.isSecure(role: "AXSecureTextField", subrole: nil))
         #expect(!AccessibleContextNode.isSecure(role: "AXStaticText", subrole: nil))
@@ -30,7 +26,7 @@ struct DesktopContextTests {
         #expect(json.utf8.count <= 12_000)
         let decoded = try JSONDecoder.isoDates.decode(DesktopContext.self, from: Data(json.utf8))
         #expect(decoded.truncated)
-        let prompt = DesktopContextPolicy.prompt(instructions: "Fixture instructions", mode: "Conversation", screenshot: true, contextJSON: json, question: "My question")
+        let prompt = RequestPrompt.make(instructions: "Fixture instructions", screenshot: true, contextJSON: json, question: "My question")
         #expect(prompt.components(separatedBy: "\n\nUser request:\n").count == 2)
         #expect(prompt.components(separatedBy: "\n\nUser request:\n").last == "My question")
         #expect(prompt.contains("Screen attached to this message: yes"))
