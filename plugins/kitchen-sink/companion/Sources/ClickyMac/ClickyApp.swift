@@ -161,8 +161,8 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
     }
     private func positionStatus() {
         guard let screen = NotchPlacement.screen else { notch?.orderOut(nil); return }
-        guard model.statusActive else { notch?.orderOut(nil); return }
-        let placement = NotchPlacement(screen: screen, expanded: true)
+        let placement = NotchPlacement(screen: screen, expanded: model.statusActive)
+        guard model.statusActive || placement.cutoutWidth > 0 else { notch?.orderOut(nil); return }
         notch?.level = placement.cutoutWidth > 0 ? .statusBar : .floating
         notch?.setFrame(placement.frame, display: true)
         notch?.orderFrontRegardless()
@@ -191,10 +191,18 @@ private struct PassiveStatusView: View {
     @Bindable var model: CompanionModel
     var body: some View {
         let cutout = NotchPlacement.screen.map { NotchPlacement(screen: $0).cutoutWidth } ?? 0
-        HStack(spacing: 0) {
-            Text(model.statusText).lineLimit(1).frame(maxWidth: .infinity)
-            if cutout > 0 { Color.clear.frame(width: cutout) }
-            Text("⌃ ⌥ Space").foregroundStyle(.secondary).frame(maxWidth: .infinity)
+        Group {
+            if cutout > 0 && !model.statusActive {
+                Color.clear.overlay(alignment: .bottom) {
+                    Capsule().fill(Palette.accent).frame(width: 24, height: 2).padding(.bottom, 1)
+                }.accessibilityLabel("Clicky ready. Hold Control Option Space to ask.")
+            } else {
+                HStack(spacing: 0) {
+                    Text(model.statusText).lineLimit(1).frame(maxWidth: .infinity)
+                    if cutout > 0 { Color.clear.frame(width: cutout) }
+                    Text("⌃ ⌥ Space").foregroundStyle(.secondary).frame(maxWidth: .infinity)
+                }
+            }
         }.font(.system(size: 11, weight: .medium))
             .foregroundStyle(.white).frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 12, bottomTrailingRadius: 12))
