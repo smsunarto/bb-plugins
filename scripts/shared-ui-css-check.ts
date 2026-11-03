@@ -17,7 +17,8 @@ for (const id of readdirSync("plugins")) {
   );
   // A plugin using only cn has no control styles in its tree-shaken bundle.
   if (!candidates.size) {
-    // cn-only (inline-vis) and a tree-shaken unused Button (gtd-sidebar) have no styles.
+    // cn-only (inline-vis) has no styles, and gtd-sidebar vendors bb's own
+    // components instead of the shared controls.
     if (!["html", "gtd-sidebar"].includes(id))
       missing.push(`${id}: shared controls missing from app bundle`);
     continue;

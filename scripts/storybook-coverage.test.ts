@@ -32,7 +32,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
     workspace: ["StackLane", "BranchActions", "Conflicts"],
     history: ["OperationHistory"],
   },
-  "gtd-sidebar": { threads: ["ThreadCard", "RenameProvider"], indicators: ["StatusGlyph"] },
+  "gtd-sidebar": { sidebar: ["../app"] },
   html: { tweaks: ["TweakPanel"] },
   genui: { gallery: ["../app", "nav"] },
   "kitchen-sink": { "thread-details": ["../src/app/app"] },
