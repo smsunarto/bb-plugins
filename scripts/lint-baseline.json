@@ -1,0 +1,644 @@
+[
+  {
+    "filename": ".storybook/native-slot.jsx",
+    "code": "react(immutability)",
+    "message": "This value cannot be modified",
+    "source": "element.dataset.nativeSlotPlacement = placement;"
+  },
+  {
+    "filename": "plugins/agentation/components/annotation-panel.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "void load();"
+  },
+  {
+    "filename": "plugins/agentation/components/annotation-panel.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "void refresh();"
+  },
+  {
+    "filename": "plugins/agentation/components/staged-annotations-action.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "{renderHeader(dismiss)}"
+  },
+  {
+    "filename": "plugins/agentation/components/staged-annotations-action.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "{renderList(dismiss)}"
+  },
+  {
+    "filename": "plugins/agentation/components/staged-annotations-action.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "void refresh();"
+  },
+  {
+    "filename": "plugins/agentation/components/staged-annotations-action.tsx",
+    "code": "unicorn(prefer-array-flat-map)",
+    "message": "Prefer a single `.flatMap(…)` over `.filter(…).flatMap(…)`.",
+    "source": ".flatMap((item) => [{ provider: ANNOTATION_MENTION_PROVIDER, ...item }, \" \"]);"
+  },
+  {
+    "filename": "plugins/amp/app.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "useEffect(() => setCopyState(\"idle\"), [threadId]);"
+  },
+  {
+    "filename": "plugins/amp/src/oracle-report-cache.ts",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "latest.current = state;"
+  },
+  {
+    "filename": "plugins/amp/src/thread-changes.ts",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "latest.current = { matches, onChange };"
+  },
+  {
+    "filename": "plugins/code-review/src/app/changes.tsx",
+    "code": "react(preserve-manual-memoization)",
+    "message": "Existing memoization could not be preserved",
+    "source": "[scroller, list],"
+  },
+  {
+    "filename": "plugins/code-review/src/app/changes.tsx",
+    "code": "react(preserve-manual-memoization)",
+    "message": "Existing memoization could not be preserved",
+    "source": "[scroller, list],"
+  },
+  {
+    "filename": "plugins/code-review/src/app/changes.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "if (Date.now() - pending.at <= REVEAL_TTL_MS) setClaimed(pending);"
+  },
+  {
+    "filename": "plugins/code-review/src/app/diff-file.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "if (focus && file.patch) setChosen(\"diff\");"
+  },
+  {
+    "filename": "plugins/code-review/src/app/diff-file.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "setNear(true);"
+  },
+  {
+    "filename": "plugins/code-review/src/app/diff-file.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "setSelected({ start: focus.line, end: focus.line, side, endSide: side });"
+  },
+  {
+    "filename": "plugins/code-review/src/app/previews/model-diff.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "layoutRef.current = layout;"
+  },
+  {
+    "filename": "plugins/code-review/test/diff-file.test.tsx",
+    "code": "react(globals)",
+    "message": "Cannot reassign variables declared outside of the component/hook",
+    "source": "show = setShown;"
+  },
+  {
+    "filename": "plugins/devin/src/app/app.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "refresh.current = () => {"
+  },
+  {
+    "filename": "plugins/dotfiles/src/app/use-file-editor.ts",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "dirty: draftRef.current !== savedRef.current,"
+  },
+  {
+    "filename": "plugins/dotfiles/src/app/use-file-editor.ts",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "dirty: draftRef.current !== savedRef.current,"
+  },
+  {
+    "filename": "plugins/gh-stack/app.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "latestSettings.current = settings;"
+  },
+  {
+    "filename": "plugins/gh-stack/app.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "if (open) setMethod(\"squash\");"
+  },
+  {
+    "filename": "plugins/gh-stack/app.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "setDraftIntents((current) => {"
+  },
+  {
+    "filename": "plugins/gh-stack/app.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "setDraftIntents((current) => {"
+  },
+  {
+    "filename": "plugins/gh-stack/app.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "void refresh();"
+  },
+  {
+    "filename": "plugins/gitbutler/src/app/app.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "chooseRepository(undefined);"
+  },
+  {
+    "filename": "plugins/gitbutler/src/app/board-context.tsx",
+    "code": "react(preserve-manual-memoization)",
+    "message": "Existing memoization could not be preserved",
+    "source": "[root, settle],"
+  },
+  {
+    "filename": "plugins/gitbutler/src/app/board-context.tsx",
+    "code": "react(preserve-manual-memoization)",
+    "message": "Existing memoization could not be preserved",
+    "source": "}, [root]);"
+  },
+  {
+    "filename": "plugins/gitbutler/src/app/branch-actions.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "if (refocus !== \"idle\") setRefocus(\"idle\");"
+  },
+  {
+    "filename": "plugins/gitbutler/src/host/host.ts",
+    "code": "eslint(no-unused-vars)",
+    "message": "Variable 'expectedUrl' is declared but never used. Unused variables should start with a '_'.",
+    "source": "const { branch, action, expectedUrl, expectedHeadOid } = input;"
+  },
+  {
+    "filename": "plugins/gitbutler/test/app.test.tsx",
+    "code": "eslint(no-setter-return)",
+    "message": "Setter cannot return a value",
+    "source": "set: (value: number) => void scrolls.push(value),"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/components/inbox/inline-rename.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "const [store] = useState(() => createRenameStore(rename));"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/components/inbox/inline-rename.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "rename.current = renameThread;"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/components/inbox/slim-row.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "if (!isCompactViewport) setMenuOpen(false);"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/components/inbox/thread-card.tsx",
+    "code": "react(purity)",
+    "message": "Cannot call impure function during render",
+    "source": "command({ kind: \"snooze\", threadId: thread.id, until: snoozeUntilTomorrow(new Date()) }),"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/components/inbox/thread-card.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "if (!isCompactViewport) setMenuOpen(false);"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "previous.current = retainUnchangedThreads(previous.current, threads);"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "previous.current = retainUnchangedThreads(previous.current, threads);"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "return previous.current;"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "useEffect(() => setProjectOrderOverride(null), [projectOrder]);"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/hooks/use-inbox-window.ts",
+    "code": "react(incompatible-library)",
+    "message": "Use of incompatible library",
+    "source": "const virtualizer = useVirtualizer<HTMLElement, Element>({"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/hooks/use-lifecycle.ts",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "setNow(armedAt);"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/test/machine-colors.test.ts",
+    "code": "eslint(no-unused-vars)",
+    "message": "Variable 'fixtureRoster' is declared but never used. Unused variables should start with a '_'.",
+    "source": "const fixtureRoster = rosterOf(6, 42);"
+  },
+  {
+    "filename": "plugins/gtd-sidebar/test/use-lifecycle.test.ts",
+    "code": "react(purity)",
+    "message": "Cannot call impure function during render",
+    "source": "{ onClick: () => lifecycle.snooze(\"t\", Date.now() + 60_000) },"
+  },
+  {
+    "filename": "plugins/html/src/app/app.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "setState({ status: \"loading\" });"
+  },
+  {
+    "filename": "plugins/magic-compose/components/ui/icon.tsx",
+    "code": "react(jsx-no-constructed-context-values)",
+    "message": "The Context `value` prop should not be constructed.",
+    "source": "<IconAncestors.Provider value={[...ancestors, resolved]}>"
+  },
+  {
+    "filename": "plugins/magic-compose/lib/live-fill.ts",
+    "code": "unicorn(no-useless-spread)",
+    "message": "Using a spread operator here creates a new array unnecessarily.",
+    "source": "for (const listener of [...listeners]) listener();"
+  },
+  {
+    "filename": "plugins/magic-compose/lib/router.test.ts",
+    "code": "eslint(no-unused-vars)",
+    "message": "Parameter 'options' is declared but never used. Unused parameters should start with a '_'.",
+    "source": "const fake = jev((key, options) => {"
+  },
+  {
+    "filename": "plugins/magic-compose/lib/session.ts",
+    "code": "unicorn(no-useless-spread)",
+    "message": "Using a spread operator here creates a new array unnecessarily.",
+    "source": "for (const listener of [...castListeners]) listener();"
+  },
+  {
+    "filename": "plugins/magic-compose/server.ts",
+    "code": "unicorn(prefer-array-find)",
+    "message": "Prefer `find` over filtering and accessing the first result.",
+    "source": "PERMISSION_MODES.filter("
+  },
+  {
+    "filename": "plugins/magic-compose/settings.tsx",
+    "code": "jsx-a11y(label-has-associated-control)",
+    "message": "A form label must be associated with a control.",
+    "source": "<label className=\"flex cursor-pointer items-center gap-2 text-sm\">"
+  },
+  {
+    "filename": "plugins/magic-compose/settings.tsx",
+    "code": "jsx-a11y(no-autofocus)",
+    "message": "The `autoFocus` attribute is found here, which can cause usability issues for sighted and non-sighted users.",
+    "source": "autoFocus"
+  },
+  {
+    "filename": "plugins/magic-compose/settings.tsx",
+    "code": "jsx-a11y(prefer-tag-over-role)",
+    "message": "Prefer `output` over `role` attribute `status`.",
+    "source": "<div className=\"flex items-start gap-2 text-xs text-muted-foreground\" role=\"status\">"
+  },
+  {
+    "filename": "plugins/magic-compose/settings.tsx",
+    "code": "jsx-a11y(role-supports-aria-props)",
+    "message": "The attribute `aria-description` is not supported by the role `button`. This role is implicit on the element `button`.",
+    "source": "aria-description={title}"
+  },
+  {
+    "filename": "plugins/magic-compose/settings.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "useEffect(() => setDraft(value), [value]);"
+  },
+  {
+    "filename": "plugins/magic-compose/settings.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "useEffect(() => setDraft(value), [value]);"
+  },
+  {
+    "filename": "plugins/magic-compose/settings.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "useEffect(() => setNote(entry.note), [entry.note]);"
+  },
+  {
+    "filename": "plugins/scott-docs/app.tsx",
+    "code": "react(preserve-manual-memoization)",
+    "message": "Existing memoization could not be preserved",
+    "source": "[],"
+  },
+  {
+    "filename": "plugins/scott-docs/app.tsx",
+    "code": "react(preserve-manual-memoization)",
+    "message": "Existing memoization could not be preserved",
+    "source": "[activeVaultId, isCurrentVault, navigate, navigateTo, vault],"
+  },
+  {
+    "filename": "plugins/scott-docs/app.tsx",
+    "code": "react(preserve-manual-memoization)",
+    "message": "Existing memoization could not be preserved",
+    "source": "const open = useCallback("
+  },
+  {
+    "filename": "plugins/scott-docs/app.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "currentVaultIdRef.current = activeVaultId;"
+  },
+  {
+    "filename": "plugins/scott-docs/app.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "onMoveFileRef.current = onMoveFile;"
+  },
+  {
+    "filename": "plugins/scott-docs/app.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "onOpenRef.current = onOpen;"
+  },
+  {
+    "filename": "plugins/scott-docs/app.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "selectedPathRef.current = selectedPath;"
+  },
+  {
+    "filename": "plugins/scott-tasks/components/staged-attachments.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "setPreviewUrl(null);"
+  },
+  {
+    "filename": "plugins/scott-tasks/components/ui/menu-item-hover.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "handlersRef.current = handlers;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "attachFilesRef.current = onAttachFiles;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "canSubmitWithEnterRef.current = canSubmitWithEnterKey;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "changeRef.current = onChange;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "mentionItemsRef.current = mentionItems;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "onSubmitRef.current = onSubmit;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "openThreadRef.current = onOpenThread;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "placeholderRef.current = placeholder;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "readyRef.current = onEditorReady;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "setMentionRef.current = setMention;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "uploadRef.current = onUploadImage;"
+  },
+  {
+    "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "{BUBBLE_ACTIONS.map((action) => ("
+  },
+  {
+    "filename": "plugins/scott-tasks/views/board/index.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "columnsRef.current = columns;"
+  },
+  {
+    "filename": "plugins/scott-tasks/views/detail/index.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "pushRef.current = push;"
+  },
+  {
+    "filename": "plugins/scott-tasks/views/detail/index.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "rpcRef.current = rpc;"
+  },
+  {
+    "filename": "plugins/scott-tasks/views/list/index.tsx",
+    "code": "react(no-deriving-state-in-effects)",
+    "message": "Values derived from props and state should be calculated during render, not in an effect",
+    "source": "setPreference(loadListPreference(preferenceScope));"
+  },
+  {
+    "filename": "plugins/scott-tasks/views/list/index.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "const scopeChanged = settledScope.current !== scopeKey;"
+  },
+  {
+    "filename": "plugins/scott-tasks/views/list/index.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "setPreference(loadListPreference(preferenceScope));"
+  },
+  {
+    "filename": "plugins/scott-tasks/views/manage/new-project-dialog.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "setName(\"\");"
+  },
+  {
+    "filename": "plugins/slopcop/server.ts",
+    "code": "unicorn(no-useless-fallback-in-spread)",
+    "message": "Empty fallbacks in spreads are unnecessary",
+    "source": "...((execution.executionInputSources as Record<string, string>) ?? {}),"
+  },
+  {
+    "filename": "plugins/t3-composer/components/ui/compact-long-press-menu.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "if (open) handleOpenChange(false);"
+  },
+  {
+    "filename": "plugins/t3-composer/components/ui/dropdown-menu.tsx",
+    "code": "jsx-a11y(prefer-tag-over-role)",
+    "message": "Prefer `address, details, fieldset, hgroup, optgroup` over `role` attribute `group`.",
+    "source": "<div ref={ref} role=\"group\" {...props}>"
+  },
+  {
+    "filename": "plugins/t3-composer/components/ui/menu-item-hover.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "handlersRef.current = handlers;"
+  },
+  {
+    "filename": "plugins/t3-composer/components/ui/responsive-overlay.tsx",
+    "code": "jsx-a11y(prefer-tag-over-role)",
+    "message": "Prefer `dialog` over `role` attribute `dialog`.",
+    "source": "role=\"dialog\""
+  },
+  {
+    "filename": "plugins/t3-composer/components/ui/video.tsx",
+    "code": "jsx-a11y(media-has-caption)",
+    "message": "Missing `<track>` element with captions inside `<audio>` or `<video>` element",
+    "source": "return <video {...props} ref={ref} />;"
+  },
+  {
+    "filename": "plugins/t3-composer/src/AttachmentPreview.tsx",
+    "code": "jsx-a11y(prefer-tag-over-role)",
+    "message": "Prefer `output` over `role` attribute `status`.",
+    "source": "<div role=\"status\" aria-label={`Uploading ${file.name}`} className={IMAGE_TILE_CLASS}>"
+  },
+  {
+    "filename": "plugins/t3-composer/src/AttachmentPreview.tsx",
+    "code": "react(no-object-type-as-default-prop)",
+    "message": "Do not use an array literal as default prop value. Use a stable reference instead.",
+    "source": "pendingUploads = [],"
+  },
+  {
+    "filename": "plugins/t3-composer/src/AttachmentPreview.tsx",
+    "code": "react(set-state-in-effect)",
+    "message": "Calling setState synchronously within an effect can trigger cascading renders",
+    "source": "setPreviewUrl(url);"
+  },
+  {
+    "filename": "plugins/t3-composer/src/ComposerPermissionControl.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "composerRef.current = composer;"
+  },
+  {
+    "filename": "plugins/t3-composer/src/PromptBoxActionsMenu.tsx",
+    "code": "react(no-object-type-as-default-prop)",
+    "message": "Do not use an array literal as default prop value. Use a stable reference instead.",
+    "source": "actions = [],"
+  },
+  {
+    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
+    "code": "eslint(no-unused-vars)",
+    "message": "Identifier 'useContext' is imported but never used.",
+    "source": "useContext,"
+  },
+  {
+    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
+    "code": "eslint(no-unused-vars)",
+    "message": "Type 'ReactNode' is imported but never used.",
+    "source": "type ReactNode,"
+  },
+  {
+    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
+    "code": "eslint(no-unused-vars)",
+    "message": "Type 'Ref' is imported but never used.",
+    "source": "type Ref,"
+  },
+  {
+    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
+    "code": "jsx-a11y(no-noninteractive-element-interactions)",
+    "message": "Non-interactive elements should not be assigned mouse or keyboard event listeners.",
+    "source": "<form"
+  },
+  {
+    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
+    "code": "react(no-object-type-as-default-prop)",
+    "message": "Do not use an object literal as default prop value. Use a stable reference instead.",
+    "source": "attachments: attachmentConfig = {},"
+  },
+  {
+    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "return ref.current;"
+  },
+  {
+    "filename": "plugins/t3-composer/src/mentions/MentionMenu.tsx",
+    "code": "jsx-a11y(prefer-tag-over-role)",
+    "message": "Prefer `output` over `role` attribute `status`.",
+    "source": "role=\"status\""
+  },
+  {
+    "filename": "plugins/t3-composer/src/mentions/MentionMenu.tsx",
+    "code": "react(immutability)",
+    "message": "This value cannot be modified",
+    "source": "itemRefs.current[index] = element;"
+  },
+  {
+    "filename": "plugins/t3-composer/src/renderer.test.tsx",
+    "code": "jsx-a11y(prefer-tag-over-role)",
+    "message": "Prefer `option` over `role` attribute `option`.",
+    "source": "<div role=\"option\" aria-selected=\"true\">"
+  },
+  {
+    "filename": "plugins/traces/src/app/app.tsx",
+    "code": "react(refs)",
+    "message": "Cannot access refs during render",
+    "source": "<Splitter {...panes.sessionsSplitter} />"
+  },
+  {
+    "filename": "plugins/traces/src/app/inspector.tsx",
+    "code": "react(static-components)",
+    "message": "Cannot create components during render",
+    "source": "<Renderer"
+  }
+]

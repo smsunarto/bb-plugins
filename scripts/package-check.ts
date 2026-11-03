@@ -385,7 +385,6 @@ function main(): void {
   const plugins = publishableWorkspacePlugins(ROOT);
   console.log(`checking ${packages.length} framework package and ${plugins.length} plugins\n`);
 
-  run("bun", ["run", "build:framework"], ROOT);
   run(
     "bun",
     ["run", ...plugins.flatMap((plugin) => ["--filter", plugin.name]), "--parallel", "build"],

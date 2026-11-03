@@ -13,6 +13,7 @@ const meta = {
   parameters: {
     host: {
       pluginId: "slopcop",
+      sdk: { hosts: { list: async () => [] }, projects: { list: async () => [] } },
       rpc: {
         listRules: () => ({ rules: [] }),
         listRuns: () => ({ runs: [] }),
@@ -46,7 +47,13 @@ const rule = {
   authorTrust: "org_members",
   requesterTrust: "org_members",
   prompt: "Review the pull request.",
-  request: null,
+  request: {
+    projectId: "proj_story",
+    providerId: "codex",
+    model: "gpt-6.1-sol",
+    permissionMode: "auto",
+    environment: { type: "reuse", environmentId: "env_story" },
+  },
   dedupe: "once_per_head_sha",
   reviewStrategy: "update",
   visibility: "visible",
@@ -70,14 +77,18 @@ export const EditAuthorExclusion: Story = {
     saveRule.mockClear();
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: /Internal PR reviews/ }));
-    const field = await canvas.findByLabelText("Exclude PR authors", { exact: false });
-    await expect(field).toHaveValue("dana, dependabot[bot]");
-    await userEvent.clear(field);
-    await userEvent.type(field, "@");
+    await userEvent.click(canvas.getByText("Filters & author exclusions"));
+    await canvas.findByLabelText("Exclude PR authors", { exact: false });
+    const field = () => canvas.getByLabelText("Exclude PR authors", { exact: false });
+    await expect(field()).toHaveValue("dana, dependabot[bot]");
+    await userEvent.click(field());
+    await userEvent.clear(field());
+    await userEvent.type(field(), "@");
     await expect(canvas.getByRole("alert")).toHaveTextContent("Add a GitHub username after @.");
-    await userEvent.clear(field);
-    await userEvent.type(field, "@Other");
-    await userEvent.click(canvas.getByTestId("bb-new-thread-composer-submit"));
+    await userEvent.click(field());
+    await userEvent.clear(field());
+    await userEvent.type(field(), "@Other");
+    await userEvent.click(canvas.getByRole("button", { name: "Save rule" }));
     await waitFor(() =>
       expect(saveRule).toHaveBeenCalledWith(
         expect.objectContaining({

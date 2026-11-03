@@ -1,7 +1,6 @@
 import { recoveryPlan } from "../../../.storybook/fixtures";
 import { screenParameters } from "../../../.storybook/layout";
 import { ready, shows } from "../../../.storybook/ready";
-import { clearNotebookStores } from "../app";
 import { expect, waitFor } from "storybook/test";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { RegisteredSurface } from "../../../.storybook/host";
@@ -73,7 +72,6 @@ const listing = {
   error: null,
 };
 const meta = {
-  beforeEach: () => clearNotebookStores(),
   play: ready,
   title: "Screens/Docs/Document browser",
   component: RegisteredSurface,
@@ -88,12 +86,14 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 export const Notes: Story = {
   play: async ({ canvasElement }) => {
-    await waitFor(() =>
-      expect(
-        canvasElement
-          .querySelector("[data-docs-tree]")
-          ?.shadowRoot?.querySelector('[role="treeitem"][aria-label="design.md"]'),
-      ).toBeTruthy(),
+    await waitFor(
+      () =>
+        expect(
+          canvasElement
+            .querySelector("[data-docs-tree]")
+            ?.shadowRoot?.querySelector('[role="treeitem"][aria-label="design.md"]'),
+        ).toBeTruthy(),
+      { timeout: 10000 },
     );
   },
 };

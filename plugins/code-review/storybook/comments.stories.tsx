@@ -1,6 +1,6 @@
 import { useState, type ComponentProps } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
 import { CommentForm } from "../src/app/comment-form";
 function InteractiveForm(args: ComponentProps<typeof CommentForm>) {
@@ -43,9 +43,13 @@ export const Draft: Story = {
       name: "Review comment",
     });
     await userEvent.clear(field);
-    await userEvent.type(field, "Please also ignore a late response from the previous checkout.");
-    await expect(field).toHaveValue(
-      "Please also ignore a late response from the previous checkout.",
+    await userEvent.type(field, "Please also ignore a late response from the previous checkout.", {
+      delay: 20,
+    });
+    await waitFor(() =>
+      expect(field.textContent).toBe(
+        "Please also ignore a late response from the previous checkout.",
+      ),
     );
   },
 };

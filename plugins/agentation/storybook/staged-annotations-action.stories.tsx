@@ -84,13 +84,13 @@ export const InThread: Story = {
   },
 };
 
-/** No thread exists yet, so the list only mentions annotations into the draft. */
+/** A new-thread composer can mention annotations or submit them as its first message. */
 export const NewThread: Story = {
   parameters: { host: host({ kind: "new-thread", projectId: "proj_story" }, listed) },
   play: async (context) => {
     const list = await opensList(context);
     await expect(list.getByRole("button", { name: /Mention all/ })).toBeEnabled();
-    await expect(list.queryByRole("button", { name: /Send all/ })).toBeNull();
+    await expect(list.getByRole("button", { name: /Send all/ })).toBeEnabled();
   },
 };
 

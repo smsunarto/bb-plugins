@@ -6,144 +6,145 @@ import { workspacePlugins } from "./plugin-package";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
-// Original plugin marks share BB's 24-unit grid, 1.5-unit strokes and rounded
-// caps/joins. Keep one geometry per plugin for compact, light and dark assets.
-const customIcons = new Map<string, { name: string; body: string }>([
+// Preserve the committed artwork across compact, light and dark assets.
+// Outline marks use a 24-unit grid; Devin uses its official solid 425-unit mark.
+const customIcons = new Map<string, { name: string; body: string; solid?: boolean }>([
   [
     "agent-instructions",
     {
       name: "Agent instructions",
-      body: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M7 8h3m4 0h3M7 16h7m3 0h.01"/><circle cx="12" cy="8" r="2"/><circle cx="16" cy="16" r="2"/>',
+      body: '<path d="M15 12h-5m5-4h-5m9 9V5a2 2 0 0 0-2-2H4"/><path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3"/>',
     },
   ],
   [
     "agentation",
     {
       name: "Agentation",
-      body: '<path d="M8 3H16c4 0 5 1 5 5v5c0 4-1 5-5 5h-3l-5 4v-4c-4 0-5-1-5-5V8c0-4 1-5 5-5Z"/><circle cx="12" cy="10.5" r="3"/><path d="M12 6v2M12 13v2m-4.5-4.5h2m5 0h2"/>',
+      body: '<path d="M14 4.1L12 6M5.1 8l-2.9-.8M6 12l-1.9 2M7.2 2.2L8 5.1m1.037 4.59a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z"/>',
     },
   ],
   [
     "amp",
     {
       name: "Amp",
-      body: '<path d="M5 18 10.5 5h3L19 18M7.5 12h9M3 21h18"/><path d="m12 8-2 5h4l-2 5"/>',
+      body: '<path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/>',
     },
   ],
   [
     "at-plugin",
-    { name: "Installed Plugin Mentions", body: '<path d="M9 3 6 21M18 3l-3 18M3 9h18M2 15h18"/>' },
+    { name: "Installed Plugin Mentions", body: '<path d="M4 9h16M4 15h16M10 3L8 21m8-18l-2 18"/>' },
   ],
   [
     "boat-sandbox",
     {
       name: "Boat Sandbox [Experimental]",
-      body: '<path d="M3 14h18l-2.5 5h-13zM7 14V8h10v6M12 3v5M9 5h6M2 22c2 0 2-1.5 4-1.5S8 22 10 22s2-1.5 4-1.5 2 1.5 4 1.5 2-1.5 4-1.5"/>',
+      body: '<path d="M10 2v15m-3 5a4 4 0 0 1-4-4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1a4 4 0 0 1-4 4zM9.159 2.46a1 1 0 0 1 1.521-.193l9.977 8.98A1 1 0 0 1 20 13H4a1 1 0 0 1-.824-1.567z"/>',
     },
   ],
   [
     "code-review",
     {
       name: "Review",
-      body: '<path d="M10 3H7C4.5 3 4 3.5 4 6v12c0 2.5.5 3 3 3h10c2.5 0 3-.5 3-3v-4M8 8h3M8 12h2M8 16h3"/><circle cx="17" cy="6" r="4"/><path d="m20 9 2 2m-7-5 1.5 1.5L19 5"/>',
+      body: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/>',
     },
   ],
   [
     "devin",
     {
       name: "Devin",
-      body: '<path d="M5 15V8c0-3.5 14-3.5 14 0v7M5 9h14M9 13h.01M15 13h.01M9 17h6M3 11v4M21 11v4M5 15c0 4 2 6 7 6s7-2 7-6M12 3V1.5"/>',
+      body: '<path d="M70 159.333V91.3471C70 88.3592 71.594 85.5983 74.1816 84.1044L133.043 50.1205C135.631 48.6265 138.819 48.6265 141.407 50.1205L200.269 84.1044C202.856 85.5983 204.45 88.3592 204.45 91.3471V126.068C204.708 137.606 210.806 148.734 221.531 154.926C232.256 161.117 244.942 160.834 255.063 155.289L285.132 137.929C287.719 136.435 290.907 136.435 293.495 137.929L352.357 171.913C354.944 173.406 356.538 176.167 356.538 179.155V247.123C356.538 250.111 354.944 252.872 352.357 254.366L293.495 288.35C290.907 289.844 287.719 289.844 285.132 288.35L255.306 271.13C245.146 265.456 232.344 265.117 221.534 271.358C210.809 277.55 204.711 288.678 204.453 300.215V334.926C204.453 337.914 202.859 340.675 200.271 342.169L141.41 376.153C138.822 377.647 135.634 377.647 133.046 376.153L74.1845 342.169C71.5969 340.675 70.0028 337.914 70.0028 334.926V266.959C70.0029 263.971 71.5969 261.21 74.1845 259.716L133.046 225.732C135.634 224.238 138.822 224.238 141.41 225.732L171.547 243.132C181.656 248.638 194.306 248.906 205.005 242.729C215.815 236.488 221.922 225.231 222.088 213.595C221.83 202.057 215.732 189.737 205.008 183.545C194.283 177.353 181.597 177.636 171.476 183.181L141.269 200.72C138.67 202.229 135.461 202.228 132.864 200.716L74.1576 166.562C71.5835 165.065 70 162.311 70 159.333Z"/>',
+      solid: true,
     },
   ],
   [
     "dotfiles",
     {
       name: "Dotfiles",
-      body: '<path d="M8 6 5 3H3v18h14v-6M8 6h9v5M3 9h7"/><path d="m17 10-3 4 3 4m3-8 3 4-3 4"/><circle cx="7" cy="17" r=".75"/>',
+      body: '<path d="M10.3 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.98a2 2 0 0 1 1.69.9l.66 1.2A2 2 0 0 0 12 6h8a2 2 0 0 1 2 2v3.3m-7.695 8.23l.923-.382m0-2.296l-.923-.383m2.547-1.241l-.383-.923m.383 6.467l-.383.924m2.679-6.468l.383-.923m-.001 7.391l-.382-.924m1.624-3.92l.924-.383m-.924 2.679l.924.383"/><circle cx="18" cy="18" r="3"/>',
     },
   ],
   [
     "gcp-machine",
     {
       name: "GCP Machine",
-      body: '<path d="M6 11a4 4 0 0 1 0-8 5 5 0 0 1 8 1 3.5 3.5 0 1 1 4 7"/><rect x="5" y="14" width="14" height="7" rx="2"/><path d="M8 17.5h.01M11 17.5h5M12 10v4"/>',
+      body: '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><path d="M6 6h.01M6 18h.01"/>',
     },
   ],
   [
     "genui",
     {
       name: "Generative UI",
-      body: '<rect x="3" y="8" width="18" height="13" rx="3"/><path d="M3 13h18M9 13v8m7-19 .8 3.2L20 6l-3.2.8L16 10l-.8-3.2L12 6l3.2-.8z"/>',
+      body: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="M10 4v4M2 8h20M6 4v4"/>',
     },
   ],
   [
     "gh-stack",
     {
       name: "GitHub Stack",
-      body: '<circle cx="6" cy="4" r="2"/><circle cx="18" cy="4" r="2"/><path d="M6 6v5M18 6v1c0 3-12 1-12 4M3 12l9 4 9-4M3 16l9 4 9-4M3 20l9 3 9-3"/>',
+      body: '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
     },
   ],
   [
     "gitbutler",
     {
       name: "GitButler",
-      body: '<circle cx="6" cy="4" r="2"/><circle cx="6" cy="20" r="2"/><circle cx="18" cy="4" r="2"/><path d="M6 6v12M18 6v2c0 4-12 4-12 8M3 10l3 2 3-2"/>',
+      body: '<path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>',
     },
   ],
   [
     "gtd-sidebar",
     {
       name: "GTD Sidebar",
-      body: '<rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9 3v18m3-13 1.5 1.5L17 6m-5 8 1.5 1.5L17 12M5.5 7h1M5.5 12h1M5.5 17h1"/>',
+      body: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/>',
     },
   ],
   [
     "html",
     {
       name: "HTML visualizations",
-      body: '<rect x="2" y="4" width="20" height="16" rx="3"/><path d="M2 8h20m-13 4-3 2 3 2m6-4 3 2-3 2m-2-5-2 6M5 6h.01M8 6h.01"/>',
+      body: '<path d="m18 16l4-4l-4-4M6 8l-4 4l4 4m8.5-12l-5 16"/>',
     },
   ],
   [
     "kitchen-sink",
     {
       name: "Kitchen Sink",
-      body: '<path d="M3 12h18v3c0 4-2 6-6 6H9c-4 0-6-2-6-6zM2 12h20M8 8V6a4 4 0 0 1 8 0v2M14 8h4M6 15h12"/>',
+      body: '<path d="M2 12h20m-2 0v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8m0-4l16-4M8.86 6.78l-.45-1.81a2 2 0 0 1 1.45-2.43l1.94-.48a2 2 0 0 1 2.43 1.46l.45 1.8"/>',
     },
   ],
   [
     "magic-compose",
     {
       name: "Magic Compose",
-      body: '<path d="m4 20 10-10 4 4L8 24z" transform="translate(0 -3)"/><path d="m12 9 4 4M6 2v4M4 4h4M20 2v6M17 5h6M20 17v4M18 19h4"/>',
+      body: '<path d="m21.64 3.64l-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72M14 7l3 3M5 6v4m14 4v4M10 2v2M7 8H3m18 8h-4M11 3H9"/>',
     },
   ],
   [
     "monokai",
     {
       name: "bb Monokai",
-      body: '<path d="M12 3C6.5 3 2 7 2 12s4 9 9 9c2 0 3-1.5 2-3s0-3 2-3h3c3 0 4-2 4-4 0-4.5-4.5-8-10-8Z"/><circle cx="7" cy="10" r="1"/><circle cx="11" cy="7" r="1"/><circle cx="16" cy="8" r="1"/><circle cx="6" cy="15" r="1"/>',
+      body: '<path d="M12 22a1 1 0 0 1 0-20a10 9 0 0 1 10 9a5 5 0 0 1-5 5h-2.25a1.75 1.75 0 0 0-1.4 2.8l.3.4a1.75 1.75 0 0 1-1.4 2.8z"/><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/>',
     },
   ],
   [
     "scott-docs",
     {
       name: "Docs",
-      body: '<path d="M12 5C9 3 5 3 2 4v15c3-1 7-1 10 1 3-2 7-2 10-1V4c-3-1-7-1-10 1Zm0 0v15M5 8c1.5-.3 2.5-.1 4 .5M5 12c1.5-.3 2.5-.1 4 .5M15 8.5c1.5-.6 2.5-.8 4-.5M15 12.5c1.5-.6 2.5-.8 4-.5"/>',
+      body: '<path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10 9H8m8 4H8m8 4H8"/>',
     },
   ],
   [
     "scott-tasks",
     {
       name: "Tasks",
-      body: '<rect x="3" y="5" width="18" height="16" rx="3"/><rect x="8" y="2" width="8" height="6" rx="2"/><path d="m7 14 3 3 7-6"/>',
+      body: '<path d="M13 5h8m-8 7h8m-8 7h8M3 17l2 2l4-4"/><rect width="6" height="6" x="3" y="4" rx="1"/>',
     },
   ],
   [
     "slopcop",
     {
       name: "SlopCop",
-      body: '<path d="M12 2 3 6v6c0 5 5 8 9 10 4-2 9-5 9-10V6zM8 10h8M12 6v8M7 17l3-3h4l3 3"/>',
+      body: '<path d="M7 18v-6a5 5 0 1 1 10 0v6M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2zm16-9h1m-3.5-7.5L18 5M2 12h1m9-10v1M4.929 4.929l.707.707M12 12v6"/>',
     },
   ],
   [
@@ -157,49 +158,51 @@ const customIcons = new Map<string, { name: string; body: string }>([
     "t3-composer",
     {
       name: "T3 Composer",
-      body: '<path d="M18 3H6C3 3 2 4 2 7v7c0 3 1 4 4 4h2v4l5-4h5c3 0 4-1 4-4V7c0-3-1-4-4-4Z"/><path d="M6 8h5M8.5 8v6M15 8h3l-2 3c3-1 4 4 0 3h-1"/>',
+      body: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>',
     },
   ],
   [
     "traces",
     {
       name: "Traces",
-      body: '<path d="M4 3v15c0 2 .5 3 3 3h14M4 7h5l2 5h5M4 16h4l2-4M16 12l3-7"/><circle cx="19" cy="5" r="2"/><circle cx="17" cy="16" r="2"/><path d="m18.5 17.5 3 3"/>',
+      body: '<path d="m10.586 5.414l-5.172 5.172m13.172 2.828l-5.172 5.172M6 12h12"/><circle cx="12" cy="20" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="20" cy="12" r="2"/><circle cx="4" cy="12" r="2"/>',
     },
   ],
   [
     "usage-bar",
     {
       name: "Usage Bar",
-      body: '<path d="M3 16a9 9 0 1 1 18 0M5 21h14M12 13l4-5M5 11l1.5.5M8 6l1 1.5M16 6l-1 1.5M19 11l-1.5.5"/><circle cx="12" cy="15" r="2"/>',
+      body: '<path d="m12 14l4-4M3.34 19a10 10 0 1 1 17.32 0"/>',
     },
   ],
   [
     "vimium",
     {
       name: "Vimium",
-      body: '<rect x="2" y="5" width="20" height="14" rx="3"/><path d="m8 9 4 6 4-6M5 9h.01M19 9h.01M5 15h.01M19 15h.01M9 22h6"/>',
+      body: '<path d="M10 8h.01M12 12h.01M14 8h.01M16 12h.01M18 8h.01M6 8h.01M7 16h10m-9-4h.01"/><rect width="20" height="16" x="2" y="4" rx="2"/>',
     },
   ],
   [
     "whiteboard",
     {
       name: "Whiteboard",
-      body: '<rect x="2" y="3" width="20" height="14" rx="3"/><path d="M12 17v5M8 22l4-3 4 3M7 8h4v4H7zM11 10h3l3-3M14 10l3 3"/>',
+      body: '<path d="M2 3h20m-1 0v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3m4 18l5-5l5 5"/>',
     },
   ],
 ]);
 
-function svg(body: string, color: string): string {
+function svg(body: string, color: string, solid: boolean): string {
+  if (solid)
+    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 425 425" fill="currentColor" color="${color}">\n  ${body}\n</svg>\n`;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" color="${color}">\n  <g stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">\n    ${body}\n  </g>\n</svg>\n`;
 }
 
-function expectedFiles(plugin: string, body: string): Map<string, string> {
+function expectedFiles(plugin: string, body: string, solid: boolean): Map<string, string> {
   const directory = join(ROOT, "plugins", plugin, "assets");
   return new Map([
-    [join(directory, "icon.svg"), svg(body, "#767676")],
-    [join(directory, "logo.svg"), svg(body, "oklch(44% 0 0)")],
-    [join(directory, "logo-dark.svg"), svg(body, "oklch(72% 0 0)")],
+    [join(directory, "icon.svg"), svg(body, "#767676", solid)],
+    [join(directory, "logo.svg"), svg(body, "oklch(44% 0 0)", solid)],
+    [join(directory, "logo-dark.svg"), svg(body, "oklch(72% 0 0)", solid)],
   ]);
 }
 
@@ -233,9 +236,9 @@ for (const { directory } of workspacePlugins(ROOT)) {
   }
 }
 
-for (const [plugin, { name, body }] of customIcons) {
+for (const [plugin, { name, body, solid = false }] of customIcons) {
   errors.push(...(await validateManifest(plugin, "./assets/icon.svg")));
-  for (const [path, expected] of expectedFiles(plugin, body)) {
+  for (const [path, expected] of expectedFiles(plugin, body, solid)) {
     if (check) {
       const actual = existsSync(path) ? await readFile(path, "utf8") : "";
       if (actual !== expected) errors.push(`${path}: not generated by scripts/plugin-icons.ts`);
