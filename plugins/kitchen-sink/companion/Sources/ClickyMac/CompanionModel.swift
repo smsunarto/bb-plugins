@@ -98,6 +98,10 @@ struct SavedInteractions: Codable {
     @ObservationIgnored var instructionsLoader: (() throws -> (String, String))?
     let desktop = DesktopServices()
     let voice = ElevenLabsVoice()
+    var voiceKeyStatus = "Key not checked"
+    var voiceKeyBusy = false
+    var accessibilityAllowed = false
+    var screenCaptureAllowed = false
     private var speechOwner: (sessionID: String, requestID: String)?
     private var speechRaw: [String: String] = [:]
     private var speechOrder: [String] = []
@@ -481,6 +485,29 @@ struct SavedInteractions: Codable {
         throw BBClientError.responseTooLarge
     }
 
+    func saveVoiceKey(_ key: String) async {
+        guard !voiceKeyBusy else { return }
+        voiceKeyBusy = true
+        defer { voiceKeyBusy = false }
+        do { try await VoiceKeychain.saveInteractively(key); voiceKeyStatus = "Key saved in Keychain"; error = nil }
+        catch { voiceKeyStatus = "Keychain access failed"; self.error = error.localizedDescription }
+    }
+    func checkVoiceKey() async {
+        guard !voiceKeyBusy else { return }
+        voiceKeyBusy = true
+        defer { voiceKeyBusy = false }
+        do { voiceKeyStatus = try await VoiceKeychain.authorize() == nil ? "No key saved" : "Key available in Keychain" }
+        catch { voiceKeyStatus = "Keychain access denied"; self.error = error.localizedDescription }
+    }
+    func removeVoiceKey() async {
+        guard !voiceKeyBusy else { return }
+        voiceKeyBusy = true
+        defer { voiceKeyBusy = false }
+        cancelVoiceInput(); stopSpeaking()
+        do { try await VoiceKeychain.removeInteractively(); voiceKeyStatus = "No key saved" }
+        catch { self.error = error.localizedDescription }
+    }
+
     func stopSpeaking() {
         speechOwner = nil; speechRaw = [:]; speechOrder = []
         voice.stopSpeaking()
@@ -631,6 +658,19 @@ struct SavedInteractions: Codable {
         do { try await transport.stop(threadID: threadID); update(id) { $0.phase = .failed; $0.retired = true }; save() }
         catch { if id == outputRequestID { self.error = "Could not confirm stop. This request is still tracked in BB. \(error.localizedDescription)" } }
     }
+
+    func openInBB(requestID: String? = nil) async {
+        guard let request = requests.first(where: { $0.id == (requestID ?? outputRequestID) }),
+              request.serverURL == preferences.serverURL, let id = request.threadID else { return }
+        do { try await client.open(threadID: id) } catch { self.error = error.localizedDescription }
+    }
+
+    func refreshContextPermissions() {
+        accessibilityAllowed = desktop.accessibilityAllowed
+        screenCaptureAllowed = desktop.screenCaptureAllowed
+    }
+    func requestAccessibility() { desktop.requestAccessibility(); refreshContextPermissions() }
+    func requestScreenCapture() { desktop.requestScreenCapture(); refreshContextPermissions() }
 
     func beginRecording() async {
         // A new hold always silences the previous answer, including a running BB turn.

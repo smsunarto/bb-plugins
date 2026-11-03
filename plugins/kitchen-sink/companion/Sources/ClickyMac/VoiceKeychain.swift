@@ -4,6 +4,8 @@ import Security
 
 nonisolated enum VoiceKeychain {
     @concurrent static func authorize() async throws -> String? { try read(allowInteraction: true) }
+    @concurrent static func saveInteractively(_ key: String) async throws { try save(key) }
+    @concurrent static func removeInteractively() async throws { try remove() }
     private static var query: [String: Any] {
         [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: "app.getbb.clicky-companion.elevenlabs",
