@@ -19,6 +19,9 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
     private var notch: NSPanel?
     private var visualWindow: VisualWindowController?
     private var previousApplication: NSRunningApplication?
+    private var positioningWindows = false
+    private var notchHovered = false
+    private var notchLayout: NotchLayoutState?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -26,7 +29,8 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         panel.title = "Clicky for BB"
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
+        panel.isMovable = false
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
@@ -48,19 +52,22 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         }
         panel.setFrameAutosaveName("ClickyPanel")
         self.panel = panel
-        let notch = VisualOutputPanel(contentRect: NSRect(x: 0, y: 0, width: 290, height: 40), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        notch.level = .floating
+        let notch = NotchPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        notch.title = "Clicky notch"
+        notch.level = .statusBar
         notch.isOpaque = false
         notch.backgroundColor = .clear
-        notch.hasShadow = true
+        notch.hasShadow = false
         notch.hidesOnDeactivate = false
-        notch.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        notch.contentView = NotchHostingView(rootView: AnyView(NotchView(model: model, open: { [weak self] in self?.show() })))
+        notch.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         self.notch = notch
+        positionWindows()
+        NotificationCenter.default.addObserver(self, selector: #selector(screenChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(screenChanged), name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "cursorarrow.rays", accessibilityDescription: "Clicky for BB")
         item.button?.target = self
-        item.button?.action = #selector(toggle)
+        item.button?.action = #selector(show)
         statusItem = item
         do {
             try model.desktop.registerShortcut(action: { [weak self] in self?.toggle() }, onVoicePress: { [weak self] in
@@ -78,29 +85,82 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         Task { await model.connect() }
     }
     @objc func toggle() { if panel?.isVisible == true { hide() } else { show() } }
-    func show() {
+    @objc func show() {
         if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApplication = front }
-        notch?.orderOut(nil); model.panelVisible = true; Task { await model.refresh() }; panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+        model.panelVisible = true
+        positionWindows()
+        notch?.orderFrontRegardless()
+        Task { await model.refresh() }
+        panel?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
     func hide() {
         model.panelVisible = false; model.desktop.clearPoints(); panel?.orderOut(nil)
         if NSApp.isActive, let previousApplication, !previousApplication.isTerminated { previousApplication.activate() }
-        if let screen = NSScreen.main {
-            notch?.setFrameOrigin(NSPoint(x: screen.frame.midX - 145, y: screen.visibleFrame.maxY - 40))
-            notch?.orderFrontRegardless()
+        positionWindows()
+        notch?.orderFrontRegardless()
+    }
+    @objc private func screenChanged() { positionWindows() }
+    func windowDidEndLiveResize(_ notification: Notification) { positionWindows() }
+    private func positionWindows() {
+        guard !positioningWindows, let screen = NotchPlacement.screen else { return }
+        positioningWindows = true
+        defer { positioningWindows = false }
+        let active = model.recording || model.transcribing || model.error != nil || model.visualWarning != nil || model.visualDocument != nil || model.selected?.phase.busy == true
+        let placement = NotchPlacement(screen: screen, expanded: notchHovered || model.panelVisible || active)
+        notch?.level = placement.cutoutWidth > 0 ? .statusBar : .floating
+        notch?.setFrame(placement.frame, display: true)
+        if let notchLayout {
+            if notchLayout.placement != placement { notchLayout.placement = placement }
+        } else {
+            let layout = NotchLayoutState(placement: placement)
+            notchLayout = layout
+            let hosting = NotchHostingView(rootView: AnyView(NotchView(model: model, layout: layout,
+                open: { [weak self] in self?.show() }, activityChanged: { [weak self] in self?.positionWindows() })))
+            hosting.sizingOptions = []
+            hosting.hoverChanged = { [weak self] hovered in
+                guard let self, self.notchHovered != hovered else { return }
+                self.notchHovered = hovered
+                self.positionWindows()
+            }
+            notch?.contentView = hosting
+        }
+        if let panel {
+            panel.setFrame(placement.expandedFrame(size: panel.frame.size, visibleFrame: screen.visibleFrame), display: true)
         }
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool { hide(); return false }
     func applicationWillTerminate(_ notification: Notification) { model.shutdown() }
 }
 
+private final class NotchLayoutState: ObservableObject {
+    @Published var placement: NotchPlacement
+    init(placement: NotchPlacement) { self.placement = placement }
+}
+
 private final class NotchHostingView: NSHostingView<AnyView> {
+    var hoverChanged: ((Bool) -> Void)?
+    private var hoverArea: NSTrackingArea?
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverArea { removeTrackingArea(hoverArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        hoverArea = area
+    }
+    override func mouseEntered(with event: NSEvent) { hoverChanged?(true) }
+    override func mouseExited(with event: NSEvent) { hoverChanged?(false) }
     override var isOpaque: Bool { false }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
 
 private struct NotchView: View {
     @Bindable var model: CompanionModel
+    @ObservedObject var layout: NotchLayoutState
     let open: () -> Void
+    let activityChanged: () -> Void
+    private var placement: NotchPlacement { layout.placement }
+    private var active: Bool { model.recording || model.transcribing || model.error != nil || model.visualWarning != nil || model.visualDocument != nil || model.selected?.phase.busy == true }
     private var status: String {
         if model.recording { return "Listening…" }
         if model.transcribing { return "Transcribing…" }
@@ -109,23 +169,38 @@ private struct NotchView: View {
         return "Clicky"
     }
     var body: some View {
-        HStack(spacing: 12) {
+        Group {
+            if placement.cutoutWidth > 0 && placement.wingWidth == 0 {
+                Button(action: open) {
+                    Color.black.frame(width: placement.cutoutWidth, height: placement.frame.height)
+                        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 8, bottomTrailingRadius: 8))
+                }.buttonStyle(.plain).accessibilityLabel("Open Clicky")
+            } else { controls }
+        }.onChange(of: active) { _, _ in activityChanged() }
+    }
+    private var controls: some View {
+        HStack(spacing: 0) {
             Button(action: open) {
-                HStack(spacing: 9) {
+                HStack(spacing: 7) {
                     Image(systemName: model.recording ? "waveform" : "cursorarrow.rays").foregroundStyle(Palette.accent)
-                    Text(status).font(.system(size: 12, weight: .medium)).lineLimit(1)
-                    Spacer(minLength: 0)
-                }
+                    Text(status).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                }.frame(maxWidth: .infinity)
             }.buttonStyle(.plain).accessibilityLabel("Open Clicky: \(status)")
                 .help(model.error ?? model.visualWarning ?? "Open conversation and settings")
-            if model.visualDocument != nil {
-                Button { model.dismissVisuals() } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.plain).help("Clear drawing").accessibilityLabel("Clear drawing")
-            } else {
-                Text("⌃ ⌥ Space").font(.system(size: 10)).foregroundStyle(.secondary)
-            }
-        }.padding(.horizontal, 20).frame(width: 290, height: 40)
-            .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 16, bottomTrailingRadius: 16))
+                .frame(width: placement.wingWidth > 0 ? placement.wingWidth : 150)
+            if placement.cutoutWidth > 0 { Color.clear.frame(width: placement.cutoutWidth).allowsHitTesting(false) }
+            HStack {
+                if model.visualDocument != nil {
+                    Button { model.dismissVisuals() } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain).help("Clear drawing").accessibilityLabel("Clear drawing")
+                } else {
+                    Button(action: open) { Text("⌃ ⌥ Space").font(.system(size: 10)).foregroundStyle(.secondary) }
+                        .buttonStyle(.plain).accessibilityLabel("Open Clicky")
+                }
+            }.frame(width: placement.wingWidth > 0 ? placement.wingWidth : 140)
+        }.frame(height: placement.rowHeight)
+            .padding(.bottom, placement.frame.height - placement.rowHeight)
+            .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 12, bottomTrailingRadius: 12))
             .foregroundStyle(.white).preferredColorScheme(.dark)
     }
 }
