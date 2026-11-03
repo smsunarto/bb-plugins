@@ -11,7 +11,9 @@ export interface PackageManifest {
   repository?: unknown;
   publishConfig?: { access?: string };
   files?: unknown;
+  bundledDependencies?: string[];
   bin?: unknown;
+  main?: string;
   exports?: unknown;
   dependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
@@ -79,7 +81,13 @@ function parsePackageManifest(value: unknown): PackageManifest {
     repository: value.repository,
     publishConfig,
     files: value.files,
+    bundledDependencies:
+      Array.isArray(value.bundledDependencies) &&
+      value.bundledDependencies.every((name) => typeof name === "string")
+        ? value.bundledDependencies
+        : undefined,
     bin: value.bin,
+    main: optionalString(value.main, "main"),
     exports: value.exports,
     dependencies: optionalDependencyMap(value.dependencies, "dependencies"),
     peerDependencies: optionalDependencyMap(value.peerDependencies, "peerDependencies"),

@@ -1,6 +1,7 @@
 /** Build and inspect every npm tarball without publishing it. */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { publishableWorkspacePlugins, type PluginManifest } from "./plugin-package";
@@ -25,7 +26,7 @@ export const ALLOWED_LICENSES: ReadonlySet<string> = new Set([
 const PACKAGE_FORBIDDEN_PATH = /\.woff2$|(^|\/)\.env|node_modules|__pycache__/;
 
 /** Plugin bundles are self-contained and must not ship their source maps. */
-const PLUGIN_FORBIDDEN_PATH = /\.map$/;
+const PLUGIN_FORBIDDEN_PATH = /^(?!node_modules\/).*\.map$/;
 
 /** A manifest path bb resolves against the installed package root. */
 interface BbTarget {
@@ -224,7 +225,11 @@ export function sourceClosureProblems(
       const resolved = candidates(base)
         .flatMap((candidate) => EXTENSIONS.map((extension) => candidate + extension))
         .find((candidate) => existsSync(join(dir, candidate)));
-      if (resolved !== undefined && !seen.has(resolved)) queue.push(resolved);
+      if (resolved === undefined)
+        problems.push(
+          `"${rel}" imports "${spec}", which is missing from the packed source closure`,
+        );
+      else if (!seen.has(resolved)) queue.push(resolved);
     }
   }
   return problems;
@@ -255,6 +260,7 @@ export function nonRegistryProtocol(spec: string): string | null {
 export function pluginPackageProblems(
   manifest: PluginManifest,
   paths: readonly string[],
+  bundledRoots?: readonly string[],
 ): string[] {
   const problems: string[] = [];
   const files = new Set(paths);
@@ -290,11 +296,17 @@ export function pluginPackageProblems(
   const forbidden = paths.filter((path) => PLUGIN_FORBIDDEN_PATH.test(path));
   if (forbidden.length > 0) problems.push(`tarball carries ${forbidden.join(", ")}`);
 
-  return [...problems, ...packageProblems(manifest, paths)];
+  return [...problems, ...packageProblems(manifest, paths, bundledRoots)];
 }
 
 /** Every reason an ordinary npm package cannot be published as it stands. */
-export function packageProblems(manifest: PackageManifest, paths: readonly string[]): string[] {
+export function packageProblems(
+  manifest: PackageManifest,
+  paths: readonly string[],
+  bundledRoots: readonly string[] = (manifest.bundledDependencies ?? []).map(
+    (name) => `node_modules/${name}`,
+  ),
+): string[] {
   const problems: string[] = [];
   const files = new Set(paths);
 
@@ -312,7 +324,19 @@ export function packageProblems(manifest: PackageManifest, paths: readonly strin
   }
 
   // ---- Distribution hygiene. ---------------------------------------------
-  const forbidden = paths.filter((path) => PACKAGE_FORBIDDEN_PATH.test(path));
+  const bundled = new Set(manifest.bundledDependencies ?? []);
+  const bundledPath = (path: string) => bundledRoots.some((root) => path.startsWith(`${root}/`));
+  for (const name of bundled) {
+    if (!manifest.dependencies?.[name])
+      problems.push(`bundled dependency ${name} is not a runtime dependency`);
+    if (!files.has(`node_modules/${name}/package.json`))
+      problems.push(`bundled dependency ${name} has no packed package.json`);
+  }
+  const forbidden = paths.filter(
+    (path) =>
+      PACKAGE_FORBIDDEN_PATH.test(path) &&
+      (!bundledPath(path) || /\.woff2$|(^|\/)\.env|__pycache__/.test(path)),
+  );
   if (forbidden.length > 0) problems.push(`tarball carries ${forbidden.join(", ")}`);
   if (!files.has("LICENSE")) problems.push("tarball has no LICENSE");
 
@@ -361,7 +385,15 @@ export function packageProblems(manifest: PackageManifest, paths: readonly strin
   for (const field of ["dependencies", "peerDependencies", "optionalDependencies"] as const) {
     for (const [name, spec] of Object.entries(manifest[field] ?? {})) {
       const protocol = nonRegistryProtocol(spec);
-      if (protocol !== null) {
+      if (
+        protocol !== null &&
+        !(
+          field === "dependencies" &&
+          protocol === "workspace" &&
+          bundled.has(name) &&
+          files.has(`node_modules/${name}/package.json`)
+        )
+      ) {
         problems.push(
           `${field}.${name} is "${spec}" (${protocol}), which the registry cannot serve to an installer`,
         );
@@ -372,8 +404,49 @@ export function packageProblems(manifest: PackageManifest, paths: readonly strin
   return problems;
 }
 
+/** Resolve only dependency packages actually carried by the generated tarball. */
+export function bundledDependencyRoots(dir: string, manifest: PluginManifest): string[] {
+  const roots = new Set<string>();
+  const queue = (manifest.bundledDependencies ?? []).map((name) => `node_modules/${name}`);
+  while (queue.length) {
+    const root = queue.pop();
+    if (!root || roots.has(root)) continue;
+    const path = join(dir, root, "package.json");
+    if (!existsSync(path)) throw new Error(`Missing bundled dependency ${root}`);
+    const dependency: PackageManifest = JSON.parse(readFileSync(path, "utf8"));
+    roots.add(root);
+    if (dependency.exports === undefined && dependency.main) {
+      const main = dependency.main;
+      const candidates = [main, `${main}.js`, `${main}.json`, `${main}.node`, `${main}/index.js`];
+      if (!candidates.some((entry) => existsSync(join(dir, root, entry))))
+        throw new Error(`Missing bundled main ${root}/${main}`);
+    }
+    for (const target of packageTargets(dependency)) {
+      const present = target.entry.includes("*")
+        ? !new Bun.Glob(target.entry).scanSync({ cwd: join(dir, root), onlyFiles: true }).next()
+            .done
+        : existsSync(join(dir, root, target.entry));
+      if (!present) throw new Error(`Missing bundled export ${root}/${target.entry}`);
+    }
+    for (const name of Object.keys(dependency.dependencies ?? {})) {
+      let parent = root;
+      while (true) {
+        const candidate = join(parent, "node_modules", name);
+        if (existsSync(join(dir, candidate, "package.json"))) {
+          queue.push(candidate);
+          break;
+        }
+        const next = dirname(parent);
+        if (next === parent || parent === ".") break;
+        parent = next;
+      }
+    }
+  }
+  return [...roots];
+}
+
 function run(command: string, args: string[], cwd: string): string {
-  return execFileSync(command, args, { cwd, encoding: "utf8" }).trim();
+  return execFileSync(command, args, { cwd, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 }).trim();
 }
 function main(): void {
   const fail = (message: string): never => {
@@ -425,20 +498,29 @@ function main(): void {
       }
     }
 
-    // `bun pm pack --dry-run` reports exactly the entries a real pack writes,
-    // so this is the tarball's contents without producing one.
-    const paths = packedPaths(run("bun", ["pm", "pack", "--dry-run"], dir));
-
-    const problems = [
-      ...pluginPackageProblems(manifest, paths),
-      ...sourceClosureProblems(dir, manifest, paths),
-    ];
-    if (problems.length > 0) {
-      fail(
-        `${id} cannot be published:\n${problems.map((problem) => `    - ${problem}`).join("\n")}`,
+    const scratch = mkdtempSync(join(tmpdir(), "bb-package-check-"));
+    try {
+      const archive = join(scratch, "plugin.tgz");
+      run("bun", ["pm", "pack", "--ignore-scripts", "--filename", archive], dir);
+      const paths = run("tar", ["-tzf", archive], scratch)
+        .split("\n")
+        .filter((path) => !path.endsWith("/"))
+        .map((path) => path.replace(/^package\//, ""));
+      run("tar", ["-xzf", archive], scratch);
+      const packedDir = join(scratch, "package");
+      const packedManifest: PluginManifest = JSON.parse(
+        readFileSync(join(packedDir, "package.json"), "utf8"),
       );
+      const roots = bundledDependencyRoots(packedDir, packedManifest);
+      const problems = [
+        ...pluginPackageProblems(packedManifest, paths, roots),
+        ...sourceClosureProblems(packedDir, packedManifest, paths),
+      ];
+      if (problems.length) throw new Error(`${id} cannot be published:\n${problems.join("\n")}`);
+      console.log(`  ${plugin.name}@${version} ready (${paths.length} files)`);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
     }
-    console.log(`  ${plugin.name}@${version} ready (${paths.length} files)`);
   }
 
   console.log("\nall npm packages are ready");

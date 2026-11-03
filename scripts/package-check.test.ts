@@ -1,8 +1,13 @@
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 // The package check decides whether a tarball can be installed at all, so the
 // checks that matter get a test each — most of all the one that reads the
 // manifest's bb.* paths back out of the packed file list.
 import { describe, expect, test } from "bun:test";
 import {
+  sourceClosureProblems,
+  bundledDependencyRoots,
   ALLOWED_LICENSES,
   bbTargets,
   nonRegistryProtocol,
@@ -332,4 +337,84 @@ describe("packedPaths", () => {
   test("throws rather than returning nothing when the format changes", () => {
     expect(() => packedPaths("bun pack v2\n\nsome new format\n")).toThrow(/Total files/);
   });
+});
+
+test("bundled runtime dependencies must carry their manifest and cannot hide secrets or unrelated packages", () => {
+  const { manifest, paths } = healthy();
+  manifest.dependencies = { "private-helper": "workspace:*" };
+  manifest.bundledDependencies = ["private-helper"];
+  expect(
+    packageProblems(manifest, paths).some((problem) => problem.includes("no packed package.json")),
+  ).toBe(true);
+  const bundled = [
+    ...paths,
+    "node_modules/private-helper/package.json",
+    "node_modules/private-helper/index.ts",
+  ];
+  expect(packageProblems(manifest, bundled)).toEqual([]);
+  expect(packageProblems(manifest, [...bundled, "node_modules/unrelated/index.js"])).not.toEqual(
+    [],
+  );
+  expect(packageProblems(manifest, [...bundled, "node_modules/private-helper/.env"])).not.toEqual(
+    [],
+  );
+});
+
+test("packed dependency traversal verifies exports and follows only shipped runtime dependencies", () => {
+  const root = mkdtempSync(join(tmpdir(), "bb-pack-test-"));
+  try {
+    for (const name of ["helper", "child", "unrelated"])
+      mkdirSync(join(root, "node_modules", name), { recursive: true });
+    writeFileSync(
+      join(root, "node_modules/helper/package.json"),
+      JSON.stringify({ name: "helper", exports: "./index.ts", dependencies: { child: "1.0.0" } }),
+    );
+    writeFileSync(
+      join(root, "node_modules/child/package.json"),
+      JSON.stringify({ name: "child", exports: "./index.ts" }),
+    );
+    const manifest = { name: "example", bundledDependencies: ["helper"] };
+    expect(() => bundledDependencyRoots(root, manifest)).toThrow("Missing bundled export");
+    writeFileSync(join(root, "node_modules/helper/index.ts"), "export {};\n");
+    writeFileSync(join(root, "node_modules/child/index.ts"), "export {};\n");
+    expect(bundledDependencyRoots(root, manifest).sort()).toEqual([
+      "node_modules/child",
+      "node_modules/helper",
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("packed source fallback rejects an omitted transitive relative import", () => {
+  const root = mkdtempSync(join(tmpdir(), "bb-source-pack-"));
+  try {
+    writeFileSync(join(root, "server.ts"), 'import { helper } from "./helper.js";\n');
+    expect(
+      sourceClosureProblems(root, { name: "example", bb: { server: "./server.ts" } }, [
+        "server.ts",
+      ]),
+    ).toEqual([
+      '"server.ts" imports "./helper.js", which is missing from the packed source closure',
+    ]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("bundled CommonJS main entries support extension resolution and reject omissions", () => {
+  const root = mkdtempSync(join(tmpdir(), "bb-main-pack-"));
+  try {
+    mkdirSync(join(root, "node_modules/helper"), { recursive: true });
+    writeFileSync(
+      join(root, "node_modules/helper/package.json"),
+      JSON.stringify({ name: "helper", main: "./index" }),
+    );
+    const manifest = { name: "example", bundledDependencies: ["helper"] };
+    expect(() => bundledDependencyRoots(root, manifest)).toThrow("Missing bundled main");
+    writeFileSync(join(root, "node_modules/helper/index.js"), "module.exports = {};\n");
+    expect(bundledDependencyRoots(root, manifest)).toEqual(["node_modules/helper"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -52,6 +52,7 @@ export interface PluginManifest {
   repository?: unknown;
   publishConfig?: { access?: string };
   files?: unknown;
+  bundledDependencies?: string[];
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;

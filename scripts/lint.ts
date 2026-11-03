@@ -86,7 +86,10 @@ if (import.meta.main) {
     console.log(
       `${ids.length - added.length} known lint errors; ${added.length} new; ${resolved.length} resolved.`,
     );
-    if (resolved.length) console.error("Prune resolved errors with bun scripts/lint.ts --update.");
+    if (resolved.length)
+      console.error(
+        "Prune resolved errors with bun scripts/lint.ts --update in a clean or isolated checkout.",
+      );
     process.exit(
       added.length || resolved.length || (result.exitCode !== 0 && ids.length === 0) ? 1 : 0,
     );

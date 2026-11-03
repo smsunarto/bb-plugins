@@ -71,7 +71,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          bun-version: 1.4.4
           no-cache: true
 
       # Trusted publishing requires npm >=11.5.1. Pin it so an image update
@@ -107,7 +107,9 @@ jobs:
 
       - name: Publish package
         working-directory: ${{ matrix.path }}
-        run: npm publish --access public
+        run: |
+          bun pm pack --ignore-scripts --filename "$RUNNER_TEMP/release.tgz"
+          npm publish "$RUNNER_TEMP/release.tgz" --access public
 
       # Keep the established unscoped plugin package alongside the canonical
       # scoped package. This checkout is disposable, so the temporary manifest
@@ -120,4 +122,5 @@ jobs:
         run: |
           package_name="$(node -p "require('./package.json').name")"
           npm pkg set "name=${package_name##*/}"
-          npm publish --access public
+          bun pm pack --ignore-scripts --filename "$RUNNER_TEMP/release-unscoped.tgz"
+          npm publish "$RUNNER_TEMP/release-unscoped.tgz" --access public
