@@ -118,6 +118,25 @@ describe("SidebarControlButton", () => {
 });
 
 describe("TopLevelSidebarSection", () => {
+  it("folds a shelf from its label, with no chevron beside it", () => {
+    const onToggleCollapsed = vi.fn();
+    const { container } = renderTree(
+      <TopLevelSidebarSection
+        label="Waiting"
+        collapseControl={{ isCollapsed: false, onToggleCollapsed }}
+      >
+        <div>Waiting thread</div>
+      </TopLevelSidebarSection>,
+    );
+    const toggle = screen.getByRole("button", { name: "Collapse Waiting section" });
+    expect(toggle.textContent).toBe("Waiting");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(container.querySelector("[data-sidebar-sticky-tier='label'] svg")).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(onToggleCollapsed).toHaveBeenCalledOnce();
+  });
+
   it("lets shortcuts escape a focused disclosure while keeping activation local", () => {
     const onShortcut = vi.fn();
     const onToggleCollapsed = vi.fn();

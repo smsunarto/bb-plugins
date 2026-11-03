@@ -28,7 +28,8 @@ the agent works. Each shelf puts the newest arrival first.
 
 You clear the list with two email verbs: **snooze** a thread until a wake time, or
 **settle** it when you are done. Settle archives the thread in bb, and bb's Undo toast
-brings it back. The SlopCop, Snoozed, and Settled shelves start folded.
+brings it back. Click a shelf's name to fold it; the SlopCop, Snoozed, and
+Settled shelves start folded.
 
 ## Install
 

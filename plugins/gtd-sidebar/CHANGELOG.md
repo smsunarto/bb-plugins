@@ -12,8 +12,9 @@
 - Folders and thread families keep GTD's own look: a 16px tree step with the
   chevron in a left column, hairline guides, and folder rows that fold on a click
   and show their `needs you / total` count while folded. Shelves, folders, and
-  families slide open and closed again. Rows drop the provider icon and the
-  actions button; right-click a row for its menu.
+  families slide open and closed again. A shelf folds from a click on its name,
+  with no chevron beside it. Rows drop the provider icon and the actions button;
+  right-click a row for its menu.
 - Settle, Un-settle, Snooze until tomorrow, and Wake now are bb thread actions:
   they show in every bb thread menu and can be row quick actions. bb's Archive
   shows beside Settle.

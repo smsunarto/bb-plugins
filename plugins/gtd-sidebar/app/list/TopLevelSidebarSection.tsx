@@ -10,7 +10,6 @@ import {
 } from "react";
 import { cn } from "@/lib/utils";
 import { Icon } from "@/components/ui/icon";
-import { LIST_HOVER_TRANSITION } from "@/components/ui/motion";
 import { CHROME_SECTION_LABEL_CLASS } from "@/components/ui/chrome-style-tokens";
 import { SidebarStickyGroup, SidebarStickyTier } from "../ui/sidebar.js";
 import {
@@ -23,7 +22,6 @@ import {
 import type { ConsumeDragClickSuppression } from "@/components/ui/use-drag-click-suppression";
 import {
   SIDEBAR_STANDARD_ROW_PADDING_CLASS,
-  SIDEBAR_CONTROL_STATE_CLASS,
   SIDEBAR_GROUP_TEXT_CLASS,
   SIDEBAR_ROW_BASE_CLASS,
   getSidebarThreadRowPaddingLeft,
@@ -288,58 +286,44 @@ export function TopLevelSidebarSection({
             isFolder ? "gtd-folder-name" : "gap-1",
           )}
         >
-          {labelEditor ?? (
-            <span
-              className="min-w-0 truncate"
-              title={label}
-              onDoubleClick={
-                // A folder toggles on a click, so its double-click would fold
-                // twice; folders rename from their menus.
-                onRename && !isFolder
-                  ? (event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      onRename();
-                    }
-                  : undefined
-              }
-            >
-              {label}
-            </span>
-          )}
-          {collapseControl && !isFolder ? (
-            <button
-              type="button"
-              disabled={Boolean(labelEditor)}
-              data-sidebar-rename-anchor=""
-              aria-expanded={!collapseControl.isCollapsed}
-              data-sidebar-hover-actions-mobile={SIDEBAR_HOVER_ACTIONS_MOBILE_ALWAYS_VALUE}
-              aria-label={
-                collapseControl.isCollapsed
-                  ? `Expand ${label} section`
-                  : `Collapse ${label} section`
-              }
-              className={cn(
-                !collapseControl.isCollapsed && SIDEBAR_HOVER_ACTIONS_CLASS,
-                "relative z-20 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md outline-none ring-sidebar-ring focus-visible:ring-2",
-                SIDEBAR_CONTROL_STATE_CLASS,
-                LIST_HOVER_TRANSITION,
-                labelEditor && "hidden",
-              )}
-              onClick={handleCollapseControlClick}
-              onPointerDown={stopCollapseControlPointerDown}
-              onKeyDown={stopCollapseControlKeyDown}
-            >
-              <Icon
-                name="ChevronDown"
-                className={cn(
-                  "gtd-chevron-motion size-3",
-                  collapseControl.isCollapsed && "-rotate-90",
-                )}
-                aria-hidden="true"
-              />
-            </button>
-          ) : null}
+          {labelEditor ??
+            (collapseControl && !isFolder ? (
+              // A shelf folds from its label: bb's header, without the chevron.
+              <button
+                type="button"
+                data-sidebar-rename-anchor=""
+                aria-expanded={!collapseControl.isCollapsed}
+                aria-label={
+                  collapseControl.isCollapsed
+                    ? `Expand ${label} section`
+                    : `Collapse ${label} section`
+                }
+                title={label}
+                className="gtd-shelf-toggle min-w-0 cursor-pointer truncate rounded-sm text-left outline-none ring-sidebar-ring focus-visible:ring-2"
+                onClick={handleCollapseControlClick}
+                onKeyDown={stopCollapseControlKeyDown}
+              >
+                {label}
+              </button>
+            ) : (
+              <span
+                className="min-w-0 truncate"
+                title={label}
+                onDoubleClick={
+                  // A folder toggles on a click, so its double-click would fold
+                  // twice; folders rename from their menus.
+                  onRename && !isFolder
+                    ? (event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onRename();
+                      }
+                    : undefined
+                }
+              >
+                {label}
+              </span>
+            ))}
         </span>
         {status || actions || collapsedActivityIndicator || foldCountIndicator ? (
           <span

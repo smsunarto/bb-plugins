@@ -82,6 +82,14 @@
   top: 100%;
 }
 
+/* A shelf folds from its label, which brightens under the pointer as the
+   only sign it is a control. */
+@media (hover: hover) {
+  .gtd-shelf-toggle:hover {
+    color: var(--sidebar-foreground);
+  }
+}
+
 /* A folder row, as GTD's own sidebar drew it: its icon in the tree's 24px
    disclosure column, the name on the title column in 11px medium, and the
    whole row a toggle. Hover, or keyboard focus on the toggle, trades the
