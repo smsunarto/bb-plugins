@@ -82,8 +82,8 @@ The list draws bb's **Pinned** section first, then one sticky shelf header per
 GTD shelf that holds a thread:
 
 - **Pinned**: bb's own section and rule. A pinned thread shows here with
-  everything under it, in bb's pinned order. A pinned thread you settle or snooze
-  moves to that shelf instead.
+  every active thread under it, in bb's pinned order. A pinned thread or child
+  you settle or snooze moves to that shelf instead.
 - **Next Action**: the agent turn is done, an interaction needs input, or the
   thread is otherwise quiet.
 - **Waiting**: foreground or background agent work is live, in the thread, any of
@@ -171,10 +171,11 @@ thread** command in bb's palette settles the open thread.
 
 ### Child threads
 
-A child sits under its parent with bb's disclosure chevron, including a fork. A
-family folds until you open it, and the choice persists across reloads. Drag a row
-onto another to nest it, or between rows to reorder or lift it out, with bb's own
-drag and drop. A drag out to the main area opens a split.
+A child sits under its parent with bb's disclosure chevron, including a fork bb
+files as a child. A family folds until you open it, and the choice persists across
+reloads. Drag a row onto another to nest it, or onto a group header to lift it back
+to the top level. Rows on a shelf follow its sort; only Pinned reorders by drag. A
+drag out to the main area opens a split.
 
 ### Thread names
 
@@ -241,7 +242,7 @@ below is a separate, user-requested inference.
 | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Action shelves          | bb's Pinned, then Next Action, Waiting, SlopCop, Snoozed, and the last 24 hours of Settled. Running work and questions stay shown. |
 | Groups                  | Group shelves by project or machine, fold groups, create a thread from a project, and reorder projects in bb.                      |
-| Thread families         | Fold families, nest and reorder with bb's drag and drop.                                                                           |
+| Thread families         | Fold families, and nest or un-nest them with bb's drag and drop.                                                                   |
 | Thread actions          | Settle, Un-settle, Snooze until tomorrow, and Wake now, in every bb thread menu and as row quick actions.                          |
 | Navigation              | bb's row click, shortcuts, multi-select, split-open, and drag-to-split, plus the project scope and machine filters.                |
 | Status and details      | bb's row status and metadata line, plus the machine globe, naming shimmer, wake countdown, and pull request number.                |
@@ -262,8 +263,9 @@ below is a separate, user-requested inference.
 This version rebuilds the list on bb's Thread list at `desktop-v0.48.1`. Moving
 to bb's components changes a few behaviors:
 
-- Pinned follows bb's rule: a pinned thread shows with every thread under it.
-- A fork nests under the thread it came from.
+- Pinned follows bb's rule: a pinned thread shows with every active thread
+  under it.
+- A fork bb files as a child nests under its parent, as in bb's own list.
 - Custom sections, **Move to section**, the **More** overflow, hiding threads, and
   the Active/Archived filter are gone. Settled replaces the archive view.
 - A drag between Pinned and another shelf doesn't move the thread. Pin or unpin it
