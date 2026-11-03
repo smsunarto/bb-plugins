@@ -367,10 +367,11 @@ struct SavedCompanion: Codable {
                 $0.serverURL == server && $0.threadID != nil && ($0.phase.busy || $0.id == selectedID) && (statusDue || $0.id == fastID)
             }.sorted { $0.id == fastID && $1.id != fastID }
             guard !visible.isEmpty else { return }
+            var failedEventReads = Set<String>()
             for session in visible {
                 guard let threadID = session.threadID else { continue }
                 do { try await readEvents(id: session.id, threadID: threadID, transport: transport) }
-                catch { self.error = "Could not refresh \(session.title). Open it in BB. \(error.localizedDescription)" }
+                catch { failedEventReads.insert(session.id); self.error = "Could not refresh \(session.title). Open it in BB. \(error.localizedDescription)" }
                 guard generation == connectionGeneration else { return }
             }
             let becameTerminal = visible.contains { prior in
@@ -394,9 +395,23 @@ struct SavedCompanion: Codable {
                         try await readEvents(id: session.id, threadID: threadID, transport: transport)
                         guard generation == connectionGeneration else { return }
                     }
-                    update(session.id) {
-                        $0.phase = $0.phase.reconciled(remoteStatus: remote.status, needsApproval: remote.hasPendingInteraction == true,
-                            queued: remote.hasQueuedWork, observedRoot: $0.rootTurnID != nil, completionStatus: $0.completionStatus)
+                    if !failedEventReads.contains(session.id), let current = sessions.first(where: { $0.id == session.id }), current.phase == .deliveryUnknown,
+                       remote.archivedAt != nil, remote.displayStatus == "idle", !remote.hasQueuedWork, remote.hasPendingInteraction != true {
+                        // An archived, settled thread cannot accept this request.
+                        // Release legacy uncertain state without resubmitting it.
+                        if session.id == selectedID {
+                            if draft.isEmpty,
+                               let pending = current.entries.last(where: { $0.role == "user" && $0.id.hasPrefix("pending-") }) {
+                                draft = pending.text
+                            }
+                            error = "This conversation is archived in BB. Start a new conversation, or unarchive it in BB before sending again."
+                        }
+                        update(session.id) { $0.phase = .failed }
+                    } else {
+                        update(session.id) {
+                            $0.phase = $0.phase.reconciled(remoteStatus: remote.status, needsApproval: remote.hasPendingInteraction == true,
+                                queued: remote.hasQueuedWork, observedRoot: $0.rootTurnID != nil, completionStatus: $0.completionStatus)
+                        }
                     }
                 } else {
                     update(session.id) { $0.phase = .failed }

@@ -97,7 +97,7 @@ public struct BBClient: Sendable {
             guard let code = error?.code ?? code else { return false }
             return [
                 "invalid_request", "invalid_json", "invalid_argument", "missing_required",
-                "unauthorized", "forbidden", "not_found", "thread_not_found",
+                "unauthorized", "forbidden", "not_found", "thread_not_found", "thread_not_writable",
                 "project_not_found", "environment_not_found", "host_not_found",
                 "thread_environment_unavailable", "http_400", "http_401", "http_403", "http_404", "http_422"
             ].contains(code)

@@ -137,6 +137,58 @@ import ClickyCore
         #expect(model.draft == "Replacement draft")
     }
 
+    @Test(arguments: ["idle-empty", "idle-existing", "active", "log-error"])
+    func archivedConversationReleasesUnconfirmedDeliveryAndPreservesTheQuestion(state: String) async throws {
+        let (root, model) = try Self.fixture()
+        defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        model.preferences.includeInitialContext = false
+        await model.send()
+        let index = try #require(model.sessions.firstIndex(where: { $0.id == model.selectedID }))
+        model.sessions[index].phase = .deliveryUnknown
+        model.sessions[index].rootTurnID = nil; model.sessions[index].completionStatus = nil
+        model.sessions[index].entries.append(ChatEntry(id: "pending-rejected", role: "user", text: "My unsent question"))
+        model.draft = state == "idle-existing" ? "My newer draft" : ""
+        try Data().write(to: root.appendingPathComponent("archived"))
+        if state == "active" { try Data().write(to: root.appendingPathComponent("active")) }
+        if state == "log-error" { try Data().write(to: root.appendingPathComponent("fail-log")) }
+        await model.refresh()
+        if state == "active" || state == "log-error" {
+            #expect(model.selected?.phase == .deliveryUnknown)
+            #expect(model.draft.isEmpty)
+            if state == "log-error" { #expect(model.error?.contains("Could not refresh") == true) }
+        } else {
+            #expect(model.selected?.phase == .failed)
+            #expect(model.draft == (state == "idle-existing" ? "My newer draft" : "My unsent question"))
+            #expect(model.error?.contains("archived") == true)
+        }
+        #expect(try String(contentsOf: root.appendingPathComponent("turn"), encoding: .utf8) == "1")
+    }
+
+    @Test(arguments: [false, true])
+    func completedArchivedConversationIsNotFailedOrRestoredAsADraft(completesDuringRefresh: Bool) async throws {
+        let (root, model) = try Self.fixture()
+        defer { model.shutdown(); try? FileManager.default.removeItem(at: root) }
+        model.preferences.includeInitialContext = false
+        await model.send()
+        let index = try #require(model.sessions.firstIndex(where: { $0.id == model.selectedID }))
+        if completesDuringRefresh {
+            let request = VisualRequest(id: UUID().uuidString, afterSequence: model.sessions[index].sequence, display: .current, hadScreenshot: false)
+            model.sessions[index].visualRequest = request
+            model.sessions[index].phase = .deliveryUnknown
+            model.sessions[index].rootTurnID = nil; model.sessions[index].completionStatus = nil
+            model.sessions[index].sentAfterSequence = model.sessions[index].sequence
+            model.sessions[index].entries.append(ChatEntry(id: "pending-accepted", role: "user", text: "Accepted question"))
+            try "Clicky request: \(request.id)\n\nUser request:\nAccepted question".write(to: root.appendingPathComponent("prompt"), atomically: true, encoding: .utf8)
+            try "2".write(to: root.appendingPathComponent("turn"), atomically: true, encoding: .utf8)
+        }
+        model.draft = ""
+        try Data().write(to: root.appendingPathComponent("archived"))
+        await model.refresh()
+        #expect(model.selected?.phase == .ready)
+        #expect(model.error == nil)
+        #expect(model.draft.isEmpty)
+    }
+
     @Test func switchingConversationsDuringCaptureCannotSendOrKeepAnAutoImage() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -188,11 +240,13 @@ if a[:2] in (['thread','spawn'],['thread','tell']):
  (root/'turn').write_text(str(turn))
  print(json.dumps({'id':'thr_fixture','threadId':'thr_fixture','ok':True,'projectId':'proj_personal','status':'idle'}))
 elif a[:2]==['thread','log']:
+ if (root/'fail-log').exists():
+  print(json.dumps({'ok':False,'error':{'code':'error','message':'Fixture event read failed'}}));sys.exit(1)
  text=(root/'prompt').read_text();base=(int((root/'turn').read_text())-1)*4
  def row(seq,kind,data,turn=None):return {'id':str(seq),'seq':seq,'type':kind,'scope':{'turnId':turn} if turn else {},'data':data}
  rows=[row(base+1,'client/turn/requested',{'requestId':str(base),'input':[{'type':'text','text':text}]}),row(base+2,'turn/started',{},str(base)),row(base+3,'turn/input/accepted',{'clientRequestId':str(base)},str(base)),row(base+4,'turn/completed',{'status':'completed'},str(base))]
  after=int(a[a.index('--after-seq')+1]);print(json.dumps([x for x in rows if x['seq']>after]))
-elif a[:2]==['thread','list']:print(json.dumps([{'id':'thr_fixture','projectId':'proj_personal','status':'idle','queuedWork':'none'}]))
+elif a[:2]==['thread','list']:print(json.dumps([{'id':'thr_fixture','projectId':'proj_personal','status':'active' if (root/'active').exists() else 'idle','queuedWork':'none','archivedAt':1 if (root/'archived').exists() else None}]))
 else:print('{}')
 """#
 }

@@ -78,6 +78,7 @@ public struct BBThread: Decodable, Sendable, Identifiable {
     public let hasPendingInteraction: Bool?
     public let queuedWork: String?
     public let updatedAt: Double?
+    public let archivedAt: Double?
     private let runtime: Runtime?
 
     public var displayStatus: String { runtime?.displayStatus ?? status }

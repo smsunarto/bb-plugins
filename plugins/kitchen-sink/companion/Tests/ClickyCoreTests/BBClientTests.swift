@@ -228,7 +228,7 @@ private struct FakeCLI {
     #expect(events.last?.seq == 6)
 }
 
-@Test(arguments: ["invalid_request", "unauthorized", "thread_not_found", "http_403"])
+@Test(arguments: ["invalid_request", "unauthorized", "thread_not_found", "thread_not_writable", "http_403"])
 func definitiveRejectionDoesNotLeaveDeliveryUncertain(code: String) async throws {
     let cli = try FakeCLI(body: """
     print(json.dumps({'ok':False,'error':{'code':'\(code)','message':'Request rejected'}}))
