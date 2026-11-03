@@ -6,6 +6,7 @@ import { queryClient } from "../src/app/query.ts";
 import { focusManager, onlineManager, timeoutManager } from "@tanstack/react-query";
 import { branchReviewRange, sharedComparisonSubPath } from "../src/shared/schema.ts";
 import { queryKey } from "../src/app/rpc.ts";
+import { shipGroupPrompt, shipGroupPromptContract } from "../src/server/rpc/ship-group-prompt.ts";
 import { localBranch, localChanges, pullRequest } from "./app-fixtures.ts";
 
 const { fireEvent, waitFor } = await import("@testing-library/react");
@@ -132,6 +133,7 @@ async function card(
       sdk: { threads: { send } },
       context: { threadId: "different-active-thread" },
       rpc: {
+        shipGroupPrompt: (input) => shipGroupPrompt(shipGroupPromptContract.input.parse(input)),
         localBranch: () => localBranch,
         localChanges: () => localChanges,
         branchReviewed: () => ({ paths }),
@@ -1053,11 +1055,257 @@ test("a group never sends when its prompt cannot be built, and retries with the 
     expect(sends).toHaveLength(0);
     expect(slot.rpcCalls.find((call) => call.method === "shipGroupPrompt")?.input).toEqual({
       targets,
+      mergeTargets: [],
     });
     fail = false;
     fireEvent.click(slot.getByRole("button", { name: "Ship all 2" }));
     await slot.findByRole("button", { name: "Sent" });
     expect(sends).toHaveLength(1);
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("a ready GitHub PR offers Merge it and sends its exact target to the owning thread", async () => {
+  const sent: unknown[] = [];
+  const slot = await card(
+    { pr: "acme/widget#42", account: "scott" },
+    [],
+    {
+      pullRequest: () => ({
+        ...pullRequest,
+        state: "open",
+        isDraft: false,
+        mergeable: "mergeable",
+        mergeStateStatus: "CLEAN",
+        canMerge: true,
+        reviewDecision: "approved",
+      }),
+    },
+    async (input) => {
+      sent.push(input);
+      return { ok: true, delivery: "sent" };
+    },
+  );
+  try {
+    fireEvent.click(await slot.findByRole("button", { name: "Merge it" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(JSON.stringify(sent[0])).toContain("acme/widget#42");
+    expect(JSON.stringify(sent[0])).toContain("code_review_share_landed");
+    expect(JSON.stringify(sent[0])).toContain("thread-1");
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+const readyPr = {
+  ...pullRequest,
+  state: "open",
+  isDraft: false,
+  mergeable: "mergeable",
+  mergeStateStatus: "CLEAN",
+  canMerge: true,
+  reviewDecision: "approved",
+};
+for (const [name, changes, merge] of [
+  ["passing hooks", { mergeStateStatus: "HAS_HOOKS" }, true],
+  ["no required reviews", { reviewDecision: null }, true],
+  ["draft", { isDraft: true }, false],
+  ["closed", { state: "closed" }, false],
+  ["merged", { state: "merged" }, false],
+  ["conflicts", { mergeable: "conflicting" }, false],
+  ["unknown mergeability", { mergeable: "unknown" }, false],
+  ["blocked checks", { mergeStateStatus: "BLOCKED" }, false],
+  ["pending or failing checks", { mergeStateStatus: "UNSTABLE" }, false],
+  ["unknown gate", { mergeStateStatus: "UNKNOWN" }, false],
+  ["required review", { reviewDecision: "review_required" }, false],
+  ["changes requested", { reviewDecision: "changes_requested" }, false],
+  ["read-only account", { canMerge: false }, false],
+] as const) {
+  test(`PR action for ${name}`, async () => {
+    const slot = await card({ pr: "acme/widget#42", account: "scott" }, [], {
+      pullRequest: () => ({ ...readyPr, ...changes }),
+    });
+    try {
+      await waitFor(() =>
+        expect(slot.rpcCalls.some((c) => c.method === "changedFiles")).toBe(true),
+      );
+      await slot.findByRole("button", { name: merge ? "Merge it" : "Ship it" });
+      expect(slot.queryByRole("button", { name: merge ? "Ship it" : "Merge it" })).toBeNull();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+}
+
+test("ready PR retains Ship it when the displayed diff is behind", async () => {
+  const slot = await card({ pr: "acme/widget#42", account: "scott" }, [], {
+    pullRequest: () => ({ ...readyPr, headRefOid: "a".repeat(40) }),
+  });
+  try {
+    await slot.findByRole("alert");
+    expect(slot.queryByRole("button", { name: "Merge it" })).toBeNull();
+    expect(slot.getByRole("button", { name: "Ship it" })).toBeTruthy();
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("cached CLEAN stays Ship it until GitHub refresh finishes", async () => {
+  const input = { account: "scott", ref: { owner: "acme", repo: "widget", number: 42 } };
+  queryClient.setQueryData(queryKey("pullRequest", input), structuredClone(readyPr));
+  let finish!: (value: typeof readyPr) => void;
+  const pending = new Promise<typeof readyPr>((resolve) => {
+    finish = resolve;
+  });
+  const slot = await card({ pr: "acme/widget#42", account: "scott" }, [], {
+    pullRequest: () => pending,
+  });
+  try {
+    await slot.findByRole("button", { name: "Ship it" });
+    expect(slot.queryByRole("button", { name: "Merge it" })).toBeNull();
+    finish(readyPr);
+    await slot.findByRole("button", { name: "Merge it" });
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+for (const allReady of [true, false]) {
+  test(`group ${allReady ? "Merge all" : "Ship all"} pins only ready PRs`, async () => {
+    const targets = [{ pr: "acme/widget#42", account: "scott" }, { pr: "acme/other#7" }];
+    const sent: unknown[] = [];
+    const slot = await card(
+      { targets: encodeURIComponent(JSON.stringify(targets)) },
+      [],
+      {
+        pullRequest: (input: never) => {
+          const ref = (input as { ref: { repo: string } }).ref;
+          return { ...readyPr, canMerge: allReady || ref.repo !== "other" };
+        },
+      },
+      async (input) => {
+        sent.push(input);
+        return { ok: true, delivery: "sent" };
+      },
+    );
+    try {
+      await waitFor(() =>
+        expect(slot.rpcCalls.filter((c) => c.method === "pullRequest")).toHaveLength(2),
+      );
+      await waitFor(() =>
+        expect(slot.rpcCalls.filter((c) => c.method === "changedFiles")).toHaveLength(2),
+      );
+      if (!allReady) await slot.findByText("Review 2 changes");
+      // Wait for the ready PRs' effects to report their pinned merge targets.
+      await waitFor(() => {
+        const button = slot.getByRole("button", { name: `${allReady ? "Merge" : "Ship"} all 2` });
+        expect(button).toBeTruthy();
+      });
+      fireEvent.click(slot.getByRole("button", { name: `${allReady ? "Merge" : "Ship"} all 2` }));
+      await waitFor(() => expect(sent).toHaveLength(1));
+      const prompt = slot.rpcCalls.find((c) => c.method === "shipGroupPrompt")?.input;
+      expect((prompt as { mergeTargets: unknown[] }).mergeTargets).toHaveLength(allReady ? 2 : 1);
+      expect(JSON.stringify(sent[0])).toContain(readyPr.headRefOid);
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+}
+
+test("Merge it remains stable during background refresh and fails closed on refresh error", async () => {
+  let refreshing = false;
+  let rejectRefresh!: (error: Error) => void;
+  const pending = new Promise<never>((_, reject) => {
+    rejectRefresh = reject;
+  });
+  const slot = await card({ pr: "acme/widget#42", account: "scott" }, [], {
+    pullRequest: () => (refreshing ? pending : readyPr),
+  });
+  try {
+    await slot.findByRole("button", { name: "Merge it" });
+    refreshing = true;
+    const input = { account: "scott", ref: { owner: "acme", repo: "widget", number: 42 } };
+    const query = queryClient.getQueryCache().find({ queryKey: queryKey("pullRequest", input) });
+    if (!query) throw new Error("Missing PR query");
+    query.setOptions({ ...query.options, retry: false });
+    const refresh = query.fetch().catch(() => {});
+    await waitFor(() => expect(query.state.fetchStatus).toBe("fetching"));
+    expect(slot.getByRole("button", { name: "Merge it" })).toBeTruthy();
+    rejectRefresh(new Error("GitHub offline"));
+    await refresh;
+    await slot.findByRole("button", { name: "Ship it" });
+    expect(slot.queryByRole("button", { name: "Merge it" })).toBeNull();
+  } finally {
+    slot.lifecycle.unmount();
+  }
+});
+
+test("a warm confirmed PR remount offers Merge it without another GitHub read", async () => {
+  let reads = 0;
+  const overrides = {
+    pullRequest: () => {
+      reads++;
+      return readyPr;
+    },
+  };
+  const attributes = { pr: "acme/widget#42", account: "scott" };
+  const first = await card(attributes, [], overrides);
+  await first.findByRole("button", { name: "Merge it" });
+  first.lifecycle.unmount();
+  const second = await card(attributes, [], overrides);
+  try {
+    await second.findByRole("button", { name: "Merge it" });
+    expect(reads).toBe(1);
+  } finally {
+    second.lifecycle.unmount();
+  }
+});
+
+test("manual snapshot adoption cannot turn an offline card into Merge it", async () => {
+  onlineManager.setOnline(false);
+  const slot = await card({ pr: "acme/widget#42", account: "scott" }, [], {
+    pullRequest: () => new Promise(() => {}),
+  });
+  try {
+    const input = { account: "scott", ref: { owner: "acme", repo: "widget", number: 42 } };
+    queryClient.setQueryData(queryKey("pullRequest", input), structuredClone(readyPr));
+    queryClient.setQueryData(queryKey("changedFiles", input), {
+      ...localChanges,
+      headRefOid: readyPr.headRefOid,
+      baseRefName: readyPr.baseRefName,
+    });
+    await slot.findByRole("button", { name: "Ship it" });
+    expect(slot.queryByRole("button", { name: "Merge it" })).toBeNull();
+  } finally {
+    slot.lifecycle.unmount();
+    onlineManager.setOnline(true);
+  }
+});
+
+test("an identical manual snapshot cannot revive Merge it after a failed network refresh", async () => {
+  let fail = false;
+  const input = { account: "scott", ref: { owner: "acme", repo: "widget", number: 42 } };
+  const slot = await card({ pr: "acme/widget#42", account: "scott" }, [], {
+    pullRequest: () => {
+      if (fail) throw new Error("GitHub offline");
+      return readyPr;
+    },
+  });
+  try {
+    await slot.findByRole("button", { name: "Merge it" });
+    fail = true;
+    const query = queryClient.getQueryCache().find({ queryKey: queryKey("pullRequest", input) });
+    if (!query) throw new Error("Missing query");
+    query.setOptions({ ...query.options, retry: false });
+    await query.fetch().catch(() => {});
+    await slot.findByRole("button", { name: "Ship it" });
+    queryClient.setQueryData(queryKey("pullRequest", input), structuredClone(readyPr));
+    await waitFor(() => expect(query.state.status).toBe("success"));
+    expect(slot.queryByRole("button", { name: "Merge it" })).toBeNull();
+    fail = false;
+    await query.fetch();
+    await slot.findByRole("button", { name: "Merge it" });
   } finally {
     slot.lifecycle.unmount();
   }

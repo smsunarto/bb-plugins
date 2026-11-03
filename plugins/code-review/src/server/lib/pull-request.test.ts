@@ -481,3 +481,18 @@ test("a missing pull request surfaces GitHub's message", async () => {
     message: "Could not resolve to a PullRequest with the number of 99999.",
   });
 });
+
+test("carries GitHub's merge gate and account permission into the card data", async () => {
+  for (const permission of ["WRITE", "MAINTAIN", "ADMIN", "READ", null]) {
+    const data = edited((pr) => {
+      pr.mergeStateStatus = "CLEAN";
+    });
+    data.repository.viewerPermission = permission;
+    const { gh } = fakeGh({
+      graphql: { PullRequest: data, Stack: fixture("stack-cli-9000.json") },
+    });
+    const pr = await loadPullRequest(gh, CLI_9000);
+    expect(pr.mergeStateStatus).toBe("CLEAN");
+    expect(pr.canMerge).toBe(permission !== "READ" && permission !== null);
+  }
+});

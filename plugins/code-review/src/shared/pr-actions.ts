@@ -49,3 +49,28 @@ export function prActionIssue({
   if (!policy.methods.includes(method)) return "This repository does not allow that merge method.";
   return null;
 }
+
+/** Card offers only passing GitHub gates; the manual merge dialog also permits UNSTABLE. */
+export function readyToMerge(
+  pr: Pick<
+    import("./schema.ts").PullRequest,
+    "state" | "isDraft" | "mergeable" | "mergeStateStatus" | "reviewDecision" | "canMerge"
+  >,
+): boolean {
+  return (
+    pr.state === "open" &&
+    !pr.isDraft &&
+    pr.canMerge &&
+    pr.mergeable === "mergeable" &&
+    (pr.mergeStateStatus === "CLEAN" || pr.mergeStateStatus === "HAS_HOOKS") &&
+    (pr.reviewDecision === null || pr.reviewDecision === "approved")
+  );
+}
+
+export const mergeTargetSchema = z.strictObject({
+  pr: z.string().min(1),
+  account: z.string().min(1),
+  headRefOid: z.string().regex(/^[0-9a-f]{40,64}$/),
+  baseRefName: z.string().min(1),
+});
+export type MergeTarget = z.infer<typeof mergeTargetSchema>;

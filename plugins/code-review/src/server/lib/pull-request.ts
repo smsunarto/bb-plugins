@@ -36,14 +36,14 @@ const THREAD = `id path line startLine startDiffSide originalLine diffSide isRes
 export const PULL_REQUEST_QUERY = `query PullRequest($owner: String!, $name: String!, $number: Int!) {
   viewer { login }
   repository(owner: $owner, name: $name) {
-    nameWithOwner
+    nameWithOwner viewerPermission
     defaultBranchRef { name }
     pullRequest(number: $number) {
       id number title body url state isDraft createdAt updatedAt
       author { ${ACTOR} }
       headRefName baseRefName headRefOid baseRefOid isCrossRepository
       headRepository { nameWithOwner }
-      additions deletions changedFiles reviewDecision mergeable
+      additions deletions changedFiles reviewDecision mergeable mergeStateStatus
       commits { totalCount }
       labels(first: 50) { nodes { name color } }
       reviewRequests(first: 50) {
@@ -190,6 +190,7 @@ export type GqlPullRequest = {
   viewer: { login: string };
   repository: {
     nameWithOwner: string;
+    viewerPermission?: string | null;
     defaultBranchRef: { name: string } | null;
     pullRequest: {
       id: string;
@@ -213,6 +214,7 @@ export type GqlPullRequest = {
       changedFiles: number;
       reviewDecision: string | null;
       mergeable: string;
+      mergeStateStatus: string | null;
       commits: { totalCount: number };
       labels: { nodes: { name: string; color: string }[] };
       reviewRequests: { nodes: { requestedReviewer: Requested | null }[] };
@@ -421,6 +423,8 @@ export function mapPullRequest(
     commitCount: pr.commits.totalCount,
     reviewDecision: reviewDecision(pr.reviewDecision),
     mergeable: MERGEABLE[pr.mergeable as keyof typeof MERGEABLE] ?? "unknown",
+    mergeStateStatus: pr.mergeStateStatus ?? null,
+    canMerge: ["ADMIN", "MAINTAIN", "WRITE"].includes(data.repository.viewerPermission ?? ""),
     labels: pr.labels.nodes.map(({ name, color }) => ({ name, color })),
     viewer: { login: viewer, isAuthor, canApprove: !isAuthor && state === "open" },
     reviewers: mapReviewers(pr),

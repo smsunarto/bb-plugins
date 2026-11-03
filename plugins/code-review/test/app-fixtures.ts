@@ -102,6 +102,8 @@ export const pullRequest: PullRequest = {
   commitCount: 2,
   reviewDecision: "review_required",
   mergeable: "mergeable",
+  mergeStateStatus: null,
+  canMerge: false,
   labels: [{ name: "security", color: "d73a4a" }],
   viewer: { login: VIEWER.login, isAuthor: false, canApprove: true },
   reviewers: [

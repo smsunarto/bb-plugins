@@ -419,6 +419,8 @@ export const pullRequestSchema = z.object({
   commitCount: z.number(),
   reviewDecision: reviewDecisionSchema.nullable(),
   mergeable: z.enum(["mergeable", "conflicting", "unknown"]),
+  mergeStateStatus: z.string().nullable().default(null),
+  canMerge: z.boolean().default(false),
   labels: z.array(z.object({ name: z.string(), color: z.string() })),
   viewer: z.object({
     login: z.string(),

@@ -1,8 +1,16 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useRef } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { z } from "zod";
 import { reviewAttributesSchema, type ReviewGroup } from "../shared/review-group.ts";
 import { QueryClientProvider, useMutation, useMutationState } from "@tanstack/react-query";
-import { queryClient } from "./query.ts";
+import { hasNetworkData, queryClient } from "./query.ts";
 import { experimental_Icon as Icon, useBbNavigate, useSdk } from "@get-bb/plugin-sdk/app";
 import type { PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
 import {
@@ -19,10 +27,17 @@ import { Button } from "./components/ui/button.tsx";
 import { PANEL_PATH, shortSha } from "./format.ts";
 import { useLocalBranch } from "./local-branch-query.ts";
 import { errorText } from "./notice.tsx";
-import { useCodeReviewRpc, useRpcQuery } from "./rpc.ts";
+import { queryKey, useCodeReviewRpc, useRpcQuery, type Input } from "./rpc.ts";
 import { useReconcile } from "./sync-state.tsx";
 
+import { readyToMerge, type MergeTarget } from "../shared/pr-actions.ts";
+
+const MergeTargetsContext = createContext<
+  ((key: string, target: MergeTarget | null) => void) | null
+>(null);
+
 const GroupContext = createContext(false);
+const NO_MERGE_TARGETS: MergeTarget[] = [];
 
 const ShipContext = createContext<ReturnType<typeof useShipMutation> | null>(null);
 
@@ -37,8 +52,12 @@ function useShipMutation(threadId: string, identity: string, targets?: ReviewGro
       mutationKey,
       // Timeline virtualization can unmount a card while its send is in flight.
       gcTime: Infinity,
-      mutationFn: async () => {
-        const text = targets ? await rpc.call("shipGroupPrompt", { targets }) : "ship it";
+      mutationFn: async (mergeTargets: MergeTarget[] = []) => {
+        const text = targets
+          ? await rpc.call("shipGroupPrompt", { targets, mergeTargets })
+          : mergeTargets[0]
+            ? await rpc.call("shipGroupPrompt", { mergeTargets: [mergeTargets[0]] })
+            : "ship it";
         return sdk.threads.send({
           threadId,
           mode: "queue-if-active",
@@ -141,6 +160,18 @@ function GroupEmbed({ targets, threadId }: { targets: ReviewGroup; threadId: str
   const ship = useContext(ShipContext);
   const identity = useContext(EmbedIdentityContext);
   const entrance = useEmbedEntrance(identity);
+  const [ready, setReady] = useState<Record<string, MergeTarget>>({});
+  const report = useCallback((key: string, target: MergeTarget | null) => {
+    setReady((previous) => {
+      if (JSON.stringify(previous[key] ?? null) === JSON.stringify(target)) return previous;
+      const next = { ...previous };
+      if (target) next[key] = target;
+      else delete next[key];
+      return next;
+    });
+  }, []);
+  const mergeTargets = Object.values(ready);
+  const allReady = mergeTargets.length === targets.length;
   return (
     <section
       ref={entrance}
@@ -151,35 +182,40 @@ function GroupEmbed({ targets, threadId }: { targets: ReviewGroup; threadId: str
         <Icon name="GitPullRequest" className="size-4 text-muted-foreground" aria-hidden />
         Review {targets.length} changes
       </div>
-      <GroupContext value={true}>
-        <ShipContext.Provider value={null}>
-          <div className="px-3">
-            {targets.map((target) =>
-              "branch" in target ? (
-                <BranchEmbed
-                  key={target.branch}
-                  id={target.branch}
-                  base={target.base}
-                  head={target.head}
-                  threadId={threadId}
-                />
-              ) : (
-                <GroupPrEmbed
-                  key={`${target.account ?? ""}:${target.pr}`}
-                  pr={target.pr}
-                  account={target.account}
-                />
-              ),
-            )}
-          </div>
-        </ShipContext.Provider>
-      </GroupContext>
+      <MergeTargetsContext value={report}>
+        <GroupContext value={true}>
+          <ShipContext.Provider value={null}>
+            <div className="px-3">
+              {targets.map((target) =>
+                "branch" in target ? (
+                  <BranchEmbed
+                    key={target.branch}
+                    id={target.branch}
+                    base={target.base}
+                    head={target.head}
+                    threadId={threadId}
+                  />
+                ) : (
+                  <GroupPrEmbed
+                    key={`${target.account ?? ""}:${target.pr}`}
+                    pr={target.pr}
+                    account={target.account}
+                  />
+                ),
+              )}
+            </div>
+          </ShipContext.Provider>
+        </GroupContext>
+      </MergeTargetsContext>
       <p className="m-0 px-3 pb-2 text-[11px] text-muted-foreground">
-        The agent checks current revisions and readiness before shipping.
+        The agent refreshes each target before shipping or merging.
       </p>
       <div className="flex flex-wrap justify-end gap-2 border-t border-border p-3">
         <ShipContext.Provider value={ship}>
-          <ShipItButton label={`Ship all ${targets.length}`} />
+          <ShipItButton
+            label={`${allReady ? "Merge" : "Ship"} all ${targets.length}`}
+            mergeTargets={mergeTargets}
+          />
         </ShipContext.Provider>
       </div>
     </section>
@@ -328,9 +364,36 @@ function PrEmbed({ refValue, account: requested }: { refValue: PrRef; account?: 
   const status = useRpcQuery("status", null, { enabled: !requested, staleTime: 5 * 60_000 });
   const account = requested ?? (status.data?.ok ? status.data.login : undefined);
   const input = account ? { account, ref: refValue } : null;
-  const pr = useRpcQuery("pullRequest", input, { ...reviewQuery, enabled: !!account });
-  const changed = useRpcQuery("changedFiles", input, { ...reviewQuery, enabled: !!account });
+  const pr = useRpcQuery("pullRequest", input, {
+    ...reviewQuery,
+    // Network confirmation also changes when structural sharing preserves data.
+    notifyOnChangeProps: "all",
+    refetchOnMount: (query) => (hasNetworkData(query.queryKey) ? true : "always"),
+    enabled: !!account,
+  });
+  const changed = useRpcQuery("changedFiles", input, {
+    ...reviewQuery,
+    // Network confirmation also changes when structural sharing preserves data.
+    notifyOnChangeProps: "all",
+    refetchOnMount: (query) => (hasNetworkData(query.queryKey) ? true : "always"),
+    enabled: !!account,
+  });
   const issue = queryIssue(pr, changed) ?? prRevisionIssue(pr.data, changed.data);
+  const report = useContext(MergeTargetsContext);
+  const reference = prKey(refValue);
+  const mergeTarget = cardMergeTarget({ account, reference, input, pr, changed, issue });
+  const key = JSON.stringify([requested, reference]);
+  const head = mergeTarget?.headRefOid;
+  const base = mergeTarget?.baseRefName;
+  useEffect(() => {
+    report?.(
+      key,
+      account && head && base
+        ? { pr: reference, account, headRefOid: head, baseRefName: base }
+        : null,
+    );
+    return () => report?.(key, null);
+  }, [report, key, account, head, base, reference]);
   const accountIssue = status.isError
     ? errorText(status.error)
     : status.data && !status.data.ok
@@ -338,6 +401,7 @@ function PrEmbed({ refValue, account: requested }: { refValue: PrRef; account?: 
       : undefined;
   return (
     <ReviewCard
+      mergeTarget={mergeTarget}
       title={pr.data?.title ?? prKey(refValue)}
       detail={account ? prKey(refValue) : undefined}
       subPath={prSubPath(refValue, "changes", account)}
@@ -353,6 +417,36 @@ function PrEmbed({ refValue, account: requested }: { refValue: PrRef; account?: 
       }}
     />
   );
+}
+
+function cardMergeTarget({
+  account,
+  reference,
+  input,
+  pr,
+  changed,
+  issue,
+}: {
+  account: string | undefined;
+  reference: string;
+  input: Input<"pullRequest"> | null;
+  pr: ReturnType<typeof useRpcQuery<"pullRequest">>;
+  changed: ReturnType<typeof useRpcQuery<"changedFiles">>;
+  issue: string | undefined;
+}): MergeTarget | undefined {
+  if (!account || issue || !pr.data || !changed.data) return undefined;
+  if (
+    !hasNetworkData(queryKey("pullRequest", input)) ||
+    !hasNetworkData(queryKey("changedFiles", input))
+  )
+    return undefined;
+  if (!readyToMerge(pr.data)) return undefined;
+  return {
+    pr: reference,
+    account,
+    headRefOid: pr.data.headRefOid,
+    baseRefName: pr.data.baseRefName,
+  };
 }
 
 function prRevisionIssue(
@@ -375,6 +469,7 @@ function ReviewCard({
   actionLabel,
   branchCheck,
   fallbackSubPath,
+  mergeTarget,
 }: {
   title: string;
   detail?: string;
@@ -386,6 +481,7 @@ function ReviewCard({
   actionLabel?: string;
   branchCheck?: BranchCheck;
   fallbackSubPath?: string;
+  mergeTarget?: MergeTarget;
 }) {
   const navigate = useBbNavigate();
   const identity = useContext(EmbedIdentityContext);
@@ -467,7 +563,10 @@ function ReviewCard({
           {actionLabel ?? labels.action}
           <Icon name="ArrowUpRight" className="size-3" aria-hidden />
         </Button>
-        <ShipItButton />
+        <ShipItButton
+          label={mergeTarget ? "Merge it" : "Ship it"}
+          mergeTargets={mergeTarget ? [mergeTarget] : []}
+        />
       </div>
     </section>
   );
@@ -489,14 +588,20 @@ function useShipFeedback(ship: ReturnType<typeof useShipMutation> | null) {
     if (status !== "pending") pointerSend.current = false;
     return () => animation?.cancel();
   }, [status]);
-  const send = (detail: number) => {
+  const send = (detail: number, mergeTargets: MergeTarget[]) => {
     pointerSend.current = detail > 0;
-    ship?.mutate();
+    ship?.mutate(mergeTargets);
   };
   return { feedback, send };
 }
 
-function ShipItButton({ label = "Ship it" }: { label?: string }) {
+function ShipItButton({
+  label = "Ship it",
+  mergeTargets = NO_MERGE_TARGETS,
+}: {
+  label?: string;
+  mergeTargets?: MergeTarget[];
+}) {
   const ship = useContext(ShipContext);
   const { feedback, send } = useShipFeedback(ship);
   if (!ship) return null;
@@ -508,7 +613,7 @@ function ShipItButton({ label = "Ship it" }: { label?: string }) {
         className="h-7 gap-1.5 text-xs"
         disabled={ship.isPending || ship.isSuccess}
         onClick={(event) => {
-          send(event.detail);
+          send(event.detail, mergeTargets);
         }}
       >
         <span ref={feedback}>
