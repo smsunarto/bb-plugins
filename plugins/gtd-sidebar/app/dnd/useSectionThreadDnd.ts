@@ -106,6 +106,11 @@ interface UseSectionThreadDndArgs {
   onTopLevelSectionOrderChange: (order: SidebarSectionId[]) => void;
   onExpandThread?: (threadId: string) => void;
   groups?: boolean;
+  /**
+   * GTD: a drop keeps every pin. A GTD shelf holds pinned threads only once
+   * they are snoozed or settled; moving one there is not leaving Pinned.
+   */
+  keepPins?: boolean;
   pinnedReorderPending: boolean;
   pinnedThreads: readonly SidebarThread[];
   pinnedRootItems?: readonly ProjectThreadItem[];
@@ -475,6 +480,7 @@ function resolveSectionThreadDropParentKey(
 
 interface ResolveSectionThreadDropDecisionOptions {
   groups?: boolean;
+  keepPins?: boolean;
   selectedThreadIds?: readonly string[];
 }
 
@@ -518,7 +524,7 @@ function resolveNestDecision(
     activeId,
     parentThreadId,
     threadIds: threads.map((thread) => thread.id),
-    unpinThreadIds: getPinnedThreadIds(threads),
+    unpinThreadIds: options.keepPins ? [] : getPinnedThreadIds(threads),
     updates: threads.map((thread) => ({
       threadId: thread.id,
       parentThreadId,
@@ -665,7 +671,7 @@ export function resolveSectionThreadDropDecision(
   const sectionId = options.groups
     ? undefined
     : (lookup.sectionIdByParentKey.get(toParentKey) ?? null);
-  const unpinThreadIds = getPinnedThreadIds(threads);
+  const unpinThreadIds = options.keepPins ? [] : getPinnedThreadIds(threads);
   const updates = threads.flatMap((thread): SectionThreadUpdate[] => {
     const detach = lookup.nestParentIdByItemId.has(thread.id);
     if (sectionId !== undefined && (detach || thread.sectionId !== sectionId)) {
@@ -859,6 +865,7 @@ export function useSectionThreadDnd({
   onTopLevelSectionOrderChange,
   onExpandThread,
   groups = false,
+  keepPins = false,
   pinnedReorderPending,
   pinnedThreads,
   pinnedRootItems,
@@ -886,8 +893,8 @@ export function useSectionThreadDnd({
   const [draggedSelection, setDraggedSelection] = useState<readonly string[] | null>(null);
   const draggedSelectionRef = useRef<readonly string[] | null>(null);
   const decisionOptions = useMemo(
-    () => ({ groups, selectedThreadIds: draggedSelection ?? undefined }),
-    [draggedSelection, groups],
+    () => ({ groups, keepPins, selectedThreadIds: draggedSelection ?? undefined }),
+    [draggedSelection, groups, keepPins],
   );
   const draggedThreadIds = useMemo(
     () => (draggedSelection === null ? null : new Set(draggedSelection)),

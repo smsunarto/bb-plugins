@@ -63,8 +63,9 @@ export function collapsedParents(
 }
 
 /**
- * `expanded` with `threadId` toggled. Ids of threads no longer listed are
- * dropped on the way, so the preference never outgrows the list.
+ * `expanded` with `threadId` toggled. Ids of threads bb no longer lists are
+ * dropped on the way, so the preference never outgrows the roster. Pass bb's
+ * whole roster, not the filtered view, or a filter forgets folds it hides.
  */
 export function toggleExpanded(
   expanded: readonly string[],

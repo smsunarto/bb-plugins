@@ -70,6 +70,40 @@ export function projectDropReorderArgs(
 }
 
 /**
+ * The reorder a group-header drag asks for, from the shelf's group order
+ * before and after the drop. A drag moves one group, so the moved project is
+ * the one whose removal leaves both orders equal; it lands before the group
+ * that now follows it, or after the one before it at the end. Null when the
+ * orders differ by more than one move or the drop changes nothing in bb.
+ */
+export function groupDropReorderArgs(
+  shelfOrder: readonly string[],
+  nextShelfOrder: readonly string[],
+  projectOrder: readonly string[],
+): {
+  projectId: string;
+  args: { previousProjectId: string | null; nextProjectId: string | null };
+} | null {
+  const sameWithout = (id: string) => {
+    const left = shelfOrder.filter((entry) => entry !== id);
+    const right = nextShelfOrder.filter((entry) => entry !== id);
+    return left.length === right.length && left.every((entry, index) => entry === right[index]);
+  };
+  const projectId = nextShelfOrder.find((id, index) => shelfOrder[index] !== id && sameWithout(id));
+  if (projectId === undefined) return null;
+  const at = nextShelfOrder.indexOf(projectId);
+  const following = nextShelfOrder[at + 1];
+  const preceding = nextShelfOrder[at - 1];
+  const args =
+    following !== undefined
+      ? projectDropReorderArgs(projectId, following, "before", projectOrder)
+      : preceding !== undefined
+        ? projectDropReorderArgs(projectId, preceding, "after", projectOrder)
+        : null;
+  return args === null ? null : { projectId, args };
+}
+
+/**
  * The order a resolved drop predicts: the dragged project moved to the slot
  * the anchors describe. Drawn in place of bb's order until the host's
  * project-order-changed publish lands — the prediction every shelf mirrors —

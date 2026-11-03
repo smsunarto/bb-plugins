@@ -77,7 +77,12 @@ import { useReadStatusGrouping } from "./useReadStatusGrouping.js";
 import { useSidebarThreadReveal, type ThreadRevealPath } from "./useSidebarThreadReveal.js";
 import { SidebarDraftPresenceSync } from "./sidebarDraftPresence.js";
 import { SidebarProjectsContext, type SidebarProject } from "../model/use-sidebar-data.js";
-import { useGtdShelves, type ProjectOrderPrediction } from "../gtd/useGtdShelves.js";
+import {
+  projectScopeAtom,
+  useGtdShelves,
+  type ProjectOrderPrediction,
+} from "../gtd/useGtdShelves.js";
+import { Button } from "@/components/ui/button";
 import {
   NO_MACHINE_KEY,
   SHELF_LABELS,
@@ -105,7 +110,7 @@ import { useUnsettle } from "../../hooks/use-settled-threads.js";
 import { snoozeUntilTomorrow } from "../../lib/lifecycle.js";
 import {
   applyProjectMove,
-  projectDropReorderArgs,
+  groupDropReorderArgs,
   projectReorderArgs,
 } from "../../lib/project-groups.js";
 
@@ -325,6 +330,7 @@ function useGroupedModeThreadDnd({
     onTopLevelSectionOrderChange: onOrderChange,
     onExpandThread: expandThread,
     groups: true,
+    keepPins: pinned === NO_PINNED,
     pinnedReorderPending: pinned.pinnedReorderPending,
     pinnedThreads: pinned.pinnedThreads,
     pinnedRootItems: pinned.pinnedRootItems,
@@ -359,11 +365,14 @@ interface ShelfRenderState {
 
 function MachineGroupSection({
   hostId,
+  shelf,
   canRename,
   renderActions,
   ...props
 }: ComponentProps<typeof SortableSidebarSection> & {
   hostId: string;
+  /** The same machine heads a group on every shelf; one rename opens one editor. */
+  shelf: string;
   canRename: boolean;
   renderActions: (renameActions?: {
     onRename: () => void;
@@ -374,7 +383,7 @@ function MachineGroupSection({
   const rename = useSidebarRename({
     kind: "machine",
     id: hostId,
-    ownerKey: `machine:${hostId}`,
+    ownerKey: `${shelf}:machine:${hostId}`,
     name: props.label,
     label: "Machine name",
     maxLength: 100,
@@ -538,6 +547,7 @@ function ShelfBody({
               key={group.key}
               sortableId={group.key}
               tier="project"
+              renameScope={`${view.shelf}:`}
               project={project}
               rootItems={item.group.items}
               threadListState={threadListState}
@@ -610,6 +620,7 @@ function ShelfBody({
               <MachineGroupSection
                 {...sectionProps}
                 hostId={group.id}
+                shelf={view.shelf}
                 canRename={hostNames.has(group.id)}
                 renderActions={(renameActions) =>
                   renderMenu(
@@ -845,6 +856,7 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
     toggleThreadCollapsed,
   } = useReadStatusGrouping({
     threads: gtd.visibleThreads,
+    roster: gtd.threads,
     selectedThreadId,
     comparator: baseThreadComparator,
   });
@@ -1069,19 +1081,8 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
   );
   const handleReorderGroups = useCallback(
     (shelfProjectIds: readonly string[], nextProjectIds: readonly string[]) => {
-      const moved = nextProjectIds.find((id, index) => shelfProjectIds[index] !== id);
-      if (moved === undefined) return;
-      const from = shelfProjectIds.indexOf(moved);
-      const to = nextProjectIds.indexOf(moved);
-      const overProjectId = nextProjectIds[to < from ? to + 1 : to - 1];
-      if (overProjectId === undefined) return;
-      const args = projectDropReorderArgs(
-        moved,
-        overProjectId,
-        to < from ? "before" : "after",
-        orderedProjectIds,
-      );
-      if (args !== null) reorderProject(moved, args);
+      const drop = groupDropReorderArgs(shelfProjectIds, nextProjectIds, orderedProjectIds);
+      if (drop !== null) reorderProject(drop.projectId, drop.args);
     },
     [orderedProjectIds, reorderProject],
   );
@@ -1102,6 +1103,12 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
     onToggleThreadCollapsed: toggleThreadCollapsed,
     onToggleEnvironmentCollapsed: toggleEnvironmentCollapsed,
   };
+  const setProjectScope = useSetAtom(projectScopeAtom);
+  const filtersActive = gtd.scope !== null || gtd.visibility.hiddenMachineIds.size > 0;
+  const clearFilters = () => {
+    setProjectScope(null);
+    if (gtd.visibility.hiddenMachineIds.size > 0) gtd.visibility.change({ kind: "all" });
+  };
   const filters = useMemo(
     () => ({
       projects: projects.map((project) => ({ id: project.id, name: project.name })),
@@ -1121,18 +1128,36 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
     );
   }
 
+  // bb keeps a snooze's row after a timer or activity wake, so only a thread
+  // still on Snoozed counts down.
+  const wakeAtFor = (thread: SidebarThread) =>
+    lifecycle.shelfFor(thread) === "snoozed" ? lifecycle.wakeAtFor(thread) : null;
   const hasPinned = pinnedState.rootNodes.length > 0;
   const content = (
     <GtdFilterProvider value={filters}>
       {runners}
-      <GtdRowExtrasProvider hosts={gtd.machines} wakeAtFor={lifecycle.wakeAtFor}>
+      <GtdRowExtrasProvider hosts={gtd.machines} wakeAtFor={wakeAtFor}>
         <ProjectListShell>
           <SidebarDraftPresenceSync />
           {!hasPinned && shelfItems.length === 0 ? (
-            <ThreadListEmptyState
-              message={gtd.status === "error" ? "Threads unavailable" : undefined}
-              className="px-2 py-0.5"
-            />
+            <>
+              <ThreadListEmptyState
+                message={gtd.status === "error" ? "Threads unavailable" : undefined}
+                className="px-2 py-0.5"
+              />
+              {/* The filters live in shelf header menus, which an empty list
+                  does not draw, so it offers its own way back. */}
+              {filtersActive ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mx-2 text-muted-foreground"
+                  onClick={clearFilters}
+                >
+                  Clear filters
+                </Button>
+              ) : null}
+            </>
           ) : (
             <div className="space-y-4 max-md:pointer-coarse:space-y-8">
               {hasPinned ? (

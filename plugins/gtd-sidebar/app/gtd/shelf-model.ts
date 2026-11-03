@@ -73,12 +73,13 @@ export interface ShelfLayoutInput {
 
 /**
  * The threads bb's Pinned section draws: each pinned thread still active on
- * GTD's terms, with every thread under it. A pinned thread that was settled
- * or snoozed goes to that shelf instead, as it always has here.
+ * GTD's terms, with every active thread under it. A pinned thread or a child
+ * that was settled or snoozed goes to that shelf instead, so its own verbs
+ * (Un-settle, Wake) stay with it.
  */
 export function pinnedFamilyIds(
   threads: readonly SidebarThread[],
-  isActivePin: (thread: SidebarThread) => boolean,
+  isActive: (thread: SidebarThread) => boolean,
 ): Set<string> {
   const children = new Map<string, SidebarThread[]>();
   for (const thread of threads) {
@@ -88,12 +89,12 @@ export function pinnedFamilyIds(
     else children.set(thread.parentThreadId, [thread]);
   }
   const pinned = new Set<string>();
-  const stack = threads.filter((thread) => thread.pinnedAt !== null && isActivePin(thread));
+  const stack = threads.filter((thread) => thread.pinnedAt !== null && isActive(thread));
   while (stack.length > 0) {
     const thread = stack.pop()!;
     if (pinned.has(thread.id)) continue;
     pinned.add(thread.id);
-    stack.push(...(children.get(thread.id) ?? []));
+    stack.push(...(children.get(thread.id) ?? []).filter(isActive));
   }
   return pinned;
 }

@@ -54,12 +54,16 @@ export interface GtdShelves {
 
 /**
  * A project drop's predicted order and the bb order it was predicted from. It
- * draws only while bb still publishes that order, so bb's republished order
- * replaces it the moment it lands.
+ * draws only while bb still publishes an equal order, so bb's republished
+ * order replaces it the moment it lands.
  */
 export interface ProjectOrderPrediction {
   from: readonly string[];
   order: readonly string[];
+}
+
+function sameOrder(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 export function useGtdShelves(prediction: ProjectOrderPrediction | null = null): GtdShelves {
@@ -113,8 +117,12 @@ export function useGtdShelves(prediction: ProjectOrderPrediction | null = null):
     () => data.projects.filter((project) => !project.isPersonal).map((project) => project.id),
     [data.projects],
   );
+  // By value: bb rebuilds its project list on every thread change, and only
+  // a new order should drop the prediction.
   const projectOrder =
-    prediction !== null && prediction.from === bbProjectOrder ? prediction.order : bbProjectOrder;
+    prediction !== null && sameOrder(prediction.from, bbProjectOrder)
+      ? prediction.order
+      : bbProjectOrder;
   const personalProjectIds = useMemo(
     () =>
       new Set(data.projects.filter((project) => project.isPersonal).map((project) => project.id)),

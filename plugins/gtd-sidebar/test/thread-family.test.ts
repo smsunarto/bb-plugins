@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { rosterFamilyIds, threadFamilyIds } from "../lib/thread-family.ts";
 
 describe("threadFamilyIds", () => {
-  it("walks paginated descendants without following forks or cycles", async () => {
+  it("walks paginated descendants, forks included, without following cycles", async () => {
     const children = new Map([
       [
         "root",
@@ -20,7 +20,7 @@ describe("threadFamilyIds", () => {
       async (parentId, offset) => (children.get(parentId) ?? []).slice(offset, offset + 2),
       2,
     );
-    assert.deepEqual(ids, ["root", "child", "grandchild"]);
+    assert.deepEqual(ids, ["root", "child", "fork", "grandchild"]);
   });
 
   it("propagates a child read failure before a family can be written", async () => {
@@ -38,7 +38,7 @@ describe("threadFamilyIds", () => {
 });
 
 describe("rosterFamilyIds", () => {
-  it("walks the roster's live descendants without following forks, archives, or cycles", () => {
+  it("walks the roster's live descendants, forks included, without archives or cycles", () => {
     const thread = (
       id: string,
       parentThreadId: string | null,
@@ -57,7 +57,7 @@ describe("rosterFamilyIds", () => {
       thread("settled", "root", { isArchived: true }),
       thread("stranger", null),
     ];
-    assert.deepEqual(rosterFamilyIds(roster, "root"), ["root", "child", "grandchild"]);
+    assert.deepEqual(rosterFamilyIds(roster, "root"), ["root", "child", "fork", "grandchild"]);
     assert.deepEqual(rosterFamilyIds(roster, "unknown"), ["unknown"]);
   });
 });

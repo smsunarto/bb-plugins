@@ -229,6 +229,19 @@ describe("section thread pin drop decisions", () => {
     });
   });
 
+  it("keeps the pin when a GTD shelf asks drops to keep pins", () => {
+    expect(
+      resolveSectionThreadDropDecision(
+        createLookupWithPinnedThread(),
+        "pinned-1",
+        "section:a",
+        null,
+        null,
+        { keepPins: true },
+      ),
+    ).toEqual({ kind: "unchanged", activeId: "pinned-1", toParentKey: expect.any(String) });
+  });
+
   it("unpins a pinned thread into a section without a redundant move", () => {
     expect(
       resolveSectionThreadDropDecision(createLookupWithPinnedThread(), "pinned-1", "section:a"),

@@ -36,7 +36,12 @@ describe("family snooze RPC", () => {
       };
       // The write answers with the same rows a re-read would.
       assert.deepEqual(written, { ok: true, rows });
-      assert.deepEqual(rows.map((row) => row.threadId).sort(), ["child", "grandchild", "root"]);
+      assert.deepEqual(rows.map((row) => row.threadId).sort(), [
+        "child",
+        "fork",
+        "grandchild",
+        "root",
+      ]);
       assert.ok(rows.every((row) => row.snoozedUntil === wakeAt));
       assert.equal(new Set(rows.map((row) => row.snoozedAt)).size, 1);
       assert.deepEqual(await harness.behavior.callRpc("unsnooze", { threadId: "root" }), {

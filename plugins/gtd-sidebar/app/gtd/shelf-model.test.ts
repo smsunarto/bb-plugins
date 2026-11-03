@@ -53,6 +53,21 @@ describe("pinnedFamilyIds", () => {
     expect([...ids].sort()).toEqual(["child", "grandchild", "pin"]);
   });
 
+  it("sends a settled or snoozed child of a pin to its own shelf", () => {
+    const threads = [
+      thread("pin", { pinnedAt: 1 }),
+      thread("live", { parentThreadId: "pin" }),
+      thread("settled", { parentThreadId: "pin", archivedAt: 5 }),
+      thread("under-settled", { parentThreadId: "settled" }),
+      thread("parked", { parentThreadId: "pin" }),
+    ];
+    const ids = pinnedFamilyIds(
+      threads,
+      (item) => item.archivedAt === null && item.id !== "parked",
+    );
+    expect([...ids].sort()).toEqual(["live", "pin"]);
+  });
+
   it("leaves an unpinned parent to its shelf when only a child is pinned", () => {
     const threads = [thread("parent"), thread("child", { parentThreadId: "parent", pinnedAt: 1 })];
     expect([...pinnedFamilyIds(threads, () => true)]).toEqual(["child"]);

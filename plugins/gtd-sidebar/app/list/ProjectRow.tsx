@@ -185,6 +185,8 @@ export interface ProjectRowProps {
   tier?: "label" | "project";
   /** GTD: menu items after Rename, such as Move up and Move down. */
   extraActions?: (surface: ProjectActionsMenuSurface) => ReactNode;
+  /** GTD: the shelf this header draws in, so one rename opens one editor. */
+  renameScope?: string;
 }
 
 interface ProjectThreadTreeProps {
@@ -1512,12 +1514,13 @@ function ProjectRowComponent({
   projectRowStyle,
   tier = "label",
   extraActions,
+  renameScope,
 }: ProjectRowProps) {
   const sdk = useSdk();
   const rename = useSidebarRename({
     kind: "project",
     id: project.id,
-    ownerKey: `project:${project.id}`,
+    ownerKey: `${renameScope ?? ""}project:${project.id}`,
     name: project.name,
     label: "Project name",
     onSave: (name) => sdk.projects.update({ projectId: project.id, name }),
@@ -1722,7 +1725,8 @@ function areProjectRowPropsEqual(prev: ProjectRowProps, next: ProjectRowProps): 
     prev.projectRowRef !== next.projectRowRef ||
     prev.projectRowStyle !== next.projectRowStyle ||
     prev.tier !== next.tier ||
-    prev.extraActions !== next.extraActions
+    prev.extraActions !== next.extraActions ||
+    prev.renameScope !== next.renameScope
   ) {
     return false;
   }

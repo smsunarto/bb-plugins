@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  groupDropReorderArgs,
   applyProjectMove,
   projectDropReorderArgs,
   projectReorderArgs,
@@ -126,6 +127,37 @@ describe("projectDropReorderArgs", () => {
     assert.equal(projectDropReorderArgs("proj_personal", "one", "before", order), null);
     assert.equal(projectDropReorderArgs("one", "proj_personal", "after", order), null);
     assert.equal(projectDropReorderArgs("gone", "one", "before", order), null);
+  });
+});
+
+describe("groupDropReorderArgs", () => {
+  const order = ["a", "b", "c", "d"];
+
+  it("finds the dragged group however far it moved, in either direction", () => {
+    assert.deepEqual(groupDropReorderArgs(order, ["b", "c", "a", "d"], order), {
+      projectId: "a",
+      args: { previousProjectId: "c", nextProjectId: "d" },
+    });
+    assert.deepEqual(groupDropReorderArgs(order, ["b", "c", "d", "a"], order), {
+      projectId: "a",
+      args: { previousProjectId: "d", nextProjectId: null },
+    });
+    assert.deepEqual(groupDropReorderArgs(order, ["d", "a", "b", "c"], order), {
+      projectId: "d",
+      args: { previousProjectId: null, nextProjectId: "a" },
+    });
+  });
+
+  it("anchors on bb's full order when the shelf shows only some projects", () => {
+    assert.deepEqual(groupDropReorderArgs(["a", "c"], ["c", "a"], order), {
+      projectId: "c",
+      args: { previousProjectId: null, nextProjectId: "a" },
+    });
+  });
+
+  it("ignores a drop that changes nothing or is more than one move", () => {
+    assert.equal(groupDropReorderArgs(order, order, order), null);
+    assert.equal(groupDropReorderArgs(order, ["b", "a", "d", "c"], order), null);
   });
 });
 

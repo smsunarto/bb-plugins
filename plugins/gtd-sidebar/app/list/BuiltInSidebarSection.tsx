@@ -67,7 +67,10 @@ export const SortableSidebarSection = memo(function SortableSidebarSection({
   return (
     <TopLevelSidebarSection
       {...props}
-      dragBindings={props.labelEditor ? undefined : dragBindings}
+      // GTD: a fixed header (Pinned, the personal project) takes no drag
+      // bindings, whose aria-disabled would otherwise disable its buttons
+      // for assistive tech.
+      dragBindings={props.labelEditor || disabled ? undefined : dragBindings}
       sectionRef={setNodeRef}
       sectionStyle={style}
     />

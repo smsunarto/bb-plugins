@@ -32,10 +32,13 @@ function useHeldReadStatus(
 
 export function useReadStatusGrouping({
   threads,
+  roster,
   selectedThreadId,
   comparator,
 }: {
   threads: readonly SidebarThread[];
+  /** Every thread bb lists, filters aside: a saved fold outlives a filter. */
+  roster: readonly SidebarThread[];
   selectedThreadId: string | undefined;
   comparator: ThreadComparator;
 }) {
@@ -57,10 +60,10 @@ export function useReadStatusGrouping({
   );
   const toggleThreadCollapsed = useCallback(
     (threadId: string) => {
-      const listed = new Set(threads.map((thread) => thread.id));
+      const listed = new Set(roster.map((thread) => thread.id));
       setExpandedThreadIdList((current) => toggleExpanded(current, threadId, listed));
     },
-    [setExpandedThreadIdList, threads],
+    [roster, setExpandedThreadIdList],
   );
   return {
     comparator: groupedComparator,
