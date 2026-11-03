@@ -15,7 +15,6 @@ import {
   type PluginThreadListProps,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
-import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import { Select, SelectContent, SelectItem, SelectValue } from "../ui/select";
 import { ThreadCard } from "./thread-card";
@@ -38,7 +37,6 @@ import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "../../lib/sidebar-actions-bridge";
 import { toThreadActionTarget } from "../../lib/thread-action-target";
 import { usePendingArchives } from "./pending-archives";
-import { TRAILING_GLYPH_BOX_CLASS } from "./status-slot";
 import { archiveAsksFirst, filterByProject, nextThreadIdAfterSettle } from "../../lib/inbox";
 import {
   buildInboxTree,
@@ -932,9 +930,8 @@ function useInboxTree(
   hiddenMachineIds: ReadonlySet<string>,
   searchQuery: string,
 ) {
-  // Folded families are bb's own preference, shared with the built-in
-  // sidebar and kept across reloads. Folded project groups stay session state
-  // below: bb has no per-shelf project key and its preference keys are closed.
+  // Folded families are the backend's `expandedThreads` preference, kept
+  // across reloads and windows. Folded project groups stay session state below.
   const familyIds = useMemo(() => {
     const listed = new Set(threads.map((thread) => thread.id));
     return [
@@ -1187,9 +1184,6 @@ function ShelfHeader({
       >
         {title}
         {rule}
-        {/* The chevron's empty box, so this rule ends where a folding
-            shelf's does. */}
-        <span aria-hidden className={TRAILING_GLYPH_BOX_CLASS} />
       </h2>
     );
   }
@@ -1203,9 +1197,8 @@ function ShelfHeader({
         type="button"
         onClick={fold.onToggle}
         aria-expanded={fold.expanded}
-        // Padded like a card, so the chevron ends on the same right edge as
-        // every row's status and provider glyph. `cursor-pointer` is explicit
-        // because Tailwind v4's preflight gives a button `cursor: default`,
+        // The folded count is the only sign of a fold; there is no chevron.
+        // `cursor-pointer` is explicit because Tailwind v4's preflight gives a button `cursor: default`,
         // and the whole header is the hit target for collapsing the shelf.
         className={cn(
           "flex cursor-pointer items-center gap-2 pr-2.5 text-left",
@@ -1214,12 +1207,6 @@ function ShelfHeader({
       >
         {title}
         {rule}
-        <span className={TRAILING_GLYPH_BOX_CLASS}>
-          <Icon
-            name="ChevronDown"
-            className={cn("size-3 gtd-chevron-motion", mutedClass, !fold.expanded && "-rotate-90")}
-          />
-        </span>
       </button>
     </h2>
   );

@@ -15,8 +15,8 @@ import {
   type Modifier,
 } from "@dnd-kit/core";
 import { hasSortableData, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
-import { useRpc } from "@get-bb/plugin-sdk/app";
-import type { gtdSidebarRpcContract } from "../lib/rpc-contract";
+import { useSdk } from "@get-bb/plugin-sdk/app";
+import { createThreadNester } from "../lib/nest-thread";
 import { useCommittedEvent } from "./use-committed-event";
 import type { InboxShelf } from "../lib/inbox-tree";
 import { projectDropEdge, type ProjectDropEdge } from "../lib/project-groups";
@@ -124,7 +124,8 @@ export function useSidebarDrag({
   /** Any drag settled — dropped or not — so a trailing click can be held. */
   onAnyDragEnd?: () => void;
 }): { drag: SidebarDragApi; contextProps: DndContextProps } {
-  const rpc = useRpc<typeof gtdSidebarRpcContract>();
+  const sdk = useSdk();
+  const nester = useMemo(() => createThreadNester(sdk.threads), [sdk]);
   const [source, setSource] = useState<SidebarDragPayload | null>(null);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: DRAG_DISTANCE_PX } }),
@@ -153,7 +154,7 @@ export function useSidebarDrag({
       if (parentThreadId === undefined) return;
       // The row moves when bb reports the change; a refused or failed write
       // leaves it where it was, which is what the screen already shows.
-      void rpc.call("nestThread", { threadId: payload.threadId, parentThreadId }).catch(() => {});
+      void nester.nest(payload.threadId, parentThreadId).catch(() => {});
       if (parentThreadId !== null) onNestedUnder?.(parentThreadId);
       return;
     }

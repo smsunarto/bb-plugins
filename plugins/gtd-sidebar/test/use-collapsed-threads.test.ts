@@ -277,6 +277,8 @@ if (process.env.GTD_COLLAPSED_TEST_CHILD !== "1") {
       readsFail = true;
       stored = ["t"];
       await act(async () => write.resolve({ threadIds: stored }));
+      // The backend invalidates fold reads with each write; this one fails.
+      await slot.behavior.experimental_invalidateRpc(["collapsed"]);
       await flush();
       assert.equal(slot.getByRole("status").textContent, "t");
       // Another window opens the family; the next read that lands wins.
@@ -377,9 +379,10 @@ if (process.env.GTD_COLLAPSED_TEST_CHILD !== "1") {
       await window.publish();
       assert.equal(window.folds(), "t,x");
       const readsBeforeAnswer = window.state.reads;
-      // The answer predates bb's fold, so a read after it is what stands.
+      // The answer predates bb's fold, so a read after it is what stands. The
+      // backend invalidates fold reads with each write.
       await act(async () => window.writes[0]!.resolve({ threadIds: ["t"] }));
-      await window.settle();
+      await window.publish();
       assert.equal(window.state.reads, readsBeforeAnswer + 1);
       assert.equal(window.folds(), "t,x");
     });
@@ -417,8 +420,11 @@ if (process.env.GTD_COLLAPSED_TEST_CHILD !== "1") {
       await flush();
       stored = ["t", "x"];
       await act(async () => writes[0]!.resolve({ threadIds: ["t"] }));
+      // The backend's invalidation for the write reads again.
+      const refresh = slot.behavior.experimental_invalidateRpc(["collapsed"]);
       // The older read answers last and changes nothing; a newer one replaces it.
       await act(async () => finishRead({ threadIds: [] }));
+      await refresh;
       await flush();
       assert.equal(reads, 3);
       assert.equal(slot.getByRole("status").textContent, "t,x");

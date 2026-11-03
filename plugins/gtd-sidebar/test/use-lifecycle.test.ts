@@ -60,6 +60,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       title: id,
       titleFallback: null,
       parentThreadId: null,
+      parentNotifications: "auto",
       sectionId: null,
       originKind: null,
       originPluginId: null,
@@ -702,14 +703,19 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
         },
       );
       await flush();
-      void slot.behavior.experimental_invalidateRpc(["lifecycle"]);
+      const staleRefresh = slot.behavior.experimental_invalidateRpc(["lifecycle"]);
       await flush();
       assert.equal(reads, 2);
       fireEvent.click(slot.getByRole("button", { name: "Park" }));
       await flush();
       assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
-      // The stale answer is dropped and the read runs again after the write.
+      // The stale answer is dropped. The backend's invalidation for the write
+      // lands after it and reads again.
       await act(async () => finishRead({ rows: [] }));
+      await staleRefresh;
+      await flush();
+      assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
+      await slot.behavior.experimental_invalidateRpc(["lifecycle"]);
       await flush();
       assert.equal(reads, 3);
       assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
@@ -742,7 +748,9 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       await flush();
       assert.equal(slot.getByRole("status").textContent, "snoozed,snoozed");
       // The answer is the snapshot from when the park ran, before the wake.
+      // The backend invalidates the read with its write, as it always does.
       await act(async () => answer({ ok: true, rows: parked }));
+      await slot.behavior.experimental_invalidateRpc(["lifecycle"]);
       await flush();
       assert.equal(slot.getByRole("status").textContent, "active,active");
     });

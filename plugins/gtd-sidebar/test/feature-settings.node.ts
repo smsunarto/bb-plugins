@@ -21,7 +21,6 @@ describe("public feature opt-ins", () => {
     const { harness } = await setup();
     try {
       const descriptors = harness.inspection.registrations.settingsDescriptors;
-      assert.equal(descriptors.groupThreadsByProject?.default, true);
       for (const key of ["mobileHaptics", "gitButlerBranches", "automaticallyNameThreads"]) {
         assert.equal(descriptors[key]?.default, false, key);
       }

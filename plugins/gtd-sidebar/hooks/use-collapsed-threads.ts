@@ -24,20 +24,19 @@ export interface CollapsedThreadsApi {
 }
 
 /**
- * thread-list's `collapsedThreads` preference as the inbox's fold state — the
- * same list the built-in sidebar folds by, so a family folded there is folded
- * here, and the fold survives a reload.
+ * The backend's family folds as the inbox's fold state. Families start
+ * folded; the backend keeps the ones the user opened in its `expandedThreads`
+ * preference, so a fold survives a reload and follows every window.
  *
  * The read is bb's cached `listCollapsedThreads`, keyed by the roster's
- * families: the backend folds families it has not seen before answering. A
- * new family set is a new read, so the last answer stays on screen while it
- * loads, and the new families stay folded until it lands.
+ * families. A new family set is a new read, so the last answer stays on
+ * screen while it loads, and the new families stay folded until it lands.
  *
  * A toggle folds on the click and holds here, not as a bb prediction: bb
  * predicts only on the read keyed by the families at the click, and the
  * roster can move to another family set's cached read before a read taken
  * after the write lands. While its write is out the fold holds over every
- * read. Once answered, saved or not (host unreachable, thread-list off), it
+ * read. Once answered, saved or not (backend unreachable), it
  * holds until the read shows it or a read of the same families lands; that
  * read also carries any newer fold another window made.
  */

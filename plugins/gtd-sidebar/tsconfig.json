@@ -7,5 +7,15 @@
     "types": ["node", "bun-types/test", "bun-types/sqlite"],
     "skipLibCheck": false
   },
-  "include": ["server.ts", "host.ts", "app.tsx", "types", "components", "hooks", "lib", "test"]
+  "include": [
+    "server.ts",
+    "host.ts",
+    "app.tsx",
+    "types",
+    "components",
+    "hooks",
+    "shared",
+    "lib",
+    "test"
+  ]
 }

@@ -16,6 +16,7 @@ function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThre
     projectId: "proj_1",
     title: "A thread",
     titleFallback: null,
+    parentNotifications: "auto",
     parentThreadId: null,
     sectionId: null,
     originKind: null,

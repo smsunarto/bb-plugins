@@ -1,4 +1,5 @@
-// @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store.
+// @smsunarto/bb-plugin-gtd-sidebar backend — the snooze store, the forked
+// Thread list's layout preferences, thread naming, and GitButler labels.
 //
 // Snoozes live in the plugin's own SQLite database, never on bb's thread.
 // Putting them on the thread would mean a schema change, a wire change, and a
@@ -10,13 +11,16 @@ import { cliCommand, defineCli, PluginCliError, type BbPluginApi } from "@get-bb
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 import type { ThreadLifecycleRow } from "./lib/lifecycle.ts";
 import { createMachineVisibilityStore } from "./lib/machine-visibility-store.ts";
-import { createCollapsedThreadsStore } from "./lib/collapsed-threads.ts";
-import { createThreadNester } from "./lib/nest-thread.ts";
 import { threadFamilyIds } from "./lib/thread-family.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 import { RETIRED_PROJECT_MIGRATIONS } from "./lib/retired-project-migrations.ts";
 import { GTD_TAGS, gtdSidebarRpcContract } from "./lib/rpc-contract.ts";
+import {
+  createPreferenceStore,
+  preferenceCliCommands,
+  preferencesRpcContract,
+} from "./lib/preference-store.ts";
 
 // Append-only: bb applies these by position, so the retired `settled_at` and
 // `archived_thread_ids` columns stay declared and simply go unread.
@@ -40,10 +44,6 @@ interface LifecycleDbRow {
 
 /** The host's 5 s limit on `but status`, plus the trip to and from the machine. */
 const BRANCH_SUMMARY_TIMEOUT_MS = 8_000;
-/** How often the backend checks thread-list for folds made in bb's sidebar. */
-const FOLD_CHECK_MS = 2_000;
-/** The slowest check while thread-list keeps failing. */
-const FOLD_CHECK_MAX_MS = 30_000;
 
 export default async function plugin(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract: gtdSidebarHostContract });
@@ -70,7 +70,8 @@ export default async function plugin(bb: BbPluginApi) {
     mobileHaptics: {
       type: "boolean",
       label: "Enable mobile haptics",
-      description: "Opt in to tactile feedback on iOS menu taps. Long-press menus work without it.",
+      description:
+        "Opt in to a tactile tap when a long press opens a row's menu in bb's iOS app. Long-press menus work without it.",
       default: false,
     },
     gitButlerBranches: {
@@ -147,33 +148,41 @@ export default async function plugin(bb: BbPluginApi) {
       THREAD_PAGE_SIZE,
     );
 
-  // Every thread-list call stops when the plugin unloads, so a hung one cannot
-  // outlive it.
-  const foldsLifetime = new AbortController();
-  bb.onDispose(() => foldsLifetime.abort());
-  const collapsedThreads = createCollapsedThreadsStore(bb.sdk.plugins, {
-    defaults: bb.storage.kv,
-    signal: foldsLifetime.signal,
-    // Whichever call saw the change, a window's fold or the check below,
-    // every window re-reads.
-    onChange: () => bb.rpc.experimental_invalidate([GTD_TAGS.collapsed]),
-  });
-  const threadNester = createThreadNester(bb.sdk.threads);
   const machineVisibility = createMachineVisibilityStore(bb.storage.kv);
+
+  // Layout preferences, family folds among them, synced to every window over
+  // realtime. A fold written by any path, CLI included, refreshes fold reads.
+  const preferences = createPreferenceStore(bb, (key) => {
+    if (key === "expandedThreads") bb.rpc.experimental_invalidate([GTD_TAGS.collapsed]);
+  });
+  // Each fold reads the stored list before it writes, so folds run one at a
+  // time: two windows toggling different families must both land.
+  let foldWrites: Promise<unknown> = Promise.resolve();
+  const serializeFolds = <T>(write: () => Promise<T>): Promise<T> => {
+    const result = foldWrites.then(write);
+    foldWrites = result.catch(() => {});
+    return result;
+  };
+  const setExpanded = (threadId: string, expanded: boolean) =>
+    serializeFolds(async () => {
+      const current = await preferences.read("expandedThreads");
+      const next = current.filter((id) => id !== threadId);
+      if (expanded) next.push(threadId);
+      if (next.length !== current.length || current.some((id, index) => id !== next[index])) {
+        await preferences.write("expandedThreads", next, null);
+      }
+      return next;
+    });
 
   bb.rpc.register(
     gtdSidebarRpcContract,
     {
       listNamingThreads: threadNamer.listNamingThreads,
       listMachineVisibility: async () => ({ hiddenMachineIds: await machineVisibility.read() }),
-      changeMachineVisibility: async (change) => ({
-        hiddenMachineIds: await machineVisibility.change(change),
-      }),
-      async listCollapsedThreads({ familyIds }) {
-        return { threadIds: await collapsedThreads.list(familyIds) };
-      },
-      async setThreadCollapsed({ threadId, collapsed }) {
-        return { threadIds: await collapsedThreads.set(threadId, collapsed) };
+      changeMachineVisibility: async (change) => {
+        const hiddenMachineIds = await machineVisibility.change(change);
+        bb.rpc.experimental_invalidate([GTD_TAGS.machines]);
+        return { hiddenMachineIds };
       },
       async listEnvironmentBranches({ environmentIds }) {
         if (!(await settings.get()).gitButlerBranches) return { environments: [] };
@@ -217,10 +226,17 @@ export default async function plugin(bb: BbPluginApi) {
         );
         return { environments: environments.filter((environment) => environment !== null) };
       },
+      async listCollapsedThreads({ familyIds }) {
+        const expanded = new Set(await preferences.read("expandedThreads"));
+        return { threadIds: familyIds.filter((id) => !expanded.has(id)) };
+      },
+      async setThreadCollapsed({ threadId, collapsed }) {
+        return { expandedThreadIds: await setExpanded(threadId, !collapsed) };
+      },
       async listLifecycle() {
         return { rows: readAll() };
       },
-      // The contract's `invalidates` refreshes every window's lifecycle read.
+      // Each write refreshes every window's lifecycle read.
       snooze: ({ threadId, snoozedUntil }) =>
         serializeLifecycle(async () => {
           const ids = await familyIds(threadId);
@@ -228,6 +244,7 @@ export default async function plugin(bb: BbPluginApi) {
           db.transaction(() => {
             for (const id of ids) writeSnooze.run(id, snoozedUntil, snoozedAt);
           })();
+          bb.rpc.experimental_invalidate([GTD_TAGS.lifecycle]);
           return { ok: true, rows: readAll() };
         }),
       unsnooze: ({ threadId }) =>
@@ -236,23 +253,14 @@ export default async function plugin(bb: BbPluginApi) {
           db.transaction(() => {
             for (const id of ids) deleteSnooze.run(id);
           })();
+          bb.rpc.experimental_invalidate([GTD_TAGS.lifecycle]);
           return { ok: true, rows: readAll() };
         }),
-      async nestThread({ threadId, parentThreadId }) {
-        const result = await threadNester.nest(threadId, parentThreadId);
-        if (!result.ok) {
-          bb.log.warn(
-            `nest thread ${threadId} under ${parentThreadId ?? "top level"} refused: ${result.reason}`,
-          );
-          return { ok: false, reason: result.reason };
-        }
-        return { ok: true };
-      },
     },
     {
       experimental_discoverable: true,
       experimental_description:
-        "Snooze, fold, nest, and label threads for the GTD Sidebar, an action-oriented sidebar that groups threads by who can act next.",
+        "Snooze and label threads for the GTD Sidebar, an action-oriented sidebar that groups threads by who can act next.",
     },
   );
 
@@ -260,58 +268,33 @@ export default async function plugin(bb: BbPluginApi) {
   // thread reusing the id, and stale rows accumulate otherwise.
   bb.events.on("thread.deleted", async ({ thread }) => {
     clear(thread.id);
-    try {
-      await collapsedThreads.remove(thread.id);
-    } catch (error) {
-      bb.log.warn(`cannot remove deleted thread fold: ${String(error)}`);
+    // An opened family whose parent is gone would otherwise stay listed.
+    if ((await preferences.read("expandedThreads")).includes(thread.id)) {
+      await setExpanded(thread.id, false);
     }
   });
 
-  // thread-list publishes its own `preferences` channel. SDK 0.6.75 still
-  // subscribes only to the current plugin's signals (`useRealtime` takes no
-  // plugin id, and `bb.realtime` only publishes), thread-list's
-  // `listPreferences` declares no tags a cross-plugin query could refresh
-  // on, and `collapsedThreads` is not one of bb's synced UI preferences. So
-  // check on the server rather than adding WAN polling in every window; the
-  // store invalidates the fold read when something changed.
-  // Checks never overlap. While thread-list cannot answer (turned off, missing,
-  // or hung) they back off to 30 s, and only the outage and the recovery log.
-  let foldTimer: ReturnType<typeof setTimeout> | undefined;
-  let foldCheckDelay = FOLD_CHECK_MS;
-  let foldsUnreadable = false;
-  const checkFolds = async () => {
-    try {
-      await collapsedThreads.read();
-      if (foldsUnreadable) bb.log.info("thread-list folds are readable again");
-      foldsUnreadable = false;
-      foldCheckDelay = FOLD_CHECK_MS;
-    } catch (error) {
-      if (foldsLifetime.signal.aborted) return;
-      if (!foldsUnreadable) {
-        bb.log.warn(
-          `cannot read thread-list folds, checking less often until it answers: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-      foldsUnreadable = true;
-      foldCheckDelay = Math.min(foldCheckDelay * 2, FOLD_CHECK_MAX_MS);
-    }
-    if (foldsLifetime.signal.aborted) return;
-    foldTimer = setTimeout(() => void checkFolds(), foldCheckDelay);
-    foldTimer.unref?.();
-  };
-  void checkFolds();
-  bb.onDispose(() => clearTimeout(foldTimer));
+  bb.rpc.register(preferencesRpcContract, {
+    async listPreferences() {
+      return { preferences: await preferences.readAll() };
+    },
+    async setPreference({ key, value, origin }) {
+      return { key, value: await preferences.write(key, value, origin ?? null) };
+    },
+    async resetPreference({ key }) {
+      return { key, value: await preferences.reset(key) };
+    },
+  });
 
   subscribeToThreadNaming(bb, threadNamer);
 
   bb.cli.register(
     defineCli({
       name: "gtd-sidebar",
-      summary: "Manage GTD Sidebar threads.",
+      summary: "Manage GTD Sidebar threads and layout preferences.",
       usageErrorExitCode: 2,
       commands: {
+        ...preferenceCliCommands(preferences),
         rename: cliCommand({
           summary: "Generate a new title for a thread.",
           positionals: [

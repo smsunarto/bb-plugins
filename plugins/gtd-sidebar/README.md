@@ -169,10 +169,10 @@ stays in bb's archive.
 
 A child sits under its parent with a disclosure chevron. Families start collapsed,
 including existing families the first time this default is applied;
-expanding or collapsing one saves that choice across reloads. Folding a family uses the
-`collapsedThreads` preference of bb's built-in Thread list plugin, so a family folded
-here is folded in bb's built-in sidebar too, and the fold survives a reload. A fold
-made in bb's sidebar shows here within a few seconds. Folded project groups stay
+expanding or collapsing one saves that choice across reloads. The opened families
+live in this plugin's `expandedThreads` preference (`bb gtd-sidebar prefs get
+expandedThreads`), so a fold survives a reload and shows in every open window at
+once. Folds no longer follow bb's built-in Thread list. Folded project groups stay
 session state.
 
 Drag a row onto another row to nest it there, or onto a project group header

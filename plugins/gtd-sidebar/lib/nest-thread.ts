@@ -1,6 +1,10 @@
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
-
-type Threads = Pick<BbPluginApi["sdk"]["threads"], "get" | "update">;
+/** The two calls a nest makes on bb's threads, from the app's `useSdk()`. */
+interface Threads {
+  get(input: {
+    threadId: string;
+  }): Promise<{ id: string; projectId: string; parentThreadId: string | null }>;
+  update(input: { threadId: string; parentThreadId: string | null }): Promise<unknown>;
+}
 
 /** Deeper than any real family; stops a corrupt parent chain from looping. */
 const ANCESTOR_LIMIT = 64;

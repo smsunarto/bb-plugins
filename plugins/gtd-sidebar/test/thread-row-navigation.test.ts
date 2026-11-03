@@ -302,6 +302,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       projectId: "one",
       title: id,
       titleFallback: null,
+      parentNotifications: "auto",
       parentThreadId: null,
       sectionId: null,
       originKind: null,
@@ -864,6 +865,219 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       if (previousAnimate)
         Object.defineProperty(dom.window.Element.prototype, "animate", previousAnimate);
     }
+  });
+
+  describe("a tall group's slide", () => {
+    type Frame = { height?: string };
+    async function slideHarness() {
+      const { SlidingDisclosure } = await import("../components/inbox/sliding-disclosure");
+      const previousAnimate = Object.getOwnPropertyDescriptor(
+        dom.window.Element.prototype,
+        "animate",
+      );
+      // Each fold runs a fade, then a height slide; `slides` keeps the slides.
+      type Run = { heights: string[]; duration: number; canceled: boolean; end: () => void };
+      const fades: Run[] = [];
+      const slides: Run[] = [];
+      // The suite reduces motion everywhere; these tests are about the motion.
+      const reducedMotion = dom.window.matchMedia;
+      dom.window.matchMedia = (query) => ({ ...reducedMotion(query), matches: false });
+      Object.defineProperty(dom.window.Element.prototype, "animate", {
+        configurable: true,
+        value: (keyframes: Frame[], options: { duration: number }) => {
+          const heights = keyframes.map((frame) => frame.height ?? "");
+          let end = () => {};
+          const finished = new Promise<void>((resolve) => (end = resolve));
+          const slide: Run = { heights, duration: options.duration, canceled: false, end };
+          if (heights[0]) slides.push(slide);
+          else fades.push(slide);
+          return {
+            finished,
+            cancel() {
+              slide.canceled = true;
+            },
+          };
+        },
+      });
+      // The list scrolls inside a box from y=100 to y=600 under a 32px shelf
+      // header that pins to its top.
+      function Content({ open }: { open: boolean }) {
+        return createElement(
+          "div",
+          { "data-list": "", style: { overflowY: "auto" } },
+          createElement("h2", null, "Settled"),
+          createElement(SlidingDisclosure, { open }, createElement("p", null, "Rows")),
+        );
+      }
+      const slot = renderSlot({ component: Content }, { open: false });
+      const scroller = slot.container.querySelector<HTMLDivElement>("[data-list]")!;
+      const header = scroller.querySelector("h2")!;
+      const panel = scroller.querySelector<HTMLDivElement>("[data-gtd-disclosure]")!;
+      scroller.getBoundingClientRect = () => ({ top: 100, bottom: 600 }) as DOMRect;
+      let scrollTop = 0;
+      Object.defineProperty(scroller, "scrollTop", {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => {
+          scrollTop = value;
+        },
+      });
+      // A 2000px group.
+      Object.defineProperty(panel, "scrollHeight", { configurable: true, value: 2000 });
+      const place = (top: number, height: number, headerBottom = top) => {
+        panel.getBoundingClientRect = () => ({ top, height }) as DOMRect;
+        header.getBoundingClientRect = () => ({ bottom: headerBottom }) as DOMRect;
+      };
+      return {
+        fades,
+        slides,
+        scroller,
+        panel,
+        place,
+        get scrollTop() {
+          return scrollTop;
+        },
+        set scrollTop(value: number) {
+          scrollTop = value;
+        },
+        fold: (open: boolean) => slot.lifecycle.rerender(createElement(Content, { open })),
+        dispose() {
+          slot.lifecycle.unmount();
+          dom.window.matchMedia = reducedMotion;
+          if (previousAnimate)
+            Object.defineProperty(dom.window.Element.prototype, "animate", previousAnimate);
+        },
+      };
+    }
+
+    it("spans only the part of the list on screen, past its fade", async () => {
+      const list = await slideHarness();
+      try {
+        // The group's top sits 168px above the list's bottom edge; the window
+        // is taller, so the slide must follow the list, not the window.
+        list.place(432, 0);
+        list.fold(true);
+        assert.deepEqual(list.slides.at(-1)?.heights, ["0px", "184px"]);
+        list.place(432, 2000);
+        list.fold(false);
+        assert.deepEqual(list.slides.at(-1)?.heights, ["184px", "0px"]);
+      } finally {
+        list.dispose();
+      }
+    });
+
+    it("opens quickly and closes a short group at the fold's pace", async () => {
+      const list = await slideHarness();
+      try {
+        // Only 184px of the 2000px group shows; it still slides as a tall one.
+        list.place(432, 0);
+        list.fold(true);
+        assert.equal(list.slides.at(-1)?.duration, 180);
+        assert.equal(list.fades.at(-1)?.duration, 200, "its rows read soon after the click");
+        list.place(432, 2000);
+        list.fold(false);
+        assert.equal(list.slides.at(-1)?.duration, 180);
+        assert.equal(list.fades.at(-1)?.duration, 350);
+        Object.defineProperty(list.panel, "scrollHeight", { configurable: true, value: 120 });
+        list.place(432, 0);
+        list.fold(true);
+        assert.deepEqual(list.slides.at(-1)?.heights, ["0px", "120px"]);
+        assert.equal(list.slides.at(-1)?.duration, 200, "an open lands with its fade");
+        list.place(432, 120);
+        list.fold(false);
+        assert.equal(list.slides.at(-1)?.duration, 350);
+      } finally {
+        list.dispose();
+      }
+    });
+
+    it("closes from its pinned header with the rows on screen holding still", async () => {
+      const list = await slideHarness();
+      try {
+        list.place(432, 0);
+        list.fold(true);
+        // Scrolled 932px into the group: its header pins at the list's top
+        // and the rows under it start 932px into the panel.
+        list.scrollTop = 1500;
+        list.place(-800, 2000, 132);
+        list.fold(false);
+        assert.deepEqual(list.slides.at(-1)?.heights, ["484px", "0px"]);
+        const exit = list.panel.firstElementChild as HTMLElement;
+        assert.equal(exit.style.translate, "0 -932px", "the rows on screen keep their place");
+        assert.equal(list.scrollTop, 568, "the header returns to its own place, still at the top");
+      } finally {
+        list.dispose();
+      }
+    });
+
+    it("lands at once when the list scrolls during an opening slide", async () => {
+      const list = await slideHarness();
+      try {
+        list.place(432, 0);
+        list.fold(true);
+        assert.equal(list.panel.style.overflow, "clip");
+        list.scroller.dispatchEvent(new dom.window.Event("scroll"));
+        assert.equal(list.slides.at(-1)?.canceled, true);
+        assert.equal(list.panel.style.overflow, "visible", "every row shows as the list scrolls");
+        assert.equal(list.fades.at(-1)?.canceled, false, "the rows still fade in");
+      } finally {
+        list.dispose();
+      }
+    });
+
+    it("hands an opening group to its own height when the slide lands, then ends with the fade", async () => {
+      const list = await slideHarness();
+      try {
+        list.place(432, 0);
+        list.fold(true);
+        await act(async () => list.slides.at(-1)?.end());
+        assert.equal(
+          list.panel.style.overflow,
+          "visible",
+          "rows past the edge are no longer clipped",
+        );
+        list.scroller.dispatchEvent(new dom.window.Event("scroll"));
+        assert.equal(list.fades.at(-1)?.canceled, false, "a later scroll leaves the fade running");
+        await act(async () => list.fades.at(-1)?.end());
+        assert.equal(list.panel.style.maskImage, "none");
+      } finally {
+        list.dispose();
+      }
+    });
+
+    it("reverses mid-fold from where the panel is", async () => {
+      const list = await slideHarness();
+      try {
+        list.place(432, 0);
+        list.fold(true);
+        const opening = list.slides.at(-1);
+        list.place(432, 90);
+        list.fold(false);
+        assert.equal(opening?.canceled, true);
+        assert.deepEqual(list.slides.at(-1)?.heights, ["90px", "0px"]);
+      } finally {
+        list.dispose();
+      }
+    });
+
+    it("keeps a closing group's copy through its own scroll and removes it with the fade", async () => {
+      const list = await slideHarness();
+      try {
+        list.place(432, 0);
+        list.fold(true);
+        list.scrollTop = 1500;
+        list.place(-800, 2000, 132);
+        list.fold(false);
+        const exit = list.panel.firstElementChild;
+        assert.ok(exit);
+        list.scroller.dispatchEvent(new dom.window.Event("scroll"));
+        assert.equal(list.panel.firstElementChild, exit, "the close's scroll leaves its copy");
+        await act(async () => list.fades.at(-1)?.end());
+        assert.equal(list.panel.childElementCount, 0);
+      } finally {
+        list.dispose();
+      }
+    });
   });
 
   describe("desktop right-click menus", () => {
@@ -2084,23 +2298,20 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ["Waiting", "Snoozed", "Settled"].map((label) => {
           const shelf = within(view.slot.getByRole("region", { name: label }));
           const button = within(shelf.getByRole("heading", { level: 2 })).getByRole("button");
-          const chevron = button.querySelector('[data-icon="ChevronDown"]');
-          return [
-            button.getAttribute("aria-expanded"),
-            chevron?.getAttribute("class")?.includes("-rotate-90"),
-          ];
+          // A shelf header draws no icon; its folded count marks the fold.
+          return [button.getAttribute("aria-expanded"), button.querySelector("svg")];
         });
       assert.deepEqual(toggles(), [
-        ["true", false],
-        ["false", true],
-        ["false", true],
+        ["true", null],
+        ["false", null],
+        ["false", null],
       ]);
       fireEvent.click(view.slot.getByRole("button", { name: "Waiting" }));
       fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
       assert.deepEqual(toggles(), [
-        ["false", true],
-        ["true", false],
-        ["false", true],
+        ["false", null],
+        ["true", null],
+        ["false", null],
       ]);
     });
   });
