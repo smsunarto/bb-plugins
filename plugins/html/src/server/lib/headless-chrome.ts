@@ -126,6 +126,11 @@ async function launchBrowser(input: {
         "--hide-scrollbars",
         "--mute-audio",
         "--block-new-web-contents",
+        // The throwaway profile needs no OS keyring. Without these, Linux Chrome waits
+        // about 25 seconds for a D-Bus secret service before its first request, and
+        // macOS Chrome can raise a Keychain prompt.
+        "--password-store=basic",
+        "--use-mock-keychain",
         `--proxy-server=socks5://127.0.0.1:${input.proxyPort}`,
         // Loopback would otherwise skip the proxy.
         "--proxy-bypass-list=<-loopback>",
