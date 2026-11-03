@@ -51,6 +51,8 @@ import {
   COARSE_POINTER_ROW_ACTION_SIZE_CLASS,
 } from "@/components/ui/coarse-pointer-sizing";
 
+import { useGtdRowContextVisible } from "../gtd/row-extras.js";
+
 const EMPTY_SPLIT_INDICATOR_THREADS: readonly ThreadSplitIndicatorTarget[] = [];
 
 function stopActionsClick(event: MouseEvent<HTMLSpanElement>) {
@@ -102,7 +104,7 @@ export function TopLevelSidebarSection({
   label,
   tier = "label",
   icon,
-  foldCount,
+  foldCount: suppliedFoldCount,
   labelEditor,
   onRename,
   children,
@@ -123,6 +125,9 @@ export function TopLevelSidebarSection({
   consumeClickSuppression,
   isDropTargetActive = false,
 }: TopLevelSidebarSectionProps) {
+  const rowContextVisible = useGtdRowContextVisible();
+  const showContext = tier === "label" || rowContextVisible;
+  const foldCount = showContext ? suppliedFoldCount : undefined;
   const threadDropState = useSectionDropTargetState(dropParentKey);
   const collapsedSplitIndicator = useThreadGroupSplitIndicator(
     collapsedThreads,
@@ -134,6 +139,7 @@ export function TopLevelSidebarSection({
   const showFoldCount =
     isFolder && isCollapsed && foldCount !== undefined && foldCount.families > 0 && !status;
   const showCollapsedActivity =
+    showContext &&
     !status &&
     collapseControl?.isCollapsed === true &&
     (collapsedSplitIndicator.miniMap !== null ||
@@ -257,6 +263,7 @@ export function TopLevelSidebarSection({
               ]
             : [
                 CHROME_SECTION_LABEL_CLASS,
+                "gtd-shelf-header",
                 SIDEBAR_STANDARD_ROW_PADDING_CLASS,
                 SIDEBAR_GROUP_TEXT_CLASS,
                 "rounded-md pr-0 transition-colors",
@@ -283,7 +290,7 @@ export function TopLevelSidebarSection({
         <span
           className={cn(
             "relative z-10 flex min-w-0 flex-1 items-center text-left",
-            isFolder ? "gtd-folder-name" : "gap-1",
+            isFolder ? "gtd-folder-name" : "flex-initial gap-1",
           )}
         >
           {labelEditor ??
@@ -325,6 +332,12 @@ export function TopLevelSidebarSection({
               </span>
             ))}
         </span>
+        {!isFolder ? (
+          <span
+            aria-hidden="true"
+            className="gtd-shelf-rule h-px min-w-2 flex-1 bg-sidebar-border"
+          />
+        ) : null}
         {status || actions || collapsedActivityIndicator || foldCountIndicator ? (
           <span
             data-sidebar-trailing-controls=""

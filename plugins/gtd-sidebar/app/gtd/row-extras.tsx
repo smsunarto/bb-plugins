@@ -14,7 +14,15 @@ import { useRowPullRequest } from "../../hooks/use-row-pull-request.ts";
 import { formatWakeTime, snoozeWakeLabel } from "../../lib/lifecycle.ts";
 import { machineColor, useBoatMachineIds } from "../../lib/machine-colors.ts";
 import { nativeHaptic } from "../../lib/native-haptics.ts";
+import type { ShelfId } from "../../shared/preferences.ts";
 import type { SidebarThread } from "../model/sidebar-thread.ts";
+
+// The containing shelf owns presentation, including folders and nested families.
+export const GtdShelfContext = createContext<ShelfId | null>(null);
+
+export function useGtdRowContextVisible(): boolean {
+  return useContext(GtdShelfContext) !== "settled";
+}
 
 interface MachineAppearance {
   /** The machine whose threads go unmarked; null until it is known. */

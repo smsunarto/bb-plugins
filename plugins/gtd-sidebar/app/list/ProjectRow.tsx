@@ -151,6 +151,7 @@ import {
   SidebarThreadDragChip,
 } from "../dnd/sidebarThreadDragChip.js";
 import { SlidingDisclosure } from "../ui/SlidingDisclosure.js";
+import { useGtdRowContextVisible } from "../gtd/row-extras.js";
 import { foldCount } from "../gtd/fold-count.js";
 
 const SIDEBAR_STICKY_PARENT_DEPTH_CAP = 4;
@@ -707,7 +708,9 @@ function EnvironmentThreadGroupHeader({
   const hiddenThreadsHaveDraft = useThreadsHaveDraft(
     isCollapsed ? childActivity.threadIds : NO_THREAD_IDS,
   );
+  const showContext = useGtdRowContextVisible();
   const showRollupGlyph =
+    showContext &&
     isCollapsed &&
     (childActivity.pending ||
       childActivity.working ||

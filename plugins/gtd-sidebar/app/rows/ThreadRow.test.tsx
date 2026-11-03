@@ -38,6 +38,9 @@ import {
   ThreadRowActionsCustomizingContext,
 } from "../list/customizeRowActionsContext.js";
 
+import { GtdShelfContext } from "../gtd/row-extras.js";
+import type { ShelfId } from "../../shared/preferences.js";
+
 installTestPluginRuntime();
 const { SidebarDraftPresenceSync } = await import("../list/sidebarDraftPresence.js");
 const { ThreadRowNavigationProvider } = await import("./threadRowNavigation.js");
@@ -68,6 +71,7 @@ function activity(
 }
 
 interface HarnessProps {
+  shelf?: ShelfId;
   thread: PluginSidebarThread;
   projects?: PluginSidebarProject[];
   isCompactViewport?: boolean;
@@ -81,6 +85,7 @@ interface HarnessProps {
 }
 
 function ThreadRowHarness({
+  shelf = "nextAction",
   thread,
   siblings = [],
   projects = [],
@@ -93,12 +98,14 @@ function ThreadRowHarness({
   onFinishCustomizingRowActions,
 }: HarnessProps) {
   const row = (
-    <ThreadRow
-      thread={thread}
-      crossProjectId={crossProjectId}
-      isActive={isActive}
-      options={options}
-    />
+    <GtdShelfContext.Provider value={shelf}>
+      <ThreadRow
+        thread={thread}
+        crossProjectId={crossProjectId}
+        isActive={isActive}
+        options={options}
+      />
+    </GtdShelfContext.Provider>
   );
   const content = (
     <SidebarProjectsContext.Provider value={projects}>
@@ -1614,4 +1621,18 @@ describe("ThreadRow", () => {
       "Thread",
     );
   });
+});
+
+describe("Settled thread context", () => {
+  it.each(["settled", "nextAction"] as const)(
+    "%s controls context metadata without hiding the title",
+    (shelf) => {
+      getDefaultStore().set(sidebarShowRowMetadataAtom, true);
+      const slot = renderThreadRow({ shelf, experiments: ["threadRowMetadata"] });
+      expect(slot.container.querySelector("[data-thread-row-metadata]") !== null).toBe(
+        shelf !== "settled",
+      );
+      expect(screen.getByRole("link", { name: "Open Thread" })).not.toBeNull();
+    },
+  );
 });

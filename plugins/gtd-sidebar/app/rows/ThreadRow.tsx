@@ -111,6 +111,7 @@ import {
   focusFirstRowActionSlot,
 } from "../list/ThreadRowActionsCustomize.js";
 import {
+  useGtdRowContextVisible,
   GtdMachineGlobe,
   GtdPullRequestNumber,
   GtdWakeTime,
@@ -466,8 +467,10 @@ function ThreadRowComponent({
   const selectionHidesActive = useIsSelectionHidingActiveRow(isActive);
   const multiSelection = useMultiSelectionContaining(thread.id);
   const selectionMenu = useThreadSelectionMenu(multiSelection);
+  const showContext = useGtdRowContextVisible();
   const rowMetadataEnabled = experimental_useExperiment(THREAD_ROW_METADATA_EXPERIMENT);
-  const showRowMetadata = useAtomValue(sidebarShowRowMetadataAtom) && rowMetadataEnabled;
+  const metadataPreference = useAtomValue(sidebarShowRowMetadataAtom);
+  const showRowMetadata = showContext && metadataPreference && rowMetadataEnabled;
   const shortcut = useSidebarThreadShortcut(thread.id);
   const pluginThreadRowStatus = useSidebarThreadRowStatus(thread.id);
   const { hasUnsubmittedDraft: hasComposerDraft } = useSidebarThreadDraft(thread.id);
@@ -753,7 +756,7 @@ function ThreadRowComponent({
               (crossProjectLabel === null || isEditing) && "flex-1",
             )}
           >
-            <GtdMachineGlobe host={thread.host} />
+            {showContext ? <GtdMachineGlobe host={thread.host} /> : null}
             {isEditing ? (
               <span className="pointer-events-auto relative z-10 min-w-0 flex-1 overflow-visible">
                 {editor}
@@ -773,7 +776,7 @@ function ThreadRowComponent({
               </span>
             )}
           </span>
-          {crossProjectLabel !== null ? (
+          {showContext && crossProjectLabel !== null ? (
             <Tooltip>
               <TooltipTrigger asChild>
                 <span
@@ -822,8 +825,8 @@ function ThreadRowComponent({
             "flex shrink-0 items-center gap-1.5 empty:hidden",
           )}
         >
-          <GtdWakeTime thread={thread} />
-          {showRowMetadata ? null : <GtdPullRequestNumber thread={thread} />}
+          {showContext ? <GtdWakeTime thread={thread} /> : null}
+          {!showContext || showRowMetadata ? null : <GtdPullRequestNumber thread={thread} />}
         </span>
         {thread.archivedAt !== null ? (
           <span className="relative flex items-center [@media(hover:none)]:hidden">
@@ -855,7 +858,7 @@ function ThreadRowComponent({
                   "absolute inset-0 flex items-center justify-center",
                 )}
               >
-                {miniMap ? (
+                {!showContext ? null : miniMap ? (
                   <span
                     data-sidebar-thread-trailing-indicator=""
                     className={cn(SIDEBAR_ROW_GLYPH_SLOT_CLASS, SIDEBAR_STATUS_GLYPH_BOX_CLASS)}

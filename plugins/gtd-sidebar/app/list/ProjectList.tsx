@@ -104,7 +104,7 @@ import {
   type GtdListActions,
 } from "../gtd/gtd-actions.js";
 import { GtdFilterProvider } from "../gtd/GtdFilters.js";
-import { GtdRowExtrasProvider } from "../gtd/row-extras.js";
+import { GtdShelfContext, GtdRowExtrasProvider } from "../gtd/row-extras.js";
 import { useSettle } from "../gtd/useSettle.js";
 import { useUnsettle } from "../../hooks/use-settled-threads.js";
 import { snoozeUntilTomorrow } from "../../lib/lifecycle.js";
@@ -521,11 +521,7 @@ function ShelfBody({
   );
 
   return (
-    <ReorderableSidebarSectionOrderList
-      order={order}
-      threadDnd={threadDnd}
-      className="space-y-1 max-md:pointer-coarse:space-y-2"
-    >
+    <ReorderableSidebarSectionOrderList order={order} threadDnd={threadDnd} className="space-y-0.5">
       {(sectionId, consumeClickSuppression) => {
         if (flat) {
           return (
@@ -1165,7 +1161,7 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
               ) : null}
             </>
           ) : (
-            <div className="space-y-4 max-md:pointer-coarse:space-y-8">
+            <div>
               {hasPinned ? (
                 <PinnedShelf
                   {...renderState}
@@ -1188,35 +1184,36 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
                 const { shelf, threads } = items.view;
                 const label = SHELF_LABELS[shelf];
                 return (
-                  <TopLevelSidebarSection
-                    key={shelf}
-                    sectionId={`shelf:${shelf}`}
-                    label={label}
-                    actions={renderMenu(shelf, label, () => createThread({}), SHELF_HEADER_MENU)}
-                    actionsOpen={isMenuOpen(shelf)}
-                    actionsMobileAlways
-                    collapsedActivity={getCollapsedChildActivity(threads)}
-                    collapsedThreads={threads}
-                    collapseControl={{
-                      isCollapsed: isShelfFolded(shelfFolds, shelf),
-                      onToggleCollapsed: () => toggleShelf(shelf),
-                    }}
-                  >
-                    <ShelfBody
-                      {...renderState}
-                      items={items}
-                      projectsById={projectsById}
-                      hostNames={hostNames}
-                      groupFolds={groupFolds}
-                      onToggleGroup={toggleGroup}
-                      onCreateThread={createThread}
-                      onReorderGroups={handleReorderGroups}
-                      onMoveProject={handleMoveProject}
-                      canReorderProject={canReorderProject}
-                      renderMenu={renderMenu}
-                      isMenuOpen={isMenuOpen}
-                    />
-                  </TopLevelSidebarSection>
+                  <GtdShelfContext.Provider key={shelf} value={shelf}>
+                    <TopLevelSidebarSection
+                      sectionId={`shelf:${shelf}`}
+                      label={label}
+                      actions={renderMenu(shelf, label, () => createThread({}), SHELF_HEADER_MENU)}
+                      actionsOpen={isMenuOpen(shelf)}
+                      actionsMobileAlways
+                      collapsedActivity={getCollapsedChildActivity(threads)}
+                      collapsedThreads={threads}
+                      collapseControl={{
+                        isCollapsed: isShelfFolded(shelfFolds, shelf),
+                        onToggleCollapsed: () => toggleShelf(shelf),
+                      }}
+                    >
+                      <ShelfBody
+                        {...renderState}
+                        items={items}
+                        projectsById={projectsById}
+                        hostNames={hostNames}
+                        groupFolds={groupFolds}
+                        onToggleGroup={toggleGroup}
+                        onCreateThread={createThread}
+                        onReorderGroups={handleReorderGroups}
+                        onMoveProject={handleMoveProject}
+                        canReorderProject={canReorderProject}
+                        renderMenu={renderMenu}
+                        isMenuOpen={isMenuOpen}
+                      />
+                    </TopLevelSidebarSection>
+                  </GtdShelfContext.Provider>
                 );
               })}
             </div>

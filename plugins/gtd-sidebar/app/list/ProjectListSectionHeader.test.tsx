@@ -13,6 +13,8 @@ import { installTestPluginRuntime, renderSlot } from "@get-bb/plugin-sdk/testing
 import type { SectionThreadDndState } from "../dnd/useSectionThreadDnd.js";
 import { makeSidebarThread } from "../model/fixtures.js";
 
+import { GtdShelfContext } from "../gtd/row-extras.js";
+
 installTestPluginRuntime();
 const { TopLevelSidebarSection } = await import("./TopLevelSidebarSection.js");
 const { SidebarControlButton } = await import("../rows/SidebarRowControls.js");
@@ -307,4 +309,39 @@ describe("TopLevelSidebarSection", () => {
     expect(document.querySelector("[data-thread-status-glyph]")).toBeNull();
     expect(screen.getByText("Draft thread")).not.toBeNull();
   });
+});
+
+describe("shelf context presentation", () => {
+  it.each(["settled", "nextAction"] as const)(
+    "%s owns folder counts and status without losing actions",
+    (shelf) => {
+      const { container } = renderTree(
+        <GtdShelfContext.Provider value={shelf}>
+          <TopLevelSidebarSection
+            label="Project"
+            tier="project"
+            foldCount={{ attention: 2, families: 3 }}
+            collapsedActivity={{
+              ...NO_COLLAPSED_CHILD_ACTIVITY,
+              working: true,
+              runtimeWorking: true,
+            }}
+            collapseControl={{ isCollapsed: true, onToggleCollapsed: vi.fn() }}
+            actions={<button type="button">New thread</button>}
+          >
+            <div>Thread</div>
+          </TopLevelSidebarSection>
+        </GtdShelfContext.Provider>,
+      );
+      expect(container.querySelector("[data-gtd-fold-count]") !== null).toBe(shelf !== "settled");
+      expect(container.querySelector("[data-sidebar-collapsed-activity-edge]") !== null).toBe(
+        shelf !== "settled",
+      );
+      expect(screen.getByRole("button", { name: "New thread" })).not.toBeNull();
+      if (shelf === "settled")
+        expect(
+          screen.getByRole("button", { name: /Expand Project/ }).getAttribute("aria-label"),
+        ).not.toContain("3");
+    },
+  );
 });

@@ -149,3 +149,34 @@
   margin-left: 4px;
   color: var(--sidebar-accent-foreground);
 }
+
+/* Pre-rewrite ShelfHeader: 8px inset, 8px above and 2px below. */
+.gtd-shelf-header {
+  padding: 8px 10px 2px 8px;
+  gap: 8px;
+}
+.gtd-shelf-header > span:first-child {
+  flex: 0 1 auto;
+}
+/* Align the folder's leading edge with the shelf label's 8px inset. */
+.gtd-folder-glyph {
+  transform: translateX(2px);
+}
+@media (max-width: 767px) and (pointer: coarse) {
+  [data-bb-plugin="gtd-sidebar"] [data-sidebar-sticky-stack] {
+    --bb-sidebar-sticky-label-height: 40px;
+  }
+  .gtd-folder-glyph {
+    transform: translateX(4px);
+  }
+  .gtd-shelf-header {
+    min-height: 40px;
+  }
+}
+
+/* Keep in-progress rotation quiet; preserve the host's reduced-motion stop. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-bb-plugin="gtd-sidebar"] [data-icon="Loading"].animate-spin {
+    animation-duration: 2s;
+  }
+}
