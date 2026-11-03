@@ -24,6 +24,9 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
     private var notchLayout: NotchLayoutState?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        model.desktop.rememberContextApplication(NSWorkspace.shared.frontmostApplication)
+        NSWorkspace.shared.notificationCenter.addObserver(self, selector: #selector(contextApplicationActivated(_:)), name: NSWorkspace.didActivateApplicationNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(contextPermissionsChanged), name: NSApplication.didBecomeActiveNotification, object: nil)
         NSApp.setActivationPolicy(.accessory)
         // Secure bootstrap: the key itself is never passed in argv or logged.
         if let flag = CommandLine.arguments.firstIndex(of: "--import-elevenlabs-key-file"), flag + 1 < CommandLine.arguments.count {
@@ -81,6 +84,7 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         statusItem = item
         do {
             try model.desktop.registerShortcut(action: { [weak self] in self?.toggle() }, onVoicePress: { [weak self] in
+                self?.model.desktop.rememberContextApplication(NSWorkspace.shared.frontmostApplication)
                 self?.hide(); Task { await self?.model.beginRecording(autoSend: true) }
             }, onVoiceRelease: { [weak self] in Task { await self?.model.endRecording() } })
         } catch { model.error = error.localizedDescription }
@@ -96,7 +100,10 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
     }
     @objc func toggle() { if panel?.isVisible == true { hide() } else { show() } }
     @objc func show() {
-        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApplication = front }
+        if let front = NSWorkspace.shared.frontmostApplication, front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            previousApplication = front
+            model.desktop.rememberContextApplication(front)
+        }
         model.panelVisible = true
         positionWindows()
         notch?.orderFrontRegardless()
@@ -110,6 +117,10 @@ final class CompanionDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate
         positionWindows()
         notch?.orderFrontRegardless()
     }
+    @objc private func contextApplicationActivated(_ notification: Notification) {
+        model.desktop.rememberContextApplication(notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)
+    }
+    @objc private func contextPermissionsChanged() { model.refreshContextPermissions() }
     @objc private func screenChanged() { positionWindows() }
     func windowDidEndLiveResize(_ notification: Notification) { positionWindows() }
     private func positionWindows() {
@@ -350,6 +361,11 @@ struct CompanionView: View {
     }
     private var composer: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if model.offersInitialContext {
+                Toggle("Include active window text and a screenshot of its display", isOn: Binding(get: { !model.skipInitialContext }, set: { model.skipInitialContext = !$0 }))
+                    .font(.caption).disabled(model.sending)
+            }
+            if let notice = model.contextNotice { Text(notice).font(.caption).foregroundStyle(.secondary) }
             if (model.recording || model.requestingMicrophone || model.transcribing), !model.voice.preview.isEmpty {
                 Text(model.voice.preview).font(.callout).foregroundStyle(.secondary).lineLimit(4).textSelection(.enabled)
             }
@@ -358,7 +374,7 @@ struct CompanionView: View {
                     Image(nsImage: capture.image).resizable().scaledToFit().frame(width: 80, height: 50).clipShape(RoundedRectangle(cornerRadius: 5))
                     VStack(alignment: .leading) { Text("Screen attached").font(.caption); Text("Saved in your BB conversation when sent.").font(.system(size: 10)).foregroundStyle(.secondary) }
                     Spacer()
-                    iconButton("Remove screenshot", "xmark") { model.clearCapture() }
+                    iconButton("Remove screenshot", "xmark") { model.clearCapture() }.disabled(model.sending)
                 }.padding(8).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
             }
             VStack(spacing: 12) {
@@ -403,6 +419,15 @@ struct CompanionView: View {
                         ForEach(model.hosts, id: \.id) { host in Text(host.name).tag(host.id) }
                     }
                     Divider()
+                    Text("Initial screen context").font(.headline)
+                    Toggle("Share active window text and its display in new conversations", isOn: Binding(get: { model.preferences.includeInitialContext ?? true }, set: { model.preferences.includeInitialContext = $0 }))
+                    Text("A screenshot of the active window’s entire display (including other visible windows) and readable Accessibility context are sent to and saved in the BB thread with the first question. You can skip this in the composer.").font(.caption).foregroundStyle(.secondary)
+                    HStack {
+                        Button(model.accessibilityAllowed ? "Accessibility enabled" : "Enable Accessibility") { model.requestAccessibility() }
+                        Button(model.screenCaptureAllowed ? "Screen Recording enabled" : "Enable Screen Recording") { model.requestScreenCapture() }
+                    }
+                    Text("If permissions still show as missing after rebuilding, remove and re-add the updated Clicky app in System Settings → Privacy & Security.").font(.caption).foregroundStyle(.secondary)
+                    Divider()
                     Text("ElevenLabs realtime voice").font(.headline)
                     SecureField("ElevenLabs API key", text: $voiceKeyDraft).textFieldStyle(.roundedBorder)
                     HStack {
@@ -416,7 +441,7 @@ struct CompanionView: View {
                     Toggle("Read typed replies aloud", isOn: $model.preferences.speakReplies)
                     Text("Voice questions get spoken replies. Hold to interrupt speech; release to send. Each hold is limited to 30 seconds. Only the beginning of long replies is read aloud.").font(.caption).foregroundStyle(.secondary)
                 }.padding(18).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
-                Text("⌘ ⇧ Space opens Clicky. Hold ⌃ ⌥ Space to talk; release to send. The chat microphone records a draft. Screen capture is always your choice. BB retains messages and attachments. ElevenLabs receives microphone audio and the text spoken aloud. Your API key stays in macOS Keychain.")
+                Text("⌘ ⇧ Space opens Clicky. Hold ⌃ ⌥ Space to talk; release to send. The chat microphone records a draft. New conversations can include a snapshot of your active window. Follow-ups use the Capture screen button for a fresh image. BB retains messages and attachments. ElevenLabs receives microphone audio and the text spoken aloud. Your API key stays in macOS Keychain.")
                     .font(.caption).foregroundStyle(.secondary).lineSpacing(4)
                 Text("For a remote BB connection, enter its authenticated local proxy URL. If BB’s host daemon restarts, that URL may change; update it here and check the connection again.").font(.caption).foregroundStyle(.secondary)
                 Text("Agents use BB’s approval flow. When a task needs permission, open its conversation in BB to continue.").font(.caption).foregroundStyle(.secondary)

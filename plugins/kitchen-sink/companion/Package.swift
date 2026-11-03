@@ -9,6 +9,7 @@ let package = Package(
         .target(name: "ClickyCore"),
         .executableTarget(name: "ClickyMac", dependencies: ["ClickyCore"],
             swiftSettings: [.defaultIsolation(MainActor.self), .enableUpcomingFeature("NonisolatedNonsendingByDefault")]),
-        .testTarget(name: "ClickyCoreTests", dependencies: ["ClickyCore"])
+        .testTarget(name: "ClickyCoreTests", dependencies: ["ClickyCore"]),
+        .testTarget(name: "ClickyMacTests", dependencies: ["ClickyMac", "ClickyCore"], swiftSettings: [.defaultIsolation(MainActor.self)])
     ]
 )

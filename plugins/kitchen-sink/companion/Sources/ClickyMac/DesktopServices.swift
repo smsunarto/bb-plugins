@@ -3,7 +3,7 @@ import Carbon
 import ClickyCore
 import ScreenCaptureKit
 
-struct CapturedScreen {
+@MainActor struct CapturedScreen {
     let url: URL
     let image: NSImage
     let displayID: CGDirectDisplayID
@@ -35,6 +35,7 @@ enum DesktopServiceError: LocalizedError {
 /// Owns native resources; captures never leave the Mac through this service.
 @MainActor
 final class DesktopServices {
+    private(set) var contextApplication: ContextApplication?
     private var overlay: NSPanel?
     private var overlayExpiry: Task<Void, Never>?
     private var hotKeys: [EventHotKeyRef] = []
@@ -47,16 +48,23 @@ final class DesktopServices {
     private let temporaryDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("bb-clicky-\(UUID().uuidString)", isDirectory: true)
 
-    /// Captures the display under the pointer once; callers preview this exact image before sending.
-    func captureScreen() async throws -> CapturedScreen {
+    func rememberContextApplication(_ app: NSRunningApplication?) {
+        guard let app, app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+        contextApplication = ContextApplication(pid: app.processIdentifier, name: app.localizedName ?? "Unknown app", bundleID: app.bundleIdentifier,
+            omitValues: IsSecureEventInputEnabled())
+    }
+
+    /// Manual capture permits the OS prompt; automatic initial context never prompts.
+    func captureScreen(displayID requestedDisplay: CGDirectDisplayID? = nil, requestPermission: Bool = true) async throws -> CapturedScreen {
         clearPoints()
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main,
+        guard let screen = requestedDisplay.flatMap({ id in NSScreen.screens.first { ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == id } })
+                ?? (requestedDisplay == nil ? (NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main) : nil),
               let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
             throw DesktopServiceError.displayUnavailable
         }
         let displayID = number.uint32Value
         let frame = screen.frame
-        guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
+        guard CGPreflightScreenCaptureAccess() || (requestPermission && CGRequestScreenCaptureAccess()) else {
             throw DesktopServiceError.screenCaptureDenied
         }
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)

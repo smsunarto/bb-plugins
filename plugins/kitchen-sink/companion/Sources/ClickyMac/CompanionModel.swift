@@ -47,6 +47,7 @@ struct Preferences: Codable {
     var hostID = ""
     var speakReplies = false
     var elevenLabsVoiceID: String? = nil
+    var includeInitialContext: Bool? = nil
 }
 
 struct SavedCompanion: Codable {
@@ -91,9 +92,16 @@ struct SavedCompanion: Codable {
     private var reopenableVisual: VisualDocument?
 
     private var connectionGeneration = UUID()
+    private var selectionGeneration = UUID()
     var transcribing = false
     var capture: CapturedScreen?
     var capturing = false
+    var skipInitialContext = false
+    var contextNotice: String?
+    var accessibilityAllowed = false
+    var screenCaptureAllowed = false
+    @ObservationIgnored var contextCapture: ((CapturedScreen?) async -> InitialDesktopContext)?
+    @ObservationIgnored var instructionsLoader: (() throws -> (String, String))?
     let desktop = DesktopServices()
     let voice = ElevenLabsVoice()
     var voiceKeyStatus = "Key not checked"
@@ -118,8 +126,8 @@ struct SavedCompanion: Codable {
     var selected: Conversation? { visibleSessions.first { $0.id == selectedID } }
     var canSend: Bool { connected && !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !(selected?.phase.busy ?? false) && !recording && !requestingMicrophone && !transcribing && !capturing }
 
-    init() {
-        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ClickyBB")
+    init(storageRoot: URL? = nil) {
+        let root = storageRoot ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("ClickyBB")
         saveURL = root.appendingPathComponent("sessions.json")
         if let data = try? Data(contentsOf: saveURL), let saved = try? JSONDecoder().decode(SavedCompanion.self, from: data) {
             preferences = saved.preferences
@@ -132,6 +140,7 @@ struct SavedCompanion: Codable {
             selectedID = sessions.first?.id
             dismissedVisualRequestIDs = Set(sessions.compactMap { $0.visualRequest?.id })
         }
+        refreshContextPermissions()
         settingsVisible = preferences.hostID.isEmpty
         if sessions.isEmpty { newConversation() }
         loadSavedVisualForSelection()
@@ -190,7 +199,9 @@ struct SavedCompanion: Codable {
     }
 
     func newConversation(job: Bool = false, preservingDraft: Bool = false) {
+        selectionGeneration = UUID()
         cancelVoiceInput()
+        skipInitialContext = false; contextNotice = nil
         dismissVisuals()
         stopSpeaking(); desktop.clearPoints()
         if !preservingDraft { clearCapture(); draft = "" }
@@ -201,7 +212,9 @@ struct SavedCompanion: Codable {
     }
 
     func select(_ id: String) {
+        selectionGeneration = UUID()
         cancelVoiceInput()
+        skipInitialContext = false; contextNotice = nil
         dismissVisuals()
         selectedID = id; draft = ""; clearCapture(); desktop.clearPoints(); stopSpeaking()
         if let requestID = selected?.visualRequest?.id { dismissedVisualRequestIDs.insert(requestID) }
@@ -223,15 +236,36 @@ struct SavedCompanion: Codable {
         if selected == nil { newConversation(preservingDraft: true) }
         guard let id = selectedID, let index = sessions.firstIndex(where: { $0.id == id }) else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let display = capture.map(VisualDisplayContext.init(capture:)) ?? VisualDisplayContext.current
-        let sentCapture = capture
         let generation = connectionGeneration
+        let selection = selectionGeneration
         let transport = client
+        let manualCapture = capture
+        var sentCapture = manualCapture
+        var automaticCapture: CapturedScreen?
+        var contextJSON: String?
+        var contextSummary: String?
+        defer { if let automaticCapture { desktop.discardCapture(automaticCapture) } }
+        if DesktopContextPolicy.include(threadID: sessions[index].threadID, enabled: preferences.includeInitialContext ?? true, skip: skipInitialContext) {
+            capturing = true
+            let snapshot: InitialDesktopContext
+            if let contextCapture { snapshot = await contextCapture(manualCapture) }
+            else { snapshot = await desktop.initialContext(manual: manualCapture) }
+            capturing = false
+            if manualCapture == nil { automaticCapture = snapshot.capture }
+            guard generation == connectionGeneration, selection == selectionGeneration, selectedID == id, !Task.isCancelled,
+                  let current = sessions.first(where: { $0.id == id }), !current.phase.busy, current.threadID == nil else { return }
+            sentCapture = snapshot.capture
+            contextJSON = try? snapshot.context.promptJSON()
+            contextSummary = snapshot.context.statusDescription
+            contextNotice = "Preparing initial context. " + (contextSummary ?? "")
+            refreshContextPermissions()
+        }
+        let display = sentCapture.map(VisualDisplayContext.init(capture:)) ?? VisualDisplayContext.current
         // Reconcile all existing events before starting a new turn. A previous final answer is never reused.
         do {
-            if let threadID = sessions[index].threadID { try await readEvents(id: id, threadID: threadID, transport: transport) }
+            if let threadID = sessions.first(where: { $0.id == id })?.threadID { try await readEvents(id: id, threadID: threadID, transport: transport) }
         } catch { self.error = error.localizedDescription; return }
-        guard generation == connectionGeneration, selectedID == id else { return }
+        guard generation == connectionGeneration, selection == selectionGeneration, selectedID == id else { return }
         guard let current = sessions.firstIndex(where: { $0.id == id }), !sessions[current].phase.busy else { return }
         dismissVisuals()
         reopenableVisual = nil
@@ -255,6 +289,7 @@ struct SavedCompanion: Codable {
             sessions[current].remoteTitle = "Clicky · \(String(text.prefix(38))) [\(id)]"
         }
         draft = ""; capture = nil; error = nil
+        defer { if automaticCapture == nil, let sentCapture { desktop.discardCapture(sentCapture) } }
         // This durable record is also the recovery key if spawn succeeds but its response is lost.
         save()
         turnCaptures.removeValue(forKey: id)
@@ -262,16 +297,25 @@ struct SavedCompanion: Codable {
         let record = sessions[current]
         let prompt: String
         do {
-            guard let url = Bundle.main.url(forResource: "companion", withExtension: "md") else { throw CocoaError(.fileNoSuchFile) }
-            var instructions = try String(contentsOf: url, encoding: .utf8)
+            let base: String
+            let visuals: String
+            if let instructionsLoader { (base, visuals) = try instructionsLoader() }
+            else {
+                guard let url = Bundle.main.url(forResource: "companion", withExtension: "md"),
+                      let visualURL = Bundle.main.url(forResource: "companion-visuals", withExtension: "md") else { throw CocoaError(.fileNoSuchFile) }
+                base = try String(contentsOf: url, encoding: .utf8)
+                visuals = try String(contentsOf: visualURL, encoding: .utf8)
+            }
+            var instructions = base
             if let request = record.visualRequest {
-                guard let visualURL = Bundle.main.url(forResource: "companion-visuals", withExtension: "md") else { throw CocoaError(.fileNoSuchFile) }
-                instructions += "\n\n" + (try String(contentsOf: visualURL, encoding: .utf8))
+                instructions += "\n\n" + visuals
                 instructions += "\nClicky request: \(request.id)"
             }
-            prompt = "\(instructions)\n\nMode: \(record.isJob ? "Agent job" : "Conversation").\nScreen attached to this message: \(sentCapture == nil ? "no" : "yes").\n\nUser request:\n\(text)"
+            prompt = DesktopContextPolicy.prompt(instructions: instructions, mode: record.isJob ? "Agent job" : "Conversation", screenshot: sentCapture != nil, contextJSON: contextJSON, question: text)
         } catch {
-            update(id) { $0.phase = .failed }; self.error = "Companion instructions are missing. Rebuild the app bundle."; save(); return
+            update(id) { $0.phase = .failed }; self.error = "Companion instructions are missing. Rebuild the app bundle."
+            if let contextSummary { contextNotice = "Initial context was not sent. " + contextSummary }
+            save(); return
         }
         do {
             if let threadID = record.threadID {
@@ -281,19 +325,22 @@ struct SavedCompanion: Codable {
                 update(id) { $0.threadID = thread.id }
             }
             update(id) { $0.phase = .running }
+            if let contextSummary { contextNotice = "Initial context sent and saved in the BB thread. " + contextSummary }
             if let sentCapture { turnCaptures[id] = sentCapture }
         } catch BBClientError.invalidConfiguration(let reason) {
             update(id) { $0.phase = .failed }
             draft = text
             self.error = reason
+            if let contextSummary { contextNotice = "Initial context was not sent. " + contextSummary }
         } catch BBClientError.commandFailed(let reason, mayHaveSucceeded: false) {
             update(id) { $0.phase = .failed; $0.entries.removeAll { $0.id.hasPrefix("pending-") && $0.text == text } }
             draft = text; self.error = reason
+            if let contextSummary { contextNotice = "Initial context was not sent. " + contextSummary }
         } catch {
             update(id) { $0.phase = .deliveryUnknown }
             self.error = "Delivery could not be confirmed. Refresh to recover the BB thread; do not resend automatically. \(error.localizedDescription)"
+            if let contextSummary { contextNotice = "Initial context delivery is unconfirmed. " + contextSummary }
         }
-        if let sentCapture { desktop.discardCapture(sentCapture) }
         save(); sending = false; startMonitoring(restart: true); await refresh()
     }
 
@@ -612,6 +659,16 @@ struct SavedCompanion: Codable {
     func openInBB() async {
         guard let id = selected?.threadID else { return }
         do { try await client.open(threadID: id) } catch { self.error = error.localizedDescription }
+    }
+
+    func refreshContextPermissions() {
+        accessibilityAllowed = desktop.accessibilityAllowed
+        screenCaptureAllowed = desktop.screenCaptureAllowed
+    }
+    func requestAccessibility() { desktop.requestAccessibility(); refreshContextPermissions() }
+    func requestScreenCapture() { desktop.requestScreenCapture(); refreshContextPermissions() }
+    var offersInitialContext: Bool {
+        selected?.threadID == nil && (preferences.includeInitialContext ?? true)
     }
 
     func takeCapture() async {
