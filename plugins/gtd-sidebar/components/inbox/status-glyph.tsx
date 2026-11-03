@@ -7,6 +7,8 @@ import { cn } from "../../lib/utils";
  * red circle-x for a failure (a turn or a queued send), the circle-question
  * for a raised hand, the clock for a message waiting in the queue, the
  * spinner for live work, and a dot for a finished thread you have not read.
+ * There is no draft glyph: bb never sends a plugin's list the `draft` or
+ * `working-draft` indicator, since a composer draft is per-client state.
  *
  * The two lists sit in the same window, and a user who switches between them
  * should not have to learn a second vocabulary. SDK 0.6.75 also ships bb's
@@ -39,8 +41,6 @@ export function hasStatusGlyph(indicator: PluginSidebarThreadIndicator): boolean
     case "background-command":
     case "plan-mode":
     case "goal":
-    case "draft":
-    case "working-draft":
       return true;
     default:
       return false;
@@ -93,9 +93,6 @@ export function StatusGlyph({
       return <ShineIcon name="ListTodo" label={aria} className={shared} />;
     case "goal":
       return <ShineIcon name="Target" label={aria} className={shared} />;
-    case "draft":
-    case "working-draft":
-      return <Icon name="Edit" aria-label={aria} className={cn(shared, "text-muted-foreground")} />;
     case "unread-success":
       // The notification dot, in a box the size of every other glyph, the way
       // bb centers its own trailing indicators. Right-aligned on its own, a

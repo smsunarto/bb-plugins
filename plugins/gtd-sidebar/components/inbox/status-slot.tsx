@@ -17,7 +17,7 @@ export const STATUS_SLOT_CLASS = "flex w-7 shrink-0 items-center justify-end";
 /**
  * The box every trailing glyph sits in, whatever its artwork measures.
  *
- * The status glyph, the provider glyph and a shelf's chevron all end a line at
+ * The status glyph and the provider glyph end a line at
  * the same inset, but they are drawn at different sizes. A shared box centres
  * each one on the same vertical axis, so right-aligning the boxes lines the
  * icons up instead of leaving them one or two pixels apart.

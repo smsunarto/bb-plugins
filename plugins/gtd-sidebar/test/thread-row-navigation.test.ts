@@ -2085,23 +2085,20 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ["Waiting", "Snoozed", "Settled"].map((label) => {
           const shelf = within(view.slot.getByRole("region", { name: label }));
           const button = within(shelf.getByRole("heading", { level: 2 })).getByRole("button");
-          const chevron = button.querySelector('[data-icon="ChevronDown"]');
-          return [
-            button.getAttribute("aria-expanded"),
-            chevron?.getAttribute("class")?.includes("-rotate-90"),
-          ];
+          // A shelf header draws no icon; its folded count marks the fold.
+          return [button.getAttribute("aria-expanded"), button.querySelector("svg")];
         });
       assert.deepEqual(toggles(), [
-        ["true", false],
-        ["false", true],
-        ["false", true],
+        ["true", null],
+        ["false", null],
+        ["false", null],
       ]);
       fireEvent.click(view.slot.getByRole("button", { name: "Waiting" }));
       fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
       assert.deepEqual(toggles(), [
-        ["false", true],
-        ["true", false],
-        ["false", true],
+        ["false", null],
+        ["true", null],
+        ["false", null],
       ]);
     });
   });

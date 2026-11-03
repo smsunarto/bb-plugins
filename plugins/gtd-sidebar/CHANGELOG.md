@@ -8,6 +8,8 @@
   0.48.1. Family folds move to this plugin's `expandedThreads` preference, so they
   follow every open window but no longer bb's built-in Thread list. Dropping a row
   onto another re-parents it through bb's SDK, with the same checks as before.
+- Shelf headers drop their chevron; the folded count marks a folded shelf, and the
+  divider runs to the row's edge.
 
 - Every thread row is one line. The two-line card is gone, along with the
   **Compact thread rows** and **Show agent icons** settings it needed. Project,
