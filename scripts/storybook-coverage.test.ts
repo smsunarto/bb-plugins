@@ -25,6 +25,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
   },
   devin: { cloud: ["../src/app/app"], branding: ["DevinIcon"] },
   dotfiles: { editor: ["WorkingFileEditor", "HostPicker"], screens: ["DotfilesPage"] },
+  "gcp-machine": { wake: ["createWakeIndicator"] },
   "gh-stack": { files: ["ChangedFileTree"], stack: ["../app"] },
   gitbutler: {
     files: ["FileList", "WorkspaceSkeleton", "Notice"],
