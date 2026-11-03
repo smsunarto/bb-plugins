@@ -1,12 +1,8 @@
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
-import { activeSectionFor } from "./inbox.ts";
+import { activeSectionFor, effectiveParentThreadId } from "./inbox.ts";
 
 export type InboxLifecycle = "active" | "snoozed" | "settled";
-/**
- * The shelves GTD draws below bb's own Pinned section. Pinned threads and
- * their descendants never reach this model: bb's Pinned list owns them.
- */
-export type InboxShelf = "nextAction" | "waiting" | "slopcop" | "snoozed" | "settled";
+export type InboxShelf = "pinned" | "nextAction" | "waiting" | "slopcop" | "snoozed" | "settled";
 
 /** The plugin id bb stamps on threads SlopCop dispatches for its GitHub rules. */
 const SLOPCOP_PLUGIN_ID = "slopcop";
@@ -18,7 +14,29 @@ export interface InboxThreadNode {
   shelf: InboxShelf;
   /** When this thread last arrived on the shelf it sits on. Roots sort by it. */
   shelfEnteredAt: number;
+  /**
+   * The family's place in bb's pinned order: the pin `sortKey` of its
+   * shallowest pinned member, matching the root bb's own pinned sidebar
+   * would list. Null when no member is pinned or the keys have not loaded.
+   */
+  pinOrderKey: string | null;
   statusThread: PluginSidebarThread;
+  hasUnread: boolean;
+  matchesSearch: boolean;
+  matchesTitle: boolean;
+}
+
+export interface VisibleInboxRow {
+  node: InboxThreadNode;
+  depth: number;
+  parentId: string | null;
+  parentProjectId: string | null;
+  parentTitle: string | null;
+  expanded: boolean;
+  guides: string;
+  lastChild: boolean;
+  statusThread: PluginSidebarThread;
+  isUnread: boolean;
 }
 
 function statusPriority(thread: PluginSidebarThread): number {
@@ -34,6 +52,7 @@ function statusPriority(thread: PluginSidebarThread): number {
 
 function ownShelf(thread: PluginSidebarThread, lifecycle: InboxLifecycle): InboxShelf {
   if (lifecycle !== "active") return lifecycle;
+  if (thread.isPinned) return "pinned";
   return activeSectionFor(thread) === "next-action" ? "nextAction" : "waiting";
 }
 
@@ -110,7 +129,9 @@ function shelfEnteredAt(
       : shelf === "settled"
         ? thread.archivedAt
         : null;
-  const seed = exact ?? (shelf === "nextAction" ? thread.latestAttentionAt : thread.updatedAt);
+  const seed =
+    exact ??
+    (shelf === "nextAction" || shelf === "pinned" ? thread.latestAttentionAt : thread.updatedAt);
   // Track parked shelves too, so leaving one restamps the next arrival.
   const tracked = sort.arrivals.enteredAt(thread.id, shelf, seed, sort.now);
   return exact ?? tracked;
@@ -119,26 +140,31 @@ function shelfEnteredAt(
 function createInboxNode(
   thread: PluginSidebarThread,
   lifecycleFor: (thread: PluginSidebarThread) => InboxLifecycle,
+  normalizedQuery: string,
   sort: ResolvedSort,
 ): InboxThreadNode {
   const lifecycle = thread.isArchived ? "settled" : lifecycleFor(thread);
   const shelf = ownShelf(thread, lifecycle);
+  const matchesTitle = thread.displayTitle.toLowerCase().includes(normalizedQuery);
   return {
     thread,
     lifecycle,
     children: [],
     shelf,
     shelfEnteredAt: shelfEnteredAt(thread, shelf, sort),
+    // bb's own pinned order, shared with the built-in sidebar's drag order.
+    pinOrderKey: thread.isPinned ? thread.pinSortKey : null,
     statusThread: thread,
+    hasUnread: thread.isUnread,
+    matchesSearch: matchesTitle,
+    matchesTitle,
   };
 }
 
 function linkedParentIds(nodes: ReadonlyMap<string, InboxThreadNode>): Map<string, string> {
   const parents = new Map<string, string>();
   for (const node of nodes.values()) {
-    // bb's own parent link, forks included: the Thread list nests a fork
-    // under its source, so shelving must keep the same family.
-    const parentId = node.thread.parentThreadId;
+    const parentId = effectiveParentThreadId(node.thread);
     if (
       parentId &&
       parentId !== node.thread.id &&
@@ -178,9 +204,18 @@ function aggregateFamilies(roots: readonly InboxThreadNode[]): void {
   for (let index = preorder.length - 1; index >= 0; index--) {
     const node = preorder[index]!;
     for (const child of node.children) {
+      node.matchesSearch ||= child.matchesSearch;
+      node.hasUnread ||= child.hasUnread;
       if (statusPriority(child.statusThread) > statusPriority(node.statusThread))
         node.statusThread = child.statusThread;
     }
+    // A pinned node's own key already decides the family — bb never lists a
+    // thread under a pinned ancestor — so descendants only contribute when
+    // the node itself is unpinned, and then their most prominent key wins.
+    node.pinOrderKey ??= node.children.reduce<string | null>(
+      (best, child) => minPinOrderKey(best, child.pinOrderKey),
+      null,
+    );
     node.shelf = familyShelf(node);
   }
 }
@@ -200,13 +235,23 @@ function rootShelf(node: InboxThreadNode): InboxShelf {
     : node.shelf;
 }
 
+/** The earlier of two pin sort keys; a null loses to any known key. */
+function minPinOrderKey(left: string | null, right: string | null): string | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return left < right ? left : right;
+}
+
 /**
  * A family is one unit of work. Any live descendant keeps the whole family in
  * waiting; only a raised hand somewhere in the family brings it back to the
- * user.
+ * user, and a pinned descendant pins the family.
  */
 function familyShelf(node: InboxThreadNode): InboxShelf {
-  if (node.shelf !== "nextAction" && node.shelf !== "waiting") return node.shelf;
+  if (node.shelf !== "nextAction" && node.shelf !== "waiting") {
+    return node.children.some((child) => child.shelf === "pinned") ? "pinned" : node.shelf;
+  }
+  if (node.children.some((child) => child.shelf === "pinned")) return "pinned";
   const needsUser =
     node.thread.hasPendingInteraction ||
     node.children.some(
@@ -220,17 +265,23 @@ function familyShelf(node: InboxThreadNode): InboxShelf {
 
 function familyComparator() {
   const shelfOrder: Record<InboxShelf, number> = {
-    nextAction: 0,
-    waiting: 1,
-    slopcop: 2,
-    snoozed: 3,
-    settled: 4,
+    pinned: 0,
+    nextAction: 1,
+    waiting: 2,
+    slopcop: 3,
+    snoozed: 4,
+    settled: 5,
   };
   // One comparator for every shelf: the family's shelf, then its place on
-  // it, most recent arrival first, then creation time and id.
+  // it — Pinned follows bb's own pin order, the rest take most recent
+  // arrival first — then creation time and id.
   return (a: InboxThreadNode, b: InboxThreadNode) => {
     const shelfDelta = shelfOrder[a.shelf] - shelfOrder[b.shelf];
     if (shelfDelta !== 0) return shelfDelta;
+    if (a.shelf === "pinned") {
+      const pinDelta = comparePinOrderKeys(a.pinOrderKey, b.pinOrderKey);
+      if (pinDelta !== 0) return pinDelta;
+    }
     return (
       b.shelfEnteredAt - a.shelfEnteredAt ||
       b.thread.createdAt - a.thread.createdAt ||
@@ -239,18 +290,30 @@ function familyComparator() {
   };
 }
 
+/** Known keys first; an unloaded one keeps its arrival place below them. */
+function comparePinOrderKeys(a: string | null, b: string | null): number {
+  if (a === null) return b === null ? 0 : 1;
+  if (b === null) return -1;
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export function buildInboxTree(
   threads: readonly PluginSidebarThread[],
   lifecycleFor: (thread: PluginSidebarThread) => InboxLifecycle,
+  query = "",
   sort: InboxSort = {},
 ): InboxThreadNode[] {
+  const normalizedQuery = query.trim().toLowerCase();
   const resolved: ResolvedSort = {
     arrivals: sort.arrivals ?? createShelfArrivals(),
     snoozedAtFor: sort.snoozedAtFor ?? (() => null),
     now: sort.now ?? Date.now(),
   };
   const nodes = new Map(
-    threads.map((thread) => [thread.id, createInboxNode(thread, lifecycleFor, resolved)]),
+    threads.map((thread) => [
+      thread.id,
+      createInboxNode(thread, lifecycleFor, normalizedQuery, resolved),
+    ]),
   );
   const parents = linkedParentIds(nodes);
   const roots: InboxThreadNode[] = [];
@@ -262,4 +325,111 @@ export function buildInboxTree(
   aggregateFamilies(roots);
   for (const root of roots) root.shelf = rootShelf(root);
   return roots.sort(familyComparator());
+}
+
+export function visibleInboxRows(
+  roots: readonly InboxThreadNode[],
+  collapsed: ReadonlySet<string>,
+  query = "",
+): VisibleInboxRow[] {
+  const searching = query.trim().length > 0;
+  const rows: VisibleInboxRow[] = [];
+  const stack = roots
+    .filter((node) => node.matchesSearch)
+    .map((node) => ({
+      node,
+      depth: 0,
+      parentId: null,
+      parentProjectId: null,
+      parentTitle: null,
+      guides: "",
+      lastChild: false,
+      ancestorMatches: false,
+    }))
+    .reverse() as (Omit<VisibleInboxRow, "expanded" | "statusThread" | "isUnread"> & {
+    ancestorMatches: boolean;
+  })[];
+  while (stack.length) {
+    const row = stack.pop()!;
+    const ancestorMatches = row.ancestorMatches || row.node.matchesTitle;
+    const children = row.node.children.filter((child) => ancestorMatches || child.matchesSearch);
+    const expanded = children.length > 0 && (searching || !collapsed.has(row.node.thread.id));
+    rows.push({
+      ...row,
+      expanded,
+      statusThread: expanded ? row.node.thread : row.node.statusThread,
+      isUnread: expanded ? row.node.thread.isUnread : row.node.hasUnread,
+    });
+    if (!expanded) continue;
+    for (let index = children.length - 1; index >= 0; index--) {
+      stack.push({
+        ancestorMatches,
+        node: children[index]!,
+        depth: row.depth + 1,
+        parentId: row.node.thread.id,
+        parentProjectId: row.node.thread.projectId,
+        parentTitle: row.node.thread.displayTitle,
+        guides: row.depth === 0 ? "" : row.guides + (row.lastChild ? "0" : "1"),
+        lastChild: index === children.length - 1,
+      });
+    }
+  }
+  return rows;
+}
+
+/** Every node in the forest with the id of the node above it, or null at a root. */
+function indexTree(
+  roots: readonly InboxThreadNode[],
+): Map<string, { node: InboxThreadNode; parentId: string | null }> {
+  const index = new Map<string, { node: InboxThreadNode; parentId: string | null }>();
+  const stack = roots.map((node) => ({ node, parentId: null as string | null }));
+  while (stack.length) {
+    const entry = stack.pop()!;
+    index.set(entry.node.thread.id, entry);
+    for (const child of entry.node.children)
+      stack.push({ node: child, parentId: entry.node.thread.id });
+  }
+  return index;
+}
+
+/**
+ * Whether dropping `sourceId` onto `targetId` may nest it there: both rows are
+ * in the forest and the same project, the target is not the source, not its
+ * current parent (a no-op), and not somewhere inside its family (a cycle).
+ */
+export function nestDropAllowed(
+  roots: readonly InboxThreadNode[],
+  sourceId: string,
+  targetId: string,
+): boolean {
+  if (sourceId === targetId) return false;
+  const index = indexTree(roots);
+  const source = index.get(sourceId);
+  const target = index.get(targetId);
+  if (source === undefined || target === undefined) return false;
+  if (source.node.thread.projectId !== target.node.thread.projectId) return false;
+  if (source.parentId === targetId) return false;
+  for (
+    let cursor = target.parentId;
+    cursor !== null;
+    cursor = index.get(cursor)?.parentId ?? null
+  ) {
+    if (cursor === sourceId) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether dropping `sourceId` onto the project header for `projectId` may
+ * lift it to the top level: it belongs to that project and has a parent.
+ */
+export function unnestDropAllowed(
+  roots: readonly InboxThreadNode[],
+  sourceId: string,
+  projectId: string,
+): boolean {
+  const source = indexTree(roots).get(sourceId);
+  return (
+    source !== undefined && source.parentId !== null && source.node.thread.projectId === projectId
+  );
 }

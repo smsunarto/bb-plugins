@@ -1,8 +1,4 @@
-/**
- * The root and its non-archived descendants, following bb's parent links,
- * forks included: the list nests a fork under its source, so a snooze parks
- * the family the list draws.
- */
+/** The root and its non-archived descendants, following bb's parent links. */
 export async function threadFamilyIds(
   rootId: string,
   listChildren: (
@@ -18,7 +14,8 @@ export async function threadFamilyIds(
     for (let offset = 0; ; offset += pageSize) {
       const children = await listChildren(parentId, offset);
       for (const child of children) {
-        if (seen.has(child.id)) continue;
+        // A fork retains its source as a bb link, but is its own inbox family.
+        if (child.originKind === "fork" || seen.has(child.id)) continue;
         seen.add(child.id);
         ids.push(child.id);
       }
@@ -44,7 +41,7 @@ export function rosterFamilyIds(
 ): string[] {
   const children = new Map<string, string[]>();
   for (const thread of threads) {
-    if (thread.parentThreadId === null || thread.isArchived) {
+    if (thread.parentThreadId === null || thread.originKind === "fork" || thread.isArchived) {
       continue;
     }
     const siblings = children.get(thread.parentThreadId);

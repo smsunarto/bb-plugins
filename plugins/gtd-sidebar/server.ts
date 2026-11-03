@@ -54,6 +54,12 @@ export default async function plugin(bb: BbPluginApi) {
       description: "Machine ID whose threads show no machine globe. Empty uses bb's primary host.",
       default: "",
     },
+    groupThreadsByProject: {
+      type: "boolean",
+      label: "Group threads by project",
+      description: "Organize each sidebar shelf into project groups.",
+      default: true,
+    },
     automaticallyNameThreads: {
       type: "boolean",
       label: "Automatically name threads",
@@ -144,6 +150,30 @@ export default async function plugin(bb: BbPluginApi) {
 
   const machineVisibility = createMachineVisibilityStore(bb.storage.kv);
 
+  // Layout preferences, family folds among them, synced to every window over
+  // realtime. A fold written by any path, CLI included, refreshes fold reads.
+  const preferences = createPreferenceStore(bb, (key) => {
+    if (key === "expandedThreads") bb.rpc.experimental_invalidate([GTD_TAGS.collapsed]);
+  });
+  // Each fold reads the stored list before it writes, so folds run one at a
+  // time: two windows toggling different families must both land.
+  let foldWrites: Promise<unknown> = Promise.resolve();
+  const serializeFolds = <T>(write: () => Promise<T>): Promise<T> => {
+    const result = foldWrites.then(write);
+    foldWrites = result.catch(() => {});
+    return result;
+  };
+  const setExpanded = (threadId: string, expanded: boolean) =>
+    serializeFolds(async () => {
+      const current = await preferences.read("expandedThreads");
+      const next = current.filter((id) => id !== threadId);
+      if (expanded) next.push(threadId);
+      if (next.length !== current.length || current.some((id, index) => id !== next[index])) {
+        await preferences.write("expandedThreads", next, null);
+      }
+      return next;
+    });
+
   bb.rpc.register(
     gtdSidebarRpcContract,
     {
@@ -196,6 +226,13 @@ export default async function plugin(bb: BbPluginApi) {
         );
         return { environments: environments.filter((environment) => environment !== null) };
       },
+      async listCollapsedThreads({ familyIds }) {
+        const expanded = new Set(await preferences.read("expandedThreads"));
+        return { threadIds: familyIds.filter((id) => !expanded.has(id)) };
+      },
+      async setThreadCollapsed({ threadId, collapsed }) {
+        return { expandedThreadIds: await setExpanded(threadId, !collapsed) };
+      },
       async listLifecycle() {
         return { rows: readAll() };
       },
@@ -231,11 +268,12 @@ export default async function plugin(bb: BbPluginApi) {
   // thread reusing the id, and stale rows accumulate otherwise.
   bb.events.on("thread.deleted", async ({ thread }) => {
     clear(thread.id);
+    // An opened family whose parent is gone would otherwise stay listed.
+    if ((await preferences.read("expandedThreads")).includes(thread.id)) {
+      await setExpanded(thread.id, false);
+    }
   });
 
-  // The forked Thread list's layout preferences (organization, sort, row
-  // actions, folds), synced to every window over realtime.
-  const preferences = createPreferenceStore(bb);
   bb.rpc.register(preferencesRpcContract, {
     async listPreferences() {
       return { preferences: await preferences.readAll() };

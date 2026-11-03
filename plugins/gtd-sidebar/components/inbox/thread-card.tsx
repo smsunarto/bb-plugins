@@ -1,0 +1,897 @@
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import {
+  experimental_useSidebarThreadSplit as useSidebarThreadSplit,
+  useSidebarThreadShortcut,
+  type PluginSidebarThread,
+  type PluginSidebarThreadShortcut,
+} from "@get-bb/plugin-sdk/app";
+import { Icon, type IconName } from "../ui/icon";
+import { cn } from "../../lib/utils";
+import { RowContextMenu } from "./row-context-menu";
+import { openMenuFromKeyboard } from "./menu-surface";
+import { useThreadRename, type ThreadRename } from "./inline-rename";
+import { LIST_HOVER_TRANSITION } from "./row-motion";
+import { CompactThreadActionMenu } from "./thread-action-menu";
+import {
+  buildThreadActionPlan,
+  findThreadAction,
+  SNOOZE_TOMORROW_LABEL,
+  type ActiveThreadShelf,
+  type DispatchRowCommand,
+  type ThreadActionPlan,
+} from "./thread-actions";
+import type { ProviderGlyphInfo } from "./provider-glyph";
+import { STATUS_SLOT_CLASS, StatusOrTime, rowDescribedBy } from "./status-slot";
+import { FadingText, HostLead, ThreadDetails } from "./thread-details";
+import { snoozeUntilTomorrow } from "../../lib/lifecycle";
+import { useIosLongPress } from "../../hooks/use-ios-long-press";
+import { useCommittedEvent } from "../../hooks/use-committed-event";
+import { useNestRow, type SidebarDragApi } from "../../hooks/use-nest-drag";
+import { useRowPullRequest } from "../../hooks/use-row-pull-request";
+import type { RowPullRequest } from "../../lib/pull-requests";
+
+/** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
+const DEPTH_STEP = 16;
+/** The touch disclosure column: app.css `.gtd-disclosure-touch` width. */
+const MOBILE_DISCLOSURE_WIDTH = 32;
+
+interface ThreadCardProps {
+  thread: PluginSidebarThread;
+  isUnread: boolean;
+  shelf: ActiveThreadShelf;
+  depth: number;
+  parentId: string | null;
+  parentTitle: string | null;
+  childCount: number;
+  expanded: boolean;
+  guides: string;
+  lastChild: boolean;
+  statusThread: PluginSidebarThread;
+  toggleThread: (threadId: string) => void;
+  provider?: ProviderGlyphInfo;
+  projectName: string | null;
+  /** bb's branch, or GitButler's virtual-branch summary for its workspace. */
+  branchName: string | null;
+  isActive: boolean;
+  isNaming?: boolean;
+  /** False while the thread is working or blocked on the user. */
+  canPark: boolean;
+  isCompactViewport: boolean;
+  command: DispatchRowCommand;
+  /** Sidebar drag state; absent on compact viewports, where there is no drag. */
+  drag?: SidebarDragApi;
+  /** Whether the row being dragged may drop here, per the tree's cycle guard. */
+  dropAllowed: boolean;
+}
+
+export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
+  const { splitProps, layout } = useSidebarThreadSplit(props.thread.id);
+  const pullRequest = useRowPullRequest(props.thread.id, props.thread.environment?.id ?? null);
+  const onSplitPointerDown = useCommittedEvent((event: PointerEvent<HTMLElement>) => {
+    splitProps.onPointerDown?.(event);
+  });
+  // Drag source and drop target both; see use-nest-drag for how this shares
+  // the anchor's pointerdown with bb's split gesture. Subscribed here, not in
+  // the body, so dnd-kit's context churn re-runs this wrapper only: the body
+  // sees committed handlers (dnd-kit rebuilds its listeners on every context
+  // render) and two booleans.
+  const nestRow = useNestRow(props.thread.id, props.dropAllowed, props.drag === undefined);
+  const { setDragRef, setDropRef } = nestRow;
+  const onNestPointerDown = useCommittedEvent((event: PointerEvent<HTMLElement>) => {
+    nestRow.listeners?.onPointerDown?.(event);
+  });
+  const onNestKeyDown = useCommittedEvent((event: KeyboardEvent<HTMLElement>) => {
+    nestRow.listeners?.onKeyDown?.(event);
+  });
+  const setNestRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setDragRef(node);
+      setDropRef(node);
+    },
+    [setDragRef, setDropRef],
+  );
+  return (
+    <ThreadCardBody
+      {...props}
+      pullRequest={pullRequest}
+      isOpenInSplit={layout !== null}
+      isFocusedInSplit={layout?.panes.some((pane) => pane.isMe && pane.isFocused)}
+      onSplitPointerDown={splitProps.onPointerDown ? onSplitPointerDown : undefined}
+      onNestPointerDown={onNestPointerDown}
+      onNestKeyDown={onNestKeyDown}
+      nestIsDragging={nestRow.isDragging}
+      nestIsOver={nestRow.isOver}
+      setNestRef={setNestRef}
+    />
+  );
+});
+
+/**
+ * One thread on one line: title, then activity, PR and status-or-age, with
+ * project, branch and agent in the hover details. Status stays in the row
+ * while section placement answers the larger question: whether the user or
+ * the agent can act next.
+ *
+ * The row is a positioned container with a full-bleed anchor UNDER the
+ * controls, the way bb's own thread row does it: a `<button>` inside an `<a>`
+ * is invalid interactive nesting and breaks keyboard behaviour.
+ */
+const ThreadCardBody = memo(function ThreadCardBody({
+  thread,
+  isUnread,
+  shelf,
+  depth,
+  parentId,
+  parentTitle,
+  childCount,
+  expanded,
+  guides,
+  lastChild,
+  statusThread,
+  toggleThread,
+  provider,
+  projectName,
+  branchName,
+  isActive,
+  isNaming = false,
+  canPark,
+  isCompactViewport,
+  command,
+  drag,
+  pullRequest,
+  isOpenInSplit,
+  isFocusedInSplit,
+  onSplitPointerDown,
+  onNestPointerDown,
+  onNestKeyDown,
+  nestIsDragging,
+  nestIsOver,
+  setNestRef,
+}: ThreadCardProps & {
+  pullRequest: RowPullRequest | null;
+  isOpenInSplit: boolean;
+  isFocusedInSplit: boolean | undefined;
+  onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
+  onNestPointerDown: (event: PointerEvent<HTMLElement>) => void;
+  onNestKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
+  nestIsDragging: boolean;
+  nestIsOver: boolean;
+  setNestRef: (node: HTMLDivElement | null) => void;
+}) {
+  const plan = buildThreadActionPlan({
+    kind: "active",
+    canPark,
+    snoozeUntilTomorrow: () =>
+      command({ kind: "snooze", threadId: thread.id, until: snoozeUntilTomorrow(new Date()) }),
+    settle: () => command({ kind: "settle", threadId: thread.id }),
+  });
+  const titleText = thread.displayTitle;
+  const rename = useThreadRename(thread.id, titleText);
+  const [isMenuOpen, setMenuOpen] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const { isPressing, handlers } = useIosLongPress(() => setMenuOpen(true), {
+    enabled: isCompactViewport && !rename.isEditing,
+  });
+  // The sheet only renders on a compact viewport. Leaving it with the sheet
+  // open must not strand the row hidden under a sheet that is gone.
+  useEffect(() => {
+    if (!isCompactViewport) setMenuOpen(false);
+  }, [isCompactViewport]);
+
+  // Stable, or React detaches it on every render and the touch menu's layout
+  // effect reads a null card: the lifted copy never draws and the row, faded
+  // out for the menu, simply vanishes.
+  const setCardRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      cardRef.current = node;
+      setNestRef(node);
+    },
+    [setNestRef],
+  );
+
+  const shortcut = useSidebarThreadShortcut(thread.id);
+  const showActions = shelf === "nextAction" || canPark;
+  const relation = parentTitle
+    ? `Child of ${parentTitle}`
+    : childCount > 0
+      ? `${childCount} subthreads`
+      : undefined;
+  const unreadId = useId();
+  const statusId = useId();
+  const describedBy = rowDescribedBy(statusId, unreadId, {
+    thread: statusThread,
+    isUnread,
+    shortcut,
+  });
+  const presentation = threadCardPresentation({
+    depth,
+    childCount,
+    isCompactViewport,
+    isActive,
+    isOpenInSplit,
+    isPressing,
+    isMenuOpen,
+  });
+
+  const title = (editable: boolean) => (
+    <ThreadTitle
+      editor={editable ? rename.editor : null}
+      title={titleText}
+      isNaming={isNaming}
+      isActive={isActive}
+      isUnread={thread.isUnread}
+      isChild={depth > 0}
+      mobile={isCompactViewport}
+    />
+  );
+  // The project lives in the group header above the row. The row leads with
+  // the machine globe only when the thread runs elsewhere; a local title
+  // starts straight after the disclosure column.
+  const rowTitle = (editable: boolean) => (
+    <>
+      <HostLead host={thread.host} />
+      {title(editable)}
+    </>
+  );
+  const mobileRow = (interactive: boolean) => (
+    <MobileThreadSummary
+      title={rowTitle(interactive)}
+      thread={statusThread}
+      isUnread={isUnread}
+      shortcut={shortcut}
+      activity={thread.activity}
+      pullRequest={pullRequest}
+      interactive={interactive}
+      statusId={statusId}
+    />
+  );
+
+  return (
+    <RowContextMenu thread={thread} plan={plan} rename={rename} disabled={isCompactViewport}>
+      <div>
+        <div
+          ref={setCardRef}
+          data-sidebar-rename-row=""
+          data-sidebar-thread-active={isActive ? "true" : undefined}
+          data-sidebar-thread-focused={isFocusedInSplit}
+          {...handlers}
+          data-action-count={!isCompactViewport && showActions ? 2 : 0}
+          data-dragging={nestIsDragging ? "true" : undefined}
+          data-drop-target={nestIsOver ? "true" : undefined}
+          {...presentation}
+          // Merged: the hold's style mutes iOS's link callout and selection,
+          // and a second `style` prop would replace it.
+          style={{ ...handlers.style, ...presentation.style }}
+        >
+          <ThreadHierarchy
+            threadId={thread.id}
+            title={titleText}
+            depth={depth}
+            childCount={childCount}
+            expanded={expanded}
+            guides={guides}
+            lastChild={lastChild}
+            mobile={isCompactViewport}
+            toggleThread={toggleThread}
+          />
+          <ThreadRowLink
+            thread={thread}
+            projectName={projectName}
+            branchName={branchName}
+            provider={provider}
+            relation={relation}
+            showDetails={!isCompactViewport}
+            shortcut={shortcut}
+            threadId={thread.id}
+            title={titleText}
+            describedBy={describedBy}
+            isActive={isActive}
+            mobile={isCompactViewport}
+            parentId={parentId}
+            childCount={childCount}
+            expanded={expanded}
+            toggleThread={toggleThread}
+            onSplitPointerDown={onSplitPointerDown}
+            onNestPointerDown={onNestPointerDown}
+            onNestKeyDown={onNestKeyDown}
+            nestActive={drag?.source?.kind === "thread"}
+            rename={rename}
+            command={command}
+          />
+          {isUnread ? (
+            <span id={unreadId} className="sr-only">
+              {thread.isUnread ? "Unread response" : "Unread response in subthreads"}
+            </span>
+          ) : null}
+          {isCompactViewport ? (
+            <CompactThreadActionMenu
+              thread={thread}
+              rename={rename}
+              plan={plan}
+              open={isMenuOpen}
+              onOpenChange={setMenuOpen}
+              anchorRef={cardRef}
+              isActive={isActive}
+              highlightContent={
+                // The menu pads this copy the way the row is padded, so the
+                // chevron and title hold their places as the row lifts.
+                <>
+                  <TouchDisclosureGlyph depth={depth} childCount={childCount} expanded={expanded} />
+                  <div className="pointer-events-none relative flex h-full items-center gap-1.5">
+                    {mobileRow(false)}
+                  </div>
+                </>
+              }
+            />
+          ) : null}
+          <div
+            className={cn(
+              "pointer-events-none relative flex items-center gap-1.5",
+              isCompactViewport ? "h-10" : "gtd-summary h-8",
+            )}
+          >
+            {isCompactViewport ? (
+              mobileRow(true)
+            ) : (
+              <DesktopThreadSummary
+                title={rowTitle(true)}
+                thread={statusThread}
+                isUnread={isUnread}
+                shortcut={shortcut}
+                plan={plan}
+                showActions={showActions}
+                canPark={canPark}
+                activity={thread.activity}
+                pullRequest={pullRequest}
+                statusId={statusId}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+    </RowContextMenu>
+  );
+});
+
+function threadCardPresentation({
+  depth,
+  childCount,
+  isCompactViewport,
+  isActive,
+  isOpenInSplit,
+  isPressing,
+  isMenuOpen,
+}: Pick<ThreadCardProps, "depth" | "childCount" | "isCompactViewport" | "isActive"> & {
+  isOpenInSplit: boolean;
+  isPressing: boolean;
+  isMenuOpen: boolean;
+}) {
+  return {
+    style: {
+      "--gtd-depth": depth,
+      ...(isCompactViewport ? { paddingLeft: compactRowPaddingLeft(depth, childCount) } : {}),
+    } as CSSProperties,
+    className: cn(
+      "group/card relative rounded-xl px-2.5",
+      !isCompactViewport && "gtd-thread-row",
+      LIST_HOVER_TRANSITION,
+      isCompactViewport ? "min-h-10 py-0" : "rounded-md",
+      isActive ? "bg-state-active" : "hover:bg-sidebar-accent",
+      !isActive && isOpenInSplit && "bg-sidebar-accent/30",
+      isPressing && !isActive && "bg-sidebar-accent",
+      isMenuOpen && "bg-sidebar-accent opacity-0",
+    ),
+  };
+}
+
+/**
+ * A compact-viewport row's left padding, shared by cards and slim rows so a
+ * family keeps its columns when it moves between shelves.
+ *
+ * The disclosure and tree guides move by --gtd-group-indent, so the content
+ * adds it too or the chevron lands on the title. Leaf rows have no disclosure
+ * slot and take --gtd-leaf-group-indent instead, which lines their titles up
+ * with the group header's name. Ungrouped rows resolve both variables to 0.
+ */
+export function compactRowPaddingLeft(depth: number, childCount: number): string {
+  return depth > 0 || childCount > 0
+    ? `calc(${MOBILE_DISCLOSURE_WIDTH + 8 + depth * DEPTH_STEP}px + var(--gtd-group-indent, 0px))`
+    : "calc(22px + var(--gtd-leaf-group-indent, 0px))";
+}
+
+function ThreadTitle({
+  editor,
+  title,
+  isNaming,
+  isActive,
+  isUnread,
+  isChild,
+  mobile,
+}: {
+  /** The in-place rename editor, drawn instead of the title while open. */
+  editor: ReactNode;
+  title: string;
+  isNaming: boolean;
+  isActive: boolean;
+  isUnread: boolean;
+  isChild: boolean;
+  mobile: boolean;
+}) {
+  // A read child sits at the slim-row tone so it reads as secondary to its
+  // parent; unread children keep full color and weight so attention pops.
+  const muted = isChild && !isActive && !isUnread;
+  // The editor takes the title's own classes, so a rename keeps its size,
+  // weight and tone in every row state.
+  const typography = cn(
+    "gtd-thread-title min-w-0 flex-1",
+    mobile && "gtd-mobile-title",
+    isActive
+      ? "text-sidebar-accent-foreground"
+      : muted
+        ? mobile
+          ? "text-muted-foreground"
+          : "text-muted-foreground/70"
+        : "text-sidebar-foreground",
+    isUnread && "font-medium",
+  );
+  if (editor !== null) {
+    return <span className={cn(typography, "pointer-events-auto relative z-10")}>{editor}</span>;
+  }
+  return (
+    <span
+      data-gtd-naming={isNaming || undefined}
+      aria-busy={isNaming || undefined}
+      className={typography}
+    >
+      <FadingText text={title} />
+    </span>
+  );
+}
+
+/**
+ * The compact viewport's row: the line a desktop row draws, minus the hover
+ * affordances a touch screen cannot reach. The long-press menu stands in for
+ * the tooltip and the trailing actions.
+ */
+function MobileThreadSummary({
+  title,
+  thread,
+  isUnread,
+  shortcut,
+  activity,
+  pullRequest,
+  interactive,
+  statusId,
+}: {
+  title: ReactNode;
+  thread: PluginSidebarThread;
+  isUnread: boolean;
+  shortcut: PluginSidebarThreadShortcut | null;
+  activity: PluginSidebarThread["activity"];
+  pullRequest: RowPullRequest | null;
+  interactive: boolean;
+  /** The slot's id, which the row's link names as its description. */
+  statusId: string;
+}) {
+  return (
+    <>
+      {title}
+      <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
+        <ActivityCounts activity={activity} isCompactViewport />
+        {pullRequest ? (
+          <PullRequestNumber
+            pullRequest={pullRequest}
+            interactive={interactive}
+            className={cn("z-[1]", interactive && "pointer-events-auto")}
+          />
+        ) : null}
+        {/* Only the live row names its slot: the touch menu's lifted copy
+           would otherwise duplicate the id. */}
+        <span id={interactive ? statusId : undefined} className={STATUS_SLOT_CLASS}>
+          <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} isCompactViewport />
+        </span>
+      </span>
+    </>
+  );
+}
+
+export function ThreadHierarchy({
+  threadId,
+  title,
+  depth,
+  childCount,
+  expanded,
+  guides,
+  lastChild,
+  mobile,
+  toggleThread,
+}: {
+  threadId: string;
+  title: string;
+  depth: number;
+  childCount: number;
+  expanded: boolean;
+  guides: string;
+  lastChild: boolean;
+  mobile: boolean;
+  toggleThread: (threadId: string) => void;
+}) {
+  const guideOffsets: number[] = [];
+  for (let level = 0; level < guides.length; level++) {
+    if (guides[level] === "1") guideOffsets.push(12 + level * DEPTH_STEP);
+  }
+  return (
+    <>
+      {!mobile && depth > 0 ? (
+        <span aria-hidden className="gtd-tree-guides">
+          {guideOffsets.map((left) => (
+            <span key={left} className="gtd-tree-line" style={{ left }} />
+          ))}
+          <span
+            className={cn("gtd-tree-line", lastChild && "gtd-tree-line-last")}
+            style={{ left: 12 + (depth - 1) * DEPTH_STEP }}
+          />
+        </span>
+      ) : null}
+      {childCount > 0 ? (
+        <button
+          type="button"
+          className={cn("gtd-disclosure", mobile && "gtd-disclosure-touch")}
+          aria-label={`${expanded ? "Collapse" : "Expand"} children of ${title}`}
+          aria-expanded={expanded}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            toggleThread(threadId);
+          }}
+        >
+          <Icon
+            name="ChevronDown"
+            className={cn(
+              "gtd-chevron-motion",
+              mobile ? "size-4" : "size-3",
+              !expanded && "-rotate-90",
+            )}
+          />
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The touch chevron as a picture, for the copy of a row the touch menu lifts.
+ * It sits where ThreadHierarchy's button does and takes no input.
+ */
+export function TouchDisclosureGlyph({
+  depth,
+  childCount,
+  expanded,
+}: {
+  depth: number;
+  childCount: number;
+  expanded: boolean;
+}) {
+  if (childCount === 0) return null;
+  return (
+    <span
+      aria-hidden
+      className="gtd-disclosure gtd-disclosure-touch"
+      style={{ "--gtd-depth": depth } as CSSProperties}
+    >
+      <Icon
+        name="ChevronDown"
+        className={cn("size-4 gtd-chevron-motion", !expanded && "-rotate-90")}
+      />
+    </span>
+  );
+}
+
+function ThreadRowLink({
+  thread,
+  describedBy,
+  projectName,
+  branchName,
+  provider,
+  relation,
+  showDetails,
+  shortcut,
+  threadId,
+  title,
+  isActive,
+  mobile,
+  parentId,
+  childCount,
+  expanded,
+  toggleThread,
+  onSplitPointerDown,
+  onNestPointerDown,
+  onNestKeyDown,
+  nestActive,
+  rename,
+  command,
+}: {
+  thread: PluginSidebarThread;
+  /** The status slot's id, then the unread note's where it adds anything. */
+  describedBy: string;
+  projectName: string | null;
+  branchName: string | null;
+  provider?: ProviderGlyphInfo;
+  relation: string | undefined;
+  showDetails: boolean;
+  shortcut: PluginSidebarThreadShortcut | null;
+  threadId: string;
+  title: string;
+  isActive: boolean;
+  mobile: boolean;
+  parentId: string | null;
+  childCount: number;
+  expanded: boolean;
+  toggleThread: (threadId: string) => void;
+  onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
+  /** dnd-kit's activators for the nest drag; no-ops where drags are off. */
+  onNestPointerDown: (event: PointerEvent<HTMLElement>) => void;
+  onNestKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
+  /** A nest drag is live somewhere in the list. */
+  nestActive: boolean;
+  rename: ThreadRename;
+  command: DispatchRowCommand;
+}) {
+  return (
+    <ThreadDetails
+      thread={thread}
+      projectName={projectName}
+      branchName={branchName}
+      provider={provider}
+      relation={relation}
+      enabled={showDetails}
+    >
+      {/* oxlint-disable-next-line jsx-a11y/anchor-is-valid -- must stay an
+             anchor: the shortcut-target contract below and modifier-click
+             split-open both depend on it. A button breaks each. */}
+      <a
+        // Both attributes, or bb's nine thread shortcuts stop finding rows.
+        data-sidebar-thread-shortcut-target=""
+        data-sidebar-thread-id={threadId}
+        data-sidebar-rename-anchor=""
+        href="#"
+        aria-label={title}
+        aria-describedby={describedBy}
+        aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
+        aria-current={isActive ? "page" : undefined}
+        onKeyDown={(event) => {
+          // Shift+F10 or the Menu key opens the right-click menu, which macOS
+          // never does natively. Touch has no such menu, and a live drag owns
+          // the keys until it drops.
+          if (!mobile && !nestActive && openMenuFromKeyboard(event)) return;
+          // Space picks the row up (see use-nest-drag); while a drag is live
+          // the arrows move the pick, not the fold.
+          onNestKeyDown(event);
+          if (nestActive) return;
+          const tree =
+            event.currentTarget.closest("[data-sidebar-thread-tree]") ??
+            event.currentTarget.closest("ul");
+          const rows = Array.from(
+            tree?.querySelectorAll<HTMLAnchorElement>("[data-sidebar-thread-id]") ?? [],
+          );
+          let focusId: string | null = null;
+          if (event.key === "ArrowRight" && childCount > 0) {
+            event.preventDefault();
+            if (!expanded) toggleThread(threadId);
+            else {
+              focusId =
+                rows[rows.indexOf(event.currentTarget) + 1]?.dataset.sidebarThreadId ?? null;
+            }
+          } else if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            if (expanded) toggleThread(threadId);
+            else focusId = parentId;
+          }
+          if (focusId) rows.find((row) => row.dataset.sidebarThreadId === focusId)?.focus();
+        }}
+        onPointerDown={(event) => {
+          // Both gestures start here; the destination decides which one lands.
+          onNestPointerDown(event);
+          onSplitPointerDown?.(event);
+        }}
+        onDoubleClick={rename.onDoubleClick}
+        onClick={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          if (rename.isEditing) return;
+          command({ kind: "open", threadId: threadId, split: event.metaKey || event.ctrlKey });
+        }}
+        className={cn("absolute inset-0 cursor-pointer", mobile ? "rounded-xl" : "rounded-md")}
+      />
+    </ThreadDetails>
+  );
+}
+
+function DesktopThreadSummary({
+  title,
+  thread,
+  isUnread,
+  shortcut,
+  plan,
+  showActions,
+  canPark,
+  activity,
+  pullRequest,
+  statusId,
+}: {
+  title: ReactNode;
+  thread: PluginSidebarThread;
+  isUnread: boolean;
+  shortcut: PluginSidebarThreadShortcut | null;
+  plan: ThreadActionPlan;
+  showActions: boolean;
+  canPark: boolean;
+  activity: PluginSidebarThread["activity"];
+  pullRequest: RowPullRequest | null;
+  /** The slot's id, which the row's link names as its description. */
+  statusId: string;
+}) {
+  const snoozeAction = findThreadAction(plan, "snooze-tomorrow");
+  const settleAction = findThreadAction(plan, "settle");
+  return (
+    <>
+      {title}
+      <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
+        <ActivityCounts activity={activity} isCompactViewport={false} />
+        {pullRequest ? <PullRequestNumber pullRequest={pullRequest} interactive /> : null}
+        <span id={statusId} className={STATUS_SLOT_CLASS}>
+          <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} />
+        </span>
+      </span>
+      {showActions ? (
+        <span className="gtd-trailing-actions">
+          <ParkButton
+            label={SNOOZE_TOMORROW_LABEL}
+            icon="Clock"
+            disabled={!canPark}
+            onActivate={() => snoozeAction?.execute()}
+          />
+          {settleAction ? (
+            <ParkButton
+              label={settleAction.label}
+              icon={settleAction.icon}
+              onActivate={settleAction.execute}
+            />
+          ) : null}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function ParkButton({
+  label,
+  icon,
+  onActivate,
+  disabled = false,
+}: {
+  label: string;
+  icon: IconName;
+  onActivate: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={disabled ? "Snooze is available when this thread is idle" : label}
+      disabled={disabled}
+      onPointerDown={(event) => {
+        if (disabled || event.button > 0) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onActivate();
+      }}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.detail === 0) onActivate();
+      }}
+      className="flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    >
+      <Icon name={icon} className="size-3.5" />
+    </button>
+  );
+}
+
+/** The PR number in its state's tint; a link only where the row takes clicks. */
+function PullRequestNumber({
+  pullRequest,
+  interactive,
+  className,
+}: {
+  pullRequest: RowPullRequest;
+  interactive: boolean;
+  className?: string;
+}) {
+  const classes = cn(
+    "relative shrink-0 font-mono",
+    className,
+    pullRequest.state === "merged"
+      ? "text-[color:var(--pr-merged)]"
+      : pullRequest.attention === "checks_failed" || pullRequest.attention === "conflicts"
+        ? "text-destructive-text"
+        : pullRequest.attention === "ready_to_merge"
+          ? "text-success-foreground"
+          : "text-muted-foreground",
+  );
+  return interactive ? (
+    <a
+      href={pullRequest.url}
+      target="_blank"
+      rel="noreferrer"
+      onClick={(event) => event.stopPropagation()}
+      title={pullRequest.title}
+      className={cn(classes, "hover:underline")}
+    >
+      #{pullRequest.number}
+    </a>
+  ) : (
+    <span className={classes}>#{pullRequest.number}</span>
+  );
+}
+
+function ActivityCounts({
+  activity,
+  isCompactViewport,
+}: {
+  activity: PluginSidebarThread["activity"];
+  isCompactViewport: boolean;
+}) {
+  return (
+    <>
+      {activity.workflows > 0 ? (
+        <ActivityCount
+          label="workflows"
+          count={activity.workflows}
+          isCompactViewport={isCompactViewport}
+        />
+      ) : null}
+      {activity.backgroundAgents > 0 ? (
+        <ActivityCount
+          label="background agents"
+          count={activity.backgroundAgents}
+          isCompactViewport={isCompactViewport}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ActivityCount({
+  label,
+  count,
+  isCompactViewport,
+}: {
+  label: string;
+  count: number;
+  isCompactViewport: boolean;
+}) {
+  return (
+    <span
+      aria-label={`${count} ${label}`}
+      className={cn(
+        "shrink-0 rounded bg-muted px-1 font-mono text-2xs",
+        isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70",
+      )}
+    >
+      {count}
+    </span>
+  );
+}

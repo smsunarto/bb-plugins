@@ -59,3 +59,33 @@ export function archiveAsksFirst(
 ): boolean {
   return threads.some((thread) => thread.parentThreadId === threadId);
 }
+
+export function effectiveParentThreadId(thread: PluginSidebarThread): string | null {
+  return thread.originKind === "fork" ? null : thread.parentThreadId;
+}
+
+/**
+ * The parent of one thread, or null when the thread is a root, when the id is
+ * unknown, or when the parent row is gone (deleted). The parent may be
+ * archived or in another project: the flat list hides those, but the child
+ * still needs a way back to them.
+ */
+export function parentOf(
+  threads: readonly PluginSidebarThread[],
+  threadId: string,
+): PluginSidebarThread | null {
+  const thread = threads.find((candidate) => candidate.id === threadId);
+  const parentThreadId = thread ? effectiveParentThreadId(thread) : null;
+  if (!parentThreadId) return null;
+  return threads.find((candidate) => candidate.id === parentThreadId) ?? null;
+}
+
+/** The children of one thread, oldest first (the order they were spawned). */
+export function childrenOf(
+  threads: readonly PluginSidebarThread[],
+  parentThreadId: string,
+): PluginSidebarThread[] {
+  return threads
+    .filter((thread) => effectiveParentThreadId(thread) === parentThreadId)
+    .sort((left, right) => left.createdAt - right.createdAt);
+}

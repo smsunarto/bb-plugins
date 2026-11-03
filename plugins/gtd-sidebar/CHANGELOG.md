@@ -4,31 +4,10 @@
 
 ### Minor Changes
 
-- Rebuild the list on bb's own Thread list (`desktop-v0.48.1`), so rows, menus,
-  drag and drop, rename, quick actions, windowing, and styling match bb's sidebar.
-  bb's Pinned section comes first; Next Action, Waiting, SlopCop, Snoozed, and
-  Settled follow as sticky shelves grouped by project or machine. Requires bb
-  0.48.1.
-- Folders and thread families keep GTD's own look: a 16px tree step with the
-  chevron in a left column, hairline guides, and folder rows that fold on a click
-  and show their `needs you / total` count while folded. Shelves, folders, and
-  families slide open and closed again. A shelf folds from a click on its name,
-  with no chevron beside it. Rows drop the provider icon and the actions button;
-  right-click a row for its menu.
-- Settle, Un-settle, Snooze until tomorrow, and Wake now are bb thread actions:
-  they show in every bb thread menu and can be row quick actions. bb's Archive
-  shows beside Settle.
-- bb's **Organize** menu chooses By project, By machine, or Flat, replacing the
-  **Group threads by project** setting. **Sort by** gains Arrival, the default.
-  The project scope and machine filters move to bb's **Filter** page.
-- Rows keep the machine globe, naming shimmer, and pull request number, and a
-  snoozed row counts down to its wake time. The GitButler branch moves to bb's row
-  metadata line. Row ages and hover details are gone.
-- Pinned follows bb's rule, a pinned thread with every active thread under it,
-  and a fork bb files as a child nests under its parent. Custom sections, Move to
-  section, the More overflow, hiding threads, and the Active/Archived filter are
-  gone. A drag between Pinned and another shelf no longer moves the thread. Folds
-  no longer sync with bb's built-in Thread list.
+- Keep GTD's own inbox look and motion on bb 0.48.1's plugin backend. Requires bb
+  0.48.1. Family folds move to this plugin's `expandedThreads` preference, so they
+  follow every open window but no longer bb's built-in Thread list. Dropping a row
+  onto another re-parents it through bb's SDK, with the same checks as before.
 
 - Every thread row is one line. The two-line card is gone, along with the
   **Compact thread rows** and **Show agent icons** settings it needed. Project,

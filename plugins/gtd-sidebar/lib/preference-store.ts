@@ -60,7 +60,11 @@ function kvKey(key: PreferenceKey): string {
   return `${PREFERENCE_KV_PREFIX}${key}`;
 }
 
-export function createPreferenceStore(bb: BbPluginApi) {
+/** `onChange` hears every saved or reset key, whichever path wrote it. */
+export function createPreferenceStore(
+  bb: BbPluginApi,
+  onChange: (key: PreferenceKey) => void = () => {},
+) {
   async function read<Key extends PreferenceKey>(key: Key): Promise<PreferenceValue<Key>> {
     const stored = await bb.storage.kv.get<unknown>(kvKey(key));
     if (stored === undefined) return getPreferenceDefault(key);
@@ -95,6 +99,7 @@ export function createPreferenceStore(bb: BbPluginApi) {
       value: parsed.value,
       origin,
     });
+    onChange(key);
     return parsed.value;
   }
 
@@ -106,6 +111,7 @@ export function createPreferenceStore(bb: BbPluginApi) {
       value,
       origin: null,
     });
+    onChange(key);
     return value;
   }
 

@@ -16,33 +16,11 @@ MIT License, Copyright (c) 2026 Michael Yong.
 | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
 | The whole plugin, forked from `examples/plugins/t3sidebar` at commit `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07) | `dist/app.js`, `dist/server.js`, `dist/app.css` |
 | Codex inference transport, `plugins/provider-codex/src/ai` at `desktop-v0.44.0` (`0baa605b32a0`), unmodified                 | `dist/host.js`                                  |
-| The thread list (`app/`, `shared/`), forked from `plugins/thread-list` at `desktop-v0.48.1` (`e003e9510cbf`), modified       | `dist/app.js`, `dist/server.js`, `dist/app.css` |
-| `components/ui/`: the component registry items that fork imports, at `desktop-v0.48.1`                                       | `dist/app.js`, `dist/app.css`                   |
+| Inline thread rename from `plugins/thread-list/app/rows/SidebarInlineRename.tsx` at `desktop-v0.44.0` (`0baa605b32a0`)       | `dist/app.js`                                   |
+| `use-compact-viewport` and `use-media-query` from bb's plugin component registry at `desktop-v0.44.0`                        | `dist/app.js`                                   |
 | shadcn/ui-derived components, vendored through bb's plugin component registry                                                | `dist/app.js`                                   |
 
 Source: <https://github.com/get-bb/bb>
-
-Every forked file had its imports rewritten for this package. GTD changed
-behavior in these files:
-
-- `app/list/`: `ProjectList.tsx` (shelves replace bb's sections),
-  `ProjectRow.tsx` (GTD's tree guides and folds), `TopLevelSidebarSection.tsx`
-  (GTD's folder row and folds), `SidebarHeaderControls.tsx`,
-  `SidebarViewItems.tsx`, `SidebarSectionOrderList.tsx`,
-  `ReorderableSidebarSectionOrderList.tsx`, `SidebarWindowedItems.tsx` (keeps
-  rows a sliding fold clips), `useReadStatusGrouping.ts`, and
-  `useSidebarThreadReveal.ts`
-- `app/rows/ThreadRow.tsx` (GTD's row extras and disclosure column; no provider
-  icon or actions button), `SidebarRowControls.tsx`, and
-  `SidebarChildToggleChevron.tsx` (GTD's chevron motion)
-- `components/ui/sidebar-row-classes.ts` (GTD's tree geometry)
-- `app/preferences/` and `shared/preferences.ts` (GTD's layout preferences, in
-  this plugin's storage)
-- `app/model/use-sidebar-data.ts` (always reads active and archived threads)
-
-GTD removed bb's custom sections, the section visibility controls, the Move
-action, and machine thread groups. `app/gtd/` and `app/ui/SlidingDisclosure.tsx`
-are GTD's own code.
 
 ---
 

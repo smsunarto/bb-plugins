@@ -12,6 +12,7 @@ import type { MachineVisibilityChange } from "./machine-visibility.ts";
  */
 export const GTD_TAGS = {
   lifecycle: "lifecycle",
+  collapsed: "collapsed",
   machines: "machines",
   naming: "naming",
 } as const;
@@ -76,6 +77,18 @@ export const gtdSidebarRpcContract = defineRpcContract({
     input: z.object({}),
     output: z.object({ rows: lifecycleRowsSchema }),
     tags: () => [GTD_TAGS.lifecycle],
+  },
+  /** Family folds, kept in the `expandedThreads` preference: families start folded. */
+  listCollapsedThreads: {
+    experimental_description: "List which of the given thread families are folded.",
+    input: z.object({ familyIds: z.array(z.string().trim().min(1)).default([]) }),
+    output: z.object({ threadIds: z.array(z.string()) }),
+    tags: () => [GTD_TAGS.collapsed],
+  },
+  setThreadCollapsed: {
+    experimental_description: "Fold or unfold one thread family.",
+    input: z.object({ threadId: z.string().trim().min(1), collapsed: z.boolean() }),
+    output: z.object({ expandedThreadIds: z.array(z.string()) }),
   },
   snooze: {
     experimental_description: "Park a thread and its family until an absolute wake time.",

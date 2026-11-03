@@ -1,30 +1,13 @@
-// @smsunarto/bb-plugin-gtd-sidebar — bb's built-in Thread list, forked, with
-// its sections replaced by GTD shelves: Pinned, Next Action, Waiting, SlopCop,
-// Snoozed, and Settled. Rows, menus, drag, rename, quick actions, and styling
-// are the built-in's own (app/, forked from bb desktop-v0.48.1).
-import { definePluginApp, type PluginThreadListProps } from "@get-bb/plugin-sdk/app";
-import { CompactViewportOverrideProvider } from "@/components/ui/hooks/use-compact-viewport";
-import { TooltipProvider } from "@/components/ui/tooltip";
+// @smsunarto/bb-plugin-gtd-sidebar — an action-oriented replacement for bb's
+// sidebar thread list, and a reference for `app.slots.experimental_threadList`.
+//
+// Active threads are grouped by who acts next. Every section orders by when
+// each thread arrived on it, most recent first.
+import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import "./app.css";
 import "./naming.css";
-import "./shelves.css";
-import { PreferencesSync } from "./app/preferences/PreferencesSync.js";
-import { ProjectList } from "./app/list/ProjectList.js";
-import { ThreadSelectionProvider } from "./app/selection/threadSelection.js";
-import { GTD_THREAD_ACTIONS, currentGtdListActions } from "./app/gtd/gtd-actions.js";
-import { gitButlerBranchMetadata } from "./app/gtd/gitbutler-branch-metadata.js";
-
-function ThreadInbox({ activeThreadId, isCompactViewport, onNavigate }: PluginThreadListProps) {
-  return (
-    <CompactViewportOverrideProvider isCompactViewport={isCompactViewport}>
-      <TooltipProvider>
-        <PreferencesSync />
-        <ThreadSelectionProvider activeThreadId={activeThreadId}>
-          <ProjectList activeThreadId={activeThreadId} onProjectSelect={onNavigate} />
-        </ThreadSelectionProvider>
-      </TooltipProvider>
-    </CompactViewportOverrideProvider>
-  );
-}
+import { ThreadInbox } from "./components/inbox/thread-inbox";
+import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";
 
 export default definePluginApp((app) => {
   // Versions up to 0.4.x cached the shelves and provider marks in web storage,
@@ -44,15 +27,12 @@ export default definePluginApp((app) => {
     component: ThreadInbox,
   });
 
-  for (const action of GTD_THREAD_ACTIONS) app.slots.experimental_threadAction(action);
-  app.slots.experimental_threadRowMetadata(gitButlerBranchMetadata);
-
   app.slots.commandPaletteAction({
     id: "settle-thread",
     title: "GTD Sidebar: settle thread",
-    isAvailable: ({ threadId }) => threadId !== null && currentGtdListActions() !== null,
+    isAvailable: ({ threadId }) => threadId !== null && hasSidebarActions(),
     run: ({ threadId }) => {
-      if (threadId !== null) currentGtdListActions()?.settle(threadId);
+      if (threadId !== null) archiveThread(threadId);
     },
   });
 });

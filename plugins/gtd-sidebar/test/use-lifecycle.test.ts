@@ -323,7 +323,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       assert.equal(slot.container.textContent, "other:nextAction:true,parent:nextAction:true");
     });
 
-    it("keeps questions actionable and a pinned review parent waiting during a review", async () => {
+    it("keeps questions actionable and pinned threads pinned during a review", async () => {
       const { slot } = await mountReviews(
         async () => [review(), { ...review("pinned-review"), parentThreadId: "pinned" }],
         [
@@ -331,9 +331,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
           { ...thread("pinned"), isPinned: true },
         ],
       );
-      // The shelf model leaves pins to bb's Pinned section, which the list
-      // cuts out before shelving; on its own the family is simply waiting.
-      assert.equal(slot.container.textContent, "parent:nextAction:false,pinned:waiting:false");
+      assert.equal(slot.container.textContent, "pinned:pinned:false,parent:nextAction:false");
     });
 
     it("keeps the launching thread waiting while hidden Arena workers run", async () => {
