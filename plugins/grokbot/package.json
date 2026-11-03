@@ -1,0 +1,91 @@
+{
+  "name": "@smsunarto/bb-plugin-grokbot",
+  "version": "0.1.0",
+  "description": "Send messages, thread context, and pings to a Grok Bot webhook from bb.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/grokbot",
+  "bugs": {
+    "url": "https://github.com/smsunarto/bb-plugins/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/grokbot"
+  },
+  "keywords": [
+    "bb",
+    "bb-plugin",
+    "grok",
+    "webhook"
+  ],
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bb": ">=0.48.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.94"
+  },
+  "bbPluginBuild": {
+    "experimental_cssScope": "owned-root-v1"
+  },
+  "bb": {
+    "name": "Grok Bot",
+    "description": "Send messages, thread context, and pings to a Grok Bot webhook.",
+    "branding": {
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      },
+      "experimental_icons": {
+        "plugin": "./assets/icon.svg"
+      }
+    },
+    "server": "./src/server/server.ts",
+    "app": "./src/app/app.tsx",
+    "skills": [
+      "skills"
+    ]
+  },
+  "files": [
+    "dist/server.js",
+    "dist/server.meta.json",
+    "dist/app.js",
+    "dist/app.meta.json",
+    "dist/app.css",
+    "dist/app.owned-root.css",
+    "assets/",
+    "skills/",
+    "README.md",
+    "LICENSE",
+    "src/server/",
+    "src/app/",
+    "src/shared/",
+    "!src/**/*.test.ts",
+    "!src/**/*.test.tsx"
+  ],
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@bb-plugins/testing": "workspace:*",
+    "@bb-plugins/ui": "workspace:*",
+    "@get-bb/plugin-sdk": "0.6.94",
+    "@testing-library/react": "16.3.2",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "bun-types": "^1.4.0",
+    "jsdom": "25.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "dev": "bb plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --conditions=development --timeout=30000",
+    "clean": "rm -rf dist"
+  }
+}
