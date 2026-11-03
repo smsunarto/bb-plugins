@@ -34,3 +34,23 @@ func uncertainDeliveryCannotBeRetriedFromThreadStatusAlone(status: String) {
     #expect(ConversationPhase.ready.reconciled(remoteStatus: "idle", needsApproval: true, queued: false, observedRoot: true, completionStatus: "completed") == .needsApproval)
     #expect(ConversationPhase.ready.reconciled(remoteStatus: "idle", needsApproval: false, queued: true, observedRoot: true, completionStatus: "completed") == .running)
 }
+
+@Test func fastPollingIsReservedForForegroundReplies() {
+    for phase in [ConversationPhase.running, .sending] {
+        #expect(ConversationPolling.isFast(phase: phase, foreground: true, isJob: false))
+        #expect(!ConversationPolling.isFast(phase: phase, foreground: false, isJob: false))
+        #expect(!ConversationPolling.isFast(phase: phase, foreground: true, isJob: true))
+    }
+    for phase in [ConversationPhase.ready, .needsApproval, .deliveryUnknown, .failed] {
+        #expect(!ConversationPolling.isFast(phase: phase, foreground: true, isJob: false))
+    }
+}
+
+@Test func statusReconciliationHasABoundedCadenceAndTerminalBypass() {
+    #expect(!ConversationPolling.statusDue(elapsed: 0.25))
+    #expect(!ConversationPolling.statusDue(elapsed: 1.99))
+    #expect(ConversationPolling.statusDue(elapsed: 2))
+    #expect(ConversationPolling.statusDue(elapsed: 0.25, becameTerminal: true))
+    #expect(ConversationPolling.fastInterval < ConversationPolling.checkpointInterval)
+    #expect(ConversationPolling.checkpointInterval < ConversationPolling.statusInterval)
+}

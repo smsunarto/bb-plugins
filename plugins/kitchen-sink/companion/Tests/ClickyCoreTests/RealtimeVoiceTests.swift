@@ -74,6 +74,51 @@ struct RealtimeVoiceTests {
             #expect(!spoken.contains("secret")); #expect(!spoken.contains("still code"))
         }
     }
+    @Test func firstSentenceSpeaksBeforeTheParagraphCompletes() {
+        var accumulator = SpeechAccumulator()
+        #expect(accumulator.consume(itemID: "a", text: "First sentence. Sec", complete: false) == ["First sentence."])
+        #expect(accumulator.consume(itemID: "a", text: "First sentence. Second sentence. Thi", complete: false) == ["Second sentence."])
+        #expect(accumulator.consume(itemID: "a", text: "First sentence. Second sentence. Third sentence.", complete: true) == ["Third sentence."])
+        #expect(accumulator.consume(itemID: "a", text: "First sentence. Second sentence. Third sentence.", complete: true).isEmpty)
+    }
+    @Test func sentenceBoundaryCannotComeFromAnOpenMarkerOrCode() {
+        for text in ["[POINT:120,30. ", "[Link. ", "`inline code. ", "(unfinished aside. ", "```clicky-visual\n{\"op\":\"scene. "] {
+            var accumulator = SpeechAccumulator()
+            #expect(accumulator.consume(itemID: "a", text: text, complete: false).isEmpty)
+        }
+        var accumulator = SpeechAccumulator()
+        #expect(accumulator.consume(itemID: "a", text: "Safe sentence. [POINT:120,30. ", complete: false) == ["Safe sentence."])
+        #expect(accumulator.consume(itemID: "a", text: "Safe sentence. [POINT:120,300:Button] Next sentence. More", complete: false) == ["Next sentence."])
+    }
+    @Test func inlineBracketCodeNeverRetractsOrReplaysSpokenPrefix() {
+        var accumulator = SpeechAccumulator()
+        var chunks = accumulator.consume(itemID: "a", text: "Press Enter. Type `[` to o", complete: false)
+        chunks += accumulator.consume(itemID: "a", text: "Press Enter. Type `[` to open. Then", complete: false)
+        chunks += accumulator.consume(itemID: "a", text: "Press Enter. Type `[` to open. Then `]` closes. End", complete: false)
+        #expect(chunks.filter { $0.contains("Press Enter.") }.count == 1)
+        #expect(chunks.joined(separator: " ").contains("to open."))
+    }
+    @Test func abbreviationsAndListNumbersDoNotForceSpeechPauses() {
+        for text in ["Use a tool, e.g. the", "Ask Dr. Smith", "Try this vs. that", "1. Begin"] {
+            var accumulator = SpeechAccumulator()
+            #expect(accumulator.consume(itemID: "a", text: text, complete: false).isEmpty)
+        }
+        var accumulator = SpeechAccumulator()
+        #expect(accumulator.consume(itemID: "a", text: "Ask Dr. Smith. Then", complete: false) == ["Ask Dr. Smith."])
+    }
+    @Test func unfinishedInlineCodeCannotExposeAnUnfinishedPointMarker() {
+        var accumulator = SpeechAccumulator()
+        #expect(accumulator.consume(itemID: "a", text: "`[POINT:120,3. ", complete: true).isEmpty)
+    }
+    @Test func anUnclosedInlineSpanDoesNotMuteLaterLines() {
+        for syntax in ["`npm test", "[unfinished link"] {
+            var accumulator = SpeechAccumulator()
+            #expect(accumulator.consume(itemID: "a", text: "Run the tests. Then check " + syntax, complete: false) == ["Run the tests."])
+            let later = accumulator.consume(itemID: "a", text: "Run the tests. Then check " + syntax + "\nNext line here.\n", complete: false)
+            #expect(later == ["Next line here."])
+            #expect(accumulator.consume(itemID: "a", text: "Run the tests. Then check " + syntax + "\nNext line here.\n", complete: true).isEmpty)
+        }
+    }
     @Test func samplesSpanWebSocketFrames() {
         var decoder = PCM16Decoder()
         #expect(decoder.decode(Data([0xff])).isEmpty)

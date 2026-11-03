@@ -81,7 +81,7 @@ public struct TranscriptAccumulator: Sendable {
     }
 }
 
-/// Speak only closed lines outside code fences. An incomplete marker or fence can
+/// Speak closed lines or complete sentences outside code fences. A partial marker or fence can
 /// never escape into audio, regardless of the provider's delta boundaries.
 public struct SpeechAccumulator: Sendable {
     private var emitted: [String: String] = [:]
@@ -92,7 +92,7 @@ public struct SpeechAccumulator: Sendable {
         let prefix = emitted[itemID] ?? ""
         // Already spoken text cannot be taken back. Suppress a corrected item
         // rather than replaying it or applying an offset into unrelated text.
-        guard stable.hasPrefix(prefix) else { emitted[itemID] = stable; return [] }
+        guard stable.hasPrefix(prefix) else { return [] }
         let tail = String(stable.dropFirst(prefix.count))
         emitted[itemID] = stable
         guard !tail.isEmpty, charactersSent < RealtimeVoiceProtocol.maxSpokenCharacters else { return [] }
@@ -111,10 +111,9 @@ public struct SpeechAccumulator: Sendable {
     }
     private static func stableText(_ text: String, complete: Bool) -> String {
         var fence: (delimiter: Character, length: Int)?
-        var lines = text.components(separatedBy: "\n")
-        if !complete { lines.removeLast() }
+        let lines = text.components(separatedBy: "\n")
         var result = ""
-        for line in lines {
+        for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if let first = trimmed.first, first == "`" || first == "~" {
                 let run = trimmed.prefix(while: { $0 == first }).count
@@ -127,15 +126,60 @@ public struct SpeechAccumulator: Sendable {
                 }
             }
             guard fence == nil else { continue }
+            let closedLine = complete || index < lines.count - 1
+            var eligible: String
+            if closedLine { eligible = line }
+            else if let end = scanLine(in: line).sentenceEnd { eligible = String(line[..<end]) }
+            else { continue }
             // Only complete bracketed markers/links are eligible to be spoken.
-            var depth = 0
-            for c in line { if c == "[" { depth += 1 }; if c == "]" { depth = max(0, depth - 1) } }
-            guard depth == 0 else { continue }
-            let clean = line.replacingOccurrences(of: #"\[POINT:[^\]]*\]"#, with: "", options: .regularExpression)
-            result += clean.trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
+            let scan = scanLine(in: eligible)
+            if scan.hasOpenSyntax {
+                guard let safeEnd = scan.sentenceEnd else { continue }
+                eligible = String(eligible[..<safeEnd])
+            }
+            let clean = eligible.replacingOccurrences(of: #"\[POINT:[^\]]*\]"#, with: "", options: .regularExpression)
+            result += clean.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Do not synthesize a newline inside an unfinished paragraph: its
+            // spoken prefix must remain a prefix when the next delta arrives.
+            if closedLine { result += "\n" }
         }
         return result
     }
+    private static func scanLine(in line: String) -> (sentenceEnd: String.Index?, hasOpenSyntax: Bool) {
+        var bracketDepth = 0
+        var parenthesisDepth = 0
+        var codeDelimiter: Int?
+        var boundary: String.Index?
+        var index = line.startIndex
+        while index < line.endIndex {
+            let char = line[index]
+            var next = line.index(after: index)
+            if char == "`" {
+                while next < line.endIndex, line[next] == "`" { next = line.index(after: next) }
+                let length = line.distance(from: index, to: next)
+                if codeDelimiter == length { codeDelimiter = nil }
+                else if codeDelimiter == nil { codeDelimiter = length }
+                index = next; continue
+            }
+            if codeDelimiter == nil {
+                if char == "[" { bracketDepth += 1 }
+                else if char == "]" { bracketDepth = max(0, bracketDepth - 1) }
+                else if char == "(" { parenthesisDepth += 1 }
+                else if char == ")" { parenthesisDepth = max(0, parenthesisDepth - 1) }
+                if bracketDepth == 0, parenthesisDepth == 0, ".!?".contains(char),
+                   next < line.endIndex, line[next].isWhitespace {
+                    let before = line[..<index]
+                    let word = before.split(whereSeparator: { $0.isWhitespace }).last?.lowercased() ?? ""
+                    let abbreviations = ["e.g", "i.e", "vs", "dr", "mr", "mrs", "ms", "prof", "sr", "jr", "etc"]
+                    let leadingNumber = !before.isEmpty && before.trimmingCharacters(in: .whitespaces).allSatisfy(\.isNumber)
+                    if char != "." || (!abbreviations.contains(word) && !leadingNumber) { boundary = next }
+                }
+            }
+            index = next
+        }
+        return (boundary, bracketDepth > 0 || codeDelimiter != nil)
+    }
+
 }
 
 /// WebSocket audio frames may split a little-endian Int16 sample.

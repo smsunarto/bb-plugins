@@ -110,6 +110,8 @@ struct SavedCompanion: Codable {
     private var refreshing = false
     private var retryCount = 0
     private var nextRetryAt = Date.distantPast
+    private var lastStatusRefreshAt = Date.distantPast
+    private var lastSavedAt = Date.distantPast
     private let saveURL: URL
     private var client: BBClient { BBClient(configuration: BBConfiguration(executablePath: preferences.executable, serverURL: preferences.serverURL.isEmpty ? nil : preferences.serverURL, runtimeExecutablePath: preferences.runtimeExecutable)) }
     var visibleSessions: [Conversation] { sessions.filter { $0.serverURL == preferences.serverURL } }
@@ -147,6 +149,7 @@ struct SavedCompanion: Codable {
     }
 
     func save() {
+        lastSavedAt = Date()
         do {
             try FileManager.default.createDirectory(at: saveURL.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
             let data = try JSONEncoder().encode(SavedCompanion(preferences: preferences, sessions: sessions))
@@ -291,19 +294,20 @@ struct SavedCompanion: Codable {
             self.error = "Delivery could not be confirmed. Refresh to recover the BB thread; do not resend automatically. \(error.localizedDescription)"
         }
         if let sentCapture { desktop.discardCapture(sentCapture) }
-        save(); startMonitoring(); sending = false; await refresh()
+        save(); sending = false; startMonitoring(restart: true); await refresh()
     }
 
-    func refresh() async {
+    func refresh(reconcileStatus: Bool = true) async {
         guard connected, !refreshing, !sending else { return }
         refreshing = true
         defer { refreshing = false }
         let transport = client
         let generation = connectionGeneration
         let server = preferences.serverURL
+        let statusDue = reconcileStatus || ConversationPolling.statusDue(elapsed: Date().timeIntervalSince(lastStatusRefreshAt))
         do {
             let pending = sessions.filter { $0.serverURL == server && $0.threadID == nil && $0.phase == .deliveryUnknown }
-            if !pending.isEmpty {
+            if statusDue, !pending.isEmpty {
                 let candidates = try await transport.listThreads(projectID: "proj_personal")
                 guard generation == connectionGeneration else { return }
                 for session in pending {
@@ -311,7 +315,10 @@ struct SavedCompanion: Codable {
                     if matches.count == 1, let match = matches.first { update(session.id) { $0.threadID = match.id; $0.phase = .running } }
                 }
             }
-            let visible = sessions.filter { $0.serverURL == server && $0.threadID != nil && ($0.phase.busy || $0.id == selectedID) }
+            let fastID = fastSessionID
+            let visible = sessions.filter {
+                $0.serverURL == server && $0.threadID != nil && ($0.phase.busy || $0.id == selectedID) && (statusDue || $0.id == fastID)
+            }.sorted { $0.id == fastID && $1.id != fastID }
             guard !visible.isEmpty else { return }
             for session in visible {
                 guard let threadID = session.threadID else { continue }
@@ -319,9 +326,18 @@ struct SavedCompanion: Codable {
                 catch { self.error = "Could not refresh \(session.title). Open it in BB. \(error.localizedDescription)" }
                 guard generation == connectionGeneration else { return }
             }
+            let becameTerminal = visible.contains { prior in
+                prior.phase.busy && sessions.first(where: { $0.id == prior.id })?.phase.busy == false
+            }
+            guard statusDue || ConversationPolling.statusDue(elapsed: Date().timeIntervalSince(lastStatusRefreshAt), becameTerminal: becameTerminal) else {
+                if Date().timeIntervalSince(lastSavedAt) >= ConversationPolling.checkpointInterval,
+                   visible.contains(where: { prior in sessions.first(where: { $0.id == prior.id })?.sequence != prior.sequence }) { save() }
+                return
+            }
             // Read current state after the event page, so historical completion cannot override a newer active turn.
             let statuses = try await transport.listThreads(ids: visible.compactMap(\.threadID))
             guard generation == connectionGeneration else { return }
+            lastStatusRefreshAt = Date()
             for session in visible {
                 if let remote = statuses.first(where: { $0.id == session.threadID }) {
                     if remote.status == "idle", speechOwner?.sessionID == session.id,
@@ -678,15 +694,23 @@ struct SavedCompanion: Codable {
         nextRetryAt = Date().addingTimeInterval(min(30, pow(2, Double(retryCount))))
         startMonitoring()
     }
-    func startMonitoring() {
+    private var fastSessionID: String? {
+        visibleSessions.first(where: {
+            ConversationPolling.isFast(phase: $0.phase, foreground: $0.id == selectedID || $0.id == speechOwner?.sessionID, isJob: $0.isJob)
+        })?.id
+    }
+    func startMonitoring(restart: Bool = false) {
+        if restart { monitor?.cancel(); monitor = nil }
         guard monitor == nil else { return }
         monitor = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(2))
-                guard let self else { return }
-                let busy = self.visibleSessions.contains(where: { $0.phase.busy })
-                if self.connected && busy { await self.refresh() }
-                else if !self.connected && self.retryCount > 0 && self.retryCount <= 3 && Date() >= self.nextRetryAt && (self.panelVisible || busy) { await self.connect() }
+                let interval = self?.fastSessionID != nil ? ConversationPolling.fastInterval : ConversationPolling.statusInterval
+                try? await Task.sleep(for: .seconds(interval))
+                guard !Task.isCancelled, let self else { return }
+                let stillBusy = self.visibleSessions.contains(where: { $0.phase.busy })
+                if self.connected && stillBusy {
+                    await self.refresh(reconcileStatus: false)
+                } else if !self.connected && self.retryCount > 0 && self.retryCount <= 3 && Date() >= self.nextRetryAt && (self.panelVisible || stillBusy) { await self.connect() }
             }
         }
     }
