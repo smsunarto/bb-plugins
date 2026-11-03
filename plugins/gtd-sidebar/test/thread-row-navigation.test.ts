@@ -966,21 +966,25 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       }
     });
 
-    it("slides a tall group quickly and a short one at the fold's pace", async () => {
+    it("opens quickly and closes a short group at the fold's pace", async () => {
       const list = await slideHarness();
       try {
         // Only 184px of the 2000px group shows; it still slides as a tall one.
         list.place(432, 0);
         list.fold(true);
         assert.equal(list.slides.at(-1)?.duration, 180);
-        assert.equal(list.fades.at(-1)?.duration, 350, "its rows fade in at the fold's pace");
+        assert.equal(list.fades.at(-1)?.duration, 200, "its rows read soon after the click");
         list.place(432, 2000);
         list.fold(false);
         assert.equal(list.slides.at(-1)?.duration, 180);
+        assert.equal(list.fades.at(-1)?.duration, 350);
         Object.defineProperty(list.panel, "scrollHeight", { configurable: true, value: 120 });
         list.place(432, 0);
         list.fold(true);
         assert.deepEqual(list.slides.at(-1)?.heights, ["0px", "120px"]);
+        assert.equal(list.slides.at(-1)?.duration, 200, "an open lands with its fade");
+        list.place(432, 120);
+        list.fold(false);
         assert.equal(list.slides.at(-1)?.duration, 350);
       } finally {
         list.dispose();

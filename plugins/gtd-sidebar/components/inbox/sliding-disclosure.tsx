@@ -1,14 +1,18 @@
 import { Component, createRef, type ReactNode } from "react";
 import { blur } from "@animate-ui/react/utils/motion";
-import { DISCLOSURE_START_EVENT, DISCLOSURE_TIMING } from "../../lib/disclosure-motion";
+import {
+  DISCLOSURE_START_EVENT,
+  DISCLOSURE_TIMING,
+  OPEN_FADE_TIMING,
+} from "../../lib/disclosure-motion";
 
 /** The fade at a sliding panel's bottom edge. */
 const FADE = 16;
 
 /**
- * How long a fold of a panel this tall slides. A short panel keeps the fold's
- * pace; a tall one lands sooner, so its rows show up about as fast as when it
- * swept its whole height, while every fold fades in at one pace.
+ * How long a close of a panel this tall slides. A short panel keeps the fold's
+ * pace; a tall one lands sooner, so the rows below move up about as fast as
+ * when it swept its whole height. An open never outlasts its quick fade.
  */
 function slideDuration(span: number): number {
   const long = Math.min(1, Math.max(0, (span - 200) / 200));
@@ -189,19 +193,24 @@ export class SlidingDisclosure extends Component<
     }
     panel.style.overflow = "clip";
     panel.style.maskImage = `linear-gradient(to bottom, #000 calc(100% - ${FADE}px), transparent)`;
+    // An opening fold's rows read soon after the click; a close keeps the
+    // fold's pace.
     const fade = panel.animate(
       [
         { opacity: snapshot.opacity, filter: open ? blur.disclosure : "blur(0px)" },
         { opacity: open ? 1 : 0, filter: open ? "blur(0px)" : blur.disclosure },
       ],
-      { duration, easing },
+      open ? OPEN_FADE_TIMING : { duration, easing },
     );
     this.animations = [fade];
     // Once a slide lands, the panel's own height takes over: an open panel's
     // rows past the edge are offscreen, and a closed panel is already gone.
     if (slide) {
       const sliding = panel.animate([{ height: `${from}px` }, { height: `${destination}px` }], {
-        duration: slideDuration(Math.abs((open ? panel.scrollHeight : 0) - snapshot.height)),
+        duration: Math.min(
+          slideDuration(Math.abs((open ? panel.scrollHeight : 0) - snapshot.height)),
+          open ? OPEN_FADE_TIMING.duration : Infinity,
+        ),
         easing,
       });
       this.animations.push(sliding);

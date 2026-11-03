@@ -13,10 +13,11 @@
 - A tall group, such as a large project on the Settled shelf, slides open and
   closed only across the part of the list on screen, instead of jumping hundreds
   of pixels a frame. A slide that long lands in about 180ms, so its rows show up
-  about as fast as before, while they fade in at the usual pace. Closed from its
-  pinned header, the rows on screen hold still while the part scrolled past
-  drops away, and scrolling during an opening slide shows the whole group at
-  once.
+  about as fast as before. Closed from its pinned header, the rows on screen hold
+  still while the part scrolled past drops away, and scrolling during an opening
+  slide shows the whole group at once.
+- Opening a shelf or group slides and fades its threads in over 200ms instead of
+  350ms, so they read about 75ms sooner after the click. Closing keeps its pace.
 
 - Every thread row is one line. The two-line card is gone, along with the
   **Compact thread rows** and **Show agent icons** settings it needed. Project,
