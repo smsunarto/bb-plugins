@@ -11,9 +11,12 @@ import {
 
 export function SidebarRowControls({
   primaryAction,
+  primaryLast = false,
   children,
 }: {
   primaryAction: ReactNode;
+  /** Puts the primary action after the other controls, at the row's edge. */
+  primaryLast?: boolean;
   children?: ReactNode;
 }) {
   return (
@@ -27,8 +30,8 @@ export function SidebarRowControls({
         }
       }}
     >
-      {primaryAction}
-      {children}
+      {primaryLast ? children : primaryAction}
+      {primaryLast ? primaryAction : children}
     </span>
   );
 }

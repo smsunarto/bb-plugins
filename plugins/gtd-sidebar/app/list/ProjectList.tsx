@@ -404,6 +404,16 @@ function MachineGroupSection({
   );
 }
 
+interface HeaderMenuOptions {
+  /** Items below the shared Organize, Sort, and Filter entries. */
+  menuItems?: ReactNode;
+  onCloseAutoFocus?: (event: Event) => void;
+  newThreadLast?: boolean;
+}
+
+/** A shelf header shows its menu first and New thread at the edge. */
+const SHELF_HEADER_MENU: HeaderMenuOptions = { newThreadLast: true };
+
 interface ShelfBodyProps extends ShelfRenderState {
   items: ShelfItems;
   projectsById: ReadonlyMap<string, SidebarProject>;
@@ -422,8 +432,7 @@ interface ShelfBodyProps extends ShelfRenderState {
     menuId: string,
     label: string,
     onNewThread: (() => void) | undefined,
-    children?: ReactNode,
-    onCloseAutoFocus?: (event: Event) => void,
+    options?: HeaderMenuOptions,
   ) => ReactNode;
   isMenuOpen: (menuId: string) => boolean;
 }
@@ -624,11 +633,8 @@ function ShelfBody({
                 shelf={view.shelf}
                 canRename={hostNames.has(group.id)}
                 renderActions={(renameActions) =>
-                  renderMenu(
-                    menuId,
-                    label,
-                    onNewThread,
-                    renameActions ? (
+                  renderMenu(menuId, label, onNewThread, {
+                    menuItems: renameActions ? (
                       <ActionMenuItem
                         surface="dropdown"
                         icon="Edit"
@@ -637,8 +643,8 @@ function ShelfBody({
                         Rename
                       </ActionMenuItem>
                     ) : undefined,
-                    renameActions?.onCloseAutoFocus,
-                  )
+                    onCloseAutoFocus: renameActions?.onCloseAutoFocus,
+                  })
                 }
               />
             ) : (
@@ -815,19 +821,19 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
       menuId: string,
       label: string,
       onNewThread: (() => void) | undefined,
-      children?: ReactNode,
-      onCloseAutoFocus?: (event: Event) => void,
+      { menuItems, onCloseAutoFocus, newThreadLast }: HeaderMenuOptions = {},
     ) => {
       const id = `displayOptions:${menuId}` as const;
       return (
         <SidebarHeaderControls
           label={label}
           onNewThread={onNewThread}
+          newThreadLast={newThreadLast}
           open={openSidebarMenu === id}
           onOpenChange={(open) => setSidebarMenuOpen(id, open)}
           onCloseAutoFocus={onCloseAutoFocus}
         >
-          {children}
+          {menuItems}
         </SidebarHeaderControls>
       );
     },
@@ -1169,8 +1175,11 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
                   onToggleCollapsed={() => toggleShelf("pinned")}
                   isReorderPending={isPinnedReorderPending}
                   onReorderPinnedRoot={handleReorderPinnedRoot}
-                  actions={renderMenu("pinned", SHELF_LABELS.pinned, () =>
-                    createThread({ pinned: true }),
+                  actions={renderMenu(
+                    "pinned",
+                    SHELF_LABELS.pinned,
+                    () => createThread({ pinned: true }),
+                    SHELF_HEADER_MENU,
                   )}
                   actionsOpen={isMenuOpen("pinned")}
                 />
@@ -1183,7 +1192,7 @@ function ProjectListComponent({ activeThreadId, onProjectSelect }: ProjectListPr
                     key={shelf}
                     sectionId={`shelf:${shelf}`}
                     label={label}
-                    actions={renderMenu(shelf, label, () => createThread({}))}
+                    actions={renderMenu(shelf, label, () => createThread({}), SHELF_HEADER_MENU)}
                     actionsOpen={isMenuOpen(shelf)}
                     actionsMobileAlways
                     collapsedActivity={getCollapsedChildActivity(threads)}

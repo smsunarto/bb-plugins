@@ -33,6 +33,7 @@ function setup(
   compact = false,
   experiments: string[] = [],
   filters: GtdFilterState | null = null,
+  newThreadLast = false,
 ) {
   const store = createStore();
   store.set(sidebarOrganizationModeAtom, organization);
@@ -47,7 +48,11 @@ function setup(
       <CompactViewportOverrideProvider isCompactViewport={compact}>
         <TooltipProvider>
           <GtdFilterProvider value={filters}>
-            <SidebarHeaderControls label={label} onNewThread={newThread}>
+            <SidebarHeaderControls
+              label={label}
+              onNewThread={newThread}
+              newThreadLast={newThreadLast}
+            >
               {section && (
                 <ActionMenuItem surface="dropdown" icon="Edit" onSelect={rename}>
                   Rename
@@ -142,6 +147,12 @@ describe("sidebar header controls", () => {
     expect(newThread).toHaveBeenCalledOnce();
     await openMenu();
     expect(primary.nextElementSibling?.getAttribute("data-state")).toBe("open");
+  });
+
+  it("puts a shelf's menu first and New thread at the edge", () => {
+    setup("Waiting", false, "project", false, [], null, true);
+    const menu = screen.getByRole("button", { name: "Waiting actions" });
+    expect(menu.nextElementSibling?.getAttribute("aria-label")).toBe("New thread in Waiting");
   });
 
   it("lists the view pages, then the header's own items", async () => {
