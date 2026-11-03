@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>app.getbb.clicky-companion</string>
+<key>CFBundleName</key><string>Clicky for BB</string>
+<key>CFBundleDisplayName</key><string>Clicky for BB</string>
+<key>CFBundleExecutable</key><string>ClickyBB</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>0.1.0</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>LSMinimumSystemVersion</key><string>14.0</string>
+<key>LSUIElement</key><true/>
+<key>NSMicrophoneUsageDescription</key><string>Stream your question to ElevenLabs while you hold Talk. Only the resulting transcript is sent to BB.</string>
+<key>NSScreenCaptureUsageDescription</key><string>Include a current display screenshot and window context when you ask a voice question.</string>
+<key>NSHighResolutionCapable</key><true/>
+</dict></plist>
