@@ -50,6 +50,13 @@ recovery from a failed request.
   browsing are not tracked. Disable `autoStop` while relying on those workloads.
   Shutdown preserves disks, not running processes or unsaved memory.
 
+The sidebar footer's GCP icon is green when its BB daemon is connected, yellow
+while waking, and neutral when offline. Clicking it wakes the enrolled machine manually. A persistent
+notification shows connection progress and automatic retries (up to three attempts,
+with 5- and 15-second backoffs). A pending BB resume is observed rather than
+restarted. Unknown command outcomes are shown explicitly instead of replayed;
+errors offer **Try again**. The button never wakes a machine on page load.
+
 Use `bb gcp-machine status` to inspect the binding, cloud state, idle reason and
 errors. `bb gcp-machine wake` explicitly resumes the registered machine. It also
 starts a VM stopped outside BB and restarts a disconnected enrolled daemon,

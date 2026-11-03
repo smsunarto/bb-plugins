@@ -11,7 +11,23 @@ export class Store {
       "CREATE TABLE binding (id INTEGER PRIMARY KEY CHECK(id = 1), value TEXT NOT NULL)",
       "CREATE TABLE activity (host_id TEXT PRIMARY KEY, at INTEGER NOT NULL)",
       "CREATE TABLE power_request (key TEXT PRIMARY KEY, action TEXT NOT NULL, request_id TEXT NOT NULL)",
+      "CREATE TABLE wake_request (request_id TEXT PRIMARY KEY, at INTEGER NOT NULL)",
     ]);
+  }
+  wakeRequests(): [string, number][] {
+    this.db.prepare("DELETE FROM wake_request WHERE at < ?").run(Date.now() - 5 * 60_000);
+    const rows = z
+      .array(z.object({ request_id: z.string(), at: z.number() }))
+      .parse(this.db.prepare("SELECT request_id, at FROM wake_request").all());
+    return rows.map((row) => [row.request_id, row.at]);
+  }
+  rememberWakeRequests(entries: [string, number][]) {
+    // Append receipts before any power action. A crash never removes accepted IDs.
+    const insert = this.db.prepare(
+      "INSERT OR IGNORE INTO wake_request (request_id, at) VALUES (?, ?)",
+    );
+    for (const [id, at] of entries) insert.run(id, at);
+    this.db.prepare("DELETE FROM wake_request WHERE at < ?").run(Date.now() - 5 * 60_000);
   }
   binding() {
     const row = this.db.prepare("SELECT value FROM binding WHERE id = 1").get() as

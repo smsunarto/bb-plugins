@@ -5,7 +5,10 @@ import { GoogleCompute } from "../../shared/node/cloud.ts";
 import { hostContract } from "../../shared/host-contract.ts";
 import { IDLE_MS, PROVIDER_ID, resourceSchema, type Resource } from "../../shared/schema.ts";
 import { busyReason } from "./activity.ts";
+import { WakeRequestError, retryableWakeStep } from "./wake-error.ts";
 import { Store } from "./store.ts";
+
+function noop() {}
 
 export function createService(bb: BbPluginApi, now = Date.now) {
   const settings = bb.settings.define({
@@ -126,6 +129,7 @@ export function createService(bb: BbPluginApi, now = Date.now) {
     request.onOutput(result.output);
     return { exitCode: result.exitCode };
   }
+  let lastResumeFailure: { hostId: string; error: unknown } | null = null;
   async function restartDaemon(
     resource: Resource,
     expectedHostId: string,
@@ -142,6 +146,8 @@ export function createService(bb: BbPluginApi, now = Date.now) {
       throw new Error("BB restart returned a different machine identity.");
     touch(expectedHostId);
   }
+  const wakeReport = { step: bb.log.info, log: noop };
+  let wakeRequest: ReturnType<BbPluginApi["sdk"]["hosts"]["experimental_resume"]> | null = null;
   async function executionResource(resource: Resource): Promise<Resource> {
     const config = await settings.get();
     const current = resourceSchema.parse({
@@ -323,12 +329,19 @@ export function createService(bb: BbPluginApi, now = Date.now) {
       },
       async resume(ctx) {
         const resource = resourceSchema.parse(ctx.resource);
-        ctx.report.step("Starting the GCP VM");
-        if ((await power(resource, "start", ctx.signal)).outcome === "gone")
-          throw new Error("The pinned GCP VM no longer exists.");
-        ctx.report.step("Restarting the enrolled BB daemon and waiting for connection");
-        await restartDaemon(resource, ctx.hostId, ctx.signal, ctx.report);
-        return { resource };
+        lastResumeFailure = null;
+        try {
+          ctx.report.step("Starting the GCP VM");
+          const result = await retryableWakeStep(() => power(resource, "start", ctx.signal));
+          if (result.outcome === "gone")
+            throw new WakeRequestError("The pinned GCP VM no longer exists.", false);
+          ctx.report.step("Restarting the enrolled BB daemon and waiting for connection");
+          await restartDaemon(resource, ctx.hostId, ctx.signal, ctx.report);
+          return { resource };
+        } catch (error) {
+          lastResumeFailure = { hostId: ctx.hostId, error };
+          throw error;
+        }
       },
       async remove(ctx) {
         const resource = resourceSchema.parse(ctx.resource);
@@ -396,36 +409,68 @@ export function createService(bb: BbPluginApi, now = Date.now) {
         error,
       };
     },
-    async wake() {
+    wakeReceipts: {
+      load: store.wakeRequests.bind(store),
+      save: store.rememberWakeRequests.bind(store),
+    },
+    resumeFailure() {
+      return lastResumeFailure?.hostId === store.binding()?.hostId
+        ? lastResumeFailure?.error
+        : undefined;
+    },
+    async readHost() {
       const binding = store.binding();
       if (!binding?.hostId)
-        throw new Error("Enroll the configured VM with the GCP Machine provider first.");
-      touch(binding.hostId);
-      const host = await bb.sdk.hosts.get({ hostId: binding.hostId, signal: signal() });
-      if (host.lifecycle.phase === "active" && host.status !== "connected") {
-        const vm = await inspect(binding.resource);
-        if (vm.kind === "missing") throw new Error("The pinned GCP VM no longer exists.");
-        if (vm.status === "TERMINATED" || vm.status === "RUNNING") {
-          const requestSignal = signal(22 * 60_000);
-          if ((await power(binding.resource, "start", requestSignal)).outcome === "gone")
-            throw new Error("The pinned GCP VM no longer exists.");
-          const current = await bb.sdk.hosts.get({ hostId: binding.hostId, signal: requestSignal });
-          if (current.lifecycle.phase !== "active")
-            throw new Error("The machine lifecycle changed during Wake. Retry after it settles.");
-          if (current.status !== "connected")
-            await restartDaemon(binding.resource, binding.hostId, requestSignal, {
-              step: (message) => bb.log.info(message),
-              log() {},
-            });
-          return bb.sdk.hosts.get({ hostId: binding.hostId, signal: signal() });
-        }
-        throw new Error(
-          `GCP VM is ${vm.status}, but its BB daemon is disconnected. Check the daemon connection before sending work.`,
+        throw new WakeRequestError(
+          "Enroll the configured VM with the GCP Machine provider first.",
+          false,
         );
-      }
-      return host.lifecycle.phase === "active"
-        ? host
-        : bb.sdk.hosts.experimental_resume({ hostId: binding.hostId });
+      return bb.sdk.hosts.get({ hostId: binding.hostId, signal: signal() });
+    },
+    wake() {
+      if (wakeRequest) return wakeRequest;
+      const request = (async () => {
+        const binding = store.binding();
+        if (!binding?.hostId)
+          throw new WakeRequestError(
+            "Enroll the configured VM with the GCP Machine provider first.",
+            false,
+          );
+        touch(binding.hostId);
+        const host = await bb.sdk.hosts.get({ hostId: binding.hostId, signal: signal() });
+        if (host.lifecycle.phase === "active" && host.status !== "connected") {
+          const vm = await retryableWakeStep(() => inspect(binding.resource));
+          if (vm.kind === "missing")
+            throw new WakeRequestError("The pinned GCP VM no longer exists.", false);
+          if (vm.status === "TERMINATED" || vm.status === "RUNNING") {
+            const requestSignal = signal(22 * 60_000);
+            const result = await retryableWakeStep(() =>
+              power(binding.resource, "start", requestSignal),
+            );
+            if (result.outcome === "gone")
+              throw new WakeRequestError("The pinned GCP VM no longer exists.", false);
+            const current = await bb.sdk.hosts.get({
+              hostId: binding.hostId,
+              signal: requestSignal,
+            });
+            if (current.lifecycle.phase !== "active")
+              throw new Error("The machine lifecycle changed during Wake. Retry after it settles.");
+            if (current.status !== "connected")
+              await restartDaemon(binding.resource, binding.hostId, requestSignal, wakeReport);
+            return bb.sdk.hosts.get({ hostId: binding.hostId, signal: signal() });
+          }
+          throw new Error(
+            `GCP VM is ${vm.status}, but its BB daemon is disconnected. Check the daemon connection before sending work.`,
+          );
+        }
+        if (host.lifecycle.phase === "active") return host;
+        lastResumeFailure = null;
+        return bb.sdk.hosts.experimental_resume({ hostId: binding.hostId });
+      })().finally(() => {
+        wakeRequest = null;
+      });
+      wakeRequest = request;
+      return request;
     },
   };
 }

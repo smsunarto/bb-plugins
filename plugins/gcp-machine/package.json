@@ -20,7 +20,8 @@
     "host": "./src/host/host.ts",
     "skills": [
       "skills"
-    ]
+    ],
+    "app": "./src/app/app.ts"
   },
   "dependencies": {
     "zod": "^4.4.3"
@@ -29,7 +30,12 @@
     "@get-bb/plugin-sdk": "0.6.94",
     "@types/node": "^22.0.0",
     "tsx": "4.23.12",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "sonner": "^1.7.4",
+    "react": "19.2.8",
+    "@types/react": "^19.0.0",
+    "react-dom": "19.2.8",
+    "@types/react-dom": "^19.0.0"
   },
   "private": true,
   "description": "Start an existing GCP VM on demand and stop it after one hour without BB work.",
@@ -39,7 +45,7 @@
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/host/*.test.ts src/server/lib/*.test.ts src/server/command/*.test.ts"
+    "test": "node --import tsx --test src/host/*.test.ts src/server/lib/*.test.ts src/server/command/*.test.ts src/app/*.test.ts"
   },
   "files": [
     "dist/*.js",

@@ -8,6 +8,7 @@ import {
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { IDLE_MS, type Inspection, type Resource } from "../../shared/schema.ts";
 import { createService } from "./service.ts";
+import { WakeRequestError } from "./wake-error.ts";
 import { Store } from "./store.ts";
 
 const resource: Resource = {
@@ -569,4 +570,21 @@ test("an unacknowledged suspend does not permanently disable later idle checks",
   f.advance();
   await f.service.sweep();
   assert.equal(f.harness.inspection.sdk.callsTo("hosts.experimental_suspend").length, 2);
+});
+
+test("native resume retains retry safety without classifying uncertain bootstrap as retryable", async (t) => {
+  const f = fixture();
+  t.after(() => f.harness.lifecycle.dispose());
+  const provider = f.harness.inspection.registrations.machineProviders.get("gcp-machine")!;
+  f.state.powerFail = true;
+  await assert.rejects(provider.resume!(lifecycleContext()));
+  const failure = f.service.resumeFailure();
+  assert.ok(failure instanceof WakeRequestError);
+  assert.equal(failure.retryable, true);
+  f.state.powerFail = false;
+  f.bb.experimental_machines.bootstrap = async () => {
+    throw new Error("uncertain bootstrap outcome");
+  };
+  await assert.rejects(provider.resume!(lifecycleContext()), /uncertain bootstrap/);
+  assert.ok(!(f.service.resumeFailure() instanceof WakeRequestError));
 });

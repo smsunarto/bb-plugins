@@ -465,6 +465,11 @@
       "devDependencies": {
         "@get-bb/plugin-sdk": "0.6.94",
         "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "sonner": "^1.7.4",
         "tsx": "4.23.12",
         "typescript": "^6.0.0",
       },
