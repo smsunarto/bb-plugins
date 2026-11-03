@@ -11,6 +11,6 @@
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSUIElement</key><true/>
 <key>NSMicrophoneUsageDescription</key><string>Stream your question to ElevenLabs while you hold Talk. Only the resulting transcript is sent to BB.</string>
-<key>NSScreenCaptureUsageDescription</key><string>Include a screenshot with the first question in a new conversation, or when you choose Capture screen.</string>
+<key>NSScreenCaptureUsageDescription</key><string>Include a current display screenshot and window context when you ask a voice question.</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

@@ -7,11 +7,12 @@ import SwiftUI
 final class VisualWindowController: NSObject {
     private let model: CompanionModel
     private var contentPanel: VisualOutputPanel?
-    private var clearPanel: VisualOutputPanel?
-    private var controlsPanel: VisualOutputPanel?
     private var kind: VisualKind?
     private var display: VisualDisplayContext?
     private let interaction = VisualInteractionState()
+    private var playbackDeadline: Task<Void, Never>?
+    private var playbackStarted = false
+    private var playbackExpired = false
     var isPresented: Bool { contentPanel != nil }
 
     init(model: CompanionModel) {
@@ -38,9 +39,18 @@ final class VisualWindowController: NSObject {
             return
         }
         if kind != document.kind || display != context { close() }
+        interaction.playing = !playbackExpired && document.nodes.contains { $0.animation != nil }
+        if interaction.playing, !playbackStarted {
+            playbackStarted = true
+            playbackDeadline = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(30))
+                guard !Task.isCancelled else { return }
+                self?.playbackExpired = true; self?.interaction.playing = false
+            }
+        }
         guard contentPanel == nil else { return }
         kind = document.kind; display = context
-        interaction.spread = 0; interaction.playing = false; interaction.resetToken += 1
+        interaction.spread = 0; interaction.resetToken += 1
         let bounds = screen.visibleFrame
         let frame: CGRect
         if document.kind == .diagram {
@@ -58,20 +68,18 @@ final class VisualWindowController: NSObject {
         // retain their normal orbit/selection gestures without mouse monitors.
         if document.kind != .scene3d { panel.ignoresMouseEvents = true }
         contentPanel = panel
-        let hosting = VisualOutputHostingView(rootView: AnyView(VisualOutputView(model: model, interaction: interaction,
-            sceneReady: { [weak self] scene in
-                scene.onGestureBegan = { [weak self] in self?.showControls() }
-            })))
+        let hosting = VisualOutputHostingView(rootView: AnyView(VisualOutputView(model: model, interaction: interaction)))
         hosting.sizingOptions = []
         panel.contentView = hosting
         panel.orderFrontRegardless()
-        showClear(on: screen)
     }
 
     func close() {
+        playbackDeadline?.cancel(); playbackDeadline = nil
+        playbackStarted = false; playbackExpired = false
         interaction.playing = false
-        for panel in [contentPanel, clearPanel, controlsPanel] { panel?.orderOut(nil); panel?.contentView = nil }
-        contentPanel = nil; clearPanel = nil; controlsPanel = nil
+        contentPanel?.orderOut(nil); contentPanel?.contentView = nil
+        contentPanel = nil
         kind = nil; display = nil
     }
 
@@ -87,31 +95,6 @@ final class VisualWindowController: NSObject {
         return panel
     }
 
-    private func showClear(on screen: NSScreen) {
-        let bounds = screen.visibleFrame
-        let panel = outputPanel(frame: CGRect(x: min(bounds.maxX - 96, bounds.midX + 157), y: bounds.maxY - 36, width: 86, height: 30))
-        panel.level = .popUpMenu
-        panel.contentView = VisualOutputHostingView(rootView: AnyView(
-            Button { [weak self] in self?.model.dismissVisuals() } label: {
-                Label("Clear", systemImage: "xmark").font(.system(size: 12, weight: .medium))
-                    .frame(width: 86, height: 30)
-                    .foregroundStyle(VisualPalette.ink)
-                    .background(VisualPalette.paper, in: Capsule())
-            }.buttonStyle(.plain).accessibilityLabel("Clear visual overlay")))
-        clearPanel = panel
-        panel.orderFrontRegardless()
-    }
-
-    private func showControls() {
-        guard controlsPanel == nil, kind == .scene3d, let screen = display?.matchingScreen else { return }
-        let bounds = screen.visibleFrame
-        let panel = outputPanel(frame: CGRect(x: bounds.maxX - 354, y: bounds.minY + 22, width: 332, height: 150))
-        panel.level = .popUpMenu
-        panel.contentView = VisualOutputHostingView(rootView: AnyView(VisualObjectControls(model: model, interaction: interaction,
-            close: { [weak self] in self?.controlsPanel?.orderOut(nil); self?.controlsPanel = nil })))
-        controlsPanel = panel
-        panel.orderFrontRegardless()
-    }
 }
 
 /// Neither arriving content nor clicks on its controls may take keyboard focus.
@@ -134,7 +117,6 @@ private final class VisualOutputHostingView: NSHostingView<AnyView> {
 private struct VisualOutputView: View {
     @Bindable var model: CompanionModel
     @Bindable var interaction: VisualInteractionState
-    let sceneReady: (ClickySceneView) -> Void
 
     var body: some View {
         if let document = model.visualDocument, !document.nodes.isEmpty {
@@ -142,39 +124,9 @@ private struct VisualOutputView: View {
             VisualCanvas(document: document, selectedID: Binding(get: { model.selectedVisualNodeID }, set: { id in
                 guard model.visualRevision == revision, model.visualDocument == document else { return }
                 model.selectedVisualNodeID = id
-            }), spread: interaction.spread, playing: interaction.playing, resetToken: interaction.resetToken,
-                sceneReady: sceneReady)
+            }), spread: interaction.spread, playing: interaction.playing, resetToken: interaction.resetToken)
                 .clipShape(RoundedRectangle(cornerRadius: document.kind == .diagram ? 14 : 0))
         }
     }
 }
 
-/// Appears only after the user interacts with 3D geometry. It owns its small opaque footprint.
-private struct VisualObjectControls: View {
-    @Bindable var model: CompanionModel
-    @Bindable var interaction: VisualInteractionState
-    var close: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(verbatim: selected?.label ?? "Explore the model").font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                Spacer()
-                Button(action: close) { Image(systemName: "xmark") }.accessibilityLabel("Hide model controls")
-            }
-            if let detail = selected?.detail, !detail.isEmpty {
-                Text(verbatim: detail).font(.system(size: 11)).lineLimit(3).frame(maxWidth: .infinity, alignment: .leading)
-            } else { Text("Drag a solid part to rotate. Scroll over it to zoom.").font(.system(size: 11)).foregroundStyle(.secondary) }
-            Spacer(minLength: 0)
-            HStack(spacing: 10) {
-                Button(interaction.playing ? "Pause" : "Play") { interaction.playing.toggle() }
-                Text("Spread").font(.caption)
-                Slider(value: $interaction.spread, in: 0...1).accessibilityLabel("Spread model parts")
-                Button("Reset") { interaction.spread = 0; interaction.playing = false; interaction.resetToken += 1 }
-            }.font(.system(size: 11))
-        }.padding(13).foregroundStyle(VisualPalette.ink)
-            .buttonStyle(.plain)
-            .background(VisualPalette.paper, in: RoundedRectangle(cornerRadius: 13))
-    }
-    private var selected: VisualNode? { model.visualDocument?.nodes.first { $0.id == model.selectedVisualNodeID } }
-}

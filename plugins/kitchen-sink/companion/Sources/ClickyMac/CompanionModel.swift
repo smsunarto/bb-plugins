@@ -1,6 +1,7 @@
 import AppKit
 import ClickyCore
 import Observation
+import OSLog
 
 struct TranscriptEntry: Codable, Identifiable {
     var id: String
@@ -65,11 +66,11 @@ struct SavedInteractions: Codable {
     var requests: [InteractionRequest] = []
     var outputRequestID: String?
     var hosts: [BBHost] = []
-    var error: String?
+    var error: String? {
+        didSet { if let error { Logger(subsystem: "app.getbb.clicky-companion", category: "requests").error("\(error, privacy: .private)") } }
+    }
     var connected = false
     var connecting = false
-    var settingsVisible = false
-    var panelVisible = false
     var recording = false
     var requestingMicrophone = false
     private struct VoiceRequestContext {
@@ -79,6 +80,7 @@ struct SavedInteractions: Codable {
     }
     private var voiceRequest: VoiceRequestContext?
     private var recordingStartedAt: Date?
+    private var requestedDesktopPermissions = false
     var visualDocument: VisualDocument?
     var visualWarning: String?
     var visualIsComplete = false
@@ -92,14 +94,10 @@ struct SavedInteractions: Codable {
 
     private var connectionGeneration = UUID()
     var transcribing = false
-    var contextNotice: String?
-    var accessibilityAllowed = false
-    var screenCaptureAllowed = false
     @ObservationIgnored var contextCapture: ((CapturedScreen?) async -> InitialDesktopContext)?
     @ObservationIgnored var instructionsLoader: (() throws -> (String, String))?
     let desktop = DesktopServices()
     let voice = ElevenLabsVoice()
-    var voiceKeyStatus = "Key not checked"
     private var speechOwner: (sessionID: String, requestID: String)?
     private var speechRaw: [String: String] = [:]
     private var speechOrder: [String] = []
@@ -143,8 +141,6 @@ struct SavedInteractions: Codable {
             if let data = try? Data(contentsOf: root.appendingPathComponent("sessions.json")),
                let legacy = try? JSONDecoder().decode(LegacySettings.self, from: data) { preferences = legacy.preferences }
         }
-        refreshContextPermissions()
-        settingsVisible = false
         pruneRequests()
         voice.onInputFailure = { [weak self] message, partial in
             guard let self else { return }
@@ -198,7 +194,7 @@ struct SavedInteractions: Codable {
 
     /// Every question owns a fresh backend request. No previous thread or busy
     /// phase can gate a new ask; only output ownership moves to the latest ask.
-    func ask(_ question: String) async {
+    func ask(_ question: String, requestPermissions: Bool = false) async {
         let text = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         stopSpeaking(); dismissVisuals()
@@ -213,11 +209,11 @@ struct SavedInteractions: Codable {
             serverURL: server, phase: .sending, requestedAt: requestedAt)
         requests.insert(record, at: 0); outputRequestID = id
         update(id) { $0.entries = [TranscriptEntry(id: "pending-\(id)", role: "user", text: text)] }
-        error = nil; contextNotice = nil
+        error = nil
         pruneRequests(); save()
         guard !host.isEmpty, !server.isEmpty else {
             update(id) { $0.phase = .failed }
-            error = "BB is not configured. Set the server and machine in the menu's Settings."
+            error = "BB connection is not configured."
             save(); return
         }
         var sentCapture: CapturedScreen?
@@ -229,6 +225,13 @@ struct SavedInteractions: Codable {
             guard generation == connectionGeneration, requests.contains(where: { $0.id == id && !$0.retired }), !Task.isCancelled else { update(id) { $0.phase = .failed }; save(); return }
             contextJSON = try? snapshot.context.promptJSON()
             update(id) { $0.contextSummary = [snapshot.context.application, snapshot.context.window].compactMap { $0 }.joined(separator: " · ") }
+        }
+        // Capture the user's app before any first-use OS dialog can activate.
+        // Direct/headless callers remain noninteractive by default.
+        if requestPermissions, !requestedDesktopPermissions, preferences.includeInitialContext ?? true {
+            requestedDesktopPermissions = true
+            if !desktop.accessibilityAllowed { desktop.requestAccessibility() }
+            if !desktop.screenCaptureAllowed { desktop.requestScreenCapture() }
         }
         guard generation == connectionGeneration, requests.contains(where: { $0.id == id && !$0.retired }), !Task.isCancelled else { update(id) { $0.phase = .failed }; save(); return }
         let request = VisualRequest(id: id, afterSequence: 0,
@@ -478,19 +481,6 @@ struct SavedInteractions: Codable {
         throw BBClientError.responseTooLarge
     }
 
-    func saveVoiceKey(_ key: String) {
-        do { try VoiceKeychain.save(key); voiceKeyStatus = "Key saved in Keychain"; error = nil }
-        catch { voiceKeyStatus = "Keychain access failed"; self.error = error.localizedDescription }
-    }
-    func checkVoiceKey() {
-        do { voiceKeyStatus = try VoiceKeychain.read(allowInteraction: true) == nil ? "No key saved" : "Key available in Keychain" }
-        catch { voiceKeyStatus = "Keychain access denied"; self.error = error.localizedDescription }
-    }
-    func removeVoiceKey() {
-        cancelVoiceInput(); stopSpeaking()
-        do { try VoiceKeychain.remove(); voiceKeyStatus = "No key saved" }
-        catch { self.error = error.localizedDescription }
-    }
     func stopSpeaking() {
         speechOwner = nil; speechRaw = [:]; speechOrder = []
         voice.stopSpeaking()
@@ -642,17 +632,6 @@ struct SavedInteractions: Codable {
         catch { if id == outputRequestID { self.error = "Could not confirm stop. This request is still tracked in BB. \(error.localizedDescription)" } }
     }
 
-    func openInBB(requestID: String? = nil) async {
-        guard let request = requests.first(where: { $0.id == (requestID ?? outputRequestID) }), request.serverURL == preferences.serverURL, let id = request.threadID else { return }
-        do { try await client.open(threadID: id) } catch { self.error = error.localizedDescription }
-    }
-
-    func refreshContextPermissions() {
-        accessibilityAllowed = desktop.accessibilityAllowed
-        screenCaptureAllowed = desktop.screenCaptureAllowed
-    }
-    func requestAccessibility() { desktop.requestAccessibility(); refreshContextPermissions() }
-    func requestScreenCapture() { desktop.requestScreenCapture(); refreshContextPermissions() }
     func beginRecording() async {
         // A new hold always silences the previous answer, including a running BB turn.
         stopSpeaking()
@@ -661,6 +640,7 @@ struct SavedInteractions: Codable {
         voiceRequest = request; requestingMicrophone = true; error = nil
         if !connected { await connect() }
         guard connected, voiceRequest?.id == request.id else { cancelVoiceInput(); return }
+        guard voiceRequest?.id == request.id else { return }
         recordingStartedAt = Date()
         recordingLimit = Task {
             try? await Task.sleep(for: .seconds(30))
@@ -701,7 +681,7 @@ struct SavedInteractions: Codable {
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw VoiceProtocolError.noSpeech }
             transcribing = false
             voiceRequest = nil
-            await ask(text)
+            await ask(text, requestPermissions: true)
         } catch is CancellationError { }
         catch { if voiceRequest?.id == request.id { self.error = error.localizedDescription } }
     }
@@ -727,7 +707,7 @@ struct SavedInteractions: Codable {
                 let stillBusy = self.serverRequests.contains(where: { $0.phase.busy && !$0.retired })
                 if self.connected && stillBusy {
                     await self.refresh(reconcileStatus: false)
-                } else if !self.connected && self.retryCount > 0 && self.retryCount <= 3 && Date() >= self.nextRetryAt && (self.panelVisible || stillBusy) { await self.connect() }
+                } else if !self.connected && self.retryCount > 0 && self.retryCount <= 3 && Date() >= self.nextRetryAt && (stillBusy || self.requestingMicrophone || self.transcribing) { await self.connect() }
             }
         }
     }

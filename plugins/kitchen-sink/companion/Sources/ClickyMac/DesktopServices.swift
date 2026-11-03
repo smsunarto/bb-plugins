@@ -27,7 +27,7 @@ enum DesktopServiceError: LocalizedError {
         case .displayUnavailable: "The selected display is no longer connected. Capture your screen again."
         case .imageEncodingFailed: "The screenshot could not be saved."
         case let .shortcutUnavailable(status):
-            "Clicky's shortcut could not be registered (\(status)). Another app may use it. You can still open Clicky from the menu bar."
+            "Clicky's shortcut could not be registered (\(status)). Resolve the conflicting shortcut, then relaunch Clicky."
         }
     }
 }
