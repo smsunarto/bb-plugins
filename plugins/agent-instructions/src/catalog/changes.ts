@@ -210,14 +210,9 @@ function createSkill(
   const text = `---\n${stringify({ name, description }, { lineWidth: 0 })}---\n\n# ${name}\n`;
   const bytes = Buffer.from(text, "utf8");
   const row: SkillRow = { name, description, enabled: 1, origin: AUTHORED };
-  return storeSkillFiles(
-    db,
-    change,
-    actor,
-    row,
-    [{ path: "SKILL.md", executable: false, sha256: sha256(bytes), bytes }],
-    ["SKILL.md"],
-  );
+  const file: StoredFile = { path: "SKILL.md", executable: false, sha256: sha256(bytes), bytes };
+  // The SKILL.md hash lets the first edit name what it replaces without reading it back.
+  return storeSkillFiles(db, change, actor, row, [file], ["SKILL.md"], { sha256: file.sha256 });
 }
 
 /** Warnings for skills whose links point into `name`, once it stops being published. */

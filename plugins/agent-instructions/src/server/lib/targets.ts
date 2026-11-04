@@ -15,6 +15,17 @@ export async function loadTargets(bb: BbPluginApi): Promise<Targets> {
   };
 }
 
+/** The host of the thread that ran a command, so its paths can be read there. */
+export async function callerHost(
+  bb: BbPluginApi,
+  threadId: string | undefined,
+): Promise<string | undefined> {
+  if (!threadId) return undefined;
+  const thread = await bb.sdk.threads.get({ threadId });
+  if (!thread.environmentId) return undefined;
+  return (await bb.sdk.environments.get({ environmentId: thread.environmentId }))?.hostId;
+}
+
 function names(ids: readonly string[], known: readonly Target[]): string {
   return ids.map((id) => known.find((target) => target.id === id)?.name ?? id).join(" or ");
 }

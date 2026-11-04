@@ -8,6 +8,7 @@ import {
   type ImportSource,
 } from "../../catalog/import.ts";
 import type { PublishReport } from "../../catalog/publish.ts";
+import { callerHost } from "../lib/targets.ts";
 import { publishFindings, publishLines, type PublishFindings } from "./publish.ts";
 
 const GLOBAL_KEY = "global-project";
@@ -18,16 +19,9 @@ async function resolveSource(
   threadId: string | undefined,
   options: { host?: string | undefined; root?: string | undefined },
 ): Promise<ImportSource> {
-  const callerHost = threadId
-    ? await ctx.bb.sdk.threads
-        .get({ threadId })
-        .then((t) =>
-          t.environmentId ? ctx.bb.sdk.environments.get({ environmentId: t.environmentId }) : null,
-        )
-        .then((e) => e?.hostId)
-    : undefined;
+  const caller = await callerHost(ctx.bb, threadId);
   if (options.root) {
-    const hostId = options.host ?? callerHost;
+    const hostId = options.host ?? caller;
     if (!hostId)
       throw new PluginCliError("--root needs --host outside a bb thread", { code: "no_host" });
     return { hostId, rootPath: options.root };
@@ -46,7 +40,7 @@ async function resolveSource(
     (s) => connected.has(s.hostId) && (!options.host || s.hostId === options.host),
   );
   const source =
-    sources.find((s) => s.hostId === callerHost) ?? sources.find((s) => s.isDefault) ?? sources[0];
+    sources.find((s) => s.hostId === caller) ?? sources.find((s) => s.isDefault) ?? sources[0];
   if (!source)
     throw new PluginCliError(`${project.name} has no checkout on a connected host`, {
       code: "offline",

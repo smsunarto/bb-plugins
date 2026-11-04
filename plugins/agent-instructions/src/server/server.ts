@@ -8,6 +8,7 @@ import { openCatalog } from "../catalog/store.ts";
 import { hostContract } from "../host-contract.ts";
 import { add } from "./command/add.ts";
 import { catalogCommand } from "./command/catalog.ts";
+import { editCommands } from "./command/edit.ts";
 import { importCommand } from "./command/import.ts";
 import { list } from "./command/list.ts";
 import { preview } from "./command/preview.ts";
@@ -42,9 +43,10 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     host: bb.hosts.experimental_client({ contract: hostContract }),
     publisher: openPublisher(bb, catalog),
   });
+  const catalogRpc = catalogHandlers(catalogCtx);
   bb.rpc.register(contract, {
     ...documentHandlers(bb),
-    ...catalogHandlers(catalogCtx),
+    ...catalogRpc,
     plugins: prompts.plugins,
     file: prompts.file,
     save: prompts.save,
@@ -64,6 +66,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
         import: importCommand(catalogCtx),
         catalog: catalogCommand(catalogCtx),
         publish: publishCommand(catalogCtx),
+        ...editCommands(catalogCtx, catalogRpc),
       },
     }),
   );
