@@ -218,6 +218,7 @@ export interface PullRequest {
   createdAt: number;
   isDraft: boolean;
   headRefOid: string;
+  headRefName: string;
   baseRefName: string;
   author: { login: string } | null;
   authorAssociation: AuthorAssociation | string;

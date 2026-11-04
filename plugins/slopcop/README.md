@@ -43,7 +43,7 @@ bb slopcop rules add \
   --repo owner/repo \
   --project my-project \
   --paths "src/auth/**,src/payments/**" \
-  --prompt "Review the diff for auth and payment issues. Post findings with gh pr review --comment."
+  --prompt "Review the diff for auth and payment issues."
 
 bb slopcop check security-sweep 482   # would it match? if not, exactly why not
 bb slopcop dispatch security-sweep 482
@@ -198,17 +198,18 @@ Two consequences worth knowing:
 
 ## Commands
 
-|                                                           |                                                 |
-| --------------------------------------------------------- | ----------------------------------------------- |
-| `bb slopcop rules`                                        | List rules                                      |
-| `bb slopcop rules add\|edit <rule>`                       | Create or update (see flags below)              |
-| `bb slopcop rules enable\|disable\|rm <rule>`             | Toggle or delete                                |
-| `bb slopcop check <rule> <number> [--issue]`              | Dry run — match, or the exact reason it did not |
-| `bb slopcop dispatch <rule> <number> [--issue] [--force]` | Run now                                         |
-| `bb slopcop runs [--rule <r>] [--limit N]`                | Recent runs                                     |
-| `bb slopcop show [run-id]`                                | A run and the review body it produced           |
-| `bb slopcop verify [run-id]`                              | Re-check a live run's comments against GitHub   |
-| `bb slopcop status`                                       | gh auth, watched repos, poll interval           |
+|                                                            |                                                 |
+| ---------------------------------------------------------- | ----------------------------------------------- |
+| `bb slopcop rules`                                         | List rules                                      |
+| `bb slopcop rules add\|edit <rule>`                        | Create or update (see flags below)              |
+| `bb slopcop rules enable\|disable\|rm <rule>`              | Toggle or delete                                |
+| `bb slopcop check <rule> <number> [--issue]`               | Dry run — match, or the exact reason it did not |
+| `bb slopcop dispatch <rule> <number> [--issue] [--force]`  | Run now                                         |
+| `bb slopcop runs [--rule <r>] [--limit N]`                 | Recent runs                                     |
+| `bb slopcop show [run-id]`                                 | A run and the review body it produced           |
+| `bb slopcop verify [run-id]`                               | Re-check a live run's comments against GitHub   |
+| `bb slopcop review [number] --event <verdict> --body <md>` | Submit one PR review with inline comments       |
+| `bb slopcop status`                                        | gh auth, watched repos, poll interval           |
 
 Plugin settings: `defaultThreadSection` accepts a BB thread section name or ID.
 SlopCop fails a run with a clear error if that section no longer exists.

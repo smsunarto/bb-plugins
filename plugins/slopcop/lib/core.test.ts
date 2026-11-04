@@ -54,6 +54,7 @@ function makePr(overrides: Partial<PullRequest> = {}): PullRequest {
     createdAt: 2_000,
     isDraft: false,
     headRefOid: "a1b2c3d",
+    headRefName: "feature/retries",
     baseRefName: "main",
     author: { login: "dana" },
     authorAssociation: "MEMBER",
@@ -265,21 +266,21 @@ describe("bot posting command", () => {
     ghCommand,
   });
 
-  it("defaults to plain gh and adds no bot note", () => {
+  it("submits the review through bb slopcop review and adds no bot note", () => {
     const prompt = buildPrompt(context());
-    expect(prompt).toContain("Post your review to the PR with `gh`.");
-    expect(prompt).not.toContain("SlopCop identity");
+    expect(prompt).toContain(`bb slopcop review ${makePr().number} --repo acme/checkout-api`);
+    expect(prompt).not.toContain("Plain `gh` is fine for reads.");
   });
 
-  it("routes writes through the configured wrapper", () => {
+  it("routes other writes through the configured wrapper", () => {
     const prompt = buildPrompt(context("/home/me/.slopcop/slopcop-gh"));
-    expect(prompt).toContain("`/home/me/.slopcop/slopcop-gh pr review --comment`");
+    expect(prompt).toContain("bb slopcop review");
+    expect(prompt).toContain("`/home/me/.slopcop/slopcop-gh` for every other `gh` command");
     expect(prompt).toContain("Plain `gh` is fine for reads.");
-    expect(prompt).not.toContain("Post your review to the PR with `gh`.");
   });
 
   it("treats a blank wrapper setting as unset", () => {
-    expect(buildPrompt(context("   "))).toContain("Post your review to the PR with `gh`.");
+    expect(buildPrompt(context("   "))).not.toContain("Plain `gh` is fine for reads.");
   });
 
   it("never tells a shadow rule to post, wrapper or not", () => {

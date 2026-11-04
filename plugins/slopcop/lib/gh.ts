@@ -6,6 +6,7 @@
 import type { ChildProcess } from "node:child_process";
 import { experimental_execHostFileCallback as execFile } from "@get-bb/plugin-sdk/process";
 import { Data, Effect, Predicate, Result } from "effect";
+import type { ReviewPayload } from "./review";
 import type { GitHubIssue, PullRequest, TriggerComment, TriggerCommentSource } from "./types";
 
 /**
@@ -37,12 +38,24 @@ export interface GhClient {
   listReviews(repo: string, number: number): Effect.Effect<GhComment[], GhError>;
   listRecentIssueComments(repo: string, since: number): Effect.Effect<TriggerComment[], GhError>;
   listRecentReviewComments(repo: string, since: number): Effect.Effect<TriggerComment[], GhError>;
+  /** Submits one review: its verdict, summary, and inline comments together. */
+  submitReview(
+    repo: string,
+    number: number,
+    review: ReviewPayload,
+  ): Effect.Effect<SubmittedReview, GhError>;
   /**
    * The account `gh` acts as, or null when it is signed out or the lookup
    * failed for another reason. Fails only when GitHub is out of reach, which
    * a later attempt can outlast.
    */
   authenticatedLogin(): Effect.Effect<string | null, GhUnavailable>;
+}
+
+export interface SubmittedReview {
+  id: string;
+  state: string;
+  url: string | null;
 }
 
 export interface GhComment {
@@ -75,8 +88,15 @@ const KILL_GRACE_MS = 2_000;
 /**
  * Runs `gh` and returns its stdout. Interrupting the call kills `gh`, then
  * waits up to KILL_GRACE_MS for it to exit, so a stop never leaves it running.
+ * `input`, when given, is written to stdin; such calls report stdout on
+ * failure too, because `gh api` prints GitHub's error body there.
  */
-function run(file: string, args: string[], timeoutMs: number): Effect.Effect<string, GhError> {
+function run(
+  file: string,
+  args: string[],
+  timeoutMs: number,
+  input?: string,
+): Effect.Effect<string, GhError> {
   return Effect.callback<string, GhError>((resume, signal) => {
     const child = execFile(
       file,
@@ -87,7 +107,10 @@ function run(file: string, args: string[], timeoutMs: number): Effect.Effect<str
           resume(Effect.succeed(stdout));
           return;
         }
-        const detail = stderr.trim() || error.message;
+        const detail =
+          [stderr.trim(), input === undefined ? "" : stdout.trim()]
+            .filter((part) => part !== "")
+            .join("\n") || error.message;
         resume(
           Effect.fail(
             new GhError({
@@ -98,6 +121,13 @@ function run(file: string, args: string[], timeoutMs: number): Effect.Effect<str
         );
       },
     );
+    if (input !== undefined) {
+      // A child that exits before reading its input makes the write fail
+      // with EPIPE. The exit callback reports the real failure, so only
+      // keep the stream error from becoming an uncaught exception.
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(input);
+    }
     return exited(child).pipe(Effect.timeoutOption(KILL_GRACE_MS), Effect.asVoid);
   });
 }
@@ -154,6 +184,7 @@ export function toPullRequest(raw: unknown): PullRequest {
     createdAt: toTimestamp(row.created_at),
     isDraft: row.draft === true,
     headRefOid: typeof head.sha === "string" ? head.sha : "",
+    headRefName: typeof head.ref === "string" ? head.ref : "",
     baseRefName: typeof base.ref === "string" ? base.ref : "",
     author: { login: String(asRecord(row.user).login ?? "") },
     authorAssociation:
@@ -298,6 +329,23 @@ export function createGhClient(ghPath: string, timeoutMs = 30_000): GhClient {
     listReviews: (repo, number) => api(`repos/${repo}/pulls/${number}/reviews`),
     listRecentIssueComments: (repo, since) => recentComments(repo, "issue", since),
     listRecentReviewComments: (repo, since) => recentComments(repo, "review", since),
+
+    submitReview: (repo, number, review) =>
+      run(
+        ghPath,
+        ["api", "--method", "POST", `repos/${repo}/pulls/${number}/reviews`, "--input", "-"],
+        timeoutMs,
+        JSON.stringify(review),
+      ).pipe(
+        Effect.map((stdout) => {
+          const row = asRecord(JSON.parse(stdout));
+          return {
+            id: String(row.id ?? ""),
+            state: typeof row.state === "string" ? row.state : "",
+            url: typeof row.html_url === "string" ? row.html_url : null,
+          };
+        }),
+      ),
 
     authenticatedLogin: Effect.fnUntraced(function* () {
       const asUser = yield* Effect.result(call(["api", "user", "--jq", ".login"]));
