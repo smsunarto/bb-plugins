@@ -18,9 +18,21 @@
 - Keep a per-lens ledger of provider, ID, launch outcome, collected report, and whether its one recovery attempt has been used. Retain successful IDs; never repeat successful fanout.
 - Before retrying an unknown launch outcome, reconcile your direct children by parent and `review_run`. Do not launch duplicates.
 
+## Independent architecture and premise assessment
+
+- Before reading lens reports, form your own view of the whole PR: the problem it solves, the constraints it must satisfy, and whether every included change belongs in that solution. Treat the description as stated intent, not proof.
+- Challenge the chosen mechanism against what already exists at the pinned base: company patterns, existing owners, framework capabilities, and dependencies already in use. Compare a concrete simpler alternative when one is credible; do not prescribe a new library merely because it exists or demand a rewrite for taste.
+- Trace ownership and contracts across callers, services, schemas, generated code, configuration, and repositories affected by the change. Read an accessible counterpart at a pinned revision when needed; otherwise identify the unverified contract. Distinguish an intentional coordinated rollout from an accidental dependency on lockstep changes.
+- Identify the important invariants and what enforces them: types, a real registry, validation, tests, or a deployment mechanism. Look for prose-only rules, duplicated decisions, and old owners left behind by consolidation. Explain the concrete future change that would cause drift.
+- Evaluate the cost model at realistic or explicitly stated scale: cardinality, algorithmic work, allocations/copies, retained memory, network round trips, concurrency limits, cancellation, and backpressure. Separate measured results, source-derived bounds, and unknown workload assumptions. No performance defect without a supported failure or cost scenario.
+- For stateful or infrastructure changes, examine provisioning ownership, compatibility, upgrade/restore, rollout order, rollback, partial failure, observability, and operator burden. Compare with the existing IaC and operational policy; a manual step is not automatically a violation.
+- Seek counterevidence before retaining a design concern. Account for deliberate tradeoffs, migration steps, inherited constraints, and deferred work that the PR names. Keep unsupported concerns as specific questions or discard them.
+- Include an explicit **Architecture assessment** in your final report, even when the design is sound. For each material decision, state **keep**, **change**, or **unverified**, cite evidence, and explain the consequence. For **change**, name the smallest credible alternative and its tradeoff; for **unverified**, name the missing fact. Summarize the overall design judgment before listing line-level findings.
+- After lens results arrive, reconcile them with this assessment. Do not let mechanical nits displace a supported architectural concern; record why a material concern was accepted, downgraded, or rejected.
+
 ## Wait, recover, and synthesize
 
-- Do your own architecture/premise pass while lenses work. Then run `bb thread wait <lens-id> --status idle --timeout 45s --json` for each unfinished lens; use bounded waits rather than sleeping or relying only on notifications.
+- Complete the independent architecture assessment while lenses work. Then run `bb thread wait <lens-id> --status idle --timeout 45s --json` for each unfinished lens; use bounded waits rather than sleeping or relying only on notifications.
 - After a wait returns or times out, read that child's state. Collect its immutable report using the durable handoff below. Continue waiting while it is active or starting; a wait timeout is not a child failure and does not spend a retry.
 - Consume an idle child's complete report even if its notification was missed. A pending-state marker or incomplete answer is not completed coverage; do not repeatedly wait for a child that is already idle.
 - Allow at most one recovery attempt per lens slot. For recoverable early idle or incomplete results, send `bb thread tell <id> --mode steer --message-file <file>` with a targeted request to finish the original assignment using its existing evidence. For transient provider/rate-limit/network failures, use `bb thread retry <id> --reason <reason>`; respect any reported retry-after time. Reuse the thread, provider, worktree, and completed evidence.

@@ -85,6 +85,7 @@ bb slopcop rules edit|enable|disable|rm <rule>
 - For saved PR rules, use [orchestrator-role.md](references/orchestrator-role.md). Keep repository-specific tooling guidance in the rule's context section.
 
 - The Slopcop orchestrator owns two direct Review children: Claude and Codex. It validates their reports and posts under the rule's live/shadow policy.
+- Each Review parent performs an independent architecture/premise assessment before consuming lens results, then reports material decisions as keep, change, or unverified with evidence and tradeoffs. The orchestrator reconciles these judgments before line-level nits.
 - Each Review parent owns eleven separate lens children: A,B,C,D,E,F,G,H,J,K,I. Lenses are leaves in the BB thread tree; they may use tool subagents within their assigned lens but cannot create BB subthreads. The orchestrator does not repeat their reviews.
 
 ### Reuse the orchestrator worktree

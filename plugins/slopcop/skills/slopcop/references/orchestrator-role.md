@@ -55,6 +55,7 @@ python3 <installed-slopcop-skill>/scripts/start_review.py \
 - Allow at most one recovery attempt per reviewer slot. For a recoverable early idle or incomplete result, send a targeted `bb thread tell <id> --mode steer --message-file <file>` asking the same reviewer to resume its assignment, inspect all recorded children, collect completed reports, and finish. For a failed turn caused by a transient provider/rate-limit/network error, use `bb thread retry <id> --reason <reason>`; respect any reported retry-after time. Preserve the thread, provider, worktree, assignment, and completed evidence.
 - Spawn a replacement only when a launch definitively failed or the original thread is unusable and cannot resume. Reconcile an unknown launch outcome by parent and `review_run` first, then rerun the helper with `--provider <failed-provider>` for that slot only. This uses the same one recovery attempt; never repeat successful fanout or replace a recoverable child.
 - Do not retry permission denials, missing prerequisites, invalid targets, intentional user stops, or substantive review uncertainty. If recovery fails, report the exact error and mark coverage incomplete. Deny permission requests from review children.
+- Require each reviewer's explicit Architecture assessment: material decisions marked keep, change, or unverified with evidence and tradeoffs. A list of nits alone is incomplete.
 - Check both reports against the same pinned target and all eleven attestation rows: A,B,C,D,E,F,G,H,J,K,I under EACH reviewer.
 - Check that each row has a matching provider and a unique leaf ID with the correct parent and lifecycle owner, or an exact failed-launch error and explicit sequential pass. Retain failed/replacement IDs in the attestation.
 - Spot-check child metadata and reported evidence with pinned reads. A successful launch or idle status alone does not prove coverage; never present partial coverage as a complete review.
@@ -69,6 +70,7 @@ python3 <installed-slopcop-skill>/scripts/start_review.py \
 
 ## Merge findings
 
+- Lead the final review with the reconciled architectural judgment and any material unresolved design question. Preserve supported architecture, operational, and scale concerns ahead of mechanical nits. Record the reason when rejecting or downgrading a reviewer's material design concern; do not silently drop it.
 - Merge and deduplicate validated findings using the profile's voice, brevity, and evidence-based pruning preferences already applied by the reviewers.
 - Preserve verified mechanical one-line nits, remove duplicates and taste-only speculation, and retain external-context items as questions.
 - Do not invent findings or rewrite preference assets. If validation fails, exclude the finding or report the uncertainty; do not message the reviewer for clarification.
