@@ -65,11 +65,6 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const Project: Story = { play: shows("AGENTS.md") };
-export const Global: Story = {
-  args: {
-    select: (app) => nav(app, "global/dotfiles/mac/.dotfiles/.agents/instructions/shared.md"),
-  },
-};
 export const Reference: Story = {
   args: {
     select: (app) =>

@@ -6,6 +6,7 @@ import { MAX_INSTRUCTIONS_LENGTH, type Rule } from "../shared/rules.ts";
 import { textFilePattern } from "../shared/text-files.ts";
 import { DOTFILES_AGENTS } from "./model.ts";
 import type { Publisher } from "./publish.ts";
+import { deliveredSkills } from "./shadow.ts";
 import {
   MAX_SKILL_FILES,
   parseFrontmatter,
@@ -16,8 +17,8 @@ import {
   rewriteNamespaced,
   SKILL_NAME_PATTERN,
 } from "./skill-rules.ts";
+import { treeSha } from "./tree.ts";
 import {
-  treeSha,
   type CatalogDoc,
   type CatalogSkill,
   type CatalogStore,
@@ -107,24 +108,10 @@ function decodeText(path: string, bytes: Buffer): string | null {
   return Buffer.from(text, "utf8").equals(bytes) ? text : null;
 }
 
-/** Names bb already delivers from plugins or its built-ins, with their owner. */
-async function deliveredSkills(bb: BbPluginApi, report: Report, allowShadow: boolean) {
+/** The shadow check, with a failure reported instead of thrown. */
+async function deliveredOrReport(bb: BbPluginApi, report: Report, allowShadow: boolean) {
   try {
-    // Plugin and built-in skills are the same in every project; any project can list them.
-    const projects = await bb.sdk.projects.list({ includePersonal: true });
-    const project = projects.find((p) => p.kind === "personal") ?? projects[0];
-    if (!project) throw new Error("bb has no project to list skills in");
-    const { skills } = await bb.sdk.skills.list({ projectId: project.id, environmentId: null });
-    const owners = new Map<string, string>();
-    const user = new Set<string>();
-    for (const skill of skills) {
-      if (skill.provider !== null) continue;
-      const name = skill.name.split(":").pop()!;
-      if (skill.scope === "plugin") owners.set(name, `plugin ${skill.pluginId ?? "unknown"}`);
-      else if (skill.scope === "bb-builtin") owners.set(name, "bb's built-in skills");
-      else if (skill.scope === "bb-user") user.add(name);
-    }
-    return { owners, user };
+    return await deliveredSkills(bb);
   } catch (error) {
     (allowShadow ? report.warnings : report.errors).push(
       `Could not check for skills bb already delivers (${(error as Error).message}); pass --allow-shadow to import without the check`,
@@ -309,9 +296,10 @@ function checkRemovals(
   ctx: CatalogContext,
   incoming: Pick<ImportPlan, "skills" | "docs" | "rules">,
   catalogSkills: ReturnType<CatalogStore["skills"]>,
-  prune: boolean,
+  options: { prune: boolean; keptRules: ReadonlySet<string> },
   report: Report,
 ) {
+  const { prune, keptRules } = options;
   const skills = new Set(incoming.skills.map((s) => s.name));
   const docs = new Set(incoming.docs.map((d) => d.id));
   const rules = new Set(incoming.rules.map((r) => r.id));
@@ -325,7 +313,9 @@ function checkRemovals(
       .map((d) => `doc ${d.id}`),
     ...ctx.store
       .state()
-      .rules.filter((r) => r.id.startsWith(IMPORTED_RULE_PREFIX) && !rules.has(r.id))
+      .rules.filter(
+        (r) => r.id.startsWith(IMPORTED_RULE_PREFIX) && !rules.has(r.id) && !keptRules.has(r.id),
+      )
       .map((r) => `rule ${r.id}`),
   ];
   if (gone.length === 0) return;
@@ -335,6 +325,44 @@ function checkRemovals(
     report.errors.push(
       `The source no longer has ${list}; pass --prune to remove them, or check --root`,
     );
+}
+
+/**
+ * Entries the user edited or deleted in bb since they were imported. The
+ * import skips them with a warning, so an edit made in bb is never lost.
+ */
+function keptInBb(ctx: CatalogContext, report: Report) {
+  const authored = ctx.catalog.authoredNames();
+  const deleted = ctx.catalog.deletedKeys();
+  const authoredDocs = new Set(
+    ctx.catalog
+      .docs()
+      .filter((d) => d.origin.kind === "authored")
+      .map((d) => d.id),
+  );
+  return {
+    skill(label: string, name: string): boolean {
+      if (authored.has(name))
+        report.warnings.push(`${label}: kept the version of ${name} edited in bb; skipped`);
+      else if (deleted.skills.has(name))
+        report.warnings.push(
+          `${label}: ${name} was deleted in bb; restore it from Recently deleted to import it again`,
+        );
+      else return false;
+      return true;
+    },
+    doc(id: string, origin: CatalogDoc["origin"]): boolean {
+      const from = origin.kind === "imported" ? origin.from : id;
+      if (authoredDocs.has(id))
+        report.warnings.push(`${from}: kept the text edited in bb; skipped`);
+      else if (deleted.docs.has(id))
+        report.warnings.push(
+          `${from}: deleted in bb; restore it from Recently deleted to import it again`,
+        );
+      else return false;
+      return true;
+    },
+  };
 }
 
 /** Reads the dotfiles sources on their host and checks them. Writes nothing. */
@@ -368,39 +396,50 @@ export async function planImport(
   duplicateNames(entries, report);
   const refs = references(entries);
 
-  const delivered = await deliveredSkills(ctx.bb, report, options.allowShadow);
-  const authored = ctx.catalog.authoredNames();
+  const delivered = await deliveredOrReport(ctx.bb, report, options.allowShadow);
   const catalogSkills = ctx.catalog.skills();
   const stored = new Set(catalogSkills.map((s) => s.name));
-  const skills = entries.map((e): CatalogSkill => {
-    const owner = delivered.owners.get(e.name);
-    if (owner)
-      (options.allowShadow ? report.warnings : report.errors).push(
-        `${e.label}: would hide the ${e.name} skill from ${owner}; pass --rename ${e.label}=<new-name>`,
-      );
-    if (delivered.user.has(e.name) && !stored.has(e.name))
-      report.warnings.push(
-        `${e.label}: bb already has a user skill named ${e.name}; publishing will leave it alone`,
-      );
-    if (authored.has(e.name))
-      report.errors.push(`${e.label}: an authored catalog skill is already named ${e.name}`);
-    const files = catalogFiles(e, refs, report);
-    return {
-      name: e.name,
-      description: publishedDescription(e, files, report),
-      origin: { kind: "imported", from: e.dir },
-      files,
-      treeSha: treeSha(files),
-    };
-  });
+  const kept = keptInBb(ctx, report);
+  const skills = entries
+    .filter((e) => !kept.skill(e.label, e.name))
+    .map((e): CatalogSkill => {
+      const owner = delivered.owners.get(e.name);
+      if (owner)
+        (options.allowShadow ? report.warnings : report.errors).push(
+          `${e.label}: would hide the ${e.name} skill from ${owner}; pass --rename ${e.label}=<new-name>`,
+        );
+      if (delivered.user.has(e.name) && !stored.has(e.name))
+        report.warnings.push(
+          `${e.label}: bb already has a user skill named ${e.name}; publishing will leave it alone`,
+        );
+      const files = catalogFiles(e, refs, report);
+      return {
+        name: e.name,
+        description: publishedDescription(e, files, report),
+        origin: { kind: "imported", from: e.dir },
+        files,
+        treeSha: treeSha(files),
+      };
+    });
 
-  const { docs, rules } = await planInstructions(ctx, source, listing.instructions, refs, report);
+  const instructions = await planInstructions(ctx, source, listing.instructions, refs, report);
+  const docs = instructions.docs.filter((d) => !kept.doc(d.id, d.origin));
+  const keptRules = editedRules(ctx, new Map(instructions.rules.map((r) => [r.id, r])));
+  for (const id of keptRules)
+    report.warnings.push(`rule ${id}: kept the rule edited in bb; skipped`);
+  const rules = instructions.rules.filter((r) => !keptRules.has(r.id));
   for (const group of refs.groups)
     report.warnings.push(
       `${group} names a whole plugin; flat skill names have no equivalent, so rewrite that sentence`,
     );
 
-  checkRemovals(ctx, { skills, docs, rules }, catalogSkills, options.prune, report);
+  checkRemovals(
+    ctx,
+    { skills, docs, rules },
+    catalogSkills,
+    { prune: options.prune, keptRules },
+    report,
+  );
 
   const renamed = entries
     .filter((e) => e.name !== e.original)
@@ -410,7 +449,10 @@ export async function planImport(
 
 export type ImportResult = ImportChanges & { rulesChanged: string[] };
 
-/** The stored form of an imported rule; a user's name, enabled flag, and extra scoping survive. */
+/**
+ * The stored form of an imported rule; a user's name, enabled flag, and extra
+ * scoping survive. A rule the user edited is skipped instead (see `editedRules`).
+ */
 function importedRule(imported: ImportedRule, previous: Rule | undefined): Rule {
   return {
     id: imported.id,
@@ -426,6 +468,33 @@ function importedRule(imported: ImportedRule, previous: Rule | undefined): Rule 
   };
 }
 
+/** A hash of what a user can edit in a rule. Turning it on or off is not an edit. */
+function ruleFingerprint(rule: Rule): string {
+  const { name, instructions, when } = rule;
+  const fields = [name, instructions, when.hosts, when.providers, when.models, when.projects];
+  return sha256(Buffer.from(JSON.stringify(fields), "utf8"));
+}
+
+/**
+ * Imported rules changed in the Rules tab since the import that wrote them; an
+ * import keeps them as they are. A rule already equal to what this import would
+ * write is not an edit, which also covers an import that stopped before it
+ * recorded its hashes.
+ */
+function editedRules(
+  ctx: CatalogContext,
+  incoming: ReadonlyMap<string, ImportedRule>,
+): Set<string> {
+  const recorded = ctx.catalog.importedRuleHashes();
+  const edited = ctx.store.state().rules.filter((rule) => {
+    const last = recorded.get(rule.id);
+    if (last === undefined || last === ruleFingerprint(rule)) return false;
+    const imported = incoming.get(rule.id);
+    return !imported || ruleFingerprint(importedRule(imported, rule)) !== ruleFingerprint(rule);
+  });
+  return new Set(edited.map((rule) => rule.id));
+}
+
 /** Stores a plan that has no errors: catalog first, then the provider rules. */
 export async function commitImport(
   ctx: CatalogContext,
@@ -435,27 +504,43 @@ export async function commitImport(
   if (plan.errors.length > 0) throw new Error("The import plan has errors; nothing was stored.");
   const changes = ctx.catalog.applyImport(plan.skills, plan.docs, actor);
   const current = ctx.store.state().rules;
-  const incoming = new Map(plan.rules.map((r) => [r.id, r]));
+  // Checked again here, so a rule edited after the plan still wins.
+  const edited = editedRules(ctx, new Map(plan.rules.map((r) => [r.id, r])));
+  const incoming = new Map(plan.rules.filter((r) => !edited.has(r.id)).map((r) => [r.id, r]));
   const removed = current
-    .filter((r) => r.id.startsWith(IMPORTED_RULE_PREFIX) && !incoming.has(r.id))
+    .filter(
+      (r) => r.id.startsWith(IMPORTED_RULE_PREFIX) && !incoming.has(r.id) && !edited.has(r.id),
+    )
     .map((r) => r.id);
-  const changed = plan.rules
+  const skipped = [...changes.skipped, ...[...edited].map((id) => `rule ${id}`)];
+  const changed = [...incoming.values()]
     .filter((imported) => {
       const previous = current.find((r) => r.id === imported.id);
       return JSON.stringify(previous) !== JSON.stringify(importedRule(imported, previous));
     })
     .map((r) => r.id);
-  if (changed.length + removed.length === 0) return { ...changes, rulesChanged: [] };
-  await ctx.store.update((rules) => {
-    const next = rules
-      .filter((r) => !removed.includes(r.id))
-      .map((r) => {
-        const imported = incoming.get(r.id);
-        return imported ? importedRule(imported, r) : r;
-      });
-    for (const imported of plan.rules)
-      if (!next.some((r) => r.id === imported.id)) next.push(importedRule(imported, undefined));
-    return next;
-  });
-  return { ...changes, rulesChanged: [...changed, ...removed] };
+  if (changed.length + removed.length > 0) {
+    await ctx.store.update((rules) => {
+      const next = rules
+        .filter((r) => !removed.includes(r.id))
+        .map((r) => {
+          const imported = incoming.get(r.id);
+          return imported ? importedRule(imported, r) : r;
+        });
+      for (const imported of incoming.values())
+        if (!next.some((r) => r.id === imported.id)) next.push(importedRule(imported, undefined));
+      return next;
+    });
+  }
+  // Recorded only after the rules are stored, and from what was stored.
+  const recorded = ctx.catalog.importedRuleHashes();
+  const hashes = new Map<string, string>();
+  for (const rule of ctx.store.state().rules) {
+    if (!rule.id.startsWith(IMPORTED_RULE_PREFIX)) continue;
+    const last = recorded.get(rule.id);
+    if (!edited.has(rule.id)) hashes.set(rule.id, ruleFingerprint(rule));
+    else if (last !== undefined) hashes.set(rule.id, last);
+  }
+  ctx.catalog.setImportedRuleHashes(hashes);
+  return { ...changes, skipped, rulesChanged: [...changed, ...removed] };
 }

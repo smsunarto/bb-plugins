@@ -136,11 +136,11 @@ test("new file saves retain create-only CAS even if a refetch finds an external 
   slot.unmount();
 });
 
-test("Dotfiles links keep their machine and checkout when opening a source", async () => {
+test("Machine and checkout links open that source", async () => {
   const app = await loadPluginApp(() => import("../app/app.tsx"));
   const slot = renderSlot(
     app.navPanels[0]!,
-    { subPath: "global/at/host/%2Fb/.dotfiles/.agents/instructions/shared.md" },
+    { subPath: "projects/at/host/%2Fb/.dotfiles/.agents/instructions/shared.md" },
     {
       rpc: {
         documentSources: () => metadata,

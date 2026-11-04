@@ -1,10 +1,12 @@
 import { MarkdownEditor } from "@bb-plugins/markdown-editor";
+import { CatalogPage } from "../catalog/app/editor.tsx";
+import { CatalogTab } from "../catalog/app/sidebar.tsx";
 import { DocumentsPage, DocumentsTab } from "../documents/app.tsx";
 import { definePluginApp, experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { PromptEditorPage, PluginsTab } from "../prompts/app/app.tsx";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { useId, useLayoutEffect, useState, useSyncExternalStore } from "react";
+import { useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "../../components/ui/button.tsx";
 import { Input } from "../../components/ui/input.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
@@ -345,11 +347,14 @@ function promptSubPath(subPath: string): string | null {
   return subPath === "prompts" ? "" : subPath.startsWith("prompts/") ? subPath.slice(8) : null;
 }
 
-const DOCUMENT_ROUTE = /^(global|projects)(?:\/|$)/;
+const CATALOG_ROUTE = /^global(?:\/|$)/;
+const DOCUMENT_ROUTE = /^projects(?:\/|$)/;
 
 function AgentInstructionsPage({ subPath }: PluginNavPanelProps) {
   const prompts = promptSubPath(subPath);
-  return DOCUMENT_ROUTE.test(subPath) ? (
+  return CATALOG_ROUTE.test(subPath) ? (
+    <CatalogPage subPath={subPath} />
+  ) : DOCUMENT_ROUTE.test(subPath) ? (
     <DocumentsPage subPath={subPath} />
   ) : prompts === null ? (
     <RulesPage />
@@ -358,20 +363,44 @@ function AgentInstructionsPage({ subPath }: PluginNavPanelProps) {
   );
 }
 
+/**
+ * Publishes the sticky switcher's height as `--ai-nav-height` on its parent, so an
+ * editor's own sticky header (the catalog's filter) can sit just below it.
+ */
+function useStickyHeight() {
+  const ref = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const nav = ref.current;
+    // Test DOMs have no ResizeObserver; every browser bb supports does.
+    if (!nav || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const height = entry?.borderBoxSize[0]?.blockSize;
+      if (height !== undefined)
+        nav.parentElement?.style.setProperty("--ai-nav-height", `${height}px`);
+    });
+    observer.observe(nav);
+    return () => observer.disconnect();
+  }, []);
+  return ref;
+}
+
 /** The page's left sidebar: the editor switcher, then the current editor's file or plugin list. */
 function AgentInstructionsSidebar({ subPath }: PluginNavPanelProps) {
   const navigate = useBbNavigate();
   const prompts = promptSubPath(subPath);
+  const catalog = CATALOG_ROUTE.test(subPath);
   const documents = DOCUMENT_ROUTE.test(subPath);
   const editors = [
-    { label: "Rules", active: prompts === null && !documents, subPath: "" },
-    { label: "Global", active: subPath.startsWith("global"), subPath: "global" },
-    { label: "Projects", active: subPath.startsWith("projects"), subPath: "projects" },
+    { label: "Rules", active: prompts === null && !documents && !catalog, subPath: "" },
+    { label: "Global", active: catalog, subPath: "global" },
+    { label: "Projects", active: documents, subPath: "projects" },
     { label: "Plugin prompts", active: prompts !== null, subPath: "prompts" },
   ];
+  const navRef = useStickyHeight();
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <nav
+        ref={navRef}
         aria-label="Instruction editors"
         className="sticky top-0 z-10 flex shrink-0 flex-wrap gap-1 border-b border-border bg-sidebar p-2"
       >
@@ -392,7 +421,9 @@ function AgentInstructionsSidebar({ subPath }: PluginNavPanelProps) {
         ))}
       </nav>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {documents ? (
+        {catalog ? (
+          <CatalogTab subPath={subPath} />
+        ) : documents ? (
           <DocumentsTab subPath={subPath} />
         ) : prompts !== null ? (
           <PluginsTab subPath={prompts} />

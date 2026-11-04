@@ -14,7 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { treeSha } from "./store.ts";
+import { treeSha } from "./tree.ts";
 
 /**
  * Publishes the catalog into bb's user tier, which bb core scans, syncs to
@@ -55,6 +55,10 @@ export type PublishReport = {
   agentsMd: "linked" | "relinked" | "unlinked" | "unchanged" | "none" | "conflict";
   /** User-tier entries this plugin did not create that block a publish; left alone. */
   conflicts: string[];
+  /** Skills, or AGENTS.md, that could not be published this time; the rest still were. */
+  failed: { name: string; error: string }[];
+  /** Skills that changed while this run read them; the run their change queued publishes them. */
+  deferred: string[];
   /** Trees and global-text copies deleted because nothing uses them any more. */
   removed: number;
 };
@@ -132,6 +136,9 @@ async function placeLink(path: string, target: string, staging: string) {
   await rename(staged, path);
 }
 
+/** A skill changed after this run listed it; the change queued its own publish. */
+class CatalogChanged extends Error {}
+
 /** The files to write, after checking that they are the tree `path` is named for. */
 function verifiedFiles(path: string, files: SourceFile[]): SourceFile[] {
   const hashed = files.map((f) => ({
@@ -140,9 +147,7 @@ function verifiedFiles(path: string, files: SourceFile[]): SourceFile[] {
     sha256: sha256(f.bytes),
   }));
   if (treeSha(hashed) !== basename(path))
-    throw new Error(
-      `The catalog changed while ${basename(dirname(path))} was being published; publish again`,
-    );
+    throw new CatalogChanged(`${basename(dirname(path))} changed while it was being published`);
   return files;
 }
 
@@ -281,18 +286,24 @@ export async function publish(
     unchanged: 0,
     agentsMd: "none",
     conflicts: [],
+    failed: [],
+    deferred: [],
     removed: 0,
   };
-  for (const [name, entry] of entries) {
-    const want = desired.get(name) ?? null;
-    if (want && entry.kind !== "foreign")
-      await ensureTree(want, () => source.skillFiles(name), staging);
-    record(report, name, await reconcile(join(skillsDir, name), entry, want, staging));
+  for (const [name, entry] of entries)
+    await publishSkill(report, name, entry, desired.get(name) ?? null, {
+      skillsDir,
+      staging,
+      source,
+    });
+  try {
+    if (text !== null && textPath !== null && agentsEntry.kind !== "foreign")
+      await ensureText(textPath, text, staging);
+    report.agentsMd = await reconcile(agentsMd, agentsEntry, textPath, staging);
+    if (report.agentsMd === "conflict") report.conflicts.push("AGENTS.md");
+  } catch (error) {
+    report.failed.push({ name: "AGENTS.md", error: (error as Error).message });
   }
-  if (text !== null && textPath !== null && agentsEntry.kind !== "foreign")
-    await ensureText(textPath, text, staging);
-  report.agentsMd = await reconcile(agentsMd, agentsEntry, textPath, staging);
-  if (report.agentsMd === "conflict") report.conflicts.push("AGENTS.md");
 
   // Keep what this run wants and whatever a link points to now, which covers a
   // tree another run linked meanwhile.
@@ -327,6 +338,24 @@ async function linkTargets(skillsDir: string, agentsMd: string, own: string) {
   return targets;
 }
 
+/** Builds and links one skill. One that cannot be published must not hold back the others. */
+async function publishSkill(
+  report: PublishReport,
+  name: string,
+  entry: Entry,
+  want: string | null,
+  where: { skillsDir: string; staging: string; source: PublishSource },
+) {
+  try {
+    if (want && entry.kind !== "foreign")
+      await ensureTree(want, () => where.source.skillFiles(name), where.staging);
+    record(report, name, await reconcile(join(where.skillsDir, name), entry, want, where.staging));
+  } catch (error) {
+    if (error instanceof CatalogChanged) report.deferred.push(name);
+    else report.failed.push({ name, error: (error as Error).message });
+  }
+}
+
 function record(report: PublishReport, name: string, outcome: Outcome) {
   if (outcome === "conflict") report.conflicts.push(`skills/${name}`);
   else if (outcome === "unchanged") report.unchanged++;
@@ -336,12 +365,18 @@ function record(report: PublishReport, name: string, outcome: Outcome) {
 /** Runs publishes one at a time, each reading the catalog as it is when it starts. */
 export function openPublisher(bb: Pick<BbPluginApi, "server" | "pluginId">, source: PublishSource) {
   let queue: Promise<unknown> = Promise.resolve();
+  let last: { at: number; report: PublishReport } | { at: number; error: string } | null = null;
   return {
     run(): Promise<PublishReport> {
       const next = queue.then(() => publish(bb.server.experimental_dataDir, bb.pluginId, source));
-      queue = next.catch(() => undefined);
+      queue = next.then(
+        (report) => (last = { at: Date.now(), report }),
+        (error: unknown) => (last = { at: Date.now(), error: (error as Error).message }),
+      );
       return next;
     },
+    /** The latest finished publish since this plugin loaded. */
+    last: () => last,
   };
 }
 export type Publisher = ReturnType<typeof openPublisher>;

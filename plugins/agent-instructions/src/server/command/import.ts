@@ -34,12 +34,9 @@ async function resolveSource(
   }
   const projectId = (await ctx.bb.storage.kv.get(GLOBAL_KEY)) as string | null | undefined;
   if (!projectId)
-    throw new PluginCliError(
-      "Pick the dotfiles project in the Global tab, or pass --root and --host",
-      {
-        code: "no_source",
-      },
-    );
+    throw new PluginCliError("Pass --root and --host to say which dotfiles checkout to read", {
+      code: "no_source",
+    });
   const [project, hosts] = await Promise.all([
     ctx.bb.sdk.projects.get({ projectId }),
     ctx.bb.sdk.hosts.list(),
@@ -108,10 +105,13 @@ function planJson(plan: ImportPlan, applied: Applied) {
 function outcomeLine(plan: ImportPlan, result: ImportResult | null): string {
   if (plan.errors.length > 0) return "Nothing stored: fix the errors above.";
   if (!result) return "Dry run: pass --apply to store this.";
-  if (result.revision === null && result.rulesChanged.length === 0)
+  if (result.revision === null && result.rulesChanged.length === 0 && result.skipped.length === 0)
     return "Stored: nothing changed";
   const counts = `${result.added.length} added, ${result.updated.length} updated, ${result.removed.length} removed, ${result.unchanged} unchanged`;
-  return `Stored revision ${result.revision ?? "unchanged"}: ${counts}; docs ${result.docsChanged.length}; rules ${result.rulesChanged.length}`;
+  const stored = `Stored revision ${result.revision ?? "unchanged"}: ${counts}; docs ${result.docsChanged.length}; rules ${result.rulesChanged.length}`;
+  return result.skipped.length > 0
+    ? `${stored}\nKept as edited or deleted in bb: ${result.skipped.join(", ")}`
+    : stored;
 }
 
 function publishText(applied: Applied): string[] {

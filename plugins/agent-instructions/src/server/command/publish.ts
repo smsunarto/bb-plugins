@@ -17,9 +17,12 @@ export type PublishFindings = { problems: string[]; warnings: string[] };
 
 export function publishFindings(report: PublishReport, rules: readonly Rule[]): PublishFindings {
   return {
-    problems: report.conflicts.map(
-      (c) => `${c} already exists and this plugin did not make it, so it was left alone`,
-    ),
+    problems: [
+      ...report.conflicts.map(
+        (c) => `${c} already exists and this plugin did not make it, so it was left alone`,
+      ),
+      ...report.failed.map((f) => `${f.name} was not published: ${f.error}`),
+    ],
     // An upper bound: host, model, and project scope are ignored, so it is never a failure.
     warnings: overflowingProviders(rules).map(
       (o) =>

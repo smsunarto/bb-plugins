@@ -254,3 +254,190 @@
   display: inline-block;
   margin-left: 6px;
 }
+
+/* Catalog editor (Global tab). */
+.pe-summary-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: calc(100% - 16px);
+  vertical-align: middle;
+}
+.pe-skill-summary .pe-summary-line .pe-dot {
+  margin-left: 0;
+}
+.pe-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 16px 6px;
+}
+.pe-status-row,
+.pe-notice-row,
+.pe-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.pe-notice-row > span {
+  flex: 1 1 200px;
+}
+.pe-head-title {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+.pe-wrap-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.pe-wrap,
+.pe-meta.pe-wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.pe-status .pe-meta {
+  white-space: normal;
+}
+.pe-meta[data-tone="warn"],
+.pe-tag[data-tone="warn"] {
+  color: var(--pe-warn);
+}
+.pe-tag[data-tone="bad"] {
+  color: var(--pe-bad);
+}
+.pe-label .pe-tag {
+  margin-left: 6px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+.pe-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.pe-link[data-tone="bad"] {
+  color: var(--pe-bad);
+}
+.pe-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pe-link:focus-visible,
+.pe-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.pe-filter {
+  padding: 2px 8px 0;
+}
+.pe-input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--input, var(--border));
+  border-radius: 6px;
+  background: var(--background);
+  color: var(--foreground);
+  font: inherit;
+}
+.pe-actions .pe-input {
+  flex: 1 1 160px;
+  width: auto;
+}
+.pe-actions form,
+form.pe-actions {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.pe-section > .pe-label {
+  display: flex;
+  align-items: center;
+  padding: 12px 8px 4px;
+}
+.pe-section:first-child > .pe-label {
+  padding-top: 4px;
+}
+.pe-hint {
+  padding: 2px 8px;
+  white-space: normal;
+}
+.pe-add {
+  color: var(--subtle-foreground, var(--muted-foreground));
+}
+.pe-inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 4px 0;
+  padding: 8px;
+  border: 1px solid var(--pe-hairline);
+  border-radius: 6px;
+}
+.pe-inline-form .pe-actions {
+  justify-content: flex-end;
+}
+.pe-deleted {
+  padding: 3px 8px;
+}
+.pe-deleted .pe-row-label {
+  color: var(--muted-foreground);
+}
+.pe-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.pe-button[data-destructive] {
+  border-color: var(--destructive);
+  background: var(--destructive);
+  color: var(--destructive-foreground, var(--primary-foreground));
+}
+.pe-shimmer {
+  display: block;
+  height: 12px;
+  margin: 8px;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--pe-recessed) 25%,
+    var(--state-hover, var(--accent)) 50%,
+    var(--pe-recessed) 75%
+  );
+  background-size: 200% 100%;
+  animation: pe-shimmer 1.4s linear infinite;
+}
+.pe-editor > .pe-shimmer {
+  margin: 0;
+}
+.pe-placeholder {
+  background: var(--pe-recessed);
+}
+@keyframes pe-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pe-shimmer {
+    animation: none;
+  }
+}
+.pe-panel output {
+  display: block;
+}
+.pe-catalog-head {
+  position: sticky;
+  top: var(--ai-nav-height, 0px);
+  z-index: 5;
+  padding-bottom: 6px;
+  background: var(--sidebar, var(--background));
+}

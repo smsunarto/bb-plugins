@@ -17,7 +17,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
-import { treeSha } from "./store.ts";
+import { treeSha } from "./tree.ts";
 import { publish, type PublishSource } from "./publish.ts";
 
 const PLUGIN = "agent-instructions";
@@ -176,7 +176,9 @@ describe("publish", () => {
       skillFiles: (name) =>
         name === "probe" ? [skillMd("probe", "Newer.\n")] : good.skillFiles(name),
     };
-    await expect(publish(dir, PLUGIN, changed)).rejects.toThrow(/changed while probe/);
+    const report = await publish(dir, PLUGIN, changed);
+    expect(report.deferred).toEqual(["probe"]);
+    expect(report.failed).toEqual([]);
     await publish(dir, PLUGIN, good);
     expect(await readFile(join(dir, "skills/probe/SKILL.md"), "utf8")).toContain("scripts/run.sh");
   });
@@ -241,7 +243,11 @@ describe("publish", () => {
         });
       },
     };
-    await expect(publish(dir, PLUGIN, crashing)).rejects.toThrow("stopped");
+    // One skill failing does not hold back the others.
+    const stopped = await publish(dir, PLUGIN, crashing);
+    expect(stopped.failed).toEqual([{ name: "probe", error: "stopped" }]);
+    expect(stopped.linked).toEqual(["dev"]);
+    expect(stopped.agentsMd).toBe("linked");
 
     await publish(dir, PLUGIN, good);
     const clean = await dataDir();

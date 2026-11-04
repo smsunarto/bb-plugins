@@ -10,6 +10,8 @@ const report = (conflicts: string[]): PublishReport => ({
   unchanged: 0,
   agentsMd: "unchanged",
   conflicts,
+  failed: [],
+  deferred: [],
   removed: 0,
 });
 const codexOn = (host: string): Rule => ({
