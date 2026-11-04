@@ -25,6 +25,7 @@ import {
   type ThreadRun,
 } from "./lib/db";
 import { buildPrompt, buildThreadTitle, isAwaitingChildren } from "./lib/dispatch";
+import { registerReviewCheckout } from "./lib/review-checkout";
 import { reviewWorktree } from "./lib/review-environment";
 import { parseReviewRequest } from "./lib/review";
 import { resolveThreadSectionId } from "./lib/sections";
@@ -1784,6 +1785,7 @@ function forwardCommand(ctx: PluginContext, spec: CommandSpec) {
 }
 
 export default async function plugin(bb: BbPluginApi): Promise<void> {
+  registerReviewCheckout(bb);
   const runtime = await makePluginRuntime(bb, Layer.empty);
   const ctx: PluginContext = Object.freeze({ bb, ...createServices(bb, runtime) });
   bb.rpc.register(rpcContract, ctx.handlers);

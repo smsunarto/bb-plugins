@@ -506,11 +506,9 @@ it("counts review threads that predate a reload against the concurrency cap", as
     await pollOnce(() => expect(spawned()).toBe(1));
     expect(harness.sdk.callsTo("threads.spawn")[0]?.[0]).toMatchObject({
       environment: {
-        type: "host",
-        workspace: {
-          type: "managed-worktree",
-          baseBranch: { kind: "named", name: "origin/feature/retries" },
-        },
+        type: "provider",
+        environmentProviderId: "slopcop-review",
+        inputs: { number: 2 },
       },
     });
     expect(store.listRuns().find((run) => run.prNumber === 2)).toMatchObject({

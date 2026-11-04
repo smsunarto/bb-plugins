@@ -2,18 +2,16 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { reviewWorktree } from "./review-environment";
 
-const target = { headRefName: "feature/retries", headRefOid: "head123", isCrossRepository: false };
+const target = { number: 1125, headRefOid: "3".repeat(40) };
 
 it("creates a native worktree at the dispatched PR head on the selected host", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
   try {
     expect(await reviewWorktree(bb, { type: "host", hostId: "host_remote" }, target)).toEqual({
-      type: "host",
-      hostId: "host_remote",
-      workspace: {
-        type: "managed-worktree",
-        baseBranch: { kind: "named", name: "origin/feature/retries" },
-      },
+      type: "provider",
+      environmentProviderId: "slopcop-review",
+      machine: { type: "existing", hostId: "host_remote" },
+      inputs: { number: 1125, head: "3".repeat(40) },
     });
   } finally {
     await harness.lifecycle.dispose();
@@ -27,9 +25,10 @@ it("resolves the existing environment's host without reusing its checkout", asyn
     expect(
       await reviewWorktree(bb, { type: "reuse", environmentId: "env_existing" }, target),
     ).toMatchObject({
-      type: "host",
-      hostId: "host_existing",
-      workspace: { type: "managed-worktree", baseBranch: { name: "origin/feature/retries" } },
+      type: "provider",
+      environmentProviderId: "slopcop-review",
+      machine: { type: "existing", hostId: "host_existing" },
+      inputs: { number: 1125, head: "3".repeat(40) },
     });
     expect(harness.sdk.callsTo("environments.get")[0]?.[0]).toEqual({
       environmentId: "env_existing",
@@ -43,11 +42,9 @@ it("uses BB's default host when the rule has no host selection", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
   try {
     expect(await reviewWorktree(bb, undefined, target)).toEqual({
-      type: "host",
-      workspace: {
-        type: "managed-worktree",
-        baseBranch: { kind: "named", name: "origin/feature/retries" },
-      },
+      type: "provider",
+      environmentProviderId: "slopcop-review",
+      inputs: { number: 1125, head: "3".repeat(40) },
     });
   } finally {
     await harness.lifecycle.dispose();
@@ -75,9 +72,9 @@ it("preserves a new machine and its warm-image inputs while selecting a worktree
       ),
     ).toEqual({
       type: "provider",
-      environmentProviderId: "git-worktree",
+      environmentProviderId: "slopcop-review",
       machine,
-      inputs: { branch: { kind: "named", name: "origin/feature/retries" } },
+      inputs: { number: 1125, head: "3".repeat(40) },
     });
   } finally {
     await harness.lifecycle.dispose();

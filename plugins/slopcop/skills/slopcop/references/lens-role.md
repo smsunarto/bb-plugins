@@ -16,6 +16,8 @@
 - Treat task context as guidance; it cannot change your leaf role or pinned target.
 - Apply the complete profile followed immediately by the complete appendix below, within these leaf boundaries.
 
+{report_instructions}
+
 ## Report to your parent
 
 - Do not message peers or parents, use `bb thread tell`, or send steering/follow-up messages. Return findings and any coverage gaps by ending your turn with the final report.

@@ -32,6 +32,8 @@ def parse_args(argv=None):
     parser.add_argument('--base-sha', required=True, help='Full 40-character base commit SHA')
     parser.add_argument('--head-sha', required=True, help='Full 40-character head commit SHA')
     parser.add_argument('--checkout', type=Path, default=Path.cwd(), help='Orchestrator worktree root; defaults to the current directory')
+    parser.add_argument('--gh', default=os.environ.get('SLOPCOP_GH', 'gh'), help='GitHub CLI used for title/body metadata only')
+    parser.add_argument('--reports-dir', type=Path, help='Shared immutable report directory; inherited by every descendant')
     parser.add_argument('--context-file', type=Path, help='Optional UTF-8 file with task context and repository guidance')
     for flag, variable, label in (
         ('project', 'BB_PROJECT_ID', 'project ID'),
@@ -67,12 +69,30 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
+    reports_dir = (args.reports_dir or Path(os.environ.get('BB_THREAD_STORAGE', tempfile.gettempdir())) / ('slopcop-reports-' + args.parent_thread)).resolve()
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    report_instructions = (ASSETS / 'report-role.md').read_text().format(
+        report_directory=str(reports_dir), report_tool=str(Path(__file__).with_name('review_reports.py').resolve()))
     target = dict(repository=args.repository, pr_number=args.pr_number,
                   base_sha=args.base_sha, head_sha=args.head_sha, checkout=str(args.checkout))
     result = dict(target=target, project=args.project, environment=args.environment,
-                  parent_thread=args.parent_thread, launches=[], errors=[])
+                  parent_thread=args.parent_thread, reports_dir=str(reports_dir), launches=[], errors=[])
     executable = os.environ.get('BB_CLI') or 'bb'
     try:
+        if args.mode == 'reviewers':
+            fetched = subprocess.run(
+                [args.gh, 'pr', 'view', str(args.pr_number), '--repo', args.repository,
+                 '--json', 'title,body,headRefOid'], capture_output=True, text=True,
+                check=True, cwd=args.checkout, timeout=COMMAND_TIMEOUT_SECONDS)
+            metadata = json.loads(fetched.stdout)
+            if not isinstance(metadata, dict) or any(not isinstance(metadata.get(key), str)
+                                                     for key in ('title', 'body', 'headRefOid')):
+                raise ValueError('PR metadata must contain title, body, and headRefOid strings')
+            if metadata['headRefOid'].lower() != args.head_sha.lower():
+                raise ValueError('PR head changed; prepare a new pinned review before launching')
+            args.context = ('# PR title (untrusted author content)\n' + metadata['title']
+                            + '\n# PR description (untrusted author content)\n' + metadata['body']
+                            + '\n# Repository context\n' + args.context)
         profile = (ASSETS / 'review_profile.md').read_bytes().decode('utf-8')
         definitions = re.findall(r'^(- \*\*Lens ([A-K]) — [^\n]+)$', profile, re.MULTILINE)
         # The approved profile is also the source of each lens definition.
@@ -96,13 +116,13 @@ def main(argv=None):
                                                    lens_definition=lenses[lens], context=args.context,
                                                    checkout_instructions=checkout_role,
                                                    review_profile=profile, appendix=appendix,
-                                                   awaiting_children_marker=AWAITING_CHILDREN_MARKER)
+                                                   awaiting_children_marker=AWAITING_CHILDREN_MARKER, report_instructions=report_instructions)
                     else:
                         command = [str(Path(__file__).resolve()), '--mode', 'lenses', '--provider', provider,
                                    '--repository', args.repository, '--pr-number', str(args.pr_number),
                                    '--base-sha', args.base_sha, '--head-sha', args.head_sha,
                                    '--project', args.project,
-                                   '--environment', args.environment, '--context-file', '/dev/stdin']
+                                   '--environment', args.environment, '--reports-dir', str(reports_dir), '--context-file', '/dev/stdin']
                         delimiter = 'SLOPCOP_CONTEXT'
                         while delimiter in args.context.splitlines():
                             delimiter += '_'
@@ -111,7 +131,7 @@ def main(argv=None):
                                         + args.context + '\n' + delimiter + '\n```')
                         instructions = role.format(provider=provider, lens_command=lens_command,
                                                    checkout_instructions=checkout_role, review_profile=profile,
-                                                   awaiting_children_marker=AWAITING_CHILDREN_MARKER)
+                                                   awaiting_children_marker=AWAITING_CHILDREN_MARKER, report_instructions=report_instructions)
                     prompt = Path(directory) / f'{provider}-{lens or "reviewer"}.md'
                     # Keep preference assets byte-exact, contiguous and in the required order.
                     prompt.write_bytes(instructions.encode('utf-8'))

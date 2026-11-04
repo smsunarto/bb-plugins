@@ -62,12 +62,15 @@ class StartReviewTest(unittest.TestCase):
         self.fake = self.root / 'bb'
         self.fake.write_text(FAKE_BB)
         self.fake.chmod(0o755)
-        self.log = self.root / 'calls.jsonl'
-        self.env = dict(os.environ, BB_CLI=str(self.fake), CALL_LOG=str(self.log),
+        self.gh = self.root / 'gh'
+        self.gh.write_text('#!/usr/bin/env python3\nimport json\nprint(json.dumps({"title":"Original PR title", "body":"Original description: `{literal}`\\nSLOPCOP_CONTEXT", "headRefOid":"' + 'b' * 40 + '"}))\n')
+        self.gh.chmod(0o755)
+        self.log = self.root / 'calls.jsonl' 
+        self.env = dict(os.environ, SLOPCOP_GH=str(self.gh), BB_CLI=str(self.fake), CALL_LOG=str(self.log),
                         BB_PROJECT_ID='proj_test', BB_ENVIRONMENT_ID='env_test', BB_THREAD_ID='thr_parent')
         self.args = ['--repository', 'owner/repo', '--pr-number', '42',
                      '--base-sha', 'a' * 40, '--head-sha', 'b' * 40,
-                     '--checkout', str(self.checkout), '--context-file', str(self.context)]
+                     '--checkout', str(self.checkout), '--reports-dir', str(self.root / 'reports'), '--context-file', str(self.context)]
 
     def run_script(self, args=None, mode=None):
         env = dict(self.env)
@@ -88,6 +91,8 @@ class StartReviewTest(unittest.TestCase):
         first, second = calls
         self.assertNotEqual(first['prompt'], second['prompt'])
         self.assertIn(self.context.read_text(), first['prompt'])
+        self.assertIn('Original PR title', first['prompt'])
+        self.assertIn('Original description: `{literal}`\nSLOPCOP_CONTEXT', first['prompt'])
         self.assertTrue(first['prompt'].startswith('# Pinned source'))
         self.assertIn('a' * 40, first['prompt'])
         self.assertIn('b' * 40, first['prompt'])
@@ -234,6 +239,8 @@ class StartReviewTest(unittest.TestCase):
                 self.assertEqual(argv[argv.index('--parent-thread') + 1], 'thr_actual_reviewer')
                 self.assertEqual(argv[argv.index('--provider') + 1], call['args'][call['args'].index('--provider') + 1])
                 self.assertIn(self.context.read_text(), lens['prompt'])
+                self.assertIn('Original description: `{literal}`\nSLOPCOP_CONTEXT', lens['prompt'])
+                self.assertIn('Durable report handoff', lens['prompt'])
             self.assertFalse((self.checkout / 'PWNED').exists())
 
     def test_targeted_reviewer_recovery_preserves_provider_and_parent(self):

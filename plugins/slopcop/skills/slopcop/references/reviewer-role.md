@@ -21,7 +21,7 @@
 ## Wait, recover, and synthesize
 
 - Do your own architecture/premise pass while lenses work. Then run `bb thread wait <lens-id> --status idle --timeout 45s --json` for each unfinished lens; use bounded waits rather than sleeping or relying only on notifications.
-- After a wait returns or times out, read that child's state and output. Continue waiting while it is active or starting; a wait timeout is not a child failure and does not spend a retry.
+- After a wait returns or times out, read that child's state. Collect its immutable report using the durable handoff below. Continue waiting while it is active or starting; a wait timeout is not a child failure and does not spend a retry.
 - Consume an idle child's complete report even if its notification was missed. A pending-state marker or incomplete answer is not completed coverage; do not repeatedly wait for a child that is already idle.
 - Allow at most one recovery attempt per lens slot. For recoverable early idle or incomplete results, send `bb thread tell <id> --mode steer --message-file <file>` with a targeted request to finish the original assignment using its existing evidence. For transient provider/rate-limit/network failures, use `bb thread retry <id> --reason <reason>`; respect any reported retry-after time. Reuse the thread, provider, worktree, and completed evidence.
 - Spawn a replacement only for a definitive failed launch or an unusable thread that cannot resume. After reconciliation, rerun the launch command with `--lens <ID>` for that slot only. This uses the same one recovery attempt; do not replace a recoverable child or retry successful lenses.
@@ -30,6 +30,8 @@
 - Preserve the ledger across turns. If forced to end an unfinished turn, return only `{awaiting_children_marker}` and resume waiting next turn.
 - Validate findings against pinned source, merge duplicates, and prune per the profile. Launch IDs or idle status alone do not prove coverage.
 - Return findings with paths/lines and evidence. Attest ALL eleven lenses: provider, lens ID, child ID (including failed/replacement IDs) or exact launch error, checkout, base/head, recovery used, outcome, and any sequential fallback.
+
+{report_instructions}
 
 ## Report to your parent
 
