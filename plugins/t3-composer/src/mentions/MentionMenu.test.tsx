@@ -90,4 +90,37 @@ describe("MentionMenu", () => {
     expect(screen.getByText("three").closest("button")?.className).toContain("bg-state-active");
     expect(screen.getByText("two").closest("button")?.className).not.toContain("bg-state-active");
   });
+
+  it("scrolls only when a later row is selected, not as results change under the first row", () => {
+    const scrollIntoView = vi
+      .spyOn(Element.prototype, "scrollIntoView")
+      .mockImplementation(() => {});
+    const path = (name: string): ExperimentalComposerMentionSuggestion => ({
+      kind: "path",
+      key: name,
+      text: name,
+      mention: { kind: "path", source: "workspace", entryKind: "file", path: name, label: name },
+    });
+    const menu = (names: string[], selectedIndex: number) => (
+      <MentionMenu
+        state={{
+          trigger: "mention",
+          state: {
+            kind: "results",
+            refreshing: false,
+            groups: [{ key: "workspace", label: "Workspace", suggestions: names.map(path) }],
+          },
+        }}
+        selectedIndex={selectedIndex}
+        onApply={vi.fn()}
+      />
+    );
+    const view = render(menu(["a.ts", "b.ts"], 0));
+    view.rerender(menu(["a.ts", "b.ts", "c.ts"], 0));
+    expect(scrollIntoView).not.toHaveBeenCalled();
+    view.rerender(menu(["a.ts", "b.ts", "c.ts"], 2));
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+    expect(scrollIntoView.mock.contexts[0]).toBe(screen.getByText("c.ts").closest("button"));
+    scrollIntoView.mockRestore();
+  });
 });

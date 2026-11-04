@@ -336,6 +336,11 @@ export function useModelCatalog(composer: PluginComposerApi, enabled: boolean): 
   };
 }
 
+/** A model's display name from its provider's most recent list, once BB has listed it. */
+export function listedModelName(providerId: string, model: string): string | undefined {
+  return findCatalogModel(lastListed.get(providerId) ?? [], model)?.displayName;
+}
+
 export function findCatalogModel(models: readonly CatalogModel[], model: string | undefined) {
   if (!model) return undefined;
   return models.find((candidate) => candidate.model === model || candidate.id === model);

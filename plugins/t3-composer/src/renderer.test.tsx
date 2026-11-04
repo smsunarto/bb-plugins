@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { fireEvent, waitFor } from "@testing-library/react";
+import { act, fireEvent, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
@@ -13,6 +13,7 @@ import type {
   PluginComposerScope,
 } from "@get-bb/plugin-sdk/app";
 import { SaveDraftAction } from "./SaveDraftAction";
+import { useFavoriteModels } from "./model-picker/favorites";
 
 // The SDK harness draws other plugins' actions as nothing; mark where BB's group mounts.
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
@@ -755,6 +756,62 @@ describe("T3 Code model picker", () => {
     );
     try {
       expect(await slot.findByText("Host model picker")).toBeTruthy();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+});
+
+describe("setting keywords", () => {
+  it("sets a starred model once its keyword is followed by a space, and removes the keyword", async () => {
+    const stars = renderHook(() => useFavoriteModels());
+    act(() => stars.result.current.toggle("codex", "gpt-6.1-sol"));
+    const { slot } = await mountComposer({}, undefined, {
+      ...pickerOptions(OPUS_HIGH),
+      text: "Fix #sol the bug",
+    });
+    try {
+      await waitFor(() =>
+        expect(slot.composer.selections.at(-1)).toMatchObject({
+          providerId: "codex",
+          model: "gpt-6.1-sol",
+        }),
+      );
+      expect(slot.composer.draft.text).toBe("Fix the bug");
+    } finally {
+      slot.lifecycle.unmount();
+      act(() => stars.result.current.toggle("codex", "gpt-6.1-sol"));
+      stars.unmount();
+    }
+  });
+
+  it("applies several keywords in the order typed", async () => {
+    const { slot } = await mountComposer(
+      {},
+      { kind: "thread", threadId: "t1" },
+      { ...pickerOptions(OPUS_HIGH), text: "#max #full fix it" },
+    );
+    try {
+      await waitFor(() => expect(slot.composer.selections).toHaveLength(2));
+      expect(slot.composer.selections).toMatchObject([
+        { reasoningLevel: "max" },
+        { permissionMode: "full" },
+      ]);
+      expect(slot.composer.draft.text).toBe("fix it");
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("leaves other # words and a keyword still being typed", async () => {
+    const { slot } = await mountComposer({}, undefined, {
+      ...pickerOptions(OPUS_HIGH),
+      text: "Fix #5 and #foo then #high",
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(slot.composer.selections).toEqual([]);
+      expect(slot.composer.draft.text).toBe("Fix #5 and #foo then #high");
     } finally {
       slot.lifecycle.unmount();
     }

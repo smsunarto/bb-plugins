@@ -10,6 +10,12 @@ export function favoriteKey(providerId: string, model: string) {
   return `${providerId}\u0000${model}`;
 }
 
+export function parseFavoriteKey(key: string): { providerId: string; model: string } | null {
+  const separator = key.indexOf("\u0000");
+  if (separator <= 0 || separator === key.length - 1) return null;
+  return { providerId: key.slice(0, separator), model: key.slice(separator + 1) };
+}
+
 function read(): readonly string[] {
   if (snapshot) return snapshot;
   try {

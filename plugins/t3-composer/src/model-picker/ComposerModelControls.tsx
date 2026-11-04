@@ -5,6 +5,7 @@ import {
   type PluginComposerApi,
 } from "@get-bb/plugin-sdk/app";
 import { isAnchorInteractive } from "@/components/ui/overlay-anchor";
+import { refusedSettingMessage } from "../composer-settings/setting-keywords";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { findCatalogModel, useModelCatalog, type CatalogModel } from "./catalog";
 import { ModelPicker } from "./ModelPicker";
@@ -23,22 +24,6 @@ export function hasEditablePickers(composer: PluginComposerApi) {
     composer.scope.kind !== "queued-message" &&
     !composer.key.startsWith("sent-message:")
   );
-}
-
-function ignoredPickMessage(requested: ComposerSelection, applied: ComposerSelection) {
-  if (requested.providerId && applied.providerId !== requested.providerId) {
-    return "BB kept the current provider for this composer.";
-  }
-  if (requested.model && applied.model !== requested.model) {
-    return "BB kept the current model for this composer.";
-  }
-  if (requested.reasoningLevel && applied.reasoningLevel !== requested.reasoningLevel) {
-    return "This model does not support that effort.";
-  }
-  if (requested.serviceTier && applied.serviceTier !== requested.serviceTier) {
-    return "This model does not offer that speed.";
-  }
-  return null;
 }
 
 /**
@@ -88,7 +73,7 @@ export function ComposerModelControls(props: { fallback: ReactNode }) {
     return composer
       .setSelection(requested)
       .then((applied) => {
-        if (pick === latestPick.current) setError(ignoredPickMessage(requested, applied));
+        if (pick === latestPick.current) setError(refusedSettingMessage(requested, applied));
         return applied;
       })
       .catch((reason: unknown) => {

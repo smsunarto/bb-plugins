@@ -462,16 +462,24 @@ export function MentionMenu({ state, selectedIndex, onApply, onDismiss }: Mentio
     itemRefs.current = itemRefs.current.slice(0, resultsLength);
   }, [resultsLength]);
 
+  // `scrollIntoView` forces a layout of the whole page, and results change on every keystroke.
+  // The first row is already in view while the list sits at the top, so scroll only for a
+  // later row or a list the user has scrolled; scroll events keep that offset without a read.
+  const scrolledRef = useRef(false);
   useEffect(() => {
     if (resultsLength === 0) return;
-    const selectedItem = itemRefs.current[selectedIndex];
-    if (!selectedItem) return;
-    selectedItem.scrollIntoView({ block: "nearest" });
+    if (selectedIndex === 0 && !scrolledRef.current) return;
+    itemRefs.current[selectedIndex]?.scrollIntoView({ block: "nearest" });
   }, [resultsLength, selectedIndex]);
 
   return (
     <div className="@container/mention-menu flex max-h-(--promptbox-typeahead-max-height) flex-col overflow-hidden rounded-md border border-border bg-popover text-popover-foreground">
-      <div className="max-h-48 min-h-0 overflow-y-auto">
+      <div
+        className="max-h-48 min-h-0 overflow-y-auto"
+        onScroll={(event) => {
+          scrolledRef.current = event.currentTarget.scrollTop > 0;
+        }}
+      >
         {innerState.kind === "hint" ? (
           <MenuStatusRow onDismiss={onDismiss} className="text-muted-foreground">
             Type to search mentions
