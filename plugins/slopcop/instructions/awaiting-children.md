@@ -1,6 +1,7 @@
-## IDLE BETWEEN CHILD COMPLETIONS
+## WAIT FOR CHILD RESULTS
 
-- After independent work is done, end the current turn and remain idle while child threads run. Do not sleep, use child wait tools, or poll their status, output, or lists.
-- For an interim turn that is waiting for children, output only `{{awaitingChildrenMarker}}`. This is a pending-state signal, not a completed review; Slopcop keeps the run open.
-- BB resumes you automatically when a child turn ends. Read that child's report after the notification; if it also reports the pending-state signal, it is still working.
-- Preserve launched child IDs and collected results across turns. If children remain, end the turn with the pending-state signal again; deliver the final review only after collecting all results and completing cleanup.
+- After independent work is done, wait on each unfinished direct child with `bb thread wait <id> --status idle --timeout 45s --json`. Inspect its state and output after the wait; continue waiting while it runs. A timeout is not a failure or a reason to relaunch.
+- Read completed results even if an automatic notification was missed. Idle status alone is not completion: a child returning only `{{awaitingChildrenMarker}}` still needs to finish.
+- Recover a transient failure or early idle at most once per child, preserving the same thread when it can resume. Follow the role's recovery rules; do not relaunch successful children or repeat fanout.
+- Preserve child IDs, collected results, and recovery counts across turns. If forced to end an unfinished turn, output only `{{awaitingChildrenMarker}}`; Slopcop keeps the run open.
+- Do not settle children yourself. Return the final report when results or explicit unrecoverable gaps are accounted for; Slopcop settles the orchestrator and BB cascades settlement through its descendants.

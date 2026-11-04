@@ -125,7 +125,7 @@ class StartReviewTest(unittest.TestCase):
         for flag, value in [('--repository', 'bad'), ('--pr-number', '0'), ('--pr-number', '-1'),
                             ('--base-sha', 'main'), ('--head-sha', 'b' * 39),
                             ('--checkout', str(self.root / 'missing')), ('--checkout', str(self.root)),
-                            ('--context-file', str(self.root / 'missing')), ('--project', ''), ('--provider', 'codex'), ('--lens', 'A'),
+                            ('--context-file', str(self.root / 'missing')), ('--project', ''), ('--lens', 'A'),
                             ('--environment', '--bad'), ('--parent-thread', '\n')]:
             with self.subTest(flag=flag, value=value):
                 args = self.args.copy()
@@ -210,11 +210,15 @@ class StartReviewTest(unittest.TestCase):
             self.assertIn('Do not read existing PR reviews, review comments, or review discussions written by other humans or agents.', call['prompt'])
             self.assertIn('Do not inspect GitHub CI checks, commit statuses, workflow runs, logs, or artifacts.', call['prompt'])
             self.assertIn('<!-- slopcop:awaiting-children -->', call['prompt'])
-            self.assertIn('end your turn with only', call['prompt'])
-            self.assertIn('remain idle', call['prompt'])
+            self.assertIn('bb thread wait <lens-id> --status idle --timeout 45s --json', call['prompt'])
+            self.assertIn('at most one recovery attempt per lens slot', call['prompt'])
+            self.assertIn('bb thread tell <id> --mode steer --message-file <file>', call['prompt'])
+            self.assertIn('bb thread retry <id> --reason <reason>', call['prompt'])
+            self.assertIn('Do not archive, stop, delete, or settle', call['prompt'])
+            self.assertNotIn('bb thread archive', call['prompt'])
+            self.assertNotIn('bb thread stop', call['prompt'])
             self.assertNotIn('clock.sleep', call['prompt'])
-            self.assertNotIn('bb thread wait <id> --timeout', call['prompt'])
-            self.assertIn('Do not message peers, parents, or lens children', call['prompt'])
+            self.assertIn('Do not message peers or parents', call['prompt'])
             self.assertEqual(call['args'][:2], ['thread', 'spawn'])
             command = re.search(r'```sh\n(.*?)\n```', call['prompt'], re.S)[1]
             self.log.unlink()
@@ -231,6 +235,23 @@ class StartReviewTest(unittest.TestCase):
                 self.assertEqual(argv[argv.index('--provider') + 1], call['args'][call['args'].index('--provider') + 1])
                 self.assertIn(self.context.read_text(), lens['prompt'])
             self.assertFalse((self.checkout / 'PWNED').exists())
+
+    def test_targeted_reviewer_recovery_preserves_provider_and_parent(self):
+        for provider in ('claude-code', 'codex'):
+            self.log.unlink(missing_ok=True)
+            completed, calls = self.run_script(self.args + ['--provider', provider])
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            result = json.loads(completed.stdout)
+            self.assertEqual(len(result['launches']), 1)
+            self.assertEqual(result['launches'][0]['provider'], provider)
+            self.assertEqual(result['launches'][0]['role'], 'reviewer')
+            self.assertEqual(len(calls), 1)
+            args = calls[0]['args']
+            for flag, value in [('--parent-thread', 'thr_parent'),
+                                ('--lifecycle-owner-thread', 'thr_parent'),
+                                ('--provider', provider)]:
+                self.assertEqual(args[args.index(flag) + 1], value)
+            self.assertFalse(Path(calls[0]['path']).exists())
 
     def test_partial_lens_failure_and_targeted_recovery(self):
         args = self.args + ['--mode', 'lenses', '--provider', 'codex']

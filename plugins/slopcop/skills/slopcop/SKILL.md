@@ -112,28 +112,31 @@ python3 <slopcop-skill-directory>/scripts/start_review.py \
 - In every role, do not read existing human or agent reviews, review comments, or discussions in the PR. Do not inspect GitHub CI checks, commit statuses, workflow runs, logs, or artifacts.
 - Use pinned source and task context; parents may synthesize their assigned children's reports returned through BB. Pass these restrictions to every tool subagent.
 
-### Communication
+### Communication and waiting
 
-- Give each child its complete assignment at launch. Children report by ending their turns; BB automatically notifies their parents (`--parent-notifications auto`).
-- Do not message or steer peers, parents, or children with `bb thread tell` or follow-up tools. Read completed reports with `bb thread output`; report unresolved gaps without a messaging loop.
-- Parents with unfinished children end their turn with only `<!-- slopcop:awaiting-children -->` and remain idle until BB automatically resumes them. Do not sleep, use child wait tools, or poll; read a child's report after its notification, treating the same pending-state signal as unfinished work.
-- Slopcop keeps pending-state turns open through idle events and reload reconciliation. Final review reports use the normal delivery format; preserve child IDs and collected results across interim turns.
-- Lenses may launch tool subagents within their single lens and must collect their completion notifications and results before reporting. Those subagents inherit the read-only worktree and communication boundaries; they cannot create BB subthreads.
+- Give each child its complete assignment at launch. Children report by ending their turns; BB also sends automatic parent notifications (`--parent-notifications auto`).
+- Orchestrators and Review parents wait with `bb thread wait <id> --status idle --timeout 45s --json`, then inspect the child's state and output. Continue bounded waits while it runs; a timeout is not a failure or a retry trigger.
+- Collect completed reports even when a notification was missed. An idle child returning only `<!-- slopcop:awaiting-children -->` is unfinished and needs the recovery path, not repeated waits for idle.
+- Preserve child IDs, reports, and recovery counts across turns. If forced to end an unfinished turn, use only the pending-state marker; Slopcop keeps that run open through idle events and reload reconciliation.
+- Do not message peers or parents. Parents may send one targeted recovery follow-up to their own direct child as described below; routine steering and clarification loops remain prohibited.
+- Lenses may use tool subagents within their single lens and collect results with the provider's native wait mechanism. They cannot create BB subthreads and report to their Review parent only through turn completion.
 
-### Handle failures
+### Recover each child at most once
 
-- Record the JSON target, parent, provider, role, lens ID, child IDs, and errors. Partial failure exits nonzero and preserves successful IDs.
-- Each BB subprocess has a 60-second deadline. A timeout or malformed response can leave an unknown launch outcome; reconcile direct children by parent and unique `review_run` in their titles before retrying.
-- After reconciling a known failed launch, use `--lens <ID>` to retry only that lens. Do not rerun successful fanout.
-- A reviewer may run a separate sequential pass only for an actual failed lens launch and must report the exact error. Treat missing or incomplete reports as coverage gaps.
+- Keep a per-child-slot ledger: provider, role, lens ID when applicable, thread IDs, observed error, collected report, and recovery used. Preserve successful work.
+- For recoverable early idle or an incomplete result, send `bb thread tell <id> --mode steer --message-file <file>` with a targeted request to finish the existing assignment. For a transient failed provider turn, use `bb thread retry <id> --reason <reason>` and respect any reported retry-after time.
+- Prefer the same thread, provider, worktree, and completed evidence. Send no second recovery if the first fails. Do not retry permission denials, missing prerequisites, invalid targets, intentional user stops, or substantive review uncertainty.
+- A replacement is allowed only for a definitive failed launch or an unusable thread that cannot resume. Each helper subprocess has a 60-second deadline; reconcile unknown outcomes using the direct parent and unique `review_run` before launching anything.
+- Use `--provider <provider>` to launch only a failed reviewer slot, or `--mode lenses --provider <provider> --lens <ID>` for only a failed lens. Replacement consumes the same one recovery allowance; never repeat successful fanout.
+- Only an actual failed lens launch permits a separate sequential pass under the profile. Record the exact failure and fallback coverage; missing or incomplete reports remain coverage gaps.
 
-### Validate and clean up
+### Validate and leave settlement to Slopcop
 
-- The helper only launches. For notification-driven completion, evidence validation, synthesis, attestation, and lens cleanup, follow [reviewer-role.md](references/reviewer-role.md).
-- The orchestrator consumes both reports and checks all eleven attestation rows under each reviewer. It then archives and stops only its two direct children.
-- Every launch assigns lifecycle ownership to its parent; archiving a failed reviewer also archives/stops its lenses.
-- Verify cleanup once with `bb thread show <id> --json`: `.thread.archivedAt` must be set, and neither `.thread.status` nor `.thread.runtime.displayStatus` may be starting, active, or stopping.
-- Report unresolved cleanup and coverage failures.
+- The helper only launches. For waiting, recovery, evidence validation, synthesis, and all eleven attestation rows, follow [reviewer-role.md](references/reviewer-role.md).
+- The orchestrator consumes both reports and validates every lens row under each reviewer. Include failed/replacement IDs and recovery outcomes in coverage attestations.
+- Orchestrators, reviewers, and lenses must not archive, stop, delete, or settle review threads. Leave every thread and report intact.
+- With `settleFinishedThreads` enabled, Slopcop settles the orchestrator after recording a completed review outcome. BB's archive cascades through children and lifecycle dependents; every helper launch retains its parent as lifecycle owner. Runs that fail before producing a completed outcome remain open for diagnosis.
+- Report unresolved coverage accurately; settlement is not proof that all requested review work succeeded.
 
 ### Preference assets and role boundaries
 

@@ -25,7 +25,7 @@ def parse_args(argv=None):
         "Each BB command has a 60-second deadline. The selected environment must use this checkout, with both commits already available. Permissions and models use BB's inherited defaults.",
     )
     parser.add_argument('--mode', choices=('reviewers', 'lenses'), default='reviewers')
-    parser.add_argument('--provider', choices=('claude-code', 'codex'), help='Required for lenses; matches the Review parent')
+    parser.add_argument('--provider', choices=('claude-code', 'codex'), help='Required for lenses; optional reviewer provider filter for a single failed slot')
     parser.add_argument('--lens', choices=LENS_IDS, help='Launch only this lens when recovering a known failed launch')
     parser.add_argument('--repository', required=True, help='GitHub owner/repo')
     parser.add_argument('--pr-number', required=True, type=int, help='Positive pull request number')
@@ -42,8 +42,8 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if args.mode == 'lenses' and not args.provider:
         parser.error('--mode lenses requires --provider')
-    if args.mode == 'reviewers' and (args.provider or args.lens):
-        parser.error('--provider and --lens are only valid with --mode lenses')
+    if args.mode == 'reviewers' and args.lens:
+        parser.error('--lens is only valid with --mode lenses')
     if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', args.repository):
         parser.error('--repository must be owner/repo')
     if args.pr_number <= 0:
@@ -83,7 +83,7 @@ def main(argv=None):
             target=json.dumps(target))
         role = (ASSETS / ('reviewer-role.md' if args.mode == 'reviewers' else 'lens-role.md')).read_text(encoding='utf-8')
         appendix = (ASSETS / 'appendix.md').read_bytes().decode('utf-8') if args.mode == 'lenses' else ''
-        jobs = [(provider, None) for provider in ('claude-code', 'codex')] if args.mode == 'reviewers' else [
+        jobs = [(provider, None) for provider in ((args.provider,) if args.provider else ('claude-code', 'codex'))] if args.mode == 'reviewers' else [
             (args.provider, lens) for lens in ((args.lens,) if args.lens else LENS_IDS)]
         with tempfile.TemporaryDirectory(prefix='bb-pr-review-') as directory:
             result['review_run'] = Path(directory).name
