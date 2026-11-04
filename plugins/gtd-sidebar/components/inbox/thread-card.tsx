@@ -498,7 +498,10 @@ function MobileThreadSummary({
         ) : null}
         {/* Only the live row names its slot: the touch menu's lifted copy
            would otherwise duplicate the id. */}
-        <span id={interactive ? statusId : undefined} className={STATUS_SLOT_CLASS}>
+        <span
+          id={interactive ? statusId : undefined}
+          className={cn(STATUS_SLOT_CLASS, pullRequest && "w-auto")}
+        >
           <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} isCompactViewport />
         </span>
       </span>
@@ -750,7 +753,7 @@ function DesktopThreadSummary({
       <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
         <ActivityCounts activity={activity} isCompactViewport={false} />
         {pullRequest ? <PullRequestNumber pullRequest={pullRequest} interactive /> : null}
-        <span id={statusId} className={STATUS_SLOT_CLASS}>
+        <span id={statusId} className={cn(STATUS_SLOT_CLASS, pullRequest && "w-auto")}>
           <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} />
         </span>
       </span>
@@ -821,7 +824,7 @@ function PullRequestNumber({
   className?: string;
 }) {
   const classes = cn(
-    "relative shrink-0 font-mono",
+    "relative mr-1 inline-flex h-4 shrink-0 items-center rounded-full border-[0.5px] border-border px-1.5 font-mono text-2xs leading-none whitespace-nowrap",
     className,
     pullRequest.state === "merged"
       ? "text-[color:var(--pr-merged)]"

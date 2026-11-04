@@ -5,12 +5,14 @@ import { relativeTimeLabel } from "../../lib/relative-time";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
 
 /**
- * The row's trailing slot: one fixed width, right-aligned, on every row.
+ * The row's trailing slot: fixed width and right-aligned by default.
  *
  * Fixed rather than intrinsic because the age label's width follows its text —
  * "now" is wider than "7m" — and an intrinsic slot drags whatever sits beside
  * it back and forth, so no two rows agree on a column. The width holds the
- * widest label this sidebar can produce ("now", "59m", "52w").
+ * widest label this sidebar can produce ("now", "59m", "52w"). PR rows
+ * override the width to fit the content, keeping the chip 10px from the
+ * time or glyph even as that content changes width.
  */
 export const STATUS_SLOT_CLASS = "flex w-7 shrink-0 items-center justify-end";
 
