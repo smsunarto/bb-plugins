@@ -85,10 +85,10 @@ const meta = {
   play: ready,
   title: "Screens/Agent Instructions/Plugin prompts",
   component: RegisteredSurface,
-  args: { source, select: (app) => nav(app, "prompts", "plugins") },
+  args: { source, select: (app) => nav(app, "prompts", "sidebar") },
   parameters: {
     ...screenParameters,
-    editorContext: { placement: "page-panel", title: "Agent instructions", tab: "Plugins" },
+    editorContext: { placement: "sidebar", title: "Agent instructions" },
     host: { pluginId: "agent-instructions", rpc },
   },
 } satisfies Meta<typeof RegisteredSurface>;
@@ -105,7 +105,7 @@ export const FileEditor: Story = {
 export const NoSelection: Story = {
   parameters: { editorContext: { placement: "page", title: "Agent instructions" } },
   args: { select: (app) => nav(app, "prompts") },
-  play: shows("Pick a tool, prompt, or skill in the Plugins tab."),
+  play: shows("Pick a tool, prompt, or skill in the sidebar."),
 };
 export const Empty: Story = {
   play: async ({ canvasElement }) => {

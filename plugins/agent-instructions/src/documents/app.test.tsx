@@ -182,15 +182,12 @@ const queryKeyForSources = ["documentSources"];
 
 async function fileList(online = true, truncated = false) {
   const app = await loadPluginApp(() => import("../app/app.tsx"));
-  const registration = app.tabs.find(
-    (item): item is Extract<typeof item, { context: { kind: "nav-panel" } }> =>
-      item.id === "files" && item.context.kind === "nav-panel",
-  );
-  if (!registration || registration.availability !== "fixed") throw new Error("Files tab missing");
+  const sidebar = app.navPanels[0]?.experimental_sidebar;
+  if (!sidebar) throw new Error("Sidebar missing");
   const data = structuredClone(metadata);
   for (const p of data.projects) for (const s of p.sources) s.connected = online;
   return renderSlot(
-    { component: registration.component },
+    { component: sidebar },
     { subPath: "projects/p/a" },
     {
       rpc: {

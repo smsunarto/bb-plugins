@@ -43,7 +43,8 @@ function DotfilesPageBody(props: PluginNavPanelProps): ReactElement {
           No dotfiles repository at {overview.data.repoPath} on {overview.data.host.name}.
         </p>
         <p className="text-sm text-muted-foreground">
-          Pick another machine in the Files tab, or set repoPath in the Dotfiles plugin settings.
+          Pick another machine in the sidebar's Files section, or set repoPath in the Dotfiles
+          plugin settings.
         </p>
       </div>
     );
@@ -51,7 +52,7 @@ function DotfilesPageBody(props: PluginNavPanelProps): ReactElement {
   if (nav.path === null) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Select a file in the Files or Workflows tab.
+        Select a file in the sidebar's Files or Workflows section.
       </div>
     );
   }

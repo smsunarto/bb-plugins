@@ -15,17 +15,23 @@ afterEach(() => queryClient.clear());
 
 type CapturedApp = Awaited<ReturnType<typeof loadPluginApp>>;
 
-/** A fixed tab bb shows beside the Dotfiles page, ready for `renderSlot`. */
-function fixedTab(captured: CapturedApp, id: string) {
-  const tab = captured.tabs.find(
-    (candidate) =>
-      candidate.id === id &&
-      candidate.availability === "fixed" &&
-      candidate.context.kind === "nav-panel" &&
-      candidate.context.panelId === "dotfiles",
-  );
-  assert.ok(tab, `the ${id} tab is registered`);
-  return { component: tab.component as ComponentType<PluginNavPanelProps> };
+/** The left sidebar bb shows beside the Dotfiles page, ready for `renderSlot`. */
+function sidebar(captured: CapturedApp) {
+  const component = captured.navPanels[0]?.experimental_sidebar;
+  assert.ok(component, "the Dotfiles page registers a sidebar");
+  return { component: component as ComponentType<PluginNavPanelProps> };
+}
+
+/** Render the sidebar with one section picked, as a reader clicking its switcher would. */
+function renderSection(
+  captured: CapturedApp,
+  section: "Files" | "Workflows" | "Tasks",
+  props: PluginNavPanelProps,
+  options: Parameters<typeof renderSlot>[2],
+) {
+  const slot = renderSlot(sidebar(captured), props, options);
+  fireEvent.click(slot.getByRole("button", { name: section }));
+  return slot;
 }
 
 const names: Record<string, string> = {
@@ -62,7 +68,7 @@ function server(selected: string, connected = true) {
   };
 }
 
-test("the nav panel keeps the dotfiles route and registers its fixed tabs", async () => {
+test("the nav panel keeps the dotfiles route and puts its sections in the left sidebar", async () => {
   const captured = await loadPluginApp(() => import("./app.tsx"));
   const panel = captured.navPanels[0];
   assert.ok(panel, "app.tsx registers one nav panel");
@@ -70,45 +76,27 @@ test("the nav panel keeps the dotfiles route and registers its fixed tabs", asyn
   assert.equal(panel.id, "dotfiles");
   assert.equal(panel.path, "dotfiles");
   assert.equal(panel.fixedTabs, undefined);
-  // Saved panel layouts find each tab by panel id and tab id.
-  assert.deepEqual(
-    captured.tabs.map(({ id, title, context, availability, layout }) => ({
-      id,
-      title,
-      context,
-      availability,
-      layout,
-    })),
-    [
-      {
-        id: "files",
-        title: "Files",
-        context: { kind: "nav-panel", panelId: "dotfiles" },
-        availability: "fixed",
-        layout: "flush",
-      },
-      {
-        id: "workflows",
-        title: "Workflows",
-        context: { kind: "nav-panel", panelId: "dotfiles" },
-        availability: "fixed",
-        layout: "flush",
-      },
-      {
-        id: "tasks",
-        title: "Tasks",
-        context: { kind: "nav-panel", panelId: "dotfiles" },
-        availability: "fixed",
-        layout: "flush",
-      },
-    ],
-  );
+  assert.equal(typeof panel.experimental_sidebar, "function");
+  assert.deepEqual(captured.tabs, []);
 });
 
-test("the files tab reads the picked machine and names it beside the repo path", async () => {
+test("the sidebar remembers the picked section", async () => {
   const captured = await loadPluginApp(() => import("./app.tsx"));
-  const filesTab = fixedTab(captured, "files");
-  const slot = renderSlot(filesTab, { subPath: "" }, { rpc: server("host_mac") });
+  window.localStorage.clear();
+  const first = renderSection(captured, "Tasks", { subPath: "" }, { rpc: server("host_mac") });
+  assert.equal(first.getByRole("button", { name: "Tasks" }).getAttribute("aria-pressed"), "true");
+  first.unmount();
+
+  const again = renderSlot(sidebar(captured), { subPath: "" }, { rpc: server("host_mac") });
+  assert.equal(again.getByRole("button", { name: "Tasks" }).getAttribute("aria-pressed"), "true");
+  assert.equal(again.getByRole("button", { name: "Files" }).getAttribute("aria-pressed"), "false");
+  again.unmount();
+  window.localStorage.clear();
+});
+
+test("the Files section reads the picked machine and names it beside the repo path", async () => {
+  const captured = await loadPluginApp(() => import("./app.tsx"));
+  const slot = renderSection(captured, "Files", { subPath: "" }, { rpc: server("host_mac") });
 
   await slot.findByText("/Users/example/git/dotfiles");
   const picker = slot.getByRole("combobox", { name: "Machine" }) as HTMLSelectElement;
@@ -122,8 +110,7 @@ test("the files tab reads the picked machine and names it beside the repo path",
 
 test("picking another machine stores it and reloads the file list from there", async () => {
   const captured = await loadPluginApp(() => import("./app.tsx"));
-  const filesTab = fixedTab(captured, "files");
-  const slot = renderSlot(filesTab, { subPath: "" }, { rpc: server("host_server") });
+  const slot = renderSection(captured, "Files", { subPath: "" }, { rpc: server("host_server") });
   await slot.findByText("/home/codex/git/dotfiles");
 
   fireEvent.change(slot.getByRole("combobox", { name: "Machine" }), {
@@ -140,8 +127,12 @@ test("picking another machine stores it and reloads the file list from there", a
 
 test("an offline machine is named instead of showing an empty file list", async () => {
   const captured = await loadPluginApp(() => import("./app.tsx"));
-  const filesTab = fixedTab(captured, "files");
-  const slot = renderSlot(filesTab, { subPath: "" }, { rpc: server("host_mac", false) });
+  const slot = renderSection(
+    captured,
+    "Files",
+    { subPath: "" },
+    { rpc: server("host_mac", false) },
+  );
 
   await slot.findByText("Local Mac is not connected.");
   slot.unmount();
@@ -158,7 +149,7 @@ test("a machine without a repository is named instead of drawing a branch", asyn
     }),
   };
 
-  const files = renderSlot(fixedTab(captured, "files"), { subPath: "" }, { rpc });
+  const files = renderSection(captured, "Files", { subPath: "" }, { rpc });
   await files.findByText("No dotfiles repository at /Users/example/git/dotfiles.");
   assert.equal(files.queryByText("clean"), null);
   assert.equal(files.queryByText("missing"), null);
@@ -180,7 +171,7 @@ test("the page prompts for a selection at the panel root", async () => {
   const panel = captured.navPanels[0];
   assert.ok(panel, "app.tsx registers one nav panel");
   const slot = renderSlot(panel, { subPath: "" }, { rpc: server("host_server") });
-  await slot.findByText("Select a file in the Files or Workflows tab.");
+  await slot.findByText("Select a file in the sidebar's Files or Workflows section.");
   slot.unmount();
 });
 
@@ -207,7 +198,7 @@ test("workflows open their source on the picked machine and stay out of Files", 
       ],
     }),
   };
-  const workflows = renderSlot(fixedTab(captured, "workflows"), { subPath: "" }, { rpc });
+  const workflows = renderSection(captured, "Workflows", { subPath: "" }, { rpc });
   await workflows.findByText(/After saving, run Refresh agent skills/);
   const workflow = await workflows.findByRole("link", { name: /^Feature/ });
   assert.ok(workflow.getAttribute("href")?.includes("/global/at/host_mac/"));
@@ -218,7 +209,7 @@ test("workflows open their source on the picked machine and stay out of Files", 
   });
   workflows.unmount();
 
-  const files = renderSlot(fixedTab(captured, "files"), { subPath: "" }, { rpc });
+  const files = renderSection(captured, "Files", { subPath: "" }, { rpc });
   await files.findByRole("button", { name: "MCP servers" });
   assert.equal(files.queryByRole("button", { name: /^Feature/ }), null);
   files.unmount();
@@ -226,8 +217,9 @@ test("workflows open their source on the picked machine and stay out of Files", 
 
 test("review editing remains reachable when the dotfiles machine is offline", async () => {
   const captured = await loadPluginApp(() => import("./app.tsx"));
-  const slot = renderSlot(
-    fixedTab(captured, "workflows"),
+  const slot = renderSection(
+    captured,
+    "Workflows",
     { subPath: "" },
     { rpc: server("host_mac", false) },
   );
@@ -241,8 +233,9 @@ test("review editing remains reachable when the dotfiles machine is offline", as
 
 test("the refresh action targets the machine selected in Dotfiles", async () => {
   const captured = await loadPluginApp(() => import("./app.tsx"));
-  const slot = renderSlot(
-    fixedTab(captured, "tasks"),
+  const slot = renderSection(
+    captured,
+    "Tasks",
     { subPath: "" },
     {
       rpc: {

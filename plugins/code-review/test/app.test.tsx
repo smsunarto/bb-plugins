@@ -11,7 +11,7 @@ import {
   localChanges,
   pullRequest,
 } from "./app-fixtures.ts";
-import { inboxTabRegistration } from "./registrations.ts";
+import { inboxSidebarRegistration } from "./registrations.ts";
 import { sourceTextbox } from "./markdown-editor.ts";
 
 const { fireEvent, waitFor, within } = await import("@testing-library/react");
@@ -56,9 +56,9 @@ async function page(subPath: string, rpc: Handlers = baseRpc) {
   return renderSlot(await registration(), { subPath }, { rpc: rpc as never });
 }
 
-/** The Inbox tab in the page's right panel, reading the same URL as the page. */
+/** The Inbox in the page's left sidebar, reading the same URL as the page. */
 async function inboxTab(subPath: string, rpc: Handlers = baseRpc) {
-  return renderSlot(inboxTabRegistration(await loadApp()), { subPath }, { rpc: rpc as never });
+  return renderSlot(inboxSidebarRegistration(await loadApp()), { subPath }, { rpc: rpc as never });
 }
 
 /** Renders the Review destination's badge hook the way bb calls it: no component root of ours. */
@@ -90,7 +90,7 @@ function selectTab(tab: HTMLElement) {
   fireEvent.mouseDown(tab, { button: 0 });
 }
 
-test("registers one Review page with its Inbox tab, under the saved ids", async () => {
+test("registers one Review page with its Inbox in the left sidebar", async () => {
   const app = await loadApp();
   const panel = await registration();
   expect(panel.id).toBe("code-review");
@@ -98,24 +98,9 @@ test("registers one Review page with its Inbox tab, under the saved ids", async 
   expect(panel.path).toBe("code-review");
   expect(panel.icon).toBe("code-review/plugin");
   expect(panel.fixedTabs).toBeUndefined();
-  // Saved panel layouts find the tab by panel id and tab id.
-  expect(
-    app.tabs.map(({ id, title, context, availability, layout }) => ({
-      id,
-      title,
-      context,
-      availability,
-      layout,
-    })),
-  ).toEqual([
-    {
-      id: "inbox",
-      title: "Inbox",
-      context: { kind: "nav-panel", panelId: "code-review" },
-      availability: "fixed",
-      layout: "flush",
-    },
-  ]);
+  // The Inbox lives in the left sidebar, not a right-panel tab.
+  expect(panel.experimental_sidebar).toBeTypeOf("function");
+  expect(app.tabs).toEqual([]);
 });
 
 test("the navigation badge counts pull requests still waiting for the viewer's review", async () => {
@@ -123,7 +108,7 @@ test("the navigation badge counts pull requests still waiting for the viewer's r
   // #42 and #7 wait on the viewer; #40 is reviewed already.
   expect(await slot.findByText("2|2 pull requests waiting for your review")).toBeTruthy();
   slot.lifecycle.unmount();
-  // The Inbox tab reads the badge's cached inbox instead of asking GitHub again.
+  // The Inbox sidebar reads the badge's cached inbox instead of asking GitHub again.
   const tab = await inboxTab("");
   await tab.findByText("Rate-limit the login endpoint", {}, { timeout: 5000 });
   expect(tab.rpcCalls.filter(({ method }) => method === "inbox")).toEqual([]);
@@ -172,11 +157,11 @@ test("lists what is assigned to the viewer, with a count on every tab", async ()
   slot.lifecycle.unmount();
 });
 
-test("with no pull request in the URL, the page points to the Inbox tab", async () => {
+test("with no pull request in the URL, the page points to the sidebar Inbox", async () => {
   const slot = await page("");
   expect(await slot.findByText("Select a pull request")).toBeTruthy();
   expect(
-    slot.getByText("Choose one in the Inbox tab, or paste a GitHub link at its top."),
+    slot.getByText("Choose one in the sidebar's Inbox, or paste a GitHub link at its top."),
   ).toBeTruthy();
   expect(slot.rpcCalls.map((call) => call.method)).toEqual(["status"]);
   slot.lifecycle.unmount();
@@ -454,7 +439,7 @@ test("without a signed-in gh, the page says how to sign in and checks again", as
   slot.lifecycle.unmount();
 });
 
-test("without a signed-in gh, the Inbox tab defers to the page and asks for no inbox", async () => {
+test("without a signed-in gh, the Inbox sidebar defers to the page and asks for no inbox", async () => {
   const tab = await inboxTab("", {
     ...baseRpc,
     status: () => ({ ok: false, reason: "unauthenticated", message: "" }),
@@ -480,7 +465,7 @@ test("without gh at all, the page links to its installer", async () => {
   slot.lifecycle.unmount();
 });
 
-test("a pull request opens its description, checks, and diffs together, current in the Inbox tab", async () => {
+test("a pull request opens its description, checks, and diffs together, current in the Inbox sidebar", async () => {
   const slot = await page(PR_PATH);
   const tab = await inboxTab(PR_PATH);
   const heading = await slot.findByRole("heading", { level: 1 });

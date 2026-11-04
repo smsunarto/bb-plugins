@@ -1,4 +1,3 @@
-import type { ExperimentalTabRegistration } from "@get-bb/plugin-sdk";
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
@@ -8,17 +7,9 @@ import { loadPluginApp, renderSlot, type RenderSlotOptions } from "@get-bb/plugi
 
 const app = await loadPluginApp(() => import("./app"));
 const docsRegistration = app.navPanels[0]!;
-const navigationView = app.tabs.find(
-  (
-    tab,
-  ): tab is Extract<
-    ExperimentalTabRegistration,
-    { context: { kind: "nav-panel" }; availability: "fixed" }
-  > => tab.context.kind === "nav-panel" && tab.availability === "fixed" && tab.id === "navigation",
-)!;
 const navigationRegistration = {
   ...docsRegistration,
-  component: navigationView.component,
+  component: docsRegistration.experimental_sidebar!,
 };
 const rangeGetBoundingClientRectDescriptor = Object.getOwnPropertyDescriptor(
   Range.prototype,
@@ -241,7 +232,7 @@ describe("Docs nav panel", () => {
     const StrictDocsSurfaces = (props: { subPath: string }) => (
       <StrictMode>
         <docsRegistration.component {...props} />
-        <navigationView.component {...props} />
+        <navigationRegistration.component {...props} />
       </StrictMode>
     );
     const slot = renderSlot(
@@ -428,7 +419,7 @@ describe("Docs nav panel", () => {
     const Surfaces = (props: { subPath: string }) => (
       <>
         <docsRegistration.component {...props} />
-        <navigationView.component {...props} />
+        <navigationRegistration.component {...props} />
       </>
     );
     const slot = renderSlot(
@@ -689,7 +680,7 @@ describe("Docs nav panel", () => {
       expect(slot.rpcCalls.some((call) => call.method === "createNote")).toBe(true),
     );
 
-    slot.rerender(<navigationView.component subPath="work/work.md" />);
+    slot.rerender(<navigationRegistration.component subPath="work/work.md" />);
     await waitFor(() => expect(workNotebookRequested).toBe(true));
     await act(async () => {
       pendingCreate.resolve({ path: "created-in-personal.md" });
@@ -2084,15 +2075,8 @@ describe("Docs fork behavior", () => {
     expect(app.navPanels[0]?.headerContent).toBeUndefined();
     expect(app.messageDirectives).toHaveLength(1);
     expect(app.messageDirectives[0]?.id).toBe("docs");
+    expect(app.navPanels[0]?.experimental_sidebar).toBeTypeOf("function");
     expect(app.tabs).toEqual([
-      expect.objectContaining({
-        context: { kind: "nav-panel", panelId: "docs" },
-        availability: "fixed",
-        id: "navigation",
-        title: "Navigation",
-        icon: "FileText",
-        layout: "flush",
-      }),
       expect.objectContaining({
         context: { kind: "thread" },
         availability: "action",

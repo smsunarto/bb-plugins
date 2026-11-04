@@ -77,7 +77,8 @@ export const Reference: Story = {
   },
 };
 export const Files: Story = {
-  args: { select: (app) => nav(app, "projects/project/linux/AGENTS.md", "files") },
+  parameters: { editorContext: { placement: "sidebar", title: "Agent instructions" } },
+  args: { select: (app) => nav(app, "projects/project/linux/AGENTS.md", "sidebar") },
   play: async ({ canvasElement }) => {
     await ready({ canvasElement });
     const row = (path: string) =>

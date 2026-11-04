@@ -10,7 +10,7 @@ import {
 import { queryKey } from "../src/app/rpc.ts";
 import type { AgentActivity, LinkedThread } from "../src/shared/schema.ts";
 import { agentActivity, inbox, localBranch, localBranches, localChanges } from "./app-fixtures.ts";
-import { inboxTabRegistration } from "./registrations.ts";
+import { inboxSidebarRegistration } from "./registrations.ts";
 
 const { act, fireEvent, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
@@ -54,7 +54,7 @@ async function page(subPath: string, rpc: Handlers = baseRpc) {
 
 async function inboxTab(subPath: string, rpc: Handlers = baseRpc) {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
-  return renderSlot(inboxTabRegistration(app), { subPath }, { rpc: rpc as never });
+  return renderSlot(inboxSidebarRegistration(app), { subPath }, { rpc: rpc as never });
 }
 
 /** Radix tabs select on mouse down, not click. */

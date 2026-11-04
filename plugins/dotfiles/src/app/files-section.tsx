@@ -13,7 +13,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "./query.ts";
 import { HostPicker, usePanelOverview } from "./host-picker.tsx";
 import { queryKey, useRpcMutation, type RPCOutput } from "./rpc.ts";
@@ -33,7 +32,8 @@ interface PendingRemoval extends SkillRow {
   readonly host: ReadyOverview["host"];
 }
 
-function FilesTabBody(props: PluginNavPanelProps & { workflows: boolean }): ReactElement {
+/** The machine header and file list; `workflows` shows the workflow group instead of the rest. */
+export function FilesSection(props: PluginNavPanelProps & { workflows: boolean }): ReactElement {
   const nav = useDotfilesRoute(props.subPath);
   const overview = usePanelOverview();
   const [pendingRemoval, setPendingRemoval] = useState<PendingRemoval | null>(null);
@@ -261,25 +261,5 @@ function FileRow({
         </button>
       )}
     </div>
-  );
-}
-
-export function DotfilesFilesTab(props: PluginNavPanelProps): ReactElement {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <div className="flex h-full min-h-0 flex-col bg-sidebar">
-        <FilesTabBody {...props} workflows={false} />
-      </div>
-    </QueryClientProvider>
-  );
-}
-
-export function DotfilesWorkflowsTab(props: PluginNavPanelProps): ReactElement {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <div className="flex h-full min-h-0 flex-col bg-sidebar">
-        <FilesTabBody {...props} workflows />
-      </div>
-    </QueryClientProvider>
   );
 }

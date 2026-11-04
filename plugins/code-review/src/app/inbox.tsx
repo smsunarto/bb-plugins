@@ -24,7 +24,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs.tsx";
 import { PANEL_PATH, absoluteTime, plural, relativeTime } from "./format.ts";
 import { useStoredChoice } from "./hooks/useStoredChoice.ts";
-import { cn, keepInView } from "./lib/utils.ts";
+import { cn, keepInView, scrollingAncestor } from "./lib/utils.ts";
 import { Loading, Notice, RetryButton, Tip, errorText } from "./notice.tsx";
 import { useRpcQuery } from "./rpc.ts";
 import { SyncState, useReconcile, usePrPrefetch } from "./sync-state.tsx";
@@ -156,7 +156,7 @@ export function inboxFor(inbox: InboxData, account: string): InboxData {
 }
 
 /**
- * The Inbox tab: a box to open any pull request by link, then the viewer's
+ * The Inbox sidebar: a box to open any pull request by link, then the viewer's
  * queues, and the unpublished branches once GitButler can list them.
  */
 export function Inbox({
@@ -226,37 +226,42 @@ export function Inbox({
         onValueChange={(value) => setTab(value as InboxTab)}
         className="flex min-h-0 flex-1 flex-col"
       >
-        <TabsList
-          aria-label="Inbox"
-          className="mx-2.5 mt-2 flex h-auto shrink-0 justify-stretch gap-0.5 rounded-md p-0.5"
-        >
-          {SECTIONS.map(({ id, label }) => (
-            <InboxTabTrigger
-              key={id}
-              value={id}
-              label={label}
-              title={label}
-              count={
-                shown
-                  ? id === "assigned"
-                    ? new Set(
-                        [...shown.assigned, ...shown.team].map((pr) => prKey(pr.ref).toLowerCase()),
-                      ).size
-                    : shown[id].length
-                  : undefined
-              }
-            />
-          ))}
-          {
-            <InboxTabTrigger
-              value="unpublished"
-              label="Unpublished"
-              title="Unpublished branches"
-              count={branches.data?.available ? branches.data.branches.length : undefined}
-            />
-          }
-        </TabsList>
-        <div data-inbox-scroll className="min-h-0 flex-1 overflow-y-auto px-1.5 pt-1 pb-6">
+        {/* bb's sidebar scrolls the whole Inbox, so the queue switcher stays pinned. */}
+        <div className="sticky top-0 z-10 shrink-0 bg-sidebar px-2.5 pt-2 pb-1">
+          <TabsList
+            aria-label="Inbox"
+            className="flex h-auto justify-stretch gap-0.5 rounded-md p-0.5"
+          >
+            {SECTIONS.map(({ id, label }) => (
+              <InboxTabTrigger
+                key={id}
+                value={id}
+                label={label}
+                title={label}
+                count={
+                  shown
+                    ? id === "assigned"
+                      ? new Set(
+                          [...shown.assigned, ...shown.team].map((pr) =>
+                            prKey(pr.ref).toLowerCase(),
+                          ),
+                        ).size
+                      : shown[id].length
+                    : undefined
+                }
+              />
+            ))}
+            {
+              <InboxTabTrigger
+                value="unpublished"
+                label="Unpublished"
+                title="Unpublished branches"
+                count={branches.data?.available ? branches.data.branches.length : undefined}
+              />
+            }
+          </TabsList>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-1.5 pt-1 pb-6">
           {/* The Unpublished tab says its own state, so the pull requests' waits for theirs. */}
           {section === "unpublished" && !shown ? null : (
             <SectionPanes inbox={inbox} shown={shown} selected={selected} />
@@ -700,8 +705,9 @@ function RowButton({
   // A deep link opens with its row possibly far down the list.
   useEffect(() => {
     const row = ref.current;
-    const area = row?.closest<HTMLElement>("[data-inbox-scroll]");
-    if (selected && row && area) keepInView(area, row);
+    if (!selected || !row) return;
+    const area = scrollingAncestor(row);
+    if (area) keepInView(area, row);
   }, [selected]);
   return (
     <button

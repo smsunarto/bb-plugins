@@ -2341,15 +2341,7 @@ export default definePluginApp((app) => {
     icon: "scott-docs/plugin",
     path: "docs",
     component: NotesPanel,
-  });
-  app.slots.experimental_tab({
-    context: { kind: "nav-panel", panelId: "docs" },
-    availability: "fixed",
-    id: "navigation",
-    title: "Navigation",
-    icon: "FileText",
-    component: NotesNavigationPanel,
-    layout: "flush",
+    experimental_sidebar: NotesNavigationPanel,
   });
   app.slots.experimental_tab({
     context: { kind: "thread" },

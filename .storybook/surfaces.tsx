@@ -2,26 +2,12 @@ import type { JsonValue, PluginMachineProviderInputsChange } from "@get-bb/plugi
 import type { CapturedPluginApp } from "@get-bb/plugin-sdk/testing/app";
 import { useCallback, useState } from "react";
 
-export function nav(app: CapturedPluginApp, subPath = "", tab?: string) {
+/** A nav panel's page, or with `"sidebar"` the left sidebar bb shows while that page is open. */
+export function nav(app: CapturedPluginApp, subPath = "", surface?: "sidebar") {
   const panel = app.navPanels[0];
-  if (tab) {
-    const target = app.tabs.find(
-      (
-        item,
-      ): item is Extract<CapturedPluginApp["tabs"][number], { context: { kind: "nav-panel" } }> =>
-        item.id === tab && item.context.kind === "nav-panel" && item.context.panelId === panel?.id,
-    );
-    if (!target || target.context.kind !== "nav-panel")
-      throw new Error(`Missing navigation tab registration: ${tab}`);
-    if (target.availability === "action") {
-      const Component = target.component;
-      return <Component subPath={subPath} params={target.params ?? null} />;
-    }
-    const Component = target.component;
-    return <Component subPath={subPath} />;
-  }
   if (!panel) throw new Error("Missing navigation registration: main");
-  const Component = panel.component;
+  const Component = surface === "sidebar" ? panel.experimental_sidebar : panel.component;
+  if (!Component) throw new Error(`Missing navigation ${surface ?? "page"} registration`);
   return <Component subPath={subPath} />;
 }
 export function settings(app: CapturedPluginApp) {

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider, hashKey } from "@tanstack/react-query
 import { queryClient } from "../src/app/query.ts";
 import { installLocalCache, readDraftText, writeDraftText } from "../src/app/local-cache.ts";
 import { inbox, pullRequest } from "./app-fixtures.ts";
-import { inboxTabRegistration } from "./registrations.ts";
+import { inboxSidebarRegistration } from "./registrations.ts";
 import { sourceTextbox } from "./markdown-editor.ts";
 import { parsePrSubPath } from "../src/shared/schema.ts";
 import type { PullRequest, Inbox, ChangedFiles } from "../src/shared/schema.ts";
@@ -455,7 +455,7 @@ test("a restored inbox renders while GitHub status and inbox are still pending",
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const wait = deferred<never>();
   const slot = renderSlot(
-    inboxTabRegistration(app),
+    inboxSidebarRegistration(app),
     { subPath: "" },
     {
       rpc: {
@@ -572,7 +572,7 @@ test("hovering several inbox rows caps speculative reads at two", async () => {
   const app = await loadPluginApp(() => import("../src/app/app.tsx"));
   const reads = deferred<PullRequest>();
   const slot = renderSlot(
-    inboxTabRegistration(app),
+    inboxSidebarRegistration(app),
     { subPath: "" },
     {
       rpc: {

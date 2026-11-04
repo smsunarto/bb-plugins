@@ -1,5 +1,4 @@
 // @vitest-environment jsdom
-import type { ExperimentalTabRegistration } from "@get-bb/plugin-sdk";
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -28,17 +27,9 @@ const { querySnapshotStorageKey, resetQuerySnapshotStateForTest } =
   await import("./query-snapshot.js");
 
 const tasksRegistration = app.navPanels[0]!;
-const navigationView = app.tabs.find(
-  (
-    tab,
-  ): tab is Extract<
-    ExperimentalTabRegistration,
-    { context: { kind: "nav-panel" }; availability: "fixed" }
-  > => tab.context.kind === "nav-panel" && tab.availability === "fixed" && tab.id === "navigation",
-)!;
 const navigationRegistration = {
   ...tasksRegistration,
-  component: navigationView.component,
+  component: tasksRegistration.experimental_sidebar!,
 };
 
 beforeEach(() => window.localStorage.clear());
@@ -255,17 +246,9 @@ describe("task pager", () => {
 });
 
 describe("tasks app shell", () => {
-  it("registers navigation as a BB-owned fixed panel tab", () => {
-    expect(app.tabs.filter((tab) => tab.context.kind === "nav-panel")).toMatchObject([
-      {
-        context: { kind: "nav-panel", panelId: "tasks" },
-        availability: "fixed",
-        id: "navigation",
-        title: "Navigation",
-        icon: "ListView",
-        layout: "flush",
-      },
-    ]);
+  it("registers navigation in the left sidebar instead of a panel tab", () => {
+    expect(tasksRegistration.experimental_sidebar).toBeTypeOf("function");
+    expect(app.tabs.filter((tab) => tab.context.kind === "nav-panel")).toEqual([]);
   });
 
   it("does not treat the first connection as a reconnect", async () => {
@@ -933,7 +916,7 @@ describe("tasks app shell", () => {
     });
   });
 
-  it("renders right-panel navigation and routes through the plugin panel", async () => {
+  it("renders sidebar navigation and routes through the plugin panel", async () => {
     const slot = renderSlot(
       navigationRegistration,
       { subPath: "all" },
@@ -976,7 +959,7 @@ describe("tasks app shell", () => {
     expect(bbProjectCalls).toBeGreaterThan(0);
   });
 
-  it("routes 'manage' to the manage panel from right-panel navigation", async () => {
+  it("routes 'manage' to the manage panel from sidebar navigation", async () => {
     const panel = renderSlot(
       navigationRegistration,
       { subPath: "all" },

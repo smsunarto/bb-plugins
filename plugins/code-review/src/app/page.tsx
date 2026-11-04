@@ -24,6 +24,8 @@ import { PrView } from "./pr-view.tsx";
 import { queryKey, useRpcQuery } from "./rpc.ts";
 
 const SHELL = "flex h-full min-h-0 min-w-0 overflow-hidden bg-background text-xs text-foreground";
+/** bb's sidebar scrolls the Inbox and draws its ground, so no clipping that would break sticky rows. */
+const SIDEBAR = "flex h-full min-h-0 min-w-0 flex-col text-xs text-foreground";
 const GH_INSTALL_URL = "https://cli.github.com";
 
 /** Whether gh is installed and signed in only changes when the reader fixes it, and Try again asks again then. */
@@ -32,7 +34,7 @@ const STATUS_QUERY = { staleTime: 5 * 60_000 } as const;
 /**
  * The Review page. The URL is the state: `subPath` is empty when no pull
  * request is open, or names a pull request or an unpublished branch, and its
- * tab. The inbox lives in the page's Inbox tab, which reads the same URL.
+ * tab. The inbox lives in the page's left sidebar, which reads the same URL.
  */
 export function CodeReviewPage({ subPath }: PluginNavPanelProps) {
   return (
@@ -156,7 +158,7 @@ function routeAccount(route: PrRoute, active: string): string {
   return listed?.account ?? active;
 }
 
-/** The Inbox tab in the page's right panel: the viewer's queues, once gh can answer. */
+/** The Inbox in the page's left sidebar: the viewer's queues, once gh can answer. */
 export function InboxTab({ subPath }: PluginNavPanelProps) {
   return (
     <QueryClientProvider client={queryClient}>
@@ -174,7 +176,7 @@ function InboxTabBody({ subPath }: { subPath: string }) {
     (!signedOut(status.data) && queryClient.getQueryData<InboxData>(queryKey("inbox")))
   ) {
     return (
-      <nav aria-label="Pull request inbox" className={cn(SHELL, "flex-col")}>
+      <nav aria-label="Pull request inbox" className={SIDEBAR}>
         <Inbox
           selected={parsePrSubPath(subPath)?.ref ?? null}
           selectedBranch={parseBranchSubPath(subPath)?.id ?? null}
@@ -185,7 +187,7 @@ function InboxTabBody({ subPath }: { subPath: string }) {
   // The page explains what gh needs. Pull requests wait until gh can answer;
   // unpublished branches need no GitHub, so they still list.
   return (
-    <div className={cn(SHELL, "flex-col gap-3 p-3 text-muted-foreground")}>
+    <div className={cn(SIDEBAR, "gap-3 p-3 text-muted-foreground")}>
       {status.data || status.isError ? (
         <>
           <p>GitHub is unavailable. The page says how to fix it.</p>
@@ -293,7 +295,7 @@ function NothingSelected() {
       <Icon name="GitPullRequest" className="mb-2 size-6 text-subtle-foreground" aria-hidden />
       <p className="font-medium text-foreground">Select a pull request</p>
       <p className="mt-1 max-w-64 leading-normal">
-        Choose one in the Inbox tab, or paste a GitHub link at its top.
+        Choose one in the sidebar's Inbox, or paste a GitHub link at its top.
       </p>
     </div>
   );

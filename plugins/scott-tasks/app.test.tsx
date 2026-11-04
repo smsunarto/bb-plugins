@@ -23,18 +23,11 @@ function Badge() {
 afterEach(cleanup);
 
 describe("Tasks registrations", () => {
-  it("keeps the saved navigation and thread tab identities", () => {
+  it("puts navigation in the left sidebar and keeps the thread tab identity", () => {
     expect(app.navPanels).toHaveLength(1);
     expect(app.navPanels[0]).not.toHaveProperty("fixedTabs");
+    expect(app.navPanels[0]?.experimental_sidebar).toBeTypeOf("function");
     expect(app.tabs).toEqual([
-      expect.objectContaining({
-        context: { kind: "nav-panel", panelId: "tasks" },
-        availability: "fixed",
-        id: "navigation",
-        title: "Navigation",
-        icon: "ListView",
-        layout: "flush",
-      }),
       expect.objectContaining({
         context: { kind: "thread" },
         availability: "action",

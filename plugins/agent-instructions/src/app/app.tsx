@@ -345,64 +345,61 @@ function promptSubPath(subPath: string): string | null {
   return subPath === "prompts" ? "" : subPath.startsWith("prompts/") ? subPath.slice(8) : null;
 }
 
+const DOCUMENT_ROUTE = /^(global|projects)(?:\/|$)/;
+
 function AgentInstructionsPage({ subPath }: PluginNavPanelProps) {
+  const prompts = promptSubPath(subPath);
+  return DOCUMENT_ROUTE.test(subPath) ? (
+    <DocumentsPage subPath={subPath} />
+  ) : prompts === null ? (
+    <RulesPage />
+  ) : (
+    <PromptEditorPage subPath={prompts} />
+  );
+}
+
+/** The page's left sidebar: the editor switcher, then the current editor's file or plugin list. */
+function AgentInstructionsSidebar({ subPath }: PluginNavPanelProps) {
   const navigate = useBbNavigate();
   const prompts = promptSubPath(subPath);
-  const documents = /^(global|projects)(?:\/|$)/.test(subPath);
+  const documents = DOCUMENT_ROUTE.test(subPath);
+  const editors = [
+    { label: "Rules", active: prompts === null && !documents, subPath: "" },
+    { label: "Global", active: subPath.startsWith("global"), subPath: "global" },
+    { label: "Projects", active: subPath.startsWith("projects"), subPath: "projects" },
+    { label: "Plugin prompts", active: prompts !== null, subPath: "prompts" },
+  ];
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <nav
         aria-label="Instruction editors"
-        className="flex shrink-0 flex-wrap gap-1 border-b border-border px-4 py-2"
+        className="sticky top-0 z-10 flex shrink-0 flex-wrap gap-1 border-b border-border bg-sidebar p-2"
       >
-        <Button
-          variant={prompts === null && !documents ? "secondary" : "ghost"}
-          size="sm"
-          aria-pressed={prompts === null && !documents}
-          onClick={() => navigate.toPluginPanel("instructions")}
-        >
-          Rules
-        </Button>
-        <Button
-          variant={subPath.startsWith("global") ? "secondary" : "ghost"}
-          size="sm"
-          aria-pressed={subPath.startsWith("global")}
-          onClick={() => navigate.toPluginPanel("instructions", { subPath: "global" })}
-        >
-          Global
-        </Button>
-        <Button
-          variant={subPath.startsWith("projects") ? "secondary" : "ghost"}
-          size="sm"
-          aria-pressed={subPath.startsWith("projects")}
-          onClick={() => navigate.toPluginPanel("instructions", { subPath: "projects" })}
-        >
-          Projects
-        </Button>
-        <Button
-          variant={prompts !== null ? "secondary" : "ghost"}
-          size="sm"
-          aria-pressed={prompts !== null}
-          onClick={() => navigate.toPluginPanel("instructions", { subPath: "prompts" })}
-        >
-          Plugin prompts
-        </Button>
+        {editors.map((editor) => (
+          <Button
+            key={editor.label}
+            variant={editor.active ? "secondary" : "ghost"}
+            size="sm"
+            aria-pressed={editor.active}
+            onClick={() =>
+              editor.subPath
+                ? navigate.toPluginPanel("instructions", { subPath: editor.subPath })
+                : navigate.toPluginPanel("instructions")
+            }
+          >
+            {editor.label}
+          </Button>
+        ))}
       </nav>
-      <div className="min-h-0 min-w-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {documents ? (
-          <DocumentsPage subPath={subPath} />
-        ) : prompts === null ? (
-          <RulesPage />
-        ) : (
-          <PromptEditorPage subPath={prompts} />
-        )}
+          <DocumentsTab subPath={subPath} />
+        ) : prompts !== null ? (
+          <PluginsTab subPath={prompts} />
+        ) : null}
       </div>
     </div>
   );
-}
-
-function PromptPluginsTab({ subPath }: PluginNavPanelProps) {
-  return <PluginsTab subPath={promptSubPath(subPath) ?? ""} />;
 }
 
 export default definePluginApp((app) => {
@@ -412,25 +409,6 @@ export default definePluginApp((app) => {
     icon: "agent-instructions/plugin",
     path: "instructions",
     component: AgentInstructionsPage,
-  });
-  app.slots.experimental_tab({
-    context: { kind: "nav-panel", panelId: "agent-instructions" },
-    availability: "fixed",
-    id: "files",
-    title: "Files",
-    icon: "FileText",
-    component: DocumentsTab,
-    useVisible: ({ subPath }) => /^(global|projects)(?:\/|$)/.test(subPath),
-    layout: "flush",
-  });
-  app.slots.experimental_tab({
-    context: { kind: "nav-panel", panelId: "agent-instructions" },
-    availability: "fixed",
-    id: "plugins",
-    title: "Plugins",
-    icon: "Puzzle",
-    component: PromptPluginsTab,
-    useVisible: ({ subPath }) => promptSubPath(subPath) !== null,
-    layout: "flush",
+    experimental_sidebar: AgentInstructionsSidebar,
   });
 });

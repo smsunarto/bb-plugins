@@ -27,14 +27,6 @@ export default definePluginApp((app) => {
     path: PANEL_PATH,
     component: CodeReviewPage,
     experimental_useBadge: useNeedsReviewBadge,
-  });
-  app.slots.experimental_tab({
-    context: { kind: "nav-panel", panelId: "code-review" },
-    availability: "fixed",
-    id: "inbox",
-    title: "Inbox",
-    icon: "GitPullRequest",
-    component: InboxTab,
-    layout: "flush",
+    experimental_sidebar: InboxTab,
   });
 });

@@ -21,7 +21,7 @@ const PANEL_PATH = "instructions";
 type Selection = { pluginId: string; path: string } | { pluginId: string; tool: string };
 
 /**
- * The URL is the selection, so the page and its Plugins tab agree:
+ * The URL is the selection, so the page and its sidebar Plugins list agree:
  * `<pluginId>/file/<path>` or `<pluginId>/tool/<name>`. bb encodes and decodes
  * each segment, so these stay raw.
  */
@@ -63,7 +63,7 @@ type Draft = { base: string; text: string };
 type DraftUpdate = (draft: Draft | undefined) => Draft | undefined;
 
 /**
- * Unsaved edits, keyed by `draftKey`. The page edits them and the Plugins tab
+ * Unsaved edits, keyed by `draftKey`. The page edits them and the sidebar Plugins list
  * marks them, so they live outside both components, for the app session.
  */
 let drafts: ReadonlyMap<string, Draft> = new Map();
@@ -492,15 +492,16 @@ function FileEditor(props: {
   );
 }
 
-/** The Plugins tab in the page's right panel: every plugin's tools, prompts, and skills. */
+/** The Plugins list in the page's left sidebar: every plugin's tools, prompts, and skills. */
 function PluginsTabBody({ subPath }: { subPath: string }) {
   const plugins = useRpcQuery("plugins", null);
   const dirty = useDrafts();
   const select = useSelect();
-  if (plugins.isPending) return <p className="pe-panel pe-tab-state pe-meta">Loading plugins…</p>;
+  if (plugins.isPending)
+    return <p className="pe-panel pe-sidebar pe-tab-state pe-meta">Loading plugins…</p>;
   if (plugins.isError) {
     return (
-      <div className="pe-panel pe-tab-state">
+      <div className="pe-panel pe-sidebar pe-tab-state">
         <p className="pe-notice" data-tone="bad">
           {plugins.error.message}
         </p>
@@ -508,7 +509,7 @@ function PluginsTabBody({ subPath }: { subPath: string }) {
     );
   }
   return (
-    <div className="pe-panel">
+    <div className="pe-panel pe-sidebar">
       <PluginList
         plugins={plugins.data.plugins}
         selection={parseSelection(subPath)}
@@ -538,7 +539,7 @@ function PromptEditor({ subPath }: { subPath: string }) {
   const plugin = plugins.data.plugins.find((p) => p.id === selection?.pluginId);
 
   let body = (
-    <div className="pe-editor pe-empty">Pick a tool, prompt, or skill in the Plugins tab.</div>
+    <div className="pe-editor pe-empty">Pick a tool, prompt, or skill in the sidebar.</div>
   );
   if (plugin && selection && "tool" in selection) {
     const tool = plugin.tools.find((t) => t.name === selection.tool);

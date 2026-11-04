@@ -56,17 +56,11 @@ async function page(subPath: string) {
   );
 }
 
-/** The fixed Plugins tab bb shows beside the page, ready for `renderSlot`. */
+/** The left sidebar bb shows beside the page, ready for `renderSlot`. */
 async function pluginsTabRegistration() {
-  const tab = (await loadApp()).tabs.find(
-    (candidate) =>
-      candidate.id === "plugins" &&
-      candidate.availability === "fixed" &&
-      candidate.context.kind === "nav-panel" &&
-      candidate.context.panelId === "agent-instructions",
-  );
-  if (!tab) throw new Error("Prompt Editor declares no Plugins tab");
-  return { component: tab.component as ComponentType<PluginNavPanelProps> };
+  const sidebar = (await loadApp()).navPanels[0]?.experimental_sidebar;
+  if (!sidebar) throw new Error("Agent instructions declares no sidebar");
+  return { component: sidebar as ComponentType<PluginNavPanelProps> };
 }
 
 async function pluginsTab(subPath: string) {
@@ -77,40 +71,22 @@ async function pluginsTab(subPath: string) {
   );
 }
 
-test("the plugin list is the page's Plugins tab, under its saved ids", async () => {
+test("the plugin list lives in the page's left sidebar, not a panel tab", async () => {
   const app = await loadApp();
   const panel = app.navPanels[0]!;
   expect(panel.path).toBe("instructions");
   expect(panel.fixedTabs).toBeUndefined();
-  // Saved panel layouts find the tab by panel id and tab id.
-  expect(
-    app.tabs
-      .filter((tab) => tab.id === "plugins")
-      .map(({ id, title, context, availability, layout }) => ({
-        id,
-        title,
-        context,
-        availability,
-        layout,
-      })),
-  ).toEqual([
-    {
-      id: "plugins",
-      title: "Plugins",
-      context: { kind: "nav-panel", panelId: "agent-instructions" },
-      availability: "fixed",
-      layout: "flush",
-    },
-  ]);
+  expect(panel.experimental_sidebar).toBeTypeOf("function");
+  expect(app.tabs).toEqual([]);
 });
 
-test("with nothing in the URL, the page points to the Plugins tab", async () => {
+test("with nothing in the URL, the page points to the sidebar", async () => {
   const slot = await page("");
-  expect(await slot.findByText("Pick a tool, prompt, or skill in the Plugins tab.")).toBeTruthy();
+  expect(await slot.findByText("Pick a tool, prompt, or skill in the sidebar.")).toBeTruthy();
   slot.lifecycle.unmount();
 });
 
-test("choosing in the tab puts the choice in the page's URL", async () => {
+test("choosing in the sidebar puts the choice in the page's URL", async () => {
   const tab = await pluginsTab("");
   fireEvent.click(await tab.findByRole("button", { name: /Notes/ }));
   expect(tab.navigateCalls).toEqual([
@@ -188,25 +164,20 @@ test("an unsaved edit on the page is marked in the tab", async () => {
   file.lifecycle.unmount();
 });
 
-test("the consolidated page offers both editors and only shows Plugins for prompt routes", async () => {
-  const app = await loadApp();
-  const tab = app.tabs.find(
-    (item): item is Extract<typeof item, { context: { kind: "nav-panel" } }> =>
-      item.context.kind === "nav-panel" && item.id === "plugins",
-  );
-  if (!tab) throw new Error("Missing Plugins tab");
-  expect(tab.useVisible?.({ subPath: "" })).toBe(false);
-  expect(tab.useVisible?.({ subPath: "prompts" })).toBe(true);
-  expect(tab.useVisible?.({ subPath: "prompts/notes/tool/notes_code" })).toBe(true);
-  const slot = await page("");
+test("the sidebar offers every editor and only lists plugins on prompt routes", async () => {
+  const sidebar = await pluginsTabRegistration();
+  const rules = renderSlot(sidebar, { subPath: "" }, { rpc: rpc as never });
+  expect(rules.getByRole("button", { name: /^Rules$/ }).getAttribute("aria-pressed")).toBe("true");
+  expect(rules.queryByRole("button", { name: /Notes/ })).toBeNull();
+  rules.lifecycle.unmount();
+
+  const slot = await pluginsTab("");
+  await slot.findByRole("button", { name: /Notes/ });
   expect(slot.getByRole("button", { name: "Plugin prompts" }).getAttribute("aria-pressed")).toBe(
     "true",
   );
   fireEvent.click(slot.getByRole("button", { name: /^Rules$/ }));
-  expect(slot.navigateCalls.at(-1)).toMatchObject({
-    method: "toPluginPanel",
-    path: "instructions",
-  });
+  expect(slot.navigateCalls.at(-1)).toEqual({ method: "toPluginPanel", path: "instructions" });
   slot.lifecycle.unmount();
 });
 

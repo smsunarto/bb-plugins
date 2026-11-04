@@ -435,7 +435,7 @@ function DocumentsBody({ subPath, list = false }: PluginNavPanelProps & { list?:
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-          Choose an instruction, skill, or reference file in the Files tab.
+          Choose an instruction, skill, or reference file in the sidebar.
         </div>
       )}
     </div>

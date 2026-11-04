@@ -1,6 +1,5 @@
 import { useState } from "react";
 import type { ReactElement } from "react";
-import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,12 +9,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { queryClient } from "./query.ts";
 import { usePanelOverview } from "./host-picker.tsx";
 import { quickTasks, useTasks } from "./tasks.ts";
 
-function TasksTabBody(): ReactElement {
+/** Quick task buttons and the latest task's output. */
+export function TasksSection(): ReactElement {
   const tasks = useTasks();
   const overview = usePanelOverview();
   const [confirmingPublish, setConfirmingPublish] = useState(false);
@@ -114,15 +112,5 @@ function TasksTabBody(): ReactElement {
         </Dialog>
       )}
     </>
-  );
-}
-
-export function DotfilesTasksTab(_props: PluginNavPanelProps): ReactElement {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <div className="flex h-full min-h-0 flex-col bg-sidebar">
-        <TasksTabBody />
-      </div>
-    </QueryClientProvider>
   );
 }

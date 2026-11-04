@@ -13,15 +13,7 @@ export default definePluginApp((app) => {
     path: "tasks",
     component: TasksAppShell,
     experimental_useBadge: useTasksBadge,
-  });
-  app.slots.experimental_tab({
-    context: { kind: "nav-panel", panelId: "tasks" },
-    availability: "fixed",
-    id: "navigation",
-    title: "Navigation",
-    icon: "ListView",
-    component: TasksNavigationPanel,
-    layout: "flush",
+    experimental_sidebar: TasksNavigationPanel,
   });
   app.slots.experimental_tab({
     context: { kind: "thread" },

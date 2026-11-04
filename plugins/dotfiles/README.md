@@ -82,7 +82,7 @@ groups and every task name are fixed, so a differently shaped repo still reads
 
 Open the **Dotfiles** panel in bb, or run `bb dotfiles`.
 
-- **Machine menu.** The Files tab header picks the machine and shows the repo path on
+- **Machine menu.** The sidebar's Files section header picks the machine and shows the repo path on
   it. The panel header names the machine too. An offline machine shows
   `<name> is not connected.` instead of an empty list.
 - **File list.** Five fixed groups — agent config, settings overlays, shell, mise, repo

@@ -75,10 +75,10 @@ const meta = {
   play: ready,
   title: "Screens/Docs/Document browser",
   component: RegisteredSurface,
-  args: { source, select: (app) => nav(app, "personal", "navigation") },
+  args: { source, select: (app) => nav(app, "personal", "sidebar") },
   parameters: {
     ...screenParameters,
-    editorContext: { placement: "page-panel", title: "Docs", tab: "Navigation" },
+    editorContext: { placement: "sidebar", title: "Docs" },
     host: { pluginId: "scott-docs", rpc: { listNotes: () => listing } },
   },
 } satisfies Meta<typeof RegisteredSurface>;

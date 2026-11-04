@@ -13,6 +13,11 @@
   background: var(--background);
   font-size: 13px;
 }
+
+/* The Plugins list sits in bb's left sidebar; let the sidebar's own ground show. */
+.pe-panel.pe-sidebar {
+  background: transparent;
+}
 .pe-panel h1,
 .pe-panel h2,
 .pe-panel h3,
