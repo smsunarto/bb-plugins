@@ -118,6 +118,32 @@ export function compose(rules: readonly Rule[], session: Session): string | null
   return text.length > 0 ? text : null;
 }
 
+/**
+ * Providers whose rules can together pass bb's cap, with the longest text
+ * `compose` could give them. Host, model, and project scope are ignored, so
+ * this is an upper bound. `provider: null` means every provider.
+ */
+export function overflowingProviders(
+  rules: readonly Rule[],
+): { provider: string | null; characters: number }[] {
+  const live = rules.filter((rule) => rule.enabled && rule.instructions.trim().length > 0);
+  const length = (allows: (rule: Rule) => boolean) =>
+    live
+      .filter(allows)
+      .map((rule) => rule.instructions.trim())
+      .join("\n\n").length;
+  const anywhere = length((rule) => rule.when.providers.length === 0);
+  if (anywhere > MAX_INSTRUCTIONS_LENGTH) return [{ provider: null, characters: anywhere }];
+  const results: { provider: string | null; characters: number }[] = [];
+  for (const provider of new Set(live.flatMap((rule) => rule.when.providers))) {
+    const characters = length(
+      (rule) => rule.when.providers.length === 0 || rule.when.providers.includes(provider),
+    );
+    if (characters > MAX_INSTRUCTIONS_LENGTH) results.push({ provider, characters });
+  }
+  return results;
+}
+
 export function newRuleId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   return `rule_${Array.from(bytes, (byte) => (byte % 36).toString(36)).join("")}`;

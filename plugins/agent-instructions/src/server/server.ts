@@ -1,6 +1,7 @@
 import { documentContracts } from "../documents/model.ts";
 import { documentHandlers } from "../documents/server.ts";
 import { defineCli, defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { openPublisher } from "../catalog/publish.ts";
 import { openCatalog } from "../catalog/store.ts";
 import { hostContract } from "../host-contract.ts";
 import { add } from "./command/add.ts";
@@ -8,6 +9,7 @@ import { catalogCommand } from "./command/catalog.ts";
 import { importCommand } from "./command/import.ts";
 import { list } from "./command/list.ts";
 import { preview } from "./command/preview.ts";
+import { publishCommand, publishFindings } from "./command/publish.ts";
 import { remove } from "./command/remove.ts";
 import { openStore, type AgentInstructionsContext } from "./lib/store.ts";
 import { rules, rulesContract } from "./rpc/rules.ts";
@@ -30,10 +32,12 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   const ctx: AgentInstructionsContext = Object.freeze({ bb, store: openStore(bb) });
   const { store } = ctx;
   const prompts = promptHandlers(bb);
+  const catalog = openCatalog(bb);
   const catalogCtx = Object.freeze({
     ...ctx,
-    catalog: openCatalog(bb),
+    catalog,
     host: bb.hosts.experimental_client({ contract: hostContract }),
+    publisher: openPublisher(bb, catalog),
   });
   bb.rpc.register(contract, {
     ...documentHandlers(bb),
@@ -55,11 +59,22 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
         preview: preview(ctx),
         import: importCommand(catalogCtx),
         catalog: catalogCommand(catalogCtx),
+        publish: publishCommand(catalogCtx),
       },
     }),
   );
 
   await store.load();
+  // Converges whatever an earlier run left, including one stopped mid-publish.
+  void catalogCtx.publisher
+    .run()
+    .then((report) => publishFindings(report, store.state().rules))
+    .then(
+      ({ problems, warnings }) =>
+        [...problems, ...warnings].forEach((finding) => bb.log.warn(`publish: ${finding}`)),
+      (error: unknown) =>
+        bb.log.error(`publishing the catalog failed: ${(error as Error).message}`),
+    );
   // `configure`, unlike `contributeInstructions`, sees the host, provider,
   // and model a thread resolves with, which is what rules match on.
   bb.agents.configure((session) => {

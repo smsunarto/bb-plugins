@@ -35,8 +35,9 @@ export const catalogHostMethods = {
     input: z.object({ rootPath, dir: relativePath }).strict(),
     output: z
       .object({
+        // Publishing writes these paths inside a tree, so none may climb out of it.
         files: z.array(
-          z.object({ path: z.string(), executable: z.boolean(), base64: z.string() }).strict(),
+          z.object({ path: relativePath, executable: z.boolean(), base64: z.string() }).strict(),
         ),
         /** Links inside the tree; bb refuses a skill that contains any. */
         symlinks: z.array(z.string()),

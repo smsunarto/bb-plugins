@@ -1,4 +1,13 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { createHash } from "node:crypto";
+
+/** Hash of every file's path, mode, and content: the name of the skill's immutable tree. */
+export function treeSha(files: readonly { path: string; executable: boolean; sha256: string }[]) {
+  const hash = createHash("sha256");
+  for (const file of [...files].sort((a, b) => (a.path < b.path ? -1 : 1)))
+    hash.update(`${file.path}\0${file.executable ? 1 : 0}\0${file.sha256}\n`);
+  return hash.digest("hex");
+}
 
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -139,6 +148,21 @@ export function openCatalog(bb: BbPluginApi) {
         origin: JSON.parse(row.origin) as Origin,
         rev: row.rev,
       }));
+    },
+
+    /** Enabled skills and the tree each should publish; no file bytes. */
+    publishable(): { name: string; treeSha: string }[] {
+      return database()
+        .prepare("SELECT name, tree_sha AS treeSha FROM skills WHERE enabled = 1 ORDER BY name")
+        .all() as { name: string; treeSha: string }[];
+    },
+
+    skillFiles(name: string): { path: string; executable: boolean; bytes: Uint8Array }[] {
+      return (
+        database()
+          .prepare("SELECT path, executable, bytes FROM skill_files WHERE skill = ? ORDER BY path")
+          .all(name) as { path: string; executable: number; bytes: Uint8Array }[]
+      ).map((row) => ({ path: row.path, executable: row.executable === 1, bytes: row.bytes }));
     },
 
     /** Names of catalog skills that a new import may not overwrite. */

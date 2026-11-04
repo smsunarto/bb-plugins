@@ -5,6 +5,7 @@ import type { RuleStore } from "../server/lib/store.ts";
 import { MAX_INSTRUCTIONS_LENGTH, type Rule } from "../shared/rules.ts";
 import { textFilePattern } from "../shared/text-files.ts";
 import { DOTFILES_AGENTS } from "./model.ts";
+import type { Publisher } from "./publish.ts";
 import {
   MAX_SKILL_FILES,
   parseFrontmatter,
@@ -15,13 +16,20 @@ import {
   rewriteNamespaced,
   SKILL_NAME_PATTERN,
 } from "./skill-rules.ts";
-import type { CatalogDoc, CatalogSkill, CatalogStore, ImportChanges } from "./store.ts";
+import {
+  treeSha,
+  type CatalogDoc,
+  type CatalogSkill,
+  type CatalogStore,
+  type ImportChanges,
+} from "./store.ts";
 
 export type CatalogContext = Readonly<{
   bb: BbPluginApi;
   store: RuleStore;
   catalog: CatalogStore;
   host: ExperimentalHostClient<typeof hostContract>;
+  publisher: Publisher;
 }>;
 
 export type ImportSource = { hostId: string; rootPath: string };
@@ -78,14 +86,6 @@ type References = {
 };
 
 const sha256 = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-
-/** Hash of every file's path, mode, and content: the name of the skill's immutable tree. */
-export function treeSha(files: CatalogSkill["files"]): string {
-  const hash = createHash("sha256");
-  for (const file of [...files].sort((a, b) => (a.path < b.path ? -1 : 1)))
-    hash.update(`${file.path}\0${file.executable ? 1 : 0}\0${file.sha256}\n`);
-  return hash.digest("hex");
-}
 
 async function mapLimit<T, R>(items: readonly T[], limit: number, run: (item: T) => Promise<R>) {
   const results: R[] = [];

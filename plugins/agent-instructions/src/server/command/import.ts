@@ -7,6 +7,8 @@ import {
   type ImportResult,
   type ImportSource,
 } from "../../catalog/import.ts";
+import type { PublishReport } from "../../catalog/publish.ts";
+import { publishFindings, publishLines, type PublishFindings } from "./publish.ts";
 
 const GLOBAL_KEY = "global-project";
 
@@ -66,7 +68,21 @@ function parseRenames(pairs: readonly string[] | undefined): Map<string, string>
   return renames;
 }
 
-function planJson(plan: ImportPlan, result: ImportResult | null) {
+/** A stored import and what publishing it did, or why publishing failed. */
+type Applied =
+  | ({ result: ImportResult } & (
+      | { published: PublishReport; findings: PublishFindings }
+      | { published: null; error: string }
+    ))
+  | null;
+
+function publishedJson(applied: NonNullable<Applied>) {
+  return applied.published === null
+    ? { error: applied.error }
+    : { ...applied.published, ...applied.findings };
+}
+
+function planJson(plan: ImportPlan, applied: Applied) {
   return {
     source: plan.source,
     skills: plan.skills.map((s) => ({
@@ -84,7 +100,8 @@ function planJson(plan: ImportPlan, result: ImportResult | null) {
     renamed: plan.renamed,
     errors: plan.errors,
     warnings: plan.warnings,
-    result,
+    result: applied?.result ?? null,
+    published: applied ? publishedJson(applied) : null,
   };
 }
 
@@ -97,26 +114,48 @@ function outcomeLine(plan: ImportPlan, result: ImportResult | null): string {
   return `Stored revision ${result.revision ?? "unchanged"}: ${counts}; docs ${result.docsChanged.length}; rules ${result.rulesChanged.length}`;
 }
 
-function planText(plan: ImportPlan, result: ImportResult | null): string {
+function publishText(applied: Applied): string[] {
+  if (!applied) return [];
+  if (applied.published === null) return [`Publish failed: ${applied.error}`];
+  return publishLines(applied.published, applied.findings);
+}
+
+function planText(plan: ImportPlan, applied: Applied): string {
   const files = plan.skills.reduce((n, s) => n + s.files.length, 0);
   const bytes = plan.skills.reduce(
     (n, s) => n + s.files.reduce((m, f) => m + f.bytes.length, 0),
     0,
   );
   const docs = plan.docs.map((d) => `${d.name}, ${d.body.length} characters`).join("; ");
-  const rules = plan.rules
+  const fragments = plan.rules
     .map((r) => `${r.provider} ${r.instructions.length} characters`)
     .join(", ");
   return [
     `Source: ${plan.source.rootPath} on ${plan.source.hostId}`,
     `Skills: ${plan.skills.length} (${files} files, ${(bytes / 1024).toFixed(0)} KiB)`,
     `Global instructions: ${docs || "none"}`,
-    `Provider rules: ${rules || "none"}`,
+    `Provider rules: ${fragments || "none"}`,
     ...plan.renamed.map((r) => `Renamed: ${r.from} -> ${r.to}`),
     ...plan.errors.map((e) => `Error: ${e}`),
     ...plan.warnings.map((w) => `Warning: ${w}`),
-    outcomeLine(plan, result),
+    outcomeLine(plan, applied?.result ?? null),
+    ...publishText(applied),
   ].join("\n");
+}
+
+/** Stores the plan, then publishes it; a failed publish still reports the stored revision. */
+async function applyImport(
+  ctx: CatalogContext,
+  plan: ImportPlan,
+  threadId: string | undefined,
+): Promise<NonNullable<Applied>> {
+  const result = await commitImport(ctx, plan, threadId ?? "cli");
+  try {
+    const published = await ctx.publisher.run();
+    return { result, published, findings: publishFindings(published, ctx.store.state().rules) };
+  } catch (error) {
+    return { result, published: null, error: (error as Error).message };
+  }
 }
 
 export function importCommand(ctx: CatalogContext) {
@@ -154,14 +193,16 @@ export function importCommand(ctx: CatalogContext) {
         allowShadow: options["allow-shadow"] ?? false,
         prune: options.prune ?? false,
       });
-      const result =
-        options.apply && plan.errors.length === 0
-          ? await commitImport(ctx, plan, threadId ?? "cli")
-          : null;
+      const applied =
+        options.apply && plan.errors.length === 0 ? await applyImport(ctx, plan, threadId) : null;
       const stdout = options.json
-        ? JSON.stringify(planJson(plan, result), null, 2)
-        : planText(plan, result);
-      return { exitCode: plan.errors.length > 0 ? 1 : 0, stdout: `${stdout}\n` };
+        ? JSON.stringify(planJson(plan, applied), null, 2)
+        : planText(plan, applied);
+      const failed =
+        plan.errors.length > 0 ||
+        applied?.published === null ||
+        (applied?.findings.problems.length ?? 0) > 0;
+      return { exitCode: failed ? 1 : 0, stdout: `${stdout}\n` };
     },
   });
 }

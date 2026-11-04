@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
-import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import hostEntry from "../host.ts";
@@ -49,8 +50,14 @@ async function fixture(extra: Record<string, string> = {}) {
 async function setup({ skillsFail = false } = {}) {
   const machine = experimental_createHostEntryHarness(hostEntry);
   cleanup.push(() => machine.experimental_dispose());
+  const dataDir = await mkdtemp(join(tmpdir(), "catalog-data-"));
+  cleanup.push(async () => {
+    spawnSync("chmod", ["-R", "u+w", dataDir]); // published trees are read-only
+    await rm(dataDir, { recursive: true, force: true });
+  });
   const { bb, harness } = createFakePluginHost({
     pluginId: "agent-instructions",
+    dataDir,
     experimental_callHostRpc: (call) =>
       machine.experimental_call(
         call.method as "readText",
@@ -102,7 +109,7 @@ async function setup({ skillsFail = false } = {}) {
     const result = await harness.behavior.runCli(args);
     return { ...result, json: result.stdout.startsWith("{") ? JSON.parse(result.stdout) : null };
   };
-  return { run };
+  return { run, dataDir };
 }
 
 test("a dry run reports what would be imported and stores nothing", async () => {
@@ -238,6 +245,41 @@ test("removing what the source dropped needs --prune, and then docs and rules st
     rules.map((r: { id: string }) => r.id),
     ["rule_import_codex"],
   );
+});
+
+test("applying publishes skills and global text to bb's user tier", async () => {
+  const { root } = await fixture();
+  const { run, dataDir } = await setup();
+  const applied = await run(...importArgs(root, "--apply"));
+  assert.equal(applied.exitCode, 0, applied.stdout);
+  assert.match(applied.stdout, /Published skills: 4 added, 0 updated, 0 removed, 0 unchanged/);
+  assert.match(
+    await readFile(join(dataDir, "skills/dotfiles-mcp/SKILL.md"), "utf8"),
+    /name: dotfiles-mcp/,
+  );
+  assert.equal((await stat(join(dataDir, "skills/probe/scripts/run.sh"))).mode & 0o777, 0o555);
+  assert.equal(
+    await readFile(join(dataDir, "AGENTS.md"), "utf8"),
+    "Read `dev` first.\nUse `scott-engineering:*` for Go.\n",
+  );
+
+  const again = await run("publish", "--json");
+  assert.equal(again.exitCode, 0, again.stdout);
+  assert.deepEqual(
+    [again.json.linked, again.json.unchanged, again.json.agentsMd, again.json.problems],
+    [[], 4, "unchanged", []],
+  );
+});
+
+test("a publish that fails after an import still reports what was stored", async () => {
+  const { root } = await fixture();
+  const { run, dataDir } = await setup();
+  await writeFile(join(dataDir, "skills"), "not a folder");
+  const applied = await run(...importArgs(root, "--apply"));
+  assert.equal(applied.exitCode, 1);
+  assert.match(applied.stdout, /Stored revision 1: 4 added/);
+  assert.match(applied.stdout, /Publish failed: .*ENOTDIR/);
+  assert.equal((await run("catalog", "--json")).json.revision, 1);
 });
 
 test("links on the way to a source are reported, never followed", async () => {
