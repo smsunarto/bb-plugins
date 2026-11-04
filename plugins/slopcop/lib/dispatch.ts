@@ -75,17 +75,10 @@ function formatBodyContract(context: DispatchContext): string {
       summaryMarker: summaryMarker,
     });
   }
-  const inlineMarker = buildMarker({
-    rule: rule.name,
-    run: runId,
-    sha: target.headRefOid,
-    kind: "inline",
-  });
+
   return prompts.read("review-body-format", {
     summaryHeader: buildHeader("summary", rule.name),
     summaryMarker: summaryMarker,
-    inlineHeader: buildHeader("inline", rule.name),
-    inlineMarker: inlineMarker,
   });
 }
 

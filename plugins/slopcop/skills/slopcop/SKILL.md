@@ -76,7 +76,7 @@ bb slopcop rules edit|enable|disable|rm <rule>
 - `no_comment`: thread finished without posting.
 - `skipped`: a rule matched nothing, such as a trust-gate rejection.
 - `failed`: the thread errored or was archived/deleted before reporting.
-- Every posted comment carries the visible `🚨 SLOP COP 🚨` header and a hidden `<!-- slopcop:… -->` marker. Verification polls GitHub for the marker instead of trusting the transcript.
+- Each review summary carries the visible `🚨 SLOP COP 🚨` header and a hidden `<!-- slopcop:… -->` marker. Inline comments are plain notes, attributed through their parent review; verification checks GitHub instead of trusting the transcript.
 
 ## Launch reviewers and their lenses
 

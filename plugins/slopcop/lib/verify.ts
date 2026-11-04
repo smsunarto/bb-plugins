@@ -98,6 +98,12 @@ export const verifyLive = Effect.fnUntraced(function* (options: {
     { comments: reviews, kind: "summary" },
   ];
 
+  const markedReviewIds = new Set(
+    reviews
+      .filter((review) => attributeBody(review.body, runId) === "marker")
+      .map((review) => review.id),
+  );
+
   const matched: RunComment[] = [];
   const headerOnly: RunComment[] = [];
   const unattributed: RunComment[] = [];
@@ -120,6 +126,10 @@ export const verifyLive = Effect.fnUntraced(function* (options: {
         comment.createdAt >= startedAt &&
         (authenticatedLogin === null || comment.author === authenticatedLogin);
       if (!isRecentOwn) continue;
+      if (source.kind === "inline" && comment.reviewId && markedReviewIds.has(comment.reviewId)) {
+        matched.push(toRunComment(comment, runId, source.kind, "marker"));
+        continue;
+      }
       if (attribution === "header" || hasVisibleHeader(comment.body)) {
         headerOnly.push(toRunComment(comment, runId, source.kind, "header"));
       } else {

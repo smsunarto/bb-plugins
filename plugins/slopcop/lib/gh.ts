@@ -60,6 +60,7 @@ export interface SubmittedReview {
 
 export interface GhComment {
   id: string;
+  reviewId?: string | null;
   body: string;
   url: string | null;
   author: string | null;
@@ -154,6 +155,7 @@ function toComment(raw: unknown): GhComment {
   const user = asRecord(row.user);
   return {
     id: String(row.id ?? ""),
+    reviewId: row.pull_request_review_id == null ? null : String(row.pull_request_review_id),
     body: typeof row.body === "string" ? row.body : "",
     url: typeof row.html_url === "string" ? row.html_url : null,
     author: typeof user.login === "string" ? user.login : null,

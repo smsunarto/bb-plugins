@@ -1,24 +1,12 @@
-## REQUIRED FORMAT — every body you produce
+## REQUIRED FORMAT — summary only
 
-Each comment MUST begin with the SlopCop header and end with its marker. The
-marker is invisible on GitHub and is how SlopCop finds its own comments later;
-a comment without it cannot be attributed and will be reported as a failure.
-
-Summary / review body — starts with:
+- Start the summary / review body with:
 
     {{summaryHeader}}
 
-and ends with exactly:
+- End the summary / review body with this exact marker:
 
     {{summaryMarker}}
 
-Each inline comment — starts with:
-
-    {{inlineHeader}} <the finding>
-
-and ends with exactly:
-
-    {{inlineMarker}}
-
-Replies use the inline header and a marker with `kind=reply`. Do not alter the
-marker text in any way.
+- Write inline comments and replies as plain review notes. Do not add Slopcop headers, prefixes, or attribution markers to them.
+- Slopcop attributes plain inline comments through their parent GitHub review, whose summary carries the marker above.
