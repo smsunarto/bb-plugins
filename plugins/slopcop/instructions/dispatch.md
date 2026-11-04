@@ -8,6 +8,10 @@ in `{{repo}}`.
 
 {{ruleInstructions}}
 
+{{awaitingInstructions}}
+
+{{reviewEvidenceInstructions}}
+
 {{postingInstructions}}
 
 {{bodyFormat}}

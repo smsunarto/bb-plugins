@@ -344,6 +344,14 @@ export function createStore(db: Database) {
       return row === undefined ? null : rowToRun(row);
     },
 
+    /** The latest run whose review thread is `threadId`. */
+    findRunByThread(threadId: string): Run | null {
+      const row = db
+        .prepare(`SELECT * FROM runs WHERE thread_id = ? ORDER BY started_at DESC LIMIT 1`)
+        .get(threadId) as Row | undefined;
+      return row === undefined ? null : rowToRun(row);
+    },
+
     insertRun(run: Run): void {
       db.prepare(
         `INSERT INTO runs (id, rule_id, rule_name, repo, target_kind, pr_number,

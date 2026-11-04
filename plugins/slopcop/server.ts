@@ -24,7 +24,10 @@ import {
   type Store,
   type ThreadRun,
 } from "./lib/db";
-import { buildPrompt, buildThreadTitle } from "./lib/dispatch";
+import { buildPrompt, buildThreadTitle, isAwaitingChildren } from "./lib/dispatch";
+import { registerReviewCheckout } from "./lib/review-checkout";
+import { reviewWorktree } from "./lib/review-environment";
+import { parseReviewRequest } from "./lib/review";
 import { resolveThreadSectionId } from "./lib/sections";
 import { expandHome } from "./lib/paths";
 import {
@@ -455,6 +458,9 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
         defaultThreadSection,
         defaultThreadSection.length > 0 ? await bb.sdk.threadSections.list() : [],
       );
+      if (target.kind === "pull_request") {
+        execution.environment = await reviewWorktree(bb, execution.environment, target);
+      }
       const thread = await bb.sdk.threads.spawn({
         ...execution,
         prompt: buildPrompt(context),
@@ -877,7 +883,9 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
     );
 
   const finishRun = (threadId: string, finalMessage: string | null, failure: string | null) =>
-    settleClaimed(() => store.claimFinished(threadId, Date.now()), finalMessage, failure);
+    failure === null && isAwaitingChildren(finalMessage)
+      ? Effect.void
+      : settleClaimed(() => store.claimFinished(threadId, Date.now()), finalMessage, failure);
 
   /** Records a claimed run's outcome: the failure, or what verification finds. */
   const settleRun = Effect.fnUntraced(function* (
@@ -972,13 +980,13 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
       // A claim this process holds is under verification by the event that made it.
       if (run.finishedAt !== null && verifying.has(threadId)) return;
       const thread = yield* Effect.promise(async () => bb.sdk.threads.get({ threadId }));
-      if (thread.status === "idle") {
+      if (thread.archivedAt !== null) {
+        yield* finish(null, "review thread archived before it reported");
+      } else if (thread.status === "idle") {
         const { output } = yield* Effect.promise(async () => bb.sdk.threads.output({ threadId }));
-        yield* finish(output, null);
+        if (!isAwaitingChildren(output)) yield* finish(output, null);
       } else if (thread.status === "error") {
         yield* finish(null, yield* describeThreadFailure(threadId, null));
-      } else if (thread.archivedAt !== null) {
-        yield* finish(null, "review thread archived before it reported");
       }
     }).pipe(
       recover((error) =>
@@ -1219,6 +1227,81 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
   } satisfies PluginRpcHandlers<typeof rpcContract>;
 
   // --- cli -----------------------------------------------------------------
+
+  /**
+   * `bb slopcop review`: one GitHub review with its verdict and inline
+   * comments. Takes the SDK's parsed options, so review text is never
+   * rescanned as flags.
+   */
+  const submitReview = async (
+    input: {
+      number: string | undefined;
+      repo: string | undefined;
+      event: string | undefined;
+      body: string | undefined;
+      comments: string | undefined;
+      commit: string | undefined;
+      json: boolean;
+    },
+    context: { threadId?: string; signal?: AbortSignal },
+  ) => {
+    const fail = (stderr: string) => ({ exitCode: 1, stderr });
+    try {
+      // A review thread inherits its run's PR, and a shadow run's thread
+      // must not post: shadow mode promises nothing reaches GitHub.
+      const run = context.threadId === undefined ? null : store.findRunByThread(context.threadId);
+      if (run?.mode === "shadow") {
+        return fail(
+          `this thread is shadow run ${run.id}, which posts nothing to GitHub. End your turn with the review as text instead.`,
+        );
+      }
+      const runPr = run?.targetKind === "pull_request" ? run : null;
+      const repo = input.repo ?? runPr?.repo;
+      if (repo === undefined || !/^[\w.-]+\/[\w.-]+$/.test(repo)) {
+        return fail("expected --repo owner/repo");
+      }
+      if (input.number !== undefined && !/^\d+$/.test(input.number)) {
+        return fail(`expected a pull request number, got '${input.number}'`);
+      }
+      const number = input.number === undefined ? runPr?.prNumber : Number(input.number);
+      if (number === undefined || !Number.isSafeInteger(number) || number <= 0) {
+        return fail("expected a pull request number");
+      }
+      // Anchor inline comments to the commit the run reviewed, so a push
+      // during the review cannot shift them onto other lines.
+      const sameAsRun = runPr !== null && runPr.repo === repo && runPr.prNumber === number;
+      const commitId = input.commit ?? (sameAsRun && runPr.headSha !== "" ? runPr.headSha : null);
+      const parsed = parseReviewRequest({
+        event: input.event,
+        body: input.body,
+        comments: input.comments,
+        commitId,
+      });
+      if (!parsed.ok) return fail(parsed.error);
+      // Resolve the identity per call: a write must follow the current
+      // botGhPath setting, which the prompt also reads fresh.
+      const client = createGhClient((await readSettings()).ghPath);
+      const submitted = await runtime.run(
+        client.submitReview(repo, number, parsed.payload),
+        context.signal,
+      );
+      const result = {
+        ...submitted,
+        repo,
+        number,
+        event: parsed.payload.event,
+        inlineComments: parsed.payload.comments.length,
+      };
+      return {
+        exitCode: 0,
+        stdout: input.json
+          ? JSON.stringify(result, null, 2)
+          : `Submitted ${result.event} review on ${repo}#${number} with ${result.inlineComments} inline comment(s): ${result.url ?? `review ${result.id}`}`,
+      };
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+  };
 
   const runCli = async (argv: string[], signal?: AbortSignal) => {
     const flag = (name: string): string | undefined => {
@@ -1618,7 +1701,7 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
     bb.log.info("disposed");
   });
 
-  return { handlers, runCli };
+  return { handlers, runCli, submitReview };
 }
 
 type Services = ReturnType<typeof createServices>;
@@ -1702,6 +1785,7 @@ function forwardCommand(ctx: PluginContext, spec: CommandSpec) {
 }
 
 export default async function plugin(bb: BbPluginApi): Promise<void> {
+  registerReviewCheckout(bb);
   const runtime = await makePluginRuntime(bb, Layer.empty);
   const ctx: PluginContext = Object.freeze({ bb, ...createServices(bb, runtime) });
   bb.rpc.register(rpcContract, ctx.handlers);
@@ -1788,6 +1872,40 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
           description: "Usage: bb slopcop show [run-id] [--json]. Defaults to the latest run.",
           optionKeys: ["json"],
           positionals: [{ name: "runId", description: "Run ID; omit for the latest run." }],
+        }),
+        review: cliCommand({
+          summary: "Submit a pull request review with inline comments",
+          description:
+            "Usage: bb slopcop review [number] --repo <owner/repo> --event approve|request-changes|comment --body <markdown> [--comments <json>] [--commit <sha>] [--json]. Posts the summary, verdict, and inline comments as one GitHub review under SlopCop's gh identity (botGhPath when set). Inside a SlopCop review thread, number, --repo, and --commit default to the run's PR and reviewed head, and shadow runs refuse to post. Each inline line must fall inside the PR diff; side defaults to RIGHT (new code), LEFT targets removed lines, and startLine makes a multi-line range. Pass multi-line text with a quoted heredoc. Not idempotent: if the outcome is unknown, check the PR's reviews before retrying.",
+          options: {
+            repo: options.repo,
+            event: {
+              type: "string",
+              description: "Review verdict: approve, request-changes, or comment.",
+            },
+            body: { type: "string", description: "Overall review comment, in Markdown." },
+            comments: {
+              type: "string",
+              description:
+                'Inline comments as a JSON array of {"path","line","body"} objects, with optional "side" (RIGHT or LEFT), "startLine", and "startSide".',
+            },
+            commit: { type: "string", description: "Commit SHA the inline comments refer to." },
+            json: options.json,
+          },
+          positionals: [{ name: "number", description: "Pull request number." }],
+          run: (input, cliContext) =>
+            ctx.submitReview(
+              {
+                number: input.positionals.number,
+                repo: input.options.repo,
+                event: input.options.event,
+                body: input.options.body,
+                comments: input.options.comments,
+                commit: input.options.commit,
+                json: input.options.json === true,
+              },
+              cliContext,
+            ),
         }),
         status: forwardCommand(ctx, {
           name: "status",

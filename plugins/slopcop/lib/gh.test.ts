@@ -23,6 +23,7 @@ it("reads every paginated PR row with older gh versions", async () => {
   output =
     JSON.stringify({
       number: 1,
+      head: { ref: "feature/retries", sha: "head123" },
       title: "first\nPR",
       user: { login: "member" },
       author_association: "MEMBER",
@@ -34,6 +35,7 @@ it("reads every paginated PR row with older gh versions", async () => {
   expect(rows.map((row) => row.number)).toEqual([1, 2]);
   expect(rows[0]?.title).toBe("first\nPR");
   expect(rows[0]?.authorAssociation).toBe("MEMBER");
+  expect(rows[0]?.headRefName).toBe("feature/retries");
 });
 it("handles an empty paginated endpoint", async () => {
   expect(await Effect.runPromise(createGhClient("gh").listOpenPullRequests("org/repo"))).toEqual(
@@ -114,5 +116,83 @@ describe("signing in", () => {
         { stdout: "slopcop[bot]\n" },
       ),
     ).toBe("slopcop[bot]");
+  });
+});
+
+describe("submitReview", () => {
+  /** Answers one `gh api` call and records what it read from stdin. */
+  function reply(stdout: string, failure: { stderr: string } | null, epipe = false) {
+    const call = { args: [] as string[], stdin: "" };
+    vi.mocked(execFile).mockImplementation(((
+      _file: string,
+      args: string[],
+      _options: unknown,
+      done: (error: Error | null, stdout: string, stderr: string) => void,
+    ) => {
+      call.args = args;
+      const listeners: ((error: Error) => void)[] = [];
+      const child = {
+        exitCode: 0,
+        signalCode: null,
+        stdin: {
+          on: (_event: string, listener: (error: Error) => void) => listeners.push(listener),
+          end: (input: string) => {
+            call.stdin = input;
+            // A real stream with no error listener would throw this.
+            if (epipe) {
+              if (listeners.length === 0) throw new Error("unhandled EPIPE");
+              for (const listener of listeners) listener(new Error("write EPIPE"));
+            }
+            const error = failure === null ? null : Object.assign(new Error("failed"), { code: 1 });
+            queueMicrotask(() => done(error, stdout, failure?.stderr ?? ""));
+          },
+        },
+      };
+      return child;
+    }) as never);
+    return call;
+  }
+  const review = {
+    event: "REQUEST_CHANGES" as const,
+    body: "Blocking.",
+    comments: [{ path: "a.ts", line: 3, body: "Bug." }],
+  };
+
+  it("posts the review JSON on stdin and returns its URL", async () => {
+    const call = reply(
+      JSON.stringify({ id: 77, state: "CHANGES_REQUESTED", html_url: "https://x/r/77" }),
+      null,
+    );
+    const submitted = await Effect.runPromise(createGhClient("gh").submitReview("o/r", 5, review));
+    expect(call.args).toEqual([
+      "api",
+      "--method",
+      "POST",
+      "repos/o/r/pulls/5/reviews",
+      "--input",
+      "-",
+    ]);
+    expect(JSON.parse(call.stdin)).toEqual(review);
+    expect(submitted).toEqual({ id: "77", state: "CHANGES_REQUESTED", url: "https://x/r/77" });
+  });
+
+  it("reports GitHub's error body, which gh api prints to stdout", async () => {
+    reply('{"message":"Unprocessable Entity","errors":["Line could not be resolved"]}', {
+      stderr: "gh: Unprocessable Entity (HTTP 422)",
+    });
+    const result = await Effect.runPromise(
+      Effect.result(createGhClient("gh").submitReview("o/r", 5, review)),
+    );
+    expect(Result.isFailure(result) && result.failure.message).toContain(
+      "Line could not be resolved",
+    );
+  });
+
+  it("reports the exit failure when gh exits before reading its input", async () => {
+    reply("", { stderr: "slopcop-gh: token request failed (401)" }, true);
+    const result = await Effect.runPromise(
+      Effect.result(createGhClient("gh").submitReview("o/r", 5, review)),
+    );
+    expect(Result.isFailure(result) && result.failure.reason).toBe("unauthenticated");
   });
 });

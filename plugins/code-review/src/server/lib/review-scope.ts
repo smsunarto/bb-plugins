@@ -17,5 +17,5 @@ export function ownsPullRequests(session: Session): boolean {
 }
 
 export function reviewSkills(session: Session): string[] {
-  return ownsPullRequests(session) ? ["review", "babysit-pr"] : [];
+  return ownsPullRequests(session) ? ["request-review", "babysit-pr"] : [];
 }

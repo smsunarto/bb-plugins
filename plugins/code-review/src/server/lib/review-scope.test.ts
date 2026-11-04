@@ -10,16 +10,17 @@ import plugin from "../server.ts";
 test("Review supplies its skills and PR watch to authors and withholds them from answering children", async () => {
   const f = createFakePluginHost({
     pluginId: "code-review",
-    agentSkillIds: ["review", "babysit-pr"],
+    agentSkillIds: ["request-review", "babysit-pr"],
   });
   await plugin(f.bb);
   try {
     const author = await f.harness.behavior.resolveAgentConfiguration(
       makePluginAgentConfigurationContext(),
     );
-    assert.deepEqual(author.skills, ["review", "babysit-pr"]);
+    assert.deepEqual(author.skills, ["request-review", "babysit-pr"]);
     assert.ok(author.tools.some((tool) => tool.name === "code_review_watch_pr"));
-    const skill = readFileSync(new URL("../../../skills/review/SKILL.md", import.meta.url), "utf8");
+    const skill = readFileSync(new URL("../../../skills/request-review/SKILL.md", import.meta.url), "utf8");
+    assert.match(skill, /^name: request-review$/m);
     const titles = [...skill.matchAll(/--title "([^"\n]+)"/g)].map((match) =>
       match[1]!
         .replaceAll("$review_label", "auth fix @ abc123")

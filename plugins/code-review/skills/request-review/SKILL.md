@@ -1,10 +1,12 @@
 ---
-name: review
-description: Review a change with one Claude and one Codex reviewer, fix accepted findings, and verify the result.
-argument-hint: "[branch, proposal, or focus]"
+name: request-review
+description: Request independent Claude and Codex review of current local agent-session work, including local committed changes or a session proposal, then fix accepted findings and verify.
+argument-hint: "[local branch, session proposal, or focus]"
 ---
 
-# Review
+# Request Review
+
+Use this skill for the current local agent session’s work: committed changes on its task branch or a proposal produced in the session. It does not review pull requests or orchestrate Slopcop reviews.
 
 Stop at a verdict when the user says not to modify, such as read-only or report-only.
 

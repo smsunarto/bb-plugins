@@ -9,6 +9,12 @@ const prompts = instructionFiles(import.meta.url);
 import { buildMarker, buildHeader } from "./marker";
 import type { GitHubIssue, GitHubTarget, PullRequest, Rule, Trigger } from "./types";
 
+export const AWAITING_CHILDREN_MARKER = "<!-- slopcop:awaiting-children -->";
+
+export function isAwaitingChildren(message: string | null): boolean {
+  return message?.trim() === AWAITING_CHILDREN_MARKER;
+}
+
 export interface DispatchContext {
   rule: Rule;
   target: GitHubTarget;
@@ -47,7 +53,11 @@ function liveBanner(ghCommand: string, target: GitHubTarget, repo: string): stri
       identityNote: note,
     });
   }
-  return prompts.read("post-review", { ghCommand: ghCommand, identityNote: note });
+  return prompts.read("post-review", {
+    number: target.number,
+    repo: repo,
+    identityNote: note,
+  });
 }
 
 function formatBodyContract(context: DispatchContext): string {
@@ -65,17 +75,10 @@ function formatBodyContract(context: DispatchContext): string {
       summaryMarker: summaryMarker,
     });
   }
-  const inlineMarker = buildMarker({
-    rule: rule.name,
-    run: runId,
-    sha: target.headRefOid,
-    kind: "inline",
-  });
+
   return prompts.read("review-body-format", {
     summaryHeader: buildHeader("summary", rule.name),
     summaryMarker: summaryMarker,
-    inlineHeader: buildHeader("inline", rule.name),
-    inlineMarker: inlineMarker,
   });
 }
 
@@ -149,6 +152,11 @@ export function buildPrompt(context: DispatchContext): string {
     targetDetails: targetDetails,
     triggerSection: triggerSection,
     ruleInstructions: rule.prompt.trim(),
+    reviewEvidenceInstructions:
+      target.kind === "pull_request" ? prompts.read("review-evidence") : "",
+    awaitingInstructions: prompts.read("awaiting-children", {
+      awaitingChildrenMarker: AWAITING_CHILDREN_MARKER,
+    }),
     postingInstructions: shadow
       ? shadowBanner(target)
       : liveBanner(context.ghCommand?.trim() || "gh", target, rule.repo),

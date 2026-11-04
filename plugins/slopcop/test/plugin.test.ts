@@ -1,6 +1,7 @@
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { expect, it, vi } from "vitest";
 import { createStore } from "../lib/db";
+import { AWAITING_CHILDREN_MARKER } from "../lib/dispatch";
 import type { GhClient, GhComment } from "../lib/gh";
 import { buildHeader, buildMarker } from "../lib/marker";
 import type { PullRequest, Run, TriggerComment } from "../lib/types";
@@ -15,6 +16,8 @@ const github = vi.hoisted(() => ({
   recentIssueComments: [] as TriggerComment[],
   /** How many times live verification has read the issue comments. */
   issueCommentReads: 0,
+  /** Reviews submitted through `bb slopcop review`. */
+  submittedReviews: [] as { repo: string; number: number; review: unknown }[],
   /** Live verification waits here first, so a test can hold a run mid-verify. */
   gate: Promise.resolve(),
 }));
@@ -38,6 +41,11 @@ vi.mock("../lib/gh", async () => {
       listReviews: () => Effect.succeed([]),
       listRecentIssueComments: () => Effect.sync(() => github.recentIssueComments),
       listRecentReviewComments: () => Effect.succeed([]),
+      submitReview: (repo: string, number: number, review: unknown) =>
+        Effect.sync(() => {
+          github.submittedReviews.push({ repo, number, review });
+          return { id: "9", state: "APPROVED", url: `https://github.com/${repo}/pull/${number}` };
+        }),
       authenticatedLogin: () => Effect.succeed("slopcop-bot"),
     }),
   };
@@ -88,6 +96,7 @@ function makePullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
     createdAt: Date.now(),
     isDraft: false,
     headRefOid: "def456",
+    headRefName: "feature/retries",
     baseRefName: "main",
     author: { login: "dana" },
     authorAssociation: "MEMBER",
@@ -145,6 +154,105 @@ it("documents compound command usage and rejects unrelated options", async () =>
     expect(invalid.exitCode).not.toBe(0);
     const missing = await harness.behavior.runCli(["check", "some-rule"]);
     expect(missing.exitCode).not.toBe(0);
+  } finally {
+    await harness.lifecycle.dispose();
+  }
+});
+
+it("submits one review with its verdict and inline comments, anchored to the run's PR", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
+  github.submittedReviews = [];
+  try {
+    await plugin(bb);
+    const store = createStore(bb.storage.database() as never);
+    store.insertRun(makeRun({ id: "run_live", threadId: "thr_live", mode: "live" }));
+    const comments = JSON.stringify([
+      { path: "src/a.ts", line: 12, body: "Off by one." },
+      { path: "src/b.ts", line: 9, startLine: 4, side: "LEFT", body: "Removed guard." },
+    ]);
+    const result = await harness.behavior.runCli(
+      ["review", "--event", "approve", "--body", "Looks good.", "--comments", comments],
+      { threadId: "thr_live" },
+    );
+    expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+    expect(result.stdout).toContain("example/example#7 with 2 inline comment(s)");
+    expect(github.submittedReviews).toEqual([
+      {
+        repo: "example/example",
+        number: 7,
+        review: {
+          event: "APPROVE",
+          body: "Looks good.",
+          commit_id: "abc123",
+          comments: [
+            { path: "src/a.ts", line: 12, body: "Off by one." },
+            {
+              path: "src/b.ts",
+              line: 9,
+              body: "Removed guard.",
+              side: "LEFT",
+              start_line: 4,
+              start_side: "LEFT",
+            },
+          ],
+        },
+      },
+    ]);
+
+    // Outside a review thread, the PR must be named and nothing is pinned.
+    const named = await harness.behavior.runCli([
+      "review",
+      "3",
+      "--repo",
+      "other/repo",
+      "--event",
+      "request-changes",
+      "--body",
+      "Blocking.",
+    ]);
+    expect(named, named.stderr).toMatchObject({ exitCode: 0 });
+    expect(github.submittedReviews[1]).toEqual({
+      repo: "other/repo",
+      number: 3,
+      review: { event: "REQUEST_CHANGES", body: "Blocking.", comments: [] },
+    });
+  } finally {
+    await harness.lifecycle.dispose();
+  }
+});
+
+it("refuses to post a review from a shadow run or with malformed input", async () => {
+  const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
+  github.submittedReviews = [];
+  try {
+    await plugin(bb);
+    createStore(bb.storage.database() as never).insertRun(
+      makeRun({ id: "run_shadow", threadId: "thr_shadow", mode: "shadow" }),
+    );
+    const review = (argv: string[], threadId?: string) =>
+      harness.behavior.runCli(["review", ...argv], threadId === undefined ? {} : { threadId });
+
+    const shadow = await review(["--event", "comment", "--body", "Hi."], "thr_shadow");
+    expect(shadow.exitCode).not.toBe(0);
+    expect(shadow.stderr).toContain("shadow run run_shadow");
+
+    const pr = ["5", "--repo", "example/example"];
+    expect((await review([...pr, "--event", "lgtm", "--body", "Hi."])).stderr).toContain(
+      "unknown --event 'lgtm'",
+    );
+    expect((await review([...pr, "--event", "comment"])).stderr).toContain("--body is required");
+    expect(
+      (await review([...pr, "--event", "comment", "--body", "Hi.", "--comments", "[{}]"])).stderr,
+    ).toContain("--comments is not an array of {path, line, body} objects at 0.path");
+    expect((await review(["--event", "comment", "--body", "Hi."])).stderr).toContain(
+      "expected --repo owner/repo",
+    );
+    // parseInt would read "1e3" as PR 1 and post to the wrong PR.
+    expect(
+      (await review(["1e3", "--repo", "example/example", "--event", "comment", "--body", "Hi."]))
+        .stderr,
+    ).toContain("expected a pull request number, got '1e3'");
+    expect(github.submittedReviews).toEqual([]);
   } finally {
     await harness.lifecycle.dispose();
   }
@@ -212,6 +320,77 @@ it("adds, persists, replaces and clears excluded PR authors without dropping oth
     await harness.lifecycle.dispose();
   }
 });
+
+it("keeps an interim idle turn open and accepts the later final review", async () => {
+  const { bb, harness } = createFakePluginHost({
+    pluginId: "slopcop",
+    settings: { settleFinishedThreads: false },
+  });
+  try {
+    await plugin(bb);
+    const store = createStore(bb.storage.database() as never);
+    store.insertRun(makeRun({ id: "run_pending", threadId: "thr_pending" }));
+    const thread = makeThreadResponse({ id: "thr_pending" });
+    await harness.behavior.emitThreadEvent("thread.idle", {
+      thread,
+      lastAssistantText: AWAITING_CHILDREN_MARKER,
+    });
+    await harness.behavior.emitThreadEvent("thread.idle", {
+      thread,
+      lastAssistantText: review("pending"),
+    });
+    await vi.waitFor(() => expect(store.getRun("run_pending")?.status).toBe("shadowed"));
+    expect(harness.sdk.callsTo("threads.archive")).toHaveLength(0);
+  } finally {
+    await harness.lifecycle.dispose();
+  }
+});
+
+it.each([false, true])(
+  "reconciles an idle pending turn after reload (archived=%s)",
+  async (archived) => {
+    let { bb, harness } = createFakePluginHost({
+      pluginId: "slopcop",
+      settings: { settleFinishedThreads: false },
+    });
+    try {
+      await plugin(bb);
+      createStore(bb.storage.database() as never).insertRun(
+        makeRun({ id: "run_pending", threadId: "thr_pending" }),
+      );
+      ({ bb, harness } = await harness.lifecycle.reload(plugin));
+      harness.sdk.stub("threads.get", () =>
+        makeThreadResponse({
+          id: "thr_pending",
+          status: "idle",
+          archivedAt: archived ? Date.now() : null,
+        }),
+      );
+      harness.sdk.stub("threads.output", () => ({ output: AWAITING_CHILDREN_MARKER }));
+      const service = harness.behavior.runService("watcher");
+      const store = createStore(bb.storage.database() as never);
+      await vi.waitFor(() => {
+        if (archived) expect(store.getRun("run_pending")?.status).toBe("failed");
+        else expect(harness.sdk.callsTo("threads.output").length).toBeGreaterThan(0);
+      });
+      service.controller.abort();
+      await service.done;
+      if (!archived) {
+        expect(store.getRun("run_pending")).toMatchObject({
+          status: "reviewing",
+          finishedAt: null,
+        });
+        await harness.behavior.emitThreadEvent("thread.idle", {
+          thread: makeThreadResponse({ id: "thr_pending" }),
+          lastAssistantText: review("pending"),
+        });
+        await vi.waitFor(() => expect(store.getRun("run_pending")?.status).toBe("shadowed"));
+      }
+    } finally {
+      await harness.lifecycle.dispose();
+    }
+  },
+);
 
 it("settles cleanly finished review threads and leaves the rest open", async () => {
   const { bb, harness } = createFakePluginHost({
@@ -325,6 +504,13 @@ it("counts review threads that predate a reload against the concurrency cap", as
     });
     await vi.waitFor(() => expect(store.getRun("run_stale")?.status).toBe("failed"));
     await pollOnce(() => expect(spawned()).toBe(1));
+    expect(harness.sdk.callsTo("threads.spawn")[0]?.[0]).toMatchObject({
+      environment: {
+        type: "provider",
+        environmentProviderId: "slopcop-review",
+        inputs: { number: 2 },
+      },
+    });
     expect(store.listRuns().find((run) => run.prNumber === 2)).toMatchObject({
       status: "reviewing",
       threadId: "thr_new",
