@@ -1,4 +1,3 @@
-import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 export const sourceSchema = z
@@ -60,7 +59,8 @@ export const metadataSchema = z.object({
 });
 export type DocumentMetadata = z.infer<typeof metadataSchema>;
 
-export const documentHostContract = defineRpcContract({
+/** Plain method definitions; `src/host-contract.ts` combines them with the catalog methods. */
+export const documentHostMethods = {
   inspectPath: {
     experimental_retryable: true,
     input: z
@@ -75,7 +75,7 @@ export const documentHostContract = defineRpcContract({
       })
       .strict(),
   },
-});
+};
 
 export const documentContracts = {
   documentSources: { input: z.null(), output: metadataSchema },

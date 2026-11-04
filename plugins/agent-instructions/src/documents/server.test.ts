@@ -7,8 +7,9 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
 import plugin from "../server/server.ts";
-import hostEntry from "./host.ts";
-import { documentHostContract, documentBoundary } from "./model.ts";
+import hostEntry from "../host.ts";
+import { hostContract } from "../host-contract.ts";
+import { documentBoundary } from "./model.ts";
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => {
   for (const dispose of cleanup.splice(0).reverse()) await dispose();
@@ -45,10 +46,7 @@ async function setup() {
   const { bb, harness } = createFakePluginHost({
     pluginId: "agent-instructions",
     experimental_callHostRpc: (call) =>
-      machine.experimental_call(
-        "inspectPath",
-        documentHostContract.inspectPath.input.parse(call.input),
-      ),
+      machine.experimental_call("inspectPath", hostContract.inspectPath.input.parse(call.input)),
     sdk: {
       projects: { list: async () => [project()], get: async () => project() },
       hosts: {

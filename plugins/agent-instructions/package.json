@@ -31,7 +31,7 @@
     },
     "server": "./src/server/server.ts",
     "app": "./src/app/app.tsx",
-    "host": "./src/documents/host.ts"
+    "host": "./src/host.ts"
   },
   "files": [
     "dist/*.js",
@@ -50,6 +50,7 @@
   "dependencies": {
     "@pierre/trees": "1.0.0-beta.6",
     "@tanstack/react-query": "^5.101.4",
+    "yaml": "^2.8.2",
     "zod": "^4.4.3",
     "@bb-plugins/instructions": "workspace:*",
     "@bb-plugins/markdown-editor": "workspace:*"
@@ -78,7 +79,7 @@
     "build": "bb plugin build .",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout=30000",
+    "test": "bun test --timeout=30000 && node --import tsx --test 'src/**/*.node-test.ts'",
     "clean": "rm -rf dist"
   }
 }

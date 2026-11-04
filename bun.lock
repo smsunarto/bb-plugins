@@ -207,6 +207,7 @@
         "@bb-plugins/markdown-editor": "workspace:*",
         "@pierre/trees": "1.0.0-beta.6",
         "@tanstack/react-query": "^5.101.4",
+        "yaml": "^2.8.2",
         "zod": "^4.4.3",
       },
       "devDependencies": {

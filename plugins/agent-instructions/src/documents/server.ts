@@ -1,9 +1,9 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { posix } from "node:path";
 import { z } from "zod";
+import { hostContract } from "../host-contract.ts";
 import {
   documentBoundary,
-  documentHostContract,
   MAX_TEXT_BYTES,
   textExtensions,
   type DocumentSource,
@@ -31,7 +31,7 @@ export function relativeDocumentQuery(root: string, query: string | undefined): 
 }
 
 export function documentHandlers(bb: BbPluginApi) {
-  const host = bb.hosts.experimental_client({ contract: documentHostContract });
+  const host = bb.hosts.experimental_client({ contract: hostContract });
   async function globalProject() {
     return z
       .string()

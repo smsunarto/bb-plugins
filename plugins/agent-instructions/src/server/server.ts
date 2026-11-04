@@ -1,7 +1,11 @@
 import { documentContracts } from "../documents/model.ts";
 import { documentHandlers } from "../documents/server.ts";
 import { defineCli, defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { openCatalog } from "../catalog/store.ts";
+import { hostContract } from "../host-contract.ts";
 import { add } from "./command/add.ts";
+import { catalogCommand } from "./command/catalog.ts";
+import { importCommand } from "./command/import.ts";
 import { list } from "./command/list.ts";
 import { preview } from "./command/preview.ts";
 import { remove } from "./command/remove.ts";
@@ -26,6 +30,11 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   const ctx: AgentInstructionsContext = Object.freeze({ bb, store: openStore(bb) });
   const { store } = ctx;
   const prompts = promptHandlers(bb);
+  const catalogCtx = Object.freeze({
+    ...ctx,
+    catalog: openCatalog(bb),
+    host: bb.hosts.experimental_client({ contract: hostContract }),
+  });
   bb.rpc.register(contract, {
     ...documentHandlers(bb),
     plugins: prompts.plugins,
@@ -39,7 +48,14 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     defineCli({
       name: "agent-instructions",
       summary: "CLI for the agent-instructions plugin",
-      commands: { list: list(ctx), add: add(ctx), remove: remove(ctx), preview: preview(ctx) },
+      commands: {
+        list: list(ctx),
+        add: add(ctx),
+        remove: remove(ctx),
+        preview: preview(ctx),
+        import: importCommand(catalogCtx),
+        catalog: catalogCommand(catalogCtx),
+      },
     }),
   );
 
