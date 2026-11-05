@@ -2,7 +2,7 @@ import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { expect, it } from "vitest";
 import { reviewWorktree } from "./review-environment";
 
-const target = { number: 1125, headRefOid: "3".repeat(40) };
+const target = { number: 1125, headRefOid: "3".repeat(40), baseRefName: "main" };
 
 it("creates a native worktree at the dispatched PR head on the selected host", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
@@ -11,7 +11,7 @@ it("creates a native worktree at the dispatched PR head on the selected host", a
       type: "provider",
       environmentProviderId: "slopcop-review",
       machine: { type: "existing", hostId: "host_remote" },
-      inputs: { number: 1125, head: "3".repeat(40) },
+      inputs: { number: 1125, head: "3".repeat(40), base: "main" },
     });
   } finally {
     await harness.lifecycle.dispose();
@@ -28,7 +28,7 @@ it("resolves the existing environment's host without reusing its checkout", asyn
       type: "provider",
       environmentProviderId: "slopcop-review",
       machine: { type: "existing", hostId: "host_existing" },
-      inputs: { number: 1125, head: "3".repeat(40) },
+      inputs: { number: 1125, head: "3".repeat(40), base: "main" },
     });
     expect(harness.sdk.callsTo("environments.get")[0]?.[0]).toEqual({
       environmentId: "env_existing",
@@ -44,7 +44,7 @@ it("uses BB's default host when the rule has no host selection", async () => {
     expect(await reviewWorktree(bb, undefined, target)).toEqual({
       type: "provider",
       environmentProviderId: "slopcop-review",
-      inputs: { number: 1125, head: "3".repeat(40) },
+      inputs: { number: 1125, head: "3".repeat(40), base: "main" },
     });
   } finally {
     await harness.lifecycle.dispose();
@@ -74,7 +74,7 @@ it("preserves a new machine and its warm-image inputs while selecting a worktree
       type: "provider",
       environmentProviderId: "slopcop-review",
       machine,
-      inputs: { number: 1125, head: "3".repeat(40) },
+      inputs: { number: 1125, head: "3".repeat(40), base: "main" },
     });
   } finally {
     await harness.lifecycle.dispose();

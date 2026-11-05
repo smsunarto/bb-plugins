@@ -23,14 +23,19 @@ type SpawnEnvironment = Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0]["e
 export async function reviewWorktree(
   bb: BbPluginApi,
   selection: unknown,
-  target: Pick<PullRequest, "number" | "headRefOid">,
+  target: Pick<PullRequest, "number" | "headRefOid" | "baseRefName">,
 ): Promise<SpawnEnvironment> {
   const configured = selectionSchema.parse(selection ?? { type: "project-default" });
+  const inputs = {
+    number: target.number,
+    head: target.headRefOid,
+    ...(target.baseRefName ? { base: target.baseRefName } : {}),
+  };
   if (configured.type === "provider") {
     return {
       type: "provider",
       environmentProviderId: "slopcop-review",
-      inputs: { number: target.number, head: target.headRefOid },
+      inputs,
       ...(configured.machine === undefined ? {} : { machine: configured.machine }),
     };
   }
@@ -42,7 +47,7 @@ export async function reviewWorktree(
   return {
     type: "provider",
     environmentProviderId: "slopcop-review",
-    inputs: { number: target.number, head: target.headRefOid },
+    inputs,
     ...(hostId === undefined ? {} : { machine: { type: "existing", hostId } }),
   };
 }

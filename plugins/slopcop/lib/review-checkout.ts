@@ -1,6 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import path from "node:path";
-import { checkoutResource, reviewCheckoutContract } from "./review-checkout-contract";
+import { checkoutResource, reviewCheckoutContract, reviewTarget } from "./review-checkout-contract";
 
 export function registerReviewCheckout(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract: reviewCheckoutContract });
@@ -9,10 +9,19 @@ export function registerReviewCheckout(bb: BbPluginApi) {
     displayName: "Slopcop PR worktree",
     description: "Review the pinned GitHub PR head, including deleted source branches.",
     icon: "GitBranch",
-    requires: { projectCheckout: true, gitCheckout: true },
-    inputs: reviewCheckoutContract.prepare.input.pick({ number: true, head: true }),
+    // gitRemote, not projectCheckout: on a new machine projectCheckout makes core
+    // clone the full repository before create runs, even when the machine image
+    // already holds a clone. The host finds or partially clones one instead.
+    requires: { gitRemote: true },
+    inputs: reviewTarget,
     async create(context) {
-      const source = context.projectCheckout.path;
+      const call = { hostId: context.host.id, signal: context.signal };
+      context.report.step("Finding a clone of the repository");
+      const { source } = await host.call(
+        "resolveSource",
+        { remote: context.gitRemote, preferred: context.projectCheckout?.path ?? null },
+        { ...call, timeoutMs: 600_000 },
+      );
       const resource = {
         source,
         path: path.join(path.dirname(source), ".slopcop-reviews", context.pathKey),
@@ -21,14 +30,11 @@ export function registerReviewCheckout(bb: BbPluginApi) {
       if (!(await context.experimental_claimPath(resource.path))) {
         return { status: "failed", message: "Review worktree path is already owned" };
       }
+      context.report.step("Checking out the PR head");
       const prepared = await host.call(
         "prepare",
         { ...resource, ...context.inputs },
-        {
-          hostId: context.host.id,
-          signal: context.signal,
-          timeoutMs: 300_000,
-        },
+        { ...call, timeoutMs: 300_000 },
       );
       return {
         status: "created",
