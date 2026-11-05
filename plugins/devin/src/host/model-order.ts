@@ -12,7 +12,8 @@ import type { AvailableModel } from "@get-bb/plugin-sdk/provider-bridge";
  *    pair is omitted. A pair's display name drops the primary's baked-in
  *    effort ("High Thinking") because the reasoning selector controls the
  *    primary independently; the sidekick's fixed effort stays in the name.
- * 2. The latest of each headline family: Astra, Fable, Sol, Opus, then SWE.
+ * 2. The latest of each headline family: Astra, Fable, Sol, Opus, SWE, then
+ *    Adaptive, Devin's automatic model router.
  * 3. The rest grouped by vendor (Anthropic, OpenAI, then others), largest
  *    model first, then newest version first.
  *
@@ -23,7 +24,7 @@ import type { AvailableModel } from "@get-bb/plugin-sdk/provider-bridge";
  *
  * Model ids are parsed, not display names: `gpt-6-1-sol-medium`,
  * `claude-fable-5-1-medium`, `swe-2-high`, `grok-4-7-medium`, and
- * `fusion-<primary>-sidekick-<sidekick>`.
+ * `fusion-<primary>-sidekick-<sidekick>`, and the bare `adaptive`.
  */
 export type ModelCatalog = Readonly<{
   models: readonly AvailableModel[];
@@ -48,7 +49,7 @@ type Family = Readonly<{ vendor: Vendor; line: string }>;
 const LINES: Readonly<Record<Vendor, readonly string[]>> = {
   openai: ["astra", "sol", "terra", "luna"],
   anthropic: ["fable", "opus", "sonnet", "haiku"],
-  cognition: ["swe"],
+  cognition: ["swe", "adaptive"],
   other: [],
 };
 
@@ -62,7 +63,11 @@ const HEADLINE: readonly Family[] = [
   { vendor: "openai", line: "sol" },
   { vendor: "anthropic", line: "opus" },
   { vendor: "cognition", line: "swe" },
+  { vendor: "cognition", line: "adaptive" },
 ];
+
+/** Cognition's lines, which name no vendor prefix in the id. */
+const COGNITION_HEADS: ReadonlySet<string> = new Set(LINES.cognition);
 
 /** A Fusion pair stays in the picker only with the latest of these as primary. */
 const FUSION_PRIMARIES: readonly Family[] = [
@@ -90,7 +95,7 @@ function parseName(tokens: readonly string[]): ModelName {
       ? "openai"
       : head === "claude"
         ? "anthropic"
-        : head === "swe"
+        : COGNITION_HEADS.has(head)
           ? "cognition"
           : "other";
   const word = rest.find((token) => !isNumeric(token)) ?? "";

@@ -43,20 +43,22 @@ export function devinProviderDeclaration(store: TargetStore): PluginProviderDecl
     models: { scope: "host" },
     maintenance: { health: true },
     capabilities: {
-      supportsServiceTier: false,
+      // Devin's `speed` option; src/host/session-options.ts maps bb's tier to it.
+      supportsServiceTier: true,
       supportsNativeUserQuestion: false,
       supportsManualCompaction: false,
       supportsThreadArchive: false,
       supportsThreadRename: false,
       // Devin's ACP server advertises no session fork.
       fork: "none",
-      // Devin ignores permission flags in ACP mode and always starts in its
-      // Code mode. The bridge auto-allows every request under Full and asks bb
-      // otherwise, so both modes hold without a launch flag.
-      permissionModes: ["accept-edits", "full"],
+      // Each mode sets Devin's own session mode (src/host/session-options.ts):
+      // Code, Smart, or Bypass. The bridge also auto-allows every request
+      // under Full and asks bb otherwise.
+      permissionModes: ["accept-edits", "auto", "full"],
       reasoningLevels: ["low", "medium", "high", "xhigh", "max"],
     },
-    composerActions: [],
+    // bb's Plan action sends `/plan`, which Devin runs in its Plan mode.
+    composerActions: ["plan"],
     experimental_nativeSkillRoots: {
       user: [".config/devin/skills", ".agents/skills", CLAUDE_SKILLS_ROOT],
       project: [".devin/skills", ".agents/skills", CLAUDE_SKILLS_ROOT],

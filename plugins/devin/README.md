@@ -50,15 +50,29 @@ selector controls the primary model independently; the sidekick's fixed
 effort stays in the model name. A standalone SWE-2 effort is not assumed to
 be available in Fusion.
 
-Next come the latest Astra, Fable, Sol, Opus, and SWE, then the remaining
-models grouped by vendor (Anthropic, OpenAI, others), largest to smallest
-and newest to oldest.
+Next come the latest Astra, Fable, Sol, Opus, and SWE, then Adaptive
+(Devin's automatic model router), then the remaining models grouped by
+vendor (Anthropic, OpenAI, others), largest to smallest and newest to
+oldest.
 
-### Permissions
+### Fast
 
-- **Full** approves every Devin tool request.
-- **Accept Edits** runs Devin in its Code mode, which approves workspace edits
+bb's fast toggle sets Devin's Speed option for the turn.
+
+### Permissions and modes
+
+Each bb permission mode runs Devin in one of its own modes:
+
+- **Accept Edits** runs Devin in Code mode, which approves workspace edits
   and asks bb for everything else.
+- **Auto** runs Devin in Smart mode, which approves what Devin judges safe
+  and asks bb for the rest.
+- **Full** runs Devin in Bypass mode and approves every Devin tool request.
+
+bb's **Plan** action (`/plan`) runs that turn in Devin's Plan mode. The next
+turn returns to the permission mode's Devin mode. A mode picked in the
+**Agent options** menu, such as Ask, holds until the permission mode changes
+or a plan turn is sent.
 
 ## Known limits
 
@@ -68,6 +82,8 @@ and newest to oldest.
   running a moment after Devin's last reply.
 - Cloud threads use Devin Cloud's default model. The bb model picker applies
   to local threads.
+- bb's thread rename stays in bb. The SDK's ACP bridge has no way to pass a
+  rename to Devin's session.
 
 ## Develop
 

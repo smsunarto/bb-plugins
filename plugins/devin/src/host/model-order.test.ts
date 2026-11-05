@@ -61,6 +61,16 @@ test("orders Devin's catalog: one Fusion pair per latest Astra and Sol, headline
   assert.deepEqual(ordered.selectedOnlyModels, []);
 });
 
+test("Adaptive follows SWE-2 in the headline tier", () => {
+  const ordered = orderModelCatalog({
+    models: [model("adaptive", "Adaptive"), ...DEVIN_CATALOG],
+    selectedOnlyModels: [],
+  });
+  const shown = names(ordered.models);
+  assert.equal(shown.indexOf("Adaptive"), shown.indexOf("SWE-2") + 1);
+  assert.equal(shown[shown.indexOf("Adaptive") + 1], "Claude Sonnet 5.5");
+});
+
 test("a newer version takes its family's slots without a table change", () => {
   const ordered = orderModelCatalog({
     models: [
