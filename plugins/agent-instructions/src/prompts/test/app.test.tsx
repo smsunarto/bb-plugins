@@ -166,18 +166,22 @@ test("an unsaved edit on the page is marked in the tab", async () => {
 
 test("the sidebar offers every editor and only lists plugins on prompt routes", async () => {
   const sidebar = await pluginsTabRegistration();
-  const rules = renderSlot(sidebar, { subPath: "" }, { rpc: rpc as never });
-  expect(rules.getByRole("button", { name: /^Rules$/ }).getAttribute("aria-pressed")).toBe("true");
-  expect(rules.queryByRole("button", { name: /Notes/ })).toBeNull();
-  rules.lifecycle.unmount();
+  const global = renderSlot(sidebar, { subPath: "" }, { rpc: rpc as never });
+  expect(global.getByRole("button", { name: "Global" }).getAttribute("aria-pressed")).toBe("true");
+  expect(global.queryByRole("button", { name: /Notes/ })).toBeNull();
+  global.lifecycle.unmount();
 
   const slot = await pluginsTab("");
   await slot.findByRole("button", { name: /Notes/ });
   expect(slot.getByRole("button", { name: "Plugin prompts" }).getAttribute("aria-pressed")).toBe(
     "true",
   );
-  fireEvent.click(slot.getByRole("button", { name: /^Rules$/ }));
-  expect(slot.navigateCalls.at(-1)).toEqual({ method: "toPluginPanel", path: "instructions" });
+  fireEvent.click(slot.getByRole("button", { name: "Global" }));
+  expect(slot.navigateCalls.at(-1)).toEqual({
+    method: "toPluginPanel",
+    path: "instructions",
+    options: { subPath: "global" },
+  });
   slot.lifecycle.unmount();
 });
 

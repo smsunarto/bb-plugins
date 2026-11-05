@@ -80,8 +80,8 @@ async function page(
       return stored;
     },
   };
-  const open = async () => {
-    const slot = renderSlot(panel, { subPath: "" }, { rpc });
+  const open = async (subPath = "global/rules") => {
+    const slot = renderSlot(panel, { subPath }, { rpc });
     await slot.findByRole("button", { name: "Add rule" });
     return slot;
   };
@@ -301,3 +301,14 @@ function sourceTextbox(element: HTMLElement): HTMLElement {
   if (!source) throw new Error("Source mode did not open");
   return source;
 }
+
+test("opening a rule from the Global sidebar marks its card", async () => {
+  const other: Rule = { ...browser, id: "rule_b", name: "Other" };
+  const { slot, open } = await page([browser, other]);
+  slot.unmount();
+  const marked = await open("global/rules/rule_b");
+  expect(marked.container.querySelector("[aria-current]")?.getAttribute("data-rule")).toBe(
+    "rule_b",
+  );
+  marked.unmount();
+});

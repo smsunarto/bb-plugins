@@ -42,8 +42,9 @@ function Overview({ listing }: { listing: CatalogListing }) {
         </output>
       ))}
       <p className="pe-meta pe-wrap">
-        bb gives every agent the enabled global instructions as one AGENTS.md, and lists the enabled
-        skills. Pick a doc or skill in the sidebar to edit it.
+        bb gives every agent the enabled global instructions as one AGENTS.md, appends the rules
+        that match its machine, provider, model, or project, and lists the enabled skills. Pick a
+        doc, rule, or skill in the sidebar to edit it.
       </p>
       {listing.published === null ? (
         <p className="pe-notice" data-tone="warn">

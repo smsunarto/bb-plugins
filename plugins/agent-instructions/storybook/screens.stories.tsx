@@ -4,7 +4,7 @@ import { within } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
 import { RegisteredSurface } from "../../../.storybook/host";
 import { nav } from "../../../.storybook/surfaces";
-import { resetRulesDraftForTest } from "../src/app/app";
+import { resetRulesDraftForTest } from "../src/app/rules";
 import type { RulesState } from "../src/shared/rules";
 const source = () => import("../src/app/app");
 const targets = {

@@ -2,7 +2,7 @@ import { useState, type ComponentProps } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { fn } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
-import { RuleCard } from "../src/app/app";
+import { RuleCard } from "../src/app/rules";
 const targets = {
   hosts: [{ id: "host_local", name: "Design MacBook" }],
   providers: [

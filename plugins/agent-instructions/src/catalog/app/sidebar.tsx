@@ -1,6 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { memo, useLayoutEffect, useRef, useState } from "react";
 import { queryClient } from "../../app/query.ts";
+import { RulesSection } from "../../app/rules.tsx";
 import { useRpcQuery } from "../../app/rpc.ts";
 import type { CatalogChange, CatalogListing } from "../contract.ts";
 import "../../prompts/app/prompt-editor.css";
@@ -19,7 +20,7 @@ import {
   type Skill,
 } from "./state.ts";
 
-/** The Global tab's sidebar: publish status, docs, skills, and recently deleted entries. */
+/** The Global tab's sidebar: publish status, docs, rules, skills, and recently deleted entries. */
 
 function Shimmer({ rows }: { rows: number }) {
   return (
@@ -360,6 +361,7 @@ function CatalogNav(props: { listing: CatalogListing; subPath: string; filterTex
           }}
         />
       </section>
+      <RulesSection subPath={subPath} />
       <section className="pe-section" aria-label="Skills">
         <h3 className="pe-label">Skills</h3>
         {skills.map(({ skill, reveal }) => (

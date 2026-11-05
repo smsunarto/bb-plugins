@@ -9,10 +9,12 @@ const { fireEvent, waitFor, within } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { queryClient } = await import("../../app/query.ts");
 const { resetCatalogDraftsForTest } = await import("./state.ts");
+const { resetRulesDraftForTest } = await import("../../app/rules.tsx");
 
 beforeEach(() => {
   queryClient.clear();
   resetCatalogDraftsForTest();
+  resetRulesDraftForTest();
 });
 
 const sha = (char: string) => char.repeat(64);
@@ -77,6 +79,23 @@ function listing(): CatalogListing {
 
 type Call = { method: string; input: unknown };
 
+const storedRules = [
+  {
+    id: "rule_steer",
+    name: "Agent message steering",
+    enabled: true,
+    instructions: "Pass --mode steer.",
+    when: { hosts: [], providers: [], models: [], projects: [] },
+  },
+  {
+    id: "rule_git",
+    name: "Git via Codex",
+    enabled: false,
+    instructions: "Delegate Git.",
+    when: { hosts: [], providers: ["claude-code"], models: [], projects: [] },
+  },
+];
+
 /** A fake catalog server: files by path, and every RPC call in order. */
 function server(overrides: Record<string, (input: never) => unknown> = {}) {
   const calls: Call[] = [];
@@ -111,6 +130,13 @@ function server(overrides: Record<string, (input: never) => unknown> = {}) {
       published: { ...published, at: 2 },
     })),
     publishCatalog: record("publishCatalog", () => published),
+    // Past any revision the module-level rules draft saw in other tests.
+    rules: record("rules", () => ({ revision: 1_000_000, rules: storedRules })),
+    targets: record("targets", () => ({
+      hosts: [],
+      providers: [{ id: "claude-code", name: "Claude Code" }],
+      projects: [],
+    })),
     ...Object.fromEntries(
       Object.entries(overrides).map(([method, handler]) => [method, record(method, handler)]),
     ),
@@ -333,5 +359,51 @@ test("typing back to the old text while a save runs keeps that text as unsaved",
     expect(slot.getByRole("button", { name: "Save" })).toHaveProperty("disabled", false),
   );
   expect(slot.getByRole("textbox", { name: "scripts/run.sh" })).toHaveProperty("value", original);
+  slot.unmount();
+});
+
+test("Global is the first editor and lists the rules with their scope", async () => {
+  const tab = await sidebar("");
+  const editors = await tab.findByRole("navigation", { name: "Instruction editors" });
+  expect(
+    within(editors)
+      .getAllByRole("button")
+      .map((b) => b.textContent),
+  ).toEqual(["Global", "Projects", "Plugin prompts"]);
+  expect(within(editors).getByRole("button", { name: "Global" }).getAttribute("aria-pressed")).toBe(
+    "true",
+  );
+  const rules = await tab.findByRole("region", { name: "Rules" });
+  const git = await within(rules).findByRole("button", { name: /Git via Codex/ });
+  // The scope names the provider once bb's targets load.
+  await waitFor(() => expect(git.textContent).toBe("Git via CodexoffClaude Code"));
+  expect(within(rules).getByRole("button", { name: /Agent message steering/ }).textContent).toBe(
+    "Agent message steering",
+  );
+  fireEvent.click(git);
+  expect(tab.navigateCalls.at(-1)).toEqual({
+    method: "toPluginPanel",
+    path: "instructions",
+    options: { subPath: "global/rules/rule_git" },
+  });
+  tab.unmount();
+});
+
+test("a new rule from the Global sidebar opens it in the rules editor", async () => {
+  const tab = await sidebar("global");
+  const rules = await tab.findByRole("region", { name: "Rules" });
+  fireEvent.click(await within(rules).findByRole("button", { name: "+ New rule" }));
+  expect(within(rules).getByRole("button", { name: "Untitled rule" })).toBeTruthy();
+  expect(tab.navigateCalls.at(-1)).toMatchObject({
+    method: "toPluginPanel",
+    options: { subPath: expect.stringMatching(/^global\/rules\/rule_/) },
+  });
+  tab.unmount();
+});
+
+test("the bare panel path opens the Global overview", async () => {
+  const slot = await page("");
+  await waitFor(() => expect(slot.queryByRole("button", { name: "Add rule" })).toBeNull());
+  expect(slot.container.querySelector("[data-rule]")).toBeNull();
   slot.unmount();
 });
