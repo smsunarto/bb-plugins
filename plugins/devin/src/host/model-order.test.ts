@@ -9,6 +9,7 @@ function model(id: string, displayName: string, isDefault = false): AvailableMod
     model: id,
     displayName,
     description: "",
+    reasoningDiscovery: "known",
     supportedReasoningEfforts: [],
     defaultReasoningEffort: "medium",
     isDefault,

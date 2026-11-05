@@ -56,7 +56,7 @@
   ],
   "dependencies": {
     "@bb-plugins/instructions": "workspace:*",
-    "@get-bb/plugin-sdk": "0.6.94",
+    "@get-bb/plugin-sdk": "0.6.125",
     "@tanstack/react-query": "^5.101.4",
     "zod": "^4.4.3"
   },
