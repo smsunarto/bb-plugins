@@ -180,7 +180,6 @@ try {
       ["screens-dotfiles-repository--populated", "page"],
       ["screens-agent-instructions-rules-editor--populated", "settings"],
       ["screens-docs-document-browser--notes", "page-panel"],
-      ["components-amp-oracle-card--completed", "message"],
       ["components-devin-cloud-session--active", "composer"],
       ["components-html-tweak-panel--editable", "message"],
       ["components-gtd-sidebar-thread-cards--idle", "sidebar"],

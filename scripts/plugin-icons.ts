@@ -24,13 +24,6 @@ const customIcons = new Map<string, { name: string; body: string; solid?: boolea
     },
   ],
   [
-    "amp",
-    {
-      name: "Amp",
-      body: '<path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/>',
-    },
-  ],
-  [
     "at-plugin",
     { name: "Installed Plugin Mentions", body: '<path d="M4 9h16M4 15h16M10 3L8 21m8-18l-2 18"/>' },
   ],

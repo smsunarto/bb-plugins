@@ -117,24 +117,6 @@ function agentation(): string {
     </div>`;
 }
 
-function amp(): string {
-  return `
-    <div class="composition amp-composition">
-      <figure class="capture amp-prompt">
-        ${media("amp", "orb-prompt.png", "capture-image", "A bb composer prompt starting with slash orb")}
-      </figure>
-      <figure class="capture amp-orb">
-        ${media("amp", "orb-bar.png", "capture-image", "An active Amp Orb session with its sync command")}
-      </figure>
-      <figure class="capture amp-oracle">
-        ${media("amp", "oracle-card.png", "capture-image", "An Oracle result card in a bb thread")}
-      </figure>
-      ${callout("amp-prompt-callout", "01", "Ask for an Orb")}
-      ${callout("amp-orb-callout", "02", "Track and sync the sandbox")}
-      ${callout("amp-oracle-callout", "03", "Bring in the Oracle")}
-    </div>`;
-}
-
 function ghStack(): string {
   return `
     <div class="composition stack-composition">
@@ -206,15 +188,6 @@ export const PLUGIN_SCREENSHOTS: readonly ScreenshotRecipe[] = [
     glow: "18% 20%",
     assets: ["capture.png", "staging.png"],
     content: agentation,
-  },
-  {
-    id: "amp",
-    name: "Amp",
-    descriptor: "LOCAL WHEN CLOSE · ORB WHEN FAR",
-    accent: "#F25B45",
-    glow: "12% 18%",
-    assets: ["orb-prompt.png", "orb-bar.png", "oracle-card.png"],
-    content: amp,
   },
   {
     id: "gh-stack",
@@ -296,13 +269,6 @@ const STYLES = String.raw`
   .annotation-staging { right: 94px; bottom: 61px; z-index: 4; width: 710px; height: 270px; }
   .annotation-capture-callout { left: 126px; top: 480px; }
   .annotation-staging-callout { right: 112px; bottom: 22px; }
-  .amp-prompt { left: 60px; top: 92px; width: 699px; height: 192px; }
-  .amp-orb { left: 793px; top: 92px; width: 547px; height: 192px; }
-  .amp-oracle { left: 265px; top: 350px; width: 870px; height: 314px; }
-  .amp-prompt .capture-image, .amp-orb .capture-image, .amp-oracle .capture-image { object-fit: contain; object-position: center; }
-  .amp-prompt-callout { left: 60px; top: 298px; }
-  .amp-orb-callout { left: 793px; top: 298px; }
-  .amp-oracle-callout { left: 265px; top: 677px; }
 
   .stack-open { left: 38px; top: 200px; width: 496px; height: 300px; }.stack-report { left: 558px; top: 190px; width: 480px; height: 320px; }.stack-result { left: 1062px; top: 100px; width: 298px; height: 500px; }
   .stack-open .capture-image, .stack-report .capture-image { object-position: top; }.stack-result .capture-image { object-fit: contain; object-position: top; }

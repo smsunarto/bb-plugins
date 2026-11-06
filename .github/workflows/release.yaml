@@ -9,7 +9,6 @@ on:
         type: choice
         options:
           - plugins/agentation
-          - plugins/amp
           - plugins/gh-stack
           - plugins/gtd-sidebar
           - plugins/monokai
@@ -94,13 +93,12 @@ jobs:
         run: bun scripts/plugin-frontend-check.ts plugins/gtd-sidebar
 
       - name: Upload plugin source maps
-        if: ${{ contains(fromJSON('["plugins/amp", "plugins/dotfiles"]'), matrix.path) }}
+        if: ${{ contains(fromJSON('["plugins/dotfiles"]'), matrix.path) }}
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
         run: |
           case "${{ matrix.path }}" in
-            plugins/amp) export SENTRY_PROJECT=bb-plugin-amp ;;
             plugins/dotfiles) export SENTRY_PROJECT=bb-plugin-dotfiles ;;
           esac
           bun scripts/sentry-release.ts "${{ matrix.path }}"

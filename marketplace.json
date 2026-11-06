@@ -26,26 +26,6 @@
       }
     },
     {
-      "id": "amp",
-      "displayName": "Amp",
-      "description": "Runs Amp locally or in an Orb as one bb provider through the plugin's own provider bridge, which spawns the Amp CLI directly.",
-      "icon": {
-        "url": "plugins/amp/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/amp",
-          "range": "*",
-          "tagPrefix": "amp/"
-        }
-      }
-    },
-    {
       "id": "devin",
       "displayName": "Devin",
       "description": "Runs Devin as a bb provider, on your machine or on a Devin Cloud VM, through the SDK's ACP bridge.",

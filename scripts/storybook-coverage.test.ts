@@ -14,7 +14,6 @@ const surfaces: Record<string, Record<string, string[]>> = {
     documents: ["../src/app/app"],
   },
   agentation: { panel: ["AnnotationPanel"] },
-  amp: { oracle: ["../app"] },
   "boat-sandbox": { "machine-inputs": ["../src/app/app", "machineProviderInputs"] },
   "code-review": {
     comments: ["CommentForm"],

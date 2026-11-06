@@ -18,7 +18,6 @@ const placements: Record<string, EditorContext> = {
   "GTD Sidebar": { placement: "sidebar", title: "Threads" },
   "Agent Instructions": { placement: "page", title: "Agent instructions" },
   Devin: { placement: "composer", title: "Cloud session" },
-  Amp: { placement: "message", title: "Amp" },
   "Kitchen Sink": { placement: "message", title: "Kitchen Sink" },
   "Game Studio": { placement: "thread-panel", title: "Game Studio", tab: "Game Studio" },
   "GitHub Stack": { placement: "thread-panel", title: "GitHub Stack", tab: "GitHub Stack" },

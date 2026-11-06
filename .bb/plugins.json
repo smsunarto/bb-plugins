@@ -16,10 +16,6 @@
       "source": "./plugins/agent-instructions"
     },
     {
-      "name": "amp",
-      "source": "./plugins/amp"
-    },
-    {
       "name": "boat-sandbox",
       "source": "./plugins/boat-sandbox"
     },

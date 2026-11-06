@@ -10,7 +10,6 @@ import {
   uploadSentryRelease,
 } from "./sentry-release.ts";
 import { PLUGIN_TELEMETRY as dotfilesTelemetry } from "../plugins/dotfiles/src/shared/telemetry.ts";
-import { PLUGIN_TELEMETRY as ampTelemetry } from "../plugins/amp/shared/telemetry.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const SENTRY_CLI = join(ROOT, "node_modules", ".bin", "sentry-cli");
@@ -188,7 +187,7 @@ test("the release workflow uploads plugin maps after build and before publish", 
   expect(workflow).toContain("SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}");
   expect(workflow).toContain("SENTRY_ORG: ${{ vars.SENTRY_ORG }}");
   expect(workflow).not.toContain("SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}");
-  for (const plugin of ["amp", "dotfiles"]) {
+  for (const plugin of ["dotfiles"]) {
     expect(workflow.slice(upload, publish)).toContain(`plugins/${plugin}`);
     expect(workflow.slice(upload, publish)).toContain(`SENTRY_PROJECT=bb-plugin-${plugin}`);
   }
@@ -196,10 +195,7 @@ test("the release workflow uploads plugin maps after build and before publish", 
 });
 
 test("telemetry identities match their plugin manifests", () => {
-  const plugins = [
-    ["amp", ampTelemetry],
-    ["dotfiles", dotfilesTelemetry],
-  ] as const;
+  const plugins = [["dotfiles", dotfilesTelemetry]] as const;
   for (const [plugin, telemetry] of plugins) {
     const manifest = JSON.parse(
       readFileSync(join(ROOT, "plugins", plugin, "package.json"), "utf8"),
@@ -210,15 +206,6 @@ test("telemetry identities match their plugin manifests", () => {
     expect(manifest.name).toBe(`@smsunarto/bb-plugin-${plugin}`);
   }
   expect(new Set(plugins.map(([, telemetry]) => telemetry.dsn)).size).toBe(plugins.length);
-});
-
-test("Amp's npm allowlist keeps source maps out of both published package names", () => {
-  const manifest = JSON.parse(
-    readFileSync(join(ROOT, "plugins", "amp", "package.json"), "utf8"),
-  ) as {
-    files: string[];
-  };
-  expect(manifest.files.some((path) => path === "dist/" || path.endsWith(".map"))).toBe(false);
 });
 
 function createPluginFixture(

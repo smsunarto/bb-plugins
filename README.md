@@ -12,16 +12,6 @@
 
 <picture><img src="docs/media/hero.png" alt="A staged overview of bb with the Monokai palette, GTD Sidebar, Agent Proxy, Agentation, and GitHub Stack" width="100%" /></picture>
 
-### Agent Providers
-
-<table>
-<tr>
-<td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/amp/assets/logo-dark.svg" /><img src="plugins/amp/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
-<td align="center"><a href="plugins/amp/"><b>Amp</b></a></td>
-<td>Runs <a href="https://ampcode.com">Amp</a> as a native bb provider, locally or in an Orb.</td>
-</tr>
-</table>
-
 ### Dev Productivity
 
 <table>
@@ -73,7 +63,7 @@ bb plugin install gtd-sidebar
 
 Adding a marketplace installs nothing — it caches the catalog, so these plugins
 become findable by name in `bb plugin search` and in bb's plugin browser. `<id>`
-is `agentation`, `amp`, `gh-stack`, `gtd-sidebar`, or `monokai`; if another
+is `agentation`, `gh-stack`, `gtd-sidebar`, or `monokai`; if another
 marketplace you have added publishes the same name, spell it
 `gtd-sidebar@smsunarto`.
 
@@ -165,7 +155,6 @@ where the component supports them.
 | --------------------- | ------------------------------------------------------------------------------ |
 | Agent Instructions    | Rule scopes, tool browser, file editor, loading and errors                     |
 | Agentation            | Annotation list, empty and error states                                        |
-| Amp                   | Oracle results, running trace, missing and invalid reports                     |
 | Code Review           | Review and branch status, findings, comments, file tree, refresh state         |
 | Devin                 | Starting and active Cloud session banners                                      |
 | Dotfiles              | Source and Markdown editors, host picker, offline and missing repository       |

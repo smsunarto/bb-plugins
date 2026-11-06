@@ -13,11 +13,6 @@
       "component": "agentation",
       "package-name": "@smsunarto/bb-plugin-agentation"
     },
-    "plugins/amp": {
-      "release-type": "node",
-      "component": "amp",
-      "package-name": "@smsunarto/bb-plugin-amp"
-    },
     "plugins/devin": {
       "release-type": "node",
       "component": "devin",

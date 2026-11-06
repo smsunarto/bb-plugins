@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 
-/** Importing this module installs jsdom globals as a side effect, the same
- *  way amp's test helper does. Import it above anything that touches DOM. */
+/** Importing this module installs jsdom globals as a side effect.
+ *  Import it above anything that touches DOM. */
 const target = globalThis as unknown as Record<string, unknown>;
 if (target["window"] === undefined || target["document"] === undefined) {
   const { JSDOM } = createRequire(import.meta.url)("jsdom") as {
