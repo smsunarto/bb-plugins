@@ -107,7 +107,10 @@
  * direct-child measure (api-document.css) misses their paragraphs and tables.
  * Give the wrapper the same measure so text lines up with headings and peeks.
  */
-.review-canvas-root[data-review-theme] .review-document .api-document-node > .bb-markdown-prose {
+.review-canvas-root[data-review-theme]
+  .review-document
+  .api-document-node
+  > :is(.bb-markdown-prose, .wb-markdown-editor-mount) {
   width: min(100%, var(--review-prose-max-width));
   max-width: calc(100cqi - 2 * var(--review-document-padding-inline));
   margin-inline: auto;
@@ -369,6 +372,31 @@
 .review-canvas-root[data-review-theme] .bb-markdown-prose .wb-table-scroll {
   max-width: 100%;
   overflow-x: auto;
+}
+
+/* Markdown blocks are live editors (editable-markdown.tsx). The block itself is the
+   affordance: no focus ring, a caret, and tables scroll as the read path's wrapper does. */
+.review-canvas-root[data-review-theme] .wb-markdown-editor {
+  outline: none;
+  caret-color: var(--ink);
+}
+
+.review-canvas-root[data-review-theme] .wb-markdown-editor a[data-footnote-ref] {
+  vertical-align: super;
+  font-size: 0.75em;
+  line-height: 0;
+}
+
+.review-canvas-root[data-review-theme] .wb-markdown-editor > table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.review-canvas-root[data-review-theme] .wb-markdown-save-error {
+  margin-block-start: 8px;
+  color: var(--destructive-text);
+  font-size: calc(var(--wb-px) * 13);
 }
 
 .review-canvas-root[data-review-theme] .review-document .bb-markdown-prose :is(th, td) code {
