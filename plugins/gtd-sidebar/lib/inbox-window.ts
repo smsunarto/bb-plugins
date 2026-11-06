@@ -18,6 +18,10 @@ export interface InboxShelfLayout {
   /** False folds the shelf to its header. */
   expanded: boolean;
   groups: readonly ProjectGroup[];
+  /** Overrides the list's grouping for this shelf; Bots always groups by bot. */
+  grouped?: boolean;
+  /** Keep the header while the shelf is empty, for its own create action. */
+  showEmpty?: boolean;
 }
 
 export interface InboxWindowLayout {
@@ -51,12 +55,12 @@ export function buildInboxWindow(
       items.push({ kind: "row", key: `row:${row.node.thread.id}`, row, shelf });
     }
   };
-  for (const { shelf, expanded, groups } of shelves) {
-    if (groups.length === 0) continue;
+  for (const { shelf, expanded, groups, showEmpty = false, ...layout } of shelves) {
+    if (groups.length === 0 && !showEmpty) continue;
     headerIndex.set(shelfKey(shelf), items.length);
     items.push({ kind: "shelf", key: shelfKey(shelf) });
     if (!expanded) continue;
-    if (!grouped) {
+    if (!(layout.grouped ?? grouped)) {
       pushRows(
         shelf,
         shelfKey(shelf),

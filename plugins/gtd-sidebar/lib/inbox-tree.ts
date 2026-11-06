@@ -2,7 +2,14 @@ import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { activeSectionFor, effectiveParentThreadId } from "./inbox.ts";
 
 export type InboxLifecycle = "active" | "snoozed" | "settled";
-export type InboxShelf = "pinned" | "nextAction" | "waiting" | "slopcop" | "snoozed" | "settled";
+export type InboxShelf =
+  | "pinned"
+  | "bots"
+  | "nextAction"
+  | "waiting"
+  | "slopcop"
+  | "snoozed"
+  | "settled";
 
 /** The plugin id bb stamps on threads SlopCop dispatches for its GitHub rules. */
 const SLOPCOP_PLUGIN_ID = "slopcop";
@@ -101,6 +108,8 @@ export interface InboxSort {
   snoozedAtFor?: (thread: PluginSidebarThread) => number | null;
   /** Clock for stamping shelf moves this build observes. */
   now?: number;
+  /** The bot a thread belongs to, if any; its active family moves to Bots. */
+  botOf?: (threadId: string) => string | null;
 }
 
 interface ResolvedSort {
@@ -161,14 +170,23 @@ function createInboxNode(
   };
 }
 
-function linkedParentIds(nodes: ReadonlyMap<string, InboxThreadNode>): Map<string, string> {
+/**
+ * Each node's displayed parent. A child shows under its parent only when both
+ * share a lifecycle and a bot, so moving a child to another bot (or to none)
+ * moves its row too; the threads themselves stay linked in bb.
+ */
+function linkedParentIds(
+  nodes: ReadonlyMap<string, InboxThreadNode>,
+  botOf: (threadId: string) => string | null,
+): Map<string, string> {
   const parents = new Map<string, string>();
   for (const node of nodes.values()) {
     const parentId = effectiveParentThreadId(node.thread);
     if (
       parentId &&
       parentId !== node.thread.id &&
-      nodes.get(parentId)?.lifecycle === node.lifecycle
+      nodes.get(parentId)?.lifecycle === node.lifecycle &&
+      botOf(parentId) === botOf(node.thread.id)
     ) {
       parents.set(node.thread.id, parentId);
     }
@@ -227,13 +245,23 @@ function aggregateFamilies(roots: readonly InboxThreadNode[]): void {
  * family like any child. A raised hand stays in Next Action, where a folded
  * shelf cannot hide it.
  */
-function rootShelf(node: InboxThreadNode): InboxShelf {
+function rootShelf(
+  node: InboxThreadNode,
+  botOf: ((threadId: string) => string | null) | undefined,
+): InboxShelf {
+  if (botOf?.(node.thread.id) && BOT_SHELF_SOURCES.has(node.shelf)) return "bots";
   if (node.thread.originPluginId !== SLOPCOP_PLUGIN_ID) return node.shelf;
   if (node.shelf === "waiting") return "slopcop";
   return node.shelf === "nextAction" && statusPriority(node.statusThread) < 5
     ? "slopcop"
     : node.shelf;
 }
+
+/**
+ * The shelves a bot's family leaves for Bots: the active ones the user did not
+ * place by hand. A pin, a snooze, or a settle stays where the user put it.
+ */
+const BOT_SHELF_SOURCES: ReadonlySet<InboxShelf> = new Set(["nextAction", "waiting", "slopcop"]);
 
 /** The earlier of two pin sort keys; a null loses to any known key. */
 function minPinOrderKey(left: string | null, right: string | null): string | null {
@@ -266,11 +294,12 @@ function familyShelf(node: InboxThreadNode): InboxShelf {
 function familyComparator() {
   const shelfOrder: Record<InboxShelf, number> = {
     pinned: 0,
-    nextAction: 1,
-    waiting: 2,
-    slopcop: 3,
-    snoozed: 4,
-    settled: 5,
+    bots: 1,
+    nextAction: 2,
+    waiting: 3,
+    slopcop: 4,
+    snoozed: 5,
+    settled: 6,
   };
   // One comparator for every shelf: the family's shelf, then its place on
   // it — Pinned follows bb's own pin order, the rest take most recent
@@ -315,7 +344,7 @@ export function buildInboxTree(
       createInboxNode(thread, lifecycleFor, normalizedQuery, resolved),
     ]),
   );
-  const parents = linkedParentIds(nodes);
+  const parents = linkedParentIds(nodes, sort.botOf ?? (() => null));
   const roots: InboxThreadNode[] = [];
   for (const node of nodes.values()) {
     const parentId = parents.get(node.thread.id);
@@ -323,7 +352,7 @@ export function buildInboxTree(
     else roots.push(node);
   }
   aggregateFamilies(roots);
-  for (const root of roots) root.shelf = rootShelf(root);
+  for (const root of roots) root.shelf = rootShelf(root, sort.botOf);
   return roots.sort(familyComparator());
 }
 

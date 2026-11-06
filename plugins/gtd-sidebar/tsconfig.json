@@ -16,6 +16,7 @@
     "hooks",
     "shared",
     "lib",
+    "bots",
     "test"
   ]
 }

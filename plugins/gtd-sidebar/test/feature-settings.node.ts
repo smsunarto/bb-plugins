@@ -47,7 +47,11 @@ describe("public feature opt-ins", () => {
         for (const key of ["projectsEnabled", "subscriptionsEnabled", "slackBotToken"]) {
           assert.equal(registrations.settingsDescriptors[key], undefined);
         }
-        assert.deepEqual(registrations.agentTools, []);
+        // The bots' state tools are the only agent tools; an unbound thread gets none.
+        assert.deepEqual(
+          registrations.agentTools.map((tool) => tool.name),
+          ["bot_read_state", "bot_update_state"],
+        );
         assert.equal(registrations.rpcMethods.includes("listInitiatives"), false);
         assert.equal(registrations.rpcMethods.includes("createInitiative"), false);
         assert.equal(registrations.rpcMethods.includes("runSubscriptionNow"), false);

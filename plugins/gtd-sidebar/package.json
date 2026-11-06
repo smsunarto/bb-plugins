@@ -71,6 +71,7 @@
     "thread-namer.ts",
     "thread-title-inference.ts",
     "lib/",
+    "bots/",
     "shared/",
     "components/",
     "hooks/",
@@ -116,18 +117,21 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "hono": "^4.11.9",
+    "jsdom": "25.0.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "@testing-library/react": "16.3.2",
     "sonner": "^1.7.4",
     "tailwind-merge": "^3.4.0",
     "typescript": "^7.0.0",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "vitest": "4.1.11"
   },
   "scripts": {
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "typecheck": "tsc --noEmit",
-    "test": "bun test --timeout=30000 test/*.test.ts && node --experimental-strip-types --test test/machine-visibility.node.ts test/feature-settings.node.ts test/snooze-family.node.ts test/family-folds.node.ts test/deletion-refresh.node.ts test/cli.node.ts",
+    "test": "bun test --timeout=30000 test/*.test.ts && vitest run && node --experimental-strip-types --test test/machine-visibility.node.ts test/feature-settings.node.ts test/snooze-family.node.ts test/family-folds.node.ts test/deletion-refresh.node.ts test/cli.node.ts",
     "clean": "rm -rf dist"
   },
   "bundledDependencies": [
