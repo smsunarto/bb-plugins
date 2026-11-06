@@ -24,6 +24,7 @@ import { AuthoringActivityContext } from "./authoring-activity.tsx";
 import { type AuthoringCursor, type CursorMemory, nextCursor } from "./authoring-cursor.ts";
 import { DisplayedReviewVersionContext } from "./displayed-review-version-context.ts";
 import { DrawQueueProvider } from "./draw-queue-provider.tsx";
+import { MarkdownEditingContext, type SaveBlockMarkdown } from "./markdown-editing.ts";
 import {
   ReviewSessionProvider,
   createReviewSession,
@@ -327,6 +328,24 @@ export function ApiCanvas({
     };
   }, [baseSession, rpc, content.reviewId, data, version]);
 
+  // Only the live version is editable; a past version's blocks stay read-only.
+  const saveMarkdown = useMemo<SaveBlockMarkdown | null>(
+    () =>
+      version === undefined
+        ? async (blockId, markdown) => {
+            await rpc.command({
+              commandId: crypto.randomUUID(),
+              operation: {
+                type: "edit",
+                reviewId: content.reviewId,
+                edit: { type: "update", targetId: blockId, changes: { markdown } },
+              },
+            });
+          }
+        : null,
+    [rpc, content.reviewId, version],
+  );
+
   const hasData = data !== undefined;
   useEffect(() => {
     if (hasData) content.bridge.ready();
@@ -375,13 +394,15 @@ export function ApiCanvas({
                   cursor={version === undefined ? lensCursor : undefined}
                 >
                   <DisplayedReviewVersionContext.Provider value={data.snapshot.version}>
-                    <MapEnabled.Provider value={content.softwareMapEnabled === true}>
-                      <CanvasDocument
-                        data={data}
-                        findHost={findHost}
-                        softwareMapEnabled={content.softwareMapEnabled === true}
-                      />
-                    </MapEnabled.Provider>
+                    <MarkdownEditingContext.Provider value={saveMarkdown}>
+                      <MapEnabled.Provider value={content.softwareMapEnabled === true}>
+                        <CanvasDocument
+                          data={data}
+                          findHost={findHost}
+                          softwareMapEnabled={content.softwareMapEnabled === true}
+                        />
+                      </MapEnabled.Provider>
+                    </MarkdownEditingContext.Provider>
                   </DisplayedReviewVersionContext.Provider>
                 </DrawQueueProvider>
               </DrawQueueProvider>

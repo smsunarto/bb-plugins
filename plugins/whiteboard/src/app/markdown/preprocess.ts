@@ -47,10 +47,13 @@ interface Edit {
  * - A footnote reference becomes a placeholder link. Definitions move out to `footnotes`.
  * - An image stays only when remote images are allowed and it is `https:`. Otherwise its alt
  *   text renders as emphasis. A reference-style image renders nothing, as upstream.
+ *
+ * `editable` keeps every inline image as an image pointing at a placeholder, so an edit can
+ * write its URL back. The editor's image view applies the fetch policy instead.
  */
 export function preprocess(
   markdown: string,
-  { allowRemoteImages }: { allowRemoteImages: boolean },
+  { allowRemoteImages, editable = false }: { allowRemoteImages: boolean; editable?: boolean },
 ): PreparedMarkdown {
   const links: LinkTarget[] = [];
   const footnotes: Footnote[] = [];
@@ -80,12 +83,13 @@ export function preprocess(
           node,
           link({ kind: "link", url: node.url ?? "", title: node.title ?? undefined }),
         );
-      case "image":
-        return allowRemoteImages && urlProtocol(node.url ?? "") === "https:"
-          ? undefined
-          : { start, end, text: emphasis(node.alt ?? "") };
+      case "image": {
+        const text = imageText(node, { allowRemoteImages, editable }, link);
+        return text === undefined ? undefined : { start, end, text };
+      }
       case "imageReference":
-        return { start, end, text: "" };
+        // markdown-it resolves it to a plain image, which an edit writes back inline.
+        return editable ? undefined : { start, end, text: "" };
       default:
         return undefined;
     }
@@ -139,5 +143,20 @@ function definitionBody(markdown: string, node: MarkdownNode): string {
 
 /** Literal text: backslash-escape ASCII punctuation, so no Markdown syntax survives. */
 const escape = (text: string) => text.replace(/\s*\n\s*/g, " ").replace(/[!-/:-@[-`{-~]/g, "\\$&");
+
+/**
+ * An inline image's replacement, undefined to keep it. Editing points it at a placeholder that
+ * keeps its URL and title; reading keeps only an allowed `https:` image and writes the rest's alt.
+ */
+function imageText(
+  node: MarkdownNode,
+  { allowRemoteImages, editable }: { allowRemoteImages: boolean; editable: boolean },
+  link: (target: LinkTarget) => string,
+): string | undefined {
+  const url = node.url ?? "";
+  if (editable)
+    return `![${escape(node.alt ?? "")}](${link({ kind: "link", url, title: node.title ?? undefined })})`;
+  return allowRemoteImages && urlProtocol(url) === "https:" ? undefined : emphasis(node.alt ?? "");
+}
 
 const emphasis = (alt: string) => (alt.trim() ? `*${escape(alt.trim())}*` : "");

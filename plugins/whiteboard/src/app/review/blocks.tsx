@@ -1,17 +1,19 @@
-import { Component, type ReactNode } from "react";
+import { Component, type ReactNode, useContext, useMemo } from "react";
 
 import { type Block, type BlockType, traceQuoteLink } from "../../shared/review/document.ts";
-import { MarkdownContent } from "../markdown/agent-markdown.tsx";
+import { EditableMarkdown } from "../markdown/editable-markdown.tsx";
 import type { ApiDocumentData } from "./api-document.tsx";
 import { blockSectionSummary } from "./block-document-derivations.ts";
 import { DocumentCallTree } from "./call-tree-view.tsx";
 import { RenderedCodeBlock } from "./code-block.tsx";
 import { CodePeekCard } from "./CodePeek.tsx";
 import { DatabaseLens } from "./database-lens.tsx";
+import { MarkdownEditingContext } from "./markdown-editing.ts";
 import { SequenceDiagram } from "./diagrams.tsx";
 import { FlowDiagram } from "./flow-diagram.tsx";
 import { AnchorLink, ReviewSection } from "./review-components.tsx";
 import { ReviewDocumentTitle } from "./review-document-surface.tsx";
+import { useReviewPanel } from "./review-panel.tsx";
 import { SoftwareMap } from "./software-map/SoftwareMap.tsx";
 import { TraceQuote } from "./trace-quote.tsx";
 import { TutorialAuthoringConversation } from "./tutorial-authoring-conversation.tsx";
@@ -45,9 +47,27 @@ export interface BlockProps<K extends BlockType> {
 export type BlockComponent<K extends BlockType> = (props: BlockProps<K>) => ReactNode;
 
 function MarkdownBlock({ node, data }: BlockProps<"markdown">) {
+  const saveBlock = useContext(MarkdownEditingContext);
+  const save = useMemo(
+    () => saveBlock && ((markdown: string) => saveBlock(node.id, markdown)),
+    [saveBlock, node.id],
+  );
+  const openPeek = useReviewPanel((state) => state.openPeek);
+
   return (
-    <MarkdownContent
+    <EditableMarkdown
       source={node.markdown}
+      save={save}
+      openLink={(href, text) => {
+        const anchor = data.anchors.get(`${node.id}:${href}`);
+        if (!anchor) return false;
+        openPeek({
+          kind: "peek",
+          anchor: { ...anchor, title: text || anchor.title },
+          content: { kind: "source", source: anchor.peek },
+        });
+        return true;
+      }}
       headingId={(index) => data.headings.get(node.id, index)}
       h1={ReviewDocumentTitle}
       renderLink={(href, children) => {
@@ -71,7 +91,6 @@ function MarkdownBlock({ node, data }: BlockProps<"markdown">) {
 
         return anchor ? <AnchorLink anchor={anchor}>{children}</AnchorLink> : undefined;
       }}
-      allowRemoteImages
     />
   );
 }

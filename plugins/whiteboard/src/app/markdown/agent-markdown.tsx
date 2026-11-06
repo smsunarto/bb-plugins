@@ -13,7 +13,7 @@ export { isReactTextNode } from "./link.tsx";
  * plugin's TipTap schema and renders as static React under `.bb-markdown-prose`, so it reads
  * like a Docs note. Upstream's link, image, footnote and heading-id semantics are kept.
  */
-const PROSE = "bb-markdown-prose";
+export const PROSE = "bb-markdown-prose";
 
 export function AgentMarkdown({
   source,
@@ -120,7 +120,7 @@ function useRenderedMarkdown(
 }
 
 /** GFM footnote definitions render once, after the body, in source order (upstream markup). */
-function Footnotes({
+export function Footnotes({
   footnotes,
   allowRemoteImages,
   renderLink,
