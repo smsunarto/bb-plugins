@@ -2,6 +2,14 @@ import { useState } from "react";
 import type { ProjectOwner } from "../contract";
 import { Button } from "@bb-plugins/ui/button";
 import { Input } from "@bb-plugins/ui/input";
+import { Icon } from "../../components/ui/icon";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
 import {
   ProjectCreateForm,
   type ProjectChoice,
@@ -88,13 +96,16 @@ export function BotProjectsPanel({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium">Add existing project</span>
-          <button
+          <Button
             type="button"
-            className="text-[11px] text-muted-foreground hover:text-foreground"
+            size="sm"
+            variant="ghost"
+            className="h-7 gap-1 px-2 text-muted-foreground"
             onClick={() => changeMode("linked")}
           >
-            Back to linked projects
-          </button>
+            <Icon name="ChevronLeft" className="size-3.5" />
+            Back
+          </Button>
         </div>
         <Input
           autoFocus
@@ -104,7 +115,7 @@ export function BotProjectsPanel({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <div className="space-y-1">
+        <div className="max-h-64 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1">
           {candidates.map((project) => (
             <button
               key={project.id}
@@ -127,13 +138,11 @@ export function BotProjectsPanel({
                   </span>
                 ) : null}
               </span>
-              <span className="text-muted-foreground" aria-hidden="true">
-                +
-              </span>
+              <Icon name="Plus" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
             </button>
           ))}
           {!candidates.length ? (
-            <p className="py-3 text-xs text-muted-foreground">
+            <p className="px-2 py-3 text-xs text-muted-foreground">
               {query.trim() ? "No matching projects" : "All available projects are already linked."}
             </p>
           ) : null}
@@ -142,20 +151,31 @@ export function BotProjectsPanel({
     );
   return (
     <div className="bot-projects-panel space-y-3">
-      <div className="flex gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={() => changeMode("existing")}>
-          Add existing…
-        </Button>
-        <Button type="button" size="sm" variant="outline" onClick={() => changeMode("create")}>
-          New project…
-        </Button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 space-y-1">
+          <h3 className="text-xs font-semibold">Linked projects</h3>
+          <p className="text-[11px] leading-4 text-muted-foreground">
+            The owner receives new project chats. Members join when you pick this bot.
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={() => changeMode("existing")}>
+            <Icon name="Search" className="size-3.5" />
+            Add existing
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => changeMode("create")}>
+            <Icon name="Plus" className="size-3.5" />
+            New project
+          </Button>
+        </div>
       </div>
       {linked.length ? (
-        <div className="divide-y divide-border rounded-md border border-border">
+        <div className="divide-y divide-border rounded-lg border border-border">
           {linked.map((project) => {
             const otherOwner = ownerName(project.id);
             return (
-              <div key={project.id} className="flex items-center gap-2 px-2 py-1.5">
+              <div key={project.id} className="flex items-center gap-2 px-3 py-2">
+                <Icon name="Folder" className="size-4 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate text-xs" title={project.name}>
                   {project.name}
                   {otherOwner ? (
@@ -164,51 +184,48 @@ export function BotProjectsPanel({
                     </span>
                   ) : null}
                 </span>
-                <select
-                  className="h-7 max-w-28 shrink-0 rounded-md border border-input bg-background px-2 text-xs text-foreground"
-                  aria-label={`${project.name} role`}
+                <Select
                   value={ownedProjectIds.includes(project.id) ? "owner" : "member"}
-                  onChange={(event) =>
-                    onRoleChange(project.id, event.target.value as "member" | "owner")
-                  }
+                  onValueChange={(value) => onRoleChange(project.id, value as "member" | "owner")}
                 >
-                  <option value="member">Member</option>
-                  <option value="owner" disabled={Boolean(otherOwner)}>
-                    {otherOwner ? `Owner (${otherOwner})` : "Owner"}
-                  </option>
-                </select>
-                <button
+                  <SelectTrigger
+                    aria-label={`${project.name} role`}
+                    className="h-7 w-28 shrink-0 text-xs"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="member">Member</SelectItem>
+                    <SelectItem value="owner" disabled={Boolean(otherOwner)}>
+                      {otherOwner ? `Owner (${otherOwner})` : "Owner"}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
                   type="button"
-                  className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-state-hover hover:text-foreground"
+                  size="icon"
+                  variant="ghost"
+                  className="size-7 shrink-0 text-muted-foreground"
                   aria-label={`Unlink ${project.name}`}
-                  title="Unlink project"
                   onClick={() => onRoleChange(project.id, "none")}
                 >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 12 12"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    aria-hidden="true"
-                  >
-                    <path d="m3 3 6 6m0-6-6 6" />
-                  </svg>
-                </button>
+                  <Icon name="X" className="size-3.5" />
+                </Button>
               </div>
             );
           })}
         </div>
       ) : (
-        <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-          <p className="font-medium">No projects linked</p>
-          <p className="mt-1 text-[11px]">This bot can still chat without a project.</p>
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-8 text-center">
+          <span className="flex size-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <Icon name="FolderOpen" className="size-4" />
+          </span>
+          <p className="text-xs font-medium">No projects linked</p>
+          <p className="text-[11px] text-muted-foreground">
+            This bot can still chat without a project.
+          </p>
         </div>
       )}
-      <p className="text-[11px] leading-4 text-muted-foreground">
-        Owner receives new project chats. Member is used when you explicitly choose this bot.
-      </p>
       {createdProjects.length ? (
         <p role="status" className="text-[11px] leading-4 text-muted-foreground">
           New projects are already created. Save the bot to link them; cancelling the bot won’t

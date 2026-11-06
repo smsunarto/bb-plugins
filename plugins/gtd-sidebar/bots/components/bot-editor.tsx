@@ -2,6 +2,12 @@ import { useId, useRef, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import { Button } from "@bb-plugins/ui/button";
 import { Input } from "@bb-plugins/ui/input";
+import { Textarea } from "@bb-plugins/ui/textarea";
+import { cn } from "../../lib/utils";
+import { Icon, type IconName } from "../../components/ui/icon";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
+import { keepTypingKeys, Field, SectionHeading } from "./editor-fields";
 import type { BotAvatar, BotMetadata, ProjectOwner } from "../contract";
 import {
   Dialog,
@@ -84,7 +90,7 @@ export function BotEditor({
   const [settingsText, setSettingsText] = useState(
     () => `${JSON.stringify(editing ? target.metadata.settings : {}, null, 2)}\n`,
   );
-  const [stateFile, setStateFile] = useState<"SOUL.md" | "MEMORY.md" | "settings.json">("SOUL.md");
+  const [stateFile, setStateFile] = useState<ContextDoc>("SOUL.md");
   const portalScope = usePortalScopeProps();
   const initialOwners = editing ? target.projectOwners : projectOwners;
   const [owners] = useState(initialOwners);
@@ -108,15 +114,7 @@ export function BotEditor({
   const saving = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<EditorTab>(editing ? (target.tab ?? "setup") : "setup");
-  const tabsId = useId();
-  const tabs = [
-    { id: "setup", label: "Bot" },
-    { id: "context", label: "Context" },
-    {
-      id: "projects",
-      label: `Projects${linkedProjectIds.length ? ` · ${linkedProjectIds.length}` : ""}`,
-    },
-  ] as const;
+  const fieldId = useId();
   function setProjectRole(projectId: string, next: ProjectRole) {
     const otherOwner = owners.find(
       (owner) => owner.projectId === projectId && owner.botId !== botId,
@@ -216,6 +214,10 @@ export function BotEditor({
       setPending(false);
     }
   }
+  const doc = CONTEXT_DOCS[stateFile];
+  const docText =
+    stateFile === "SOUL.md" ? soul : stateFile === "MEMORY.md" ? memory : settingsText;
+  const busy = pending || projectPending;
   return (
     <Dialog
       open
@@ -223,7 +225,7 @@ export function BotEditor({
         if (!open) closeEditor();
       }}
     >
-      <DialogContent className="bot-editor-dialog flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-xl">
+      <DialogContent className="bot-editor-dialog flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <form
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(event) => event.preventDefault()}
@@ -234,24 +236,26 @@ export function BotEditor({
             }
           }}
         >
-          <DialogHeader className="shrink-0 px-4 pt-4 pr-10 pb-3">
-            <DialogTitle>{editing ? "Edit bot" : "Create bot"}</DialogTitle>
-            <DialogDescription>
-              An identity, private state, and optional linked projects.
+          <DialogHeader className="shrink-0 px-5 pt-5 pr-12 pb-4">
+            <DialogTitle>{editing ? `Edit ${target.metadata.name}` : "Create bot"}</DialogTitle>
+            <DialogDescription className="text-xs">
+              A named assistant with its own instructions, memory, and projects.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex shrink-0 items-end gap-3 px-4 pb-3">
-            <div className="flex shrink-0 items-center gap-0.5">
+          <div className="flex shrink-0 items-start gap-4 px-5 pb-4">
+            <div className="flex shrink-0 flex-col items-center gap-1.5">
               <Popover.Root>
                 <Popover.Trigger asChild>
                   <button
                     type="button"
                     disabled={pending}
-                    className="flex size-14 shrink-0 items-center justify-center rounded-lg hover:bg-state-hover"
-                    aria-label="Customize avatar"
-                    title="Customize appearance"
+                    className="group relative flex size-16 items-center justify-center rounded-xl border border-border bg-muted/40 transition-colors duration-150 outline-none hover:bg-state-hover hover:duration-0 focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-state-active"
+                    aria-label="Customize appearance"
                   >
-                    <BotIcon avatar={avatar} size={48} label="Bot preview" />
+                    <BotIcon avatar={avatar} size={44} label="Bot preview" />
+                    <span className="absolute -right-1.5 -bottom-1.5 flex size-5 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-xs group-hover:text-foreground">
+                      <Icon name="Pencil" className="size-3" />
+                    </span>
                   </button>
                 </Popover.Trigger>
                 <Popover.Portal>
@@ -259,15 +263,11 @@ export function BotEditor({
                     {...portalScope}
                     aria-label="Bot appearance"
                     align="start"
-                    sideOffset={6}
-                    className="z-50 max-h-[60vh] w-72 max-w-[calc(100vw-24px)] overflow-y-auto rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-md"
+                    sideOffset={8}
+                    className="z-50 max-h-[60vh] w-80 max-w-[calc(100vw-24px)] overflow-y-auto rounded-lg border border-border bg-popover p-3 text-popover-foreground shadow-md"
                   >
                     <fieldset disabled={pending}>
-                      <AvatarAppearance
-                        avatar={avatar}
-                        onChange={setAvatar}
-                        showRandomize={false}
-                      />
+                      <AvatarAppearance avatar={avatar} onChange={setAvatar} />
                     </fieldset>
                   </Popover.Content>
                 </Popover.Portal>
@@ -276,172 +276,137 @@ export function BotEditor({
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
-                    size="icon"
+                    size="sm"
                     variant="ghost"
-                    className="h-6 w-6 shrink-0 text-muted-foreground"
+                    className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
                     disabled={pending}
-                    aria-label="Randomize appearance"
                     onClick={() => setAvatar(randomAvatar())}
                   >
-                    <svg
-                      aria-hidden="true"
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.7"
-                    >
-                      <rect x="3" y="3" width="18" height="18" rx="4" />
-                      <g fill="currentColor" stroke="none">
-                        <circle cx="8" cy="8" r="1.5" />
-                        <circle cx="16" cy="8" r="1.5" />
-                        <circle cx="12" cy="12" r="1.5" />
-                        <circle cx="8" cy="16" r="1.5" />
-                        <circle cx="16" cy="16" r="1.5" />
-                      </g>
-                    </svg>
+                    <Icon name="Dices" className="size-3.5" />
+                    Shuffle
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Randomize appearance</TooltipContent>
+                <TooltipContent>Random color, shape, and expression</TooltipContent>
               </Tooltip>
             </div>
-            <div className="grid min-w-0 flex-1 grid-cols-2 gap-3">
-              <label className="min-w-0 space-y-1 text-xs font-medium text-muted-foreground">
-                Bot name
+            <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
+              <Field label="Name" htmlFor={`${fieldId}-name`}>
                 <Input
+                  id={`${fieldId}-name`}
                   autoFocus
                   className="h-8"
                   value={name}
                   maxLength={120}
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="Research bot"
+                  placeholder="Atlas"
                 />
-              </label>
-              <label className="min-w-0 space-y-1 text-xs font-medium text-muted-foreground">
-                Role
+              </Field>
+              <Field label="Role" htmlFor={`${fieldId}-role`}>
                 <Input
+                  id={`${fieldId}-role`}
                   className="h-8"
                   value={role}
                   maxLength={80}
                   onChange={(event) => setRole(event.target.value)}
-                  placeholder="Assistant"
+                  placeholder="Research assistant"
                 />
-              </label>
+              </Field>
             </div>
           </div>
-          <div
-            role="tablist"
-            aria-label="Bot settings"
-            className="flex shrink-0 gap-1 border-b border-border px-4"
-            onKeyDown={(event) => {
-              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-              event.preventDefault();
-              event.stopPropagation();
-              const buttons = Array.from(
-                event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]'),
-              );
-              const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
-              const next =
-                event.key === "Home"
-                  ? 0
-                  : event.key === "End"
-                    ? tabs.length - 1
-                    : (index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length;
-              setTab(tabs[next]!.id);
-              buttons[next]?.focus();
-            }}
+          <Tabs
+            value={tab}
+            onValueChange={(next) => setTab(next as EditorTab)}
+            className="flex min-h-0 shrink flex-col"
           >
-            {tabs.map((entry) => (
-              <button
-                key={entry.id}
-                id={`${tabsId}-${entry.id}`}
-                type="button"
-                role="tab"
-                aria-selected={tab === entry.id}
-                aria-controls={`${tabsId}-panel`}
-                tabIndex={tab === entry.id ? 0 : -1}
-                className="min-w-0 flex-1 truncate rounded-t px-1.5 py-2 text-[11px] font-medium text-muted-foreground hover:bg-state-hover aria-selected:bg-state-active aria-selected:text-foreground"
-                onClick={() => setTab(entry.id)}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
-          <div
-            id={`${tabsId}-panel`}
-            role="tabpanel"
-            aria-labelledby={`${tabsId}-${tab}`}
-            className="bot-editor-panel h-60 min-h-0 overflow-y-auto px-4 py-3"
-          >
-            {tab === "setup" ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  <MachineSelect
-                    hosts={hosts}
-                    value={hostId}
-                    onValueChange={setHostId}
+            <div className="shrink-0 px-5">
+              <TabsList aria-label="Bot settings" className="flex w-full">
+                <TabsTrigger value="setup">
+                  <Icon name="Settings" className="size-3.5" />
+                  General
+                </TabsTrigger>
+                <TabsTrigger value="context">
+                  <Icon name="FileText" className="size-3.5" />
+                  Instructions
+                </TabsTrigger>
+                <TabsTrigger value="projects">
+                  <Icon name="Folder" className="size-3.5" />
+                  Projects
+                  {linkedProjectIds.length ? (
+                    <span className="rounded-full bg-muted px-1.5 text-[10px] leading-4 tabular-nums text-muted-foreground">
+                      {linkedProjectIds.length}
+                    </span>
+                  ) : null}
+                </TabsTrigger>
+              </TabsList>
+            </div>
+            <div className="bot-editor-panel h-[26rem] min-h-0 shrink overflow-y-auto px-5 py-4">
+              <TabsContent value="setup" className="space-y-5">
+                <Field
+                  label="Machine"
+                  detail="Where new conversations run. The bot's state is stored in BB, not on the machine."
+                >
+                  <div className="max-w-xs">
+                    <MachineSelect
+                      hosts={hosts}
+                      value={hostId}
+                      onValueChange={setHostId}
+                      disabled={pending}
+                      label="Machine"
+                      hideLabel
+                    />
+                  </div>
+                </Field>
+                <div className="space-y-3">
+                  <SectionHeading
+                    title="New conversations"
+                    detail="Defaults applied when you start a conversation with this bot."
+                  />
+                  <LaunchPresetEditor
+                    value={launchPreset}
+                    onChange={setLaunchPreset}
+                    hostId={hostId}
                     disabled={pending}
                   />
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  State is stored privately in BB. Machine is the default for new conversations.
-                </p>
-                <LaunchPresetEditor
-                  value={launchPreset}
-                  onChange={setLaunchPreset}
-                  hostId={hostId}
-                  disabled={pending}
-                />
-              </div>
-            ) : null}
-            {tab === "context" ? (
-              <div className="flex h-full min-h-0 flex-col gap-2">
-                <div className="flex shrink-0 items-center justify-between gap-2">
-                  <select
+              </TabsContent>
+              <TabsContent value="context" className="flex h-full min-h-0 flex-col gap-3">
+                <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+                  <ToggleGroup
+                    type="single"
                     aria-label="Context document"
-                    className="h-7 min-w-0 rounded border border-input bg-background px-2 text-xs text-foreground"
                     value={stateFile}
-                    onChange={(event) => setStateFile(event.target.value as typeof stateFile)}
+                    onValueChange={(next) => {
+                      if (next) setStateFile(next as ContextDoc);
+                    }}
                   >
-                    <option value="SOUL.md">Instructions · SOUL.md</option>
-                    <option value="MEMORY.md">Memory · MEMORY.md</option>
-                    <option value="settings.json">Settings · settings.json</option>
-                  </select>
-                  <span className="text-[10px] text-muted-foreground">
-                    {
-                      (stateFile === "SOUL.md"
-                        ? soul
-                        : stateFile === "MEMORY.md"
-                          ? memory
-                          : settingsText
-                      ).length
-                    }
-                    /
-                    {stateFile === "SOUL.md"
-                      ? 4096
-                      : stateFile === "MEMORY.md"
-                        ? MEMORY_MAX_CHARS
-                        : 16384}
+                    {CONTEXT_DOC_IDS.map((id) => (
+                      <ToggleGroupItem key={id} value={id} title={id}>
+                        <Icon name={CONTEXT_DOCS[id].icon} className="size-3.5" />
+                        {CONTEXT_DOCS[id].label}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                  <span
+                    className={cn(
+                      "font-mono text-[10px] tabular-nums text-muted-foreground",
+                      docText.length > doc.max && "text-destructive",
+                    )}
+                  >
+                    {stateFile} · {docText.length.toLocaleString()}/{doc.max.toLocaleString()}
                   </span>
                 </div>
-                <textarea
+                <p className="shrink-0 text-[11px] leading-4 text-muted-foreground">{doc.detail}</p>
+                <Textarea
                   aria-label={stateFile}
-                  className="min-h-24 w-full flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 font-mono text-xs text-foreground"
-                  value={
-                    stateFile === "SOUL.md"
-                      ? soul
-                      : stateFile === "MEMORY.md"
-                        ? memory
-                        : settingsText
-                  }
+                  className="min-h-32 flex-1 resize-none font-mono text-xs leading-5"
+                  value={docText}
                   maxLength={
                     stateFile === "SOUL.md" ? 4096 : stateFile === "MEMORY.md" ? undefined : 16384
                   }
                   disabled={pending}
                   spellCheck={stateFile === "SOUL.md"}
-                  onKeyDown={(event) => event.stopPropagation()}
-                  onKeyUp={(event) => event.stopPropagation()}
+                  onKeyDown={keepTypingKeys}
+                  onKeyUp={keepTypingKeys}
                   onChange={(event) =>
                     stateFile === "SOUL.md"
                       ? setSoul(event.target.value)
@@ -449,67 +414,58 @@ export function BotEditor({
                         ? setMemory(event.target.value)
                         : setSettingsText(event.target.value)
                   }
-                  placeholder={
-                    stateFile === "SOUL.md"
-                      ? "Personality, perspective, and communication style."
-                      : undefined
-                  }
+                  placeholder={doc.placeholder}
                 />
                 {stateFile === "MEMORY.md" && memory.length > MEMORY_MAX_CHARS ? (
-                  <p role="status" className="text-xs text-destructive">
-                    Memory exceeds 3000 characters. Shorten it before saving a memory change.
-                    Existing text is kept.
+                  <p role="status" className="shrink-0 text-xs text-destructive">
+                    Memory is over 3,000 characters. Shorten it before saving a memory change.
                   </p>
                 ) : null}
-                <p className="shrink-0 text-[10px] text-muted-foreground">
-                  Private to this bot. Saved together with the bot; don’t store credentials here.
+                <p className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <Icon name="Shield" className="size-3.5" />
+                  Private to this bot. Don't store credentials here.
                 </p>
-              </div>
-            ) : null}
-            <div hidden={tab !== "projects"}>
-              <BotProjectsPanel
-                projects={projects}
-                owners={owners}
-                botNames={botNames}
-                botId={botId}
-                botName={name}
-                hostId={hostId}
-                hosts={hosts}
-                linkedProjectIds={linkedProjectIds}
-                ownedProjectIds={ownedProjectIds}
-                onRoleChange={setProjectRole}
-                onBusyChange={setProjectPending}
-                onDraftChange={setProjectDraft}
-                onCreateProject={onCreateProject}
-                onBrowseProjects={onBrowseProjects}
-              />
+              </TabsContent>
+              <TabsContent value="projects" forceMount hidden={tab !== "projects"}>
+                <BotProjectsPanel
+                  projects={projects}
+                  owners={owners}
+                  botNames={botNames}
+                  botId={botId}
+                  botName={name}
+                  hostId={hostId}
+                  hosts={hosts}
+                  linkedProjectIds={linkedProjectIds}
+                  ownedProjectIds={ownedProjectIds}
+                  onRoleChange={setProjectRole}
+                  onBusyChange={setProjectPending}
+                  onDraftChange={setProjectDraft}
+                  onCreateProject={onCreateProject}
+                  onBrowseProjects={onBrowseProjects}
+                />
+              </TabsContent>
             </div>
-          </div>
+          </Tabs>
           {error ? (
-            <p
+            <div
               role="alert"
-              className="max-h-20 shrink-0 overflow-y-auto px-4 pb-2 text-xs text-destructive"
+              className="mx-5 mb-3 flex max-h-20 shrink-0 items-start gap-2 overflow-y-auto rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
             >
+              <Icon name="CircleX" className="mt-px size-3.5 shrink-0" />
               {error}
-            </p>
+            </div>
           ) : null}
-          <DialogFooter className="shrink-0 border-t border-border px-4 py-3">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={pending || projectPending}
-              onClick={closeEditor}
-            >
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-5 py-3">
+            <Button type="button" variant="outline" disabled={busy} onClick={closeEditor}>
               Cancel
             </Button>
             <Button
               type="button"
               onClick={() => void submit()}
-              disabled={
-                pending || projectPending || projectDraft || !name.trim() || (!editing && !hostId)
-              }
+              disabled={busy || projectDraft || !name.trim() || (!editing && !hostId)}
             >
-              {pending ? "Saving..." : editing ? "Save bot" : "Create bot"}
+              {pending ? <Icon name="Loading" className="size-3.5 animate-spin" /> : null}
+              {pending ? "Saving…" : editing ? "Save changes" : "Create bot"}
             </Button>
           </DialogFooter>
         </form>
@@ -517,3 +473,31 @@ export function BotEditor({
     </Dialog>
   );
 }
+
+type ContextDoc = "SOUL.md" | "MEMORY.md" | "settings.json";
+const CONTEXT_DOC_IDS = ["SOUL.md", "MEMORY.md", "settings.json"] as const satisfies ContextDoc[];
+const CONTEXT_DOCS: Record<
+  ContextDoc,
+  { label: string; icon: IconName; max: number; detail: string; placeholder?: string }
+> = {
+  "SOUL.md": {
+    label: "Instructions",
+    icon: "Sparkles",
+    max: 4096,
+    detail: "Personality, perspective, and communication style. Sent with every conversation.",
+    placeholder:
+      "You are Atlas, a careful research assistant. Cite sources and keep answers short.",
+  },
+  "MEMORY.md": {
+    label: "Memory",
+    icon: "Brain",
+    max: MEMORY_MAX_CHARS,
+    detail: "Facts the bot remembers across conversations. The bot adds to it as it works.",
+  },
+  "settings.json": {
+    label: "Settings",
+    icon: "Code",
+    max: 16384,
+    detail: "A JSON object of preferences the bot can read and change.",
+  },
+};

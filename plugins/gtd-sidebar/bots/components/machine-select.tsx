@@ -1,4 +1,5 @@
 import { useId } from "react";
+import { Label } from "../../components/ui/label";
 import {
   Select,
   SelectContent,
@@ -14,6 +15,7 @@ export function MachineSelect({
   disabled = false,
   connectedOnly = false,
   label = "Machine",
+  hideLabel = false,
 }: {
   hosts: { id: string; name: string; connected: boolean }[];
   value: string;
@@ -21,13 +23,15 @@ export function MachineSelect({
   disabled?: boolean;
   connectedOnly?: boolean;
   label?: string;
+  /** The caller shows its own visible label; keep this one for screen readers. */
+  hideLabel?: boolean;
 }) {
   const id = useId();
   return (
     <div className="min-w-0 space-y-1">
-      <label htmlFor={id} className="block text-xs font-medium text-muted-foreground">
+      <Label htmlFor={id} className={hideLabel ? "sr-only" : "text-muted-foreground"}>
         {label}
-      </label>
+      </Label>
       <Select value={value} onValueChange={onValueChange} disabled={disabled}>
         <SelectTrigger id={id} className="h-8 text-xs">
           <SelectValue placeholder="Select machine" />

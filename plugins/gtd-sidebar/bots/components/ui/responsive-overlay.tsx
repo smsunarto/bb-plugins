@@ -285,7 +285,13 @@ const persistentDrawerStacks = new WeakMap<Document, PersistentDrawerStack>();
 function getDrawerFocusableElements(panel: HTMLElement): HTMLElement[] {
   return Array.from(
     panel.querySelectorAll<HTMLElement>(PERSISTENT_DRAWER_FOCUSABLE_SELECTOR),
-  ).filter((element) => element.closest('[aria-hidden="true"], [inert]') === null);
+  ).filter(
+    // Match the browser's Tab order: skip roving-tabindex items (inactive tabs,
+    // radios) and anything in a hidden panel, where focus() is a no-op.
+    (element) =>
+      element.getAttribute("tabindex") !== "-1" &&
+      element.closest('[aria-hidden="true"], [inert], [hidden]') === null,
+  );
 }
 
 function activeElementIsInAnotherOverlay(

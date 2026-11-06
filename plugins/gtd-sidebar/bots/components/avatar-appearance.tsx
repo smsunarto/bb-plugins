@@ -1,5 +1,3 @@
-import { useState } from "react";
-import { Button } from "@bb-plugins/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import {
   AVATAR_COLORS,
@@ -7,153 +5,132 @@ import {
   AVATAR_EXPRESSIONS,
   AVATAR_MOTIONS,
   AVATAR_SHAPES,
-  randomAvatar,
   type BotAvatar,
 } from "../lib/appearance";
 import { BotIcon } from "./bot-icon";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
 
-const CATEGORIES = [
-  { id: "color", label: "Color" },
-  { id: "shape", label: "Shape" },
-  { id: "expression", label: "Expression" },
-  { id: "motion", label: "Motion" },
-] as const;
-
-type Category = (typeof CATEGORIES)[number]["id"];
+const TILE_CLASS =
+  "h-11 w-full rounded-md border border-transparent first:rounded-md first:border-l last:rounded-md data-[state=on]:border-primary [&_svg]:size-8";
 
 export function AvatarAppearance({
   avatar,
   onChange,
-  showRandomize = true,
 }: {
   avatar: BotAvatar;
   onChange: (avatar: BotAvatar) => void;
-  showRandomize?: boolean;
 }) {
-  const [category, setCategory] = useState<Category>("expression");
   return (
-    <div className="space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <div role="group" aria-label="Appearance category" className="flex min-w-0 flex-wrap gap-1">
-          {CATEGORIES.map((entry) => (
-            <Button
-              key={entry.id}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2"
-              aria-pressed={category === entry.id}
-              onClick={() => setCategory(entry.id)}
-            >
-              {entry.label}
-            </Button>
-          ))}
-        </div>
-        {showRandomize ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 shrink-0"
-            onClick={() => onChange(randomAvatar())}
-          >
-            Randomize appearance
-          </Button>
-        ) : null}
-      </div>
-      {category === "color" ? (
-        <fieldset>
-          <legend className="mb-1.5 text-xs font-medium text-muted-foreground">Color</legend>
-          <div className="flex flex-wrap items-center gap-1.5">
-            {AVATAR_COLORS.map((color) => (
-              <Tooltip key={color}>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="size-6 rounded-full border-2 border-background ring-offset-2 aria-pressed:ring-2 aria-pressed:ring-foreground"
-                    style={{ background: color }}
-                    aria-label={color}
-                    aria-pressed={avatar.color === color}
-                    onClick={() => onChange({ ...avatar, color })}
-                  />
-                </TooltipTrigger>
-                <TooltipContent>{AVATAR_COLOR_LABELS[color]}</TooltipContent>
-              </Tooltip>
-            ))}
-            <input
-              type="color"
-              className="size-6 cursor-pointer rounded border-0 bg-transparent p-0"
-              aria-label="Custom color"
-              value={avatar.color}
-              onChange={(event) => onChange({ ...avatar, color: event.target.value })}
-            />
-          </div>
-        </fieldset>
-      ) : null}
-      {category === "shape" ? (
-        <div role="group" aria-label="Shape" className="grid grid-cols-4 gap-1">
-          {AVATAR_SHAPES.map((option) => (
-            <Tooltip key={option.id}>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-full [&_svg]:size-8"
-                  aria-label={option.label}
-                  aria-pressed={avatar.shape === option.id}
-                  onClick={() => onChange({ ...avatar, shape: option.id })}
-                >
-                  <BotIcon avatar={{ ...avatar, shape: option.id, motion: "still" }} size={32} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{option.label}</TooltipContent>
-            </Tooltip>
-          ))}
-        </div>
-      ) : null}
-      {category === "expression" ? (
-        <div role="group" aria-label="Expression" className="grid grid-cols-4 gap-1">
+    <Tabs defaultValue="expression" className="space-y-3">
+      <TabsList aria-label="Appearance category" className="flex w-full">
+        <TabsTrigger value="expression">Face</TabsTrigger>
+        <TabsTrigger value="shape">Shape</TabsTrigger>
+        <TabsTrigger value="color">Color</TabsTrigger>
+        <TabsTrigger value="motion">Motion</TabsTrigger>
+      </TabsList>
+      <TabsContent value="expression">
+        <ToggleGroup
+          type="single"
+          aria-label="Expression"
+          className="grid w-full grid-cols-4 gap-1 border-0 shadow-none"
+          value={avatar.expression}
+          onValueChange={(expression) => {
+            if (expression)
+              onChange({ ...avatar, expression: expression as BotAvatar["expression"] });
+          }}
+        >
           {AVATAR_EXPRESSIONS.map((option) => (
-            <Tooltip key={option.id}>
+            <ToggleGroupItem
+              key={option.id}
+              value={option.id}
+              aria-label={option.label}
+              title={option.label}
+              className={TILE_CLASS}
+            >
+              <BotIcon avatar={{ ...avatar, expression: option.id, motion: "still" }} size={32} />
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </TabsContent>
+      <TabsContent value="shape">
+        <ToggleGroup
+          type="single"
+          aria-label="Shape"
+          className="grid w-full grid-cols-4 gap-1 border-0 shadow-none"
+          value={avatar.shape}
+          onValueChange={(shape) => {
+            if (shape) onChange({ ...avatar, shape: shape as BotAvatar["shape"] });
+          }}
+        >
+          {AVATAR_SHAPES.map((option) => (
+            <ToggleGroupItem
+              key={option.id}
+              value={option.id}
+              aria-label={option.label}
+              title={option.label}
+              className={TILE_CLASS}
+            >
+              <BotIcon avatar={{ ...avatar, shape: option.id, motion: "still" }} size={32} />
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </TabsContent>
+      <TabsContent value="color">
+        <fieldset aria-label="Color" className="flex flex-wrap items-center gap-2">
+          {AVATAR_COLORS.map((color) => (
+            <Tooltip key={color}>
               <TooltipTrigger asChild>
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-full [&_svg]:size-8"
-                  aria-label={option.label}
-                  aria-pressed={avatar.expression === option.id}
-                  onClick={() => onChange({ ...avatar, expression: option.id })}
-                >
-                  <BotIcon
-                    avatar={{ ...avatar, expression: option.id, motion: "still" }}
-                    size={32}
-                  />
-                </Button>
+                  className="size-7 rounded-full border-2 border-popover ring-offset-0 transition-shadow outline-none hover:ring-2 hover:ring-border focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-foreground"
+                  style={{ background: color }}
+                  aria-label={AVATAR_COLOR_LABELS[color]}
+                  aria-pressed={avatar.color === color}
+                  onClick={() => onChange({ ...avatar, color })}
+                />
               </TooltipTrigger>
-              <TooltipContent>{option.label}</TooltipContent>
+              <TooltipContent>{AVATAR_COLOR_LABELS[color]}</TooltipContent>
             </Tooltip>
           ))}
-        </div>
-      ) : null}
-      {category === "motion" ? (
-        <div role="group" aria-label="Motion" className="flex flex-wrap gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <label className="relative size-7 cursor-pointer overflow-hidden rounded-full border border-dashed border-input hover:border-foreground focus-within:ring-2 focus-within:ring-ring">
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-1 rounded-full"
+                  style={{ background: avatar.color }}
+                />
+                <input
+                  type="color"
+                  className="absolute inset-0 cursor-pointer opacity-0"
+                  aria-label="Custom color"
+                  value={avatar.color}
+                  onChange={(event) => onChange({ ...avatar, color: event.target.value })}
+                />
+              </label>
+            </TooltipTrigger>
+            <TooltipContent>Custom color</TooltipContent>
+          </Tooltip>
+        </fieldset>
+      </TabsContent>
+      <TabsContent value="motion">
+        <ToggleGroup
+          type="single"
+          aria-label="Motion"
+          className="flex w-full flex-wrap"
+          value={avatar.motion}
+          onValueChange={(motion) => {
+            if (motion) onChange({ ...avatar, motion: motion as BotAvatar["motion"] });
+          }}
+        >
           {AVATAR_MOTIONS.map((option) => (
-            <Button
-              key={option.id}
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7"
-              aria-pressed={avatar.motion === option.id}
-              onClick={() => onChange({ ...avatar, motion: option.id })}
-            >
+            <ToggleGroupItem key={option.id} value={option.id} className="flex-1">
               {option.label}
-            </Button>
+            </ToggleGroupItem>
           ))}
-        </div>
-      ) : null}
-    </div>
+        </ToggleGroup>
+      </TabsContent>
+    </Tabs>
   );
 }
