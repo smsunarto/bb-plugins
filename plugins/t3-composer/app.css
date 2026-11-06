@@ -352,7 +352,11 @@
   /* One row of 28px pills, held while a new thread's machine and branch load, so the
      tray does not collapse and regrow after the new-thread page sends. */
   min-height: calc(36px + var(--t3-tray-overlap));
+  /* BB collapses this row in a narrow pane until the editor expands; the tray
+     stays visible so the machine and context window remain readable on mobile. */
   max-height: none;
+  opacity: 1;
+  pointer-events: auto;
   overflow: visible;
   z-index: 0;
   order: -1;
@@ -410,22 +414,6 @@
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   svg[data-icon="ChevronDown"] {
   display: none;
-}
-
-/* Mirrors BB's rule that hides the row in a narrow pane. */
-@container follow-up-composer style(--follow-up-composer-container-compact: true) {
-  [data-follow-up-composer]:not([data-follow-up-composer-footer-visible]):has(
-      > [data-composer-box] [data-t3-composer]
-    )
-    > [data-follow-up-composer-footer] {
-    --t3-tray-overlap: 0px;
-    min-height: 0;
-    max-height: 0;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    box-shadow: none;
-  }
 }
 
 /* Hide BB's copy only once the card's picker has rendered. While BB disables its
