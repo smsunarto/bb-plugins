@@ -61,6 +61,8 @@ function createFakeBoat(identity = "account-a") {
     failingGets: new Map<string, Error>(),
     /** Reads of these sandboxes never answer; the value counts how many were sent. */
     hungGets: new Map<string, number>(),
+    /** Commands containing this text exit 1. */
+    failingCommand: null as string | null,
   };
   const calls = { account: 0 };
   const view = (state: FakeSandboxState): BoatSandbox => ({
@@ -75,6 +77,7 @@ function createFakeBoat(identity = "account-a") {
     stop: state.stopError === null ? null : { status: "failing", error: state.stopError },
   });
   const live = () => sandboxes.filter((s) => !s.deleted);
+  const commands: string[] = [];
   const client: BoatClient = {
     async account() {
       calls.account += 1;
@@ -173,14 +176,18 @@ function createFakeBoat(identity = "account-a") {
       deletes.push(id);
       state.deletingPolls = 2;
     },
-    async startCommand() {
-      return 1;
+    async startCommand(_id, command) {
+      commands.push(command);
+      return commands.length;
     },
     async commandStatus() {
       return { status: "exited", running: false, exitCode: 0 };
     },
-    attach() {
-      return Stream.make({ type: "exit", status: "exited", exitCode: 0, signal: null });
+    attach(_id, processId) {
+      const command = commands[processId - 1] ?? "";
+      const failing = faults.failingCommand;
+      const exitCode = failing !== null && command.includes(failing) ? 1 : 0;
+      return Stream.make({ type: "exit", status: "exited", exitCode, signal: null });
     },
     async stopCommand() {},
     async writeFile() {},
@@ -194,6 +201,7 @@ function createFakeBoat(identity = "account-a") {
     resumes,
     extends: extends_,
     deletes,
+    commands,
     failNextCreate(error: BoatApiError) {
       failNextCreate = error;
     },
@@ -422,6 +430,37 @@ describe("boat sandbox plugin", () => {
     expect(checkpoints).toHaveLength(1);
     expect(bootstrap).toHaveBeenCalledTimes(1);
     expect(boat.sandboxes[0]?.state).toBe("ready");
+  });
+
+  describe("daemon units a snapshot carries in", () => {
+    test("create retires daemon units a snapshot carried in before bootstrap installs its own", async () => {
+      const { provider, boat, createContext } = await setup();
+      await provider.create(createContext({ type: "large", from: "web-stack" }));
+      expect(boat.commands).toHaveLength(2);
+      expect(boat.commands[0]).toContain("bb-host-daemon-*.service");
+      expect(boat.commands[0]).toContain("disable --now");
+      expect(boat.commands[1]).toContain("install");
+    });
+
+    test("create fails without bootstrapping when the snapshot's daemon unit cannot be stopped", async () => {
+      const { provider, boat, bootstrap, createContext } = await setup();
+      boat.faults.failingCommand = "bb-host-daemon-*.service";
+      const result = await provider.create(createContext({ from: "web-stack" }));
+      expect(result).toMatchObject({
+        status: "failed",
+        message: expect.stringContaining("exit 1"),
+      });
+      expect(bootstrap).not.toHaveBeenCalled();
+    });
+
+    test("resume keeps the machine's own daemon unit: core only starts it", async () => {
+      const { provider, boat, createContext, lifecycleContext } = await setup();
+      await provider.create(createContext());
+      await provider.suspend!(lifecycleContext());
+      const before = boat.commands.length;
+      await provider.resume!(lifecycleContext());
+      expect(boat.commands.slice(before)).toEqual([expect.not.stringContaining("bb-host-daemon-")]);
+    });
   });
 
   test("a retried create reuses the sandbox already labelled with the key", async () => {
