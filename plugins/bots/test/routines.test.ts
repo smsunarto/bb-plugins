@@ -80,39 +80,67 @@ describe("routines", () => {
     expect(listed.routines[0]!.automationError).toMatch(/unavailable/);
   });
 
-  it("starts the routine's conversation on the first run, then reuses it", async () => {
+  it("runs in a subthread of the bot's main chat that reports back, reused across runs", async () => {
     const { host, bot, routine } = await withRoutine();
     const first = asJSON(
       (await host.harness.behavior.runCli(["routines", "fire", routine.id, "--json"])).stdout,
     );
     expect(first.delivery).toBe("started");
+    // The first run starts the main chat it reports to.
+    const main = host.store.require(bot.id).mainThreadId!;
+    expect(main).not.toBe(first.threadId);
     const thread = host.threads.get(first.threadId)!;
     expect(thread.projectId).toBe("project");
+    expect(thread.parentThreadId).toBe(main);
+    const spawned = host.harness.inspection.sdk
+      .callsTo("threads.spawn")
+      .map(([args]) => args as { parentThreadId?: string; parentNotifications?: string })
+      .find((args) => args.parentThreadId === main);
+    expect(spawned?.parentNotifications).toBe("auto");
     const bound = (await host.harness.behavior.callRpc("thread_bot", {
       threadId: first.threadId,
-    })) as {
-      botId: string;
-    };
+    })) as { botId: string };
     expect(bound.botId).toBe(bot.id);
-    // A routine conversation never takes over as the bot's main conversation.
-    const main = (await host.harness.behavior.callRpc("conversation_create", {
-      botId: bot.id,
-      request: request(),
-    })) as { threadId: string };
     const listed = (await host.harness.behavior.callRpc("routines_list", { botId: bot.id })) as {
       routines: RoutineView[];
     };
     expect(listed.routines[0]!.threadId).toBe(first.threadId);
-    expect(host.store.require(bot.id).mainThreadId).toBe(main.threadId);
 
     const second = asJSON(
       (await host.harness.behavior.runCli(["routines", "fire", routine.id, "--json"])).stdout,
     );
     expect(second).toMatchObject({ threadId: first.threadId, delivery: "sent" });
+    expect(host.store.require(bot.id).mainThreadId).toBe(main);
     expect(host.sent).toHaveLength(1);
     expect(host.sent[0]).toMatchObject({ threadId: first.threadId, mode: "queue-if-active" });
     expect(host.sent[0]!.text).toContain("Summarize new support tickets.");
     expect(host.sent[0]!.text).toContain(routine.id);
+  });
+
+  it("moves a routine's subthread under the bot's new main chat", async () => {
+    const { host, bot, routine } = await withRoutine();
+    const fire = async () =>
+      asJSON(
+        (await host.harness.behavior.runCli(["routines", "fire", routine.id, "--json"])).stdout,
+      );
+    const first = await fire();
+    const oldMain = host.store.require(bot.id).mainThreadId!;
+    host.threads.set(oldMain, { ...host.threads.get(oldMain)!, archivedAt: Date.now() });
+    const updates: { threadId: string; parentThreadId?: string }[] = [];
+    host.harness.inspection.sdk.stub(
+      "threads.update",
+      async (args: { threadId: string; parentThreadId?: string }) => {
+        updates.push(args);
+        const row = { ...host.threads.get(args.threadId)!, parentThreadId: args.parentThreadId! };
+        host.threads.set(args.threadId, row);
+        return row;
+      },
+    );
+    const next = await fire();
+    const newMain = host.store.require(bot.id).mainThreadId!;
+    expect(newMain).not.toBe(oldMain);
+    expect(next).toMatchObject({ threadId: first.threadId, delivery: "sent" });
+    expect(updates).toEqual([{ threadId: first.threadId, parentThreadId: newMain }]);
   });
 
   it("starts a fresh conversation when the old one was archived", async () => {

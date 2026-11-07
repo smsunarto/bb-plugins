@@ -76,7 +76,7 @@ const input = z.discriminatedUnion("type", [
     })
     .strict(),
 ]);
-export const newThreadEnvironmentSchema = z.discriminatedUnion("type", [
+const newThreadEnvironmentSchema = z.discriminatedUnion("type", [
   // Native composers also use environment providers for existing remote
   // machines and newly provisioned machines. Preserve their opaque JSON inputs.
   z

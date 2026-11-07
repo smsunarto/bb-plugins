@@ -138,11 +138,12 @@ export function validTimezone(timezone: string) {
   }
 }
 
-/** Starts a routine's conversation, bound to its bot. Returns the new thread id. */
+/** Starts a routine's subthread under the bot's main chat, bound to its bot. Returns the new thread id. */
 export type StartRoutineConversation = (args: {
   bot: BotMetadata;
   routine: Routine;
   text: string;
+  parentThreadId: string;
 }) => Promise<string>;
 
 export function createRoutines(
@@ -159,6 +160,8 @@ export function createRoutines(
       threadProjectId: string,
     ) => Promise<boolean>;
     resolveOwner: (threadId: string, persist?: boolean) => Promise<string | null>;
+    /** The bot's main chat, started when it has none: every routine's parent. */
+    mainChatId: (bot: BotMetadata) => Promise<string>;
     startConversation: StartRoutineConversation;
     publish: () => void;
   },
@@ -372,11 +375,13 @@ export function createRoutines(
   }
 
   /**
-   * Delivers one run: the routine's instruction goes to its own conversation,
-   * queued while that conversation is busy. The first run, or a run after the
-   * conversation was archived, deleted, moved to another bot or left in another
-   * project, starts a new one. `automationId` is the calling automation's; a
-   * stale schedule left behind by an earlier replacement is refused.
+   * Delivers one run: the routine's instruction goes to its own subthread of
+   * the bot's main chat, queued while that subthread is busy, and bb reports
+   * each finished run to the main chat. The first run, or a run after the
+   * subthread was archived, deleted, moved to another bot or left in another
+   * project, starts a new one; a subthread left under an older main chat moves
+   * under the current one. `automationId` is the calling automation's; a stale
+   * schedule left behind by an earlier replacement is refused.
    */
   async function fire(routineId: string, automationId?: string) {
     return serial(`routine:${routineId}`, async () => {
@@ -395,15 +400,20 @@ export function createRoutines(
         routineId: routine.id,
         instruction: routine.instruction,
       });
+      const parentThreadId = await deps.mainChatId(bot);
       if (routine.threadId) {
         const thread = await bb.sdk.threads.get({ threadId: routine.threadId }).catch(() => null);
         if (
           thread &&
+          // A routine conversation made the main chat starts a subthread under itself.
+          thread.id !== parentThreadId &&
           !thread.archivedAt &&
           !thread.deletedAt &&
           (await deps.runsIn(bot, routine.projectId, thread.projectId)) &&
           (await deps.resolveOwner(thread.id, false)) === bot.id
         ) {
+          if (thread.parentThreadId !== parentThreadId)
+            await bb.sdk.threads.update({ threadId: thread.id, parentThreadId });
           const result = await bb.sdk.threads.send({
             threadId: thread.id,
             mode: "queue-if-active",
@@ -413,7 +423,7 @@ export function createRoutines(
           return { routineId, threadId: thread.id, delivery: result.delivery };
         }
       }
-      const threadId = await deps.startConversation({ bot, routine, text });
+      const threadId = await deps.startConversation({ bot, routine, text, parentThreadId });
       save({ ...require(routineId), threadId, updatedAt: Date.now() });
       deps.publish();
       return { routineId, threadId, delivery: "started" as const };

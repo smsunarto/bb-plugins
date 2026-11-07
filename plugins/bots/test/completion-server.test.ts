@@ -22,7 +22,7 @@ async function setup() {
         })) as { threadId: string }
       ).threadId,
     );
-  // Make every conversation four days idle; the newest-created is first (main).
+  // Make every conversation four days idle; the first one started is the main chat.
   const old = Date.now() - 4 * DAY;
   ids.forEach((id, index) =>
     host.threads.set(id, {
@@ -60,7 +60,7 @@ async function setup() {
     ).completions
       .map((row) => row.threadId)
       .sort();
-  return { host, bot, ids, main: ids[2]!, archived, completions };
+  return { host, bot, ids, main: ids[0]!, archived, completions };
 }
 
 describe("automatic completion", () => {
@@ -127,8 +127,8 @@ describe("automatic completion", () => {
     expect(await completions()).toEqual(["child", ids[0]].sort());
   });
 
-  it("skips a completed first conversation when choosing the bot's default recipient", async () => {
-    const { host, bot, ids, main } = await setup();
+  it("keeps the main chat as the bot's default recipient even once completed", async () => {
+    const { host, bot, main } = await setup();
     await host.harness.behavior.callRpc("conversation_complete", {
       threadId: main,
       completed: true,
@@ -137,6 +137,6 @@ describe("automatic completion", () => {
     const entry = (
       JSON.parse(listed.stdout) as { bots: { id: string; mainThreadId: string | null }[] }
     ).bots.find((row) => row.id === bot.id);
-    expect(entry?.mainThreadId).toBe(ids[1]);
+    expect(entry?.mainThreadId).toBe(main);
   });
 });

@@ -14,10 +14,8 @@ import {
 export interface BotSummary {
   attention: number;
   working: boolean;
-  /** The newest conversation, live first: a row's second line. */
-  latest: { id: string; title: string } | null;
-  /** The newest live conversation, where opening the bot goes; null starts one. */
-  liveId: string | null;
+  /** The bot's latest main-chat reply as one plain line: a row's second line. */
+  excerpt: string | null;
   /** The newest conversation was marked complete. */
   finished: boolean;
 }
@@ -158,7 +156,7 @@ const BotTile = memo(function BotTile({
   );
 });
 
-/** An unpinned bot: avatar, name, and the title of its newest conversation. */
+/** An unpinned bot: avatar, name, and its latest main-chat reply. */
 export const BotRow = memo(function BotRow({
   bot,
   summary,
@@ -181,7 +179,6 @@ export const BotRow = memo(function BotRow({
   canMoveUp: boolean;
   canMoveDown: boolean;
 }) {
-  const latest = summary?.latest ?? null;
   const status = botStatus(summary);
   return (
     <BotMenu
@@ -211,7 +208,7 @@ export const BotRow = memo(function BotRow({
         </span>
         <span className="gtd-bot-row-text">
           <span className="gtd-bot-row-name">{bot.name}</span>
-          <span className="gtd-bot-row-detail">{latest?.title ?? "No conversations yet"}</span>
+          <span className="gtd-bot-row-detail">{summary?.excerpt ?? "No messages yet"}</span>
           {status === null ? null : <span className="sr-only">{STATUS_LABEL[status]}</span>}
         </span>
       </button>

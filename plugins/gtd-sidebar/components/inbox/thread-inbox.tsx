@@ -272,27 +272,24 @@ function InboxList({
     if (activeBotId !== null) setTab("bots");
   }
   // Attention comes from the shelf's rows; a row's second line is the bot's
-  // newest live conversation, searched or not.
+  // latest main-chat reply, searched or not.
   const botSummaries = useMemo(() => {
     const attention = new Map(botShelfGroups.map((group) => [group.projectId, group.attention]));
+    const excerpts = new Map(
+      (bots.list?.lastMessages ?? []).map((message) => [message.botId, message.text]),
+    );
     const summaries = new Map<string, BotSummary>();
     for (const botId of bots.shownBotIds) {
       const threads = bots.threadsByBot.get(botId) ?? [];
       let newest: PluginSidebarThread | null = null;
-      let newestLive: PluginSidebarThread | null = null;
       // A root is any conversation whose parent is not among the bot's own,
       // so a child moved to this bot, or one that outlived its parent, counts.
-      for (const thread of conversationRoots(threads)) {
+      for (const thread of conversationRoots(threads))
         if (newest === null || thread.updatedAt > newest.updatedAt) newest = thread;
-        if (bots.isCompleted(thread.id)) continue;
-        if (newestLive === null || thread.updatedAt > newestLive.updatedAt) newestLive = thread;
-      }
-      const latest = newestLive ?? newest;
       summaries.set(botId, {
         attention: attention.get(botId) ?? 0,
         working: threads.some(isWorking),
-        latest: latest === null ? null : { id: latest.id, title: latest.displayTitle },
-        liveId: newestLive?.id ?? null,
+        excerpt: excerpts.get(botId) ?? null,
         finished: newest !== null && bots.isCompleted(newest.id),
       });
     }
@@ -383,21 +380,15 @@ function InboxList({
     () => botShelves(selectableBots, bots.list?.sections ?? NO_SECTIONS),
     [selectableBots, bots.list?.sections],
   );
-  // Opening a bot goes to its main chat, else its newest live conversation,
-  // else starts its main chat.
+  // Opening a bot goes to its main chat, the one conversation the user talks
+  // in, starting it when it is gone.
   const openBot = useCommittedEvent((bot: BotMetadata) => {
     const live = bots.threadsByBot.get(bot.id) ?? [];
-    const target =
-      (bot.mainThreadId !== null && live.some((thread) => thread.id === bot.mainThreadId)
-        ? bot.mainThreadId
-        : null) ??
-      botSummaries.get(bot.id)?.liveId ??
-      null;
-    if (target === null) {
+    if (bot.mainThreadId === null || !live.some((thread) => thread.id === bot.mainThreadId)) {
       botsActions.openMainChat(bot);
       return;
     }
-    navigate.toThread(target);
+    navigate.toThread(bot.mainThreadId);
     onNavigate();
   });
   const onNewThread = useCommittedEvent((projectId: string) => {

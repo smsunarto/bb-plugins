@@ -134,7 +134,7 @@ const summaries = new Map<string, BotSummary>([
       attention: 0,
       working: true,
       finished: false,
-      latest: { id: "t1", title: "Flaky test triage" },
+      excerpt: "Found it: the retry test races the clock. Fix is in a subthread now.",
     },
   ],
   [
@@ -143,7 +143,7 @@ const summaries = new Map<string, BotSummary>([
       attention: 0,
       working: false,
       finished: true,
-      latest: { id: "t3", title: "Weekly vault digest" },
+      excerpt: "Weekly vault digest is ready: 14 new notes, 3 need tags.",
     },
   ],
   [
@@ -152,10 +152,7 @@ const summaries = new Map<string, BotSummary>([
       attention: 2,
       working: false,
       finished: false,
-      latest: {
-        id: "t2",
-        title: "Paper notes on CRDTs and local-first sync",
-      },
+      excerpt: "Summarized the CRDT paper. The sync section is the part worth reading first.",
     },
   ],
 ]);

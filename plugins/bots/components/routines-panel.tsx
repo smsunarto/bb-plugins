@@ -38,7 +38,7 @@ const localTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 
 
 /**
  * A bot's routines: scheduled instructions that Automations runs, each in its
- * own conversation. Changes apply immediately, apart from the editor's Save.
+ * own subthread of the bot's main chat. Changes apply immediately, apart from the editor's Save.
  */
 export function RoutinesPanel({ botId, botName }: { botId: string; botName: string }) {
   const query = useRpcQuery({
@@ -88,8 +88,8 @@ export function RoutinesPanel({ botId, botName }: { botId: string; botName: stri
     <div className="space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="min-w-0 flex-1 text-[11px] leading-4 text-muted-foreground">
-          Scheduled instructions {botName || "the bot"} runs through Automations. Each routine posts
-          its runs to a conversation of its own. Changes here apply immediately.
+          Scheduled instructions {botName || "the bot"} runs through Automations. Each routine runs
+          in its own subthread, which reports to the main chat. Changes here apply immediately.
         </p>
         {draft ? null : (
           <Button

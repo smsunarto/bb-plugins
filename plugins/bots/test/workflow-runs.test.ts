@@ -104,7 +104,8 @@ describe("workflow runs on the server", () => {
         latestAttentionAt: old + index,
       }),
     );
-    const [worker, main] = ids as [string, string];
+    // The first conversation started is the bot's main chat.
+    const [main, worker] = ids as [string, string];
     const workflowAgent = makeThreadResponse({
       id: "wf-agent",
       projectId: PERSONAL_ID,

@@ -232,19 +232,18 @@ it("rejects duplicate names and empty conversation lists without routing side ef
   expect((await run(["message", b.id, "Hi"])).stderr).toContain("no visible conversation");
   expect(send).not.toHaveBeenCalled();
 });
-it("routes default messages to the first ordered root instead of the legacy main", async () => {
+it("routes default messages to the bot's main chat over the first ordered root", async () => {
   const { host, b, run } = await setup();
   host.threads.set("preferred", makeThreadResponse({ id: "preferred", createdAt: 1 }));
   host.store.bind("preferred", b.id);
   host.store.mutate(b.id, (current) => ({ ...current, threadOrder: ["preferred", b.id] }));
   expect((await run(["message", b.id, "Review"])).exitCode).toBe(0);
   expect(host.harness.inspection.sdk.callsTo("threads.send")[0]?.[0]).toMatchObject({
-    threadId: "preferred",
+    threadId: b.id,
     mode: "queue-if-active",
   });
   const listed = JSON.parse((await run(["list", "--json"])).stdout!);
-  expect(listed.bots.find((bot: { id: string }) => bot.id === b.id).mainThreadId).toBe("preferred");
-  expect(host.store.require(b.id).mainThreadId).toBe(b.id);
+  expect(listed.bots.find((bot: { id: string }) => bot.id === b.id).mainThreadId).toBe(b.id);
 });
 it("resolves inherited reply targets read-only and does not retry failed delivery", async () => {
   const { host, a, b, run } = await setup();

@@ -1,4 +1,4 @@
-Create, change, pause, resume, test, or delete one of this bot's routines. A routine runs its instruction on a cron schedule, through bb Automations, in a conversation of its own; each run posts its result there.
+Create, change, pause, resume, test, or delete one of this bot's routines. A routine runs its instruction on a cron schedule, through bb Automations, in its own subthread of the bot's main chat; bb reports each finished run to the main chat.
 
 USE WHEN
 - The user asks for something recurring ("every weekday at 9, summarize…", "check X every 2 hours"): action create.

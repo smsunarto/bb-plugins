@@ -22,7 +22,8 @@ function excerpt(text: string, budget: number) {
     ? text
     : text.slice(0, Math.max(0, budget - TRUNCATED.length)) + TRUNCATED;
 }
-export function botInstructions(bot: BotMetadata, project?: BotProjectContext) {
+/** `mainChat`: the thread is the bot's main chat, which delegates work to subthreads. */
+export function botInstructions(bot: BotMetadata, project?: BotProjectContext, mainChat = false) {
   const identity = files.read("bots/prompt-header", {
     name: bot.name.slice(0, 120),
     id: bot.id.slice(0, 128),
@@ -31,7 +32,10 @@ export function botInstructions(bot: BotMetadata, project?: BotProjectContext) {
   const relationship = project
     ? `\n\n${files.read("bots/prompt-project", { relationship: excerpt(projectContextInstructions(project), 550) })}`
     : "";
-  const header = `${identity}${relationship}\n\n${files.read("bots/prompt-identity")}\n`;
+  const main = mainChat
+    ? `\n\n${files.read("bots/prompt-main-chat", { name: bot.name.slice(0, 120) })}`
+    : "";
+  const header = `${identity}${relationship}${main}\n\n${files.read("bots/prompt-identity")}\n`;
   // Existing oversized memory remains readable through the tool; never trim storage.
   const memory = `\n\n${files.read("bots/prompt-memory")}\n${excerpt(bot.memory, MEMORY_MAX_CHARS)}`;
   const soulBudget = Math.min(1300, DYNAMIC_MAX_CHARS - header.length - memory.length);

@@ -71,12 +71,18 @@ export function ownersByThread(
   return owners;
 }
 
-/** The first ordered visible root: the bot's click target and protected main. */
+/**
+ * The bot's protected main conversation: its main chat while that is among
+ * `threads`, else the first ordered visible root.
+ */
 export function mainConversationId<T extends CompletionThread & { createdAt: number }>(
   threads: readonly T[],
   order: readonly string[] | undefined,
   records: ReadonlyMap<string, CompletionRecord>,
+  mainThreadId: string | null = null,
 ): string | null {
+  if (mainThreadId !== null && threads.some((thread) => thread.id === mainThreadId))
+    return mainThreadId;
   const hidden = hiddenCompletedIds(threads, records);
   const shown = threads.filter((thread) => !hidden.has(thread.id));
   return conversationRoots(orderConversations(shown, order))[0]?.id ?? null;
@@ -208,7 +214,7 @@ export function createCompletion(
             if (workflowOwners.has(row.id)) row.busy = true;
             return row;
           });
-          const mainId = mainConversationId(view, bot.threadOrder, current);
+          const mainId = mainConversationId(view, bot.threadOrder, current, bot.mainThreadId);
           const decision = decideCompletion({
             threads: view,
             records: current,

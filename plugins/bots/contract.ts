@@ -1,7 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { AVATAR_EXPRESSION_IDS, AVATAR_MOTION_IDS, AVATAR_SHAPE_IDS } from "./lib/appearance.ts";
-import { newThreadEnvironmentSchema, newThreadRequestSchema } from "./lib/new-thread-request.ts";
+import { newThreadRequestSchema } from "./lib/new-thread-request.ts";
 import { launchPresetSchema } from "./lib/launch-preset.ts";
 import {
   routineActionSchema,
@@ -417,6 +417,10 @@ export const rpcContract = defineRpcContract({
           .array(z.object({ threadId: id, completedAt: z.number() }).strict())
           .optional(),
         detachedThreadIds: z.array(id).optional(),
+        /** Each bot's latest main-chat reply as one plain line, for the Bots tab. */
+        lastMessages: z
+          .array(z.object({ botId: id, text: z.string(), at: z.number() }).strict())
+          .optional(),
       })
       .strict(),
   },
@@ -472,11 +476,12 @@ export const rpcContract = defineRpcContract({
   },
   main_set: { input: z.object({ botId: id, threadId: id }).strict(), output: metadataSchema },
   /**
-   * Open the bot's main chat, starting it in this project and environment
-   * when the bot has none or it was archived or deleted.
+   * Open the bot's main chat, the one conversation its user talks in. One is
+   * started, in the bot's owned project or else its home, when the bot has
+   * none or it was archived or deleted.
    */
   main_open: {
-    input: z.object({ botId: id, projectId: id, environment: newThreadEnvironmentSchema }).strict(),
+    input: z.object({ botId: id }).strict(),
     output: z.object({ threadId: id, created: z.boolean() }).strict(),
   },
   conversation_create: {

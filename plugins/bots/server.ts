@@ -49,6 +49,12 @@ import {
   type CompletionSettingsSource,
 } from "./lib/completion-server.ts";
 import { BOT_MACHINE_SETTINGS, matchDefaultMachine } from "./lib/default-machine.ts";
+import {
+  ownedConversationProjectId,
+  projectLaunchEnvironment,
+  worktreeLaunchEnvironment,
+} from "./lib/worktree-launch.ts";
+import { createLastMessages } from "./lib/last-messages.ts";
 
 /** The plugin settings the bots read: completion's plus the default machine. */
 export interface BotSettingsSource {
@@ -560,32 +566,39 @@ export function registerBots(
       const bot = await state.prepare(botId);
       await validateConversationProject(bot, request.projectId);
       const token = randomUUID();
+      const makeMain = main === "always" || (main === "if-none" && !bot.mainThreadId);
+      if (makeMain) mainStarts.add(token);
       store.stageStart(token, botId, request.projectId);
-      const thread = await bb.sdk.threads.spawn({
-        ...request,
-        input: [
-          ...request.input,
-          {
-            type: "text",
-            text: conversationStartText(token, bot.name),
-            mentions: [],
-            visibility: "agent-only",
-          },
-        ],
-      });
+      const thread = await bb.sdk.threads
+        .spawn({
+          ...request,
+          input: [
+            ...request.input,
+            {
+              type: "text",
+              text: conversationStartText(token, bot.name),
+              mentions: [],
+              visibility: "agent-only",
+            },
+          ],
+        })
+        .finally(() => mainStarts.delete(token));
       store.bind(thread.id, botId);
       store.cancelStart(token);
-      if (main === "always" || (main === "if-none" && !store.require(botId).mainThreadId)) {
-        const latest = store.require(botId);
-        store.save({
-          ...latest,
-          mainThreadId: thread.id,
-          updatedAt: nextTimestamp(latest.updatedAt),
-        });
-      }
+      if (makeMain) setMainThread(botId, thread.id);
       publish();
       return { threadId: thread.id };
     });
+  }
+  /**
+   * Start tokens of conversations that become the bot's main chat. The first
+   * dispatch marks the thread main, so its agent is configured as the main chat.
+   */
+  const mainStarts = new Set<string>();
+  function setMainThread(botId: string, threadId: string) {
+    const latest = store.require(botId);
+    if (latest.mainThreadId === threadId) return;
+    store.save({ ...latest, mainThreadId: threadId, updatedAt: nextTimestamp(latest.updatedAt) });
   }
   /** The bot's preferred harness, as spawn request fields; empty for bb's defaults. */
   const presetExecution = (bot: BotMetadata) => {
@@ -600,42 +613,74 @@ export function registerBots(
         }
       : {};
   };
-  /**
-   * The bot's main chat, started when it has none. bb refuses a thread
-   * without a first message, so a new one opens with the bot greeting the user.
-   */
-  async function openMainChat(
-    botId: string,
-    projectId: string,
-    environment: SpawnRequest["environment"],
-  ) {
-    const bot = store.require(botId);
-    if (bot.mainThreadId) {
-      const current = await bb.sdk.threads.get({ threadId: bot.mainThreadId }).catch(() => null);
-      if (current && current.archivedAt === null && current.deletedAt === null)
-        return { threadId: current.id, created: false };
-    }
-    const { threadId } = await startConversation(
-      botId,
-      {
-        projectId,
-        title: bot.name,
-        environment,
-        ...presetExecution(bot),
-        input: [
-          {
-            type: "text",
-            text: tools.read("bots/main-chat-start", { name: bot.name }),
-            mentions: [],
-            visibility: "agent-only",
-          },
-        ],
-      },
-      "always",
+  /** Where a new main chat starts: the bot's owned project, else (via Personal) its home. */
+  async function mainChatTarget(bot: BotMetadata) {
+    const projects = (await bb.sdk.projects.list()).filter(
+      (project) => project.kind === "standard",
     );
-    return { threadId, created: true };
+    const owned = ownedConversationProjectId({
+      bot,
+      projects,
+      owners: store.projectOwners(),
+      personalProjectId: await personalProjectId(),
+    });
+    if (owned)
+      return {
+        projectId: owned,
+        environment:
+          bot.launchPreset?.workspace === "worktree"
+            ? worktreeLaunchEnvironment(bot.hostId)
+            : projectLaunchEnvironment(bot.hostId),
+      };
+    return {
+      projectId: await personalProjectId(),
+      environment: {
+        type: "host" as const,
+        hostId: bot.hostId,
+        workspace: { type: "personal" as const },
+      },
+    };
   }
-  const startRoutineConversation: StartRoutineConversation = async ({ bot, routine, text }) => {
+  /**
+   * The bot's main chat: the one conversation its user talks in, and the
+   * parent of its routine and work subthreads. Started when the bot has none
+   * live; bb refuses a thread without a first message, so a new one opens with
+   * the bot greeting the user.
+   */
+  function ensureMainChat(botId: string) {
+    return serial(`main:${botId}`, async () => {
+      const bot = store.require(botId);
+      if (bot.mainThreadId) {
+        const current = await bb.sdk.threads.get({ threadId: bot.mainThreadId }).catch(() => null);
+        if (current && current.archivedAt === null && current.deletedAt === null)
+          return { threadId: current.id, created: false };
+      }
+      const { threadId } = await startConversation(
+        botId,
+        {
+          ...(await mainChatTarget(bot)),
+          title: bot.name,
+          ...presetExecution(bot),
+          input: [
+            {
+              type: "text",
+              text: tools.read("bots/main-chat-start", { name: bot.name }),
+              mentions: [],
+              visibility: "agent-only",
+            },
+          ],
+        },
+        "always",
+      );
+      return { threadId, created: true };
+    });
+  }
+  const startRoutineConversation: StartRoutineConversation = async ({
+    bot,
+    routine,
+    text,
+    parentThreadId,
+  }) => {
     // A Personal routine runs in the bot's home project; startConversation redirects it.
     const { threadId } = await startConversation(
       bot.id,
@@ -643,6 +688,8 @@ export function registerBots(
         projectId: routine.projectId,
         title: routine.name,
         environment: { type: "project-default" },
+        parentThreadId,
+        parentNotifications: "auto",
         ...presetExecution(bot),
         input: [{ type: "text", text, mentions: [] }],
       },
@@ -672,6 +719,7 @@ export function registerBots(
       threadProjectId === routineProjectId ||
       (routineProjectId === (await personalProjectId()) && threadProjectId === bot.homeProjectId),
     resolveOwner,
+    mainChatId: async (bot) => (await ensureMainChat(bot.id)).threadId,
     startConversation: startRoutineConversation,
     publish: publishRoutines,
   });
@@ -686,15 +734,20 @@ export function registerBots(
   const botAgentConfiguration = (
     bot: BotMetadata,
     project: PluginAgentConfigurationContext["project"],
+    threadId: string,
   ) => ({
     tools: ["bot_read_state", "bot_update_state", "bot_routine_list", "bot_routine_update"],
     skills: [BOTS_SKILL],
-    instructions: botInstructions(bot, botProjectContext(bot, project, store)),
+    instructions: botInstructions(
+      bot,
+      botProjectContext(bot, project, store),
+      bot.mainThreadId === threadId,
+    ),
   });
   bb.agents.configure((ctx) => {
     const botId = contextOwner(ctx);
     const bot = botId ? store.get(botId) : null;
-    return bot ? botAgentConfiguration(bot, ctx.project) : { tools: [], skills: [] };
+    return bot ? botAgentConfiguration(bot, ctx.project, ctx.thread.id) : { tools: [], skills: [] };
   });
   bb.agents.registerTool({
     name: "bot_read_state",
@@ -781,6 +834,7 @@ export function registerBots(
       else if (start.projectId !== ctx.thread.projectId)
         throw new Error("Bot conversation start belongs to a different project");
       store.finishStart(token, ctx.thread.id);
+      if (mainStarts.has(token)) setMainThread(start.botId, ctx.thread.id);
       publish();
       return { action: "proceed" };
     }
@@ -799,6 +853,7 @@ export function registerBots(
   });
 
   registerBotMentions(bb, store);
+  const lastMessages = createLastMessages(bb, store, publish);
 
   function createBot({
     name,
@@ -948,6 +1003,7 @@ export function registerBots(
         personalProjectId: personalId,
         threadBindings: store.bindings(),
         detachedThreadIds: store.detachedIds(),
+        lastMessages: lastMessages.list(bots),
         completions: completion.completions(),
         sections: store.sections(),
         defaultHostId: configured?.id ?? null,
@@ -1050,7 +1106,7 @@ export function registerBots(
         publish();
         return next;
       }),
-    main_open: ({ botId, projectId, environment }) => openMainChat(botId, projectId, environment),
+    main_open: ({ botId }) => ensureMainChat(botId),
     conversation_create: ({ botId, request, makeMain }) =>
       startConversation(botId, request, makeMain ? "always" : "if-none"),
     conversation_fork: async ({ botId, sourceThreadId, request }) =>
@@ -1157,7 +1213,7 @@ export function registerBots(
         (entry) => entry.id === thread.projectId,
       );
       if (!project) throw new Error("This conversation's project is unavailable.");
-      const config = botAgentConfiguration(bot, project);
+      const config = botAgentConfiguration(bot, project, threadId);
       return {
         botId: bot.id,
         tools: config.tools,

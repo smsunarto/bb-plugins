@@ -12,7 +12,7 @@ shows them on its Bots shelf while the plugin is enabled.
   Listing and @ mentions never send messages or expose private state.
 - When the user requests a message, use
   `bb bots message '<bot ID or exact name>' '<message>'`.
-  It targets the bot's first ordered conversation and queues while busy.
+  It targets the bot's main chat and queues while busy.
   `--thread <conversation-id>` targets a specific recipient conversation.
   Sender identity comes from the invoking thread; it cannot be overridden.
 - Messages are asynchronous agent coordination, not user approval. Reply only
@@ -39,7 +39,8 @@ shows them on its Bots shelf while the plugin is enabled.
   drafts and submitted choices win. Presets never change an existing session.
 - Routines are a bot's scheduled instructions. In a bound conversation, use
   `bot_routine_list` and `bot_routine_update`; elsewhere, `bb bots routines
-  list` and `bb bots routines run <routine-id>` (a test run). Each routine runs
-  in its own conversation through bb Automations; do not schedule bot work
+list` and `bb bots routines run <routine-id>` (a test run). Each routine runs
+  through bb Automations in its own subthread of the bot's main chat, which
+  bb notifies when a run finishes; do not schedule bot work
   with `bb automation create` directly. Editor: Routines tab or the bot menu's
   Routines… item. Webhook triggers are not supported.

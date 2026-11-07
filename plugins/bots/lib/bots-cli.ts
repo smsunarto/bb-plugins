@@ -174,6 +174,7 @@ export function botsCliCommands(
             (await listBotConversations(bb, bot, resolveOwner)).rows.map(toCompletionThread),
             bot.threadOrder,
             completionRecords(),
+            bot.mainThreadId,
           ) ??
           undefined;
         if (!threadId)
@@ -288,6 +289,7 @@ export function botsCliCommands(
             (botRows.get(bot.id) ?? []).map(toCompletionThread),
             bot.threadOrder,
             records,
+            bot.mainThreadId,
           ) ?? undefined,
         ]),
     );

@@ -7,7 +7,6 @@ import type { BotsModel } from "../hooks/use-bots";
 import { conversationRoots, orderConversations } from "../lib/conversation-order";
 import {
   conversationLaunchProjectId,
-  ownedConversationProjectId,
   projectLaunchEnvironment,
   worktreeLaunchEnvironment,
   worktreeLaunchHostId,
@@ -147,38 +146,10 @@ export function useBotsController(
       if (preparing.current) return;
       preparing.current = true;
       try {
-        let prepared = await rpc.call("bot_prepare", { botId: bot.id });
-        const snapshot = await rpc.call("bots_list", {});
-        const current = snapshot.bots.find((entry) => entry.id === bot.id);
-        if (!current) throw new Error("Bot no longer exists.");
-        if (current.updatedAt >= prepared.updatedAt) prepared = current;
+        const prepared = await rpc.call("bot_prepare", { botId: bot.id });
         if (!prepared.stateReady)
           throw new Error("The bot’s private state could not be prepared. Try again.");
-        // A missing main chat starts in the bot’s owned project, else (via Personal) in its home project.
-        const ownedProjectId = ownedConversationProjectId({
-          bot: prepared,
-          projects: snapshot.projects,
-          owners: snapshot.projectOwners ?? [],
-          personalProjectId: snapshot.personalProjectId,
-          main: firstConversation(prepared),
-        });
-        const target = ownedProjectId
-          ? {
-              projectId: ownedProjectId,
-              environment:
-                prepared.launchPreset?.workspace === "worktree"
-                  ? worktreeLaunchEnvironment(prepared.hostId)
-                  : projectLaunchEnvironment(prepared.hostId),
-            }
-          : {
-              projectId: snapshot.personalProjectId,
-              environment: {
-                type: "host" as const,
-                hostId: prepared.hostId,
-                workspace: { type: "personal" as const },
-              },
-            };
-        const { threadId } = await rpc.call("main_open", { botId: prepared.id, ...target });
+        const { threadId } = await rpc.call("main_open", { botId: prepared.id });
         navigate.toThread(threadId);
         onNavigate();
       } finally {
