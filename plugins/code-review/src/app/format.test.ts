@@ -21,7 +21,10 @@ test("relativeTime says nothing for a value it cannot read", () => {
 });
 
 test("absoluteTime spells the moment out in the given locale and zone", () => {
-  expect(absoluteTime("2026-10-09T12:00:00Z", "en-US", "UTC")).toBe("Oct 9, 2026, 12:00 PM");
+  // ICU releases differ on the date-time joiner ("," or " at").
+  expect(absoluteTime("2026-10-09T12:00:00Z", "en-US", "UTC")).toMatch(
+    /^Oct 9, 2026(,| at) 12:00\sPM$/,
+  );
   expect(absoluteTime("nope")).toBe("");
 });
 

@@ -5,9 +5,9 @@ import type { BotStore } from "./bot-store.ts";
 const files = instructionFiles(import.meta.url);
 
 export const BOT_MENTION_LIMIT = 30;
-// oxlint-disable-next-line no-control-regex -- strips terminal control characters from names
 const displayText = (value: string) =>
   value
+    // oxlint-disable-next-line no-control-regex -- strips terminal control characters from names
     .replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
     .replace(/\s+/g, " ")
     .trim();

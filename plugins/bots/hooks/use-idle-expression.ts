@@ -38,9 +38,13 @@ export function useIdleExpression({
 }: Input): BotAvatar["expression"] {
   const reducedMotion = usePrefersReducedMotion();
   const visible = useSyncExternalStore(subscribeVisibility, isVisible, () => true);
+  // The pose is a function of wall-clock idle time, so render reads the clock and
+  // the effect's last-known activity to avoid flashing a stale pose for a frame.
+  /* oxlint-disable react/purity, react/refs */
   const now = Date.now();
   const lastKnownActivity = useRef(activityTime(lastActivityAt, now) ?? now);
   const previous = useRef({ botId, expression, awake });
+  /* oxlint-enable react/purity, react/refs */
   const [frame, setFrame] = useState<{ key: string; expression: BotAvatar["expression"] } | null>(
     null,
   );
@@ -55,6 +59,7 @@ export function useIdleExpression({
   ]);
 
   useEffect(() => {
+    // oxlint-disable-next-line react/purity -- runs in the effect, not during render
     const started = Date.now();
     const reported = activityTime(lastActivityAt, started);
     const changedBot = previous.current.botId !== botId;
@@ -114,6 +119,7 @@ export function useIdleExpression({
   // even for the frame before the effect cancels its old timer.
   if (awake || !visible) return expression;
   if (frame?.key === key) return frame.expression;
+  /* oxlint-disable react/refs, react/purity */
   if (
     previous.current.botId === botId &&
     (previous.current.awake || previous.current.expression !== expression)
@@ -124,4 +130,5 @@ export function useIdleExpression({
       ? Math.max(lastKnownActivity.current, activityTime(lastActivityAt, now) ?? 0)
       : (activityTime(lastActivityAt, now) ?? now);
   return idleExpression(expression, now - since);
+  /* oxlint-enable react/refs, react/purity */
 }

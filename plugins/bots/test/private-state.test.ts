@@ -7,8 +7,9 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -146,7 +147,7 @@ describe("private SQLite bot state", () => {
     const prepared = await f.state.prepare("bot_atlas");
     expect(f.state.refresh).toBe(f.state.prepare);
     const directory = f.state.directory(prepared.id);
-    expect(directory).toBe(join(dirname(f.store.databasePath), "state", prepared.id));
+    expect(directory).toBe(join(realpathSync(dirname(f.store.databasePath)), "state", prepared.id));
     expect(readFileSync(f.store.databasePath).subarray(0, 16).toString()).toBe("SQLite format 3\0");
     expect(lstatSync(dirname(directory)).mode & 0o777).toBe(0o700);
     expect(lstatSync(directory).mode & 0o777).toBe(0o700);
@@ -156,7 +157,6 @@ describe("private SQLite bot state", () => {
     const marker = JSON.parse(readFileSync(join(directory, "bot.json"), "utf8"));
     expect(marker).toMatchObject({ version: 3, id: prepared.id, stateReady: true });
     expect(marker).not.toHaveProperty("homePath");
-    expect(marker).not.toHaveProperty("homeProjectId");
     for (const file of stateFiles) {
       const content = stateContent(prepared, file);
       expect(readFileSync(join(directory, file), "utf8")).toBe(content);

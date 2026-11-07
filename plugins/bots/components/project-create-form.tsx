@@ -56,11 +56,14 @@ export function ProjectCreateForm({
     mounted.current = true;
     return () => {
       mounted.current = false;
+      // Invalidates any folder listing still in flight; the counter is meant to be live.
+      // oxlint-disable-next-line react-hooks/exhaustive-deps
       browseSequence.current++;
     };
   }, []);
   useEffect(() => {
     if (!hostId && preferredHost) {
+      // oxlint-disable-next-line react/set-state-in-effect -- adopts the preferred machine once hosts load
       setHostId(preferredHost.id);
       requestId.current = crypto.randomUUID();
     }
@@ -114,6 +117,7 @@ export function ProjectCreateForm({
     }
   }
   return (
+    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Enter in a field submits the form; the fields themselves are the interactive elements
     <div
       className="project-create-form space-y-2"
       onKeyDown={(event) => {
@@ -164,7 +168,11 @@ export function ProjectCreateForm({
             aria-label="Folders"
           >
             {loading ? (
-              <p role="status" className="p-2 text-xs text-muted-foreground">
+              <p
+                // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
+                role="status"
+                className="p-2 text-xs text-muted-foreground"
+              >
                 Loading folders…
               </p>
             ) : (
@@ -205,9 +213,11 @@ export function ProjectCreateForm({
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3">
+            {/* oxlint-disable-next-line jsx-a11y/label-has-associated-control -- the label wraps the shared Input component */}
             <label className="space-y-1 text-xs text-muted-foreground">
               Project name
               <Input
+                // oxlint-disable-next-line jsx-a11y/no-autofocus -- the first field of a dialog the user just opened
                 autoFocus
                 className="h-8"
                 value={name}
@@ -235,6 +245,7 @@ export function ProjectCreateForm({
               }}
             />
           </div>
+          {/* oxlint-disable-next-line jsx-a11y/label-has-associated-control -- the label wraps the shared Input component */}
           <label className="block space-y-1 text-xs text-muted-foreground">
             Project folder
             <span className="flex gap-2">
@@ -269,7 +280,11 @@ export function ProjectCreateForm({
               : ""}
           </p>
           {!online ? (
-            <p role="status" className="text-xs text-muted-foreground">
+            <p
+              // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
+              role="status"
+              className="text-xs text-muted-foreground"
+            >
               Connect a machine to create a project.
             </p>
           ) : null}

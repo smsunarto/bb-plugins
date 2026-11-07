@@ -2,7 +2,7 @@ import { relativeDocumentQuery } from "./server.ts";
 import { afterEach, expect, test } from "bun:test";
 import { createFakePluginHost, makeHostResponse } from "@get-bb/plugin-sdk/testing";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { createHash } from "node:crypto";
@@ -250,7 +250,11 @@ test("global apply passes its canonical source to the guarded executor", async (
     output: "rendered",
   });
   expect(tasks).toMatchObject([
-    { method: "runTask", input: { hostId: "host", task: "render", expectedRepoPath: f.root } },
+    {
+      method: "runTask",
+      // macOS temp paths resolve through /private; the server sends the canonical path.
+      input: { hostId: "host", task: "render", expectedRepoPath: await realpath(f.root) },
+    },
   ]);
 });
 

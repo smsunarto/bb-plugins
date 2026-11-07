@@ -381,6 +381,14 @@ test("packed dependency traversal verifies exports and follows only shipped runt
       "node_modules/child",
       "node_modules/helper",
     ]);
+    writeFileSync(
+      join(root, "node_modules/child/package.json"),
+      JSON.stringify({
+        name: "child",
+        exports: { ".": { source: "./src/index.ts", default: "./index.ts" } },
+      }),
+    );
+    expect(bundledDependencyRoots(root, manifest)).toContain("node_modules/child");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -42,12 +42,6 @@
     "source": ".flatMap((item) => [{ provider: ANNOTATION_MENTION_PROVIDER, ...item }, \" \"]);"
   },
   {
-    "filename": "plugins/amp/app.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "useEffect(() => setCopyState(\"idle\"), [threadId]);"
-  },
-  {
     "filename": "plugins/amp/src/oracle-report-cache.ts",
     "code": "react(refs)",
     "message": "Cannot access refs during render",

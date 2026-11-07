@@ -57,10 +57,12 @@ test("a session spawns this host's Amp CLI, not a stale configured path", async 
       }),
     );
     const deadline = Date.now() + 4_000;
-    while (!existsSync(marker) && Date.now() < deadline) {
+    // The shell creates the marker before printf fills it, so wait for content.
+    const spawned = () => existsSync(marker) && readFileSync(marker, "utf8") !== "";
+    while (!spawned() && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    assert.equal(existsSync(marker) ? readFileSync(marker, "utf8") : "never spawned", cli);
+    assert.equal(spawned() ? readFileSync(marker, "utf8") : "never spawned", cli);
   } finally {
     handleLine(
       JSON.stringify({

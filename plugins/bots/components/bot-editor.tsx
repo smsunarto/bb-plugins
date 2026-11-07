@@ -238,6 +238,7 @@ export function BotEditor({
       }}
     >
       <DialogContent className="bot-editor-dialog flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions -- Enter in a field saves; the fields themselves are the interactive elements */}
         <form
           className="flex min-h-0 flex-1 flex-col"
           onSubmit={(event) => event.preventDefault()}
@@ -305,6 +306,7 @@ export function BotEditor({
               <Field label="Name" htmlFor={`${fieldId}-name`}>
                 <Input
                   id={`${fieldId}-name`}
+                  // oxlint-disable-next-line jsx-a11y/no-autofocus -- the first field of a dialog the user just opened
                   autoFocus
                   className="h-8"
                   value={name}
@@ -435,7 +437,11 @@ export function BotEditor({
                   placeholder={doc.placeholder}
                 />
                 {stateFile === "MEMORY.md" && memory.length > MEMORY_MAX_CHARS ? (
-                  <p role="status" className="shrink-0 text-xs text-destructive">
+                  <p
+                    // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
+                    role="status"
+                    className="shrink-0 text-xs text-destructive"
+                  >
                     Memory is over 3,000 characters. Shorten it before saving a memory change.
                   </p>
                 ) : null}

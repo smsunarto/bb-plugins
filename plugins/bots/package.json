@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Named bots with private instructions and memory, each with its own conversations.",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "author": "Scott Sunarto",
   "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/bots#readme",
   "bugs": {
@@ -32,7 +32,11 @@
     "name": "Bots",
     "description": "Named bots with private instructions and memory. GTD Sidebar shows them on its Bots shelf.",
     "branding": {
-      "icon": "./assets/icon.svg"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./server.ts",
     "app": "./app.tsx",
@@ -53,6 +57,7 @@
     "dist/app.owned-root.css",
     "assets/",
     "README.md",
+    "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "server.ts",
     "app.tsx",

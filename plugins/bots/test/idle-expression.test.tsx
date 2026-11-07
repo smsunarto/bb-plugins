@@ -169,7 +169,7 @@ it("reacts to reduced-motion changes and cancels an in-progress random look", ()
   expect(result.current).toBe("neutral");
   act(() => {
     reduced = true;
-    for (const listener of [...mediaListeners]) listener();
+    for (const listener of Array.from(mediaListeners)) listener();
   });
   expect(result.current).toBe("curious");
   advance(GLANCE_MIN_MS);

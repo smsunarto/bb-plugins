@@ -26,6 +26,7 @@ async function setup(defaultMachine: string) {
   const host = await backend();
   instances.push(host);
   host.harness.inspection.sdk.stub("hosts.list", async () =>
+    // oxlint-disable-next-line oxc/no-map-spread -- test fixture copy
     hosts.map((entry) => ({ ...entry, status: "connected" as const })),
   );
   await host.harness.behavior.setSettings({ defaultMachine });

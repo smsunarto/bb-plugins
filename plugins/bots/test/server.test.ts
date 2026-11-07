@@ -234,7 +234,6 @@ describe("private bot identities", () => {
     expect(bot.stateReady).toBe(true);
     expect(bot.homeProjectId).toBeNull();
     expect(bot).not.toHaveProperty("homePath");
-    expect(bot).not.toHaveProperty("homeProjectId");
     expect(bot.linkedProjectIds).toEqual([]);
     const directory = host.stateDirectory(bot.id);
     expect(await readFile(join(directory, "SOUL.md"), "utf8")).toBe("You are Atlas.");

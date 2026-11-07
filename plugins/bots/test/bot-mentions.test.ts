@@ -130,7 +130,7 @@ it("resolves stable IDs using current public metadata, not private state or a st
 
 it("keeps bots without a main referenceable without starting a conversation", async () => {
   const host = await setup();
-  const bot = await host.create("New bot", []);
+  await host.create("New bot", []);
   const item = (await provider(host).search(context("New bot")))[0]!;
   expect(item.subtitle).not.toContain("main conversation");
   const result = await provider(host).resolve(item.id);

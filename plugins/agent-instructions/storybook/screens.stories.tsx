@@ -4,9 +4,11 @@ import { within } from "storybook/test";
 import { ready } from "../../../.storybook/ready";
 import { RegisteredSurface } from "../../../.storybook/host";
 import { nav } from "../../../.storybook/surfaces";
-import { resetRulesDraftForTest } from "../src/app/rules";
+import { RULES_ROUTE, resetRulesDraftForTest } from "../src/app/rules";
 import type { RulesState } from "../src/shared/rules";
 const source = () => import("../src/app/app");
+// Rules open from the Global tab; the bare path now shows the global catalog.
+const rulesPage: typeof nav = (app) => nav(app, RULES_ROUTE);
 const targets = {
   hosts: [{ id: "host_local", name: "Design MacBook" }],
   providers: [
@@ -52,7 +54,7 @@ const meta = {
   parameters: screenParameters,
   title: "Screens/Agent Instructions/Rules editor",
   component: RegisteredSurface,
-  args: { source, select: nav },
+  args: { source, select: rulesPage },
   play: ready,
 } satisfies Meta<typeof RegisteredSurface>;
 export default meta;
@@ -78,7 +80,7 @@ export const Populated: Story = {
   },
 };
 export const Loading: Story = {
-  render: () => <RegisteredSurface source={source} select={nav} />,
+  render: () => <RegisteredSurface source={source} select={rulesPage} />,
   parameters: {
     host: {
       pluginId: "agent-instructions",
@@ -91,7 +93,7 @@ export const Loading: Story = {
   },
 };
 export const Error: Story = {
-  render: () => <RegisteredSurface source={source} select={nav} />,
+  render: () => <RegisteredSurface source={source} select={rulesPage} />,
   parameters: {
     host: {
       pluginId: "agent-instructions",

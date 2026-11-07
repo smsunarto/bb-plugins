@@ -736,6 +736,7 @@ function InboxList({
                   {tab === "bots" ? (
                     <section aria-label="Bots">
                       <div
+                        // oxlint-disable-next-line react/refs -- passes the virtualizer's callback ref; nothing reads .current
                         ref={inboxWindow.measureRef}
                         data-index={windowLayout.headerIndex.get(shelfKey("bots"))}
                       >

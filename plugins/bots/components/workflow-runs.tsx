@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-  type CSSProperties,
-} from "react";
+import { createContext, useContext, useId, useMemo, useState, type CSSProperties } from "react";
 import {
   experimental_ThreadStatusGlyph as ThreadStatusGlyph,
   experimental_useRpcQuery as useRpcQuery,
@@ -97,9 +89,11 @@ function WorkflowRunRow({
   const navigate = useBbNavigate();
   const containsActive = run.agents.some((agent) => agent.threadId === activeThreadId);
   const [expanded, setExpanded] = useState(containsActive);
-  useEffect(() => {
+  const [wasActive, setWasActive] = useState(containsActive);
+  if (containsActive !== wasActive) {
+    setWasActive(containsActive);
     if (containsActive) setExpanded(true);
-  }, [containsActive]);
+  }
   const listId = useId();
   const summary = workflowRunSummary(run);
   const label = `${run.name} workflow, ${summary}`;

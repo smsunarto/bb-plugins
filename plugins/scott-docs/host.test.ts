@@ -289,7 +289,15 @@ describe("Docs host opened-file watching", () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(host.experimental_getSignals()).toEqual([]);
 
+    await writeFile(filePath, "# Plan");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(host.experimental_getSignals()).toEqual([]);
+
     await writeFile(filePath, "# Plan\n\nAgent rewrite");
+    // A reader renewing during the debounce window must not swallow the signal for other readers.
+    await expect(host.experimental_call("watchFile", watch)).resolves.toEqual({
+      sha256: sha256("# Plan\n\nAgent rewrite"),
+    });
     await vi.waitFor(() =>
       expect(host.experimental_getSignals()).toEqual([
         {
@@ -306,6 +314,36 @@ describe("Docs host opened-file watching", () => {
     expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(1);
     await host.experimental_dispose();
     expect(host.experimental_getRetainedWorkerLeaseCount()).toBe(0);
+  });
+
+  it("signals repeated edits and deletion when an oversized file cannot be hashed", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "bb-docs-host-"));
+    temporaryDirectories.push(root);
+    const filePath = path.join(root, "large.md");
+    const content = "x".repeat(8 * 1024 * 1024 + 1);
+    await writeFile(filePath, content);
+    const host = experimental_createHostEntryHarness(hostEntry);
+    try {
+      await expect(
+        host.experimental_call("watchFile", { watchId: "large", path: filePath, leaseMs: 60_000 }),
+      ).resolves.toEqual({ sha256: null });
+      for (const next of [content + "first", content + "second", null]) {
+        // Let late events from the previous write settle before observing the next edit.
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const before = host.experimental_getSignals().length;
+        if (next === null) await rm(filePath);
+        else await writeFile(filePath, next);
+        await vi.waitFor(() =>
+          expect(host.experimental_getSignals().length).toBeGreaterThan(before),
+        );
+        expect(host.experimental_getSignals().at(-1)).toEqual({
+          signal: "fileChanged",
+          payload: { watchId: "large", sha256: null },
+        });
+      }
+    } finally {
+      await host.experimental_dispose();
+    }
   });
 
   it("keeps one watch and one worker lease when two renewals of a watch overlap", async () => {

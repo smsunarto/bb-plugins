@@ -42,6 +42,13 @@ const customIcons = new Map<string, { name: string; body: string; solid?: boolea
     },
   ],
   [
+    "bots",
+    {
+      name: "Bots",
+      body: '<path d="M12 4V2M9 13v1m6-1v1"/><path d="M4 12a8 8 0 0 1 8-8a8 8 0 0 1 8 8v4a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M2 13v2m20-2v2"/>',
+    },
+  ],
+  [
     "code-review",
     {
       name: "Review",

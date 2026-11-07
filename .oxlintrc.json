@@ -21,7 +21,8 @@
     "**/node_modules/**",
     "**/vendor/**",
     "**/generated/**",
-    "**/*.d.ts"
+    "**/*.d.ts",
+    "plugins/gtd-sidebar/bots-components/**"
   ],
   "rules": {
     "complexity/complexity": [

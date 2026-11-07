@@ -154,7 +154,7 @@ it("retries semantic memory edits against newer bytes without losing unrelated f
 });
 
 it("bounds retries when an external writer keeps changing state", async () => {
-  const { host, update } = await scope();
+  const { update } = await scope();
   let writes = 0;
   racing.update = (store, id, file) => {
     if (file === "MEMORY.md") concurrentState(store, id, file, `- Concurrent ${++writes}.\n`);

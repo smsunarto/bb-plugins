@@ -237,7 +237,13 @@ const FILE_WATCH_DEBOUNCE_MS = 250;
 
 const fileWatches = new Map<
   string,
-  { path: string; stop: () => Promise<void>; expiry: ReturnType<typeof setTimeout> }
+  {
+    path: string;
+    stop: () => Promise<void>;
+    expiry: ReturnType<typeof setTimeout>;
+    /** The initial or last signalled hash; renewals must not swallow pending change signals. */
+    sha256: string | null;
+  }
 >();
 
 async function unwatchFile(watchId: string): Promise<void> {
@@ -284,13 +290,17 @@ async function watchFile(
         await lease.dispose();
       },
       expiry: expire(),
+      sha256: null as string | null,
     };
     fileWatches.set(watchId, watch);
     const report = async () => {
       if (fileWatches.get(watchId) !== watch) return;
-      await context
-        .experimental_emitSignal("fileChanged", { watchId, sha256: await fileSha256(filePath) })
-        .catch(() => {});
+      // macOS can deliver a late event for a write made before the watch began.
+      const sha256 = await fileSha256(filePath);
+      if (fileWatches.get(watchId) !== watch || (sha256 !== null && sha256 === watch.sha256))
+        return;
+      watch.sha256 = sha256;
+      await context.experimental_emitSignal("fileChanged", { watchId, sha256 }).catch(() => {});
     };
     try {
       folder = watchFolder(path.dirname(filePath), { persistent: false }, (_kind, changed) => {
@@ -309,7 +319,10 @@ async function watchFile(
       if (fileWatches.get(watchId) === watch) await unwatchFile(watchId);
     }
   }
-  return { sha256: await fileSha256(filePath) };
+  const sha256 = await fileSha256(filePath);
+  const current = fileWatches.get(watchId);
+  if (existing === undefined && current?.path === filePath) current.sha256 = sha256;
+  return { sha256 };
 }
 
 export default experimental_defineHostEntry({

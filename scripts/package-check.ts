@@ -422,6 +422,10 @@ export function bundledDependencyRoots(dir: string, manifest: PluginManifest): s
         throw new Error(`Missing bundled main ${root}/${main}`);
     }
     for (const target of packageTargets(dependency)) {
+      // `source` is a workspace build condition; published packages such as
+      // the plugin SDK declare it without shipping the files, and no
+      // installer resolves it from node_modules.
+      if (target.label.endsWith(".source")) continue;
       const present = target.entry.includes("*")
         ? !new Bun.Glob(target.entry).scanSync({ cwd: join(dir, root), onlyFiles: true }).next()
             .done

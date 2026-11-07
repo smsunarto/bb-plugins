@@ -102,6 +102,7 @@ export function BotProjectsPanel({
           </Button>
         </div>
         <Input
+          // oxlint-disable-next-line jsx-a11y/no-autofocus -- the first field of a dialog the user just opened
           autoFocus
           className="h-8"
           aria-label="Search projects"
@@ -221,7 +222,11 @@ export function BotProjectsPanel({
         </div>
       )}
       {createdProjects.length ? (
-        <p role="status" className="text-[11px] leading-4 text-muted-foreground">
+        <p
+          // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
+          role="status"
+          className="text-[11px] leading-4 text-muted-foreground"
+        >
           New projects are already created. Save the bot to link them; cancelling the bot won’t
           delete them.
         </p>

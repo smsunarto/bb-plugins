@@ -93,7 +93,11 @@ export function ConversationDialog({
           </p>
         ) : null}
         {pending ? (
-          <p role="status" className="text-xs text-muted-foreground">
+          <p
+            // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a status message, not a form result, which is what <output> means
+            role="status"
+            className="text-xs text-muted-foreground"
+          >
             Creating conversation…
           </p>
         ) : null}

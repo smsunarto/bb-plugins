@@ -634,6 +634,7 @@ export function PersistentResponsiveDrawerShell({
         data-persistent-drawer-content=""
         data-state={open ? "open" : "closed"}
         inert={!open}
+        // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- a drawer that stays mounted when closed; a native <dialog> would force top-layer modal behaviour
         role="dialog"
         tabIndex={-1}
         className={cn(

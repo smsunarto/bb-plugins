@@ -10,6 +10,7 @@ import {
   openSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   unlinkSync,
   writeFileSync,
@@ -165,7 +166,9 @@ export function createPrivateBotState(bb: BbPluginApi, store: BotStore, publish:
     assertId(botId);
     if (!isAbsolute(store.databasePath))
       throw new Error("Private state requires an absolute SDK storage database path");
-    return join(dirname(store.databasePath), "state", botId);
+    // BB owns the SDK storage directory; resolve it so a symlinked ancestor such as
+    // macOS's /var -> /private/var passes. Everything below it must be a real directory.
+    return join(realpathSync(dirname(store.databasePath)), "state", botId);
   }
   function warning(botId: string, kind: keyof StateWarnings, message?: string) {
     // Warning persistence/logging is itself best-effort, never a failed state write.

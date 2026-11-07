@@ -15,6 +15,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
   },
   agentation: { panel: ["AnnotationPanel"] },
   amp: { oracle: ["../app"] },
+  bots: { avatar: ["AvatarAppearance", "BotIcon"] },
   "boat-sandbox": { "machine-inputs": ["../src/app/app", "machineProviderInputs"] },
   "code-review": {
     comments: ["CommentForm"],
@@ -32,7 +33,7 @@ const surfaces: Record<string, Record<string, string[]>> = {
     workspace: ["StackLane", "BranchActions", "Conflicts"],
     history: ["OperationHistory"],
   },
-  "gtd-sidebar": { sidebar: ["../app"] },
+  "gtd-sidebar": { threads: ["ThreadCard"], "bot-cards": ["BotRow", "PinnedBotGrid"] },
   html: { tweaks: ["TweakPanel"] },
   genui: { gallery: ["../app", "nav"] },
   "kitchen-sink": { "thread-details": ["../src/app/app"] },
