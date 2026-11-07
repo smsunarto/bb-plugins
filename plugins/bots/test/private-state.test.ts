@@ -140,6 +140,21 @@ function expectDocument(
 }
 
 describe("private SQLite bot state", () => {
+  it("loads a launch preset saved with the retired starter prompt and saves it without one", async () => {
+    const f = fixture();
+    const db = f.bb.storage.database();
+    const launchPreset = { execution: null, workspace: "worktree" as const };
+    db.prepare("INSERT INTO bots(id,data) VALUES (?,?)").run(
+      "bot_atlas",
+      JSON.stringify({ ...bot(), launchPreset: { ...launchPreset, initialPrompt: "Old prompt" } }),
+    );
+    expect(f.store.require("bot_atlas").launchPreset).toEqual(launchPreset);
+    f.store.save(f.store.require("bot_atlas"));
+    const row = db.prepare("SELECT data FROM bots WHERE id = ?").get("bot_atlas") as {
+      data: string;
+    };
+    expect(JSON.parse(row.data).launchPreset).toEqual(launchPreset);
+  });
   it("loads a bot saved with the retired role field and saves it without one", async () => {
     const f = fixture();
     const db = f.bb.storage.database();

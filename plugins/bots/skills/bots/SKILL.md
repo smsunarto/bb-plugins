@@ -34,9 +34,8 @@ shows them on its Bots shelf while the plugin is enabled.
   click the avatar to customize it or use its adjacent dice to randomize.
   Saving is explicit. Per-bot AGENTS.md is retired; workspace AGENTS.md applies.
 - Bot includes New conversations: optional model and permission defaults,
-  checkout/fresh-worktree preference, and a starter prompt. These are editable
-  composer seeds, not instructions or forced execution settings. Existing
-  drafts and submitted choices win. Presets never change an existing session.
+  and checkout/fresh-worktree preference. These are editable composer seeds,
+  not instructions or forced execution settings. Submitted choices win. Presets never change an existing session.
 - Routines are a bot's scheduled instructions. In a bound conversation, use
   `bot_routine_list` and `bot_routine_update`; elsewhere, `bb bots routines
 list` and `bb bots routines run <routine-id>` (a test run). Each routine runs

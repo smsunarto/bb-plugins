@@ -103,7 +103,6 @@ describe("private bot identities", () => {
         permissionMode: null,
       },
       workspace: "worktree",
-      initialPrompt: "Review the changes.",
     };
     let bot = (await host.harness.behavior.callRpc("bot_create", {
       name: "Preset bot",
@@ -158,7 +157,6 @@ describe("private bot identities", () => {
           permissionMode: "full",
         },
         workspace: "worktree",
-        initialPrompt: "Saved prompt",
       },
     })) as BotMetadata;
     const chosen = {

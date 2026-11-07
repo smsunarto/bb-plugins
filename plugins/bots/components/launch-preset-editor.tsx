@@ -2,12 +2,11 @@ import {
   experimental_ProviderModelPicker as ProviderModelPicker,
   experimental_PermissionModePicker as PermissionModePicker,
 } from "@get-bb/plugin-sdk/app";
-import { Textarea } from "@bb-plugins/ui/textarea";
 import { useId, type Dispatch, type SetStateAction } from "react";
 import type { LaunchPreset } from "../lib/launch-preset";
 import { Label } from "./ui/label";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
-import { keepTypingKeys, Field, SwitchRow } from "./editor-fields";
+import { Field, SwitchRow } from "./editor-fields";
 
 const WORKSPACES = [
   {
@@ -140,21 +139,6 @@ export function LaunchPresetEditor({
             </Label>
           ))}
         </RadioGroup>
-      </Field>
-      <Field
-        label="Starter prompt"
-        htmlFor={`${id}-prompt`}
-        detail="Prefills an empty draft. You can change it before sending."
-      >
-        <Textarea
-          id={`${id}-prompt`}
-          className="min-h-20 resize-y text-xs"
-          value={value.initialPrompt}
-          maxLength={8192}
-          onKeyDown={keepTypingKeys}
-          onChange={(event) => onChange({ ...value, initialPrompt: event.target.value })}
-          placeholder="An optional starting point for new conversations…"
-        />
       </Field>
     </fieldset>
   );

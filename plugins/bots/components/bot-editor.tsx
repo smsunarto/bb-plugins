@@ -210,9 +210,7 @@ export function BotEditor({
         linkedProjectIds,
         ownedProjectIds,
         launchPreset:
-          preset.data.execution || preset.data.initialPrompt || preset.data.workspace !== "checkout"
-            ? preset.data
-            : null,
+          preset.data.execution || preset.data.workspace !== "checkout" ? preset.data : null,
       };
       if (target.kind === "edit") await onUpdate(fields);
       else await onCreate({ ...fields, hostId });

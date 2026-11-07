@@ -22,11 +22,16 @@ export const BOT_MIGRATIONS = [
   "CREATE INDEX bot_routines_by_bot ON bot_routines(bot_id)",
 ];
 
-/** A stored bot row, minus fields bots no longer have. */
+/** A stored bot row, minus fields bots no longer have: role and the launch preset's starter prompt. */
 function storedRow(data: string): unknown {
   const parsed: unknown = JSON.parse(data);
-  if (!parsed || typeof parsed !== "object" || !("role" in parsed)) return parsed;
+  if (!parsed || typeof parsed !== "object") return parsed;
   const { role: _role, ...rest } = parsed as Record<string, unknown>;
+  const preset = rest.launchPreset;
+  if (preset && typeof preset === "object" && "initialPrompt" in preset) {
+    const { initialPrompt: _prompt, ...launchPreset } = preset as Record<string, unknown>;
+    rest.launchPreset = launchPreset;
+  }
   return rest;
 }
 
