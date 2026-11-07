@@ -7,6 +7,7 @@ import { prepareCheckout, resolveSource } from "../host";
 it("fetches a retained PR ref and verifies its SHA before adding the worktree", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "slopcop-checkout-"));
   const calls: string[][] = [];
+  let checkout: { timeout?: number; env?: Record<string, string> } = {};
   const input = {
     source: root,
     path: path.join(root, "worktree"),
@@ -16,10 +17,15 @@ it("fetches a retained PR ref and verifies its SHA before adding the worktree", 
     base: "main",
   };
   try {
-    const result = await prepareCheckout(input, new AbortController().signal, async (_, args) => {
-      calls.push(args);
-      return args[0] === "rev-parse" ? input.head : "";
-    });
+    const result = await prepareCheckout(
+      input,
+      new AbortController().signal,
+      async (_, args, _signal, timeout, env) => {
+        calls.push(args);
+        if (args[0] === "worktree") checkout = { timeout, env };
+        return args[0] === "rev-parse" ? input.head : "";
+      },
+    );
     expect(result.path).toBe(input.path);
     expect(calls).toEqual([
       [
@@ -30,12 +36,45 @@ it("fetches a retained PR ref and verifies its SHA before adding the worktree", 
         "+refs/heads/main:refs/remotes/origin/main",
       ],
       ["rev-parse", "refs/slopcop/thr_test"],
-      ["worktree", "add", "--detach", input.path, input.head],
+      ["worktree", "add", "--quiet", "--detach", input.path, input.head],
     ]);
+    // A large LFS repository checks out pointers, with more than git's default deadline.
+    expect(checkout.env).toEqual({ GIT_LFS_SKIP_SMUDGE: "1" });
+    expect(checkout.timeout).toBeGreaterThan(120_000);
+    expect(checkout.timeout).toBeLessThan(300_000);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
+it("removes a checkout that git did not finish, so a retry starts clean", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "slopcop-checkout-"));
+  const input = {
+    source: root,
+    path: path.join(root, "worktree"),
+    ref: "refs/slopcop/thr_test",
+    number: 1125,
+    head: "3".repeat(40),
+    base: null,
+  };
+  try {
+    await expect(
+      prepareCheckout(input, new AbortController().signal, async (_, args) => {
+        if (args[0] === "rev-parse") return input.head;
+        if (args[0] === "worktree" && args[1] === "add") {
+          // git wrote HEAD and some files before its deadline killed it.
+          await mkdir(input.path, { recursive: true });
+          await writeFile(path.join(input.path, ".git"), "gitdir: elsewhere\n");
+          throw new Error("Command failed: git worktree add");
+        }
+        return "";
+      }),
+    ).rejects.toThrow("worktree add");
+    await expect(readdir(input.path)).rejects.toThrow();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 it("refuses a changed PR head without creating a worktree", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "slopcop-checkout-"));
   const calls: string[][] = [];

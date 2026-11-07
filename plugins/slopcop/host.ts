@@ -8,12 +8,20 @@ import { promisify } from "node:util";
 import { reviewCheckoutContract } from "./lib/review-checkout-contract";
 
 const exec = promisify(execFile);
-async function git(source: string, args: string[], signal: AbortSignal, timeout = 120_000) {
+/** Inside the server's 300 s `prepare` call, so git stops before the server abandons it. */
+const PREPARE_BUDGET_MS = 290_000;
+async function git(
+  source: string,
+  args: string[],
+  signal: AbortSignal,
+  timeout = 120_000,
+  env: Record<string, string> = {},
+) {
   const result = await exec("git", ["-C", source, ...args], {
     signal,
     timeout,
     maxBuffer: 1024 * 1024,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    env: { ...process.env, GIT_TERMINAL_PROMPT: "0", ...env },
   });
   return result.stdout.trim();
 }
@@ -103,6 +111,7 @@ export async function prepareCheckout(
   signal: AbortSignal,
   runGit: typeof git = git,
 ) {
+  const deadline = Date.now() + PREPARE_BUDGET_MS;
   if (await exists(input.path)) {
     const head = await runGit(input.path, ["rev-parse", "HEAD"], signal);
     if (head !== input.head) throw new Error("Existing review worktree has a different HEAD");
@@ -117,7 +126,26 @@ export async function prepareCheckout(
   if (head !== input.head)
     throw new Error("PR head changed before checkout; dispatch a fresh review");
   await mkdir(path.dirname(input.path), { recursive: true });
-  await runGit(input.source, ["worktree", "add", "--detach", input.path, input.head], signal);
+  // Reviewers read source, so LFS files stay pointers: smudging a large LFS repo
+  // (rampage-client: ~14k files, hundreds of MiB) outran the checkout deadline.
+  try {
+    await runGit(
+      input.source,
+      ["worktree", "add", "--quiet", "--detach", input.path, input.head],
+      signal,
+      Math.max(1, deadline - Date.now()),
+      { GIT_LFS_SKIP_SMUDGE: "1" },
+    );
+  } catch (error) {
+    // A killed checkout already has the right HEAD but missing files, so a retry would reuse it.
+    const cleanup = AbortSignal.timeout(30_000);
+    await runGit(input.source, ["worktree", "remove", "--force", input.path], cleanup).catch(
+      () => undefined,
+    );
+    await rm(input.path, { recursive: true, force: true });
+    await runGit(input.source, ["worktree", "prune"], cleanup).catch(() => undefined);
+    throw error;
+  }
   return { path: input.path };
 }
 

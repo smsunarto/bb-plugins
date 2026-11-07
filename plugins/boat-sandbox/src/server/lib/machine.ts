@@ -496,6 +496,34 @@ const make = Effect.fnUntraced(function* (deps: BoatMachineDeps) {
 });
 
 /**
+ * Stops and deletes every bb host daemon unit before setup installs this machine's own. Setup
+ * names units by host id, so a unit copied in with a snapshot never matches and is never replaced.
+ * Without a systemd user bus no unit runs and setup installs none, so there is nothing to retire.
+ */
+export const RETIRE_DAEMON_UNITS = [
+  "set -e",
+  // Setup's own bus discovery, so both see the same user manager.
+  "if ! systemctl --user show-environment >/dev/null 2>&1; then",
+  '  runtime=$(loginctl show-user "$(id -u)" --property=RuntimePath --value 2>/dev/null || true)',
+  '  case "$runtime" in /*) export XDG_RUNTIME_DIR="$runtime"; unset DBUS_SESSION_BUS_ADDRESS ;; esac',
+  "fi",
+  "systemctl --user show-environment >/dev/null 2>&1 || exit 0",
+  "retired=0",
+  'for unit in "$HOME"/.config/systemd/user/bb-host-daemon-*.service; do',
+  '  [ -e "$unit" ] || continue',
+  '  name=$(basename "$unit")',
+  '  echo "Retiring earlier bb daemon unit $name"',
+  '  systemctl --user disable --now "$name"',
+  '  rm -f "$unit"',
+  "  retired=1",
+  "done",
+  '[ "$retired" = 1 ] || exit 0',
+  "systemctl --user daemon-reload",
+  // The stopped daemon leaves its lock behind; the new one would wait for it to go stale.
+  'rm -rf "$HOME"/.bb-machines/*/daemon.lock.lock',
+].join("\n");
+
+/**
  * A failed create, cleanup or removal is an answer to core, not a rejection; a cancelled one is
  * interrupted, so `run` rejects with the abort reason.
  */
@@ -519,22 +547,48 @@ export function registerBoatMachine(
   },
 ): void {
   const { machine, run } = options;
-  const bootstrap = (
+  const bootstrap = Effect.fnUntraced(function* (
     key: string,
     ready: ReadySandbox,
     context: Pick<PluginMachineProviderLifecycleContext, "report" | "signal">,
-  ) =>
-    call(() =>
+    { fresh }: { fresh: boolean },
+  ) {
+    const executor = createBoatExecutor(ready.client, ready.resource.sandboxId, {
+      randomId: options.randomId,
+      run,
+    });
+    // A sandbox started from a snapshot of a bb machine still enables that machine's daemon
+    // unit. It shares the data dir and port with the unit setup installs, so the two fight over
+    // the daemon lock and the connected daemon drops whenever either restarts. Only a fresh
+    // machine is cleaned: a resume runs setup's `--start`, which reuses this machine's unit.
+    if (fresh) {
+      const retired = yield* call((signal) =>
+        executor.exec({
+          command: ["sh", "-c", RETIRE_DAEMON_UNITS],
+          stdin: "",
+          // Above systemd's default 90 s stop timeout.
+          timeoutMs: 120_000,
+          signal,
+          onOutput: (chunk) => context.report.log(chunk),
+        }),
+      );
+      if (retired.exitCode !== 0) {
+        return yield* Effect.fail(
+          new Error(
+            `Could not stop the bb daemon unit the snapshot carried in (exit ${retired.exitCode})`,
+          ),
+        );
+      }
+    }
+    return yield* call(() =>
       bb.experimental_machines.bootstrap({
         key,
-        executor: createBoatExecutor(ready.client, ready.resource.sandboxId, {
-          randomId: options.randomId,
-          run,
-        }),
+        executor,
         report: context.report,
         signal: context.signal,
       }),
     );
+  });
 
   bb.experimental_environments.register({
     id: MACHINE_DEFINITION.id,
@@ -571,7 +625,7 @@ export function registerBoatMachine(
         Effect.gen(function* () {
           const ready = yield* machine.create(context);
           const connectStartedAt = yield* Clock.currentTimeMillis;
-          const { hostId } = yield* bootstrap(context.key, ready, context);
+          const { hostId } = yield* bootstrap(context.key, ready, context, { fresh: true });
           const connectedAt = yield* Clock.currentTimeMillis;
           context.report.log(`Boat daemon connected in ${connectedAt - connectStartedAt} ms\n`);
           yield* options.onConnected(hostId);
@@ -594,7 +648,7 @@ export function registerBoatMachine(
       run(
         Effect.gen(function* () {
           const ready = yield* machine.resume(context);
-          yield* bootstrap(ready.resource.key, ready, context);
+          yield* bootstrap(ready.resource.key, ready, context, { fresh: false });
           yield* options.onConnected(context.hostId);
           return { resource: ready.resource };
         }),
