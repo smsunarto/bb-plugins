@@ -1,7 +1,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { AVATAR_EXPRESSION_IDS, AVATAR_MOTION_IDS, AVATAR_SHAPE_IDS } from "./lib/appearance.ts";
-import { newThreadRequestSchema } from "./lib/new-thread-request.ts";
+import { newThreadEnvironmentSchema, newThreadRequestSchema } from "./lib/new-thread-request.ts";
 import { launchPresetSchema } from "./lib/launch-preset.ts";
 import {
   routineActionSchema,
@@ -469,6 +469,14 @@ export const rpcContract = defineRpcContract({
     output: metadataSchema,
   },
   main_set: { input: z.object({ botId: id, threadId: id }).strict(), output: metadataSchema },
+  /**
+   * Open the bot's main chat, starting it in this project and environment
+   * when the bot has none or it was archived or deleted.
+   */
+  main_open: {
+    input: z.object({ botId: id, projectId: id, environment: newThreadEnvironmentSchema }).strict(),
+    output: z.object({ threadId: id, created: z.boolean() }).strict(),
+  },
   conversation_create: {
     input: z
       .object({ botId: id, request: newThreadRequestSchema, makeMain: z.boolean().optional() })

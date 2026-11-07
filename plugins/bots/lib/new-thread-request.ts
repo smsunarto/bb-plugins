@@ -76,7 +76,7 @@ const input = z.discriminatedUnion("type", [
     })
     .strict(),
 ]);
-const environment = z.discriminatedUnion("type", [
+export const newThreadEnvironmentSchema = z.discriminatedUnion("type", [
   // Native composers also use environment providers for existing remote
   // machines and newly provisioned machines. Preserve their opaque JSON inputs.
   z
@@ -150,7 +150,7 @@ export const newThreadRequestSchema: z.ZodType<NewThreadRequest> = z
         serviceTier: source,
       })
       .strict(),
-    environment,
+    environment: newThreadEnvironmentSchema,
     input: z.array(input).min(1),
     sendAt: z.number().int().nonnegative().optional(),
   })

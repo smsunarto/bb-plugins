@@ -163,7 +163,7 @@ const summaries = new Map<string, BotSummary>([
 const actions: BotsActions = {
   createBot: fn(),
   editBot: fn(),
-  newConversation: fn(),
+  openMainChat: fn(),
   newInProject: fn(),
   fork: fn(),
   setHidden: fn(),

@@ -378,8 +378,8 @@ function InboxList({
     () => botShelves(selectableBots, bots.list?.sections ?? NO_SECTIONS),
     [selectableBots, bots.list?.sections],
   );
-  // Opening a bot goes to its main conversation, else its newest live one,
-  // else starts a new one.
+  // Opening a bot goes to its main chat, else its newest live conversation,
+  // else starts its main chat.
   const openBot = useCommittedEvent((bot: BotMetadata) => {
     const live = bots.threadsByBot.get(bot.id) ?? [];
     const target =
@@ -389,7 +389,7 @@ function InboxList({
       botSummaries.get(bot.id)?.liveId ??
       null;
     if (target === null) {
-      botsActions.newConversation(bot);
+      botsActions.openMainChat(bot);
       return;
     }
     navigate.toThread(target);

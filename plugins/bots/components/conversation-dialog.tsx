@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 
 export type ConversationTarget = {
   bot: BotMetadata;
-  kind: "bot" | "project" | "worktree" | "fork";
+  kind: "project" | "worktree" | "fork";
   projectId: string;
   environment: NewThreadRequest["environment"];
   makeMain: boolean;
@@ -32,21 +32,17 @@ export function ConversationDialog({
   const [error, setError] = useState<string | null>(null);
   const submitting = useRef(false);
   const title =
-    target.kind === "bot"
-      ? "New conversation"
-      : target.kind === "worktree"
-        ? "New conversation in worktree"
-        : target.kind === "fork"
-          ? "Fork conversation"
-          : "New conversation in project";
+    target.kind === "worktree"
+      ? "New conversation in worktree"
+      : target.kind === "fork"
+        ? "Fork conversation"
+        : "New conversation in project";
   const description =
-    target.kind === "bot"
-      ? `Chat with ${target.bot.name} without a project. Choose the machine and harness before sending.`
-      : target.kind === "worktree"
-        ? "Start in a fresh worktree. Choose the branch and harness before sending."
-        : target.kind === "fork"
-          ? "Continue this conversation in the same BB environment."
-          : "Start in the project checkout. Change the project, machine, or harness here before sending.";
+    target.kind === "worktree"
+      ? "Start in a fresh worktree. Choose the branch and harness before sending."
+      : target.kind === "fork"
+        ? "Continue this conversation in the same BB environment."
+        : "Start in the project checkout. Change the project, machine, or harness here before sending.";
   return (
     <Dialog
       open

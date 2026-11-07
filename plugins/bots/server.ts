@@ -545,8 +545,55 @@ export function registerBots(
       return { threadId: thread.id };
     });
   }
-  const startRoutineConversation: StartRoutineConversation = async ({ bot, routine, text }) => {
+  /** The bot's preferred harness, as spawn request fields; empty for bb's defaults. */
+  const presetExecution = (bot: BotMetadata) => {
     const execution = bot.launchPreset?.execution;
+    return execution
+      ? {
+          providerId: execution.providerId,
+          model: execution.model,
+          reasoningLevel: execution.reasoningLevel,
+          ...(execution.serviceTier ? { serviceTier: execution.serviceTier } : {}),
+          ...(execution.permissionMode ? { permissionMode: execution.permissionMode } : {}),
+        }
+      : {};
+  };
+  /**
+   * The bot's main chat, started when it has none. bb refuses a thread
+   * without a first message, so a new one opens with the bot greeting the user.
+   */
+  async function openMainChat(
+    botId: string,
+    projectId: string,
+    environment: SpawnRequest["environment"],
+  ) {
+    const bot = store.require(botId);
+    if (bot.mainThreadId) {
+      const current = await bb.sdk.threads.get({ threadId: bot.mainThreadId }).catch(() => null);
+      if (current && current.archivedAt === null && current.deletedAt === null)
+        return { threadId: current.id, created: false };
+    }
+    const { threadId } = await startConversation(
+      botId,
+      {
+        projectId,
+        title: bot.name,
+        environment,
+        ...presetExecution(bot),
+        input: [
+          {
+            type: "text",
+            text: tools.read("bots/main-chat-start", { name: bot.name }),
+            mentions: [],
+            visibility: "agent-only",
+          },
+        ],
+      },
+      "always",
+    );
+    return { threadId, created: true };
+  }
+  const startRoutineConversation: StartRoutineConversation = async ({ bot, routine, text }) => {
     const personal = routine.projectId === (await personalProjectId());
     const { threadId } = await startConversation(
       bot.id,
@@ -556,15 +603,7 @@ export function registerBots(
         environment: personal
           ? { type: "host", hostId: bot.hostId, workspace: { type: "personal" } }
           : { type: "project-default" },
-        ...(execution
-          ? {
-              providerId: execution.providerId,
-              model: execution.model,
-              reasoningLevel: execution.reasoningLevel,
-              ...(execution.serviceTier ? { serviceTier: execution.serviceTier } : {}),
-              ...(execution.permissionMode ? { permissionMode: execution.permissionMode } : {}),
-            }
-          : {}),
+        ...presetExecution(bot),
         input: [{ type: "text", text, mentions: [] }],
       },
       "never",
@@ -953,6 +992,7 @@ export function registerBots(
         publish();
         return next;
       }),
+    main_open: ({ botId, projectId, environment }) => openMainChat(botId, projectId, environment),
     conversation_create: ({ botId, request, makeMain }) =>
       startConversation(botId, request, makeMain ? "always" : "if-none"),
     conversation_fork: async ({ botId, sourceThreadId, request }) =>

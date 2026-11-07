@@ -21,8 +21,8 @@ import { TooltipProvider } from "./ui/tooltip";
 export interface BotsActions {
   createBot(): void;
   editBot(bot: BotMetadata, tab?: EditorTab): void;
-  /** A conversation in the bot's owned project, or a projectless one. */
-  newConversation(bot: BotMetadata): void;
+  /** Go to the bot's main chat, starting it in the bot's owned project or without one. */
+  openMainChat(bot: BotMetadata): void;
   newInProject(bot: BotMetadata, kind: "project" | "worktree", from?: PluginSidebarThread): void;
   fork(bot: BotMetadata, source: PluginSidebarThread): void;
   setHidden(bot: BotMetadata, hidden: boolean): void;
@@ -149,19 +149,18 @@ export function useBotsController(
       });
     };
 
-    const newConversation = async (bot: BotMetadata) => {
+    const openMainChat = async (bot: BotMetadata) => {
       if (preparing.current) return;
       preparing.current = true;
       try {
         let prepared = await rpc.call("bot_prepare", { botId: bot.id });
-        // Read ownership at the action boundary, then keep the composer seed
-        // stable: later updates must not reset the user's choices.
         const snapshot = await rpc.call("bots_list", {});
         const current = snapshot.bots.find((entry) => entry.id === bot.id);
         if (!current) throw new Error("Bot no longer exists.");
         if (current.updatedAt >= prepared.updatedAt) prepared = current;
         if (!prepared.stateReady)
           throw new Error("The bot’s private state could not be prepared. Try again.");
+        // A missing main chat starts in the bot's owned project, else without one.
         const ownedProjectId = ownedConversationProjectId({
           bot: prepared,
           projects: snapshot.projects,
@@ -169,26 +168,25 @@ export function useBotsController(
           personalProjectId: snapshot.personalProjectId,
           main: firstConversation(prepared),
         });
-        if (ownedProjectId) {
-          const worktree = prepared.launchPreset?.workspace === "worktree";
-          setConversation({
-            bot: prepared,
-            kind: worktree ? "worktree" : "project",
-            projectId: ownedProjectId,
-            environment: worktree
-              ? worktreeLaunchEnvironment(prepared.hostId)
-              : projectLaunchEnvironment(prepared.hostId),
-            makeMain: false,
-          });
-          return;
-        }
-        setConversation({
-          bot: prepared,
-          kind: "bot",
-          projectId: snapshot.personalProjectId,
-          environment: { type: "host", hostId: prepared.hostId, workspace: { type: "personal" } },
-          makeMain: false,
-        });
+        const target = ownedProjectId
+          ? {
+              projectId: ownedProjectId,
+              environment:
+                prepared.launchPreset?.workspace === "worktree"
+                  ? worktreeLaunchEnvironment(prepared.hostId)
+                  : projectLaunchEnvironment(prepared.hostId),
+            }
+          : {
+              projectId: snapshot.personalProjectId,
+              environment: {
+                type: "host" as const,
+                hostId: prepared.hostId,
+                workspace: { type: "personal" as const },
+              },
+            };
+        const { threadId } = await rpc.call("main_open", { botId: prepared.id, ...target });
+        navigate.toThread(threadId);
+        onNavigate();
       } finally {
         preparing.current = false;
       }
@@ -197,7 +195,7 @@ export function useBotsController(
     return {
       createBot: () => setEditor({ kind: "create" }),
       editBot: (bot, tab) => run(() => editBot(bot, tab)),
-      newConversation: (bot) => run(() => newConversation(bot)),
+      openMainChat: (bot) => run(() => openMainChat(bot)),
       newInProject: (bot, kind, from) => {
         const main = firstConversation(bot);
         const preferredMain =
@@ -327,10 +325,10 @@ export function useBotsController(
           onClose={() => setEditor(null)}
           onCreate={async (value) => {
             const created = await rpc.call("bot_create", { ...value, sectionId: null });
-            // Creation is saved. Close the editor before preparing the first
-            // conversation, so a preparation error cannot create a duplicate.
+            // Creation is saved. Close the editor before starting the main
+            // chat, so a preparation error cannot create a duplicate bot.
             setEditor(null);
-            actions.newConversation(created);
+            actions.openMainChat(created);
           }}
           onUpdate={async (value) => {
             if (editor.kind !== "edit") return;

@@ -287,7 +287,7 @@ function BotMenu({
   );
 }
 
-/** A bot's own actions: new conversations, pinning, settings, visibility, order. */
+/** A bot's own actions: its main chat, new conversations, pinning, settings, visibility, order. */
 function botMenu(
   bot: BotMetadata,
   actions: BotsActions,
@@ -296,7 +296,7 @@ function botMenu(
   const hasWork = actions.hasWorkProjects(bot);
   const pinned = bot.pinned === true;
   return [
-    { label: "New conversation", icon: "Plus", run: () => actions.newConversation(bot) },
+    { label: "Main chat", icon: "Chat", run: () => actions.openMainChat(bot) },
     {
       label: "New conversation in project…",
       icon: "Folder",
