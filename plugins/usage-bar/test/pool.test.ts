@@ -14,8 +14,6 @@ function account(overrides: Partial<AccountSummary>): AccountSummary {
     enabled: true,
     priority: 1,
     lastUsedAt: null,
-    sevenDayUtilization: null,
-    sevenDayResetAt: null,
     familyWeekly: NO_FAMILIES,
     limitWindows: [],
     observedAt: null,
@@ -95,8 +93,10 @@ test("Claude shows weekly and each model's weekly window with its Max tier, but 
       label: "Scott",
       subscriptionType: "max",
       rateLimitTier: "default_claude_max_20x",
-      sevenDayUtilization: 0.52,
-      sevenDayResetAt: 200,
+      limitWindows: [
+        { slot: "primary", windowMinutes: 300, utilization: 0.9, resetAt: 100 },
+        { slot: "secondary", windowMinutes: 10080, utilization: 0.52, resetAt: 200 },
+      ],
       familyWeekly: { ...NO_FAMILIES, fable: { utilization: 0.58, resetAt: 300 } },
     }),
   ]);
@@ -196,8 +196,7 @@ test("invalid timestamps and fractional native integers preserve valid quota wit
   const parsed = accountListSchema.parse([
     account({
       provider: "claude",
-      sevenDayUtilization: 0.25,
-      sevenDayResetAt: 1e308,
+      limitWindows: [{ slot: "secondary", windowMinutes: 10080, utilization: 0.25, resetAt: 1e308 }],
       observedAt: 1e308,
       heldUntil: 1e308,
       inFlight: 1.5,

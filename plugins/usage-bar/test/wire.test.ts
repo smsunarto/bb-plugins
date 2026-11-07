@@ -21,8 +21,6 @@ function summary(overrides: Record<string, unknown>) {
     enabled: true,
     priority: 0,
     lastUsedAt: null,
-    sevenDayUtilization: null,
-    sevenDayResetAt: null,
     familyWeekly: NO_FAMILIES,
     limitWindows: [],
     observedAt: NOW,
@@ -76,8 +74,9 @@ test.skipIf(process.platform !== "darwin")(
         subscriptionType: "max",
         rateLimitTier: "default_claude_max_20x",
         inFlight: 1,
-        sevenDayUtilization: 0.52,
-        sevenDayResetAt: NOW + 4_000,
+        limitWindows: [
+          { slot: "secondary", windowMinutes: 10080, utilization: 0.52, resetAt: NOW + 4_000 },
+        ],
         familyWeekly: { ...NO_FAMILIES, fable: { utilization: 0.58, resetAt: NOW + 5_000 } },
       }),
       summary({
@@ -187,8 +186,9 @@ test.skipIf(process.platform !== "darwin")(
         provider: "claude",
         email: "carve@example.com",
         subscriptionType: "max",
-        sevenDayUtilization: 0.3,
-        sevenDayResetAt: NOW + 2_000,
+        limitWindows: [
+          { slot: "secondary", windowMinutes: 10080, utilization: 0.3, resetAt: NOW + 2_000 },
+        ],
         familyWeekly: { ...NO_FAMILIES, opus: { utilization: 1, resetAt: NOW + 3_000 } },
       }),
     ]);

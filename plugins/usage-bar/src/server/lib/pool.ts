@@ -25,8 +25,6 @@ const accountSummarySchema = z.object({
   enabled: z.boolean(),
   priority: z.number().int().catch(0),
   lastUsedAt: timestampSchema,
-  sevenDayUtilization: z.number().nullable(),
-  sevenDayResetAt: timestampSchema,
   familyWeekly: z.record(z.string(), quotaSchema.nullable()),
   limitWindows: z.array(
     quotaSchema.extend({
@@ -155,11 +153,12 @@ function codexWindows(account: AccountSummary): MenuWindow[] {
  */
 function claudeWindows(account: AccountSummary): MenuWindow[] {
   const windows: MenuWindow[] = [];
-  if (account.sevenDayUtilization !== null) {
+  const weekly = account.limitWindows.find((window) => window.windowMinutes === WEEK_MINUTES);
+  if (weekly !== undefined && weekly.utilization !== null) {
     windows.push({
       label: "Weekly",
-      usedPercent: percent(account.sevenDayUtilization),
-      resetAt: account.sevenDayResetAt,
+      usedPercent: percent(weekly.utilization),
+      resetAt: weekly.resetAt,
       windowMinutes: WEEK_MINUTES,
       model: null,
     });
