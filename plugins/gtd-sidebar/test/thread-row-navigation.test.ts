@@ -1857,7 +1857,13 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         thread("a", { host: { id: "host-a", name: "Studio" } }),
         thread("draft"),
       ]);
-      host.sidebar = { ...host.sidebar, experimental_hosts: [{ id: "host-b", name: "Empty" }] };
+      host.sidebar = {
+        ...host.sidebar,
+        experimental_hosts: [
+          { id: "host-a", name: "Studio" },
+          { id: "host-b", name: "Empty" },
+        ],
+      };
       host.actions = currentActions;
       const view = mount(host);
       await act(async () => {});
