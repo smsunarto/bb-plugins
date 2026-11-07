@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  experimental_ThreadRowMetadata as ThreadRowMetadata,
   experimental_useSidebarThreadSplit as useSidebarThreadSplit,
   useSidebarThreadShortcut,
   type PluginSidebarThread,
@@ -32,7 +33,7 @@ import {
   type ThreadActionPlan,
 } from "./thread-actions";
 import type { ProviderGlyphInfo } from "./provider-glyph";
-import { STATUS_SLOT_CLASS, StatusOrTime, rowDescribedBy } from "./status-slot";
+import { STATUS_SLOT_CLASS, StatusOrTime, useRowDescribedBy } from "./status-slot";
 import { FadingText, HostLead, ThreadDetails } from "./thread-details";
 import { snoozeUntilTomorrow } from "../../lib/lifecycle";
 import { useIosLongPress } from "../../hooks/use-ios-long-press";
@@ -209,7 +210,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
       : undefined;
   const unreadId = useId();
   const statusId = useId();
-  const describedBy = rowDescribedBy(statusId, unreadId, {
+  const describedBy = useRowDescribedBy(statusId, unreadId, {
     thread: statusThread,
     isUnread,
     shortcut,
@@ -358,11 +359,26 @@ const ThreadCardBody = memo(function ThreadCardBody({
               />
             )}
           </div>
+          <RowMetadataLine thread={thread} hidden={rename.isEditing} />
         </div>
       </div>
     </RowContextMenu>
   );
 });
+
+/**
+ * Other plugins' row badges, as bb's own row draws them under its title.
+ * bb's line takes its own pointer events; a row with no badges takes no space
+ * (app.css). Like bb's row, it hides while the row is renamed.
+ */
+function RowMetadataLine({ thread, hidden }: { thread: PluginSidebarThread; hidden: boolean }) {
+  if (hidden) return null;
+  return (
+    <div className="gtd-row-metadata pointer-events-none relative flex min-w-0 overflow-hidden">
+      <ThreadRowMetadata thread={thread} />
+    </div>
+  );
+}
 
 function threadCardPresentation({
   depth,

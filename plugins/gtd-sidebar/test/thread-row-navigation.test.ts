@@ -581,10 +581,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   }
 
   /**
-   * A row link's description as a screen reader hears it: each element its
-   * aria-describedby names, with a labelled glyph read by its label. Testing
-   * Library's own `description` match skips aria-label inside a description,
-   * which browsers read.
+   * A row link's description: each element its aria-describedby names. bb's
+   * status glyph labels itself in the app; the test runtime's stand-in names
+   * its indicator instead, so a glyph reads as that kind here.
    */
   function description(slot: RenderedSlot, id: string): string {
     return row(slot, id)
@@ -592,12 +591,17 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       .split(" ")
       .map((ref) => {
         const part = document.getElementById(ref)!;
-        const glyphs = within(part)
-          .queryAllByRole("img")
-          .map((img) => img.getAttribute("aria-label"));
+        const glyphs = Array.from(part.querySelectorAll("[data-thread-status-glyph]"), (glyph) =>
+          glyph.getAttribute("data-thread-status-glyph"),
+        );
         return [...glyphs, part.textContent].filter(Boolean).join(" ");
       })
       .join(" ");
+  }
+
+  /** bb's status glyph of `indicator` inside `container`, or null. */
+  function statusGlyph(container: HTMLElement, indicator: string): HTMLElement | null {
+    return container.querySelector(`[data-thread-status-glyph="${indicator}"]`);
   }
 
   async function openMenu(anchor: HTMLAnchorElement, compact: boolean) {
@@ -677,20 +681,15 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         expandParked(view.slot);
         for (const id of ["finished", "snoozed", "settled"]) {
           const container = row(view.slot, id).parentElement!;
-          const dot = within(container).getByRole("img", { name: "Unread response" });
-          assert.ok(dot.closest(".w-7"));
+          const dot = statusGlyph(container, "unread-success");
+          assert.ok(dot?.closest(".w-7"));
           // Said once: the slot's dot is the whole description.
           assert.equal(description(view.slot, id), "Unread response");
         }
-        assert.ok(within(row(view.slot, "working").parentElement!).getByLabelText("Working"));
+        assert.ok(statusGlyph(row(view.slot, "working").parentElement!, "runtime"));
         // The glyph takes the slot, so the note follows it.
-        assert.equal(description(view.slot, "working"), "Working Unread response");
-        assert.equal(
-          within(row(view.slot, "working").parentElement!).queryByRole("img", {
-            name: "Unread response",
-          }),
-          null,
-        );
+        assert.equal(description(view.slot, "working"), "runtime Unread response");
+        assert.equal(statusGlyph(row(view.slot, "working").parentElement!, "unread-success"), null);
         view.update({
           host: {
             ...host,
@@ -700,8 +699,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
             },
           },
         });
-        assert.equal(view.slot.queryAllByRole("img", { name: "Unread response" }).length, 0);
-        assert.ok(within(row(view.slot, "working").parentElement!).getByLabelText("Working"));
+        assert.equal(statusGlyph(view.slot.container, "unread-success"), null);
+        assert.ok(statusGlyph(row(view.slot, "working").parentElement!, "runtime"));
       },
     );
 
@@ -743,16 +742,58 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const view = mount(hostState([root, child]));
       fireEvent.click(rowButton(view.slot, "root", "Collapse children of root"));
       const container = row(view.slot, "root").parentElement!;
-      assert.ok(within(container).getByRole("img", { name: "Unread response" }).closest(".w-7"));
+      assert.ok(statusGlyph(container, "unread-success")?.closest(".w-7"));
       // The note stands in for the dot: it also says where the unread work is.
       assert.equal(description(view.slot, "root"), "Unread response in subthreads");
       fireEvent.click(rowButton(view.slot, "root", "Expand children of root"));
-      assert.equal(within(container).queryByRole("img", { name: "Unread response" }), null);
-      assert.ok(
-        within(row(view.slot, "child").parentElement!).getByRole("img", {
-          name: "Unread response",
-        }),
+      assert.equal(statusGlyph(container, "unread-success"), null);
+      assert.ok(statusGlyph(row(view.slot, "child").parentElement!, "unread-success"));
+    });
+    it("draws another plugin's row status in place of the age, under bb's precedence", () => {
+      const threeDaysAgo = Date.now() - 3 * 86_400_000 - 3_600_000;
+      const view = mount(
+        hostState([
+          thread("drafting", { latestAttentionAt: threeDaysAgo }),
+          thread("asks", {
+            hasPendingInteraction: true,
+            indicator: "waiting-for-input",
+            indicatorLabel: "Needs input",
+          }),
+          thread("quiet", { latestAttentionAt: threeDaysAgo }),
+        ]),
+        {},
+        "",
+        {
+          sidebarRowStatuses: {
+            drafting: { icon: "Edit", label: "Draft saved", tone: "default" },
+            asks: { icon: "Edit", label: "Draft saved", tone: "default" },
+          },
+        },
       );
+      const drafting = row(view.slot, "drafting").parentElement!;
+      assert.equal(
+        drafting.querySelector("[data-thread-status-glyph]")?.getAttribute("data-row-status"),
+        "Draft saved",
+      );
+      assert.equal(within(drafting).queryByText("3d"), null);
+      // bb's glyph keeps a raised hand over the row status; the slot still draws it.
+      assert.ok(statusGlyph(row(view.slot, "asks").parentElement!, "waiting-for-input"));
+      assert.ok(within(row(view.slot, "quiet").parentElement!).getByText("3d"));
+    });
+
+    it("draws bb's row metadata line under each card's title", () => {
+      const view = mount(hostState([thread("a"), thread("b")]));
+      for (const id of ["a", "b"]) {
+        const line = row(view.slot, id).parentElement!.querySelector(".gtd-row-metadata");
+        assert.equal(
+          line
+            ?.querySelector("[data-thread-row-metadata]")
+            ?.getAttribute("data-thread-row-metadata"),
+          id,
+        );
+        // After the title line, so the badges sit under the title.
+        assert.ok(line?.previousElementSibling?.querySelector(".gtd-thread-title"));
+      }
     });
   });
 
@@ -781,7 +822,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         // The snoozed row says its wake time, not the "Wake now" button beside it.
         assert.deepEqual(
           ["asks", "quiet", "snoozed", "settled"].map((id) => description(view.slot, id)),
-          ["Needs input", "3d", "4d", "3d"],
+          ["waiting-for-input", "3d", "4d", "3d"],
         );
         assert.deepEqual(
           ["snoozed", "settled", "asks"].map((id) =>
@@ -1481,7 +1522,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       };
       view.update({ host });
       assert.equal(rowBodyRender.mock.calls.length, 1);
-      assert.ok(within(row(view.slot, "b").parentElement!).getByLabelText("Thread failed"));
+      assert.ok(statusGlyph(row(view.slot, "b").parentElement!, "unread-error"));
 
       const pullRequest: RowPullRequest = {
         number: 12,

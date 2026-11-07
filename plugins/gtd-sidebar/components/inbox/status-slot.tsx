@@ -1,6 +1,11 @@
-import type { PluginSidebarThread, PluginSidebarThreadShortcut } from "@get-bb/plugin-sdk/app";
+import {
+  experimental_ThreadStatusGlyph as ThreadStatusGlyph,
+  useSidebarThreadRowStatus,
+  type PluginSidebarThread,
+  type PluginSidebarThreadRowStatus,
+  type PluginSidebarThreadShortcut,
+} from "@get-bb/plugin-sdk/app";
 import { cn } from "../../lib/utils";
-import { StatusGlyph, hasStatusGlyph } from "./status-glyph";
 import { relativeTimeLabel } from "../../lib/relative-time";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
 
@@ -29,6 +34,12 @@ export const TRAILING_GLYPH_BOX_CLASS = "flex size-3.5 shrink-0 items-center jus
 /**
  * Status OR age, never both: the glyph already implies the row is current, and
  * the age only earns its place once the thread has nothing to say.
+ *
+ * The glyph is bb's own, so the two lists in one window share one vocabulary,
+ * and a status another plugin sets on the row (drafts, workflows) shows here
+ * as it does in bb's list; the glyph applies bb's rule for which of the two
+ * wins. `thread.indicator` is already resolved through bb's precedence, so
+ * this does not re-resolve it.
  */
 export function StatusOrTime({
   thread,
@@ -44,17 +55,28 @@ export function StatusOrTime({
   /** A phone, where the age has to read at arm's length. */
   isCompactViewport?: boolean;
 }) {
+  const rowStatus = useSidebarThreadRowStatus(thread.id);
   if (shortcut) return <ShortcutPill shortcut={shortcut} />;
-  if (drawsStatusGlyph(thread)) {
-    return <StatusGlyph indicator={thread.indicator} label={thread.indicatorLabel} />;
+  if (drawsStatusGlyph(thread, rowStatus)) {
+    return <ThreadStatusGlyph indicator={thread.indicator} rowStatus={rowStatus} size="compact" />;
   }
-  if (isUnread) return <StatusGlyph indicator="unread-success" label="Unread response" />;
+  if (isUnread) return <ThreadStatusGlyph indicator="unread-success" size="compact" />;
   return <AgeLabel at={thread.latestAttentionAt} isCompactViewport={isCompactViewport} />;
 }
 
-/** The thread's own status glyph outranks the unread dot in the slot. */
-function drawsStatusGlyph(thread: PluginSidebarThread): boolean {
-  return thread.indicator !== "unread-success" && hasStatusGlyph(thread.indicator);
+/**
+ * Whether a glyph other than the unread dot speaks for the row. The dot alone
+ * leaves the slot to the unread rule, so a collapsed family's unread
+ * descendants still draw it. "none" is the only kind without a glyph: bb's
+ * glyph draws any kind bb reports, including ones newer than this plugin.
+ */
+function drawsStatusGlyph(
+  thread: PluginSidebarThread,
+  rowStatus: PluginSidebarThreadRowStatus | null,
+): boolean {
+  return (
+    rowStatus !== null || (thread.indicator !== "none" && thread.indicator !== "unread-success")
+  );
 }
 
 /**
@@ -63,7 +85,7 @@ function drawsStatusGlyph(thread: PluginSidebarThread): boolean {
  * Where the slot draws the unread dot, the row's unread note stands in for it:
  * the note says the same, or says the unread work sits in collapsed subthreads.
  */
-export function rowDescribedBy(
+export function useRowDescribedBy(
   statusId: string,
   unreadId: string,
   {
@@ -78,8 +100,9 @@ export function rowDescribedBy(
     shortcut: PluginSidebarThreadShortcut | null;
   },
 ): string {
+  const rowStatus = useSidebarThreadRowStatus(thread.id);
   if (!isUnread) return statusId;
-  const slotDrawsDot = shortcut === null && !drawsStatusGlyph(thread);
+  const slotDrawsDot = shortcut === null && !drawsStatusGlyph(thread, rowStatus);
   return slotDrawsDot ? unreadId : `${statusId} ${unreadId}`;
 }
 

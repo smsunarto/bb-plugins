@@ -73,13 +73,26 @@
 }
 
 .gtd-thread-row {
-  height: 32px;
+  /* A card grows by its metadata line; slim rows pin their height with h-8. */
+  min-height: 32px;
   /* Content starts 28px in: 10px past the disclosure's 12px chevron glyph,
      which sits centred in its 24px hit area. Each nesting level steps in by
      --gtd-depth-step; thread-card.tsx mirrors the value for the tree guides. */
   --gtd-depth-step: 16px;
   padding: 0 10px 0
     calc(28px + var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * var(--gtd-depth-step, 16px));
+}
+/* Other plugins' row badges under a card's title. The summary line keeps its
+   height, so the badges tuck under the title instead of adding a full line;
+   a row with no badges takes no space. */
+.gtd-row-metadata {
+  margin-top: -6px;
+  padding-bottom: 6px;
+  font-size: 11px;
+}
+/* bb marks its metadata line with data-has-items once an item shows. */
+.gtd-row-metadata:not(:has([data-has-items])) {
+  display: none;
 }
 .gtd-thread-title {
   display: flex;

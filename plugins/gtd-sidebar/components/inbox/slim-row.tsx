@@ -26,7 +26,7 @@ import {
   type DispatchRowCommand,
   type ThreadAction,
 } from "./thread-actions";
-import { STATUS_SLOT_CLASS, ShortcutPill, StatusOrTime, rowDescribedBy } from "./status-slot";
+import { STATUS_SLOT_CLASS, ShortcutPill, StatusOrTime, useRowDescribedBy } from "./status-slot";
 import { FadingText, HostLead, ThreadDetails } from "./thread-details";
 import type { ProviderGlyphInfo } from "./provider-glyph";
 import { snoozeWakeLabel } from "../../lib/lifecycle";
@@ -120,6 +120,7 @@ const SlimRowBody = memo(function SlimRowBody({
   }, [isCompactViewport]);
 
   const shortcut = useSidebarThreadShortcut(thread.id);
+  const describedBy = useRowDescribedBy(statusId, unreadId, { thread, isUnread, shortcut });
   const { rowClassName, rowStyle, titleClassName } = slimRowPresentation({
     isCompactViewport,
     isActive,
@@ -200,11 +201,7 @@ const SlimRowBody = memo(function SlimRowBody({
               data-sidebar-rename-anchor=""
               href="#"
               aria-label={title}
-              aria-describedby={rowDescribedBy(statusId, unreadId, {
-                thread,
-                isUnread,
-                shortcut,
-              })}
+              aria-describedby={describedBy}
               aria-keyshortcuts={shortcut?.ariaKeyshortcuts}
               aria-current={isActive ? "page" : undefined}
               onKeyDown={(event) => {
