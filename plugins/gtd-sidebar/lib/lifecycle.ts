@@ -16,7 +16,6 @@ export function isThreadWorking(thread: PluginSidebarThread): boolean {
     activity.backgroundAgents > 0 ||
     activity.backgroundCommands > 0 ||
     activity.planMode > 0 ||
-    activity.goals > 0 ||
     thread.indicator === "runtime" ||
     thread.indicator === "working-draft"
   );
@@ -34,7 +33,7 @@ export interface ThreadLifecycleRow {
 /** The activity signals that outrank a user's parking decision. */
 export interface ThreadActivitySignals {
   hasPendingInteraction: boolean;
-  /** Any live work: runtime, workflows, background agents, plan, goals. */
+  /** Any live work: runtime, workflows, background agents, plan. */
   isWorking: boolean;
   /** Newest attention timestamp bb reports for the thread. */
   latestAttentionAt: number;
@@ -46,7 +45,7 @@ export type ThreadShelf = "active" | "snoozed";
  * Whether a thread may be parked at all.
  *
  * bb has more kinds of live work than a single session status — workflows,
- * background agents, background commands, plan mode, goals — and every one of
+ * background agents, background commands, plan mode — and every one of
  * them must block parking. Hiding a thread that is still working is the one
  * failure this feature cannot afford.
  */

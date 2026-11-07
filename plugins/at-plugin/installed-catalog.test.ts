@@ -34,6 +34,7 @@ function installed(overrides: Partial<InstalledPluginRecord> = {}): InstalledPlu
     services: [],
     source: "path:/plugins/example",
     sourceDisplay: "/plugins/example",
+    sourceNotice: null,
     status: "running",
     statusDetail: null,
     updateState: {},

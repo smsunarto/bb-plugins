@@ -5,7 +5,7 @@ import { changeHiddenMachines, type MachineVisibilityChange } from "./machine-vi
 const hiddenIdsSchema = z.array(z.string().min(1));
 const STORAGE_KEY = "hiddenMachineIds";
 
-/** Changes run one at a time; the RPC contract invalidates every window's read. */
+/** Changes run one at a time; the RPC handler invalidates every window's read. */
 export function createMachineVisibilityStore(kv: BbPluginApi["storage"]["kv"]) {
   // A value an older build or a hand edit left behind hides nothing.
   const read = async () => {

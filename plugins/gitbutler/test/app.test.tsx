@@ -744,6 +744,7 @@ function actionThread(id: string): PluginThreadActionTarget {
     id,
     projectId: "project-1",
     parentThreadId: null,
+    parentNotifications: "auto",
     archivedAt: null,
     pinnedAt: null,
     sectionId: null,

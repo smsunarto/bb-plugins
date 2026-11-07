@@ -40,7 +40,6 @@ export function hasStatusGlyph(indicator: PluginSidebarThreadIndicator): boolean
     case "background-agent":
     case "background-command":
     case "plan-mode":
-    case "goal":
       return true;
     default:
       return false;
@@ -91,8 +90,6 @@ export function StatusGlyph({
       return <ShineIcon name="Terminal" label={aria} className={shared} />;
     case "plan-mode":
       return <ShineIcon name="ListTodo" label={aria} className={shared} />;
-    case "goal":
-      return <ShineIcon name="Target" label={aria} className={shared} />;
     case "unread-success":
       // The notification dot, in a box the size of every other glyph, the way
       // bb centers its own trailing indicators. Right-aligned on its own, a
@@ -119,7 +116,7 @@ function ShineIcon({
   label,
   className,
 }: {
-  name: "Workflow" | "UserRoundPlus" | "Terminal" | "ListTodo" | "Target";
+  name: "Workflow" | "UserRoundPlus" | "Terminal" | "ListTodo";
   label: string | undefined;
   className: string;
 }) {

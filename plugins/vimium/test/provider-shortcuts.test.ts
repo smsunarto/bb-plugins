@@ -19,6 +19,7 @@ const model = (id: string): Model => ({
     description: "",
   })),
   supportedServiceTiers: [{ id: "fast" }, { id: "ultrafast" }],
+  reasoningDiscovery: "known",
 });
 
 afterEach(() => {

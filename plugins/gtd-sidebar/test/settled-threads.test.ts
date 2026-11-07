@@ -23,7 +23,7 @@ function thread(overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThre
     originPluginId: null,
     providerId: "codex",
     hasPendingInteraction: false,
-    activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 0 },
+    activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0 },
     indicator: "none",
     indicatorLabel: null,
     isUnread: false,

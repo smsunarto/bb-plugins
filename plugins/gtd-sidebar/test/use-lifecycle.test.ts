@@ -66,7 +66,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       originPluginId: null,
       providerId: "codex",
       hasPendingInteraction: false,
-      activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0, goals: 0 },
+      activity: { workflows: 0, backgroundAgents: 0, backgroundCommands: 0, planMode: 0 },
       indicator: "none",
       indicatorLabel: null,
       isUnread: false,
@@ -197,7 +197,6 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
       activity: {
         activeBackgroundAgentCount: 0,
         activeBackgroundCommandCount: 0,
-        activeGoalCount: 0,
         activePlanModeCount: 0,
         activeWorkflowCount: 0,
       },

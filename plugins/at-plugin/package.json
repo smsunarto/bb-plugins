@@ -43,7 +43,7 @@
     "@bb-plugins/instructions": "workspace:*"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.94",
+    "@get-bb/plugin-sdk": "0.6.132",
     "@types/node": "^22.0.0",
     "typescript": "^6.0.0",
     "vitest": "4.1.11"

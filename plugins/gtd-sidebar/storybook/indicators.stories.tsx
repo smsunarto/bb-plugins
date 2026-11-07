@@ -31,7 +31,6 @@ export const AllIndicators: Story = {
           "background-agent",
           "background-command",
           "plan-mode",
-          "goal",
           "draft",
           "working-draft",
           "none",

@@ -46,7 +46,7 @@
     "@bb-plugins/effect-bridge": "workspace:*"
   },
   "devDependencies": {
-    "@get-bb/plugin-sdk": "0.6.94",
+    "@get-bb/plugin-sdk": "0.6.132",
     "@types/node": "^22.0.0",
     "bun-types": "^1.4.0",
     "tsx": "4.23.12",
