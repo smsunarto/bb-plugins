@@ -37,3 +37,9 @@ shows them on its Bots shelf while the plugin is enabled.
   checkout/fresh-worktree preference, and a starter prompt. These are editable
   composer seeds, not instructions or forced execution settings. Existing
   drafts and submitted choices win. Presets never change an existing session.
+- Routines are a bot's scheduled instructions. In a bound conversation, use
+  `bot_routine_list` and `bot_routine_update`; elsewhere, `bb bots routines
+  list` and `bb bots routines run <routine-id>` (a test run). Each routine runs
+  in its own conversation through bb Automations; do not schedule bot work
+  with `bb automation create` directly. Editor: Routines tab or the bot menu's
+  Routines… item. Webhook triggers are not supported.

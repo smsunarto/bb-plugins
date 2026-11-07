@@ -6,7 +6,8 @@ import { MEMORY_MAX_CHARS } from "./memory-limit.ts";
 const files = instructionFiles(import.meta.url);
 
 /** The tool guidance BB appends when the bot's tools are selected. Reread so prompt edits apply live. */
-export const botGuidance = () => files.read("tools/bot_read_state.instructions");
+export const botGuidance = () =>
+  `${files.read("tools/bot_read_state.instructions")}\n\n${files.read("tools/bot_routine_update.instructions")}`;
 
 /** The agent-only marker and note a bot conversation's first message carries. */
 export const conversationStartText = (token: string, name: string) =>

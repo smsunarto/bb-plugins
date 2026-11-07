@@ -27,8 +27,7 @@ export function sdkThreadBusy(thread: SdkThread): boolean {
     (activity.activeWorkflowCount ?? 0) > 0 ||
     (activity.activeBackgroundAgentCount ?? 0) > 0 ||
     (activity.activeBackgroundCommandCount ?? 0) > 0 ||
-    (activity.activePlanModeCount ?? 0) > 0 ||
-    (activity.activeGoalCount ?? 0) > 0
+    (activity.activePlanModeCount ?? 0) > 0
   );
 }
 

@@ -109,6 +109,8 @@ export async function backend(initialProjects: Project[] = [project()]) {
   const get = (hostId: string, path: string) => files.get(key(hostId, path));
   let sequence = 0;
   let failSpawn = false;
+  const automations = fakeAutomations();
+  const sent: { threadId: string; text: string; mode: string }[] = [];
   let host = createFakePluginHost({
     pluginId: "bots",
     agentSkillIds: ["bots"],
@@ -158,7 +160,18 @@ export async function backend(initialProjects: Project[] = [project()]) {
           throw new Error("Never write bot state to project/execution-host files");
         },
       },
+      plugins: {
+        callRpc: async ({ pluginId, method, input, outputSchema }) => {
+          if (pluginId !== "automations") throw new Error(`No plugin ${pluginId}`);
+          return outputSchema.parse(automations.call(method, input));
+        },
+      },
       threads: {
+        send: async ({ threadId, mode, input }) => {
+          const block = input[0];
+          sent.push({ threadId, mode, text: block?.type === "text" ? block.text : "" });
+          return { delivery: "sent" } as never;
+        },
         list: async ({
           projectId,
           parentThreadId,
@@ -229,6 +242,8 @@ export async function backend(initialProjects: Project[] = [project()]) {
   return {
     projects,
     threads,
+    automations,
+    sent,
     files,
     offline,
     put,
@@ -270,6 +285,110 @@ export async function backend(initialProjects: Project[] = [project()]) {
         linkedProjectIds,
         soul: `You are ${name}.`,
       })) as BotMetadata;
+    },
+  };
+}
+
+/** An in-memory stand-in for the automations plugin's RPC. */
+export function fakeAutomations() {
+  type Row = {
+    id: string;
+    projectId: string;
+    name: string;
+    enabled: boolean;
+    trigger: { triggerType: string; cron: string; timezone: string };
+    execution: { env?: Record<string, string>; script?: string };
+    createdByThreadId?: string;
+    runs: { id: string; status: "succeeded"; trigger: "manual" }[];
+  };
+  const rows = new Map<string, Row>();
+  let next = 0;
+  let unavailable = false;
+  const status = (row: Row) => ({
+    id: row.id,
+    enabled: row.enabled,
+    nextRunAt: row.enabled ? 1_900_000_000_000 : null,
+    lastRunAt: null,
+    lastRunStatus: null,
+    lastError: null,
+    runCount: row.runs.length,
+  });
+  const find = (input: { projectId: string; automationId: string }) => {
+    const row = rows.get(input.automationId);
+    if (!row || row.projectId !== input.projectId) throw new Error("Automation not found");
+    return row;
+  };
+  return {
+    rows,
+    /** Called when a manual run fires the routine, like the stored script would. */
+    onRun: null as null | ((row: Row) => Promise<void>),
+    setUnavailable(value: boolean) {
+      unavailable = value;
+    },
+    call(method: string, raw: unknown): unknown {
+      if (unavailable) throw new Error("Plugin automations is not running");
+      const input = raw as Record<string, unknown> & { projectId: string; automationId: string };
+      switch (method) {
+        case "automations_create": {
+          const row = {
+            ...(input as unknown as Omit<Row, "id" | "runs">),
+            id: `auto-${++next}`,
+            runs: [],
+          } as Row;
+          rows.set(row.id, row);
+          return status(row);
+        }
+        case "automations_update": {
+          const row = find(input);
+          Object.assign(row, { name: input.name, trigger: input.trigger });
+          return status(row);
+        }
+        case "automations_get":
+          return status(find(input));
+        case "automations_pause":
+          find(input).enabled = false;
+          return status(find(input));
+        case "automations_resume":
+          find(input).enabled = true;
+          return status(find(input));
+        case "automations_delete":
+          find(input);
+          rows.delete(input.automationId);
+          return { ok: true };
+        case "automations_run": {
+          const row = find(input);
+          const run = {
+            id: `run-${row.runs.length + 1}`,
+            status: "succeeded" as const,
+            trigger: "manual" as const,
+          };
+          row.runs.push(run);
+          return {
+            run: {
+              ...run,
+              error: null,
+              skipReason: null,
+              output: null,
+              startedAt: 1,
+              finishedAt: 2,
+            },
+          };
+        }
+        case "automations_runs":
+          return {
+            runs: find(input).runs.map((run) =>
+              Object.assign({}, run, {
+                error: null,
+                skipReason: null,
+                output: null,
+                startedAt: 1,
+                finishedAt: 2,
+              }),
+            ),
+          };
+        default:
+          throw new Error(`Unknown method ${method}`);
+      }
     },
   };
 }

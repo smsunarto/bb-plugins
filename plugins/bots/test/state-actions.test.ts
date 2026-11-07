@@ -63,11 +63,17 @@ async function scope() {
 it("exposes object-root native schemas with target/action required", async () => {
   const { host } = await scope();
   const tools = host.harness.inspection.registrations.agentTools;
-  expect(tools.map((tool) => tool.name)).toEqual(["bot_read_state", "bot_update_state"]);
+  expect(tools.map((tool) => tool.name)).toEqual([
+    "bot_read_state",
+    "bot_update_state",
+    "bot_routine_list",
+    "bot_routine_update",
+  ]);
   for (const tool of tools) expect((tool.inputSchema as { type: string }).type).toBe("object");
   expect((tools[1]!.inputSchema as { required: string[] }).required).toEqual(
     expect.arrayContaining(["target", "action"]),
   );
+  expect((tools[3]!.inputSchema as { required: string[] }).required).toEqual(["action"]);
   expect((tools[0]!.inputSchema as { properties: object }).properties).not.toHaveProperty("file");
 });
 

@@ -17,6 +17,9 @@ export const BOT_MIGRATIONS = [
   "CREATE TABLE thread_completion (thread_id TEXT PRIMARY KEY, completed_at INTEGER, reopened_at INTEGER)",
   // A user's explicit "No bot": stops parent/fork inheritance at this thread.
   "CREATE TABLE thread_detached (thread_id TEXT PRIMARY KEY, detached_at INTEGER NOT NULL)",
+  // Routines: a bot's scheduled instructions; Automations runs each one's schedule.
+  "CREATE TABLE bot_routines (id TEXT PRIMARY KEY, bot_id TEXT NOT NULL REFERENCES bots(id) ON DELETE CASCADE, data TEXT NOT NULL)",
+  "CREATE INDEX bot_routines_by_bot ON bot_routines(bot_id)",
 ];
 
 /** Expects `BOT_MIGRATIONS` to have run on the plugin database. */

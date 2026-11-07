@@ -5,7 +5,7 @@ import {
   type PluginAgentConfigurationContext,
 } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
-import type { z } from "zod";
+import { z } from "zod";
 import {
   BOT_TAGS,
   rpcContract,
@@ -36,10 +36,22 @@ import { botProjectContext } from "./lib/project-context.ts";
 import { botGuidance, botInstructions, conversationStartText } from "./lib/bot-instructions.ts";
 import { MEMORY_MAX_CHARS, validateMemory } from "./lib/memory-limit.ts";
 import {
+  createAutomationsClient,
+  createRoutines,
+  type StartRoutineConversation,
+} from "./lib/routines.ts";
+import { routineToolSchema, type RoutineFields } from "./lib/routine-schema.ts";
+import { routineCliCommands } from "./lib/routines-cli.ts";
+import {
   BOT_COMPLETION_SETTINGS,
   createCompletion,
   type CompletionSettingsSource,
 } from "./lib/completion-server.ts";
+
+type SpawnRequest = Extract<
+  Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0],
+  { input: unknown }
+>;
 
 const START_MARKER = /^\[bb-bot-start:([a-f0-9-]{36})\]/;
 const sha256 = (content: string) => createHash("sha256").update(content).digest("hex");
@@ -73,7 +85,11 @@ export default async function plugin(bb: BbPluginApi) {
  * `BOT_MIGRATIONS` to have run on the plugin database. Returns the
  * `bb bots …` commands for the plugin's CLI registration.
  */
-export function registerBots(bb: BbPluginApi, settings: CompletionSettingsSource) {
+export function registerBots(
+  bb: BbPluginApi,
+  settings: CompletionSettingsSource,
+  automations = createAutomationsClient(bb),
+) {
   const tools = instructionFiles(import.meta.url);
   const store = createBotStore(bb);
   const publish = () => bb.rpc.experimental_invalidate([BOT_TAGS.bots]);
@@ -478,13 +494,109 @@ export function registerBots(bb: BbPluginApi, settings: CompletionSettingsSource
       throw new Error("State changed too often; read it again and retry");
     });
   }
+  /**
+   * Spawns a conversation bound to the bot from its first dispatch. `main`
+   * says whether it becomes the bot's main conversation.
+   */
+  async function startConversation(
+    botId: string,
+    request: SpawnRequest,
+    main: "always" | "if-none" | "never",
+  ) {
+    if (request.projectId !== (await personalProjectId()))
+      await updateProjectRole(botId, "join", request.projectId);
+    return serial(botId, async () => {
+      const bot = await state.prepare(botId);
+      await validateConversationProject(bot, request.projectId);
+      const token = randomUUID();
+      store.stageStart(token, botId, request.projectId);
+      const thread = await bb.sdk.threads.spawn({
+        ...request,
+        input: [
+          ...request.input,
+          {
+            type: "text",
+            text: conversationStartText(token, bot.name),
+            mentions: [],
+            visibility: "agent-only",
+          },
+        ],
+      });
+      store.bind(thread.id, botId);
+      store.cancelStart(token);
+      if (main === "always" || (main === "if-none" && !store.require(botId).mainThreadId)) {
+        const latest = store.require(botId);
+        store.save({
+          ...latest,
+          mainThreadId: thread.id,
+          updatedAt: nextTimestamp(latest.updatedAt),
+        });
+      }
+      publish();
+      return { threadId: thread.id };
+    });
+  }
+  const startRoutineConversation: StartRoutineConversation = async ({ bot, routine, text }) => {
+    const execution = bot.launchPreset?.execution;
+    const personal = routine.projectId === (await personalProjectId());
+    const { threadId } = await startConversation(
+      bot.id,
+      {
+        projectId: routine.projectId,
+        title: routine.name,
+        environment: personal
+          ? { type: "host", hostId: bot.hostId, workspace: { type: "personal" } }
+          : { type: "project-default" },
+        ...(execution
+          ? {
+              providerId: execution.providerId,
+              model: execution.model,
+              reasoningLevel: execution.reasoningLevel,
+              ...(execution.serviceTier ? { serviceTier: execution.serviceTier } : {}),
+              ...(execution.permissionMode ? { permissionMode: execution.permissionMode } : {}),
+            }
+          : {}),
+        input: [{ type: "text", text, mentions: [] }],
+      },
+      "never",
+    );
+    return threadId;
+  };
+  const publishRoutines = () => bb.rpc.experimental_invalidate([BOT_TAGS.routines]);
+  async function routineProjects(bot: BotMetadata) {
+    const projects = await bb.sdk.projects.list({ includePersonal: true });
+    const personal = projects.find((project) => project.kind === "personal");
+    if (!personal) throw new Error("BB's personal project is unavailable");
+    personalId = personal.id;
+    return [
+      { id: personal.id, name: "Personal" },
+      ...bot.linkedProjectIds.map((id) => ({
+        id,
+        name: projects.find((project) => project.id === id)?.name ?? "Unavailable project",
+      })),
+    ];
+  }
+  const routines = createRoutines(bb, {
+    automations,
+    requireBot: (botId) => store.require(botId),
+    allowedProjectIds: async (bot) => (await routineProjects(bot)).map((project) => project.id),
+    resolveOwner,
+    startConversation: startRoutineConversation,
+    publish: publishRoutines,
+  });
+  async function ownedRoutine(botId: string, routineId: string) {
+    const routine = routines.require(routineId);
+    if (routine.botId !== botId) throw new Error("That routine belongs to another bot.");
+    return routine;
+  }
+
   const contextOwner = (ctx: PluginAgentConfigurationContext) => owner(ctx.thread);
   // One source for the agent configuration and the Info tab's prompt preview.
   const botAgentConfiguration = (
     bot: BotMetadata,
     project: PluginAgentConfigurationContext["project"],
   ) => ({
-    tools: ["bot_read_state", "bot_update_state"],
+    tools: ["bot_read_state", "bot_update_state", "bot_routine_list", "bot_routine_update"],
     skills: [BOTS_SKILL],
     instructions: botInstructions(bot, botProjectContext(bot, project, store)),
   });
@@ -513,6 +625,57 @@ export function registerBots(bb: BbPluginApi, settings: CompletionSettingsSource
       return JSON.stringify(
         await applyBotState(botId, stateMutationSchema.parse(normalizeStateMutation(change))),
       );
+    },
+  });
+  bb.agents.registerTool({
+    name: "bot_routine_list",
+    ...tools.tool("bot_routine_list"),
+    parameters: z.object({}).strict(),
+    execute: async (_input, ctx) => {
+      const botId = await resolveOwner(ctx.threadId);
+      if (!botId) throw new Error("This conversation is not assigned to a bot");
+      const [views, projects] = await Promise.all([
+        routines.listViews(botId),
+        routineProjects(store.require(botId)),
+      ]);
+      return JSON.stringify({ routines: views, projects });
+    },
+  });
+  bb.agents.registerTool({
+    name: "bot_routine_update",
+    ...tools.tool("bot_routine_update"),
+    parameters: routineToolSchema,
+    execute: async (input, ctx) => {
+      const botId = await resolveOwner(ctx.threadId);
+      if (!botId) throw new Error("This conversation is not assigned to a bot");
+      const fields = Object.fromEntries(
+        (["name", "instruction", "cron", "timezone", "projectId"] as const)
+          .filter((key) => input[key] != null)
+          .map((key) => [key, input[key]]),
+      ) as Partial<RoutineFields>;
+      if (input.action === "create") {
+        const allowed = (await routineProjects(store.require(botId))).map((project) => project.id);
+        const projectId =
+          fields.projectId ?? (allowed.includes(ctx.projectId) ? ctx.projectId : allowed[0]!);
+        const missing = (["name", "instruction", "cron", "timezone"] as const).filter(
+          (key) => !fields[key],
+        );
+        if (missing.length) throw new Error(`create needs ${missing.join(", ")}`);
+        return JSON.stringify(
+          await routines.create(botId, { ...(fields as RoutineFields), projectId }, ctx.threadId),
+        );
+      }
+      if (!input.routineId)
+        throw new Error(`${input.action} needs routineId from bot_routine_list`);
+      await ownedRoutine(botId, input.routineId);
+      if (input.action === "update") {
+        if (!Object.keys(fields).length)
+          throw new Error(
+            "update needs at least one of name, instruction, cron, timezone, projectId",
+          );
+        return JSON.stringify(await routines.update(input.routineId, fields));
+      }
+      return JSON.stringify(await routines.act(input.routineId, input.action));
     },
   });
   bb.experimental_hooks.on("message.dispatch", async (ctx) => {
@@ -720,40 +883,8 @@ export function registerBots(bb: BbPluginApi, settings: CompletionSettingsSource
         publish();
         return next;
       }),
-    conversation_create: async ({ botId, request, makeMain }) => {
-      if (request.projectId !== (await personalProjectId()))
-        await updateProjectRole(botId, "join", request.projectId);
-      return serial(botId, async () => {
-        const bot = await state.prepare(botId);
-        await validateConversationProject(bot, request.projectId);
-        const token = randomUUID();
-        store.stageStart(token, botId, request.projectId);
-        const thread = await bb.sdk.threads.spawn({
-          ...request,
-          input: [
-            ...request.input,
-            {
-              type: "text",
-              text: conversationStartText(token, bot.name),
-              mentions: [],
-              visibility: "agent-only",
-            },
-          ],
-        });
-        store.bind(thread.id, botId);
-        store.cancelStart(token);
-        if (makeMain || !store.require(botId).mainThreadId) {
-          const latest = store.require(botId);
-          store.save({
-            ...latest,
-            mainThreadId: thread.id,
-            updatedAt: nextTimestamp(latest.updatedAt),
-          });
-        }
-        publish();
-        return { threadId: thread.id };
-      });
-    },
+    conversation_create: ({ botId, request, makeMain }) =>
+      startConversation(botId, request, makeMain ? "always" : "if-none"),
     conversation_fork: async ({ botId, sourceThreadId, request }) =>
       serial(botId, async () => {
         const bot = await state.prepare(botId);
@@ -967,7 +1098,25 @@ export function registerBots(bb: BbPluginApi, settings: CompletionSettingsSource
         return state.update(botId, file, content, expectedSha256);
       }),
     state_apply: ({ botId, change }) => applyBotState(botId, change),
+    routines_list: async ({ botId }) => {
+      const bot = store.require(botId);
+      const [views, projects] = await Promise.all([
+        routines.listViews(botId),
+        routineProjects(bot),
+      ]);
+      return { routines: views, projects };
+    },
+    routine_save: async ({ botId, routineId, ...fields }) => {
+      if (!routineId) return routines.create(botId, fields, null);
+      await ownedRoutine(botId, routineId);
+      return routines.update(routineId, fields);
+    },
+    routine_action: ({ routineId, action }) => routines.act(routineId, action),
+    routine_runs: async ({ routineId, limit }) => ({ runs: await routines.runs(routineId, limit) }),
   });
 
-  return botsCliCommands(bb, store, resolveOwner, completion.records);
+  return {
+    ...botsCliCommands(bb, store, resolveOwner, completion.records),
+    ...routineCliCommands(store, routines),
+  };
 }
