@@ -231,6 +231,8 @@ export function registerBots(
                 "Bot changed while editing. Read the current identity before saving.",
               );
             let next = { ...current, ...fields };
+            // A home lives on its machine; a new machine gets a new home on first use.
+            if (next.hostId !== current.hostId) next.homeProjectId = null;
             if (memory !== undefined) next = applyState(next, "MEMORY.md", memory);
             if (settings !== undefined)
               next = applyState(
