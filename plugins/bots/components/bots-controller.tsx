@@ -313,6 +313,7 @@ export function useBotsController(
           key={editor.kind === "edit" ? editor.metadata.id : "create"}
           target={editor}
           hosts={list.hosts}
+          defaultHostId={list.defaultHostId ?? null}
           projects={list.projects}
           bots={list.bots}
           projectOwners={list.projectOwners ?? []}

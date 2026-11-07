@@ -48,6 +48,17 @@ import {
   createCompletion,
   type CompletionSettingsSource,
 } from "./lib/completion-server.ts";
+import { BOT_MACHINE_SETTINGS, matchDefaultMachine } from "./lib/default-machine.ts";
+
+/** The plugin settings the bots read: completion's plus the default machine. */
+export interface BotSettingsSource {
+  get(): Promise<
+    Partial<
+      Record<keyof typeof BOT_COMPLETION_SETTINGS | keyof typeof BOT_MACHINE_SETTINGS, unknown>
+    >
+  >;
+  onChange(listener: () => void): unknown;
+}
 
 type SpawnRequest = Extract<
   Parameters<BbPluginApi["sdk"]["threads"]["spawn"]>[0],
@@ -66,7 +77,7 @@ const BOTS_SKILL = "bots";
  * from tobi/bb-bots-sidebar 1.1.0.
  */
 export default async function plugin(bb: BbPluginApi) {
-  const settings = bb.settings.define(BOT_COMPLETION_SETTINGS);
+  const settings = bb.settings.define({ ...BOT_COMPLETION_SETTINGS, ...BOT_MACHINE_SETTINGS });
   bb.storage.migrate(bb.storage.database(), BOT_MIGRATIONS);
   const commands = registerBots(bb, settings);
   bb.cli.register(
@@ -88,7 +99,7 @@ export default async function plugin(bb: BbPluginApi) {
  */
 export function registerBots(
   bb: BbPluginApi,
-  settings: CompletionSettingsSource,
+  settings: BotSettingsSource & CompletionSettingsSource,
   automations = createAutomationsClient(bb),
 ) {
   const tools = instructionFiles(import.meta.url);
@@ -848,17 +859,25 @@ export function registerBots(
     });
   }
 
+  /** The enrolled machine the Default machine setting names, if any. */
+  async function configuredHost(hosts: Awaited<ReturnType<typeof bb.sdk.hosts.list>>) {
+    return matchDefaultMachine(hosts, (await settings.get()).defaultMachine);
+  }
+
   /**
-   * The machine a new bot runs on: the calling bot's, else a connected one,
-   * else (unless `connectedOnly`) any enrolled one.
+   * The machine a new bot runs on: the Default machine setting's (when
+   * `connectedOnly`, only while it is connected), else the calling bot's, else
+   * a connected one, else (unless `connectedOnly`) any enrolled one.
    */
   async function defaultHostId(
     callerThreadId?: string,
     connectedOnly = false,
   ): Promise<string | null> {
+    const hosts = await bb.sdk.hosts.list();
+    const configured = await configuredHost(hosts);
+    if (configured && (!connectedOnly || configured.status === "connected")) return configured.id;
     const callerBot = callerThreadId ? await resolveOwner(callerThreadId, false) : null;
     if (callerBot !== null) return store.require(callerBot).hostId;
-    const hosts = await bb.sdk.hosts.list();
     const connected = hosts.find((host) => host.status === "connected");
     return (connected ?? (connectedOnly ? undefined : hosts[0]))?.id ?? null;
   }
@@ -912,6 +931,12 @@ export function registerBots(
       const personal = projects.find((project) => project.kind === "personal");
       if (!personal) throw new Error("BB's personal project is unavailable");
       personalId = personal.id;
+      const { defaultMachine } = await settings.get();
+      const configured = matchDefaultMachine(hosts, defaultMachine);
+      if (!configured && typeof defaultMachine === "string" && defaultMachine.trim())
+        warnings.push(
+          `Default machine "${defaultMachine.trim()}" matches no enrolled machine, so new bots use the first connected one.`,
+        );
       const bots = store.list();
       const botHomes = new Set(bots.map((bot) => bot.homeProjectId));
       return {
@@ -923,6 +948,7 @@ export function registerBots(
         detachedThreadIds: store.detachedIds(),
         completions: completion.completions(),
         sections: store.sections(),
+        defaultHostId: configured?.id ?? null,
         hosts: hosts.map((host) => ({
           id: host.id,
           name: host.name,

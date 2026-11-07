@@ -11,11 +11,12 @@ import { defineCli } from "@get-bb/plugin-sdk";
 import { registerBots } from "../server";
 import { BOT_MIGRATIONS, createBotStore } from "../lib/bot-store";
 import { BOT_COMPLETION_SETTINGS } from "../lib/completion-server";
+import { BOT_MACHINE_SETTINGS } from "../lib/default-machine";
 
 /** The Bots server as server.ts wires it, without the one-time GTD import. */
 async function plugin(bb: BbPluginApi) {
   bb.storage.migrate(bb.storage.database(), BOT_MIGRATIONS);
-  const settings = bb.settings.define(BOT_COMPLETION_SETTINGS);
+  const settings = bb.settings.define({ ...BOT_COMPLETION_SETTINGS, ...BOT_MACHINE_SETTINGS });
   bb.cli.register(
     defineCli({
       name: "bots",
