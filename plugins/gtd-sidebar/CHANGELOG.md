@@ -4,6 +4,10 @@
 
 ### Patch Changes
 
+- Other plugins' row badges draw as chips under the title, and the card no
+  longer draws its own pull request number beside the title, so a pull request
+  shows once, through GitHub PR Status's badge.
+
 - The machine menu opens and closes instantly, without animation.
 
 - Switching between the Code and Bots tabs shows their groups at once instead of

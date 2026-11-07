@@ -15,7 +15,6 @@ import type {
 import type { RenderedSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { PointerEvent } from "react";
 import type { LifecycleApi } from "../hooks/use-lifecycle.ts";
-import type { RowPullRequest } from "../lib/pull-requests.ts";
 import { changeHiddenMachines } from "../lib/machine-visibility.ts";
 import { machineVisibilityChangeSchema } from "../lib/rpc-contract.ts";
 import { machineColors } from "../lib/machine-colors.ts";
@@ -146,8 +145,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     navigate: Partial<BbNavigate>;
     lifecycle: LifecycleApi;
     unarchive: (args: { threadId: string }) => Promise<{ ok: true }>;
-    /** GitHub PR Status rows, keyed by environment id. */
-    pullRequests: Readonly<Record<string, RowPullRequest>>;
     /** A plugin's per-thread notification level, offered as a choice list. */
     notifications?: Readonly<Record<string, string>>;
     splitThreads: readonly string[];
@@ -226,35 +223,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
             }
           : {},
       };
-    },
-    // GitHub PR Status's keyed read, answered from the host's rows. The
-    // stored row keeps its identity, as the shared query cache's does. The
-    // GitButler plugin's thread-keyed read has no rows here.
-    experimental_useRpcKeyedQuery: (options: {
-      pluginId?: string;
-      method: string;
-      keys: readonly string[];
-    }) => {
-      const { pullRequests } = useHost();
-      if (options.pluginId === "gitbutler") {
-        assert.equal(options.method, "threadPullRequests");
-        const data = Object.fromEntries(options.keys.map((key) => [key, { outcome: "absent" }]));
-        return { data, error: null, isLoading: false, isFetching: false, refetch: async () => {} };
-      }
-      assert.equal(options.pluginId, "bb--github-pr-status");
-      assert.equal(options.method, "pullRequests");
-      const data = Object.fromEntries(
-        options.keys.map((key) => {
-          const pullRequest = pullRequests[key];
-          return [
-            key,
-            pullRequest === undefined
-              ? { outcome: "absent" }
-              : { outcome: "available", pullRequest },
-          ];
-        }),
-      );
-      return { data, error: null, isLoading: false, isFetching: false, refetch: async () => {} };
     },
   }));
   mock.module("../hooks/use-lifecycle.ts", () => ({ useLifecycle: () => useHost().lifecycle }));
@@ -490,7 +458,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       navigate: {},
       lifecycle: lifecycle(),
       unarchive: async () => ({ ok: true }),
-      pullRequests: {},
       splitThreads: [],
       splitEnabled: true,
       onSplitPointerDown: () => {},
@@ -1557,32 +1524,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       view.update({ host });
       assert.equal(rowBodyRender.mock.calls.length, 1);
       assert.ok(statusGlyph(row(view.slot, "b").parentElement!, "unread-error"));
-
-      const pullRequest: RowPullRequest = {
-        number: 12,
-        title: "Row rendering",
-        url: "https://example.com/pull/12",
-        state: "open",
-        attention: "checks_failed",
-      };
-      rowBodyRender.mockClear();
-      host = { ...host, pullRequests: { "env-b": pullRequest } };
-      view.update({ host });
-      assert.equal(rowBodyRender.mock.calls.length, 1);
-      const pr = view.slot.getByRole("link", { name: "#12" });
-      assert.equal(pr.getAttribute("href"), pullRequest.url);
-      assert.equal(pr.getAttribute("title"), pullRequest.title);
-      assert.ok(pr.classList.contains("text-destructive-text"));
-      rowBodyRender.mockClear();
-      host = {
-        ...host,
-        pullRequests: { "env-b": { ...pullRequest, attention: "ready_to_merge" } },
-      };
-      view.update({ host });
-      assert.equal(rowBodyRender.mock.calls.length, 1);
-      assert.ok(
-        view.slot.getByRole("link", { name: "#12" }).classList.contains("text-success-foreground"),
-      );
 
       rowBodyRender.mockClear();
       host = { ...host, splitThreads: ["b"] };

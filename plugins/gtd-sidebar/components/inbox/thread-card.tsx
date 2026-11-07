@@ -39,8 +39,6 @@ import { snoozeUntilTomorrow } from "../../lib/lifecycle";
 import { useIosLongPress } from "../../hooks/use-ios-long-press";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { useNestRow, type SidebarDragApi } from "../../hooks/use-nest-drag";
-import { useRowPullRequest } from "../../hooks/use-row-pull-request";
-import type { RowPullRequest } from "../../lib/pull-requests";
 
 /** Horizontal step per nesting level, in px. Mirrors --gtd-depth-step in app.css. */
 const DEPTH_STEP = 16;
@@ -78,7 +76,6 @@ interface ThreadCardProps {
 
 export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
   const { splitProps, layout } = useSidebarThreadSplit(props.thread.id);
-  const pullRequest = useRowPullRequest(props.thread.id, props.thread.environment?.id ?? null);
   const onSplitPointerDown = useCommittedEvent((event: PointerEvent<HTMLElement>) => {
     splitProps.onPointerDown?.(event);
   });
@@ -105,7 +102,6 @@ export const ThreadCard = memo(function ThreadCard(props: ThreadCardProps) {
   return (
     <ThreadCardBody
       {...props}
-      pullRequest={pullRequest}
       isOpenInSplit={layout !== null}
       isFocusedInSplit={layout?.panes.some((pane) => pane.isMe && pane.isFocused)}
       onSplitPointerDown={splitProps.onPointerDown ? onSplitPointerDown : undefined}
@@ -150,7 +146,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
   isCompactViewport,
   command,
   drag,
-  pullRequest,
   isOpenInSplit,
   isFocusedInSplit,
   onSplitPointerDown,
@@ -160,7 +155,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
   nestIsOver,
   setNestRef,
 }: ThreadCardProps & {
-  pullRequest: RowPullRequest | null;
   isOpenInSplit: boolean;
   isFocusedInSplit: boolean | undefined;
   onSplitPointerDown?: (event: PointerEvent<HTMLElement>) => void;
@@ -252,7 +246,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
       isUnread={isUnread}
       shortcut={shortcut}
       activity={thread.activity}
-      pullRequest={pullRequest}
       interactive={interactive}
       statusId={statusId}
     />
@@ -354,7 +347,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
                 showActions={showActions}
                 canPark={canPark}
                 activity={thread.activity}
-                pullRequest={pullRequest}
                 statusId={statusId}
               />
             )}
@@ -486,7 +478,6 @@ function MobileThreadSummary({
   isUnread,
   shortcut,
   activity,
-  pullRequest,
   interactive,
   statusId,
 }: {
@@ -495,7 +486,6 @@ function MobileThreadSummary({
   isUnread: boolean;
   shortcut: PluginSidebarThreadShortcut | null;
   activity: PluginSidebarThread["activity"];
-  pullRequest: RowPullRequest | null;
   interactive: boolean;
   /** The slot's id, which the row's link names as its description. */
   statusId: string;
@@ -505,19 +495,9 @@ function MobileThreadSummary({
       {title}
       <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
         <ActivityCounts activity={activity} isCompactViewport />
-        {pullRequest ? (
-          <PullRequestNumber
-            pullRequest={pullRequest}
-            interactive={interactive}
-            className={cn("z-[1]", interactive && "pointer-events-auto")}
-          />
-        ) : null}
         {/* Only the live row names its slot: the touch menu's lifted copy
            would otherwise duplicate the id. */}
-        <span
-          id={interactive ? statusId : undefined}
-          className={cn(STATUS_SLOT_CLASS, pullRequest && "w-auto")}
-        >
+        <span id={interactive ? statusId : undefined} className={STATUS_SLOT_CLASS}>
           <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} isCompactViewport />
         </span>
       </span>
@@ -746,7 +726,6 @@ function DesktopThreadSummary({
   showActions,
   canPark,
   activity,
-  pullRequest,
   statusId,
 }: {
   title: ReactNode;
@@ -757,7 +736,6 @@ function DesktopThreadSummary({
   showActions: boolean;
   canPark: boolean;
   activity: PluginSidebarThread["activity"];
-  pullRequest: RowPullRequest | null;
   /** The slot's id, which the row's link names as its description. */
   statusId: string;
 }) {
@@ -768,8 +746,7 @@ function DesktopThreadSummary({
       {title}
       <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
         <ActivityCounts activity={activity} isCompactViewport={false} />
-        {pullRequest ? <PullRequestNumber pullRequest={pullRequest} interactive /> : null}
-        <span id={statusId} className={cn(STATUS_SLOT_CLASS, pullRequest && "w-auto")}>
+        <span id={statusId} className={STATUS_SLOT_CLASS}>
           <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} />
         </span>
       </span>
@@ -826,43 +803,6 @@ function ParkButton({
     >
       <Icon name={icon} className="size-3.5" />
     </button>
-  );
-}
-
-/** The PR number in its state's tint; a link only where the row takes clicks. */
-function PullRequestNumber({
-  pullRequest,
-  interactive,
-  className,
-}: {
-  pullRequest: RowPullRequest;
-  interactive: boolean;
-  className?: string;
-}) {
-  const classes = cn(
-    "relative mr-1 inline-flex h-4 shrink-0 items-center rounded-full border-[0.5px] border-border px-1.5 font-mono text-2xs leading-none whitespace-nowrap",
-    className,
-    pullRequest.state === "merged"
-      ? "text-[color:var(--pr-merged)]"
-      : pullRequest.attention === "checks_failed" || pullRequest.attention === "conflicts"
-        ? "text-destructive-text"
-        : pullRequest.attention === "ready_to_merge"
-          ? "text-success-foreground"
-          : "text-muted-foreground",
-  );
-  return interactive ? (
-    <a
-      href={pullRequest.url}
-      target="_blank"
-      rel="noreferrer"
-      onClick={(event) => event.stopPropagation()}
-      title={pullRequest.title}
-      className={cn(classes, "hover:underline")}
-    >
-      #{pullRequest.number}
-    </a>
-  ) : (
-    <span className={classes}>#{pullRequest.number}</span>
   );
 }
 

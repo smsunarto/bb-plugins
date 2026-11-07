@@ -94,6 +94,22 @@
 .gtd-row-metadata:not(:has([data-has-items])) {
   display: none;
 }
+/* Each badge reads as the chip the card draws for its own pull request
+   (PullRequestNumber in thread-card.tsx). bb wraps every plugin's badge in a
+   display: contents mount, so the badge root is the line's grandchild. The
+   badge keeps its own text color, which carries the pull request's state. */
+.gtd-row-metadata [data-thread-row-metadata] > * > * {
+  display: inline-flex;
+  height: 16px;
+  align-items: center;
+  border: 0.5px solid var(--border);
+  border-radius: 9999px;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1;
+  white-space: nowrap;
+}
 .gtd-thread-title {
   display: flex;
   font-size: 12px;
