@@ -27,6 +27,7 @@ import {
 } from "./lib/private-state.ts";
 import { memoryFacts, mutateStateDocument } from "./lib/state-actions.ts";
 import { browseProjectDirectory, createWorkProject } from "./lib/project-creation.ts";
+import { ensureHomeProject } from "./lib/home-project.ts";
 import { botsCliCommands } from "./lib/bots-cli.ts";
 import { createWorkflowRuns } from "./lib/workflow-runs-server.ts";
 import { handoffSourceFromText, handoffSourceThreadId } from "./lib/handoff-source.ts";
@@ -161,13 +162,13 @@ export function registerBots(
   async function validateLinks(ids: string[]) {
     if (new Set(ids).size !== ids.length) throw new Error("A project can only be linked once");
     const projects = await bb.sdk.projects.list();
-    const legacyHomes = new Set(store.list().map((bot) => bot.legacyHomeProjectId));
+    const botHomes = new Set(store.list().map((bot) => bot.homeProjectId));
     for (const id of ids) {
       if (
         !projects.some((project) => project.id === id && project.kind === "standard") ||
-        legacyHomes.has(id)
+        botHomes.has(id)
       )
-        throw new Error("Link an existing work project, not a legacy bot home");
+        throw new Error("Link an existing work project, not a bot home project");
     }
   }
   function validateSection(id: string | null) {
@@ -175,7 +176,11 @@ export function registerBots(
       throw new Error("Section no longer exists");
   }
   async function validateConversationProject(bot: BotMetadata, projectId: string) {
-    if (projectId !== (await personalProjectId()) && !bot.linkedProjectIds.includes(projectId))
+    if (
+      projectId !== (await personalProjectId()) &&
+      projectId !== bot.homeProjectId &&
+      !bot.linkedProjectIds.includes(projectId)
+    )
       throw new Error("Choose a projectless conversation or link this project to the bot first");
   }
   function saveBotIdentity({
@@ -272,8 +277,8 @@ export function registerBots(
   async function projectToJoinFor(thread: RoutingThread, atCreation: boolean) {
     if (!atCreation && thread.status !== "pending") return null;
     const projects = await bb.sdk.projects.list();
-    const legacyHome = store.list().some((bot) => bot.legacyHomeProjectId === thread.projectId);
-    return !legacyHome &&
+    const botHome = store.list().some((bot) => bot.homeProjectId === thread.projectId);
+    return !botHome &&
       projects.some((project) => project.id === thread.projectId && project.kind === "standard")
       ? thread.projectId
       : null;
@@ -369,7 +374,7 @@ export function registerBots(
   }
   async function projectView(bot: BotMetadata, currentProjectId?: string): Promise<StateView> {
     const projects = await bb.sdk.projects.list({ includePersonal: true });
-    const legacyHomes = new Set(store.list().map((entry) => entry.legacyHomeProjectId));
+    const botHomes = new Set(store.list().map((entry) => entry.homeProjectId));
     const ownership = (id: string) => {
       const entry = store.projectOwner(id);
       return {
@@ -378,7 +383,7 @@ export function registerBots(
       };
     };
     const available = projects
-      .filter((project) => project.kind === "standard" && !legacyHomes.has(project.id))
+      .filter((project) => project.kind === "standard" && !botHomes.has(project.id))
       .map((project) =>
         Object.assign({ id: project.id, name: project.name }, ownership(project.id)),
       );
@@ -504,15 +509,39 @@ export function registerBots(
     });
   }
   /**
+   * A projectless request (Personal, or the bot's home) runs in the bot's own
+   * home project's checkout, never BB's shared Personal workspace.
+   */
+  async function withHome(botId: string, request: SpawnRequest): Promise<SpawnRequest> {
+    const bot = store.require(botId);
+    if (
+      request.projectId !== (await personalProjectId()) &&
+      request.projectId !== bot.homeProjectId
+    )
+      return request;
+    const projectId = await serial("project-create", () => ensureHomeProject(bb, store, botId));
+    publish();
+    return {
+      ...request,
+      projectId,
+      environment: {
+        type: "host",
+        hostId: bot.hostId,
+        workspace: { type: "unmanaged", path: null },
+      },
+    };
+  }
+  /**
    * Spawns a conversation bound to the bot from its first dispatch. `main`
    * says whether it becomes the bot's main conversation.
    */
   async function startConversation(
     botId: string,
-    request: SpawnRequest,
+    original: SpawnRequest,
     main: "always" | "if-none" | "never",
   ) {
-    if (request.projectId !== (await personalProjectId()))
+    const request = await withHome(botId, original);
+    if (request.projectId !== store.require(botId).homeProjectId)
       await updateProjectRole(botId, "join", request.projectId);
     return serial(botId, async () => {
       const bot = await state.prepare(botId);
@@ -594,15 +623,13 @@ export function registerBots(
     return { threadId, created: true };
   }
   const startRoutineConversation: StartRoutineConversation = async ({ bot, routine, text }) => {
-    const personal = routine.projectId === (await personalProjectId());
+    // A Personal routine runs in the bot's home project; startConversation redirects it.
     const { threadId } = await startConversation(
       bot.id,
       {
         projectId: routine.projectId,
         title: routine.name,
-        environment: personal
-          ? { type: "host", hostId: bot.hostId, workspace: { type: "personal" } }
-          : { type: "project-default" },
+        environment: { type: "project-default" },
         ...presetExecution(bot),
         input: [{ type: "text", text, mentions: [] }],
       },
@@ -617,7 +644,7 @@ export function registerBots(
     if (!personal) throw new Error("BB's personal project is unavailable");
     personalId = personal.id;
     return [
-      { id: personal.id, name: "Personal" },
+      { id: personal.id, name: "Home" },
       ...bot.linkedProjectIds.map((id) => ({
         id,
         name: projects.find((project) => project.id === id)?.name ?? "Unavailable project",
@@ -628,6 +655,9 @@ export function registerBots(
     automations,
     requireBot: (botId) => store.require(botId),
     allowedProjectIds: async (bot) => (await routineProjects(bot)).map((project) => project.id),
+    runsIn: async (bot, routineProjectId, threadProjectId) =>
+      threadProjectId === routineProjectId ||
+      (routineProjectId === (await personalProjectId()) && threadProjectId === bot.homeProjectId),
     resolveOwner,
     startConversation: startRoutineConversation,
     publish: publishRoutines,
@@ -785,7 +815,7 @@ export function registerBots(
         role,
         hostId,
         stateReady: true,
-        legacyHomeProjectId: null,
+        homeProjectId: null,
         avatar,
         sectionId,
         linkedProjectIds,
@@ -883,7 +913,7 @@ export function registerBots(
       if (!personal) throw new Error("BB's personal project is unavailable");
       personalId = personal.id;
       const bots = store.list();
-      const legacyHomes = new Set(bots.map((bot) => bot.legacyHomeProjectId));
+      const botHomes = new Set(bots.map((bot) => bot.homeProjectId));
       return {
         bots,
         projectOwners: store.projectOwners().map(({ projectId, botId }) => ({ projectId, botId })),
@@ -899,7 +929,7 @@ export function registerBots(
           connected: host.status === "connected",
         })),
         projects: projects
-          .filter((project) => project.kind === "standard" && !legacyHomes.has(project.id))
+          .filter((project) => project.kind === "standard" && !botHomes.has(project.id))
           .map((project) => ({ id: project.id, name: project.name })),
       };
     },
@@ -1126,7 +1156,7 @@ export function registerBots(
           if (
             target &&
             thread.projectId !== (await personalProjectId()) &&
-            thread.projectId !== target.legacyHomeProjectId &&
+            thread.projectId !== target.homeProjectId &&
             !target.linkedProjectIds.includes(thread.projectId)
           ) {
             await validateLinks([thread.projectId]);
@@ -1174,7 +1204,7 @@ export function registerBots(
           if (store.owner(threadId) === botId) return { ok: true } as const;
           const needsLink =
             thread.projectId !== (await personalProjectId()) &&
-            thread.projectId !== bot.legacyHomeProjectId &&
+            thread.projectId !== bot.homeProjectId &&
             !bot.linkedProjectIds.includes(thread.projectId);
           if (needsLink) await validateLinks([thread.projectId]);
           // Membership and the new association commit together; a competing binding

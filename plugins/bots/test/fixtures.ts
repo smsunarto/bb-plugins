@@ -64,7 +64,7 @@ export const bot: BotMetadata = {
   order: 0,
   hostId: "host",
   stateReady: true,
-  legacyHomeProjectId: null,
+  homeProjectId: null,
   linkedProjectIds: ["project"],
   soul: "",
   agents: "",

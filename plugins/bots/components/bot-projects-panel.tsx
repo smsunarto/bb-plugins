@@ -216,7 +216,7 @@ export function BotProjectsPanel({
           </span>
           <p className="text-xs font-medium">No projects linked</p>
           <p className="text-[11px] text-muted-foreground">
-            This bot can still chat without a project.
+            Chats without a project run in this bot’s home folder.
           </p>
         </div>
       )}

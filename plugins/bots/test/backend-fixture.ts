@@ -29,6 +29,14 @@ import type { BotMetadata } from "../contract";
 
 type Project = Awaited<ReturnType<BbPluginApi["sdk"]["projects"]["get"]>>;
 export const PERSONAL_ID = "personal";
+/** The execution machine's home directory; bot home projects live under `bb-bots/`. */
+export const HOME = "/home/test";
+/** Where a projectless bot conversation runs: its home project's checkout. */
+export const homeEnvironment = {
+  type: "host",
+  hostId: "host-home",
+  workspace: { type: "unmanaged", path: null },
+} as const;
 export const avatar = {
   color: "#168b75",
   shape: "round",
@@ -97,6 +105,7 @@ export async function backend(initialProjects: Project[] = [project()]) {
   const personal = { ...project(PERSONAL_ID), kind: "personal" as const, sources: [] };
   const threads = new Map<string, ReturnType<typeof makeThreadResponse>>();
   const files = new Map<string, string>();
+  const homeFolders = new Set<string>();
   const offline = new Set<string>();
   const initialConfigurations: {
     threadId: string;
@@ -122,8 +131,17 @@ export async function backend(initialProjects: Project[] = [project()]) {
           if (!found) throw new Error("Project missing");
           return found;
         },
-        create: async () => {
-          throw new Error("Private bot state must never create backing projects");
+        // Only a bot's home project, in its own folder under ~/bb-bots.
+        create: async ({ name, source }) => {
+          if (source?.type !== "local_path" || !source.path.startsWith(`${HOME}/bb-bots/`))
+            throw new Error("Private bot state must never create backing projects");
+          const created = {
+            ...project(`home-${projects.length}`, source.hostId, source.path),
+            name,
+            createdAt: Date.now(),
+          };
+          projects.push(created);
+          return created;
         },
         update: async () => {
           throw new Error("The bot must not rename projects");
@@ -137,13 +155,20 @@ export async function backend(initialProjects: Project[] = [project()]) {
             status: offline.has("host-home") ? "disconnected" : "connected",
           },
         ],
-        directory: async () => {
+        // The machine's home and the bot home folders under it; nothing else.
+        directory: async ({ path }) => {
+          if (path === undefined) return { directory: HOME, parent: "/home", entries: [] };
+          if (homeFolders.has(path)) return { directory: path, parent: dirname(path), entries: [] };
+          if (path.startsWith(`${HOME}/bb-bots/`)) throw new Error(`ENOENT: no such file ${path}`);
           throw new Error("Bot state must not depend on an execution directory");
         },
       },
       files: {
-        mkdir: async () => {
-          throw new Error("Never create state directories on execution hosts");
+        mkdir: async ({ path }) => {
+          if (!path.startsWith(`${HOME}/bb-bots/`))
+            throw new Error("Never create state directories on execution hosts");
+          homeFolders.add(path);
+          return {} as never;
         },
         read: async ({ hostId, path }) => {
           if (hostId && offline.has(hostId)) throw new Error("Host offline");

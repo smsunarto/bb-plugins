@@ -10,7 +10,7 @@ BEFORE CALLING
 - Write the instruction as a standalone request: runs arrive without this conversation's context.
 
 INPUTS
-- create needs name, instruction, cron, and timezone. projectId defaults to this conversation's project when the routine may run there, else Personal; bot_routine_list lists the allowed projects.
+- create needs name, instruction, cron, and timezone. projectId defaults to this conversation's project when the routine may run there, else the bot's home project (listed as Home); bot_routine_list lists the allowed projects.
 - update takes routineId and only the fields that change. Moving to another project replaces the schedule, keeps it paused or active, and starts a new conversation in that project on the next run.
 - pause, resume, run, and delete take only routineId.
 

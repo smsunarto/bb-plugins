@@ -472,7 +472,7 @@ it("supports owner claims in creation and excludes legacy homes from ownership",
     soul: "",
   })) as BotMetadata;
   expect(host.store.projectOwner("project")?.botId).toBe(bot.id);
-  host.projects.push(project("legacy-home"));
-  host.store.save({ ...host.store.require(bot.id), legacyHomeProjectId: "legacy-home" });
-  await expect(role(host, bot.id, "own", "legacy-home")).rejects.toThrow(/legacy bot home/);
+  host.projects.push(project("home"));
+  host.store.save({ ...host.store.require(bot.id), homeProjectId: "home" });
+  await expect(role(host, bot.id, "own", "home")).rejects.toThrow(/bot home project/);
 });

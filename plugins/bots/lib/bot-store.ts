@@ -26,17 +26,23 @@ export const BOT_MIGRATIONS = [
 export function createBotStore(bb: BbPluginApi) {
   const db = bb.storage.database();
   const legacySchema = metadataSchema
-    .omit({ stateReady: true, legacyHomeProjectId: true })
+    .omit({ stateReady: true, homeProjectId: true })
     .extend({ homePath: z.string(), homeProjectId: z.string().nullable() })
     .strict();
   const raw = (id: string) =>
     db.prepare("SELECT data FROM bots WHERE id = ?").get(id) as { data: string } | undefined;
   function decode(data: string): BotMetadata {
     const parsed: unknown = JSON.parse(data);
+    // Rows saved before bots got home projects again name the field legacyHomeProjectId.
+    if (parsed && typeof parsed === "object" && "legacyHomeProjectId" in parsed) {
+      const { legacyHomeProjectId, ...rest } = parsed as Record<string, unknown>;
+      const renamed = metadataSchema.safeParse({ ...rest, homeProjectId: legacyHomeProjectId });
+      if (renamed.success) return renamed.data;
+    }
     const current = metadataSchema.safeParse(parsed);
     if (current.success) return current.data;
     const { homePath: _path, homeProjectId, ...legacy } = legacySchema.parse(parsed);
-    return { ...legacy, legacyHomeProjectId: homeProjectId, stateReady: false };
+    return { ...legacy, homeProjectId, stateReady: false };
   }
   const get = (id: string): BotMetadata | null => {
     const row = raw(id);

@@ -21,7 +21,7 @@ function bot(
     avatar,
     hostId: "host_story",
     stateReady: true,
-    legacyHomeProjectId: null,
+    homeProjectId: null,
     linkedProjectIds: [],
     mainThreadId: null,
     hiddenUntilActivity: false,

@@ -50,7 +50,7 @@ describe("owned-project defaults", () => {
     expect(
       ownedConversationProjectId({
         ...context,
-        bot: { ...context.bot, legacyHomeProjectId: "legacy" },
+        bot: { ...context.bot, homeProjectId: "legacy" },
         projects,
         owners: ["missing", personalProjectId, "legacy"].map((projectId) => ({
           botId: bot.id,

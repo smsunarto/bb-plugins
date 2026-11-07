@@ -116,7 +116,7 @@ export function LaunchPresetEditor({
       </div>
       <Field
         label="Workspace"
-        detail="Applies to + on a project this bot owns. Personal chats are unaffected."
+        detail="Applies to + on a project this bot owns. Home chats are unaffected."
       >
         <RadioGroup
           aria-label="Project workspace"

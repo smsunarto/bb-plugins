@@ -264,7 +264,12 @@ describe("routines", () => {
     const next = await fire();
     expect(next.delivery).toBe("started");
     expect(next.threadId).not.toBe(first.threadId);
-    expect(host.threads.get(next.threadId)!.projectId).toBe(PERSONAL_ID);
+    // A Personal routine runs in the bot's home project and keeps posting into that conversation.
+    expect(host.threads.get(next.threadId)!.projectId).toBe(
+      host.store.require(bot.id).homeProjectId,
+    );
+    const again = await fire();
+    expect(again.threadId).toBe(next.threadId);
   });
 
   it("schedules a routine again when its automation was deleted outside Bots", async () => {

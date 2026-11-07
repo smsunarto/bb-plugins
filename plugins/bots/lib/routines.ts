@@ -150,8 +150,14 @@ export function createRoutines(
   deps: {
     automations: AutomationsClient;
     requireBot: (botId: string) => BotMetadata;
-    /** The projects a routine may run in: personal plus the bot's linked projects. */
+    /** The projects a routine may run in: Personal (run in the bot's home project) plus the bot's linked projects. */
     allowedProjectIds: (bot: BotMetadata) => Promise<string[]>;
+    /** Whether a conversation in `threadProjectId` runs in the routine's project; a Personal routine runs in the bot's home. */
+    runsIn: (
+      bot: BotMetadata,
+      routineProjectId: string,
+      threadProjectId: string,
+    ) => Promise<boolean>;
     resolveOwner: (threadId: string, persist?: boolean) => Promise<string | null>;
     startConversation: StartRoutineConversation;
     publish: () => void;
@@ -239,7 +245,7 @@ export function createRoutines(
         `Unknown timezone ${fields.timezone}. Use an IANA name like America/New_York.`,
       );
     if (!(await deps.allowedProjectIds(bot)).includes(fields.projectId))
-      throw new Error("Run routines in the bot's Personal space or one of its linked projects.");
+      throw new Error("Run routines in the bot's home project or one of its linked projects.");
   }
 
   async function create(botId: string, fields: RoutineFields, createdByThreadId: string | null) {
@@ -395,7 +401,7 @@ export function createRoutines(
           thread &&
           !thread.archivedAt &&
           !thread.deletedAt &&
-          thread.projectId === routine.projectId &&
+          (await deps.runsIn(bot, routine.projectId, thread.projectId)) &&
           (await deps.resolveOwner(thread.id, false)) === bot.id
         ) {
           const result = await bb.sdk.threads.send({
