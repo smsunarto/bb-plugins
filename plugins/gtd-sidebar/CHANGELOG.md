@@ -4,6 +4,11 @@
 
 ### Minor Changes
 
+- Add a Bots shelf above Next Action while the separate Bots plugin is enabled:
+  each bot is a group of its conversations drawn as GTD cards. Thread menus gain
+  Fork and New conversation in worktree for bot conversations. Bots, their CLI
+  (`bb bots`), tools, and Info rows live in the Bots plugin, which imports the bots
+  GTD stored before the split.
 - Keep GTD's own inbox look and motion on bb 0.48.1's plugin backend. Requires bb
   0.48.1. Family folds move to this plugin's `expandedThreads` preference, so they
   follow every open window but no longer bb's built-in Thread list. Dropping a row

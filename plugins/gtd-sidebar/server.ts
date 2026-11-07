@@ -15,6 +15,7 @@ import { threadFamilyIds } from "./lib/thread-family.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 import { RETIRED_PROJECT_MIGRATIONS } from "./lib/retired-project-migrations.ts";
+import { RETIRED_BOT_MIGRATIONS, registerRetiredBotsExport } from "./lib/retired-bots.ts";
 import { GTD_TAGS, gtdSidebarRpcContract } from "./lib/rpc-contract.ts";
 import {
   createPreferenceStore,
@@ -88,7 +89,9 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   const db = bb.storage.database();
-  bb.storage.migrate(db, [...migrations, ...RETIRED_PROJECT_MIGRATIONS]);
+  // One positional list for the whole database. New migrations go at the very end.
+  bb.storage.migrate(db, [...migrations, ...RETIRED_PROJECT_MIGRATIONS, ...RETIRED_BOT_MIGRATIONS]);
+  registerRetiredBotsExport(bb);
 
   // The columns stay nullable because migrations are append-only, so the
   // read drops any row an older build left with one time missing.

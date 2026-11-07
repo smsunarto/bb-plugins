@@ -24,6 +24,10 @@
       "source": "./plugins/boat-sandbox"
     },
     {
+      "name": "bots",
+      "source": "./plugins/bots"
+    },
+    {
       "name": "code-review",
       "source": "./plugins/code-review"
     },

@@ -77,6 +77,7 @@ plugin.
 ### Active and parked sections
 
 - **Pinned** — the user's explicit priority, kept in its own shelf above active work.
+- **Bots** — shown while the [Bots plugin](../bots) is enabled: each bot is a group of its conversations, which sit here instead of Next Action or Waiting. See [Bots](#bots).
 - **Next Action** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet.
 - **Waiting** — foreground or background agent work is live, in the thread, any of its subthreads, or the hidden Review and Arena workers it launched. A family moves back to Next Action only when one of its threads asks you something.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
@@ -91,6 +92,25 @@ moment it settled; expand Snoozed to see that order.
 
 An empty section disappears. A pending interaction stays in **Next Action** even if
 background work is also live, because the user can act now.
+
+### Bots
+
+Bots come from the separate [Bots plugin](../bots), which owns the bots, their
+private state, CLI (`bb bots`), agent tools, and the thread Info rows. While it
+is enabled, GTD Sidebar draws its bots on the Bots shelf; disable it and the
+shelf disappears, and its conversations return to their usual shelves.
+
+Hover the shelf header for **+** to create a bot. On a bot's header, **+** starts
+a conversation in the project it owns, or a projectless one; right-click it to
+start one in a project or a fresh worktree, edit the bot, manage its projects,
+hide it until its next activity, or move it up and down. Completed conversations
+fold behind the header's **Show N completed**; live workflow runs show as rows
+under the conversation that started them. A pinned, snoozed, or settled bot
+conversation stays on that shelf.
+
+GTD Sidebar stored bots itself before the split. It keeps those tables and hands
+them once to the Bots plugin through `retired_bots_export`, which refuses any
+other caller.
 
 ### Visible machines
 
@@ -340,6 +360,11 @@ from bb's forkable built-in Thread list (`plugins/thread-list`) and its componen
 registry at `desktop-v0.44.0` (`0baa605b32a00619c1d7e3f32be6553ebcf8244a`). GTD
 Sidebar is not a fork of that plugin: its t3sidebar lineage has no upstream to merge
 from, so features are ported one at a time.
+
+The Bots shelf bundles the Bots plugin's client, forked from Tobi Lütke's
+[`tobi/bb-bots-sidebar`](https://github.com/tobi/bb-bots-sidebar) at `v1.1.0`.
+That repository publishes no license, so the fork is for personal use until it
+has one; see the Bots plugin's notices.
 
 Provider icons are bb's own artwork, drawn through `experimental_ProviderIcon`
 in one muted tint rather than in brand color — by design.
