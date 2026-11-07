@@ -5,7 +5,7 @@ import { Input } from "@bb-plugins/ui/input";
 import { Textarea } from "@bb-plugins/ui/textarea";
 import { BOTS_PLUGIN_ID, rpcContract } from "../contract";
 import { useBotsRpc } from "../lib/rpc";
-import { describeCron, relativeTime } from "../lib/routine-format";
+import { describeCron, relativeTime, routineStatus } from "../lib/routine-format";
 import {
   ROUTINE_INSTRUCTION_MAX,
   ROUTINE_NAME_MAX,
@@ -191,13 +191,7 @@ function RoutineRow({
   const [open, setOpen] = useState(false);
   const automation = routine.automation;
   const busy = Boolean(pending);
-  const state = !automation
-    ? "Unavailable"
-    : automation.enabled
-      ? automation.nextRunAt
-        ? `Next ${relativeTime(automation.nextRunAt)}`
-        : "Scheduled"
-      : "Paused";
+  const state = routineStatus(routine);
   return (
     <li className="rounded-md border border-border">
       <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">

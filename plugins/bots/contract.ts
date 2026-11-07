@@ -522,6 +522,7 @@ export const rpcContract = defineRpcContract({
   state_read: {
     input: z.object({ botId: id, file: stateFileSchema }).strict(),
     output: stateOutput,
+    tags: () => [BOT_TAGS.bots],
   },
   state_update: { input: stateUpdateSchema.safeExtend({ botId: id }), output: stateOutput },
   state_apply: {

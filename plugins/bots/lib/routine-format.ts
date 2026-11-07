@@ -1,3 +1,5 @@
+import type { RoutineView } from "./routine-schema";
+
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const pad = (value: string) => value.padStart(2, "0");
 
@@ -32,4 +34,12 @@ export function relativeTime(at: number, now = Date.now()): string {
   for (const [unit, size] of UNITS)
     if (Math.abs(delta) >= size) return format.format(Math.round(delta / size), unit);
   return delta >= 0 ? "in under a minute" : "just now";
+}
+
+/** The same saved schedule status wherever a routine appears. */
+export function routineStatus(routine: Pick<RoutineView, "automation">, now = Date.now()): string {
+  const automation = routine.automation;
+  if (!automation) return "Unavailable";
+  if (!automation.enabled) return "Paused";
+  return automation.nextRunAt ? `Next ${relativeTime(automation.nextRunAt, now)}` : "Scheduled";
 }

@@ -193,3 +193,15 @@ describe("choosing a thread's bot", () => {
     });
   });
 });
+
+it("reads ready bot memory without changing the saved revision", async () => {
+  const host = await setup();
+  const atlas = await host.create("Atlas", []);
+  const before = host.store.require(atlas.id);
+  const changes = () => host.bb.storage.database().prepare("SELECT total_changes() AS count").get();
+  const writesBefore = changes();
+  await call(host, "state_read", { botId: atlas.id, file: "MEMORY.md" });
+  await call(host, "state_read", { botId: atlas.id, file: "MEMORY.md" });
+  expect(host.store.require(atlas.id)).toEqual(before);
+  expect(changes()).toEqual(writesBefore);
+});

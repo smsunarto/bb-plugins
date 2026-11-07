@@ -1364,8 +1364,7 @@ export function registerBots(
           return { ok: true } as const;
         }),
       ),
-    state_read: ({ botId, file }) =>
-      serial(botId, async () => state.read(await state.prepare(botId), file)),
+    state_read: ({ botId, file }) => serial(botId, () => state.read(store.require(botId), file)),
     state_update: ({ botId, file, content, expectedSha256 }) =>
       serial(botId, async () => {
         await state.prepare(botId);

@@ -12,6 +12,8 @@ import { BotIcon } from "./bot-icon";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger } from "./ui/select";
 import { cn } from "../lib/utils";
 
+import { ThreadBotResources } from "./thread-bot-resources";
+
 const NONE = "__no_bot__";
 
 /** The toast for a bot change, naming the bot and how many children moved with it. */
@@ -210,15 +212,18 @@ export function ThreadBotPromptSection({ threadId }: ExperimentalThreadInfoProps
   const value = useThreadBotPrompt(threadId);
   if (!value?.botId) return null;
   return (
-    <InfoSection label="Bot prompt">
-      <div className="flex flex-col">
-        {value.sections.map((section) => (
-          <PromptBlock key={section.id} title={section.title} text={section.text} />
-        ))}
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Tools: {value.tools.join(", ")} · Skill: {value.skills.join(", ")}
-        </p>
-      </div>
-    </InfoSection>
+    <>
+      <ThreadBotResources key={value.botId} botId={value.botId} />
+      <InfoSection label="Bot prompt">
+        <div className="flex flex-col">
+          {value.sections.map((section) => (
+            <PromptBlock key={section.id} title={section.title} text={section.text} />
+          ))}
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            Tools: {value.tools.join(", ")} · Skill: {value.skills.join(", ")}
+          </p>
+        </div>
+      </InfoSection>
+    </>
   );
 }
