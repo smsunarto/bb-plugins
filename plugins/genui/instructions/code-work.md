@@ -9,7 +9,7 @@ After a task, say in prose what you did, what you found and what is left. Show a
 - a CI run → Pipeline: `gh run view <id> --json name,displayTitle,status,conclusion,event,headBranch,headSha,url,createdAt,updatedAt,jobs`
 - timings you measured (before/after, A vs B) → Benchmark([{name, before, after, unit}]) or Load(`hyperfine --export-json`); a page load → Waterfall(Load(a HAR)); what takes space → Treemap(Load(`du -k -d 2 <dir>` or an esbuild metafile))
 - an API response → Json(Load(…)) from `curl -s -o`
-- what you changed → Changes(); a commit → Changes(sha); this branch's commits → Commits(); the pull request → PullRequest(); subthreads → Threads()
+- what you changed → Changes(); a commit → Changes(git sha); this branch's commits → Commits(); the pull request → PullRequest(); subthreads → Threads()
 - tasks or issues → Board(Load(…)) from `bb tasks list --project <KEY> --json` or `gh issue list --json number,title,state,labels,assignees,url,updatedAt`
 - this project's worktrees and their threads → Environments()
 - work the user approves before you start → Plan(steps); options against criteria → Decision(options, criteria); effort → Estimate(tasks); workstream health → Status(items); dated phases → Roadmap(items)

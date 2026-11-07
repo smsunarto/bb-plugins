@@ -500,7 +500,7 @@ export const COMPONENTS = {
       { name: "paths", kind: "list", optional: true },
     ],
     summary:
-      'files changed in this thread\'s checkout with +/- and diffs; target: omit for the branch\'s work incl. uncommitted, "uncommitted", or a commit sha; paths filters',
+      'files changed in this thread\'s checkout with +/- and diffs; target: omit for the branch\'s work incl. uncommitted, "uncommitted", or a git commit sha (hex, not a GitButler or jj id); paths filters',
   },
   Commits: {
     group: "Project",
