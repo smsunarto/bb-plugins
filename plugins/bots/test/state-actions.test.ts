@@ -68,6 +68,8 @@ it("exposes object-root native schemas with target/action required", async () =>
     "bot_update_state",
     "bot_routine_list",
     "bot_routine_update",
+    "bot_skill_read",
+    "bot_skill_update",
   ]);
   for (const tool of tools) expect((tool.inputSchema as { type: string }).type).toBe("object");
   expect((tools[1]!.inputSchema as { required: string[] }).required).toEqual(

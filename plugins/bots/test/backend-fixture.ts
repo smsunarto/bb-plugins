@@ -45,6 +45,8 @@ export const avatar = {
   motion: "still",
 } as const;
 export const hash = (content: string) => createHash("sha256").update(content).digest("hex");
+const isSkillPath = (path: string) =>
+  /^\/home\/test\/bb-bots\/[^/]+\/\.bb\/skills\/[a-z0-9-]+\/SKILL\.md$/u.test(path);
 export function project(
   id = "project",
   hostId = "host-project",
@@ -182,8 +184,52 @@ export async function backend(initialProjects: Project[] = [project()]) {
             sizeBytes: Buffer.byteLength(content),
           };
         },
-        write: async () => {
-          throw new Error("Never write bot state to project/execution-host files");
+        // Only a bot's own skills, in its home project's .bb/skills, are host files.
+        write: async ({ hostId, path, content, expectedSha256 }) => {
+          if (!isSkillPath(path))
+            throw new Error("Never write bot state to project/execution-host files");
+          if (hostId && offline.has(hostId)) throw new Error("Host offline");
+          const current = files.get(key(hostId, path));
+          const currentSha256 = current === undefined ? null : hash(current);
+          if (expectedSha256 !== undefined && expectedSha256 !== currentSha256)
+            return { outcome: "conflict", currentSha256 };
+          files.set(key(hostId, path), content);
+          return { outcome: "written", sha256: hash(content), sizeBytes: content.length };
+        },
+        remove: async ({ hostId, path }) => {
+          if (!isSkillPath(`${path}/SKILL.md`)) throw new Error("Never remove project files");
+          for (const name of files.keys())
+            if (name.startsWith(key(hostId, `${path}/`))) files.delete(name);
+          return {} as never;
+        },
+      },
+      // BB's own index of a project's skills: each <root>/.bb/skills/<name>/SKILL.md.
+      skills: {
+        list: async ({ projectId }) => {
+          const source = projects.find((p) => p.id === projectId)?.sources?.[0];
+          if (!source || source.type !== "local_path") return { skills: [] };
+          if (offline.has(source.hostId)) throw new Error("Host offline");
+          const prefix = key(source.hostId, `${source.path}/.bb/skills/`);
+          return {
+            skills: [...files.entries()]
+              .filter(([name]) => name.startsWith(prefix) && name.endsWith("/SKILL.md"))
+              .map(([name, content]) => {
+                const filePath = name.slice(source.hostId.length + 1);
+                const field = (k: string) =>
+                  new RegExp(`^${k}: *(.*)$`, "mu").exec(content)?.[1] ?? null;
+                return {
+                  id: filePath,
+                  name: field("name") ?? "",
+                  description: field("description"),
+                  filePath,
+                  manageable: true,
+                  pluginId: null,
+                  provider: null,
+                  registrySkillId: null,
+                  scope: "bb-project" as const,
+                };
+              }),
+          };
         },
       },
       plugins: {

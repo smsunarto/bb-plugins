@@ -44,3 +44,8 @@ list` and `bb bots routines run <routine-id>` (a test run). Each routine runs
   bb notifies when a run finishes; do not schedule bot work
   with `bb automation create` directly. Editor: Routines tab or the bot menu's
   Routines… item. Webhook triggers are not supported.
+- Each bot has its own skills: BB project skills in its home project's
+  `.bb/skills/<name>/SKILL.md`, loaded natively only in that home project's
+  conversations. In a bound conversation, use `bot_skill_read` and
+  `bot_skill_update`; do not write a bot's skills into a work project or
+  another bot's home. Editor: Skills tab or the bot menu's Skills… item.

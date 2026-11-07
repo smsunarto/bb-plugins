@@ -29,6 +29,7 @@ import { MEMORY_MAX_CHARS } from "../lib/memory-limit";
 import { emptyLaunchPreset, launchPresetSchema, type LaunchPreset } from "../lib/launch-preset";
 import { LaunchPresetEditor } from "./launch-preset-editor";
 import { RoutinesPanel } from "./routines-panel";
+import { SkillsPanel } from "./skills-panel";
 
 export type HostOption = { id: string; name: string; connected: boolean };
 export type ProjectOption = { id: string; name: string };
@@ -45,7 +46,7 @@ export type BotEditFields = Pick<
   | "launchPreset"
 > & { ownedProjectIds: string[]; memory?: string };
 type ProjectRole = "none" | "member" | "owner";
-export type EditorTab = "setup" | "context" | "projects" | "routines";
+export type EditorTab = "setup" | "context" | "projects" | "routines" | "skills";
 export type EditorTarget =
   | { kind: "create" }
   | { kind: "edit"; metadata: BotMetadata; projectOwners: ProjectOwner[]; tab?: EditorTab };
@@ -357,6 +358,12 @@ export function BotEditor({
                     Routines
                   </TabsTrigger>
                 ) : null}
+                {botId ? (
+                  <TabsTrigger value="skills">
+                    <Icon name="Puzzle" className="size-3.5" />
+                    Skills
+                  </TabsTrigger>
+                ) : null}
               </TabsList>
             </div>
             <div className="bot-editor-panel h-[26rem] min-h-0 shrink overflow-y-auto px-5 py-4">
@@ -471,6 +478,11 @@ export function BotEditor({
               {botId ? (
                 <TabsContent value="routines">
                   <RoutinesPanel botId={botId} botName={name} />
+                </TabsContent>
+              ) : null}
+              {botId ? (
+                <TabsContent value="skills">
+                  <SkillsPanel botId={botId} botName={name} />
                 </TabsContent>
               ) : null}
             </div>

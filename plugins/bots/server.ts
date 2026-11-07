@@ -28,6 +28,8 @@ import {
 import { memoryFacts, mutateStateDocument } from "./lib/state-actions.ts";
 import { browseProjectDirectory, createWorkProject } from "./lib/project-creation.ts";
 import { ensureHomeProject } from "./lib/home-project.ts";
+import { createBotSkills } from "./lib/bot-skills.ts";
+import { skillReadToolSchema, skillUpdateToolSchema } from "./lib/skill-schema.ts";
 import { botsCliCommands } from "./lib/bots-cli.ts";
 import { createWorkflowRuns } from "./lib/workflow-runs-server.ts";
 import { handoffSourceFromText, handoffSourceThreadId } from "./lib/handoff-source.ts";
@@ -698,6 +700,13 @@ export function registerBots(
     return threadId;
   };
   const publishRoutines = () => bb.rpc.experimental_invalidate([BOT_TAGS.routines]);
+  const skills = createBotSkills(bb, store, async (botId) => {
+    const before = store.require(botId).homeProjectId;
+    const projectId = await serial("project-create", () => ensureHomeProject(bb, store, botId));
+    if (projectId !== before) publish();
+    return projectId;
+  });
+  const publishSkills = () => bb.rpc.experimental_invalidate([BOT_TAGS.skills]);
   async function routineProjects(bot: BotMetadata) {
     const projects = await bb.sdk.projects.list({ includePersonal: true });
     const personal = projects.find((project) => project.kind === "personal");
@@ -736,7 +745,14 @@ export function registerBots(
     project: PluginAgentConfigurationContext["project"],
     threadId: string,
   ) => ({
-    tools: ["bot_read_state", "bot_update_state", "bot_routine_list", "bot_routine_update"],
+    tools: [
+      "bot_read_state",
+      "bot_update_state",
+      "bot_routine_list",
+      "bot_routine_update",
+      "bot_skill_read",
+      "bot_skill_update",
+    ],
     skills: [BOTS_SKILL],
     instructions: botInstructions(
       bot,
@@ -820,6 +836,40 @@ export function registerBots(
         return JSON.stringify(await routines.update(input.routineId, fields));
       }
       return JSON.stringify(await routines.act(input.routineId, input.action));
+    },
+  });
+  bb.agents.registerTool({
+    name: "bot_skill_read",
+    ...tools.tool("bot_skill_read"),
+    parameters: skillReadToolSchema,
+    execute: async ({ name }, ctx) => {
+      const botId = await resolveOwner(ctx.threadId);
+      if (!botId) throw new Error("This conversation is not assigned to a bot");
+      return JSON.stringify(
+        name ? await skills.read(botId, name) : { skills: await skills.list(botId) },
+      );
+    },
+  });
+  bb.agents.registerTool({
+    name: "bot_skill_update",
+    ...tools.tool("bot_skill_update"),
+    parameters: skillUpdateToolSchema,
+    execute: async ({ action, name, content, expectedSha256 }, ctx) => {
+      const botId = await resolveOwner(ctx.threadId);
+      if (!botId) throw new Error("This conversation is not assigned to a bot");
+      if (action === "delete") {
+        const result = await skills.remove(botId, name);
+        publishSkills();
+        return JSON.stringify(result);
+      }
+      if (!content) throw new Error("write needs content: the complete SKILL.md");
+      const result = await skills.save(botId, {
+        name,
+        content,
+        expectedSha256: expectedSha256 ?? null,
+      });
+      publishSkills();
+      return JSON.stringify(result);
     },
   });
   bb.experimental_hooks.on("message.dispatch", async (ctx) => {
@@ -1337,6 +1387,18 @@ export function registerBots(
     },
     routine_action: ({ routineId, action }) => routines.act(routineId, action),
     routine_runs: async ({ routineId, limit }) => ({ runs: await routines.runs(routineId, limit) }),
+    skills_list: async ({ botId }) => ({ skills: await skills.list(botId) }),
+    skill_read: ({ botId, name }) => skills.read(botId, name),
+    skill_save: async ({ botId, ...input }) => {
+      const result = await skills.save(botId, input);
+      publishSkills();
+      return result;
+    },
+    skill_delete: async ({ botId, name }) => {
+      const result = await skills.remove(botId, name);
+      publishSkills();
+      return result;
+    },
   });
 
   return {

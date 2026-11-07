@@ -63,6 +63,23 @@ saved. A bot keeps at most 50 routines. `bb bots routines list` lists them and
 `bb bots routines run <routine id>` tests one. Webhook triggers are not
 supported yet.
 
+## Skills
+
+Each bot keeps its own skills: reusable procedures in its home project at
+`~/bb-bots/<bot>/.bb/skills/<name>/SKILL.md`. These are ordinary BB project
+skills, so BB loads them natively for every provider (Claude, Codex, and the
+rest), but only in conversations that run in that bot's home project. No other
+bot, project, or thread sees them.
+
+Ask the bot in chat ("save how we do release notes as a skill") and it writes one
+with `bot_skill_update`, or open **Skills…** from the bot's menu (the editor's
+**Skills** tab) to add, edit, or delete one. A bot whose conversation runs
+elsewhere, such as a repo it owns, reads its skills on demand with
+`bot_skill_read`, because BB loads project skills only in their own project.
+Changes apply immediately to the files and reach a conversation's agent from
+its next session. A bot keeps at most 50 skills; a skill with the same name as a
+user or plugin skill overrides it in the bot's home project.
+
 ## Moving from GTD Sidebar
 
 GTD Sidebar stored bots in its own database before this plugin existed. On its

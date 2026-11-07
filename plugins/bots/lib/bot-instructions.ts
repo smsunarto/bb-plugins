@@ -7,7 +7,9 @@ const files = instructionFiles(import.meta.url);
 
 /** The tool guidance BB appends when the bot's tools are selected. Reread so prompt edits apply live. */
 export const botGuidance = () =>
-  `${files.read("tools/bot_read_state.instructions")}\n\n${files.read("tools/bot_routine_update.instructions")}`;
+  ["bot_read_state", "bot_routine_update", "bot_skill_read"]
+    .map((tool) => files.read(`tools/${tool}.instructions`))
+    .join("\n\n");
 
 /** The agent-only marker and note a bot conversation's first message carries. */
 export const conversationStartText = (token: string, name: string) =>

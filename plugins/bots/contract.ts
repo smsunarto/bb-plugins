@@ -9,6 +9,7 @@ import {
   routineRunSchema,
   routineViewSchema,
 } from "./lib/routine-schema.ts";
+import { skillContentSchema, skillNameSchema } from "./lib/skill-schema.ts";
 
 import { MEMORY_MAX_CHARS, MEMORY_LIMIT_ERROR } from "./lib/memory-limit.ts";
 
@@ -376,6 +377,7 @@ export const BOT_TAGS = {
   bots: "bots",
   workflowRuns: "bot-workflow-runs",
   routines: "bot-routines",
+  skills: "bot-skills",
 } as const;
 
 export const rpcContract = defineRpcContract({
@@ -551,5 +553,36 @@ export const rpcContract = defineRpcContract({
     input: z.object({ routineId: id, limit: z.number().int().min(1).max(20).default(5) }).strict(),
     output: z.object({ runs: z.array(routineRunSchema) }).strict(),
     tags: () => [BOT_TAGS.routines],
+  },
+  /** The bot's skills: BB project skills in its home project's `.bb/skills`. */
+  skills_list: {
+    input: z.object({ botId: id }).strict(),
+    output: z
+      .object({
+        skills: z.array(z.object({ name: z.string(), description: z.string() }).strict()),
+      })
+      .strict(),
+    tags: () => [BOT_TAGS.skills],
+  },
+  skill_read: {
+    input: z.object({ botId: id, name: skillNameSchema }).strict(),
+    output: z.object({ name: z.string(), content: z.string(), sha256: z.string() }).strict(),
+    tags: () => [BOT_TAGS.skills],
+  },
+  /** `expectedSha256: null` creates; a sha256 from skill_read replaces that revision. */
+  skill_save: {
+    input: z
+      .object({
+        botId: id,
+        name: skillNameSchema,
+        content: skillContentSchema,
+        expectedSha256: z.string().nullable(),
+      })
+      .strict(),
+    output: z.object({ name: z.string(), sha256: z.string() }).strict(),
+  },
+  skill_delete: {
+    input: z.object({ botId: id, name: skillNameSchema }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
   },
 });

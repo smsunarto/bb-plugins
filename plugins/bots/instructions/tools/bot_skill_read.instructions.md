@@ -1,0 +1,1 @@
+You have your own skills, private to this bot, in your home project's `.bb/skills`. BB loads them as native skills only in conversations in your home project. Elsewhere, call bot_skill_read with no name to list them when a task might match one, then read the one you need. Save reusable procedures the user teaches you with bot_skill_update, never as files in a working project.
