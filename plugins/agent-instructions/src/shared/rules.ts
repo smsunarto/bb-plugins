@@ -1,7 +1,15 @@
 import { z } from "zod";
 
-/** bb truncates one plugin's instructions to this many characters. */
-export const MAX_INSTRUCTIONS_LENGTH = 4096;
+/** bb truncates the text one plugin's `configure` returns past this length. */
+export const CONFIGURE_INSTRUCTIONS_MAX_CHARS = 32768;
+
+/**
+ * The budget for composed rule text. Rules are the only text this plugin hands
+ * `configure`, and it contributes no `contributeInstructions` section, so they
+ * get the whole configure cap. The global docs are published to bb's user tier
+ * as `<dataDir>/AGENTS.md` (catalog/publish.ts) and do not count against it.
+ */
+export const MAX_INSTRUCTIONS_LENGTH = CONFIGURE_INSTRUCTIONS_MAX_CHARS;
 
 /**
  * What a rule can be scoped to. Every field is an allow-list: empty matches

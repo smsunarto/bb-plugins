@@ -235,11 +235,11 @@ test("a pathological model glob still resolves quickly", async () => {
 
 test("preview shows only what fits in bb's instruction limit", async () => {
   const { harness } = await load();
-  await saveAll(harness, [rule("big", "a".repeat(4096)), rule("late", "Cut off.")]);
+  await saveAll(harness, [rule("big", "a".repeat(32768)), rule("late", "Cut off.")]);
   await instructionsFor(harness, { thread: "thr_3" });
   const { stdout } = await harness.runCli(["preview", "--thread", "thr_3"]);
   expect(stdout).not.toContain("Cut off.");
   expect(stdout).toEndWith(
-    `${"a".repeat(4096)}\n\n(truncated: the agent gets 4096 of 4106 characters)\n`,
+    `${"a".repeat(32768)}\n\n(truncated: the agent gets 32768 of 32778 characters)\n`,
   );
 });

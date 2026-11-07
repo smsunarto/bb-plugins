@@ -11,25 +11,25 @@ const rule = (instructions: string, providers: string[] = [], enabled = true): R
 
 describe("overflowingProviders", () => {
   test("adds unscoped rules to each provider's own rules", () => {
-    const shared = rule("s".repeat(2000));
+    const shared = rule("s".repeat(16000));
     expect(
       overflowingProviders([
         shared,
-        rule("c".repeat(2100), ["codex"]),
+        rule("c".repeat(16800), ["codex"]),
         rule("x".repeat(100), ["claude-code"]),
       ]),
-    ).toEqual([{ provider: "codex", characters: 2000 + 2 + 2100 }]);
+    ).toEqual([{ provider: "codex", characters: 16000 + 2 + 16800 }]);
   });
   test("reports every provider once when unscoped rules alone overflow", () => {
     expect(
-      overflowingProviders([rule("a".repeat(3000)), rule("b".repeat(1200)), rule("c", ["codex"])]),
-    ).toEqual([{ provider: null, characters: 4202 }]);
+      overflowingProviders([rule("a".repeat(24000)), rule("b".repeat(9600)), rule("c", ["codex"])]),
+    ).toEqual([{ provider: null, characters: 33602 }]);
   });
   test("ignores disabled and blank rules", () => {
     expect(
       overflowingProviders([
-        rule("a".repeat(4000)),
-        rule("b".repeat(4000), [], false),
+        rule("a".repeat(32000)),
+        rule("b".repeat(32000), [], false),
         rule("   "),
       ]),
     ).toEqual([]);
