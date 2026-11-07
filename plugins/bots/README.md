@@ -7,7 +7,9 @@ while this plugin is enabled; disable Bots and the shelf disappears.
 A bot keeps its identity, instructions, and up to 3,000 characters of memory in
 this plugin's private storage. On GTD Sidebar's Bots shelf, hover the shelf
 header for **+** to create one. On a bot's header, **+** starts a conversation in
-the project it owns, or a projectless one; right-click it to start one in a
+the project it owns, or else in the bot's home project: its own folder under
+`~/bb-bots/` that bb registers on first use, so bots never share BB's Personal
+workspace; right-click it to start one in a
 project or a fresh worktree, edit the bot, manage its projects, hide it until its
 next activity, or move it up and down.
 

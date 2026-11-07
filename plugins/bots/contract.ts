@@ -40,7 +40,7 @@ export const metadataSchema = z
     avatar: avatarSchema,
     hostId: id,
     stateReady: z.boolean(),
-    legacyHomeProjectId: id.nullable(),
+    homeProjectId: id.nullable(),
     linkedProjectIds: z.array(id),
     mainThreadId: id.nullable(),
     hiddenUntilActivity: z.boolean(),

@@ -36,7 +36,7 @@ function bot(overrides: Partial<BotMetadata> = {}): BotMetadata {
     avatar: { color: "#168b75", shape: "round", expression: "curious", motion: "still" },
     hostId: "execution-offline",
     stateReady: true,
-    legacyHomeProjectId: null,
+    homeProjectId: null,
     linkedProjectIds: ["project-user"],
     mainThreadId: "main-original",
     hiddenUntilActivity: false,
@@ -98,7 +98,7 @@ function fixture() {
     path = "/legacy/atlas",
     homeProjectId: string | null = "old-home",
   ) {
-    const { stateReady: _ready, legacyHomeProjectId: _home, ...cached } = bot(overrides);
+    const { stateReady: _ready, homeProjectId: _home, ...cached } = bot(overrides);
     const legacy = { ...cached, homePath: path, homeProjectId };
     // Seed the actual v2 row, so BotStore's real decode/save source capture runs.
     host.bb.storage
@@ -339,7 +339,7 @@ describe("one-time read-only v2 import", () => {
     const prepared = await preparing;
     expect(prepared).toMatchObject({
       stateReady: true,
-      legacyHomeProjectId: "old-home",
+      homeProjectId: "old-home",
       name: "Renamed while importing",
       mainThreadId: "main-new",
       sectionId: "section-new",

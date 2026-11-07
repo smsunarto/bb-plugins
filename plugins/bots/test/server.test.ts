@@ -7,7 +7,15 @@ import {
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
 import type { BotMetadata } from "../contract";
-import { avatar, backend, hash, PERSONAL_ID, request, project } from "./backend-fixture";
+import {
+  avatar,
+  backend,
+  hash,
+  homeEnvironment,
+  PERSONAL_ID,
+  request,
+  project,
+} from "./backend-fixture";
 
 const instances: Awaited<ReturnType<typeof backend>>[] = [];
 async function setup(projects = [project()]) {
@@ -168,6 +176,8 @@ describe("private bot identities", () => {
     await host.harness.behavior.callRpc("conversation_create", { botId: bot.id, request: chosen });
     expect(host.harness.inspection.sdk.callsTo("threads.spawn")[0]?.[0]).toMatchObject({
       ...chosen,
+      projectId: host.store.require(bot.id).homeProjectId,
+      environment: homeEnvironment,
       input: expect.arrayContaining(chosen.input),
     });
     expect(host.initialConfigurations[0]?.instructions).toContain("You are Atlas.");
@@ -222,7 +232,7 @@ describe("private bot identities", () => {
     const host = await setup();
     const bot = await host.create("Atlas", []);
     expect(bot.stateReady).toBe(true);
-    expect(bot.legacyHomeProjectId).toBeNull();
+    expect(bot.homeProjectId).toBeNull();
     expect(bot).not.toHaveProperty("homePath");
     expect(bot).not.toHaveProperty("homeProjectId");
     expect(bot.linkedProjectIds).toEqual([]);
@@ -294,7 +304,19 @@ describe("private bot identities", () => {
       };
       expect(submitted.input.slice(0, input.input.length)).toEqual(input.input);
       expect(submitted.executionInputSources).toEqual(input.executionInputSources);
-      expect(submitted.environment).toEqual(input.environment);
+      if (projectId === PERSONAL_ID) {
+        // Each bot gets its own home project instead of the shared Personal workspace.
+        const homes = [first, second].map((bot) => host.store.require(bot.id).homeProjectId);
+        expect(homes[0]).toBeTruthy();
+        expect(homes[1]).toBeTruthy();
+        expect(homes[0]).not.toBe(homes[1]);
+        expect(
+          host.harness.inspection.sdk
+            .callsTo("threads.spawn")
+            .map(([args]) => (args as { projectId: string }).projectId),
+        ).toEqual(homes);
+        expect(submitted.environment).toEqual(homeEnvironment);
+      } else expect(submitted.environment).toEqual(input.environment);
       expect(submitted.input.at(-1)).toMatchObject({ type: "text", visibility: "agent-only" });
       const unrelated = await host.harness.behavior.resolveAgentConfiguration(
         makePluginAgentConfigurationContext({
@@ -305,7 +327,9 @@ describe("private bot identities", () => {
       expect(unrelated.instructions).toBeNull();
       expect(unrelated.tools).toEqual([]);
       expect(unrelated.skills).toEqual([]);
-      expect(host.harness.inspection.sdk.callsTo("projects.create")).toEqual([]);
+      expect(host.harness.inspection.sdk.callsTo("projects.create")).toHaveLength(
+        projectId === PERSONAL_ID ? 2 : 0,
+      );
     },
   );
 
@@ -319,15 +343,16 @@ describe("private bot identities", () => {
       makeMain: true,
     })) as { threadId: string };
     expect(host.initialConfigurations).toEqual([]);
+    const home = host.store.require(bot.id).homeProjectId!;
     expect(host.harness.inspection.sdk.callsTo("threads.spawn")[0]?.[0]).toMatchObject({
       sendAt: when,
-      projectId: PERSONAL_ID,
+      projectId: home,
     });
     await host.reload();
     const config = await host.harness.behavior.resolveAgentConfiguration(
       makePluginAgentConfigurationContext({
         thread: { id: created.threadId },
-        project: { id: PERSONAL_ID },
+        project: { id: home },
       }),
     );
     expect(config.instructions).toContain("You are Atlas.");
@@ -338,12 +363,9 @@ describe("private bot identities", () => {
   it("recovers first-turn ownership after a lost spawn response and reload", async () => {
     const host = await setup();
     const bot = await host.create();
-    const pending = makeThreadResponse({
-      id: "pending",
-      projectId: PERSONAL_ID,
-      originPluginId: host.bb.pluginId,
-    });
-    host.harness.inspection.sdk.stub("threads.spawn", async () => {
+    let pending = makeThreadResponse({ id: "pending", originPluginId: host.bb.pluginId });
+    host.harness.inspection.sdk.stub("threads.spawn", async (args) => {
+      pending = { ...pending, projectId: (args as { projectId: string }).projectId };
       host.threads.set(pending.id, pending);
       throw new Error("Connection lost after creation");
     });
@@ -363,7 +385,7 @@ describe("private bot identities", () => {
     const config = await host.harness.behavior.resolveAgentConfiguration(
       makePluginAgentConfigurationContext({
         thread: { id: pending.id },
-        project: { id: PERSONAL_ID },
+        project: { id: pending.projectId },
       }),
     );
     expect(config.instructions).toContain("You are Atlas.");
@@ -801,7 +823,7 @@ describe("v2 state import", () => {
       soul: "Latest legacy identity",
       memory: "- Stable fact.\n",
       settings: { preference: true },
-      legacyHomeProjectId: "old-home",
+      homeProjectId: "old-home",
       mainThreadId: "old-main",
     });
     expect(list.projects.map((project) => project.id)).toEqual(["project"]);

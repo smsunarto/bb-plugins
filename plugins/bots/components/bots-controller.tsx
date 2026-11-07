@@ -45,12 +45,8 @@ export interface BotsActions {
 let publishedActions: BotsActions | null = null;
 export const botsActionsBridge = () => publishedActions;
 
-function isPersonalOrLegacyHome(
-  projectId: string,
-  bot: BotMetadata,
-  personalProjectId: string | null,
-) {
-  return projectId === personalProjectId || projectId === bot.legacyHomeProjectId;
+function isPersonalOrHome(projectId: string, bot: BotMetadata, personalProjectId: string | null) {
+  return projectId === personalProjectId || projectId === bot.homeProjectId;
 }
 
 function availableWorkProjects(
@@ -59,9 +55,7 @@ function availableWorkProjects(
   personalProjectId: string | null,
 ) {
   const linked = new Set(bot.linkedProjectIds);
-  const work = projects.filter(
-    (project) => !isPersonalOrLegacyHome(project.id, bot, personalProjectId),
-  );
+  const work = projects.filter((project) => !isPersonalOrHome(project.id, bot, personalProjectId));
   return [
     ...work.filter((project) => linked.has(project.id)),
     ...work.filter((project) => !linked.has(project.id)),
@@ -75,7 +69,7 @@ function allowsConversationProject(
   projects: readonly ProjectOption[],
 ) {
   if (projectId === personalProjectId) return true;
-  if (isPersonalOrLegacyHome(projectId, bot, personalProjectId)) return false;
+  if (isPersonalOrHome(projectId, bot, personalProjectId)) return false;
   return (
     bot.linkedProjectIds.includes(projectId) || projects.some((project) => project.id === projectId)
   );
@@ -160,7 +154,7 @@ export function useBotsController(
         if (current.updatedAt >= prepared.updatedAt) prepared = current;
         if (!prepared.stateReady)
           throw new Error("The bot’s private state could not be prepared. Try again.");
-        // A missing main chat starts in the bot's owned project, else without one.
+        // A missing main chat starts in the bot’s owned project, else (via Personal) in its home project.
         const ownedProjectId = ownedConversationProjectId({
           bot: prepared,
           projects: snapshot.projects,

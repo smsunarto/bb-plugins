@@ -272,16 +272,16 @@ it("rejects missing projects and foreign legacy homes without altering state, bu
   const host = await setup();
   const original = await host.create("Legacy", []);
   const other = await host.create("Other", []);
-  host.projects.push(project("legacy-home"));
-  host.store.save({ ...original, legacyHomeProjectId: "legacy-home" });
+  host.projects.push(project("home"));
+  host.store.save({ ...original, homeProjectId: "home" });
   addThread(host, "missing", "missing");
-  addThread(host, "legacy", "legacy-home");
+  addThread(host, "legacy", "home");
   await expect(
     host.harness.behavior.callRpc("conversation_assign", { botId: other.id, threadId: "missing" }),
   ).rejects.toThrow(/existing work project/);
   await expect(
     host.harness.behavior.callRpc("conversation_assign", { botId: other.id, threadId: "legacy" }),
-  ).rejects.toThrow(/legacy bot home/);
+  ).rejects.toThrow(/bot home project/);
   expect(host.store.require(other.id).linkedProjectIds).toEqual([]);
   await host.harness.behavior.callRpc("conversation_assign", {
     botId: original.id,

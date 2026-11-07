@@ -52,7 +52,7 @@ export function ownedConversationProjectId({
   personalProjectId,
   main,
 }: {
-  bot: Pick<BotMetadata, "id" | "linkedProjectIds" | "legacyHomeProjectId">;
+  bot: Pick<BotMetadata, "id" | "linkedProjectIds" | "homeProjectId">;
   projects: ReadonlyArray<{ id: string }>;
   owners: readonly ProjectOwner[];
   personalProjectId: string | null;
@@ -60,9 +60,7 @@ export function ownedConversationProjectId({
 }): string | null {
   const available = new Set(
     projects
-      .filter(
-        (project) => project.id !== personalProjectId && project.id !== bot.legacyHomeProjectId,
-      )
+      .filter((project) => project.id !== personalProjectId && project.id !== bot.homeProjectId)
       .map((project) => project.id),
   );
   const owned = new Set(
