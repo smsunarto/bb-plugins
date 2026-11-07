@@ -21,6 +21,7 @@ describe("sidebar machines", () => {
   test("lists known machines without threads, preferring their current names", () => {
     expect(
       sidebarMachines(threads, [
+        { id: "host-a", name: "Studio" },
         { id: "host-b", name: "Renamed" },
         { id: "host-c", name: "Empty" },
       ]),
@@ -29,6 +30,29 @@ describe("sidebar machines", () => {
       { id: "host-b", name: "Renamed" },
       { id: "host-a", name: "Studio" },
     ]);
+  });
+
+  test("omits machines bb no longer knows once its roster arrives", () => {
+    const orphaned = [
+      ...threads,
+      { id: "five", projectId: "repo-a", host: { id: "host_gone", name: "host_gone" } },
+    ] as PluginSidebarThread[];
+    expect(sidebarMachines(orphaned, [{ id: "host-a", name: "Studio" }])).toEqual([
+      { id: "host-a", name: "Studio" },
+    ]);
+    expect(sidebarMachines(orphaned).map((machine) => machine.id)).toContain("host_gone");
+  });
+
+  test("omits disposable sandboxes", () => {
+    const sandboxThreads = [
+      ...threads,
+      { id: "five", projectId: "repo-a", host: { id: "host-boat", name: "Boat bx_1" } },
+    ] as PluginSidebarThread[];
+    const hosts = [
+      { id: "host-a", name: "Studio", type: "persistent" },
+      { id: "host-boat", name: "Boat bx_1", type: "ephemeral" },
+    ];
+    expect(sidebarMachines(sandboxThreads, hosts)).toEqual([{ id: "host-a", name: "Studio" }]);
   });
 
   test("hides selected machines while preserving threads without a known host", () => {

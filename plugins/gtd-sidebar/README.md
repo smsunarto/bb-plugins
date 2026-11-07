@@ -119,6 +119,8 @@ machines without closing the menu, use **Only** to see one, or **All machines**
 to reset. The last visible machine stays checked. Choices persist across reloads
 and update other open windows and devices connected to the same bb.
 New machines appear by default; threads without a known machine stay visible.
+The menu lists only persistent machines bb still knows; deleted machines and
+disposable sandboxes stay out, and their threads remain visible.
 When the filter leaves exactly one machine visible, new threads opened from a
 project header preselect that machine.
 

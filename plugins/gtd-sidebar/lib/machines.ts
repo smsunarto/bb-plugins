@@ -4,20 +4,32 @@ import { listedHiddenIds } from "./machine-visibility.ts";
 export type SidebarMachine = NonNullable<PluginSidebarThread["host"]>;
 
 /**
- * Every machine the picker offers: bb's known machines, including ones with
- * no threads yet, plus any machine a thread still names. A known machine's
- * record wins, so a rename shows before its threads refresh. Hosts older than
- * bb 0.44 omit `experimental_hosts`, and the threads alone decide.
+ * bb passes its full host records, but the SDK types only `id` and `name`.
+ * `type` is read defensively until the contract exposes it.
+ */
+type SidebarHost = SidebarMachine & { type?: unknown };
+
+/**
+ * Every machine the picker offers. bb's persistent machines, including ones
+ * with no threads yet, decide the list. Disposable sandboxes come and go per
+ * task, and a thread whose machine bb no longer knows names it only by its
+ * id, so neither adds an entry. Hosts older than bb 0.44 omit
+ * `experimental_hosts`, and an empty roster is still loading, so the threads
+ * alone decide then.
  */
 export function sidebarMachines(
   threads: readonly PluginSidebarThread[],
-  hosts: readonly SidebarMachine[] = [],
+  hosts: readonly SidebarHost[] = [],
 ): SidebarMachine[] {
   const machines = new Map<string, SidebarMachine>();
-  for (const thread of threads) {
-    if (thread.host) machines.set(thread.host.id, thread.host);
+  if (hosts.length === 0) {
+    for (const thread of threads) {
+      if (thread.host) machines.set(thread.host.id, thread.host);
+    }
   }
-  for (const host of hosts) machines.set(host.id, { id: host.id, name: host.name });
+  for (const host of hosts) {
+    if (host.type !== "ephemeral") machines.set(host.id, { id: host.id, name: host.name });
+  }
   return [...machines.values()].sort(
     (left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
   );
