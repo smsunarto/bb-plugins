@@ -4,11 +4,11 @@
 
 ### Minor Changes
 
-- Add a Bots shelf above Next Action, forked from Bots Sidebar 1.1.0: named
-  bots with private instructions and memory, each a group of its conversations
-  drawn as GTD cards. Thread menus gain Bot, Mark complete, Fork, and New
-  conversation in worktree; the Info tab shows the thread's bot and its prompt.
-  The CLI moves to `bb gtd-sidebar bots`. Bot state starts fresh.
+- Add a Bots shelf above Next Action while the separate Bots plugin is enabled:
+  each bot is a group of its conversations drawn as GTD cards. Thread menus gain
+  Fork and New conversation in worktree for bot conversations. Bots, their CLI
+  (`bb bots`), tools, and Info rows live in the Bots plugin, which imports the bots
+  GTD stored before the split.
 - Keep GTD's own inbox look and motion on bb 0.48.1's plugin backend. Requires bb
   0.48.1. Family folds move to this plugin's `expandedThreads` preference, so they
   follow every open window but no longer bb's built-in Thread list. Dropping a row

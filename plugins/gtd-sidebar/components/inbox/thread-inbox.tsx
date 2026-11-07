@@ -60,15 +60,16 @@ import {
   type ProjectGroup as ProjectGroupRows,
 } from "../../lib/project-groups";
 import { ProjectGroup, SortableProjectGroup } from "./project-group";
-import { useBotsModel } from "../../bots/hooks/use-bots";
-import { groupRowsByBot, type BotGroup as BotGroupRows } from "../../bots/lib/bot-groups";
-import { BotGroup } from "../../bots/components/bot-group";
-import { useBotsController } from "../../bots/components/bots-controller";
 import {
   BotWorkflowRuns,
   WorkflowRunsContext,
+  useBotsController,
+  useBotsModel,
+  useBotsPluginEnabled,
   useWorkflowRunsData,
-} from "../../bots/components/workflow-runs";
+} from "@smsunarto/bb-plugin-bots/shelf";
+import { groupRowsByBot, type BotGroup as BotGroupRows } from "../../lib/bot-groups";
+import { BotGroup } from "./bot-group";
 import { Icon } from "../ui/icon";
 import { isShelvedThread } from "../../lib/settled-threads";
 import { retainUnchangedThreads } from "../../lib/stable-threads";
@@ -180,8 +181,10 @@ function InboxList({
     [projects],
   );
   // Bots and their bindings, joined to every listed thread (archived ones
-  // too, so a settled child still knows its bot).
-  const bots = useBotsModel(sidebarThreads);
+  // too, so a settled child still knows its bot). They come from the Bots
+  // plugin; with it off there is no Bots shelf and no read.
+  const botsEnabled = useBotsPluginEnabled() === true;
+  const bots = useBotsModel(sidebarThreads, botsEnabled);
   const { actions: botsActions, dialogs: botDialogs } = useBotsController(bots, onNavigate);
   const workflowRuns = useWorkflowRunsData(bots.bots.length > 0);
   // Only a shown bot claims its threads for the Bots shelf: a hidden bot's

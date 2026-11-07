@@ -77,7 +77,7 @@ plugin.
 ### Active and parked sections
 
 - **Pinned** — the user's explicit priority, kept in its own shelf above active work.
-- **Bots** — named specialists with private instructions and memory, each a group of its conversations. A bot's active conversations sit here instead of Next Action or Waiting. See [Bots](#bots).
+- **Bots** — shown while the [Bots plugin](../bots) is enabled: each bot is a group of its conversations, which sit here instead of Next Action or Waiting. See [Bots](#bots).
 - **Next Action** — the agent turn is done, an interaction needs input, or the thread is otherwise quiet.
 - **Waiting** — foreground or background agent work is live, in the thread, any of its subthreads, or the hidden Review and Arena workers it launched. A family moves back to Next Action only when one of its threads asks you something.
 - **Snoozed** — hidden until the wake time you chose. A snoozed thread comes back early if it starts working or asks you something.
@@ -95,24 +95,22 @@ background work is also live, because the user can act now.
 
 ### Bots
 
-A bot keeps its identity, instructions, and up to 3,000 characters of memory in
-this plugin's private storage, and its conversations under its own header on the
-Bots shelf. Hover the shelf header for **+** to create one. On a bot's header,
-**+** starts a conversation in the project it owns, or a projectless one; right-click
-it to start one in a project or a fresh worktree, edit the bot, manage its
-projects, hide it until its next activity, or move it up and down.
+Bots come from the separate [Bots plugin](../bots), which owns the bots, their
+private state, CLI (`bb bots`), agent tools, and the thread Info rows. While it
+is enabled, GTD Sidebar draws its bots on the Bots shelf; disable it and the
+shelf disappears, and its conversations return to their usual shelves.
 
-Any thread's menu has **Bot** to assign it, move it with its children, or detach
-it, plus **Mark complete** on a bot's conversation. Completed conversations fold
-behind the header's **Show N completed** until new activity reopens them; idle
-ones complete on their own after the hours set in the plugin's settings. Live
-workflow runs show as rows under the conversation that started them. A pinned,
-snoozed, or settled bot conversation stays on that shelf.
+Hover the shelf header for **+** to create a bot. On a bot's header, **+** starts
+a conversation in the project it owns, or a projectless one; right-click it to
+start one in a project or a fresh worktree, edit the bot, manage its projects,
+hide it until its next activity, or move it up and down. Completed conversations
+fold behind the header's **Show N completed**; live workflow runs show as rows
+under the conversation that started them. A pinned, snoozed, or settled bot
+conversation stays on that shelf.
 
-Agents in a bot's conversations read and update its state with `bot_read_state`
-and `bot_update_state`. `bb gtd-sidebar bots list` and
-`bb gtd-sidebar bots message <bot> "<message>"` let agents find and message
-bots; `@` completes bot names in the composer without sending anything.
+GTD Sidebar stored bots itself before the split. It keeps those tables and hands
+them once to the Bots plugin through `retired_bots_export`, which refuses any
+other caller.
 
 ### Visible machines
 
@@ -363,12 +361,10 @@ registry at `desktop-v0.44.0` (`0baa605b32a00619c1d7e3f32be6553ebcf8244a`). GTD
 Sidebar is not a fork of that plugin: its t3sidebar lineage has no upstream to merge
 from, so features are ported one at a time.
 
-Bots are forked from Tobi Lütke's
-[`tobi/bb-bots-sidebar`](https://github.com/tobi/bb-bots-sidebar) at `v1.1.0`
-(`ff5853061ea1cffda1992b85dd4dc6631a1f085a`): its bot store, tools, CLI, editor,
-and avatars, redrawn as a GTD shelf. State does not carry over from an installed
-Bots Sidebar. That repository publishes no license, so this fork is for personal
-use until it has one.
+The Bots shelf bundles the Bots plugin's client, forked from Tobi Lütke's
+[`tobi/bb-bots-sidebar`](https://github.com/tobi/bb-bots-sidebar) at `v1.1.0`.
+That repository publishes no license, so the fork is for personal use until it
+has one; see the Bots plugin's notices.
 
 Provider icons are bb's own artwork, drawn through `experimental_ProviderIcon`
 in one muted tint rather than in brand color — by design.

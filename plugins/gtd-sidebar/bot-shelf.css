@@ -1,0 +1,124 @@
+/* The Bots shelf, shown while the Bots plugin is enabled: bot group headers,
+   the shelf's New bot action, and workflow run rows. The avatar's styles come
+   from the Bots plugin's bots.css; everything else on the shelf is GTD's own
+   project-group and thread-card styling.
+
+   The shelf's dialogs come from the Bots package, outside this plugin's root,
+   and bb's build scans only the root for Tailwind classes. The `bots-components`
+   symlink brings those files into the scan; esbuild still imports them through
+   `@smsunarto/bb-plugin-bots`. */
+
+/* The role trails the name in the header's muted voice. */
+.gtd-bot-group-role {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+/* The avatar fills the folder's glyph column. */
+.gtd-bot-group-header .gtd-project-group-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gtd-bot-group-header[data-selected="true"] .gtd-project-group-name {
+  color: var(--foreground);
+}
+
+/* Bots' New bot: the project header's + at the shelf header's end. */
+.gtd-shelf-action {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-end;
+  width: 22px;
+  height: 22px;
+  margin-right: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted-foreground);
+  opacity: 0;
+  cursor: pointer;
+}
+/* The header's own toggle rule (`.gtd-shelf-header > button`) must not
+   stretch the action across the row. */
+.gtd-shelf-header > .gtd-shelf-action {
+  flex: 0 0 auto;
+  margin-left: 0;
+  padding: 0;
+}
+.gtd-shelf-header:hover .gtd-shelf-action,
+.gtd-shelf-action:focus-visible {
+  opacity: 1;
+}
+.gtd-shelf-action:hover {
+  color: var(--foreground);
+  background: var(--sidebar-accent);
+}
+.gtd-shelf-action:focus-visible {
+  outline: 1px solid var(--ring);
+}
+@media (hover: none) {
+  .gtd-shelf-action {
+    width: 32px;
+    height: 32px;
+    opacity: 1;
+  }
+}
+
+/* Workflow runs: virtual children one level under the conversation card. */
+.gtd-workflow-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+.gtd-workflow-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 0
+    calc(12px + var(--gtd-group-indent, 0px) + var(--gtd-depth, 1) * var(--gtd-depth-step, 16px));
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.gtd-workflow-agent {
+  padding-left: calc(
+    30px + var(--gtd-group-indent, 0px) + var(--gtd-depth, 1) * var(--gtd-depth-step, 16px)
+  );
+}
+@media (hover: hover) {
+  .gtd-workflow-row:hover {
+    background: var(--sidebar-accent);
+    color: var(--sidebar-accent-foreground);
+  }
+}
+.gtd-workflow-row[aria-current="page"] {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+}
+.gtd-workflow-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.gtd-workflow-count {
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}

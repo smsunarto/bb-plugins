@@ -26,10 +26,10 @@ Source: <https://github.com/get-bb/bb>
 
 ## Bots Sidebar — `tobi/bb-bots-sidebar`
 
-Forked at `v1.1.0` (`ff5853061ea1cffda1992b85dd4dc6631a1f085a`): the bot store,
-agent tools, CLI, editor and avatar components under `bots/`. The repository
-publishes no license; this fork is kept for personal use until it does.
-It ships in `dist/server.js` and `dist/app.js`.
+Forked at `v1.1.0` (`ff5853061ea1cffda1992b85dd4dc6631a1f085a`) in the Bots
+plugin (`plugins/bots`), whose shelf client, editor, and avatar components GTD
+Sidebar bundles for its Bots shelf. The repository publishes no license; this
+fork is kept for personal use until it does. It ships in `dist/app.js`.
 
 Source: <https://github.com/tobi/bb-bots-sidebar>
 

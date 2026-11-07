@@ -15,9 +15,7 @@ import { threadFamilyIds } from "./lib/thread-family.ts";
 import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 import { RETIRED_PROJECT_MIGRATIONS } from "./lib/retired-project-migrations.ts";
-import { registerBots } from "./bots/server.ts";
-import { BOT_MIGRATIONS } from "./bots/lib/bot-store.ts";
-import { BOT_COMPLETION_SETTINGS } from "./bots/lib/completion-server.ts";
+import { RETIRED_BOT_MIGRATIONS, registerRetiredBotsExport } from "./lib/retired-bots.ts";
 import { GTD_TAGS, gtdSidebarRpcContract } from "./lib/rpc-contract.ts";
 import {
   createPreferenceStore,
@@ -84,7 +82,6 @@ export default async function plugin(bb: BbPluginApi) {
         "Opt in to periodic host GitButler CLI reads for primary checkouts. Otherwise use BB's native branch labels.",
       default: false,
     },
-    ...BOT_COMPLETION_SETTINGS,
   });
   const threadNamer = createThreadNamer(bb, {
     automaticallyNameThreads: async () => (await settings.get()).automaticallyNameThreads,
@@ -92,10 +89,9 @@ export default async function plugin(bb: BbPluginApi) {
   });
 
   const db = bb.storage.database();
-  // One positional list for the whole database: GTD's, then the bots
-  // forked in from Bots Sidebar. New migrations go at the very end.
-  bb.storage.migrate(db, [...migrations, ...RETIRED_PROJECT_MIGRATIONS, ...BOT_MIGRATIONS]);
-  const botsCommands = registerBots(bb, settings);
+  // One positional list for the whole database. New migrations go at the very end.
+  bb.storage.migrate(db, [...migrations, ...RETIRED_PROJECT_MIGRATIONS, ...RETIRED_BOT_MIGRATIONS]);
+  registerRetiredBotsExport(bb);
 
   // The columns stay nullable because migrations are append-only, so the
   // read drops any row an older build left with one time missing.
@@ -298,11 +294,10 @@ export default async function plugin(bb: BbPluginApi) {
   bb.cli.register(
     defineCli({
       name: "gtd-sidebar",
-      summary: "Manage GTD Sidebar threads, bots, and layout preferences.",
+      summary: "Manage GTD Sidebar threads and layout preferences.",
       usageErrorExitCode: 2,
       commands: {
         ...preferenceCliCommands(preferences),
-        ...botsCommands,
         rename: cliCommand({
           summary: "Generate a new title for a thread.",
           positionals: [

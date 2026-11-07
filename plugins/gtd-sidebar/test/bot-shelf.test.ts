@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk";
 import { buildInboxTree, visibleInboxRows, type InboxShelf } from "../lib/inbox-tree.ts";
-import { groupRowsByBot } from "../bots/lib/bot-groups.ts";
+import { groupRowsByBot } from "../lib/bot-groups.ts";
 
 function thread(id: string, overrides: Partial<PluginSidebarThread> = {}): PluginSidebarThread {
   return {
