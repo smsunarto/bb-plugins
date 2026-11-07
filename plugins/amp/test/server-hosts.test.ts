@@ -186,21 +186,6 @@ test("a report found by asking every host is read from that host next time", asy
   assert.equal(threadReads.get("thr_moved"), 1);
 });
 
-test("the Orb banner reads a thread's provider once, and an unlinked Amp thread is not hidden", async () => {
-  const harness = await loadAmp();
-  THREADS.thr_claude = { id: "thr_claude", providerId: "claude-code", createdAt: LONG_AGO };
-  assert.deepEqual(await harness.behavior.callRpc("getOrbUsage", { threadId: "thr_claude" }), {
-    state: "hidden",
-  });
-  assert.deepEqual(await harness.behavior.callRpc("getOrbUsage", { threadId: "thr_claude" }), {
-    state: "hidden",
-  });
-  assert.equal(threadReads.get("thr_claude"), 1);
-  assert.deepEqual(await harness.behavior.callRpc("getOrbUsage", { threadId: "thr_mac" }), {
-    state: "unlinked",
-  });
-});
-
 test("the first host that has the report answers without waiting for a slow one", async () => {
   // linux-builder never answers; the lookup must not wait out its timeout.
   const harness = await loadAmp((call) =>

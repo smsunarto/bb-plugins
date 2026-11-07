@@ -1,9 +1,10 @@
-import type { AmpThreadLinkState } from "../lib/declaration.ts";
+import { threadLinkStateSchema, type AmpThreadLinkState } from "./thread-link.ts";
 
-/** What the composer banner renders. The server derives it from the thread's
- *  latest `amp/thread-link` extension state. `hidden` never shows: another
- *  provider's thread, or an Amp thread that runs locally. `unlinked` is an
- *  Amp thread whose bridge has not published its link yet. */
+/** What the composer banner renders, derived from the thread's latest
+ *  `amp/thread-link` extension state. `hidden` never shows: an Amp thread that
+ *  runs locally, or a state that fails the schema. `unlinked` is a thread with
+ *  no link yet, which is also every other provider's thread: only Amp's
+ *  bridge publishes this kind. */
 export type OrbUsageView =
   | Readonly<{ state: "hidden" }>
   | Readonly<{ state: "unlinked" }>
@@ -13,12 +14,6 @@ export type OrbUsageView =
       ampThreadId: string;
       syncCommand: string;
     }>;
-
-/** True once no later thread event can change the view. A thread's provider
- *  and executor are fixed at creation, and its Amp thread id once revealed. */
-export function orbUsageSettled(view: OrbUsageView): boolean {
-  return view.state === "hidden" || view.state === "active";
-}
 
 /** Map the persisted thread-link state to the banner view. Local execution
  *  hides the banner; an orb run that has not revealed its Amp thread id yet
@@ -32,4 +27,13 @@ export function threadLinkToOrbUsageView(link: AmpThreadLinkState): OrbUsageView
     ampThreadId: link.ampThreadId,
     syncCommand: link.syncCommand ?? `amp sync ${link.ampThreadId}`,
   };
+}
+
+/** The banner view for whatever `experimental_useThreadExtensionState`
+ *  reports. bb validated the payload against the declared schema at ingest;
+ *  a miss here means the schemas drifted, and hiding is the safe answer. */
+export function orbUsageFromThreadLinkState(state: unknown): OrbUsageView {
+  if (state === null || state === undefined) return { state: "unlinked" };
+  const link = threadLinkStateSchema.safeParse(state);
+  return link.success ? threadLinkToOrbUsageView(link.data) : { state: "hidden" };
 }

@@ -1,7 +1,7 @@
-// The Oracle card and the Orb banner read server state that only changes
-// when the thread does. These tests pin that they refresh on that thread's
-// realtime changes instead of a timer, and that settled answers are kept
-// across remounts instead of asked for again.
+// The Oracle card reads server state that only changes when the thread does.
+// These tests pin that it refreshes on that thread's realtime changes instead
+// of a timer, and that settled answers are kept across remounts instead of
+// asked for again. The Orb banner reads bb's extension state directly.
 import assert from "node:assert/strict";
 import { afterEach, test } from "bun:test";
 import "./helpers/plugin-app-runtime.ts";
@@ -9,7 +9,6 @@ import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { act, cleanup } from "@testing-library/react";
 import * as appModule from "../app.tsx";
 import type { OracleReport } from "../src/oracle-directive.ts";
-import type { OrbUsageView } from "../src/orb-usage.ts";
 import type { ThreadChange } from "../src/thread-changes.ts";
 
 const app = await loadPluginApp(appModule);
@@ -146,105 +145,56 @@ test("an Oracle report that finishes while its first read is answering still sho
   assert.equal(channel.listeners.size, 0);
 });
 
-function renderOrb(
-  threadId: string,
-  getOrbUsage: () => OrbUsageView | Promise<OrbUsageView>,
-  channel = realtime(),
-) {
-  const slot = renderSlot(orbBanner!, {}, {
+/** The Orb banner on `threadId`, with bb reporting `link` as the thread's
+ *  `thread-link` extension state (undefined: none published). */
+function renderOrb(threadId: string, link?: unknown) {
+  return renderSlot(orbBanner!, {}, {
     composer: { scope: { kind: "thread", threadId } },
-    rpc: { getOrbUsage },
-    sdk: { subscribe: channel.subscribe },
+    threadExtensionStates: link === undefined ? {} : { [threadId]: { "thread-link": link } },
   } as never);
-  return { slot, channel };
 }
 
-const orbCalls = (slot: ReturnType<typeof renderSlot>) =>
-  slot.inspection.rpcCalls.filter((call) => call.method === "getOrbUsage").length;
+test("the Orb banner reads the thread's published link, with no request", async () => {
+  const unlinked = renderOrb("thr_orb");
+  assert.equal(unlinked.container.textContent, "");
+  unlinked.unmount();
 
-test("the Orb banner appears when the thread publishes its link, with no timer", async () => {
-  let view: OrbUsageView = { state: "unlinked" };
-  const { slot, channel } = renderOrb("thr_orb", () => view);
-  await act(settle);
-  assert.equal(slot.container.textContent, "");
-  assert.equal(orbCalls(slot), 1);
+  const starting = renderOrb("thr_orb", {
+    ampThreadId: null,
+    executionTarget: "orb",
+    syncCommand: null,
+  });
+  assert.ok(starting.getByText("Starting"));
+  starting.unmount();
 
-  await act(() => new Promise((resolve) => setTimeout(resolve, 900)));
-  await channel.change("thr_orb", ["events-appended"], ["item/agentMessage/delta"]);
-  assert.equal(orbCalls(slot), 1);
-
-  view = { state: "starting" };
-  await channel.change("thr_orb", ["events-appended"], ["thread/extensionState/updated"]);
-  assert.ok(slot.getByText("Starting"));
-
-  view = { state: "active", ampThreadId: "T-abc", syncCommand: "amp sync T-abc" };
-  await channel.change("thr_orb", ["events-appended"], ["thread/extensionState/updated"]);
-  assert.ok(slot.getByText("Active"));
-  assert.equal(orbCalls(slot), 3);
-  assert.equal(channel.listeners.size, 0, "an active banner is settled");
+  const active = renderOrb("thr_orb", {
+    ampThreadId: "T-abc",
+    executionTarget: "orb",
+    syncCommand: "amp sync T-abc",
+  });
+  assert.ok(active.getByText("Active"));
+  assert.equal(active.inspection.rpcCalls.length, 0);
 });
 
-test("another provider's thread is asked once and then left alone", async () => {
-  const channel = realtime();
-  const first = renderOrb("thr_claude", () => ({ state: "hidden" }), channel);
-  await act(settle);
-  assert.equal(orbCalls(first.slot), 1);
-  assert.equal(channel.listeners.size, 0);
-  first.slot.unmount();
+test("a local run, or a link that fails the schema, shows no banner", async () => {
+  const local = renderOrb("thr_local", {
+    ampThreadId: "T-abc",
+    executionTarget: "local",
+    syncCommand: null,
+  });
+  assert.equal(local.container.textContent, "");
+  local.unmount();
 
-  const again = renderOrb("thr_claude", () => {
-    throw new Error("a settled thread must not be asked again");
-  });
-  await act(settle);
-  assert.equal(orbCalls(again.slot), 0);
-});
-
-test("two panes on one thread share one request per change", async () => {
-  let resolve!: (view: OrbUsageView) => void;
-  const pending = new Promise<OrbUsageView>((done) => {
-    resolve = done;
-  });
-  let calls = 0;
-  const handler = () => {
-    calls += 1;
-    return pending;
-  };
-  renderOrb("thr_split", handler);
-  renderOrb("thr_split", handler);
-  await act(async () => {
-    resolve({ state: "starting" });
-    await settle();
-  });
-  assert.equal(calls, 1);
-});
-
-test("a link published while a read is out gets one more read", async () => {
-  let release!: () => void;
-  const first = new Promise<OrbUsageView>((done) => {
-    release = () => done({ state: "unlinked" });
-  });
-  let view: OrbUsageView | Promise<OrbUsageView> = first;
-  const { slot, channel } = renderOrb("thr_race", () => view);
-  view = { state: "active", ampThreadId: "T-race", syncCommand: "amp sync T-race" };
-  // Two panes' worth of the same change, heard before the first answer lands.
-  await channel.change("thr_race", ["events-appended"], ["thread/extensionState/updated"]);
-  await channel.change("thr_race", ["events-appended"], ["thread/extensionState/updated"]);
-  assert.equal(orbCalls(slot), 1);
-  await act(async () => {
-    release();
-    await settle();
-  });
-  assert.equal(orbCalls(slot), 2);
-  assert.ok(slot.getByText("Active"));
+  const drifted = renderOrb("thr_drift", { executionTarget: "cloud" });
+  assert.equal(drifted.container.textContent, "");
 });
 
 test("copying the sync command goes through bb's clipboard writer", async () => {
-  const { slot } = renderOrb("thr_copy", () => ({
-    state: "active",
+  const slot = renderOrb("thr_copy", {
     ampThreadId: "T-copy",
+    executionTarget: "orb",
     syncCommand: "amp sync T-copy",
-  }));
-  await act(settle);
+  });
   await act(async () => {
     slot.getByLabelText("Copy Amp sync command").click();
     await settle();

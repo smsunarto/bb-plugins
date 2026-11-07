@@ -11,7 +11,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { buildAmpProviderDeclaration, threadLinkStateSchema } from "./lib/declaration.js";
+import { buildAmpProviderDeclaration } from "./lib/declaration.js";
 import {
   cleanupLegacyAmpEntry,
   inspectLegacyAmpEntry,
@@ -19,11 +19,9 @@ import {
   type LegacyCleanupResult,
   type LegacyConfigPaths,
 } from "./lib/provision.js";
-import { AMP_THREAD_LINK_KIND } from "./src/bridge/kinds.js";
 import { AMP_AGENT } from "./src/execution-target.js";
 import { ampHostContract, oracleReportSchema } from "./src/host-contract.js";
 import { createOrbIntent } from "./src/orb-intent.js";
-import { threadLinkToOrbUsageView } from "./src/orb-usage.js";
 import { PLUGIN_TELEMETRY } from "./shared/telemetry.js";
 
 // Amp's source entry lives at the plugin root. Published bundles have their
@@ -38,26 +36,7 @@ const telemetry = sentryPluginTelemetry({
   serverEntryUrl: telemetryEntryUrl,
 });
 
-const orbUsageViewSchema = z.discriminatedUnion("state", [
-  z.object({ state: z.literal("hidden") }).strict(),
-  z.object({ state: z.literal("unlinked") }).strict(),
-  z.object({ state: z.literal("starting") }).strict(),
-  z
-    .object({
-      state: z.literal("active"),
-      ampThreadId: z.string(),
-      syncCommand: z.string(),
-    })
-    .strict(),
-]);
-
 export const rpcContract = defineRpcContract({
-  getOrbUsage: {
-    experimental_description:
-      "Which Amp thread a bb thread maps to and whether it runs on an Orb machine; hidden for non-Amp and local threads, unlinked until the bridge links an Amp thread.",
-    input: z.object({ threadId: z.string().min(1) }).strict(),
-    output: orbUsageViewSchema,
-  },
   getOrbIntent: {
     experimental_description: "Whether the next new Amp thread is armed to run on an Orb machine.",
     input: z.object({}).strict(),
@@ -92,10 +71,6 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const HOST_BUNDLE = existsSync(join(MODULE_DIR, "host.js"))
   ? join(MODULE_DIR, "host.js")
   : join(MODULE_DIR, "dist", "host.js");
-
-/** How many extension-state rows to scan for the latest `amp/thread-link`.
- *  Other kinds may interleave; the thread-link row is normally first. */
-const THREAD_LINK_SCAN_LIMIT = 50;
 
 /** One call to a host entry. An Oracle card waits on the answer, so a host
  *  that does not answer fails the card fast. */
@@ -202,46 +177,9 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter) {
     return { report: null, error: ORACLE_UNAVAILABLE };
   }
 
-  /** Thread id → provider id. A thread's provider never changes, so a
-   *  banner on another provider's thread costs no bb read after the first. */
-  const threadProviders = new Map<string, string>();
-
-  async function providerOf(threadId: string): Promise<string> {
-    let providerId = threadProviders.get(threadId);
-    if (providerId === undefined) {
-      providerId = (await bb.sdk.threads.get({ threadId })).providerId;
-      threadProviders.set(threadId, providerId);
-    }
-    return providerId;
-  }
-
   bb.rpc.register(
     rpcContract,
     {
-      async getOrbUsage({ threadId }) {
-        return observeFailure(reporter, "rpc.execute", "getOrbUsage", async () => {
-          if ((await providerOf(threadId)) !== AMP_AGENT.providerId) {
-            return { state: "hidden" as const };
-          }
-          const rows = await bb.sdk.threads.events.list({
-            threadId,
-            types: ["thread/extensionState/updated"],
-            order: "desc",
-            limit: String(THREAD_LINK_SCAN_LIMIT),
-          });
-          for (const row of rows) {
-            if (row.type !== "thread/extensionState/updated") continue;
-            if (row.data.kind !== AMP_THREAD_LINK_KIND) continue;
-            // Ingest already validated the payload against this same schema; a
-            // miss here means the schemas drifted, and hiding is the safe answer.
-            const link = threadLinkStateSchema.safeParse(row.data.payload);
-            return link.success
-              ? threadLinkToOrbUsageView(link.data)
-              : { state: "hidden" as const };
-          }
-          return { state: "unlinked" as const };
-        });
-      },
       // The Orb toggle arms the next thread here. The next Amp thread bb
       // creates claims it, and deriveProviderOptions carries the choice to
       // the bridge on that thread's host (src/orb-intent.ts).
@@ -265,7 +203,7 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter) {
     {
       experimental_discoverable: true,
       experimental_description:
-        "Amp provider state: Orb execution intent and usage per thread, and stored Oracle reports.",
+        "Amp provider state: Orb execution intent and stored Oracle reports.",
     },
   );
 
@@ -440,7 +378,6 @@ async function registerPlugin(bb: BbPluginApi, reporter: SentryPluginReporter) {
   bb.events.on("thread.deleted", async ({ thread }) => {
     return observeFailure(reporter, "event.handler", "thread.deleted", async () => {
       orb.forget(thread.id);
-      threadProviders.delete(thread.id);
       await Promise.all([
         bb.storage.kv.delete(`amp-thread-link:${thread.id}`),
         bb.storage.kv.delete(`orb-usage:${thread.id}`),

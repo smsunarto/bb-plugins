@@ -5,6 +5,11 @@ import { AMP_FALLBACK_MODELS } from "../src/bridge/model-catalog.ts";
 import type { OrbIntent } from "../src/orb-intent.ts";
 import { AMP_NATIVE_SKILL_ROOTS } from "./provision.ts";
 import { AMP_SENTRY_ENV } from "./telemetry.ts";
+import {
+  THREAD_LINK_EXTENSION_KIND,
+  threadLinkStateSchema,
+  type AmpThreadLinkState,
+} from "../src/thread-link.ts";
 
 /** `amp/oracle` timeline items carry only this receipt. The report body
  *  stays in the XDG store on the thread's host, and the plugin's
@@ -17,13 +22,7 @@ export const oracleReceiptSchema = z.object({
 /** `amp/thread-link` thread state: which Amp thread a bb thread maps to and
  *  where it executes. The session emits it when the Amp thread id first
  *  arrives, and once per session for a record that already has one. */
-export const threadLinkStateSchema = z.object({
-  ampThreadId: z.string().nullable(),
-  executionTarget: z.enum(["local", "orb"]),
-  syncCommand: z.string().nullable(),
-});
-
-export type AmpThreadLinkState = z.infer<typeof threadLinkStateSchema>;
+export { threadLinkStateSchema, type AmpThreadLinkState };
 
 /**
  * The provider declaration for `bb.providers.register`. The executable
@@ -69,7 +68,7 @@ export function buildAmpProviderDeclaration(orb: OrbIntent): PluginProviderDecla
     // declaration test pins the correspondence).
     extensionKinds: {
       oracle: { item: oracleReceiptSchema },
-      "thread-link": { state: threadLinkStateSchema },
+      [THREAD_LINK_EXTENSION_KIND]: { state: threadLinkStateSchema },
     },
     // One probe per host: the catalog is static (src/bridge/model-catalog.ts),
     // never workspace-dependent. The fallback mirrors the bridge's live

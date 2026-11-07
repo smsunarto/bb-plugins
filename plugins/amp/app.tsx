@@ -99,12 +99,16 @@ function OracleTimelineItem({ payload, thread }: PluginTimelineRendererProps) {
 
 function AmpOrbBanner() {
   const { scope } = useComposer();
-  const threadId = scope.kind === "thread" ? scope.threadId : null;
+  // Keyed by thread, so switching threads starts with fresh copy feedback.
+  return scope.kind === "thread" ? (
+    <ThreadOrbBanner key={scope.threadId} threadId={scope.threadId} />
+  ) : null;
+}
+
+function ThreadOrbBanner({ threadId }: { threadId: string }) {
   const usage = useOrbUsage(threadId);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const copyResetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => setCopyState("idle"), [threadId]);
 
   useEffect(
     () => () => {
@@ -113,7 +117,6 @@ function AmpOrbBanner() {
     [],
   );
 
-  if (threadId === null || usage === null) return null;
   if (usage.state === "hidden" || usage.state === "unlinked") return null;
 
   const copySyncCommand = async () => {

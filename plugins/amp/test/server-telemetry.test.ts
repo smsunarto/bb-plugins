@@ -45,10 +45,15 @@ test("Amp reports rejected server callbacks and disposes its reporter", async ()
   });
 
   await plugin(bb);
-  await expect(harness.behavior.callRpc("getOrbUsage", { threadId: "thread-1" })).rejects.toThrow(
-    "private server failure",
-  );
-  expect(failures).toEqual([{ boundary: "rpc.execute", operation: "getOrbUsage", error: failure }]);
+  await expect(
+    harness.behavior.callRpc("getOracleReport", {
+      reportId: "00000000-0000-4000-8000-000000000000",
+      threadId: "thread-1",
+    }),
+  ).rejects.toThrow("private server failure");
+  expect(failures).toEqual([
+    { boundary: "rpc.execute", operation: "getOracleReport", error: failure },
+  ]);
 
   await harness.lifecycle.dispose();
   expect(disposeCount).toBe(1);
