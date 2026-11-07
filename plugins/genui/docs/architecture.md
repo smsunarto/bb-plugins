@@ -86,14 +86,8 @@ The internals behind [the README](../README.md): how agents learn the language, 
      BB keeps the renderer instance through streaming, closure and reply
      completion. Missing, disabled, conflicting or crashing renderers fall
      back to BB's code block; a crash is retried when code or status changes.
-     The props are the SDK's `ExperimentalCodeFenceRendererProps` (0.6.54);
-     `app.tsx` checks the method exists at runtime, since BB 0.45 lacks it.
-   - On a BB without that slot, an app overlay (`ui/FenceOverlay.tsx`) finds
-     the code blocks in BB's DOM, hides them and portals the same `Fence`
-     there. It treats a block as complete after 1.5 seconds without a text
-     change, so a paused or interrupted app can execute on this legacy path.
-     Each mount carries `data-bb-plugin`, so BB's scoped plugin
-     CSS applies.
+     The props are the SDK's `ExperimentalCodeFenceRendererProps`. The plugin
+     requires BB 0.49, which always has the slot.
    - BB's timeline unmounts rows that scroll out of view and remounts them
      on the way back, so a block must open at its final height or the
      conversation moves under the reader. The overlay renders a block it
@@ -589,7 +583,6 @@ pilot stored.
 - `ui/`:
   - `Fence.tsx`: the shared renderer.
   - `SlotFence.tsx`: the native renderer slot, including terminal status policy.
-  - `FenceOverlay.tsx`: the older-BB DOM fallback and settlement heuristic.
   - `AppBlock.tsx`: the sandboxed apps (preview, frame, toolbar);
     `appDocument.ts` their documents and bootstrap; `appBridge.ts` what a
     frame may post, and app storage in the host.

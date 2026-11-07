@@ -10,7 +10,6 @@ import {
   MAX_COMMITS,
   THREAD_ID,
   type ChangedFile,
-  type ChangeKind,
   type ChangesResult,
   type ChangesScope,
   type ChangesTarget,
@@ -30,6 +29,7 @@ import {
 } from "../core/project";
 import { lastMessage, pendingAsk, workersByParent, type LastMessage } from "../core/thread-activity";
 import type { EnvironmentsSource } from "./environments";
+import { changedFiles, filePatches, pullRequest as readPullRequest, workspaceStatus as readWorkspaceStatus, type GitFile } from "./bb-git";
 import { createSnapshots, fitChanges, PATCH_BYTES, SNAPSHOT_BYTES, snapshotKey, type SnapshotStorage } from "./snapshots";
 
 /** Keep what is shown in this reply block (`blockKey`), or replace what was kept (`refresh`). */
@@ -115,18 +115,9 @@ export function isRepositoryPath(path: string): boolean {
   return path !== "" && path.length <= 1024 && !path.startsWith("/") && !path.split("/").includes("..") && !path.includes("\0");
 }
 
-interface DiffFileEntry {
-  readonly path: string;
-  readonly previousPath: string | null;
-  readonly changeKind: ChangeKind;
-  readonly additions: number;
-  readonly deletions: number;
-  readonly binary: boolean;
-  readonly loadMode: "auto" | "on_demand" | "too_large";
-  readonly origin: "tracked" | "untracked";
-}
+type DiffFileEntry = Pick<GitFile, "path" | "previousPath" | "changeKind" | "additions" | "deletions" | "binary" | "loadMode" | "origin">;
 
-/** BB's diffFiles entry as Changes shows it. */
+/** The Git plugin's files entry as Changes shows it. */
 export function changedFile(file: DiffFileEntry, inline: boolean): ChangedFile {
   return {
     path: file.path,
@@ -208,17 +199,17 @@ async function workspaceStatus(sdk: Sdk, environmentId: string) {
   const environment = await sdk.environments.get({ environmentId });
   if (!environment.isGitRepo) return failure("not-git", "This thread's environment isn't a git checkout");
   let base = environment.mergeBaseBranch ?? environment.defaultBranch;
-  let status = await sdk.environments.status({ environmentId, ...(base === null ? {} : { mergeBaseBranch: base }) });
+  let status = await readWorkspaceStatus(sdk, environmentId, base);
   if (status.outcome !== "available") return outcomeFailure(status);
   if (base === null) {
     base = status.workspace.branch.defaultBranch;
-    status = await sdk.environments.status({ environmentId, mergeBaseBranch: base });
+    status = await readWorkspaceStatus(sdk, environmentId, base);
     if (status.outcome !== "available") return outcomeFailure(status);
   }
   return { ok: true as const, base, workspace: status.workspace };
 }
 
-/** What BB says is checked out (environments.status `workspace.checkout`). */
+/** What BB says is checked out (workspaceStatus `workspace.checkout`). */
 type Checkout =
   | { readonly kind: "branch"; readonly branchName: string; readonly headSha: string | null }
   | { readonly kind: "detached"; readonly headSha: string | null }
@@ -283,20 +274,21 @@ export function createProjectSource(bb: BbPluginApi, storage: SnapshotStorage = 
   }
 
   /** On-demand patches for a snapshot, in file order, until they'd no longer fit. */
-  async function snapshotPatches(environmentId: string, query: DiffQuery, files: readonly ChangedFile[]): Promise<FilePatch[]> {
+  async function snapshotPatches(
+    environmentId: string,
+    query: DiffQuery,
+    files: readonly ChangedFile[],
+    revisions: ReadonlyMap<string, GitFile>,
+  ): Promise<FilePatch[]> {
     const wanted = files
       .filter((file) => file.diff === "on-demand" && isRepositoryPath(file.path))
       .slice(0, MAX_SNAPSHOT_PATCH_FILES)
-      .map((file) => file.path);
+      .flatMap((file) => revisions.get(file.path) ?? []);
     const found: FilePatch[] = [];
     let bytes = 0;
     for (let start = 0; start < wanted.length && bytes < SNAPSHOT_BYTES; start += PATCH_BATCH) {
-      const answer = await sdk.environments.diffPatch({
-        environmentId,
-        paths: wanted.slice(start, start + PATCH_BATCH),
-        target: patchTarget(query),
-      });
-      if (answer.outcome !== "available") break;
+      const answer = await filePatches(sdk, environmentId, patchTarget(query), wanted.slice(start, start + PATCH_BATCH));
+      if (answer.failed !== undefined) break;
       for (const patch of answer.patches) {
         found.push(patch);
         if (patch.patch.length <= PATCH_BYTES) bytes += patch.patch.length;
@@ -309,7 +301,7 @@ export function createProjectSource(bb: BbPluginApi, storage: SnapshotStorage = 
     const resolved = await resolveDiff(threadId, target);
     if (!resolved.ok) return resolved;
     const { environmentId, query, scope } = resolved;
-    const answer = await sdk.environments.diffFiles({ environmentId, ...query });
+    const answer = await changedFiles(sdk, environmentId, patchTarget(query));
     if (answer.outcome !== "available") return outcomeFailure(answer);
     const inline = new Set(answer.initialPatches.map((patch) => patch.path));
     const all = answer.files.map((file) => changedFile(file, inline.has(file.path)));
@@ -331,7 +323,8 @@ export function createProjectSource(bb: BbPluginApi, storage: SnapshotStorage = 
       stored: false,
     };
     if (!keep) return view;
-    return fitChanges(view, [...patches, ...(await snapshotPatches(environmentId, query, files))]);
+    const revisions = new Map(answer.files.map((file) => [file.path, file]));
+    return fitChanges(view, [...patches, ...(await snapshotPatches(environmentId, query, files, revisions))]);
   }
 
   async function liveCommits(threadId: string): Promise<CommitsResult> {
@@ -512,12 +505,18 @@ export function createProjectSource(bb: BbPluginApi, storage: SnapshotStorage = 
       try {
         const resolved = await resolveDiff(threadId, target);
         if (!resolved.ok) return resolved;
-        const answer = await sdk.environments.diffPatch({
-          environmentId: resolved.environmentId,
-          paths: [...paths],
-          target: patchTarget(resolved.query),
-        });
-        if (answer.outcome !== "available") return outcomeFailure(answer);
+        // A patch is read at the revision the file list reports, so read the list first.
+        const gitTarget = patchTarget(resolved.query);
+        const listed = await changedFiles(sdk, resolved.environmentId, gitTarget);
+        if (listed.outcome !== "available") return outcomeFailure(listed);
+        const wanted = new Set(paths);
+        const answer = await filePatches(
+          sdk,
+          resolved.environmentId,
+          gitTarget,
+          listed.files.filter((file) => wanted.has(file.path)),
+        );
+        if (answer.failed !== undefined && answer.patches.length === 0) return outcomeFailure(answer.failed);
         return { ok: true, patches: answer.patches };
       } catch (cause) {
         return failure("unavailable", `BB couldn't read the diff: ${errorMessage(cause)}`);
@@ -547,7 +546,7 @@ export function createProjectSource(bb: BbPluginApi, storage: SnapshotStorage = 
         const environment = await threadEnvironment(sdk, threadId);
         if (!environment.ok) return environment;
         const [answer, env] = await Promise.all([
-          sdk.environments.pullRequest({ environmentId: environment.environmentId }),
+          readPullRequest(sdk, environment.environmentId),
           sdk.environments.get({ environmentId: environment.environmentId }),
         ]);
         if (answer.outcome === "unavailable") return failure("unavailable", answer.message);

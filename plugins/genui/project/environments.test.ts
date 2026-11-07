@@ -64,7 +64,7 @@ function workspace(branch: string, overrides: Partial<WorkspaceEntry> = {}): Wor
   return {
     branch: { defaultBranch: "main" },
     checkout: { kind: "branch", branchName: branch, headSha: "82af8f087df1cb963097461359446d9a69b36dc9" },
-    mergeBase: { aheadCount: 2, behindCount: 1 },
+    mergeBase: { aheadCount: 2, behindCount: 1, commits: [] },
     workingTree: { files: [{}, {}], insertions: 12, deletions: 3, lineStatsComplete: true },
     ...overrides,
   };
@@ -85,6 +85,20 @@ const PULL_REQUEST = {
   inMergeQueue: false,
   updatedAt: "2026-10-09T12:00:00Z",
 };
+
+/**
+ * `bb.sdk.plugins.callRpc` for the Git and PR status plugins, answering from
+ * `reads` and parsing each answer with the caller's schema as bb does.
+ */
+function pluginReads(reads: Record<string, (input: never) => unknown>) {
+  return {
+    callRpc: async ({ pluginId, method, input, outputSchema }: { pluginId: string; method: string; input: never; outputSchema: { parse(value: unknown): unknown } }) => {
+      const read = reads[`${pluginId}.${method}`];
+      if (read === undefined) throw new Error(`no fake for ${pluginId}.${method}`);
+      return outputSchema.parse(await read(input));
+    },
+  };
+}
 
 /** A BB with two projects: proj_a (the reply's) and proj_b (someone else's). */
 function fakeBb(options: { status?: (environmentId: string, base: string | undefined) => unknown } = {}) {
@@ -134,18 +148,20 @@ function fakeBb(options: { status?: (environmentId: string, base: string | undef
         if (found === undefined) throw new Error("404");
         return found;
       },
-      status: async (args: { environmentId: string; mergeBaseBranch?: string }) => {
-        calls.push({ method: "environments.status", args });
+    },
+    plugins: pluginReads({
+      "bb--git.workspaceStatus": (args: { environmentId: string; mergeBaseBranch?: string }) => {
+        calls.push({ method: "git.workspaceStatus", args });
         const custom = options.status?.(args.environmentId, args.mergeBaseBranch);
         if (custom !== undefined) return custom;
         const branch = environments[args.environmentId]?.branchName ?? "main";
         return { outcome: "available", workspace: workspace(branch) };
       },
-      pullRequest: async (args: { environmentId: string }) => {
-        calls.push({ method: "environments.pullRequest", args });
-        return { outcome: "available", pullRequest: PULL_REQUEST };
+      "bb--github-pr-status.pullRequests": ({ keys }: { keys: string[] }) => {
+        calls.push({ method: "pullRequests", args: { environmentId: keys[0] } });
+        return { [keys[0]!]: { outcome: "available", pullRequest: PULL_REQUEST } };
       },
-    },
+    }),
   };
   return { source: createEnvironmentsSource(sdk as unknown as BbPluginApi["sdk"]), calls };
 }
@@ -228,7 +244,7 @@ describe("environments: one environment's detail", () => {
     expect(await source.environment("thr_mine00", "env_nope")).toMatchObject({ ok: false, reason: "not-found" });
     expect(await source.environment("thr_mine00", "x")).toMatchObject({ ok: false, reason: "invalid" });
     expect(await source.environment("thr_nobody", "env_wt01")).toMatchObject({ ok: false, reason: "not-found" });
-    expect(calls.some((call) => call.method === "environments.status")).toBe(false);
+    expect(calls.some((call) => call.method === "git.workspaceStatus")).toBe(false);
   });
 
   it("reads a worktree's status against its base and its pull request", async () => {
@@ -247,7 +263,7 @@ describe("environments: one environment's detail", () => {
       uncommitted: { files: 2, additions: 12, deletions: 3, complete: true },
     });
     expect(detail.pull).toMatchObject({ ok: true, pullRequest: { number: 424, state: "draft", checks: { state: "failing", failed: 1, passed: 3 } } });
-    expect(calls.find((call) => call.method === "environments.status")?.args).toEqual({ environmentId: "env_wt01", mergeBaseBranch: "main" });
+    expect(calls.find((call) => call.method === "git.workspaceStatus")?.args).toEqual({ environmentId: "env_wt01", mergeBaseBranch: "main" });
   });
 
   it("doesn't look for a pull request on the default branch", async () => {
@@ -255,7 +271,7 @@ describe("environments: one environment's detail", () => {
     const detail = (await source.environment("thr_mine00", "env_main")) as EnvironmentDetail;
     expect(detail.checkout).toMatchObject({ ok: true, onBase: true, ahead: null, behind: null });
     expect(detail.pull).toBeNull();
-    expect(calls.some((call) => call.method === "environments.pullRequest")).toBe(false);
+    expect(calls.some((call) => call.method === "pullRequests")).toBe(false);
   });
 
   it("says a missing workspace folder honestly", async () => {
@@ -274,7 +290,7 @@ describe("environments: one environment's detail", () => {
     const { source, calls } = fakeBb();
     const detail = (await source.environment("thr_mine00", "env_gone")) as EnvironmentDetail;
     expect(detail.checkout).toMatchObject({ ok: false, reason: "gone" });
-    expect(calls.some((call) => call.method === "environments.status")).toBe(false);
+    expect(calls.some((call) => call.method === "git.workspaceStatus")).toBe(false);
   });
 
   it("asks again with the default branch when BB has none recorded", async () => {
@@ -293,12 +309,14 @@ function fakeBbWithoutBase() {
     threads: { get: async () => thread("thr_mine00", "env_main") },
     environments: {
       get: async () => environment("env_wt01", { defaultBranch: null }),
-      status: async (args: unknown) => {
-        calls.push({ method: "environments.status", args });
+    },
+    plugins: pluginReads({
+      "bb--git.workspaceStatus": (args: unknown) => {
+        calls.push({ method: "git.workspaceStatus", args });
         return { outcome: "available", workspace: workspace("wt/env_wt01") };
       },
-      pullRequest: async () => ({ outcome: "absent" }),
-    },
+      "bb--github-pr-status.pullRequests": ({ keys }: { keys: string[] }) => ({ [keys[0]!]: { outcome: "absent" } }),
+    }),
   };
   return { source: createEnvironmentsSource(sdk as unknown as BbPluginApi["sdk"]), calls };
 }

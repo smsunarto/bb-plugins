@@ -1,6 +1,6 @@
 // The `::ui{id="…"}` message directive renders UIs stored by the retired
 // show_ui tool, so replies written during the pilot keep rendering. New
-// replies write ```ui blocks instead (FenceOverlay).
+// replies write ```ui blocks instead (SlotFence).
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useComposer, useRpc, useSdk, type PluginMessageDirectiveProps } from "@get-bb/plugin-sdk/app";
 import { compile } from "../core";

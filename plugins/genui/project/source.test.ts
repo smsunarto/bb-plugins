@@ -6,6 +6,20 @@ import { createProjectSource, diffQuery, outcomeFailure } from "./source";
 
 type Fake = Record<string, Record<string, (args: never) => unknown>>;
 
+/**
+ * `bb.sdk.plugins.callRpc` for the Git and PR status plugins, answering from
+ * `reads` and parsing each answer with the caller's schema as bb does.
+ */
+function pluginReads(reads: Record<string, (input: never) => unknown>) {
+  return {
+    callRpc: async ({ pluginId, method, input, outputSchema }: { pluginId: string; method: string; input: never; outputSchema: { parse(value: unknown): unknown } }) => {
+      const read = reads[`${pluginId}.${method}`];
+      if (read === undefined) throw new Error(`no fake for ${pluginId}.${method}`);
+      return outputSchema.parse(await read(input));
+    },
+  };
+}
+
 /** A BB with one project's threads and one checkout; only what source.ts calls. */
 function fakeBb(overrides: Fake = {}) {
   const calls: { method: string; args: unknown }[] = [];
@@ -44,9 +58,9 @@ function fakeBb(overrides: Fake = {}) {
   };
   let now = 1;
   const files = [
-    { path: "src/a.ts", previousPath: null, changeKind: "modified", additions: 3, deletions: 1, binary: false, loadMode: "auto", origin: "tracked" },
-    { path: "src/b.ts", previousPath: "old/b.ts", changeKind: "renamed", additions: 0, deletions: 0, binary: false, loadMode: "on_demand", origin: "tracked" },
-    { path: "logo.png", previousPath: null, changeKind: "added", additions: 0, deletions: 0, binary: true, loadMode: "auto", origin: "untracked" },
+    { path: "src/a.ts", previousPath: null, changeKind: "modified", additions: 3, deletions: 1, binary: false, loadMode: "auto", origin: "tracked", revision: "r-a" },
+    { path: "src/b.ts", previousPath: "old/b.ts", changeKind: "renamed", additions: 0, deletions: 0, binary: false, loadMode: "on_demand", origin: "tracked", revision: "r-b" },
+    { path: "logo.png", previousPath: null, changeKind: "added", additions: 0, deletions: 0, binary: true, loadMode: "auto", origin: "untracked", revision: "r-logo" },
   ];
   const sdk = {
     threads: {
@@ -82,19 +96,22 @@ function fakeBb(overrides: Fake = {}) {
     providers: { list: async () => [{ id: "claude-code", displayName: "Claude Code", logoUrl: null }] },
     environments: {
       get: async () => ({ isGitRepo: true, mergeBaseBranch: null, defaultBranch: "main", branchName: "feat" }),
-      status: async (args: unknown) => {
-        calls.push({ method: "status", args });
+    },
+    plugins: pluginReads({
+      "bb--git.workspaceStatus": (args: unknown) => {
+        calls.push({ method: "workspaceStatus", args });
         return {
           outcome: "available",
           workspace: {
             branch: { currentBranch: "feat", defaultBranch: "main" },
             checkout: { kind: "branch", branchName: "feat", headSha: "f".repeat(40) },
+            workingTree: { files: [], insertions: 0, deletions: 0, lineStatsComplete: true },
             mergeBase: { aheadCount: 1, behindCount: 2, commits: [{ sha: "abc1234def", shortSha: "abc1234", subject: "Fix", authorName: "Ana", authoredAt: 5 }] },
           },
         };
       },
-      diffFiles: async (args: unknown) => {
-        calls.push({ method: "diffFiles", args });
+      "bb--git.files": (args: unknown) => {
+        calls.push({ method: "files", args });
         // Each read sees a newer state, so a kept snapshot is told apart from a fresh read.
         now += 1;
         return {
@@ -106,12 +123,17 @@ function fakeBb(overrides: Fake = {}) {
           shortstat: "",
         };
       },
-      diffPatch: async (args: { paths: string[] }) => {
-        calls.push({ method: "diffPatch", args });
-        return { outcome: "available", patches: args.paths.map((path) => ({ path, patch: `@@ ${path}`, truncated: false })) };
+      "bb--git.patches": (args: { keys: string[] }) => {
+        calls.push({ method: "patches", args });
+        return Object.fromEntries(
+          args.keys.map((key) => {
+            const path = (JSON.parse(key) as unknown[])[3] as string;
+            return [key, { outcome: "available", patch: { path, patch: `@@ ${path}`, truncated: false } }];
+          }),
+        );
       },
-      pullRequest: async () => ({ outcome: "absent" }),
-    },
+      "bb--github-pr-status.pullRequests": ({ keys }: { keys: string[] }) => ({ [keys[0]!]: { outcome: "absent" } }),
+    }),
     ...overrides,
   };
   const storage = {
@@ -141,7 +163,7 @@ describe("Changes", () => {
   it("compares the branch with the default branch, all changes included", async () => {
     const { source, calls } = fakeBb();
     const view = await source.changes("thr_mine00", { kind: "branch" }, null, null);
-    expect(calls.find((call) => call.method === "diffFiles")?.args).toMatchObject({ target: "all", mergeBaseBranch: "main" });
+    expect(calls.find((call) => call.method === "files")?.args).toMatchObject({ target: { type: "all", mergeBaseBranch: "main" } });
     expect(view).toMatchObject({ ok: true, scope: { kind: "branch", branch: "feat", base: "main", onBase: false }, stored: false });
     if (!view.ok) return;
     expect(view.files.map((file) => [file.path, file.diff])).toEqual([
@@ -165,7 +187,7 @@ describe("Changes", () => {
     expect(again).toEqual(first);
     expect(first.ok && first.patches.map((patch) => patch.path)).toEqual(["src/a.ts", "src/b.ts"]);
     expect(first.ok && first.livePatches).toBe(false);
-    expect(calls.filter((call) => call.method === "diffFiles")).toHaveLength(1);
+    expect(calls.filter((call) => call.method === "files")).toHaveLength(1);
     const refreshed = await source.changes("thr_mine00", { kind: "uncommitted" }, null, { ...keep, refresh: true });
     expect(refreshed.ok && refreshed.files[0]!.additions).not.toBe(first.ok && first.files[0]!.additions);
     // The refresh replaced what later renders show.
@@ -193,7 +215,7 @@ describe("Changes", () => {
     for (const path of ["/etc/passwd", "src/../../x", ""]) {
       expect(await source.patches("thr_mine00", { kind: "branch" }, [path])).toMatchObject({ ok: false, reason: "invalid" });
     }
-    expect(calls.some((call) => call.method === "diffPatch")).toBe(false);
+    expect(calls.some((call) => call.method === "patches")).toBe(false);
   });
 });
 
