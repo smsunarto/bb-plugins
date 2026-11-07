@@ -661,42 +661,45 @@ function InboxList({
                 isCompactViewport={isCompactViewport}
               />
             ) : null}
-            <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
-              <Select value={scope} onValueChange={setScope}>
-                {/* It sizes to its label, so the chevron sits beside it. The
+            {/* Project and machine filters sort code threads; bots have neither. */}
+            {tab === "code" ? (
+              <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
+                <Select value={scope} onValueChange={setScope}>
+                  {/* It sizes to its label, so the chevron sits beside it. The
                 machine picker takes the slack. */}
-                <ScopeTrigger
-                  isCompactViewport={isCompactViewport}
-                  className="min-w-0 flex-initial justify-start font-medium"
-                  aria-label={`Project scope: ${scopeLabel}`}
-                >
-                  <SelectValue />
-                </ScopeTrigger>
-                <SelectContent>
-                  <SelectItem
-                    value={ALL_PROJECTS}
-                    className={scopeItemClassName(isCompactViewport)}
+                  <ScopeTrigger
+                    isCompactViewport={isCompactViewport}
+                    className="min-w-0 flex-initial justify-start font-medium"
+                    aria-label={`Project scope: ${scopeLabel}`}
                   >
-                    All projects
-                  </SelectItem>
-                  {projects.map((project) => (
+                    <SelectValue />
+                  </ScopeTrigger>
+                  <SelectContent>
                     <SelectItem
-                      key={project.id}
-                      value={project.id}
+                      value={ALL_PROJECTS}
                       className={scopeItemClassName(isCompactViewport)}
                     >
-                      {project.name}
+                      All projects
                     </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <MachineVisibilityPicker
-                machines={machines}
-                visibility={visibility}
-                onChange={visibility.change}
-                isCompactViewport={isCompactViewport}
-              />
-            </div>
+                    {projects.map((project) => (
+                      <SelectItem
+                        key={project.id}
+                        value={project.id}
+                        className={scopeItemClassName(isCompactViewport)}
+                      >
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <MachineVisibilityPicker
+                  machines={machines}
+                  visibility={visibility}
+                  onChange={visibility.change}
+                  isCompactViewport={isCompactViewport}
+                />
+              </div>
+            ) : null}
 
             <div
               ref={scrollRef}
