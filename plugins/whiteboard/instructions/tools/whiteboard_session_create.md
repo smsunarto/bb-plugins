@@ -9,6 +9,6 @@ SOURCES
 
 When a session for `pullRequestUrl` already exists, it is returned instead (`created: false`) without your title or target; read its `note`. If `headMoved`, move it with `whiteboard_session_set_target`; `ownedBy` means another agent holds its lease. Pass `reuseExisting: false` to create a separate session.
 
-Returns `sessionId`, `version`, and `session` (its `whiteboard_session_list` row, with resolved commits and `repositoryPath`), so you can call `whiteboard_session_diff` next without another read. The session opens in the calling thread unless you pass `open: false`; `opened` and any `openError` report that, and a failed open does not undo the create. Then begin a document lease with `whiteboard_session_activity`.
+Returns `sessionId`, `version`, and `session` (its `whiteboard_session_list` row, with resolved commits and `repositoryPath`), so you can call `whiteboard_session_diff` next without another read. The session opens as a tab in the calling thread unless you pass `open: false`; `opened` and any `openError` report that, and a failed open does not undo the create. The tab does not come to the front, so tell the user to click **Open Whiteboard** in the thread header. Then begin a document lease with `whiteboard_session_activity`.
 
 Pass a fresh UUID `commandId`. After a lost response, retry with the same `commandId` and identical input to get the original result.

@@ -1,5 +1,4 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import { CHANNELS, type OpenPayload } from "../../shared/contracts/channels.ts";
 import { CATALOG_TAG, LIVE_SESSION_TAG, sessionTag } from "../../shared/contracts/rpc.ts";
 import type { LocalReviewData } from "./review/local-data.ts";
 import type { ReviewStore } from "./review/store.ts";
@@ -7,11 +6,10 @@ import type { ReviewStore } from "./review/store.ts";
 /** The coalescing window for live-read invalidations. */
 export const INVALIDATE_COALESCE_MS = 50;
 
-/** What the engine tells clients: live-read invalidations and agents' opens. */
+/** What the engine tells clients: live-read invalidations. */
 export interface Realtime {
   /** Refresh live reads carrying any of these tags; coalesced over `INVALIDATE_COALESCE_MS`. */
   invalidate(tags: readonly string[]): void;
-  open(payload: OpenPayload): void;
   /** Drop pending invalidations. Idempotent. */
   dispose(): void;
 }
@@ -27,7 +25,7 @@ export function createRealtime(bb: BbPluginApi): Realtime {
   let timer: NodeJS.Timeout | undefined;
   let disposed = false;
 
-  // Both run inside store listeners and timers; they must never throw there.
+  // Flushes run inside timers; they must never throw there.
   const report = (what: string, error: unknown) =>
     bb.log.warn(`whiteboard: ${what} failed: ${String(error)}`);
 
@@ -50,14 +48,6 @@ export function createRealtime(bb: BbPluginApi): Realtime {
       if (timer) return;
       timer = setTimeout(flush, INVALIDATE_COALESCE_MS);
       timer.unref?.();
-    },
-    open(payload) {
-      if (disposed) return;
-      try {
-        bb.realtime.publish(CHANNELS.open, payload);
-      } catch (error) {
-        report(`realtime publish on ${CHANNELS.open}`, error);
-      }
     },
     dispose() {
       disposed = true;

@@ -24,7 +24,7 @@ import {
   setDiffLayout,
 } from "./theme.ts";
 import { createTooltips } from "./tooltip.tsx";
-import { createLiveFileOpener, createVerbs } from "./verbs.ts";
+import { type VerbDeps, createLiveFileOpener, createVerbs } from "./verbs.ts";
 
 /** What a mount hands the bridge. */
 export type BbBridgeDeps = {
@@ -34,6 +34,7 @@ export type BbBridgeDeps = {
   threadId?: string;
   reviewId?: string;
   navigate: BbNavigate;
+  panel: VerbDeps["panel"];
   info: InfoOutput;
   portals: Portals;
   events: SurfaceEvents;
@@ -65,7 +66,7 @@ function lazy<T>(create: () => T): () => T {
 
 /** The bb implementation of upstream `ReviewCanvasBridge` (design §3.8). */
 export function createBbBridge(deps: BbBridgeDeps): ReviewCanvasBridge {
-  const { rpc, threadId, reviewId, navigate, portals, events } = deps;
+  const { rpc, threadId, reviewId, navigate, panel, portals, events } = deps;
 
   const notify: NonNullable<ReviewCanvasBridge["notify"]> = (message) => {
     if (message.kind === "error") toast.error(message.text);
@@ -132,6 +133,7 @@ export function createBbBridge(deps: BbBridgeDeps): ReviewCanvasBridge {
     diffView,
     post: createVerbs({
       navigate,
+      panel,
       threadId,
       reviewId,
       rpc,

@@ -22,12 +22,11 @@ sidebar.
 - **Panels.** A thread panel shows one session. The sidebar entry shows Home
   with every session, and a full-page view of one session. In a full-page
   session, All Whiteboards at the right of bb's title bar returns to Home.
-- **Auto-open.** When an agent opens a session, the server adds a durable tab
-  to the thread. Clients showing the thread focus it at once. A client that
-  shows the thread within the next 5 minutes, or reconnects in that time,
-  focuses it on arrival, with its current title. It does not focus a tab closed in the meantime. Phone-width
-  viewports never focus it. Tabs opened from Home or a link are tracked too.
-  They follow renames and close when the session is dismissed or deleted.
+- **Opening.** When an agent opens a session, the server adds a durable tab
+  to the thread without focusing it. **Open Whiteboard** in the thread header
+  shows the thread's newest Whiteboard tab, or Home when it has none. Tabs
+  opened from Home or a link are tracked too. They follow renames and close
+  when the session is dismissed or deleted.
 - **Git.** Git, `gh` and diffr run on the bb host that owns the repository,
   through the plugin's host entry. That host can be another machine than the
   bb server or the browser.

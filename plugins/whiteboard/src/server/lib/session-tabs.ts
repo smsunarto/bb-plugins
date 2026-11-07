@@ -5,7 +5,6 @@ import {
   panelParamsJson,
   panelTabId,
 } from "../../shared/contracts/panel.ts";
-import { type PendingOpen, PENDING_OPEN_TTL_MS } from "../../shared/contracts/rpc.ts";
 import type { ReviewStore } from "./review/store.ts";
 
 /**
@@ -34,7 +33,7 @@ export function tabTitle(title: string): string {
   return `${title.slice(0, TAB_TITLE_MAX_LENGTH - 1).replace(/[\uD800-\uDBFF]$/, "")}…`;
 }
 
-/** The tab bb's client builds for `openThreadPanel({actionId, params: {sessionId}})`. */
+/** The tab bb's client builds for `openTab({tab, params: {sessionId}})`. */
 export function sessionTab(sessionId: string, title: string): PluginPanelTab {
   const paramsJson = panelParamsJson(sessionId);
   title = tabTitle(title);
@@ -95,20 +94,12 @@ export type SessionTabsStore = Pick<ReviewStore, "subscribeCatalog" | "list" | "
 
 export interface SessionTabs {
   /**
-   * An agent opened `sessionId` from `threadId`: append or retitle its tab,
-   * record the thread, and leave the open for `claimOpen`. Answers the open's
-   * `at`, which increases per load. A failed tab write throws and records
-   * nothing.
+   * An agent opened `sessionId` from `threadId`: append or retitle its tab
+   * and record the thread. A failed tab write throws and records nothing.
    */
-  open(threadId: string, sessionId: string, title: string): Promise<number>;
+  open(threadId: string, sessionId: string, title: string): Promise<void>;
   /** A panel shows `sessionId` in `threadId`: record it, so the tab follows renames and removals. */
   track(threadId: string, sessionId: string): void;
-  /**
-   * Read the thread's last agent open if it is newer than `after`, under 5
-   * minutes old and its tab is still open. Reading keeps it; an `after` at or
-   * past it forgets it. A failed tab read throws and keeps it.
-   */
-  claimOpen(threadId: string, after?: number): Promise<PendingOpen | null>;
   /** Stop following the store. */
   dispose(): void;
 }
@@ -141,10 +132,6 @@ export function createSessionTabs(deps: { bb: BbPluginApi; store: SessionTabsSto
   /** Titles the recorded tabs are known to carry. Unknown means "check the tab". */
   const titles = new Map<string, string>();
   const dismissalGenerations = new Map<string, { at: string; generation?: number }>();
-  /** Per thread, the last agent open no client has focused yet. */
-  const pending = new Map<string, { sessionId: string; at: number }>();
-  /** Opens' `at`: the clock, made strictly increasing. */
-  let lastAt = 0;
   let stopped = false;
   let running: Promise<void> | undefined;
   let again = false;
@@ -230,7 +217,6 @@ export function createSessionTabs(deps: { bb: BbPluginApi; store: SessionTabsSto
       }
       if (stale()) continue;
       opened.delete(key);
-      if (pending.get(threadId)?.sessionId === sessionId) pending.delete(threadId);
       db()
         .prepare("DELETE FROM session_threads WHERE session_id=? AND thread_id=?")
         .run(sessionId, threadId);
@@ -352,9 +338,6 @@ export function createSessionTabs(deps: { bb: BbPluginApi; store: SessionTabsSto
       });
       record(sessionId, threadId);
       opened.set(key, new Date().toISOString());
-      lastAt = Math.max(Date.now(), lastAt + 1);
-      pending.set(threadId, { sessionId, at: lastAt });
-      return lastAt;
     },
     track(threadId, sessionId) {
       record(sessionId, threadId);
@@ -363,32 +346,8 @@ export function createSessionTabs(deps: { bb: BbPluginApi; store: SessionTabsSto
       const key = threadSessionKey(sessionId, threadId);
       if (!opened.has(key)) opened.set(key, new Date().toISOString());
     },
-    async claimOpen(threadId, after) {
-      const entry = pending.get(threadId);
-      if (!entry) return null;
-      if (
-        (after !== undefined && entry.at <= after) ||
-        Date.now() - entry.at > PENDING_OPEN_TTL_MS
-      ) {
-        pending.delete(threadId);
-        return null;
-      }
-      // The tab as it is now: `openThreadPanel` re-creates a tab the user
-      // closed since, and writes its title over the one a rename left.
-      const id = sessionTab(entry.sessionId, "").id;
-      const { tabs } = await bb.sdk.threads.tabs.get({ threadId });
-      // A client that focused it, or a newer open, may have moved on meanwhile.
-      if (pending.get(threadId) !== entry) return null;
-      const tab = tabs.find((candidate) => candidate.id === id);
-      if (tab?.kind === "plugin-panel")
-        return { sessionId: entry.sessionId, title: tab.title, at: entry.at };
-      // A closed tab stays closed.
-      pending.delete(threadId);
-      return null;
-    },
     dispose() {
       stopped = true;
-      pending.clear();
       unsubscribe();
     },
   };

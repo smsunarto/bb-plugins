@@ -1,6 +1,6 @@
 import type { ReviewApi } from "../../server/lib/review/api.ts";
 import type { SettingsPayload } from "./channels.ts";
-import type { InfoInput, InfoOutput, PendingOpen } from "./rpc.ts";
+import type { InfoInput, InfoOutput } from "./rpc.ts";
 
 /**
  * Server-side seams between the engine, its RPC handlers and the agent tools.
@@ -36,8 +36,6 @@ export interface Engine {
   run<T>(context: ThreadContextInput, fn: (signal: AbortSignal) => Promise<T>): Promise<T>;
   /** The `info` RPC. A thread panel showing a session also records its tab. */
   info(input: InfoInput): Promise<InfoOutput>;
-  /** The `claimOpen` RPC: forget opens up to `after`, and read a newer waiting one. */
-  claimOpen(threadId: string, after?: number): Promise<PendingOpen | null>;
   /** Refresh worktree sources every second until the returned release; held per watched read. */
   watchWorktrees(): () => void;
   /** Idempotent. The plugin's single `bb.onDispose` hook calls it. */

@@ -56,7 +56,7 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
   const api = createReviewApi({
     store,
     data,
-    open: createOpenPanel({ settings, realtime, openTab: tabs.open }),
+    open: createOpenPanel({ settings, openTab: tabs.open }),
     capabilities: () => ({
       desktopAvailable: desktopAvailable(),
       softwareMapEnabled: settings.softwareMapEnabled(),
@@ -154,7 +154,6 @@ export function createEngine(bb: BbPluginApi, settings: WhiteboardSettings): Eng
           structuralDiffEnabled,
         };
       }),
-    claimOpen: (threadId, after) => tabs.claimOpen(threadId, after),
     watchWorktrees: () => (disposed ? () => {} : store.watchWorktrees()),
     dispose() {
       return (disposing ??= (async () => {

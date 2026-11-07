@@ -16,10 +16,10 @@ const sdk = vi.hoisted(() => ({
   navigate: {
     toPluginPanel: (_path: string, _options?: unknown) => {},
     toCompose: (_options?: unknown) => {},
-    openThreadPanel: () => true,
     openUrl: () => true,
     experimental_openFilePreview: () => true,
   },
+  panel: { openTab: (_options: unknown) => true },
 }));
 const rpcState = vi.hoisted(() => ({
   catalog: [] as Array<{ reviewId: string; title: string; dismissedAt: string | null }>,
@@ -41,6 +41,7 @@ vi.mock("@get-bb/plugin-sdk/app", () => ({
   useBbContext: () => sdk.context,
   useBbNavigate: () => sdk.navigate,
   useComposer: () => sdk.composer,
+  experimental_useAppPanel: () => sdk.panel,
   experimental_useCodeTheme: () => ({ mode: "light", name: "light", theme: null }),
   experimental_Icon: ({ name }: { name: string }) => <svg data-icon={name} />,
   useSdk: () => ({

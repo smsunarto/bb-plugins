@@ -1,4 +1,11 @@
-import { type BbNavigate, useBbContext, useBbNavigate, useComposer } from "@get-bb/plugin-sdk/app";
+import {
+  type BbNavigate,
+  type ExperimentalPanelController,
+  experimental_useAppPanel,
+  useBbContext,
+  useBbNavigate,
+  useComposer,
+} from "@get-bb/plugin-sdk/app";
 import { skipToken, useQuery } from "@tanstack/react-query";
 import {
   type ReactNode,
@@ -11,7 +18,7 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { CodeThemeProvider } from "../lib/highlight.tsx";
-import { NAV_PANEL_PATH, PANEL_ACTION_ID } from "../../shared/contracts/panel.ts";
+import { NAV_PANEL_PATH } from "../../shared/contracts/panel.ts";
 import type { CoverageMode, InfoOutput } from "../../shared/contracts/rpc.ts";
 import type {
   ReviewApiSummary,
@@ -35,6 +42,7 @@ import { ReviewHome } from "../review/review-home-view.tsx";
 import { ReviewContainerProvider } from "../review/review-root-context.tsx";
 import { createCatalogEdits } from "./catalog.ts";
 import { EmptyState } from "./empty-state.tsx";
+import { openSessionTab } from "./whiteboard-tab.ts";
 
 /**
  * The bb version of upstream `desktop-entry.tsx` + `reviewCanvasPart.ts`
@@ -76,6 +84,16 @@ function useStableNavigate(): BbNavigate {
       }),
     [],
   );
+}
+
+/** A stable `openTab` that always calls the latest side panel, so the bridge outlives panel changes. */
+function useStablePanel(): Pick<ExperimentalPanelController, "openTab"> {
+  const panel = experimental_useAppPanel();
+  const ref = useRef(panel);
+  useLayoutEffect(() => {
+    ref.current = panel;
+  }, [panel]);
+  return useMemo(() => ({ openTab: (options) => ref.current.openTab(options) }), []);
 }
 
 function isFindShortcut(event: KeyboardEvent): boolean {
@@ -311,6 +329,7 @@ export function WhiteboardMount({
 }) {
   const rpc = useWhiteboardRpc(threadId);
   const navigate = useStableNavigate();
+  const panel = useStablePanel();
   const composer = useComposer();
   const sourceViewRef = useRef<ReviewSourceView>(undefined);
   const setSourceView = useCallback<NonNullable<ApiContent["setSourceView"]>>((address, view) => {
@@ -331,6 +350,7 @@ export function WhiteboardMount({
         ...(threadId ? { threadId } : {}),
         ...(sessionId ? { reviewId: sessionId } : {}),
         navigate,
+        panel,
         // The bridge outlives settings changes; read flags through the ref.
         get info() {
           return infoRef.current;
@@ -339,7 +359,7 @@ export function WhiteboardMount({
         events,
         sourceView: () => sourceViewRef.current,
       }),
-    [rpc, threadId, sessionId, navigate, portals, events],
+    [rpc, threadId, sessionId, navigate, panel, portals, events],
   );
   // Panels key the mount by session, so one find host per mount is one per session.
   const [findHost] = useState(createReviewFindHost);
@@ -348,15 +368,10 @@ export function WhiteboardMount({
 
   const openSession = useCallback(
     (review: ReviewApiSummary) => {
-      if (threadId) {
-        navigate.openThreadPanel({
-          actionId: PANEL_ACTION_ID,
-          title: review.title,
-          params: { sessionId: review.reviewId },
-        });
-      } else navigate.toPluginPanel(NAV_PANEL_PATH, { subPath: review.reviewId });
+      if (threadId) openSessionTab(panel, review.reviewId, review.title);
+      else navigate.toPluginPanel(NAV_PANEL_PATH, { subPath: review.reviewId });
     },
-    [navigate, threadId],
+    [navigate, panel, threadId],
   );
 
   // "Add to chat" from this mount's selection popover: the quote, then a pill

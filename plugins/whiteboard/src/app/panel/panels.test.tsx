@@ -57,14 +57,18 @@ describe("routeSessionId", () => {
 describe("SessionPanel", () => {
   it("restores the alias as the current thread's canonical document when switching threads", () => {
     serverInfo.value = { sessionId: "pad-for-one" };
-    const view = render(<SessionPanel threadId="thread-1" params={{ sessionId: "scratchpad" }} />);
+    const view = render(
+      <SessionPanel environment={null} threadId="thread-1" params={{ sessionId: "scratchpad" }} />,
+    );
     expect(mountProps()).toEqual({
       threadId: "thread-1",
       info: { sessionId: "pad-for-one" },
       sessionId: "pad-for-one",
     });
     serverInfo.value = { sessionId: "pad-for-two" };
-    view.rerender(<SessionPanel threadId="thread-2" params={{ sessionId: "scratchpad" }} />);
+    view.rerender(
+      <SessionPanel environment={null} threadId="thread-2" params={{ sessionId: "scratchpad" }} />,
+    );
     expect(mountProps()).toEqual({
       threadId: "thread-2",
       info: { sessionId: "pad-for-two" },
@@ -73,12 +77,12 @@ describe("SessionPanel", () => {
   });
 
   it("mounts the session named by the tab params", () => {
-    render(<SessionPanel threadId="thread-1" params={{ sessionId: "s1" }} />);
+    render(<SessionPanel environment={null} threadId="thread-1" params={{ sessionId: "s1" }} />);
     expect(mountProps()).toEqual({ threadId: "thread-1", info: {}, sessionId: "s1" });
   });
 
   it("mounts Home for the thread without a session", () => {
-    render(<SessionPanel threadId="thread-1" params={null} />);
+    render(<SessionPanel environment={null} threadId="thread-1" params={null} />);
     expect(mountProps()).toEqual({ threadId: "thread-1", info: {} });
   });
 });

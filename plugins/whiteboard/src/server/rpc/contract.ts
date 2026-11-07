@@ -19,7 +19,6 @@ import {
   stackInput,
 } from "../../shared/contracts/rpc.ts";
 import type { WhiteboardContext } from "../lib/context.ts";
-import { claimOpen, claimOpenContract } from "./claim-open.ts";
 import { info, infoContract } from "./info.ts";
 import { liveFile, liveFileContract } from "./live-file.ts";
 import {
@@ -43,7 +42,6 @@ const answer = <F extends (...args: never[]) => Promise<unknown>>() => z.custom<
 /** The panel's RPC methods. `sessions` and `liveSession` are live reads. */
 export const contract = defineRpcContract({
   info: infoContract,
-  claimOpen: claimOpenContract,
   liveFile: liveFileContract,
   sessions: {
     input: sessionsInput,
@@ -73,7 +71,6 @@ export const contract = defineRpcContract({
 export function registerRpc(ctx: WhiteboardContext<"engine">): void {
   ctx.bb.rpc.register(contract, {
     info: (input) => info(ctx, input),
-    claimOpen: (input) => claimOpen(ctx, input),
     liveFile: (input) => liveFile(ctx, input),
     sessions: (input) => sessions(ctx, input),
     liveSession: (input) => liveSession(ctx, input),

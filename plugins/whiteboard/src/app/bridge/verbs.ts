@@ -1,4 +1,4 @@
-import type { BbNavigate } from "@get-bb/plugin-sdk/app";
+import type { BbNavigate, ExperimentalPanelController } from "@get-bb/plugin-sdk/app";
 import type { WhiteboardRpcClient } from "../rpc.ts";
 import type { OpenSourceFile } from "./diff-view.tsx";
 import type {
@@ -6,7 +6,8 @@ import type {
   ReviewVerbRequest,
   ReviewVerbResponse,
 } from "../../shared/review-protocol/index.ts";
-import { NAV_PANEL_PATH, PANEL_ACTION_ID } from "../../shared/contracts/panel.ts";
+import { NAV_PANEL_PATH } from "../../shared/contracts/panel.ts";
+import { openSessionTab } from "../panel/whiteboard-tab.ts";
 import type { SurfaceEvents } from "./events.ts";
 
 /**
@@ -14,7 +15,7 @@ import type { SurfaceEvents } from "./events.ts";
  *
  *   reveal          live worktree file -> bb file preview; pinned source -> toast
  *   openDiff        Diffs view + revealFile
- *   openReview      thread: openThreadPanel({sessionId}); Home: toPluginPanel(subPath)
+ *   openReview      thread: panel.openTab({sessionId}); Home: toPluginPanel(subPath)
  *   showReviewView  in-panel route (surface event)
  */
 export const UNAVAILABLE_IN_BB = "Unavailable in bb.";
@@ -24,6 +25,8 @@ export const BASE_SOURCE_NOT_OPENABLE = "Base source is read only.";
 
 export type VerbDeps = {
   navigate: BbNavigate;
+  /** The thread's side panel, which opens sessions as tabs. */
+  panel: Pick<ExperimentalPanelController, "openTab">;
   /** The panel's thread; absent on the Home navPanel. */
   threadId?: string;
   reviewId?: string;
@@ -64,11 +67,7 @@ async function sessionTitle(
 
 function openSession(deps: VerbDeps, sessionId: string, title: string | undefined): boolean {
   if (deps.threadId) {
-    return deps.navigate.openThreadPanel({
-      actionId: PANEL_ACTION_ID,
-      ...(title ? { title } : {}),
-      params: { sessionId },
-    });
+    return openSessionTab(deps.panel, sessionId, title);
   }
   deps.navigate.toPluginPanel(NAV_PANEL_PATH, { subPath: sessionId });
   return true;

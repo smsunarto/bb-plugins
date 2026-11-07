@@ -1,15 +1,13 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
-import { NAV_PANEL_PATH, PANEL_ACTION_ID, WHITEBOARD_ICON } from "../shared/contracts/panel.ts";
+import { NAV_PANEL_PATH, WHITEBOARD_ICON } from "../shared/contracts/panel.ts";
 import { HomeHeader } from "./panel/home-header.tsx";
 import { HomePanel } from "./panel/home-panel.tsx";
-import { OpenListener } from "./panel/open-listener.tsx";
 import { SessionPanel } from "./panel/session-panel.tsx";
+import { WHITEBOARD_TAB, focusWhiteboard } from "./panel/whiteboard-tab.ts";
 
 export default definePluginApp((app) => {
   app.slots.experimental_tab({
-    context: { kind: "thread" },
-    availability: "action",
-    id: PANEL_ACTION_ID,
+    ...WHITEBOARD_TAB,
     title: "Whiteboard",
     icon: WHITEBOARD_ICON,
     component: SessionPanel,
@@ -23,10 +21,20 @@ export default definePluginApp((app) => {
     component: HomePanel,
     headerContent: HomeHeader,
   });
-  // Renders null: it only focuses the tab the server adds on `whiteboard:open` (design §3.6).
-  app.slots.experimental_threadHeaderAction({
-    id: "open-listener",
-    title: "Whiteboard",
-    component: OpenListener,
+  // An agent's open adds the tab without focusing it; this button shows it.
+  app.slots.experimental_threadAction({
+    id: "open",
+    title: "Open Whiteboard",
+    icon: WHITEBOARD_ICON,
+    group: "workspace",
+    order: 20,
+    placement: "header",
+    item: ({ experimental_panel }) => ({
+      label: "Open Whiteboard",
+      icon: WHITEBOARD_ICON,
+      run: () => {
+        focusWhiteboard(experimental_panel);
+      },
+    }),
   });
 });

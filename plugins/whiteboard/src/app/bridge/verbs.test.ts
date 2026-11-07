@@ -1,6 +1,7 @@
 import type { WhiteboardRpcClient } from "../rpc.ts";
 import type { BbNavigate } from "@get-bb/plugin-sdk/app";
 import { describe, expect, it, vi } from "vitest";
+import { WHITEBOARD_TAB } from "../panel/whiteboard-tab.ts";
 import { createSurfaceEvents } from "./events.ts";
 import {
   BASE_SOURCE_NOT_OPENABLE,
@@ -14,7 +15,6 @@ import {
 function navigateMock() {
   return {
     toPluginPanel: vi.fn(),
-    openThreadPanel: vi.fn(() => true),
     experimental_openFilePreview: vi.fn(() => true),
   };
 }
@@ -25,6 +25,7 @@ function setup(
   catalog?: Array<{ reviewId: string; title: string }>,
 ) {
   const navigate = navigateMock();
+  const panel = { openTab: vi.fn(() => true) };
   const events = createSurfaceEvents();
   const emitted: unknown[] = [];
   events.subscribe((event) => emitted.push(event));
@@ -34,6 +35,7 @@ function setup(
   });
   const deps: VerbDeps = {
     navigate: navigate as unknown as BbNavigate,
+    panel,
     threadId: "thread-1",
     reviewId: "session-1",
     rpc: { sessions },
@@ -52,7 +54,7 @@ function setup(
     softwareMapEnabled: () => true,
     ...overrides,
   };
-  return { post: createVerbs(deps), deps, navigate, emitted, sessions };
+  return { post: createVerbs(deps), deps, navigate, panel, emitted, sessions };
 }
 
 describe("createVerbs", () => {
@@ -133,43 +135,43 @@ describe("createVerbs", () => {
   });
 
   it("opens a session in the thread panel with its catalog title", async () => {
-    const { post, navigate } = setup({}, [{ reviewId: "s2", title: "Auth walkthrough" }]);
+    const { post, panel } = setup({}, [{ reviewId: "s2", title: "Auth walkthrough" }]);
     expect(await post({ name: "openReview", args: { reviewUuid: "s2", active: true } })).toEqual({
       ok: true,
     });
-    expect(navigate.openThreadPanel).toHaveBeenCalledWith({
-      actionId: "whiteboard",
+    expect(panel.openTab).toHaveBeenCalledWith({
+      tab: WHITEBOARD_TAB,
       title: "Auth walkthrough",
       params: { sessionId: "s2" },
     });
   });
 
   it("refuses a session the catalog does not list, as upstream does", async () => {
-    const { post, navigate } = setup({}, [{ reviewId: "s2", title: "Auth walkthrough" }]);
+    const { post, panel } = setup({}, [{ reviewId: "s2", title: "Auth walkthrough" }]);
     expect(await post({ name: "openReview", args: { reviewUuid: "gone", active: true } })).toEqual({
       ok: false,
       error: SESSION_NOT_FOUND,
     });
-    expect(navigate.openThreadPanel).not.toHaveBeenCalled();
+    expect(panel.openTab).not.toHaveBeenCalled();
   });
 
   it("opens a session in the Home route without a thread", async () => {
-    const { post, navigate } = setup({ threadId: undefined });
+    const { post, navigate, panel } = setup({ threadId: undefined });
     expect(await post({ name: "openApiReview", args: { reviewId: "s3", title: "T" } })).toEqual({
       ok: true,
       result: { softwareMapEnabled: true },
     });
     expect(navigate.toPluginPanel).toHaveBeenCalledWith("whiteboard", { subPath: "s3" });
-    expect(navigate.openThreadPanel).not.toHaveBeenCalled();
+    expect(panel.openTab).not.toHaveBeenCalled();
   });
 
   it("opens a session without a title when the catalog cannot be read", async () => {
-    const { post, navigate } = setup();
+    const { post, panel } = setup();
     expect(await post({ name: "openReview", args: { reviewUuid: "s2", active: true } })).toEqual({
       ok: true,
     });
-    expect(navigate.openThreadPanel).toHaveBeenCalledWith({
-      actionId: "whiteboard",
+    expect(panel.openTab).toHaveBeenCalledWith({
+      tab: WHITEBOARD_TAB,
       params: { sessionId: "s2" },
     });
   });

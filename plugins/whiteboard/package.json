@@ -23,8 +23,8 @@
   ],
   "type": "module",
   "engines": {
-    "bb": ">=0.48.0 <1.0.0",
-    "bbPluginSdk": ">=0.6.75"
+    "bb": ">=0.49.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.132"
   },
   "bbPluginBuild": {
     "experimental_cssScope": "owned-root-v1"
@@ -109,7 +109,7 @@
   },
   "devDependencies": {
     "@bb-plugins/ui": "workspace:*",
-    "@get-bb/plugin-sdk": "0.6.75",
+    "@get-bb/plugin-sdk": "0.6.132",
     "@pierre/diffs": "^1.2.9",
     "@radix-ui/react-tooltip": "^1.2.12",
     "@testing-library/dom": "^10.4.1",

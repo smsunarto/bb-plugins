@@ -37,6 +37,7 @@ function bridgeWith(info = { softwareMapEnabled: false }) {
     threadId: "thread-1",
     reviewId: "s1",
     navigate: {} as BbNavigate,
+    panel: { openTab: () => true },
     info: { appVersion: "", scratchpadEnabled: false, structuralDiffEnabled: false, ...info },
     portals: createPortals(),
     events: createSurfaceEvents(),

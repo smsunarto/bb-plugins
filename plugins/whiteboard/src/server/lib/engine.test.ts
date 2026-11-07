@@ -213,12 +213,8 @@ test("calls from a thread keep its context, create durable tabs, and follow rena
     },
   ]);
   expect(tabs.get("t2")!.tabs).toEqual([]);
-  expect(host.harness.inspection.realtimeSignals).toContainEqual(
-    expect.objectContaining({
-      channel: "whiteboard:open",
-      payload: expect.objectContaining({ threadId: "t1", sessionId: created.reviewId }),
-    }),
-  );
+  // The tab is added without a focus request; the header button opens it.
+  expect(host.harness.inspection.realtimeSignals).toEqual([]);
   await command({
     commandId: randomUUID(),
     operation: { type: "rename", reviewId: created.reviewId, title: "Renamed" },
@@ -255,7 +251,6 @@ test("a thread panel's info records the tab it shows once, so a dismissal closes
   await engine.info({ sessionId: created.reviewId });
 
   expect(sessionRows()).toEqual([{ thread_id: "t1" }]);
-  await expect(engine.claimOpen("t1")).resolves.toBeNull();
   await command({
     commandId: randomUUID(),
     operation: { type: "attention", reviewId: created.reviewId, action: "dismiss" },

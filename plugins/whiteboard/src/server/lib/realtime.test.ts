@@ -45,19 +45,6 @@ describe("createRealtime", () => {
     expect(inspection.realtimeSignals).toEqual([]);
   });
 
-  test("open publishes at once", () => {
-    const { realtime, inspection } = host();
-
-    realtime.open({ threadId: "t1", sessionId: "s1", title: "Plan", at: 1 });
-
-    expect(inspection.realtimeSignals).toEqual([
-      {
-        channel: "whiteboard:open",
-        payload: { threadId: "t1", sessionId: "s1", title: "Plan", at: 1 },
-      },
-    ]);
-  });
-
   test("dispose drops pending invalidations and ignores later calls", async () => {
     const { realtime, inspection, harness } = host();
 
@@ -69,7 +56,6 @@ describe("createRealtime", () => {
     realtime.dispose();
     await harness.lifecycle.dispose();
     realtime.invalidate(["catalog"]);
-    realtime.open({ threadId: "t1", sessionId: "s1", title: "Plan", at: 1 });
     vi.advanceTimersByTime(1_000);
 
     expect(inspection.experimental_rpcInvalidations).toEqual([]);

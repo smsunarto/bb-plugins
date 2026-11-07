@@ -10,6 +10,6 @@ Returns the guide as Markdown.
 RULES FOR EVERY WHITEBOARD TOOL
 
 - Read `whiteboard_session_capabilities` before authoring, and generate software maps only when it reports `softwareMapEnabled: true`.
-- `whiteboard_session_create` opens the new session as a tab in the calling thread; call `whiteboard_session_open` only to show an existing session.
+- `whiteboard_session_create` opens the new session as a tab in the calling thread; call `whiteboard_session_open` only to show an existing session. Neither brings the tab to the front: tell the user to click **Open Whiteboard** in the thread header.
 - Read and write Whiteboard data only through these tools, never through its files or database.
 - Every write takes a `commandId` UUID: a fresh one for each operation, and the same one with identical input when you retry after a lost response.

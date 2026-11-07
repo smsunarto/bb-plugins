@@ -53,7 +53,6 @@ export function useWhiteboardRpc(threadId: string | undefined): WhiteboardRpcCli
         send(method, wire({ ...input, threadId }));
     return {
       info: call("info"),
-      claimOpen: call("claimOpen"),
       liveFile: call("liveFile"),
       sessions: call("sessions"),
       liveSession: call("liveSession"),

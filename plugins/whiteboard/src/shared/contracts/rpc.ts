@@ -47,27 +47,6 @@ export const infoOutput = z.object({
 });
 export type InfoOutput = z.infer<typeof infoOutput>;
 
-/** How long an agent's open waits for a client of its thread to focus the tab. */
-export const PENDING_OPEN_TTL_MS = 5 * 60_000;
-
-/**
- * Read the focus an agent's open left for a thread. `after` is the newest
- * open the client focused there: the server forgets opens up to it, so each
- * focuses once, and answers only a newer one.
- */
-export const claimOpenInput = z.strictObject({
-  threadId: z.string().min(1),
-  after: z.number().optional(),
-});
-export const claimOpenOutput = z.object({
-  /**
-   * Null when no newer open is waiting, it is older than 5 minutes, or its tab
-   * was closed. `at` orders opens per thread, as `whiteboard:open` does.
-   */
-  open: z.object({ sessionId: z.string(), title: z.string(), at: z.number() }).nullable(),
-});
-export type PendingOpen = NonNullable<z.infer<typeof claimOpenOutput>["open"]>;
-
 /**
  * Resolves a session file to the live file bb opens in its file opener.
  * `target` is null when the file has no live copy (commit or retained
