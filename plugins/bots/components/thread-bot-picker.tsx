@@ -12,6 +12,7 @@ import { BotIcon } from "./bot-icon";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger } from "./ui/select";
 import { cn } from "../lib/utils";
 
+import { DisclosureRow } from "./disclosure-row";
 import { ThreadBotResources } from "./thread-bot-resources";
 
 const NONE = "__no_bot__";
@@ -170,40 +171,12 @@ function useThreadBotPrompt(threadId: string) {
 }
 
 function PromptBlock({ title, text }: { title: string; text: string }) {
-  const [open, setOpen] = useState(false);
   return (
-    <div className="bot-prompt-block">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-1.5 rounded-sm py-1 text-left text-xs text-muted-foreground hover:text-foreground"
-      >
-        <svg
-          aria-hidden="true"
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          className={cn("shrink-0 transition-transform", open && "rotate-90")}
-        >
-          <path
-            d="M4.5 2.5 8 6l-3.5 3.5"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <span className="text-foreground">{title}</span>
-        <span className="tabular-nums">{text.length.toLocaleString()} chars</span>
-      </button>
-      {open ? (
-        <pre className="mb-1 ml-[18px] max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-foreground">
-          {text}
-        </pre>
-      ) : null}
-    </div>
+    <DisclosureRow title={title} meta={`${text.length.toLocaleString()} chars`}>
+      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-foreground">
+        {text}
+      </pre>
+    </DisclosureRow>
   );
 }
 
@@ -219,7 +192,7 @@ export function ThreadBotPromptSection({ threadId }: ExperimentalThreadInfoProps
           {value.sections.map((section) => (
             <PromptBlock key={section.id} title={section.title} text={section.text} />
           ))}
-          <p className="mt-1 text-[11px] text-muted-foreground">
+          <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
             Tools: {value.tools.join(", ")} · Skill: {value.skills.join(", ")}
           </p>
         </div>

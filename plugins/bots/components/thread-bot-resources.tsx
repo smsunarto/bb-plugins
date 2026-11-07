@@ -1,14 +1,23 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import {
   experimental_InfoSection as InfoSection,
   experimental_useRpcQuery as useRpcQuery,
+  Markdown,
 } from "@get-bb/plugin-sdk/app";
 import { Button } from "@bb-plugins/ui/button";
 import { BOTS_PLUGIN_ID, rpcContract } from "../contract";
 import { describeCron, routineStatus } from "../lib/routine-format";
+import { DisclosureRow } from "./disclosure-row";
 
-const textClass =
-  "max-h-80 overflow-auto whitespace-pre-wrap text-xs leading-relaxed [overflow-wrap:anywhere]";
+const textClass = "whitespace-pre-wrap text-xs leading-relaxed [overflow-wrap:anywhere]";
+/** Markdown at the sidebar's reading size, scrolling inside its own region when long. */
+const markdownClass = "bot-sidebar-markdown max-h-80 min-w-0 overflow-auto text-xs";
+
+/** A SKILL.md body without its frontmatter; the row already shows name and description. */
+/** MEMORY.md without a leading "# Memory" heading, which would repeat the section label. */
+const memoryBody = (content: string) => content.replace(/^\s*#\s+memory\s*\n/i, "").trim();
+const skillBody = (content: string) =>
+  content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
 
 /** These reads stay independent: skills need the checkout host; memory does not. */
 export function ThreadBotResources({ botId }: { botId: string }) {
@@ -36,16 +45,11 @@ function ReadStatus({
 }) {
   if (loading)
     return (
-      <div
-        role="status"
-        aria-busy="true"
-        aria-label={`Loading ${label}`}
-        className="space-y-2 py-1"
-      >
+      <output aria-busy="true" aria-label={`Loading ${label}`} className="block space-y-2 py-1">
         <span className="sr-only">Loading {label}…</span>
-        <div className="h-4 animate-pulse rounded bg-muted/60" />
-        <div className="h-4 w-2/3 animate-pulse rounded bg-muted/60" />
-      </div>
+        <span className="block h-4 animate-pulse rounded bg-muted/60" />
+        <span className="block h-4 w-2/3 animate-pulse rounded bg-muted/60" />
+      </output>
     );
   if (!failed) return null;
   return (
@@ -69,26 +73,6 @@ function ReadStatus({
   );
 }
 
-function ResourceItem({
-  title,
-  children,
-  detail,
-}: {
-  title: string;
-  children: ReactNode;
-  detail?: ReactNode;
-}) {
-  return (
-    <details className="min-w-0 py-1">
-      <summary className="cursor-pointer rounded-sm text-xs text-foreground [overflow-wrap:anywhere] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-        {title}
-      </summary>
-      {detail}
-      <div className="mt-2 min-w-0">{children}</div>
-    </details>
-  );
-}
-
 function BotSkills({ botId }: { botId: string }) {
   const query = useRpcQuery({
     contract: rpcContract,
@@ -97,7 +81,7 @@ function BotSkills({ botId }: { botId: string }) {
     input: { botId },
   });
   return (
-    <InfoSection label="Skills">
+    <InfoSection label="Skills" count={query.data?.skills.length || undefined}>
       <ReadStatus
         label="skills"
         loading={!query.data && query.error === null}
@@ -107,7 +91,7 @@ function BotSkills({ botId }: { botId: string }) {
       />
       {query.data ? (
         query.data.skills.length ? (
-          <div className="min-w-0 divide-y divide-border/50">
+          <div className="min-w-0">
             {query.data.skills.map((skill) => (
               <Skill key={skill.name} botId={botId} {...skill} />
             ))}
@@ -123,15 +107,14 @@ function BotSkills({ botId }: { botId: string }) {
 function Skill({ botId, name, description }: { botId: string; name: string; description: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <details className="min-w-0 py-1" onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary className="cursor-pointer rounded-sm text-xs text-foreground [overflow-wrap:anywhere] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-        {name}
-      </summary>
+    <DisclosureRow title={name} onToggle={setOpen}>
       {description ? (
-        <p className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">{description}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+          {description}
+        </p>
       ) : null}
       {open ? <SkillContent botId={botId} name={name} /> : null}
-    </details>
+    </DisclosureRow>
   );
 }
 
@@ -152,9 +135,7 @@ function SkillContent({ botId, name }: { botId: string; name: string }) {
         retry={() => void query.refetch()}
       />
       {query.data ? (
-        <pre className={`${textClass} rounded-md bg-muted/50 p-2 font-mono text-[11px]`}>
-          {query.data.content}
-        </pre>
+        <Markdown content={skillBody(query.data.content)} className={markdownClass} />
       ) : null}
     </div>
   );
@@ -168,7 +149,7 @@ function BotRoutines({ botId }: { botId: string }) {
     input: { botId },
   });
   return (
-    <InfoSection label="Routines">
+    <InfoSection label="Routines" count={query.data?.routines.length || undefined}>
       <ReadStatus
         label="routines"
         loading={!query.data && query.error === null}
@@ -178,28 +159,26 @@ function BotRoutines({ botId }: { botId: string }) {
       />
       {query.data ? (
         query.data.routines.length ? (
-          <div className="min-w-0 divide-y divide-border/50">
+          <div className="min-w-0">
             {query.data.routines.map((routine) => (
-              <ResourceItem
+              <DisclosureRow
                 key={routine.id}
                 title={routine.name}
-                detail={
-                  <p className="mt-1 text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                    {routineStatus(routine)}
-                    {" · "}
-                    {describeCron(routine.cron)}
-                    {" · "}
-                    {routine.timezone}
-                  </p>
-                }
+                meta={routineStatus(routine)}
+                metaTone={routine.automationError ? "danger" : "muted"}
               >
-                <p className={textClass}>{routine.instruction}</p>
+                <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                  {describeCron(routine.cron)}
+                  {" · "}
+                  {routine.timezone}
+                </p>
+                <p className={`mt-1.5 ${textClass}`}>{routine.instruction}</p>
                 {routine.automationError ? (
-                  <p className="mt-1 text-xs text-destructive [overflow-wrap:anywhere]">
+                  <p className="mt-1.5 text-xs text-destructive [overflow-wrap:anywhere]">
                     {routine.automationError}
                   </p>
                 ) : null}
-              </ResourceItem>
+              </DisclosureRow>
             ))}
           </div>
         ) : (
@@ -228,7 +207,7 @@ function BotMemory({ botId }: { botId: string }) {
       />
       {query.data ? (
         query.data.content.trim() ? (
-          <p className={textClass}>{query.data.content}</p>
+          <Markdown content={memoryBody(query.data.content)} className={markdownClass} />
         ) : (
           <p className="text-xs text-muted-foreground">No memories yet.</p>
         )

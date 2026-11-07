@@ -128,3 +128,23 @@
     animation: none !important;
   }
 }
+
+/* Memory and skill bodies in the thread Info tab: chat Markdown at sidebar scale. */
+.bot-sidebar-markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 0.75em 0 0.25em;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+.bot-sidebar-markdown > :first-child,
+.bot-sidebar-markdown > * > :first-child {
+  margin-top: 0;
+}
+.bot-sidebar-markdown :is(p, li, ul, ol, pre, blockquote) {
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+.bot-sidebar-markdown :is(ul, ol) {
+  margin-block: 0.25em;
+}
