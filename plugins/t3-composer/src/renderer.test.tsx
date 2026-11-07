@@ -10,6 +10,7 @@ import type {
   ExperimentalComposerHistory,
   ExperimentalComposerInput,
   ExperimentalComposerRendererApi,
+  PluginComposerScope,
 } from "@get-bb/plugin-sdk/app";
 import { SaveDraftAction } from "./SaveDraftAction";
 
@@ -29,7 +30,7 @@ type SlotOptions = NonNullable<Parameters<typeof renderSlot>[2]>;
 
 async function mountComposer(
   inputOverrides: Partial<ExperimentalComposerInput> = {},
-  scope: ExperimentalComposerRendererApi["view"]["scope"] = { kind: "new-thread", projectId: "p1" },
+  scope: PluginComposerScope = { kind: "new-thread", projectId: "p1" },
   options: Pick<SlotOptions, "providers" | "sdk"> & {
     selection?: ComposerSelection;
     text?: string;
@@ -57,13 +58,6 @@ async function mountComposer(
   };
   const renderer: ExperimentalComposerRendererApi = {
     input,
-    view: {
-      scope,
-      layout: input.compact ? "compact" : "expanded",
-      draft: { text: "A draft", isEmpty: false, attachmentCount: 0 },
-      run: { isRunning: false, isSubmitting: false },
-    },
-    key: "new-thread:p1",
     inputLocked: false,
     focusComposerShortcut: null,
     decorationSources: [],

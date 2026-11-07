@@ -1250,11 +1250,10 @@ export function PromptBoxInternal({
     (!showVoiceActionGroup ||
       (value.trim().length === 0 && attachments.length === 0 && !pendingUploads?.length));
   const effectivePlaceholder = showCompactLayout ? compact.placeholder : placeholder;
-  const composerKey = renderer.key;
+  const composerKey = composer.key;
   const composerInputLocked = renderer.inputLocked;
   const composerLayout = showCompactLayout ? "compact" : "expanded";
-  const composerView = renderer.view;
-  const composerScopeKey = JSON.stringify(composerView.scope);
+  const composerScopeKey = JSON.stringify(composer.scope);
   const decorationSources = renderer.decorationSources;
   const decorationSourcesRef = useRef(decorationSources);
   decorationSourcesRef.current = decorationSources;
