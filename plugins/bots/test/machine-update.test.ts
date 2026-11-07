@@ -10,7 +10,7 @@ it("saves an enrolled default machine atomically while preserving history and pr
   instances.push(host);
   const bot = await host.create();
   host.store.bind("old-main", bot.id);
-  host.store.save({ ...bot, mainThreadId: "old-main" });
+  host.store.save({ ...bot, mainThreadId: "old-main", homeProjectId: "old-home" });
   host.harness.inspection.sdk.stub("hosts.list", async () => [
     { id: "remote", name: "Remote", status: "disconnected" },
   ]);
@@ -33,6 +33,7 @@ it("saves an enrolled default machine atomically while preserving history and pr
     ...update,
     hostId: "remote",
   })) as BotMetadata;
+  expect(saved.homeProjectId).toBeNull();
   expect(saved).toMatchObject({
     hostId: "remote",
     name: "New name",
