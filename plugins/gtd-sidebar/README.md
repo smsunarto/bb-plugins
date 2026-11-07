@@ -155,11 +155,14 @@ lead with a globe in their machine's colour instead.
 
 ### Rows
 
-One line: the title in bold when unread, activity counts, the PR number, and a
-status slot. The status slot shows what the thread needs — failed, waiting on you,
+One line: the title in bold when unread, activity counts, and a status slot. The status slot shows what the thread needs — failed, waiting on you,
 working, or finished while you were away — and its age (`now`, `7m`, `3d`) when it
 needs nothing. Hovering swaps that slot for the park buttons. Resting on a row
 shows its project, branch, machine, and agent.
+
+Other plugins' row badges, such as GitHub PR Status's pull request number, sit
+under the title as chips. They show while bb's Thread row metadata experiment is
+on.
 
 ### A working thread can never be snoozed
 

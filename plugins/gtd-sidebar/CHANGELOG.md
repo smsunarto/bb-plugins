@@ -4,6 +4,9 @@
 
 ### Patch Changes
 
+- Other plugins' row badges draw as chips under the title, and the card no
+  longer draws its own pull request number beside the title, so a pull request
+  shows once, through GitHub PR Status's badge.
 - The machine menu lists only persistent machines bb still knows. Threads on
   deleted machines no longer add a `host_…` entry each, and disposable
   sandboxes such as Boat stay out of the menu.
