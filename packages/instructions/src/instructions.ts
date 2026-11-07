@@ -24,6 +24,8 @@ export const TOOLS_DIR = "tools";
 export const TOOL_INSTRUCTIONS_SUFFIX = ".instructions";
 /** The host rejects a tool whose instructions snippet exceeds this. */
 export const TOOL_INSTRUCTIONS_MAX_CHARS = 4096;
+/** The host truncates `configure` and `contributeInstructions` text past this. */
+export const PLUGIN_INSTRUCTIONS_MAX_CHARS = 32768;
 
 const PLACEHOLDER = /{{\s*([a-zA-Z][a-zA-Z0-9_]*)\s*}}/g;
 

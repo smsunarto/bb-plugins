@@ -1,5 +1,9 @@
 // Local fork: authored agent text is loaded from instructions/ for Agent Instructions → Plugin prompts.
-import { instructionFiles, TOOL_INSTRUCTIONS_MAX_CHARS } from "@bb-plugins/instructions";
+import {
+  instructionFiles,
+  PLUGIN_INSTRUCTIONS_MAX_CHARS,
+  TOOL_INSTRUCTIONS_MAX_CHARS,
+} from "@bb-plugins/instructions";
 // What agents are told about ```ui blocks, in the three sections BB adds to
 // sessions whose replies a person reads (see server.ts). BB appends tool
 // sections before plugin sections, so:
@@ -12,7 +16,8 @@ import { instructionFiles, TOOL_INSTRUCTIONS_MAX_CHARS } from "@bb-plugins/instr
 //   strongest lever on what models write; moved to the earlier section, the
 //   same calculator example stopped being followed.
 // BB refuses a tool whose instructions pass 4096 characters and truncates the
-// configure section there; instructions.test.ts holds all three.
+// configure and contributed sections past 32768; instructions.test.ts holds all
+// three.
 import {
   ACTIONS,
   callSignature,
@@ -120,20 +125,20 @@ export const WEB_LOOKUPS_OFF = instructionText.read("web-lookups-off");
 export const AGENT_INSTRUCTIONS_WEB_OFF = AGENT_INSTRUCTIONS.replace(MAP_EXAMPLE, WEB_LOOKUPS_OFF);
 
 /** Agent Instructions → Plugin prompts validates raw files; generated signatures must fit after expansion too. */
-export function assertInstructionLimit(name: string, text: string): void {
-  if (text.length > TOOL_INSTRUCTIONS_MAX_CHARS) {
+export function assertInstructionLimit(name: string, text: string, maxChars: number): void {
+  if (text.length > maxChars) {
     throw new Error(
-      `instructions/${name}.md renders ${text.length} characters; BB allows ${TOOL_INSTRUCTIONS_MAX_CHARS}`,
+      `instructions/${name}.md renders ${text.length} characters; BB allows ${maxChars}`,
     );
   }
 }
 
-for (const [name, text] of [
-  ["tools/check_ui.instructions", UI_REFERENCE],
-  ["tools/ui_examples.instructions", UI_REFERENCE_MORE],
-  ["code-work", CODE_WORK_INSTRUCTIONS],
-  ["inline-ui", AGENT_INSTRUCTIONS],
-  ["inline-ui", AGENT_INSTRUCTIONS_WEB_OFF],
+for (const [name, text, maxChars] of [
+  ["tools/check_ui.instructions", UI_REFERENCE, TOOL_INSTRUCTIONS_MAX_CHARS],
+  ["tools/ui_examples.instructions", UI_REFERENCE_MORE, TOOL_INSTRUCTIONS_MAX_CHARS],
+  ["code-work", CODE_WORK_INSTRUCTIONS, PLUGIN_INSTRUCTIONS_MAX_CHARS],
+  ["inline-ui", AGENT_INSTRUCTIONS, PLUGIN_INSTRUCTIONS_MAX_CHARS],
+  ["inline-ui", AGENT_INSTRUCTIONS_WEB_OFF, PLUGIN_INSTRUCTIONS_MAX_CHARS],
 ] as const) {
-  assertInstructionLimit(name, text);
+  assertInstructionLimit(name, text, maxChars);
 }

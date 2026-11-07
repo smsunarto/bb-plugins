@@ -21,17 +21,17 @@ import {
 
 describe("agent instructions", () => {
   it("rejects oversized rendered text with the editable source filename", () => {
-    expect(() => assertInstructionLimit("inline-ui", "x".repeat(4096))).not.toThrow();
-    expect(() => assertInstructionLimit("inline-ui", "x".repeat(4097))).toThrow(
-      "instructions/inline-ui.md renders 4097 characters; BB allows 4096",
+    expect(() => assertInstructionLimit("inline-ui", "x".repeat(32768), 32768)).not.toThrow();
+    expect(() => assertInstructionLimit("inline-ui", "x".repeat(32769), 32768)).toThrow(
+      "instructions/inline-ui.md renders 32769 characters; BB allows 32768",
     );
   });
   // BB refuses a tool whose instructions pass 4096 characters (the plugin then
-  // fails to load) and truncates the configure and contributed sections there.
-  it("fit BB's 4096-character cap per section", () => {
-    expect(AGENT_INSTRUCTIONS.length).toBeLessThanOrEqual(4096);
-    expect(AGENT_INSTRUCTIONS_WEB_OFF.length).toBeLessThanOrEqual(4096);
-    expect(CODE_WORK_INSTRUCTIONS.length).toBeLessThanOrEqual(4096);
+  // fails to load) and truncates the configure and contributed sections past 32768.
+  it("fit BB's per-section caps", () => {
+    expect(AGENT_INSTRUCTIONS.length).toBeLessThanOrEqual(32768);
+    expect(AGENT_INSTRUCTIONS_WEB_OFF.length).toBeLessThanOrEqual(32768);
+    expect(CODE_WORK_INSTRUCTIONS.length).toBeLessThanOrEqual(32768);
     expect(UI_REFERENCE.length).toBeLessThanOrEqual(4096);
     expect(UI_REFERENCE_MORE.length).toBeLessThanOrEqual(4096);
   });
