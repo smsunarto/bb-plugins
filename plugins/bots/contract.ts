@@ -3,6 +3,12 @@ import { z } from "zod";
 import { AVATAR_EXPRESSION_IDS, AVATAR_MOTION_IDS, AVATAR_SHAPE_IDS } from "./lib/appearance.ts";
 import { newThreadRequestSchema } from "./lib/new-thread-request.ts";
 import { launchPresetSchema } from "./lib/launch-preset.ts";
+import {
+  routineActionSchema,
+  routineFieldsSchema,
+  routineRunSchema,
+  routineViewSchema,
+} from "./lib/routine-schema.ts";
 
 import { MEMORY_MAX_CHARS, MEMORY_LIMIT_ERROR } from "./lib/memory-limit.ts";
 
@@ -362,7 +368,11 @@ export const workflowRunSchema = z
  */
 export const BOTS_PLUGIN_ID = "bots";
 
-export const BOT_TAGS = { bots: "bots", workflowRuns: "bot-workflow-runs" } as const;
+export const BOT_TAGS = {
+  bots: "bots",
+  workflowRuns: "bot-workflow-runs",
+  routines: "bot-routines",
+} as const;
 
 export const rpcContract = defineRpcContract({
   thread_bot: {
@@ -492,5 +502,31 @@ export const rpcContract = defineRpcContract({
   state_apply: {
     input: z.object({ botId: id, change: stateMutationSchema }).strict(),
     output: stateMutationResultSchema,
+  },
+  routines_list: {
+    input: z.object({ botId: id }).strict(),
+    output: z
+      .object({
+        routines: z.array(routineViewSchema),
+        /** Where a routine may run: Personal and the bot's linked projects. */
+        projects: z.array(z.object({ id, name: z.string() }).strict()),
+      })
+      .strict(),
+    tags: () => [BOT_TAGS.routines],
+  },
+  routine_save: {
+    input: routineFieldsSchema.extend({ botId: id, routineId: id.optional() }).strict(),
+    output: routineViewSchema,
+  },
+  routine_action: {
+    input: z.object({ routineId: id, action: routineActionSchema }).strict(),
+    output: z
+      .object({ routine: routineViewSchema.nullable(), run: routineRunSchema.nullable() })
+      .strict(),
+  },
+  routine_runs: {
+    input: z.object({ routineId: id, limit: z.number().int().min(1).max(20).default(5) }).strict(),
+    output: z.object({ runs: z.array(routineRunSchema) }).strict(),
+    tags: () => [BOT_TAGS.routines],
   },
 });

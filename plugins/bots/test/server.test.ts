@@ -248,7 +248,12 @@ describe("private bot identities", () => {
       expect(host.initialConfigurations[0]?.instructions).not.toContain(
         host.stateDirectory(first.id),
       );
-      expect(host.initialConfigurations[0]?.tools).toEqual(["bot_read_state", "bot_update_state"]);
+      expect(host.initialConfigurations[0]?.tools).toEqual([
+        "bot_read_state",
+        "bot_update_state",
+        "bot_routine_list",
+        "bot_routine_update",
+      ]);
       const bindings = (
         (await host.harness.behavior.callRpc("bots_list", {})) as { threadBindings: unknown[] }
       ).threadBindings;

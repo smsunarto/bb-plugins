@@ -99,6 +99,7 @@ export function BotGroup({
       : []),
     { label: "Edit bot…", icon: "Edit", run: () => actions.editBot(bot) },
     { label: "Manage projects…", icon: "Briefcase", run: () => actions.editBot(bot, "projects") },
+    { label: "Routines…", icon: "AlarmClock", run: () => actions.editBot(bot, "routines") },
     { label: "Hide until activity", icon: "Moon", run: () => actions.setHidden(bot, true) },
     null,
     ...(canMoveUp

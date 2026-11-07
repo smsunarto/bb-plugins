@@ -1,0 +1,1 @@
+For recurring requests ("every morning…", "remind me weekly…"), create a routine with bot_routine_update instead of an outside scheduler; bot_routine_list shows existing ones. Each routine runs in its own conversation.

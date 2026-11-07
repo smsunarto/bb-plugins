@@ -23,6 +23,27 @@ and `bot_update_state`. `bb bots list` and `bb bots message <bot> "<message>"`
 let agents find and message bots; `@` completes bot names in the composer
 without sending anything.
 
+## Routines
+
+A routine is a bot's scheduled instruction, like Grok Bot's routines. Ask the
+bot in chat ("every weekday at 9:00, summarize new support tickets") and it
+creates one with `bot_routine_update`, or open **Routines…** from the bot's
+menu (the editor's **Routines** tab) to add, edit, pause, test, or delete one.
+Routine changes apply immediately, not on the editor's Save.
+
+Each routine runs in a conversation of its own. The first run starts that
+conversation; later runs post into it, queued while it is busy. If it is
+archived, deleted, or moved to another bot, the next run starts a new one.
+
+Schedules run through the built-in Automations plugin, so each routine also
+appears in the Automations panel with its run history. Its automation is a
+script that calls `bb bots routines fire <routine id>`; Bots then delivers the
+instruction. A run that succeeded was delivered, not necessarily finished.
+Without Automations, routines show as unavailable and new ones cannot be
+saved. A bot keeps at most 50 routines. `bb bots routines list` lists them and
+`bb bots routines run <routine id>` tests one. Webhook triggers are not
+supported yet.
+
 ## Moving from GTD Sidebar
 
 GTD Sidebar stored bots in its own database before this plugin existed. On its
