@@ -14,10 +14,6 @@ function account(overrides: Partial<AccountSummary>): AccountSummary {
     enabled: true,
     priority: 1,
     lastUsedAt: null,
-    fiveHourUtilization: null,
-    fiveHourResetAt: null,
-    sevenDayUtilization: null,
-    sevenDayResetAt: null,
     familyWeekly: NO_FAMILIES,
     limitWindows: [],
     observedAt: null,
@@ -90,24 +86,23 @@ test("Codex windows read as Session then Weekly, skipping the empty header place
   ]);
 });
 
-test("Claude shows session, weekly, and each model's weekly window with its Max tier", () => {
+test("Claude shows weekly and each model's weekly window with its Max tier, but no session", () => {
   const [claude] = poolProviders([
     account({
       provider: "claude",
       label: "Scott",
       subscriptionType: "max",
       rateLimitTier: "default_claude_max_20x",
-      fiveHourUtilization: 0.48,
-      fiveHourResetAt: 100,
-      sevenDayUtilization: 0.52,
-      sevenDayResetAt: 200,
+      limitWindows: [
+        { slot: "primary", windowMinutes: 300, utilization: 0.9, resetAt: 100 },
+        { slot: "secondary", windowMinutes: 10080, utilization: 0.52, resetAt: 200 },
+      ],
       familyWeekly: { ...NO_FAMILIES, fable: { utilization: 0.58, resetAt: 300 } },
     }),
   ]);
   expect(claude?.accounts[0]?.identity).toBe("Scott");
   expect(claude?.accounts[0]?.plan).toBe("Max 20x");
   expect(claude?.accounts[0]?.windows).toEqual([
-    { label: "Session", usedPercent: 48, resetAt: 100, windowMinutes: 300, model: null },
     { label: "Weekly", usedPercent: 52, resetAt: 200, windowMinutes: 10080, model: null },
     { label: "Fable weekly", usedPercent: 58, resetAt: 300, windowMinutes: 10080, model: "fable" },
   ]);
@@ -201,8 +196,7 @@ test("invalid timestamps and fractional native integers preserve valid quota wit
   const parsed = accountListSchema.parse([
     account({
       provider: "claude",
-      fiveHourUtilization: 0.25,
-      fiveHourResetAt: 1e308,
+      limitWindows: [{ slot: "secondary", windowMinutes: 10080, utilization: 0.25, resetAt: 1e308 }],
       observedAt: 1e308,
       heldUntil: 1e308,
       inFlight: 1.5,
@@ -214,7 +208,7 @@ test("invalid timestamps and fractional native integers preserve valid quota wit
     heldUntil: null,
     inFlight: 0,
     windows: [
-      { label: "Session", usedPercent: 25, resetAt: null, windowMinutes: 300, model: null },
+      { label: "Weekly", usedPercent: 25, resetAt: null, windowMinutes: 10080, model: null },
     ],
   });
   expect(

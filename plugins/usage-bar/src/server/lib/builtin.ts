@@ -94,6 +94,12 @@ function menuWindow(window: UsageWindow): MenuWindow {
   }
 }
 
+/** Claude no longer enforces a session limit, so its 5h reading is not shown. */
+function shownWindows(resource: Resource, windows: UsageWindow[]): UsageWindow[] {
+  if (builtinProvider(resource) !== "claude") return windows;
+  return windows.filter((window) => window.kind !== "five-hour");
+}
+
 /** One resource's measurement as a menu account, or null when its CLI is not installed. */
 export function builtinAccount(
   key: string,
@@ -122,7 +128,7 @@ export function builtinAccount(
     heldUntil: null,
     error,
     inFlight: 0,
-    windows: usage.status === "ok" ? usage.windows.map(menuWindow) : [],
+    windows: usage.status === "ok" ? shownWindows(resource, usage.windows).map(menuWindow) : [],
   };
 }
 
