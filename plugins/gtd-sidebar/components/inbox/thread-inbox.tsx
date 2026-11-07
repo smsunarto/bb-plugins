@@ -1,4 +1,8 @@
-import { SlidingDisclosure } from "./sliding-disclosure";
+import {
+  DisclosureViewContext,
+  SlidingDisclosure,
+  type DisclosureView,
+} from "./sliding-disclosure";
 import {
   useCallback,
   useEffect,
@@ -254,6 +258,7 @@ function InboxList({
   // The tabs show as soon as Bots is on; the Bots tab draws its own loading,
   // failed, and offline states. With Bots off the list is the Code tab alone.
   const tab: SidebarTab = botsEnabled ? chosenTab : "code";
+  const disclosureView = useDisclosureView(tab);
   const activeBotId = activeThreadId === null ? null : shelfBotOf(activeThreadId);
   // Opening a bot's conversation from anywhere (a link, the composer, bb's
   // keys) brings the Bots tab forward, so its bot shows as the open one.
@@ -713,106 +718,108 @@ function InboxList({
               onFocus={focusedRow.onFocus}
               onBlur={focusedRow.onBlur}
             >
-              <InboxContent
-                status={status}
-                // Until the saved machine choice loads, every machine counts as
-                // visible, so painting early would flash hidden machines' rows.
-                ready={
-                  lifecycle.shelvesReady &&
-                  visibility.ready &&
-                  sidebar.experimental_archived?.status !== "loading"
-                }
-                count={shelvedTotal}
-                // The Bots tab lists bots, so an empty thread list leaves it whole.
-                keepShelves={tab === "bots"}
-                searchQuery={searchQuery}
-              >
-                {tab === "bots" ? (
-                  <section aria-label="Bots">
-                    <div
-                      ref={inboxWindow.measureRef}
-                      data-index={windowLayout.headerIndex.get(shelfKey("bots"))}
-                    >
-                      {bots.list === undefined ? (
-                        bots.failed ? (
-                          <BotsError onRetry={bots.retry} />
-                        ) : (
-                          <BotsLoading />
-                        )
-                      ) : searching ? (
-                        <BotConversationsHeading
-                          empty={botTabGroups.every((group) => group.rows.length === 0)}
-                        />
-                      ) : (
-                        <>
-                          {bots.failed ? <BotsOffline onRetry={bots.retry} /> : null}
-                          <PinnedBotGrid
-                            bots={pinnedBots}
-                            threadsByBot={bots.threadsByBot}
-                            activeBotId={activeBotId}
-                            onOpen={openBot}
-                            actions={botsActions}
-                            canMove={!isCompactViewport}
+              <DisclosureViewContext.Provider value={disclosureView}>
+                <InboxContent
+                  status={status}
+                  // Until the saved machine choice loads, every machine counts as
+                  // visible, so painting early would flash hidden machines' rows.
+                  ready={
+                    lifecycle.shelvesReady &&
+                    visibility.ready &&
+                    sidebar.experimental_archived?.status !== "loading"
+                  }
+                  count={shelvedTotal}
+                  // The Bots tab lists bots, so an empty thread list leaves it whole.
+                  keepShelves={tab === "bots"}
+                  searchQuery={searchQuery}
+                >
+                  {tab === "bots" ? (
+                    <section aria-label="Bots">
+                      <div
+                        ref={inboxWindow.measureRef}
+                        data-index={windowLayout.headerIndex.get(shelfKey("bots"))}
+                      >
+                        {bots.list === undefined ? (
+                          bots.failed ? (
+                            <BotsError onRetry={bots.retry} />
+                          ) : (
+                            <BotsLoading />
+                          )
+                        ) : searching ? (
+                          <BotConversationsHeading
+                            empty={botTabGroups.every((group) => group.rows.length === 0)}
                           />
-                          {botShelfList.map((botShelf) => (
-                            <Shelf
-                              key={botShelf.key}
-                              label={botShelf.label}
-                              count={botShelf.bots.length}
-                              isCompactViewport={isCompactViewport}
-                              measureRef={IGNORE_MEASURE}
-                              measureIndex={undefined}
-                            >
-                              <ul className="flex flex-col">
-                                {botShelf.bots.map((bot, index) => (
-                                  <li key={bot.id}>
-                                    <BotRow
-                                      bot={bot}
-                                      summary={botSummaries.get(bot.id)}
-                                      threads={bots.threadsByBot.get(bot.id) ?? NO_BOT_THREADS}
-                                      active={bot.id === activeBotId}
-                                      onOpen={openBot}
-                                      actions={botsActions}
-                                      group={botShelf.bots}
-                                      canMoveUp={!isCompactViewport && index > 0}
-                                      canMoveDown={
-                                        !isCompactViewport && index < botShelf.bots.length - 1
-                                      }
-                                    />
-                                  </li>
-                                ))}
-                              </ul>
-                            </Shelf>
-                          ))}
-                        </>
-                      )}
-                    </div>
-                    <ul className="flex flex-col">
-                      {renderRows(
-                        "bots",
-                        shelfKey("bots"),
-                        botTabGroups.flatMap((group) => group.rows),
-                        false,
-                      )}
-                    </ul>
-                  </section>
-                ) : null}
-                {shelfViews.map(({ shelf, label, fold, showEmpty }) =>
-                  groupedShelves[shelf].length > 0 || showEmpty === true ? (
-                    <Shelf
-                      key={label}
-                      label={label}
-                      count={shelves[shelf].length}
-                      isCompactViewport={isCompactViewport}
-                      fold={fold}
-                      measureRef={inboxWindow.measureRef}
-                      measureIndex={windowLayout.headerIndex.get(shelfKey(shelf))}
-                    >
-                      {renderGroups(shelf, groupedShelves[shelf])}
-                    </Shelf>
-                  ) : null,
-                )}
-              </InboxContent>
+                        ) : (
+                          <>
+                            {bots.failed ? <BotsOffline onRetry={bots.retry} /> : null}
+                            <PinnedBotGrid
+                              bots={pinnedBots}
+                              threadsByBot={bots.threadsByBot}
+                              activeBotId={activeBotId}
+                              onOpen={openBot}
+                              actions={botsActions}
+                              canMove={!isCompactViewport}
+                            />
+                            {botShelfList.map((botShelf) => (
+                              <Shelf
+                                key={botShelf.key}
+                                label={botShelf.label}
+                                count={botShelf.bots.length}
+                                isCompactViewport={isCompactViewport}
+                                measureRef={IGNORE_MEASURE}
+                                measureIndex={undefined}
+                              >
+                                <ul className="flex flex-col">
+                                  {botShelf.bots.map((bot, index) => (
+                                    <li key={bot.id}>
+                                      <BotRow
+                                        bot={bot}
+                                        summary={botSummaries.get(bot.id)}
+                                        threads={bots.threadsByBot.get(bot.id) ?? NO_BOT_THREADS}
+                                        active={bot.id === activeBotId}
+                                        onOpen={openBot}
+                                        actions={botsActions}
+                                        group={botShelf.bots}
+                                        canMoveUp={!isCompactViewport && index > 0}
+                                        canMoveDown={
+                                          !isCompactViewport && index < botShelf.bots.length - 1
+                                        }
+                                      />
+                                    </li>
+                                  ))}
+                                </ul>
+                              </Shelf>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                      <ul className="flex flex-col">
+                        {renderRows(
+                          "bots",
+                          shelfKey("bots"),
+                          botTabGroups.flatMap((group) => group.rows),
+                          false,
+                        )}
+                      </ul>
+                    </section>
+                  ) : null}
+                  {shelfViews.map(({ shelf, label, fold, showEmpty }) =>
+                    groupedShelves[shelf].length > 0 || showEmpty === true ? (
+                      <Shelf
+                        key={label}
+                        label={label}
+                        count={shelves[shelf].length}
+                        isCompactViewport={isCompactViewport}
+                        fold={fold}
+                        measureRef={inboxWindow.measureRef}
+                        measureIndex={windowLayout.headerIndex.get(shelfKey(shelf))}
+                      >
+                        {renderGroups(shelf, groupedShelves[shelf])}
+                      </Shelf>
+                    ) : null,
+                  )}
+                </InboxContent>
+              </DisclosureViewContext.Provider>
             </div>
           </div>
           {/* The ghost rides the pointer from document.body, clear of the list's
@@ -1549,6 +1556,15 @@ function SidebarTabs({
       {option("bots", "Bots", "Bot", null)}
     </div>
   );
+}
+
+/** Lets the panels a tab switch mounts appear in place. */
+function useDisclosureView(tab: SidebarTab): DisclosureView {
+  const shown = useRef<unknown>(tab);
+  useEffect(() => {
+    shown.current = tab;
+  }, [tab]);
+  return useMemo(() => ({ current: tab, shown }), [tab]);
 }
 
 /** The label over the Bots tab's search results. */

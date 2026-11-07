@@ -4,6 +4,11 @@
 
 ### Patch Changes
 
+- The machine menu opens and closes instantly, without animation.
+
+- Switching between the Code and Bots tabs shows their groups at once instead of
+  sliding each one in.
+
 - The machine menu lists only persistent machines bb still knows. Threads on
   deleted machines no longer add a `host_…` entry each, and disposable
   sandboxes such as Boat stay out of the menu.
