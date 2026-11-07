@@ -7,15 +7,15 @@ import {
 import { Button } from "@bb-plugins/ui/button";
 import { BOTS_PLUGIN_ID, rpcContract } from "../contract";
 import { describeCron, routineStatus } from "../lib/routine-format";
-import { DisclosureRow } from "./disclosure-row";
+import { CardToggle, ClampedText, ResourceCard } from "./resource-card";
 
 const textClass = "whitespace-pre-wrap text-xs leading-relaxed [overflow-wrap:anywhere]";
 /** Markdown at the sidebar's reading size, scrolling inside its own region when long. */
 const markdownClass = "bot-sidebar-markdown max-h-80 min-w-0 overflow-auto text-xs";
 
-/** A SKILL.md body without its frontmatter; the row already shows name and description. */
 /** MEMORY.md without a leading "# Memory" heading, which would repeat the section label. */
 const memoryBody = (content: string) => content.replace(/^\s*#\s+memory\s*\n/i, "").trim();
+/** A SKILL.md body without its frontmatter; the card already shows name and description. */
 const skillBody = (content: string) =>
   content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "").trim();
 
@@ -91,7 +91,7 @@ function BotSkills({ botId }: { botId: string }) {
       />
       {query.data ? (
         query.data.skills.length ? (
-          <div className="min-w-0">
+          <div className="flex min-w-0 flex-col gap-2">
             {query.data.skills.map((skill) => (
               <Skill key={skill.name} botId={botId} {...skill} />
             ))}
@@ -107,14 +107,17 @@ function BotSkills({ botId }: { botId: string }) {
 function Skill({ botId, name, description }: { botId: string; name: string; description: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <DisclosureRow title={name} onToggle={setOpen}>
+    <ResourceCard title={name}>
       {description ? (
         <p className="text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
           {description}
         </p>
       ) : null}
       {open ? <SkillContent botId={botId} name={name} /> : null}
-    </DisclosureRow>
+      <CardToggle open={open} onClick={() => setOpen(!open)}>
+        {open ? "Hide SKILL.md" : "Read SKILL.md"}
+      </CardToggle>
+    </ResourceCard>
   );
 }
 
@@ -126,7 +129,7 @@ function SkillContent({ botId, name }: { botId: string; name: string }) {
     input: { botId, name },
   });
   return (
-    <div className="mt-2 min-w-0">
+    <div className="min-w-0 border-t border-border/60 pt-2">
       <ReadStatus
         label={name}
         loading={!query.data && query.error === null}
@@ -159,9 +162,9 @@ function BotRoutines({ botId }: { botId: string }) {
       />
       {query.data ? (
         query.data.routines.length ? (
-          <div className="min-w-0">
+          <div className="flex min-w-0 flex-col gap-2">
             {query.data.routines.map((routine) => (
-              <DisclosureRow
+              <ResourceCard
                 key={routine.id}
                 title={routine.name}
                 meta={routineStatus(routine)}
@@ -172,13 +175,13 @@ function BotRoutines({ botId }: { botId: string }) {
                   {" · "}
                   {routine.timezone}
                 </p>
-                <p className={`mt-1.5 ${textClass}`}>{routine.instruction}</p>
+                <ClampedText text={routine.instruction} className={textClass} />
                 {routine.automationError ? (
-                  <p className="mt-1.5 text-xs text-destructive [overflow-wrap:anywhere]">
+                  <p className="text-xs text-destructive [overflow-wrap:anywhere]">
                     {routine.automationError}
                   </p>
                 ) : null}
-              </DisclosureRow>
+              </ResourceCard>
             ))}
           </div>
         ) : (
@@ -207,7 +210,9 @@ function BotMemory({ botId }: { botId: string }) {
       />
       {query.data ? (
         query.data.content.trim() ? (
-          <Markdown content={memoryBody(query.data.content)} className={markdownClass} />
+          <div className="min-w-0 rounded-lg border border-border/60 bg-muted/20 px-3 py-2.5">
+            <Markdown content={memoryBody(query.data.content)} className={markdownClass} />
+          </div>
         ) : (
           <p className="text-xs text-muted-foreground">No memories yet.</p>
         )

@@ -53,7 +53,7 @@ const options = {
   },
 };
 
-it("shows the selected bot's memory, skill and routine, reading skill content only on expansion", async () => {
+it("shows the selected bot's memory, skill and routine cards, reading skill content only on request", async () => {
   const slot = renderSlot(
     { component: ThreadBotPromptSection },
     { threadId: "chat", projectId: "project", environment: null },
@@ -64,13 +64,12 @@ it("shows the selected bot's memory, skill and routine, reading skill content on
   expect(screen.getByText("Morning check")).toBeTruthy();
   expect(screen.getByText(/Next in/)).toBeTruthy();
   expect(slot.rpcCalls.some((call) => call.method === "skill_read")).toBe(false);
-  fireEvent.click(screen.getByText("release-notes"));
+  fireEvent.click(screen.getByRole("button", { name: "Read SKILL.md" }));
   await screen.findByText("Read the diff before drafting notes.");
   expect(slot.rpcCalls.find((call) => call.method === "skill_read")?.input).toEqual({
     botId: "bot",
     name: "release-notes",
   });
-  fireEvent.click(screen.getByText("Morning check"));
   expect(screen.getByText(routine.instruction)).toBeTruthy();
   slot.unmount();
 });

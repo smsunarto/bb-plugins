@@ -12,7 +12,7 @@ import { BotIcon } from "./bot-icon";
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger } from "./ui/select";
 import { cn } from "../lib/utils";
 
-import { DisclosureRow } from "./disclosure-row";
+import { ClampedText, ResourceCard } from "./resource-card";
 import { ThreadBotResources } from "./thread-bot-resources";
 
 const NONE = "__no_bot__";
@@ -172,15 +172,16 @@ function useThreadBotPrompt(threadId: string) {
 
 function PromptBlock({ title, text }: { title: string; text: string }) {
   return (
-    <DisclosureRow title={title} meta={`${text.length.toLocaleString()} chars`}>
-      <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-md bg-muted/50 p-2 font-mono text-[11px] leading-relaxed text-foreground">
-        {text}
-      </pre>
-    </DisclosureRow>
+    <ResourceCard title={title} meta={`${text.length.toLocaleString()} chars`}>
+      <ClampedText
+        text={text}
+        className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground"
+      />
+    </ResourceCard>
   );
 }
 
-/** Thread Info tab: the system-prompt additions from the thread's bot, each block folded. */
+/** Thread Info tab: the system-prompt additions from the thread's bot, one card per block. */
 export function ThreadBotPromptSection({ threadId }: ExperimentalThreadInfoProps) {
   const value = useThreadBotPrompt(threadId);
   if (!value?.botId) return null;
@@ -188,7 +189,7 @@ export function ThreadBotPromptSection({ threadId }: ExperimentalThreadInfoProps
     <>
       <ThreadBotResources key={value.botId} botId={value.botId} />
       <InfoSection label="Bot prompt">
-        <div className="flex flex-col">
+        <div className="flex flex-col gap-2">
           {value.sections.map((section) => (
             <PromptBlock key={section.id} title={section.title} text={section.text} />
           ))}
