@@ -1,5 +1,13 @@
 import { SlidingDisclosure } from "./sliding-disclosure";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -63,13 +71,16 @@ import { ProjectGroup, SortableProjectGroup } from "./project-group";
 import {
   BotWorkflowRuns,
   WorkflowRunsContext,
+  isWorking,
+  type BotMetadata,
   useBotsController,
   useBotsModel,
   useBotsPluginEnabled,
   useWorkflowRunsData,
 } from "@smsunarto/bb-plugin-bots/shelf";
-import { groupRowsByBot, type BotGroup as BotGroupRows } from "../../lib/bot-groups";
-import { BotGroup } from "./bot-group";
+import { groupRowsByBot } from "../../lib/bot-groups";
+import { BotCardGrid, type BotCardSummary } from "./bot-cards";
+import { useSidebarTab, type SidebarTab } from "../../hooks/use-sidebar-tab";
 import { Icon } from "../ui/icon";
 import { isShelvedThread } from "../../lib/settled-threads";
 import { retainUnchangedThreads } from "../../lib/stable-threads";
@@ -99,7 +110,6 @@ const ALL_PROJECTS = "__all__";
 // archived threads too; `isShelvedThread` cuts it to the shelf's window.
 const SIDEBAR_LIFECYCLES = ["active", "archived"] as const;
 
-const NO_THREADS: readonly PluginSidebarThread[] = [];
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const GITBUTLER_REFRESH_MS = 30_000;
 const MOBILE_SCROLL_FADE_STYLE: CSSProperties = {
@@ -237,8 +247,59 @@ function InboxList({
         isCompleted: bots.isCompleted,
         showCompleted: botsShowingCompleted,
         activeThreadId,
-      }) as ProjectGroupRows[],
+      }),
     [shelves.bots, bots, shelfBotOf, botsShowingCompleted, activeThreadId],
+  );
+  // The Bots tab shows once Bots has loaded; until then, and with Bots off,
+  // the list is the Code tab alone.
+  const [chosenTab, setTab] = useSidebarTab();
+  const botsReady = botsEnabled && bots.list !== undefined;
+  const tab: SidebarTab = botsReady ? chosenTab : "code";
+  const activeBotId = activeThreadId === null ? null : shelfBotOf(activeThreadId);
+  const [chosenBotId, setChosenBotId] = useState<string | null>(null);
+  // Opening a bot's conversation from anywhere (a link, the composer, bb's
+  // keys) brings its tab and card forward, so the open thread is on screen.
+  // Adjusted during render, once per open thread and its bot (which may load
+  // after the thread), so the list never paints the wrong tab first and a
+  // later switch back to Code sticks.
+  const followKey = activeBotId === null ? null : `${activeThreadId}:${activeBotId}`;
+  const [followedKey, setFollowedKey] = useState<string | null>(null);
+  if (followKey !== followedKey) {
+    setFollowedKey(followKey);
+    if (activeBotId !== null) {
+      setTab("bots");
+      setChosenBotId(activeBotId);
+    }
+  }
+  const selectedBotId =
+    chosenBotId !== null && bots.shownBotIds.includes(chosenBotId)
+      ? chosenBotId
+      : (activeBotId ?? bots.shownBotIds[0] ?? null);
+  const botSummaries = useMemo(() => {
+    const summaries = new Map<string, BotCardSummary>();
+    for (const group of botShelfGroups) {
+      const threads = bots.threadsByBot.get(group.projectId) ?? [];
+      summaries.set(group.projectId, {
+        families: group.families,
+        attention: group.attention,
+        completed: group.completed,
+        working: threads.some((thread) => !thread.isArchived && isWorking(thread)),
+      });
+    }
+    return summaries;
+  }, [botShelfGroups, bots.threadsByBot]);
+  const botAttention = useMemo(
+    () => [...botSummaries.values()].reduce((total, summary) => total + summary.attention, 0),
+    [botSummaries],
+  );
+  // The Bots tab lists the selected bot's conversations; a search lists every
+  // bot's matches.
+  const botTabGroups = useMemo(
+    () =>
+      searching
+        ? botShelfGroups.filter((group) => group.rows.length > 0)
+        : botShelfGroups.filter((group) => group.projectId === selectedBotId),
+    [botShelfGroups, searching, selectedBotId],
   );
   const projectShelfGroups = useMemo(() => {
     const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] =>
@@ -258,40 +319,40 @@ function InboxList({
     () => ({ ...projectShelfGroups, bots: botShelfGroups }),
     [projectShelfGroups, botShelfGroups],
   );
-  const { pinned, bots: botGroups, nextAction, waiting, slopcop } = groupedShelves;
-  const { shelfViews, windowLayout, botsOpen, waitingOpen, slopcopOpen } = useShelfWindow(
+  const { pinned, nextAction, waiting, slopcop } = groupedShelves;
+  const { shelfViews, windowLayout, waitingOpen, slopcopOpen } = useShelfWindow(
     groupedShelves,
     grouped,
     searching,
     isGroupCollapsed,
-    bots.list !== undefined,
+    tab,
+    botTabGroups,
   );
   // The rows the user can see, in the order they see them and tagged with the
   // shelf they sit under, so settling walks to the visible neighbour in its
   // own section and never into a folded group or another shelf.
   const visibleActiveRows = useMemo(
     () =>
-      (
-        [
-          ["pinned", pinned],
-          ["bots", botsOpen ? botGroups : []],
-          ["nextAction", nextAction],
-          ["waiting", waitingOpen ? waiting : []],
-          ["slopcop", slopcopOpen ? slopcop : []],
-        ] as const
-      ).flatMap(([shelf, groups]) =>
-        groups.flatMap((group) =>
-          (grouped || shelf === "bots") &&
-          !searching &&
-          isGroupCollapsed(groupCollapseKey(shelf, group.projectId))
-            ? []
-            : group.rows.map((row) => ({ shelf, row })),
-        ),
-      ),
+      tab === "bots"
+        ? botTabGroups.flatMap((group) => group.rows.map((row) => ({ shelf: "bots" as const, row })))
+        : (
+            [
+              ["pinned", pinned],
+              ["nextAction", nextAction],
+              ["waiting", waitingOpen ? waiting : []],
+              ["slopcop", slopcopOpen ? slopcop : []],
+            ] as const
+          ).flatMap(([shelf, groups]) =>
+            groups.flatMap((group) =>
+              grouped && !searching && isGroupCollapsed(groupCollapseKey(shelf, group.projectId))
+                ? []
+                : group.rows.map((row) => ({ shelf, row })),
+            ),
+          ),
     [
+      tab,
+      botTabGroups,
       pinned,
-      botGroups,
-      botsOpen,
       nextAction,
       waiting,
       waitingOpen,
@@ -305,6 +366,20 @@ function InboxList({
   // A machine scope carries into the composer, which preselects that machine
   // for the new environment when it can host one.
   const navigate = useBbNavigate();
+  const selectableBots = useMemo(() => {
+    const shown = new Set(bots.shownBotIds);
+    return bots.bots.filter((bot) => shown.has(bot.id));
+  }, [bots.bots, bots.shownBotIds]);
+  const selectedBot = selectableBots.find((bot) => bot.id === selectedBotId) ?? null;
+  // A card's chat pill opens the bot's newest conversation, the first on its list.
+  const openLatestConversation = useCommittedEvent((bot: BotMetadata) => {
+    const group = botShelfGroups.find((entry) => entry.projectId === bot.id);
+    const latest = group?.rows.find((row) => row.depth === 0);
+    setChosenBotId(bot.id);
+    if (latest === undefined) return;
+    navigate.toThread(latest.node.thread.id);
+    onNavigate();
+  });
   const onNewThread = useCommittedEvent((projectId: string) => {
     const hostId = visibility.composerHostId;
     navigate.toCompose({
@@ -458,37 +533,7 @@ function InboxList({
       ? null
       : windowedRows(inboxWindow, start, rows, gapFirst, (row) => renderRow(shelf, row));
   };
-  const renderBotGroups = (groups: readonly ProjectGroupRows[]) =>
-    (groups as readonly BotGroupRows[]).map((group, index) => {
-      const bot = bots.bots.find((entry) => entry.id === group.projectId);
-      if (bot === undefined) return null;
-      const key = groupCollapseKey("bots", group.projectId);
-      return (
-        <BotGroup
-          key={group.projectId}
-          bot={bot}
-          threads={bots.threadsByBot.get(bot.id) ?? NO_THREADS}
-          families={group.families}
-          attention={group.attention}
-          completed={group.completed}
-          showCompleted={botsShowingCompleted.has(bot.id)}
-          onToggleCompleted={() => toggleBotCompleted(bot.id)}
-          expanded={searching || !isGroupCollapsed(key)}
-          onToggle={() => toggleGroup(key)}
-          actions={botsActions}
-          canMoveUp={!isCompactViewport && index > 0}
-          canMoveDown={!isCompactViewport && index < groups.length - 1}
-          selected={activeThreadId !== null && bots.ownerOf(activeThreadId) === bot.id}
-          isCompactViewport={isCompactViewport}
-          measureRef={inboxWindow.measureRef}
-          measureIndex={windowLayout.headerIndex.get(key)}
-        >
-          {renderRows("bots", key, group.rows, true)}
-        </BotGroup>
-      );
-    });
   const renderGroups = (shelf: InboxShelf, groups: readonly ProjectGroupRows[]) => {
-    if (shelf === "bots") return renderBotGroups(groups);
     const groupIds = groups.map((group) => group.projectId);
     // The shelf's sortable list is its groups that bb can reorder, in
     // rendered order: the personal project and any stale id are out — never
@@ -593,6 +638,15 @@ function InboxList({
               }
             }}
           >
+            {botsReady ? (
+              <SidebarTabs
+                tab={tab}
+                onChange={setTab}
+                codeCount={shelves.nextAction.length}
+                botAttention={botAttention}
+                isCompactViewport={isCompactViewport}
+              />
+            ) : null}
             <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
               <Select value={scope} onValueChange={setScope}>
                 {/* It sizes to its label, so the chevron sits beside it. The
@@ -652,23 +706,54 @@ function InboxList({
                   sidebar.experimental_archived?.status !== "loading"
                 }
                 count={shelvedTotal}
-                // The Bots shelf keeps its header, and New bot, on an empty list.
-                keepShelves={bots.list !== undefined}
+                // The Bots tab keeps its cards, and New bot, on an empty list.
+                keepShelves={tab === "bots"}
                 searchQuery={searchQuery}
               >
+                {tab === "bots" ? (
+                  <section aria-label="Bots">
+                    <div
+                      ref={inboxWindow.measureRef}
+                      data-index={windowLayout.headerIndex.get(shelfKey("bots"))}
+                    >
+                      {searching ? null : (
+                        <BotCardGrid
+                          bots={selectableBots}
+                          summaries={botSummaries}
+                          threadsByBot={bots.threadsByBot}
+                          selectedBotId={selectedBotId}
+                          activeBotId={activeBotId}
+                          showingCompleted={botsShowingCompleted}
+                          onSelect={setChosenBotId}
+                          onOpenLatest={openLatestConversation}
+                          onToggleCompleted={toggleBotCompleted}
+                          actions={botsActions}
+                          isCompactViewport={isCompactViewport}
+                        />
+                      )}
+                      <BotConversationsHeading
+                        bot={searching ? null : selectedBot}
+                        empty={botTabGroups.every((group) => group.rows.length === 0)}
+                      />
+                    </div>
+                    <ul className="flex flex-col">
+                      {renderRows(
+                        "bots",
+                        shelfKey("bots"),
+                        botTabGroups.flatMap((group) => group.rows),
+                        false,
+                      )}
+                    </ul>
+                  </section>
+                ) : null}
                 {shelfViews.map(({ shelf, label, fold, showEmpty }) =>
                   groupedShelves[shelf].length > 0 || showEmpty === true ? (
                     <Shelf
                       key={label}
                       label={label}
-                      count={shelf === "bots" ? groupedShelves.bots.length : shelves[shelf].length}
+                      count={shelves[shelf].length}
                       isCompactViewport={isCompactViewport}
                       fold={fold}
-                      action={
-                        shelf === "bots" ? (
-                          <ShelfAction label="New bot" onClick={botsActions.createBot} />
-                        ) : undefined
-                      }
                       measureRef={inboxWindow.measureRef}
                       measureIndex={windowLayout.headerIndex.get(shelfKey(shelf))}
                     >
@@ -701,6 +786,8 @@ interface ShelfFold {
   onToggle: () => void;
 }
 
+const NO_SHELF_VIEWS: readonly ShelfView[] = [];
+
 interface ShelfView {
   shelf: InboxShelf;
   label: string;
@@ -719,10 +806,10 @@ function useShelfWindow(
   grouped: boolean,
   searching: boolean,
   isGroupCollapsed: (key: string) => boolean,
-  /** Bots have loaded, so the Bots shelf shows even before the first bot. */
-  botsReady: boolean,
+  tab: SidebarTab,
+  /** The Bots tab's conversations: the selected bot's, or every match while searching. */
+  botTabGroups: readonly ProjectGroupRows[],
 ) {
-  const [showBots, setShowBots] = useState(true);
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
   // Waiting and SlopCop are the active shelves worth folding away: Waiting's
@@ -732,20 +819,13 @@ function useShelfWindow(
   const [showSlopcop, setShowSlopcop] = useState(false);
   // Pinned and Next Action always show; the rest fold, and a search opens
   // them all.
-  const botsOpen = showBots || searching;
   const waitingOpen = showWaiting || searching;
   const slopcopOpen = showSlopcop || searching;
   const snoozedOpen = showSnoozed || searching;
   const settledOpen = showSettled || searching;
-  // Every shelf in the order it draws.
-  const shelfViews: readonly ShelfView[] = [
+  // Every Code shelf in the order it draws. The Bots tab draws its own.
+  const codeShelfViews: readonly ShelfView[] = [
     { shelf: "pinned", label: "Pinned" },
-    {
-      shelf: "bots",
-      label: "Bots",
-      fold: { expanded: botsOpen, onToggle: () => setShowBots((open) => !open) },
-      showEmpty: botsReady && !searching,
-    },
     { shelf: "nextAction", label: "Next Action" },
     {
       shelf: "waiting",
@@ -768,31 +848,28 @@ function useShelfWindow(
       fold: { expanded: settledOpen, onToggle: () => setShowSettled((open) => !open) },
     },
   ];
+  const shelfViews = tab === "bots" ? NO_SHELF_VIEWS : codeShelfViews;
   const windowLayout = useMemo(
     () =>
       buildInboxWindow(
-        [
+        tab === "bots"
+          ? // One header (the cards and the list's heading), then the rows.
+            [{ shelf: "bots", expanded: true, groups: botTabGroups, grouped: false, showEmpty: true }]
+          : [
           { shelf: "pinned", expanded: true, groups: groupedShelves.pinned },
-          {
-            shelf: "bots",
-            expanded: botsOpen,
-            groups: groupedShelves.bots,
-            grouped: true,
-            showEmpty: botsReady && !searching,
-          },
           { shelf: "nextAction", expanded: true, groups: groupedShelves.nextAction },
           { shelf: "waiting", expanded: waitingOpen, groups: groupedShelves.waiting },
           { shelf: "slopcop", expanded: slopcopOpen, groups: groupedShelves.slopcop },
           { shelf: "snoozed", expanded: snoozedOpen, groups: groupedShelves.snoozed },
           { shelf: "settled", expanded: settledOpen, groups: groupedShelves.settled },
-        ],
+            ],
         grouped,
         (key) => searching || !isGroupCollapsed(key),
       ),
     [
       groupedShelves,
-      botsOpen,
-      botsReady,
+      tab,
+      botTabGroups,
       waitingOpen,
       slopcopOpen,
       snoozedOpen,
@@ -802,7 +879,7 @@ function useShelfWindow(
       isGroupCollapsed,
     ],
   );
-  return { shelfViews, windowLayout, botsOpen, waitingOpen, slopcopOpen };
+  return { shelfViews, windowLayout, waitingOpen, slopcopOpen };
 }
 
 /**
@@ -1374,17 +1451,84 @@ function ShelfHeader({
   );
 }
 
-/** A shelf header's own action: an icon button revealed on hover or focus, always shown on touch. */
-function ShelfAction({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
+/** Code (the shelves) and Bots, as one segmented control above the list. */
+function SidebarTabs({
+  tab,
+  onChange,
+  codeCount,
+  botAttention,
+  isCompactViewport,
+}: {
+  tab: SidebarTab;
+  onChange: (tab: SidebarTab) => void;
+  codeCount: number;
+  botAttention: number;
+  isCompactViewport: boolean;
+}) {
+  const option = (value: SidebarTab, label: string, icon: "Code" | "Bot", trailing: ReactNode) => (
     <button
       type="button"
-      aria-label={label}
-      title={label}
-      onClick={onClick}
-      className="gtd-shelf-action"
+      role="tab"
+      aria-selected={tab === value}
+      onClick={() => onChange(value)}
+      className="gtd-sidebar-tab"
     >
-      <Icon name="Plus" className="size-3" />
+      <Icon name={icon} className="size-3.5 shrink-0" />
+      {label}
+      {trailing}
     </button>
+  );
+  return (
+    <div
+      role="tablist"
+      aria-label="Sidebar view"
+      className={cn("gtd-sidebar-tabs", isCompactViewport && "gtd-sidebar-tabs-touch")}
+    >
+      {option(
+        "code",
+        "Code",
+        "Code",
+        codeCount > 0 ? <span className="gtd-sidebar-tab-count">{codeCount}</span> : null,
+      )}
+      {option(
+        "bots",
+        "Bots",
+        "Bot",
+        botAttention > 0 ? (
+          <span className="gtd-sidebar-tab-badge" aria-label={`${botAttention} need you`}>
+            {botAttention}
+          </span>
+        ) : null,
+      )}
+    </div>
+  );
+}
+
+/** The label over the Bots tab's conversation list: whose they are, or search results. */
+function BotConversationsHeading({ bot, empty }: { bot: BotMetadata | null; empty: boolean }) {
+  return (
+    <>
+      <h2 className="gtd-bot-conversations-heading">
+        {bot === null ? (
+          "Results"
+        ) : (
+          <>
+            <span
+              className="gtd-bot-conversations-dot"
+              style={{ background: bot.avatar.color }}
+              aria-hidden
+            />
+            <span className="truncate">{bot.name}</span>
+            <span aria-hidden>·</span>
+            Conversations
+          </>
+        )}
+      </h2>
+      {empty ? (
+        <p className="gtd-bot-conversations-empty">
+          {bot === null ? "No conversations found" : "No conversations yet"}
+        </p>
+      ) : null}
+    </>
   );
 }

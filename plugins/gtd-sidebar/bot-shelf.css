@@ -1,74 +1,286 @@
-/* The Bots shelf, shown while the Bots plugin is enabled: bot group headers,
-   the shelf's New bot action, and workflow run rows. The avatar's styles come
-   from the Bots plugin's bots.css; everything else on the shelf is GTD's own
-   project-group and thread-card styling.
+/* The Bots tab, shown while the Bots plugin is enabled: the Code/Bots tabs,
+   bot cards, the selected bot's conversation heading, and workflow run rows.
+   The avatar's styles come from the Bots plugin's bots.css; conversation rows
+   are GTD's own thread cards.
 
-   The shelf's dialogs come from the Bots package, outside this plugin's root,
+   The tab's dialogs come from the Bots package, outside this plugin's root,
    and bb's build scans only the root for Tailwind classes. The `bots-components`
    symlink brings those files into the scan; esbuild still imports them through
    `@smsunarto/bb-plugin-bots`. */
 
-/* The role trails the name in the header's muted voice. */
-.gtd-bot-group-role {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--muted-foreground);
-  font-weight: 400;
-}
-/* The avatar fills the folder's glyph column. */
-.gtd-bot-group-header .gtd-project-group-chevron {
+/* Code / Bots: a segmented control over the list. */
+.gtd-sidebar-tabs {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-shrink: 0;
+  gap: 2px;
+  margin: 0 8px 6px;
+  padding: 2px;
+  border: 1px solid var(--border-hairline, var(--sidebar-border));
+  border-radius: 9px;
+  background: var(--secondary);
 }
-.gtd-bot-group-header[data-selected="true"] .gtd-project-group-name {
-  color: var(--foreground);
-}
-
-/* Bots' New bot: the project header's + at the shelf header's end. */
-.gtd-shelf-action {
+.gtd-sidebar-tab {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 26px;
   align-items: center;
   justify-content: center;
-  align-self: flex-end;
-  width: 22px;
-  height: 22px;
-  margin-right: 2px;
+  gap: 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: 7px;
   background: transparent;
   color: var(--muted-foreground);
-  opacity: 0;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
 }
-/* The header's own toggle rule (`.gtd-shelf-header > button`) must not
-   stretch the action across the row. */
-.gtd-shelf-header > .gtd-shelf-action {
-  flex: 0 0 auto;
-  margin-left: 0;
-  padding: 0;
+.gtd-sidebar-tabs-touch .gtd-sidebar-tab {
+  height: 34px;
+  font-size: 13px;
 }
-.gtd-shelf-header:hover .gtd-shelf-action,
-.gtd-shelf-action:focus-visible {
-  opacity: 1;
-}
-.gtd-shelf-action:hover {
+.gtd-sidebar-tab[aria-selected="true"] {
+  background: var(--sidebar-border);
   color: var(--foreground);
-  background: var(--sidebar-accent);
+  font-weight: 600;
 }
-.gtd-shelf-action:focus-visible {
+@media (hover: hover) {
+  .gtd-sidebar-tab[aria-selected="false"]:hover {
+    color: var(--foreground);
+  }
+}
+.gtd-sidebar-tab:focus-visible {
   outline: 1px solid var(--ring);
 }
-@media (hover: none) {
-  .gtd-shelf-action {
-    width: 32px;
-    height: 32px;
-    opacity: 1;
+.gtd-sidebar-tab-count {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+.gtd-sidebar-tab-badge {
+  display: inline-flex;
+  min-width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Bot cards: two across, one when the panel is narrow. */
+.gtd-bot-grid {
+  container-type: inline-size;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 8px;
+  padding: 2px 2px 4px;
+}
+.gtd-bot-card {
+  --gtd-bot-color: var(--primary);
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 200px;
+  flex-direction: column;
+  align-items: center;
+  padding: 30px 8px 8px;
+  border: 1px solid var(--border-hairline, var(--sidebar-border));
+  border-radius: 18px;
+  background: radial-gradient(
+    120% 75% at 50% 18%,
+    color-mix(in srgb, var(--gtd-bot-color) 35%, transparent) 0%,
+    color-mix(in srgb, var(--gtd-bot-color) 8%, transparent) 55%,
+    var(--card) 100%
+  );
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+.gtd-bot-card[data-selected="true"] {
+  border-color: var(--gtd-bot-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gtd-bot-color) 20%, transparent);
+}
+/* The card-wide select button, under the pills. */
+.gtd-bot-card-select {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+.gtd-bot-card-select:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+@media (hover: hover) {
+  .gtd-bot-card:not([data-selected="true"]):hover {
+    border-color: color-mix(in srgb, var(--gtd-bot-color) 45%, transparent);
   }
+}
+.gtd-bot-card-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  height: 18px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--sidebar) 70%, transparent);
+  color: var(--foreground);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.gtd-bot-card-badge[data-tone="working"] {
+  color: var(--muted-foreground);
+}
+.gtd-bot-card-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--primary);
+}
+.gtd-bot-card-badge[data-tone="working"] .gtd-bot-card-dot {
+  background: var(--gtd-bot-color);
+}
+.gtd-bot-card-avatar {
+  display: flex;
+  pointer-events: none;
+  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--gtd-bot-color) 35%, transparent));
+}
+.gtd-bot-card-name {
+  max-width: 100%;
+  margin-top: 12px;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.gtd-bot-card-role {
+  display: -webkit-box;
+  min-height: 28px;
+  margin-top: 2px;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 14px;
+  text-align: center;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  pointer-events: none;
+}
+.gtd-bot-card-actions {
+  position: relative;
+  display: flex;
+  width: 100%;
+  margin-top: auto;
+  padding-top: 10px;
+  gap: 6px;
+}
+.gtd-bot-card-pill {
+  display: inline-flex;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 15px;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.gtd-bot-card-pill[data-variant="secondary"] {
+  flex: 0 0 44px;
+  border: 1px solid var(--border-hairline, var(--sidebar-border));
+  background: color-mix(in srgb, var(--sidebar) 70%, transparent);
+  color: var(--foreground);
+}
+.gtd-bot-card-pill[data-variant="primary"] {
+  flex: 1 1 0;
+  min-width: 0;
+  border: 0;
+  background: var(--foreground);
+  color: var(--sidebar);
+}
+.gtd-bot-card-pill:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@media (hover: hover) {
+  .gtd-bot-card-pill[data-variant="secondary"]:not(:disabled):hover {
+    background: var(--sidebar);
+  }
+  .gtd-bot-card-pill[data-variant="primary"]:hover {
+    opacity: 0.9;
+  }
+}
+.gtd-bot-card-pill:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.gtd-bot-new {
+  display: inline-flex;
+  grid-column: 1 / -1;
+  height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .gtd-bot-new:hover {
+    color: var(--foreground);
+    background: var(--sidebar-accent);
+  }
+}
+.gtd-bot-new:focus-visible {
+  outline: 1px solid var(--ring);
+}
+
+/* The selected bot's name over its conversations. */
+.gtd-bot-conversations-heading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 8px 4px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.gtd-bot-conversations-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 4px;
+}
+.gtd-bot-conversations-empty {
+  margin: 4px 8px 8px;
+  color: var(--muted-foreground);
+  font-size: 12px;
 }
 
 /* Workflow runs: virtual children one level under the conversation card. */

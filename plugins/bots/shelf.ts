@@ -27,6 +27,7 @@ export {
   useWorkflowRunsData,
 } from "./components/workflow-runs";
 export { SidebarBotIcon } from "./components/sidebar-bot-icon";
+export { isWorking } from "./lib/conversations";
 
 /** The `app` that `definePluginApp` hands its setup; the SDK does not export its type. */
 type PluginApp = Parameters<Parameters<typeof definePluginApp>[0]>[0];
