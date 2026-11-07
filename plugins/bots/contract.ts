@@ -410,6 +410,8 @@ export const rpcContract = defineRpcContract({
         threadBindings: z.array(z.object({ threadId: id, botId: id }).strict()),
         warnings: z.array(z.string()),
         personalProjectId: id,
+        /** The machine the Default machine setting names; null when unset or unmatched. */
+        defaultHostId: id.nullable().optional(),
         projectOwners: z.array(projectOwnerSchema).optional(),
         completions: z
           .array(z.object({ threadId: id, completedAt: z.number() }).strict())

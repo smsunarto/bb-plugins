@@ -27,7 +27,8 @@ without sending anything.
 
 Every install keeps one bot, Dr. Bot, pinned first in GTD Sidebar's Bots tab.
 New bots are made by asking Dr. Bot, which runs `bb bots create`; there is no
-New bot button.
+New bot button. New bots run on the machine named by the **Default machine**
+setting (a machine name or ID); left empty, they use the first connected one.
 
 ## Routines
 

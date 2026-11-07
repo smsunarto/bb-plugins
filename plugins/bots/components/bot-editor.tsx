@@ -54,9 +54,20 @@ function ownedProjectIdsFor(botId: string, owners: ProjectOwner[]): string[] {
   return owners.filter((owner) => owner.botId === botId).map((owner) => owner.projectId);
 }
 
+/** A new bot's machine: the configured default when listed, else a connected one, else any. */
+function newBotHostId(hosts: HostOption[], defaultHostId: string | null): string {
+  return (
+    hosts.find((host) => host.id === defaultHostId)?.id ??
+    hosts.find((host) => host.connected)?.id ??
+    hosts[0]?.id ??
+    ""
+  );
+}
+
 export function BotEditor({
   target,
   hosts,
+  defaultHostId = null,
   projects,
   bots,
   projectOwners,
@@ -68,6 +79,8 @@ export function BotEditor({
 }: ProjectCreationActions & {
   target: EditorTarget;
   hosts: HostOption[];
+  /** A new bot starts on this machine when it is listed. */
+  defaultHostId?: string | null;
   projects: ProjectOption[];
   bots: BotMetadata[];
   projectOwners: ProjectOwner[];
@@ -79,10 +92,8 @@ export function BotEditor({
   const botId = editing ? target.metadata.id : null;
   const [name, setName] = useState(editing ? target.metadata.name : "");
   const [role, setRole] = useState(editing ? target.metadata.role : "Assistant");
-  const [hostId, setHostId] = useState(
-    editing
-      ? target.metadata.hostId
-      : (hosts.find((host) => host.connected)?.id ?? hosts[0]?.id ?? ""),
+  const [hostId, setHostId] = useState(() =>
+    editing ? target.metadata.hostId : newBotHostId(hosts, defaultHostId),
   );
   const [memory, setMemory] = useState(editing ? target.metadata.memory : "");
   const [launchPreset, setLaunchPreset] = useState<LaunchPreset>(() =>
