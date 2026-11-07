@@ -33,12 +33,11 @@ it("registers bots under the native @ trigger and Bots group", async () => {
   expect(await p.search({ ...context("a"), trigger: "#" })).toEqual([]);
 });
 
-it("matches names, roles and IDs without requiring project membership", async () => {
+it("matches names and IDs without requiring project membership", async () => {
   const host = await setup();
   const bot = await host.create("Atlas", []);
-  host.store.mutate(bot.id, (current) => ({ ...current, role: "Compiler specialist" }));
   const p = provider(host);
-  for (const query of ["atl", " ATLAS ", "compiler", bot.id]) {
+  for (const query of ["atl", " ATLAS ", bot.id]) {
     const items = await p.search({
       ...context(query),
       projectId: "unlinked-work-project",
@@ -46,7 +45,6 @@ it("matches names, roles and IDs without requiring project membership", async ()
     });
     expect(items.map((item) => item.id)).toEqual([bot.id]);
     expect(items[0]?.title).toBe("Atlas");
-    expect(items[0]?.subtitle).toContain("Compiler specialist");
     expect(items[0]?.subtitle).toContain(bot.id);
   }
 });
@@ -69,16 +67,15 @@ it("supports @bots discovery, includes hidden bots and disambiguates duplicate n
   ]);
 });
 
-it("ranks exact and prefix name matches before role-only matches", async () => {
+it("ranks exact and prefix name matches before substring matches", async () => {
   const host = await setup();
-  const roleOnly = await host.create("Researcher", []);
+  const substring = await host.create("Old Atlas", []);
   const prefix = await host.create("Atlas tools", []);
   const exact = await host.create("Atlas", []);
-  host.store.mutate(roleOnly.id, (current) => ({ ...current, role: "Atlas coordinator" }));
   expect((await provider(host).search(context("atlas"))).map((item) => item.id)).toEqual([
     exact.id,
     prefix.id,
-    roleOnly.id,
+    substring.id,
   ]);
 });
 
@@ -105,7 +102,6 @@ it("resolves stable IDs using current public metadata, not private state or a st
   host.store.mutate(bot.id, (current) => ({
     ...current,
     name: "Renamed bot",
-    role: "Reviewer",
     mainThreadId: "main-thread",
     soul: "PRIVATE_SOUL_SENTINEL",
     agents: "PRIVATE_AGENTS_SENTINEL",
@@ -116,7 +112,7 @@ it("resolves stable IDs using current public metadata, not private state or a st
   const sdkCalls = host.harness.inspection.sdk.calls.length;
   const result = await provider(host).resolve(bot.id);
   expect(result.context).toContain('"name":"Renamed bot"');
-  expect(result.context).toContain('"role":"Reviewer"');
+  expect(result.context).not.toContain('"role"');
   expect(result.context).toContain(`bb bots message '${bot.id}' '<message>'`);
   expect(result.context).toContain("does not send a message");
   expect(result.context).toContain("not your identity");

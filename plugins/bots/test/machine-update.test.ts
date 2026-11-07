@@ -17,7 +17,6 @@ it("saves an enrolled default machine atomically while preserving history and pr
   const update = {
     botId: bot.id,
     name: "New name",
-    role: bot.role,
     avatar: bot.avatar,
     sectionId: bot.sectionId,
     linkedProjectIds: bot.linkedProjectIds,

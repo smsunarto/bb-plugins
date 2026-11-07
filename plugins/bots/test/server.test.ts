@@ -29,7 +29,6 @@ afterEach(async () => {
 const editable = (bot: BotMetadata) => ({
   botId: bot.id,
   name: bot.name,
-  role: bot.role,
   avatar: bot.avatar,
   sectionId: bot.sectionId,
   linkedProjectIds: bot.linkedProjectIds,
@@ -43,7 +42,6 @@ function legacyRecord() {
   return {
     id: "bot_legacy",
     name: "Legacy bot",
-    role: "Research",
     avatar,
     hostId: "host-project",
     homePath: "/legacy/bot-home",
@@ -109,7 +107,6 @@ describe("private bot identities", () => {
     };
     let bot = (await host.harness.behavior.callRpc("bot_create", {
       name: "Preset bot",
-      role: "Reviewer",
       hostId: "host-home",
       avatar,
       sectionId: null,
@@ -571,7 +568,6 @@ describe("private state data", () => {
     await expect(
       host.harness.behavior.callRpc("bot_create", {
         name: "Invalid",
-        role: "",
         hostId: "host-home",
         avatar,
         sectionId: null,
@@ -592,7 +588,6 @@ describe("private state data", () => {
     ).toEqual({});
     const created = (await host.harness.behavior.callRpc("bot_create", {
       name: "Seeded",
-      role: "Research",
       hostId: "host-home",
       avatar,
       sectionId: null,
@@ -705,7 +700,7 @@ describe("private state data", () => {
     });
     const staleOmitted = (await host.harness.behavior.callRpc("bot_update", {
       ...editable(renamed),
-      role: "Archivist",
+      name: "Archivist",
       expectedStateHashes: {
         ...renamed.stateHashes,
         "MEMORY.md": "0".repeat(64),
@@ -713,7 +708,7 @@ describe("private state data", () => {
       },
     })) as BotMetadata;
     expect(staleOmitted).toMatchObject({
-      role: "Archivist",
+      name: "Archivist",
       memory: "- Keep me.\n",
       settings: { keep: true },
     });
@@ -748,7 +743,6 @@ describe("private state data", () => {
     await expect(
       host.harness.behavior.callRpc("bot_create", {
         name: "Too big",
-        role: "",
         hostId: "host-home",
         avatar,
         sectionId: null,
@@ -760,7 +754,6 @@ describe("private state data", () => {
     await expect(
       host.harness.behavior.callRpc("bot_create", {
         name: "Too big",
-        role: "",
         hostId: "host-home",
         avatar,
         sectionId: null,
@@ -772,7 +765,6 @@ describe("private state data", () => {
     await expect(
       host.harness.behavior.callRpc("bot_create", {
         name: "Invalid",
-        role: "",
         hostId: "host-home",
         avatar,
         sectionId: null,
@@ -874,7 +866,6 @@ it("injects fixed guidance, SOUL and all compliant memory, without archived bot 
   host.store.save({
     ...bot,
     name: "N".repeat(120),
-    role: "R".repeat(80),
     soul: "Unique soul " + "s".repeat(4084),
     agents: "Archived instructions must not run",
     memory: "m".repeat(3000),
@@ -914,7 +905,6 @@ it("rejects memory above 3000 through editor and raw-state RPCs without partial 
   await expect(
     host.harness.behavior.callRpc("bot_create", {
       name: "Too long",
-      role: "",
       avatar,
       hostId: "host-home",
       sectionId: null,

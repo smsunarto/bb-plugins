@@ -29,7 +29,6 @@ export function botInstructions(bot: BotMetadata, project?: BotProjectContext, m
   const identity = files.read("bots/prompt-header", {
     name: bot.name.slice(0, 120),
     id: bot.id.slice(0, 128),
-    role: bot.role.slice(0, 80),
   });
   const relationship = project
     ? `\n\n${files.read("bots/prompt-project", { relationship: excerpt(projectContextInstructions(project), 550) })}`

@@ -26,7 +26,6 @@ export function registerBotMentions(bb: BbPluginApi, store: BotStore) {
         .list()
         .map((bot, index) => {
           const name = displayText(bot.name).toLocaleLowerCase();
-          const role = displayText(bot.role).toLocaleLowerCase();
           const id = bot.id.toLocaleLowerCase();
           const rank =
             !needle || needle === "bots"
@@ -37,11 +36,9 @@ export function registerBotMentions(bb: BbPluginApi, store: BotStore) {
                   ? 1
                   : name.includes(needle)
                     ? 2
-                    : role.includes(needle)
+                    : id.includes(needle)
                       ? 3
-                      : id.includes(needle)
-                        ? 4
-                        : -1;
+                      : -1;
           return { bot, index, rank };
         })
         .filter((entry) => entry.rank >= 0)
@@ -50,7 +47,7 @@ export function registerBotMentions(bb: BbPluginApi, store: BotStore) {
         .map(({ bot }): PluginMentionItem => ({
           id: bot.id,
           title: displayText(bot.name),
-          subtitle: [displayText(bot.role) || "Bot", bot.id].join(" · "),
+          subtitle: ["Bot", bot.id].join(" · "),
           icon: "Bot",
         }));
     },
@@ -58,7 +55,7 @@ export function registerBotMentions(bb: BbPluginApi, store: BotStore) {
       // Resolve by stable identity at send time, never by an ambiguous name.
       // Mentioning a bot must not expose its private files or activate it.
       const bot = store.require(itemId);
-      const metadata = { botId: bot.id, name: bot.name, role: bot.role };
+      const metadata = { botId: bot.id, name: bot.name };
       return {
         context: files.read("bots/mention", {
           metadata: JSON.stringify(metadata),

@@ -22,6 +22,14 @@ export const BOT_MIGRATIONS = [
   "CREATE INDEX bot_routines_by_bot ON bot_routines(bot_id)",
 ];
 
+/** A stored bot row, minus fields bots no longer have. */
+function storedRow(data: string): unknown {
+  const parsed: unknown = JSON.parse(data);
+  if (!parsed || typeof parsed !== "object" || !("role" in parsed)) return parsed;
+  const { role: _role, ...rest } = parsed as Record<string, unknown>;
+  return rest;
+}
+
 /** Expects `BOT_MIGRATIONS` to have run on the plugin database. */
 export function createBotStore(bb: BbPluginApi) {
   const db = bb.storage.database();
@@ -32,7 +40,7 @@ export function createBotStore(bb: BbPluginApi) {
   const raw = (id: string) =>
     db.prepare("SELECT data FROM bots WHERE id = ?").get(id) as { data: string } | undefined;
   function decode(data: string): BotMetadata {
-    const parsed: unknown = JSON.parse(data);
+    const parsed = storedRow(data);
     // Rows saved before bots got home projects again name the field legacyHomeProjectId.
     if (parsed && typeof parsed === "object" && "legacyHomeProjectId" in parsed) {
       const { legacyHomeProjectId, ...rest } = parsed as Record<string, unknown>;
@@ -58,7 +66,7 @@ export function createBotStore(bb: BbPluginApi) {
         const value = metadataSchema.parse(bot);
         const previous = raw(bot.id);
         if (previous) {
-          const legacy = legacySchema.safeParse(JSON.parse(previous.data));
+          const legacy = legacySchema.safeParse(storedRow(previous.data));
           if (legacy.success) {
             if (!state(`legacy-state:${bot.id}`))
               setState(`legacy-state:${bot.id}`, {
@@ -359,7 +367,7 @@ export function createBotStore(bb: BbPluginApi) {
       if (stored) return stored;
       const row = raw(id);
       if (!row) return null;
-      const legacy = legacySchema.safeParse(JSON.parse(row.data));
+      const legacy = legacySchema.safeParse(storedRow(row.data));
       return legacy.success
         ? {
             hostId: legacy.data.hostId,

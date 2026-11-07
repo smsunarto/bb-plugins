@@ -86,12 +86,6 @@ function ThreadBotSelect({ threadId }: { threadId: string }) {
       <span className="flex min-w-0 items-center gap-2">
         <BotIcon avatar={bot.avatar} size={16} />
         <span className="truncate">{bot.name}</span>
-        {bot.role ? (
-          <>
-            <span className="sr-only">, </span>
-            <span className="truncate text-muted-foreground">{bot.role}</span>
-          </>
-        ) : null}
       </span>
     </SelectItem>
   );

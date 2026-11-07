@@ -7,17 +7,10 @@ import "../app.css";
 import "../bot-shelf.css";
 import "../../bots/bots.css";
 
-function bot(
-  id: string,
-  name: string,
-  role: string,
-  avatar: BotMetadata["avatar"],
-  order: number,
-): BotMetadata {
+function bot(id: string, name: string, avatar: BotMetadata["avatar"], order: number): BotMetadata {
   return {
     id,
     name,
-    role,
     avatar,
     hostId: "host_story",
     stateReady: true,
@@ -45,7 +38,6 @@ const bots: BotMetadata[] = [
     ...bot(
       "bot_ada",
       "Ada",
-      "Reviews PRs",
       { color: "#6d5efc", shape: "round", expression: "curious", motion: "calm" },
       0,
     ),
@@ -55,7 +47,6 @@ const bots: BotMetadata[] = [
     ...bot(
       "bot_juno",
       "Juno",
-      "Triages inbox",
       { color: "#168b75", shape: "squircle", expression: "happy", motion: "playful" },
       1,
     ),
@@ -65,7 +56,6 @@ const bots: BotMetadata[] = [
     ...bot(
       "bot_rex",
       "Rex",
-      "Ships builds",
       { color: "#cb7428", shape: "blob", expression: "focused", motion: "calm" },
       2,
     ),
@@ -75,7 +65,6 @@ const bots: BotMetadata[] = [
     ...bot(
       "bot_mira",
       "Mira",
-      "Long reads",
       { color: "#e152b0", shape: "cloud", expression: "neutral", motion: "still" },
       3,
     ),
@@ -85,7 +74,6 @@ const bots: BotMetadata[] = [
     ...bot(
       "bot_nova",
       "Nova",
-      "Release notes",
       { color: "#66d9ef", shape: "round", expression: "happy", motion: "calm" },
       4,
     ),
@@ -95,7 +83,6 @@ const bots: BotMetadata[] = [
     ...bot(
       "bot_otto",
       "Otto-with-a-very-long-name",
-      "Deps",
       { color: "#a6e22e", shape: "squircle", expression: "neutral", motion: "still" },
       5,
     ),
@@ -104,14 +91,12 @@ const bots: BotMetadata[] = [
   bot(
     "bot_pico",
     "Pico",
-    "Flaky tests",
     { color: "#fd971f", shape: "blob", expression: "focused", motion: "calm" },
     6,
   ),
   bot(
     "bot_sage",
     "Sage",
-    "Vault digest",
     { color: "#ae81ff", shape: "cloud", expression: "curious", motion: "calm" },
     7,
   ),
@@ -119,7 +104,6 @@ const bots: BotMetadata[] = [
     ...bot(
       "bot_wren",
       "Wren",
-      "Papers",
       { color: "#f92672", shape: "round", expression: "neutral", motion: "still" },
       8,
     ),

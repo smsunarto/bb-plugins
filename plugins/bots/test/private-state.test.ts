@@ -33,7 +33,6 @@ function bot(overrides: Partial<BotMetadata> = {}): BotMetadata {
   return {
     id: "bot_atlas",
     name: "Atlas",
-    role: "Research",
     avatar: { color: "#168b75", shape: "round", expression: "curious", motion: "still" },
     hostId: "execution-offline",
     stateReady: true,
@@ -100,7 +99,8 @@ function fixture() {
     homeProjectId: string | null = "old-home",
   ) {
     const { stateReady: _ready, homeProjectId: _home, ...cached } = bot(overrides);
-    const legacy = { ...cached, homePath: path, homeProjectId };
+    // v2 rows also carried the retired role field.
+    const legacy = { ...cached, role: "Research", homePath: path, homeProjectId };
     // Seed the actual v2 row, so BotStore's real decode/save source capture runs.
     host.bb.storage
       .database()
@@ -140,6 +140,21 @@ function expectDocument(
 }
 
 describe("private SQLite bot state", () => {
+  it("loads a bot saved with the retired role field and saves it without one", async () => {
+    const f = fixture();
+    const db = f.bb.storage.database();
+    db.prepare("INSERT INTO bots(id,data) VALUES (?,?)").run(
+      "bot_atlas",
+      JSON.stringify({ ...bot(), role: "Research" }),
+    );
+    expect(f.store.require("bot_atlas")).toEqual(bot());
+    f.store.save({ ...bot(), name: "Renamed" });
+    const row = db.prepare("SELECT data FROM bots WHERE id = ?").get("bot_atlas") as {
+      data: string;
+    };
+    expect(JSON.parse(row.data)).not.toHaveProperty("role");
+    expect(f.store.require("bot_atlas").name).toBe("Renamed");
+  });
   it("exports new ready bots under the SDK DB, offline, without any SDK project/host/file calls", async () => {
     const f = fixture();
     f.setOffline(true);

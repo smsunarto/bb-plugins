@@ -34,8 +34,6 @@ describe("bots CLI", () => {
       "create",
       "--name",
       "Quill",
-      "--role",
-      "Writes the docs",
       "--soul",
       "You write the docs.",
       "--color",
@@ -50,7 +48,6 @@ describe("bots CLI", () => {
     expect(pinned).toBe(true);
     expect(host.store.require(id)).toMatchObject({
       name: "Quill",
-      role: "Writes the docs",
       hostId: "host-home",
       soul: "You write the docs.",
       pinned: true,
@@ -172,7 +169,6 @@ it("keeps complete compliant memory inside BB instruction budget with relationsh
     {
       ...a,
       name: "n".repeat(120),
-      role: "r".repeat(80),
       id: "i".repeat(128),
       soul: "s".repeat(4000),
       memory,

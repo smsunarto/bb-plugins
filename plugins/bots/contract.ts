@@ -37,7 +37,6 @@ export const metadataSchema = z
   .object({
     id,
     name: z.string().min(1).max(120),
-    role: z.string().max(80),
     avatar: avatarSchema,
     hostId: id,
     stateReady: z.boolean(),
@@ -83,7 +82,6 @@ export const threadBotSchema = z
         .object({
           id,
           name: z.string(),
-          role: z.string(),
           avatar: avatarSchema,
           hidden: z.boolean(),
         })
@@ -144,7 +142,6 @@ const settingsObjectSchema = z
 const memoryInputSchema = z.string().max(MEMORY_MAX_CHARS, MEMORY_LIMIT_ERROR);
 const editFields = {
   name: z.string().trim().min(1).max(120),
-  role: z.string().trim().max(80),
   avatar: avatarSchema,
   sectionId: id.nullable(),
   linkedProjectIds: z.array(id).max(100),
@@ -190,12 +187,11 @@ export const stateMutationSchema = z.union([
       action: z.literal("set"),
       expectedRevision: z.number().int().nonnegative(),
       name: z.string().trim().min(1).max(120).optional(),
-      role: z.string().trim().max(80).optional(),
       soul: z.string().max(4096).optional(),
     })
     .strict()
     .refine(
-      (value) => [value.name, value.role, value.soul].some((field) => field !== undefined),
+      (value) => [value.name, value.soul].some((field) => field !== undefined),
       "Provide at least one identity field",
     ),
   z
@@ -278,12 +274,6 @@ export const stateMutationToolSchema = z
       .trim()
       .min(1)
       .max(120)
-      .nullish()
-      .describe("Identity/set only. Otherwise omit or null."),
-    role: z
-      .string()
-      .trim()
-      .max(80)
       .nullish()
       .describe("Identity/set only. Otherwise omit or null."),
     soul: z.string().max(4096).nullish().describe("Identity/set only. Otherwise omit or null."),

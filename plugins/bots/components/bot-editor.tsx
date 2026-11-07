@@ -37,7 +37,6 @@ export type BotEditFields = Pick<
   BotMetadata,
   | "hostId"
   | "name"
-  | "role"
   | "avatar"
   | "sectionId"
   | "linkedProjectIds"
@@ -92,7 +91,6 @@ export function BotEditor({
   const editing = target.kind === "edit";
   const botId = editing ? target.metadata.id : null;
   const [name, setName] = useState(editing ? target.metadata.name : "");
-  const [role, setRole] = useState(editing ? target.metadata.role : "Assistant");
   const [hostId, setHostId] = useState(() =>
     editing ? target.metadata.hostId : newBotHostId(hosts, defaultHostId),
   );
@@ -204,7 +202,6 @@ export function BotEditor({
       const fields = {
         hostId,
         name: name.trim(),
-        role: role.trim(),
         avatar,
         sectionId,
         soul,
@@ -303,7 +300,7 @@ export function BotEditor({
                 <TooltipContent>Random color, shape, and expression</TooltipContent>
               </Tooltip>
             </div>
-            <div className="grid min-w-0 flex-1 gap-3 sm:grid-cols-2">
+            <div className="min-w-0 flex-1">
               <Field label="Name" htmlFor={`${fieldId}-name`}>
                 <Input
                   id={`${fieldId}-name`}
@@ -314,16 +311,6 @@ export function BotEditor({
                   maxLength={120}
                   onChange={(event) => setName(event.target.value)}
                   placeholder="Atlas"
-                />
-              </Field>
-              <Field label="Role" htmlFor={`${fieldId}-role`}>
-                <Input
-                  id={`${fieldId}-role`}
-                  className="h-8"
-                  value={role}
-                  maxLength={80}
-                  onChange={(event) => setRole(event.target.value)}
-                  placeholder="Research assistant"
                 />
               </Field>
             </div>

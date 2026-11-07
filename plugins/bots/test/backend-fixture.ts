@@ -350,7 +350,6 @@ export async function backend(initialProjects: Project[] = [project()]) {
     async create(name = "Atlas", linkedProjectIds = ["project"]) {
       return (await host.harness.behavior.callRpc("bot_create", {
         name,
-        role: "Research",
         hostId: "host-home",
         avatar,
         sectionId: null,

@@ -105,7 +105,6 @@ export function botsCliCommands(
           return {
             id: bot.id,
             name: bot.name,
-            role: bot.role,
             mainThreadId: firstThreads.get(bot.id) ?? null,
             linkedProjectCount: bot.linkedProjectIds.length,
             ownedProjectCount: store.ownedProjects(bot.id).length,
@@ -124,7 +123,7 @@ export function botsCliCommands(
           stdout: options.json
             ? JSON.stringify(value)
             : [
-                "BOT ID (MESSAGE TARGET)\tNAME\tSTATUS\tVISIBILITY\tOWNED PROJECTS\tJOINED PROJECTS\tROLE\tFIRST CONVERSATION",
+                "BOT ID (MESSAGE TARGET)\tNAME\tSTATUS\tVISIBILITY\tOWNED PROJECTS\tJOINED PROJECTS\tFIRST CONVERSATION",
                 ...bots.map((bot) =>
                   [
                     bot.id,
@@ -133,7 +132,6 @@ export function botsCliCommands(
                     bot.visibility,
                     bot.ownedProjects.map((p) => printable(p.name)).join(", ") || "—",
                     bot.joinedProjects.map((p) => printable(p.name)).join(", ") || "—",
-                    printable(bot.role),
                     bot.mainThreadId ?? "No conversations",
                   ].join("\t"),
                 ),
@@ -303,13 +301,12 @@ export function botsCliCommands(
     return { threadId: ctx.threadId, bot: id ? store.require(id) : null };
   }
   const create = cliCommand({
-    summary: "Create a bot with a name, role, soul, and face; Dr. Bot uses this to make bots",
+    summary: "Create a bot with a name, soul, and face; Dr. Bot uses this to make bots",
     description:
       "The bot runs on the calling bot's machine, else the first connected one. Pass the soul, the bot's private SOUL.md (at most 4,096 characters), with --soul-stdin and a quoted heredoc so the shell leaves its text alone.",
     options: {
       json: JSON_OPTION,
       name: { type: "string", required: true, description: "Bot name, 1-120 characters" },
-      role: { type: "string", default: "", description: "A few words on its job, at most 80" },
       soul: {
         type: "string",
         default: "",
@@ -339,7 +336,6 @@ export function botsCliCommands(
         if (!/^#[0-9a-fA-F]{6}$/.test(color)) throw new Error("Color must look like #a1b2c3");
         const parsed = rpcContract.bot_create.input.safeParse({
           name: options.name.trim(),
-          role: options.role.trim(),
           soul: options.soul,
           hostId,
           avatar: {

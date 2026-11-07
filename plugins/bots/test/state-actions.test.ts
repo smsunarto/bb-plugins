@@ -84,7 +84,6 @@ it("accepts provider-supplied nulls for unused fields without treating them as e
   const unused = {
     expectedRevision: null,
     name: null,
-    role: null,
     soul: null,
     content: null,
     expectedSha256: null,
@@ -229,7 +228,6 @@ it("requires a fresh revision for identity and never renames linked projects", a
   expect(result.state).toMatchObject({
     name: "Orion",
     soul: "A careful collaborator.",
-    role: "Research",
   });
   expect(host.store.require(bot.id).soul).toBe("A careful collaborator.");
   expect(host.harness.inspection.sdk.callsTo("projects.update")).toEqual([]);
@@ -238,7 +236,7 @@ it("requires a fresh revision for identity and never renames linked projects", a
       target: "identity",
       action: "set",
       expectedRevision: identity.revision,
-      role: "Stale edit",
+      name: "Stale edit",
     }),
   ).rejects.toThrow(/Identity changed/);
   const latest = await read("identity");

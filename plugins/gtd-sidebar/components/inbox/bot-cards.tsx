@@ -147,7 +147,7 @@ const BotTile = memo(function BotTile({
         aria-current={active || undefined}
         onClick={() => onOpen(bot)}
         onKeyDown={(event) => openMenuFromKeyboard(event)}
-        title={bot.role || bot.name}
+        title={bot.name}
       >
         <BotAvatar bot={bot} threads={threads} size={48} />
         <span className="gtd-bot-tile-name">{bot.name}</span>

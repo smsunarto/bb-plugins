@@ -390,7 +390,7 @@ export function registerBots(
       botId: bot.id,
       target: "identity",
       revision: bot.updatedAt,
-      state: { name: bot.name, role: bot.role, soul: bot.soul },
+      state: { name: bot.name, soul: bot.soul },
     };
   }
   async function projectView(bot: BotMetadata, currentProjectId?: string): Promise<StateView> {
@@ -471,7 +471,6 @@ export function registerBots(
         throw new Error("Identity changed. Read identity again and merge your update.");
       const fields = {
         name: change.name ?? bot.name,
-        role: change.role ?? bot.role,
         soul: change.soul ?? bot.soul,
       };
       if (Object.entries(fields).every(([key, value]) => bot[key as keyof typeof fields] === value))
@@ -907,7 +906,6 @@ export function registerBots(
 
   function createBot({
     name,
-    role,
     hostId,
     avatar,
     sectionId,
@@ -930,7 +928,6 @@ export function registerBots(
       let created: BotMetadata = {
         id,
         name,
-        role,
         hostId,
         stateReady: true,
         homeProjectId: null,
@@ -1001,7 +998,6 @@ export function registerBots(
       if (hostId === null || store.list().some((bot) => bot.builtin === "dr-bot")) return;
       await createBot({
         name: "Dr. Bot",
-        role: "Makes new bots",
         hostId,
         avatar: { color: "#f8f8f2", shape: "round", expression: "happy", motion: "calm" },
         sectionId: null,
@@ -1248,7 +1244,6 @@ export function registerBots(
         bots: store.list().map((bot) => ({
           id: bot.id,
           name: bot.name,
-          role: bot.role,
           avatar: bot.avatar,
           hidden: bot.hiddenUntilActivity,
         })),

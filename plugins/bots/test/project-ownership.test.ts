@@ -20,7 +20,6 @@ async function setup() {
 const edit = (bot: BotMetadata) => ({
   botId: bot.id,
   name: bot.name,
-  role: bot.role,
   avatar: bot.avatar,
   sectionId: bot.sectionId,
   linkedProjectIds: bot.linkedProjectIds,
@@ -215,7 +214,6 @@ it("enforces unique ownership under concurrent claims without stealing or partia
   await expect(
     host.harness.behavior.callRpc("bot_create", {
       name: "Conflict",
-      role: "",
       hostId: "host-home",
       avatar,
       sectionId: null,
@@ -284,7 +282,7 @@ it("persists ownership through reload and keeps the original cutoff on unrelated
   const current = host.store.require(bot.id);
   await host.harness.behavior.callRpc("bot_update", {
     ...edit(current),
-    role: "Renamed role",
+    name: "Renamed bot",
     ownedProjectIds: ["project"],
   });
   expect(host.store.projectOwner("project")?.assignedAt).toBe(since);
@@ -463,7 +461,6 @@ it("supports owner claims in creation and excludes legacy homes from ownership",
   const host = await setup();
   const bot = (await host.harness.behavior.callRpc("bot_create", {
     name: "Owner",
-    role: "",
     hostId: "host-home",
     avatar,
     sectionId: null,

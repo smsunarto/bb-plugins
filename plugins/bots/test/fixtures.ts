@@ -55,7 +55,6 @@ export function thread(
 export const bot: BotMetadata = {
   id: "bot",
   name: "Test bot",
-  role: "Assistant",
   hiddenUntilActivity: false,
   hiddenAt: null,
   mainThreadId: "main",
