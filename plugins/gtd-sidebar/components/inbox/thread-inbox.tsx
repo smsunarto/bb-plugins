@@ -71,6 +71,7 @@ import { ProjectGroup, SortableProjectGroup } from "./project-group";
 import {
   BotWorkflowRuns,
   WorkflowRunsContext,
+  conversationRoots,
   isWorking,
   type BotMetadata,
   useBotsController,
@@ -79,7 +80,15 @@ import {
   useWorkflowRunsData,
 } from "@smsunarto/bb-plugin-bots/shelf";
 import { groupRowsByBot } from "../../lib/bot-groups";
-import { BotCardGrid, type BotCardSummary } from "./bot-cards";
+import {
+  BotRow,
+  BotsError,
+  BotsLoading,
+  BotsOffline,
+  PinnedBotGrid,
+  botShelves,
+  type BotSummary,
+} from "./bot-cards";
 import { useSidebarTab, type SidebarTab } from "../../hooks/use-sidebar-tab";
 import { Icon } from "../ui/icon";
 import { isShelvedThread } from "../../lib/settled-threads";
@@ -215,17 +224,6 @@ function InboxList({
     shelfBotOf,
   );
   const shelvedTotal = Object.values(shelves).reduce((total, rows) => total + rows.length, 0);
-  const [botsShowingCompleted, setBotsShowingCompleted] = useState<ReadonlySet<string>>(
-    () => new Set(),
-  );
-  const toggleBotCompleted = useCommittedEvent((botId: string) =>
-    setBotsShowingCompleted((current) => {
-      const next = new Set(current);
-      if (next.has(botId)) next.delete(botId);
-      else next.add(botId);
-      return next;
-    }),
-  );
   const searching = searchQuery.trim().length > 0;
   // An active machine filter keeps its repository header even when only one
   // repository remains. The header is the only visible repository identity on
@@ -245,20 +243,20 @@ function InboxList({
         botIds: bots.shownBotIds,
         ownerOf: shelfBotOf,
         isCompleted: bots.isCompleted,
-        showCompleted: botsShowingCompleted,
+        showCompleted: NO_BOT_IDS,
         activeThreadId,
       }),
-    [shelves.bots, bots, shelfBotOf, botsShowingCompleted, activeThreadId],
+    [shelves.bots, bots, shelfBotOf, activeThreadId],
   );
   // The Bots tab shows once Bots has loaded; until then, and with Bots off,
   // the list is the Code tab alone.
   const [chosenTab, setTab] = useSidebarTab();
-  const botsReady = botsEnabled && bots.list !== undefined;
-  const tab: SidebarTab = botsReady ? chosenTab : "code";
+  // The tabs show as soon as Bots is on; the Bots tab draws its own loading,
+  // failed, and offline states. With Bots off the list is the Code tab alone.
+  const tab: SidebarTab = botsEnabled ? chosenTab : "code";
   const activeBotId = activeThreadId === null ? null : shelfBotOf(activeThreadId);
-  const [chosenBotId, setChosenBotId] = useState<string | null>(null);
   // Opening a bot's conversation from anywhere (a link, the composer, bb's
-  // keys) brings its tab and card forward, so the open thread is on screen.
+  // keys) brings the Bots tab forward, so its bot shows as the open one.
   // Adjusted during render, once per open thread and its bot (which may load
   // after the thread), so the list never paints the wrong tab first and a
   // later switch back to Code sticks.
@@ -266,40 +264,40 @@ function InboxList({
   const [followedKey, setFollowedKey] = useState<string | null>(null);
   if (followKey !== followedKey) {
     setFollowedKey(followKey);
-    if (activeBotId !== null) {
-      setTab("bots");
-      setChosenBotId(activeBotId);
-    }
+    if (activeBotId !== null) setTab("bots");
   }
-  const selectedBotId =
-    chosenBotId !== null && bots.shownBotIds.includes(chosenBotId)
-      ? chosenBotId
-      : (activeBotId ?? bots.shownBotIds[0] ?? null);
+  // Attention comes from the shelf's rows; a row's second line is the bot's
+  // newest live conversation, searched or not.
   const botSummaries = useMemo(() => {
-    const summaries = new Map<string, BotCardSummary>();
-    for (const group of botShelfGroups) {
-      const threads = bots.threadsByBot.get(group.projectId) ?? [];
-      summaries.set(group.projectId, {
-        families: group.families,
-        attention: group.attention,
-        completed: group.completed,
-        working: threads.some((thread) => !thread.isArchived && isWorking(thread)),
+    const attention = new Map(botShelfGroups.map((group) => [group.projectId, group.attention]));
+    const summaries = new Map<string, BotSummary>();
+    for (const botId of bots.shownBotIds) {
+      const threads = bots.threadsByBot.get(botId) ?? [];
+      let newest: PluginSidebarThread | null = null;
+      let newestLive: PluginSidebarThread | null = null;
+      // A root is any conversation whose parent is not among the bot's own,
+      // so a child moved to this bot, or one that outlived its parent, counts.
+      for (const thread of conversationRoots(threads)) {
+        if (newest === null || thread.updatedAt > newest.updatedAt) newest = thread;
+        if (bots.isCompleted(thread.id)) continue;
+        if (newestLive === null || thread.updatedAt > newestLive.updatedAt) newestLive = thread;
+      }
+      const latest = newestLive ?? newest;
+      summaries.set(botId, {
+        attention: attention.get(botId) ?? 0,
+        working: threads.some(isWorking),
+        latest: latest === null ? null : { id: latest.id, title: latest.displayTitle },
+        liveId: newestLive?.id ?? null,
+        finished: newest !== null && bots.isCompleted(newest.id),
       });
     }
     return summaries;
-  }, [botShelfGroups, bots.threadsByBot]);
-  const botAttention = useMemo(
-    () => [...botSummaries.values()].reduce((total, summary) => total + summary.attention, 0),
-    [botSummaries],
-  );
-  // The Bots tab lists the selected bot's conversations; a search lists every
-  // bot's matches.
+  }, [botShelfGroups, bots]);
+  // The Bots tab lists bots, not conversations; a search lists every bot's
+  // matching conversations instead.
   const botTabGroups = useMemo(
-    () =>
-      searching
-        ? botShelfGroups.filter((group) => group.rows.length > 0)
-        : botShelfGroups.filter((group) => group.projectId === selectedBotId),
-    [botShelfGroups, searching, selectedBotId],
+    () => (searching ? botShelfGroups.filter((group) => group.rows.length > 0) : NO_GROUPS),
+    [botShelfGroups, searching],
   );
   const projectShelfGroups = useMemo(() => {
     const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] =>
@@ -334,7 +332,9 @@ function InboxList({
   const visibleActiveRows = useMemo(
     () =>
       tab === "bots"
-        ? botTabGroups.flatMap((group) => group.rows.map((row) => ({ shelf: "bots" as const, row })))
+        ? botTabGroups.flatMap((group) =>
+            group.rows.map((row) => ({ shelf: "bots" as const, row })),
+          )
         : (
             [
               ["pinned", pinned],
@@ -370,14 +370,29 @@ function InboxList({
     const shown = new Set(bots.shownBotIds);
     return bots.bots.filter((bot) => shown.has(bot.id));
   }, [bots.bots, bots.shownBotIds]);
-  const selectedBot = selectableBots.find((bot) => bot.id === selectedBotId) ?? null;
-  // A card's chat pill opens the bot's newest conversation, the first on its list.
-  const openLatestConversation = useCommittedEvent((bot: BotMetadata) => {
-    const group = botShelfGroups.find((entry) => entry.projectId === bot.id);
-    const latest = group?.rows.find((row) => row.depth === 0);
-    setChosenBotId(bot.id);
-    if (latest === undefined) return;
-    navigate.toThread(latest.node.thread.id);
+  const pinnedBots = useMemo(
+    () => selectableBots.filter((bot) => bot.pinned === true),
+    [selectableBots],
+  );
+  const botShelfList = useMemo(
+    () => botShelves(selectableBots, bots.list?.sections ?? NO_SECTIONS),
+    [selectableBots, bots.list?.sections],
+  );
+  // Opening a bot goes to its main conversation, else its newest live one,
+  // else starts a new one.
+  const openBot = useCommittedEvent((bot: BotMetadata) => {
+    const live = bots.threadsByBot.get(bot.id) ?? [];
+    const target =
+      (bot.mainThreadId !== null && live.some((thread) => thread.id === bot.mainThreadId)
+        ? bot.mainThreadId
+        : null) ??
+      botSummaries.get(bot.id)?.liveId ??
+      null;
+    if (target === null) {
+      botsActions.newConversation(bot);
+      return;
+    }
+    navigate.toThread(target);
     onNavigate();
   });
   const onNewThread = useCommittedEvent((projectId: string) => {
@@ -638,12 +653,11 @@ function InboxList({
               }
             }}
           >
-            {botsReady ? (
+            {botsEnabled ? (
               <SidebarTabs
                 tab={tab}
                 onChange={setTab}
                 codeCount={shelves.nextAction.length}
-                botAttention={botAttention}
                 isCompactViewport={isCompactViewport}
               />
             ) : null}
@@ -706,7 +720,7 @@ function InboxList({
                   sidebar.experimental_archived?.status !== "loading"
                 }
                 count={shelvedTotal}
-                // The Bots tab keeps its cards, and New bot, on an empty list.
+                // The Bots tab lists bots, so an empty thread list leaves it whole.
                 keepShelves={tab === "bots"}
                 searchQuery={searchQuery}
               >
@@ -716,25 +730,59 @@ function InboxList({
                       ref={inboxWindow.measureRef}
                       data-index={windowLayout.headerIndex.get(shelfKey("bots"))}
                     >
-                      {searching ? null : (
-                        <BotCardGrid
-                          bots={selectableBots}
-                          summaries={botSummaries}
-                          threadsByBot={bots.threadsByBot}
-                          selectedBotId={selectedBotId}
-                          activeBotId={activeBotId}
-                          showingCompleted={botsShowingCompleted}
-                          onSelect={setChosenBotId}
-                          onOpenLatest={openLatestConversation}
-                          onToggleCompleted={toggleBotCompleted}
-                          actions={botsActions}
-                          isCompactViewport={isCompactViewport}
+                      {bots.list === undefined ? (
+                        bots.failed ? (
+                          <BotsError onRetry={bots.retry} />
+                        ) : (
+                          <BotsLoading />
+                        )
+                      ) : searching ? (
+                        <BotConversationsHeading
+                          empty={botTabGroups.every((group) => group.rows.length === 0)}
                         />
+                      ) : (
+                        <>
+                          {bots.failed ? <BotsOffline onRetry={bots.retry} /> : null}
+                          <PinnedBotGrid
+                            bots={pinnedBots}
+                            threadsByBot={bots.threadsByBot}
+                            activeBotId={activeBotId}
+                            onOpen={openBot}
+                            actions={botsActions}
+                            canMove={!isCompactViewport}
+                          />
+                          {botShelfList.map((botShelf) => (
+                            <Shelf
+                              key={botShelf.key}
+                              label={botShelf.label}
+                              count={botShelf.bots.length}
+                              isCompactViewport={isCompactViewport}
+                              measureRef={IGNORE_MEASURE}
+                              measureIndex={undefined}
+                            >
+                              <ul className="flex flex-col">
+                                {botShelf.bots.map((bot, index) => (
+                                  <li key={bot.id}>
+                                    <BotRow
+                                      bot={bot}
+                                      summary={botSummaries.get(bot.id)}
+                                      threads={bots.threadsByBot.get(bot.id) ?? NO_BOT_THREADS}
+                                      active={bot.id === activeBotId}
+                                      onOpen={openBot}
+                                      actions={botsActions}
+                                      group={botShelf.bots}
+                                      canMoveUp={!isCompactViewport && index > 0}
+                                      canMoveDown={
+                                        !isCompactViewport && index < botShelf.bots.length - 1
+                                      }
+                                    />
+                                  </li>
+                                ))}
+                              </ul>
+                            </Shelf>
+                          ))}
+                        </>
                       )}
-                      <BotConversationsHeading
-                        bot={searching ? null : selectedBot}
-                        empty={botTabGroups.every((group) => group.rows.length === 0)}
-                      />
                     </div>
                     <ul className="flex flex-col">
                       {renderRows(
@@ -786,6 +834,12 @@ interface ShelfFold {
   onToggle: () => void;
 }
 
+const NO_BOT_IDS: ReadonlySet<string> = new Set();
+const NO_GROUPS: readonly ProjectGroupRows[] = [];
+const NO_SECTIONS: readonly { id: string; name: string; order: number }[] = [];
+const NO_BOT_THREADS: readonly PluginSidebarThread[] = [];
+/** Bot shelves sit inside the Bots tab's one measured header, so they measure nothing. */
+const IGNORE_MEASURE = () => {};
 const NO_SHELF_VIEWS: readonly ShelfView[] = [];
 
 interface ShelfView {
@@ -854,14 +908,22 @@ function useShelfWindow(
       buildInboxWindow(
         tab === "bots"
           ? // One header (the cards and the list's heading), then the rows.
-            [{ shelf: "bots", expanded: true, groups: botTabGroups, grouped: false, showEmpty: true }]
+            [
+              {
+                shelf: "bots",
+                expanded: true,
+                groups: botTabGroups,
+                grouped: false,
+                showEmpty: true,
+              },
+            ]
           : [
-          { shelf: "pinned", expanded: true, groups: groupedShelves.pinned },
-          { shelf: "nextAction", expanded: true, groups: groupedShelves.nextAction },
-          { shelf: "waiting", expanded: waitingOpen, groups: groupedShelves.waiting },
-          { shelf: "slopcop", expanded: slopcopOpen, groups: groupedShelves.slopcop },
-          { shelf: "snoozed", expanded: snoozedOpen, groups: groupedShelves.snoozed },
-          { shelf: "settled", expanded: settledOpen, groups: groupedShelves.settled },
+              { shelf: "pinned", expanded: true, groups: groupedShelves.pinned },
+              { shelf: "nextAction", expanded: true, groups: groupedShelves.nextAction },
+              { shelf: "waiting", expanded: waitingOpen, groups: groupedShelves.waiting },
+              { shelf: "slopcop", expanded: slopcopOpen, groups: groupedShelves.slopcop },
+              { shelf: "snoozed", expanded: snoozedOpen, groups: groupedShelves.snoozed },
+              { shelf: "settled", expanded: settledOpen, groups: groupedShelves.settled },
             ],
         grouped,
         (key) => searching || !isGroupCollapsed(key),
@@ -1304,7 +1366,7 @@ function InboxContent({
   status: ReturnType<typeof useSidebarThreads>["status"];
   ready: boolean;
   count: number;
-  /** Draw the shelves above the empty message, for a shelf that shows empty. */
+  /** Draw the children in place of the empty message, for a list that is not threads. */
   keepShelves: boolean;
   searchQuery: string;
   children: React.ReactNode;
@@ -1318,14 +1380,7 @@ function InboxContent({
     const empty = (
       <InboxStatus>{searchQuery.trim() ? "No threads found" : "No threads yet"}</InboxStatus>
     );
-    return keepShelves ? (
-      <>
-        {children}
-        {empty}
-      </>
-    ) : (
-      empty
-    );
+    return keepShelves ? children : empty;
   }
   return children;
 }
@@ -1456,13 +1511,11 @@ function SidebarTabs({
   tab,
   onChange,
   codeCount,
-  botAttention,
   isCompactViewport,
 }: {
   tab: SidebarTab;
   onChange: (tab: SidebarTab) => void;
   codeCount: number;
-  botAttention: number;
   isCompactViewport: boolean;
 }) {
   const option = (value: SidebarTab, label: string, icon: "Code" | "Bot", trailing: ReactNode) => (
@@ -1490,45 +1543,17 @@ function SidebarTabs({
         "Code",
         codeCount > 0 ? <span className="gtd-sidebar-tab-count">{codeCount}</span> : null,
       )}
-      {option(
-        "bots",
-        "Bots",
-        "Bot",
-        botAttention > 0 ? (
-          <span className="gtd-sidebar-tab-badge" aria-label={`${botAttention} need you`}>
-            {botAttention}
-          </span>
-        ) : null,
-      )}
+      {option("bots", "Bots", "Bot", null)}
     </div>
   );
 }
 
-/** The label over the Bots tab's conversation list: whose they are, or search results. */
-function BotConversationsHeading({ bot, empty }: { bot: BotMetadata | null; empty: boolean }) {
+/** The label over the Bots tab's search results. */
+function BotConversationsHeading({ empty }: { empty: boolean }) {
   return (
     <>
-      <h2 className="gtd-bot-conversations-heading">
-        {bot === null ? (
-          "Results"
-        ) : (
-          <>
-            <span
-              className="gtd-bot-conversations-dot"
-              style={{ background: bot.avatar.color }}
-              aria-hidden
-            />
-            <span className="truncate">{bot.name}</span>
-            <span aria-hidden>·</span>
-            Conversations
-          </>
-        )}
-      </h2>
-      {empty ? (
-        <p className="gtd-bot-conversations-empty">
-          {bot === null ? "No conversations found" : "No conversations yet"}
-        </p>
-      ) : null}
+      <h2 className="gtd-bot-conversations-heading">Results</h2>
+      {empty ? <p className="gtd-bot-conversations-empty">No conversations found</p> : null}
     </>
   );
 }

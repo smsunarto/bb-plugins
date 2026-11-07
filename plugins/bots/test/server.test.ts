@@ -61,6 +61,30 @@ function legacyRecord() {
   };
 }
 
+describe("Dr. Bot", () => {
+  it("is seeded once, pinned, on a connected machine", async () => {
+    const host = await setup();
+    await host.harness.behavior.callRpc("bots_list", {});
+    await host.harness.behavior.callRpc("bots_list", {});
+    const seeded = host.store.list().filter((bot) => bot.builtin === "dr-bot");
+    expect(seeded).toHaveLength(1);
+    expect(seeded[0]).toMatchObject({ name: "Dr. Bot", pinned: true, hostId: "host-home" });
+    expect(seeded[0]!.soul).toContain("bb bots create");
+  });
+  it("waits for a connected machine instead of failing the list", async () => {
+    const host = await setup();
+    host.offline.add("host-home");
+    await host.harness.behavior.callRpc("bots_list", {});
+    expect(host.store.list().some((bot) => bot.builtin === "dr-bot")).toBe(false);
+  });
+  it("waits for an enrolled machine instead of failing the list", async () => {
+    const host = await setup();
+    host.harness.inspection.sdk.stub("hosts.list", async () => []);
+    await host.harness.behavior.callRpc("bots_list", {});
+    expect(host.store.list().some((bot) => bot.builtin === "dr-bot")).toBe(false);
+  });
+});
+
 describe("private bot identities", () => {
   it("persists launch presets privately and preserves them through older clients and reloads", async () => {
     const host = await setup();

@@ -5,7 +5,9 @@ import {
   type PluginCliContext,
 } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
-import type { BotMetadata } from "../contract.ts";
+import { rpcContract, type BotMetadata } from "../contract.ts";
+import type { z } from "zod";
+import { AVATAR_COLORS, AVATAR_EXPRESSION_IDS, AVATAR_SHAPE_IDS } from "./appearance.ts";
 import type { BotStore } from "./bot-store.ts";
 import { listBotConversations } from "./bot-conversations.ts";
 import type { CompletionRecord } from "./completion.ts";
@@ -69,6 +71,12 @@ export function botsCliCommands(
   store: BotStore,
   resolveOwner: (threadId: string, persist?: boolean) => Promise<string | null>,
   completionRecords: () => ReadonlyMap<string, CompletionRecord> = () => new Map(),
+  creation?: {
+    createBot: (
+      input: z.infer<typeof rpcContract.bot_create.input> & Pick<BotMetadata, "pinned">,
+    ) => Promise<BotMetadata>;
+    defaultHostId: (callerThreadId?: string) => Promise<string | null>;
+  },
 ) {
   const list = cliCommand({
     summary:
@@ -292,5 +300,81 @@ export function botsCliCommands(
     const id = await resolveOwner(ctx.threadId, false);
     return { threadId: ctx.threadId, bot: id ? store.require(id) : null };
   }
-  return { list, message };
+  const create = cliCommand({
+    summary: "Create a bot with a name, role, soul, and face; Dr. Bot uses this to make bots",
+    description:
+      "The bot runs on the calling bot's machine, else the first connected one. Pass the soul, the bot's private SOUL.md (at most 4,096 characters), with --soul-stdin and a quoted heredoc so the shell leaves its text alone.",
+    options: {
+      json: JSON_OPTION,
+      name: { type: "string", required: true, description: "Bot name, 1-120 characters" },
+      role: { type: "string", default: "", description: "A few words on its job, at most 80" },
+      soul: {
+        type: "string",
+        default: "",
+        stdin: true,
+        description: "Who the bot is and how it works",
+      },
+      color: { type: "string", description: "Face color as #rrggbb; random when omitted" },
+      shape: {
+        type: "enum",
+        values: AVATAR_SHAPE_IDS,
+        description: "Face shape; random when omitted",
+      },
+      expression: {
+        type: "enum",
+        values: AVATAR_EXPRESSION_IDS,
+        default: "curious",
+        description: "Resting expression",
+      },
+      pin: { type: "boolean", description: "Pin it to the top of the Bots tab" },
+    },
+    async run({ options }, ctx) {
+      try {
+        if (!creation) throw new Error("Bot creation is unavailable");
+        const hostId = await creation.defaultHostId(ctx.threadId ?? undefined);
+        if (hostId === null) throw new Error("No enrolled machine can run a bot");
+        const color = options.color ?? AVATAR_COLORS[randomIndex(AVATAR_COLORS.length)]!;
+        if (!/^#[0-9a-fA-F]{6}$/.test(color)) throw new Error("Color must look like #a1b2c3");
+        const parsed = rpcContract.bot_create.input.safeParse({
+          name: options.name.trim(),
+          role: options.role.trim(),
+          soul: options.soul,
+          hostId,
+          avatar: {
+            color: color.toLowerCase(),
+            shape: (options.shape ??
+              AVATAR_SHAPE_IDS[
+                randomIndex(AVATAR_SHAPE_IDS.length)
+              ]!) as BotMetadata["avatar"]["shape"],
+            expression: options.expression as BotMetadata["avatar"]["expression"],
+            motion: "calm",
+          },
+          sectionId: null,
+          linkedProjectIds: [],
+        });
+        if (!parsed.success)
+          throw new Error(
+            parsed.error.issues
+              .map((issue) => `--${String(issue.path[0] ?? "input")}: ${issue.message}`)
+              .join("; "),
+          );
+        const bot = await creation.createBot({
+          ...parsed.data,
+          ...(options.pin ? { pinned: true } : {}),
+        });
+        const value = { id: bot.id, name: bot.name, pinned: bot.pinned === true };
+        return {
+          exitCode: 0,
+          stdout: options.json
+            ? JSON.stringify(value)
+            : `Created ${printable(bot.name)} (${bot.id}).\nMessage it: bb bots message ${bot.id} "Your message"`,
+        };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  });
+  return { list, message, create };
 }
+
+const randomIndex = (length: number) => Math.floor(Math.random() * length);

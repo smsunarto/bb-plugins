@@ -23,6 +23,10 @@ and `bot_update_state`. `bb bots list` and `bb bots message <bot> "<message>"`
 let agents find and message bots; `@` completes bot names in the composer
 without sending anything.
 
+Every install keeps one bot, Dr. Bot, pinned first in GTD Sidebar's Bots tab.
+New bots are made by asking Dr. Bot, which runs `bb bots create`; there is no
+New bot button.
+
 ## Routines
 
 A routine is a bot's scheduled instruction, like Grok Bot's routines. Ask the

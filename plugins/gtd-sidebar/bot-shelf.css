@@ -1,5 +1,5 @@
 /* The Bots tab, shown while the Bots plugin is enabled: the Code/Bots tabs,
-   bot cards, the selected bot's conversation heading, and workflow run rows.
+   pinned bot tiles, unpinned bot rows, the search heading, and workflow run rows.
    The avatar's styles come from the Bots plugin's bots.css; conversation rows
    are GTD's own thread cards.
 
@@ -59,223 +59,210 @@
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
 }
-.gtd-sidebar-tab-badge {
-  display: inline-flex;
-  min-width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 4px;
-  border-radius: 8px;
-  background: var(--primary);
-  color: var(--primary-foreground);
-  font-size: 10px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
 
-/* Bot cards: two across, one when the panel is narrow. */
+/* Pinned bots: three across, an avatar and a name. Sizes sit on a 4px grid. */
 .gtd-bot-grid {
-  container-type: inline-size;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
-  padding: 2px 2px 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px 0 8px;
 }
-.gtd-bot-card {
-  --gtd-bot-color: var(--primary);
-  position: relative;
+.gtd-bot-tile {
   display: flex;
   min-width: 0;
-  min-height: 200px;
   flex-direction: column;
   align-items: center;
-  padding: 30px 8px 8px;
-  border: 1px solid var(--border-hairline, var(--sidebar-border));
-  border-radius: 18px;
-  background: radial-gradient(
-    120% 75% at 50% 18%,
-    color-mix(in srgb, var(--gtd-bot-color) 35%, transparent) 0%,
-    color-mix(in srgb, var(--gtd-bot-color) 8%, transparent) 55%,
-    var(--card) 100%
-  );
-  transition:
-    border-color 150ms ease,
-    box-shadow 150ms ease;
-}
-.gtd-bot-card[data-selected="true"] {
-  border-color: var(--gtd-bot-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gtd-bot-color) 20%, transparent);
-}
-/* The card-wide select button, under the pills. */
-.gtd-bot-card-select {
-  position: absolute;
-  inset: 0;
-  border: 0;
-  border-radius: inherit;
-  background: transparent;
+  gap: 8px;
+  padding: 12px 4px;
+  border-radius: 12px;
+  color: var(--sidebar-foreground);
   cursor: pointer;
 }
-.gtd-bot-card-select:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-}
-@media (hover: hover) {
-  .gtd-bot-card:not([data-selected="true"]):hover {
-    border-color: color-mix(in srgb, var(--gtd-bot-color) 45%, transparent);
-  }
-}
-.gtd-bot-card-badge {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  display: inline-flex;
-  height: 18px;
-  align-items: center;
-  gap: 4px;
-  padding: 0 6px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--sidebar) 70%, transparent);
-  color: var(--foreground);
-  font-size: 10px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  pointer-events: none;
-}
-.gtd-bot-card-badge[data-tone="working"] {
-  color: var(--muted-foreground);
-}
-.gtd-bot-card-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--primary);
-}
-.gtd-bot-card-badge[data-tone="working"] .gtd-bot-card-dot {
-  background: var(--gtd-bot-color);
-}
-.gtd-bot-card-avatar {
-  display: flex;
-  pointer-events: none;
-  filter: drop-shadow(0 10px 18px color-mix(in srgb, var(--gtd-bot-color) 35%, transparent));
-}
-.gtd-bot-card-name {
+.gtd-bot-tile-name {
   max-width: 100%;
-  margin-top: 12px;
   overflow: hidden;
-  color: var(--foreground);
-  font-size: 15px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
   text-overflow: ellipsis;
-  pointer-events: none;
+  white-space: nowrap;
 }
-.gtd-bot-card-role {
-  display: -webkit-box;
-  min-height: 28px;
-  margin-top: 2px;
-  overflow: hidden;
-  color: var(--muted-foreground);
-  font-size: 11px;
-  line-height: 14px;
-  text-align: center;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  pointer-events: none;
-}
-.gtd-bot-card-actions {
-  position: relative;
+
+/* Unpinned bots: Grok-style rows under GTD shelves, one per bot section, then
+   unsectioned bots under Bots. Hover, press, and the open bot share one fill;
+   keyboard focus is a ring only. */
+.gtd-bot-row {
   display: flex;
   width: 100%;
-  margin-top: auto;
-  padding-top: 10px;
-  gap: 6px;
-}
-.gtd-bot-card-pill {
-  display: inline-flex;
-  height: 30px;
+  min-width: 0;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border-radius: 15px;
-  font-size: 11px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 12px;
+  color: var(--sidebar-foreground);
+  text-align: left;
   cursor: pointer;
 }
-.gtd-bot-card-pill[data-variant="secondary"] {
-  flex: 0 0 44px;
-  border: 1px solid var(--border-hairline, var(--sidebar-border));
-  background: color-mix(in srgb, var(--sidebar) 70%, transparent);
-  color: var(--foreground);
-}
-.gtd-bot-card-pill[data-variant="primary"] {
-  flex: 1 1 0;
+.gtd-bot-row-text {
+  display: flex;
   min-width: 0;
-  border: 0;
-  background: var(--foreground);
-  color: var(--sidebar);
+  flex: 1;
+  flex-direction: column;
 }
-.gtd-bot-card-pill:disabled {
-  opacity: 0.5;
-  cursor: default;
+.gtd-bot-row-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gtd-bot-row-detail {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gtd-bot-tile[data-active="true"],
+.gtd-bot-row[data-active="true"] {
+  background: var(--sidebar-accent);
 }
 @media (hover: hover) {
-  .gtd-bot-card-pill[data-variant="secondary"]:not(:disabled):hover {
-    background: var(--sidebar);
-  }
-  .gtd-bot-card-pill[data-variant="primary"]:hover {
-    opacity: 0.9;
+  .gtd-bot-tile:not([data-active="true"]):hover,
+  .gtd-bot-row:not([data-active="true"]):hover {
+    background: var(--sidebar-accent);
   }
 }
-.gtd-bot-card-pill:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
+.gtd-bot-tile:focus-visible,
+.gtd-bot-row:focus-visible {
+  outline: 1px solid var(--ring);
 }
-.gtd-bot-new {
-  display: inline-flex;
-  grid-column: 1 / -1;
-  height: 34px;
+
+/* A row avatar's status: new activity, in progress (an arc that turns), finished. */
+.gtd-bot-row-avatar {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+.gtd-bot-status {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: flex;
+  width: 14px;
+  height: 14px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  border: 1px dashed var(--border);
-  border-radius: 12px;
-  background: transparent;
+  border: 2px solid var(--sidebar);
+  border-radius: 7px;
+  color: var(--sidebar);
+}
+.gtd-bot-status[data-status="activity"] {
+  background: var(--primary);
+}
+.gtd-bot-status[data-status="progress"] {
+  background: conic-gradient(
+    var(--success) 0 70%,
+    color-mix(in srgb, var(--success) 25%, transparent) 0
+  );
+  animation: gtd-bot-status-turn 1.2s linear infinite;
+}
+.gtd-bot-status[data-status="finished"] {
+  background: var(--muted-foreground);
+}
+@keyframes gtd-bot-status-turn {
+  to {
+    rotate: 1turn;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gtd-bot-status[data-status="progress"] {
+    animation: none;
+  }
+}
+
+/* First load, a failed first load, and a failed refresh over saved bots. */
+.gtd-bot-skeleton {
+  display: block;
+  background: color-mix(in srgb, var(--sidebar-foreground) 6%, transparent);
+  animation: gtd-bot-shimmer 1.2s ease-in-out infinite alternate;
+}
+@keyframes gtd-bot-shimmer {
+  to {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gtd-bot-skeleton {
+    animation: none;
+  }
+}
+.gtd-bots-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 24px 8px;
+}
+.gtd-bots-error-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+}
+.gtd-bots-error-detail {
   color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
+}
+.gtd-bots-retry {
+  height: 24px;
+  margin-top: 4px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--sidebar-accent);
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
 }
-@media (hover: hover) {
-  .gtd-bot-new:hover {
-    color: var(--foreground);
-    background: var(--sidebar-accent);
-  }
+.gtd-bots-offline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--sidebar-foreground) 4%, transparent);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 16px;
 }
-.gtd-bot-new:focus-visible {
+.gtd-bots-offline-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  background: var(--warning);
+}
+.gtd-bots-offline-retry {
+  color: var(--sidebar-foreground);
+  font-weight: 500;
+  cursor: pointer;
+}
+.gtd-bots-retry:focus-visible,
+.gtd-bots-offline-retry:focus-visible {
   outline: 1px solid var(--ring);
 }
 
-/* The selected bot's name over its conversations. */
+/* While searching, matching conversations list under a Results heading. */
 .gtd-bot-conversations-heading {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  margin: 10px 8px 4px;
+  margin: 8px 8px 4px;
   color: var(--muted-foreground);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-.gtd-bot-conversations-dot {
-  width: 8px;
-  height: 8px;
-  flex-shrink: 0;
-  border-radius: 4px;
 }
 .gtd-bot-conversations-empty {
   margin: 4px 8px 8px;

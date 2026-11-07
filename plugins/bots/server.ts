@@ -71,7 +71,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.cli.register(
     defineCli({
       name: "bots",
-      summary: "List bots and message their conversations.",
+      summary: "List, create, and message bots.",
       usageErrorExitCode: 2,
       commands,
     }),
@@ -298,8 +298,17 @@ export function registerBots(
     atCreation: boolean,
     handoffFrom: string | null = null,
   ) {
-    // Every GTD user's sends pass through here; with no bots nothing can own them.
-    if (store.list().length === 0) return null;
+    // Every GTD user's sends pass through here. With no bindings and no bot
+    // that has projects (a fresh install holds only Dr. Bot), nothing can own them.
+    if (
+      store.bindings().length === 0 &&
+      store
+        .list()
+        .every(
+          (bot) => bot.linkedProjectIds.length === 0 && store.ownedProjects(bot.id).length === 0,
+        )
+    )
+      return null;
     const existing = store.owner(thread.id);
     if (existing) return existing;
     // Our creation request carries a durable explicit choice. A fire-and-forget
@@ -709,6 +718,109 @@ export function registerBots(
 
   registerBotMentions(bb, store);
 
+  function createBot({
+    name,
+    role,
+    hostId,
+    avatar,
+    sectionId,
+    linkedProjectIds,
+    ownedProjectIds,
+    soul,
+    memory,
+    settings,
+    launchPreset,
+    pinned,
+    builtin,
+  }: z.infer<typeof rpcContract.bot_create.input> & Pick<BotMetadata, "pinned" | "builtin">) {
+    return serial("registry", async () => {
+      await validateLinks(linkedProjectIds);
+      if (ownedProjectIds) await validateLinks(ownedProjectIds);
+      validateSection(sectionId);
+      if (!(await bb.sdk.hosts.list()).some((host) => host.id === hostId))
+        throw new Error("Choose an enrolled execution machine");
+      const id = `bot_${randomUUID().replaceAll("-", "")}`;
+      let created: BotMetadata = {
+        id,
+        name,
+        role,
+        hostId,
+        stateReady: true,
+        legacyHomeProjectId: null,
+        avatar,
+        sectionId,
+        linkedProjectIds,
+        soul,
+        agents: "",
+        memory: "",
+        settings: {},
+        stateHashes: { ...EMPTY_HASHES },
+        order: store.list().length,
+        mainThreadId: null,
+        hiddenUntilActivity: false,
+        hiddenAt: null,
+        updatedAt: Date.now(),
+        legacyProjectId: null,
+        ...(pinned ? { pinned } : {}),
+        ...(builtin ? { builtin } : {}),
+      };
+      if (memory !== undefined) created = applyState(created, "MEMORY.md", memory);
+      if (launchPreset !== undefined) created.launchPreset = launchPreset;
+      if (settings !== undefined)
+        created = applyState(
+          created,
+          "settings.json",
+          stateContent({ ...created, settings }, "settings.json"),
+        );
+      store.saveWithProjects(created, ownedProjectIds);
+      const ready = await state.prepare(id);
+      publish();
+      return ready;
+    });
+  }
+
+  /**
+   * The machine a new bot runs on: the calling bot's, else a connected one,
+   * else (unless `connectedOnly`) any enrolled one.
+   */
+  async function defaultHostId(
+    callerThreadId?: string,
+    connectedOnly = false,
+  ): Promise<string | null> {
+    const callerBot = callerThreadId ? await resolveOwner(callerThreadId, false) : null;
+    if (callerBot !== null) return store.require(callerBot).hostId;
+    const hosts = await bb.sdk.hosts.list();
+    const connected = hosts.find((host) => host.status === "connected");
+    return (connected ?? (connectedOnly ? undefined : hosts[0]))?.id ?? null;
+  }
+
+  // Every install keeps one bot, Dr. Bot, pinned first. It is how new bots get
+  // made: its soul points it at `bb bots create`. Seeded on the first list
+  // read that finds a connected machine.
+  let seeding: Promise<void> | null = null;
+  function ensureDrBot(): Promise<void> {
+    if (store.list().some((bot) => bot.builtin === "dr-bot")) return Promise.resolve();
+    seeding ??= (async () => {
+      // A connected machine only: Dr. Bot keeps the machine it is seeded on.
+      const hostId = await defaultHostId(undefined, true);
+      if (hostId === null || store.list().some((bot) => bot.builtin === "dr-bot")) return;
+      await createBot({
+        name: "Dr. Bot",
+        role: "Makes new bots",
+        hostId,
+        avatar: { color: "#f8f8f2", shape: "round", expression: "happy", motion: "calm" },
+        sectionId: null,
+        linkedProjectIds: [],
+        soul: tools.read("bots/dr-bot-soul"),
+        pinned: true,
+        builtin: "dr-bot",
+      });
+    })().finally(() => {
+      seeding = null;
+    });
+    return seeding;
+  }
+
   bb.rpc.register(rpcContract, {
     project_browse: ({ hostId, path }) => browseProjectDirectory(bb, { hostId, path }),
     project_create: (input) =>
@@ -718,6 +830,11 @@ export function registerBots(
     workflow_runs: async () => ({ runs: await workflowRuns.list() }),
     bots_list: async () => {
       const warnings: string[] = [];
+      await ensureDrBot().catch((error: unknown) =>
+        warnings.push(
+          `Dr. Bot could not be created: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
       await Promise.all(store.list().map((bot) => serial(bot.id, () => state.prepare(bot.id))));
       const [hosts, projects] = await Promise.all([
         bb.sdk.hosts.list(),
@@ -747,61 +864,7 @@ export function registerBots(
           .map((project) => ({ id: project.id, name: project.name })),
       };
     },
-    bot_create: ({
-      name,
-      role,
-      hostId,
-      avatar,
-      sectionId,
-      linkedProjectIds,
-      ownedProjectIds,
-      soul,
-      memory,
-      settings,
-      launchPreset,
-    }) =>
-      serial("registry", async () => {
-        await validateLinks(linkedProjectIds);
-        if (ownedProjectIds) await validateLinks(ownedProjectIds);
-        validateSection(sectionId);
-        if (!(await bb.sdk.hosts.list()).some((host) => host.id === hostId))
-          throw new Error("Choose an enrolled execution machine");
-        const id = `bot_${randomUUID().replaceAll("-", "")}`;
-        let created: BotMetadata = {
-          id,
-          name,
-          role,
-          hostId,
-          stateReady: true,
-          legacyHomeProjectId: null,
-          avatar,
-          sectionId,
-          linkedProjectIds,
-          soul,
-          agents: "",
-          memory: "",
-          settings: {},
-          stateHashes: { ...EMPTY_HASHES },
-          order: store.list().length,
-          mainThreadId: null,
-          hiddenUntilActivity: false,
-          hiddenAt: null,
-          updatedAt: Date.now(),
-          legacyProjectId: null,
-        };
-        if (memory !== undefined) created = applyState(created, "MEMORY.md", memory);
-        if (launchPreset !== undefined) created.launchPreset = launchPreset;
-        if (settings !== undefined)
-          created = applyState(
-            created,
-            "settings.json",
-            stateContent({ ...created, settings }, "settings.json"),
-          );
-        store.saveWithProjects(created, ownedProjectIds);
-        const ready = await state.prepare(id);
-        publish();
-        return ready;
-      }),
+    bot_create: (input) => createBot(input),
     bot_prepare: ({ botId }) => serial(botId, () => state.prepare(botId)),
     bot_update: saveBotIdentity,
     bots_reorder: ({ bots: placements }) =>
@@ -864,6 +927,13 @@ export function registerBots(
           hiddenAt: hiddenUntilActivity ? Date.now() : null,
           updatedAt: nextTimestamp(bot.updatedAt),
         });
+        publish();
+        return next;
+      }),
+    pin_set: ({ botId, pinned }) =>
+      serial(botId, async () => {
+        const bot = store.require(botId);
+        const next = store.save({ ...bot, pinned, updatedAt: nextTimestamp(bot.updatedAt) });
         publish();
         return next;
       }),
@@ -1116,7 +1186,7 @@ export function registerBots(
   });
 
   return {
-    ...botsCliCommands(bb, store, resolveOwner, completion.records),
+    ...botsCliCommands(bb, store, resolveOwner, completion.records, { createBot, defaultHostId }),
     ...routineCliCommands(store, routines),
   };
 }

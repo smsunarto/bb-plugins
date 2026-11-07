@@ -45,6 +45,10 @@ export const metadataSchema = z
     mainThreadId: id.nullable(),
     hiddenUntilActivity: z.boolean(),
     hiddenAt: z.number().nullable(),
+    /** Shown as a card at the top of GTD Sidebar's Bots tab; absent means unpinned. */
+    pinned: z.boolean().optional(),
+    /** Set on the default bot this plugin seeds and keeps, Dr. Bot. */
+    builtin: z.literal("dr-bot").optional(),
     threadOrder: z.array(id).optional(),
     launchPreset: launchPresetSchema.nullable().optional(),
     sectionId: id.nullable(),
@@ -458,6 +462,10 @@ export const rpcContract = defineRpcContract({
   },
   visibility_set: {
     input: z.object({ botId: id, hiddenUntilActivity: z.boolean() }).strict(),
+    output: metadataSchema,
+  },
+  pin_set: {
+    input: z.object({ botId: id, pinned: z.boolean() }).strict(),
     output: metadataSchema,
   },
   main_set: { input: z.object({ botId: id, threadId: id }).strict(), output: metadataSchema },

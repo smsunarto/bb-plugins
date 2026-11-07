@@ -26,9 +26,15 @@ export interface BotsActions {
   newInProject(bot: BotMetadata, kind: "project" | "worktree", from?: PluginSidebarThread): void;
   fork(bot: BotMetadata, source: PluginSidebarThread): void;
   setHidden(bot: BotMetadata, hidden: boolean): void;
+  /** Pin a bot as a card at the top of the Bots tab, or unpin it back to its shelf. */
+  setPinned(bot: BotMetadata, pinned: boolean): void;
   setCompleted(threadId: string, completed: boolean): void;
-  /** Move a bot one place up or down the shelf's saved order. */
-  move(bot: BotMetadata, direction: "up" | "down"): void;
+  /**
+   * Move a bot past its neighbour in `group`, the bots shown beside it (a
+   * pinned grid or one shelf); without a group, past its neighbour in the
+   * saved order. Every other bot keeps its place.
+   */
+  move(bot: BotMetadata, direction: "up" | "down", group?: readonly BotMetadata[]): void;
   hasWorkProjects(bot: BotMetadata): boolean;
 }
 
@@ -226,6 +232,7 @@ export function useBotsController(
       },
       setHidden: (bot, hidden) =>
         run(() => rpc.call("visibility_set", { botId: bot.id, hiddenUntilActivity: hidden })),
+      setPinned: (bot, pinned) => run(() => rpc.call("pin_set", { botId: bot.id, pinned })),
       setCompleted: (threadId, completed) =>
         run(async () => {
           await rpc.call("conversation_complete", { threadId, completed });
@@ -239,12 +246,15 @@ export function useBotsController(
             });
           }
         }),
-      move: (bot, direction) =>
+      move: (bot, direction, group) =>
         run(async () => {
           const order = [...latest.current.bots];
+          const peers = group ?? order;
+          const at = peers.findIndex((entry) => entry.id === bot.id);
+          const neighbour = peers[direction === "up" ? at - 1 : at + 1];
           const from = order.findIndex((entry) => entry.id === bot.id);
-          const to = direction === "up" ? from - 1 : from + 1;
-          if (from < 0 || to < 0 || to >= order.length) return;
+          const to = neighbour ? order.findIndex((entry) => entry.id === neighbour.id) : -1;
+          if (at < 0 || from < 0 || to < 0) return;
           [order[from], order[to]] = [order[to]!, order[from]!];
           await rpc.call("bots_reorder", {
             bots: order.map((entry) => ({ botId: entry.id, sectionId: entry.sectionId })),

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   experimental_useRpcQuery as useRpcQuery,
   type PluginSidebarThread,
@@ -29,6 +29,10 @@ export type BotsList = NonNullable<ReturnType<typeof useBotsList>["data"]>;
 /** The bots as the sidebar sees them, joined to the sidebar's own threads. */
 export interface BotsModel {
   list: BotsList | undefined;
+  /** The last read failed; `list` may still hold the saved bots. */
+  failed: boolean;
+  /** Read the bots again, after a failure. */
+  retry: () => void;
   /** Every bot in its saved order, hidden ones included. */
   bots: readonly BotMetadata[];
   /** Bots the shelf shows: hidden-until-activity ones only once woken. */
@@ -44,8 +48,15 @@ export interface BotsModel {
 
 /** `enabled: false` skips the read, for a host that knows Bots is off. */
 export function useBotsModel(threads: readonly PluginSidebarThread[], enabled = true): BotsModel {
-  const { data: queried } = useBotsList(enabled);
+  const { data: queried, error, refetch } = useBotsList(enabled);
   const list = enabled ? queried : undefined;
+  const failed = enabled && error !== null;
+  // The query's refetch is not a stable function; reading it through a ref
+  // keeps the model, and every memo keyed on it, steady across renders.
+  const refetchRef = useRef(refetch);
+  useEffect(() => {
+    refetchRef.current = refetch;
+  }, [refetch]);
   return useMemo(() => {
     const bots = list?.bots ?? [];
     const owners = conversationOwners(
@@ -82,6 +93,8 @@ export function useBotsModel(threads: readonly PluginSidebarThread[], enabled = 
     }
     return {
       list,
+      failed,
+      retry: () => void refetchRef.current(),
       bots,
       shownBotIds,
       wokenBotIds,
@@ -95,5 +108,5 @@ export function useBotsModel(threads: readonly PluginSidebarThread[], enabled = 
       },
       threadsByBot,
     };
-  }, [list, threads]);
+  }, [list, failed, threads]);
 }

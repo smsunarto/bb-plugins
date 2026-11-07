@@ -28,6 +28,42 @@ async function setup() {
   return { host, a, b, send, run: host.harness.behavior.runCli.bind(host.harness.behavior) };
 }
 describe("bots CLI", () => {
+  it("creates a bot on a connected machine, pinned on request, with its soul and face", async () => {
+    const { host, run } = await setup();
+    const result = await run([
+      "create",
+      "--name",
+      "Quill",
+      "--role",
+      "Writes the docs",
+      "--soul",
+      "You write the docs.",
+      "--color",
+      "#A1B2C3",
+      "--shape",
+      "cloud",
+      "--pin",
+      "--json",
+    ]);
+    expect(result.exitCode).toBe(0);
+    const { id, pinned } = JSON.parse(result.stdout!) as { id: string; pinned: boolean };
+    expect(pinned).toBe(true);
+    expect(host.store.require(id)).toMatchObject({
+      name: "Quill",
+      role: "Writes the docs",
+      hostId: "host-home",
+      soul: "You write the docs.",
+      pinned: true,
+      avatar: { color: "#a1b2c3", shape: "cloud", expression: "curious" },
+    });
+  });
+  it("rejects a malformed color without creating anything", async () => {
+    const { host, run } = await setup();
+    const before = host.store.list().length;
+    const result = await run(["create", "--name", "Quill", "--color", "teal"]);
+    expect(result.exitCode).not.toBe(0);
+    expect(host.store.list()).toHaveLength(before);
+  });
   it("lists bounded public metadata and pagination without private state", async () => {
     const { run } = await setup();
     const result = await run(["list", "--json", "--limit", "1"]);
