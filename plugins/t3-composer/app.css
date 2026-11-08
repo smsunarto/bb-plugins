@@ -327,26 +327,25 @@
 /* BB's project, machine and branch row becomes ChatGPT's tray, attached above
    the card. There is no SDK input for the row, so it is reordered and restyled
    in place; BB still owns its pickers and hides it in narrow panes. */
-:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer]) {
+[data-follow-up-composer]:has(> [data-composer-box] [data-t3-composer]),
+[data-app-composer]:has(> [data-composer-box] [data-t3-composer]) {
   display: flex;
   flex-direction: column;
   /* Doubles BB's 8px gap below the composer. */
   margin-bottom: 8px;
 }
 
-/* Banners above the composer stay above the tray. */
-:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
-  > :not([data-composer-box], [data-follow-up-composer-footer], [data-new-thread-footer]) {
-  order: -2;
-}
-
+/* Banners keep order 0, so they stay above the tray (1) and the card (2). */
 :is([data-follow-up-composer], [data-app-composer]) > [data-composer-box]:has([data-t3-composer]) {
   position: relative;
   z-index: 1;
+  order: 2;
 }
 
 :is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
-  > :is([data-follow-up-composer-footer], [data-new-thread-footer]) {
+  > [data-follow-up-composer-footer],
+:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > [data-new-thread-footer] {
   --t3-tray-overlap: 12px;
   position: relative;
   /* One row of 28px pills, held while a new thread's machine and branch load, so the
@@ -359,7 +358,7 @@
   pointer-events: auto;
   overflow: visible;
   z-index: 0;
-  order: -1;
+  order: 1;
   min-width: 0;
   margin: 0 0 calc(-1 * var(--t3-tray-overlap));
   padding: 4px 6px calc(4px + var(--t3-tray-overlap));
@@ -372,14 +371,23 @@
 
 .dark
   :is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
-  > :is([data-follow-up-composer-footer], [data-new-thread-footer]) {
+  > [data-follow-up-composer-footer],
+.dark
+  :is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > [data-new-thread-footer] {
   background: color-mix(in srgb, var(--foreground) 8%, var(--background));
   box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
 :is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
-  :is(button, [data-option-display], span:has(> svg[data-icon="Laptop"])) {
+  button,
+:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+  [data-option-display],
+:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+  span:has(> svg[data-icon="Laptop"]) {
   display: inline-flex;
   align-items: center;
   height: 28px;
@@ -399,7 +407,6 @@
 :is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   button:is(:hover, [data-state="open"], [aria-expanded="true"]) {
-  background: color-mix(in srgb, var(--foreground) 8%, transparent);
   color: var(--foreground);
 }
 
@@ -424,7 +431,7 @@
   )
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   button[aria-label="Permission mode"]:not(:disabled) {
-  /* Outranks the tray's pill display, whose selector list is more specific. */
+  /* Outranks the tray's pill display. */
   display: none !important;
 }
 
@@ -617,9 +624,6 @@
 
   [data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]),
   [data-t3-composer][data-promptbox] [data-t3-permission] button,
-  :is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
-    > :is([data-follow-up-composer-footer], [data-new-thread-footer])
-    button,
   [data-t3-composer][data-promptbox] [data-plugin-composer-action] {
     height: 36px;
     min-height: 36px;
