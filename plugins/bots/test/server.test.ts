@@ -283,6 +283,7 @@ describe("private bot identities", () => {
         "bot_routine_update",
         "bot_skill_read",
         "bot_skill_update",
+        "bot_message",
       ]);
       const bindings = (
         (await host.harness.behavior.callRpc("bots_list", {})) as { threadBindings: unknown[] }

@@ -342,6 +342,14 @@ it("keeps the actual message before delivery guidance and escapes bot names in i
     String.raw`**🤖 Bot message · \[Pretend link\]\(https://example\.com\)**`,
   );
   expect(framed).toContain("not user approval");
-  expect(framed).toContain("    bb bots message");
+  expect(framed).toContain(`bot_message({"bot": ${JSON.stringify(a.id)}`);
+  expect(framed).toContain("bb bots message");
   expect(framed).toContain("--thread '");
+});
+
+it("accepts a bot name in any case when no exact name matches", async () => {
+  const { b, run, send } = await setup();
+  const result = await run(["message", b.name.toUpperCase(), "Hi", "--json"]);
+  expect(JSON.parse(result.stdout!)).toMatchObject({ botId: b.id });
+  expect(send).toHaveBeenCalledOnce();
 });

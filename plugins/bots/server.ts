@@ -30,7 +30,7 @@ import { browseProjectDirectory, createWorkProject } from "./lib/project-creatio
 import { ensureHomeProject } from "./lib/home-project.ts";
 import { createBotSkills } from "./lib/bot-skills.ts";
 import { skillReadToolSchema, skillUpdateToolSchema } from "./lib/skill-schema.ts";
-import { botsCliCommands } from "./lib/bots-cli.ts";
+import { botsCliCommands, frameBotMessage, MESSAGE_MAX_CHARS, recipient } from "./lib/bots-cli.ts";
 import { createWorkflowRuns } from "./lib/workflow-runs-server.ts";
 import { handoffSourceFromText, handoffSourceThreadId } from "./lib/handoff-source.ts";
 import { registerBotMentions } from "./lib/bot-mentions.ts";
@@ -653,7 +653,13 @@ export function registerBots(
       const bot = store.require(botId);
       if (bot.mainThreadId) {
         const current = await bb.sdk.threads.get({ threadId: bot.mainThreadId }).catch(() => null);
-        if (current && current.archivedAt === null && current.deletedAt === null)
+        // A main chat moved to another bot, or detached, is no longer this bot's.
+        if (
+          current &&
+          current.archivedAt === null &&
+          current.deletedAt === null &&
+          (await resolveOwner(current.id, false)) === botId
+        )
           return { threadId: current.id, created: false };
       }
       const { threadId } = await startConversation(
@@ -751,6 +757,7 @@ export function registerBots(
       "bot_routine_update",
       "bot_skill_read",
       "bot_skill_update",
+      "bot_message",
     ],
     skills: [BOTS_SKILL],
     instructions: botInstructions(
@@ -869,6 +876,51 @@ export function registerBots(
       });
       publishSkills();
       return JSON.stringify(result);
+    },
+  });
+  bb.agents.registerTool({
+    name: "bot_message",
+    ...tools.tool("bot_message"),
+    parameters: z
+      .object({
+        bot: z.string().trim().min(1).describe("Recipient bot's ID or name"),
+        message: z.string().trim().min(1).max(MESSAGE_MAX_CHARS).describe("Message text"),
+      })
+      .strict(),
+    execute: async ({ bot: selector, message }, ctx) => {
+      const senderId = await resolveOwner(ctx.threadId);
+      if (!senderId) throw new Error("This conversation is not assigned to a bot");
+      const others = store.list().filter((bot) => bot.id !== senderId);
+      const roster = others.map((bot) => `${bot.name} (${bot.id})`).join(", ") || "none";
+      const target = recipient(store.list(), selector, `Bots you can message: ${roster}.`);
+      if (target.id === senderId)
+        throw new Error(
+          "That is this bot. bot_message reaches other bots; a subthread already reports to its parent.",
+        );
+      const { threadId, created } = await ensureMainChat(target.id);
+      ctx.signal.throwIfAborted();
+      const result = await bb.sdk.threads.send({
+        threadId,
+        mode: "queue-if-active",
+        senderThreadId: ctx.threadId,
+        input: [
+          {
+            type: "text",
+            text: frameBotMessage(
+              { threadId: ctx.threadId, bot: store.require(senderId) },
+              message,
+            ),
+            mentions: [],
+          },
+        ],
+      });
+      return JSON.stringify({
+        botId: target.id,
+        botName: target.name,
+        threadId,
+        startedMainChat: created,
+        delivery: result.delivery,
+      });
     },
   });
   bb.experimental_hooks.on("message.dispatch", async (ctx) => {

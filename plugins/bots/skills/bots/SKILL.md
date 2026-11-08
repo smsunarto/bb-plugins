@@ -10,8 +10,11 @@ shows them on its Bots shelf while the plugin is enabled.
 
 - Read public bot metadata with `bb bots list --json --limit 50 --offset 0`.
   Listing and @ mentions never send messages or expose private state.
-- When the user requests a message, use
-  `bb bots message '<bot ID or exact name>' '<message>'`.
+- In a bot's conversation, message another bot with the `bot_message` tool:
+  it reaches that bot's main chat (starting one if needed) and queues while
+  busy, and the reply arrives later in this bot's main chat.
+- Elsewhere, when the user requests a message, use
+  `bb bots message '<bot ID or name>' '<message>'`.
   It targets the bot's main chat and queues while busy.
   `--thread <conversation-id>` targets a specific recipient conversation.
   Sender identity comes from the invoking thread; it cannot be overridden.

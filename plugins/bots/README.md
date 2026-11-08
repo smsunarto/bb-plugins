@@ -36,7 +36,10 @@ ones complete on their own after the hours set in this plugin's settings. Live
 workflow runs show as rows under the conversation that started them.
 
 Agents in a bot's conversations read and update its state with `bot_read_state`
-and `bot_update_state`. `bb bots list` and `bb bots message <bot> "<message>"`
+and `bot_update_state`, and message another bot's main chat with `bot_message`
+(it starts that bot's main chat if it has none and queues while it is busy);
+the recipient replies with `bot_message` too, so answers land in the sender's
+main chat. `bb bots list` and `bb bots message <bot> "<message>"`
 let agents find and message bots; `@` completes bot names in the composer
 without sending anything.
 

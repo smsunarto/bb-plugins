@@ -15,18 +15,25 @@ import { mainConversationId, toCompletionThread } from "./completion-server.ts";
 
 const files = instructionFiles(import.meta.url);
 
-const MESSAGE_MAX_CHARS = 12000;
+export const MESSAGE_MAX_CHARS = 12000;
 const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 // oxlint-disable-next-line no-control-regex -- strips terminal control characters from names
 const printable = (value: string) => value.replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
 
-function recipient(bots: BotMetadata[], selector: string) {
+/** The bot a selector names: its ID, else its exact name, else its name in any case. */
+export function recipient(
+  bots: BotMetadata[],
+  selector: string,
+  hint = "Use bb bots list for IDs and names.",
+) {
   const byId = bots.find((bot) => bot.id === selector);
   if (byId) return byId;
-  const matches = bots.filter((bot) => bot.name === selector);
-  if (matches.length > 1)
-    throw new Error("Several bots have that name. Use an exact bot ID from bb bots list.");
-  if (!matches.length) throw new Error("Bot not found. Use bb bots list for IDs and exact names.");
+  const exact = bots.filter((bot) => bot.name === selector);
+  const matches = exact.length
+    ? exact
+    : bots.filter((bot) => bot.name.toLowerCase() === selector.toLowerCase());
+  if (matches.length > 1) throw new Error(`Several bots have that name. ${hint}`);
+  if (!matches.length) throw new Error(`Bot not found. ${hint}`);
   return matches[0]!;
 }
 
@@ -154,7 +161,7 @@ export function botsCliCommands(
     description:
       "Sender identity comes from the invoking BB thread; there is no --from override. Quote names and messages containing spaces. List output contains public bot metadata, never private state.",
     positionals: [
-      { name: "bot", description: "Bot ID or exact name", required: true },
+      { name: "bot", description: "Bot ID or name", required: true },
       { name: "message", description: "Message text", required: true },
     ],
     options: {
@@ -375,7 +382,7 @@ export function botsCliCommands(
   });
   const remove = cliCommand({
     summary: "Delete a bot with its routines and memory; its conversations stay, unassigned",
-    positionals: [{ name: "bot", description: "Bot ID or exact name", required: true }],
+    positionals: [{ name: "bot", description: "Bot ID or name", required: true }],
     options: { json: JSON_OPTION },
     async run({ positionals, options }) {
       try {

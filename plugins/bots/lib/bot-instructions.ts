@@ -7,7 +7,7 @@ const files = instructionFiles(import.meta.url);
 
 /** The tool guidance BB appends when the bot's tools are selected. Reread so prompt edits apply live. */
 export const botGuidance = () =>
-  ["bot_read_state", "bot_routine_update", "bot_skill_read"]
+  ["bot_read_state", "bot_routine_update", "bot_skill_read", "bot_message"]
     .map((tool) => files.read(`tools/${tool}.instructions`))
     .join("\n\n");
 
