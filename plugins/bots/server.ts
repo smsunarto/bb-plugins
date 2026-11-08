@@ -6,6 +6,7 @@ import {
 } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
 import { z } from "zod";
+import { createSilentTurns } from "./lib/silent-turns.ts";
 import {
   BOT_TAGS,
   rpcContract,
@@ -1091,6 +1092,7 @@ export function registerBots(
 
   registerBotMentions(bb, store);
   const lastMessages = createLastMessages(bb, store, publish);
+  createSilentTurns(bb, (thread) => owner(thread) !== null);
 
   function createBot({
     name,
