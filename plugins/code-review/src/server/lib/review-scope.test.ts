@@ -21,12 +21,14 @@ test("Review supplies its skills and PR watch to authors and withholds them from
     assert.ok(author.tools.some((tool) => tool.name === "code_review_watch_pr"));
     const skill = readFileSync(new URL("../../../skills/request-review/SKILL.md", import.meta.url), "utf8");
     assert.match(skill, /^name: request-review$/m);
-    const titles = [...skill.matchAll(/--title "([^"\n]+)"/g)].map((match) =>
-      match[1]!
+    const templates = [...skill.matchAll(/--title "([^"\n]+)"/g)].map((match) => match[1]!);
+    assert.equal(templates.length, 1);
+    const titles = ["Claude", "Codex"].map((reviewer) =>
+      templates[0]!
+        .replaceAll("$reviewer_name", reviewer)
         .replaceAll("$review_label", "auth fix @ abc123")
         .replaceAll("$review_run", "bb-review.XYZ123"),
     );
-    assert.equal(titles.length, 2);
     for (const title of [...titles, "Arena (Claude)", "Arena (Codex)"]) {
       const child = await f.harness.behavior.resolveAgentConfiguration(
         makePluginAgentConfigurationContext({ thread: { title, parentThreadId: "author" } }),

@@ -198,6 +198,6 @@ The CLI root is `review`; existing `code_review_*` agent tools retain their name
 
 `bb review prompt --request <text>` prints the shared reviewer brief, including the playbook pointer, followed by your request. Pass multiline requests as one quoted argument and redirect stdout to a file for `bb thread spawn --prompt-file`. The command only formats the prompt; it launches no threads.
 
-The `request-review` skill requests independent Claude/Codex review of the current local agent session’s committed work or proposal. It owns the manual launch recipe, unique review titles, result handling, and child cleanup; engineering handoffs can discover it by name.
+The `request-review` skill requests one independent review, from the provider opposite the requesting thread's (Codex `gpt-6.1-sol` for Claude threads, Claude `claude-opus-5-5` otherwise; `high` reasoning, never fast), of the current local agent session’s committed work or proposal. It owns the manual launch recipe, unique review titles, result handling, and child cleanup; engineering handoffs can discover it by name.
 
 The shared `bb review prompt` command supplies the review brief for local session reviews and other callers, including Slopcop’s prepared PR checkout helper. That helper ships with the Slopcop skill; pull-request review is outside `request-review`’s scope.
