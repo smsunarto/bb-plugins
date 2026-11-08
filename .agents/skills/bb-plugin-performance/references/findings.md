@@ -79,18 +79,21 @@ The [Monokai template](../../../../plugins/monokai/scripts/bb-monokai.template.c
 
 October 2026 investigations (@thread:thr_se9qyngs5r, @thread:thr_4v44w32c6m) traced thread-switch style recalculation to the combined plugin stylesheets. Each plugin re-emits Tailwind utilities the host already supplies, and the builder's default scope prefix also matches anonymous roots: `[data-bb-plugin-root]` elements without a `data-bb-plugin` id. Every plugin's selectors therefore test against roots it does not own. Disabling one sheet at a time found no single culprit; deduplicating rules or dropping the anonymous-root branch in the browser roughly halved blocking time.
 
-Plugins opt into narrower matching with `bbPluginBuild.experimental_cssScope: "owned-root-v1"` in `package.json`. Before opting in, every mount and portal root must carry the plugin's named `data-bb-plugin` identity. Opted-in plugins use a local `lib/portal-scope.ts` helper (`usePortalScopeProps`) for portaled overlays. Audit body portals and shadow roots first, since an unnamed root loses its styles.
+BB 0.49 ships the narrower variant without a plugin opt-in; it ignores the earlier `bbPluginBuild.experimental_cssScope` field and no longer emits `dist/app.owned-root.css`:
 
-- Serving the narrower variant needs BB-core builder, server, and client support. That core change was unmerged when the investigations ended; check whether the installed BB serves it before claiming a live improvement.
-- An explicit `files` allowlist in a plugin's `package.json` silently drops new build outputs. Check a pack dry-run of every opted-in plugin.
-- Plugin-side volume levers remain: use host components and utilities instead of re-emitting them, and keep generated, vendored, or copied output out of the plugin root, because the builder scans it for class candidates.
+- **Gate:** the `narrowPluginCss` experiment makes the client request `app.css?css-scope=owned-root-v1`. Check it with `bb settings show --json`; it applies after a reload.
+- **Eligibility:** the server derives the narrow sheet at load time by dropping the `[data-bb-plugin-root]:not([data-bb-plugin])` arm from the utilities layer. It does so only when the built `app.js` has no `data-bb-plugin-root` without a `data-bb-plugin` within 120 characters. Otherwise that plugin silently keeps the legacy sheet, and `bb plugin build` warns.
+- **Roots:** give every mount and portal root the plugin's named `data-bb-plugin` identity. Plugins use a local `lib/portal-scope.ts` helper (`usePortalScopeProps`) for portaled overlays; refresh an old copy with `npx shadcn add @bb/portal-scope`. Audit body portals and shadow roots, since an unnamed root keeps the whole plugin on the legacy sheet.
+- **Audit:** compare `cssUrl` from `GET /api/v1/plugins` fetched with and without `css-scope=owned-root-v1`; an eligible plugin's narrow sheet is about 30% smaller. On November 7, 2026, every enabled live plugin was eligible.
+- **Lifetime:** the host attaches a plugin's sheet while one of its React slots, panel headers, portals, or content-script generations is active. Declarative entries such as an `experimental_threadAction` item do not attach it.
+- **Volume:** use host components and utilities instead of re-emitting them, and keep generated, vendored, or copied output out of the plugin root, because the builder scans it for class candidates. Whiteboard's hand-written CSS (about 320 KB served) dominates once its tab or panel has mounted.
 - Rank selector cost with a selector-stats trace. A CSSOM rewrite that won in the browser did not repeat once built and loaded normally, because the diagnostic rewrote rules the builder skipped.
 
 ## Pin bundle identity during comparisons
 
 Concurrent rollouts changed several plugin bundles in the middle of these experiments. Hash the served JavaScript and CSS before and after each arm and discard arms whose hashes changed.
 
-`bb plugin reload` rebuilds from the registered source when source files look newer than the built bundle. Copying theme or source files after `app.js` therefore triggers a rebuild from that source, and a reinstall from a manifest without the opt-in drops its owned-root output. Copy source assets first and built artifacts last, then verify hashes after reload.
+`bb plugin reload` rebuilds from the registered source when source files look newer than the built bundle. Copying theme or source files after `app.js` therefore triggers a rebuild from that source. Copy source assets first and built artifacts last, then verify hashes after reload.
 
 Launch test servers from a process that outlives the agent's turn. Stopping a turn to deliver a message killed services started inside it.
 

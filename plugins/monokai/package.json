@@ -29,9 +29,6 @@
     "bb": ">=0.42.0 <1.0.0",
     "bbPluginSdk": ">=0.4.47"
   },
-  "bbPluginBuild": {
-    "experimental_cssScope": "owned-root-v1"
-  },
   "bb": {
     "name": "bb Monokai",
     "description": "A dark Monokai-family palette for bb: one meaning per hue, a single text ladder, and a matching terminal.",
@@ -63,7 +60,6 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
-    "dist/app.owned-root.css",
     "themes/",
     "assets/",
     "README.md",

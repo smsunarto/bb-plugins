@@ -26,9 +26,6 @@
     "bb": ">=0.48.1 <1.0.0",
     "bbPluginSdk": ">=0.6.104"
   },
-  "bbPluginBuild": {
-    "experimental_cssScope": "owned-root-v1"
-  },
   "bb": {
     "name": "Kitchen Sink",
     "description": "Personal BB thread tools: project scripts, task lists, navigation, and completion feedback.",
@@ -51,7 +48,6 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
-    "dist/app.owned-root.css",
     "assets/",
     "README.md",
     "LICENSE",

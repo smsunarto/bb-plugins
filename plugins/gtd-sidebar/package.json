@@ -29,9 +29,6 @@
     "bb": ">=0.49.0 <1.0.0",
     "bbPluginSdk": ">=0.6.132"
   },
-  "bbPluginBuild": {
-    "experimental_cssScope": "owned-root-v1"
-  },
   "bb": {
     "name": "GTD Sidebar",
     "description": "An action-oriented sidebar that groups threads by who can act next.",
@@ -57,7 +54,6 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
-    "dist/app.owned-root.css",
     "assets/",
     "README.md",
     "LICENSE",

@@ -25,9 +25,6 @@
     "bb": ">=0.48.1 <1.0.0",
     "bbPluginSdk": ">=0.6.104"
   },
-  "bbPluginBuild": {
-    "experimental_cssScope": "owned-root-v1"
-  },
   "bb": {
     "name": "Bots",
     "description": "Named bots with private instructions and memory. GTD Sidebar shows them on its Bots shelf.",
@@ -54,7 +51,6 @@
     "dist/app.js",
     "dist/app.meta.json",
     "dist/app.css",
-    "dist/app.owned-root.css",
     "assets/",
     "README.md",
     "LICENSE",
