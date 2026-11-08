@@ -22,6 +22,15 @@ export const BOT_MIGRATIONS = [
   "CREATE INDEX bot_routines_by_bot ON bot_routines(bot_id)",
 ];
 
+/** Prefixes of the `bot_state` keys a bot owns, each stored as `<prefix>:<bot id>`. */
+const BOT_STATE_KEYS = [
+  "legacy-state",
+  "legacy-record",
+  "home-project",
+  "last-message",
+  "private-state-warning",
+];
+
 /** A stored bot row, minus fields bots no longer have: role and the launch preset's starter prompt. */
 function storedRow(data: string): unknown {
   const parsed: unknown = JSON.parse(data);
@@ -389,6 +398,19 @@ export function createBotStore(bb: BbPluginApi) {
           return save(update(current));
         })
         .immediate();
+    },
+    /**
+     * Forgets the bot: its row and everything keyed by it. Its conversations stay
+     * in bb, unassigned. Deleting a bot that is already gone changes nothing.
+     */
+    remove(id: string) {
+      db.transaction(() => {
+        for (const table of ["bot_threads", "bot_starts", "bot_project_owners", "bot_routines"])
+          db.prepare(`DELETE FROM ${table} WHERE bot_id = ?`).run(id);
+        const remove = db.prepare("DELETE FROM bot_state WHERE key = ?");
+        for (const prefix of BOT_STATE_KEYS) remove.run(`${prefix}:${id}`);
+        db.prepare("DELETE FROM bots WHERE id = ?").run(id);
+      }).immediate();
     },
     require(id: string) {
       const bot = get(id);

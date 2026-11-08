@@ -91,7 +91,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.cli.register(
     defineCli({
       name: "bots",
-      summary: "List, create, and message bots.",
+      summary: "List, create, message, and delete bots.",
       usageErrorExitCode: 2,
       commands,
     }),
@@ -963,6 +963,29 @@ export function registerBots(
     });
   }
 
+  /**
+   * Deletes a bot. Routines go first, each with its Automations schedule, so a
+   * failure leaves the bot intact and a retry finishes the rest. Its
+   * conversations and home project stay in bb, unassigned.
+   */
+  function deleteBot(botId: string) {
+    return serial("registry", () =>
+      serial(botId, async () => {
+        const bot = store.get(botId);
+        if (!bot) return { ok: true } as const;
+        if (bot.builtin === "dr-bot")
+          throw new Error("Dr. Bot is built in and cannot be deleted. Hide or unpin it instead.");
+        for (const routine of routines.list(botId)) await routines.act(routine.id, "delete");
+        store.remove(botId);
+        state.remove(botId);
+        publish();
+        publishRoutines();
+        publishSkills();
+        return { ok: true } as const;
+      }),
+    );
+  }
+
   /** The enrolled machine the Default machine setting names, if any. */
   async function configuredHost(hosts: Awaited<ReturnType<typeof bb.sdk.hosts.list>>) {
     return matchDefaultMachine(hosts, (await settings.get()).defaultMachine);
@@ -1066,6 +1089,7 @@ export function registerBots(
     bot_create: (input) => createBot(input),
     bot_prepare: ({ botId }) => serial(botId, () => state.prepare(botId)),
     bot_update: saveBotIdentity,
+    bot_delete: ({ botId }) => deleteBot(botId),
     bots_reorder: ({ bots: placements }) =>
       serial("registry", async () => {
         const bots = store.list();
@@ -1396,7 +1420,11 @@ export function registerBots(
   });
 
   return {
-    ...botsCliCommands(bb, store, resolveOwner, completion.records, { createBot, defaultHostId }),
+    ...botsCliCommands(bb, store, resolveOwner, completion.records, {
+      createBot,
+      deleteBot,
+      defaultHostId,
+    }),
     ...routineCliCommands(store, routines),
   };
 }

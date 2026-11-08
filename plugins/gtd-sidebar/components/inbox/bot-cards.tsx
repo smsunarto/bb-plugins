@@ -284,7 +284,7 @@ function BotMenu({
   );
 }
 
-/** A bot's own actions: its main chat, new conversations, pinning, settings, visibility, order. */
+/** A bot's own actions: its main chat, new conversations, pinning, settings, visibility, deletion, order. */
 function botMenu(
   bot: BotMetadata,
   actions: BotsActions,
@@ -317,6 +317,9 @@ function botMenu(
     { label: "Routines…", icon: "AlarmClock", run: () => actions.editBot(bot, "routines") },
     { label: "Skills…", icon: "Puzzle", run: () => actions.editBot(bot, "skills") },
     { label: "Hide until activity", icon: "Moon", run: () => actions.setHidden(bot, true) },
+    ...(bot.builtin === "dr-bot"
+      ? []
+      : [{ label: "Delete bot…", icon: "Delete" as const, run: () => actions.deleteBot(bot) }]),
     null,
     ...(options.canMoveUp
       ? [

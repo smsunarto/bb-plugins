@@ -438,6 +438,14 @@ export const rpcContract = defineRpcContract({
     output: metadataSchema,
   },
   bot_prepare: { input: z.object({ botId: id }).strict(), output: metadataSchema },
+  /**
+   * Deletes the bot, its routines, memory, and project ownership. Its
+   * conversations and home project stay in bb, no longer assigned to a bot.
+   */
+  bot_delete: {
+    input: z.object({ botId: id }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
   bots_reorder: {
     input: z
       .object({

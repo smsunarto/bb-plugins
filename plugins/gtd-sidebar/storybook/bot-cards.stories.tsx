@@ -148,6 +148,7 @@ const actions: BotsActions = {
   newInProject: fn(),
   fork: fn(),
   setHidden: fn(),
+  deleteBot: fn(),
   setPinned: fn(),
   setCompleted: fn(),
   move: fn(),

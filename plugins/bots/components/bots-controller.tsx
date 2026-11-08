@@ -25,6 +25,8 @@ export interface BotsActions {
   newInProject(bot: BotMetadata, kind: "project" | "worktree", from?: PluginSidebarThread): void;
   fork(bot: BotMetadata, source: PluginSidebarThread): void;
   setHidden(bot: BotMetadata, hidden: boolean): void;
+  /** Delete the bot after the user confirms; its conversations stay, unassigned. */
+  deleteBot(bot: BotMetadata): void;
   /** Pin a bot as a card at the top of the Bots tab, or unpin it back to its shelf. */
   setPinned(bot: BotMetadata, pinned: boolean): void;
   setCompleted(threadId: string, completed: boolean): void;
@@ -195,6 +197,18 @@ export function useBotsController(
       },
       setHidden: (bot, hidden) =>
         run(() => rpc.call("visibility_set", { botId: bot.id, hiddenUntilActivity: hidden })),
+      deleteBot: (bot) => {
+        if (
+          !window.confirm(
+            `Delete ${bot.name}? Its routines, memory, and soul are removed for good. Its conversations stay, no longer assigned to a bot.`,
+          )
+        )
+          return;
+        run(async () => {
+          await rpc.call("bot_delete", { botId: bot.id });
+          toast.success(`Deleted ${bot.name}`);
+        });
+      },
       setPinned: (bot, pinned) => run(() => rpc.call("pin_set", { botId: bot.id, pinned })),
       setCompleted: (threadId, completed) =>
         run(async () => {

@@ -11,7 +11,12 @@ the project it owns, or else in the bot's home project: its own folder under
 `~/bb-bots/` that bb registers on first use, so bots never share BB's Personal
 workspace; right-click it to start one in a
 project or a fresh worktree, edit the bot, manage its projects, hide it until its
-next activity, or move it up and down.
+next activity, move it up and down, or delete it.
+
+**Delete bot…** (or `bb bots delete <bot>`) removes the bot with its soul,
+memory, routines and their Automations schedules, and project ownership. Its
+conversations stay in bb, no longer assigned to a bot, and its home project and
+`~/bb-bots/` folder (with its skills) stay on disk. Dr. Bot cannot be deleted.
 
 ## Main chat
 

@@ -12,6 +12,7 @@ import {
   readdirSync,
   realpathSync,
   renameSync,
+  rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -384,6 +385,17 @@ export function createPrivateBotState(bb: BbPluginApi, store: BotStore, publish:
     publish();
     return document(bot, file);
   }
-  return { prepare, refresh: prepare, read, update, mirror, warnings, directory };
+  /** Drops a deleted bot's exports and warnings. Best effort: SQLite no longer holds the bot. */
+  function remove(botId: string) {
+    localWarnings.delete(botId);
+    try {
+      rmSync(directory(botId), { recursive: true, force: true });
+    } catch (error) {
+      bb.log.warn(
+        `Bot ${botId}: private state exports could not be removed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  return { prepare, refresh: prepare, read, update, mirror, remove, warnings, directory };
 }
 export type PrivateBotState = ReturnType<typeof createPrivateBotState>;

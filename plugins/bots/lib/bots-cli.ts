@@ -63,7 +63,7 @@ const fail = (error: unknown): never => {
 };
 
 /**
- * `bb bots list|message`. The default recipient is the shelf's
+ * `bb bots list|message|create|delete`. The default recipient is the shelf's
  * first conversation that is not completed.
  */
 export function botsCliCommands(
@@ -75,6 +75,7 @@ export function botsCliCommands(
     createBot: (
       input: z.infer<typeof rpcContract.bot_create.input> & Pick<BotMetadata, "pinned">,
     ) => Promise<BotMetadata>;
+    deleteBot: (botId: string) => Promise<{ ok: true }>;
     defaultHostId: (callerThreadId?: string) => Promise<string | null>;
   },
 ) {
@@ -372,7 +373,28 @@ export function botsCliCommands(
       }
     },
   });
-  return { list, message, create };
+  const remove = cliCommand({
+    summary: "Delete a bot with its routines and memory; its conversations stay, unassigned",
+    positionals: [{ name: "bot", description: "Bot ID or exact name", required: true }],
+    options: { json: JSON_OPTION },
+    async run({ positionals, options }) {
+      try {
+        if (!creation) throw new Error("Bot deletion is unavailable");
+        const bot = recipient(store.list(), positionals.bot);
+        await creation.deleteBot(bot.id);
+        const value = { id: bot.id, name: bot.name, deleted: true };
+        return {
+          exitCode: 0,
+          stdout: options.json
+            ? JSON.stringify(value)
+            : `Deleted ${printable(bot.name)} (${bot.id}).`,
+        };
+      } catch (error) {
+        return fail(error);
+      }
+    },
+  });
+  return { list, message, create, delete: remove };
 }
 
 const randomIndex = (length: number) => Math.floor(Math.random() * length);
