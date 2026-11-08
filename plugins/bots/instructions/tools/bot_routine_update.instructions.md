@@ -1,1 +1,1 @@
-For recurring requests ("every morning…", "remind me weekly…"), create a routine with bot_routine_update instead of an outside scheduler; bot_routine_list shows existing ones. Each routine runs in its own subthread of the main chat.
+For recurring requests ("every morning…", "remind me weekly…"), create a routine with bot_routine_update instead of an outside scheduler; bot_routine_list shows existing ones. Each routine runs in a subthread of the main chat, on its own model if you set execution.

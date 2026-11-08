@@ -5,9 +5,11 @@ import { z } from "zod";
 import type { BotMetadata } from "../contract.ts";
 import {
   ROUTINES_PER_BOT,
+  routineFieldsSchema,
   routineSchema,
   type Routine,
   type RoutineAction,
+  type RoutineExecution,
   type RoutineFields,
   type RoutineRun,
   type RoutineView,
@@ -163,6 +165,8 @@ export function createRoutines(
     /** The bot's main chat, started when it has none: every routine's parent. */
     mainChatId: (bot: BotMetadata) => Promise<string>;
     startConversation: StartRoutineConversation;
+    /** Rejects a harness the bot's machine does not offer. */
+    checkExecution: (bot: BotMetadata, execution: RoutineExecution) => Promise<void>;
     publish: () => void;
   },
 ) {
@@ -251,12 +255,18 @@ export function createRoutines(
       throw new Error("Run routines in the bot's home project or one of its linked projects.");
   }
 
-  async function create(botId: string, fields: RoutineFields, createdByThreadId: string | null) {
+  async function create(
+    botId: string,
+    input: z.input<typeof routineFieldsSchema>,
+    createdByThreadId: string | null,
+  ) {
     return serial(`bot:${botId}`, async () => {
       const bot = deps.requireBot(botId);
       if (list(botId).length >= ROUTINES_PER_BOT)
         throw new Error(`A bot can have at most ${ROUTINES_PER_BOT} routines. Delete one first.`);
+      const fields = routineFieldsSchema.parse(input);
       await validate(bot, fields);
+      if (fields.execution) await deps.checkExecution(bot, fields.execution);
       const now = Date.now();
       const draft: Routine = {
         id: `routine_${randomUUID().replaceAll("-", "")}`,
@@ -302,6 +312,8 @@ export function createRoutines(
       const bot = deps.requireBot(routine.botId);
       const next: Routine = { ...routine, ...fields };
       await validate(bot, next);
+      const harnessChanged = JSON.stringify(next.execution) !== JSON.stringify(routine.execution);
+      if (harnessChanged && next.execution) await deps.checkExecution(bot, next.execution);
       const moved = next.projectId !== routine.projectId;
       let automationId = routine.automationId;
       const scheduleChanged =
@@ -326,8 +338,9 @@ export function createRoutines(
         ...latest(routineId),
         ...fields,
         automationId,
-        // A moved routine starts a conversation in its new project.
-        ...(moved ? { threadId: null } : {}),
+        // A moved routine starts a conversation in its new project; a new
+        // harness needs a new thread, since a thread keeps its provider.
+        ...(moved || harnessChanged ? { threadId: null } : {}),
         updatedAt: Date.now(),
       });
       deps.publish();
@@ -380,8 +393,9 @@ export function createRoutines(
    * each finished run to the main chat. The first run, or a run after the
    * subthread was archived, deleted, moved to another bot or left in another
    * project, starts a new one; a subthread left under an older main chat moves
-   * under the current one. `automationId` is the calling automation's; a stale
-   * schedule left behind by an earlier replacement is refused.
+   * under the current one. A routine whose threadMode is new starts a subthread
+   * on every run. `automationId` is the calling automation's; a stale schedule
+   * left behind by an earlier replacement is refused.
    */
   async function fire(routineId: string, automationId?: string) {
     return serial(`routine:${routineId}`, async () => {
@@ -401,7 +415,7 @@ export function createRoutines(
         instruction: routine.instruction,
       });
       const parentThreadId = await deps.mainChatId(bot);
-      if (routine.threadId) {
+      if (routine.threadMode === "reuse" && routine.threadId) {
         const thread = await bb.sdk.threads.get({ threadId: routine.threadId }).catch(() => null);
         if (
           thread &&

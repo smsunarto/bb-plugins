@@ -6,6 +6,19 @@ export const ROUTINE_NAME_MAX = 80;
 export const ROUTINE_INSTRUCTION_MAX = 4000;
 
 const id = z.string().min(1);
+/** The harness a routine's runs start on; null uses the bot's preferred model, else bb's default. */
+export const routineExecutionSchema = z
+  .object({
+    providerId: z.string().trim().min(1),
+    model: z.string().trim().min(1),
+    reasoningLevel: z.string().trim().min(1),
+    serviceTier: z.string().trim().min(1).optional(),
+  })
+  .strict();
+export type RoutineExecution = z.infer<typeof routineExecutionSchema>;
+/** reuse: every run posts to the routine's one subthread. new: each run starts its own. */
+export const routineThreadModeSchema = z.enum(["reuse", "new"]);
+export type RoutineThreadMode = z.infer<typeof routineThreadModeSchema>;
 export const routineFieldsSchema = z
   .object({
     name: z.string().trim().min(1).max(ROUTINE_NAME_MAX),
@@ -13,6 +26,9 @@ export const routineFieldsSchema = z
     cron: z.string().trim().min(1).max(100),
     timezone: z.string().trim().min(1).max(64),
     projectId: id,
+    // Defaults keep routines saved before these fields existed valid.
+    execution: routineExecutionSchema.nullable().default(null),
+    threadMode: routineThreadModeSchema.default("reuse"),
   })
   .strict();
 export type RoutineFields = z.infer<typeof routineFieldsSchema>;
@@ -23,7 +39,7 @@ export const routineSchema = routineFieldsSchema
     botId: id,
     /** The bb automation that schedules the routine; null only if it could not be recreated. */
     automationId: id.nullable(),
-    /** The routine's conversation. Created by the first run. */
+    /** The routine's conversation: its latest run's when threadMode is new. Created by the first run. */
     threadId: id.nullable(),
     createdAt: z.number(),
     updatedAt: z.number(),
@@ -92,6 +108,20 @@ export const routineToolSchema = z
       .nullish()
       .describe(
         "Project the routine's conversation runs in. Create defaults to this conversation's.",
+      ),
+    execution: routineExecutionSchema
+      .nullish()
+      .describe(
+        "Harness for runs: providerId, model, and reasoningLevel from `bb provider models --json`. Omit to keep the current choice.",
+      ),
+    useDefaultModel: z
+      .boolean()
+      .nullish()
+      .describe("true clears execution, so runs use the bot's preferred model or bb's default."),
+    threadMode: routineThreadModeSchema
+      .nullish()
+      .describe(
+        "reuse (default): every run posts to the routine's one subthread. new: each run starts a fresh subthread.",
       ),
   })
   .strict();

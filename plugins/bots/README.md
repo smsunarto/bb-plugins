@@ -36,8 +36,10 @@ ones complete on their own after the hours set in this plugin's settings. Live
 workflow runs show as rows under the conversation that started them.
 
 Agents in a bot's conversations read and update its state with `bot_read_state`
-and `bot_update_state`, and message another bot's main chat with `bot_message`
-(it starts that bot's main chat if it has none and queues while it is busy);
+and `bot_update_state` (Dr. Bot can pass `bot` to these and the routine and
+skill tools to manage another bot, or `bot: "*"` to read every bot), and
+message another bot's main chat with `bot_message` (it starts that bot's main
+chat if it has none and queues while it is busy);
 the recipient replies with `bot_message` too, so answers land in the sender's
 main chat. `bb bots list` and `bb bots message <bot> "<message>"`
 let agents find and message bots; `@` completes bot names in the composer
@@ -60,7 +62,16 @@ Each routine runs in a subthread of the bot's main chat, and bb reports each
 finished run to the main chat. The first run starts that subthread (and the
 main chat, if the bot has none); later runs post into it, queued while it is
 busy. If it is archived, deleted, or moved to another bot, the next run starts
-a new one; one left under an older main chat moves under the current one.
+a new one; one left under an older main chat moves under the current one. Set
+a routine's **Subthread** to **New each run** to start a fresh subthread every
+time instead. A routine's **Model** overrides the bot's preferred model for its
+runs; changing it starts a new subthread on the next run. `bot_routine_list`
+reports each routine's latest run from its conversation: whether it finished,
+and the start of its reply.
+
+Each bot has a home folder on its machine (`~/bb-bots/<bot>`). Bots keep files
+that later runs reuse, such as cursors and dedupe records, in its `data/`
+folder.
 
 Schedules run through the built-in Automations plugin, so each routine also
 appears in the Automations panel with its run history. Its automation is a

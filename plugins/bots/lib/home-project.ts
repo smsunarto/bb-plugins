@@ -22,6 +22,17 @@ export function homePath(bot: Pick<BotMetadata, "id" | "name">) {
   return `${HOME_ROOT}/${slug ? `${slug}-` : ""}${suffix}`;
 }
 
+/** The bot's home folder and the machine it is on: where its home project was created. */
+export function homeFolder(
+  store: Pick<BotStore, "state">,
+  bot: Pick<BotMetadata, "id" | "name" | "hostId">,
+) {
+  const request = store.state<HomeRequest>(requestKey(bot.id));
+  return request
+    ? { path: request.path, hostId: request.hostId }
+    : { path: homePath(bot), hostId: bot.hostId };
+}
+
 /**
  * The bot's home project, created on its machine when it has none or its
  * project was deleted. Projectless conversations run in it instead of BB's

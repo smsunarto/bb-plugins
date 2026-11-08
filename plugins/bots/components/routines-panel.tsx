@@ -1,5 +1,8 @@
 import { useEffect, useId, useState } from "react";
-import { experimental_useRpcQuery as useRpcQuery } from "@get-bb/plugin-sdk/app";
+import {
+  experimental_ProviderModelPicker as ProviderModelPicker,
+  experimental_useRpcQuery as useRpcQuery,
+} from "@get-bb/plugin-sdk/app";
 import { Button } from "@bb-plugins/ui/button";
 import { Input } from "@bb-plugins/ui/input";
 import { Textarea } from "@bb-plugins/ui/textarea";
@@ -10,10 +13,12 @@ import {
   ROUTINE_INSTRUCTION_MAX,
   ROUTINE_NAME_MAX,
   type RoutineAction,
+  type RoutineExecution,
+  type RoutineThreadMode,
   type RoutineView,
 } from "../lib/routine-schema";
 import { cn } from "../lib/utils";
-import { Field, keepTypingKeys } from "./editor-fields";
+import { Field, keepTypingKeys, SwitchRow } from "./editor-fields";
 import { Icon } from "./ui/icon";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Switch } from "./ui/switch";
@@ -26,7 +31,14 @@ type Draft = {
   cron: string;
   timezone: string;
   projectId: string;
+  execution: RoutineExecution | null;
+  threadMode: RoutineThreadMode;
 };
+
+const THREAD_MODES = [
+  { value: "reuse", label: "Reuse one subthread" },
+  { value: "new", label: "New each run" },
+] as const satisfies readonly { value: RoutineThreadMode; label: string }[];
 
 const SCHEDULE_PRESETS = [
   { label: "Weekdays 9:00", cron: "0 9 * * 1-5" },
@@ -40,7 +52,16 @@ const localTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone || 
  * A bot's routines: scheduled instructions that Automations runs, each in its
  * own subthread of the bot's main chat. Changes apply immediately, apart from the editor's Save.
  */
-export function RoutinesPanel({ botId, botName }: { botId: string; botName: string }) {
+export function RoutinesPanel({
+  botId,
+  botName,
+  hostId,
+}: {
+  botId: string;
+  botName: string;
+  /** The bot's machine, whose catalog lists the models a routine can run on. */
+  hostId: string;
+}) {
   const query = useRpcQuery({
     contract: rpcContract,
     pluginId: BOTS_PLUGIN_ID,
@@ -89,7 +110,7 @@ export function RoutinesPanel({ botId, botName }: { botId: string; botName: stri
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="min-w-0 flex-1 text-[11px] leading-4 text-muted-foreground">
           Scheduled instructions {botName || "the bot"} runs through Automations. Each routine runs
-          in its own subthread, which reports to the main chat. Changes here apply immediately.
+          in a subthread that reports to the main chat. Changes here apply immediately.
         </p>
         {draft ? null : (
           <Button
@@ -105,6 +126,8 @@ export function RoutinesPanel({ botId, botName }: { botId: string; botName: stri
                 cron: SCHEDULE_PRESETS[0].cron,
                 timezone: localTimezone(),
                 projectId: projects[0]?.id ?? "",
+                execution: null,
+                threadMode: "reuse",
               })
             }
           >
@@ -118,6 +141,7 @@ export function RoutinesPanel({ botId, botName }: { botId: string; botName: stri
           key={draft.routineId ?? "new"}
           draft={draft}
           projects={projects}
+          hostId={hostId}
           saving={pending === "save"}
           onCancel={() => setDraft(null)}
           onSave={(value) => void save(value)}
@@ -165,6 +189,8 @@ export function RoutinesPanel({ botId, botName }: { botId: string; botName: stri
                   cron: routine.cron,
                   timezone: routine.timezone,
                   projectId: routine.projectId,
+                  execution: routine.execution,
+                  threadMode: routine.threadMode,
                 })
               }
             />
@@ -236,9 +262,12 @@ function RoutineRow({
           <p className="text-xs whitespace-pre-wrap">{routine.instruction}</p>
           <p className="text-[11px] text-muted-foreground">
             Runs in {projectName ?? "an unavailable project"} ·{" "}
-            {routine.threadId
-              ? "posts to its conversation"
-              : "starts its conversation on first run"}
+            {routine.execution ? `${routine.execution.model} · ` : ""}
+            {routine.threadMode === "new"
+              ? "starts a new subthread each run"
+              : routine.threadId
+                ? "posts to its conversation"
+                : "starts its conversation on first run"}
             {automation?.lastError ? ` · Last error: ${automation.lastError}` : ""}
           </p>
           <RoutineRuns routineId={routine.id} />
@@ -352,12 +381,14 @@ function RoutineRuns({ routineId }: { routineId: string }) {
 function RoutineForm({
   draft,
   projects,
+  hostId,
   saving,
   onCancel,
   onSave,
 }: {
   draft: Draft;
   projects: Project[];
+  hostId: string;
   saving: boolean;
   onCancel: () => void;
   onSave: (value: Draft) => void;
@@ -370,7 +401,8 @@ function RoutineForm({
     value.instruction.trim() &&
     value.cron.trim() &&
     value.timezone.trim() &&
-    value.projectId;
+    value.projectId &&
+    (!value.execution || (value.execution.providerId && value.execution.model));
   return (
     <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -455,6 +487,59 @@ function RoutineForm({
             value={value.timezone}
             onChange={(event) => set({ timezone: event.target.value })}
           />
+        </Field>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SwitchRow
+          id={`${id}-model`}
+          label="Model"
+          detail={
+            value.execution
+              ? "Runs start on this model."
+              : "Uses the bot's preferred model, else bb's default."
+          }
+          checked={value.execution !== null}
+          disabled={!hostId}
+          onCheckedChange={(checked) =>
+            set({
+              execution: checked ? { providerId: "", model: "", reasoningLevel: "medium" } : null,
+            })
+          }
+        >
+          {value.execution ? (
+            <ProviderModelPicker
+              value={value.execution}
+              routing={{ kind: "host", hostId }}
+              disabled={!hostId}
+              className="h-8 max-w-full"
+              onChange={(execution) => set({ execution })}
+            />
+          ) : null}
+        </SwitchRow>
+        <Field
+          label="Subthread"
+          htmlFor={`${id}-thread-mode`}
+          detail={
+            value.threadMode === "new"
+              ? "Each run starts fresh, without earlier runs' context."
+              : "Runs share one subthread and its context."
+          }
+        >
+          <Select
+            value={value.threadMode}
+            onValueChange={(threadMode) => set({ threadMode: threadMode as RoutineThreadMode })}
+          >
+            <SelectTrigger id={`${id}-thread-mode`} className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {THREAD_MODES.map((mode) => (
+                <SelectItem key={mode.value} value={mode.value}>
+                  {mode.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </Field>
       </div>
       <div className="flex justify-end gap-2">

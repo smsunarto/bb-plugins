@@ -462,7 +462,7 @@ export function BotEditor({
               </TabsContent>
               {botId ? (
                 <TabsContent value="routines">
-                  <RoutinesPanel botId={botId} botName={name} />
+                  <RoutinesPanel botId={botId} botName={name} hostId={hostId} />
                 </TabsContent>
               ) : null}
               {botId ? (

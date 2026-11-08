@@ -309,9 +309,15 @@ export const stateMutationToolSchema = z
     projectId: id
       .nullish()
       .describe("Required for project join/leave/own/release. Otherwise omit or null."),
+    bot: z
+      .string()
+      .trim()
+      .min(1)
+      .nullish()
+      .describe("Dr. Bot only: another bot's ID or name to change. Omit for this bot."),
   })
   .strict()
-  .superRefine((value, ctx) => {
+  .superRefine(({ bot: _bot, ...value }, ctx) => {
     const result = stateMutationSchema.safeParse(normalizeStateMutation(value));
     if (!result.success)
       ctx.addIssue({

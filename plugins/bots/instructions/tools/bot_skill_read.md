@@ -7,7 +7,7 @@ USE WHEN
 - The user asks which skills you have.
 
 INPUTS
-Omit name to list every skill with its description. Pass name to read that skill's complete SKILL.md.
+Omit name to list every skill with its description. Pass name to read that skill's complete SKILL.md. Dr. Bot can pass bot (another bot's ID or name) to read that bot's skills.
 
 RETURNS
 Without name: `{ skills: [{ name, description }] }`, empty until the first skill is saved. With name: `{ name, content, sha256 }`. Follow the content as you would a loaded skill, and pass sha256 to bot_skill_update to replace it.

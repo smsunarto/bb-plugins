@@ -27,7 +27,7 @@ import {
 } from "./lib/private-state.ts";
 import { memoryFacts, mutateStateDocument } from "./lib/state-actions.ts";
 import { browseProjectDirectory, createWorkProject } from "./lib/project-creation.ts";
-import { ensureHomeProject } from "./lib/home-project.ts";
+import { ensureHomeProject, homeFolder } from "./lib/home-project.ts";
 import { createBotSkills } from "./lib/bot-skills.ts";
 import { skillReadToolSchema, skillUpdateToolSchema } from "./lib/skill-schema.ts";
 import { botsCliCommands, frameBotMessage, MESSAGE_MAX_CHARS, recipient } from "./lib/bots-cli.ts";
@@ -43,7 +43,12 @@ import {
   createRoutines,
   type StartRoutineConversation,
 } from "./lib/routines.ts";
-import { routineToolSchema, type RoutineFields } from "./lib/routine-schema.ts";
+import {
+  routineToolSchema,
+  type Routine,
+  type RoutineExecution,
+  type RoutineFields,
+} from "./lib/routine-schema.ts";
 import { routineCliCommands } from "./lib/routines-cli.ts";
 import {
   BOT_COMPLETION_SETTINGS,
@@ -682,6 +687,39 @@ export function registerBots(
       return { threadId, created: true };
     });
   }
+  /** A routine's own harness wins over the bot's preferred model; permissions stay the bot's. */
+  const routineExecution = (bot: BotMetadata, routine: Routine) => {
+    if (!routine.execution) return presetExecution(bot);
+    const permissionMode = bot.launchPreset?.execution?.permissionMode;
+    return { ...routine.execution, ...(permissionMode ? { permissionMode } : {}) };
+  };
+  /**
+   * Rejects a model or reasoning level the bot's machine does not list. An
+   * unreachable catalog does not block saving; the run reports a bad choice.
+   */
+  async function checkRoutineExecution(bot: BotMetadata, execution: RoutineExecution) {
+    const catalog = await bb.sdk.providers
+      .models({
+        hostId: bot.hostId,
+        providerId: execution.providerId,
+        preferCached: true,
+        signal: AbortSignal.timeout(8000),
+      })
+      .catch(() => null);
+    if (!catalog || catalog.modelLoadError || !catalog.models.length) return;
+    const model = catalog.models.find(
+      (entry) => entry.model === execution.model || entry.id === execution.model,
+    );
+    if (!model)
+      throw new Error(
+        `${execution.providerId} has no model ${execution.model} on this bot's machine. Models: ${catalog.models.map((entry) => entry.model).join(", ")}.`,
+      );
+    const efforts = model.supportedReasoningEfforts.map((entry) => entry.reasoningEffort);
+    if (efforts.length && !efforts.includes(execution.reasoningLevel))
+      throw new Error(
+        `${execution.model} does not support reasoningLevel ${execution.reasoningLevel}. Use one of: ${efforts.join(", ")}.`,
+      );
+  }
   const startRoutineConversation: StartRoutineConversation = async ({
     bot,
     routine,
@@ -697,7 +735,7 @@ export function registerBots(
         environment: { type: "project-default" },
         parentThreadId,
         parentNotifications: "auto",
-        ...presetExecution(bot),
+        ...routineExecution(bot, routine),
         input: [{ type: "text", text, mentions: [] }],
       },
       "never",
@@ -735,6 +773,7 @@ export function registerBots(
     resolveOwner,
     mainChatId: async (bot) => (await ensureMainChat(bot.id)).threadId,
     startConversation: startRoutineConversation,
+    checkExecution: checkRoutineExecution,
     publish: publishRoutines,
   });
   async function ownedRoutine(botId: string, routineId: string) {
@@ -764,6 +803,7 @@ export function registerBots(
       bot,
       botProjectContext(bot, project, store),
       bot.mainThreadId === threadId,
+      homeFolder(store, bot),
     ),
   });
   bb.agents.configure((ctx) => {
@@ -771,13 +811,94 @@ export function registerBots(
     const bot = botId ? store.get(botId) : null;
     return bot ? botAgentConfiguration(bot, ctx.project, ctx.thread.id) : { tools: [], skills: [] };
   });
+  const RUN_REPLY_MAX = 600;
+  /**
+   * Whether a routine's latest run finished, from its conversation: Automations
+   * only records that the instruction was delivered.
+   */
+  async function runOutcome(botId: string, threadId: string | null) {
+    if (!threadId) return null;
+    try {
+      const signal = AbortSignal.timeout(5000);
+      const thread = await bb.sdk.threads.get({ threadId, signal });
+      // A run conversation moved to another bot is no longer this bot's to read.
+      if ((await resolveOwner(threadId, false)) !== botId)
+        return { threadId, status: "reassigned", updatedAt: thread.updatedAt, reply: null };
+      const status = thread.deletedAt
+        ? "deleted"
+        : thread.archivedAt
+          ? "archived"
+          : thread.runtime.displayStatus;
+      const busy = [
+        "active",
+        "pending",
+        "provisioning",
+        "starting",
+        "stopping",
+        "waiting-for-host",
+      ].includes(status);
+      const reply = busy
+        ? null
+        : ((await bb.sdk.threads.output({ threadId, signal }).catch(() => null))?.output ?? null);
+      return {
+        threadId,
+        status,
+        updatedAt: thread.updatedAt,
+        reply: reply && reply.length > RUN_REPLY_MAX ? `${reply.slice(0, RUN_REPLY_MAX)}…` : reply,
+      };
+    } catch (error) {
+      return {
+        threadId,
+        status: "unavailable",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+  const botSelector = z
+    .string()
+    .trim()
+    .min(1)
+    .nullish()
+    .describe("Dr. Bot only: another bot's ID or name to act on. Omit for this bot.");
+  const roster = () =>
+    store
+      .list()
+      .map((bot) => `${bot.name} (${bot.id})`)
+      .join(", ") || "none";
+  /**
+   * The bot a tool call acts on: the conversation's own bot, or, for Dr. Bot
+   * (which manages the others), the bot `selector` names.
+   */
+  async function actingBot(threadId: string, selector?: string | null) {
+    const callerId = await resolveOwner(threadId);
+    if (!callerId) throw new Error("This conversation is not assigned to a bot");
+    if (!selector) return callerId;
+    const target = recipient(store.list(), selector, `Bots: ${roster()}.`);
+    if (target.id !== callerId && store.require(callerId).builtin !== "dr-bot")
+      throw new Error(
+        "Only Dr. Bot can act on another bot. Omit bot, or ask that bot with bot_message.",
+      );
+    return target.id;
+  }
   bb.agents.registerTool({
     name: "bot_read_state",
     ...tools.tool("bot_read_state"),
-    parameters: stateReadSchema,
-    execute: async (input, ctx) => {
-      const botId = await resolveOwner(ctx.threadId);
-      if (!botId) throw new Error("This conversation is not assigned to a bot");
+    parameters: stateReadSchema.extend({
+      bot: botSelector.describe(
+        'Dr. Bot only: another bot\'s ID or name, or "*" for every bot. Omit for this bot.',
+      ),
+    }),
+    execute: async ({ bot: selector, ...input }, ctx) => {
+      if (selector === "*") {
+        const callerId = await actingBot(ctx.threadId);
+        if (store.require(callerId).builtin !== "dr-bot")
+          throw new Error("Only Dr. Bot can read every bot. Omit bot.");
+        const bots = [];
+        for (const bot of store.list())
+          bots.push({ name: bot.name, ...(await readBotState(bot.id, input, ctx.projectId)) });
+        return JSON.stringify({ bots });
+      }
+      const botId = await actingBot(ctx.threadId, selector);
       return JSON.stringify(await readBotState(botId, input, ctx.projectId));
     },
   });
@@ -785,9 +906,8 @@ export function registerBots(
     name: "bot_update_state",
     ...tools.tool("bot_update_state"),
     parameters: stateMutationToolSchema,
-    execute: async (change, ctx) => {
-      const botId = await resolveOwner(ctx.threadId);
-      if (!botId) throw new Error("This conversation is not assigned to a bot");
+    execute: async ({ bot: selector, ...change }, ctx) => {
+      const botId = await actingBot(ctx.threadId, selector);
       return JSON.stringify(
         await applyBotState(botId, stateMutationSchema.parse(normalizeStateMutation(change))),
       );
@@ -796,29 +916,47 @@ export function registerBots(
   bb.agents.registerTool({
     name: "bot_routine_list",
     ...tools.tool("bot_routine_list"),
-    parameters: z.object({}).strict(),
-    execute: async (_input, ctx) => {
-      const botId = await resolveOwner(ctx.threadId);
-      if (!botId) throw new Error("This conversation is not assigned to a bot");
+    parameters: z.object({ bot: botSelector }).strict(),
+    execute: async ({ bot: selector }, ctx) => {
+      const botId = await actingBot(ctx.threadId, selector);
       const [views, projects] = await Promise.all([
         routines.listViews(botId),
         routineProjects(store.require(botId)),
       ]);
-      return JSON.stringify({ routines: views, projects });
+      // Views are built for this call, so each takes its run outcome in place.
+      const routineViews = await Promise.all(
+        views.map(async (view) =>
+          Object.assign(view, { lastRun: await runOutcome(botId, view.threadId) }),
+        ),
+      );
+      return JSON.stringify({ routines: routineViews, projects });
     },
   });
   bb.agents.registerTool({
     name: "bot_routine_update",
     ...tools.tool("bot_routine_update"),
-    parameters: routineToolSchema,
-    execute: async (input, ctx) => {
-      const botId = await resolveOwner(ctx.threadId);
-      if (!botId) throw new Error("This conversation is not assigned to a bot");
+    parameters: routineToolSchema.extend({ bot: botSelector }),
+    execute: async ({ bot: selector, ...input }, ctx) => {
+      const botId = await actingBot(ctx.threadId, selector);
       const fields = Object.fromEntries(
-        (["name", "instruction", "cron", "timezone", "projectId"] as const)
+        (
+          [
+            "name",
+            "instruction",
+            "cron",
+            "timezone",
+            "projectId",
+            "execution",
+            "threadMode",
+          ] as const
+        )
           .filter((key) => input[key] != null)
           .map((key) => [key, input[key]]),
       ) as Partial<RoutineFields>;
+      if (input.useDefaultModel) {
+        if (input.execution) throw new Error("Pass execution or useDefaultModel, not both.");
+        fields.execution = null;
+      }
       if (input.action === "create") {
         const allowed = (await routineProjects(store.require(botId))).map((project) => project.id);
         const projectId =
@@ -837,7 +975,7 @@ export function registerBots(
       if (input.action === "update") {
         if (!Object.keys(fields).length)
           throw new Error(
-            "update needs at least one of name, instruction, cron, timezone, projectId",
+            "update needs at least one of name, instruction, cron, timezone, projectId, execution, useDefaultModel, threadMode",
           );
         return JSON.stringify(await routines.update(input.routineId, fields));
       }
@@ -847,10 +985,9 @@ export function registerBots(
   bb.agents.registerTool({
     name: "bot_skill_read",
     ...tools.tool("bot_skill_read"),
-    parameters: skillReadToolSchema,
-    execute: async ({ name }, ctx) => {
-      const botId = await resolveOwner(ctx.threadId);
-      if (!botId) throw new Error("This conversation is not assigned to a bot");
+    parameters: skillReadToolSchema.extend({ bot: botSelector }),
+    execute: async ({ bot: selector, name }, ctx) => {
+      const botId = await actingBot(ctx.threadId, selector);
       return JSON.stringify(
         name ? await skills.read(botId, name) : { skills: await skills.list(botId) },
       );
@@ -859,10 +996,9 @@ export function registerBots(
   bb.agents.registerTool({
     name: "bot_skill_update",
     ...tools.tool("bot_skill_update"),
-    parameters: skillUpdateToolSchema,
-    execute: async ({ action, name, content, expectedSha256 }, ctx) => {
-      const botId = await resolveOwner(ctx.threadId);
-      if (!botId) throw new Error("This conversation is not assigned to a bot");
+    parameters: skillUpdateToolSchema.extend({ bot: botSelector }),
+    execute: async ({ bot: selector, action, name, content, expectedSha256 }, ctx) => {
+      const botId = await actingBot(ctx.threadId, selector);
       if (action === "delete") {
         const result = await skills.remove(botId, name);
         publishSkills();

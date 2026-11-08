@@ -15,6 +15,7 @@ INPUTS
 
 - write with no expectedSha256 creates the skill and fails if it already exists. write with expectedSha256 replaces that revision.
 - delete takes only name and removes the skill's folder, supporting files included.
+- Dr. Bot can pass bot (another bot's ID or name) to change that bot's skills, with a sha256 read from the same bot.
 
 RETURNS
 write returns `{ name, sha256 }`; delete returns `{ ok: true }`. A conflict means the skill changed or already exists: read it again, merge, and retry with the new sha256.

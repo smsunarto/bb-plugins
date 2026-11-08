@@ -24,8 +24,16 @@ function excerpt(text: string, budget: number) {
     ? text
     : text.slice(0, Math.max(0, budget - TRUNCATED.length)) + TRUNCATED;
 }
-/** `mainChat`: the thread is the bot's main chat, which delegates work to subthreads. */
-export function botInstructions(bot: BotMetadata, project?: BotProjectContext, mainChat = false) {
+/**
+ * `mainChat`: the thread is the bot's main chat, which delegates work to
+ * subthreads. `home`: the bot's home folder, where it keeps durable files.
+ */
+export function botInstructions(
+  bot: BotMetadata,
+  project?: BotProjectContext,
+  mainChat = false,
+  home?: { path: string; hostId: string },
+) {
   const identity = files.read("bots/prompt-header", {
     name: bot.name.slice(0, 120),
     id: bot.id.slice(0, 128),
@@ -36,9 +44,13 @@ export function botInstructions(bot: BotMetadata, project?: BotProjectContext, m
   const main = mainChat
     ? `\n\n${files.read("bots/prompt-main-chat", { name: bot.name.slice(0, 120) })}`
     : "";
-  const header = `${identity}${relationship}${main}\n\n${files.read("bots/prompt-identity")}\n`;
-  // Existing oversized memory remains readable through the tool; never trim storage.
-  const memory = `\n\n${files.read("bots/prompt-memory")}\n${excerpt(bot.memory, MEMORY_MAX_CHARS)}`;
+  const folder = home ? `\n\n${files.read("bots/prompt-home", home)}` : "";
+  const header = `${identity}${relationship}${folder}${main}\n\n${files.read("bots/prompt-identity")}\n`;
+  // Existing oversized memory remains readable through the tool; never trim
+  // storage. Memory gives way before the header, so the total stays in budget.
+  const memoryHeading = `\n\n${files.read("bots/prompt-memory")}\n`;
+  const memoryBudget = DYNAMIC_MAX_CHARS - header.length - memoryHeading.length;
+  const memory = `${memoryHeading}${excerpt(bot.memory, Math.min(MEMORY_MAX_CHARS, memoryBudget))}`;
   const soulBudget = Math.min(1300, DYNAMIC_MAX_CHARS - header.length - memory.length);
   return header + excerpt(bot.soul, soulBudget) + memory;
 }
