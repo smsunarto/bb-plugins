@@ -239,9 +239,14 @@ const ThreadCardBody = memo(function ThreadCardBody({
       {title(editable)}
     </>
   );
+  // The touch menu's lifted copy leaves the badges out: they are other
+  // plugins' mounts, and a second copy would mount them twice.
+  const metadata = (interactive: boolean) =>
+    interactive ? <RowMetadata thread={thread} hidden={rename.isEditing} /> : null;
   const mobileRow = (interactive: boolean) => (
     <MobileThreadSummary
       title={rowTitle(interactive)}
+      metadata={metadata(interactive)}
       thread={statusThread}
       isUnread={isUnread}
       shortcut={shortcut}
@@ -340,6 +345,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
             ) : (
               <DesktopThreadSummary
                 title={rowTitle(true)}
+                metadata={metadata(true)}
                 thread={statusThread}
                 isUnread={isUnread}
                 shortcut={shortcut}
@@ -351,7 +357,6 @@ const ThreadCardBody = memo(function ThreadCardBody({
               />
             )}
           </div>
-          <RowMetadataLine thread={thread} hidden={rename.isEditing} />
         </div>
       </div>
     </RowContextMenu>
@@ -359,16 +364,17 @@ const ThreadCardBody = memo(function ThreadCardBody({
 });
 
 /**
- * Other plugins' row badges, as bb's own row draws them under its title.
- * bb's line takes its own pointer events; a row with no badges takes no space
- * (app.css). Like bb's row, it hides while the row is renamed.
+ * Other plugins' row badges, drawn on the title line between the title and
+ * the row's signals. bb's badges take their own pointer events; a row with no
+ * badges takes no space (app.css). Like bb's row, it hides while the row is
+ * renamed.
  */
-function RowMetadataLine({ thread, hidden }: { thread: PluginSidebarThread; hidden: boolean }) {
+function RowMetadata({ thread, hidden }: { thread: PluginSidebarThread; hidden: boolean }) {
   if (hidden) return null;
   return (
-    <div className="gtd-row-metadata pointer-events-none relative flex min-w-0 overflow-hidden">
+    <span className="gtd-row-metadata relative flex max-w-[45%] shrink-0 overflow-hidden">
       <ThreadRowMetadata thread={thread} />
-    </div>
+    </span>
   );
 }
 
@@ -474,6 +480,7 @@ function ThreadTitle({
  */
 function MobileThreadSummary({
   title,
+  metadata,
   thread,
   isUnread,
   shortcut,
@@ -482,6 +489,8 @@ function MobileThreadSummary({
   statusId,
 }: {
   title: ReactNode;
+  /** Other plugins' row badges, drawn after the title. */
+  metadata: ReactNode;
   thread: PluginSidebarThread;
   isUnread: boolean;
   shortcut: PluginSidebarThreadShortcut | null;
@@ -493,6 +502,7 @@ function MobileThreadSummary({
   return (
     <>
       {title}
+      {metadata}
       <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
         <ActivityCounts activity={activity} isCompactViewport />
         {/* Only the live row names its slot: the touch menu's lifted copy
@@ -719,6 +729,7 @@ function ThreadRowLink({
 
 function DesktopThreadSummary({
   title,
+  metadata,
   thread,
   isUnread,
   shortcut,
@@ -729,6 +740,8 @@ function DesktopThreadSummary({
   statusId,
 }: {
   title: ReactNode;
+  /** Other plugins' row badges, drawn after the title. */
+  metadata: ReactNode;
   thread: PluginSidebarThread;
   isUnread: boolean;
   shortcut: PluginSidebarThreadShortcut | null;
@@ -744,6 +757,7 @@ function DesktopThreadSummary({
   return (
     <>
       {title}
+      {metadata}
       <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
         <ActivityCounts activity={activity} isCompactViewport={false} />
         <span id={statusId} className={STATUS_SLOT_CLASS}>

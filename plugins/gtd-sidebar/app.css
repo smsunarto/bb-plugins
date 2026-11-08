@@ -73,7 +73,6 @@
 }
 
 .gtd-thread-row {
-  /* A card grows by its metadata line; slim rows pin their height with h-8. */
   min-height: 32px;
   /* Content starts 28px in: 10px past the disclosure's 12px chevron glyph,
      which sits centred in its 24px hit area. Each nesting level steps in by
@@ -82,13 +81,20 @@
   padding: 0 10px 0
     calc(28px + var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * var(--gtd-depth-step, 16px));
 }
-/* Other plugins' row badges under a card's title. The summary line keeps its
-   height, so the badges tuck under the title instead of adding a full line;
-   a row with no badges takes no space. */
+/* Other plugins' row badges on a card's title line, after the title; a row
+   with no badges takes no space. */
 .gtd-row-metadata {
-  margin-top: -6px;
-  padding-bottom: 6px;
   font-size: 11px;
+}
+/* After a badge, the status slot shrinks to its glyph, which keeps its right
+   edge; its 28px box would otherwise leave ~14px of air left of a 14px glyph.
+   The badge then pulls 1px into the line's 6px gap, so it sits 5px from the
+   glyph. */
+.gtd-row-metadata:has([data-has-items]) {
+  margin-right: -1px;
+}
+.gtd-row-metadata:has([data-has-items]) + .gtd-rest-signals > :last-child {
+  width: auto;
 }
 /* bb marks its metadata line with data-has-items once an item shows. */
 .gtd-row-metadata:not(:has([data-has-items])) {

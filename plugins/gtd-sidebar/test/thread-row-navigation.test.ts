@@ -748,7 +748,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.ok(within(row(view.slot, "quiet").parentElement!).getByText("3d"));
     });
 
-    it("draws bb's row metadata line under each card's title", () => {
+    it("draws bb's row metadata on each card's title line", () => {
       const view = mount(hostState([thread("a"), thread("b")]));
       for (const id of ["a", "b"]) {
         const line = row(view.slot, id).parentElement!.querySelector(".gtd-row-metadata");
@@ -758,8 +758,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
             ?.getAttribute("data-thread-row-metadata"),
           id,
         );
-        // After the title line, so the badges sit under the title.
-        assert.ok(line?.previousElementSibling?.querySelector(".gtd-thread-title"));
+        // Right after the title, on the same line.
+        assert.ok(line?.previousElementSibling?.classList.contains("gtd-thread-title"));
       }
     });
   });
