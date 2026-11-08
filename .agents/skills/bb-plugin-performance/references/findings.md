@@ -89,6 +89,27 @@ BB 0.49 ships the narrower variant without a plugin opt-in; it ignores the earli
 - **Volume:** use host components and utilities instead of re-emitting them, and keep generated, vendored, or copied output out of the plugin root, because the builder scans it for class candidates. Whiteboard's hand-written CSS (about 320 KB served) dominates once its tab or panel has mounted.
 - Rank selector cost with a selector-stats trace. A CSSOM rewrite that won in the browser did not repeat once built and loaded normally, because the diagnostic rewrote rules the builder skipped.
 
+## Universal-bucket selectors dominate the plugin share
+
+A November 7, 2026 investigation (@thread:thr_pi9w9trdym) measured thread switches on a BB 0.49 test instance with the live plugin set, narrow CSS on, and the Monokai dark theme. On a fast desktop, style recalculation took about 22.5 ms per switch, against about 115 ms of script. Disabling every plugin sheet in the browser cut it to about 6 ms, so plugin CSS owned roughly 16 ms.
+
+Selector stats (`disabled-by-default-blink.debug`, `SelectorStats` events keyed by `style_sheet_id`) ranked the plugin cost by rule shape rather than by sheet:
+
+- **`space-*` and `divide-*`:** Tailwind compiles them to `… > :not(:last-child)`, which Blink tests against every element. Each distinct utility a bundle uses costs this, so a plugin saves only after every use in its bundle is gone, including components bundled from other plugins (gtd-sidebar bundles bots) and Storybook files under the plugin root.
+- **Trailing `:is(…)` or `:not(…)`:** t3-composer's tray rules ended in `:is([data-…-footer], …)`. Listing each attribute let Blink bucket them and restyled about 280 fewer elements per switch.
+- **Bucketed shapes:** rules ending in a class, tag, or attribute were cheap, including attribute-heavy composer rules and `[&>li+li]:border-t`.
+
+Removing the `space-*` and `divide-*` utilities from the ten plugins whose sheets attach on a thread page, and rekeying t3-composer's tray rules, cut median style recalculation from 27.9 to 21.8 ms per switch (36 switches per side, alternating rebuilt bundles, host load about 8). The restyled element count fell from about 1,590 to 1,265. Host rules and builtin plugins' `space-*` utilities remain in the universal bucket.
+
+Replacements that kept the captured surfaces pixel-identical. A flex column also drops margins `space-*` gave a control followed only by hidden siblings, such as inactive Radix tab panels or the native `<select>` Radix Select adds inside a form, and stretches inline-level children such as an `inline-flex` button unless it has `self-start`: `flex flex-col gap-*` for block stacks; spacing on the known label and hint for wrappers with arbitrary children, such as a host picker that a flex column would stretch; and `border-t first:border-t-0` or `[&>li+li]:border-t` for row dividers.
+
+Splitting t3-composer's pill and icon-button `:is(…)` lists, and dropping a `> *` rule the pill rule already covered, cut that sheet's selector match attempts per switch from about 85,000 to 60,000. Computed styles stayed identical across hover, open, container-width, and coarse-pointer states, and the wall-clock change was below run-to-run noise. Two checks caught problems:
+
+- **Specificity:** an `:is()` list takes its most specific argument's specificity, and each split selector keeps only its own. The split let a coarse-pointer `width: auto` rule that had always lost apply for the first time.
+- **Descendant targets:** BB's `Square` icon draws a `path`, so `[&_rect]:stroke-0` missed it. Read the rendered markup before narrowing a `[&_*]` utility.
+
+t3-composer's editor-content rules (`.ProseMirror … > *`, `::selection`) and `[data-promptbox-standard-actions] > *`, which also reaches host-provided children, remain universal.
+
 ## Pin bundle identity during comparisons
 
 Concurrent rollouts changed several plugin bundles in the middle of these experiments. Hash the served JavaScript and CSS before and after each arm and discard arms whose hashes changed.
