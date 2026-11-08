@@ -388,12 +388,12 @@ function AccountFilter({
           {filtered ? (
             <AccountAvatar login={value} className="size-3.5" />
           ) : (
-            <span className="flex shrink-0 -space-x-1">
+            <span className="flex shrink-0">
               {accounts.slice(0, 3).map((login) => (
                 <AccountAvatar
                   key={login}
                   login={login}
-                  className="size-3.5 ring-1 ring-background"
+                  className="-mr-1 size-3.5 ring-1 ring-background last:mr-0"
                 />
               ))}
             </span>

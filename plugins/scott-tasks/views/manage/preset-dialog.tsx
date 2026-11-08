@@ -179,7 +179,7 @@ export function PresetDialog({
             Presets pick the provider, model, and guardrails for dispatched threads.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           <Field label="Name">
             <Input
               autoFocus

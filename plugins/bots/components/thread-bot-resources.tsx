@@ -47,7 +47,7 @@ function ReadStatus({
 }) {
   if (loading)
     return (
-      <output aria-busy="true" aria-label={`Loading ${label}`} className="block space-y-2 py-1">
+      <output aria-busy="true" aria-label={`Loading ${label}`} className="flex flex-col gap-2 py-1">
         <span className="sr-only">Loading {label}…</span>
         <span className="block h-4 animate-pulse rounded bg-muted/60" />
         <span className="block h-4 w-2/3 animate-pulse rounded bg-muted/60" />

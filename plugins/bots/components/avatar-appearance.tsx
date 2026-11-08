@@ -22,7 +22,7 @@ export function AvatarAppearance({
   onChange: (avatar: BotAvatar) => void;
 }) {
   return (
-    <Tabs defaultValue="expression" className="space-y-3">
+    <Tabs defaultValue="expression" className="flex flex-col gap-3">
       <TabsList aria-label="Appearance category" className="flex w-full">
         <TabsTrigger value="expression">Face</TabsTrigger>
         <TabsTrigger value="shape">Shape</TabsTrigger>

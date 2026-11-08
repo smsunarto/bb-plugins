@@ -17,7 +17,7 @@ export function EmptyState({
       <div className="flex size-10 items-center justify-center rounded-md bg-secondary text-muted-foreground">
         <Icon name={icon} className="size-5" />
       </div>
-      <div className="space-y-1">
+      <div className="flex flex-col gap-1">
         <p className="text-sm font-medium">{title}</p>
         {description ? <p className="text-sm text-muted-foreground">{description}</p> : null}
       </div>

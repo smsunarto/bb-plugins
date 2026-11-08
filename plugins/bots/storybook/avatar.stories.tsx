@@ -17,7 +17,7 @@ const initial: BotAvatar = {
 function AvatarEditor({ avatar: start }: { avatar: BotAvatar }) {
   const [avatar, setAvatar] = useState(start);
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
         {AVATAR_SHAPES.map((shape, index) => (
           <BotIcon

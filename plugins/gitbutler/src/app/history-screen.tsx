@@ -99,7 +99,7 @@ function Operations({ target }: { target: WorkspaceTarget }) {
     );
   }
   return (
-    <ol className="mt-3 list-none divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+    <ol className="mt-3 list-none [&>li+li]:border-t [&>li+li]:border-border overflow-hidden rounded-lg border border-border bg-card">
       {data.entries.map((entry) => (
         <OperationRow key={entry.id} entry={entry} />
       ))}

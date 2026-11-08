@@ -210,7 +210,7 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
         className={`rpiv-todo-body ${expanded ? "rpiv-todo-body-open" : "rpiv-todo-body-closed"}`}
       >
         <div className="overflow-hidden bg-popover">
-          <ul className="max-h-40 space-y-1 overflow-y-auto px-2.5 pb-2 pt-2">
+          <ul className="flex max-h-40 flex-col gap-1 overflow-y-auto px-2.5 pb-2 pt-2">
             {sorted.map((item) => (
               <TodoRow key={item.id} item={item} />
             ))}

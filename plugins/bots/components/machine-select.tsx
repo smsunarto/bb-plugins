@@ -22,7 +22,7 @@ export function MachineSelect({
 }) {
   const id = useId();
   return (
-    <div className="min-w-0 space-y-1">
+    <div className="flex min-w-0 flex-col gap-1">
       <Label htmlFor={id} className={hideLabel ? "sr-only" : "text-muted-foreground"}>
         {label}
       </Label>

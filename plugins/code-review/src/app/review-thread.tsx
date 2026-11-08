@@ -354,7 +354,7 @@ export function ReviewThreadView({
         {open ? (
           <>
             {showContext && thread.diffHunk ? <HunkExcerpt diffHunk={thread.diffHunk} /> : null}
-            <div className="divide-y divide-border">
+            <div className="[&>article+article]:border-t [&>article+article]:border-border">
               {thread.comments.map((comment) => (
                 <Comment key={comment.id} pr={pr} comment={comment} />
               ))}

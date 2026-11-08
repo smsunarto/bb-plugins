@@ -111,7 +111,7 @@ function ProjectRow({
 function SidebarSkeleton() {
   return (
     <DelayedLoading>
-      <div className="space-y-2 px-2 pt-2">
+      <div className="flex flex-col gap-2 px-2 pt-2">
         {["w-3/4", "w-2/3", "w-4/5", "w-3/5", "w-2/3"].map((width, index) => (
           <div className="flex h-7 items-center gap-2 px-2" key={index}>
             <Skeleton className="size-3 rounded-sm" />
@@ -189,7 +189,7 @@ export function TasksSidebar({
           onToggle={() => toggleFolder(folder.id)}
         />
         {!collapsed ? (
-          <div className="space-y-px">
+          <div className="flex flex-col gap-px">
             {folderProjects.map((project) => (
               <ProjectRow
                 key={project.id}
@@ -209,7 +209,7 @@ export function TasksSidebar({
   return (
     <div className="flex h-full min-h-0 flex-col bg-sidebar">
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2">
-        <div className="space-y-px">
+        <div className="flex flex-col gap-px">
           <SidebarRow active={route.kind === "all"} onClick={() => onNavigate({ kind: "all" })}>
             <Icon name="ListView" className="size-3.5 shrink-0" />
             <span className="flex-1">All tasks</span>
@@ -232,7 +232,7 @@ export function TasksSidebar({
             {ungrouped.length > 0 ? (
               <>
                 <SectionHeader label="Projects" />
-                <div className="space-y-px">
+                <div className="flex flex-col gap-px">
                   {ungrouped.map((project) => (
                     <ProjectRow
                       key={project.id}
@@ -257,7 +257,7 @@ export function TasksSidebar({
             {presets ? (
               <>
                 <SectionHeader label="Agent presets" />
-                <div className="space-y-px">
+                <div className="flex flex-col gap-px">
                   {presets.map((preset) => (
                     <SidebarRow
                       key={preset.id}

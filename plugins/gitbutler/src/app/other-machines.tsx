@@ -139,7 +139,7 @@ function MachineBody({ checkout }: { checkout: Checkout }) {
       if (checkout.stacks.length === 0) return <MachineNote>No applied branches.</MachineNote>;
       return (
         // One group per stack, its branches top first as on this machine's board.
-        <ul className="list-none divide-y divide-border border-t border-border">
+        <ul className="list-none border-t border-border [&>li+li]:border-t [&>li+li]:border-border">
           {checkout.stacks.map((stack) => (
             <li key={stack.key}>
               <ul className="list-none">

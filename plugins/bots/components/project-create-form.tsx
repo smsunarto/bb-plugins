@@ -119,7 +119,7 @@ export function ProjectCreateForm({
   return (
     // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- Enter in a field submits the form; the fields themselves are the interactive elements
     <div
-      className="project-create-form space-y-2"
+      className="project-create-form flex flex-col gap-2"
       onKeyDown={(event) => {
         if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
           event.preventDefault();
@@ -200,6 +200,7 @@ export function ProjectCreateForm({
           <Button
             type="button"
             size="sm"
+            className="self-start"
             disabled={loading || !directory || Boolean(error)}
             onClick={() => {
               changed();
@@ -214,7 +215,7 @@ export function ProjectCreateForm({
         <>
           <div className="grid grid-cols-2 gap-3">
             {/* oxlint-disable-next-line jsx-a11y/label-has-associated-control -- the label wraps the shared Input component */}
-            <label className="space-y-1 text-xs text-muted-foreground">
+            <label className="text-xs text-muted-foreground">
               Project name
               <Input
                 // oxlint-disable-next-line jsx-a11y/no-autofocus -- the first field of a dialog the user just opened
@@ -246,7 +247,7 @@ export function ProjectCreateForm({
             />
           </div>
           {/* oxlint-disable-next-line jsx-a11y/label-has-associated-control -- the label wraps the shared Input component */}
-          <label className="block space-y-1 text-xs text-muted-foreground">
+          <label className="block text-xs text-muted-foreground">
             Project folder
             <span className="flex gap-2">
               <Input

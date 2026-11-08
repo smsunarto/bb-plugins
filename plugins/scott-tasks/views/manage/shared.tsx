@@ -105,10 +105,10 @@ export function Field({
   hint?: string;
 }) {
   return (
-    <div className="space-y-1.5">
-      <label className="block text-xs font-medium text-muted-foreground">{label}</label>
+    <div>
+      <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{label}</label>
       {children}
-      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

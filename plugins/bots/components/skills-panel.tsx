@@ -51,7 +51,7 @@ export function SkillsPanel({ botId, botName }: { botId: string; botName: string
     });
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="min-w-0 flex-1 text-[11px] leading-4 text-muted-foreground">
           Procedures only {who} uses. They live in its home project's <code>.bb/skills</code> and
@@ -93,7 +93,7 @@ export function SkillsPanel({ botId, botName }: { botId: string; botName: string
         </p>
       ) : null}
       {query.data === undefined && query.error === null ? (
-        <div className="space-y-2" aria-busy="true" aria-label="Loading skills">
+        <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading skills">
           {[0, 1].map((index) => (
             <div key={index} className="h-12 animate-pulse rounded-md bg-muted/60" />
           ))}
@@ -111,7 +111,7 @@ export function SkillsPanel({ botId, botName }: { botId: string; botName: string
           skill.”
         </div>
       ) : (
-        <ul className="space-y-2">
+        <ul className="flex flex-col gap-2">
           {skills.map((skill) => (
             <SkillRow
               key={skill.name}
@@ -214,7 +214,7 @@ function SkillForm({
   const nameError =
     creating && value.name && !nameCheck.success ? nameCheck.error.issues[0]?.message : null;
   return (
-    <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+    <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/20 p-3">
       {creating ? (
         <Field
           label="Name"

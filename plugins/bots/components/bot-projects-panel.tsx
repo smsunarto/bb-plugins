@@ -87,7 +87,7 @@ export function BotProjectsPanel({
     );
   if (mode === "existing")
     return (
-      <div className="space-y-2">
+      <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium">Add existing project</span>
           <Button
@@ -110,7 +110,7 @@ export function BotProjectsPanel({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <div className="max-h-64 space-y-0.5 overflow-y-auto rounded-lg border border-border p-1">
+        <div className="flex max-h-64 flex-col gap-0.5 overflow-y-auto rounded-lg border border-border p-1">
           {candidates.map((project) => (
             <button
               key={project.id}
@@ -145,9 +145,9 @@ export function BotProjectsPanel({
       </div>
     );
   return (
-    <div className="bot-projects-panel space-y-3">
+    <div className="bot-projects-panel flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="min-w-0 space-y-1">
+        <div className="flex min-w-0 flex-col gap-1">
           <h3 className="text-xs font-semibold">Linked projects</h3>
           <p className="text-[11px] leading-4 text-muted-foreground">
             The owner receives new project chats. Members join when you pick this bot.
@@ -165,11 +165,14 @@ export function BotProjectsPanel({
         </div>
       </div>
       {linked.length ? (
-        <div className="divide-y divide-border rounded-lg border border-border">
+        <div className="rounded-lg border border-border">
           {linked.map((project) => {
             const otherOwner = ownerName(project.id);
             return (
-              <div key={project.id} className="flex items-center gap-2 px-3 py-2">
+              <div
+                key={project.id}
+                className="flex items-center gap-2 border-t border-border px-3 py-2 first:border-t-0"
+              >
                 <Icon name="Folder" className="size-4 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate text-xs" title={project.name}>
                   {project.name}

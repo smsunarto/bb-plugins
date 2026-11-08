@@ -151,7 +151,10 @@ function CheckGroups({ pr, data }: { pr: PullRequest; data: Checks }) {
       {failing.length ? (
         <FixButton count={selected.length} onFix={() => setFix({ open: true, checks: selected })} />
       ) : null}
-      <ul aria-label="Check runs" className="min-w-0 list-none divide-y divide-border">
+      <ul
+        aria-label="Check runs"
+        className="min-w-0 list-none [&>li+li]:border-t [&>li+li]:border-border"
+      >
         {groups
           .flatMap((group) => [...group.checks].sort((a, b) => a.name.localeCompare(b.name)))
           .map((check) => (

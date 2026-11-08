@@ -36,8 +36,8 @@ export function LaunchPresetEditor({
   const execution = value.execution;
   const routing = hostId ? { kind: "host" as const, hostId } : undefined;
   return (
-    <fieldset disabled={disabled} className="space-y-4">
-      <div className="space-y-2">
+    <fieldset disabled={disabled} className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
         <SwitchRow
           id={`${id}-model`}
           label="Preferred model"
@@ -132,7 +132,7 @@ export function LaunchPresetEditor({
               className="cursor-pointer items-start gap-2.5 rounded-lg border border-border p-3 font-normal transition-colors duration-150 hover:bg-state-hover hover:duration-0 has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-state-active"
             >
               <RadioGroupItem id={`${id}-${option.value}`} value={option.value} />
-              <span className="min-w-0 space-y-1">
+              <span className="flex min-w-0 flex-col gap-1">
                 <span className="block font-medium">{option.title}</span>
                 <span className="block leading-4 text-muted-foreground">{option.detail}</span>
               </span>

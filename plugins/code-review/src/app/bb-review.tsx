@@ -339,7 +339,7 @@ function InstructionsEditor({ initial, onDone }: { initial: string; onDone: () =
         }}
       />
       {save.isError ? <Notice tone="error">{errorText(save.error)}</Notice> : null}
-      <DialogFooter className="items-center gap-2 sm:space-x-0">
+      <DialogFooter className="items-center gap-2">
         <span className="me-auto text-[11px] tabular-nums text-muted-foreground">
           {text.length.toLocaleString()} / {INSTRUCTIONS_MAX.toLocaleString()}
         </span>

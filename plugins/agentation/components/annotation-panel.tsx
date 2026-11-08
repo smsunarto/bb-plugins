@@ -216,7 +216,7 @@ function AnnotationCard({
 
       <p className="mt-2 text-sm text-foreground">{annotation.comment}</p>
 
-      <dl className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+      <dl className="mt-2 flex flex-col gap-0.5 text-[11px] text-muted-foreground">
         <div className="truncate">
           <dt className="inline font-medium">Selector: </dt>
           <dd className="inline font-mono">{annotation.elementPath}</dd>
@@ -242,7 +242,7 @@ function AnnotationCard({
       </dl>
 
       {annotation.thread.length > 0 ? (
-        <ul className="mt-2 space-y-1 border-l border-border pl-3">
+        <ul className="mt-2 flex flex-col gap-1 border-l border-border pl-3">
           {annotation.thread.map((message) => (
             <li key={message.id} className="text-xs">
               <span
@@ -393,7 +393,7 @@ export function AnnotationPanel() {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="mx-auto w-full max-w-3xl space-y-4 p-4 md:p-5">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 md:p-5">
         <div className="flex flex-wrap items-center gap-1.5">
           {statusFilters.map((entry) => (
             <Button
@@ -423,7 +423,7 @@ export function AnnotationPanel() {
           grouped.map(([sessionId, sessionAnnotations]) => {
             const session = sessionsById.get(sessionId);
             return (
-              <section key={sessionId} className="space-y-2">
+              <section key={sessionId} className="flex flex-col gap-2">
                 <header className="flex items-center justify-between gap-2">
                   <h2 className="truncate text-sm font-medium text-foreground">
                     {session?.route ?? sessionId}
@@ -433,7 +433,7 @@ export function AnnotationPanel() {
                     {sessionAnnotations.length === 1 ? "" : "s"}
                   </span>
                 </header>
-                <div className="space-y-2">
+                <div className="flex flex-col gap-2">
                   {sessionAnnotations.map((annotation) => (
                     <AnnotationCard
                       key={annotation.id}
@@ -493,7 +493,7 @@ export function AnnotationPanelHeader() {
 /** Rendered under the declarative settings form on the plugin's detail page. */
 export function AgentationSettingsSection() {
   return (
-    <div className="space-y-2 text-sm text-muted-foreground">
+    <div className="flex flex-col gap-2 text-sm text-muted-foreground">
       <p>
         The toolbar mounts over the whole bb app, so it can annotate the shell and any plugin
         surface. Elements drawn by a plugin are attributed to that plugin automatically.

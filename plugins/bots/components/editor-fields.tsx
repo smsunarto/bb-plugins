@@ -21,8 +21,8 @@ export function Field({
   children: ReactNode;
 }) {
   return (
-    <div className={cn("min-w-0 space-y-1.5", className)}>
-      <div className="flex min-h-4 items-center justify-between gap-2">
+    <div className={cn("min-w-0", className)}>
+      <div className="mb-1.5 flex min-h-4 items-center justify-between gap-2">
         {htmlFor ? (
           <Label htmlFor={htmlFor}>{label}</Label>
         ) : (
@@ -31,7 +31,9 @@ export function Field({
         {aside}
       </div>
       {children}
-      {detail ? <p className="text-[11px] leading-4 text-muted-foreground">{detail}</p> : null}
+      {detail ? (
+        <p className="mt-1.5 text-[11px] leading-4 text-muted-foreground">{detail}</p>
+      ) : null}
     </div>
   );
 }
@@ -58,7 +60,7 @@ export function SwitchRow({
   return (
     <div className="rounded-lg border border-border">
       <div className="flex items-center justify-between gap-3 p-3">
-        <div className="min-w-0 space-y-1">
+        <div className="flex min-w-0 flex-col gap-1">
           <Label htmlFor={id}>{label}</Label>
           <p className="text-[11px] leading-4 text-muted-foreground">{detail}</p>
         </div>
@@ -72,7 +74,7 @@ export function SwitchRow({
 /** A small heading that opens a group of fields. */
 export function SectionHeading({ title, detail }: { title: string; detail?: string }) {
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       <h3 className="text-xs font-semibold">{title}</h3>
       {detail ? <p className="text-[11px] leading-4 text-muted-foreground">{detail}</p> : null}
     </div>

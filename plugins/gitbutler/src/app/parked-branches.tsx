@@ -87,7 +87,7 @@ export function ParkedBranches({ target }: { target: WorkspaceTarget }) {
         <Count>{data.branches.length}</Count>
       </button>
       {open ? (
-        <ul className="list-none divide-y divide-border border-t border-border">
+        <ul className="list-none border-t border-border [&>li+li]:border-t [&>li+li]:border-border">
           {data.branches.map((branch) => (
             <ParkedRow key={branch.name} branch={branch} />
           ))}

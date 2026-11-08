@@ -131,7 +131,7 @@ function FixComposer({
         <pre className="max-h-[50vh] min-h-32 overflow-auto rounded-lg border border-border bg-card p-2.5 font-mono text-[11px] whitespace-pre-wrap [overflow-wrap:anywhere]">
           {text}
         </pre>
-        <DialogFooter className="gap-2 sm:space-x-0">
+        <DialogFooter className="gap-2">
           <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onClose}>
             Cancel
           </Button>

@@ -375,7 +375,7 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
         )}
         renderList={(dismiss) => (
           <ol
-            className="flex flex-col divide-y divide-border"
+            className="flex flex-col border-t border-border [&>li+li]:border-t [&>li+li]:border-border"
             aria-busy={action !== null && action.kind !== "confirm-discard"}
           >
             {rows.map(({ id, label, parts }, index) => (
@@ -619,7 +619,7 @@ function AnnotationsAction({
         align="start"
         mobileTitle={label}
         className={cn(
-          "flex flex-col divide-y divide-border text-sm",
+          "flex flex-col text-sm",
           !isCompact && "max-h-80 w-96 max-w-[calc(100vw-2rem)] overflow-y-auto p-0",
         )}
         onPointerEnter={hoverOpen}

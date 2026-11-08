@@ -352,7 +352,7 @@ export function BotEditor({
               </TabsList>
             </div>
             <div className="bot-editor-panel h-[26rem] min-h-0 shrink overflow-y-auto px-5 py-4">
-              <TabsContent value="setup" className="space-y-5">
+              <TabsContent value="setup" className="flex flex-col gap-5">
                 <Field
                   label="Machine"
                   detail="Where new conversations run. The bot's state is stored in BB, not on the machine."
@@ -368,7 +368,7 @@ export function BotEditor({
                     />
                   </div>
                 </Field>
-                <div className="space-y-3">
+                <div className="flex flex-col gap-3">
                   <SectionHeading
                     title="New conversations"
                     detail="Defaults applied when you start a conversation with this bot."
@@ -481,7 +481,7 @@ export function BotEditor({
               {error}
             </div>
           ) : null}
-          <DialogFooter className="shrink-0 gap-2 border-t border-border px-5 py-3">
+          <DialogFooter className="shrink-0 gap-2 border-t border-border px-5 py-3 sm:gap-4">
             <Button type="button" variant="outline" disabled={busy} onClick={closeEditor}>
               Cancel
             </Button>

@@ -106,7 +106,7 @@ export function RoutinesPanel({
     });
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="min-w-0 flex-1 text-[11px] leading-4 text-muted-foreground">
           Scheduled instructions {botName || "the bot"} runs through Automations. Each routine runs
@@ -155,7 +155,7 @@ export function RoutinesPanel({
       ) : null}
       {notice ? <output className="block text-xs text-muted-foreground">{notice}</output> : null}
       {query.data === undefined && query.error === null ? (
-        <div className="space-y-2" aria-busy="true" aria-label="Loading routines">
+        <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading routines">
           {[0, 1].map((index) => (
             <div key={index} className="h-14 animate-pulse rounded-md bg-muted/60" />
           ))}
@@ -173,7 +173,7 @@ export function RoutinesPanel({
           9:00, summarize new support tickets.”
         </div>
       ) : (
-        <ul className="space-y-2">
+        <ul className="flex flex-col gap-2">
           {routines.map((routine) => (
             <RoutineRow
               key={routine.id}
@@ -255,7 +255,7 @@ function RoutineRow({
         />
       </div>
       {open ? (
-        <div className="space-y-3 border-t border-border px-3 py-2.5">
+        <div className="flex flex-col gap-3 border-t border-border px-3 py-2.5">
           {routine.automationError ? (
             <p className="text-xs text-destructive">{routine.automationError}</p>
           ) : null}
@@ -350,7 +350,7 @@ function RoutineRuns({ routineId }: { routineId: string }) {
   const runs = query.data?.runs ?? [];
   if (!runs.length) return <p className="text-[11px] text-muted-foreground">No runs yet.</p>;
   return (
-    <ul className="space-y-1" aria-label="Recent runs">
+    <ul className="flex flex-col gap-1" aria-label="Recent runs">
       {runs.map((run) => (
         <li key={run.id} className="flex min-w-0 items-center gap-2 text-[11px]">
           <Icon
@@ -404,7 +404,7 @@ function RoutineForm({
     value.projectId &&
     (!value.execution || (value.execution.providerId && value.execution.model));
   return (
-    <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
+    <div className="flex flex-col gap-3 rounded-md border border-border bg-muted/20 p-3">
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Name" htmlFor={`${id}-name`}>
           <Input
@@ -461,7 +461,7 @@ function RoutineForm({
             placeholder="0 9 * * 1-5"
             onChange={(event) => set({ cron: event.target.value })}
           />
-          <div className="flex flex-wrap gap-1">
+          <div className="mt-1.5 flex flex-wrap gap-1">
             {SCHEDULE_PRESETS.map((preset) => (
               <Button
                 key={preset.cron}
