@@ -2,9 +2,8 @@
    Each is its own pill with app.css's symmetric padding and hover.
    Scoped under [data-t3-model-controls] so these rules outrank app.css's control pills,
    which load after this file. */
-[data-t3-composer-controls]
-  [data-t3-model-controls]
-  :is([data-t3-model-picker-trigger], [data-t3-traits-trigger]) {
+[data-t3-composer-controls] [data-t3-model-controls] [data-t3-model-picker-trigger],
+[data-t3-composer-controls] [data-t3-model-controls] [data-t3-traits-trigger] {
   display: inline-flex;
   align-items: center;
 }

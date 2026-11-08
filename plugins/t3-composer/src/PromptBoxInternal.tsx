@@ -3253,7 +3253,7 @@ export function PromptBoxInternal({
                             : COARSE_POINTER_PROMPT_ICON_ACTION_BUTTON_CLASS
                         }
                       >
-                        <Icon name="Square" className="size-3.5 fill-current [&_*]:stroke-0" />
+                        <Icon name="Square" className="size-3.5 fill-current [&_path]:stroke-0" />
                       </Button>
                     ) : showVoiceAsPrimaryAction ? (
                       <VoiceInputButton

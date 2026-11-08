@@ -104,13 +104,8 @@
   reading-flow: flex-visual;
 }
 
-[data-t3-composer][data-promptbox] [data-t3-composer-controls] > * {
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* Pills: model, effort and mode pickers. */
-[data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]) {
+/* Pills: model, effort and mode pickers. Each, like BB's fallback picker, is a button. */
+[data-t3-composer][data-promptbox] [data-t3-composer-controls] button {
   height: 28px;
   min-height: 28px;
   min-width: 0;
@@ -129,7 +124,7 @@
 
 [data-t3-composer][data-promptbox]
   [data-t3-composer-controls]
-  :is(button, [role="combobox"]):is(:hover, [data-state="open"], [aria-expanded="true"]) {
+  button:is(:hover, [data-state="open"], [aria-expanded="true"]) {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
   color: var(--foreground);
 }
@@ -146,12 +141,9 @@
 }
 
 /* Round icon buttons: +, mic, save draft and plugin actions. */
-[data-t3-composer][data-promptbox]
-  :is(
-    [data-t3-composer-actions-menu],
-    [data-t3-composer-voice]:not([data-promptbox-submit-action]),
-    [data-t3-composer-save-draft]
-  ) {
+[data-t3-composer][data-promptbox] [data-t3-composer-actions-menu],
+[data-t3-composer][data-promptbox] [data-t3-composer-voice]:not([data-promptbox-submit-action]),
+[data-t3-composer][data-promptbox] [data-t3-composer-save-draft] {
   width: 28px;
   min-width: 28px;
   height: 28px;
@@ -162,12 +154,10 @@
   color: var(--foreground);
 }
 
+[data-t3-composer][data-promptbox] [data-t3-composer-actions-menu]:hover,
 [data-t3-composer][data-promptbox]
-  :is(
-    [data-t3-composer-actions-menu],
-    [data-t3-composer-voice]:not([data-promptbox-submit-action]),
-    [data-t3-composer-save-draft]
-  ):hover {
+  [data-t3-composer-voice]:not([data-promptbox-submit-action]):hover,
+[data-t3-composer][data-promptbox] [data-t3-composer-save-draft]:hover {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
@@ -177,8 +167,9 @@
 }
 
 [data-t3-composer][data-promptbox]
-  :is([data-t3-composer-voice]:not([data-promptbox-submit-action]), [data-t3-composer-save-draft])
-  > svg {
+  [data-t3-composer-voice]:not([data-promptbox-submit-action])
+  > svg,
+[data-t3-composer][data-promptbox] [data-t3-composer-save-draft] > svg {
   width: 16px;
   height: 16px;
 }
@@ -254,7 +245,7 @@
     margin-left: auto;
   }
 
-  [data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]) {
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls] button {
     padding: 0 6px;
     font-size: 13px;
   }
@@ -481,15 +472,12 @@
 
 /* On the narrowest phones the name alone identifies the model. */
 @container t3-composer (max-width: 330px) {
-  [data-t3-composer][data-promptbox]
-    [data-t3-model-picker-trigger]
-    > span
-    > :not([data-t3-model-picker-label]) {
+  [data-t3-composer][data-promptbox] [data-t3-model-picker-trigger] > span > [aria-hidden="true"] {
     display: none;
   }
 
   /* Tighter pills keep the add button, model and effort on one row on 360px phones. */
-  [data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]),
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls] button,
   [data-t3-composer][data-promptbox] [data-t3-permission] button {
     padding: 0 4px;
   }
@@ -509,10 +497,7 @@
   flex-shrink: 1;
 }
 
-[data-t3-composer][data-promptbox]
-  [data-t3-composer-controls]
-  :is(button, [role="combobox"])
-  > svg {
+[data-t3-composer][data-promptbox] [data-t3-composer-controls] button > svg {
   flex-shrink: 0;
 }
 
@@ -600,13 +585,10 @@
     line-height: 24px;
   }
 
-  [data-t3-composer][data-promptbox]
-    :is(
-      [data-t3-composer-actions-menu],
-      [data-t3-composer-voice]:not([data-promptbox-submit-action]),
-      [data-t3-composer-save-draft],
-      [data-promptbox-submit-action]
-    ) {
+  [data-t3-composer][data-promptbox] [data-t3-composer-actions-menu],
+  [data-t3-composer][data-promptbox] [data-t3-composer-voice]:not([data-promptbox-submit-action]),
+  [data-t3-composer][data-promptbox] [data-t3-composer-save-draft],
+  [data-t3-composer][data-promptbox] [data-promptbox-submit-action] {
     width: 36px;
     min-width: 36px;
     height: 36px;
@@ -622,7 +604,7 @@
     height: 14px;
   }
 
-  [data-t3-composer][data-promptbox] [data-t3-composer-controls] :is(button, [role="combobox"]),
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls] button,
   [data-t3-composer][data-promptbox] [data-t3-permission] button,
   [data-t3-composer][data-promptbox] [data-plugin-composer-action] {
     height: 36px;
