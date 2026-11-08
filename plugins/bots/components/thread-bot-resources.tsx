@@ -7,9 +7,11 @@ import {
 import { Button } from "@bb-plugins/ui/button";
 import { BOTS_PLUGIN_ID, rpcContract } from "../contract";
 import { describeCron, routineStatus } from "../lib/routine-format";
-import { CardToggle, ClampedText, ResourceCard } from "./resource-card";
+import { CardToggle, cardTextClass, ClampedText, ResourceCard } from "./resource-card";
 
-const textClass = "whitespace-pre-wrap text-xs leading-relaxed [overflow-wrap:anywhere]";
+const textClass = `whitespace-pre-wrap ${cardTextClass}`;
+/** "America/Los_Angeles" as "Los Angeles": the city is what a reader recognises. */
+const zoneCity = (timezone: string) => timezone.split("/").pop()?.replace(/_/g, " ") ?? timezone;
 /** Markdown at the sidebar's reading size, scrolling inside its own region when long. */
 const markdownClass = "bot-sidebar-markdown max-h-80 min-w-0 overflow-auto text-xs";
 
@@ -108,11 +110,7 @@ function Skill({ botId, name, description }: { botId: string; name: string; desc
   const [open, setOpen] = useState(false);
   return (
     <ResourceCard title={name}>
-      {description ? (
-        <p className="text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
-          {description}
-        </p>
-      ) : null}
+      {description ? <p className={cardTextClass}>{description}</p> : null}
       {open ? <SkillContent botId={botId} name={name} /> : null}
       <CardToggle open={open} onClick={() => setOpen(!open)}>
         {open ? "Hide SKILL.md" : "Read SKILL.md"}
@@ -129,7 +127,7 @@ function SkillContent({ botId, name }: { botId: string; name: string }) {
     input: { botId, name },
   });
   return (
-    <div className="min-w-0 border-t border-border/60 pt-2">
+    <div className="w-full min-w-0 border-t border-border/60 pt-2">
       <ReadStatus
         label={name}
         loading={!query.data && query.error === null}
@@ -167,17 +165,21 @@ function BotRoutines({ botId }: { botId: string }) {
               <ResourceCard
                 key={routine.id}
                 title={routine.name}
+                subtitle={
+                  <>
+                    {describeCron(routine.cron)}
+                    {" · "}
+                    <span title={routine.timezone} className="whitespace-nowrap">
+                      {zoneCity(routine.timezone)}
+                    </span>
+                  </>
+                }
                 meta={routineStatus(routine)}
                 metaTone={routine.automationError ? "danger" : "muted"}
               >
-                <p className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                  {describeCron(routine.cron)}
-                  {" · "}
-                  {routine.timezone}
-                </p>
                 <ClampedText text={routine.instruction} className={textClass} />
                 {routine.automationError ? (
-                  <p className="text-xs text-destructive [overflow-wrap:anywhere]">
+                  <p className="text-xs leading-[1.55] text-destructive [overflow-wrap:anywhere]">
                     {routine.automationError}
                   </p>
                 ) : null}

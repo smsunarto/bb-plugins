@@ -175,7 +175,7 @@ function PromptBlock({ title, text }: { title: string; text: string }) {
     <ResourceCard title={title} meta={`${text.length.toLocaleString()} chars`}>
       <ClampedText
         text={text}
-        className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-muted-foreground"
+        className="whitespace-pre-wrap break-words font-mono text-[11px] leading-[1.6] text-muted-foreground"
       />
     </ResourceCard>
   );
@@ -193,7 +193,7 @@ export function ThreadBotPromptSection({ threadId }: ExperimentalThreadInfoProps
           {value.sections.map((section) => (
             <PromptBlock key={section.id} title={section.title} text={section.text} />
           ))}
-          <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+          <p className="mt-1 text-[11px] leading-[1.55] text-muted-foreground text-pretty [overflow-wrap:anywhere]">
             Tools: {value.tools.join(", ")} · Skill: {value.skills.join(", ")}
           </p>
         </div>
