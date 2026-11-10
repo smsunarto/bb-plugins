@@ -55,8 +55,8 @@ python3 <installed-slopcop-skill>/scripts/start_review.py \
 - Allow at most one recovery attempt per reviewer slot. For a recoverable early idle or incomplete result, send a targeted `bb thread tell <id> --mode steer --message-file <file>` asking the same reviewer to resume its assignment, inspect all recorded children, collect completed reports, and finish. For a failed turn caused by a transient provider/rate-limit/network error, use `bb thread retry <id> --reason <reason>`; respect any reported retry-after time. Preserve the thread, provider, worktree, assignment, and completed evidence.
 - Spawn a replacement only when a launch definitively failed or the original thread is unusable and cannot resume. Reconcile an unknown launch outcome by parent and `review_run` first, then rerun the helper with `--provider <failed-provider>` for that slot only. This uses the same one recovery attempt; never repeat successful fanout or replace a recoverable child.
 - Do not retry permission denials, missing prerequisites, invalid targets, intentional user stops, or substantive review uncertainty. If recovery fails, report the exact error and mark coverage incomplete. Deny permission requests from review children.
-- Require each reviewer's explicit Architecture assessment: material decisions marked keep, change, or unverified with evidence and tradeoffs. A list of nits alone is incomplete.
-- Check both reports against the same pinned target and all eleven attestation rows: A,B,C,D,E,F,G,H,J,K,I under EACH reviewer.
+- Require each reviewer's Premise verdict (P0–P5) and, when its premise gate passed, its explicit Architecture assessment: material decisions marked keep, change, or unverified with evidence and tradeoffs. A list of nits alone is incomplete.
+- Check both reports against the same pinned target and all eleven attestation rows: A,B,C,D,E,F,G,H,J,K,I under EACH reviewer. A reviewer that failed the premise gate marks every row `not launched: premise gate`.
 - Check that each row has a matching provider and a unique leaf ID with the correct parent and lifecycle owner, or an exact failed-launch error and explicit sequential pass. Retain failed/replacement IDs in the attestation.
 - Spot-check child metadata and reported evidence with pinned reads. A successful launch or idle status alone does not prove coverage; never present partial coverage as a complete review.
 
@@ -67,6 +67,13 @@ python3 <installed-slopcop-skill>/scripts/start_review.py \
 - A pending result means the child has not published a complete report. Keep waiting or apply the bounded recovery rule; idle status alone is not a final report.
 - Before ending with the final review, save its complete Markdown to a temporary file and publish it with `python3 <report-helper> --directory <reports-dir> --thread "$BB_THREAD_ID" publish --file <file>`. Return that same text.
 - If resumed after publication, return the existing report unchanged. Never replace a completed report with a short acknowledgment or a pending marker.
+
+## Settle the premise
+
+- If any reviewer failed the premise gate, verify its gating facts with pinned reads before using them.
+- **Confirmed:** deliver a premise-only review. Lead with the failed items and their alternatives, keep inline comments to the lines that anchor them, and drop every lens finding, including the other reviewer's. Keep the profile's premise-review layout (lead line, short bullets, alternative, closing question); never merge it into one paragraph.
+- **Rejected:** record the counterevidence in your ledger and continue with the reviewers whose lenses ran. If no reviewer ran lenses, spend one gated reviewer's recovery follow-up asking it to launch its lenses, citing your counterevidence.
+- When the premise holds, lead the review with any premise questions the reviewers carried (unverified items, P1, P4) before line-level findings.
 
 ## Merge findings
 

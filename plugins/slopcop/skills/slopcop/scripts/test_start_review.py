@@ -277,7 +277,7 @@ class StartReviewTest(unittest.TestCase):
 
     def test_approved_asset_integrity(self):
         expected = {
-            'review_profile.md': '7b26f129f8c42fd9438fb9b7c01eed668dcdd5c8f9144cd0d4258cc815a703e6',
+            'review_profile.md': '69abf0a6d03b97f577037cac90f4a214107460a912deb72950deb9572623fdb9',
             'appendix.md': '8795064276c30a97498e3438fb7c8ef49fd5653751b02fe7b7a8211c2fc6165e',
         }
         for name, digest in expected.items():
