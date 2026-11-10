@@ -11,15 +11,15 @@ import {
   parseChangeKey,
   type ChangeFile,
   type CommitsResult,
+  type ForgeFile,
   type FilesResult,
   type ReviewRevision,
 } from "../core/review.ts";
-import { readPullRequestCommits, readPullRequestFiles } from "../forge/review.ts";
 import type { RangeAnswer, RangeRead } from "../contract/host.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import type { LocalReads } from "./local-read.ts";
 import { callProblem, failureProblem, hostCall, type HostCalls } from "./host-calls.ts";
-import { moved } from "./review-change.ts";
+import { localMatch, moved } from "./review-change.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
 
@@ -28,7 +28,6 @@ const REVISION_CACHE = 24;
 
 type HostRevision = ReviewRevision & { source: { kind: "host" } };
 type ForgeRevision = ReviewRevision & { source: { kind: "forge" } };
-type ForgeFile = { file: ChangeFile; patch: FilePatch | null };
 
 const isHost = (revision: ReviewRevision): revision is HostRevision =>
   revision.source.kind === "host";
@@ -80,6 +79,13 @@ export function createRevisionReads(deps: {
   const forgeFiles = lru<ForgeFile[]>(REVISION_CACHE);
   const hostFiles = lru<ChangeFile[]>(REVISION_CACHE);
 
+  /** Hosts a forge read may go through: the Change's own checkout first, then the placement table's. */
+  const placementsFor = (key: ChangeKey) => {
+    const own = localMatch(store, key)?.placement;
+    const all = store.checkouts();
+    return own ? [own, ...all.filter((each) => each !== own)] : all;
+  };
+
   const onHost = (revision: HostRevision, read: RangeRead) =>
     Effect.gen(function* () {
       const { hostId, path } = revision.source;
@@ -116,10 +122,12 @@ export function createRevisionReads(deps: {
       return deps.share(
         `files:${id}`,
         deps.sites
-          .onServer(parsed.repo, (exec, signal) =>
-            readPullRequestFiles(exec, parsed.repo, revision.source.number, signal),
+          .repoRead(
+            { kind: "files", repo: parsed.repo, number: revision.source.number },
+            placementsFor(key),
           )
           .pipe(
+            Effect.map((answer) => (answer.kind === "files" ? answer.files : [])),
             Effect.mapError((error) => error.problem),
             Effect.tap((files) => Effect.sync(() => forgeFiles.set(id, files))),
           ),
@@ -167,10 +175,14 @@ export function createRevisionReads(deps: {
     if (!isForge(revision) || parsed?.kind !== "gh")
       return Effect.fail(moved("This Change is not on GitHub."));
     return deps.sites
-      .onServer(parsed.repo, (exec, signal) =>
-        readPullRequestCommits(exec, parsed.repo, revision.source.number, signal),
+      .repoRead(
+        { kind: "commits", repo: parsed.repo, number: revision.source.number },
+        placementsFor(key),
       )
-      .pipe(Effect.mapError((error) => error.problem));
+      .pipe(
+        Effect.map((answer) => (answer.kind === "commits" ? answer.commits : [])),
+        Effect.mapError((error) => error.problem),
+      );
   };
 
   return {

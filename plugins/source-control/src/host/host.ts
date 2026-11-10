@@ -24,6 +24,7 @@ import type { Checkout } from "./checkout.ts";
 import { forget, share } from "./memo.ts";
 import { act, hostFailure, problemOf, providers, resolveCheckout } from "./providers.ts";
 import { rangeCommits, rangeFiles, rangePatches } from "./range.ts";
+import { runReviewRead } from "../forge/review.ts";
 import { changed, keepWatching, renew, stopAll } from "./repository-state.ts";
 
 type Context = ExperimentalHostRpcContext<typeof sourceControlHostSignals>;
@@ -209,6 +210,14 @@ export default experimental_defineHostEntry({
           ok: true as const,
           value: await readPullRequest(ghFor(account), { repo, headOwner, branch }, signal),
         };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ok: false as const, error: ghFailure(error) };
+      }
+    },
+    async forgeReview({ read, account }, { signal }) {
+      try {
+        return { ok: true as const, value: await runReviewRead(ghFor(account), read, signal) };
       } catch (error) {
         if (signal.aborted) throw error;
         return { ok: false as const, error: ghFailure(error) };

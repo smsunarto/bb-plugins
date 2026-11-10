@@ -60,6 +60,7 @@ function forgeCalls(host: HostClient): HostForge {
       host.call("forgeCall", { op: "pr.read", ...query }, options(hostId, signal)),
     setDraft: (hostId, write, signal) =>
       host.call("forgeWrite", { op: "pr.setDraft", ...write }, options(hostId, signal)),
+    review: (hostId, input, signal) => host.call("forgeReview", input, options(hostId, signal)),
   };
 }
 

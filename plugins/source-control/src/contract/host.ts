@@ -17,7 +17,7 @@ import {
   workspaceValueSchema,
 } from "../core/change.ts";
 import { repoSchema } from "../core/ids.ts";
-import { changeFileSchema } from "../core/review.ts";
+import { changeFileSchema, forgeFileSchema, inboxEntrySchema } from "../core/review.ts";
 
 const pathSchema = z.string().min(1).max(4096);
 /** A commit id (four characters or more), or its first parent as `<id>^` for one commit's own diff. */
@@ -82,6 +82,23 @@ export const forgeOperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("pr.read"), ...pullRequestQuery }).strict(),
 ]);
 export type ForgeOperation = z.infer<typeof forgeOperationSchema>;
+
+/** The review page's GitHub reads a host runs as one of its accounts. */
+export const reviewReadSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("inbox") }).strict(),
+  z
+    .object({ kind: z.literal("files"), repo: repoSchema, number: z.number().int().positive() })
+    .strict(),
+  z
+    .object({ kind: z.literal("commits"), repo: repoSchema, number: z.number().int().positive() })
+    .strict(),
+]);
+
+export const reviewAnswerSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("inbox"), entries: z.array(inboxEntrySchema).max(200) }).strict(),
+  z.object({ kind: z.literal("files"), files: z.array(forgeFileSchema).max(3_000) }).strict(),
+  z.object({ kind: z.literal("commits"), commits: z.array(commitSchema).max(1_000) }).strict(),
+]);
 
 /** How long a write may run on the host. */
 export const ACTION_DEADLINE_MS = 5 * 60_000;
@@ -160,6 +177,12 @@ export const sourceControlHostContract = defineRpcContract({
     experimental_retryable: true,
     input: forgeOperationSchema,
     output: outcome(forgeReadSchema),
+  },
+  /** An inbox, or a pull request's files or commits, read on this host as `account`. */
+  forgeReview: {
+    experimental_retryable: true,
+    input: z.object({ read: reviewReadSchema, account: forgeAccountSchema }).strict(),
+    output: outcome(reviewAnswerSchema),
   },
   /**
    * Marks the pull request draft or ready while its head is still

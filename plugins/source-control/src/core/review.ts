@@ -15,12 +15,14 @@ import {
   statusLine,
   type ChangeSummary,
 } from "./status.ts";
-import { changeKeyOf, changeKeySchema, type ChangeKey, type Repo } from "./ids.ts";
+import { changeKeyOf, changeKeySchema, repoSchema, type ChangeKey, type Repo } from "./ids.ts";
 import {
   changeKeyForBranch,
   commitSchema,
+  filePatchSchema,
   fileChangeSchema,
   problemSchema,
+  pullRequestSchema,
   uncommittedCount,
   type Branch,
   type ForgeValue,
@@ -393,6 +395,27 @@ export const changeFileSchema = z
   })
   .strict();
 export type ChangeFile = z.infer<typeof changeFileSchema>;
+
+/** One pull request in an account's inbox, with where its branch lives. */
+export const inboxEntrySchema = z
+  .object({
+    repo: repoSchema,
+    headOwner: z.string().min(1),
+    branch: z.string().min(1),
+    author: z.string().nullable(),
+    updatedAt: z.string().nullable(),
+    mine: z.boolean(),
+    asked: z.boolean(),
+    pullRequest: pullRequestSchema,
+  })
+  .strict();
+export type InboxEntry = z.infer<typeof inboxEntrySchema>;
+
+/** A pull request's file as GitHub lists it, with its hunks when GitHub sent them. */
+export const forgeFileSchema = z
+  .object({ file: changeFileSchema, patch: filePatchSchema.nullable() })
+  .strict();
+export type ForgeFile = z.infer<typeof forgeFileSchema>;
 
 /**
  * The exact revision files and patches are read at: immutable, so they are

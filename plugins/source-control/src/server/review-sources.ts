@@ -5,7 +5,7 @@
  */
 import { Effect, Semaphore } from "effect";
 import type { Placement } from "../core/change.ts";
-import { accountTag } from "../core/ids.ts";
+import { accountTag, PAGE_SOURCES_TAG } from "../core/ids.ts";
 import {
   inboxRow,
   workspaceRows,
@@ -13,7 +13,6 @@ import {
   type PageSources,
   type SourceRows,
 } from "../core/review.ts";
-import { readInbox } from "../forge/review.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import type { LocalReads } from "./local-read.ts";
 import type { Share } from "./shared.ts";
@@ -82,9 +81,7 @@ export function createReviewSources(deps: {
     deps.share(
       `inbox:${login}`,
       Effect.gen(function* () {
-        const answer = yield* deps.sites
-          .asServerAccount(login, (exec, signal) => readInbox(exec, signal))
-          .pipe(Effect.result);
+        const answer = yield* deps.sites.inbox(login, store.checkouts()).pipe(Effect.result);
         const next: SourceRows =
           answer._tag === "Success"
             ? { read: { rows: answer.success.map(inboxRow), at: deps.now() }, problem: null }
@@ -117,18 +114,35 @@ export function createReviewSources(deps: {
     });
 
   return {
-    /** The hosts the placement table has checkouts on, and the server's accounts. */
+    /**
+     * The hosts the placement table has checkouts on, and the accounts known
+     * on the server and those hosts. Hosts not asked lately are asked after
+     * answering, three at a time, and the sources read again if one has an account.
+     */
     pageSources: () =>
-      deps.sites.serverAccounts.pipe(
-        Effect.map((accounts): PageSources => {
-          const names = new Map<string, string>();
-          for (const each of store.checkouts()) names.set(each.hostId, each.hostName);
-          return {
-            hosts: [...names].map(([hostId, name]) => ({ hostId, name })),
-            accounts: accounts.map(({ login, active }) => ({ login, active })),
-          };
-        }),
-      ),
+      Effect.gen(function* () {
+        const checkouts = store.checkouts();
+        const accounts = yield* deps.sites.knownAccounts(checkouts);
+        yield* Effect.forkDetach(
+          deps.share(
+            "probe-hosts",
+            deps.sites.probeHosts(checkouts).pipe(
+              Effect.tap((found) =>
+                Effect.sync(() => {
+                  if (found) deps.invalidate([PAGE_SOURCES_TAG]);
+                }),
+              ),
+              Effect.asVoid,
+            ),
+          ),
+        );
+        const names = new Map<string, string>();
+        for (const each of checkouts) names.set(each.hostId, each.hostName);
+        return {
+          hosts: [...names].map(([hostId, name]) => ({ hostId, name })),
+          accounts: accounts.map(({ login, active }) => ({ login, active })),
+        } satisfies PageSources;
+      }),
     inbox(keys: readonly string[]): Record<string, SourceRows> {
       for (const login of keys) logins.add(login);
       return Object.fromEntries(keys.map((login) => [login, store.inbox(login)]));

@@ -11,7 +11,8 @@ import type {
   VcsResult,
   WorkspaceValue,
 } from "../core/change.ts";
-import type { Exec } from "../forge/github.ts";
+import { readPullRequest, type Exec } from "../forge/github.ts";
+import { runReviewRead } from "../forge/review.ts";
 import { createSourceControl } from "./server.ts";
 
 const PLUGIN = "source-control";
@@ -92,6 +93,8 @@ type Host = {
   delayMs?: number;
   /** Never answers a range read, while its workspace reads still answer. */
   rangeHung?: boolean;
+  /** Runs GitHub reads itself, against the world's fake GitHub, as its `ghAccounts`. */
+  forgeLive?: boolean;
   workspace: WorkspaceValue;
   ghAccounts: string[];
   action?: VcsResult;
@@ -118,6 +121,8 @@ type World = {
   /** REST reads (`gh api <path>`) and their pages. */
   rest?: Record<string, unknown[][]>;
   restReads?: string[];
+  /** GitHub reads a host ran, as `<hostId>:<kind>`. */
+  hostForge?: string[];
   /** Host workspace reads in flight now, and the most at once. */
   inFlight?: number;
   maxInFlight?: number;
@@ -168,6 +173,39 @@ function fakeInbox(world: World, login: string): Run {
     asked: { nodes: world.inbox?.asked ?? [] },
   };
   return { code: 0, stdout: JSON.stringify({ data }), stderr: "" };
+}
+
+/** A host's workspace read, after its delay, counting the reads in flight. */
+async function fakeWorkspace(world: World, host: Host) {
+  if (host.delayMs) {
+    world.inFlight = (world.inFlight ?? 0) + 1;
+    world.maxInFlight = Math.max(world.maxInFlight ?? 0, world.inFlight);
+    await new Promise((resolve) => setTimeout(resolve, host.delayMs));
+    world.inFlight -= 1;
+  }
+  return { ok: true, value: { state: "workspace", value: host.workspace } };
+}
+
+/** A host running GitHub reads itself, against the world's fake GitHub. */
+async function liveHostForge(world: World, hostId: string, method: string, input: unknown) {
+  if (method === "forgeReview") {
+    const { read } = input as { read: Parameters<typeof runReviewRead>[1] };
+    (world.hostForge ??= []).push(`${hostId}:${read.kind}`);
+    return { ok: true, value: await runReviewRead(hostGh(world, hostId), read) };
+  }
+  (world.hostForge ??= []).push(`${hostId}:pr`);
+  const query = input as Parameters<typeof readPullRequest>[1];
+  return { ok: true, value: await readPullRequest(hostGh(world, hostId), query) };
+}
+
+/** A host's `gh`: the same fake GitHub, its inbox searches recorded by host. */
+function hostGh(world: World, hostId: string): Exec {
+  const github = serverGh(world);
+  return async (args, options) => {
+    const body = JSON.parse(String(options?.stdin ?? "{}")) as { query?: string };
+    if (body.query?.includes("mine: search")) return fakeInbox(world, hostId);
+    return github(args, options);
+  };
 }
 
 function serverGh(world: World): Exec {
@@ -282,20 +320,15 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
       const host = world.hosts[hostId]!;
       if (!host.online) throw new Error("Host is not connected");
       if (host.hung) return new Promise(() => undefined);
-      if (method === "workspace") {
-        if (host.delayMs) {
-          world.inFlight = (world.inFlight ?? 0) + 1;
-          world.maxInFlight = Math.max(world.maxInFlight ?? 0, world.inFlight);
-          await new Promise((resolve) => setTimeout(resolve, host.delayMs));
-          world.inFlight -= 1;
-        }
-        return { ok: true, value: { state: "workspace", value: host.workspace } };
-      }
-      if (method === "range" && host.rangeHung) return new Promise(() => undefined);
+      if (method === "workspace") return fakeWorkspace(world, host);
       if (method === "range")
-        return fakeRange(input as { read: { kind: string; paths?: string[] } });
+        return host.rangeHung
+          ? new Promise(() => undefined)
+          : fakeRange(input as { read: { kind: string; paths?: string[] } });
       if (method === "renewWatch") return { watching: true };
       if (method === "forgeAccounts") return { ok: true, value: { accounts: host.ghAccounts } };
+      if (host.forgeLive && (method === "forgeReview" || method === "forgeCall"))
+        return liveHostForge(world, hostId, method, input);
       if (method === "forgeCall") return { ok: true, value: { pullRequest: null, checks: null } };
       if (method === "vcsAction") return host.action ?? { status: "done" };
       if (method === "patches") return { ok: true, value: { files: [] } };
@@ -971,6 +1004,68 @@ describe("review page", () => {
     ]);
     await vi.advanceTimersByTimeAsync(5 * 60_000);
     expect(world.inboxReads!.length).toBe(reads);
+  });
+
+  test("a server with no gh login reads the inbox, a pull request and its files through a host that has the account", async () => {
+    const world = twoHosts();
+    world.serverAccounts = [];
+    world.hosts["host-a"]!.ghAccounts = ["smsunarto"];
+    world.hosts["host-a"]!.forgeLive = true;
+    world.inbox = { mine: [], asked: [INBOX_PR] };
+    world.pullRequests["fix/retry"] = [INBOX_PR];
+    world.rest = {
+      "repos/acme/api/pulls/77/files?per_page=100": [
+        [
+          {
+            filename: "src/retry.ts",
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            patch: "@@ -1 +1,2 @@\n a\n+b",
+          },
+        ],
+      ],
+    };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    vi.useFakeTimers();
+    const accounts = async () =>
+      ((await harness.behavior.callRpc("pageSources", {})) as { accounts: { login: string }[] })
+        .accounts;
+    // The thread's own pull request read already found the host's account.
+    await accounts();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await accounts()).toEqual([{ login: "smsunarto", active: true }]);
+
+    const stop = harness.behavior.experimental_watchRpc("inbox", { key: "smsunarto" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    stop();
+    const inbox = (await harness.behavior.callRpc("inbox", { keys: ["smsunarto"] })) as Record<
+      string,
+      { read: { rows: { key: string }[] } | null; problem: unknown }
+    >;
+    expect(inbox.smsunarto).toMatchObject({
+      read: { rows: [{ key: "gh:acme/api:acme:fix/retry" }] },
+      problem: null,
+    });
+
+    const key = "gh:acme/api:acme:fix/retry";
+    const watch = harness.behavior.experimental_watchRpc("changeDetail", { key });
+    await vi.advanceTimersByTimeAsync(1_000);
+    watch();
+    const detail = (
+      (await harness.behavior.callRpc("changeDetail", { keys: [key] })) as Record<string, any>
+    )[key];
+    expect(detail.revision).toEqual({
+      head: "beef01",
+      base: "main",
+      source: { kind: "forge", number: 77 },
+    });
+    expect(
+      await harness.behavior.callRpc("changeFiles", { key, revision: detail.revision }),
+    ).toMatchObject({ ok: true, files: [{ path: "src/retry.ts" }] });
+    // The thread's own pull request (route-gh), the inbox, #77, then its files: all on host-a.
+    expect(world.hostForge).toEqual(["host-a:pr", "host-a:inbox", "host-a:pr", "host-a:files"]);
   });
 
   test("a pull request with no checkout anywhere opens and reads entirely from GitHub", async () => {

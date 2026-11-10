@@ -5,20 +5,10 @@
  */
 import type { Commit, FilePatch, PullRequest } from "../core/change.ts";
 import type { Repo } from "../core/ids.ts";
-import type { ChangeFile } from "../core/review.ts";
+import type { ChangeFile, ForgeFile, InboxEntry } from "../core/review.ts";
 import { classifyFailure, GhError, type Exec } from "./github.ts";
 
-/** One pull request in an inbox, with where its branch lives. */
-export type InboxEntry = {
-  repo: Repo;
-  headOwner: string;
-  branch: string;
-  author: string | null;
-  updatedAt: string | null;
-  mine: boolean;
-  asked: boolean;
-  pullRequest: PullRequest;
-};
+export type { InboxEntry };
 
 const INBOX_LIMIT = 50;
 
@@ -255,7 +245,7 @@ export async function readPullRequestFiles(
   repo: Repo,
   number: number,
   signal?: AbortSignal,
-): Promise<{ file: ChangeFile; patch: FilePatch | null }[]> {
+): Promise<ForgeFile[]> {
   const pages = await restPages<RestFile>(exec, filesPath(repo, number), signal);
   return pages.flatMap((raw) => {
     if (!raw.filename) return [];
@@ -328,4 +318,35 @@ export async function readPullRequestCommits(
         : [],
     )
     .toReversed();
+}
+
+/** The review page's GitHub reads, as one closed union a host can run too. */
+export type ReviewRead =
+  | { kind: "inbox" }
+  | { kind: "files"; repo: Repo; number: number }
+  | { kind: "commits"; repo: Repo; number: number };
+export type ReviewAnswer =
+  | { kind: "inbox"; entries: InboxEntry[] }
+  | { kind: "files"; files: ForgeFile[] }
+  | { kind: "commits"; commits: Commit[] };
+
+export async function runReviewRead(
+  exec: Exec,
+  read: ReviewRead,
+  signal?: AbortSignal,
+): Promise<ReviewAnswer> {
+  switch (read.kind) {
+    case "inbox":
+      return { kind: "inbox", entries: await readInbox(exec, signal) };
+    case "files":
+      return {
+        kind: "files",
+        files: await readPullRequestFiles(exec, read.repo, read.number, signal),
+      };
+    case "commits":
+      return {
+        kind: "commits",
+        commits: await readPullRequestCommits(exec, read.repo, read.number, signal),
+      };
+  }
 }

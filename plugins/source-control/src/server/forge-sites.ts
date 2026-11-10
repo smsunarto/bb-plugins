@@ -12,6 +12,7 @@
 import { Effect, Schema } from "effect";
 import { problemSchema, type ForgeRead, type ForgeResult, type Problem } from "../core/change.ts";
 import type { ForgeAccount, HostFailure } from "../contract/host.ts";
+import { runReviewRead, type ReviewAnswer, type ReviewRead } from "../forge/review.ts";
 import {
   accountExec,
   GhError,
@@ -41,6 +42,11 @@ export type HostForge = {
     write: DraftWrite & { account: ForgeAccount },
     signal: AbortSignal,
   ): Promise<Outcome<ForgeResult>>;
+  review(
+    hostId: string,
+    input: { read: ReviewRead; account: ForgeAccount },
+    signal: AbortSignal,
+  ): Promise<Outcome<ReviewAnswer>>;
 };
 
 const problemValue = Schema.declare(
@@ -82,11 +88,43 @@ const invisible = (code: string) => code === "not-found" || code === "forbidden"
 type Access = { hostId: string | null; site: string; account: { login: string; active: boolean } };
 type Probe = { accounts: string[]; at: number };
 type Placement = { hostId: string; hostName: string };
+/** A signed-in account and the site it is signed in on. */
+export type SiteAccount = { login: string; active: boolean; hostId: string | null; site: string };
 
 const repoName = (query: { repo: { owner: string; name: string } }) =>
   `${query.repo.owner}/${query.repo.name}`.toLowerCase();
 const sameAccess = (a: Access, b: Access) =>
   a.hostId === b.hostId && a.account.login === b.account.login;
+
+const ghRefused = (site: string, error: unknown) =>
+  error instanceof GhError
+    ? new SiteRefused({ code: error.code, message: error.message, site })
+    : new SiteRefused({ code: "failed", message: String(error), site });
+
+const withinDeadline = <A>(effect: Effect.Effect<A, ForgeUnavailable>) =>
+  effect.pipe(
+    Effect.timeoutOrElse({
+      duration: FORGE_DEADLINE_MS,
+      orElse: () =>
+        Effect.fail(
+          unavailable({
+            kind: "failed",
+            site: "GitHub",
+            detail: `GitHub did not answer within ${FORGE_DEADLINE_MS / 1000} s.`,
+          }),
+        ),
+    }),
+  );
+
+const uniqueHosts = (placements: readonly Placement[]) => [
+  ...new Map(placements.map((each) => [each.hostId, each])).values(),
+];
+
+const toSiteAccount = (access: Access): SiteAccount => ({
+  ...access.account,
+  hostId: access.hostId,
+  site: access.site,
+});
 
 export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now: () => number }) {
   let server: Probe | null = null;
@@ -143,11 +181,6 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
       ),
     );
 
-  const ghRefused = (site: string, error: unknown) =>
-    error instanceof GhError
-      ? new SiteRefused({ code: error.code, message: error.message, site })
-      : new SiteRefused({ code: "failed", message: String(error), site });
-
   const hostAnswer = <T>(access: Access, call: (signal: AbortSignal) => Promise<Outcome<T>>) =>
     Effect.tryPromise({
       try: call,
@@ -189,20 +222,55 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
           deps.host.setDraft(access.hostId!, { ...write, account: access.account }, signal),
         );
 
-  const withinDeadline = <A>(effect: Effect.Effect<A, ForgeUnavailable>) =>
-    effect.pipe(
-      Effect.timeoutOrElse({
-        duration: FORGE_DEADLINE_MS,
-        orElse: () =>
-          Effect.fail(
-            unavailable({
-              kind: "failed",
-              site: "GitHub",
-              detail: `GitHub did not answer within ${FORGE_DEADLINE_MS / 1000} s.`,
-            }),
-          ),
-      }),
-    );
+  /**
+   * The first access that can see the repository: the one that read it last,
+   * else each of `sources` in order. Only "this account cannot see it" moves
+   * on; any other refusal is the answer.
+   */
+  const firstThatSees = <T>(
+    repo: string,
+    sources: readonly Effect.Effect<Access[]>[],
+    run: (access: Access) => Effect.Effect<T, SiteRefused>,
+    nowhere: Problem,
+  ) =>
+    Effect.gen(function* () {
+      const tried: Access[] = [];
+      const attempt = Effect.fnUntraced(function* (access: Access) {
+        if (tried.some((done) => sameAccess(done, access))) return null;
+        tried.push(access);
+        const answer = yield* run(access).pipe(Effect.result);
+        if (answer._tag === "Success") {
+          const before = seen.get(repo);
+          if (!before || !sameAccess(before, access))
+            yield* Effect.logDebug(
+              `Reading ${repo} as ${access.account.login} on ${access.site}` +
+                (tried.length > 1 ? `; ${tried.length - 1} other account(s) cannot see it.` : "."),
+            );
+          seen.set(repo, access);
+          return { value: answer.success };
+        }
+        if (sameAccess(access, seen.get(repo) ?? access)) seen.delete(repo);
+        if (!invisible(answer.failure.code))
+          return yield* unavailable(refusedProblem(answer.failure));
+        return null;
+      });
+      const last = seen.get(repo);
+      if (last) {
+        const read = yield* attempt(last);
+        if (read) return read.value;
+      }
+      for (const source of sources)
+        for (const access of yield* source) {
+          const read = yield* attempt(access);
+          if (read) return read.value;
+        }
+      if (tried.length === 0) return yield* unavailable(nowhere);
+      return yield* unavailable({
+        kind: "auth",
+        site: tried.at(-1)!.site,
+        detail: `No signed-in GitHub account can see ${repo}.`,
+      });
+    });
 
   /**
    * The branch's pull request and checks: the account that read the
@@ -210,128 +278,119 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
    * until one can see it. The host is asked for accounts only then.
    */
   const pullRequest = (query: PullRequestQuery, placement: Placement | null) =>
+    pullRequestVia(query, placement ? [placement] : []);
+
+  /** As `pullRequest`, trying each host in `placements` after the server: the review page's reads by ChangeKey. */
+  const pullRequestVia = (query: PullRequestQuery, placements: readonly Placement[]) =>
     withinDeadline(
-      Effect.gen(function* () {
-        const repo = repoName(query);
-        const tried: Access[] = [];
-        const attempt = Effect.fnUntraced(function* (access: Access) {
-          if (tried.some((done) => sameAccess(done, access))) return null;
-          tried.push(access);
-          const answer = yield* readAt(access, query).pipe(Effect.result);
-          if (answer._tag === "Success") {
-            const before = seen.get(repo);
-            if (!before || !sameAccess(before, access))
-              yield* Effect.logDebug(
-                `Reading ${repo} as ${access.account.login} on ${access.site}` +
-                  (tried.length > 1
-                    ? `; ${tried.length - 1} other account(s) cannot see it.`
-                    : "."),
-              );
-            seen.set(repo, access);
-            return answer.success;
-          }
-          if (sameAccess(access, seen.get(repo) ?? access)) seen.delete(repo);
-          // Only "this account cannot see it" moves on; any other refusal is the answer.
-          if (!invisible(answer.failure.code))
-            return yield* unavailable(refusedProblem(answer.failure));
-          return null;
-        });
-        const last = seen.get(repo);
-        if (last) {
-          const read = yield* attempt(last);
-          if (read) return read;
-        }
-        // A Change with no checkout anywhere has only the server's accounts.
-        for (const source of placement
-          ? [serverAccesses, hostAccesses(placement)]
-          : [serverAccesses])
-          for (const access of yield* source) {
-            const read = yield* attempt(access);
-            if (read) return read;
-          }
-        if (tried.length === 0)
-          return yield* unavailable({
-            kind: "no-site",
-            host: placement?.hostName ?? SERVER_SITE_NAME,
-          });
-        return yield* unavailable({
-          kind: "auth",
-          site: tried.at(-1)!.site,
-          detail: `No signed-in GitHub account can see ${query.repo.owner}/${query.repo.name}.`,
-        });
-      }),
+      firstThatSees(
+        repoName(query),
+        [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)],
+        (access) => readAt(access, query),
+        { kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME },
+      ),
+    );
+
+  const reviewAt = (access: Access, read: ReviewRead) =>
+    access.hostId === null
+      ? Effect.tryPromise({
+          try: (signal) =>
+            runReviewRead(asAccount(access.account.login, access.account.active), read, signal),
+          catch: (error) => ghRefused(access.site, error),
+        })
+      : hostAnswer(access, (signal) =>
+          deps.host.review(access.hostId!, { read, account: access.account }, signal),
+        );
+
+  /**
+   * A pull request's files or commits: the account that read the repository
+   * last, else the server's accounts, else those of each host in
+   * `placements`, so a server with no `gh` login reads through a host.
+   */
+  const repoRead = (
+    read: ReviewRead & { repo: { owner: string; name: string } },
+    placements: readonly Placement[],
+  ) =>
+    withinDeadline(
+      firstThatSees(
+        repoName(read),
+        [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)],
+        (access) => reviewAt(access, read),
+        { kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME },
+      ),
     );
 
   /**
-   * A read the review page makes on the bb server, as the account that last
-   * read the repository there, else each server account until one can see it.
-   * A repository only a checkout's host can see is `no-site` here.
+   * Every account the page can read an inbox as: the server's, then those
+   * already known on each host in `placements`. Never waits on a host.
    */
-  const onServer = <T>(
-    repo: { owner: string; name: string },
-    run: (exec: Exec, signal: AbortSignal) => Promise<T>,
-  ) =>
+  const knownAccounts = (placements: readonly Placement[]) =>
+    serverAccesses.pipe(
+      Effect.map((server) => {
+        const all = [...server];
+        for (const placement of uniqueHosts(placements)) {
+          const known = hosts.get(placement.hostId);
+          if (!fresh(known)) continue;
+          known.accounts.forEach((login, index) =>
+            all.push({
+              hostId: placement.hostId,
+              site: placement.hostName,
+              account: { login, active: index === 0 },
+            }),
+          );
+        }
+        const byLogin = new Map<string, Access>();
+        for (const access of all)
+          if (!byLogin.has(access.account.login)) byLogin.set(access.account.login, access);
+        return [...byLogin.values()];
+      }),
+    );
+
+  /** Learn the accounts of the hosts not probed lately, three at a time; true when one was new. */
+  const probeHosts = (placements: readonly Placement[]) =>
+    Effect.gen(function* () {
+      const stale = uniqueHosts(placements).filter((each) => !fresh(hosts.get(each.hostId)));
+      if (stale.length === 0) return false;
+      const found = yield* Effect.forEach(stale, (each) => hostAccounts(each.hostId), {
+        concurrency: 3,
+      });
+      return found.some((logins) => logins.length > 0);
+    });
+
+  /** One account's inbox, on the site it is signed in on. */
+  const inbox = (login: string, placements: readonly Placement[]) =>
     withinDeadline(
       Effect.gen(function* () {
-        const name = repoName({ repo });
-        const last = seen.get(name);
-        const candidates = [
-          ...(last && last.hostId === null ? [last] : []),
-          ...(yield* serverAccesses).filter((access) => !last || !sameAccess(access, last)),
-        ];
-        for (const access of candidates) {
-          const answer = yield* Effect.tryPromise({
-            try: (signal) => run(asAccount(access.account.login, access.account.active), signal),
-            catch: (error) => ghRefused(access.site, error),
-          }).pipe(Effect.result);
-          if (answer._tag === "Success") {
-            seen.set(name, access);
-            return answer.success;
-          }
-          if (!invisible(answer.failure.code))
-            return yield* unavailable(refusedProblem(answer.failure));
-        }
-        return yield* unavailable(
-          candidates.length === 0
-            ? { kind: "no-site", host: SERVER_SITE_NAME }
-            : {
-                kind: "auth",
-                site: SERVER_SITE_NAME,
-                detail: `No GitHub account on the bb server can see ${name}.`,
-              },
+        const access = (yield* knownAccounts(placements)).find(
+          (each) => each.account.login === login,
         );
+        if (!access)
+          return yield* unavailable({
+            kind: "auth",
+            site: SERVER_SITE_NAME,
+            detail: `${login} is not signed in to gh on the bb server or a checkout's host.`,
+          });
+        const answer = yield* reviewAt(access, { kind: "inbox" }).pipe(
+          Effect.mapError((refused) => unavailable(refusedProblem(refused))),
+        );
+        return answer.kind === "inbox" ? answer.entries : [];
       }),
     );
 
   return {
-    /** The bb server's signed-in accounts, the active one first. */
-    serverAccounts: serverAccesses.pipe(
-      Effect.map((accesses) => accesses.map((access) => access.account)),
-    ),
-    /** Run as one server account, by login: an inbox is that account's own. */
-    asServerAccount: <T>(login: string, run: (exec: Exec, signal: AbortSignal) => Promise<T>) =>
-      withinDeadline(
-        Effect.gen(function* () {
-          const access = (yield* serverAccesses).find((each) => each.account.login === login);
-          if (!access)
-            return yield* unavailable({
-              kind: "auth",
-              site: SERVER_SITE_NAME,
-              detail: `${login} is not signed in to gh on the bb server.`,
-            });
-          return yield* Effect.tryPromise({
-            try: (signal) => run(asAccount(login, access.account.active), signal),
-            catch: (error) => ghRefused(access.site, error),
-          }).pipe(Effect.mapError((refused) => unavailable(refusedProblem(refused))));
-        }),
-      ),
-    onServer,
+    /** Accounts the page can read an inbox as, without waiting on a host. */
+    knownAccounts: (placements: readonly Placement[]) =>
+      knownAccounts(placements).pipe(Effect.map((accesses) => accesses.map(toSiteAccount))),
+    probeHosts,
+    inbox,
+    repoRead,
     /** Forget every probe, as an explicit retry does. */
     reprobe() {
       server = null;
       hosts.clear();
     },
     pullRequest,
+    pullRequestVia,
     /**
      * Marks the pull request draft or ready, as the account that read it:
      * a write never falls back to another account. Reads first when no

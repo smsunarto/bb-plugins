@@ -214,8 +214,11 @@ export function createReviewChange(deps: {
         if (parsed?.kind !== "gh") return;
         attempts.set(key, deps.now());
         const { repo, headOwner, branch } = parsed;
+        // The Change's own checkout first, then any checkout's host, so a server with no gh login still reads it.
+        const own = localMatch(store, key)?.placement;
+        const placements = own ? [own, ...store.checkouts()] : store.checkouts();
         const answer = yield* deps.sites
-          .pullRequest({ repo, headOwner, branch }, localMatch(store, key)?.placement ?? null)
+          .pullRequestVia({ repo, headOwner, branch }, placements)
           .pipe(Effect.result);
         const at = deps.now();
         const ok = answer._tag === "Success";
