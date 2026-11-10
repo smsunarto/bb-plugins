@@ -548,3 +548,137 @@ test("opening an uncommitted file reads the uncommitted patches, and only then",
   });
   expect(await slot.findByText(/no uncommitted change now/)).toBeTruthy();
 });
+
+// ── Status everywhere ──────────────────────────────────────────────────
+
+const segment = app.threadContextSegments.find((registration) => registration.id === "change")!;
+
+/** Board B's change: a draft #482 with 2 checks running, 9 passed, and 3 files uncommitted. */
+function boardB(): ThreadChange {
+  const row = checkout("scott/forge-host", "Route gh through the checkout host");
+  if (row.state !== "checkout" || !row.local.read || !row.forge.read?.value)
+    throw new Error("fixture");
+  row.local.read.value = local("scott/forge-host", {
+    uncommitted: [
+      { path: "a.ts", kind: "modified" },
+      { path: "b.ts", kind: "modified" },
+      { path: "c.ts", kind: "added" },
+    ],
+    stacks: [
+      {
+        key: "scott/forge-host",
+        branches: [branchOf("scott/forge-host", { status: "pushed", push: "none", ahead: 0 })],
+        assigned: [],
+      },
+    ],
+  });
+  row.forge.read.value = { ...row.forge.read.value, checks: { passed: 9, failed: 0, pending: 2 } };
+  return row;
+}
+
+function renderStrip(row: ThreadChange, segments: { key: string; pluginId: string }[] = []) {
+  const forgeCalls: unknown[] = [];
+  const props = {
+    threadId: "thread-a",
+    projectId: "proj",
+    environment: { id: "env" },
+    segments: [{ key: "source-control/change", pluginId: "source-control" }, ...segments],
+    isExpanded: false,
+    onToggle: () => undefined,
+  };
+  const options = {
+    experimental_rpcContract: sourceControlContract,
+    rpc: {
+      changeForThread: () => ({ "thread-a": row }),
+      forgeAction: (input: unknown) => {
+        forgeCalls.push(input);
+        return { status: "done" as const };
+      },
+    } as Rpc,
+  };
+  return {
+    summary: renderSlot({ component: segment.summary }, props, options),
+    action: renderSlot({ component: segment.action! }, props, options),
+    forgeCalls,
+  };
+}
+
+test("strip, tab header and the sidebar's row say the same for one Change", async () => {
+  const { threadStatus } = await import("../core/status.ts");
+  const row = boardB();
+  const { slot } = renderRow(row);
+  const strip = renderStrip(row);
+
+  // The tab header: board A's ship path and chips.
+  const path = await slot.findByTestId("sc-ship-path");
+  expect([...path.querySelectorAll("li")].map((step) => step.getAttribute("data-state"))).toEqual([
+    "done",
+    "done",
+    "current",
+    "running",
+    "todo",
+    "todo",
+  ]);
+  expect(path.textContent).toContain("Draft, waiting on you");
+  expect(path.textContent).toContain("2 running· 9 passed");
+  expect(slot.getByTestId("sc-chips").textContent).toBe("2 Running");
+
+  // The strip: board B's words.
+  expect((await strip.summary.findByTestId("sc-strip")).textContent).toBe(
+    "Draft #4822 checks running3 uncommitted",
+  );
+  expect(await strip.action.findByTestId("sc-strip-mark-ready")).toBeTruthy();
+
+  // The sidebar's row is the same derivation, served by statusForThread.
+  const status = threadStatus(row);
+  expect(status).toMatchObject({
+    state: "change",
+    pullRequest: { number: 482, state: "draft" },
+    line: "Draft · 2 checks running",
+    chips: [{ label: "2 Running", tone: "warning" }],
+  });
+  expect(slot.getByTestId("sc-pr-chip").textContent).toBe("Draft");
+});
+
+test("the strip leaves the uncommitted count to bb's own changed-files segment when it shows", async () => {
+  const strip = renderStrip(boardB(), [{ key: "bb--git/changed-files", pluginId: "bb--git" }]);
+  expect((await strip.summary.findByTestId("sc-strip")).textContent).toBe(
+    "Draft #4822 checks running",
+  );
+});
+
+test("Mark ready names the pull request and head the reader saw", async () => {
+  const strip = renderStrip(boardB());
+  const button = await strip.action.findByTestId("sc-strip-mark-ready");
+  act(() => (button as HTMLButtonElement).click());
+  await waitFor(() => expect(strip.forgeCalls).toHaveLength(1));
+  expect(strip.forgeCalls[0]).toEqual({
+    threadId: "thread-a",
+    action: { kind: "setDraft", draft: false },
+    expected: { number: 482, head: "c0ffee" },
+  });
+});
+
+test("the strip hides for a thread with no Change of its own", async () => {
+  const { useStripVisible } = await import("./composer-strip.tsx");
+  const visible: boolean[] = [];
+  function Probe({ row }: { row: ThreadChange }) {
+    visible.push(
+      useStripVisible({ threadId: "thread-a", projectId: "proj", environment: { id: "env" } }),
+    );
+    void row;
+    return null;
+  }
+  const none: ThreadChange = { state: "none", reason: "This thread has no project environment." };
+  renderSlot(
+    { component: Probe },
+    { row: none },
+    {
+      experimental_rpcContract: sourceControlContract,
+      rpc: { changeForThread: () => ({ "thread-a": none }) } as Rpc,
+    },
+  );
+  await waitFor(() => expect(visible.length).toBeGreaterThan(1));
+  expect(visible.at(-1)).toBe(false);
+  expect(segment.useVisible).toBe(useStripVisible);
+});

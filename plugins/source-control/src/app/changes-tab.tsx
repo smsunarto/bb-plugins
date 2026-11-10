@@ -10,7 +10,7 @@ import {
   experimental_useRpcMutation as useRpcMutation,
   experimental_useTabVisible as useTabVisible,
 } from "@get-bb/plugin-sdk/app";
-import { memo, useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   describeProblem,
   forgeIsBehind,
@@ -29,10 +29,12 @@ import {
 } from "../core/change.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { PullButton, PullStatus, WORKSPACE, useVcsActions } from "./branch-actions.tsx";
-import { plural, shortId, shortRef } from "./format.ts";
+import { cx, plural, shortId, shortRef } from "./format.ts";
 import { readSnapshot, writeSnapshot } from "./snapshot.ts";
 import { Bar, Button, SectionLabel } from "./ui.tsx";
 import { StackLane, UncommittedCard } from "./workspace-lane.tsx";
+import { attentionChips, shipPath, summarize } from "../core/status.ts";
+import { Chips, ShipPath, useDraftToggle } from "./status.tsx";
 
 export function ChangesTab({ threadId }: { threadId: string }) {
   const visible = useTabVisible();
@@ -265,6 +267,8 @@ function ReadyBody({
   return (
     <div className="flex min-w-0 flex-col gap-4 p-3 @md:p-4">
       <ThisThread
+        threadId={threadId}
+        row={row}
         branchName={row.branch}
         branch={view.branch}
         workspace={workspace}
@@ -436,28 +440,98 @@ function FailedBody({
 
 const PR_LABEL = { open: "Open", closed: "Closed", merged: "Merged" } as const;
 
+function chipLabel(forge: ForgeValue | undefined, onGitHub: boolean): string {
+  if (!onGitHub) return "Local";
+  if (forge === undefined) return "Unknown";
+  if (forge === null) return "No PR";
+  return forge.isDraft && forge.state === "open" ? "Draft" : PR_LABEL[forge.state];
+}
+
+const CHIP =
+  "flex h-6 shrink-0 items-center gap-1 rounded-full bg-surface-raised px-2 text-[12px] leading-4 font-semibold text-foreground";
+
+/**
+ * The pull request's state; for an open one, a menu with Mark ready for
+ * review or Convert to draft. Escape closes it and returns focus.
+ */
 function PullRequestChip({
+  threadId,
   forge,
   onGitHub,
 }: {
+  threadId: string;
   forge: ForgeValue | undefined;
   onGitHub: boolean;
 }) {
-  const label = !onGitHub
-    ? "Local"
-    : forge === undefined
-      ? "Unknown"
-      : forge === null
-        ? "No PR"
-        : forge.isDraft && forge.state === "open"
-          ? "Draft"
-          : PR_LABEL[forge.state];
+  const label = chipLabel(forge, onGitHub);
+  const draft = useDraftToggle(threadId, forge ?? null);
+  const [open, setOpen] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const item = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (open) item.current?.focus();
+  }, [open]);
+  if (!draft.toggle || !forge)
+    return (
+      <span data-testid="sc-pr-chip" className={CHIP}>
+        {label}
+      </span>
+    );
+  const close = () => {
+    setOpen(false);
+    trigger.current?.focus();
+  };
   return (
-    <span
-      data-testid="sc-pr-chip"
-      className="flex h-6 shrink-0 items-center gap-1 rounded-full bg-surface-raised px-2 text-[12px] leading-4 font-semibold text-foreground"
-    >
-      {label}
+    <span className="relative flex shrink-0 flex-col">
+      <button
+        ref={trigger}
+        type="button"
+        data-testid="sc-pr-chip"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className={cx(CHIP, "cursor-pointer border-0 enabled:hover:bg-border")}
+      >
+        {label}
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden className="shrink-0">
+          <path
+            d="M3 4.5L6 7.5L9 4.5"
+            fill="none"
+            stroke="var(--tertiary-foreground)"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      {open ? (
+        <span
+          role="menu"
+          tabIndex={-1}
+          className="absolute top-7 left-0 z-10 flex min-w-48 flex-col rounded-[8px] border border-solid border-border bg-popover p-1 shadow-md"
+          onKeyDown={(event) => {
+            if (event.key === "Escape") close();
+          }}
+        >
+          <button
+            type="button"
+            ref={item}
+            role="menuitem"
+            data-testid="sc-draft-toggle"
+            disabled={draft.pending}
+            onClick={() => {
+              draft.toggle?.();
+              close();
+            }}
+            className="flex h-7 cursor-pointer items-center rounded-[6px] border-0 bg-transparent px-2 text-left text-[12px] leading-4 text-foreground enabled:hover:bg-surface-raised"
+          >
+            {forge.isDraft ? "Mark ready for review" : "Convert to draft"}
+          </button>
+        </span>
+      ) : null}
+      {draft.message ? (
+        <output className="text-[12px] leading-4 text-warning">{draft.message}</output>
+      ) : null}
     </span>
   );
 }
@@ -499,14 +573,18 @@ function localLine(branch: Branch | null, workspace: WorkspaceValue): string {
   return parts.join(" · ");
 }
 
-/** The thread's own Change: its pull request over its branch. */
+/** The thread's own Change: its pull request over its branch, its ship path and what needs attention. */
 function ThisThread({
+  threadId,
+  row,
   branchName,
   branch,
   workspace,
   forge,
   offline,
 }: {
+  threadId: string;
+  row: ThreadChange;
   branchName: string | null;
   branch: Branch | null;
   workspace: WorkspaceValue;
@@ -515,6 +593,9 @@ function ThisThread({
 }) {
   const pr = forge.read?.value;
   const name = branch?.name ?? branchName;
+  const summary = useMemo(() => summarize(row), [row]);
+  const steps = useMemo(() => (summary?.branch ? shipPath(summary) : null), [summary]);
+  const chips = useMemo(() => (summary ? attentionChips(summary) : []), [summary]);
   return (
     <section
       data-testid="sc-ready"
@@ -523,7 +604,7 @@ function ThisThread({
     >
       <SectionLabel>This thread</SectionLabel>
       <div className="flex min-w-0 items-center gap-2">
-        <PullRequestChip forge={pr} onGitHub={workspace.github !== null} />
+        <PullRequestChip threadId={threadId} forge={pr} onGitHub={workspace.github !== null} />
         <span
           className="min-w-0 truncate text-[15px] leading-6 font-semibold text-foreground"
           data-testid="sc-title"
@@ -531,6 +612,8 @@ function ThisThread({
           {pr ? pr.title : (name ?? "No branch")}
         </span>
       </div>
+      <Chips chips={chips} />
+      {steps ? <ShipPath steps={steps} /> : null}
       <span
         className="text-[12px] leading-4 break-words text-muted-foreground"
         data-testid="sc-forge-line"
