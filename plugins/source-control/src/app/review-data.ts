@@ -9,7 +9,7 @@ import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
 } from "@get-bb/plugin-sdk/app";
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import type {
   BatchInput,
@@ -23,6 +23,61 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { ReviewInterner, type StableReview } from "./review-model.ts";
 
 const NO_KEYS: readonly string[] = [];
+
+/**
+ * Checks the reader made that the server has not shown back yet, by Change.
+ * bb's shared keyed prediction drops an earlier accepted check when a later
+ * one is predicted on the same Change, so the selection keeps its own: each
+ * box shows the reader's choice from the click until a read agrees, the
+ * write fails, or a few seconds pass, when the server's read is the truth.
+ */
+const PENDING_MS = 5_000;
+const pendingChecks = new Map<ChangeKey, ReadonlyMap<string, boolean>>();
+const pendingListeners = new Set<() => void>();
+
+function setPending(key: ChangeKey, ids: readonly string[], selected: boolean | null): void {
+  const next = new Map(pendingChecks.get(key));
+  for (const id of ids) {
+    if (selected === null) next.delete(id);
+    else next.set(id, selected);
+  }
+  if (next.size === 0) pendingChecks.delete(key);
+  else pendingChecks.set(key, next);
+  for (const listener of pendingListeners) listener();
+}
+
+/** Drops the pending checks for `ids` that still say `selected`; a later click owns the rest. */
+function clearPending(key: ChangeKey, ids: readonly string[], selected: boolean): void {
+  const current = pendingChecks.get(key);
+  const done = ids.filter((id) => current?.get(id) === selected);
+  if (done.length > 0) setPending(key, done, null);
+}
+
+function subscribePending(listener: () => void): () => void {
+  pendingListeners.add(listener);
+  return () => pendingListeners.delete(listener);
+}
+
+/** The server's review with the reader's unconfirmed checks applied. */
+function withPending(
+  review: ChangeReview | undefined,
+  pending: ReadonlyMap<string, boolean> | undefined,
+): ChangeReview | undefined {
+  if (!review || !pending) return review;
+  const selected = new Set(review.selected);
+  for (const [id, checked] of pending) {
+    if (checked) selected.add(id);
+    else selected.delete(id);
+  }
+  return selected.size === review.selected.length && review.selected.every((id) => selected.has(id))
+    ? review
+    : { ...review, selected: [...selected] };
+}
+
+/** For tests: forget every pending check. */
+export function resetPendingChecks(): void {
+  pendingChecks.clear();
+}
 
 export type ReviewRead = {
   /** Undefined until the first read answers. */
@@ -40,7 +95,23 @@ export function useChangeReview(key: ChangeKey | null, enabled = true): ReviewRe
     keys: key ? [key] : NO_KEYS,
     enabled: enabled && key !== null,
   });
-  const review = key ? query.data?.[key] : undefined;
+  const read = key ? query.data?.[key] : undefined;
+  const pending = useSyncExternalStore(subscribePending, () =>
+    key ? pendingChecks.get(key) : undefined,
+  );
+  // A read that shows a pending check as the reader left it confirms it.
+  useLayoutEffect(() => {
+    if (!key || !read || !pending) return;
+    const shown = new Set(read.selected);
+    const agreed = [...pending].filter(([id, checked]) => shown.has(id) === checked);
+    for (const checked of [true, false])
+      clearPending(
+        key,
+        agreed.filter(([, value]) => value === checked).map(([id]) => id),
+        checked,
+      );
+  }, [key, read, pending]);
+  const review = useMemo(() => withPending(read, pending), [read, pending]);
   const [interner] = useState(() => new ReviewInterner());
   const stable = useMemo(() => interner.stable(review), [interner, review]);
   const refetch = useRef(query.refetch);
@@ -80,20 +151,8 @@ function upsert(drafts: readonly Draft[], input: DraftInput): Draft[] {
 
 /** The review's writes for one Change, as one object that never changes. */
 export function useReviewActions(key: ChangeKey): ReviewActions {
-  const select = useRpcMutation({
-    contract: sourceControlContract,
-    method: "setSelected",
-    optimistic: (input, cache) =>
-      cache.updateKey("reviewForChange", input.key, (current) => {
-        if (!current) return current;
-        const set = new Set(current.selected);
-        for (const id of input.ids) {
-          if (input.selected) set.add(id);
-          else set.delete(id);
-        }
-        return { ...current, selected: [...set] };
-      }),
-  });
+  // Predicted by the pending checks above, not by bb's keyed prediction.
+  const select = useRpcMutation({ contract: sourceControlContract, method: "setSelected" });
   const save = useRpcMutation({
     contract: sourceControlContract,
     method: "saveDraft",
@@ -149,8 +208,13 @@ export function useReviewActions(key: ChangeKey): ReviewActions {
     () => ({
       setSelected(ids, selected) {
         if (ids.length === 0) return;
-        // A failed write rolls its prediction back; the box shows what the server has.
-        void latest.current.select({ key, ids: [...ids], selected }).catch(() => undefined);
+        const list = [...ids];
+        setPending(key, list, selected);
+        // A failed write drops its prediction at once; the box shows what the server has.
+        void latest.current.select({ key, ids: list, selected }).then(
+          () => setTimeout(() => clearPending(key, list, selected), PENDING_MS),
+          () => clearPending(key, list, selected),
+        );
       },
       async saveDraft(draft) {
         await latest.current.save({ key, draft });

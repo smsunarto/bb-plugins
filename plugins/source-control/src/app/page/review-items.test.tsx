@@ -15,6 +15,7 @@ import { reviewPath, type ChangeDetail, type ChangeRow } from "../../core/review
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { ChangeDirective } from "../chat-card.tsx";
 import { FindingsCard } from "../findings-card.tsx";
+import { resetPendingChecks } from "../review-data.ts";
 import { ReviewPanel } from "../review-entry.tsx";
 import { patchLines } from "../review-model.ts";
 import { annotationProbe } from "./annotations.tsx";
@@ -248,6 +249,7 @@ const checked = (element: Element) => String((element as HTMLInputElement).check
 beforeEach(() => {
   localStorage.clear();
   resetNavStores();
+  resetPendingChecks();
   resetPatchStores();
   annotationProbe.onRender = null;
 });
@@ -626,4 +628,19 @@ test("Escape with the tray open closes the tray and goes no further", async () =
   expect(send.getAttribute("aria-expanded")).toBe("false");
   expect(tray.className).toContain("hidden");
   expect(reachedPage).toBe(0);
+});
+
+test("two checks one after another both stay checked, before and after the server answers", async () => {
+  const server = reviewServer([finding(1, 2), finding(2, 3)]);
+  const slot = render(server.handlers);
+  const boxes = () => within(slot.getByTestId("thread-tab")).getAllByTestId("sc-finding-check");
+  await waitFor(() => expect(boxes()).toHaveLength(2));
+  fireEvent.click(boxes()[0]!);
+  await waitFor(() => expect(server.state.selected).toHaveLength(1));
+  await slot.experimental_invalidateRpc([reviewTag(KEY)]);
+  fireEvent.click(boxes()[1]!);
+  expect(boxes().map(checked)).toEqual(["true", "true"]);
+  await waitFor(() => expect(server.state.selected).toHaveLength(2));
+  await slot.experimental_invalidateRpc([reviewTag(KEY)]);
+  await waitFor(() => expect(boxes().map(checked)).toEqual(["true", "true"]));
 });
