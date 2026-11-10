@@ -1,6 +1,12 @@
-import type { BbPluginApi, ExperimentalPluginRpcHandlersWithContext } from "@get-bb/plugin-sdk";
+import type {
+  BbPluginApi,
+  ExperimentalPluginRpcHandlersWithContext,
+  PluginAgentToolContext,
+} from "@get-bb/plugin-sdk";
+import { instructionFiles } from "@bb-plugins/instructions";
 import { makePluginRuntime, type PluginRuntime } from "@bb-plugins/effect-bridge";
 import { Effect } from "effect";
+import { z } from "zod";
 import {
   ACTION_DEADLINE_MS,
   sourceControlHostContract,
@@ -8,6 +14,7 @@ import {
 } from "../contract/host.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import type { ChangeKey } from "../core/ids.ts";
+import { shareDirective } from "../core/directive.ts";
 import { execGh } from "../forge/exec-gh.ts";
 import type { Exec } from "../forge/github.ts";
 import { createForgeSites, FORGE_DEADLINE_MS, type HostForge } from "./forge-sites.ts";
@@ -36,6 +43,9 @@ type HostClient = ReturnType<typeof hostClient>;
 type Changes = ReturnType<typeof createThreadChanges>;
 type Runtime = PluginRuntime<SharedWork>;
 type Start = ReturnType<typeof createReviewStart>;
+
+const files = instructionFiles(import.meta.url);
+const SHARE_CHANGE = "source_control_share_change";
 
 const hostClient = (bb: BbPluginApi) =>
   bb.hosts.experimental_client({
@@ -69,11 +79,14 @@ function forgeCalls(host: HostClient): HostForge {
     setDraft: (hostId, write, signal) =>
       host.call("forgeWrite", { op: "pr.setDraft", ...write }, options(hostId, signal)),
     review: (hostId, input, signal) => host.call("forgeReview", input, options(hostId, signal)),
+    submitReview: (hostId, write, signal) =>
+      host.call("forgeSubmitReview", write, options(hostId, signal)),
   };
 }
 
-/** A Change's review items, drafts and selection, and starting a bb review of it. */
-function reviewHandlers(runtime: Runtime, items: Changes["review"]["items"], start: Start) {
+/** A Change's review items, drafts and selection, starting a bb review of it, and sending batches. */
+function reviewHandlers(runtime: Runtime, review: Changes["review"], start: Start) {
+  const { items, batches } = review;
   return {
     reviewForChange: ({ keys }) => items.read(keys),
     saveDraft: ({ key, draft }) => ({ ok: true as const, draft: items.saveDraft(key, draft) }),
@@ -85,6 +98,18 @@ function reviewHandlers(runtime: Runtime, items: Changes["review"]["items"], sta
       items.setSelected(key, ids, selected);
       return { ok: true as const };
     },
+    dismissItem: ({ key, id }) => {
+      items.dismiss(key, id);
+      return { ok: true as const };
+    },
+    setTray: ({ key, tray }) => {
+      items.setTray(key, tray);
+      return { ok: true as const };
+    },
+    agentTargets: async ({ key }) => ({ targets: await batches.targets(key) }),
+    // A send is not stopped by its caller leaving: a retry with the same id finds where it got to.
+    sendBatch: ({ key, batch }) => runtime.run(batches.send(key, batch)),
+    stopAgent: ({ key, batchId }) => batches.stop(key, batchId),
     startReview: ({ key }) => start.startReview(key),
     changeConversation: ({ key }, context) =>
       runtime.run(items.conversation(key), context.experimental_signal),
@@ -151,7 +176,7 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes, start:
         runtime.run(changes.review.commits(key, revision), context.experimental_signal),
       changeForgeAction: ({ key, action, expected }) =>
         runtime.run(changes.review.setDraft(key, action.draft, expected)),
-      ...reviewHandlers(runtime, changes.review.items, start),
+      ...reviewHandlers(runtime, changes.review, start),
     },
     { experimental_discoverable: true },
   );
@@ -207,14 +232,47 @@ function listen(bb: BbPluginApi, runtime: Runtime, host: HostClient, changes: Ch
       runtime.fork(changes.turnEnded(thread.id));
       // A review that stops without reporting ends with no findings, or failed.
       changes.review.items.runEnded(thread.id, event === "thread.failed");
+      changes.review.batches.threadStatus(thread.id, event === "thread.idle" ? "idle" : "failed");
     });
+  // An agent a batch went to: "fixing" while it runs, gone once archived.
+  bb.events.on("thread.active", ({ thread }) =>
+    changes.review.batches.threadStatus(thread.id, "running"),
+  );
+  bb.events.on("thread.archived", ({ thread }) =>
+    changes.review.batches.threadStatus(thread.id, "gone"),
+  );
 }
 
-/** Review threads get the findings tool; no other thread sees it. */
-function registerAgents(bb: BbPluginApi, changes: Changes) {
+/** The calling thread's Change as a card: the directive names its key and head, nothing else. */
+function shareChangeTool(runtime: Runtime, changes: Changes) {
+  return {
+    name: SHARE_CHANGE,
+    ...files.tool(SHARE_CHANGE),
+    presentation: {
+      label: { pending: "Sharing the Change", completed: "Shared the Change" },
+    },
+    parameters: z.object({}),
+    async execute(_input: Record<string, never>, { threadId }: PluginAgentToolContext) {
+      // A thread whose Change was never read is read once, now.
+      if (!changes.keyOf(threadId)) await runtime.run(changes.retry(threadId));
+      const key = changes.keyOf(threadId);
+      if (!key)
+        throw new Error(
+          "This thread has no Change to share: it needs a checkout with a branch checked out.",
+        );
+      const detail = changes.review.detail([key])[key];
+      const head = detail?.state === "change" ? detail.head : null;
+      return shareDirective(key, head);
+    },
+  };
+}
+
+/** Review threads get the findings tool; every thread can share its Change. */
+function registerAgents(bb: BbPluginApi, runtime: Runtime, changes: Changes) {
   bb.agents.registerTool(reportFindingsTool(changes.review.items));
+  bb.agents.registerTool(shareChangeTool(runtime, changes));
   bb.agents.configure((session) => ({
-    tools: reportFindingsEnabled(session) ? [REPORT_FINDINGS] : [],
+    tools: reportFindingsEnabled(session) ? [REPORT_FINDINGS, SHARE_CHANGE] : [SHARE_CHANGE],
     skills: [],
   }));
 }
@@ -262,7 +320,7 @@ export function createSourceControl(deps: SourceControlDeps) {
       now: deps.now,
     });
     registerRpc(bb, runtime, changes, start);
-    registerAgents(bb, changes);
+    registerAgents(bb, runtime, changes);
     listen(bb, runtime, host, changes);
   };
 }

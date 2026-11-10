@@ -28,10 +28,14 @@ import {
   sourceRowsSchema,
 } from "../core/review.ts";
 import {
+  agentTargetSchema,
+  batchInputSchema,
+  batchViewSchema,
   changeReviewSchema,
   conversationResultSchema,
   draftInputSchema,
   draftSchema,
+  traySchema,
 } from "../core/items.ts";
 import {
   accountTag,
@@ -202,6 +206,40 @@ export const sourceControlContract = defineRpcContract({
       })
       .strict(),
     output: z.object({ ok: z.literal(true) }).strict(),
+  },
+  /** Dismisses a bb finding: it leaves the items, their count and the selection. Convergent. */
+  dismissItem: {
+    input: z.object({ key: changeKeySchema, id: z.string().min(1).max(512) }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
+  /** The send tray's destination and target, kept per Change. */
+  setTray: {
+    input: z.object({ key: changeKeySchema, tray: traySchema }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
+  /** Threads an agent batch can go to: those on the Change's branch first. Read on demand. */
+  agentTargets: {
+    input: z.object({ key: changeKeySchema }).strict(),
+    output: z.object({ targets: z.array(agentTargetSchema).max(50) }).strict(),
+  },
+  /**
+   * Sends checked items and drafts to an agent thread or as one GitHub
+   * review. Keyed on the client's batch id: sending an id again returns the
+   * stored outcome and sends nothing more; a queued or failed one is retried.
+   */
+  sendBatch: {
+    experimental_description:
+      "Send a Change's checked review items and unsent line comments to an agent thread, or post them as one GitHub review pinned to the reviewed head. The batch id is the client's: repeating it never sends twice.",
+    input: z.object({ key: changeKeySchema, batch: batchInputSchema }).strict(),
+    output: batchViewSchema,
+  },
+  /** Stops the agent thread a sent batch went to. */
+  stopAgent: {
+    input: z.object({ key: changeKeySchema, batchId: z.string().min(1).max(128) }).strict(),
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true) }).strict(),
+      z.object({ ok: z.literal(false), message: z.string() }).strict(),
+    ]),
   },
   /** Starts a bb review of the Change's head, or returns the one already running on it. */
   startReview: {

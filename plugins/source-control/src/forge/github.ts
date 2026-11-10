@@ -466,3 +466,85 @@ export async function setDraftAt(
   await setDraft(exec, { repo: write.repo, number: write.number, draft: write.draft }, signal);
   return { status: "done" };
 }
+
+/** One line comment of a review. */
+export type ReviewComment = {
+  path: string;
+  line: number;
+  startLine: number | null;
+  side: "LEFT" | "RIGHT";
+  body: string;
+};
+
+/** A whole review: its body (which carries the batch's marker) and every comment, at `expectedHead`. */
+export type ReviewWrite = PullRequestQuery & {
+  number: number;
+  expectedHead: string;
+  marker: string;
+  body: string;
+  comments: ReviewComment[];
+};
+
+export type ReviewSubmitted =
+  | { status: "done" | "upToDate"; url: string | null }
+  | Extract<ForgeResult, { status: "conflict" }>;
+
+type RestReview = { body?: string | null; html_url?: string };
+
+/**
+ * Posts every comment as one review, only while the pull request is still
+ * at `expectedHead`. A review already carrying `marker` is this batch, sent
+ * before: it is not posted again, so a retry after a lost answer is safe.
+ */
+export async function submitReviewAt(
+  exec: Exec,
+  write: ReviewWrite,
+  signal?: AbortSignal,
+): Promise<ReviewSubmitted> {
+  const { pullRequest } = await readPullRequest(exec, write, signal);
+  if (!pullRequest || pullRequest.number !== write.number || pullRequest.state !== "open")
+    return {
+      status: "conflict",
+      detail: `#${write.number} is no longer this branch's open pull request.`,
+    };
+  const path = `repos/${write.repo.owner}/${write.repo.name}/pulls/${write.number}/reviews`;
+  const listed = await exec(["api", "--paginate", "--slurp", `${path}?per_page=100`], { signal });
+  if (listed.code !== 0) throw classifyFailure(listed);
+  let reviews: RestReview[];
+  try {
+    reviews = (JSON.parse(listed.stdout) as RestReview[][]).flat();
+  } catch {
+    throw new GhError("failed", "GitHub returned reviews that could not be read.");
+  }
+  const sent = reviews.find((review) => review.body?.includes(write.marker));
+  if (sent) return { status: "upToDate", url: sent.html_url ?? null };
+  if (pullRequest.headRefOid !== write.expectedHead)
+    return {
+      status: "conflict",
+      detail: `#${write.number} moved to ${pullRequest.headRefOid.slice(0, 7)} since you looked.`,
+    };
+  const payload = {
+    commit_id: write.expectedHead,
+    event: "COMMENT",
+    body: `${write.body}\n\n${write.marker}`,
+    comments: write.comments.map((comment) => ({
+      path: comment.path,
+      line: comment.line,
+      side: comment.side,
+      ...(comment.startLine !== null && comment.startLine < comment.line
+        ? { start_line: comment.startLine, start_side: comment.side }
+        : {}),
+      body: comment.body,
+    })),
+  };
+  const posted = await exec(["api", "-X", "POST", path, "--input", "-"], {
+    stdin: JSON.stringify(payload),
+    signal,
+  });
+  if (posted.code !== 0 || posted.failure) throw classifyFailure(posted);
+  try {
+    return { status: "done", url: (JSON.parse(posted.stdout) as RestReview).html_url ?? null };
+  } catch {
+    return { status: "done", url: null };
+  }
+}

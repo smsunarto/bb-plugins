@@ -19,6 +19,9 @@ import {
   type DraftInput,
   type LineEdits,
   type ReviewItem,
+  type BatchView,
+  type Tray,
+  type Viewer,
 } from "../core/items.ts";
 import { parseChangeKey, type ChangeDetail, type ReviewRevision } from "../core/review.ts";
 import type { ForgeSites } from "./forge-sites.ts";
@@ -47,6 +50,10 @@ export type ReviewItemsDeps = {
   /** Runs work no caller waits for. */
   fork: (work: Effect.Effect<void>) => void;
   now: () => number;
+  /** The Change's batches as the tray and the card show them. */
+  batches: (key: ChangeKey) => BatchView[];
+  /** Who "You" is on the Change's pull request. */
+  viewer: (key: ChangeKey) => Viewer | null;
 };
 
 const TRANSIENT = new Set<Problem["kind"]>([
@@ -202,13 +209,57 @@ export function createReviewItems(deps: ReviewItemsDeps) {
     if (findings.length > 0 || drafts.length > 0) deps.fork(Effect.ignore(settle(key)));
   };
 
+  /**
+   * GitHub's threads sit at the pull request's head. A checkout ahead of it
+   * shows them at its own head, moved past the commits between; the move is
+   * read once per pair of heads, in the background, and the threads show at
+   * the pull request's head until it lands.
+   */
+  const forgeEdits = new Map<string, FileEdits | null>();
+  const forgeAt = (key: ChangeKey, prHead: string, items: ReviewItem[]): ReviewItem[] => {
+    const revision = headOf(key);
+    if (!revision || revision.source.kind !== "host" || revision.head === prHead) return items;
+    if (items.length === 0) return items;
+    const cacheKey = `${key}|${prHead}|${revision.head}`;
+    if (!forgeEdits.has(cacheKey)) {
+      deps.fork(
+        Effect.ignore(
+          deps.share(
+            `forge-anchors:${cacheKey}`,
+            Effect.gen(function* () {
+              const paths = [...new Set(items.map((item) => item.anchor.path))];
+              const read = yield* editsSince(key, revision, prHead, paths);
+              // Away for now: the next read asks again.
+              if (read !== null && !(read instanceof Map) && TRANSIENT.has(read.kind)) return;
+              if (forgeEdits.size > 200) forgeEdits.clear();
+              forgeEdits.set(cacheKey, read instanceof Map ? read : null);
+              deps.invalidate([reviewTag(key)]);
+            }),
+          ),
+        ),
+      );
+      return items;
+    }
+    const edits = forgeEdits.get(cacheKey) ?? null;
+    return items.map((item) => {
+      if (item.state !== "open") return item;
+      const anchor = moved(item.anchor, edits, revision.head);
+      return anchor ? { ...item, anchor } : { ...item, state: "outdated" };
+    });
+  };
+
   const review = (key: ChangeKey): ChangeReview => {
     const pr = store.forge(key).read?.value ?? null;
     const threads = store.threads(key);
+    const dismissed = store.dismissed(key);
     const forgeItems = pr
-      ? (threads.read?.value ?? []).flatMap((thread) => forgeItem(thread, pr.headRefOid) ?? [])
+      ? forgeAt(
+          key,
+          pr.headRefOid,
+          (threads.read?.value ?? []).flatMap((thread) => forgeItem(thread, pr.headRefOid) ?? []),
+        )
       : [];
-    const items = [...store.findings(key), ...forgeItems];
+    const items = [...store.findings(key), ...forgeItems].filter((item) => !dismissed.has(item.id));
     const ids = new Set(items.map((item) => item.id));
     return {
       items,
@@ -216,6 +267,9 @@ export function createReviewItems(deps: ReviewItemsDeps) {
       selected: store.selected(key).filter((id) => ids.has(id)),
       runs: store.runs(key),
       forge: { at: threads.read?.at ?? null, problem: threads.problem },
+      batches: deps.batches(key),
+      tray: store.tray(key),
+      viewer: deps.viewer(key),
     };
   };
 
@@ -231,6 +285,15 @@ export function createReviewItems(deps: ReviewItemsDeps) {
     },
     settle,
     settleIfBehind,
+    /** The Change's items as the reader sees them now, dismissed ones left out. */
+    items: (key: ChangeKey): ReviewItem[] => review(key).items,
+    /** Dismisses a finding for good: it leaves the list, the count and the selection. Twice is once. */
+    dismiss(key: ChangeKey, id: string): void {
+      if (store.dismiss(key, id)) deps.invalidate([reviewTag(key)]);
+    },
+    setTray(key: ChangeKey, tray: Tray): void {
+      if (store.setTray(key, tray)) deps.invalidate([reviewTag(key)]);
+    },
     /** Saves a draft; the same client id twice is one draft, the second an edit. */
     saveDraft(key: ChangeKey, input: DraftInput): Draft {
       const before = store.draft(key, input.id);

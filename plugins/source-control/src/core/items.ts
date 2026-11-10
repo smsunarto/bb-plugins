@@ -124,9 +124,111 @@ export const reviewRunSchema = z
   .strict();
 export type ReviewRun = z.infer<typeof reviewRunSchema>;
 
+// ── Sending ────────────────────────────────────────────────────────────
+
+export const destinationSchema = z.enum(["agent", "github"]);
+export type Destination = z.infer<typeof destinationSchema>;
+
+/** Where a batch goes: an agent thread, a new agent thread in the Change's project, or the pull request. */
+export const batchTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("thread"), threadId: z.string().min(1).max(128) }).strict(),
+  z.object({ kind: z.literal("new-thread") }).strict(),
+  z.object({ kind: z.literal("pull-request"), number: z.number().int().positive() }).strict(),
+]);
+export type BatchTarget = z.infer<typeof batchTargetSchema>;
+
+/** What a client asks to send. The id is minted by the client: sending it again is the same send. */
+export const batchInputSchema = z
+  .object({
+    /** Letters, digits, `-` and `_` only: it is written into messages and review bodies as a marker. */
+    id: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+    /** The head the reader saw; a GitHub review is posted only while the pull request is still there. */
+    head: z.string().min(4).max(64),
+    itemIds: z.array(z.string().min(1).max(512)).max(200),
+    draftIds: z.array(z.string().min(1).max(128)).max(200),
+    destination: destinationSchema,
+    target: batchTargetSchema,
+  })
+  .strict();
+export type BatchInput = z.infer<typeof batchInputSchema>;
+
+/** The marker a batch leaves in its agent message or review body, found before any resend. */
+export function batchMarker(id: string): string {
+  return `<!-- source-control:batch=${id} -->`;
+}
+
+export const batchStateSchema = z.enum(["queued", "sending", "sent", "failed"]);
+export type BatchState = z.infer<typeof batchStateSchema>;
+
+export const batchSchema = batchInputSchema
+  .extend({
+    /**
+     * `queued`: accepted, its site unreachable for now (`problem` says why);
+     * `failed`: refused (`problem`); both wait for an explicit Retry.
+     */
+    state: batchStateSchema,
+    problem: problemSchema.nullable(),
+    createdAt: z.number().int().nonnegative(),
+    sentAt: z.number().int().nonnegative().nullable(),
+    /** The agent thread it went to, once known. */
+    threadId: z.string().nullable(),
+    /** The posted review, for GitHub. */
+    url: z.string().nullable(),
+  })
+  .strict();
+export type Batch = z.infer<typeof batchSchema>;
+
+/** A sent agent batch's thread, as bb last said. */
+export const agentStatusSchema = z.enum(["running", "idle", "failed", "gone", "unknown"]);
+export type AgentStatus = z.infer<typeof agentStatusSchema>;
+
+/**
+ * What a batch shows: `fixing` while its agent runs; `verify` once the agent
+ * stopped and the Change has a new head (never "done"); `stopped` when it
+ * stopped with no new head; `posted` for a GitHub review.
+ */
+export const batchPhaseSchema = z.enum([
+  "sending",
+  "queued",
+  "failed",
+  "fixing",
+  "verify",
+  "stopped",
+  "posted",
+]);
+export type BatchPhase = z.infer<typeof batchPhaseSchema>;
+
+export const batchViewSchema = batchSchema
+  .extend({ phase: batchPhaseSchema, agent: agentStatusSchema.nullable() })
+  .strict();
+export type BatchView = z.infer<typeof batchViewSchema>;
+
+export function batchPhase(
+  batch: Pick<Batch, "state" | "destination" | "head">,
+  agent: AgentStatus | null,
+  head: string | null,
+): BatchPhase {
+  if (batch.state !== "sent") return batch.state;
+  if (batch.destination === "github") return "posted";
+  if (agent === "running" || agent === "unknown") return "fixing";
+  return head !== null && head !== batch.head ? "verify" : "stopped";
+}
+
+/** The tray's choices, kept by the server so a reload or another device shows the same. */
+export const traySchema = z
+  .object({ destination: destinationSchema, target: batchTargetSchema.nullable() })
+  .strict();
+export type Tray = z.infer<typeof traySchema>;
+
+export const viewerSchema = z
+  .object({ login: z.string(), avatarUrl: z.string().nullable() })
+  .strict();
+export type Viewer = z.infer<typeof viewerSchema>;
+
 /** Everything the rail, the annotations and the thread tab's card draw for one Change. */
 export const changeReviewSchema = z
   .object({
+    /** Open, outdated and resolved items; a dismissed finding is not here. */
     items: z.array(reviewItemSchema),
     drafts: z.array(draftSchema),
     /** Item ids the reader checked. */
@@ -137,9 +239,16 @@ export const changeReviewSchema = z
     forge: z
       .object({ at: z.number().int().nonnegative().nullable(), problem: problemSchema.nullable() })
       .strict(),
+    /** Batches of this Change, newest first: every unsent one, and the last sent ones. */
+    batches: z.array(batchViewSchema).max(20),
+    tray: traySchema,
+    /** The GitHub account the repository is read as: who "You" is. Null before any read. */
+    viewer: viewerSchema.nullable(),
   })
   .strict();
 export type ChangeReview = z.infer<typeof changeReviewSchema>;
+
+export const DEFAULT_TRAY: Tray = { destination: "agent", target: null };
 
 export const EMPTY_REVIEW: ChangeReview = {
   items: [],
@@ -147,11 +256,33 @@ export const EMPTY_REVIEW: ChangeReview = {
   selected: [],
   runs: [],
   forge: { at: null, problem: null },
+  batches: [],
+  tray: DEFAULT_TRAY,
+  viewer: null,
 };
+
+/** A thread an agent batch can go to. */
+export const agentTargetSchema = z
+  .object({
+    threadId: z.string(),
+    title: z.string().nullable(),
+    status: agentStatusSchema,
+    /** One of the threads working on this Change's branch. */
+    onChange: z.boolean(),
+  })
+  .strict();
+export type AgentTarget = z.infer<typeof agentTargetSchema>;
 
 // ── Forge threads ──────────────────────────────────────────────────────
 
 const SLOPCOP_MARKER = /<!--\s*slopcop:/;
+const SLOPCOP_PRIORITY = /<!--\s*slopcop:[^>]*\bpriority=([0-3])\b[^>]*-->/;
+
+/** The priority SlopCop stored in its comment's marker, if it did. */
+export function slopCopPriority(body: string): number | null {
+  const match = SLOPCOP_PRIORITY.exec(body);
+  return match ? Number(match[1]) : null;
+}
 
 /** SlopCop posts as its own GitHub App, and marks every comment it writes. */
 export function isSlopCop(comment: { author: string; bot: boolean; body: string }): boolean {
@@ -166,7 +297,7 @@ export function forgeItem(thread: ForgeThread, head: string): ReviewItem | null 
   return {
     id: `gh:${thread.id}`,
     origin: { kind: "forge", author: first.author, bot: first.bot, slopcop: isSlopCop(first) },
-    priority: null,
+    priority: slopCopPriority(first.body),
     title: null,
     body: first.body,
     anchor: {

@@ -109,6 +109,20 @@ describe("ship path", () => {
 
   test.each([
     [
+      "no GitHub remote and no remote at all: it ends at Committed",
+      summary({ ...LOCAL, onGitHub: false, pullRequest: null }),
+      ["Committed:done"],
+    ],
+    [
+      "no GitHub remote, pushed to another remote: it ends at Pushed",
+      summary({
+        branch: branch({ status: "pushed", remote: { ref: "origin/x", name: "x" } }),
+        onGitHub: false,
+        pullRequest: null,
+      }),
+      ["Committed:done", "Pushed:done"],
+    ],
+    [
       "board B: a draft whose checks run",
       BOARD_B,
       [

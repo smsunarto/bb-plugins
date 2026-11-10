@@ -131,6 +131,22 @@ type World = {
   maxInFlight?: number;
   /** Threads the plugin spawned, with what it asked for. */
   spawned?: { id: string; pluginMetadata: unknown; prompt: string; environment: unknown }[];
+  /** Messages each thread received, in order. */
+  messages?: Record<string, string[]>;
+  /**
+   * How the next sends go: "lost" records the message then throws, as a
+   * server that died before bb answered; "hang" records it and never answers;
+   * "refuse" throws without recording.
+   */
+  sendAs?: ("ok" | "lost" | "hang" | "refuse")[];
+  /** Threads the plugin stopped. */
+  stopped?: string[];
+  /** Reviews posted to each pull request's REST path, and how the next posts go. */
+  reviews?: Record<
+    string,
+    { body: string; html_url: string; commit_id: string; comments: unknown[] }[]
+  >;
+  postAs?: ("ok" | "lost")[];
 };
 
 type Run = Awaited<ReturnType<Exec>>;
@@ -213,10 +229,29 @@ function hostGh(world: World, hostId: string): Exec {
   };
 }
 
+/** GitHub's reviews of a pull request: listing them, and posting one. */
+function fakeReviews(world: World, args: readonly string[], stdin: unknown): Run | null {
+  const path = args.find((arg) => /\/pulls\/\d+\/reviews/.test(arg))?.replace(/\?.*$/, "");
+  if (!path) return null;
+  const reviews = ((world.reviews ??= {})[path] ??= []);
+  if (args[1] === "--paginate") return { code: 0, stdout: JSON.stringify([reviews]), stderr: "" };
+  const posted = JSON.parse(String(stdin)) as {
+    body: string;
+    commit_id: string;
+    comments: unknown[];
+  };
+  reviews.push({ ...posted, html_url: `https://github.com/${path}#${reviews.length + 1}` });
+  if (world.postAs?.shift() === "lost")
+    return { code: 1, stdout: "", stderr: "gh: HTTP 502: Bad Gateway" };
+  return { code: 0, stdout: JSON.stringify(reviews.at(-1)), stderr: "" };
+}
+
 function serverGh(world: World): Exec {
   return async (args, options) => {
     (world.ghRuns ??= []).push(Date.now());
     if (args[0] === "auth") return fakeAuth(world, args);
+    const review = args[0] === "api" ? fakeReviews(world, args, options?.stdin) : null;
+    if (review) return review;
     if (args[0] === "api" && args[1] === "--paginate") return fakeRest(world, args);
     const token = options?.env?.GH_TOKEN;
     const login = token ? token.replace(/^tok-/, "") : world.serverAccounts[0]!;
@@ -315,6 +350,26 @@ function fakeSdk(world: World) {
         const id = `review-${(world.spawned ??= []).length + 1}`;
         world.spawned.push({ id, ...args });
         return makeThreadResponse({ id, status: "active" } as never);
+      }) as never,
+      send: (async ({ threadId, input }: { threadId: string; input: { text: string }[] }) => {
+        const how = world.sendAs?.shift() ?? "ok";
+        if (how === "refuse") throw new Error("Thread is not reachable");
+        // Another call can run while this one waits, as on a real server.
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        ((world.messages ??= {})[threadId] ??= []).push(input.map((part) => part.text).join(""));
+        if (how === "hang") return new Promise(() => undefined);
+        if (how === "lost") throw new Error("socket hang up");
+        return { ok: true };
+      }) as never,
+      promptHistory: (async ({ threadId }: { threadId: string }) => ({
+        prompts: (world.messages?.[threadId] ?? []).map((text) => ({ text })),
+      })) as never,
+      queuedMessages: {
+        list: (async () => ({ messages: [] })) as never,
+      },
+      stop: (async ({ threadId }: { threadId: string }) => {
+        (world.stopped ??= []).push(threadId);
+        return { ok: true };
       }) as never,
     },
     environments: {
@@ -1294,6 +1349,7 @@ describe("review items and drafts", () => {
     }[];
     selected: string[];
     runs: { threadId: string; state: string; findings: number }[];
+    viewer: { login: string; avatarUrl: string | null } | null;
   };
   const reviewOf = async (
     harness: Awaited<ReturnType<typeof start>>["harness"],
@@ -1370,8 +1426,13 @@ describe("review items and drafts", () => {
     expect(before.drafts).toMatchObject([{ id: "d-1", replyTo: "gh:T1" }]);
     // A second client asks the server, which holds the only copy.
     expect(await reviewOf(harness, KEY)).toEqual(before);
+    expect(before.viewer).toEqual({
+      login: "smsunarto",
+      avatarUrl: "https://github.com/smsunarto.png?size=48",
+    });
     const after = await restart();
-    expect(await reviewOf(after, KEY)).toEqual(before);
+    // Who "You" is comes back with the next read of the pull request; the rest is stored.
+    expect(await reviewOf(after, KEY)).toEqual({ ...before, viewer: null });
   });
 
   test("a new head moves findings and drafts past the edits above them, outdates the ones whose lines changed, and drops none", async () => {
@@ -1459,8 +1520,9 @@ describe("review items and drafts", () => {
       ).tools.map((tool) => tool.name);
     expect(await tools({ kind: "review", changeKey: KEY })).toEqual([
       "source_control_report_findings",
+      "source_control_share_change",
     ]);
-    expect(await tools({})).toEqual([]);
+    expect(await tools({})).toEqual(["source_control_share_change"]);
     await expect(
       harness.behavior.callAgentTool(
         "source_control_report_findings",
@@ -1490,5 +1552,247 @@ describe("review items and drafts", () => {
     const seen = runs.length;
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(world.ghRuns ?? []).toHaveLength(seen);
+  });
+
+  describe("sending", () => {
+    type View = {
+      id: string;
+      state: string;
+      phase: string;
+      problem: { kind: string; detail?: string } | null;
+      threadId: string | null;
+      url: string | null;
+    };
+    const REVIEWS = "repos/smsunarto/bb-plugins/pulls/482/reviews";
+    const toAgent = (id: string, itemIds = ["gh:T1"], draftIds: string[] = []) => ({
+      id,
+      head: "c0ffee",
+      itemIds,
+      draftIds,
+      destination: "agent" as const,
+      target: { kind: "thread" as const, threadId: "thread-a" },
+    });
+    const toGitHub = (id: string, draftIds: string[]) => ({
+      id,
+      head: "c0ffee",
+      itemIds: [],
+      draftIds,
+      destination: "github" as const,
+      target: { kind: "pull-request" as const, number: 482 },
+    });
+    const send = (harness: Awaited<ReturnType<typeof start>>["harness"], batch: unknown) =>
+      harness.behavior.callRpc("sendBatch", { key: KEY, batch }) as Promise<View>;
+    const reviewed = async (world: World = twoHosts()) => {
+      world.pullRequests["scott/route-gh"] = [REVIEWED];
+      const started = await start(world);
+      await started.harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+      return { world, ...started };
+    };
+    const draft = (harness: Awaited<ReturnType<typeof start>>["harness"], id: string) =>
+      harness.behavior.callRpc("saveDraft", {
+        key: KEY,
+        draft: { id, anchor: anchor("src/a.ts", 12), body: "Use the helper here.", replyTo: null },
+      });
+
+    test("two sends with one id reach the agent once, with ids, anchors, bodies, revision and the marker", async () => {
+      const { world, harness } = await reviewed();
+      await harness.behavior.callRpc("setSelected", { key: KEY, ids: ["gh:T1"], selected: true });
+      const [first, second] = await Promise.all([
+        send(harness, toAgent("b-1")),
+        send(harness, toAgent("b-1")),
+      ]);
+      expect(first).toMatchObject({ state: "sent", threadId: "thread-a" });
+      expect(second).toMatchObject({ state: "sent", threadId: "thread-a" });
+      expect(world.messages?.["thread-a"]).toHaveLength(1);
+      const text = world.messages!["thread-a"]![0]!;
+      expect(text).toContain("gh:T1");
+      expect(text).toContain("src/a.ts:12");
+      expect(text).toContain("Why not reuse the helper?");
+      expect(text).toContain("c0ffee");
+      expect(text).toContain("<!-- source-control:batch=b-1 -->");
+      expect(text).not.toContain("diff --git");
+      // The test checkout's base is its target commit, named as such.
+      expect(text).not.toContain("`branch:");
+      // A third send with the id is answered from the store.
+      expect(await send(harness, toAgent("b-1"))).toMatchObject({ state: "sent" });
+      expect(world.messages!["thread-a"]).toHaveLength(1);
+      // Sent items leave the selection.
+      expect((await reviewOf(harness, KEY)).selected).toEqual([]);
+    });
+
+    test("a send whose answer was lost, retried after a restart, finds its marker and sends nothing", async () => {
+      const { world, harness, restart } = await reviewed();
+      world.sendAs = ["lost"];
+      const lost = await send(harness, toAgent("b-2"));
+      expect(lost).toMatchObject({ state: "queued", problem: { kind: "failed" } });
+      expect(world.messages?.["thread-a"]).toHaveLength(1);
+      const after = await restart();
+      expect(await send(after, toAgent("b-2"))).toMatchObject({ state: "sent" });
+      expect(world.messages!["thread-a"]).toHaveLength(1);
+    });
+
+    test("a send cut off mid-call by a restart is found by its marker, not sent again", async () => {
+      const { world, harness, restart } = await reviewed();
+      world.sendAs = ["hang"];
+      void send(harness, toAgent("b-3")).catch(() => undefined);
+      await vi.waitFor(() => expect(world.messages?.["thread-a"]).toHaveLength(1));
+      // Unloading waits its 5 s grace for the call, then interrupts it.
+      const after = await restart();
+      const review = (await after.behavior.callRpc("reviewForChange", { keys: [KEY] })) as Record<
+        string,
+        { batches: View[] }
+      >;
+      expect(review[KEY]!.batches[0]).toMatchObject({ id: "b-3", state: "sending" });
+      expect(await send(after, toAgent("b-3"))).toMatchObject({ state: "sent" });
+      expect(world.messages!["thread-a"]).toHaveLength(1);
+    }, 15_000);
+
+    test("a refused send stays queued with its problem until an explicit retry sends it", async () => {
+      const { world, harness } = await reviewed();
+      world.sendAs = ["refuse"];
+      expect(await send(harness, toAgent("b-4"))).toMatchObject({
+        state: "queued",
+        problem: { kind: "failed", detail: "Thread is not reachable" },
+      });
+      expect(world.messages?.["thread-a"]).toBeUndefined();
+      expect(await send(harness, toAgent("b-4"))).toMatchObject({ state: "sent" });
+      expect(world.messages!["thread-a"]).toHaveLength(1);
+    });
+
+    test("two GitHub submits with one id post one review pinned to the head, and the drafts go only once it is sent", async () => {
+      const { world, harness } = await reviewed();
+      await draft(harness, "d-1");
+      const [first, second] = await Promise.all([
+        send(harness, toGitHub("g-1", ["d-1"])),
+        send(harness, toGitHub("g-1", ["d-1"])),
+      ]);
+      expect(first).toMatchObject({ state: "sent", phase: "posted" });
+      expect(second).toMatchObject({ state: "sent" });
+      expect(world.reviews?.[REVIEWS]).toHaveLength(1);
+      expect(world.reviews![REVIEWS]![0]).toMatchObject({
+        commit_id: "c0ffee",
+        comments: [{ path: "src/a.ts", line: 12, side: "RIGHT", body: "Use the helper here." }],
+      });
+      expect(world.reviews![REVIEWS]![0]!.body).toContain("<!-- source-control:batch=g-1 -->");
+      expect((await reviewOf(harness, KEY)).drafts).toEqual([]);
+    });
+
+    test("a GitHub submit whose answer was lost, retried after a restart, finds its review and posts nothing", async () => {
+      const { world, harness, restart } = await reviewed();
+      await draft(harness, "d-1");
+      world.postAs = ["lost"];
+      expect(await send(harness, toGitHub("g-2", ["d-1"]))).toMatchObject({ state: "queued" });
+      expect(world.reviews![REVIEWS]).toHaveLength(1);
+      // Not sent, so the draft is still there.
+      expect((await reviewOf(harness, KEY)).drafts).toHaveLength(1);
+      const after = await restart();
+      expect(await send(after, toGitHub("g-2", ["d-1"]))).toMatchObject({
+        state: "sent",
+        url: `https://github.com/${REVIEWS}#1`,
+      });
+      expect(world.reviews![REVIEWS]).toHaveLength(1);
+      expect((await reviewOf(after, KEY)).drafts).toEqual([]);
+    });
+
+    test("a pull request that moved since the reader looked takes no review, and the batch fails saying so", async () => {
+      const { world, harness } = await reviewed();
+      await draft(harness, "d-1");
+      world.pullRequests["scott/route-gh"] = [{ ...REVIEWED, headRefOid: "d00d1e" }];
+      expect(await send(harness, toGitHub("g-3", ["d-1"]))).toMatchObject({
+        state: "failed",
+        problem: { kind: "moved", detail: expect.stringContaining("d00d1e") },
+      });
+      expect(world.reviews?.[REVIEWS] ?? []).toEqual([]);
+      expect((await reviewOf(harness, KEY)).drafts).toHaveLength(1);
+    });
+
+    test("with no GitHub site the batch stays queued, naming the problem", async () => {
+      const world = twoHosts();
+      world.serverAccounts = [];
+      const { harness } = await start(world);
+      await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+      await draft(harness, "d-1");
+      const queued = await send(harness, toGitHub("g-4", ["d-1"]));
+      expect(queued.state).toBe("queued");
+      expect(["no-site", "auth"]).toContain(queued.problem?.kind);
+      expect(world.reviews?.[REVIEWS] ?? []).toEqual([]);
+    });
+
+    test("an offline host leaves a new-thread batch queued with the reason", async () => {
+      const { world, harness } = await reviewed();
+      world.hosts["host-a"]!.online = false;
+      world.hosts["host-b"]!.online = false;
+      world.sendAs = ["refuse"];
+      const queued = await send(harness, {
+        ...toAgent("b-5"),
+        target: { kind: "thread", threadId: "thread-a" },
+      });
+      expect(queued).toMatchObject({ state: "queued", problem: { kind: "failed" } });
+      expect(world.messages?.["thread-a"]).toBeUndefined();
+    });
+
+    test("a sent batch shows fixing while its thread runs, verify after a new head once idle, and Stop stops it", async () => {
+      const { world, harness } = await reviewed();
+      const sent = await send(harness, toAgent("b-6"));
+      expect(sent.phase).toBe("fixing");
+      const batches = async () =>
+        (
+          (await harness.behavior.callRpc("reviewForChange", { keys: [KEY] })) as Record<
+            string,
+            { batches: View[] }
+          >
+        )[KEY]!.batches;
+      await harness.behavior.emitThreadEvent("thread.idle", {
+        thread: makeThreadResponse({ id: "thread-a" }),
+      } as never);
+      await vi.waitFor(async () => expect((await batches())[0]!.phase).toBe("stopped"));
+      world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", {
+        stacks: [{ key: "scott/route-gh", branches: [branch({ head: "d00d1e" })], assigned: [] }],
+      });
+      await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+      await vi.waitFor(async () => expect((await batches())[0]!.phase).toBe("verify"));
+      expect(await harness.behavior.callRpc("stopAgent", { key: KEY, batchId: "b-6" })).toEqual({
+        ok: true,
+      });
+      expect(world.stopped).toEqual(["thread-a"]);
+    });
+
+    test("a dismissed finding leaves the items, the count and the selection, and dismissing twice is once", async () => {
+      const { harness } = await reviewed();
+      await harness.behavior.callRpc("setSelected", { key: KEY, ids: ["gh:T2"], selected: true });
+      for (let attempt = 0; attempt < 2; attempt += 1)
+        expect(await harness.behavior.callRpc("dismissItem", { key: KEY, id: "gh:T2" })).toEqual({
+          ok: true,
+        });
+      const review = await reviewOf(harness, KEY);
+      expect(review.items.map((item) => item.id)).toEqual(["gh:T1"]);
+      expect(review.selected).toEqual([]);
+    });
+
+    test("the tray's destination and target are the server's, so a reload shows the same", async () => {
+      const { harness, restart } = await reviewed();
+      const tray = { destination: "github", target: { kind: "pull-request", number: 482 } };
+      await harness.behavior.callRpc("setTray", { key: KEY, tray });
+      const after = await restart();
+      expect(
+        (
+          (await after.behavior.callRpc("reviewForChange", { keys: [KEY] })) as Record<
+            string,
+            { tray: unknown }
+          >
+        )[KEY]!.tray,
+      ).toEqual(tray);
+    });
+
+    test("share_change returns the thread's Change and head as a directive and nothing else", async () => {
+      const { harness } = await reviewed();
+      expect(
+        await harness.behavior.callAgentTool(
+          "source_control_share_change",
+          {},
+          { threadId: "thread-a" },
+        ),
+      ).toBe(`::source-control{key="${encodeURIComponent(KEY)}" revision="c0ffee"}`);
+    });
   });
 });

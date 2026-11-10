@@ -141,7 +141,12 @@ function approvalStep(pr: PullRequest | null | undefined): ShipStep {
   );
 }
 
-/** Committed, Pushed, the pull request, Checks, Approval, Merged: where the Change is on its way in. */
+/**
+ * Committed, Pushed, the pull request, Checks, Approval, Merged: where the
+ * Change is on its way in. With no GitHub remote it can never get a pull
+ * request, so the path ends at Pushed when the branch has a remote to push
+ * to, else at Committed.
+ */
 export function shipPath(summary: ChangeSummary): ShipStep[] {
   const { branch, pullRequest: pr } = summary;
   const merged = pr?.state === "merged";
@@ -153,18 +158,20 @@ export function shipPath(summary: ChangeSummary): ShipStep[] {
     merged ||
     published ||
     (committed && !!branch?.remote && !unpushed(branch) && branch.status !== "unknown");
-  return [
+  const steps = [
     step(
       "committed",
       "Committed",
       committed ? "done" : summary.uncommitted > 0 ? "current" : "todo",
     ),
-    step("pushed", "Pushed", pushed ? "done" : committed && summary.onGitHub ? "current" : "todo"),
-    pullRequestStep(pr),
-    checksStep(pr),
-    approvalStep(pr),
-    mergedStep(pr),
+    step(
+      "pushed",
+      "Pushed",
+      pushed ? "done" : committed && (summary.onGitHub || !!branch?.remote) ? "current" : "todo",
+    ),
   ];
+  if (!summary.onGitHub && !pr) return branch?.remote ? steps : steps.slice(0, 1);
+  return [...steps, pullRequestStep(pr), checksStep(pr), approvalStep(pr), mergedStep(pr)];
 }
 
 /** Merged; a pull request that conflicts with its base cannot get there until it is updated. */

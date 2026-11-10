@@ -19,7 +19,10 @@ import {
   readAccounts,
   readPullRequest,
   setDraftAt,
+  submitReviewAt,
   type DraftWrite,
+  type ReviewSubmitted,
+  type ReviewWrite,
   type Exec,
   type PullRequestQuery,
 } from "../forge/github.ts";
@@ -47,6 +50,11 @@ export type HostForge = {
     input: { read: ReviewRead; account: ForgeAccount },
     signal: AbortSignal,
   ): Promise<Outcome<ReviewAnswer>>;
+  submitReview(
+    hostId: string,
+    write: ReviewWrite & { account: ForgeAccount },
+    signal: AbortSignal,
+  ): Promise<Outcome<ReviewSubmitted>>;
 };
 
 const problemValue = Schema.declare(
@@ -126,6 +134,52 @@ const toSiteAccount = (access: Access): SiteAccount => ({
   site: access.site,
 });
 
+/** A host's answer as a value, or the site's refusal. */
+const hostAnswer = <T>(access: Access, call: (signal: AbortSignal) => Promise<Outcome<T>>) =>
+  Effect.tryPromise({
+    try: call,
+    catch: (error) =>
+      new SiteRefused({ code: "failed", message: String(error), site: access.site }),
+  }).pipe(
+    Effect.flatMap((answer) =>
+      answer.ok
+        ? Effect.succeed(answer.value)
+        : Effect.fail(
+            new SiteRefused({
+              code: answer.error.code,
+              message: answer.error.message,
+              site: access.site,
+            }),
+          ),
+    ),
+  );
+
+type AsAccount = ReturnType<typeof accountExec>;
+
+/** Posts a review as the access's account, on the server or through its host. */
+const submitAt = (asAccount: AsAccount, host: HostForge, access: Access, write: ReviewWrite) =>
+  access.hostId === null
+    ? Effect.tryPromise({
+        try: (signal) =>
+          submitReviewAt(asAccount(access.account.login, access.account.active), write, signal),
+        catch: (error) => ghRefused(access.site, error),
+      })
+    : hostAnswer(access, (signal) =>
+        host.submitReview(access.hostId!, { ...write, account: access.account }, signal),
+      );
+
+/** Marks a pull request draft or ready as the access's account, on the server or through its host. */
+const writeAt = (asAccount: AsAccount, host: HostForge, access: Access, write: DraftWrite) =>
+  access.hostId === null
+    ? Effect.tryPromise({
+        try: (signal) =>
+          setDraftAt(asAccount(access.account.login, access.account.active), write, signal),
+        catch: (error) => ghRefused(access.site, error),
+      })
+    : hostAnswer(access, (signal) =>
+        host.setDraft(access.hostId!, { ...write, account: access.account }, signal),
+      );
+
 export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now: () => number }) {
   let server: Probe | null = null;
   const hosts = new Map<string, Probe>();
@@ -181,25 +235,6 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
       ),
     );
 
-  const hostAnswer = <T>(access: Access, call: (signal: AbortSignal) => Promise<Outcome<T>>) =>
-    Effect.tryPromise({
-      try: call,
-      catch: (error) =>
-        new SiteRefused({ code: "failed", message: String(error), site: access.site }),
-    }).pipe(
-      Effect.flatMap((answer) =>
-        answer.ok
-          ? Effect.succeed(answer.value)
-          : Effect.fail(
-              new SiteRefused({
-                code: answer.error.code,
-                message: answer.error.message,
-                site: access.site,
-              }),
-            ),
-      ),
-    );
-
   const readAt = (access: Access, query: PullRequestQuery) =>
     access.hostId === null
       ? Effect.tryPromise({
@@ -211,16 +246,19 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
           deps.host.pullRequest(access.hostId!, { ...query, account: access.account }, signal),
         );
 
-  const writeAt = (access: Access, write: DraftWrite) =>
-    access.hostId === null
-      ? Effect.tryPromise({
-          try: (signal) =>
-            setDraftAt(asAccount(access.account.login, access.account.active), write, signal),
-          catch: (error) => ghRefused(access.site, error),
-        })
-      : hostAnswer(access, (signal) =>
-          deps.host.setDraft(access.hostId!, { ...write, account: access.account }, signal),
-        );
+  /** The account that read the repository: every write on it runs as that one, never another. */
+  const writerFor = (query: PullRequestQuery, placements: readonly Placement[]) =>
+    Effect.gen(function* () {
+      const repo = repoName(query);
+      if (!seen.has(repo)) yield* pullRequestVia(query, placements);
+      const access = seen.get(repo);
+      if (!access)
+        return yield* unavailable({
+          kind: "no-site",
+          host: placements[0]?.hostName ?? SERVER_SITE_NAME,
+        });
+      return access;
+    });
 
   /**
    * The first access that can see the repository: the one that read it last,
@@ -391,6 +429,22 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     },
     pullRequest,
     pullRequestVia,
+    /** The login the repository was last read as, if any: who "You" is on its pull requests. */
+    viewerOf: (repo: { owner: string; name: string }): string | null =>
+      seen.get(`${repo.owner}/${repo.name}`.toLowerCase())?.account.login ?? null,
+    /**
+     * Posts one review as the account that read the repository, through the
+     * site it is signed in on. A refusal is a ForgeUnavailable with its problem.
+     */
+    submitReview: (write: ReviewWrite, placements: readonly Placement[]) =>
+      withinDeadline(
+        Effect.gen(function* () {
+          const access = yield* writerFor(write, placements);
+          return yield* submitAt(asAccount, deps.host, access, write).pipe(
+            Effect.mapError((refused) => unavailable(refusedProblem(refused))),
+          );
+        }),
+      ),
     /**
      * Marks the pull request draft or ready, as the account that read it:
      * a write never falls back to another account. Reads first when no
@@ -407,7 +461,7 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
               kind: "no-site",
               host: placement?.hostName ?? SERVER_SITE_NAME,
             });
-          return yield* writeAt(access, write).pipe(
+          return yield* writeAt(asAccount, deps.host, access, write).pipe(
             Effect.mapError((refused) => unavailable(refusedProblem(refused))),
           );
         }),

@@ -22,8 +22,13 @@ import {
 } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import {
+  batchSchema,
+  DEFAULT_TRAY,
   draftSchema,
   forgeThreadSchema,
+  traySchema,
+  type Batch,
+  type Tray,
   reviewItemSchema,
   reviewRunSchema,
   type Draft,
@@ -75,6 +80,11 @@ const MIGRATIONS = [
   `CREATE INDEX finding_by_thread ON finding (thread_id)`,
   `CREATE TABLE draft (change_key TEXT NOT NULL, id TEXT NOT NULL, created_at INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (change_key, id))`,
   `CREATE TABLE selection (change_key TEXT NOT NULL, item_id TEXT NOT NULL, PRIMARY KEY (change_key, item_id))`,
+  // Phase 5B: dismissed findings, batches and the send tray.
+  `CREATE TABLE dismissed (change_key TEXT NOT NULL, item_id TEXT NOT NULL, PRIMARY KEY (change_key, item_id))`,
+  `CREATE TABLE batch (id TEXT PRIMARY KEY, change_key TEXT NOT NULL, created_at INTEGER NOT NULL, json TEXT NOT NULL, payload TEXT NOT NULL)`,
+  `CREATE INDEX batch_by_change ON batch (change_key, created_at)`,
+  `CREATE TABLE tray (change_key TEXT PRIMARY KEY, json TEXT NOT NULL)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -95,6 +105,86 @@ function parsed<T>(schema: z.ZodType<T>, json: string): T | null {
   } catch {
     return null;
   }
+}
+
+/** Dismissed findings, batches with what they carry, and the send tray. */
+function sendingTables(
+  db: Database,
+  rows: <T>(schema: z.ZodType<T>, list: { json: string }[]) => T[],
+) {
+  const dismissedOf = db.prepare<[string], { item_id: string }>(
+    `SELECT item_id FROM dismissed WHERE change_key = ?`,
+  );
+  const dismiss = db.prepare(
+    `INSERT INTO dismissed (change_key, item_id) VALUES (?, ?) ON CONFLICT DO NOTHING`,
+  );
+  const unselect = db.prepare(`DELETE FROM selection WHERE change_key = ? AND item_id = ?`);
+  const getBatch = db.prepare<[string], { change_key: string; json: string; payload: string }>(
+    `SELECT change_key, json, payload FROM batch WHERE id = ?`,
+  );
+  const insertBatch = db.prepare(
+    `INSERT INTO batch (id, change_key, created_at, json, payload) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING`,
+  );
+  const updateBatch = db.prepare(`UPDATE batch SET json = ? WHERE id = ?`);
+  const batchesOf = db.prepare<[string], { json: string }>(
+    `SELECT json FROM batch WHERE change_key = ? ORDER BY created_at DESC, id LIMIT 20`,
+  );
+  const batchesByThread = db.prepare<[string], { change_key: string }>(
+    `SELECT DISTINCT change_key FROM batch WHERE json ->> '$.threadId' = ?`,
+  );
+  const getTray = db.prepare<[string], { json: string }>(
+    `SELECT json FROM tray WHERE change_key = ?`,
+  );
+  const putTray = db.prepare(
+    `INSERT INTO tray (change_key, json) VALUES (?, ?) ON CONFLICT (change_key) DO UPDATE SET json = excluded.json`,
+  );
+  const dropDraft = db.prepare(`DELETE FROM draft WHERE change_key = ? AND id = ?`);
+
+  const tray = (key: ChangeKey): Tray => {
+    const row = getTray.get(key);
+    return (row && parsed(traySchema, row.json)) ?? DEFAULT_TRAY;
+  };
+  return {
+    dismissed: (key: ChangeKey): Set<string> =>
+      new Set(dismissedOf.all(key).map((row) => row.item_id)),
+    /** Dismisses an item and unchecks it; true when it was not dismissed before. */
+    dismiss: db.transaction((key: ChangeKey, id: string) => {
+      unselect.run(key, id);
+      return dismiss.run(key, id).changes > 0;
+    }),
+    batch(id: string): { key: ChangeKey; batch: Batch; payload: string } | null {
+      const row = getBatch.get(id);
+      const batch = row ? parsed(batchSchema, row.json) : null;
+      return row && batch
+        ? { key: row.change_key as ChangeKey, batch, payload: row.payload }
+        : null;
+    },
+    /** Stores a new batch with what it carries; false when the id is taken. */
+    acceptBatch(key: ChangeKey, batch: Batch, payload: string): boolean {
+      return (
+        insertBatch.run(batch.id, key, batch.createdAt, JSON.stringify(batch), payload).changes > 0
+      );
+    },
+    putBatch(batch: Batch): void {
+      updateBatch.run(JSON.stringify(batch), batch.id);
+    },
+    /** A sent batch: its items leave the selection and its drafts are gone, in one step. */
+    settleSent: db.transaction((key: ChangeKey, batch: Batch) => {
+      updateBatch.run(JSON.stringify(batch), batch.id);
+      for (const id of batch.itemIds) unselect.run(key, id);
+      for (const id of batch.draftIds) dropDraft.run(key, id);
+    }),
+    batches: (key: ChangeKey): Batch[] => rows(batchSchema, batchesOf.all(key)),
+    /** Changes with a batch sent to this thread. */
+    changesSentTo: (threadId: string): ChangeKey[] =>
+      batchesByThread.all(threadId).map((row) => row.change_key as ChangeKey),
+    tray,
+    setTray(key: ChangeKey, value: Tray): boolean {
+      const changed = JSON.stringify(tray(key)) !== JSON.stringify(value);
+      putTray.run(key, JSON.stringify(value));
+      return changed;
+    },
+  };
 }
 
 /** The review page's own state: GitHub's threads, bb's findings and runs, drafts and the selection. */
@@ -156,7 +246,9 @@ function reviewTables(db: Database) {
     return row ? parsed(draftSchema, row.json) : null;
   };
 
+  const sending = sendingTables(db, rows);
   return {
+    ...sending,
     /** GitHub's review threads on the Change's pull request. */
     threads,
     setThreads(key: ChangeKey, facet: Facet<ForgeThread[]>): boolean {

@@ -19,6 +19,7 @@ import {
   readAccounts,
   readPullRequest,
   setDraftAt,
+  submitReviewAt,
 } from "../forge/github.ts";
 import type { Checkout } from "./checkout.ts";
 import { forget, share } from "./memo.ts";
@@ -227,6 +228,14 @@ export default experimental_defineHostEntry({
     async forgeReview({ read, account }, { signal }) {
       try {
         return { ok: true as const, value: await runReviewRead(ghFor(account), read, signal) };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ok: false as const, error: ghFailure(error) };
+      }
+    },
+    async forgeSubmitReview({ account, ...write }, { signal }) {
+      try {
+        return { ok: true as const, value: await submitReviewAt(ghFor(account), write, signal) };
       } catch (error) {
         if (signal.aborted) throw error;
         return { ok: false as const, error: ghFailure(error) };

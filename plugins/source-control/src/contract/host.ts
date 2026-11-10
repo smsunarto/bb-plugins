@@ -122,6 +122,12 @@ export const reviewAnswerSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("timeline"), items: z.array(timelineItemSchema).max(100) }).strict(),
 ]);
 
+export const reviewSubmittedSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("done"), url: z.string().nullable() }).strict(),
+  z.object({ status: z.literal("upToDate"), url: z.string().nullable() }).strict(),
+  z.object({ status: z.literal("conflict"), detail: z.string() }).strict(),
+]);
+
 /** How long a write may run on the host. */
 export const ACTION_DEADLINE_MS = 5 * 60_000;
 
@@ -222,6 +228,37 @@ export const sourceControlHostContract = defineRpcContract({
       })
       .strict(),
     output: outcome(forgeResultSchema),
+  },
+  /**
+   * Posts one review carrying every comment, only while the pull request is
+   * still at `expectedHead`. Convergent: a review already carrying `marker`
+   * is returned as `upToDate`, so it may be retried.
+   */
+  forgeSubmitReview: {
+    experimental_retryable: true,
+    input: z
+      .object({
+        ...pullRequestQuery,
+        number: z.number().int().positive(),
+        expectedHead: z.string().regex(/^[0-9a-fA-F]{4,64}$/),
+        marker: z.string().regex(/^<!-- source-control:batch=[A-Za-z0-9_-]{1,128} -->$/),
+        body: z.string().max(65_536),
+        comments: z
+          .array(
+            z
+              .object({
+                path: pathSchema,
+                line: z.number().int().positive(),
+                startLine: z.number().int().positive().nullable(),
+                side: z.enum(["LEFT", "RIGHT"]),
+                body: z.string().max(65_536),
+              })
+              .strict(),
+          )
+          .max(200),
+      })
+      .strict(),
+    output: outcome(reviewSubmittedSchema),
   },
 });
 

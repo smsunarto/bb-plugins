@@ -156,16 +156,20 @@ async function projectFor(bb: BbPluginApi, owner: string, name: string): Promise
   );
 }
 
-/** Where the review runs and what it is told. */
-async function reviewTarget(
+/**
+ * Where an agent works on the Change: in the checkout that has it (reused,
+ * since its commits may be nowhere else), else in a new worktree of the
+ * project whose remote is the pull request's repository.
+ */
+export async function changeHome(
   bb: BbPluginApi,
   store: Store,
   key: ChangeKey,
-  detail: Extract<ChangeDetail, { state: "change" }>,
   revision: ReviewRevision,
-): Promise<{ projectId: string; environment: SpawnArgs["environment"]; prompt: string } | string> {
+): Promise<
+  { projectId: string; environment: SpawnArgs["environment"]; placement: Placement | null } | string
+> {
   const { source } = revision;
-  const pr = store.forge(key).read?.value ?? null;
   if (source.kind === "host") {
     const placement = store
       .checkouts()
@@ -174,31 +178,55 @@ async function reviewTarget(
     const environment = await bb.sdk.environments.get({ environmentId: placement.environmentId });
     return {
       projectId: environment.projectId,
-      // The branch's commits are in this checkout, maybe nowhere else: the review reads them here.
       environment: { type: "reuse", environmentId: placement.environmentId },
-      prompt: checkoutPrompt({
-        branch: detail.row.branch,
-        repoName: detail.row.repo,
-        placement,
-        revision,
-        pullRequest: pr && pr.state === "open" ? { number: pr.number, url: pr.url } : null,
-      }),
+      placement,
     };
   }
   const parsed = parseChangeKey(key);
-  if (parsed?.kind !== "gh" || !pr) return "This Change has no checkout or pull request to review.";
+  if (parsed?.kind !== "gh") return "This Change has no checkout or pull request.";
   const project = await projectFor(bb, parsed.repo.owner, parsed.repo.name);
-  if (!project)
-    return `Add ${parsed.repo.owner}/${parsed.repo.name} as a bb project to review it with bb.`;
+  if (!project) return `Add ${parsed.repo.owner}/${parsed.repo.name} as a bb project first.`;
   const sourceRow = project.sources.find((each) => each.isDefault) ?? project.sources[0];
   return {
     projectId: project.id,
-    // A new worktree, so the review never moves anyone's checkout.
+    // A new worktree, so the agent never moves anyone's checkout.
     environment: {
       type: "host",
       ...(sourceRow ? { hostId: sourceRow.hostId } : {}),
       workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
     },
+    placement: null,
+  };
+}
+
+/** Where the review runs and what it is told. */
+async function reviewTarget(
+  bb: BbPluginApi,
+  store: Store,
+  key: ChangeKey,
+  detail: Extract<ChangeDetail, { state: "change" }>,
+  revision: ReviewRevision,
+): Promise<{ projectId: string; environment: SpawnArgs["environment"]; prompt: string } | string> {
+  const home = await changeHome(bb, store, key, revision);
+  if (typeof home === "string") return home;
+  const pr = store.forge(key).read?.value ?? null;
+  if (home.placement)
+    return {
+      projectId: home.projectId,
+      environment: home.environment,
+      prompt: checkoutPrompt({
+        branch: detail.row.branch,
+        repoName: detail.row.repo,
+        placement: home.placement,
+        revision,
+        pullRequest: pr && pr.state === "open" ? { number: pr.number, url: pr.url } : null,
+      }),
+    };
+  const parsed = parseChangeKey(key);
+  if (parsed?.kind !== "gh" || !pr) return "This Change has no checkout or pull request to review.";
+  return {
+    projectId: home.projectId,
+    environment: home.environment,
     prompt: pullRequestPrompt({
       owner: parsed.repo.owner,
       repo: parsed.repo.name,

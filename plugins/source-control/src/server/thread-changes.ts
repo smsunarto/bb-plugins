@@ -27,6 +27,7 @@ import { HOST_DEADLINE_MS, type HostCalls } from "./host-calls.ts";
 import { createLocalReads, type ThreadBranchLookup } from "./local-read.ts";
 import { createPlacements } from "./placement.ts";
 import { createReview } from "./review.ts";
+import { localMatch } from "./review-change.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
 import { createWatch } from "./watch.ts";
@@ -50,6 +51,20 @@ export type ThreadChangesDeps = {
   /** Runs work no caller waits for. */
   fork: (work: Effect.Effect<void>) => void;
 };
+
+/** Threads on the Change's branch: those read showing it, and those at its checkout on it. */
+function threadsOnChange(
+  store: Store,
+  key: ChangeKey,
+  showing: Iterable<string> | undefined,
+  keyOf: (threadId: string) => ChangeKey | null,
+): string[] {
+  const threads = new Set(showing ?? []);
+  const match = localMatch(store, key);
+  for (const threadId of match ? store.threadsAt(match.placement.hostId, match.placement.path) : [])
+    if (keyOf(threadId) === key) threads.add(threadId);
+  return [...threads];
+}
 
 export function createThreadChanges(deps: ThreadChangesDeps) {
   const { bb, store, now, share } = deps;
@@ -96,6 +111,9 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     return current.state === "checkout" ? current.key : null;
   };
 
+  const invalidate = (tags: readonly string[]) => {
+    if (!deps.disposed()) bb.rpc.experimental_invalidate(tags);
+  };
   const placements = createPlacements({ bb, store, now });
   // Bound once the review page's reads exist; a checkout read reaches its lists through it.
   let checkoutRead: (hostId: string, path: string) => void = () => {};
@@ -118,9 +136,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     share,
     threadsOf: (key) => keyThreads.get(key) ?? [],
     announce,
-    invalidate: (tags) => {
-      if (!deps.disposed()) bb.rpc.experimental_invalidate(tags);
-    },
+    invalidate,
     forgeRead: (key) => review.items.settleIfBehind(key),
     now,
   });
@@ -155,18 +171,18 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     );
 
   const review = createReview({
+    bb,
     store,
     sites: deps.sites,
     local,
     host: deps.host,
     share,
-    invalidate: (tags) => {
-      if (!deps.disposed()) bb.rpc.experimental_invalidate(tags);
-    },
+    invalidate,
     forgeChanged: (key) => announce(keyThreads.get(key) ?? []),
     fork: deps.fork,
     now,
     deadlineMs: hostDeadlineMs,
+    threadsOnChange: (key) => threadsOnChange(store, key, keyThreads.get(key), keyOf),
   });
   checkoutRead = review.checkoutRead;
 
@@ -237,6 +253,8 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
       return yield* forge.setDraft(threadId, where.placement, action.draft, expected);
     }),
     refresh,
+    /** The thread's Change from stored rows, if its checkout and branch are known. */
+    keyOf,
     review,
     /** Explicit retry: probe forge sites again, then read. */
     retry: (threadId: string) =>
