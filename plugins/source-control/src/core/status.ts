@@ -81,6 +81,18 @@ export type ShipStep = {
   detail: { text: string; tone: "warning" | "error" | "muted" }[];
 };
 
+/** A ship path as a read carries it, for a surface that has no branch or pull request of its own. */
+export const shipStepSchema = z
+  .object({
+    id: z.enum(["committed", "pushed", "pullRequest", "checks", "approval", "merged"]),
+    label: z.string(),
+    state: z.enum(["done", "current", "running", "failed", "todo"]),
+    detail: z.array(
+      z.object({ text: z.string(), tone: z.enum(["warning", "error", "muted"]) }).strict(),
+    ),
+  })
+  .strict() satisfies z.ZodType<ShipStep>;
+
 function step(
   id: ShipStep["id"],
   label: string,
@@ -134,9 +146,13 @@ export function shipPath(summary: ChangeSummary): ShipStep[] {
   const { branch, pullRequest: pr } = summary;
   const merged = pr?.state === "merged";
   const commits = commitCount(branch);
-  const committed = merged || commits > 0;
+  // A pull request read with no checkout of its branch was committed and pushed by someone.
+  const published = !branch && !!pr;
+  const committed = merged || published || commits > 0;
   const pushed =
-    merged || (committed && !!branch?.remote && !unpushed(branch) && branch.status !== "unknown");
+    merged ||
+    published ||
+    (committed && !!branch?.remote && !unpushed(branch) && branch.status !== "unknown");
   return [
     step(
       "committed",

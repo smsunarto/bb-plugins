@@ -88,6 +88,8 @@ type Host = {
   online: boolean;
   /** Never answers while true, as a host that stopped responding. */
   hung?: boolean;
+  /** Answers each workspace read after this long, by the fake clock. */
+  delayMs?: number;
   workspace: WorkspaceValue;
   ghAccounts: string[];
   action?: VcsResult;
@@ -108,35 +110,69 @@ type World = {
   readAs?: string[];
   /** Each `gh pr ready` on the server, with the account it ran as. */
   writes?: { login: string; args: readonly string[] }[];
+  /** Inbox searches, by the account they ran as, and what GitHub answers. */
+  inboxReads?: string[];
+  inbox?: { mine: unknown[]; asked: unknown[] };
+  /** REST reads (`gh api <path>`) and their pages. */
+  rest?: Record<string, unknown[][]>;
+  restReads?: string[];
+  /** Host workspace reads in flight now, and the most at once. */
+  inFlight?: number;
+  maxInFlight?: number;
 };
+
+type Run = Awaited<ReturnType<Exec>>;
+
+/** `gh auth token` and `gh auth status` for the world's server accounts. */
+function fakeAuth(world: World, args: readonly string[]): Run {
+  if (args[1] === "token") {
+    const login = args[args.indexOf("--user") + 1]!;
+    return world.serverAccounts.includes(login)
+      ? { code: 0, stdout: `tok-${login}\n`, stderr: "" }
+      : { code: 1, stdout: "", stderr: `no account found for ${login}` };
+  }
+  if (world.serverAccounts.length === 0)
+    return {
+      code: 1,
+      stdout: "",
+      stderr: "You are not logged into any GitHub hosts. To log in, run: gh auth login",
+    };
+  return {
+    code: 0,
+    stdout: world.serverAccounts
+      .map(
+        (login, index) =>
+          `github.com\n  ✓ Logged in to github.com account ${login} (keyring)\n  - Active account: ${index === 0}`,
+      )
+      .join("\n"),
+    stderr: "",
+  };
+}
+
+/** `gh api --paginate --slurp <path>`: the world's pages for the path. */
+function fakeRest(world: World, args: readonly string[]): Run {
+  const path = args.at(-1)!;
+  (world.restReads ??= []).push(path);
+  const pages = world.rest?.[path];
+  return pages
+    ? { code: 0, stdout: JSON.stringify(pages), stderr: "" }
+    : { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" };
+}
+
+function fakeInbox(world: World, login: string): Run {
+  (world.inboxReads ??= []).push(login);
+  const data = {
+    mine: { nodes: world.inbox?.mine ?? [] },
+    asked: { nodes: world.inbox?.asked ?? [] },
+  };
+  return { code: 0, stdout: JSON.stringify({ data }), stderr: "" };
+}
 
 function serverGh(world: World): Exec {
   return async (args, options) => {
     (world.ghRuns ??= []).push(Date.now());
-    if (args[0] === "auth" && args[1] === "token") {
-      const login = args[args.indexOf("--user") + 1]!;
-      return world.serverAccounts.includes(login)
-        ? { code: 0, stdout: `tok-${login}\n`, stderr: "" }
-        : { code: 1, stdout: "", stderr: `no account found for ${login}` };
-    }
-    if (args[0] === "auth") {
-      if (world.serverAccounts.length === 0)
-        return {
-          code: 1,
-          stdout: "",
-          stderr: "You are not logged into any GitHub hosts. To log in, run: gh auth login",
-        };
-      return {
-        code: 0,
-        stdout: world.serverAccounts
-          .map(
-            (login, index) =>
-              `github.com\n  ✓ Logged in to github.com account ${login} (keyring)\n  - Active account: ${index === 0}`,
-          )
-          .join("\n"),
-        stderr: "",
-      };
-    }
+    if (args[0] === "auth") return fakeAuth(world, args);
+    if (args[0] === "api" && args[1] === "--paginate") return fakeRest(world, args);
     const token = options?.env?.GH_TOKEN;
     const login = token ? token.replace(/^tok-/, "") : world.serverAccounts[0]!;
     if (args[0] === "pr" && args[1] === "ready") {
@@ -149,7 +185,11 @@ function serverGh(world: World): Exec {
         };
       return { code: 0, stdout: "", stderr: "" };
     }
-    const body = JSON.parse(String(options?.stdin ?? "{}")) as { variables?: { branch?: string } };
+    const body = JSON.parse(String(options?.stdin ?? "{}")) as {
+      query?: string;
+      variables?: { branch?: string };
+    };
+    if (body.query?.includes("mine: search")) return fakeInbox(world, login);
     const head = body.variables?.branch ?? "";
     world.ghCalls.push(head);
     (world.readAs ??= []).push(login);
@@ -169,6 +209,41 @@ function serverGh(world: World): Exec {
       }),
       stderr: "",
     };
+  };
+}
+
+/** The host's range reads: one modified file, no commits, a header-only patch per path. */
+function fakeRange({ read }: { read: { kind: string; paths?: string[] } }) {
+  if (read.kind === "files")
+    return {
+      ok: true,
+      value: {
+        kind: "files",
+        files: [
+          {
+            path: "src/a.ts",
+            kind: "modified",
+            previousPath: null,
+            additions: 3,
+            deletions: 1,
+            binary: false,
+          },
+        ],
+      },
+    };
+  if (read.kind === "commits") return { ok: true, value: { kind: "commits", commits: [] } };
+  return {
+    ok: true,
+    value: {
+      kind: "patches",
+      files: (read.paths ?? []).map((path) => ({
+        path,
+        kind: "modified",
+        previousPath: null,
+        patch: `diff --git a/${path} b/${path}\n`,
+        truncated: false,
+      })),
+    },
   };
 }
 
@@ -205,8 +280,17 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
       const host = world.hosts[hostId]!;
       if (!host.online) throw new Error("Host is not connected");
       if (host.hung) return new Promise(() => undefined);
-      if (method === "workspace")
+      if (method === "workspace") {
+        if (host.delayMs) {
+          world.inFlight = (world.inFlight ?? 0) + 1;
+          world.maxInFlight = Math.max(world.maxInFlight ?? 0, world.inFlight);
+          await new Promise((resolve) => setTimeout(resolve, host.delayMs));
+          world.inFlight -= 1;
+        }
         return { ok: true, value: { state: "workspace", value: host.workspace } };
+      }
+      if (method === "range")
+        return fakeRange(input as { read: { kind: string; paths?: string[] } });
       if (method === "renewWatch") return { watching: true };
       if (method === "forgeAccounts") return { ok: true, value: { accounts: host.ghAccounts } };
       if (method === "forgeCall") return { ok: true, value: { pullRequest: null, checks: null } };
@@ -471,7 +555,7 @@ describe("host calls", () => {
 });
 
 describe("publishing", () => {
-  test("an unchanged refresh publishes nothing; a changed checkout publishes its threads", async () => {
+  test("an unchanged refresh publishes nothing; a changed checkout publishes its threads, its host's list and its Changes", async () => {
     const world = twoHosts();
     world.threads["thread-a2"] = { hostId: "host-a", path: "/Users/scott/bb-plugins" };
     world.pullRequests["scott/route-gh"] = [PR];
@@ -488,7 +572,12 @@ describe("publishing", () => {
     world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", { uncommitted: [] });
     await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
     expect(new Set(invalidations().slice(published))).toEqual(
-      new Set(["thread:thread-a", "thread:thread-a2"]),
+      new Set([
+        "thread:thread-a",
+        "thread:thread-a2",
+        "host:host-a",
+        "change:gh:smsunarto/bb-plugins:smsunarto:scott/route-gh",
+      ]),
     );
   });
 });
@@ -777,5 +866,185 @@ describe("writes", () => {
     });
     expect(result).toMatchObject({ status: "failed" });
     expect(hostCalls("vcsAction")).toHaveLength(0);
+  });
+});
+
+describe("review page", () => {
+  /** Five hosts with a thread's checkout each, and a sixth connected host with none. */
+  function sixHosts(): World {
+    const world: World = { ...twoHosts(), hosts: {}, threads: {} };
+    for (let n = 1; n <= 6; n++) {
+      const path = `/srv/h${n}/bb-plugins`;
+      world.hosts[`h${n}`] = {
+        name: `host-${n}`,
+        online: true,
+        delayMs: 2_000,
+        workspace: workspace(path),
+        ghAccounts: [],
+      };
+      if (n <= 5) world.threads[`t${n}`] = { hostId: `h${n}`, path };
+    }
+    return world;
+  }
+
+  test("opening the page calls only the placement table's hosts, three at a time, and nothing once hidden", async () => {
+    vi.useFakeTimers();
+    const world = sixHosts();
+    const { harness, hostCalls } = await start(world);
+    // Thread events place each thread; nothing lists hosts.
+    for (let n = 1; n <= 5; n++) {
+      const read = harness.behavior.callRpc("refreshThread", { threadId: `t${n}` });
+      await vi.advanceTimersByTimeAsync(2_500);
+      await read;
+    }
+    const sources = (await harness.behavior.callRpc("pageSources", {})) as {
+      hosts: { hostId: string }[];
+    };
+    expect(sources.hosts.map((host) => host.hostId)).toEqual(["h1", "h2", "h3", "h4", "h5"]);
+
+    world.maxInFlight = 0;
+    const before = hostCalls("workspace").length;
+    const stops = sources.hosts.map((host) =>
+      harness.behavior.experimental_watchRpc("hostChanges", { key: host.hostId }),
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    const opened = hostCalls("workspace").slice(before);
+    expect(new Set(opened.map((call) => call.hostId))).toEqual(
+      new Set(["h1", "h2", "h3", "h4", "h5"]),
+    );
+    expect(world.maxInFlight).toBe(3);
+
+    for (const stop of stops) stop();
+    await vi.advanceTimersByTimeAsync(2_000);
+    const hidden = hostCalls().length;
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(hostCalls().length).toBe(hidden);
+    expect(hostCalls().some((call) => call.hostId === "h6")).toBe(false);
+  });
+
+  const INBOX_PR = {
+    ...PR,
+    number: 77,
+    url: "https://github.com/acme/api/pull/77",
+    title: "Asked of me",
+    isDraft: false,
+    headRefName: "fix/retry",
+    headRefOid: "beef01",
+    updatedAt: "2026-11-09T10:00:00Z",
+    mergeable: "MERGEABLE",
+    additions: 5,
+    deletions: 2,
+    changedFiles: 2,
+    author: { login: "someone" },
+    repository: { name: "api", owner: { login: "acme" } },
+    headRepositoryOwner: { login: "acme" },
+  };
+
+  test("an account's inbox is read once a minute while watched, and never while not", async () => {
+    vi.useFakeTimers();
+    const world = twoHosts();
+    world.inbox = { mine: [], asked: [INBOX_PR] };
+    const { harness } = await start(world);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(world.inboxReads ?? []).toEqual([]);
+
+    const stop = harness.behavior.experimental_watchRpc("inbox", { key: "smsunarto" });
+    await vi.advanceTimersByTimeAsync(10 * 60_000 + 1_000);
+    stop();
+    const reads = world.inboxReads!.length;
+    expect(reads).toBeGreaterThanOrEqual(10);
+    expect(reads).toBeLessThanOrEqual(12);
+    const rows = (await harness.behavior.callRpc("inbox", { keys: ["smsunarto"] })) as Record<
+      string,
+      { read: { rows: { key: string; asked: boolean; mine: boolean; line: string }[] } }
+    >;
+    expect(rows.smsunarto!.read.rows).toEqual([
+      expect.objectContaining({
+        key: "gh:acme/api:acme:fix/retry",
+        asked: true,
+        mine: false,
+        line: "Review requested",
+      }),
+    ]);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(world.inboxReads!.length).toBe(reads);
+  });
+
+  test("a pull request with no checkout anywhere opens and reads entirely from GitHub", async () => {
+    vi.useFakeTimers();
+    const world = twoHosts();
+    world.pullRequests["fix/retry"] = [INBOX_PR];
+    const files = [
+      {
+        filename: "src/retry.ts",
+        status: "modified",
+        additions: 4,
+        deletions: 1,
+        patch: "@@ -1 +1,4 @@\n-a\n+b\n+c\n+d\n+e",
+      },
+      { filename: "package-lock.json", status: "modified", additions: 1, deletions: 1 },
+    ];
+    world.rest = { "repos/acme/api/pulls/77/files?per_page=100": [files] };
+    const { harness, hostCalls } = await start(world);
+    const key = "gh:acme/api:acme:fix/retry";
+    const stop = harness.behavior.experimental_watchRpc("changeDetail", { key });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const detail = (
+      (await harness.behavior.callRpc("changeDetail", { keys: [key] })) as Record<string, any>
+    )[key];
+    stop();
+    expect(detail).toMatchObject({
+      state: "change",
+      row: { number: 77, title: "Asked of me", state: "open" },
+      revision: { head: "beef01", source: { kind: "forge", number: 77 } },
+      files: 2,
+      additions: 5,
+      deletions: 2,
+    });
+    expect(detail.ship.map((step: { state: string }) => step.state).slice(0, 2)).toEqual([
+      "done",
+      "done",
+    ]);
+
+    const listed = await harness.behavior.callRpc("changeFiles", {
+      key,
+      revision: detail.revision,
+    });
+    expect(listed).toMatchObject({
+      ok: true,
+      files: [{ path: "src/retry.ts", additions: 4 }, { path: "package-lock.json" }],
+    });
+    const patches = (await harness.behavior.callRpc("changePatches", {
+      key,
+      revision: detail.revision,
+      paths: ["src/retry.ts"],
+    })) as { ok: true; value: { files: { patch: string }[] } };
+    expect(patches.value.files[0]!.patch).toContain("diff --git a/src/retry.ts b/src/retry.ts");
+    // One files read per revision: the patches came from it.
+    expect(world.restReads).toEqual(["repos/acme/api/pulls/77/files?per_page=100"]);
+    expect(hostCalls()).toEqual([]);
+  });
+
+  test("a checkout's revision is read from its host once, then served from memory", async () => {
+    const world = twoHosts();
+    world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", {
+      target: { ref: "origin/main", head: "aaa1111", behind: 0, base: null, lastFetched: null },
+    });
+    world.pullRequests["scott/route-gh"] = [PR];
+    const { harness, hostCalls } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+    const detail = (
+      (await harness.behavior.callRpc("changeDetail", { keys: [key] })) as Record<string, any>
+    )[key];
+    expect(detail.revision).toEqual({
+      head: "c0ffee",
+      base: "aaa1111",
+      source: { kind: "host", hostId: "host-a", path: "/Users/scott/bb-plugins" },
+    });
+    const ask = () => harness.behavior.callRpc("changeFiles", { key, revision: detail.revision });
+    expect(await ask()).toMatchObject({ ok: true, files: [{ path: "src/a.ts" }] });
+    expect(await ask()).toMatchObject({ ok: true });
+    expect(hostCalls("range")).toHaveLength(1);
   });
 });

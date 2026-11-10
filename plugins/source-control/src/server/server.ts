@@ -43,6 +43,7 @@ function checkoutCalls(host: HostClient): HostCalls {
       host.call("renewWatch", { path }, { hostId, ...options }),
     vcsAction: (hostId, input, options) => host.call("vcsAction", input, { hostId, ...options }),
     patches: (hostId, input, options) => host.call("patches", input, { hostId, ...options }),
+    range: (hostId, input, options) => host.call("range", input, { hostId, ...options }),
   };
 }
 
@@ -84,6 +85,19 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes) {
         await runtime.run(changes.setReadAs(threadId, readAs));
         return { ok: true as const };
       },
+      pageSources: (_input, context) =>
+        runtime.run(changes.review.pageSources(), context.experimental_signal),
+      inbox: ({ keys }) => changes.review.inbox(keys),
+      hostChanges: ({ keys }) => changes.review.hostChanges(keys),
+      changeDetail: ({ keys }) => changes.review.detail(keys),
+      changeFiles: ({ key, revision }, context) =>
+        runtime.run(changes.review.files(key, revision), context.experimental_signal),
+      changePatches: ({ key, revision, paths }, context) =>
+        runtime.run(changes.review.patches(key, revision, paths), context.experimental_signal),
+      changeCommits: ({ key, revision }, context) =>
+        runtime.run(changes.review.commits(key, revision), context.experimental_signal),
+      changeForgeAction: ({ key, action, expected }) =>
+        runtime.run(changes.review.setDraft(key, action.draft, expected)),
     },
     { experimental_discoverable: true },
   );
@@ -95,6 +109,19 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes) {
       () => undefined,
     );
   });
+  // The review page: each source and the open Change are read only while a page watches them.
+  const watchWith =
+    <K extends string>(watch: (key: K) => Effect.Effect<unknown, unknown>) =>
+    (read: { key?: string } | object, signal: AbortSignal) => {
+      if (!("key" in read) || typeof read.key !== "string") return undefined;
+      return runtime.run(watch(read.key as K), signal).then(
+        () => undefined,
+        () => undefined,
+      );
+    };
+  bb.rpc.experimental_whileWatched("inbox", watchWith(changes.review.watchInbox));
+  bb.rpc.experimental_whileWatched("hostChanges", watchWith(changes.review.watchHost));
+  bb.rpc.experimental_whileWatched("changeDetail", watchWith(changes.review.watchChange));
   bb.rpc.experimental_whileWatched("statusForThread", (read, signal) => {
     if (!("key" in read)) return undefined;
     return runtime.run(changes.glance(read.key), signal).then(

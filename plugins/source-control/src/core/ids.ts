@@ -103,3 +103,16 @@ export function changeTag(key: ChangeKey): string {
 export function checksTag(key: ChangeKey): string {
   return `change:${key}:checks`;
 }
+
+/** The tag of one host's list rows on the review page. */
+export function hostTag(hostId: string): string {
+  return `host:${hostId}`;
+}
+
+/** The tag of one forge account's inbox. */
+export function accountTag(login: string): string {
+  return `account:${login}`;
+}
+
+/** The review page's sources: hosts with placements and forge accounts. */
+export const PAGE_SOURCES_TAG = "page:sources";

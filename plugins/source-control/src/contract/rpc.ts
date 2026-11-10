@@ -19,7 +19,24 @@ import {
   vcsResultSchema,
 } from "../core/change.ts";
 import { threadStatusSchema } from "../core/status.ts";
-import { changeKeySchema, checksTag, threadTag, type ChangeKey } from "../core/ids.ts";
+import {
+  changeDetailSchema,
+  commitsResultSchema,
+  filesResultSchema,
+  pageSourcesSchema,
+  reviewRevisionSchema,
+  sourceRowsSchema,
+} from "../core/review.ts";
+import {
+  accountTag,
+  changeKeySchema,
+  changeTag,
+  checksTag,
+  hostTag,
+  PAGE_SOURCES_TAG,
+  threadTag,
+  type ChangeKey,
+} from "../core/ids.ts";
 
 export const MAX_THREAD_KEYS = 200;
 
@@ -77,6 +94,72 @@ export const sourceControlContract = defineRpcContract({
     input: z
       .object({
         threadId: threadIdSchema,
+        action: forgeActionSchema,
+        expected: z
+          .object({ number: z.number().int().positive(), head: z.string().min(1) })
+          .strict(),
+      })
+      .strict(),
+    output: forgeResultSchema,
+  },
+  pageSources: {
+    experimental_description:
+      "What the review page lists from: the hosts the placement table has checkouts on, and the GitHub accounts the bb server can read with.",
+    input: z.object({}).strict(),
+    output: pageSourcesSchema,
+    tags: () => [PAGE_SOURCES_TAG],
+  },
+  inbox: {
+    experimental_description:
+      "Each account's open pull requests on GitHub, keyed by login: the ones it opened and the ones it is asked to review, as list rows. Read again while watched.",
+    input: z.object({ keys: z.array(z.string().min(1).max(100)).min(1).max(20) }).strict(),
+    output: z.record(z.string(), sourceRowsSchema),
+    keyTags: (key: string) => [accountTag(key)],
+  },
+  hostChanges: {
+    experimental_description:
+      "Each host's Changes, keyed by host id: the branches of every checkout the placement table has on it, as list rows from their last read. Read again while watched.",
+    input: z.object({ keys: z.array(z.string().min(1).max(128)).min(1).max(50) }).strict(),
+    output: z.record(z.string(), sourceRowsSchema),
+    keyTags: (key: string) => [hostTag(key)],
+  },
+  changeDetail: {
+    experimental_description:
+      "Each Change's review header and rail, keyed by ChangeKey: its pull request, size, the revision its files are read at, and its stack.",
+    input: z.object({ keys: z.array(changeKeySchema).min(1).max(20) }).strict(),
+    output: z.record(z.string(), changeDetailSchema),
+    keyTags: (key: string) => [changeTag(key as ChangeKey), checksTag(key as ChangeKey)],
+  },
+  /** A Change's files at one revision. Immutable per revision, so never tagged. */
+  changeFiles: {
+    input: z.object({ key: changeKeySchema, revision: reviewRevisionSchema }).strict(),
+    output: filesResultSchema,
+  },
+  /** File patches of a Change at one revision, for the files near the viewport. Immutable. */
+  changePatches: {
+    input: z
+      .object({
+        key: changeKeySchema,
+        revision: reviewRevisionSchema,
+        paths: z.array(z.string()).min(1).max(40),
+      })
+      .strict(),
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), value: patchesSchema }).strict(),
+      z.object({ ok: z.literal(false), problem: problemSchema }).strict(),
+    ]),
+  },
+  /** A Change's commits at one revision, newest first. Immutable. */
+  changeCommits: {
+    input: z.object({ key: changeKeySchema, revision: reviewRevisionSchema }).strict(),
+    output: commitsResultSchema,
+  },
+  changeForgeAction: {
+    experimental_description:
+      "Mark a Change's pull request draft or ready for review, only while it is still #`expected.number` at `expected.head`. Returns `conflict` and changes nothing otherwise.",
+    input: z
+      .object({
+        key: changeKeySchema,
         action: forgeActionSchema,
         expected: z
           .object({ number: z.number().int().positive(), head: z.string().min(1) })

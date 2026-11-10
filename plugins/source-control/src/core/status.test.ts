@@ -121,6 +121,22 @@ describe("ship path", () => {
       ],
     ],
     [
+      "someone else's pull request, with no checkout here",
+      summary({
+        branch: null,
+        uncommitted: 0,
+        pullRequest: pr({ isDraft: false, checks: settled }),
+      }),
+      [
+        "Committed:done",
+        "Pushed:done",
+        "Ready for review:done",
+        "Checks:done",
+        "Approval:todo",
+        "Merged:todo",
+      ],
+    ],
+    [
       "local commits, never pushed",
       LOCAL,
       [

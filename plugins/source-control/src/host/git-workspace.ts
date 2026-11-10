@@ -367,7 +367,7 @@ export async function readGitWorkspace(
   };
 }
 
-const DIFF_OPTIONS = [
+export const DIFF_OPTIONS = [
   "-c",
   "core.quotePath=false",
   "diff",

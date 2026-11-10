@@ -21,6 +21,7 @@ import {
   type WorkspaceValue,
 } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
+import { sourceRowsSchema, type SourceRows } from "../core/review.ts";
 import type { ReadAs } from "../contract/host.ts";
 
 /** Where a thread's Change comes from, or why it has none. */
@@ -54,6 +55,7 @@ const MIGRATIONS = [
   `CREATE TABLE checks_facet (change_key TEXT PRIMARY KEY, json TEXT NOT NULL)`,
   // Phase 4: pull requests gained mergeable and diff stats.
   `DELETE FROM forge_facet`,
+  `CREATE TABLE inbox_facet (login TEXT PRIMARY KEY, json TEXT NOT NULL)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -141,12 +143,45 @@ export function openStore(bb: BbPluginApi) {
     const row = getChecks.get(key);
     return (row && parsed(checksFacetSchema, row.json)) ?? EMPTY_FACET;
   };
+  const placementRows = db.prepare<[], { host_id: string; path: string; json: string }>(
+    `SELECT tc.host_id, tc.path, tp.json FROM thread_checkout tc
+     JOIN thread_placement tp ON tp.thread_id = tc.thread_id
+     GROUP BY tc.host_id, tc.path ORDER BY tc.host_id, tc.path`,
+  );
+  const getInbox = db.prepare<[string], { json: string }>(
+    `SELECT json FROM inbox_facet WHERE login = ?`,
+  );
+  const putInbox = db.prepare(
+    `INSERT INTO inbox_facet (login, json) VALUES (?, ?) ON CONFLICT (login) DO UPDATE SET json = excluded.json`,
+  );
+  const EMPTY_ROWS: SourceRows = { read: null, problem: null };
+  const inbox = (login: string): SourceRows => {
+    const row = getInbox.get(login);
+    return (row && parsed(sourceRowsSchema, row.json)) ?? EMPTY_ROWS;
+  };
+  const sameRows = (before: SourceRows, after: SourceRows) =>
+    JSON.stringify([before.read?.rows ?? null, before.problem]) ===
+    JSON.stringify([after.read?.rows ?? null, after.problem]);
+
   const branch = (threadId: string): string | null => getBranch.get(threadId)?.branch ?? null;
   const readAs = (hostId: string, path: string): ReadAs =>
     getReadAs.get(hostId, path)?.read_as === "git" ? "git" : "auto";
 
   // Every setter stores its value and returns whether a reader would see a change.
   return {
+    /** One placement per checkout the placement table knows, by host: what the review page lists. */
+    checkouts(): Placement[] {
+      return placementRows.all().flatMap((row) => {
+        const value = parsed(threadPlacementSchema, row.json);
+        return value?.state === "checkout" ? [value.placement] : [];
+      });
+    },
+    inbox,
+    setInbox(login: string, rows: SourceRows): boolean {
+      const changed = !sameRows(inbox(login), rows);
+      putInbox.run(login, JSON.stringify(rows));
+      return changed;
+    },
     placement(threadId: string): ThreadPlacement | null {
       const row = getPlacement.get(threadId);
       return row ? parsed(threadPlacementSchema, row.json) : null;

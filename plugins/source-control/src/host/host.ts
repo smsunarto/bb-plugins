@@ -23,6 +23,7 @@ import {
 import type { Checkout } from "./checkout.ts";
 import { forget, share } from "./memo.ts";
 import { act, hostFailure, problemOf, providers, resolveCheckout } from "./providers.ts";
+import { rangeCommits, rangeFiles, rangePatches } from "./range.ts";
 import { changed, keepWatching, renew, stopAll } from "./repository-state.ts";
 
 type Context = ExperimentalHostRpcContext<typeof sourceControlHostSignals>;
@@ -106,6 +107,36 @@ export default experimental_defineHostEntry({
         const provider = resolved.state === "detached" ? "git" : resolved.provider;
         const { files } = await providers[provider].patches(resolved.checkout, source, signal);
         return { ok: true as const, value: { files } };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ok: false as const, error: hostFailure(error) };
+      }
+    },
+
+    async range({ path, base, head, read }, { signal }) {
+      try {
+        const resolved = await resolveCheckout(path, "git", signal);
+        if (resolved.state === "not-git")
+          return {
+            ok: false as const,
+            error: { code: "not-found" as const, message: "Not a Git checkout." },
+          };
+        const cwd = resolved.checkout.path;
+        if (read.kind === "files")
+          return {
+            ok: true as const,
+            value: { kind: "files" as const, files: await rangeFiles(cwd, base, head, signal) },
+          };
+        if (read.kind === "commits")
+          return {
+            ok: true as const,
+            value: {
+              kind: "commits" as const,
+              commits: await rangeCommits(cwd, base, head, signal),
+            },
+          };
+        const { files } = await rangePatches(cwd, base, head, read.paths, signal);
+        return { ok: true as const, value: { kind: "patches" as const, files } };
       } catch (error) {
         if (signal.aborted) throw error;
         return { ok: false as const, error: hostFailure(error) };

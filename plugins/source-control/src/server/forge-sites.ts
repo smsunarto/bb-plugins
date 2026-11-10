@@ -209,7 +209,7 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
    * repository last, else each server account, else each of the host's,
    * until one can see it. The host is asked for accounts only then.
    */
-  const pullRequest = (query: PullRequestQuery, placement: Placement) =>
+  const pullRequest = (query: PullRequestQuery, placement: Placement | null) =>
     withinDeadline(
       Effect.gen(function* () {
         const repo = repoName(query);
@@ -241,13 +241,19 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
           const read = yield* attempt(last);
           if (read) return read;
         }
-        for (const source of [serverAccesses, hostAccesses(placement)])
+        // A Change with no checkout anywhere has only the server's accounts.
+        for (const source of placement
+          ? [serverAccesses, hostAccesses(placement)]
+          : [serverAccesses])
           for (const access of yield* source) {
             const read = yield* attempt(access);
             if (read) return read;
           }
         if (tried.length === 0)
-          return yield* unavailable({ kind: "no-site", host: placement.hostName });
+          return yield* unavailable({
+            kind: "no-site",
+            host: placement?.hostName ?? SERVER_SITE_NAME,
+          });
         return yield* unavailable({
           kind: "auth",
           site: tried.at(-1)!.site,
@@ -256,7 +262,70 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
       }),
     );
 
+  /**
+   * A read the review page makes on the bb server, as the account that last
+   * read the repository there, else each server account until one can see it.
+   * A repository only a checkout's host can see is `no-site` here.
+   */
+  const onServer = <T>(
+    repo: { owner: string; name: string },
+    run: (exec: Exec, signal: AbortSignal) => Promise<T>,
+  ) =>
+    withinDeadline(
+      Effect.gen(function* () {
+        const name = repoName({ repo });
+        const last = seen.get(name);
+        const candidates = [
+          ...(last && last.hostId === null ? [last] : []),
+          ...(yield* serverAccesses).filter((access) => !last || !sameAccess(access, last)),
+        ];
+        for (const access of candidates) {
+          const answer = yield* Effect.tryPromise({
+            try: (signal) => run(asAccount(access.account.login, access.account.active), signal),
+            catch: (error) => ghRefused(access.site, error),
+          }).pipe(Effect.result);
+          if (answer._tag === "Success") {
+            seen.set(name, access);
+            return answer.success;
+          }
+          if (!invisible(answer.failure.code))
+            return yield* unavailable(refusedProblem(answer.failure));
+        }
+        return yield* unavailable(
+          candidates.length === 0
+            ? { kind: "no-site", host: SERVER_SITE_NAME }
+            : {
+                kind: "auth",
+                site: SERVER_SITE_NAME,
+                detail: `No GitHub account on the bb server can see ${name}.`,
+              },
+        );
+      }),
+    );
+
   return {
+    /** The bb server's signed-in accounts, the active one first. */
+    serverAccounts: serverAccesses.pipe(
+      Effect.map((accesses) => accesses.map((access) => access.account)),
+    ),
+    /** Run as one server account, by login: an inbox is that account's own. */
+    asServerAccount: <T>(login: string, run: (exec: Exec, signal: AbortSignal) => Promise<T>) =>
+      withinDeadline(
+        Effect.gen(function* () {
+          const access = (yield* serverAccesses).find((each) => each.account.login === login);
+          if (!access)
+            return yield* unavailable({
+              kind: "auth",
+              site: SERVER_SITE_NAME,
+              detail: `${login} is not signed in to gh on the bb server.`,
+            });
+          return yield* Effect.tryPromise({
+            try: (signal) => run(asAccount(login, access.account.active), signal),
+            catch: (error) => ghRefused(access.site, error),
+          }).pipe(Effect.mapError((refused) => unavailable(refusedProblem(refused))));
+        }),
+      ),
+    onServer,
     /** Forget every probe, as an explicit retry does. */
     reprobe() {
       server = null;
@@ -268,13 +337,17 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
      * a write never falls back to another account. Reads first when no
      * account has read the repository yet.
      */
-    setDraft: (write: DraftWrite, placement: Placement) =>
+    setDraft: (write: DraftWrite, placement: Placement | null) =>
       withinDeadline(
         Effect.gen(function* () {
           const repo = repoName(write);
           if (!seen.has(repo)) yield* pullRequest(write, placement);
           const access = seen.get(repo);
-          if (!access) return yield* unavailable({ kind: "no-site", host: placement.hostName });
+          if (!access)
+            return yield* unavailable({
+              kind: "no-site",
+              host: placement?.hostName ?? SERVER_SITE_NAME,
+            });
           return yield* writeAt(access, write).pipe(
             Effect.mapError((refused) => unavailable(refusedProblem(refused))),
           );

@@ -12,7 +12,13 @@ import type {
   VcsAction,
   VcsResult,
 } from "../core/change.ts";
-import type { HostFailure, HostWorkspace, ReadAs } from "../contract/host.ts";
+import type {
+  HostFailure,
+  HostWorkspace,
+  RangeAnswer,
+  RangeRead,
+  ReadAs,
+} from "../contract/host.ts";
 
 export const HOST_DEADLINE_MS = 10_000;
 
@@ -37,6 +43,11 @@ export type HostCalls = {
     input: { path: string; readAs: ReadAs; source: PatchSource },
     options: CallOptions,
   ): Promise<Outcome<Patches>>;
+  range(
+    hostId: string,
+    input: { path: string; base: string; head: string; read: RangeRead },
+    options: CallOptions,
+  ): Promise<Outcome<RangeAnswer>>;
 };
 
 /** The host did not answer before the server's deadline. */

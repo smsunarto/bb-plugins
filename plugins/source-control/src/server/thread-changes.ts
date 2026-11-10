@@ -26,6 +26,7 @@ import type { ForgeSites } from "./forge-sites.ts";
 import { HOST_DEADLINE_MS, type HostCalls } from "./host-calls.ts";
 import { createLocalReads, type ThreadBranchLookup } from "./local-read.ts";
 import { createPlacements } from "./placement.ts";
+import { createReview } from "./review.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
 import { createWatch } from "./watch.ts";
@@ -94,6 +95,8 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
   };
 
   const placements = createPlacements({ bb, store, now });
+  // Bound once the review page's reads exist; a checkout read reaches its lists through it.
+  let checkoutRead: (hostId: string, path: string) => void = () => {};
   const local = createLocalReads({
     store,
     host: deps.host,
@@ -101,6 +104,9 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     branches: deps.branches,
     share,
     announce,
+    checkoutRead: (hostId, path) => {
+      if (!deps.disposed()) checkoutRead(hostId, path);
+    },
     now,
     deadlineMs: hostDeadlineMs,
   });
@@ -144,6 +150,21 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
         ),
       ),
     );
+
+  const review = createReview({
+    store,
+    sites: deps.sites,
+    local,
+    host: deps.host,
+    share,
+    invalidate: (tags) => {
+      if (!deps.disposed()) bb.rpc.experimental_invalidate(tags);
+    },
+    forgeChanged: (key) => announce(keyThreads.get(key) ?? []),
+    now,
+    deadlineMs: hostDeadlineMs,
+  });
+  checkoutRead = review.checkoutRead;
 
   const watch = createWatch({
     store,
@@ -212,6 +233,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
       return yield* forge.setDraft(threadId, where.placement, action.draft, expected);
     }),
     refresh,
+    review,
     /** Explicit retry: probe forge sites again, then read. */
     retry: (threadId: string) =>
       Effect.sync(() => deps.sites.reprobe()).pipe(Effect.andThen(refresh(threadId))),

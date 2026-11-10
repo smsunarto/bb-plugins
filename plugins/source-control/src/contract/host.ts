@@ -6,6 +6,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
+  commitSchema,
   forgeReadSchema,
   forgeResultSchema,
   patchesSchema,
@@ -16,8 +17,11 @@ import {
   workspaceValueSchema,
 } from "../core/change.ts";
 import { repoSchema } from "../core/ids.ts";
+import { changeFileSchema } from "../core/review.ts";
 
 const pathSchema = z.string().min(1).max(4096);
+/** A commit id, full or abbreviated as git allows (four characters or more). */
+const commitIdSchema = z.string().regex(/^[0-9a-fA-F]{4,64}$/);
 
 /** How to read a checkout: by what it is, or as plain git whatever it is. */
 export const readAsSchema = z.enum(["auto", "git"]);
@@ -98,6 +102,34 @@ export const sourceControlHostContract = defineRpcContract({
     input: z.object({ path: pathSchema, readAs: readAsSchema, source: patchSourceSchema }).strict(),
     output: outcome(patchesSchema),
   },
+  /**
+   * The checkout's files, patches or commits between two commits: what
+   * `head` adds since it left `base`. Immutable for a pair of commits.
+   */
+  range: {
+    experimental_retryable: true,
+    input: z
+      .object({
+        path: pathSchema,
+        base: commitIdSchema,
+        head: commitIdSchema,
+        read: z.discriminatedUnion("kind", [
+          z.object({ kind: z.literal("files") }).strict(),
+          z
+            .object({ kind: z.literal("patches"), paths: z.array(z.string()).min(1).max(80) })
+            .strict(),
+          z.object({ kind: z.literal("commits") }).strict(),
+        ]),
+      })
+      .strict(),
+    output: outcome(
+      z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("files"), files: z.array(changeFileSchema) }).strict(),
+        z.object({ kind: z.literal("patches"), files: patchesSchema.shape.files }).strict(),
+        z.object({ kind: z.literal("commits"), commits: z.array(commitSchema) }).strict(),
+      ]),
+    ),
+  },
   /** Keeps a checkout watched for another lease without reading it. */
   renewWatch: {
     experimental_retryable: true,
@@ -147,6 +179,12 @@ export const sourceControlHostContract = defineRpcContract({
     output: outcome(forgeResultSchema),
   },
 });
+
+export type RangeRead = z.infer<typeof sourceControlHostContract.range.input>["read"];
+export type RangeAnswer = Extract<
+  z.infer<typeof sourceControlHostContract.range.output>,
+  { ok: true }
+>["value"];
 
 /** How long one read or renewal keeps a checkout watched. */
 export const WATCH_LEASE_MS = 150_000;

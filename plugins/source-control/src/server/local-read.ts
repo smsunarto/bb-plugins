@@ -36,6 +36,8 @@ export function createLocalReads(deps: {
   branches: ThreadBranchLookup;
   share: Share;
   announce: (threadIds: Iterable<string>) => void;
+  /** A checkout's facet changed: lists of the host's Changes read again. */
+  checkoutRead?: (hostId: string, path: string) => void;
   now: () => number;
   deadlineMs: number;
 }) {
@@ -72,7 +74,10 @@ export function createLocalReads(deps: {
             return;
           }
         }
-        if (store.setLocal(hostId, path, next)) announce(threads);
+        if (store.setLocal(hostId, path, next)) {
+          announce(threads);
+          deps.checkoutRead?.(hostId, path);
+        }
       }),
     );
 

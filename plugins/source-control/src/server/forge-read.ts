@@ -15,7 +15,7 @@ import {
   type ForgeValue,
   type Placement,
 } from "../core/change.ts";
-import { checksTag, type ChangeKey } from "../core/ids.ts";
+import { changeTag, checksTag, type ChangeKey } from "../core/ids.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
@@ -85,7 +85,10 @@ export function createForgeReads(deps: {
                     failed(store.forge(key), answer.failure.problem),
                     failed(store.checks(key), answer.failure.problem),
                   ];
-            if (store.setForge(key, forge)) deps.announce([threadId, ...deps.threadsOf(key)]);
+            if (store.setForge(key, forge)) {
+              deps.announce([threadId, ...deps.threadsOf(key)]);
+              deps.invalidate([changeTag(key)]);
+            }
             if (store.setChecks(key, checks)) deps.invalidate([checksTag(key)]);
           }),
         )
