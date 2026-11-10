@@ -493,6 +493,9 @@ const darkExpected = declarationMap({
   "--muted-foreground": roleValues["text.ink74"],
   "--readback-foreground": roleValues["text.ink55"],
   "--subtle-foreground": roleValues["text.ink30"],
+  // The contract's normal-white gray (#ADADA9): opaque, so it holds on tinted fills.
+  "--tertiary-foreground": palette.contentTint.white,
+  "--info": palette.feedback.info,
   "--accent-foreground": palette.text.ink,
   "--secondary-foreground": palette.text.ink,
   "--primary": palette.accent,
@@ -890,6 +893,7 @@ export function auditTheme(source: string): void {
     ["--foreground", "--background", 4.5],
     ["--muted-foreground", "--background", 4.5],
     ["--readback-foreground", "--background", 4.5],
+    ["--tertiary-foreground", "--background", 4.5],
     ["--sidebar-foreground", "--sidebar", 4.5],
     ["--primary-foreground", "--primary", 4.5],
     ["--destructive-foreground", "--destructive", 4.5],

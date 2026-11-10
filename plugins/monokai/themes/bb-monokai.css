@@ -256,6 +256,8 @@
   --readback-foreground: #e3e3dd8c; /* muted 55% — 5.00:1 */
   --subtle-foreground: #e3e3dd4d; /* faint 30% — the deliberately ghosted
                                    * "where, not what" tier */
+  --tertiary-foreground: #adada9; /* opaque tertiary gray (CONTRACT normal
+                                   * white), for labels on tinted fills */
 
   --accent-foreground: #e3e3dd; /* on --accent over --background (#252525) — 11.90:1 */
   --secondary-foreground: #e3e3dd;
@@ -290,6 +292,7 @@
   --warning: #f1b467;
   --warning-text: #f1b467;
   --attention: #f1b467;
+  --info: #6796e6; /* informational state, never the accent */
   --success: #3fa266;
   --success-foreground: #3fa266; /* pinned: the default desaturates toward ink */
   --diff-added: #3fa266;
