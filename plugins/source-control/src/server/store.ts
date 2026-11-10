@@ -6,30 +6,59 @@
  * on one branch share one pull request read.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { z } from "zod";
 import {
   EMPTY_FACET,
+  facetSchema,
+  forgeValueSchema,
+  placementSchema,
+  workspaceValueSchema,
   type Facet,
   type ForgeValue,
-  type LocalValue,
   type Placement,
-  type ThreadChange,
+  type WorkspaceValue,
 } from "../core/change.ts";
-import { changeKeyOf, type ChangeKey } from "../core/ids.ts";
+import type { ChangeKey } from "../core/ids.ts";
+import type { ReadAs } from "../contract/host.ts";
 
 /** Where a thread's Change comes from, or why it has none. */
 export type ThreadPlacement =
   | { state: "none"; reason: string }
   | { state: "checkout"; placement: Placement };
 
+const threadPlacementSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("none"), reason: z.string() }).strict(),
+  z.object({ state: z.literal("checkout"), placement: placementSchema }).strict(),
+]);
+const localFacetSchema = facetSchema(workspaceValueSchema);
+const forgeFacetSchema = facetSchema(forgeValueSchema);
+
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
+/** Numbered and never edited once landed: append only. */
 const MIGRATIONS = [
   `CREATE TABLE thread_placement (thread_id TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
   `CREATE TABLE local_facet (host_id TEXT NOT NULL, path TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (host_id, path))`,
   `CREATE TABLE forge_facet (change_key TEXT PRIMARY KEY, json TEXT NOT NULL)`,
+  // Phase 2: the local facet became the workspace shape; earlier rows no longer parse.
+  `DELETE FROM local_facet`,
+  `CREATE TABLE thread_checkout (thread_id TEXT PRIMARY KEY, host_id TEXT NOT NULL, path TEXT NOT NULL)`,
+  `CREATE INDEX thread_checkout_by_checkout ON thread_checkout (host_id, path)`,
+  `CREATE TABLE checkout_read_as (host_id TEXT NOT NULL, path TEXT NOT NULL, read_as TEXT NOT NULL, PRIMARY KEY (host_id, path))`,
+  `CREATE TABLE thread_branch (thread_id TEXT PRIMARY KEY, branch TEXT)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
+
+/** A stored row in its schema, or null when it no longer parses (written by an older shape). */
+function parsed<T>(schema: z.ZodType<T>, json: string): T | null {
+  try {
+    const result = schema.safeParse(JSON.parse(json));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
 
 export function openStore(bb: BbPluginApi) {
   const db: Database = bb.storage.database();
@@ -40,6 +69,14 @@ export function openStore(bb: BbPluginApi) {
   const putPlacement = db.prepare(
     `INSERT INTO thread_placement (thread_id, json, updated_at) VALUES (?, ?, ?)
      ON CONFLICT (thread_id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at`,
+  );
+  const putCheckout = db.prepare(
+    `INSERT INTO thread_checkout (thread_id, host_id, path) VALUES (?, ?, ?)
+     ON CONFLICT (thread_id) DO UPDATE SET host_id = excluded.host_id, path = excluded.path`,
+  );
+  const dropCheckout = db.prepare(`DELETE FROM thread_checkout WHERE thread_id = ?`);
+  const threadsAt = db.prepare<[string, string], { thread_id: string }>(
+    `SELECT thread_id FROM thread_checkout WHERE host_id = ? AND path = ?`,
   );
   const getLocal = db.prepare<[string, string], { json: string }>(
     `SELECT json FROM local_facet WHERE host_id = ? AND path = ?`,
@@ -54,58 +91,64 @@ export function openStore(bb: BbPluginApi) {
   const putForge = db.prepare(
     `INSERT INTO forge_facet (change_key, json) VALUES (?, ?) ON CONFLICT (change_key) DO UPDATE SET json = excluded.json`,
   );
-
-  const placement = (threadId: string): ThreadPlacement | null => {
-    const row = getPlacement.get(threadId);
-    return row ? (JSON.parse(row.json) as ThreadPlacement) : null;
-  };
-  const local = (hostId: string, path: string): Facet<LocalValue> => {
-    const row = getLocal.get(hostId, path);
-    return row ? (JSON.parse(row.json) as Facet<LocalValue>) : EMPTY_FACET;
-  };
-  const forge = (key: ChangeKey): Facet<ForgeValue> => {
-    const row = getForge.get(key);
-    return row ? (JSON.parse(row.json) as Facet<ForgeValue>) : EMPTY_FACET;
-  };
+  const getReadAs = db.prepare<[string, string], { read_as: string }>(
+    `SELECT read_as FROM checkout_read_as WHERE host_id = ? AND path = ?`,
+  );
+  const putReadAs = db.prepare(
+    `INSERT INTO checkout_read_as (host_id, path, read_as) VALUES (?, ?, ?)
+     ON CONFLICT (host_id, path) DO UPDATE SET read_as = excluded.read_as`,
+  );
+  const dropReadAs = db.prepare(`DELETE FROM checkout_read_as WHERE host_id = ? AND path = ?`);
+  const getBranch = db.prepare<[string], { branch: string | null }>(
+    `SELECT branch FROM thread_branch WHERE thread_id = ?`,
+  );
+  const putBranch = db.prepare(
+    `INSERT INTO thread_branch (thread_id, branch) VALUES (?, ?)
+     ON CONFLICT (thread_id) DO UPDATE SET branch = excluded.branch`,
+  );
 
   return {
-    placement,
+    placement(threadId: string): ThreadPlacement | null {
+      const row = getPlacement.get(threadId);
+      return row ? parsed(threadPlacementSchema, row.json) : null;
+    },
     setPlacement(threadId: string, value: ThreadPlacement, now: number) {
       putPlacement.run(threadId, JSON.stringify(value), now);
+      if (value.state === "checkout")
+        putCheckout.run(threadId, value.placement.hostId, value.placement.path);
+      else dropCheckout.run(threadId);
     },
-    local,
-    setLocal(hostId: string, path: string, facet: Facet<LocalValue>) {
+    /** Every thread last seen on this checkout. */
+    threadsAt(hostId: string, path: string): string[] {
+      return threadsAt.all(hostId, path).map((row) => row.thread_id);
+    },
+    local(hostId: string, path: string): Facet<WorkspaceValue> {
+      const row = getLocal.get(hostId, path);
+      return (row && parsed(localFacetSchema, row.json)) ?? EMPTY_FACET;
+    },
+    setLocal(hostId: string, path: string, facet: Facet<WorkspaceValue>) {
       putLocal.run(hostId, path, JSON.stringify(facet));
     },
-    forge,
+    forge(key: ChangeKey): Facet<ForgeValue> {
+      const row = getForge.get(key);
+      return (row && parsed(forgeFacetSchema, row.json)) ?? EMPTY_FACET;
+    },
     setForge(key: ChangeKey, facet: Facet<ForgeValue>) {
       putForge.run(key, JSON.stringify(facet));
     },
-    /** One thread's Change assembled from its placement and the facets it points at. */
-    threadChange(threadId: string): ThreadChange {
-      const where = placement(threadId);
-      if (!where) return { state: "pending" };
-      if (where.state === "none") return where;
-      const localFacet = local(where.placement.hostId, where.placement.path);
-      const key = keyOf(where.placement, localFacet);
-      return {
-        state: "checkout",
-        placement: where.placement,
-        key,
-        local: localFacet,
-        forge: key ? forge(key) : EMPTY_FACET,
-      };
+    /** The thread's branch in its checkout, as last worked out. */
+    branch(threadId: string): string | null {
+      return getBranch.get(threadId)?.branch ?? null;
+    },
+    setBranch(threadId: string, branch: string | null) {
+      putBranch.run(threadId, branch);
+    },
+    readAs(hostId: string, path: string): ReadAs {
+      return getReadAs.get(hostId, path)?.read_as === "git" ? "git" : "auto";
+    },
+    setReadAs(hostId: string, path: string, readAs: ReadAs) {
+      if (readAs === "git") putReadAs.run(hostId, path, "git");
+      else dropReadAs.run(hostId, path);
     },
   };
-}
-
-/** The ChangeKey a checkout's last read implies, or null before its first read. */
-export function keyOf(placement: Placement, local: Facet<LocalValue>): ChangeKey | null {
-  const value = local.read?.value;
-  return value
-    ? changeKeyOf(
-        { hostId: placement.hostId, commonDir: value.commonDir, branch: value.branch },
-        value.github,
-      )
-    : null;
 }

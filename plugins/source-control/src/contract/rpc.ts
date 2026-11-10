@@ -5,7 +5,15 @@
  */
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { threadChangeSchema } from "../core/change.ts";
+import {
+  patchesSchema,
+  patchSourceSchema,
+  problemSchema,
+  revisionSchema,
+  threadChangeSchema,
+  vcsActionSchema,
+  vcsResultSchema,
+} from "../core/change.ts";
 import { threadTag } from "../core/ids.ts";
 
 export const MAX_THREAD_KEYS = 200;
@@ -24,6 +32,29 @@ export const sourceControlContract = defineRpcContract({
     experimental_description:
       "Read the thread's checkout and pull request again now, and resolve once its row is current.",
     input: z.object({ threadId: threadIdSchema }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
+  /** File patches from the thread's checkout. A commit's never change; uncommitted ones refresh with the thread. */
+  patches: {
+    input: z.object({ threadId: threadIdSchema, source: patchSourceSchema }).strict(),
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), value: patchesSchema }).strict(),
+      z.object({ ok: z.literal(false), problem: problemSchema }).strict(),
+    ]),
+    tags: (input: { threadId: string; source: { kind: string } }) =>
+      input.source.kind === "uncommitted" ? [threadTag(input.threadId)] : [],
+  },
+  vcsAction: {
+    experimental_description:
+      "Push, pull or land on the thread's checkout, only if it is still at `expected`. Returns `conflict` and changes nothing otherwise. Never retried.",
+    input: z
+      .object({ threadId: threadIdSchema, action: vcsActionSchema, expected: revisionSchema })
+      .strict(),
+    output: vcsResultSchema,
+  },
+  /** Reads a GitButler workspace as plain git, or by what it is again. Stored per checkout. */
+  setReadAs: {
+    input: z.object({ threadId: threadIdSchema, readAs: z.enum(["auto", "git"]) }).strict(),
     output: z.object({ ok: z.literal(true) }).strict(),
   },
 });
