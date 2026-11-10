@@ -68,16 +68,29 @@ export function localMatch(store: Store, key: ChangeKey): LocalMatch | null {
   return null;
 }
 
-/** What `head` adds since `base`, on the host that has it; null for a branch with no commits. */
-function hostRevision(match: LocalMatch): ReviewRevision | null {
+/** A pull request's base as a branch the host can find on its remote; one it cannot name safely is left to the default. */
+const SAFE_BRANCH = /^[A-Za-z0-9_][A-Za-z0-9._/-]{0,250}$/;
+
+/**
+ * What `head` adds since `base`, on the host that has it; null for a branch
+ * with no commits. The base is the branch below in its stack, else the
+ * target; a checkout with no target (no `HEAD` for its remote) compares with
+ * the pull request's base branch, else the remote's default, which the host resolves.
+ */
+function hostRevision(match: LocalMatch, pr: PullRequest | null): ReviewRevision | null {
   const stack = match.workspace.stacks.find((each) =>
     each.branches.some((branch) => branch.name === match.row.branch),
   );
   const at = stack?.branches.findIndex((branch) => branch.name === match.row.branch) ?? -1;
   const branch = stack?.branches[at];
   const target = match.workspace.target;
-  const base = stack?.branches[at + 1]?.head ?? target?.head ?? target?.base?.id ?? null;
-  if (!branch?.head || !base) return null;
+  const named = pr?.baseRef && SAFE_BRANCH.test(pr.baseRef) && !pr.baseRef.includes("..");
+  const base =
+    stack?.branches[at + 1]?.head ??
+    target?.head ??
+    target?.base?.id ??
+    `branch:${named ? pr!.baseRef : ""}`;
+  if (!branch?.head) return null;
   return {
     head: branch.head,
     base,
@@ -87,7 +100,7 @@ function hostRevision(match: LocalMatch): ReviewRevision | null {
 
 /** The checkout says what is here; the forge, what is published. A reachable checkout wins. */
 function revisionOf(match: LocalMatch | null, pr: PullRequest | null): ReviewRevision | null {
-  const local = match && !match.problem ? hostRevision(match) : null;
+  const local = match && !match.problem ? hostRevision(match, pr) : null;
   if (local) return local;
   if (!pr || pr.state === "closed") return null;
   return { head: pr.headRefOid, base: pr.baseRef, source: { kind: "forge", number: pr.number } };

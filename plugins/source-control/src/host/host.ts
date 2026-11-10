@@ -23,7 +23,7 @@ import {
 import type { Checkout } from "./checkout.ts";
 import { forget, share } from "./memo.ts";
 import { act, hostFailure, problemOf, providers, resolveCheckout } from "./providers.ts";
-import { rangeCommits, rangeFiles, rangePatches } from "./range.ts";
+import { rangeCommits, rangeFiles, rangePatches, resolveBase } from "./range.ts";
 import { runReviewRead } from "../forge/review.ts";
 import { changed, keepWatching, renew, stopAll } from "./repository-state.ts";
 
@@ -123,20 +123,29 @@ export default experimental_defineHostEntry({
             error: { code: "not-found" as const, message: "Not a Git checkout." },
           };
         const cwd = resolved.checkout.path;
+        const from = await resolveBase(cwd, base, signal);
+        if (!from)
+          return {
+            ok: false as const,
+            error: {
+              code: "not-found" as const,
+              message: "This checkout has no branch on its remote to compare with.",
+            },
+          };
         if (read.kind === "files")
           return {
             ok: true as const,
-            value: { kind: "files" as const, files: await rangeFiles(cwd, base, head, signal) },
+            value: { kind: "files" as const, files: await rangeFiles(cwd, from, head, signal) },
           };
         if (read.kind === "commits")
           return {
             ok: true as const,
             value: {
               kind: "commits" as const,
-              commits: await rangeCommits(cwd, base, head, signal),
+              commits: await rangeCommits(cwd, from, head, signal),
             },
           };
-        const { files } = await rangePatches(cwd, base, head, read.paths, signal);
+        const { files } = await rangePatches(cwd, from, head, read.paths, signal);
         return { ok: true as const, value: { kind: "patches" as const, files } };
       } catch (error) {
         if (signal.aborted) throw error;

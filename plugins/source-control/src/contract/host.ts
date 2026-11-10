@@ -22,6 +22,15 @@ import { changeFileSchema, forgeFileSchema, inboxEntrySchema } from "../core/rev
 const pathSchema = z.string().min(1).max(4096);
 /** A commit id (four characters or more), or its first parent as `<id>^` for one commit's own diff. */
 const commitIdSchema = z.string().regex(/^[0-9a-fA-F]{4,64}\^?$/);
+/**
+ * A range's base: a commit id, or `branch:<name>` for that branch on the
+ * checkout's remote (`branch:` alone: the remote's default branch), which
+ * the host resolves when no target was read.
+ */
+const baseSchema = z
+  .string()
+  .regex(/^(?:[0-9a-fA-F]{4,64}\^?|branch:(?:[A-Za-z0-9_][A-Za-z0-9._/-]{0,250})?)$/)
+  .refine((base) => !base.includes(".."), "A branch name has no '..'.");
 
 /** How to read a checkout: by what it is, or as plain git whatever it is. */
 export const readAsSchema = z.enum(["auto", "git"]);
@@ -128,7 +137,7 @@ export const sourceControlHostContract = defineRpcContract({
     input: z
       .object({
         path: pathSchema,
-        base: commitIdSchema,
+        base: baseSchema,
         head: commitIdSchema,
         read: z.discriminatedUnion("kind", [
           z.object({ kind: z.literal("files") }).strict(),

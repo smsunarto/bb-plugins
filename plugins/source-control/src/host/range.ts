@@ -6,9 +6,55 @@
  */
 import type { Commit, FileChange } from "../core/change.ts";
 import type { ChangeFile } from "../core/review.ts";
-import { runGit } from "./cli.ts";
+import { optionalGit, runGit } from "./cli.ts";
 import { DIFF_OPTIONS, MAX_PATCH_CHARS, logCommits } from "./git-workspace.ts";
 import { patchesFromGit, type PatchSet } from "./parse.ts";
+
+/** A base the server names by branch: `branch:<name>`, or `branch:` for the remote's default branch. */
+export const BRANCH_BASE = "branch:";
+
+/** The remote a checkout compares with: `origin`, or its only remote. */
+async function compareRemote(cwd: string, signal: AbortSignal): Promise<string | null> {
+  const remotes = ((await optionalGit(cwd, ["remote"], signal)) ?? "").split("\n").filter(Boolean);
+  return remotes.includes("origin") ? "origin" : remotes.length === 1 ? remotes[0]! : null;
+}
+
+/**
+ * The commit a base names. A commit id is itself. `branch:<name>` is that
+ * branch on the remote, else the remote's default branch: its `HEAD`, else
+ * `main`, else `master`, as a checkout added by hand rather than cloned has
+ * no `HEAD` for its remote. Null when none of them exists.
+ */
+export async function resolveBase(
+  cwd: string,
+  base: string,
+  signal: AbortSignal,
+): Promise<string | null> {
+  if (!base.startsWith(BRANCH_BASE)) return base;
+  const remote = await compareRemote(cwd, signal);
+  if (!remote) return null;
+  const named = base.slice(BRANCH_BASE.length);
+  const head = await optionalGit(
+    cwd,
+    ["symbolic-ref", "-q", `refs/remotes/${remote}/HEAD`],
+    signal,
+  );
+  const candidates = [
+    ...(named ? [`refs/remotes/${remote}/${named}`] : []),
+    ...(head ? [head] : []),
+    `refs/remotes/${remote}/main`,
+    `refs/remotes/${remote}/master`,
+  ];
+  for (const ref of candidates) {
+    const id = await optionalGit(
+      cwd,
+      ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`],
+      signal,
+    );
+    if (id) return id;
+  }
+  return null;
+}
 
 /** A range as git reads it: what `head` adds since it left `base`. */
 const range = (base: string, head: string) => `${base}...${head}`;
