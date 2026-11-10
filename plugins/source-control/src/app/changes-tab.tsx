@@ -33,8 +33,8 @@ import { cx, plural, shortId, shortRef } from "./format.ts";
 import { readSnapshot, writeSnapshot } from "./snapshot.ts";
 import { Bar, Button, SectionLabel } from "./ui.tsx";
 import { StackLane, UncommittedCard } from "./workspace-lane.tsx";
-import { attentionChips, shipPath, summarize } from "../core/status.ts";
-import { Chips, ShipPath, useDraftToggle } from "./status.tsx";
+import { attentionChips, summarize } from "../core/status.ts";
+import { Chips, useDraftToggle } from "./status.tsx";
 
 export function ChangesTab({ threadId }: { threadId: string }) {
   const visible = useTabVisible();
@@ -448,7 +448,7 @@ function chipLabel(forge: ForgeValue | undefined, onGitHub: boolean): string {
 }
 
 const CHIP =
-  "flex h-6 shrink-0 items-center gap-1 rounded-full bg-surface-raised px-2 text-[12px] leading-4 font-semibold text-foreground";
+  "flex h-6 shrink-0 items-center gap-1 rounded-full bg-border px-2 text-[12px] leading-4 font-semibold text-foreground";
 
 /**
  * The pull request's state; for an open one, a menu with Mark ready for
@@ -536,44 +536,59 @@ function PullRequestChip({
   );
 }
 
-function forgeLine(forge: Facet<ForgeValue>, workspace: WorkspaceValue, branch: Branch | null) {
+/**
+ * What the header's second line cannot say: the pull request is still being
+ * read, cannot be read, or is behind; the branch is not pushed or out of step.
+ * Null when the line says it all.
+ */
+function headerNote(
+  forge: Facet<ForgeValue>,
+  workspace: WorkspaceValue,
+  branch: Branch | null,
+): string | null {
   const pr = forge.read?.value;
-  if (forge.problem) return describeProblem(forge.problem);
-  if (pr === undefined)
-    return workspace.github
-      ? "Reading the pull request…"
-      : "No GitHub remote; this Change is local to its checkout.";
-  if (pr === null) return "No pull request for this branch yet.";
-  const checks =
-    pr.checks.failed > 0
-      ? `${pr.checks.failed} checks failing`
-      : pr.checks.pending > 0
-        ? `${pr.checks.pending} checks running`
-        : pr.checks.passed > 0
-          ? "checks passing"
-          : "no checks";
-  const behind = branch && forgeIsBehind(branch, pr) ? " · GitHub has an older head" : "";
-  return `#${pr.number} · ${checks}${behind}`;
+  const notes: string[] = [];
+  if (forge.problem) notes.push(describeProblem(forge.problem));
+  else if (pr === undefined)
+    notes.push(
+      workspace.github
+        ? "Reading the pull request…"
+        : "No GitHub remote; this Change is local to its checkout.",
+    );
+  else if (pr === null) notes.push("No pull request for this branch yet.");
+  else if (branch && forgeIsBehind(branch, pr)) notes.push("GitHub has an older head.");
+  if (workspace.conflicted.length > 0) notes.push(`${workspace.conflicted.length} conflicted`);
+  if (branch && !branch.remote) notes.push("Not pushed.");
+  else if (branch && (branch.ahead > 0 || branch.behind > 0))
+    notes.push(
+      [
+        branch.ahead > 0 ? `${branch.ahead} to push` : null,
+        branch.behind > 0 ? `${branch.behind} to pull` : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    );
+  return notes.length > 0 ? notes.join(" ") : null;
 }
 
-function localLine(branch: Branch | null, workspace: WorkspaceValue): string {
-  const parts: string[] = [];
-  const uncommitted = uncommittedCount(workspace);
-  parts.push(uncommitted === 0 ? "No uncommitted changes" : `${uncommitted} uncommitted`);
-  if (workspace.conflicted.length > 0) parts.push(`${workspace.conflicted.length} conflicted`);
-  if (branch) {
-    parts.push(plural(branch.commits.length + branch.moreCommits, "commit"));
-    if (!branch.remote) parts.push("not pushed");
-    else {
-      if (branch.ahead > 0) parts.push(`${branch.ahead} to push`);
-      if (branch.behind > 0) parts.push(`${branch.behind} to pull`);
-      if (branch.ahead === 0 && branch.behind === 0) parts.push("pushed");
-    }
-  }
-  return parts.join(" · ");
+/** "· #482 · 3 commits", the part of board B's second line after the branch. */
+function headerCounts(pr: ForgeValue | undefined, branch: Branch | null): string {
+  const commits = pr ? pr.commits : branch ? branch.commits.length + branch.moreCommits : 0;
+  return [pr ? `#${pr.number}` : null, plural(commits, "commit")].filter(Boolean).join(" · ");
 }
 
-/** The thread's own Change: its pull request over its branch, its ship path and what needs attention. */
+function GitHubMark() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" aria-hidden className="shrink-0">
+      <path
+        d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+/** The thread's own Change, as board B heads it: state and title, then branch, number, commits and size. */
 function ThisThread({
   threadId,
   row,
@@ -593,9 +608,12 @@ function ThisThread({
 }) {
   const pr = forge.read?.value;
   const name = branch?.name ?? branchName;
-  const summary = useMemo(() => summarize(row), [row]);
-  const steps = useMemo(() => (summary?.branch ? shipPath(summary) : null), [summary]);
-  const chips = useMemo(() => (summary ? attentionChips(summary) : []), [summary]);
+  const chips = useMemo(() => {
+    const summary = summarize(row);
+    return summary ? attentionChips(summary) : [];
+  }, [row]);
+  const note = headerNote(forge, workspace, branch);
+  const uncommitted = uncommittedCount(workspace);
   return (
     <section
       data-testid="sc-ready"
@@ -603,36 +621,58 @@ function ThisThread({
       aria-label="This thread"
     >
       <SectionLabel>This thread</SectionLabel>
-      <div className="flex min-w-0 items-center gap-2">
-        <PullRequestChip threadId={threadId} forge={pr} onGitHub={workspace.github !== null} />
+      <div className="flex min-w-0 flex-col gap-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <PullRequestChip threadId={threadId} forge={pr} onGitHub={workspace.github !== null} />
+          <span
+            className="min-w-0 flex-1 truncate text-[16px] leading-6 font-semibold text-foreground"
+            data-testid="sc-title"
+          >
+            {pr ? pr.title : (name ?? "No branch")}
+          </span>
+          {pr ? (
+            <a
+              href={pr.url}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Open #${pr.number} on GitHub`}
+              title="Open in GitHub"
+              className="flex size-8 shrink-0 items-center justify-center rounded-[6px] border border-solid border-border text-foreground transition-colors hover:bg-surface-raised motion-reduce:transition-none"
+            >
+              <GitHubMark />
+            </a>
+          ) : null}
+        </div>
         <span
-          className="min-w-0 truncate text-[15px] leading-6 font-semibold text-foreground"
-          data-testid="sc-title"
+          className="flex min-w-0 flex-wrap items-center gap-x-2 text-[12px] leading-4"
+          data-testid="sc-local-line"
         >
-          {pr ? pr.title : (name ?? "No branch")}
+          {name ? (
+            <span className="min-w-0 truncate font-mono text-muted-foreground">{name}</span>
+          ) : (
+            <span className="text-muted-foreground">This thread has no branch of its own here</span>
+          )}
+          <span className="text-(--tertiary-foreground)">· {headerCounts(pr, branch)}</span>
+          {pr ? (
+            <>
+              <span className="font-mono text-success-foreground">+{pr.additions}</span>
+              <span className="font-mono text-destructive-text">−{pr.deletions}</span>
+            </>
+          ) : null}
+          {!pr && uncommitted > 0 ? (
+            <span className="text-(--tertiary-foreground)">· {uncommitted} uncommitted</span>
+          ) : null}
         </span>
       </div>
       <Chips chips={chips} />
-      {steps ? <ShipPath steps={steps} /> : null}
-      <span
-        className="text-[12px] leading-4 break-words text-muted-foreground"
-        data-testid="sc-forge-line"
-      >
-        {forgeLine(forge, workspace, branch)}
-      </span>
-      <span
-        className="text-[12px] leading-4 break-words text-muted-foreground"
-        data-testid="sc-local-line"
-      >
-        {name ? (
-          <>
-            <span className="font-mono">{name}</span> ·{" "}
-          </>
-        ) : (
-          "This thread has no branch of its own here · "
-        )}
-        {localLine(branch, workspace)}
-      </span>
+      {note ? (
+        <span
+          className="text-[12px] leading-4 break-words text-muted-foreground"
+          data-testid="sc-forge-line"
+        >
+          {note}
+        </span>
+      ) : null}
       {offline ? (
         <span className="text-[12px] leading-4 text-muted-foreground">
           Push, pull, and land need the host. Pull request state still comes from GitHub.

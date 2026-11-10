@@ -614,18 +614,14 @@ test("strip, tab header and the sidebar's row say the same for one Change", asyn
   const { slot } = renderRow(row);
   const strip = renderStrip(row);
 
-  // The tab header: board A's ship path and chips.
-  const path = await slot.findByTestId("sc-ship-path");
-  expect([...path.querySelectorAll("li")].map((step) => step.getAttribute("data-state"))).toEqual([
-    "done",
-    "done",
-    "current",
-    "running",
-    "todo",
-    "todo",
-  ]);
-  expect(path.textContent).toContain("Draft, waiting on you");
-  expect(path.textContent).toContain("2 running· 9 passed");
+  // The tab header, as board B heads it: state and title, then branch, number, commits and size.
+  // The ship path is the review page's; the forge line would repeat the chip.
+  const line = await slot.findByTestId("sc-local-line");
+  expect(line.textContent).toContain("· #482 · 3 commits");
+  expect(line.textContent).toContain("+412−96");
+  expect(slot.queryByTestId("sc-ship-path")).toBeNull();
+  expect(slot.queryByTestId("sc-forge-line")?.textContent ?? "").not.toMatch(/#482|checks/);
+  expect(slot.getByRole("link", { name: "Open #482 on GitHub" })).toBeTruthy();
   expect(slot.getByTestId("sc-chips").textContent).toBe("2 Running");
 
   // The strip: board B's words.
