@@ -7,6 +7,7 @@ import {
   reviewPath,
   startsCollapsed,
   type ChangeRow,
+  lineTone,
 } from "./review.ts";
 
 const key = (raw: string) => raw as ChangeKey;
@@ -146,4 +147,20 @@ test.each([
   ["src/app.ts", false],
 ])("%s starts collapsed: %s", (path, expected) => {
   expect(startsCollapsed(path)).toBe(expected);
+});
+
+describe("the phone line's tone", () => {
+  const chip = (id: string, tone: "neutral" | "warning" | "error" | "success" | "merged") =>
+    ({ id, label: id, tone, icon: null }) as const;
+  test.each([
+    ["my own pull request waiting on review", [chip("passed", "success")], "neutral"],
+    ["my own pull request with checks running", [chip("running", "warning")], "neutral"],
+    ["a review asked of me", [chip("asked", "warning"), chip("passed", "success")], "warning"],
+    ["failed checks win over an ask", [chip("failed", "error"), chip("asked", "warning")], "error"],
+    ["ready to merge", [chip("ready", "success"), chip("passed", "success")], "success"],
+    ["merged", [chip("merged", "merged")], "merged"],
+    ["local, not pushed", [chip("local", "neutral")], "neutral"],
+  ] as const)("%s", (_, chips, tone) => {
+    expect(lineTone({ chips: [...chips] })).toBe(tone);
+  });
 });

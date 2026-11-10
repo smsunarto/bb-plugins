@@ -7,7 +7,13 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { describeProblem, readAgo } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
-import { parseReviewPath, type Filter, type NavRow, type RepoShelf } from "../../core/review.ts";
+import {
+  lineTone,
+  parseReviewPath,
+  type Filter,
+  type NavRow,
+  type RepoShelf,
+} from "../../core/review.ts";
 import { cx, shortAge } from "../format.ts";
 import { Chips } from "../status.tsx";
 import { Bar } from "../ui.tsx";
@@ -136,7 +142,7 @@ const ChangeRowView = memo(function ChangeRowView({
   const phone = variant === "phone";
   const age = row.updatedAt ? shortAge(row.updatedAt, now) : "";
   const hosts = row.hosts.map((id) => hostNames.get(id) ?? id);
-  const tone = row.chips.find((chip) => chip.tone !== "neutral")?.tone ?? "neutral";
+  const tone = lineTone(row);
   const author = row.author ? (
     <>
       {phone ? null : (

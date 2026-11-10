@@ -309,6 +309,19 @@ function matches(row: NavRow, filter: Filter): boolean {
  * by repository and stack, closest to shipping first. A stack keeps its own
  * order, bottom (merges first) at the bottom, and sorts by its most urgent row.
  */
+/**
+ * The tint of a row's one status line on the phone (board D): problems are
+ * red, a review asked of the reader is amber, ready to merge is green, a
+ * merged Change is purple; anything that waits on others stays neutral.
+ */
+export function lineTone(row: Pick<ChangeRow, "chips">): ChangeRow["chips"][number]["tone"] {
+  if (row.chips.some((chip) => chip.tone === "error")) return "error";
+  if (row.chips.some((chip) => chip.id === "asked")) return "warning";
+  if (row.chips.some((chip) => chip.id === "ready")) return "success";
+  if (row.chips.some((chip) => chip.id === "merged")) return "merged";
+  return "neutral";
+}
+
 const ASKED_CHIP = {
   id: "asked",
   label: "Review requested",

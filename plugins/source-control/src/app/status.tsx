@@ -189,14 +189,20 @@ export const Chips = memo(function Chips({ chips }: { chips: readonly AttentionC
         <li
           key={chip.id}
           className={cx(
-            "flex h-5 shrink-0 items-center gap-1 rounded-full border border-solid px-2",
+            // A chip that fits on no line by itself shortens its label; one that does not fit after others wraps out of a one-line row whole.
+            "flex h-5 max-w-full min-w-0 items-center gap-1 rounded-full border border-solid px-2",
             chip.tone === "error"
               ? "border-[color-mix(in_oklab,var(--destructive)_40%,transparent)]"
               : "border-border",
           )}
         >
           <ChipIcon chip={chip} />
-          <span className={cx("text-[11px] leading-4 font-medium", CHIP_TEXT[chip.tone])}>
+          <span
+            className={cx(
+              "min-w-0 truncate text-[11px] leading-4 font-medium",
+              CHIP_TEXT[chip.tone],
+            )}
+          >
             {chip.label}
           </span>
         </li>
