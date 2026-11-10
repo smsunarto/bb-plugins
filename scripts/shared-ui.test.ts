@@ -2,13 +2,6 @@ import { expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { sharedStyles } from "./shared-ui-styles";
-import { monokaiUtilityCSS } from "./storybook-theme";
-
-test("shared theme aliases follow every Monokai color token", () => {
-  expect(readFileSync("packages/ui/theme.css", "utf8")).toBe(
-    monokaiUtilityCSS(readFileSync("plugins/monokai/themes/bb-monokai.css", "utf8")),
-  );
-});
 
 function checkUtils(root: string) {
   const path = join(root, "utils.ts");

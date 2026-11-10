@@ -4,5 +4,5 @@
     "lib": ["ES2022", "DOM"],
     "types": ["bun-types/test"]
   },
-  "include": ["src", "test", "storybook"]
+  "include": ["src", "test"]
 }

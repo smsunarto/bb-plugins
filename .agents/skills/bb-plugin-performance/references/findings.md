@@ -95,7 +95,7 @@ A November 7, 2026 investigation (@thread:thr_pi9w9trdym) measured thread switch
 
 Selector stats (`disabled-by-default-blink.debug`, `SelectorStats` events keyed by `style_sheet_id`) ranked the plugin cost by rule shape rather than by sheet:
 
-- **`space-*` and `divide-*`:** Tailwind compiles them to `… > :not(:last-child)`, which Blink tests against every element. Each distinct utility a bundle uses costs this, so a plugin saves only after every use in its bundle is gone, including components bundled from other plugins (gtd-sidebar bundles bots) and Storybook files under the plugin root.
+- **`space-*` and `divide-*`:** Tailwind compiles them to `… > :not(:last-child)`, which Blink tests against every element. Each distinct utility a bundle uses costs this, so a plugin saves only after every use in its bundle is gone, including components bundled from other plugins (gtd-sidebar bundles bots) and any other files under the plugin root.
 - **Trailing `:is(…)` or `:not(…)`:** t3-composer's tray rules ended in `:is([data-…-footer], …)`. Listing each attribute let Blink bucket them and restyled about 280 fewer elements per switch.
 - **Bucketed shapes:** rules ending in a class, tag, or attribute were cheap, including attribute-heavy composer rules and `[&>li+li]:border-t`.
 

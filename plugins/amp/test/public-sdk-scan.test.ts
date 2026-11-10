@@ -37,11 +37,7 @@ test("the plugin imports only the public SDK and its declared dependencies", () 
     ],
   });
   assert.ok(report.files.length > 0, "the scan found no source files");
-  // Storybook stories are repository tooling, never bundled into the plugin:
-  // they import Storybook and the shared ../../../.storybook harness.
-  const violations = report.violations.filter(
-    (violation) => !violation.file.startsWith("storybook/"),
-  );
+  const violations = report.violations;
   assert.deepEqual(
     violations,
     [],

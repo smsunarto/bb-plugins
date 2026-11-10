@@ -6,7 +6,6 @@ dist/
 !plugins/agentation/vendor/agentation/dist/
 # Whiteboard vendors npm files at their package paths, dist/ included.
 !plugins/whiteboard/src/app/vendor/npm/**/dist/
-storybook-static/
 out/
 .next/
 __pycache__/

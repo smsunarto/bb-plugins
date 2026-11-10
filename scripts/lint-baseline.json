@@ -1,11 +1,5 @@
 [
   {
-    "filename": ".storybook/native-slot.jsx",
-    "code": "react(immutability)",
-    "message": "This value cannot be modified",
-    "source": "element.dataset.nativeSlotPlacement = placement;"
-  },
-  {
     "filename": "plugins/agentation/components/annotation-panel.tsx",
     "code": "react(set-state-in-effect)",
     "message": "Calling setState synchronously within an effect can trigger cascading renders",

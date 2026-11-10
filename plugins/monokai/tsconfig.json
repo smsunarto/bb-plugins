@@ -8,7 +8,6 @@
     "skipLibCheck": false
   },
   "include": [
-    ".storybook/**/*.ts",
     "app/**/*.ts",
     "app.ts",
     "docs/**/*.ts",

@@ -108,84 +108,11 @@ The watcher targets the running BB selected by the CLI. It rebuilds and reloads 
 Use `bb plugin source monokai`, `bb plugin list`, and `bb plugin logs monokai` to inspect it.
 Run focused tests with BB's SDK testing harnesses, then verify the changed user flow in the app.
 
-## Preview components with Storybook
-
-Run `bun run storybook` from the repository root and open
-[Storybook](http://localhost:6010). It discovers stories under
-`plugins/*/storybook/` and `packages/*/storybook/` in two sections:
-**Screens** for complete plugin views and **Components** for focused states,
-shared controls, and the theme catalog. Start with Screens to review components
-in context. The preview reuses Monokai's generated theme and decorators.
-Run `bun run build-storybook` to export the catalog to `storybook-static/`.
-
-The [Storybook MCP addon](https://storybook.js.org/docs/ai/mcp/overview) serves
-agent tools at `http://localhost:6010/mcp` while the root Storybook command is
-running. Project-level configuration is checked in as `.mcp.json` for Claude
-Code and `.codex/config.toml` for Codex. Restart your agent after adding the
-configuration; Codex requires the project to be trusted. These files do not
-change global MCP settings. Agents must run on the same machine as Storybook
-to use this localhost endpoint.
-
-Port 6010 is shared by checkouts on the same machine. Start Storybook from the
-checkout you are editing before connecting an agent. The command fails if that
-port is occupied; verify which checkout owns the running server before reusing
-it. To run multiple checkouts simultaneously, give each server a different port
-and update both MCP configuration URLs in that checkout to match.
-
-Claude Code asks you to approve the project MCP server on first use. Codex
-loads its project configuration in a new session.
-
-### Catalog coverage
-
-Every browser plugin has a catalog under its own `storybook/` directory. Canvas
-previews use BB's native sidebar, page header, tabbed panel, message, composer,
-and settings components. Storybook builds these from the working files in a
-local BB checkout: `BB_STORYBOOK_SOURCE`, or the sibling `../bb` directory.
-BB's dependencies must be installed there. Restart Storybook after changing
-that checkout. This does not modify or start the BB app.
-
-Use the context toolbar to switch between **BB editor** and **Isolated component**.
-**Auto** uses native context in Canvas and isolated examples in Docs. Switching
-back to isolated mode reloads the preview document to remove BB's global styles;
-Controls args and globals are retained. A missing or incompatible checkout shows
-an explicit notice, and isolated previews remain available.
-
-Use the width toolbar for 360px, 640px, and 1100px component containers. BB's native
-panel divider controls the surrounding panel width. Backend calls are replaced
-with local fixtures or rejected, and panel width stays within the story's state.
-Run `bun run test:storybook:native` against the running local Storybook to check
-the native integration; it fails if native BB is unavailable. The regular
-`test:storybook` command tests isolated components without requiring BB source.
-
-The stories render production components; parent stories exercise their rendered internal
-helpers. States include loading, empty, populated, error, disabled, and selected
-where the component supports them.
-
-| Plugin                | Component coverage                                                             |
-| --------------------- | ------------------------------------------------------------------------------ |
-| Agent Instructions    | Rule scopes, tool browser, file editor, loading and errors                     |
-| Agentation            | Annotation list, empty and error states                                        |
-| Amp                   | Oracle results, running trace, missing and invalid reports                     |
-| Code Review           | Review and branch status, findings, comments, file tree, refresh state         |
-| Devin                 | Starting and active Cloud session banners                                      |
-| Dotfiles              | Source and Markdown editors, host picker, offline and missing repository       |
-| Game Studio           | Workflow canvas, node cards and inspector, generation controls, verdicts       |
-| GitHub Stack          | Stack panel, pull request cards, changed-file tree, loading and errors         |
-| GitButler             | Workspace lanes, branch actions, conflicts, history, file lists and trees      |
-| GTD Sidebar           | Thread cards, status indicators, compact layout                                |
-| Kitchen Sink          | Image comparison, annotations, invalid paths, branding                         |
-| Monokai               | Theme foundations, chrome, content palettes, surface composition               |
-| Docs                  | Note browser, Markdown editor, HTML card, invalid link                         |
-| Inline Visualizations | Tweak controls, saving, read-only, original and empty states                   |
-| Tasks                 | List, board, detail and activity, labels/presets/folders, controls and dialogs |
-| Traces                | JSON inspector, long output, paging, empty and error states                    |
-| Vimium                | Keyboard activation and visible link hints                                     |
-| Whiteboard            | Markdown, code, empty states, diff tree                                        |
+## Shared UI controls
 
 Shared controls live in `packages/ui`: buttons, inputs, textareas, class merging,
 and hover motion. Plugins keep thin re-exports for their existing import paths;
 compact sizing, native focus, and repository border styles remain explicit variants.
-The **Shared** catalog tests these once, including icon sizing and Whiteboard styling.
 Their CSS ships with the components so BB builds do not depend on Tailwind scanning
 hoisted package sources. Selectors carry a content fingerprint to isolate different
 released versions. After editing control CSS, run `bun scripts/shared-ui-styles.ts`.
@@ -196,31 +123,6 @@ every consuming plugin path and release those consumers together: agent-instruct
 agentation, code-review, dotfiles, gh-stack, gitbutler, gtd-sidebar, html, scott-docs,
 scott-tasks, and whiteboard. Private plugins use the same rebuild
 step when installed from source.
-
-The manager, docs, story surfaces, portals, and code highlighting use Monokai.
-Semantic utility aliases are generated from its palette with
-`bun scripts/storybook-theme.ts`; the test suite rejects stale aliases and checks
-the rendered theme after every story. `.storybook/bb-theme.css` mirrors the
-BB 0.46.1 plugin theme's typography, radii, fonts, and shadows; refresh that snapshot
-from `PLUGIN_THEME_CSS` when changing the BB toolchain.
-
-Host-only plugins do not have browser stories. Usage Bar's native macOS menu
-is also outside this browser catalog. The SDK's public test runtime supplies
-host controls and RPC fixtures, so Storybook does not read real accounts or
-checkouts. Host-owned icons, Markdown, navigation, and composer behavior are
-fixture substitutes; use live BB to verify those integrations.
-
-Run `bun run test:storybook` for Chromium render and interaction tests. If
-Chromium is not installed, run `bunx playwright install chromium` first.
-`bun test scripts/storybook-coverage.test.ts` checks that every browser plugin
-keeps its explicit surface inventory, including the Tasks views and Studio canvas. Keep fixtures local to the story and use explicit
-RPC responses for pending, failure, and recovery states.
-
-The existing plugin-local Storybook command still previews Monokai alone.
-Use the root command for the repository catalog and MCP endpoint. Storybook
-previews do not replace live BB checks of host integration and shadow DOM.
-The catalog uses the root SDK test runtime (0.6.75); plugins with different SDK
-pins still need their own build and live integration checks.
 
 ## Test another BB build
 

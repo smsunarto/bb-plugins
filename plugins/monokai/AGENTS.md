@@ -2,7 +2,7 @@
 
 - `CONTRACT.md` owns palette policy. BB's agent stream owns Markdown presentation. Docs and Canvas adapt the stream's rules, including theme overrides, rather than maintaining separate reading styles.
 - Do not edit `themes/bb-monokai.css` or `themes/bb-monokai-code.json` by hand.
-- Use Storybook for the palette catalog. Use live bb for shadow DOM and host selectors.
+- Use live bb to review the palette, shadow DOM, and host selectors.
 - Code theme tokens are inline styles in a shadow root. CSS cannot set them. The theme is dark only. Light stays on `pierre-light`.
 - `CONTRACT.md` and the vendored rules are checked in; normal builds need no external checkout. `sync:code-theme --source <editor-theme-directory>` imports rules from an explicit source. `check:code-theme --source <editor-theme-directory>` reports drift without writing. CI runs neither.
 - An unmapped hex stops the sync. Amend `CONTRACT.md` and the palette first. When importing palette changes, copy and review upstream contract updates explicitly; rule syncing does not update this snapshot.

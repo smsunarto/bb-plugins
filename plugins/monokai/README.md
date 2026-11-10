@@ -226,14 +226,3 @@ syntax token. The plugin build runs that check automatically.
 
 Re-apply with `bb theme set plugin:monokai:bb-monokai` if the palette does not
 refresh.
-
-To review the palette contract outside bb, start its local Storybook:
-
-```sh
-bun run --filter '@smsunarto/bb-plugin-monokai' storybook
-```
-
-The catalog imports the generated theme stylesheet, so regeneration updates
-the stories without a second token source. It previews the palette and
-component states; live bb remains the integration check for shadow-DOM
-surfaces and host styles.

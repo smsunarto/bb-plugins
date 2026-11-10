@@ -72,7 +72,6 @@
   ],
   "devDependencies": {
     "@pierre/diffs": "^1.2.9",
-    "@storybook/react-vite": "10.6.3",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
@@ -82,21 +81,18 @@
     "hono": "^4.11.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "storybook": "10.6.3",
     "typescript": "^7.0.0",
-    "vite": "^8.2.1",
     "zod": "^4.3.6"
   },
   "scripts": {
     "dev": "bun run generate:theme && bb plugin dev .",
-    "storybook": "storybook dev --port 6006",
     "generate:theme": "bun run scripts/generate-theme.ts",
     "sync:code-theme": "bun run scripts/sync-code-theme.ts",
     "check:code-theme": "bun run scripts/sync-code-theme.ts --check",
     "check:theme": "bun run scripts/generate-theme.ts --check",
     "check": "bun run typecheck && bun run check:theme",
     "build": "bun run check && bb plugin build .",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p storybook",
+    "typecheck": "tsc --noEmit",
     "test": "bun test test/*.test.ts",
     "clean": "rm -rf dist"
   },

@@ -8,8 +8,7 @@
     "./input": "./src/input.tsx",
     "./textarea": "./src/textarea.tsx",
     "./utils": "./src/utils.ts",
-    "./motion": "./src/motion.ts",
-    "./theme.css": "./theme.css"
+    "./motion": "./src/motion.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.3.0",
