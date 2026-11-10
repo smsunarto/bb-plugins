@@ -51,17 +51,23 @@ export function readingOrder(files: readonly ChangeFile[]): ChangeFile[] {
 
 // ── Near the viewport ──────────────────────────────────────────────────
 
-type Watch = (path: string, element: Element | null, onNear: () => void) => void;
+/** Told when the card comes within AHEAD of the viewport, and when it leaves again. */
+type Watch = (path: string, element: Element | null, onNear: (near: boolean) => void) => void;
 
 type Column = {
   watch: Watch;
   /** The cards by path, for scrolling to one. */
   cards: Map<string, Element>;
+  /** Each card's last drawn height, so a far card keeps its place as one empty box. */
+  heights: Map<string, number>;
 };
 
 const ColumnContext = createContext<Column | null>(null);
 
-/** How far ahead of the viewport a card asks for its patch. */
+/** Cards drawn before the observer reports: about a screen of them. */
+const EAGER_CARDS = 8;
+
+/** How far ahead of the viewport a card asks for its patch, and draws at all. */
 const AHEAD = "1200px 0px";
 
 function useColumn(
@@ -74,7 +80,19 @@ function useColumn(
   });
   const [column] = useState(() => {
     const cards = new Map<string, Element>();
-    const near = new Map<Element, () => void>();
+    const near = new Map<Element, (near: boolean) => void>();
+    const heights = new Map<string, number>();
+    // Heights come from ResizeObserver entries, after layout: nothing is measured on demand.
+    const sized =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver((entries) => {
+            for (const entry of entries) {
+              const path = paths.get(entry.target);
+              const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
+              if (path && height > 0) heights.set(path, height);
+            }
+          });
     const paths = new Map<Element, string>();
     let ahead: IntersectionObserver | null = null;
     let top: IntersectionObserver | null = null;
@@ -84,7 +102,7 @@ function useColumn(
       if (typeof IntersectionObserver === "undefined") return;
       ahead = new IntersectionObserver(
         (entries) => {
-          for (const entry of entries) if (entry.isIntersecting) near.get(entry.target)?.();
+          for (const entry of entries) near.get(entry.target)?.(entry.isIntersecting);
         },
         { root, rootMargin: AHEAD },
       );
@@ -114,9 +132,10 @@ function useColumn(
       cards.set(path, element);
       paths.set(element, path);
       near.set(element, onNear);
+      sized?.observe(element);
       if (typeof IntersectionObserver === "undefined") {
         // No observer (tests, very old engines): every open card is near.
-        onNear();
+        onNear(true);
         return;
       }
       if (ahead && top) {
@@ -125,7 +144,7 @@ function useColumn(
       } else pending.push(element);
     };
     return {
-      column: { watch, cards },
+      column: { watch, cards, heights },
       setup,
       teardown() {
         ahead?.disconnect();
@@ -135,6 +154,7 @@ function useColumn(
       forget(element: Element) {
         near.delete(element);
         paths.delete(element);
+        sized?.unobserve(element);
         inBand.delete(element);
         ahead?.unobserve(element);
         top?.unobserve(element);
@@ -149,6 +169,7 @@ function useColumn(
   return useMemo(
     () => ({
       cards: column.column.cards,
+      heights: column.column.heights,
       watch: (path, element, onNear) => {
         if (element) column.column.watch(path, element, onNear);
         else {
@@ -170,6 +191,11 @@ function useColumn(
 function reservedHeight(file: ChangeFile): number {
   const lines = Math.min(file.additions + file.deletions, 30);
   return Math.max(2, lines) * 20 + 16;
+}
+
+/** A card never drawn: its header, and the space its diff will reserve. */
+function farHeight(file: ChangeFile, open: boolean): number {
+  return 36 + 2 + (open ? reservedHeight(file) : 0);
 }
 
 function PatchBody({
@@ -247,23 +273,41 @@ const FileCard = memo(function FileCard({
   store,
   line,
   onToggle,
+  eager,
 }: {
   file: ChangeFile;
   open: boolean;
   store: PatchStore;
   line: number | null;
   onToggle: (path: string) => void;
+  /** The first cards draw at once; the rest wait for the observer to say they are near. */
+  eager: boolean;
 }) {
   const column = useContext(ColumnContext);
-  const [near, setNear] = useState(false);
+  const [near, setNear] = useState(eager);
   const watchRef = useCallback(
-    (element: HTMLElement | null) => column?.watch(file.path, element, () => setNear(true)),
+    (element: HTMLElement | null) => column?.watch(file.path, element, setNear),
     [column, file.path],
   );
   useEffect(() => {
     if (open && near) store.request(file.path);
   }, [open, near, store, file.path]);
   const generated = startsCollapsed(file.path);
+  const card =
+    "min-w-0 overflow-hidden rounded-[8px] border border-solid border-border-hairline bg-background";
+  // Far from the view a card is one box of its last height: a 300-file change stays a few thousand nodes.
+  if (!near)
+    return (
+      <section
+        ref={watchRef}
+        data-testid="sc-file-card"
+        data-path={file.path}
+        data-open={open}
+        aria-label={file.path}
+        className={card}
+        style={{ height: column?.heights.get(file.path) ?? farHeight(file, open) }}
+      />
+    );
   return (
     <section
       ref={watchRef}
@@ -271,7 +315,7 @@ const FileCard = memo(function FileCard({
       data-path={file.path}
       data-open={open}
       aria-label={file.path}
-      className="min-w-0 overflow-hidden rounded-[8px] border border-solid border-border-hairline bg-background"
+      className={card}
     >
       <button
         type="button"
@@ -436,9 +480,10 @@ export function FilesView({
   else
     cards = (
       <div className="flex min-w-0 flex-col gap-2">
-        {files!.map((file) => (
+        {files!.map((file, index) => (
           <FileCard
             key={file.path}
+            eager={index < EAGER_CARDS}
             file={file}
             open={openState[file.path] ?? !startsCollapsed(file.path)}
             store={store}

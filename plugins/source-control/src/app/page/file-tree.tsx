@@ -11,6 +11,10 @@ import { startsCollapsed, type ChangeFile } from "../../core/review.ts";
 import { cx } from "../format.ts";
 import { FileStatus } from "../file-cards.tsx";
 import { Chevron } from "./icons.tsx";
+import { useListWindow } from "./use-window.ts";
+
+/** Every row is `h-7`, so a long tree windows without measuring. */
+const ROW_HEIGHT = 28;
 
 type Folder = { kind: "folder"; path: string; name: string; children: Node[] };
 type Leaf = { kind: "file"; path: string; name: string; file: ChangeFile };
@@ -155,19 +159,42 @@ export function FileTree({
     return open.size === closed.size ? closed : open;
   }, [closed, current]);
   const rows = useMemo(() => visibleRows(tree, shown), [tree, shown]);
+  const [list, setList] = useState<HTMLDivElement | null>(null);
+  const sizeOf = useCallback(() => ROW_HEIGHT, []);
+  const keyOf = useCallback(
+    (index: number) => `${rows[index]!.node.kind}:${rows[index]!.node.path}`,
+    [rows],
+  );
+  // A 300-file tree is thousands of nodes; past 50 rows only those near the view mount.
+  const win = useListWindow({ count: rows.length, sizeOf, keyOf, list });
+  const row = ({ node, depth }: Row) => (
+    <TreeRow
+      key={`${node.kind}:${node.path}`}
+      node={node}
+      depth={depth}
+      current={node.kind === "file" && node.path === current}
+      open={node.kind === "folder" && !shown.has(node.path)}
+      onFile={onSelect}
+      onFolder={toggle}
+    />
+  );
   return (
-    <div role="tree" aria-label="Changed files" className="flex flex-col py-1">
-      {rows.map(({ node, depth }) => (
-        <TreeRow
-          key={`${node.kind}:${node.path}`}
-          node={node}
-          depth={depth}
-          current={node.kind === "file" && node.path === current}
-          open={node.kind === "folder" && !shown.has(node.path)}
-          onFile={onSelect}
-          onFolder={toggle}
-        />
-      ))}
+    <div ref={setList} role="tree" aria-label="Changed files" className="flex flex-col py-1">
+      {win.items ? (
+        <div className="relative" style={{ height: win.total }}>
+          {win.items.map((virtual) => (
+            <div
+              key={virtual.key as string}
+              className="absolute inset-x-0 top-0"
+              style={{ transform: `translateY(${virtual.start - win.margin}px)` }}
+            >
+              {row(rows[virtual.index]!)}
+            </div>
+          ))}
+        </div>
+      ) : (
+        rows.map(row)
+      )}
     </div>
   );
 }

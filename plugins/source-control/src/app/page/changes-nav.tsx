@@ -462,11 +462,25 @@ function SourceLine({
   );
 }
 
-function SourcesFooter({ sources, now }: { sources: ChangeSources; now: number }) {
+function SourcesFooter({
+  sources,
+  now,
+  phone,
+}: {
+  sources: ChangeSources;
+  now: number;
+  phone: boolean;
+}) {
   const shown = sources.states.filter((state) => state.status !== "ready");
   if (shown.length === 0 && sources.stopped.length === 0) return null;
   return (
-    <ul className="m-0 flex shrink-0 list-none flex-col gap-2 border-t border-solid border-border-hairline px-4 py-3">
+    // Pinned to the bottom of whatever scrolls the list, on that surface's ground.
+    <ul
+      className={cx(
+        "sticky bottom-0 m-0 flex shrink-0 list-none flex-col gap-2 border-t border-solid border-border-hairline px-4 py-3",
+        phone ? "bg-background" : "bg-sidebar",
+      )}
+    >
       {shown.map((state) => (
         <SourceLine key={`${state.kind}:${state.id}`} state={state} now={now} sources={sources} />
       ))}
@@ -577,7 +591,10 @@ function ListItems({
             key={item.key}
             data-index={virtual.index}
             className="absolute top-0 right-2 left-2"
-            style={{ height: virtual.size, transform: `translateY(${virtual.start}px)` }}
+            style={{
+              height: virtual.size,
+              transform: `translateY(${virtual.start - win.margin}px)`,
+            }}
           >
             {render(item)}
           </div>
@@ -602,10 +619,10 @@ export function ChangesList({ subPath, variant }: { subPath: string; variant: Va
   const now = useNow();
   const go = useGo();
   const onSelect = useCallback((key: ChangeKey) => go({ key }), [go]);
-  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const [list, setList] = useState<HTMLDivElement | null>(null);
   const sizeOf = useCallback((index: number) => itemSize(items[index]!), [items]);
   const keyOf = useCallback((index: number) => items[index]!.key, [items]);
-  const win = useListWindow({ count: items.length, sizeOf, keyOf, scrollElement: scroller });
+  const win = useListWindow({ count: items.length, sizeOf, keyOf, list });
   const phone = variant === "phone";
 
   const render = (item: Item) => (
@@ -632,7 +649,11 @@ export function ChangesList({ subPath, variant }: { subPath: string; variant: Va
       className="@container flex h-full min-h-0 min-w-0 flex-col text-foreground"
     >
       <div
-        className={cx("flex shrink-0 flex-col gap-3", phone ? "px-5 pt-2 pb-3" : "px-4 pt-4 pb-3")}
+        className={cx(
+          "flex shrink-0 flex-col gap-3",
+          // bb scrolls the sidebar; the head stays above the list as board A draws it.
+          phone ? "px-5 pt-2 pb-3" : "sticky top-0 z-10 bg-sidebar px-4 pt-4 pb-3",
+        )}
       >
         <div
           className={cx("flex justify-between gap-2", phone ? "items-baseline" : "items-center")}
@@ -651,14 +672,11 @@ export function ChangesList({ subPath, variant }: { subPath: string; variant: Va
         </div>
         <Filters counts={merged.counts} variant={variant} />
       </div>
-      <div
-        ref={setScroller}
-        data-testid="sc-nav-scroll"
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2"
-      >
+      {/* bb's sidebar scrolls this list; on the page the panel's column does. */}
+      <div ref={setList} data-testid="sc-nav-scroll" className="min-h-0 flex-1 pb-2">
         {body}
       </div>
-      <SourcesFooter sources={sources} now={now} />
+      <SourcesFooter sources={sources} now={now} phone={phone} />
     </nav>
   );
 }
