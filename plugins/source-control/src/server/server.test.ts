@@ -367,6 +367,8 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
     ...options,
   });
   await plugin(bb);
+  // bb starts services once the plugin is active; watches wait for that.
+  harness.runService("activation");
   const read = async (threadId: string) =>
     (
       (await harness.behavior.callRpc("changeForThread", { keys: [threadId] })) as Record<
@@ -386,7 +388,11 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
   const invalidations = () =>
     harness.inspection.experimental_rpcInvalidations.flatMap((tags) => tags ?? []);
   /** Stop this plugin instance and load another on the same database, as a server restart. */
-  const restart = async () => (await harness.lifecycle.reload(plugin)).harness;
+  const restart = async () => {
+    const next = (await harness.lifecycle.reload(plugin)).harness;
+    next.runService("activation");
+    return next;
+  };
   return { harness, read, checkout, hostCalls, invalidations, restart };
 }
 

@@ -91,7 +91,31 @@ function reviewHandlers(runtime: Runtime, items: Changes["review"]["items"], sta
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
 }
 
+/**
+ * bb resumes a page's watches while the plugin is still registering, after a
+ * reload or a restart, when host calls are refused. A service starts only once
+ * the plugin is active, so watches wait for it.
+ */
+function activation(bb: BbPluginApi) {
+  let activate = () => {};
+  const active = new Promise<void>((resolve) => {
+    activate = resolve;
+  });
+  bb.background.service("activation", {
+    start(signal) {
+      activate();
+      return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve()));
+    },
+  });
+  return <A, E>(work: Effect.Effect<A, E>) =>
+    Effect.andThen(
+      Effect.promise(() => active),
+      work,
+    );
+}
+
 function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes, start: Start) {
+  const afterRegistration = activation(bb);
   const items = changes.review.items;
   bb.rpc.register(
     sourceControlContract,
@@ -134,7 +158,7 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes, start:
   bb.rpc.experimental_whileWatched("changeForThread", (read, signal) => {
     if (!("key" in read)) return undefined;
     // Ends when the last watcher leaves, which interrupts the watch.
-    return runtime.run(changes.watch(read.key), signal).then(
+    return runtime.run(afterRegistration(changes.watch(read.key)), signal).then(
       () => undefined,
       () => undefined,
     );
@@ -144,7 +168,7 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes, start:
     <K extends string>(watch: (key: K) => Effect.Effect<unknown, unknown>) =>
     (read: { key?: string } | object, signal: AbortSignal) => {
       if (!("key" in read) || typeof read.key !== "string") return undefined;
-      return runtime.run(watch(read.key as K), signal).then(
+      return runtime.run(afterRegistration(watch(read.key as K)), signal).then(
         () => undefined,
         () => undefined,
       );
@@ -159,7 +183,7 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes, start:
   );
   bb.rpc.experimental_whileWatched("statusForThread", (read, signal) => {
     if (!("key" in read)) return undefined;
-    return runtime.run(changes.glance(read.key), signal).then(
+    return runtime.run(afterRegistration(changes.glance(read.key)), signal).then(
       () => undefined,
       () => undefined,
     );
