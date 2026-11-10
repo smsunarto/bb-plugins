@@ -28,6 +28,8 @@ import { buildPrompt, buildThreadTitle, isAwaitingChildren } from "./lib/dispatc
 import { registerReviewCheckout } from "./lib/review-checkout";
 import { reviewWorktree } from "./lib/review-environment";
 import { parseReviewRequest } from "./lib/review";
+import { canonicalRepo, isRunning, pullRequestReview, rerunRule } from "./lib/pull-request-review";
+import { REVIEW_RUNS_TAG, sourceControlRpcContract } from "./lib/source-control-contract";
 import { resolveThreadSectionId } from "./lib/sections";
 import { expandHome } from "./lib/paths";
 import {
@@ -142,6 +144,7 @@ const commentOutputSchema = z.object({
   url: z.string().nullable(),
   bodyExcerpt: z.string(),
   attribution: z.string(),
+  priority: z.number().nullable(),
 });
 
 export const rpcContract = defineRpcContract({
@@ -337,6 +340,7 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
 
   const announce = () => {
     bb.realtime.publish(RUNS_CHANNEL, { at: Date.now() });
+    bb.rpc.experimental_invalidate([REVIEW_RUNS_TAG]);
   };
 
   /**
@@ -1135,6 +1139,8 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
         : null,
     };
     store.upsertRule(rule);
+    // Which rule a re-run would use, and whether one can run, read the rules.
+    bb.rpc.experimental_invalidate([REVIEW_RUNS_TAG]);
     if (isDangerousCombination(rule)) {
       bb.log.warn(
         `rule '${rule.name}' reviews PRs from ANY author — untrusted code can run with agent access`,
@@ -1226,6 +1232,54 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
     },
   } satisfies PluginRpcHandlers<typeof rpcContract>;
 
+  // --- discoverable rpc for Source Control ---------------------------------
+
+  const sourceControlHandlers = {
+    pullRequestReview: ({ repo, number }) => pullRequestReview(store, repo, number),
+
+    /**
+     * A manual dispatch of the rule that last reviewed the PR, gated by its
+     * matching like `dispatchNow` without force. Reading the PR is the only
+     * wait: the running check and the run row `dispatch` inserts happen in
+     * one synchronous step, so concurrent calls for one head start one run.
+     */
+    runPullRequestAgain: async ({ repo: requested, number }) => {
+      const repo = canonicalRepo(store, requested);
+      const runs = store.listPullRequestRuns(repo, number);
+      const choice = rerunRule(store, repo, runs.find(isRunning) ?? runs[0] ?? null);
+      if ("reason" in choice) return { ok: false as const, message: choice.reason };
+      const { rule } = choice;
+      let checked: Effect.Success<ReturnType<typeof checkPr>>;
+      try {
+        checked = await runtime.run(checkPr(rule, number));
+      } catch (error) {
+        return {
+          ok: false as const,
+          message: `SlopCop could not read ${repo}#${number} from GitHub: ${messageOf(error)}`,
+        };
+      }
+      const { pullRequest, result } = checked;
+      const runningForHead = store
+        .listPullRequestRuns(repo, number)
+        .some((run) => isRunning(run) && run.headSha === pullRequest.headRefOid);
+      if (runningForHead) return { ok: true as const };
+      if (!result.matched) {
+        return {
+          ok: false as const,
+          message: `The SlopCop rule "${rule.name}" does not review this pull request: ${result.reason}`,
+        };
+      }
+      const { runId, threadId } = await dispatch(rule, pullRequest, { trigger: "manual" });
+      if (threadId === null) {
+        return {
+          ok: false as const,
+          message: store.getRun(runId)?.detail ?? "SlopCop could not start the review thread.",
+        };
+      }
+      return { ok: true as const };
+    },
+  } satisfies PluginRpcHandlers<typeof sourceControlRpcContract>;
+
   // --- cli -----------------------------------------------------------------
 
   /**
@@ -1276,6 +1330,7 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
         body: input.body,
         comments: input.comments,
         commitId,
+        run: sameAsRun ? { rule: runPr.ruleName, run: runPr.id, sha: commitId ?? "" } : null,
       });
       if (!parsed.ok) return fail(parsed.error);
       // Resolve the identity per call: a write must follow the current
@@ -1701,7 +1756,7 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
     bb.log.info("disposed");
   });
 
-  return { handlers, runCli, submitReview };
+  return { handlers, sourceControlHandlers, runCli, submitReview };
 }
 
 type Services = ReturnType<typeof createServices>;
@@ -1789,6 +1844,12 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   const runtime = await makePluginRuntime(bb, Layer.empty);
   const ctx: PluginContext = Object.freeze({ bb, ...createServices(bb, runtime) });
   bb.rpc.register(rpcContract, ctx.handlers);
+  // A separate registration, so only these two methods are discoverable.
+  bb.rpc.register(sourceControlRpcContract, ctx.sourceControlHandlers, {
+    experimental_discoverable: true,
+    experimental_description:
+      "SlopCop's GitHub review state for one pull request, with a re-run of its review, for Source Control's Review rail.",
+  });
   bb.cli.register(
     defineCli({
       name: "slopcop",
@@ -1887,7 +1948,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
             comments: {
               type: "string",
               description:
-                'Inline comments as a JSON array of {"path","line","body"} objects, with optional "side" (RIGHT or LEFT), "startLine", and "startSide".',
+                'Inline comments as a JSON array of {"path","line","body"} objects, with optional "priority" (0-3 for P0-P3), "side" (RIGHT or LEFT), "startLine", and "startSide".',
             },
             commit: { type: "string", description: "Commit SHA the inline comments refer to." },
             json: options.json,

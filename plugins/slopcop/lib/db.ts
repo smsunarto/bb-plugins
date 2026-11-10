@@ -1,6 +1,7 @@
 // Persistence. Migrations are append-only by statement index — never reorder
 // or edit a shipped statement, only push new ones.
 import {
+  prioritySchema,
   runStatusSchema,
   triggerSchema,
   type Rule,
@@ -130,6 +131,9 @@ export const MIGRATIONS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_comment_events_pending
      ON comment_trigger_events(repo, status, created_at)`,
   `ALTER TABLE rules ADD COLUMN comment_trigger_enabled_at INTEGER`,
+  // A finding's P0-P3 priority, read from its marker. Null for summaries and
+  // for comments recorded before priorities existed.
+  `ALTER TABLE run_comments ADD COLUMN priority INTEGER`,
 ];
 
 function hasColumn(db: Database, table: string, column: string): boolean {
@@ -162,6 +166,7 @@ export function repairKeywordSchema(db: Database): void {
     ["runs", "trigger", `TEXT NOT NULL DEFAULT 'manual'`],
     ["runs", "trigger_event_id", `TEXT`],
     ["rules", "comment_trigger_enabled_at", `INTEGER`],
+    ["run_comments", "priority", `INTEGER`],
   ] as const;
   for (const [table, column, definition] of columns) {
     if (!hasColumn(db, table, column)) {
@@ -490,6 +495,22 @@ export function createStore(db: Database) {
       return row !== undefined;
     },
 
+    /**
+     * A pull request's runs that reached a thread or tried to, newest first.
+     * Gate skips are left out: they never reviewed anything.
+     */
+    listPullRequestRuns(repo: string, prNumber: number, limit = 20): Run[] {
+      const rows = db
+        .prepare(
+          `SELECT * FROM runs
+           WHERE repo = ? AND pr_number = ? AND target_kind = 'pull_request'
+             AND status != 'skipped'
+           ORDER BY started_at DESC LIMIT ?`,
+        )
+        .all(repo, prNumber, limit) as Row[];
+      return rows.map(rowToRun);
+    },
+
     listComments(runId: string): RunComment[] {
       const rows = db.prepare(`SELECT * FROM run_comments WHERE run_id = ?`).all(runId) as Row[];
       return rows.map((row) => ({
@@ -501,6 +522,7 @@ export function createStore(db: Database) {
         url: typeof row.url === "string" ? row.url : null,
         bodyExcerpt: text(row, "body_excerpt"),
         attribution: text(row, "attribution", "marker") as RunComment["attribution"],
+        priority: prioritySchema.safeParse(row.priority).data ?? null,
       }));
     },
 
@@ -508,7 +530,7 @@ export function createStore(db: Database) {
       db.prepare(`DELETE FROM run_comments WHERE run_id = ?`).run(runId);
       const insert = db.prepare(
         `INSERT INTO run_comments (run_id, github_id, kind, path, line, url,
-           body_excerpt, attribution) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           body_excerpt, attribution, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       );
       for (const comment of comments) {
         insert.run(
@@ -520,6 +542,7 @@ export function createStore(db: Database) {
           comment.url,
           comment.bodyExcerpt,
           comment.attribution,
+          comment.priority,
         );
       }
     },

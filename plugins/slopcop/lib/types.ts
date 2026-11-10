@@ -173,6 +173,10 @@ export type RunStatus = z.infer<typeof runStatusSchema>;
 export const commentKindSchema = z.enum(["summary", "inline", "reply"]);
 export type CommentKind = z.infer<typeof commentKindSchema>;
 
+/** A finding's priority: 0 is P0 (blocks merge) through 3, P3 (nit). */
+export const prioritySchema = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
+export type Priority = z.infer<typeof prioritySchema>;
+
 export interface RunComment {
   runId: string;
   githubId: string | null;
@@ -182,6 +186,8 @@ export interface RunComment {
   url: string | null;
   bodyExcerpt: string;
   attribution: "marker" | "header" | "account";
+  /** From the comment's marker; null when the reviewer gave none. */
+  priority: Priority | null;
 }
 
 export interface Run {

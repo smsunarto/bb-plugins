@@ -4,6 +4,8 @@
 // The CLI hands argv strings to `parseReviewRequest`; what comes out is the
 // exact body GitHub's create-review endpoint takes.
 import { z } from "zod";
+import { buildMarker } from "./marker";
+import { prioritySchema } from "./types";
 
 /** CLI verdict names mapped to GitHub's review events. */
 export const REVIEW_EVENTS = {
@@ -23,6 +25,7 @@ const inlineCommentSchema = z
     side: sideSchema.optional(),
     startLine: z.number().int().positive().optional(),
     startSide: sideSchema.optional(),
+    priority: prioritySchema.optional(),
   })
   .strict()
   .refine((comment) => comment.startLine === undefined || comment.startLine < comment.line, {
@@ -62,11 +65,32 @@ function parseComments(raw: string | undefined): InlineComment[] | string {
   return `--comments is not an array of {path, line, body} objects${where}: ${issue?.message ?? "invalid"}`;
 }
 
-function toGitHubComment(comment: InlineComment): ReviewPayload["comments"][number] {
+/** The run a review belongs to, which its inline comments' markers name. */
+export interface ReviewRun {
+  rule: string;
+  run: string;
+  sha: string;
+}
+
+function toGitHubComment(
+  comment: InlineComment,
+  run: ReviewRun | null,
+): ReviewPayload["comments"][number] {
+  // The marker is SlopCop's to write, not the agent's: it attributes the
+  // comment to its run and carries the finding's priority for other readers.
+  // Outside a run there is nothing to attribute, so the body stays as written.
+  const marker =
+    run === null
+      ? ""
+      : `\n\n${buildMarker({
+          ...run,
+          kind: "inline",
+          ...(comment.priority === undefined ? {} : { priority: comment.priority }),
+        })}`;
   const out: ReviewPayload["comments"][number] = {
     path: comment.path,
     line: comment.line,
-    body: comment.body,
+    body: `${comment.body}${marker}`,
   };
   if (comment.side !== undefined) out.side = comment.side;
   if (comment.startLine !== undefined) out.start_line = comment.startLine;
@@ -82,6 +106,8 @@ export function parseReviewRequest(input: {
   body: string | undefined;
   comments: string | undefined;
   commitId: string | null;
+  /** The SlopCop run posting this review, or null outside a review thread. */
+  run?: ReviewRun | null;
 }): ParsedReview {
   const choices = Object.keys(REVIEW_EVENTS).join(", ");
   if (input.event === undefined) return { ok: false, error: `--event is required: ${choices}` };
@@ -98,7 +124,7 @@ export function parseReviewRequest(input: {
       event: REVIEW_EVENTS[input.event as ReviewEventName],
       body,
       ...(input.commitId === null ? {} : { commit_id: input.commitId }),
-      comments: comments.map(toGitHubComment),
+      comments: comments.map((comment) => toGitHubComment(comment, input.run ?? null)),
     },
   };
 }

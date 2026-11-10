@@ -109,3 +109,57 @@ describe("run rows", () => {
     expect(store.getRun("run_1")?.finishedAt).toBe(5);
   });
 });
+
+describe("run comments", () => {
+  it("keeps each finding's priority, and reads rows from before priorities as none", () => {
+    const { database, store } = makeStore();
+    const comment = {
+      runId: "run_1",
+      githubId: "c1",
+      kind: "inline" as const,
+      path: "src/a.ts",
+      line: 3,
+      url: null,
+      bodyExcerpt: "Off by one.",
+      attribution: "marker" as const,
+    };
+    store.replaceComments("run_1", [
+      { ...comment, priority: 1 },
+      { ...comment, githubId: "c2", priority: null },
+    ]);
+    database
+      .prepare(`INSERT INTO run_comments (run_id, github_id, kind) VALUES (?, ?, ?)`)
+      .run("run_1", "legacy", "inline");
+
+    expect(
+      store.listComments("run_1").map(({ githubId, priority }) => [githubId, priority]),
+    ).toEqual([
+      ["c1", 1],
+      ["c2", null],
+      ["legacy", null],
+    ]);
+  });
+
+  it("adds the priority column to a database that predates it", () => {
+    const database = new Database(":memory:");
+    databases.push(database);
+    for (const migration of MIGRATIONS.slice(0, -1)) database.exec(migration);
+    repairKeywordSchema(database);
+    repairKeywordSchema(database);
+    const store = createStore(database);
+    store.replaceComments("run_1", [
+      {
+        runId: "run_1",
+        githubId: "c1",
+        kind: "inline",
+        path: null,
+        line: null,
+        url: null,
+        bodyExcerpt: "",
+        attribution: "marker",
+        priority: 3,
+      },
+    ]);
+    expect(store.listComments("run_1")[0]?.priority).toBe(3);
+  });
+});

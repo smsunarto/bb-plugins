@@ -330,6 +330,30 @@ describe("markers", () => {
     expect(parseMarker(buildMarker(marker))).toEqual(marker);
   });
 
+  it("round-trips a finding's priority in the form other plugins match", () => {
+    const marker = {
+      rule: "security-sweep",
+      run: "run_1",
+      sha: "a1b2c3d",
+      kind: "inline" as const,
+      priority: 0 as const,
+    };
+    const built = buildMarker(marker);
+    expect(parseMarker(built)).toEqual(marker);
+    // Source Control reads the priority with exactly this pattern.
+    const sourceControl = /<!--\s*slopcop:[^>]*\bpriority=([0-3])\b[^>]*-->/;
+    expect(sourceControl.exec(`Finding.\n\n${built}`)?.[1]).toBe("0");
+  });
+
+  it("reads markers written before priorities, and ignores an out-of-range one", () => {
+    const old = "<!-- slopcop:rule=r run=run_1 sha=s kind=inline -->";
+    expect(parseMarker(old)).toEqual({ rule: "r", run: "run_1", sha: "s", kind: "inline" });
+    expect(buildMarker({ rule: "r", run: "run_1", sha: "s", kind: "inline" })).toBe(old);
+    expect(
+      parseMarker("<!-- slopcop:rule=r run=run_1 sha=s kind=inline priority=7 -->"),
+    ).not.toHaveProperty("priority");
+  });
+
   it("neutralizes rule names that would break out of the comment", () => {
     const built = buildMarker({
       rule: "evil --> <script>",

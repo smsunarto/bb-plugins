@@ -1,5 +1,5 @@
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createStore } from "../lib/db";
 import { AWAITING_CHILDREN_MARKER } from "../lib/dispatch";
 import type { GhClient, GhComment } from "../lib/gh";
@@ -20,6 +20,9 @@ const github = vi.hoisted(() => ({
   submittedReviews: [] as { repo: string; number: number; review: unknown }[],
   /** Live verification waits here first, so a test can hold a run mid-verify. */
   gate: Promise.resolve(),
+  /** Single-PR reads wait here, so a test can overlap two of them. */
+  pullRequestGate: Promise.resolve(),
+  pullRequestReads: 0,
 }));
 
 vi.mock("../lib/gh", async () => {
@@ -27,7 +30,14 @@ vi.mock("../lib/gh", async () => {
   return {
     createGhClient: (): GhClient => ({
       listOpenPullRequests: () => Effect.sync(() => github.pullRequests),
-      getPullRequest: () => Effect.die(new Error("not stubbed")),
+      getPullRequest: (_repo: string, number: number) =>
+        Effect.promise(async () => {
+          github.pullRequestReads += 1;
+          await github.pullRequestGate;
+          const found = github.pullRequests.find((pullRequest) => pullRequest.number === number);
+          if (found === undefined) throw new Error("not stubbed");
+          return found;
+        }),
       listOpenIssueNumbers: () => Effect.succeed([]),
       getIssue: () => Effect.die(new Error("not stubbed")),
       listFiles: () => Effect.succeed([]),
@@ -167,7 +177,7 @@ it("submits one review with its verdict and inline comments, anchored to the run
     const store = createStore(bb.storage.database() as never);
     store.insertRun(makeRun({ id: "run_live", threadId: "thr_live", mode: "live" }));
     const comments = JSON.stringify([
-      { path: "src/a.ts", line: 12, body: "Off by one." },
+      { path: "src/a.ts", line: 12, body: "Off by one.", priority: 1 },
       { path: "src/b.ts", line: 9, startLine: 4, side: "LEFT", body: "Removed guard." },
     ]);
     const result = await harness.behavior.runCli(
@@ -185,11 +195,18 @@ it("submits one review with its verdict and inline comments, anchored to the run
           body: "Looks good.",
           commit_id: "abc123",
           comments: [
-            { path: "src/a.ts", line: 12, body: "Off by one." },
+            // Inside a run, SlopCop marks each inline comment itself; the
+            // priority travels in that marker, and a comment without one
+            // gets a marker without the field.
+            {
+              path: "src/a.ts",
+              line: 12,
+              body: "Off by one.\n\n<!-- slopcop:rule=settle run=run_live sha=abc123 kind=inline priority=1 -->",
+            },
             {
               path: "src/b.ts",
               line: 9,
-              body: "Removed guard.",
+              body: "Removed guard.\n\n<!-- slopcop:rule=settle run=run_live sha=abc123 kind=inline -->",
               side: "LEFT",
               start_line: 4,
               start_side: "LEFT",
@@ -1078,4 +1095,158 @@ it("reads GitHub once more, 4 s later, before believing a live run posted nothin
     github.issueComments = [];
     await harness.lifecycle.dispose();
   }
+});
+
+describe("Source Control review state", () => {
+  const agent = { projectId: "project-test", providerId: "codex", model: "test-model" };
+
+  it("publishes only its two pull request methods", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
+    try {
+      await plugin(bb);
+      expect(
+        harness.registrations.experimental_publishedRpcMethods.map(({ method }) => method),
+      ).toEqual(["pullRequestReview", "runPullRequestAgain"]);
+      expect(harness.registrations.rpcMethods).toContain("dispatchNow");
+    } finally {
+      await harness.lifecycle.dispose();
+    }
+  });
+
+  it("reports none, running, done and failed from the latest run", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
+    try {
+      await plugin(bb);
+      const { rule } = await harness.behavior.callRpc("saveRule", {
+        id: null,
+        rule: { name: "review", repo: "Example/Example", request: agent },
+      });
+      const store = createStore(bb.storage.database() as never);
+      const run = (id: string, prNumber: number, overrides: Partial<Run>) =>
+        store.insertRun(
+          makeRun({
+            id,
+            ruleId: rule.id,
+            ruleName: "review",
+            repo: "Example/Example",
+            prNumber,
+            ...overrides,
+          }),
+        );
+      run("run_running", 2, { status: "reviewing", threadId: "thr_running" });
+      run("run_done_old", 3, { status: "failed", startedAt: 1, finishedAt: 2 });
+      run("run_done", 3, { status: "commented", startedAt: 10, finishedAt: Date.UTC(2026, 10, 9) });
+      run("run_failed", 4, { status: "failed", startedAt: 10, finishedAt: 20 });
+      run("run_skipped", 5, { status: "skipped", startedAt: 10, finishedAt: 10 });
+      const finding = {
+        runId: "run_done",
+        githubId: "c",
+        kind: "inline" as const,
+        path: "src/a.ts",
+        line: 1,
+        url: null,
+        bodyExcerpt: "",
+        attribution: "marker" as const,
+        priority: 1 as const,
+      };
+      store.replaceComments("run_done", [
+        { ...finding, kind: "summary", priority: null },
+        finding,
+        { ...finding, githubId: "d", priority: null },
+      ]);
+      const read = (number: number, repo = "example/example") =>
+        harness.behavior.callRpc("pullRequestReview", { repo, number });
+
+      const runnable = { canRunAgain: true, reason: null };
+      expect(await read(1)).toEqual({ state: "none", finishedAt: null, findings: 0, ...runnable });
+      expect(await read(2)).toEqual({
+        state: "running",
+        finishedAt: null,
+        findings: 0,
+        canRunAgain: false,
+        reason: "A SlopCop review of this pull request is already running.",
+      });
+      expect(await read(3)).toEqual({
+        state: "done",
+        finishedAt: "2026-11-09T00:00:00.000Z",
+        findings: 2,
+        ...runnable,
+      });
+      expect(await read(4)).toEqual({
+        state: "failed",
+        finishedAt: new Date(20).toISOString(),
+        findings: 0,
+        ...runnable,
+      });
+      expect(await read(5)).toMatchObject({ state: "none" });
+      expect(await read(1, "other/repo")).toEqual({
+        state: "none",
+        finishedAt: null,
+        findings: 0,
+        canRunAgain: false,
+        reason: "No enabled SlopCop rule reviews pull requests in other/repo.",
+      });
+    } finally {
+      await harness.lifecycle.dispose();
+    }
+  });
+
+  it("starts one run per head however often Run again is pressed", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "slopcop" });
+    try {
+      await plugin(bb);
+      await harness.behavior.callRpc("saveRule", {
+        id: null,
+        rule: {
+          name: "review",
+          repo: "example/example",
+          request: agent,
+          conditions: [{ kind: "exclude_author", logins: ["bot"] }],
+        },
+      });
+      let threads = 0;
+      harness.sdk.stub("threads.spawn", () => ({ id: `thr_${(threads += 1)}` }));
+      github.pullRequests = [
+        makePullRequest({ number: 2, headRefOid: "head2" }),
+        makePullRequest({ number: 3, headRefOid: "head3" }),
+        makePullRequest({ number: 4, author: { login: "bot" } }),
+      ];
+      const again = (number: number) =>
+        harness.behavior.callRpc("runPullRequestAgain", { repo: "example/example", number });
+      const spawned = () => harness.sdk.callsTo("threads.spawn").length;
+      const invalidations = harness.inspection.experimental_rpcInvalidations.length;
+
+      expect(await again(2)).toEqual({ ok: true });
+      expect(await again(2)).toEqual({ ok: true });
+      expect(spawned()).toBe(1);
+      expect(
+        await harness.behavior.callRpc("pullRequestReview", { repo: "example/example", number: 2 }),
+      ).toMatchObject({ state: "running", canRunAgain: false });
+      expect(harness.inspection.experimental_rpcInvalidations.length).toBeGreaterThan(
+        invalidations,
+      );
+      expect(harness.inspection.experimental_rpcInvalidations).toContainEqual(["review-runs"]);
+
+      // Two presses whose GitHub reads overlap still start one run.
+      let release = () => {};
+      github.pullRequestGate = new Promise<void>((resolve) => (release = resolve));
+      const reads = github.pullRequestReads;
+      const both = Promise.all([again(3), again(3)]);
+      await vi.waitFor(() => expect(github.pullRequestReads).toBe(reads + 2));
+      expect(spawned()).toBe(1);
+      release();
+      expect(await both).toEqual([{ ok: true }, { ok: true }]);
+      expect(spawned()).toBe(2);
+      github.pullRequestGate = Promise.resolve();
+
+      expect(await again(4)).toEqual({
+        ok: false,
+        message:
+          'The SlopCop rule "review" does not review this pull request: PR author is excluded by this rule (@bot)',
+      });
+      expect(spawned()).toBe(2);
+    } finally {
+      await harness.lifecycle.dispose();
+    }
+  });
 });

@@ -52,6 +52,7 @@ function toRunComment(
     url: comment.url,
     bodyExcerpt: excerpt(comment.body),
     attribution,
+    priority: marker?.priority ?? null,
   };
 }
 
@@ -207,6 +208,7 @@ export function verifyShadow(options: {
     url: null,
     bodyExcerpt: excerpt(body, 2000),
     attribution: marker !== null ? "marker" : header ? "header" : "account",
+    priority: marker?.priority ?? null,
   };
 
   if (marker !== null && marker.run === options.runId) {

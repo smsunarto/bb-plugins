@@ -46,3 +46,41 @@ it.each(["our-review", "another-review"])(
     expect(result.comments).toHaveLength(2);
   },
 );
+
+it("records each inline finding's priority from its marker", async () => {
+  const marked = (priority?: 0 | 2) =>
+    buildMarker({
+      rule: "rule",
+      run: "our-run",
+      sha: "head",
+      kind: "inline",
+      ...(priority === undefined ? {} : { priority }),
+    });
+  const gh = {
+    ...createGhClient("unused"),
+    listIssueComments: () => Effect.succeed([]),
+    listReviews: () => Effect.succeed([]),
+    listReviewComments: () =>
+      Effect.succeed([
+        comment({ id: "p0", body: `Data loss.\n\n${marked(0)}` }),
+        comment({ id: "p2", body: `Rename.\n\n${marked(2)}` }),
+        comment({ id: "none", body: `Older.\n\n${marked()}` }),
+      ]),
+  };
+  const result = await Effect.runPromise(
+    verifyLive({
+      gh,
+      repo: "owner/repo",
+      prNumber: 1,
+      runId: "our-run",
+      startedAt: 1000,
+      authenticatedLogin: "review-bot",
+    }),
+  );
+  expect(result.status).toBe("commented");
+  expect(result.comments.map(({ githubId, priority }) => [githubId, priority])).toEqual([
+    ["p0", 0],
+    ["p2", 2],
+    ["none", null],
+  ]);
+});

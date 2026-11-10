@@ -9,13 +9,20 @@
 //
 // The header is NOT authoritative for matching. It is ordinary editable text
 // that anyone can type into a comment; only the marker is treated as proof.
-import type { CommentKind } from "./types";
+import type { CommentKind, Priority } from "./types";
 
 export interface Marker {
   rule: string;
   run: string;
   sha: string;
   kind: CommentKind;
+  /**
+   * The finding's priority, P0 (blocks merge) to P3 (nit). Inline comments
+   * carry it as `priority=<0-3>`; other plugins read that field from the
+   * comment body, so its spelling is a public contract. Absent on summaries
+   * and on comments posted before priorities existed.
+   */
+  priority?: Priority;
 }
 
 const MARKER_PATTERN = /<!--\s*slopcop:([^>]*?)\s*-->/;
@@ -31,6 +38,7 @@ export function buildMarker(marker: Marker): string {
     `run=${sanitize(marker.run)}`,
     `sha=${sanitize(marker.sha)}`,
     `kind=${marker.kind}`,
+    ...(marker.priority === undefined ? [] : [`priority=${marker.priority}`]),
   ];
   return `<!-- slopcop:${fields.join(" ")} -->`;
 }
@@ -54,7 +62,20 @@ export function parseMarker(body: string): Marker | null {
   ) {
     return null;
   }
-  return { rule, run, sha: fields.get("sha") ?? "", kind };
+  const priority = parsePriority(fields.get("priority"));
+  return {
+    rule,
+    run,
+    sha: fields.get("sha") ?? "",
+    kind,
+    ...(priority === undefined ? {} : { priority }),
+  };
+}
+
+function parsePriority(value: string | undefined): Priority | undefined {
+  return value === "0" || value === "1" || value === "2" || value === "3"
+    ? (Number(value) as Priority)
+    : undefined;
 }
 
 /**
