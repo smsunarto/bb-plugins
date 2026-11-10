@@ -10,6 +10,8 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect o
       /^@get-bb\/plugin-sdk\/process$/,
       /^vitest(\/config)?$/,
       /^@testing-library\//,
+      // Parses the built stylesheet in css.test.ts.
+      /^lightningcss$/,
       /^react$/,
       // bb's runtime provides Pierre's diff renderer to plugin apps, as for gitbutler.
       /^@pierre\/diffs(\/react)?$/,
