@@ -16,6 +16,7 @@ import {
   forgeIsBehind,
   readAgo,
   tabView,
+  changeKeyForBranch,
   uncommittedCount,
   type Branch,
   type CheckoutChange,
@@ -264,6 +265,13 @@ function ReadyBody({
   );
   const { workspace } = view;
   const native = workspace.provider === "git";
+  const hostId = row.placement.hostId;
+  // The thread's own branch is the row's Change; the others are keyed as the nav keys them.
+  const keyOf = useCallback(
+    (branch: Branch) =>
+      branch.name === row.branch ? row.key : changeKeyForBranch(hostId, workspace, branch),
+    [row.branch, row.key, hostId, workspace],
+  );
   return (
     <div className="flex min-w-0 flex-col gap-4 p-3 @md:p-4">
       <ThisThread
@@ -285,6 +293,7 @@ function ReadyBody({
         <StackLane
           key={stack.key}
           threadId={threadId}
+          keyOf={keyOf}
           stack={stack}
           threadBranch={row.branch}
           forge={row.forge.read?.value}

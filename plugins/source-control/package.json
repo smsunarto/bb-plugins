@@ -44,6 +44,7 @@
   ],
   "dependencies": {
     "@bb-plugins/effect-bridge": "workspace:*",
+    "@tanstack/virtual-core": "3.17.11",
     "effect": "4.1.0",
     "smol-toml": "1.8.0",
     "zod": "^4.4.3"
@@ -56,6 +57,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "better-sqlite3": "^12.0.0",
+    "bun-types": "^1.4.0",
     "jsdom": "25.0.1",
     "lightningcss": "1.33.0",
     "react": "19.2.8",
@@ -69,6 +71,7 @@
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "build:page": "bun scripts/build-page.ts"
   }
 }

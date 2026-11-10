@@ -97,6 +97,20 @@ describe("mergeChanges", () => {
     expect(asked.order.map((each) => each.key)).toEqual([X]);
     expect(asked.counts).toEqual({ all: 4, mine: 3, asked: 1 });
   });
+
+  const failed = { id: "failed", label: "1 Failed", tone: "error", icon: "cross" } as const;
+  const passed = { id: "passed", label: "Passed", tone: "success", icon: "check" } as const;
+  test.each([
+    ["after problems, before good news", "open", [failed, passed], ["failed", "asked", "passed"]],
+    ["alone", "open", [], ["asked"]],
+    ["not on a draft", "draft", [passed], ["passed"]],
+  ] as const)("an asked pull request says so: %s", (_, state, chips, ids) => {
+    const merged = mergeChanges(
+      [[row({ key: X, number: 77, state, asked: true, chips: [...chips] })]],
+      "all",
+    );
+    expect(merged.order[0]!.chips.map((chip) => chip.id)).toEqual(ids);
+  });
 });
 
 describe("deep links", () => {

@@ -1,0 +1,481 @@
+/**
+ * A Change's files at one revision, as the Files tab (and a commit in the
+ * Commits tab) shows them: the tree beside a column of file cards whose
+ * diffs Pierre virtualizes against the column, as gitbutler's scroll area
+ * does. A card asks for its patch only when open and near the viewport;
+ * lockfiles and generated files start collapsed.
+ */
+import {
+  experimental_useCodeTheme as useCodeTheme,
+  experimental_useRpcQuery as useRpcQuery,
+} from "@get-bb/plugin-sdk/app";
+import { Virtualizer } from "@pierre/diffs";
+import { FileDiff, VirtualizerContext } from "@pierre/diffs/react";
+import {
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+import { describeProblem } from "../../core/change.ts";
+import type { ChangeKey } from "../../core/ids.ts";
+import { startsCollapsed, type ChangeFile, type ReviewRevision } from "../../core/review.ts";
+import { sourceControlContract } from "../../contract/rpc.ts";
+import {
+  FileName,
+  FileRowsSkeleton,
+  FileStatus,
+  PatchesProblem,
+  parsePatch,
+} from "../file-cards.tsx";
+import { cx, plural } from "../format.ts";
+import { FileTree } from "./file-tree.tsx";
+import { Chevron } from "./icons.tsx";
+import { usePatch, usePatchStore, type PatchStore } from "./patches.ts";
+
+/** Lockfiles and generated output last, as code-review's reading order puts them. */
+export function readingOrder(files: readonly ChangeFile[]): ChangeFile[] {
+  return files.toSorted(
+    (a, b) =>
+      Number(startsCollapsed(a.path)) - Number(startsCollapsed(b.path)) ||
+      a.path.localeCompare(b.path),
+  );
+}
+
+// ── Near the viewport ──────────────────────────────────────────────────
+
+type Watch = (path: string, element: Element | null, onNear: () => void) => void;
+
+type Column = {
+  watch: Watch;
+  /** The cards by path, for scrolling to one. */
+  cards: Map<string, Element>;
+};
+
+const ColumnContext = createContext<Column | null>(null);
+
+/** How far ahead of the viewport a card asks for its patch. */
+const AHEAD = "1200px 0px";
+
+function useColumn(
+  scroller: RefObject<HTMLElement | null>,
+  onCurrent: (path: string) => void,
+): Column {
+  const current = useRef(onCurrent);
+  useLayoutEffect(() => {
+    current.current = onCurrent;
+  });
+  const [column] = useState(() => {
+    const cards = new Map<string, Element>();
+    const near = new Map<Element, () => void>();
+    const paths = new Map<Element, string>();
+    let ahead: IntersectionObserver | null = null;
+    let top: IntersectionObserver | null = null;
+    const pending: Element[] = [];
+    const inBand = new Set<Element>();
+    const setup = (root: HTMLElement) => {
+      if (typeof IntersectionObserver === "undefined") return;
+      ahead = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) if (entry.isIntersecting) near.get(entry.target)?.();
+        },
+        { root, rootMargin: AHEAD },
+      );
+      // The first card in the top band is the one being read. A jump or a card resizing can
+      // pass several through it in one batch, so the band is tracked whole and read in page order.
+      top = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries)
+            if (entry.isIntersecting) inBand.add(entry.target);
+            else inBand.delete(entry.target);
+          let first: Element | null = null;
+          for (const element of inBand)
+            if (!first || element.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING)
+              first = element;
+          const path = first ? paths.get(first) : undefined;
+          if (path) current.current(path);
+        },
+        { root, rootMargin: "-8px 0px -70% 0px" },
+      );
+      for (const element of pending.splice(0)) {
+        ahead.observe(element);
+        top.observe(element);
+      }
+    };
+    const watch: Watch = (path, element, onNear) => {
+      if (!element) return;
+      cards.set(path, element);
+      paths.set(element, path);
+      near.set(element, onNear);
+      if (typeof IntersectionObserver === "undefined") {
+        // No observer (tests, very old engines): every open card is near.
+        onNear();
+        return;
+      }
+      if (ahead && top) {
+        ahead.observe(element);
+        top.observe(element);
+      } else pending.push(element);
+    };
+    return {
+      column: { watch, cards },
+      setup,
+      teardown() {
+        ahead?.disconnect();
+        top?.disconnect();
+        ahead = top = null;
+      },
+      forget(element: Element) {
+        near.delete(element);
+        paths.delete(element);
+        inBand.delete(element);
+        ahead?.unobserve(element);
+        top?.unobserve(element);
+      },
+    };
+  });
+  useEffect(() => {
+    const element = scroller.current;
+    if (element) column.setup(element);
+    return () => column.teardown();
+  }, [column, scroller]);
+  return useMemo(
+    () => ({
+      cards: column.column.cards,
+      watch: (path, element, onNear) => {
+        if (element) column.column.watch(path, element, onNear);
+        else {
+          const old = column.column.cards.get(path);
+          if (old) {
+            column.forget(old);
+            column.column.cards.delete(path);
+          }
+        }
+      },
+    }),
+    [column],
+  );
+}
+
+// ── A file card ────────────────────────────────────────────────────────
+
+/** Space a diff will take, reserved while its patch loads so the column does not jump. */
+function reservedHeight(file: ChangeFile): number {
+  const lines = Math.min(file.additions + file.deletions, 30);
+  return Math.max(2, lines) * 20 + 16;
+}
+
+function PatchBody({
+  store,
+  file,
+  line,
+}: {
+  store: PatchStore;
+  file: ChangeFile;
+  line: number | null;
+}) {
+  const entry = usePatch(store, file.path);
+  const { mode, name } = useCodeTheme();
+  const options = useMemo(
+    () => ({
+      disableFileHeader: true,
+      diffStyle: "unified" as const,
+      stickyHeader: false,
+      theme: name,
+      themeType: mode,
+    }),
+    [mode, name],
+  );
+  const patch = entry?.state === "ready" ? entry.file : null;
+  const parsed = useMemo(() => (patch ? parsePatch(patch.patch) : null), [patch]);
+  const selected = useMemo(() => (line ? { start: line, end: line } : null), [line]);
+  if (!entry || entry.state === "loading")
+    return (
+      <div
+        aria-busy="true"
+        aria-label={`Loading ${file.path}`}
+        data-testid="sc-patch-loading"
+        className="animate-pulse border-t border-solid border-border-hairline bg-surface-recessed motion-reduce:animate-none"
+        style={{ height: reservedHeight(file) }}
+      />
+    );
+  if (entry.state === "failed")
+    return <PatchesProblem text={entry.message} onRetry={() => store.request(file.path)} />;
+  if (!patch || !parsed)
+    return (
+      <p
+        data-testid="sc-patch-empty"
+        className="m-0 border-t border-solid border-border-hairline bg-surface-recessed px-3.5 py-2 text-[11px] leading-4 text-muted-foreground"
+      >
+        {patch?.truncated
+          ? "This diff is too large to show. Open the file on GitHub or in your editor to read it."
+          : file.kind === "renamed" && file.previousPath
+            ? `Renamed from ${file.previousPath}.`
+            : "No text to show. The file is binary or its contents did not change."}
+      </p>
+    );
+  return (
+    <div
+      data-testid="sc-patch"
+      className="min-w-0 border-t border-solid border-border-hairline [--diffs-font-family:var(--font-mono,ui-monospace,monospace)] [--diffs-font-size:12px] [--diffs-line-height:20px]"
+    >
+      {patch.truncated ? (
+        <p className="m-0 border-b border-solid border-border-hairline px-3.5 py-1 text-[11px] leading-4 text-warning">
+          This diff is too large to show in full.
+        </p>
+      ) : null}
+      <FileDiff
+        key={parsed.cacheKey}
+        fileDiff={parsed}
+        options={options}
+        selectedLines={selected}
+      />
+    </div>
+  );
+}
+
+const FileCard = memo(function FileCard({
+  file,
+  open,
+  store,
+  line,
+  onToggle,
+}: {
+  file: ChangeFile;
+  open: boolean;
+  store: PatchStore;
+  line: number | null;
+  onToggle: (path: string) => void;
+}) {
+  const column = useContext(ColumnContext);
+  const [near, setNear] = useState(false);
+  const watchRef = useCallback(
+    (element: HTMLElement | null) => column?.watch(file.path, element, () => setNear(true)),
+    [column, file.path],
+  );
+  useEffect(() => {
+    if (open && near) store.request(file.path);
+  }, [open, near, store, file.path]);
+  const generated = startsCollapsed(file.path);
+  return (
+    <section
+      ref={watchRef}
+      data-testid="sc-file-card"
+      data-path={file.path}
+      data-open={open}
+      aria-label={file.path}
+      className="min-w-0 overflow-hidden rounded-[8px] border border-solid border-border-hairline bg-background"
+    >
+      <button
+        type="button"
+        aria-expanded={open}
+        title={file.path}
+        onClick={() => onToggle(file.path)}
+        className="flex h-9 w-full min-w-0 cursor-pointer items-center gap-2 border-0 bg-surface-recessed ps-2.5 pe-3 text-start text-[12px] leading-4 hover:bg-surface-raised"
+      >
+        <Chevron
+          className={cx(
+            "shrink-0 transition-transform duration-150 motion-reduce:transition-none",
+            !open && "-rotate-90",
+          )}
+        />
+        <FileStatus kind={file.kind} />
+        <FileName path={file.path} />
+        {generated ? (
+          <span className="shrink-0 text-[11px] text-(--tertiary-foreground)">Generated</span>
+        ) : null}
+        {file.binary ? (
+          <span className="shrink-0 text-[11px] text-(--tertiary-foreground)">Binary</span>
+        ) : (
+          <span className="shrink-0 font-mono text-[11px] tabular-nums">
+            <span className="text-success-foreground">+{file.additions}</span>{" "}
+            <span className="text-destructive-text">−{file.deletions}</span>
+          </span>
+        )}
+      </button>
+      {open ? <PatchBody store={store} file={file} line={line} /> : null}
+    </section>
+  );
+});
+
+// ── The view ───────────────────────────────────────────────────────────
+
+/**
+ * The column Pierre virtualizes against. Its size and scroll come from the
+ * virtualizer's own observers; nothing is measured on mount.
+ */
+function DiffColumn({
+  scroller,
+  children,
+}: {
+  scroller: RefObject<HTMLDivElement | null>;
+  children: ReactNode;
+}) {
+  const [virtualizer] = useState(() => new Virtualizer());
+  useLayoutEffect(() => {
+    const element = scroller.current;
+    // Pierre observes the column with both; an engine without them (tests) draws diffs unvirtualized.
+    if (
+      !element ||
+      typeof IntersectionObserver === "undefined" ||
+      typeof ResizeObserver === "undefined"
+    )
+      return;
+    // The diffs mounted before this ran wait in its queue until now.
+    virtualizer.setup(element);
+    return () => virtualizer.cleanUp();
+  }, [virtualizer, scroller]);
+  return (
+    <VirtualizerContext.Provider value={virtualizer}>
+      <div
+        ref={scroller}
+        data-testid="sc-diff-column"
+        className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain"
+      >
+        {/* One child: the virtualizer reads the page's height off the first. */}
+        <div>{children}</div>
+      </div>
+    </VirtualizerContext.Provider>
+  );
+}
+
+export function FilesView({
+  changeKey,
+  revision,
+  path,
+  line,
+  onPath,
+  lead,
+  showTree,
+}: {
+  changeKey: ChangeKey;
+  revision: ReviewRevision;
+  /** The file the link names, scrolled to once the files are known. */
+  path: string | null;
+  line: number | null;
+  /** The reader picked a file in the tree. */
+  onPath: (path: string) => void;
+  /** Drawn above the cards, inside the scrolling column (the rail on a narrow page). */
+  lead?: ReactNode;
+  showTree: boolean;
+}) {
+  const query = useRpcQuery({
+    contract: sourceControlContract,
+    method: "changeFiles",
+    input: { key: changeKey, revision },
+  });
+  const answer = query.data;
+  const files = useMemo(() => (answer?.ok ? readingOrder(answer.files) : null), [answer]);
+  const store = usePatchStore(changeKey, revision);
+  const [openState, setOpenState] = useState<Readonly<Record<string, boolean>>>({});
+  const toggle = useCallback(
+    (file: string) =>
+      setOpenState((state) => ({ ...state, [file]: !(state[file] ?? !startsCollapsed(file)) })),
+    [],
+  );
+  const [current, setCurrent] = useState<string | null>(path);
+  const scroller = useRef<HTMLDivElement>(null);
+  const column = useColumn(scroller, setCurrent);
+  const reveal = useCallback(
+    (file: string) => {
+      setOpenState((state) => ({ ...state, [file]: true }));
+      setCurrent(file);
+      // On the reader's action, after the card has opened.
+      // Only the diff column scrolls: `scrollIntoView` would also scroll bb's page around it.
+      requestAnimationFrame(() => {
+        const card = column.cards.get(file);
+        const box = scroller.current;
+        if (!card || !box) return;
+        const offset = card.getBoundingClientRect().top - box.getBoundingClientRect().top;
+        box.scrollTo({ top: box.scrollTop + offset });
+      });
+    },
+    [column],
+  );
+  // A link naming a file scrolls to it once the files are known, and again on back/forward.
+  const revealed = useRef<string | null>(null);
+  const known = files !== null;
+  useEffect(() => {
+    if (!known || !path || revealed.current === path) return;
+    revealed.current = path;
+    reveal(path);
+  }, [known, path, reveal]);
+  const pick = useCallback(
+    (file: string) => {
+      revealed.current = file;
+      reveal(file);
+      onPath(file);
+    },
+    [onPath, reveal],
+  );
+
+  let cards: ReactNode;
+  if (answer === undefined)
+    cards = query.error ? (
+      <PatchesProblem text={query.error.message} onRetry={() => void query.refetch()} />
+    ) : (
+      <FileRowsSkeleton rows={6} label="Loading files…" />
+    );
+  else if (!answer.ok)
+    cards = (
+      <PatchesProblem text={describeProblem(answer.problem)} onRetry={() => void query.refetch()} />
+    );
+  else if (files!.length === 0)
+    cards = (
+      <p className="m-0 py-6 text-[13px] leading-5 text-muted-foreground">
+        This change has no file changes.
+      </p>
+    );
+  else
+    cards = (
+      <div className="flex min-w-0 flex-col gap-2">
+        {files!.map((file) => (
+          <FileCard
+            key={file.path}
+            file={file}
+            open={openState[file.path] ?? !startsCollapsed(file.path)}
+            store={store}
+            line={file.path === path ? line : null}
+            onToggle={toggle}
+          />
+        ))}
+        {answer.more ? (
+          <p className="m-0 text-[12px] leading-4 text-muted-foreground">
+            More files than bb lists here. Open the pull request on GitHub for the rest.
+          </p>
+        ) : null}
+      </div>
+    );
+
+  return (
+    <ColumnContext.Provider value={column}>
+      <div className="flex min-h-0 min-w-0 flex-1" data-testid="sc-files">
+        {showTree ? (
+          <aside
+            aria-label={files ? plural(files.length, "file") : "Files"}
+            className="flex w-68 shrink-0 flex-col overflow-y-auto overscroll-contain border-e border-solid border-border-hairline"
+          >
+            {files ? (
+              <FileTree files={files} current={current} onSelect={pick} />
+            ) : (
+              <FileRowsSkeleton rows={8} label="Loading files…" />
+            )}
+          </aside>
+        ) : null}
+        <DiffColumn scroller={scroller}>
+          <div className="flex min-w-0 flex-col gap-4 px-4 py-4 @3xl:px-6">
+            {lead}
+            {cards}
+          </div>
+        </DiffColumn>
+      </div>
+    </ColumnContext.Provider>
+  );
+}

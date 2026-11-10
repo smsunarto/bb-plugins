@@ -77,3 +77,8 @@ test("commits newest first", async () => {
     "Rename and grow",
   ]);
 });
+
+test("one commit's own files, read against its first parent", async () => {
+  const files = await rangeFiles(repo, `${head}^`, head, signal);
+  expect(files.map((file) => file.path).toSorted()).toEqual(["keep.ts", "logo.bin", "new.ts"]);
+});

@@ -4,7 +4,7 @@
  * colour and dot shape say where each commit lives, and file rows ending in a
  * change-kind glyph. Ported from `plugins/gitbutler/src/app/workspace-lane.tsx`.
  */
-import { experimental_Icon as Icon, UrlLink } from "@get-bb/plugin-sdk/app";
+import { experimental_Icon as Icon, UrlLink, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   describeProblem,
@@ -17,6 +17,8 @@ import {
   type Stack,
   type VcsAction,
 } from "../core/change.ts";
+import type { ChangeKey } from "../core/ids.ts";
+import { reviewPath } from "../core/review.ts";
 import { BranchActions, type Dispatch, type Outcome } from "./branch-actions.tsx";
 import {
   FileDiffCard,
@@ -110,8 +112,47 @@ export function commitKey(where: Where, commitId: string): string {
   return `${where}:${commitId}`;
 }
 
+/** Opens the review page at this commit's file, for a branch that is a Change. */
+function ReviewJump({
+  changeKey,
+  commitId,
+  path,
+}: {
+  changeKey: ChangeKey;
+  commitId: string;
+  path: string;
+}) {
+  const navigate = useBbNavigate();
+  return (
+    <div className="flex justify-end border-t border-border-hairline px-3.5 py-1">
+      <button
+        type="button"
+        data-testid="sc-review-jump"
+        onClick={() =>
+          navigate.toPluginPanel("source-control", {
+            subPath: reviewPath({ key: changeKey, tab: "commits", commit: commitId, path }),
+          })
+        }
+        className="flex h-6 cursor-pointer items-center gap-1 rounded-[6px] border-0 bg-transparent px-1.5 text-[11px] leading-4 text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+      >
+        Open in Review
+        <Icon name="ArrowUpRight" fallback="ExternalLink" className="size-3" aria-hidden />
+      </button>
+    </div>
+  );
+}
+
 /** A commit's changed files, under its row, read when the row opens. */
-function CommitFiles({ threadId, commitId }: { threadId: string; commitId: string }) {
+function CommitFiles({
+  threadId,
+  commitId,
+  reviewKey,
+}: {
+  threadId: string;
+  commitId: string;
+  /** The branch's Change, when it has one: its open file links to the review page. */
+  reviewKey: ChangeKey | null;
+}) {
   const source = useMemo<PatchSource>(() => ({ kind: "commit", commitId }), [commitId]);
   const read = usePatches(threadId, source);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -146,7 +187,16 @@ function CommitFiles({ threadId, commitId }: { threadId: string; commitId: strin
       changes={changes}
       expanded={expanded}
       onToggle={toggle}
-      diff={open ? <FileDiffCard file={open} /> : null}
+      diff={
+        open ? (
+          <>
+            {reviewKey ? (
+              <ReviewJump changeKey={reviewKey} commitId={commitId} path={open.path} />
+            ) : null}
+            <FileDiffCard file={open} />
+          </>
+        ) : null
+      }
     />
   );
 }
@@ -163,8 +213,10 @@ const CommitRow = memo(function CommitRow({
   open,
   now,
   onToggle,
+  reviewKey,
 }: {
   threadId: string;
+  reviewKey: ChangeKey | null;
   commit: Commit;
   where: Where;
   tone: Tone;
@@ -241,6 +293,7 @@ const CommitRow = memo(function CommitRow({
       {open ? (
         <OpenCommit
           threadId={threadId}
+          reviewKey={reviewKey}
           commitId={commit.id}
           tone={railTone}
           bottom={bottom}
@@ -254,12 +307,14 @@ const CommitRow = memo(function CommitRow({
 /** Under an open commit row: its files, with the rail running on behind them. */
 function OpenCommit({
   threadId,
+  reviewKey,
   commitId,
   tone,
   bottom,
   last,
 }: {
   threadId: string;
+  reviewKey: ChangeKey | null;
   commitId: string;
   tone: Tone;
   bottom: Segment;
@@ -278,7 +333,7 @@ function OpenCommit({
           aria-hidden
         />
         <div className="relative min-w-0 overflow-hidden rounded-[6px] border border-border-hairline bg-background">
-          <CommitFiles threadId={threadId} commitId={commitId} />
+          <CommitFiles threadId={threadId} commitId={commitId} reviewKey={reviewKey} />
         </div>
       </div>
       {last ? null : <div className="ms-10 border-b border-border-hairline" />}
@@ -515,6 +570,7 @@ function CardHeader({
 
 const BranchCard = memo(function BranchCard({
   threadId,
+  reviewKey,
   branch,
   forge,
   last,
@@ -532,6 +588,8 @@ const BranchCard = memo(function BranchCard({
   onToggleCommit,
 }: {
   threadId: string;
+  /** The branch's Change, for the jump from a commit's file to the review page. */
+  reviewKey: ChangeKey | null;
   branch: Branch;
   /** The pull request, for the thread's own branch only. */
   forge: ForgeValue | undefined;
@@ -602,6 +660,7 @@ const BranchCard = memo(function BranchCard({
               <CommitRow
                 key={`upstream-${commit.id}`}
                 threadId={threadId}
+                reviewKey={reviewKey}
                 commit={commit}
                 where="upstream"
                 tone="upstream"
@@ -634,6 +693,7 @@ const BranchCard = memo(function BranchCard({
               <CommitRow
                 key={commit.id}
                 threadId={threadId}
+                reviewKey={reviewKey}
                 commit={commit}
                 where="local"
                 tone={look.tone}
@@ -673,6 +733,7 @@ function holds(branch: Branch, key: string | null): boolean {
 /** One stack: its label, the files assigned to it, and its branches, top first. */
 export const StackLane = memo(function StackLane({
   threadId,
+  keyOf,
   stack,
   threadBranch,
   forge,
@@ -689,6 +750,8 @@ export const StackLane = memo(function StackLane({
   onToggleCommit,
 }: {
   threadId: string;
+  /** Each branch's Change, or null when it has none to review. Stable across renders. */
+  keyOf: (branch: Branch) => ChangeKey | null;
   stack: Stack;
   /** The thread's own branch name, whose card shows the pull request. */
   threadBranch: string | null;
@@ -729,6 +792,7 @@ export const StackLane = memo(function StackLane({
             <div key={branch.name} className="contents">
               <BranchCard
                 threadId={threadId}
+                reviewKey={keyOf(branch)}
                 branch={branch}
                 forge={branch.name === threadBranch ? forge : undefined}
                 last={last}

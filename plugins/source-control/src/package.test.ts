@@ -12,7 +12,7 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect o
       /^@testing-library\//,
       // Parses the built stylesheet in css.test.ts.
       /^lightningcss$/,
-      /^react$/,
+      /^react(\/jsx-runtime)?$/,
       // bb's runtime provides Pierre's diff renderer to plugin apps, as for gitbutler.
       /^@pierre\/diffs(\/react)?$/,
       // The server's Effect runtime; layering.test.ts keeps both out of every other layer.
@@ -20,8 +20,19 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect o
       /^@bb-plugins\/effect-bridge$/,
       // GitButler's branch metadata, read on the host.
       /^smol-toml$/,
+      // The review page's list window, bundled into the lazy page module.
+      /^@tanstack\/virtual-core$/,
+      // `scripts/build-page.ts` runs under Bun and bundles with it.
+      /^bun$/,
     ],
   });
-  expect(scan.violations).toEqual([]);
+  // The review page loads from the plugin's own route on first open.
+  expect(scan.violations).toEqual([
+    {
+      file: "src/app/review-entry.tsx",
+      reason: "dynamic-specifier",
+      specifier: "/* @vite-ignore */ url",
+    },
+  ]);
   expect(scan.privateDependencies).toEqual([]);
 });

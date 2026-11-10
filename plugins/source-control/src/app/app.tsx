@@ -1,6 +1,7 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ChangesTab } from "./changes-tab.tsx";
 import { StripAction, StripSummary, useStripVisible } from "./composer-strip.tsx";
+import { ReviewPanel, ReviewSidebar, useReviewBadge, useReviewTitle } from "./review-entry.tsx";
 
 export default definePluginApp((app) => {
   // The thread's Change, in its Source Control tab. Shown for threads with an environment; the tab
@@ -24,5 +25,16 @@ export default definePluginApp((app) => {
     summary: StripSummary,
     action: StripAction,
     useVisible: useStripVisible,
+  });
+  // The review page and its Changes nav. Both are shims: the page module loads on first open.
+  app.slots.navPanel({
+    id: "source-control",
+    title: "Source Control",
+    path: "source-control",
+    icon: "GitPullRequest",
+    component: ReviewPanel,
+    experimental_sidebar: ReviewSidebar,
+    experimental_useBadge: useReviewBadge,
+    experimental_usePageTitle: useReviewTitle,
   });
 });

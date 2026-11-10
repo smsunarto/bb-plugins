@@ -46,7 +46,7 @@ const SPRITE_PATHS: ReadonlyMap<string, readonly string[]> = new Map(
   ].map(([, name, body]) => [name!, [...body!.matchAll(/ d="([^"]+)"/g)].map(([, d]) => d!)]),
 );
 
-function FileStatus({ kind }: { kind: ChangeKind }) {
+export function FileStatus({ kind }: { kind: ChangeKind }) {
   const look = FILE_LOOK[kind];
   return (
     <>
@@ -66,7 +66,7 @@ function FileStatus({ kind }: { kind: ChangeKind }) {
 }
 
 /** The directory first and dimmed, then the name, as GitButler's `FileName` lays out a path. */
-function FileName({ path }: { path: string }) {
+export function FileName({ path }: { path: string }) {
   const separator = path.lastIndexOf("/");
   return (
     <span className="flex min-w-0 flex-1 items-baseline">

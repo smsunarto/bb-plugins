@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { Branch, ThreadChange, WorkspaceValue } from "../core/change.ts";
 import { changeKeySchema } from "../core/ids.ts";
+import { reviewPath } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { writeSnapshot } from "./snapshot.ts";
 
@@ -529,6 +530,43 @@ test("opening a commit reads that commit's files, and only then", async () => {
   expect(of("patches").map((call) => call.input)).toEqual([
     { threadId: "thread-a", source: { kind: "commit", commitId: "f00d001" } },
   ]);
+});
+
+test("a commit's open file jumps to the review page at that commit and file", async () => {
+  const { slot } = renderRow(stacked(), {
+    patches: () => ({
+      ok: true as const,
+      value: {
+        files: [
+          {
+            path: "src/server/router.ts",
+            kind: "modified" as const,
+            previousPath: null,
+            patch: "",
+            truncated: false,
+          },
+        ],
+      },
+    }),
+  });
+  await act(async () =>
+    (await slot.findByRole("button", { name: /Route server reads to the owning host/ })).click(),
+  );
+  await act(async () => (await slot.findByText("router.ts")).click());
+  await act(async () => (await slot.findByTestId("sc-review-jump")).click());
+  // The commit is on the thread's own branch, so the jump takes the row's key.
+  expect(slot.navigateCalls.at(-1)).toMatchObject({
+    method: "toPluginPanel",
+    path: "source-control",
+    options: {
+      subPath: reviewPath({
+        key: changeKeySchema.parse("gh:smsunarto/bb-plugins:smsunarto:scott/forge-host"),
+        tab: "commits",
+        commit: "f00d001",
+        path: "src/server/router.ts",
+      }),
+    },
+  });
 });
 
 test("an offline header keeps the last read's age, not now", async () => {

@@ -307,6 +307,25 @@ function matches(row: NavRow, filter: Filter): boolean {
  * by repository and stack, closest to shipping first. A stack keeps its own
  * order, bottom (merges first) at the bottom, and sorts by its most urgent row.
  */
+const ASKED_CHIP = {
+  id: "asked",
+  label: "Review requested",
+  tone: "warning",
+  icon: null,
+} as const satisfies ChangeRow["chips"][number];
+
+/**
+ * An open pull request the reader is asked to review says so after its
+ * problems and before its good news (board A); the phone line takes its tone.
+ */
+function withAsked(row: NavRow): NavRow {
+  if (!row.asked || row.state !== "open" || row.chips.some((chip) => chip.id === "asked"))
+    return row;
+  const at = row.chips.findIndex((chip) => chip.tone !== "error" && chip.tone !== "warning");
+  const chips = row.chips.toSpliced(at === -1 ? row.chips.length : at, 0, ASKED_CHIP).slice(0, 8);
+  return { ...row, chips };
+}
+
 export function mergeChanges(
   sources: readonly (readonly ChangeRow[])[],
   filter: Filter,
@@ -320,7 +339,7 @@ export function mergeChanges(
         seen ? combine(seen, row) : { ...row, hosts: row.hostId === null ? [] : [row.hostId] },
       );
     }
-  const all = [...byKey.values()];
+  const all = [...byKey.values()].map(withAsked);
   const counts: Record<Filter, number> = {
     all: all.length,
     mine: all.filter((row) => row.mine).length,

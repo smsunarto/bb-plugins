@@ -20,8 +20,8 @@ import { repoSchema } from "../core/ids.ts";
 import { changeFileSchema } from "../core/review.ts";
 
 const pathSchema = z.string().min(1).max(4096);
-/** A commit id, full or abbreviated as git allows (four characters or more). */
-const commitIdSchema = z.string().regex(/^[0-9a-fA-F]{4,64}$/);
+/** A commit id (four characters or more), or its first parent as `<id>^` for one commit's own diff. */
+const commitIdSchema = z.string().regex(/^[0-9a-fA-F]{4,64}\^?$/);
 
 /** How to read a checkout: by what it is, or as plain git whatever it is. */
 export const readAsSchema = z.enum(["auto", "git"]);
