@@ -7,7 +7,6 @@ import {
   sourceControlHostSignals,
 } from "../contract/host.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import pageSource, { PAGE_ETAG } from "../../generated/page-bundle.ts";
 import { execGh } from "../forge/exec-gh.ts";
 import type { Exec } from "../forge/github.ts";
 import { createForgeSites, FORGE_DEADLINE_MS, type HostForge } from "./forge-sites.ts";
@@ -132,21 +131,6 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes) {
   });
 }
 
-/** Where the app imports the review page from on first open; the eager bundle only registers it. */
-export const PAGE_PATH = "/page.js";
-
-/** The review page and its diff viewer as one ES module, served from the plugin's route. */
-function servePage(bb: BbPluginApi) {
-  bb.http.route("GET", PAGE_PATH, (context) => {
-    const headers = { etag: PAGE_ETAG, "cache-control": "no-cache" };
-    if (context.req.header("if-none-match") === PAGE_ETAG)
-      return new Response(null, { status: 304, headers });
-    return new Response(pageSource, {
-      headers: { ...headers, "content-type": "text/javascript; charset=utf-8" },
-    });
-  });
-}
-
 function listen(bb: BbPluginApi, runtime: Runtime, host: HostClient, changes: Changes) {
   bb.onDispose(
     host.experimental_onSignal("checkoutChanged", ({ hostId, payload }) =>
@@ -192,7 +176,6 @@ export function createSourceControl(deps: SourceControlDeps) {
       ),
     });
     registerRpc(bb, runtime, changes);
-    servePage(bb);
     listen(bb, runtime, host, changes);
   };
 }

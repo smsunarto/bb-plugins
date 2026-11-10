@@ -26,7 +26,7 @@ export default definePluginApp((app) => {
     action: StripAction,
     useVisible: useStripVisible,
   });
-  // The review page and its Changes nav. Both are shims: the page module loads on first open.
+  // The review page, with the Changes nav as its sidebar.
   app.slots.navPanel({
     id: "source-control",
     title: "Source Control",

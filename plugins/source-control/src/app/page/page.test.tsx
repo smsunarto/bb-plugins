@@ -19,7 +19,7 @@ import {
   type SourceRows,
 } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
-import { ChangesSidebar, ReviewPage } from "./index.tsx";
+import { ReviewPanel as ReviewPage, ReviewSidebar as ChangesSidebar } from "../review-entry.tsx";
 import { resetNavStores } from "./sources.ts";
 import { resetPatchStores } from "./patches.ts";
 import { OVERSCAN } from "./use-window.ts";

@@ -20,19 +20,10 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect o
       /^@bb-plugins\/effect-bridge$/,
       // GitButler's branch metadata, read on the host.
       /^smol-toml$/,
-      // The review page's list window, bundled into the lazy page module.
+      // The review page's list window.
       /^@tanstack\/virtual-core$/,
-      // `scripts/build-page.ts` runs under Bun and bundles with it.
-      /^bun$/,
     ],
   });
-  // The review page loads from the plugin's own route on first open.
-  expect(scan.violations).toEqual([
-    {
-      file: "src/app/review-entry.tsx",
-      reason: "dynamic-specifier",
-      specifier: "/* @vite-ignore */ url",
-    },
-  ]);
+  expect(scan.violations).toEqual([]);
   expect(scan.privateDependencies).toEqual([]);
 });

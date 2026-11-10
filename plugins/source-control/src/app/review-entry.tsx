@@ -1,128 +1,29 @@
 /**
- * The review page's eager half: thin shims that import the page module from
- * the plugin's own route on first render, and the nav badge and page title,
- * which read only what is already cached. Plugin bundles have no code
- * splitting, so everything heavy lives in `page/` and loads on first open,
- * as code-review's three.js kit does.
+ * The Source Control nav panel's parts: the review page, the Changes nav as
+ * its sidebar, and the nav badge and page title, which read only what the
+ * page has already cached.
  */
 import {
-  experimental_usePluginId as usePluginId,
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcQuery as useRpcQuery,
 } from "@get-bb/plugin-sdk/app";
-import { useEffect, useMemo, useState } from "react";
-import { PAGE_ETAG } from "../../generated/page-version.ts";
+import { useMemo } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import { parseReviewPath } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { Bar, Button } from "./ui.tsx";
+import { ChangesList } from "./page/changes-nav.tsx";
+import { ReviewPage } from "./page/review-page.tsx";
 
-type PageModule = typeof import("./page/index.tsx");
 type PanelProps = { subPath: string };
 
-let loading: { url: string; module: Promise<PageModule> } | null = null;
-let loaded: { url: string; module: PageModule } | null = null;
-
-export function pageUrl(pluginId: string): string {
-  return `/api/v1/plugins/${encodeURIComponent(pluginId)}/http/page.js?v=${PAGE_ETAG}`;
+/** The nav panel's page: the selected Change's review. */
+export function ReviewPanel({ subPath }: PanelProps) {
+  return <ReviewPage subPath={subPath} />;
 }
 
-/** Keeps the module once imported; forgets a failed import so the next ask tries again. */
-async function settle(url: string, module: Promise<PageModule>): Promise<void> {
-  try {
-    const value = await module;
-    if (loading?.module === module) loaded = { url, module: value };
-  } catch {
-    if (loading?.module === module) loading = null;
-  }
-}
-
-/** The page module, imported once per URL. A failed import is asked again next time. */
-function loadPage(url: string): Promise<PageModule> {
-  if (loading?.url !== url) {
-    const module = import(/* @vite-ignore */ url) as Promise<PageModule>;
-    loading = { url, module };
-    void settle(url, module);
-  }
-  return loading.module;
-}
-
-type Loaded = { url: string; module: PageModule | null; failed: boolean };
-
-function usePageModule(): { module: PageModule | null; failed: boolean; retry(): void } {
-  const url = pageUrl(usePluginId());
-  const [state, setState] = useState<Loaded>(() => ({
-    url,
-    module: loaded?.url === url ? loaded.module : null,
-    failed: false,
-  }));
-  const current: Loaded = state.url === url ? state : { url, module: null, failed: false };
-  const waiting = current.module === null && !current.failed;
-  useEffect(() => {
-    if (!waiting) return;
-    let live = true;
-    const apply = (next: Loaded) => {
-      if (live) setState(next);
-    };
-    loadPage(url).then(
-      (module) => apply({ url, module, failed: false }),
-      () => apply({ url, module: null, failed: true }),
-    );
-    return () => {
-      live = false;
-    };
-  }, [url, waiting]);
-  return {
-    module: current.module,
-    failed: current.failed,
-    retry: () => setState({ url, module: null, failed: false }),
-  };
-}
-
-/** Holds the page's shape while its module loads, so nothing shifts when it lands. */
-function Loading({ failed, retry, sidebar }: { failed: boolean; retry(): void; sidebar: boolean }) {
-  return (
-    <div
-      data-bb-plugin="source-control"
-      data-testid="sc-page-loading"
-      aria-busy={!failed}
-      className="flex h-full min-h-0 flex-col gap-3 p-4 text-foreground"
-    >
-      {failed ? (
-        <div role="alert" className="flex flex-col items-start gap-2">
-          <p className="m-0 text-[12px] leading-5 text-muted-foreground">
-            The review page didn't load. The bb server may be restarting.
-          </p>
-          <Button onClick={retry}>Try again</Button>
-        </div>
-      ) : sidebar ? (
-        <>
-          <Bar className="h-4 w-20" />
-          <Bar className="h-7 w-full" />
-          <Bar className="mt-2 h-14 w-full" />
-          <Bar className="h-14 w-full" />
-        </>
-      ) : (
-        <>
-          <Bar className="h-3 w-40" />
-          <Bar className="h-6 w-96 max-w-full" />
-          <Bar className="h-3 w-72 max-w-full" />
-        </>
-      )}
-    </div>
-  );
-}
-
-export function ReviewPanel(props: PanelProps) {
-  const page = usePageModule();
-  if (page.module) return <page.module.ReviewPage {...props} />;
-  return <Loading failed={page.failed} retry={page.retry} sidebar={false} />;
-}
-
-export function ReviewSidebar(props: PanelProps) {
-  const page = usePageModule();
-  if (page.module) return <page.module.ChangesSidebar {...props} />;
-  return <Loading failed={page.failed} retry={page.retry} sidebar />;
+/** The nav panel's sidebar: the Changes nav. */
+export function ReviewSidebar({ subPath }: PanelProps) {
+  return <ChangesList subPath={subPath} variant="nav" />;
 }
 
 const NO_KEYS: readonly string[] = [];
