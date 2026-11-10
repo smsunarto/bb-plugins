@@ -94,6 +94,10 @@
     {
       "name": "at-plugin",
       "source": "./plugins/at-plugin"
+    },
+    {
+      "name": "source-control",
+      "source": "./plugins/source-control"
     }
   ]
 }

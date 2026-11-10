@@ -162,6 +162,13 @@ const customIcons = new Map<string, { name: string; body: string; solid?: boolea
     },
   ],
   [
+    "source-control",
+    {
+      name: "Source Control",
+      body: '<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="9" r="2"/><path d="M6 7v10m12-6c0 4-6 3-11.3 6.6"/>',
+    },
+  ],
+  [
     "t3-composer",
     {
       name: "T3 Composer",

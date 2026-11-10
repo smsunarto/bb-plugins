@@ -959,6 +959,26 @@
         "vitest": "4.1.11",
       },
     },
+    "plugins/source-control": {
+      "name": "@smsunarto/bb-plugin-source-control",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@get-bb/plugin-sdk": "0.6.132",
+        "@testing-library/react": "16.3.2",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "better-sqlite3": "^12.0.0",
+        "jsdom": "25.0.1",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "typescript": "^6.0.0",
+        "vitest": "^4.1.1",
+      },
+    },
     "plugins/t3-composer": {
       "name": "@smsunarto/bb-plugin-t3-composer",
       "version": "0.1.0",
@@ -1965,6 +1985,8 @@
     "@smsunarto/bb-plugin-scott-tasks": ["@smsunarto/bb-plugin-scott-tasks@workspace:plugins/scott-tasks"],
 
     "@smsunarto/bb-plugin-slopcop": ["@smsunarto/bb-plugin-slopcop@workspace:plugins/slopcop"],
+
+    "@smsunarto/bb-plugin-source-control": ["@smsunarto/bb-plugin-source-control@workspace:plugins/source-control"],
 
     "@smsunarto/bb-plugin-t3-composer": ["@smsunarto/bb-plugin-t3-composer@workspace:plugins/t3-composer"],
 
