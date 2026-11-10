@@ -50,6 +50,14 @@ const MIGRATIONS = [
 
 export type Store = ReturnType<typeof openStore>;
 
+/** Whether a facet now says something else than before. When it was read is not news: a client shows it only beside a problem. */
+function sameFacet<T>(before: Facet<T>, after: Facet<T>): boolean {
+  return (
+    JSON.stringify([before.read?.value ?? null, before.read === null, before.problem]) ===
+    JSON.stringify([after.read?.value ?? null, after.read === null, after.problem])
+  );
+}
+
 /** A stored row in its schema, or null when it no longer parses (written by an older shape). */
 function parsed<T>(schema: z.ZodType<T>, json: string): T | null {
   try {
@@ -107,48 +115,62 @@ export function openStore(bb: BbPluginApi) {
      ON CONFLICT (thread_id) DO UPDATE SET branch = excluded.branch`,
   );
 
+  const local = (hostId: string, path: string): Facet<WorkspaceValue> => {
+    const row = getLocal.get(hostId, path);
+    return (row && parsed(localFacetSchema, row.json)) ?? EMPTY_FACET;
+  };
+  const forge = (key: ChangeKey): Facet<ForgeValue> => {
+    const row = getForge.get(key);
+    return (row && parsed(forgeFacetSchema, row.json)) ?? EMPTY_FACET;
+  };
+  const branch = (threadId: string): string | null => getBranch.get(threadId)?.branch ?? null;
+  const readAs = (hostId: string, path: string): ReadAs =>
+    getReadAs.get(hostId, path)?.read_as === "git" ? "git" : "auto";
+
+  // Every setter stores its value and returns whether a reader would see a change.
   return {
     placement(threadId: string): ThreadPlacement | null {
       const row = getPlacement.get(threadId);
       return row ? parsed(threadPlacementSchema, row.json) : null;
     },
-    setPlacement(threadId: string, value: ThreadPlacement, now: number) {
-      putPlacement.run(threadId, JSON.stringify(value), now);
+    setPlacement(threadId: string, value: ThreadPlacement, now: number): boolean {
+      const json = JSON.stringify(value);
+      const changed = getPlacement.get(threadId)?.json !== json;
+      putPlacement.run(threadId, json, now);
       if (value.state === "checkout")
         putCheckout.run(threadId, value.placement.hostId, value.placement.path);
       else dropCheckout.run(threadId);
+      return changed;
     },
     /** Every thread last seen on this checkout. */
     threadsAt(hostId: string, path: string): string[] {
       return threadsAt.all(hostId, path).map((row) => row.thread_id);
     },
-    local(hostId: string, path: string): Facet<WorkspaceValue> {
-      const row = getLocal.get(hostId, path);
-      return (row && parsed(localFacetSchema, row.json)) ?? EMPTY_FACET;
-    },
-    setLocal(hostId: string, path: string, facet: Facet<WorkspaceValue>) {
+    local,
+    setLocal(hostId: string, path: string, facet: Facet<WorkspaceValue>): boolean {
+      const changed = !sameFacet(local(hostId, path), facet);
       putLocal.run(hostId, path, JSON.stringify(facet));
+      return changed;
     },
-    forge(key: ChangeKey): Facet<ForgeValue> {
-      const row = getForge.get(key);
-      return (row && parsed(forgeFacetSchema, row.json)) ?? EMPTY_FACET;
-    },
-    setForge(key: ChangeKey, facet: Facet<ForgeValue>) {
+    forge,
+    setForge(key: ChangeKey, facet: Facet<ForgeValue>): boolean {
+      const changed = !sameFacet(forge(key), facet);
       putForge.run(key, JSON.stringify(facet));
+      return changed;
     },
     /** The thread's branch in its checkout, as last worked out. */
-    branch(threadId: string): string | null {
-      return getBranch.get(threadId)?.branch ?? null;
+    branch,
+    setBranch(threadId: string, name: string | null): boolean {
+      const changed = branch(threadId) !== name;
+      putBranch.run(threadId, name);
+      return changed;
     },
-    setBranch(threadId: string, branch: string | null) {
-      putBranch.run(threadId, branch);
-    },
-    readAs(hostId: string, path: string): ReadAs {
-      return getReadAs.get(hostId, path)?.read_as === "git" ? "git" : "auto";
-    },
-    setReadAs(hostId: string, path: string, readAs: ReadAs) {
-      if (readAs === "git") putReadAs.run(hostId, path, "git");
+    readAs,
+    setReadAs(hostId: string, path: string, value: ReadAs): boolean {
+      const changed = readAs(hostId, path) !== value;
+      if (value === "git") putReadAs.run(hostId, path, "git");
       else dropReadAs.run(hostId, path);
+      return changed;
     },
   };
 }

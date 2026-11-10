@@ -67,3 +67,19 @@ test("core and contract stay free of the SDK's runtime-specific entry points", (
   }
   expect(violations).toEqual([]);
 });
+
+test("Effect runs on the server only: host, app, forge, core and contract stay Effect-free", () => {
+  const violations: string[] = [];
+  for (const file of files(SRC)) {
+    const layer = layerOf(file);
+    if (!layer || layer === "server") continue;
+    for (const specifier of specifiers(readFileSync(file, "utf8")))
+      if (
+        specifier === "effect" ||
+        specifier.startsWith("effect/") ||
+        specifier.startsWith("@bb-plugins/effect-bridge")
+      )
+        violations.push(`${relative(SRC, file)} imports ${specifier}`);
+  }
+  expect(violations).toEqual([]);
+});

@@ -51,7 +51,8 @@ export function ChangesTab({ threadId }: { threadId: string }) {
   const row = live && live.state !== "pending" ? live : (snapshot ?? live);
   // Keyed by thread: writes, questions, and open commits belong to one
   // thread, so a late answer for A never lands in B's cards.
-  return <ChangesView key={threadId} threadId={threadId} row={row} />;
+  const fromRead = live !== undefined && live.state !== "pending";
+  return <ChangesView key={threadId} threadId={threadId} row={row} live={fromRead} />;
 }
 
 /** The current time, ticking so "Read N min ago" and commit ages stay true. */
@@ -72,18 +73,26 @@ function repoName(row: CheckoutChange): string {
 
 type Vcs = ReturnType<typeof useVcsActions>;
 
-/** The header's read state: the local facet's own age, never "now" for an old read. */
-function readStateText(view: TabView, reading: boolean, now: number): string | null {
+/**
+ * The header's read state: the local facet's own age, never "now" for an old
+ * read. A live, healthy read shows none: the server publishes only changes,
+ * so the age of an unchanged read is the age of its last change.
+ */
+function readStateText(view: TabView, reading: boolean, live: boolean, now: number): string | null {
   if (view.kind === "loading" || reading) return "Reading…";
-  return view.kind === "ready" ? readAgo(view.readAt, now) : null;
+  if (view.kind !== "ready" || (live && !view.stale)) return null;
+  return readAgo(view.readAt, now);
 }
 
 const ChangesView = memo(function ChangesView({
   threadId,
   row,
+  live,
 }: {
   threadId: string;
   row: ThreadChange | undefined;
+  /** From the server's read now, not the last snapshot. */
+  live: boolean;
 }) {
   const refresh = useRpcMutation({ contract: sourceControlContract, method: "refreshThread" });
   const readAs = useRpcMutation({ contract: sourceControlContract, method: "setReadAs" });
@@ -105,7 +114,7 @@ const ChangesView = memo(function ChangesView({
     >
       <Header
         repo={checkout ? repoName(checkout) : null}
-        readState={readStateText(view, refresh.isPending, now)}
+        readState={readStateText(view, refresh.isPending, live, now)}
         target={target}
         vcs={vcs}
         readOnly={checkout?.readAsGit === true}

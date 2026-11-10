@@ -5,7 +5,8 @@
  * remembered; an explicit retry probes again, so a user's read never has to
  * fail first to discover a site.
  */
-import type { Problem, ForgeValue } from "../core/change.ts";
+import { Effect, Schema } from "effect";
+import { problemSchema, type ForgeValue, type Problem } from "../core/change.ts";
 import type { HostFailure } from "../contract/host.ts";
 import {
   GhError,
@@ -19,19 +20,25 @@ export const SERVER_SITE_NAME = "the bb server";
 const PROBE_TTL_MS = 5 * 60_000;
 export const FORGE_DEADLINE_MS = 15_000;
 
+type Outcome<T> = { ok: true; value: T } | { ok: false; error: HostFailure };
+
 export type HostForge = {
-  accounts(
-    hostId: string,
-    signal: AbortSignal,
-  ): Promise<{ ok: true; value: { accounts: string[] } } | { ok: false; error: HostFailure }>;
+  accounts(hostId: string, signal: AbortSignal): Promise<Outcome<{ accounts: string[] }>>;
   pullRequest(
     hostId: string,
     query: PullRequestQuery,
     signal: AbortSignal,
-  ): Promise<{ ok: true; value: ForgeValue } | { ok: false; error: HostFailure }>;
+  ): Promise<Outcome<ForgeValue>>;
 };
 
-type Probe = { usable: boolean; at: number };
+const problemValue = Schema.declare(
+  (input: unknown): input is Problem => problemSchema.safeParse(input).success,
+);
+
+/** No site could answer; `problem` is what the forge facet shows. */
+export class ForgeUnavailable extends Schema.TaggedError<ForgeUnavailable>()("ForgeUnavailable", {
+  problem: problemValue,
+}) {}
 
 /** A failure at a site as the problem the forge facet carries. */
 export function forgeProblem(site: string, code: HostFailure["code"], message: string): Problem {
@@ -47,46 +54,68 @@ export function forgeProblem(site: string, code: HostFailure["code"], message: s
   }
 }
 
-export class ForgeReadError extends Error {
-  readonly problem: Problem;
-  constructor(problem: Problem) {
-    super(problem.kind);
-    this.problem = problem;
-  }
-}
+const unavailable = (problem: Problem) => new ForgeUnavailable({ problem });
+
+type Probe = { usable: boolean; at: number };
 
 export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now: () => number }) {
   let server: Probe | null = null;
   const hosts = new Map<string, Probe>();
-  const fresh = (probe: Probe | null | undefined) => probe && deps.now() - probe.at < PROBE_TTL_MS;
+  const fresh = (probe: Probe | null | undefined): probe is Probe =>
+    !!probe && deps.now() - probe.at < PROBE_TTL_MS;
 
-  async function serverUsable(signal: AbortSignal): Promise<boolean> {
-    if (!fresh(server)) {
-      let usable = false;
-      try {
-        usable = (await readAccounts(deps.serverExec, signal)).length > 0;
-      } catch {
-        usable = false;
-      }
-      server = { usable, at: deps.now() };
-    }
-    return server!.usable;
-  }
+  const serverUsable = Effect.suspend(() => {
+    if (fresh(server)) return Effect.succeed(server.usable);
+    return Effect.tryPromise((signal) => readAccounts(deps.serverExec, signal)).pipe(
+      Effect.map((accounts) => accounts.length > 0),
+      Effect.orElseSucceed(() => false),
+      Effect.tap((usable) =>
+        Effect.sync(() => {
+          server = { usable, at: deps.now() };
+        }),
+      ),
+    );
+  });
 
-  async function hostUsable(hostId: string, signal: AbortSignal): Promise<boolean> {
-    const known = hosts.get(hostId);
-    if (fresh(known)) return known!.usable;
-    let usable = false;
-    try {
-      const answer = await deps.host.accounts(hostId, signal);
-      usable = answer.ok && answer.value.accounts.length > 0;
-    } catch {
-      // An unreachable host is not a site now; ask again on the next probe.
-      return false;
-    }
-    hosts.set(hostId, { usable, at: deps.now() });
-    return usable;
-  }
+  const hostUsable = (hostId: string) =>
+    Effect.suspend(() => {
+      const known = hosts.get(hostId);
+      if (fresh(known)) return Effect.succeed(known.usable);
+      return Effect.tryPromise((signal) => deps.host.accounts(hostId, signal)).pipe(
+        Effect.map((answer) => answer.ok && answer.value.accounts.length > 0),
+        Effect.tap((usable) => Effect.sync(() => hosts.set(hostId, { usable, at: deps.now() }))),
+        // An unreachable host is not a site now; ask again on the next read.
+        Effect.orElseSucceed(() => false),
+      );
+    });
+
+  const onServer = (query: PullRequestQuery) =>
+    Effect.tryPromise({
+      try: (signal) => readPullRequest(deps.serverExec, query, signal),
+      catch: (error) =>
+        unavailable(
+          error instanceof GhError
+            ? forgeProblem(SERVER_SITE_NAME, error.code, error.message)
+            : forgeProblem(SERVER_SITE_NAME, "failed", String(error)),
+        ),
+    });
+
+  const onHost = (query: PullRequestQuery, placement: { hostId: string; hostName: string }) =>
+    Effect.tryPromise({
+      try: (signal) => deps.host.pullRequest(placement.hostId, query, signal),
+      catch: (error) =>
+        unavailable({ kind: "failed", site: placement.hostName, detail: String(error) }),
+    }).pipe(
+      Effect.flatMap((answer) =>
+        answer.ok
+          ? Effect.succeed(answer.value)
+          : Effect.fail(
+              unavailable(
+                forgeProblem(placement.hostName, answer.error.code, answer.error.message),
+              ),
+            ),
+      ),
+    );
 
   return {
     /** Forget every probe, as an explicit retry does. */
@@ -94,49 +123,26 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
       server = null;
       hosts.clear();
     },
-    /**
-     * The branch's pull request, read at the first usable site. Throws a
-     * `ForgeReadError` carrying the problem when no site can answer.
-     */
-    async pullRequest(
-      query: PullRequestQuery,
-      placement: { hostId: string; hostName: string },
-      signal: AbortSignal,
-    ): Promise<ForgeValue> {
-      const deadline = AbortSignal.any([signal, AbortSignal.timeout(FORGE_DEADLINE_MS)]);
-      if (await serverUsable(deadline)) {
-        try {
-          return await readPullRequest(deps.serverExec, query, deadline);
-        } catch (error) {
-          if (signal.aborted) throw error;
-          if (error instanceof GhError)
-            throw new ForgeReadError(
-              forgeProblem(
-                SERVER_SITE_NAME,
-                error.code === "gh-missing" ? "gh-missing" : error.code,
-                error.message,
-              ),
-            );
-          throw new ForgeReadError(forgeProblem(SERVER_SITE_NAME, "failed", String(error)));
-        }
-      }
-      if (await hostUsable(placement.hostId, deadline)) {
-        const answer = await deps.host
-          .pullRequest(placement.hostId, query, deadline)
-          .catch((error: unknown) => {
-            if (signal.aborted) throw error;
-            throw new ForgeReadError({
-              kind: "failed",
-              site: placement.hostName,
-              detail: String(error),
-            });
-          });
-        if (answer.ok) return answer.value;
-        throw new ForgeReadError(
-          forgeProblem(placement.hostName, answer.error.code, answer.error.message),
-        );
-      }
-      throw new ForgeReadError({ kind: "no-site", host: placement.hostName });
-    },
+    /** The branch's pull request, read at the first usable site within the forge deadline. */
+    pullRequest: (query: PullRequestQuery, placement: { hostId: string; hostName: string }) =>
+      Effect.gen(function* () {
+        if (yield* serverUsable) return yield* onServer(query);
+        if (yield* hostUsable(placement.hostId)) return yield* onHost(query, placement);
+        return yield* unavailable({ kind: "no-site", host: placement.hostName });
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: FORGE_DEADLINE_MS,
+          orElse: () =>
+            Effect.fail(
+              unavailable({
+                kind: "failed",
+                site: "GitHub",
+                detail: `GitHub did not answer within ${FORGE_DEADLINE_MS / 1000} s.`,
+              }),
+            ),
+        }),
+      ),
   };
 }
+
+export type ForgeSites = ReturnType<typeof createForgeSites>;

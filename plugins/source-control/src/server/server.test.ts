@@ -100,10 +100,13 @@ type World = {
   /** Pull requests by the head branch name GitHub was asked about. */
   pullRequests: Record<string, unknown[]>;
   ghCalls: string[];
+  /** When each `gh` run on the server started, by the fake clock. */
+  ghRuns?: number[];
 };
 
 function serverGh(world: World): Exec {
   return async (args, options) => {
+    (world.ghRuns ??= []).push(Date.now());
     if (args[0] === "auth") {
       if (world.serverAccounts.length === 0)
         return {
@@ -195,7 +198,9 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
     harness.inspection.experimental_hostRpcCalls.filter(
       (call) => method === undefined || call.method === method,
     );
-  return { harness, read, checkout, hostCalls };
+  const invalidations = () =>
+    harness.inspection.experimental_rpcInvalidations.flatMap((tags) => tags ?? []);
+  return { harness, read, checkout, hostCalls, invalidations };
 }
 
 function twoHosts(): World {
@@ -314,11 +319,14 @@ describe("offline", () => {
   });
 
   test("while the host hangs, GitHub's answer lands without waiting for the host deadline", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
+    // Every timer is fake, the scheduler's setImmediate included, so only 100 ms pass.
+    vi.useFakeTimers();
     const world = twoHosts();
     world.pullRequests["scott/route-gh"] = [PR];
     const { harness, checkout } = await start(world);
-    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    const first = harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await vi.advanceTimersByTimeAsync(100);
+    await first;
     world.hosts["host-a"]!.hung = true;
     world.pullRequests["scott/route-gh"] = [{ ...PR, title: "Seen while the host hangs" }];
     const done = harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
@@ -425,6 +433,89 @@ describe("host calls", () => {
     ]);
     expect(hostCalls("workspace")).toHaveLength(1);
     expect((await checkout("thread-a2")).local.read?.value.path).toBe("/Users/scott/bb-plugins");
+  });
+});
+
+describe("publishing", () => {
+  test("an unchanged refresh publishes nothing; a changed checkout publishes its threads", async () => {
+    const world = twoHosts();
+    world.threads["thread-a2"] = { hostId: "host-a", path: "/Users/scott/bb-plugins" };
+    world.pullRequests["scott/route-gh"] = [PR];
+    const { harness, invalidations, hostCalls } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a2" });
+    const published = invalidations().length;
+    const reads = hostCalls("workspace").length;
+
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(hostCalls("workspace").length).toBeGreaterThan(reads);
+    expect(invalidations()).toHaveLength(published);
+
+    world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", { uncommitted: [] });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(new Set(invalidations().slice(published))).toEqual(
+      new Set(["thread:thread-a", "thread:thread-a2"]),
+    );
+  });
+});
+
+describe("forge budget", () => {
+  const RUNNING = {
+    ...PR,
+    commits: {
+      nodes: [
+        {
+          commit: {
+            statusCheckRollup: {
+              contexts: {
+                nodes: [{ __typename: "CheckRun", status: "IN_PROGRESS", conclusion: null }],
+              },
+            },
+          },
+        },
+      ],
+    },
+  };
+
+  /** The most `gh` runs any minute saw, by the fake clock. */
+  function busiestMinute(runs: readonly number[]): number {
+    return Math.max(
+      0,
+      ...runs.map((at) => runs.filter((other) => other >= at && other < at + 60_000).length),
+    );
+  }
+
+  test("nothing calls GitHub while no surface watches", async () => {
+    vi.useFakeTimers();
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [RUNNING];
+    const { harness, hostCalls } = await start(world);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    await harness.behavior.experimental_emitHostSignal("host-a", "checkoutChanged", {
+      paths: ["/Users/scott/bb-plugins"],
+    });
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(world.ghRuns ?? []).toHaveLength(0);
+    expect(hostCalls("forgeCall")).toHaveLength(0);
+  });
+
+  test.each([
+    ["an idle change", PR, 1],
+    ["a change whose checks run", RUNNING, 3],
+  ])("%s stays within 5 gh runs a minute while watched", async (_name, pr, perMinute) => {
+    vi.useFakeTimers();
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [pr];
+    const { harness } = await start(world);
+    const stop = harness.behavior.experimental_watchRpc("changeForThread", { key: "thread-a" });
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    stop();
+    const runs = world.ghRuns ?? [];
+    expect(busiestMinute(runs)).toBeLessThanOrEqual(5);
+    // Pull request reads alone, once the first read is past.
+    const reads = world.ghCalls.length;
+    expect(reads).toBeGreaterThanOrEqual(perMinute * 29);
+    expect(reads).toBeLessThanOrEqual(perMinute * 31 + 1);
   });
 });
 
