@@ -12,6 +12,7 @@ import {
   succeeded,
   type Facet,
   type Placement,
+  type Problem,
   type WorkspaceValue,
 } from "../core/change.ts";
 import { callProblem, failureProblem, hostCall, offline, type HostCalls } from "./host-calls.ts";
@@ -113,7 +114,20 @@ export function createLocalReads(deps: {
       }),
     );
 
-  return { readCheckout, settleBranch, turnEnded };
+  /**
+   * Another read of the checkout's host timed out or found it gone: the
+   * checkout is marked so at once, keeping its last read, so the review page
+   * moves to the forge's copy without waiting for the next checkout read.
+   */
+  const unreachable = (placement: Placement, problem: Problem) =>
+    Effect.sync(() => {
+      const { hostId, path } = placement;
+      if (!store.setLocal(hostId, path, failed(store.local(hostId, path), problem))) return;
+      announce(store.threadsAt(hostId, path));
+      deps.checkoutRead?.(hostId, path);
+    });
+
+  return { readCheckout, settleBranch, turnEnded, unreachable };
 }
 
 export type LocalReads = ReturnType<typeof createLocalReads>;

@@ -17,6 +17,7 @@ import {
 import { readPullRequestCommits, readPullRequestFiles } from "../forge/review.ts";
 import type { RangeAnswer, RangeRead } from "../contract/host.ts";
 import type { ForgeSites } from "./forge-sites.ts";
+import type { LocalReads } from "./local-read.ts";
 import { callProblem, failureProblem, hostCall, type HostCalls } from "./host-calls.ts";
 import { moved } from "./review-change.ts";
 import type { Share } from "./shared.ts";
@@ -71,6 +72,7 @@ export function createRevisionReads(deps: {
   store: Store;
   sites: ForgeSites;
   host: HostCalls;
+  local: LocalReads;
   share: Share;
   deadlineMs: number;
 }) {
@@ -87,7 +89,15 @@ export function createRevisionReads(deps: {
       if (!placement) return yield* Effect.fail(moved("No thread has this checkout any more."));
       const answer = yield* hostCall(deps.deadlineMs, (options) =>
         deps.host.range(hostId, { path, base: revision.base, head: revision.head, read }, options),
-      ).pipe(Effect.mapError((error) => callProblem(placement, error, true)));
+      ).pipe(
+        Effect.mapError((error) => callProblem(placement, error, true)),
+        // A host that missed its deadline is unreachable for the checkout's header too.
+        Effect.tapError((problem) =>
+          problem.kind === "host-offline"
+            ? deps.local.unreachable(placement, problem)
+            : Effect.void,
+        ),
+      );
       if (!answer.ok) return yield* Effect.fail(failureProblem(placement, answer.error));
       return answer.value as RangeAnswer;
     });

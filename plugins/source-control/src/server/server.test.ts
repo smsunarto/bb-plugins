@@ -90,6 +90,8 @@ type Host = {
   hung?: boolean;
   /** Answers each workspace read after this long, by the fake clock. */
   delayMs?: number;
+  /** Never answers a range read, while its workspace reads still answer. */
+  rangeHung?: boolean;
   workspace: WorkspaceValue;
   ghAccounts: string[];
   action?: VcsResult;
@@ -289,6 +291,7 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
         }
         return { ok: true, value: { state: "workspace", value: host.workspace } };
       }
+      if (method === "range" && host.rangeHung) return new Promise(() => undefined);
       if (method === "range")
         return fakeRange(input as { read: { kind: string; paths?: string[] } });
       if (method === "renewWatch") return { watching: true };
@@ -1046,5 +1049,36 @@ describe("review page", () => {
     expect(await ask()).toMatchObject({ ok: true, files: [{ path: "src/a.ts" }] });
     expect(await ask()).toMatchObject({ ok: true });
     expect(hostCalls("range")).toHaveLength(1);
+  });
+
+  test("a host that misses the deadline on a range read moves the Change to the forge's revision at once", async () => {
+    const world = twoHosts();
+    world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", {
+      target: { ref: "origin/main", head: "aaa1111", behind: 0, base: null, lastFetched: null },
+    });
+    world.pullRequests["scott/route-gh"] = [PR];
+    const { harness } = await start(world, { hostDeadlineMs: 50 });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+    const detail = async () =>
+      ((await harness.behavior.callRpc("changeDetail", { keys: [key] })) as Record<string, any>)[
+        key
+      ];
+    const atHost = (await detail()).revision;
+    expect(atHost.source.kind).toBe("host");
+    world.hosts["host-a"]!.rangeHung = true;
+    expect(await harness.behavior.callRpc("changeFiles", { key, revision: atHost })).toMatchObject({
+      ok: false,
+      problem: { kind: "host-offline" },
+    });
+    expect((await detail()).revision).toEqual({
+      head: "c0ffee",
+      base: "main",
+      source: { kind: "forge", number: 482 },
+    });
+    // The host answers again: its next checkout read brings the Change back to it.
+    world.hosts["host-a"]!.rangeHung = false;
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect((await detail()).revision.source.kind).toBe("host");
   });
 });
