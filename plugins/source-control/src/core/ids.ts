@@ -98,3 +98,8 @@ export function threadTag(threadId: string): string {
 export function changeTag(key: ChangeKey): string {
   return `change:${key}`;
 }
+
+/** The tag of one Change's checks facet. */
+export function checksTag(key: ChangeKey): string {
+  return `change:${key}:checks`;
+}

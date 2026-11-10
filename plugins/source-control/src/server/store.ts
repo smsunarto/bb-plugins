@@ -9,10 +9,12 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   EMPTY_FACET,
+  checksValueSchema,
   facetSchema,
   forgeValueSchema,
   placementSchema,
   workspaceValueSchema,
+  type ChecksValue,
   type Facet,
   type ForgeValue,
   type Placement,
@@ -32,6 +34,7 @@ const threadPlacementSchema = z.discriminatedUnion("state", [
 ]);
 const localFacetSchema = facetSchema(workspaceValueSchema);
 const forgeFacetSchema = facetSchema(forgeValueSchema);
+const checksFacetSchema = facetSchema(checksValueSchema);
 
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -46,6 +49,9 @@ const MIGRATIONS = [
   `CREATE INDEX thread_checkout_by_checkout ON thread_checkout (host_id, path)`,
   `CREATE TABLE checkout_read_as (host_id TEXT NOT NULL, path TEXT NOT NULL, read_as TEXT NOT NULL, PRIMARY KEY (host_id, path))`,
   `CREATE TABLE thread_branch (thread_id TEXT PRIMARY KEY, branch TEXT)`,
+  // Phase 3: pull requests gained approvals; earlier rows no longer parse.
+  `DELETE FROM forge_facet`,
+  `CREATE TABLE checks_facet (change_key TEXT PRIMARY KEY, json TEXT NOT NULL)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -99,6 +105,12 @@ export function openStore(bb: BbPluginApi) {
   const putForge = db.prepare(
     `INSERT INTO forge_facet (change_key, json) VALUES (?, ?) ON CONFLICT (change_key) DO UPDATE SET json = excluded.json`,
   );
+  const getChecks = db.prepare<[string], { json: string }>(
+    `SELECT json FROM checks_facet WHERE change_key = ?`,
+  );
+  const putChecks = db.prepare(
+    `INSERT INTO checks_facet (change_key, json) VALUES (?, ?) ON CONFLICT (change_key) DO UPDATE SET json = excluded.json`,
+  );
   const getReadAs = db.prepare<[string, string], { read_as: string }>(
     `SELECT read_as FROM checkout_read_as WHERE host_id = ? AND path = ?`,
   );
@@ -122,6 +134,10 @@ export function openStore(bb: BbPluginApi) {
   const forge = (key: ChangeKey): Facet<ForgeValue> => {
     const row = getForge.get(key);
     return (row && parsed(forgeFacetSchema, row.json)) ?? EMPTY_FACET;
+  };
+  const checks = (key: ChangeKey): Facet<ChecksValue> => {
+    const row = getChecks.get(key);
+    return (row && parsed(checksFacetSchema, row.json)) ?? EMPTY_FACET;
   };
   const branch = (threadId: string): string | null => getBranch.get(threadId)?.branch ?? null;
   const readAs = (hostId: string, path: string): ReadAs =>
@@ -156,6 +172,12 @@ export function openStore(bb: BbPluginApi) {
     setForge(key: ChangeKey, facet: Facet<ForgeValue>): boolean {
       const changed = !sameFacet(forge(key), facet);
       putForge.run(key, JSON.stringify(facet));
+      return changed;
+    },
+    checks,
+    setChecks(key: ChangeKey, facet: Facet<ChecksValue>): boolean {
+      const changed = !sameFacet(checks(key), facet);
+      putChecks.run(key, JSON.stringify(facet));
       return changed;
     },
     /** The thread's branch in its checkout, as last worked out. */

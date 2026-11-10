@@ -6,7 +6,8 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
-  forgeValueSchema,
+  forgeReadSchema,
+  forgeResultSchema,
   patchesSchema,
   patchSourceSchema,
   revisionSchema,
@@ -56,15 +57,25 @@ function outcome<T extends z.ZodType>(value: T) {
   ]);
 }
 
+/**
+ * Which signed-in `gh` account runs a forge call: `active` is the one `gh`
+ * uses by default; another runs with its own token. Null: the active one.
+ */
+export const forgeAccountSchema = z
+  .object({ login: z.string().min(1), active: z.boolean() })
+  .strict()
+  .nullable();
+export type ForgeAccount = z.infer<typeof forgeAccountSchema>;
+
+const pullRequestQuery = {
+  repo: repoSchema,
+  headOwner: z.string().min(1),
+  branch: z.string().min(1),
+  account: forgeAccountSchema,
+};
+
 export const forgeOperationSchema = z.discriminatedUnion("op", [
-  z
-    .object({
-      op: z.literal("pr.read"),
-      repo: repoSchema,
-      headOwner: z.string().min(1),
-      branch: z.string().min(1),
-    })
-    .strict(),
+  z.object({ op: z.literal("pr.read"), ...pullRequestQuery }).strict(),
 ]);
 export type ForgeOperation = z.infer<typeof forgeOperationSchema>;
 
@@ -116,7 +127,24 @@ export const sourceControlHostContract = defineRpcContract({
   forgeCall: {
     experimental_retryable: true,
     input: forgeOperationSchema,
-    output: outcome(forgeValueSchema),
+    output: outcome(forgeReadSchema),
+  },
+  /**
+   * Marks the pull request draft or ready while its head is still
+   * `expectedHead`. Convergent, so it may be retried.
+   */
+  forgeWrite: {
+    experimental_retryable: true,
+    input: z
+      .object({
+        op: z.literal("pr.setDraft"),
+        ...pullRequestQuery,
+        number: z.number().int().positive(),
+        draft: z.boolean(),
+        expectedHead: z.string().min(1),
+      })
+      .strict(),
+    output: outcome(forgeResultSchema),
   },
 });
 

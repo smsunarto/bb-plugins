@@ -6,7 +6,7 @@
  * Classification and auth parsing are ported from
  * `plugins/code-review/src/server/lib/gh.ts`.
  */
-import type { PullRequest, ForgeValue } from "../core/change.ts";
+import type { CheckRow, ForgeRead, ForgeResult, PullRequest } from "../core/change.ts";
 import type { Repo } from "../core/ids.ts";
 
 export type GhErrorCode =
@@ -37,7 +37,7 @@ export type RunResult = {
 /** Runs `gh args`, writing `stdin` when given. Never rejects for a non-zero exit. */
 export type Exec = (
   args: readonly string[],
-  options: { stdin?: string; signal?: AbortSignal },
+  options: { stdin?: string; signal?: AbortSignal; env?: Readonly<Record<string, string>> },
 ) => Promise<RunResult>;
 
 const NO_CREDENTIALS =
@@ -105,17 +105,27 @@ export async function readAccounts(exec: Exec, signal?: AbortSignal): Promise<st
   return parseAuthStatus(`${result.stdout}\n${result.stderr}`);
 }
 
+/** How many checks one read brings; GitHub has more only on unusually large suites. */
+const CHECK_LIMIT = 100;
+
 const PULL_REQUESTS = `query($owner: String!, $name: String!, $branch: String!) {
   repository(owner: $owner, name: $name) {
     pullRequests(headRefName: $branch, first: 20, orderBy: { field: UPDATED_AT, direction: DESC }) {
       nodes {
         number url title state isDraft headRefOid baseRefName reviewDecision
         headRepositoryOwner { login }
-        commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100) { nodes {
-          __typename
-          ... on CheckRun { status conclusion }
-          ... on StatusContext { state }
-        } } } } } }
+        latestOpinionatedReviews(first: 50) { nodes { state } }
+        commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: ${CHECK_LIMIT}) {
+          pageInfo { hasNextPage }
+          nodes {
+            __typename
+            ... on CheckRun {
+              name status conclusion detailsUrl startedAt completedAt
+              checkSuite { workflowRun { workflow { name } } }
+            }
+            ... on StatusContext { context state targetUrl createdAt }
+          }
+        } } } } }
       }
     }
   }
@@ -123,9 +133,17 @@ const PULL_REQUESTS = `query($owner: String!, $name: String!, $branch: String!) 
 
 type CheckNode = {
   __typename?: string;
+  name?: string;
   status?: string;
   conclusion?: string | null;
+  detailsUrl?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  checkSuite?: { workflowRun?: { workflow?: { name?: string } | null } | null } | null;
+  context?: string;
   state?: string;
+  targetUrl?: string | null;
+  createdAt?: string | null;
 };
 type PullRequestNode = {
   number: number;
@@ -137,14 +155,20 @@ type PullRequestNode = {
   baseRefName: string;
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
   headRepositoryOwner: { login: string } | null;
+  latestOpinionatedReviews?: { nodes?: ({ state?: string } | null)[] } | null;
   commits?: {
     nodes?: {
-      commit?: { statusCheckRollup?: { contexts?: { nodes?: (CheckNode | null)[] } } | null };
+      commit?: {
+        statusCheckRollup?: {
+          contexts?: { pageInfo?: { hasNextPage?: boolean }; nodes?: (CheckNode | null)[] };
+        } | null;
+      };
     }[];
   };
 };
 
-const PASSING = new Set(["SUCCESS", "NEUTRAL", "SKIPPED"]);
+const PASSING = new Set(["SUCCESS"]);
+const SKIPPED = new Set(["NEUTRAL", "SKIPPED"]);
 const FAILING = new Set([
   "FAILURE",
   "TIMED_OUT",
@@ -155,20 +179,42 @@ const FAILING = new Set([
   "ERROR",
 ]);
 
+/** A check's result as an outcome: anything not reported yet is pending. */
+function outcomeOf(result: string | null | undefined): CheckRow["outcome"] {
+  if (!result) return "pending";
+  if (PASSING.has(result)) return "passed";
+  if (SKIPPED.has(result)) return "skipped";
+  return FAILING.has(result) ? "failed" : "pending";
+}
+
+/** A check run or commit status as a row. */
+export function checkRow(node: CheckNode): CheckRow {
+  if (node.__typename === "StatusContext")
+    return {
+      name: node.context ?? "Status",
+      workflow: null,
+      outcome: outcomeOf(node.state),
+      url: node.targetUrl ?? null,
+      startedAt: node.createdAt ?? null,
+      completedAt: null,
+    };
+  return {
+    name: node.name ?? "Check",
+    workflow: node.checkSuite?.workflowRun?.workflow?.name ?? null,
+    outcome: outcomeOf(node.status === "COMPLETED" ? node.conclusion : null),
+    url: node.detailsUrl ?? null,
+    startedAt: node.startedAt ?? null,
+    completedAt: node.completedAt ?? null,
+  };
+}
+
 /** Pass, fail and pending counts across check runs and commit statuses. */
-export function countChecks(nodes: readonly (CheckNode | null)[]): PullRequest["checks"] {
+export function countChecks(rows: readonly CheckRow[]): PullRequest["checks"] {
   const counts = { passed: 0, failed: 0, pending: 0 };
-  for (const node of nodes) {
-    if (!node) continue;
-    const outcome =
-      node.__typename === "StatusContext"
-        ? node.state
-        : node.status === "COMPLETED"
-          ? node.conclusion
-          : null;
-    if (outcome && PASSING.has(outcome)) counts.passed++;
-    else if (outcome && FAILING.has(outcome)) counts.failed++;
-    else counts.pending++;
+  for (const row of rows) {
+    if (row.outcome === "failed") counts.failed++;
+    else if (row.outcome === "pending") counts.pending++;
+    else counts.passed++;
   }
   return counts;
 }
@@ -182,18 +228,26 @@ const REVIEW: Record<
   REVIEW_REQUIRED: "review-required",
 };
 
-function toPullRequest(node: PullRequestNode): PullRequest {
-  const contexts = node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts?.nodes ?? [];
+function toRead(node: PullRequestNode): ForgeRead {
+  const contexts = node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts;
+  const rows = (contexts?.nodes ?? []).flatMap((check) => (check ? [checkRow(check)] : []));
+  const approvals = (node.latestOpinionatedReviews?.nodes ?? []).filter(
+    (review) => review?.state === "APPROVED",
+  ).length;
   return {
-    number: node.number,
-    url: node.url,
-    title: node.title,
-    state: node.state === "OPEN" ? "open" : node.state === "MERGED" ? "merged" : "closed",
-    isDraft: node.isDraft,
-    headRefOid: node.headRefOid,
-    baseRef: node.baseRefName,
-    reviewDecision: node.reviewDecision ? REVIEW[node.reviewDecision] : null,
-    checks: countChecks(contexts),
+    pullRequest: {
+      number: node.number,
+      url: node.url,
+      title: node.title,
+      state: node.state === "OPEN" ? "open" : node.state === "MERGED" ? "merged" : "closed",
+      isDraft: node.isDraft,
+      headRefOid: node.headRefOid,
+      baseRef: node.baseRefName,
+      reviewDecision: node.reviewDecision ? REVIEW[node.reviewDecision] : null,
+      approvals,
+      checks: countChecks(rows),
+    },
+    checks: { head: node.headRefOid, rows, more: contexts?.pageInfo?.hasNextPage === true },
   };
 }
 
@@ -202,21 +256,33 @@ function toPullRequest(node: PullRequestNode): PullRequest {
  * else the most recently updated. Null when the branch has none, which is an
  * answer, not a failure.
  */
-export function pickPullRequest(nodes: readonly PullRequestNode[], headOwner: string): ForgeValue {
+export function pickPullRequest(nodes: readonly PullRequestNode[], headOwner: string): ForgeRead {
   const own = nodes.filter(
     (node) => node.headRepositoryOwner?.login.toLowerCase() === headOwner.toLowerCase(),
   );
   const chosen = own.find((node) => node.state === "OPEN") ?? own[0];
-  return chosen ? toPullRequest(chosen) : null;
+  return chosen ? toRead(chosen) : { pullRequest: null, checks: null };
 }
 
 export type PullRequestQuery = { repo: Repo; headOwner: string; branch: string };
+
+function graphqlError(error: { message?: string; type?: string }): GhError {
+  const code: GhErrorCode =
+    error.type === "NOT_FOUND"
+      ? "not-found"
+      : error.type === "FORBIDDEN"
+        ? "forbidden"
+        : error.type === "RATE_LIMITED"
+          ? "rate-limited"
+          : "failed";
+  return new GhError(code, error.message ?? "GitHub GraphQL request failed.");
+}
 
 export async function readPullRequest(
   exec: Exec,
   query: PullRequestQuery,
   signal?: AbortSignal,
-): Promise<ForgeValue> {
+): Promise<ForgeRead> {
   const body = JSON.stringify({
     query: PULL_REQUESTS,
     variables: { owner: query.repo.owner, name: query.repo.name, branch: query.branch },
@@ -234,20 +300,89 @@ export async function readPullRequest(
     parsed = undefined;
   }
   const error = parsed?.errors?.[0];
-  if (error) {
-    const code: GhErrorCode =
-      error.type === "NOT_FOUND"
-        ? "not-found"
-        : error.type === "FORBIDDEN"
-          ? "forbidden"
-          : error.type === "RATE_LIMITED"
-            ? "rate-limited"
-            : "failed";
-    throw new GhError(code, error.message ?? "GitHub GraphQL request failed.");
-  }
+  if (error) throw graphqlError(error);
   if (result.code !== 0 || !parsed?.data) throw classifyFailure(result);
   const nodes = (parsed.data.repository?.pullRequests?.nodes ?? []).filter(
     (node): node is PullRequestNode => node !== null,
   );
   return pickPullRequest(nodes, query.headOwner);
+}
+
+/** Marks the pull request draft, or ready for review. Throws a `GhError` when GitHub refuses. */
+export async function setDraft(
+  exec: Exec,
+  target: { repo: Repo; number: number; draft: boolean },
+  signal?: AbortSignal,
+): Promise<void> {
+  const args = [
+    "pr",
+    "ready",
+    String(target.number),
+    "--repo",
+    `${target.repo.owner}/${target.repo.name}`,
+  ];
+  const result = await exec(target.draft ? [...args, "--undo"] : args, { signal });
+  if (result.code !== 0 || result.failure) throw classifyFailure(result);
+}
+
+/**
+ * `exec` signed in as `login`. The active account needs nothing; another
+ * account's token is asked of `gh` once and kept in memory for `ttlMs`, never
+ * written anywhere.
+ */
+export function accountExec(
+  exec: Exec,
+  now: () => number,
+  ttlMs = 5 * 60_000,
+): (login: string, active: boolean) => Exec {
+  const tokens = new Map<string, { token: string; at: number }>();
+  return (login, active) => {
+    if (active) return exec;
+    return async (args, options) => {
+      let known = tokens.get(login);
+      if (!known || now() - known.at >= ttlMs) {
+        const answer = await exec(
+          ["auth", "token", "--hostname", "github.com", "--user", login],
+          options.signal ? { signal: options.signal } : {},
+        );
+        const token = answer.stdout.trim();
+        if (answer.code !== 0 || token === "") throw classifyFailure(answer);
+        known = { token, at: now() };
+        tokens.set(login, known);
+      }
+      return exec(args, { ...options, env: { ...options.env, GH_TOKEN: known.token } });
+    };
+  };
+}
+
+export type DraftWrite = PullRequestQuery & {
+  number: number;
+  draft: boolean;
+  expectedHead: string;
+};
+
+/**
+ * Marks the pull request draft or ready, only while its head is still
+ * `expectedHead`. Convergent: a pull request already so is `upToDate`, so a
+ * retry after a lost answer is safe.
+ */
+export async function setDraftAt(
+  exec: Exec,
+  write: DraftWrite,
+  signal?: AbortSignal,
+): Promise<ForgeResult> {
+  const { pullRequest } = await readPullRequest(exec, write, signal);
+  if (!pullRequest || pullRequest.number !== write.number || pullRequest.state !== "open")
+    return {
+      status: "conflict",
+      detail: `#${write.number} is no longer this branch's open pull request.`,
+    };
+  if (pullRequest.headRefOid !== write.expectedHead)
+    return {
+      status: "conflict",
+      detail: `#${write.number} moved to ${pullRequest.headRefOid.slice(0, 7)} since you looked.`,
+    };
+  if (pullRequest.isDraft === write.draft) return { status: "upToDate" };
+  await setDraft(exec, { repo: write.repo, number: write.number, draft: write.draft }, signal);
+  return { status: "done" };
 }

@@ -9,16 +9,28 @@ import type { ExperimentalHostRpcContext } from "@get-bb/plugin-sdk/host";
 import {
   sourceControlHostContract,
   sourceControlHostSignals,
+  type ForgeAccount,
   type HostFailure,
 } from "../contract/host.ts";
 import { execGh } from "../forge/exec-gh.ts";
-import { GhError, readAccounts, readPullRequest } from "../forge/github.ts";
+import {
+  accountExec,
+  GhError,
+  readAccounts,
+  readPullRequest,
+  setDraftAt,
+} from "../forge/github.ts";
 import type { Checkout } from "./checkout.ts";
 import { forget, share } from "./memo.ts";
 import { act, hostFailure, problemOf, providers, resolveCheckout } from "./providers.ts";
 import { changed, keepWatching, renew, stopAll } from "./repository-state.ts";
 
 type Context = ExperimentalHostRpcContext<typeof sourceControlHostSignals>;
+
+/** `gh` as the account the server chose for the repository. */
+const asAccount = accountExec(execGh, Date.now);
+const ghFor = (account: ForgeAccount) =>
+  account ? asAccount(account.login, account.active) : execGh;
 
 function ghFailure(error: unknown): HostFailure {
   if (error instanceof GhError) {
@@ -161,11 +173,19 @@ export default experimental_defineHostEntry({
     },
     async forgeCall(operation, { signal }) {
       try {
-        const { repo, headOwner, branch } = operation;
+        const { repo, headOwner, branch, account } = operation;
         return {
           ok: true as const,
-          value: await readPullRequest(execGh, { repo, headOwner, branch }, signal),
+          value: await readPullRequest(ghFor(account), { repo, headOwner, branch }, signal),
         };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ok: false as const, error: ghFailure(error) };
+      }
+    },
+    async forgeWrite({ op: _op, account, ...write }, { signal }) {
+      try {
+        return { ok: true as const, value: await setDraftAt(ghFor(account), write, signal) };
       } catch (error) {
         if (signal.aborted) throw error;
         return { ok: false as const, error: ghFailure(error) };

@@ -102,11 +102,23 @@ type World = {
   ghCalls: string[];
   /** When each `gh` run on the server started, by the fake clock. */
   ghRuns?: number[];
+  /** Server accounts GitHub answers "not found" for this repository. */
+  cannotSee?: string[];
+  /** The account each pull request read on the server ran as. */
+  readAs?: string[];
+  /** Each `gh pr ready` on the server, with the account it ran as. */
+  writes?: { login: string; args: readonly string[] }[];
 };
 
 function serverGh(world: World): Exec {
   return async (args, options) => {
     (world.ghRuns ??= []).push(Date.now());
+    if (args[0] === "auth" && args[1] === "token") {
+      const login = args[args.indexOf("--user") + 1]!;
+      return world.serverAccounts.includes(login)
+        ? { code: 0, stdout: `tok-${login}\n`, stderr: "" }
+        : { code: 1, stdout: "", stderr: `no account found for ${login}` };
+    }
     if (args[0] === "auth") {
       if (world.serverAccounts.length === 0)
         return {
@@ -118,16 +130,38 @@ function serverGh(world: World): Exec {
         code: 0,
         stdout: world.serverAccounts
           .map(
-            (login) =>
-              `github.com\n  ✓ Logged in to github.com account ${login} (keyring)\n  - Active account: true`,
+            (login, index) =>
+              `github.com\n  ✓ Logged in to github.com account ${login} (keyring)\n  - Active account: ${index === 0}`,
           )
           .join("\n"),
         stderr: "",
       };
     }
+    const token = options?.env?.GH_TOKEN;
+    const login = token ? token.replace(/^tok-/, "") : world.serverAccounts[0]!;
+    if (args[0] === "pr" && args[1] === "ready") {
+      (world.writes ??= []).push({ login, args });
+      if (world.cannotSee?.includes(login))
+        return {
+          code: 1,
+          stdout: "",
+          stderr: "GraphQL: Could not resolve to a Repository (HTTP 404)",
+        };
+      return { code: 0, stdout: "", stderr: "" };
+    }
     const body = JSON.parse(String(options?.stdin ?? "{}")) as { variables?: { branch?: string } };
     const head = body.variables?.branch ?? "";
     world.ghCalls.push(head);
+    (world.readAs ??= []).push(login);
+    if (world.cannotSee?.includes(login))
+      return {
+        code: 0,
+        stdout: JSON.stringify({
+          data: { repository: null },
+          errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }],
+        }),
+        stderr: "",
+      };
     return {
       code: 0,
       stdout: JSON.stringify({
@@ -175,7 +209,7 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
         return { ok: true, value: { state: "workspace", value: host.workspace } };
       if (method === "renewWatch") return { watching: true };
       if (method === "forgeAccounts") return { ok: true, value: { accounts: host.ghAccounts } };
-      if (method === "forgeCall") return { ok: true, value: null };
+      if (method === "forgeCall") return { ok: true, value: { pullRequest: null, checks: null } };
       if (method === "vcsAction") return host.action ?? { status: "done" };
       if (method === "patches") return { ok: true, value: { files: [] } };
       throw new Error(`unexpected ${method} ${JSON.stringify(input)}`);
@@ -516,6 +550,147 @@ describe("forge budget", () => {
     const reads = world.ghCalls.length;
     expect(reads).toBeGreaterThanOrEqual(perMinute * 29);
     expect(reads).toBeLessThanOrEqual(perMinute * 31 + 1);
+  });
+});
+
+describe("accounts", () => {
+  function twoAccounts() {
+    const world = twoHosts();
+    world.serverAccounts = ["smsunarto", "sms-yui"];
+    world.cannotSee = ["smsunarto"];
+    world.pullRequests["scott/route-gh"] = [PR];
+    return world;
+  }
+  const markReady = (head: string) => ({
+    threadId: "thread-a",
+    action: { kind: "setDraft" as const, draft: false },
+    expected: { number: 482, head },
+  });
+
+  test("a repository is read with the account that can see it, and then with that one only", async () => {
+    const world = twoAccounts();
+    const { harness, checkout } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(world.readAs).toEqual(["smsunarto", "sms-yui"]);
+    expect((await checkout("thread-a")).forge.read?.value).toMatchObject({ number: 482 });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(world.readAs).toEqual(["smsunarto", "sms-yui", "sms-yui"]);
+  });
+
+  test("Mark ready runs as the account that read the pull request, and never falls back to another", async () => {
+    const world = twoAccounts();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("forgeAction", markReady("c0ffee"))).toEqual({
+      status: "done",
+    });
+    expect(world.writes).toEqual([
+      { login: "sms-yui", args: ["pr", "ready", "482", "--repo", "smsunarto/bb-plugins"] },
+    ]);
+
+    // The account that read it loses access: the write fails rather than trying smsunarto.
+    world.cannotSee = ["sms-yui"];
+    const reads = world.readAs!.length;
+    const result = await harness.behavior.callRpc("forgeAction", markReady("c0ffee"));
+    expect(result).toMatchObject({ status: "failed" });
+    expect(world.writes!.map((write) => write.login)).toEqual(["sms-yui"]);
+    expect(world.readAs!.slice(reads, reads + 1)).toEqual(["sms-yui"]);
+  });
+
+  test("Mark ready against a stale head is a conflict and writes nothing", async () => {
+    const world = twoAccounts();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("forgeAction", markReady("0ld"))).toEqual({
+      status: "conflict",
+      detail: "#482 moved to c0ffee since you looked.",
+    });
+    expect(world.writes ?? []).toEqual([]);
+  });
+
+  test("Mark ready on a pull request already ready is up to date, so a retry is safe", async () => {
+    const world = twoAccounts();
+    world.pullRequests["scott/route-gh"] = [{ ...PR, isDraft: false }];
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("forgeAction", markReady("c0ffee"))).toEqual({
+      status: "upToDate",
+    });
+    expect(world.writes ?? []).toEqual([]);
+  });
+});
+
+describe("checks", () => {
+  test("the checks facet holds each check of the head, read with the pull request in one call", async () => {
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [
+      {
+        ...PR,
+        commits: {
+          nodes: [
+            {
+              commit: {
+                statusCheckRollup: {
+                  contexts: {
+                    pageInfo: { hasNextPage: false },
+                    nodes: [
+                      {
+                        __typename: "CheckRun",
+                        name: "test",
+                        status: "IN_PROGRESS",
+                        conclusion: null,
+                        detailsUrl: "https://github.com/run/1",
+                        startedAt: "2026-11-10T01:00:00Z",
+                        completedAt: null,
+                        checkSuite: { workflowRun: { workflow: { name: "CI" } } },
+                      },
+                      {
+                        __typename: "StatusContext",
+                        context: "deploy/preview",
+                        state: "FAILURE",
+                        targetUrl: null,
+                        createdAt: "2026-11-10T01:01:00Z",
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+        },
+      },
+    ];
+    const { harness, checkout, invalidations } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(world.ghCalls).toHaveLength(1);
+    const row = await checkout("thread-a");
+    expect(row.forge.read?.value).toMatchObject({ checks: { passed: 0, failed: 1, pending: 1 } });
+    const checks = (await harness.behavior.callRpc("checksForChange", {
+      keys: [row.key!],
+    })) as Record<string, { read: { value: unknown } | null }>;
+    expect(checks[row.key!]!.read?.value).toEqual({
+      head: "c0ffee",
+      more: false,
+      rows: [
+        {
+          name: "test",
+          workflow: "CI",
+          outcome: "pending",
+          url: "https://github.com/run/1",
+          startedAt: "2026-11-10T01:00:00Z",
+          completedAt: null,
+        },
+        {
+          name: "deploy/preview",
+          workflow: null,
+          outcome: "failed",
+          url: null,
+          startedAt: "2026-11-10T01:01:00Z",
+          completedAt: null,
+        },
+      ],
+    });
+    expect(invalidations()).toContain(`change:${row.key}:checks`);
   });
 });
 

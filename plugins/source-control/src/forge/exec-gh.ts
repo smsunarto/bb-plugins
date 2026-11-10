@@ -28,7 +28,7 @@ export function runResult(
   return { code, stdout, stderr };
 }
 
-export const execGh: Exec = (args, { stdin, signal }) =>
+export const execGh: Exec = (args, { stdin, signal, env }) =>
   new Promise<RunResult>((resolve) => {
     const child = execFile(
       "gh",
@@ -38,7 +38,13 @@ export const execGh: Exec = (args, { stdin, signal }) =>
         timeout: TIMEOUT_MS,
         maxBuffer: MAX_BUFFER,
         ...(signal ? { signal } : {}),
-        env: { ...process.env, GH_PROMPT_DISABLED: "1", GH_NO_UPDATE_NOTIFIER: "1", NO_COLOR: "1" },
+        env: {
+          ...process.env,
+          ...env,
+          GH_PROMPT_DISABLED: "1",
+          GH_NO_UPDATE_NOTIFIER: "1",
+          NO_COLOR: "1",
+        },
       },
       (error, stdout, stderr) => resolve(runResult(error, String(stdout), String(stderr))),
     );

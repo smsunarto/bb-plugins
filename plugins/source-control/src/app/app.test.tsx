@@ -93,6 +93,7 @@ function checkout(
               headRefOid: "c0ffee",
               baseRef: "main",
               reviewDecision: null,
+              approvals: 0,
               checks: { passed: 4, failed: 0, pending: 0 },
             }
           : null,

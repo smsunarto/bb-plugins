@@ -6,6 +6,10 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
+  checksValueSchema,
+  facetSchema,
+  forgeActionSchema,
+  forgeResultSchema,
   patchesSchema,
   patchSourceSchema,
   problemSchema,
@@ -14,7 +18,7 @@ import {
   vcsActionSchema,
   vcsResultSchema,
 } from "../core/change.ts";
-import { threadTag } from "../core/ids.ts";
+import { changeKeySchema, checksTag, threadTag, type ChangeKey } from "../core/ids.ts";
 
 export const MAX_THREAD_KEYS = 200;
 
@@ -51,6 +55,27 @@ export const sourceControlContract = defineRpcContract({
       .object({ threadId: threadIdSchema, action: vcsActionSchema, expected: revisionSchema })
       .strict(),
     output: vcsResultSchema,
+  },
+  checksForChange: {
+    experimental_description:
+      "Each Change's checks on its pull request's head, keyed by ChangeKey: every check run and commit status with its outcome and link.",
+    input: z.object({ keys: z.array(changeKeySchema).min(1).max(MAX_THREAD_KEYS) }).strict(),
+    output: z.record(z.string(), facetSchema(checksValueSchema)),
+    keyTags: (key: string) => [checksTag(key as ChangeKey)],
+  },
+  forgeAction: {
+    experimental_description:
+      "Mark the thread's pull request draft or ready for review, only while it is still #`expected.number` at `expected.head`. Returns `conflict` and changes nothing otherwise. Convergent: already so returns `upToDate`.",
+    input: z
+      .object({
+        threadId: threadIdSchema,
+        action: forgeActionSchema,
+        expected: z
+          .object({ number: z.number().int().positive(), head: z.string().min(1) })
+          .strict(),
+      })
+      .strict(),
+    output: forgeResultSchema,
   },
   /** Reads a GitButler workspace as plain git, or by what it is again. Stored per checkout. */
   setReadAs: {

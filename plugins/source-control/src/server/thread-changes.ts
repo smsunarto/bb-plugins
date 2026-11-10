@@ -10,7 +10,14 @@
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { Cause, Effect, Fiber } from "effect";
-import { changeKeyForBranch, EMPTY_FACET, findBranch, type ThreadChange } from "../core/change.ts";
+import {
+  changeKeyForBranch,
+  EMPTY_FACET,
+  findBranch,
+  type ForgeAction,
+  type ForgeResult,
+  type ThreadChange,
+} from "../core/change.ts";
 import { threadTag, type ChangeKey } from "../core/ids.ts";
 import { createActions } from "./actions.ts";
 import { createForgeReads } from "./forge-read.ts";
@@ -99,6 +106,9 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     share,
     threadsOf: (key) => keyThreads.get(key) ?? [],
     announce,
+    invalidate: (tags) => {
+      if (!deps.disposed()) bb.rpc.experimental_invalidate(tags);
+    },
     now,
   });
 
@@ -159,6 +169,24 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     read(keys: readonly string[]): Record<string, ThreadChange> {
       return Object.fromEntries(keys.map((threadId) => [threadId, row(threadId)]));
     },
+    /** Stored checks only, by ChangeKey. */
+    checks(keys: readonly ChangeKey[]) {
+      return Object.fromEntries(keys.map((key) => [key, store.checks(key)]));
+    },
+    /** One write on the thread's pull request, at the head the reader saw. */
+    forgeAction: Effect.fn("forgeAction")(function* (
+      threadId: string,
+      action: ForgeAction,
+      expected: { number: number; head: string },
+    ) {
+      const where = store.placement(threadId);
+      if (where?.state !== "checkout")
+        return {
+          status: "failed",
+          problem: { kind: "moved", detail: "This thread has no checkout." },
+        } satisfies ForgeResult;
+      return yield* forge.setDraft(threadId, where.placement, action.draft, expected);
+    }),
     refresh,
     /** Explicit retry: probe forge sites again, then read. */
     retry: (threadId: string) =>

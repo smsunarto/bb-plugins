@@ -324,6 +324,8 @@ export const pullRequestSchema = z
     headRefOid: z.string(),
     baseRef: z.string(),
     reviewDecision: z.enum(["approved", "changes-requested", "review-required"]).nullable(),
+    /** Reviewers whose latest opinion is an approval. */
+    approvals: z.number().int().nonnegative(),
     checks: z
       .object({ passed: z.number().int(), failed: z.number().int(), pending: z.number().int() })
       .strict(),
@@ -331,9 +333,55 @@ export const pullRequestSchema = z
   .strict();
 export type PullRequest = z.infer<typeof pullRequestSchema>;
 
+/** One check run or commit status on the pull request's head. Skipped and neutral count as passed. */
+export const checkRowSchema = z
+  .object({
+    name: z.string(),
+    /** The Actions workflow the run belongs to, when it is one. */
+    workflow: z.string().nullable(),
+    outcome: z.enum(["passed", "failed", "pending", "skipped"]),
+    url: z.string().nullable(),
+    startedAt: z.string().nullable(),
+    completedAt: z.string().nullable(),
+  })
+  .strict();
+export type CheckRow = z.infer<typeof checkRowSchema>;
+
+/**
+ * The checks facet's value: every check on the pull request's head, or null
+ * without a pull request. `more` when GitHub had more than were read.
+ */
+export const checksValueSchema = z
+  .object({ head: z.string(), rows: z.array(checkRowSchema).max(100), more: z.boolean() })
+  .strict()
+  .nullable();
+export type ChecksValue = z.infer<typeof checksValueSchema>;
+
+/** A write to the pull request, made only if its head is still `expected.head`. */
+export const forgeActionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("setDraft"), draft: z.boolean() }).strict(),
+]);
+export type ForgeAction = z.infer<typeof forgeActionSchema>;
+
+export const forgeResultSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("done") }).strict(),
+  /** Already so: nothing ran. */
+  z.object({ status: z.literal("upToDate") }).strict(),
+  /** Nothing ran: the pull request's head moved since the reader looked. */
+  z.object({ status: z.literal("conflict"), detail: z.string() }).strict(),
+  z.object({ status: z.literal("failed"), problem: problemSchema }).strict(),
+]);
+export type ForgeResult = z.infer<typeof forgeResultSchema>;
+
 /** The forge facet's value: the branch's pull request, or null when it has none. */
 export const forgeValueSchema = pullRequestSchema.nullable();
 export type ForgeValue = z.infer<typeof forgeValueSchema>;
+
+/** A pull request read: the pull request and its checks, from one GitHub call. */
+export const forgeReadSchema = z
+  .object({ pullRequest: forgeValueSchema, checks: checksValueSchema })
+  .strict();
+export type ForgeRead = z.infer<typeof forgeReadSchema>;
 
 export const placementSchema = z
   .object({ hostId: z.string(), hostName: z.string(), path: z.string(), environmentId: z.string() })

@@ -11,10 +11,11 @@ import {
   remoteBranchName,
   succeeded,
   type Facet,
+  type ForgeResult,
   type ForgeValue,
   type Placement,
 } from "../core/change.ts";
-import type { ChangeKey } from "../core/ids.ts";
+import { checksTag, type ChangeKey } from "../core/ids.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
@@ -42,6 +43,8 @@ export function createForgeReads(deps: {
   /** Every thread currently showing this Change. */
   threadsOf: (key: ChangeKey) => Iterable<string>;
   announce: (threadIds: Iterable<string>) => void;
+  /** Tell readers of these tags, which are not thread tags, to read again. */
+  invalidate: (tags: readonly string[]) => void;
   now: () => number;
 }) {
   const { store } = deps;
@@ -73,20 +76,47 @@ export function createForgeReads(deps: {
           `forge:${key}`,
           Effect.gen(function* () {
             attempted.set(key, deps.now());
-            const next = yield* deps.sites.pullRequest(query, placement).pipe(
-              Effect.map((pr) => succeeded(pr, deps.now())),
-              Effect.catchTag("ForgeUnavailable", (error) =>
-                Effect.succeed(failed(store.forge(key), error.problem)),
-              ),
-            );
-            if (store.setForge(key, next)) deps.announce([threadId, ...deps.threadsOf(key)]);
+            const answer = yield* deps.sites.pullRequest(query, placement).pipe(Effect.result);
+            const at = deps.now();
+            const [forge, checks] =
+              answer._tag === "Success"
+                ? [succeeded(answer.success.pullRequest, at), succeeded(answer.success.checks, at)]
+                : [
+                    failed(store.forge(key), answer.failure.problem),
+                    failed(store.checks(key), answer.failure.problem),
+                  ];
+            if (store.setForge(key, forge)) deps.announce([threadId, ...deps.threadsOf(key)]);
+            if (store.setChecks(key, checks)) deps.invalidate([checksTag(key)]);
           }),
         )
         .pipe(Effect.as(key));
     });
 
+  /** Mark the thread's pull request draft or ready, at the head the reader saw; then read it again. */
+  const setDraft = Effect.fnUntraced(function* (
+    threadId: string,
+    placement: Placement,
+    draft: boolean,
+    expected: { number: number; head: string },
+  ) {
+    const found = target(threadId, placement);
+    if (!found)
+      return {
+        status: "failed",
+        problem: { kind: "moved", detail: "This thread's branch has no pull request here." },
+      } satisfies ForgeResult;
+    const result = yield* deps.sites.setDraft(
+      { ...found.query, number: expected.number, draft, expectedHead: expected.head },
+      placement,
+    );
+    // Done, already so, or moved: the reader sees GitHub's state either way.
+    yield* readForge(threadId, placement);
+    return result;
+  });
+
   return {
     readForge,
+    setDraft,
     /** Whether the thread's pull request is due a watched read. */
     due(threadId: string, placement: Placement): boolean {
       const found = target(threadId, placement);
