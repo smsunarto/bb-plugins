@@ -7,6 +7,8 @@
  */
 import { access, readdir, readFile, realpath, stat } from "node:fs/promises";
 import { resolve } from "node:path";
+import { parse as parseToml } from "smol-toml";
+import { z } from "zod";
 import type { VcsAction, VcsResult } from "../core/change.ts";
 import { readCheckout, unchanged, type Checkout } from "./checkout.ts";
 import { CommandFailedError, runBut, runGit, runGitCommand } from "./cli.ts";
@@ -46,17 +48,19 @@ async function clean(cwd: string, signal: AbortSignal) {
   }
 }
 
-/** A TOML basic string's form of `text`, as GitButler's metadata writes branch names. */
-function tomlString(text: string): string {
-  return `"${text.replace(/[\\"]/g, (char) => `\\${char}`)}"`;
-}
+const metadataBranches = z.object({
+  branches: z.record(
+    z.string(),
+    z
+      .object({
+        name: z.string().optional(),
+        heads: z.array(z.object({ name: z.string() })).optional(),
+      })
+      .refine((stack) => stack.name !== undefined || (stack.heads?.length ?? 0) > 0),
+  ),
+});
 
-/**
- * Parked and archived heads still own shared refs outside workspace mode.
- * The ported check parsed GitButler's `virtual_branches.toml`; this host has
- * no TOML parser, so any `name = "<branch>"` line counts, which can refuse a
- * write the full parse would allow but never allows one it would refuse.
- */
+/** Parked and archived heads still own shared refs outside workspace mode. */
 async function notRecorded(cwd: string, gitDir: string, branch: string, signal: AbortSignal) {
   const customStorage = await runGitCommand(
     cwd,
@@ -88,8 +92,19 @@ async function notRecorded(cwd: string, gitDir: string, branch: string, signal: 
       "GitButler branch metadata could not be read. Open the main GitButler workspace to repair or refresh it before running this action.",
     );
   }
-  const quoted = tomlString(branch).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  if (new RegExp(`^\\s*name\\s*=\\s*${quoted}\\s*$`, "m").test(content))
+  let metadata: z.infer<typeof metadataBranches>;
+  try {
+    metadata = metadataBranches.parse(parseToml(content));
+  } catch {
+    throw new CommandFailedError(
+      "GitButler branch metadata is invalid. Open the main GitButler workspace to repair or refresh it before running this action.",
+    );
+  }
+  if (
+    Object.values(metadata.branches).some(
+      (stack) => stack.name === branch || stack.heads?.some((head) => head.name === branch),
+    )
+  )
     throw new CommandFailedError(
       "This branch is recorded in GitButler metadata. Run its actions in the main GitButler workspace before changing its shared ref from this checkout.",
     );

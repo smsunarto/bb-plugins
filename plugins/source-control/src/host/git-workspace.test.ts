@@ -320,6 +320,15 @@ test("a branch GitButler's metadata records is not changed from a plain checkout
   // Another branch's record does not hold this one back.
   await writeFile(join(storage, "virtual_branches.toml"), metadata("scott/other"));
   expect(await push()).toEqual({ status: "done" });
+  // A quoted name on a line of its own is not a record: only the parsed table counts.
+  await writeFile(
+    join(storage, "virtual_branches.toml"),
+    `${metadata("scott/other")}notes = """\nname = "${name}"\n"""\n`,
+  );
+  expect(await push()).toEqual({ status: "upToDate" });
+  // Metadata that does not parse refuses the write rather than guessing.
+  await writeFile(join(storage, "virtual_branches.toml"), `[branches.abc\nname = "${name}"\n`);
+  await expect(push()).rejects.toThrow("GitButler branch metadata is invalid");
 });
 
 test("a write naming another branch than the one checked out is refused", async () => {

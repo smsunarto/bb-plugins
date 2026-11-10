@@ -43,6 +43,9 @@
     "LICENSE"
   ],
   "dependencies": {
+    "@bb-plugins/effect-bridge": "workspace:*",
+    "effect": "4.1.0",
+    "smol-toml": "1.8.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
