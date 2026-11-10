@@ -116,3 +116,8 @@ export function accountTag(login: string): string {
 
 /** The review page's sources: hosts with placements and forge accounts. */
 export const PAGE_SOURCES_TAG = "page:sources";
+
+/** The tag of one Change's review items, drafts and selection. */
+export function reviewTag(key: ChangeKey): string {
+  return `change:${key}:review`;
+}

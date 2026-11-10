@@ -21,6 +21,16 @@ import {
   type WorkspaceValue,
 } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
+import {
+  draftSchema,
+  forgeThreadSchema,
+  reviewItemSchema,
+  reviewRunSchema,
+  type Draft,
+  type ForgeThread,
+  type ReviewItem,
+  type ReviewRun,
+} from "../core/items.ts";
 import { sourceRowsSchema, type SourceRows } from "../core/review.ts";
 import type { ReadAs } from "../contract/host.ts";
 
@@ -36,6 +46,7 @@ const threadPlacementSchema = z.discriminatedUnion("state", [
 const localFacetSchema = facetSchema(workspaceValueSchema);
 const forgeFacetSchema = facetSchema(forgeValueSchema);
 const checksFacetSchema = facetSchema(checksValueSchema);
+const threadsFacetSchema = facetSchema(z.array(forgeThreadSchema));
 
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
@@ -56,6 +67,14 @@ const MIGRATIONS = [
   // Phase 4: pull requests gained mergeable and diff stats.
   `DELETE FROM forge_facet`,
   `CREATE TABLE inbox_facet (login TEXT PRIMARY KEY, json TEXT NOT NULL)`,
+  // Phase 5: review items, drafts and the reader's selection, by ChangeKey.
+  `CREATE TABLE threads_facet (change_key TEXT PRIMARY KEY, json TEXT NOT NULL)`,
+  `CREATE TABLE review_run (thread_id TEXT PRIMARY KEY, change_key TEXT NOT NULL, started_at INTEGER NOT NULL, json TEXT NOT NULL)`,
+  `CREATE INDEX review_run_by_change ON review_run (change_key, started_at)`,
+  `CREATE TABLE finding (change_key TEXT NOT NULL, id TEXT NOT NULL, thread_id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (change_key, id))`,
+  `CREATE INDEX finding_by_thread ON finding (thread_id)`,
+  `CREATE TABLE draft (change_key TEXT NOT NULL, id TEXT NOT NULL, created_at INTEGER NOT NULL, json TEXT NOT NULL, PRIMARY KEY (change_key, id))`,
+  `CREATE TABLE selection (change_key TEXT NOT NULL, item_id TEXT NOT NULL, PRIMARY KEY (change_key, item_id))`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -76,6 +95,112 @@ function parsed<T>(schema: z.ZodType<T>, json: string): T | null {
   } catch {
     return null;
   }
+}
+
+/** The review page's own state: GitHub's threads, bb's findings and runs, drafts and the selection. */
+function reviewTables(db: Database) {
+  const getThreads = db.prepare<[string], { json: string }>(
+    `SELECT json FROM threads_facet WHERE change_key = ?`,
+  );
+  const putThreads = db.prepare(
+    `INSERT INTO threads_facet (change_key, json) VALUES (?, ?) ON CONFLICT (change_key) DO UPDATE SET json = excluded.json`,
+  );
+  const runsOf = db.prepare<[string], { json: string }>(
+    `SELECT json FROM review_run WHERE change_key = ? ORDER BY started_at DESC LIMIT 10`,
+  );
+  const getRun = db.prepare<[string], { change_key: string; json: string }>(
+    `SELECT change_key, json FROM review_run WHERE thread_id = ?`,
+  );
+  const putRun = db.prepare(
+    `INSERT INTO review_run (thread_id, change_key, started_at, json) VALUES (?, ?, ?, ?)
+     ON CONFLICT (thread_id) DO UPDATE SET json = excluded.json`,
+  );
+  const findingsOf = db.prepare<[string], { json: string }>(
+    `SELECT json FROM finding WHERE change_key = ? ORDER BY rowid`,
+  );
+  const dropFindings = db.prepare(`DELETE FROM finding WHERE change_key = ? AND thread_id = ?`);
+  const putFinding = db.prepare(
+    `INSERT INTO finding (change_key, id, thread_id, json) VALUES (?, ?, ?, ?)
+     ON CONFLICT (change_key, id) DO UPDATE SET json = excluded.json`,
+  );
+  const draftsOf = db.prepare<[string], { json: string }>(
+    `SELECT json FROM draft WHERE change_key = ? ORDER BY created_at, id`,
+  );
+  const getDraft = db.prepare<[string, string], { json: string }>(
+    `SELECT json FROM draft WHERE change_key = ? AND id = ?`,
+  );
+  const putDraft = db.prepare(
+    `INSERT INTO draft (change_key, id, created_at, json) VALUES (?, ?, ?, ?)
+     ON CONFLICT (change_key, id) DO UPDATE SET json = excluded.json`,
+  );
+  const dropDraft = db.prepare(`DELETE FROM draft WHERE change_key = ? AND id = ?`);
+  const selectedOf = db.prepare<[string], { item_id: string }>(
+    `SELECT item_id FROM selection WHERE change_key = ? ORDER BY item_id`,
+  );
+  const select = db.prepare(
+    `INSERT INTO selection (change_key, item_id) VALUES (?, ?) ON CONFLICT DO NOTHING`,
+  );
+  const unselect = db.prepare(`DELETE FROM selection WHERE change_key = ? AND item_id = ?`);
+  const rows = <T>(schema: z.ZodType<T>, list: { json: string }[]): T[] =>
+    list.flatMap((row) => {
+      const value = parsed(schema, row.json);
+      return value === null ? [] : [value];
+    });
+
+  const threads = (key: ChangeKey): Facet<ForgeThread[]> => {
+    const row = getThreads.get(key);
+    return (row && parsed(threadsFacetSchema, row.json)) ?? EMPTY_FACET;
+  };
+  const draft = (key: ChangeKey, id: string): Draft | null => {
+    const row = getDraft.get(key, id);
+    return row ? parsed(draftSchema, row.json) : null;
+  };
+
+  return {
+    /** GitHub's review threads on the Change's pull request. */
+    threads,
+    setThreads(key: ChangeKey, facet: Facet<ForgeThread[]>): boolean {
+      const changed = !sameFacet(threads(key), facet);
+      putThreads.run(key, JSON.stringify(facet));
+      return changed;
+    },
+    /** bb reviews of the Change, newest first. */
+    runs: (key: ChangeKey): ReviewRun[] => rows(reviewRunSchema, runsOf.all(key)),
+    run(threadId: string): { key: ChangeKey; run: ReviewRun } | null {
+      const row = getRun.get(threadId);
+      const run = row ? parsed(reviewRunSchema, row.json) : null;
+      return row && run ? { key: row.change_key as ChangeKey, run } : null;
+    },
+    putRun(key: ChangeKey, run: ReviewRun): void {
+      putRun.run(run.threadId, key, run.startedAt, JSON.stringify(run));
+    },
+    findings: (key: ChangeKey): ReviewItem[] => rows(reviewItemSchema, findingsOf.all(key)),
+    /** A thread's report replaces the one it made before. */
+    replaceFindings: db.transaction((key: ChangeKey, threadId: string, items: ReviewItem[]) => {
+      dropFindings.run(key, threadId);
+      for (const item of items) putFinding.run(key, item.id, threadId, JSON.stringify(item));
+    }),
+    putFindings: db.transaction((key: ChangeKey, items: ReviewItem[]) => {
+      for (const item of items) {
+        const threadId = item.origin.kind === "bb" ? item.origin.threadId : "";
+        putFinding.run(key, item.id, threadId, JSON.stringify(item));
+      }
+    }),
+    drafts: (key: ChangeKey): Draft[] => rows(draftSchema, draftsOf.all(key)),
+    draft,
+    putDraft(key: ChangeKey, value: Draft): boolean {
+      const before = draft(key, value.id);
+      putDraft.run(key, value.id, value.createdAt, JSON.stringify(value));
+      return JSON.stringify(before) !== JSON.stringify(value);
+    },
+    dropDraft: (key: ChangeKey, id: string): boolean => dropDraft.run(key, id).changes > 0,
+    selected: (key: ChangeKey): string[] => selectedOf.all(key).map((row) => row.item_id),
+    setSelected: db.transaction((key: ChangeKey, ids: readonly string[], on: boolean) => {
+      let changes = 0;
+      for (const id of ids) changes += (on ? select : unselect).run(key, id).changes;
+      return changes > 0;
+    }),
+  };
 }
 
 export function openStore(bb: BbPluginApi) {
@@ -163,12 +288,15 @@ export function openStore(bb: BbPluginApi) {
     JSON.stringify([before.read?.rows ?? null, before.problem]) ===
     JSON.stringify([after.read?.rows ?? null, after.problem]);
 
+  const review = reviewTables(db);
+
   const branch = (threadId: string): string | null => getBranch.get(threadId)?.branch ?? null;
   const readAs = (hostId: string, path: string): ReadAs =>
     getReadAs.get(hostId, path)?.read_as === "git" ? "git" : "auto";
 
   // Every setter stores its value and returns whether a reader would see a change.
   return {
+    ...review,
     /** One placement per checkout the placement table knows, by host: what the review page lists. */
     checkouts(): Placement[] {
       return placementRows.all().flatMap((row) => {

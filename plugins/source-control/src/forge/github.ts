@@ -6,7 +6,7 @@
  * Classification and auth parsing are ported from
  * `plugins/code-review/src/server/lib/gh.ts`.
  */
-import type { CheckRow, ForgeRead, ForgeResult, PullRequest } from "../core/change.ts";
+import type { CheckRow, ForgeRead, ForgeResult, ForgeThread, PullRequest } from "../core/change.ts";
 import type { Repo } from "../core/ids.ts";
 
 export type GhErrorCode =
@@ -107,6 +107,9 @@ export async function readAccounts(exec: Exec, signal?: AbortSignal): Promise<st
 
 /** How many checks one read brings; GitHub has more only on unusually large suites. */
 const CHECK_LIMIT = 100;
+/** Review threads and comments per thread one read brings; a longer review shows its first ones. */
+const THREAD_LIMIT = 100;
+const THREAD_COMMENT_LIMIT = 30;
 
 const PULL_REQUESTS = `query($owner: String!, $name: String!, $branch: String!) {
   repository(owner: $owner, name: $name) {
@@ -116,6 +119,10 @@ const PULL_REQUESTS = `query($owner: String!, $name: String!, $branch: String!) 
         mergeable additions deletions changedFiles commitCount: commits { totalCount }
         headRepositoryOwner { login }
         latestOpinionatedReviews(first: 50) { nodes { state } }
+        reviewThreads(first: ${THREAD_LIMIT}) { nodes {
+          id path line startLine originalLine diffSide isResolved isOutdated
+          comments(first: ${THREAD_COMMENT_LIMIT}) { nodes { id body createdAt url author { __typename login } } }
+        } }
         commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: ${CHECK_LIMIT}) {
           pageInfo { hasNextPage }
           nodes {
@@ -146,6 +153,25 @@ type CheckNode = {
   targetUrl?: string | null;
   createdAt?: string | null;
 };
+type ThreadNode = {
+  id?: string;
+  path?: string;
+  line?: number | null;
+  startLine?: number | null;
+  originalLine?: number | null;
+  diffSide?: "LEFT" | "RIGHT";
+  isResolved?: boolean;
+  isOutdated?: boolean;
+  comments?: {
+    nodes?: ({
+      id?: string;
+      body?: string;
+      createdAt?: string;
+      url?: string;
+      author?: { __typename?: string; login?: string } | null;
+    } | null)[];
+  };
+};
 type PullRequestNode = {
   number: number;
   url: string;
@@ -162,6 +188,7 @@ type PullRequestNode = {
   commitCount?: { totalCount?: number };
   headRepositoryOwner: { login: string } | null;
   latestOpinionatedReviews?: { nodes?: ({ state?: string } | null)[] } | null;
+  reviewThreads?: { nodes?: (ThreadNode | null)[] } | null;
   commits?: {
     nodes?: {
       commit?: {
@@ -240,6 +267,38 @@ const MERGEABLE = {
   UNKNOWN: "unknown",
 } as const satisfies Record<string, PullRequest["mergeable"]>;
 
+const positive = (value: number | null | undefined) =>
+  typeof value === "number" && value > 0 ? value : null;
+
+/** A review thread as stored; a deleted author is GitHub's "ghost". */
+export function toThread(node: ThreadNode): ForgeThread | null {
+  if (!node.id || !node.path) return null;
+  return {
+    id: node.id,
+    path: node.path,
+    line: positive(node.line),
+    startLine: positive(node.startLine),
+    originalLine: positive(node.originalLine),
+    side: node.diffSide === "LEFT" ? "LEFT" : "RIGHT",
+    isResolved: node.isResolved === true,
+    isOutdated: node.isOutdated === true,
+    comments: (node.comments?.nodes ?? []).flatMap((comment) =>
+      comment?.id
+        ? [
+            {
+              id: comment.id,
+              author: comment.author?.login ?? "ghost",
+              bot: comment.author?.__typename === "Bot",
+              body: comment.body ?? "",
+              createdAt: comment.createdAt ?? "",
+              url: comment.url ?? null,
+            },
+          ]
+        : [],
+    ),
+  };
+}
+
 function toRead(node: PullRequestNode): ForgeRead {
   const contexts = node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts;
   const rows = (contexts?.nodes ?? []).flatMap((check) => (check ? [checkRow(check)] : []));
@@ -265,6 +324,10 @@ function toRead(node: PullRequestNode): ForgeRead {
       checks: countChecks(rows),
     },
     checks: { head: node.headRefOid, rows, more: contexts?.pageInfo?.hasNextPage === true },
+    threads: (node.reviewThreads?.nodes ?? []).flatMap((thread) => {
+      const value = thread ? toThread(thread) : null;
+      return value ? [value] : [];
+    }),
   };
 }
 
@@ -278,7 +341,7 @@ export function pickPullRequest(nodes: readonly PullRequestNode[], headOwner: st
     (node) => node.headRepositoryOwner?.login.toLowerCase() === headOwner.toLowerCase(),
   );
   const chosen = own.find((node) => node.state === "OPEN") ?? own[0];
-  return chosen ? toRead(chosen) : { pullRequest: null, checks: null };
+  return chosen ? toRead(chosen) : { pullRequest: null, checks: null, threads: null };
 }
 
 export type PullRequestQuery = { repo: Repo; headOwner: string; branch: string };

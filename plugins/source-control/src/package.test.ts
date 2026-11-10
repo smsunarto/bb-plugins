@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { experimental_scanPublicSdkOnly } from "@get-bb/plugin-sdk/testing";
 
-test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect on the server, smol-toml on the host and its own files", async () => {
+test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect and its instructions on the server, smol-toml on the host and its own files", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const scan = await experimental_scanPublicSdkOnly(root, {
     // A public SDK subpath the scanner does not list by default; gitbutler and code-review use it too.
@@ -18,6 +18,8 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect o
       // The server's Effect runtime; layering.test.ts keeps both out of every other layer.
       /^effect$/,
       /^@bb-plugins\/effect-bridge$/,
+      // The review prompts and the findings tool's text, read from instructions/ on the server.
+      /^@bb-plugins\/instructions$/,
       // GitButler's branch metadata, read on the host.
       /^smol-toml$/,
       // The review page's list window.

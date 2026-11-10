@@ -17,6 +17,7 @@ import {
   workspaceValueSchema,
 } from "../core/change.ts";
 import { repoSchema } from "../core/ids.ts";
+import { timelineItemSchema } from "../core/items.ts";
 import { changeFileSchema, forgeFileSchema, inboxEntrySchema } from "../core/review.ts";
 
 const pathSchema = z.string().min(1).max(4096);
@@ -101,12 +102,24 @@ export const reviewReadSchema = z.discriminatedUnion("kind", [
   z
     .object({ kind: z.literal("commits"), repo: repoSchema, number: z.number().int().positive() })
     .strict(),
+  z
+    .object({
+      kind: z.literal("compare"),
+      repo: repoSchema,
+      base: z.string().regex(/^[0-9a-fA-F]{4,64}$/),
+      head: z.string().regex(/^[0-9a-fA-F]{4,64}$/),
+    })
+    .strict(),
+  z
+    .object({ kind: z.literal("timeline"), repo: repoSchema, number: z.number().int().positive() })
+    .strict(),
 ]);
 
 export const reviewAnswerSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("inbox"), entries: z.array(inboxEntrySchema).max(200) }).strict(),
   z.object({ kind: z.literal("files"), files: z.array(forgeFileSchema).max(3_000) }).strict(),
   z.object({ kind: z.literal("commits"), commits: z.array(commitSchema).max(1_000) }).strict(),
+  z.object({ kind: z.literal("timeline"), items: z.array(timelineItemSchema).max(100) }).strict(),
 ]);
 
 /** How long a write may run on the host. */

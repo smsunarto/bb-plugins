@@ -7,10 +7,12 @@
  * read once the page is hidden.
  */
 import { changeTag, hostTag, type ChangeKey } from "../core/ids.ts";
+import type { Effect } from "effect";
 import type { ForgeSites } from "./forge-sites.ts";
 import type { HostCalls } from "./host-calls.ts";
 import type { LocalReads } from "./local-read.ts";
 import { createReviewChange } from "./review-change.ts";
+import { createReviewItems } from "./review-items.ts";
 import { createRevisionReads } from "./review-revision.ts";
 import { checkoutsOn, createReviewSources, rowsOf } from "./review-sources.ts";
 import type { Share } from "./shared.ts";
@@ -25,13 +27,34 @@ export function createReview(deps: {
   invalidate: (tags: readonly string[]) => void;
   /** A Change's pull request was read: the threads showing it read again. */
   forgeChanged: (key: ChangeKey) => void;
+  /** Runs work no caller waits for. */
+  fork: (work: Effect.Effect<void>) => void;
   now: () => number;
   deadlineMs: number;
 }) {
   const sources = createReviewSources(deps);
-  const change = createReviewChange({ ...deps, inboxRow: sources.inboxRow });
+  // Bound below: a pull request read may move the Change's head.
+  let headMayHaveMoved = (_key: ChangeKey) => {};
+  const change = createReviewChange({
+    ...deps,
+    inboxRow: sources.inboxRow,
+    forgeRead: (key) => headMayHaveMoved(key),
+  });
   const revision = createRevisionReads(deps);
+  const items = createReviewItems({
+    store: deps.store,
+    sites: deps.sites,
+    share: deps.share,
+    detail: (key) => change.detail([key])[key]!,
+    patches: revision.patches,
+    placementsFor: revision.placementsFor,
+    invalidate: deps.invalidate,
+    fork: deps.fork,
+    now: deps.now,
+  });
+  headMayHaveMoved = items.settleIfBehind;
   return {
+    items,
     pageSources: sources.pageSources,
     inbox: sources.inbox,
     watchInbox: sources.watchInbox,
@@ -46,8 +69,9 @@ export function createReview(deps: {
     /** A checkout was read and changed: its host's list and its Changes' headers read again. */
     checkoutRead(hostId: string, path: string) {
       const placement = checkoutsOn(deps.store, hostId).find((each) => each.path === path);
-      const keys = placement ? rowsOf(deps.store, placement).map((row) => changeTag(row.key)) : [];
-      deps.invalidate([hostTag(hostId), ...keys]);
+      const rows = placement ? rowsOf(deps.store, placement) : [];
+      deps.invalidate([hostTag(hostId), ...rows.map((row) => changeTag(row.key))]);
+      for (const row of rows) items.settleIfBehind(row.key);
     },
   };
 }

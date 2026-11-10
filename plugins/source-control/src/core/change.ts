@@ -383,9 +383,45 @@ export type ForgeResult = z.infer<typeof forgeResultSchema>;
 export const forgeValueSchema = pullRequestSchema.nullable();
 export type ForgeValue = z.infer<typeof forgeValueSchema>;
 
-/** A pull request read: the pull request and its checks, from one GitHub call. */
+export const diffSideSchema = z.enum(["LEFT", "RIGHT"]);
+
+/** A GitHub review thread as the forge read stores it. */
+export const forgeThreadSchema = z
+  .object({
+    id: z.string(),
+    path: z.string(),
+    line: z.number().int().positive().nullable(),
+    startLine: z.number().int().positive().nullable(),
+    originalLine: z.number().int().positive().nullable(),
+    side: diffSideSchema,
+    isResolved: z.boolean(),
+    isOutdated: z.boolean(),
+    comments: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            author: z.string(),
+            bot: z.boolean(),
+            body: z.string(),
+            createdAt: z.string(),
+            url: z.string().nullable(),
+          })
+          .strict(),
+      )
+      .max(100),
+  })
+  .strict();
+export type ForgeThread = z.infer<typeof forgeThreadSchema>;
+
+/** A pull request read: the pull request, its checks and its review threads, from one GitHub call. */
 export const forgeReadSchema = z
-  .object({ pullRequest: forgeValueSchema, checks: checksValueSchema })
+  .object({
+    pullRequest: forgeValueSchema,
+    checks: checksValueSchema,
+    /** Null when there is no pull request. */
+    threads: z.array(forgeThreadSchema).max(300).nullable(),
+  })
   .strict();
 export type ForgeRead = z.infer<typeof forgeReadSchema>;
 

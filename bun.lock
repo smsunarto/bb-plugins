@@ -964,6 +964,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@bb-plugins/effect-bridge": "workspace:*",
+        "@bb-plugins/instructions": "workspace:*",
         "@tanstack/virtual-core": "3.17.11",
         "effect": "4.1.0",
         "smol-toml": "1.8.0",

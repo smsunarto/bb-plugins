@@ -186,6 +186,7 @@ export function createRevisionReads(deps: {
   };
 
   return {
+    placementsFor,
     files: (key: ChangeKey, revision: ReviewRevision) =>
       filesAt(key, revision).pipe(
         Effect.map((list): FilesResult => ({ ok: true, files: list, more: false })),

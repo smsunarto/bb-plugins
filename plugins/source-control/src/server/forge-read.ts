@@ -15,7 +15,7 @@ import {
   type ForgeValue,
   type Placement,
 } from "../core/change.ts";
-import { changeTag, checksTag, type ChangeKey } from "../core/ids.ts";
+import { changeTag, checksTag, reviewTag, type ChangeKey } from "../core/ids.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
@@ -45,6 +45,8 @@ export function createForgeReads(deps: {
   announce: (threadIds: Iterable<string>) => void;
   /** Tell readers of these tags, which are not thread tags, to read again. */
   invalidate: (tags: readonly string[]) => void;
+  /** A Change's pull request was read: its review items may need a new head. */
+  forgeRead?: (key: ChangeKey) => void;
   now: () => number;
 }) {
   const { store } = deps;
@@ -90,6 +92,12 @@ export function createForgeReads(deps: {
               deps.invalidate([changeTag(key)]);
             }
             if (store.setChecks(key, checks)) deps.invalidate([checksTag(key)]);
+            const threads =
+              answer._tag === "Success"
+                ? succeeded(answer.success.threads ?? [], at)
+                : failed(store.threads(key), answer.failure.problem);
+            if (store.setThreads(key, threads)) deps.invalidate([reviewTag(key)]);
+            deps.forgeRead?.(key);
           }),
         )
         .pipe(Effect.as(key));

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   createFakePluginHost,
   makeHostResponse,
+  makePluginAgentConfigurationContext,
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
 import type {
@@ -93,6 +94,8 @@ type Host = {
   delayMs?: number;
   /** Never answers a range read, while its workspace reads still answer. */
   rangeHung?: boolean;
+  /** A range read's patch text by path, between whatever two commits were asked. */
+  patches?: Record<string, string>;
   /** Runs GitHub reads itself, against the world's fake GitHub, as its `ghAccounts`. */
   forgeLive?: boolean;
   workspace: WorkspaceValue;
@@ -126,6 +129,8 @@ type World = {
   /** Host workspace reads in flight now, and the most at once. */
   inFlight?: number;
   maxInFlight?: number;
+  /** Threads the plugin spawned, with what it asked for. */
+  spawned?: { id: string; pluginMetadata: unknown; prompt: string; environment: unknown }[];
 };
 
 type Run = Awaited<ReturnType<Exec>>;
@@ -252,8 +257,11 @@ function serverGh(world: World): Exec {
   };
 }
 
-/** The host's range reads: one modified file, no commits, a header-only patch per path. */
-function fakeRange({ read }: { read: { kind: string; paths?: string[] } }) {
+/** The host's range reads: one modified file, no commits, a header-only patch per path unless the host has one. */
+function fakeRange(
+  { read }: { read: { kind: string; paths?: string[] } },
+  patches: Record<string, string> = {},
+) {
   if (read.kind === "files")
     return {
       ok: true,
@@ -280,9 +288,51 @@ function fakeRange({ read }: { read: { kind: string; paths?: string[] } }) {
         path,
         kind: "modified",
         previousPath: null,
-        patch: `diff --git a/${path} b/${path}\n`,
+        patch: patches[path] ?? `diff --git a/${path} b/${path}\n`,
         truncated: false,
       })),
+    },
+  };
+}
+
+function fakeSdk(world: World) {
+  return {
+    threads: {
+      get: (async ({ threadId }: { threadId: string }) => {
+        const where = world.threads[threadId];
+        if (!where) return makeThreadResponse({ id: threadId, status: "active" } as never);
+        return {
+          ...makeThreadResponse({ id: threadId }),
+          environment: {
+            id: where.environmentId ?? `env-${threadId}`,
+            hostId: where.hostId,
+            path: where.path,
+            status: "ready",
+          },
+        };
+      }) as never,
+      spawn: (async (args: { pluginMetadata: unknown; prompt: string; environment: unknown }) => {
+        const id = `review-${(world.spawned ??= []).length + 1}`;
+        world.spawned.push({ id, ...args });
+        return makeThreadResponse({ id, status: "active" } as never);
+      }) as never,
+    },
+    environments: {
+      get: (async ({ environmentId }: { environmentId: string }) => ({
+        id: environmentId,
+        projectId: "proj-1",
+        status: "ready",
+      })) as never,
+    },
+    hosts: {
+      get: (async ({ hostId }: { hostId: string }) => {
+        const host = world.hosts[hostId]!;
+        return makeHostResponse({
+          id: hostId,
+          name: host.name,
+          status: host.online ? "connected" : "disconnected",
+        } as never);
+      }) as never,
     },
   };
 }
@@ -290,32 +340,7 @@ function fakeRange({ read }: { read: { kind: string; paths?: string[] } }) {
 async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
   const { bb, harness } = createFakePluginHost({
     pluginId: PLUGIN,
-    sdk: {
-      threads: {
-        get: (async ({ threadId }: { threadId: string }) => {
-          const where = world.threads[threadId]!;
-          return {
-            ...makeThreadResponse({ id: threadId }),
-            environment: {
-              id: where.environmentId ?? `env-${threadId}`,
-              hostId: where.hostId,
-              path: where.path,
-              status: "ready",
-            },
-          };
-        }) as never,
-      },
-      hosts: {
-        get: (async ({ hostId }: { hostId: string }) => {
-          const host = world.hosts[hostId]!;
-          return makeHostResponse({
-            id: hostId,
-            name: host.name,
-            status: host.online ? "connected" : "disconnected",
-          } as never);
-        }) as never,
-      },
-    },
+    sdk: fakeSdk(world),
     experimental_callHostRpc: async ({ method, hostId, input }) => {
       const host = world.hosts[hostId]!;
       if (!host.online) throw new Error("Host is not connected");
@@ -324,18 +349,24 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
       if (method === "range")
         return host.rangeHung
           ? new Promise(() => undefined)
-          : fakeRange(input as { read: { kind: string; paths?: string[] } });
+          : fakeRange(input as { read: { kind: string; paths?: string[] } }, host.patches);
       if (method === "renewWatch") return { watching: true };
       if (method === "forgeAccounts") return { ok: true, value: { accounts: host.ghAccounts } };
       if (host.forgeLive && (method === "forgeReview" || method === "forgeCall"))
         return liveHostForge(world, hostId, method, input);
-      if (method === "forgeCall") return { ok: true, value: { pullRequest: null, checks: null } };
+      if (method === "forgeCall")
+        return { ok: true, value: { pullRequest: null, checks: null, threads: null } };
       if (method === "vcsAction") return host.action ?? { status: "done" };
       if (method === "patches") return { ok: true, value: { files: [] } };
       throw new Error(`unexpected ${method} ${JSON.stringify(input)}`);
     },
   });
-  await createSourceControl({ serverExec: serverGh(world), now: () => Date.now(), ...options })(bb);
+  const plugin = createSourceControl({
+    serverExec: serverGh(world),
+    now: () => Date.now(),
+    ...options,
+  });
+  await plugin(bb);
   const read = async (threadId: string) =>
     (
       (await harness.behavior.callRpc("changeForThread", { keys: [threadId] })) as Record<
@@ -354,7 +385,9 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
     );
   const invalidations = () =>
     harness.inspection.experimental_rpcInvalidations.flatMap((tags) => tags ?? []);
-  return { harness, read, checkout, hostCalls, invalidations };
+  /** Stop this plugin instance and load another on the same database, as a server restart. */
+  const restart = async () => (await harness.lifecycle.reload(plugin)).harness;
+  return { harness, read, checkout, hostCalls, invalidations, restart };
 }
 
 function twoHosts(): World {
@@ -1175,5 +1208,281 @@ describe("review page", () => {
     world.hosts["host-a"]!.rangeHung = false;
     await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
     expect((await detail()).revision.source.kind).toBe("host");
+  });
+});
+
+describe("review items and drafts", () => {
+  const KEY = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+
+  /** A pull request with one human thread and one SlopCop thread. */
+  const REVIEWED = {
+    ...PR,
+    reviewThreads: {
+      nodes: [
+        {
+          id: "T1",
+          path: "src/a.ts",
+          line: 12,
+          startLine: null,
+          originalLine: 12,
+          diffSide: "RIGHT",
+          isResolved: false,
+          isOutdated: false,
+          comments: {
+            nodes: [
+              {
+                id: "C1",
+                body: "Why not reuse the helper?",
+                createdAt: "2026-11-01T00:00:00Z",
+                url: "https://github.com/x/1",
+                author: { __typename: "User", login: "octo" },
+              },
+              {
+                id: "C2",
+                body: "Fair.",
+                createdAt: "2026-11-01T01:00:00Z",
+                url: "https://github.com/x/2",
+                author: { __typename: "User", login: "smsunarto" },
+              },
+            ],
+          },
+        },
+        {
+          id: "T2",
+          path: "src/b.ts",
+          line: 3,
+          startLine: null,
+          originalLine: 3,
+          diffSide: "RIGHT",
+          isResolved: false,
+          isOutdated: false,
+          comments: {
+            nodes: [
+              {
+                id: "C3",
+                body: "**[P2]** Missing await\n<!-- slopcop:rule=r run=1 sha=c0ffee kind=inline -->",
+                createdAt: "2026-11-01T00:00:00Z",
+                url: null,
+                author: { __typename: "Bot", login: "slopcop-dev" },
+              },
+            ],
+          },
+        },
+      ],
+    },
+  };
+
+  type Review = {
+    items: {
+      id: string;
+      state: string;
+      anchor: { path: string; line: number | null; head: string };
+      origin: { kind: string; slopcop?: boolean };
+    }[];
+    drafts: {
+      id: string;
+      body: string;
+      state: string;
+      createdAt: number;
+      anchor: { line: number | null; head: string };
+    }[];
+    selected: string[];
+    runs: { threadId: string; state: string; findings: number }[];
+  };
+  const reviewOf = async (
+    harness: Awaited<ReturnType<typeof start>>["harness"],
+    key: string,
+  ): Promise<Review> =>
+    (
+      (await harness.behavior.callRpc("reviewForChange", { keys: [key] })) as Record<string, Review>
+    )[key]!;
+  const anchor = (path: string, line: number, head = "c0ffee") => ({
+    path,
+    line,
+    startLine: null,
+    side: "RIGHT" as const,
+    head,
+  });
+
+  test("GitHub's review threads come with the pull request read, one item per thread, SlopCop's by its marker", async () => {
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [REVIEWED];
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    const review = await reviewOf(harness, KEY);
+    expect(review.items.map((item) => [item.id, item.origin])).toEqual([
+      ["gh:T1", { kind: "forge", author: "octo", bot: false, slopcop: false }],
+      ["gh:T2", { kind: "forge", author: "slopcop-dev", bot: true, slopcop: true }],
+    ]);
+    expect(review.items[0]).toMatchObject({
+      anchor: { path: "src/a.ts", line: 12, head: "c0ffee" },
+      replies: [{ id: "C2", author: "smsunarto" }],
+    });
+    // One GitHub call brought the pull request, its checks and its threads.
+    expect(world.ghCalls).toEqual(["scott/route-gh"]);
+  });
+
+  test("a draft saved twice with one client id is one draft, on a local Change with no pull request", async () => {
+    const world = twoHosts();
+    world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", { github: null });
+    const { harness, checkout, invalidations } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    const key = (await checkout("thread-a")).key!;
+    expect(key.startsWith("local:")).toBe(true);
+    const draft = { id: "d-1", anchor: anchor("src/a.ts", 4), body: "Rename this.", replyTo: null };
+    await harness.behavior.callRpc("saveDraft", { key, draft });
+    const published = invalidations().length;
+    // A retry after a lost answer changes nothing and tells no one.
+    await harness.behavior.callRpc("saveDraft", { key, draft });
+    expect(invalidations()).toHaveLength(published);
+    await harness.behavior.callRpc("saveDraft", { key, draft: { ...draft, body: "Rename it." } });
+    const { drafts } = await reviewOf(harness, key);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({ id: "d-1", body: "Rename it.", state: "pending" });
+    await harness.behavior.callRpc("deleteDraft", { key, id: "d-1" });
+    await harness.behavior.callRpc("deleteDraft", { key, id: "d-1" });
+    expect((await reviewOf(harness, key)).drafts).toEqual([]);
+  });
+
+  test("drafts and the selection survive a restart and read the same from every client", async () => {
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [REVIEWED];
+    const { harness, restart } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await harness.behavior.callRpc("saveDraft", {
+      key: KEY,
+      draft: { id: "d-1", anchor: anchor("src/a.ts", 12), body: "Agreed.", replyTo: "gh:T1" },
+    });
+    await harness.behavior.callRpc("setSelected", {
+      key: KEY,
+      ids: ["gh:T1", "gh:T2"],
+      selected: true,
+    });
+    await harness.behavior.callRpc("setSelected", { key: KEY, ids: ["gh:T2"], selected: false });
+    const before = await reviewOf(harness, KEY);
+    expect(before.selected).toEqual(["gh:T1"]);
+    expect(before.drafts).toMatchObject([{ id: "d-1", replyTo: "gh:T1" }]);
+    // A second client asks the server, which holds the only copy.
+    expect(await reviewOf(harness, KEY)).toEqual(before);
+    const after = await restart();
+    expect(await reviewOf(after, KEY)).toEqual(before);
+  });
+
+  test("a new head moves findings and drafts past the edits above them, outdates the ones whose lines changed, and drops none", async () => {
+    const world = twoHosts();
+    world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", {
+      target: { ref: "origin/main", head: "aaa1111", behind: 0, base: null, lastFetched: null },
+    });
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    const started = (await harness.behavior.callRpc("startReview", { key: KEY })) as {
+      ok: true;
+      threadId: string;
+    };
+    expect(started).toMatchObject({ ok: true, reused: false });
+    expect(world.spawned?.[0]).toMatchObject({
+      pluginMetadata: { kind: "review", changeKey: KEY, head: "c0ffee" },
+      environment: { type: "reuse", environmentId: "env-thread-a" },
+    });
+    expect(world.spawned?.[0]?.prompt).toContain("git diff aaa1111...c0ffee");
+    // Asking again while it runs returns the same review.
+    expect(await harness.behavior.callRpc("startReview", { key: KEY })).toMatchObject({
+      threadId: started.threadId,
+      reused: true,
+    });
+    const finding = (path: string, line: number) => ({
+      priority: 1,
+      title: "Fix it",
+      body: "",
+      path,
+      line,
+    });
+    await harness.behavior.callAgentTool(
+      "source_control_report_findings",
+      {
+        summary: "Two problems in a.ts, one in b.ts.",
+        findings: [finding("src/a.ts", 10), finding("src/a.ts", 40), finding("src/b.ts", 5)],
+      },
+      { threadId: started.threadId },
+    );
+    await harness.behavior.callRpc("saveDraft", {
+      key: KEY,
+      draft: { id: "d-1", anchor: anchor("src/a.ts", 40), body: "And here.", replyTo: null },
+    });
+    let review = await reviewOf(harness, KEY);
+    expect(review.items.map((item) => item.id)).toEqual([
+      `bb:${started.threadId}:1`,
+      `bb:${started.threadId}:2`,
+      `bb:${started.threadId}:3`,
+    ]);
+    expect(review.runs).toMatchObject([{ state: "reported", findings: 3 }]);
+
+    // A commit replaces line 10 of a.ts with two lines and leaves b.ts alone.
+    const next = branch({ head: "d00d1e" });
+    world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", {
+      target: { ref: "origin/main", head: "aaa1111", behind: 0, base: null, lastFetched: null },
+      stacks: [{ key: next.name, branches: [next], assigned: [] }],
+    });
+    world.hosts["host-a"]!.patches = {
+      "src/a.ts":
+        "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -9,3 +9,4 @@\n ctx\n-old\n+new\n+newer\n ctx\n",
+    };
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await vi.waitFor(async () => {
+      review = await reviewOf(harness, KEY);
+      expect(review.items[1]?.anchor.head).toBe("d00d1e");
+    });
+    expect(review.items.map((item) => [item.state, item.anchor.line, item.anchor.head])).toEqual([
+      ["outdated", 10, "c0ffee"],
+      ["open", 41, "d00d1e"],
+      ["open", 5, "d00d1e"],
+    ]);
+    expect(review.drafts.map((draft) => [draft.state, draft.anchor.line])).toEqual([
+      ["pending", 41],
+    ]);
+  });
+
+  test("only review threads get the findings tool, and a thread that is not one cannot report", async () => {
+    const world = twoHosts();
+    const { harness } = await start(world);
+    const tools = async (pluginMetadata: Record<string, string>) =>
+      (
+        await harness.behavior.resolveAgentConfiguration(
+          makePluginAgentConfigurationContext({ pluginMetadata }),
+        )
+      ).tools.map((tool) => tool.name);
+    expect(await tools({ kind: "review", changeKey: KEY })).toEqual([
+      "source_control_report_findings",
+    ]);
+    expect(await tools({})).toEqual([]);
+    await expect(
+      harness.behavior.callAgentTool(
+        "source_control_report_findings",
+        { summary: "", findings: [] },
+        { threadId: "thread-a" },
+      ),
+    ).rejects.toThrow(/not a Source Control review/);
+  });
+
+  test("an idle change with review threads stays within 5 gh runs a minute while its page and tab watch, and none once hidden", async () => {
+    vi.useFakeTimers();
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [REVIEWED];
+    const { harness } = await start(world);
+    const watches = [
+      harness.behavior.experimental_watchRpc("changeForThread", { key: "thread-a" }),
+      harness.behavior.experimental_watchRpc("changeDetail", { key: KEY }),
+      harness.behavior.experimental_watchRpc("reviewForChange", { key: KEY }),
+    ];
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    for (const stop of watches) stop();
+    const runs = world.ghRuns ?? [];
+    const busiest = Math.max(
+      ...runs.map((at) => runs.filter((other) => other >= at && other < at + 60_000).length),
+    );
+    expect(busiest).toBeLessThanOrEqual(5);
+    const seen = runs.length;
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(world.ghRuns ?? []).toHaveLength(seen);
   });
 });

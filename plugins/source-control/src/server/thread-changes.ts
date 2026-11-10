@@ -47,6 +47,8 @@ export type ThreadChangesDeps = {
   actionDeadlineMs: number;
   /** How long a host read may take before the host counts as offline. */
   hostDeadlineMs?: number;
+  /** Runs work no caller waits for. */
+  fork: (work: Effect.Effect<void>) => void;
 };
 
 export function createThreadChanges(deps: ThreadChangesDeps) {
@@ -119,6 +121,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     invalidate: (tags) => {
       if (!deps.disposed()) bb.rpc.experimental_invalidate(tags);
     },
+    forgeRead: (key) => review.items.settleIfBehind(key),
     now,
   });
 
@@ -161,6 +164,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
       if (!deps.disposed()) bb.rpc.experimental_invalidate(tags);
     },
     forgeChanged: (key) => announce(keyThreads.get(key) ?? []),
+    fork: deps.fork,
     now,
     deadlineMs: hostDeadlineMs,
   });

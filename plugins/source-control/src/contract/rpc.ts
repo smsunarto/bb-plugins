@@ -28,12 +28,19 @@ import {
   sourceRowsSchema,
 } from "../core/review.ts";
 import {
+  changeReviewSchema,
+  conversationResultSchema,
+  draftInputSchema,
+  draftSchema,
+} from "../core/items.ts";
+import {
   accountTag,
   changeKeySchema,
   changeTag,
   checksTag,
   hostTag,
   PAGE_SOURCES_TAG,
+  reviewTag,
   threadTag,
   type ChangeKey,
 } from "../core/ids.ts";
@@ -167,6 +174,50 @@ export const sourceControlContract = defineRpcContract({
       })
       .strict(),
     output: forgeResultSchema,
+  },
+  reviewForChange: {
+    experimental_description:
+      "Each Change's review, keyed by ChangeKey: its findings and GitHub review comments as items with one id each, the reader's unsent line comments, which items are checked, and its bb review runs.",
+    input: z.object({ keys: z.array(changeKeySchema).min(1).max(20) }).strict(),
+    output: z.record(z.string(), changeReviewSchema),
+    keyTags: (key: string) => [reviewTag(key as ChangeKey)],
+  },
+  /** Saves a line comment. Idempotent on the draft's client-minted id: a second save edits it. */
+  saveDraft: {
+    input: z.object({ key: changeKeySchema, draft: draftInputSchema }).strict(),
+    output: z.object({ ok: z.literal(true), draft: draftSchema }).strict(),
+  },
+  /** Deletes a draft; deleting one already gone is fine. */
+  deleteDraft: {
+    input: z.object({ key: changeKeySchema, id: z.string().min(1).max(128) }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
+  /** Checks or unchecks items. Convergent. */
+  setSelected: {
+    input: z
+      .object({
+        key: changeKeySchema,
+        ids: z.array(z.string().min(1).max(512)).min(1).max(500),
+        selected: z.boolean(),
+      })
+      .strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
+  },
+  /** Starts a bb review of the Change's head, or returns the one already running on it. */
+  startReview: {
+    experimental_description:
+      "Start a bb agent thread that reviews the Change's current head read-only and reports findings to Source Control, or return the review already running on that head.",
+    input: z.object({ key: changeKeySchema }).strict(),
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), threadId: z.string(), reused: z.boolean() }).strict(),
+      z.object({ ok: z.literal(false), message: z.string() }).strict(),
+    ]),
+  },
+  /** The pull request's conversation, read on demand while the tab shows it. */
+  changeConversation: {
+    input: z.object({ key: changeKeySchema }).strict(),
+    output: conversationResultSchema,
+    tags: (input: { key: string }) => [changeTag(input.key as ChangeKey)],
   },
   /** Reads a GitButler workspace as plain git, or by what it is again. Stored per checkout. */
   setReadAs: {

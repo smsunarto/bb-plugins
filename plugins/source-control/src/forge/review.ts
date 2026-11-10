@@ -5,8 +5,10 @@
  */
 import type { Commit, FilePatch, PullRequest } from "../core/change.ts";
 import type { Repo } from "../core/ids.ts";
+import type { TimelineItem } from "../core/items.ts";
 import type { ChangeFile, ForgeFile, InboxEntry } from "../core/review.ts";
 import { classifyFailure, GhError, type Exec } from "./github.ts";
+import { readTimeline } from "./timeline.ts";
 
 export type { InboxEntry };
 
@@ -246,7 +248,38 @@ export async function readPullRequestFiles(
   number: number,
   signal?: AbortSignal,
 ): Promise<ForgeFile[]> {
-  const pages = await restPages<RestFile>(exec, filesPath(repo, number), signal);
+  return forgeFiles(await restPages<RestFile>(exec, filesPath(repo, number), signal));
+}
+
+/** A commit id for a compare path: GitHub takes hex only. */
+const COMMIT = /^[0-9a-fA-F]{4,64}$/;
+
+/**
+ * What `head` changed since `base`, as GitHub compares them (from their
+ * merge base): one call, at most 300 files, which GitHub's compare lists.
+ */
+export async function readCompareFiles(
+  exec: Exec,
+  repo: Repo,
+  base: string,
+  head: string,
+  signal?: AbortSignal,
+): Promise<ForgeFile[]> {
+  if (!COMMIT.test(base) || !COMMIT.test(head))
+    throw new GhError("failed", "A compare takes two commit ids.");
+  const result = await exec(
+    ["api", `repos/${repo.owner}/${repo.name}/compare/${base}...${head}`, "--jq", ".files"],
+    { signal },
+  );
+  if (result.code !== 0) throw classifyFailure(result);
+  try {
+    return forgeFiles((JSON.parse(result.stdout || "[]") as RestFile[] | null) ?? []);
+  } catch {
+    throw new GhError("failed", "GitHub returned a compare that could not be read.");
+  }
+}
+
+function forgeFiles(pages: readonly RestFile[]): ForgeFile[] {
   return pages.flatMap((raw) => {
     if (!raw.filename) return [];
     const kind = FILE_KINDS[raw.status ?? ""] ?? "modified";
@@ -324,11 +357,14 @@ export async function readPullRequestCommits(
 export type ReviewRead =
   | { kind: "inbox" }
   | { kind: "files"; repo: Repo; number: number }
-  | { kind: "commits"; repo: Repo; number: number };
+  | { kind: "commits"; repo: Repo; number: number }
+  | { kind: "compare"; repo: Repo; base: string; head: string }
+  | { kind: "timeline"; repo: Repo; number: number };
 export type ReviewAnswer =
   | { kind: "inbox"; entries: InboxEntry[] }
   | { kind: "files"; files: ForgeFile[] }
-  | { kind: "commits"; commits: Commit[] };
+  | { kind: "commits"; commits: Commit[] }
+  | { kind: "timeline"; items: TimelineItem[] };
 
 export async function runReviewRead(
   exec: Exec,
@@ -348,5 +384,12 @@ export async function runReviewRead(
         kind: "commits",
         commits: await readPullRequestCommits(exec, read.repo, read.number, signal),
       };
+    case "compare":
+      return {
+        kind: "files",
+        files: await readCompareFiles(exec, read.repo, read.base, read.head, signal),
+      };
+    case "timeline":
+      return { kind: "timeline", items: await readTimeline(exec, read.repo, read.number, signal) };
   }
 }

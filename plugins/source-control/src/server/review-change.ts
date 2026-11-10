@@ -17,7 +17,7 @@ import {
   type PullRequest,
   type WorkspaceValue,
 } from "../core/change.ts";
-import { changeTag, checksTag, type ChangeKey } from "../core/ids.ts";
+import { changeTag, checksTag, reviewTag, type ChangeKey } from "../core/ids.ts";
 import {
   inboxRow,
   parseChangeKey,
@@ -213,6 +213,8 @@ export function createReviewChange(deps: {
   invalidate: (tags: readonly string[]) => void;
   /** A Change's pull request was read: the threads showing it read again. */
   forgeChanged: (key: ChangeKey) => void;
+  /** A Change's pull request was read: its review items may need a new head. */
+  forgeRead?: (key: ChangeKey) => void;
   now: () => number;
 }) {
   const { store } = deps;
@@ -246,6 +248,11 @@ export function createReviewChange(deps: {
           deps.forgeChanged(key);
         }
         if (store.setChecks(key, checks)) deps.invalidate([checksTag(key)]);
+        const threads = ok
+          ? succeeded(answer.success.threads ?? [], at)
+          : failed(store.threads(key), answer.failure.problem);
+        if (store.setThreads(key, threads)) deps.invalidate([reviewTag(key)]);
+        deps.forgeRead?.(key);
       }),
     );
 
