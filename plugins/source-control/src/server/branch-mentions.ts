@@ -15,6 +15,43 @@ type Token = { word: string } | { operator: string };
 const HEREDOC =
   /<<-?[ \t]*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[^\n]*\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/g;
 
+/** A quoted or escaped run starting at `index`: its text and the index of its last character. */
+function quoted(script: string, index: number): { text: string; end: number } | null {
+  const char = script[index];
+  if (char === "'") {
+    const close = script.indexOf("'", index + 1);
+    const end = close === -1 ? script.length : close;
+    return { text: script.slice(index + 1, end), end };
+  }
+  if (char === '"') {
+    let text = "";
+    let at = index + 1;
+    while (at < script.length && script[at] !== '"') {
+      if (script[at] === "\\" && at + 1 < script.length) at += 1;
+      text += script[at];
+      at += 1;
+    }
+    return { text, end: at };
+  }
+  if (char === "\\" && index + 1 < script.length) {
+    const next = script[index + 1]!;
+    return { text: next === "\n" ? "" : next, end: index + 1 };
+  }
+  return null;
+}
+
+const SEPARATORS = new Set(["\n", ";", "(", ")"]);
+
+/** A control operator at `index` (`;`, `&&`, `|`, …) and how many characters it takes. */
+function operatorAt(script: string, index: number): { operator: string; length: number } | null {
+  const char = script[index]!;
+  if (SEPARATORS.has(char)) return { operator: char, length: 1 };
+  if (char !== "&" && char !== "|") return null;
+  return script[index + 1] === char
+    ? { operator: char + char, length: 2 }
+    : { operator: char, length: 1 };
+}
+
 function tokenize(script: string): Token[] {
   const tokens: Token[] = [];
   let word: string | null = null;
@@ -24,33 +61,17 @@ function tokenize(script: string): Token[] {
   };
   for (let index = 0; index < script.length; index += 1) {
     const char = script[index]!;
-    if (char === "'") {
-      const end = script.indexOf("'", index + 1);
-      const stop = end === -1 ? script.length : end;
-      word = (word ?? "") + script.slice(index + 1, stop);
-      index = stop;
-    } else if (char === '"') {
-      let value = "";
-      index += 1;
-      while (index < script.length && script[index] !== '"') {
-        if (script[index] === "\\" && index + 1 < script.length) index += 1;
-        value += script[index];
-        index += 1;
-      }
-      word = (word ?? "") + value;
-    } else if (char === "\\" && index + 1 < script.length) {
-      index += 1;
-      if (script[index] !== "\n") word = (word ?? "") + script[index];
+    const run = quoted(script, index);
+    const operator = run ? null : operatorAt(script, index);
+    if (run) {
+      word = (word ?? "") + run.text;
+      index = run.end;
+    } else if (operator) {
+      push();
+      tokens.push({ operator: operator.operator });
+      index += operator.length - 1;
     } else if (char === " " || char === "\t") {
       push();
-    } else if (char === "\n" || char === ";" || char === "(" || char === ")") {
-      push();
-      tokens.push({ operator: char });
-    } else if (char === "&" || char === "|") {
-      push();
-      const double = script[index + 1] === char;
-      tokens.push({ operator: double ? char + char : char });
-      if (double) index += 1;
     } else {
       word = (word ?? "") + char;
     }
@@ -202,6 +223,19 @@ function butMention(args: readonly string[], checkout: string | undefined): Bran
   }
 }
 
+/** Where `cd <dir>` leaves the commands after it: away from the checkout, or not; undefined when it says nothing. */
+function cdLeaves(command: readonly string[], checkout: string | undefined): boolean | undefined {
+  const dir = command[1];
+  if (dir === undefined || dir === "-") return undefined;
+  return dir.startsWith("/") || dir.startsWith("~") ? leaves(dir, checkout) : undefined;
+}
+
+/** The script a shell runs with `-c`: `zsh -lc '<script>'`. */
+function shellScript(command: readonly string[]): string | undefined {
+  const flag = command.findIndex((word, index) => index > 0 && /^-[a-z]*c[a-z]*$/.test(word));
+  return flag === -1 ? undefined : command[flag + 1];
+}
+
 function scan(
   script: string,
   checkout: string | undefined,
@@ -213,17 +247,14 @@ function scan(
   for (const words of simpleCommands(script)) {
     const command = commandWords(words);
     const program = basename(command[0] ?? "");
-    if (program === "cd" && command[1] !== undefined && command[1] !== "-") {
-      if (command[1].startsWith("/") || command[1].startsWith("~")) {
-        elsewhere = leaves(command[1], checkout);
-      }
+    if (program === "cd") {
+      elsewhere = cdLeaves(command, checkout) ?? elsewhere;
     } else if (program === "but") {
       const mention = elsewhere ? null : butMention(command.slice(1), checkout);
       if (mention) out.push(mention);
     } else if (SHELLS.has(program) && depth < 3) {
-      // `zsh -lc '<script>'`: the script is a command line of its own.
-      const flag = command.findIndex((word, index) => index > 0 && /^-[a-z]*c[a-z]*$/.test(word));
-      const inner = flag === -1 ? undefined : command[flag + 1];
+      // The script is a command line of its own.
+      const inner = shellScript(command);
       if (inner !== undefined) scan(inner, checkout, elsewhere, depth + 1, out);
     }
   }

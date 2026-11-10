@@ -96,6 +96,23 @@ function advance(previous: OwnBranch, mentions: readonly Mention[], lastSeq: num
   return { branch, namedAt, renames: renames.slice(-RENAMES_KEPT), scannedSeq: lastSeq };
 }
 
+/** The branch a subthread named last, under the name it has after every rename since. */
+function latestNamed(mine: OwnBranch, theirs: OwnBranch[]): string | null {
+  let latest: { branch: string; namedAt: number } | null = null;
+  for (const { branch, namedAt } of theirs)
+    if (branch !== null && namedAt !== null && (!latest || namedAt > latest.namedAt))
+      latest = { branch, namedAt };
+  if (!latest) return null;
+  const since = latest.namedAt;
+  let branch = latest.branch;
+  const renames = [mine, ...theirs]
+    .flatMap((record) => record.renames)
+    .filter((rename) => rename.at > since)
+    .sort((a, b) => a.at - b.at);
+  for (const rename of renames) if (rename.from === branch) branch = rename.to;
+  return branch;
+}
+
 export function createThreadBranches(
   bb: BbPluginApi,
   /** Called with a thread whose branch a background recheck changed. */
@@ -235,19 +252,7 @@ export function createThreadBranches(
     ).filter((read): read is Read => read !== null);
     const more = mineMore || reads.some((read) => read.more);
     const theirs = reads.map((read) => read.record);
-    let latest: OwnBranch | null = null;
-    for (const record of theirs) {
-      if (record.branch === null || record.namedAt === null) continue;
-      if (!latest || record.namedAt > latest.namedAt!) latest = record;
-    }
-    if (!latest) return { branch: null, more };
-    let branch = latest.branch!;
-    const renames = [mine, ...theirs]
-      .flatMap((record) => record.renames)
-      .filter((rename) => rename.at > latest.namedAt!)
-      .sort((a, b) => a.at - b.at);
-    for (const rename of renames) if (rename.from === branch) branch = rename.to;
-    return { branch, more };
+    return { branch: latestNamed(mine, theirs), more };
   }
 
   function work(threadId: string, place: ThreadPlace): Promise<string | null> {
