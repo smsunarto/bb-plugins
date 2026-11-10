@@ -20,11 +20,25 @@ export type CatalogRouting =
 export type ProviderCatalog =
   | { status: "loading"; models: readonly CatalogModel[] }
   | { status: "ready"; models: readonly CatalogModel[]; fetchedAt: number }
-  | { status: "error"; models: readonly CatalogModel[]; message: string; fetchedAt: number };
+  | {
+      status: "error";
+      models: readonly CatalogModel[];
+      message: string;
+      fetchedAt: number;
+      /** Consecutive failed loads, which space out the automatic retries. */
+      failures: number;
+    };
 
 const LOADING: ProviderCatalog = { status: "loading", models: [] };
 const STALE_AFTER_MS = 5 * 60_000;
 const REQUEST_DEADLINE_MS = 15_000;
+const FIRST_RETRY_MS = 5_000;
+const MAX_RETRY_MS = 2 * 60_000;
+
+/** When a read that failed `failures` times in a row, last at `failedAt`, is tried again. */
+function retryAt(failedAt: number, failures: number) {
+  return failedAt + Math.min(FIRST_RETRY_MS * 2 ** (failures - 1), MAX_RETRY_MS);
+}
 
 /**
  * One app-wide cache shared by every mounted composer, keyed by routing and
@@ -121,13 +135,16 @@ function load(
   inFlight.add(key);
   // A refresh keeps the models already shown; only a cold miss shows loading.
   if (!cached) publish(key, LOADING);
-  const failed = (message: string) =>
+  const failed = (message: string) => {
+    const previous = catalogs.get(key);
     publish(key, {
       status: "error",
-      models: catalogs.get(key)?.models ?? [],
+      models: previous?.models ?? [],
       message,
       fetchedAt: Date.now(),
+      failures: (previous?.status === "error" ? previous.failures : 0) + 1,
     });
+  };
   Promise.resolve()
     .then(() =>
       sdk.providers.models({
@@ -150,7 +167,7 @@ function load(
 
 type ThreadLookup =
   | { status: "pending" }
-  | { status: "failed" }
+  | { status: "failed"; failedAt: number; failures: number }
   | { status: "ready"; environmentId: string | null };
 
 /** Thread → environment. A failed read is retried on the next ask instead of guessing a machine. */
@@ -165,6 +182,7 @@ function resolveThread(
   if (current?.status === "pending") return;
   // A thread without an environment yet may get one once provisioned; re-read it when asked.
   if (current?.status === "ready" && (current.environmentId !== null || !options.refresh)) return;
+  const failures = current?.status === "failed" ? current.failures : 0;
   if (current?.status !== "ready") threadLookups.set(threadId, { status: "pending" });
   Promise.resolve()
     .then(() => sdk.threads.get({ threadId, signal: AbortSignal.timeout(REQUEST_DEADLINE_MS) }))
@@ -174,7 +192,11 @@ function resolveThread(
     })
     .catch(() => {
       if (threadLookups.get(threadId)?.status === "pending") {
-        threadLookups.set(threadId, { status: "failed" });
+        threadLookups.set(threadId, {
+          status: "failed",
+          failedAt: Date.now(),
+          failures: failures + 1,
+        });
       }
       notify();
     });
@@ -251,7 +273,46 @@ export function useModelCatalog(composer: PluginComposerApi, enabled: boolean): 
   }, [sdk, routing, selectedProviderId]);
 
   // Only a failed read leaves the machine unknown; while it is pending, the machine is coming.
-  const lookupFailed = threadId !== null && threadLookups.get(threadId)?.status === "failed";
+  const lookup = threadId === null ? undefined : threadLookups.get(threadId);
+  const lookupFailed = lookup?.status === "failed";
+
+  // A failed read leaves BB's picker in place of these, and only these offer Retry, so retry
+  // it here, spaced out and only while the page is visible, until the machine answers.
+  const selectedCatalog =
+    routing && selectedProviderId
+      ? catalogs.get(catalogKey(routing, selectedProviderId))
+      : undefined;
+  const nextRetryAt = !enabled
+    ? null
+    : lookup?.status === "failed"
+      ? retryAt(lookup.failedAt, lookup.failures)
+      : selectedCatalog?.status === "error"
+        ? retryAt(selectedCatalog.fetchedAt, selectedCatalog.failures)
+        : null;
+  useEffect(() => {
+    if (nextRetryAt === null) return;
+    const retry = () => {
+      if (threadId !== null && threadLookups.get(threadId)?.status === "failed") {
+        resolveThread(sdk, threadId);
+      } else if (routing && selectedProviderId) {
+        load(sdk, routing, selectedProviderId, { retryErrors: true });
+      }
+    };
+    let visibilityListener: (() => void) | null = null;
+    const timer = setTimeout(() => {
+      if (document.visibilityState === "visible") return retry();
+      visibilityListener = () => {
+        if (document.visibilityState !== "visible") return;
+        document.removeEventListener("visibilitychange", visibilityListener!);
+        retry();
+      };
+      document.addEventListener("visibilitychange", visibilityListener);
+    }, nextRetryAt - Date.now());
+    return () => {
+      clearTimeout(timer);
+      if (visibilityListener) document.removeEventListener("visibilitychange", visibilityListener);
+    };
+  }, [sdk, routing, selectedProviderId, threadId, nextRetryAt]);
 
   return {
     providers,

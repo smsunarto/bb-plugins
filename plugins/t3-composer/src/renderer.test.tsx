@@ -676,6 +676,63 @@ describe("T3 Code model picker", () => {
     }
   });
 
+  it("brings these pickers back once a failed thread lookup succeeds on retry", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let attempts = 0;
+    const { slot } = await mountComposer(
+      {},
+      { kind: "thread", threadId: "t-flaky-lookup" },
+      pickerOptions(OPUS_HIGH, {
+        threads: {
+          get: async () => {
+            attempts += 1;
+            if (attempts === 1) throw new Error("offline");
+            return { id: "t-flaky-lookup", environmentId: "env-flaky-lookup" };
+          },
+        },
+      }),
+    );
+    try {
+      expect(await slot.findByText("Host model picker")).toBeTruthy();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await slot.findByRole("button", { name: "Opus 5.5" })).toBeTruthy();
+      expect(slot.queryByText("Host model picker")).toBeNull();
+    } finally {
+      slot.lifecycle.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("brings these pickers back once a failed model list loads on retry", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const options = pickerOptions(OPUS_HIGH, {
+      threads: { get: async () => ({ id: "t-flaky-models", environmentId: "env-flaky-models" }) },
+    });
+    const sdk = options.sdk as { providers: { models: (args: unknown) => Promise<unknown> } };
+    const models = sdk.providers.models;
+    let attempts = 0;
+    sdk.providers.models = async (args) => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("Host is not connected");
+      return models(args);
+    };
+    const { slot } = await mountComposer(
+      {},
+      { kind: "thread", threadId: "t-flaky-models" },
+      options,
+    );
+    try {
+      expect(await slot.findByText("Host model picker")).toBeTruthy();
+      await waitFor(() => expect(attempts).toBe(1));
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(await slot.findByRole("button", { name: "Opus 5.5" })).toBeTruthy();
+      expect(attempts).toBe(2);
+    } finally {
+      slot.lifecycle.unmount();
+      vi.useRealTimers();
+    }
+  });
+
   it("shows these pickers for a model whose agent options are only on/off, as in a new Codex thread", async () => {
     const { slot } = await mountComposer(
       {},
