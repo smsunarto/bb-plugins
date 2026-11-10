@@ -57,9 +57,15 @@ function checksOf(pr: PullRequest | null | undefined) {
   return pr?.checks ?? { passed: 0, failed: 0, pending: 0 };
 }
 
-/** Open, out of draft, approved, every check passed: nothing stands between it and merging. */
+/** GitHub cannot merge the open pull request's head into its base without a conflict. */
+export function conflictsWithBase(pr: PullRequest | null | undefined): boolean {
+  return pr?.state === "open" && pr.mergeable === "conflicting";
+}
+
+/** Open, out of draft, approved, mergeable, every check passed: nothing stands between it and merging. */
 function readyToMerge(pr: PullRequest | null | undefined): boolean {
   if (!pr || pr.state !== "open" || pr.isDraft || pr.reviewDecision !== "approved") return false;
+  if (pr.mergeable !== "mergeable") return false;
   const checks = checksOf(pr);
   return checks.failed === 0 && checks.pending === 0;
 }
@@ -170,6 +176,8 @@ export function attentionChips(summary: ChangeSummary): AttentionChip[] {
   }
   if (summary.conflicted)
     add({ id: "conflicted", label: "Conflicted", tone: "error", icon: "cross" });
+  if (conflictsWithBase(pr))
+    add({ id: "conflicts", label: "Conflicts", tone: "error", icon: "cross" });
   if (failed > 0) add({ id: "failed", label: `${failed} Failed`, tone: "error", icon: "cross" });
   if (pending > 0)
     add({ id: "running", label: `${pending} Running`, tone: "warning", icon: "dot" });
@@ -207,6 +215,7 @@ export function statusLine(summary: ChangeSummary): string {
   if (pr?.state === "closed") return "Closed";
   if (summary.conflicted) return "Conflicted";
   if (!pr) return unpublishedLine(summary);
+  if (conflictsWithBase(pr)) return `Conflicts with ${pr.baseRef}`;
   if (failed > 0) return `${plural(failed, "check")} failed`;
   if (pr.reviewDecision === "changes-requested") return "Changes requested";
   if (pr.isDraft) return draftLine(summary, pending);
@@ -226,6 +235,7 @@ export type PrimaryAction =
 export function primaryAction(summary: ChangeSummary): PrimaryAction {
   const pr = summary.pullRequest;
   if (pr?.state === "merged" || pr?.state === "closed" || summary.conflicted) return null;
+  if (conflictsWithBase(pr)) return null;
   if (unpushed(summary.branch) && summary.onGitHub) return { kind: "push", label: "Push" };
   if (pr?.isDraft) return { kind: "markReady", label: "Mark ready" };
   if (readyToMerge(pr)) return { kind: "merge", label: "Merge" };
@@ -242,12 +252,13 @@ export function sortKey(summary: ChangeSummary): number {
   const pr = summary.pullRequest;
   const { failed, pending } = checksOf(pr);
   if (pr?.state === "merged" || pr?.state === "closed") return 9;
-  if (summary.conflicted || failed > 0 || pr?.reviewDecision === "changes-requested") return 0;
-  if (summary.findings > 0 || pr?.isDraft || unpushed(summary.branch)) return 1;
-  if (readyToMerge(pr)) return 2;
-  if (pending > 0) return 3;
-  if (!pr) return 4;
-  return 5;
+  if (summary.conflicted || conflictsWithBase(pr)) return 0;
+  if (failed > 0 || pr?.reviewDecision === "changes-requested") return 1;
+  if (summary.findings > 0 || pr?.isDraft || unpushed(summary.branch)) return 2;
+  if (readyToMerge(pr)) return 3;
+  if (pending > 0) return 4;
+  if (!pr) return 5;
+  return 6;
 }
 
 // ── Compact status for other surfaces ──────────────────────────────────

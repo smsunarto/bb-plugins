@@ -10,7 +10,13 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { useMemo } from "react";
 import type { ThreadChange } from "../core/change.ts";
-import { attentionChips, primaryAction, summarize, type ChangeSummary } from "../core/status.ts";
+import {
+  attentionChips,
+  conflictsWithBase,
+  primaryAction,
+  summarize,
+  type ChangeSummary,
+} from "../core/status.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
 import { Pending } from "./ui.tsx";
@@ -60,13 +66,18 @@ function lead(summary: ChangeSummary): string {
 const checks = (count: number, verb: string) =>
   `${count} ${count === 1 ? "check" : "checks"} ${verb}`;
 
-/** "Draft #482 · 4 findings · 2 checks running · 3 uncommitted", as board B words it. */
+/**
+ * "Draft #482 · 4 findings · 2 checks running · 3 uncommitted", as board B
+ * words it; a conflict with the base comes before any check, as in the chips.
+ */
 export function stripParts(summary: ChangeSummary, countUncommitted: boolean): Part[] {
   const pr = summary.pullRequest;
   const counts = pr?.state === "open" ? pr.checks : null;
   const parts: Part[] = [{ text: lead(summary), tone: "font-semibold text-foreground" }];
   if (summary.findings > 0)
     parts.push({ text: `${summary.findings} findings`, tone: "text-muted-foreground" });
+  if (pr && conflictsWithBase(pr))
+    parts.push({ text: `Conflicts with ${pr.baseRef}`, tone: "text-destructive-text" });
   if (counts && counts.failed > 0)
     parts.push({ text: checks(counts.failed, "failed"), tone: "text-destructive-text" });
   if (counts && counts.pending > 0)

@@ -52,6 +52,8 @@ const MIGRATIONS = [
   // Phase 3: pull requests gained approvals; earlier rows no longer parse.
   `DELETE FROM forge_facet`,
   `CREATE TABLE checks_facet (change_key TEXT PRIMARY KEY, json TEXT NOT NULL)`,
+  // Phase 4: pull requests gained mergeable and diff stats.
+  `DELETE FROM forge_facet`,
 ];
 
 export type Store = ReturnType<typeof openStore>;

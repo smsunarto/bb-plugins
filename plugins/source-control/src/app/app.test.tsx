@@ -94,6 +94,11 @@ function checkout(
               baseRef: "main",
               reviewDecision: null,
               approvals: 0,
+              mergeable: "mergeable",
+              additions: 412,
+              deletions: 96,
+              changedFiles: 14,
+              commits: 3,
               checks: { passed: 4, failed: 0, pending: 0 },
             }
           : null,
@@ -638,6 +643,26 @@ test("strip, tab header and the sidebar's row say the same for one Change", asyn
     chips: [{ label: "2 Running", tone: "warning" }],
   });
   expect(slot.getByTestId("sc-pr-chip").textContent).toBe("Draft");
+});
+
+test("a pull request that conflicts with its base says so before its failed checks, everywhere", async () => {
+  const { threadStatus } = await import("../core/status.ts");
+  const row = boardB();
+  if (row.state !== "checkout" || !row.forge.read?.value) throw new Error("fixture");
+  row.forge.read.value = {
+    ...row.forge.read.value,
+    number: 156,
+    isDraft: false,
+    mergeable: "conflicting",
+    checks: { passed: 5, failed: 4, pending: 0 },
+  };
+  const { slot } = renderRow(row);
+  const strip = renderStrip(row, [{ key: "bb--git/changed-files", pluginId: "bb--git" }]);
+  expect((await strip.summary.findByTestId("sc-strip")).textContent).toBe(
+    "Open #156Conflicts with main4 checks failed",
+  );
+  expect((await slot.findByTestId("sc-chips")).textContent).toBe("Conflicts4 Failed");
+  expect(threadStatus(row)).toMatchObject({ line: "Conflicts with main", sort: 0 });
 });
 
 test("the strip leaves the uncommitted count to bb's own changed-files segment when it shows", async () => {

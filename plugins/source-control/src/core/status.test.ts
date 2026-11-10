@@ -38,6 +38,11 @@ function pr(overrides: Partial<PullRequest> = {}): PullRequest {
     baseRef: "main",
     reviewDecision: "review-required",
     approvals: 0,
+    mergeable: "mergeable",
+    additions: 412,
+    deletions: 96,
+    changedFiles: 14,
+    commits: 3,
     checks: { passed: 9, failed: 0, pending: 2 },
     ...overrides,
   };
@@ -79,6 +84,22 @@ const CHANGES = summary({
   pullRequest: pr({ isDraft: false, reviewDecision: "changes-requested", checks: settled }),
 });
 const CONFLICTED = summary({ conflicted: true });
+/** #156 as bb showed it: "Conflicts with main" while 4 checks failed. */
+const CONFLICTS = summary({
+  pullRequest: pr({
+    isDraft: false,
+    mergeable: "conflicting",
+    checks: { passed: 5, failed: 4, pending: 0 },
+  }),
+});
+const CONFLICTS_APPROVED = summary({
+  pullRequest: pr({ ...approved, mergeable: "conflicting" }),
+  uncommitted: 0,
+});
+const MERGEABLE_UNKNOWN = summary({
+  pullRequest: pr({ ...approved, mergeable: "unknown" }),
+  uncommitted: 0,
+});
 const FINDINGS = summary({ findings: 4 });
 const PUSHED_NO_PR = summary({ pullRequest: null, uncommitted: 0 });
 const REVIEW = summary({ pullRequest: pr({ isDraft: false, checks: settled }) });
@@ -191,6 +212,9 @@ describe("attention chips", () => {
     ["approved and green", READY, ["Ready to merge", "Passed"]],
     ["changes requested", CHANGES, ["Changes requested", "Passed"]],
     ["conflicted", CONFLICTED, ["Conflicted", "2 Running"]],
+    ["conflicts with the base rank above failed checks", CONFLICTS, ["Conflicts", "4 Failed"]],
+    ["conflicts keep an approved PR from ready", CONFLICTS_APPROVED, ["Conflicts", "Passed"]],
+    ["mergeable not computed yet is not ready", MERGEABLE_UNKNOWN, ["Passed"]],
     ["local", LOCAL, ["Local"]],
     ["merged", MERGED, ["Merged"]],
     ["pushed, no pull request", PUSHED_NO_PR, []],
@@ -224,6 +248,13 @@ describe("phone status line", () => {
     ["pushed, GitHub not read yet", summary({ pullRequest: undefined, uncommitted: 0 }), "Pushed"],
     ["merged", MERGED, "Merged"],
     ["conflicted", CONFLICTED, "Conflicted"],
+    ["conflicts with the base, over failed checks", CONFLICTS, "Conflicts with main"],
+    ["conflicts on an approved PR", CONFLICTS_APPROVED, "Conflicts with main"],
+    [
+      "conflicts on a merged PR are over",
+      summary({ pullRequest: pr({ state: "merged", mergeable: "conflicting" }) }),
+      "Merged",
+    ],
   ])("%s", (_name, input, expected) => {
     expect(statusLine(input)).toBe(expected);
   });
@@ -238,6 +269,9 @@ describe("primary action", () => {
     ["waiting on review", REVIEW, null],
     ["merged", MERGED, null],
     ["conflicted", CONFLICTED, null],
+    ["conflicts with the base", CONFLICTS, null],
+    ["approved but conflicting is not mergeable", CONFLICTS_APPROVED, null],
+    ["approved, mergeable not computed yet", MERGEABLE_UNKNOWN, null],
     ["no GitHub remote", summary({ ...LOCAL, onGitHub: false }), null],
   ])("%s", (_name, input, expected) => {
     expect(primaryAction(input)?.kind ?? null).toBe(expected);
@@ -248,6 +282,7 @@ describe("sort key", () => {
   test("what needs its owner sorts first, what is done last", () => {
     const ordered = [
       CONFLICTED,
+      CONFLICTS,
       FAILING,
       CHANGES,
       BOARD_B,
@@ -257,7 +292,7 @@ describe("sort key", () => {
       REVIEW,
       MERGED,
     ];
-    expect(ordered.map(sortKey)).toEqual([0, 0, 0, 1, 1, 2, 4, 5, 9]);
-    expect(sortKey(summary({ pullRequest: pr({ isDraft: false }) }))).toBe(3);
+    expect(ordered.map(sortKey)).toEqual([0, 0, 1, 1, 2, 2, 3, 5, 6, 9]);
+    expect(sortKey(summary({ pullRequest: pr({ isDraft: false }) }))).toBe(4);
   });
 });

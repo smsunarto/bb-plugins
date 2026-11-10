@@ -113,6 +113,7 @@ const PULL_REQUESTS = `query($owner: String!, $name: String!, $branch: String!) 
     pullRequests(headRefName: $branch, first: 20, orderBy: { field: UPDATED_AT, direction: DESC }) {
       nodes {
         number url title state isDraft headRefOid baseRefName reviewDecision
+        mergeable additions deletions changedFiles commitCount: commits { totalCount }
         headRepositoryOwner { login }
         latestOpinionatedReviews(first: 50) { nodes { state } }
         commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: ${CHECK_LIMIT}) {
@@ -154,6 +155,11 @@ type PullRequestNode = {
   headRefOid: string;
   baseRefName: string;
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
+  additions?: number;
+  deletions?: number;
+  changedFiles?: number;
+  commitCount?: { totalCount?: number };
   headRepositoryOwner: { login: string } | null;
   latestOpinionatedReviews?: { nodes?: ({ state?: string } | null)[] } | null;
   commits?: {
@@ -228,6 +234,12 @@ const REVIEW: Record<
   REVIEW_REQUIRED: "review-required",
 };
 
+const MERGEABLE = {
+  MERGEABLE: "mergeable",
+  CONFLICTING: "conflicting",
+  UNKNOWN: "unknown",
+} as const satisfies Record<string, PullRequest["mergeable"]>;
+
 function toRead(node: PullRequestNode): ForgeRead {
   const contexts = node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts;
   const rows = (contexts?.nodes ?? []).flatMap((check) => (check ? [checkRow(check)] : []));
@@ -245,6 +257,11 @@ function toRead(node: PullRequestNode): ForgeRead {
       baseRef: node.baseRefName,
       reviewDecision: node.reviewDecision ? REVIEW[node.reviewDecision] : null,
       approvals,
+      mergeable: MERGEABLE[node.mergeable ?? "UNKNOWN"],
+      additions: node.additions ?? 0,
+      deletions: node.deletions ?? 0,
+      changedFiles: node.changedFiles ?? 0,
+      commits: node.commitCount?.totalCount ?? 0,
       checks: countChecks(rows),
     },
     checks: { head: node.headRefOid, rows, more: contexts?.pageInfo?.hasNextPage === true },

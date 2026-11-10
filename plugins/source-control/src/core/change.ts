@@ -326,6 +326,12 @@ export const pullRequestSchema = z
     reviewDecision: z.enum(["approved", "changes-requested", "review-required"]).nullable(),
     /** Reviewers whose latest opinion is an approval. */
     approvals: z.number().int().nonnegative(),
+    /** Whether GitHub can merge the head into the base; `unknown` while it is still computing. */
+    mergeable: z.enum(["mergeable", "conflicting", "unknown"]),
+    additions: z.number().int().nonnegative(),
+    deletions: z.number().int().nonnegative(),
+    changedFiles: z.number().int().nonnegative(),
+    commits: z.number().int().nonnegative(),
     checks: z
       .object({ passed: z.number().int(), failed: z.number().int(), pending: z.number().int() })
       .strict(),
