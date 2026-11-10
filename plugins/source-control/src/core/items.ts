@@ -199,7 +199,7 @@ export type ItemGroup = { id: string; label: string; kind: "bb" | "slopcop" | "p
 /** The rail's author group: bb's findings, SlopCop's, then each person or bot by login. */
 export function itemGroup(item: Pick<ReviewItem, "origin">): ItemGroup {
   const { origin } = item;
-  if (origin.kind === "bb") return { id: "bb", label: "bb", kind: "bb" };
+  if (origin.kind === "bb") return { id: "bb", label: "bb review", kind: "bb" };
   if (origin.slopcop) return { id: "slopcop", label: "SlopCop", kind: "slopcop" };
   return {
     id: `@${origin.author.toLowerCase()}`,

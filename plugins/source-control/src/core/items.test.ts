@@ -117,7 +117,7 @@ describe("authors", () => {
       item("g4", human, null, 2),
     ]);
     expect(groups.map((group) => [group.group.label, group.items.map((each) => each.id)])).toEqual([
-      ["bb", ["b1", "b2"]],
+      ["bb review", ["b1", "b2"]],
       ["SlopCop", ["g3"]],
       ["Octo", ["g4", "g2"]],
       ["dependabot", ["g1"]],

@@ -529,7 +529,7 @@ export function startsCollapsed(path: string): boolean {
 
 // ── Deep links ─────────────────────────────────────────────────────────
 
-export const REVIEW_TABS = ["files", "commits"] as const;
+export const REVIEW_TABS = ["files", "commits", "conversation"] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 
 export type ReviewLocation = {

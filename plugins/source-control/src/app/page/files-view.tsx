@@ -24,8 +24,9 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { describeProblem } from "../../core/change.ts";
+import { describeProblem, type FilePatch } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
+import type { Anchor, ReviewItem } from "../../core/items.ts";
 import { startsCollapsed, type ChangeFile, type ReviewRevision } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import {
@@ -36,9 +37,28 @@ import {
   parsePatch,
 } from "../file-cards.tsx";
 import { cx, plural } from "../format.ts";
+import { useChangeReview, useReviewActions, type ReviewActions } from "../review-data.ts";
+import {
+  FileReviewInterner,
+  annotationSide,
+  entryAnchor,
+  lineKey,
+  patchLinesOf,
+  sameArray,
+  type FileReview,
+  type PatchLines,
+} from "../review-model.ts";
+import {
+  AddCommentButton,
+  LineThread,
+  type AnnotationContext,
+  type ComposerEntry,
+  type LineEntry,
+} from "./annotations.tsx";
 import { FileTree } from "./file-tree.tsx";
 import { Chevron } from "./icons.tsx";
 import { usePatch, usePatchStore, type PatchStore } from "./patches.ts";
+import { FocusContext } from "./review-focus.ts";
 
 /** Lockfiles and generated output last, as code-review's reading order puts them. */
 export function readingOrder(files: readonly ChangeFile[]): ChangeFile[] {
@@ -198,17 +218,172 @@ function farHeight(file: ChangeFile, open: boolean): number {
   return 36 + 2 + (open ? reservedHeight(file) : 0);
 }
 
+// ── Annotations ────────────────────────────────────────────────────────
+
+type DiffAnnotation = { side: "additions" | "deletions"; lineNumber: number; metadata: string };
+
+type Lines = {
+  /** Each shown line's entries, by `lineKey`. */
+  byLine: ReadonlyMap<string, readonly LineEntry[]>;
+  /** Entries whose line the diff does not show: on another head, on the whole file, or no diff to show. */
+  loose: readonly LineEntry[];
+  annotations: readonly DiffAnnotation[];
+};
+
+const NO_ENTRIES: readonly LineEntry[] = Object.freeze([]);
+const NO_ANNOTATIONS: readonly DiffAnnotation[] = Object.freeze([]);
+
+/**
+ * A file's entries by the line they sit under. A line whose entries are the
+ * same objects keeps its array, and the annotation list keeps its identity
+ * while the same lines carry entries, so Pierre redraws the diff only when a
+ * line gains or loses its annotation.
+ */
+class LineInterner {
+  private last: Lines = { byLine: new Map(), loose: NO_ENTRIES, annotations: NO_ANNOTATIONS };
+  private lastKeys = "";
+
+  build(entries: readonly LineEntry[], shown: PatchLines | null, head: string): Lines {
+    const byLine = new Map<string, LineEntry[]>();
+    const loose: LineEntry[] = [];
+    for (const entry of entries) {
+      const anchor = entry.kind === "composer" ? entry.anchor : entryAnchor(entry);
+      // Lines numbered at another head are not this diff's lines.
+      const key =
+        anchor.line === null || anchor.head !== head
+          ? null
+          : lineKey(annotationSide(anchor), anchor.line);
+      if (!shown || key === null || !shown.rows.has(key)) loose.push(entry);
+      else byLine.set(key, [...(byLine.get(key) ?? []), entry]);
+    }
+    const kept = new Map<string, readonly LineEntry[]>();
+    for (const [key, list] of byLine) kept.set(key, sameArray(this.last.byLine.get(key), list));
+    const keys = [...kept.keys()].toSorted(
+      (a, b) => (shown?.rows.get(a) ?? 0) - (shown?.rows.get(b) ?? 0) || a.localeCompare(b),
+    );
+    const joined = keys.join("|");
+    const annotations =
+      joined === this.lastKeys
+        ? this.last.annotations
+        : keys.map((key) => {
+            const [side, line] = key.split(":") as ["additions" | "deletions", string];
+            return { side, lineNumber: Number(line), metadata: key };
+          });
+    this.lastKeys = joined;
+    this.last = { byLine: kept, loose: sameArray(this.last.loose, loose), annotations };
+    return this.last;
+  }
+}
+
+type Composing = { side: "additions" | "deletions"; line: number } | null;
+type Hovered = () => { lineNumber: number; side: "additions" | "deletions" } | undefined;
+
+/**
+ * A file's annotations: its entries by line, the composer the gutter's "+"
+ * opens, and Pierre's render callbacks. Null `actions` draws none.
+ */
+function useLineAnnotations({
+  path,
+  review,
+  actions,
+  head,
+  shown,
+}: {
+  path: string;
+  review: FileReview | undefined;
+  actions: ReviewActions | null;
+  head: string;
+  shown: PatchLines | null;
+}) {
+  const [composing, setComposing] = useState<Composing>(null);
+  const context = useMemo<AnnotationContext | null>(
+    () => (actions ? { actions, closeComposer: () => setComposing(null) } : null),
+    [actions],
+  );
+  const composer = useMemo<ComposerEntry | null>(() => {
+    if (!composing) return null;
+    const anchor: Anchor = {
+      path,
+      line: composing.line,
+      startLine: null,
+      side: composing.side === "deletions" ? "LEFT" : "RIGHT",
+      head,
+    };
+    return { kind: "composer", id: `composer:${composing.side}:${composing.line}`, anchor };
+  }, [composing, path, head]);
+  const [interner] = useState(() => new LineInterner());
+  const lines = useMemo(() => {
+    const entries: LineEntry[] = [...(review?.entries ?? NO_ENTRIES)];
+    if (composer) entries.push(composer);
+    return interner.build(entries, shown, head);
+  }, [interner, review, composer, shown, head]);
+  const { byLine } = lines;
+  const renderAnnotation = useCallback(
+    (annotation: DiffAnnotation) => {
+      const entries = byLine.get(annotation.metadata);
+      if (!entries || !context) return null;
+      return (
+        <LineThread
+          key={annotation.metadata}
+          lineKey={annotation.metadata}
+          entries={entries}
+          inset
+          context={context}
+        />
+      );
+    },
+    [byLine, context],
+  );
+  const renderGutterUtility = useCallback(
+    (hovered: Hovered) => (
+      <AddCommentButton
+        onClick={() => {
+          const at = hovered();
+          if (at) setComposing({ side: at.side, line: at.lineNumber });
+        }}
+      />
+    ),
+    [],
+  );
+  const loose =
+    context && lines.loose.length > 0 ? (
+      <LineThread lineKey="file" entries={lines.loose} inset={false} context={context} />
+    ) : null;
+  return {
+    loose,
+    annotations: lines.annotations as DiffAnnotation[],
+    renderAnnotation: context ? renderAnnotation : undefined,
+    renderGutterUtility: context ? renderGutterUtility : undefined,
+  };
+}
+
+/** Why a ready file has no diff to draw. */
+function emptyText(patch: FilePatch | null, file: ChangeFile): string {
+  if (patch?.truncated)
+    return "This diff is too large to show. Open the file on GitHub or in your editor to read it.";
+  if (file.kind === "renamed" && file.previousPath) return `Renamed from ${file.previousPath}.`;
+  return "No text to show. The file is binary or its contents did not change.";
+}
+
 function PatchBody({
   store,
   file,
   line,
+  review,
+  actions,
+  head,
 }: {
   store: PatchStore;
   file: ChangeFile;
   line: number | null;
+  /** The file's items and drafts; undefined when the view draws none (a commit's files). */
+  review: FileReview | undefined;
+  actions: ReviewActions | null;
+  head: string;
 }) {
   const entry = usePatch(store, file.path);
   const { mode, name } = useCodeTheme();
+  const commenting = actions !== null;
   const options = useMemo(
     () => ({
       disableFileHeader: true,
@@ -216,12 +391,20 @@ function PatchBody({
       stickyHeader: false,
       theme: name,
       themeType: mode,
+      enableGutterUtility: commenting,
     }),
-    [mode, name],
+    [mode, name, commenting],
   );
   const patch = entry?.state === "ready" ? entry.file : null;
   const parsed = useMemo(() => (patch ? parsePatch(patch.patch) : null), [patch]);
   const selected = useMemo(() => (line ? { start: line, end: line } : null), [line]);
+  const notes = useLineAnnotations({
+    path: file.path,
+    review,
+    actions,
+    head,
+    shown: patch && parsed ? patchLinesOf(patch) : null,
+  });
   if (!entry || entry.state === "loading")
     return (
       <div
@@ -236,22 +419,22 @@ function PatchBody({
     return <PatchesProblem text={entry.message} onRetry={() => store.request(file.path)} />;
   if (!patch || !parsed)
     return (
-      <p
-        data-testid="sc-patch-empty"
-        className="m-0 border-t border-solid border-border-hairline bg-surface-recessed px-3.5 py-2 text-[11px] leading-4 text-muted-foreground"
-      >
-        {patch?.truncated
-          ? "This diff is too large to show. Open the file on GitHub or in your editor to read it."
-          : file.kind === "renamed" && file.previousPath
-            ? `Renamed from ${file.previousPath}.`
-            : "No text to show. The file is binary or its contents did not change."}
-      </p>
+      <>
+        {notes.loose}
+        <p
+          data-testid="sc-patch-empty"
+          className="m-0 border-t border-solid border-border-hairline bg-surface-recessed px-3.5 py-2 text-[11px] leading-4 text-muted-foreground"
+        >
+          {emptyText(patch, file)}
+        </p>
+      </>
     );
   return (
     <div
       data-testid="sc-patch"
       className="min-w-0 border-t border-solid border-border-hairline [--diffs-font-family:var(--font-mono,ui-monospace,monospace)] [--diffs-font-size:12px] [--diffs-line-height:20px]"
     >
+      {notes.loose}
       {patch.truncated ? (
         <p className="m-0 border-b border-solid border-border-hairline px-3.5 py-1 text-[11px] leading-4 text-warning">
           This diff is too large to show in full.
@@ -262,6 +445,9 @@ function PatchBody({
         fileDiff={parsed}
         options={options}
         selectedLines={selected}
+        lineAnnotations={notes.annotations}
+        renderAnnotation={notes.renderAnnotation}
+        renderGutterUtility={notes.renderGutterUtility}
       />
     </div>
   );
@@ -274,12 +460,18 @@ const FileCard = memo(function FileCard({
   line,
   onToggle,
   eager,
+  review,
+  actions,
+  head,
 }: {
   file: ChangeFile;
   open: boolean;
   store: PatchStore;
   line: number | null;
   onToggle: (path: string) => void;
+  review: FileReview | undefined;
+  actions: ReviewActions | null;
+  head: string;
   /** The first cards draw at once; the rest wait for the observer to say they are near. */
   eager: boolean;
 }) {
@@ -344,10 +536,110 @@ const FileCard = memo(function FileCard({
           </span>
         )}
       </button>
-      {open ? <PatchBody store={store} file={file} line={line} /> : null}
+      {open ? (
+        <PatchBody
+          store={store}
+          file={file}
+          line={line}
+          review={review}
+          actions={actions}
+          head={head}
+        />
+      ) : null}
     </section>
   );
 });
+
+/**
+ * After a card is revealed, scroll its column to an item's annotation once
+ * Pierre has drawn it: the card may still be a placeholder, its patch still
+ * loading, or the line far down a long diff Pierre has not drawn yet, so
+ * this jumps near the line's row first. Stops after about four seconds, or
+ * when `live` says a newer reveal took over. Reads geometry only on the
+ * reader's action.
+ */
+function chaseAnnotation(
+  item: ReviewItem,
+  column: Column,
+  scroller: RefObject<HTMLElement | null>,
+  store: PatchStore,
+  live: () => boolean,
+): void {
+  const file = item.anchor.path;
+  let frames = 0;
+  let estimated = false;
+  const step = () => {
+    if (!live() || ++frames > 240) return;
+    const card = column.cards.get(file);
+    const box = scroller.current;
+    if (card && box) {
+      const target = [...card.querySelectorAll("[data-sc-anchor]")].find(
+        (element) => element.getAttribute("data-sc-anchor") === item.id,
+      );
+      // An annotation Pierre has not drawn into its slot has no box yet.
+      if (target && target.getClientRects().length > 0) {
+        const offset = target.getBoundingClientRect().top - box.getBoundingClientRect().top;
+        box.scrollTo({ top: box.scrollTop + offset - Math.round(box.clientHeight / 4) });
+        return;
+      }
+      const patch = store.get(file);
+      if (!estimated && patch?.state === "ready" && patch.file && item.anchor.line !== null) {
+        estimated = true;
+        const row = patchLinesOf(patch.file).rows.get(
+          lineKey(annotationSide(item.anchor), item.anchor.line),
+        );
+        if (row !== undefined) {
+          const top = card.getBoundingClientRect().top - box.getBoundingClientRect().top;
+          box.scrollTo({ top: box.scrollTop + top + 36 + row * 20 - box.clientHeight / 3 });
+        }
+      }
+    }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/** The Change's review by file, for the Files tab; none for a commit's files. */
+function useFileReviews(annotate: boolean, changeKey: ChangeKey, head: string) {
+  const { stable } = useChangeReview(annotate ? changeKey : null);
+  const writes = useReviewActions(changeKey);
+  const [fileReviews] = useState(() => new FileReviewInterner());
+  const byPath = useMemo(
+    () => (annotate ? fileReviews.build(stable, head) : null),
+    [annotate, fileReviews, stable, head],
+  );
+  return { byPath, actions: annotate ? writes : null };
+}
+
+/** Answers the rail's picks while this column can show them: the card is picked, then its annotation chased. */
+function useAttachReveal({
+  annotate,
+  files,
+  pick,
+  column,
+  scroller,
+  store,
+}: {
+  annotate: boolean;
+  files: readonly ChangeFile[] | null;
+  /** Opens a file's card and scrolls to it, as a pick in the tree does. */
+  pick: (path: string) => void;
+  column: Column;
+  scroller: RefObject<HTMLElement | null>;
+  store: PatchStore;
+}) {
+  const focus = useContext(FocusContext);
+  const chase = useRef(0);
+  useEffect(() => {
+    if (!focus || !annotate || !files) return;
+    return focus.attach((item) => {
+      if (!files.some((entry) => entry.path === item.anchor.path)) return;
+      pick(item.anchor.path);
+      const token = ++chase.current;
+      chaseAnnotation(item, column, scroller, store, () => token === chase.current);
+    });
+  }, [focus, annotate, files, pick, column, scroller, store]);
+}
 
 // ── The view ───────────────────────────────────────────────────────────
 
@@ -398,9 +690,12 @@ export function FilesView({
   onPath,
   lead,
   showTree,
+  annotate = false,
 }: {
   changeKey: ChangeKey;
   revision: ReviewRevision;
+  /** Draw the Change's review items and drafts on its lines (the Files tab, not a commit's files). */
+  annotate?: boolean;
   /** The file the link names, scrolled to once the files are known. */
   path: string | null;
   line: number | null;
@@ -460,6 +755,10 @@ export function FilesView({
     [onPath, reveal],
   );
 
+  const { byPath, actions } = useFileReviews(annotate, changeKey, revision.head);
+  // A rail row scrolls the diff to its item: the card first, then the item once its patch draws.
+  useAttachReveal({ annotate, files, pick, column, scroller, store });
+
   let cards: ReactNode;
   if (answer === undefined)
     cards = query.error ? (
@@ -489,6 +788,9 @@ export function FilesView({
             store={store}
             line={file.path === path ? line : null}
             onToggle={toggle}
+            review={byPath?.get(file.path)}
+            actions={actions}
+            head={revision.head}
           />
         ))}
         {answer.more ? (

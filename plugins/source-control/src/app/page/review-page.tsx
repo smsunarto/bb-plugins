@@ -27,11 +27,14 @@ import { ShipPath } from "../status.tsx";
 import { Bar, Button, Pending } from "../ui.tsx";
 import { ChangesList } from "./changes-nav.tsx";
 import { CommitsView } from "./commits-view.tsx";
+import { ConversationView } from "./conversation-view.tsx";
 import { FilesView } from "./files-view.tsx";
 import { PHONE, WIDE, useGo, useNow, useWidth, type Go } from "./hooks.ts";
 import { ArrowRight, Chevron, GitHubMark, StackIcon, StateIcon } from "./icons.tsx";
 import { revisionId } from "./patches.ts";
 import { RailSections } from "./rail.tsx";
+import { FocusContext, ReviewFocus } from "./review-focus.ts";
+import { ReviewSection } from "./review-section.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 
@@ -316,6 +319,7 @@ function Tabs({
   const tabs: { id: ReviewTab; label: string; count: number | null }[] = [
     { id: "files", label: "Files", count: files },
     { id: "commits", label: "Commits", count: null },
+    { id: "conversation", label: "Conversation", count: null },
   ];
   return (
     <div
@@ -427,6 +431,12 @@ function Review({
     [go, key, location.tab, location.commit],
   );
   const onCommit = useCallback((commit: string) => go({ key, tab: "commits", commit }), [go, key]);
+  // One per Change (this component is keyed by it): the rail's pick, and the diff that shows it.
+  const [focus] = useState(() => new ReviewFocus());
+  useLayoutEffect(
+    () => focus.onDetached((item) => go({ key, tab: "files", path: item.anchor.path })),
+    [focus, go, key],
+  );
   if (!detail || detail.state === "pending") {
     if (query.error && !detail)
       return (
@@ -442,7 +452,12 @@ function Review({
     return <HeaderSkeleton />;
   }
   if (detail.state === "missing") return <Missing problem={detail.problem} />;
-  const rail = <RailSections detail={detail} go={go} now={now} />;
+  const rail = (
+    <>
+      <RailSections detail={detail} go={go} now={now} />
+      <ReviewSection changeKey={key} />
+    </>
+  );
   const lead = wide ? null : (
     <div className="flex flex-col gap-4 border-b border-solid border-border-hairline pb-4">
       {rail}
@@ -450,7 +465,11 @@ function Review({
   );
   const { revision } = detail;
   let body;
-  if (!revision)
+  if (location.tab === "conversation")
+    body = (
+      <ConversationView changeKey={key} hasPullRequest={detail.row.number !== null} lead={lead} />
+    );
+  else if (!revision)
     body = (
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4 px-4 py-4 @3xl:px-6">
@@ -493,10 +512,11 @@ function Review({
         onPath={onPath}
         lead={lead}
         showTree={wide}
+        annotate
       />
     );
   return (
-    <>
+    <FocusContext.Provider value={focus}>
       <Header detail={detail} now={now} />
       <div className={cx("shrink-0 pb-4", PAD)}>
         <ShipPath steps={detail.ship} />
@@ -506,14 +526,14 @@ function Review({
         {body}
         {wide ? (
           <aside
-            aria-label="Stack and checks"
+            aria-label="Stack, checks and review"
             className="flex w-84 shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain border-s border-solid border-border-hairline py-4 ps-5 pe-8"
           >
             {rail}
           </aside>
         ) : null}
       </div>
-    </>
+    </FocusContext.Provider>
   );
 }
 

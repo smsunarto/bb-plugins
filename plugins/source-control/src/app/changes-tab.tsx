@@ -30,6 +30,7 @@ import {
 } from "../core/change.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { PullButton, PullStatus, WORKSPACE, useVcsActions } from "./branch-actions.tsx";
+import { FindingsCard } from "./findings-card.tsx";
 import { cx, plural, shortId, shortRef } from "./format.ts";
 import { readSnapshot, writeSnapshot } from "./snapshot.ts";
 import { Bar, Button, SectionLabel } from "./ui.tsx";
@@ -623,6 +624,8 @@ function ThisThread({
   }, [row]);
   const note = headerNote(forge, workspace, branch);
   const uncommitted = uncommittedCount(workspace);
+  const visible = useTabVisible();
+  const changeKey = row.state === "checkout" ? row.key : null;
   return (
     <section
       data-testid="sc-ready"
@@ -687,6 +690,7 @@ function ThisThread({
           Push, pull, and land need the host. Pull request state still comes from GitHub.
         </span>
       ) : null}
+      {changeKey ? <FindingsCard key={changeKey} changeKey={changeKey} visible={visible} /> : null}
     </section>
   );
 }
