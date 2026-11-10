@@ -19,6 +19,7 @@ import {
   type ThreadChange,
 } from "../core/change.ts";
 import { threadTag, type ChangeKey } from "../core/ids.ts";
+import { threadStatus, type ThreadStatus } from "../core/status.ts";
 import { createActions } from "./actions.ts";
 import { createForgeReads } from "./forge-read.ts";
 import type { ForgeSites } from "./forge-sites.ts";
@@ -28,6 +29,9 @@ import { createPlacements } from "./placement.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
 import { createWatch } from "./watch.ts";
+
+/** A row read from another surface is read again once it is this old. */
+export const GLANCE_MS = 5 * 60_000;
 
 export type ThreadChangesDeps = {
   bb: BbPluginApi;
@@ -169,6 +173,26 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     read(keys: readonly string[]): Record<string, ThreadChange> {
       return Object.fromEntries(keys.map((threadId) => [threadId, row(threadId)]));
     },
+    /** Each thread's compact status, from the store only. */
+    status(keys: readonly string[]): Record<string, ThreadStatus> {
+      return Object.fromEntries(keys.map((threadId) => [threadId, threadStatus(row(threadId))]));
+    },
+    /**
+     * A list row came into view: read the thread once if it has never been
+     * read or its last read is older than GLANCE_MS. No watch follows; the
+     * thread's own tab keeps it live.
+     */
+    glance: (threadId: string) =>
+      Effect.suspend(() => {
+        if (watch.watched(threadId)) return Effect.void;
+        const where = store.placement(threadId);
+        if (where?.state === "none") return Effect.void;
+        const readAt =
+          where?.state === "checkout"
+            ? store.local(where.placement.hostId, where.placement.path).read?.at
+            : undefined;
+        return readAt !== undefined && now() - readAt < GLANCE_MS ? Effect.void : refresh(threadId);
+      }),
     /** Stored checks only, by ChangeKey. */
     checks(keys: readonly ChangeKey[]) {
       return Object.fromEntries(keys.map((key) => [key, store.checks(key)]));

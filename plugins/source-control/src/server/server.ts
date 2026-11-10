@@ -67,6 +67,7 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes) {
     sourceControlContract,
     {
       changeForThread: ({ keys }) => changes.read(keys),
+      statusForThread: ({ keys }) => changes.status(keys),
       refreshThread: async ({ threadId }) => {
         await runtime.run(changes.retry(threadId));
         return { ok: true as const };
@@ -90,6 +91,13 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes) {
     if (!("key" in read)) return undefined;
     // Ends when the last watcher leaves, which interrupts the watch.
     return runtime.run(changes.watch(read.key), signal).then(
+      () => undefined,
+      () => undefined,
+    );
+  });
+  bb.rpc.experimental_whileWatched("statusForThread", (read, signal) => {
+    if (!("key" in read)) return undefined;
+    return runtime.run(changes.glance(read.key), signal).then(
       () => undefined,
       () => undefined,
     );

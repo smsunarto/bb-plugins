@@ -56,7 +56,8 @@ test("imports between layers only point toward core", () => {
 
 test("core and contract stay free of the SDK's runtime-specific entry points", () => {
   const violations: string[] = [];
-  for (const file of files(join(SRC, "core")).concat(files(join(SRC, "contract")))) {
+  const sources = files(join(SRC, "core")).concat(files(join(SRC, "contract")));
+  for (const file of sources.filter((path) => !/\.test\.tsx?$/.test(path))) {
     const source = readFileSync(file, "utf8");
     for (const specifier of specifiers(source).filter((name) => !name.startsWith("."))) {
       const core = relative(SRC, file).startsWith("core");

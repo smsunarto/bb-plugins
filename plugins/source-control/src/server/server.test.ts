@@ -694,6 +694,42 @@ describe("checks", () => {
   });
 });
 
+describe("status for other surfaces", () => {
+  test("a list row reads a thread once, stays quiet while fresh, and is small", async () => {
+    vi.useFakeTimers();
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [PR];
+    const { harness, hostCalls } = await start(world);
+    const stop = harness.behavior.experimental_watchRpc("statusForThread", { key: "thread-a" });
+    await vi.advanceTimersByTimeAsync(4 * 60_000);
+    stop();
+    expect(hostCalls("workspace")).toHaveLength(1);
+    expect(world.ghCalls).toHaveLength(1);
+    const rows = (await harness.behavior.callRpc("statusForThread", {
+      keys: ["thread-a"],
+    })) as Record<string, unknown>;
+    expect(rows["thread-a"]).toMatchObject({
+      state: "change",
+      pullRequest: { number: 482, state: "draft" },
+      line: "Draft",
+      chips: [{ label: "Passed" }],
+    });
+    expect(JSON.stringify(rows["thread-a"]).length).toBeLessThan(2_048);
+
+    // Mounted again within five minutes of the read: nothing more.
+    const again = harness.behavior.experimental_watchRpc("statusForThread", { key: "thread-a" });
+    await vi.advanceTimersByTimeAsync(10);
+    again();
+    expect(hostCalls("workspace")).toHaveLength(1);
+    // Past five minutes: read once more.
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    const later = harness.behavior.experimental_watchRpc("statusForThread", { key: "thread-a" });
+    await vi.advanceTimersByTimeAsync(10);
+    later();
+    expect(hostCalls("workspace")).toHaveLength(2);
+  });
+});
+
 describe("writes", () => {
   test("a write the host refuses as stale reports conflict, is not retried, and reloads the checkout", async () => {
     const world = twoHosts();

@@ -18,6 +18,7 @@ import {
   vcsActionSchema,
   vcsResultSchema,
 } from "../core/change.ts";
+import { threadStatusSchema } from "../core/status.ts";
 import { changeKeySchema, checksTag, threadTag, type ChangeKey } from "../core/ids.ts";
 
 export const MAX_THREAD_KEYS = 200;
@@ -30,6 +31,13 @@ export const sourceControlContract = defineRpcContract({
       "Each thread's Change, keyed by thread id: its checkout's branch state from the checkout host and its GitHub pull request, each with when it was last read and any current problem.",
     input: z.object({ keys: z.array(threadIdSchema).min(1).max(MAX_THREAD_KEYS) }).strict(),
     output: z.record(z.string(), threadChangeSchema),
+    keyTags: (key: string) => [threadTag(key)],
+  },
+  statusForThread: {
+    experimental_description:
+      "Each thread's Change as one list row, keyed by thread id: its pull request (number, title, url, state), a status line, attention chips and a tone, derived exactly as Source Control's own surfaces derive them. Small enough for a row per thread.",
+    input: z.object({ keys: z.array(threadIdSchema).min(1).max(MAX_THREAD_KEYS) }).strict(),
+    output: z.record(z.string(), threadStatusSchema),
     keyTags: (key: string) => [threadTag(key)],
   },
   refreshThread: {

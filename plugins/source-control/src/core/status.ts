@@ -1,0 +1,316 @@
+/**
+ * Every status a surface shows for a Change, derived from one summary by
+ * pure functions: the ship path, the attention chips, the phone's status
+ * line, the primary action and the sort key. The tab header, the composer
+ * strip and outside consumers such as the sidebar call these, so they
+ * cannot disagree.
+ */
+import { z } from "zod";
+import {
+  findBranch,
+  uncommittedCount,
+  type Branch,
+  type PullRequest,
+  type ThreadChange,
+} from "./change.ts";
+import { changeKeySchema, type ChangeKey } from "./ids.ts";
+
+/** What the derivations read: one Change as its facets last said. */
+export type ChangeSummary = {
+  key: ChangeKey | null;
+  branch: Branch | null;
+  /** The checkout has a GitHub remote, so the branch can be pushed and reviewed. */
+  onGitHub: boolean;
+  uncommitted: number;
+  conflicted: boolean;
+  /** Undefined until the forge facet has been read once; null for a branch with none. */
+  pullRequest: PullRequest | null | undefined;
+  /** Open review findings. Zero until the review loop lands. */
+  findings: number;
+};
+
+/** The summary of a thread's Change, or null while it has no read checkout. */
+export function summarize(row: ThreadChange | undefined, findings = 0): ChangeSummary | null {
+  if (row?.state !== "checkout") return null;
+  const workspace = row.local.read?.value;
+  if (!workspace) return null;
+  const branch = findBranch(workspace, row.branch);
+  return {
+    key: row.key,
+    branch,
+    onGitHub: workspace.github !== null,
+    uncommitted: uncommittedCount(workspace),
+    conflicted: workspace.conflicted.length > 0 || branch?.status === "conflicted",
+    pullRequest: row.forge.read ? row.forge.read.value : undefined,
+    findings,
+  };
+}
+
+const commitCount = (branch: Branch | null) =>
+  branch ? branch.commits.length + branch.moreCommits : 0;
+const UNPUSHED = new Set(["unpushed", "ahead", "diverged"]);
+const unpushed = (branch: Branch | null) => !!branch && UNPUSHED.has(branch.status);
+const plural = (count: number, one: string, many = `${one}s`) =>
+  `${count} ${count === 1 ? one : many}`;
+
+function checksOf(pr: PullRequest | null | undefined) {
+  return pr?.checks ?? { passed: 0, failed: 0, pending: 0 };
+}
+
+/** Open, out of draft, approved, every check passed: nothing stands between it and merging. */
+function readyToMerge(pr: PullRequest | null | undefined): boolean {
+  if (!pr || pr.state !== "open" || pr.isDraft || pr.reviewDecision !== "approved") return false;
+  const checks = checksOf(pr);
+  return checks.failed === 0 && checks.pending === 0;
+}
+
+// ── Ship path ──────────────────────────────────────────────────────────
+
+export type StepState = "done" | "current" | "running" | "failed" | "todo";
+export type ShipStep = {
+  id: "committed" | "pushed" | "pullRequest" | "checks" | "approval" | "merged";
+  label: string;
+  state: StepState;
+  /** Counts after the label, as the checks step shows "2 running · 9 passed". */
+  detail: { text: string; tone: "warning" | "error" | "muted" }[];
+};
+
+function step(
+  id: ShipStep["id"],
+  label: string,
+  state: StepState,
+  detail: ShipStep["detail"] = [],
+) {
+  return { id, label, state, detail } satisfies ShipStep;
+}
+
+function pullRequestStep(pr: PullRequest | null | undefined): ShipStep {
+  if (!pr) return step("pullRequest", "Pull request", "todo");
+  if (pr.state === "closed") return step("pullRequest", "Closed", "failed");
+  if (pr.state === "merged") return step("pullRequest", "Opened", "done");
+  return pr.isDraft
+    ? step("pullRequest", "Draft, waiting on you", "current")
+    : step("pullRequest", "Ready for review", "done");
+}
+
+function checksStep(pr: PullRequest | null | undefined): ShipStep {
+  const { passed, failed, pending } = checksOf(pr);
+  const passedText = { text: `${passed} passed`, tone: "muted" as const };
+  if (!pr || passed + failed + pending === 0) return step("checks", "Checks", "todo");
+  if (failed > 0)
+    return step("checks", "Checks", "failed", [
+      { text: `${failed} failed`, tone: "error" },
+      ...(passed > 0 ? [{ ...passedText, text: `· ${passedText.text}` }] : []),
+    ]);
+  if (pending > 0)
+    return step("checks", "Checks", "running", [
+      { text: `${pending} running`, tone: "warning" },
+      ...(passed > 0 ? [{ ...passedText, text: `· ${passedText.text}` }] : []),
+    ]);
+  return step("checks", "Checks", "done", [passedText]);
+}
+
+function approvalStep(pr: PullRequest | null | undefined): ShipStep {
+  if (pr?.reviewDecision === "approved" || (pr?.state === "merged" && pr.approvals > 0))
+    return step("approval", "Approved", "done");
+  if (pr?.reviewDecision === "changes-requested")
+    return step("approval", "Changes requested", "failed");
+  return step(
+    "approval",
+    "Approval",
+    "todo",
+    pr && pr.approvals > 0 ? [{ text: `${pr.approvals} approved`, tone: "muted" }] : [],
+  );
+}
+
+/** Committed, Pushed, the pull request, Checks, Approval, Merged: where the Change is on its way in. */
+export function shipPath(summary: ChangeSummary): ShipStep[] {
+  const { branch, pullRequest: pr } = summary;
+  const merged = pr?.state === "merged";
+  const commits = commitCount(branch);
+  const committed = merged || commits > 0;
+  const pushed =
+    merged || (committed && !!branch?.remote && !unpushed(branch) && branch.status !== "unknown");
+  return [
+    step(
+      "committed",
+      "Committed",
+      committed ? "done" : summary.uncommitted > 0 ? "current" : "todo",
+    ),
+    step("pushed", "Pushed", pushed ? "done" : committed && summary.onGitHub ? "current" : "todo"),
+    pullRequestStep(pr),
+    checksStep(pr),
+    approvalStep(pr),
+    step("merged", "Merged", merged ? "done" : "todo"),
+  ];
+}
+
+// ── Attention chips ────────────────────────────────────────────────────
+
+export type ChipTone = "neutral" | "warning" | "error" | "success" | "merged";
+export type AttentionChip = {
+  id: string;
+  /** Count first and capitalised: "4 Findings", "2 Running". */
+  label: string;
+  tone: ChipTone;
+  icon: "dot" | "cross" | "check" | null;
+};
+
+/** What asks for attention, most urgent first. */
+export function attentionChips(summary: ChangeSummary): AttentionChip[] {
+  const pr = summary.pullRequest;
+  const { passed, failed, pending } = checksOf(pr);
+  const chips: AttentionChip[] = [];
+  const add = (chip: AttentionChip) => chips.push(chip);
+  if (summary.findings > 0)
+    add({ id: "findings", label: `${summary.findings} Findings`, tone: "neutral", icon: null });
+  if (pr?.state === "merged") {
+    add({ id: "merged", label: "Merged", tone: "merged", icon: null });
+    return chips;
+  }
+  if (summary.conflicted)
+    add({ id: "conflicted", label: "Conflicted", tone: "error", icon: "cross" });
+  if (failed > 0) add({ id: "failed", label: `${failed} Failed`, tone: "error", icon: "cross" });
+  if (pending > 0)
+    add({ id: "running", label: `${pending} Running`, tone: "warning", icon: "dot" });
+  if (pr?.reviewDecision === "changes-requested")
+    add({ id: "changes", label: "Changes requested", tone: "error", icon: null });
+  if (readyToMerge(pr)) add({ id: "ready", label: "Ready to merge", tone: "success", icon: null });
+  if (pr && failed === 0 && pending === 0 && passed > 0)
+    add({ id: "passed", label: "Passed", tone: "success", icon: "check" });
+  if (!pr && summary.branch && (unpushed(summary.branch) || !summary.branch.remote))
+    add({ id: "local", label: "Local", tone: "neutral", icon: null });
+  return chips;
+}
+
+// ── Phone status line ──────────────────────────────────────────────────
+
+/** Before a pull request, or before GitHub has answered: how far the branch got. */
+function unpublishedLine(summary: ChangeSummary): string {
+  if (commitCount(summary.branch) === 0)
+    return summary.uncommitted > 0 ? `${summary.uncommitted} uncommitted` : "No commits yet";
+  if (unpushed(summary.branch) || !summary.branch?.remote) return "Local, not pushed";
+  return summary.pullRequest === null ? "Pushed, no pull request" : "Pushed";
+}
+
+function draftLine(summary: ChangeSummary, pending: number): string {
+  if (summary.findings > 0) return `Draft · ${plural(summary.findings, "finding")} to settle`;
+  if (pending > 0) return `Draft · ${plural(pending, "check")} running`;
+  return "Draft";
+}
+
+/** One line saying what the Change is waiting on, as the phone list shows it. */
+export function statusLine(summary: ChangeSummary): string {
+  const pr = summary.pullRequest;
+  const { failed, pending } = checksOf(pr);
+  if (pr?.state === "merged") return "Merged";
+  if (pr?.state === "closed") return "Closed";
+  if (summary.conflicted) return "Conflicted";
+  if (!pr) return unpublishedLine(summary);
+  if (failed > 0) return `${plural(failed, "check")} failed`;
+  if (pr.reviewDecision === "changes-requested") return "Changes requested";
+  if (pr.isDraft) return draftLine(summary, pending);
+  if (pending > 0) return `${plural(pending, "check")} running`;
+  return readyToMerge(pr) ? "Ready to merge" : "Review requested";
+}
+
+// ── Primary action ─────────────────────────────────────────────────────
+
+export type PrimaryAction =
+  | { kind: "push"; label: "Push" }
+  | { kind: "markReady"; label: "Mark ready" }
+  | { kind: "merge"; label: "Merge" }
+  | null;
+
+/** The one next step the Change's owner takes, or null when it waits on someone else. */
+export function primaryAction(summary: ChangeSummary): PrimaryAction {
+  const pr = summary.pullRequest;
+  if (pr?.state === "merged" || pr?.state === "closed" || summary.conflicted) return null;
+  if (unpushed(summary.branch) && summary.onGitHub) return { kind: "push", label: "Push" };
+  if (pr?.isDraft) return { kind: "markReady", label: "Mark ready" };
+  if (readyToMerge(pr)) return { kind: "merge", label: "Merge" };
+  return null;
+}
+
+// ── Sort key ───────────────────────────────────────────────────────────
+
+/**
+ * Lists sort by this, lowest first: what needs its owner, then what is
+ * moving, then what waits on others, then what is done.
+ */
+export function sortKey(summary: ChangeSummary): number {
+  const pr = summary.pullRequest;
+  const { failed, pending } = checksOf(pr);
+  if (pr?.state === "merged" || pr?.state === "closed") return 9;
+  if (summary.conflicted || failed > 0 || pr?.reviewDecision === "changes-requested") return 0;
+  if (summary.findings > 0 || pr?.isDraft || unpushed(summary.branch)) return 1;
+  if (readyToMerge(pr)) return 2;
+  if (pending > 0) return 3;
+  if (!pr) return 4;
+  return 5;
+}
+
+// ── Compact status for other surfaces ──────────────────────────────────
+
+export const chipSchema = z
+  .object({
+    id: z.string(),
+    label: z.string(),
+    tone: z.enum(["neutral", "warning", "error", "success", "merged"]),
+    icon: z.enum(["dot", "cross", "check"]).nullable(),
+  })
+  .strict();
+
+/**
+ * A thread's Change as other plugins draw it in a list row: small, and
+ * already derived, so a row says what the tab and the strip say.
+ */
+export const threadStatusSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("pending") }).strict(),
+  z.object({ state: z.literal("none") }).strict(),
+  z
+    .object({
+      state: z.literal("change"),
+      key: changeKeySchema.nullable(),
+      branch: z.string().nullable(),
+      pullRequest: z
+        .object({
+          number: z.number().int().positive(),
+          title: z.string(),
+          url: z.string(),
+          state: z.enum(["draft", "open", "merged", "closed"]),
+        })
+        .strict()
+        .nullable(),
+      line: z.string(),
+      chips: z.array(chipSchema),
+      /** The most urgent chip's tone, for a single tint. */
+      tone: z.enum(["neutral", "warning", "error", "success", "merged"]),
+      sort: z.number().int(),
+    })
+    .strict(),
+]);
+export type ThreadStatus = z.infer<typeof threadStatusSchema>;
+
+export function threadStatus(row: ThreadChange | undefined): ThreadStatus {
+  if (!row || row.state === "pending") return { state: "pending" };
+  const summary = summarize(row);
+  if (!summary) return row.state === "none" ? { state: "none" } : { state: "pending" };
+  const pr = summary.pullRequest ?? null;
+  const chips = attentionChips(summary);
+  return {
+    state: "change",
+    key: summary.key,
+    branch: summary.branch?.name ?? null,
+    pullRequest: pr && {
+      number: pr.number,
+      title: pr.title,
+      url: pr.url,
+      state: pr.state === "open" ? (pr.isDraft ? "draft" : "open") : pr.state,
+    },
+    line: statusLine(summary),
+    chips,
+    tone: chips.find((chip) => chip.tone !== "neutral")?.tone ?? "neutral",
+    sort: sortKey(summary),
+  };
+}
