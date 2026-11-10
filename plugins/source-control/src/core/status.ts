@@ -163,8 +163,18 @@ export function shipPath(summary: ChangeSummary): ShipStep[] {
     pullRequestStep(pr),
     checksStep(pr),
     approvalStep(pr),
-    step("merged", "Merged", merged ? "done" : "todo"),
+    mergedStep(pr),
   ];
+}
+
+/** Merged; a pull request that conflicts with its base cannot get there until it is updated. */
+function mergedStep(pr: PullRequest | null | undefined): ShipStep {
+  if (pr?.state === "merged") return step("merged", "Merged", "done");
+  if (conflictsWithBase(pr))
+    return step("merged", "Merged", "failed", [
+      { text: `Conflicts with ${pr!.baseRef}`, tone: "error" },
+    ]);
+  return step("merged", "Merged", "todo");
 }
 
 // ── Attention chips ────────────────────────────────────────────────────

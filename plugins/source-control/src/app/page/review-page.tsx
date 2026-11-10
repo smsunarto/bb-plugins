@@ -180,12 +180,21 @@ function StatusMenu({
 
 // ── Header ─────────────────────────────────────────────────────────────
 
+/** What the Change conflicts with, from the chips its row already derives. */
+function conflictText(row: Ready["row"]): string | null {
+  if (row.chips.some((chip) => chip.id === "conflicted")) return "Conflicted in its checkout";
+  if (row.chips.some((chip) => chip.id === "conflicts"))
+    return row.baseRef ? `Conflicts with ${row.baseRef}` : "Conflicts with its base";
+  return null;
+}
+
 function Header({ detail, now }: { detail: Ready; now: number }) {
   const { row } = detail;
   const draft = useDraftToggle(detail);
   const slash = row.repo.indexOf("/");
   const owner = slash > 0 ? row.repo.slice(0, slash) : null;
   const name = slash > 0 ? row.repo.slice(slash + 1) : row.repo;
+  const conflict = conflictText(row);
   return (
     <header
       data-testid="sc-review-header"
@@ -244,6 +253,14 @@ function Header({ detail, now }: { detail: Ready; now: number }) {
           ) : null}
           {detail.deletions !== null ? (
             <span className="font-mono text-destructive-text">−{detail.deletions}</span>
+          ) : null}
+          {conflict ? (
+            <>
+              <span className="text-(--tertiary-foreground)">·</span>
+              <span data-testid="sc-review-conflicts" className="font-medium text-destructive-text">
+                {conflict}
+              </span>
+            </>
           ) : null}
         </div>
         {draft.message ? (

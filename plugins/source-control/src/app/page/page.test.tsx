@@ -19,6 +19,7 @@ import {
   type SourceRows,
 } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
+import { shipPath } from "../../core/status.ts";
 import { ReviewPanel as ReviewPage, ReviewSidebar as ChangesSidebar } from "../review-entry.tsx";
 import { resetNavStores } from "./sources.ts";
 import { resetPatchStores } from "./patches.ts";
@@ -238,6 +239,48 @@ test("a hostChanges call that never answers blocks neither the inbox rows nor th
     "Still reading studio-macStop",
     "Still reading build-linuxStop",
   ]);
+});
+
+test("a Change that conflicts with its base says so in the header and on the ship path", async () => {
+  const conflicting = row("scott/forge-host", {
+    number: 482,
+    chips: [{ id: "conflicts", label: "Conflicts", tone: "error", icon: "cross" }],
+  });
+  const ship = shipPath({
+    key: conflicting.key,
+    branch: null,
+    onGitHub: true,
+    uncommitted: 0,
+    conflicted: false,
+    findings: 0,
+    pullRequest: {
+      number: 482,
+      url: "https://github.com/smsunarto/bb-plugins/pull/482",
+      title: "t",
+      state: "open",
+      isDraft: false,
+      headRefOid: "c0ffee",
+      baseRef: "main",
+      reviewDecision: null,
+      approvals: 0,
+      mergeable: "conflicting",
+      additions: 1,
+      deletions: 0,
+      changedFiles: 1,
+      commits: 1,
+      checks: { passed: 0, failed: 0, pending: 0 },
+    },
+  });
+  const slot = render(
+    {
+      inbox: () => ({ smsunarto: read([conflicting]) }),
+      changeDetail: ({ keys }) =>
+        Object.fromEntries(keys.map((k) => [k, detail(conflicting, { ship })])),
+    },
+    reviewPath({ key: conflicting.key }),
+  );
+  expect((await slot.findByTestId("sc-review-conflicts")).textContent).toBe("Conflicts with main");
+  expect(slot.getByTestId("sc-review-page").textContent).toContain("MergedConflicts with main");
 });
 
 test("a late changeDetail answer for A never draws in B's pane", async () => {

@@ -218,6 +218,24 @@ describe("ship path", () => {
       { text: "· 9 passed", tone: "muted" },
     ]);
   });
+
+  test.each([
+    [
+      "conflicts with the base",
+      CONFLICTS,
+      "failed",
+      [{ text: "Conflicts with main", tone: "error" }],
+    ],
+    [
+      "conflicts, approved",
+      CONFLICTS_APPROVED,
+      "failed",
+      [{ text: "Conflicts with main", tone: "error" }],
+    ],
+    ["merged", MERGED, "done", []],
+  ] as const)("the merged step: %s", (_, summary, state, detail) => {
+    expect(shipPath(summary)[5]).toMatchObject({ state, detail });
+  });
 });
 
 describe("attention chips", () => {
