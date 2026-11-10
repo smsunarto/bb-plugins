@@ -24,7 +24,7 @@ type StackEntry = NonNullable<Ready["stack"]>[number];
 const RAIL_LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
 
-const STATE_CHIP: Record<RowState, { label: string; className: string }> = {
+export const STATE_CHIP: Record<RowState, { label: string; className: string }> = {
   local: {
     label: "Unpushed",
     className: "border border-solid border-border bg-surface-raised text-foreground",

@@ -1,0 +1,360 @@
+/**
+ * The Change card an agent puts in its reply (board B), from the directive
+ * `::source-control{key="<encoded ChangeKey>" revision="<head>"}`. The
+ * attributes are untrusted: the key is decoded and validated before any
+ * read. The card reads the Change and its review by key, only while it is
+ * on screen, and says when it shows an old read, could not read, or the
+ * Change has moved past the revision the agent wrote about.
+ */
+import {
+  experimental_useRpcKeyedQuery as useRpcKeyedQuery,
+  useBbNavigate,
+  useRealtimeConnectionState,
+  type PluginMessageDirectiveProps,
+} from "@get-bb/plugin-sdk/app";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { describeProblem, readAgo, type CheckRow } from "../core/change.ts";
+import { parseDirective } from "../core/directive.ts";
+import type { ChangeKey } from "../core/ids.ts";
+import { reviewPath, type ChangeDetail } from "../core/review.ts";
+import { sourceControlContract } from "../contract/rpc.ts";
+import { FindingList, OpenReviewArrow, fixLabel } from "./findings-card.tsx";
+import { cx, plural, shortId } from "./format.ts";
+import { PANEL_PATH, useNow } from "./page/hooks.ts";
+import { STATE_CHIP } from "./page/rail.tsx";
+import { useChangeReview, useReviewActions } from "./review-data.ts";
+import { latestBatch } from "./review-model.ts";
+import { BatchLine, useFixSelected } from "./send.tsx";
+import { Bar, Button } from "./ui.tsx";
+
+type Ready = Extract<ChangeDetail, { state: "change" }>;
+
+/** True once the element has been on screen; IntersectionObserver reports it without forcing layout. */
+function useSeen(ref: RefObject<HTMLElement | null>): boolean {
+  const [seen, setSeen] = useState(() => typeof IntersectionObserver === "undefined");
+  const [onScreen, setOnScreen] = useState(seen);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => {
+      const entry = entries.at(-1);
+      if (!entry) return;
+      setOnScreen(entry.isIntersecting);
+      if (entry.isIntersecting) setSeen(true);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return seen && onScreen;
+}
+
+const CARD =
+  "flex w-full max-w-[576px] min-w-0 flex-col overflow-clip rounded-[8px] border border-solid border-border bg-background text-start font-sans text-foreground";
+
+function BranchGlyph() {
+  return (
+    <span aria-hidden className="flex h-5 w-4 shrink-0 items-center justify-center">
+      <svg width="15" height="15" viewBox="0 0 10 10" className="shrink-0">
+        <g fill="none" stroke="var(--tertiary-foreground)" strokeWidth="0.9" strokeLinecap="round">
+          <circle cx="2.5" cy="2" r="1.2" />
+          <circle cx="2.5" cy="8" r="1.2" />
+          <circle cx="7.5" cy="8" r="1.2" />
+          <path d="M2.5 3.2V6.8M7.5 6.8V4.5C7.5 3.4 6.9 2.8 5.8 2.8H5" />
+        </g>
+      </svg>
+    </span>
+  );
+}
+
+function ChecksChip({ rows }: { rows: readonly CheckRow[] }) {
+  const failed = rows.filter((row) => row.outcome === "failed").length;
+  const running = rows.filter((row) => row.outcome === "pending").length;
+  if (rows.length === 0) return null;
+  const [text, tone, dot] =
+    failed > 0
+      ? [`${failed} Failed`, "text-destructive-text", "bg-destructive"]
+      : running > 0
+        ? [`${running} Running`, "text-warning", "bg-warning"]
+        : ["Passed", "text-success-foreground", "bg-success"];
+  return (
+    <span
+      className="flex h-5 shrink-0 items-center gap-1 rounded-full border border-solid border-border px-2"
+      data-testid="sc-card-checks"
+    >
+      <span aria-hidden className={cx("size-1.5 shrink-0 rounded-full", dot)} />
+      <span className={cx("text-[11px] leading-4 font-medium whitespace-pre", tone)}>{text}</span>
+    </span>
+  );
+}
+
+function CardSkeleton() {
+  return (
+    <div
+      className={CARD}
+      aria-busy="true"
+      aria-label="Reading this change"
+      data-testid="sc-card-loading"
+    >
+      <div className="flex flex-col gap-2 p-3">
+        <Bar className="h-4 w-56 max-w-full" />
+        <Bar className="h-5 w-80 max-w-full" />
+      </div>
+      <div className="flex flex-col gap-3 border-t border-solid border-border px-3 py-3">
+        <Bar className="h-3.5 w-64 max-w-full" />
+        <Bar className="h-3.5 w-72 max-w-full" />
+        <Bar className="h-3.5 w-52 max-w-full" />
+      </div>
+      <div className="flex gap-2 px-3 pt-1 pb-3">
+        <Bar className="h-7 flex-1" />
+        <Bar className="h-7 flex-1" />
+      </div>
+    </div>
+  );
+}
+
+function CardNote({ children, testId }: { children: ReactNode; testId: string }) {
+  return (
+    <div className={cx(CARD, "gap-2 p-3")} data-testid={testId}>
+      {children}
+    </div>
+  );
+}
+
+/** The card's head (board B): state, number and branch, size, title and checks, then any caveat. */
+function CardHeader({
+  detail,
+  revision,
+  visible,
+  offline,
+}: {
+  detail: Ready;
+  revision: string | null;
+  visible: boolean;
+  offline: boolean;
+}) {
+  const { row } = detail;
+  const now = useNow();
+  const checks = useRpcKeyedQuery({
+    contract: sourceControlContract,
+    method: "checksForChange",
+    keys: [row.key],
+    enabled: visible && row.number !== null,
+  });
+  const checkRows = checks.data?.[row.key]?.read?.value?.rows ?? [];
+  const chip = STATE_CHIP[row.state];
+  const head = detail.head;
+  const moved =
+    revision !== null && head !== null && !head.startsWith(revision) && !revision.startsWith(head);
+  let stale: string | null = null;
+  if (offline) stale = "Offline. This is what bb last read.";
+  else if (detail.problem) stale = `${describeProblem(detail.problem)} This is what bb last read.`;
+  const size = [
+    detail.files !== null ? (
+      <span key="files" className="text-[11px] leading-4 text-(--tertiary-foreground)">
+        {plural(detail.files, "file")}
+      </span>
+    ) : null,
+    detail.additions !== null ? (
+      <span key="add" className="font-mono text-[11px] leading-4 text-success-foreground">
+        +{detail.additions}
+      </span>
+    ) : null,
+    detail.deletions !== null ? (
+      <span key="del" className="font-mono text-[11px] leading-4 text-destructive-text">
+        −{detail.deletions}
+      </span>
+    ) : null,
+  ];
+  return (
+    <div className="flex min-w-0 items-start gap-2 p-3">
+      <BranchGlyph />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <span
+            className={cx(
+              "flex h-4 shrink-0 items-center rounded-full px-2 text-[11px] leading-3 font-semibold",
+              chip.className,
+            )}
+          >
+            {chip.label}
+          </span>
+          <span className="min-w-0 truncate font-mono text-[11px] leading-4 text-(--tertiary-foreground)">
+            {row.number !== null ? `#${row.number} · ${row.branch}` : row.branch}
+          </span>
+          <span className="flex shrink-0 items-center gap-2">{size}</span>
+        </div>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 text-[13px] leading-5 font-semibold break-words text-foreground">
+            {row.title}
+          </span>
+          <ChecksChip rows={checkRows} />
+        </div>
+        {moved ? (
+          <span className="text-[12px] leading-4 text-muted-foreground" data-testid="sc-card-moved">
+            The change moved past this revision ({shortId(revision)}); this is its head now,{" "}
+            {shortId(head)}.
+          </span>
+        ) : null}
+        {stale ? (
+          <span className="text-[12px] leading-4 text-muted-foreground" data-testid="sc-card-stale">
+            {stale} {readAgo(detail.at, now)}.
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ReadyCard({
+  detail,
+  revision,
+  threadId,
+  visible,
+  offline,
+}: {
+  detail: Ready;
+  revision: string | null;
+  threadId: string;
+  visible: boolean;
+  offline: boolean;
+}) {
+  const key = detail.row.key;
+  const navigate = useBbNavigate();
+  const { stable } = useChangeReview(key, visible);
+  const actions = useReviewActions(key);
+  const fix = useFixSelected(key, stable, detail.head, threadId);
+  const batch = latestBatch(stable.batches);
+  const hasItems = stable.items.length > 0;
+  return (
+    <div className={CARD} data-testid="sc-card" data-key={key}>
+      <CardHeader detail={detail} revision={revision} visible={visible} offline={offline} />
+      {hasItems ? (
+        <FindingList
+          changeKey={key}
+          stable={stable}
+          actions={actions}
+          className="border-t border-solid border-border px-3 py-2"
+        />
+      ) : null}
+      {batch?.destination === "agent" ? (
+        <div className="flex min-w-0 px-3 pb-1">
+          <BatchLine
+            changeKey={key}
+            batch={batch}
+            here={batch.target.kind === "thread" && batch.target.threadId === threadId}
+          />
+        </div>
+      ) : null}
+      <div className="flex min-w-0 flex-wrap gap-2 px-3 pt-1 pb-3">
+        <button
+          type="button"
+          onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key }) })}
+          className="flex h-7 min-w-0 flex-[1_1_8rem] cursor-pointer items-center justify-center gap-2 rounded-[6px] border border-solid border-border bg-transparent px-3 text-[12px] leading-4 font-medium text-foreground hover:bg-surface-raised"
+        >
+          Open review
+          <OpenReviewArrow />
+        </button>
+        {hasItems ? (
+          <button
+            type="button"
+            data-testid="sc-card-fix"
+            disabled={fix.count === 0 || fix.pending || detail.head === null}
+            onClick={fix.fix}
+            className="flex h-7 min-w-0 flex-[1_1_8rem] cursor-pointer items-center justify-center rounded-[6px] border-0 bg-(--foreground) px-3 text-[12px] leading-4 font-semibold text-background enabled:hover:opacity-90 disabled:cursor-default disabled:opacity-50"
+          >
+            {fixLabel(fix)}
+          </button>
+        ) : null}
+      </div>
+      {fix.error ? (
+        <span role="alert" className="px-3 pb-3 text-[12px] leading-4 text-warning">
+          {fix.error}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function ChangeCard({
+  changeKey,
+  revision,
+  threadId,
+}: {
+  changeKey: ChangeKey;
+  revision: string | null;
+  threadId: string;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const visible = useSeen(root);
+  const connection = useRealtimeConnectionState();
+  const query = useRpcKeyedQuery({
+    contract: sourceControlContract,
+    method: "changeDetail",
+    keys: [changeKey],
+    enabled: visible,
+  });
+  const detail = query.data?.[changeKey];
+  let body;
+  if (!detail || detail.state === "pending")
+    body =
+      query.error && !detail ? (
+        <CardNote testId="sc-card-failed">
+          <p role="alert" className="m-0 text-[13px] leading-5 text-muted-foreground">
+            Couldn't read this change. {query.error.message}
+          </p>
+          <div>
+            <Button onClick={() => void query.refetch()}>Try again</Button>
+          </div>
+        </CardNote>
+      ) : (
+        <CardSkeleton />
+      );
+  else if (detail.state === "missing")
+    body = (
+      <CardNote testId="sc-card-missing">
+        <p className="m-0 text-[13px] leading-5 text-muted-foreground">
+          {detail.problem
+            ? describeProblem(detail.problem)
+            : "bb doesn't know this change. Its branch may have been deleted."}
+        </p>
+      </CardNote>
+    );
+  else
+    body = (
+      <ReadyCard
+        detail={detail}
+        revision={revision}
+        threadId={threadId}
+        visible={visible}
+        offline={connection !== "connected"}
+      />
+    );
+  return (
+    <div ref={root} data-bb-plugin="source-control" className="@container my-2 flex w-full min-w-0">
+      {body}
+    </div>
+  );
+}
+
+/** `::source-control{key revision}` in an agent's reply. */
+export function ChangeDirective({ attributes, message }: PluginMessageDirectiveProps) {
+  const parsed = parseDirective(attributes);
+  if (!parsed)
+    return (
+      <span
+        data-bb-plugin="source-control"
+        data-testid="sc-card-invalid"
+        className="text-[12px] leading-4 text-muted-foreground"
+      >
+        This link to a change is not one bb can read.
+      </span>
+    );
+  return (
+    <ChangeCard
+      key={parsed.key}
+      changeKey={parsed.key}
+      revision={parsed.revision}
+      threadId={message.threadId}
+    />
+  );
+}

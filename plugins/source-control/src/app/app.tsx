@@ -1,5 +1,7 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import { ChangesTab } from "./changes-tab.tsx";
+import { ChangeDirective } from "./chat-card.tsx";
+import { DIRECTIVE_ID } from "../core/directive.ts";
 import { StripAction, StripSummary, useStripVisible } from "./composer-strip.tsx";
 import { ReviewPanel, ReviewSidebar, useReviewBadge, useReviewTitle } from "./review-entry.tsx";
 
@@ -26,6 +28,9 @@ export default definePluginApp((app) => {
     action: StripAction,
     useVisible: useStripVisible,
   });
+  // The Change card an agent puts in its reply: `::source-control{key="…" revision="…"}`.
+  // Drawn only where a message has the directive.
+  app.slots.messageDirective({ id: DIRECTIVE_ID, component: ChangeDirective });
   // The review page, with the Changes nav as its sidebar.
   app.slots.navPanel({
     id: "source-control",

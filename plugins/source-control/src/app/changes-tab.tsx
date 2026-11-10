@@ -690,7 +690,15 @@ function ThisThread({
           Push, pull, and land need the host. Pull request state still comes from GitHub.
         </span>
       ) : null}
-      {changeKey ? <FindingsCard key={changeKey} changeKey={changeKey} visible={visible} /> : null}
+      {changeKey ? (
+        <FindingsCard
+          key={changeKey}
+          changeKey={changeKey}
+          threadId={threadId}
+          head={branch?.head ?? null}
+          visible={visible}
+        />
+      ) : null}
     </section>
   );
 }

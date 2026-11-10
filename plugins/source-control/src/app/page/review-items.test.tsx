@@ -3,9 +3,17 @@ import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { renderSlot, type PluginRpcTestHandlers } from "@get-bb/plugin-sdk/testing/app";
 import { changeKeySchema, reviewTag, type ChangeKey } from "../../core/ids.ts";
-import type { ChangeReview, Draft, DraftInput, ReviewItem } from "../../core/items.ts";
+import type {
+  BatchInput,
+  BatchView,
+  ChangeReview,
+  Draft,
+  DraftInput,
+  ReviewItem,
+} from "../../core/items.ts";
 import { reviewPath, type ChangeDetail, type ChangeRow } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
+import { ChangeDirective } from "../chat-card.tsx";
 import { FindingsCard } from "../findings-card.tsx";
 import { ReviewPanel } from "../review-entry.tsx";
 import { patchLines } from "../review-model.ts";
@@ -90,16 +98,33 @@ function finding(n: number, line: number): ReviewItem {
   };
 }
 
+/** A GitHub thread's item, which a reader answers with Reply. */
+function comment(n: number, line: number): ReviewItem {
+  return {
+    ...finding(n, line),
+    id: `gh:thread-${n}`,
+    origin: { kind: "forge", author: "mira", bot: false, slopcop: false },
+    priority: null,
+    title: null,
+    body: `Comment ${n}.`,
+  };
+}
+
 /** The server's review store, as the handlers below keep it. */
-function reviewServer(items: ReviewItem[]) {
+function reviewServer(items: ReviewItem[], extra: Partial<ChangeReview> = {}) {
   const state: ChangeReview = {
     items,
     drafts: [],
     selected: [],
     runs: [],
     forge: { at: null, problem: null },
+    batches: [],
+    tray: { destination: "agent", target: null },
+    viewer: null,
+    ...extra,
   };
   const saved: DraftInput[] = [];
+  const sent: BatchInput[] = [];
   const handlers: Partial<Handlers> = {
     reviewForChange: ({ keys }) =>
       Object.fromEntries(keys.map((key) => [key, structuredClone(state)])),
@@ -122,8 +147,40 @@ function reviewServer(items: ReviewItem[]) {
       state.drafts = state.drafts.filter((draft) => draft.id !== id);
       return { ok: true as const };
     },
+    dismissItem: ({ id }) => {
+      state.items = state.items.filter((item) => item.id !== id);
+      state.selected = state.selected.filter((selected) => selected !== id);
+      return { ok: true as const };
+    },
+    setTray: ({ tray }) => {
+      state.tray = tray;
+      return { ok: true as const };
+    },
+    agentTargets: () => ({
+      targets: [
+        { threadId: "thread-a", title: "Source control core", status: "idle", onChange: true },
+      ],
+    }),
+    sendBatch: ({ batch }) => {
+      sent.push(batch);
+      const view: BatchView = {
+        ...batch,
+        state: "sent",
+        phase: "fixing",
+        problem: null,
+        createdAt: 1,
+        sentAt: 2,
+        threadId: batch.target.kind === "thread" ? batch.target.threadId : "thread-new",
+        url: null,
+        agent: "running",
+      };
+      state.batches = [view, ...state.batches.filter((old) => old.id !== batch.id)];
+      state.selected = state.selected.filter((id) => !batch.itemIds.includes(id));
+      return view;
+    },
+    stopAgent: () => ({ ok: true as const }),
   };
-  return { state, saved, handlers };
+  return { state, saved, sent, handlers };
 }
 
 type Handlers = PluginRpcTestHandlers<typeof sourceControlContract>;
@@ -134,13 +191,13 @@ function Both() {
     <>
       <ReviewPanel subPath={reviewPath({ key: KEY })} />
       <div data-testid="thread-tab">
-        <FindingsCard changeKey={KEY} visible />
+        <FindingsCard changeKey={KEY} threadId="thread-a" head={HEAD} visible />
       </div>
     </>
   );
 }
 
-function render(review: Partial<Handlers>) {
+function render(review: Partial<Handlers>, detail: ChangeDetail = DETAIL) {
   return renderSlot(
     { component: Both },
     {},
@@ -148,7 +205,7 @@ function render(review: Partial<Handlers>) {
       experimental_rpcContract: sourceControlContract,
       pluginId: "source-control",
       rpc: {
-        changeDetail: ({ keys }) => Object.fromEntries(keys.map((key) => [key, DETAIL])),
+        changeDetail: ({ keys }) => Object.fromEntries(keys.map((key) => [key, detail])),
         checksForChange: ({ keys }) =>
           Object.fromEntries(keys.map((key) => [key, { read: null, problem: null }])),
         changeFiles: () => ({
@@ -237,7 +294,7 @@ test("checking an item in the rail checks it in the diff's annotation and the th
 });
 
 test("typing in one comment composer redraws no line's annotations", async () => {
-  const server = reviewServer([finding(1, 2), finding(2, 4)]);
+  const server = reviewServer([comment(1, 2), comment(2, 4)]);
   const slot = render(server.handlers);
   await waitFor(() => expect(slot.getAllByTestId("sc-annotation")).toHaveLength(2));
   const [first] = slot.getAllByTestId("sc-annotation");
@@ -264,7 +321,7 @@ test("typing in one comment composer redraws no line's annotations", async () =>
 });
 
 test("a reply is saved once under its client id, shows as Pending, and can be deleted", async () => {
-  const server = reviewServer([finding(1, 2)]);
+  const server = reviewServer([comment(1, 2)]);
   const slot = render(server.handlers);
   const annotation = await slot.findByTestId("sc-annotation");
   fireEvent.click(within(annotation).getByTestId("sc-reply"));
@@ -278,7 +335,7 @@ test("a reply is saved once under its client id, shows as Pending, and can be de
   expect(server.saved).toHaveLength(1);
   expect(server.saved[0]).toMatchObject({
     body: "Key it by account and repo.",
-    replyTo: finding(1, 2).id,
+    replyTo: comment(1, 2).id,
     // A local change with no pull request: the anchor names the head the diff shows.
     anchor: { path: PATH, line: 2, side: "RIGHT", head: HEAD },
   });
@@ -335,4 +392,238 @@ test("the lines a patch shows, by side, with their unified row", () => {
     ["deletions:3", 5],
     ["additions:4", 5],
   ]);
+});
+
+// ── Sending ────────────────────────────────────────────────────────────
+
+const PR_DETAIL: ChangeDetail = {
+  ...DETAIL,
+  row: { ...ROW, repo: "smsunarto/bb-plugins", number: 482, state: "draft", url: null },
+};
+
+function failedBatch(): BatchView {
+  return {
+    id: "batch-1",
+    head: HEAD,
+    itemIds: [finding(1, 2).id],
+    draftIds: [],
+    destination: "agent",
+    target: { kind: "thread", threadId: "thread-a" },
+    state: "failed",
+    phase: "failed",
+    problem: { kind: "failed", site: "bb", detail: "The thread refused it." },
+    createdAt: 1,
+    sentAt: null,
+    threadId: "thread-a",
+    url: null,
+    agent: null,
+  };
+}
+
+test("the tray lists what was checked in the rail, an annotation and the thread card, from one entry", async () => {
+  const server = reviewServer([finding(1, 2), finding(2, 3), finding(3, 4)]);
+  const slot = render(server.handlers);
+  const rail = await slot.findByTestId("sc-rail-review");
+  await waitFor(() => expect(slot.getAllByTestId("sc-annotation")).toHaveLength(3));
+  const card = slot.getByTestId("thread-tab");
+
+  fireEvent.click(within(rail).getAllByTestId("sc-review-check")[0]!);
+  fireEvent.click(
+    within(slot.getAllByTestId("sc-annotation")[1]!).getByTestId("sc-annotation-check"),
+  );
+  fireEvent.click(within(card).getAllByTestId("sc-finding-check")[2]!);
+
+  const send = slot.getByTestId("sc-send");
+  expect(send.textContent).toBe("Send 3 to agent");
+  fireEvent.click(send);
+  const tray = await slot.findByTestId("sc-tray");
+  expect(
+    within(tray)
+      .getAllByTestId("sc-tray-item")
+      .map((row) => row.dataset.item),
+  ).toEqual([finding(1, 2).id, finding(2, 3).id, finding(3, 4).id]);
+  // The thread on this branch is the default target, once the server lists it.
+  await waitFor(() =>
+    expect(within(tray).getByTestId("sc-tray-recipient").textContent).toBe("Source control core"),
+  );
+
+  // Remove unchecks it everywhere.
+  fireEvent.click(within(within(tray).getAllByTestId("sc-tray-item")[1]!).getByText("Remove"));
+  expect(checked(within(card).getAllByTestId("sc-finding-check")[1]!)).toBe("false");
+  expect(slot.getByTestId("sc-send").textContent).toBe("Send 2 to agent");
+
+  fireEvent.click(within(tray).getByTestId("sc-tray-send"));
+  await waitFor(() => expect(server.sent).toHaveLength(1));
+  expect(server.sent[0]).toMatchObject({
+    head: HEAD,
+    itemIds: [finding(1, 2).id, finding(3, 4).id],
+    destination: "agent",
+    target: { kind: "thread", threadId: "thread-a" },
+  });
+  // Sent: the pill says what the agent is doing, and the rail rows show progress.
+  await slot.experimental_invalidateRpc([reviewTag(KEY)]);
+  await waitFor(() =>
+    expect(slot.getByTestId("sc-batch-pill").textContent).toContain("Agent fixing 2"),
+  );
+  expect(within(rail).getAllByTestId("sc-review-fixing")).toHaveLength(2);
+});
+
+test("the destination toggle changes the send label; GitHub is off with a reason without a pull request", async () => {
+  const local = render(reviewServer([finding(1, 2)]).handlers);
+  const github = await local.findByTestId("sc-destination-github");
+  expect((github as HTMLButtonElement).disabled).toBe(true);
+  expect(github.closest("label")!.getAttribute("title")).toBe(
+    "This change has no pull request on GitHub yet.",
+  );
+  cleanup();
+
+  const server = reviewServer([finding(1, 2)], { selected: [finding(1, 2).id] });
+  const slot = render(server.handlers, PR_DETAIL);
+  const toggle = await slot.findByTestId("sc-destination-github");
+  await waitFor(() => expect(slot.getByTestId("sc-send").textContent).toBe("Send 1 to agent"));
+  fireEvent.click(slot.getByTestId("sc-send"));
+  expect((await slot.findByTestId("sc-tray-send")).textContent).toBe("Send 1");
+  fireEvent.click(toggle);
+  expect(slot.getByTestId("sc-send").textContent).toBe("Submit to GitHub");
+  expect(slot.getByTestId("sc-tray-send").textContent).toBe("Submit 1");
+  await waitFor(() => expect(server.state.tray.destination).toBe("github"));
+});
+
+test("a failed batch says why and Retry sends it again under the same id", async () => {
+  const server = reviewServer([finding(1, 2)], { batches: [failedBatch()] });
+  const slot = render(server.handlers);
+  const banner = await slot.findByTestId("sc-batch-banner");
+  expect(banner.textContent).toContain("Reading from bb failed.");
+  fireEvent.click(within(banner).getByTestId("sc-batch-retry"));
+  await waitFor(() => expect(server.sent).toHaveLength(1));
+  const { id, head, itemIds, draftIds, destination, target } = failedBatch();
+  expect(server.sent[0]).toEqual({ id, head, itemIds, draftIds, destination, target });
+});
+
+test("Dismiss takes a bb finding out of the rail, the diff and the card at once", async () => {
+  const server = reviewServer([finding(1, 2), finding(2, 4)]);
+  const slot = render(server.handlers);
+  await waitFor(() => expect(slot.getAllByTestId("sc-annotation")).toHaveLength(2));
+  fireEvent.click(within(slot.getAllByTestId("sc-annotation")[0]!).getByTestId("sc-dismiss"));
+  expect(slot.getAllByTestId("sc-annotation")).toHaveLength(1);
+  expect(within(slot.getByTestId("thread-tab")).getAllByTestId("sc-finding")).toHaveLength(1);
+  await waitFor(() =>
+    expect(server.state.items.map((item) => item.id)).toEqual([finding(2, 4).id]),
+  );
+});
+
+test("drafts and composers name the reader by their GitHub login", async () => {
+  const server = reviewServer([comment(1, 2)], {
+    viewer: { login: "smsunarto", avatarUrl: null },
+  });
+  const slot = render(server.handlers);
+  const annotation = await slot.findByTestId("sc-annotation");
+  fireEvent.click(within(annotation).getByTestId("sc-reply"));
+  await waitFor(() =>
+    expect(within(annotation).getByTestId("sc-me").textContent).toBe("smsunarto"),
+  );
+});
+
+test("the thread card shows the top five in the rail's order, then Show all", async () => {
+  const items = [1, 2, 3, 4, 5, 6, 7].map((n) => finding(n, 2));
+  const slot = render(reviewServer(items).handlers);
+  const card = slot.getByTestId("thread-tab");
+  await waitFor(() => expect(within(card).getAllByTestId("sc-finding")).toHaveLength(5));
+  // P0 first: finding 1 is the only P0.
+  expect(within(card).getAllByTestId("sc-finding")[0]!.dataset.item).toBe(finding(1, 2).id);
+  const more = within(card).getByTestId("sc-findings-more");
+  expect(more.textContent).toBe("Show all 7");
+  fireEvent.click(more);
+  expect(within(card).getAllByTestId("sc-finding")).toHaveLength(7);
+});
+
+// ── The chat card ──────────────────────────────────────────────────────
+
+const MESSAGE = { id: "m1", threadId: "thread-a", turnId: null, projectId: null };
+
+function renderCard(
+  rpc: Partial<Handlers>,
+  attributes: Record<string, string> = { key: encodeURIComponent(KEY), revision: HEAD },
+) {
+  return renderSlot(
+    { component: ChangeDirective },
+    { attributes, source: "", message: MESSAGE, openWorkspaceFile: null },
+    {
+      experimental_rpcContract: sourceControlContract,
+      pluginId: "source-control",
+      rpc: {
+        checksForChange: ({ keys }) =>
+          Object.fromEntries(keys.map((key) => [key, { read: null, problem: null }])),
+        ...reviewServer([finding(1, 2)]).handlers,
+        ...rpc,
+      } as Handlers,
+    },
+  );
+}
+
+test("the chat card reserves its space while the change loads", async () => {
+  const slot = renderCard({ changeDetail: () => new Promise(() => {}) });
+  expect(await slot.findByTestId("sc-card-loading")).toBeTruthy();
+});
+
+test("the chat card says when it could not read the change, and tries again", async () => {
+  let calls = 0;
+  const slot = renderCard({
+    changeDetail: () => {
+      calls += 1;
+      throw new Error("The server is unreachable.");
+    },
+  });
+  const failed = await slot.findByTestId("sc-card-failed", {}, { timeout: 4000 });
+  expect(failed.textContent).toContain("The server is unreachable.");
+  const before = calls;
+  fireEvent.click(within(failed).getByRole("button", { name: "Try again" }));
+  await waitFor(() => expect(calls).toBeGreaterThan(before));
+});
+
+test("the chat card keeps the last read while offline and says so", async () => {
+  const slot = renderCard({
+    changeDetail: ({ keys }) => Object.fromEntries(keys.map((key) => [key, DETAIL])),
+  });
+  expect((await slot.findByTestId("sc-card")).textContent).toContain("A local change");
+  expect(slot.queryByTestId("sc-card-stale")).toBeNull();
+  await slot.setRealtimeConnectionState("reconnecting");
+  expect((await slot.findByTestId("sc-card-stale")).textContent).toContain("Offline.");
+  expect(slot.getByTestId("sc-card").textContent).toContain("Finding 1");
+});
+
+test("the chat card says when the change moved past the revision it was shared at", async () => {
+  const slot = renderCard(
+    { changeDetail: ({ keys }) => Object.fromEntries(keys.map((key) => [key, DETAIL])) },
+    { key: encodeURIComponent(KEY), revision: "abc1234" },
+  );
+  expect((await slot.findByTestId("sc-card-moved")).textContent).toContain("abc1234");
+});
+
+test("the chat card refuses a key it cannot read", () => {
+  const slot = renderCard({}, { key: "%E0%A4%A" });
+  expect(slot.getByTestId("sc-card-invalid")).toBeTruthy();
+});
+
+test("Escape with the tray open closes the tray and goes no further", async () => {
+  const server = reviewServer([finding(1, 2)]);
+  const slot = render(server.handlers);
+  const rail = await slot.findByTestId("sc-rail-review");
+  fireEvent.click(within(rail).getAllByTestId("sc-review-check")[0]!);
+  const send = slot.getByTestId("sc-send");
+  fireEvent.click(send);
+  const tray = await slot.findByTestId("sc-tray");
+  let reachedPage = 0;
+  const onPage = (event: KeyboardEvent) => {
+    if (event.key === "Escape") reachedPage += 1;
+  };
+  document.addEventListener("keydown", onPage);
+  try {
+    fireEvent.keyDown(send, { key: "Escape" });
+  } finally {
+    document.removeEventListener("keydown", onPage);
+  }
+  expect(send.getAttribute("aria-expanded")).toBe("false");
+  expect(tray.className).toContain("hidden");
+  expect(reachedPage).toBe(0);
 });

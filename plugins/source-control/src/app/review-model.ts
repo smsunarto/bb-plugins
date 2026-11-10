@@ -5,12 +5,16 @@
  * interners' memory of the last build.
  */
 import {
+  DEFAULT_TRAY,
   groupItems,
   itemGroup,
   type Anchor,
+  type BatchView,
   type ChangeReview,
   type Draft,
   type ReviewItem,
+  type Tray,
+  type Viewer,
 } from "../core/items.ts";
 
 /** Keeps one object per id while its JSON stays the same. */
@@ -43,42 +47,102 @@ export type StableReview = {
   items: readonly ReviewItem[];
   drafts: readonly Draft[];
   selected: ReadonlySet<string>;
+  /** Newest first. */
+  batches: readonly BatchView[];
+  /** Items an agent batch is sending or fixing now: they show progress, not a checkbox. */
+  fixing: ReadonlySet<string>;
+  tray: Tray;
+  viewer: Viewer | null;
 };
 
 const NO_ITEMS: readonly ReviewItem[] = Object.freeze([]);
 const NO_DRAFTS: readonly Draft[] = Object.freeze([]);
+const NO_BATCHES: readonly BatchView[] = Object.freeze([]);
 const NOTHING: ReadonlySet<string> = new Set();
 
-export const EMPTY_STABLE: StableReview = { items: NO_ITEMS, drafts: NO_DRAFTS, selected: NOTHING };
+export const EMPTY_STABLE: StableReview = {
+  items: NO_ITEMS,
+  drafts: NO_DRAFTS,
+  selected: NOTHING,
+  batches: NO_BATCHES,
+  fixing: NOTHING,
+  tray: DEFAULT_TRAY,
+  viewer: null,
+};
+
+function sameSet(old: ReadonlySet<string>, next: Set<string>): ReadonlySet<string> {
+  return next.size === old.size && [...next].every((id) => old.has(id)) ? old : next;
+}
+
+/** The ids of the items in agent batches still sending or being fixed. */
+export function fixingIds(batches: readonly BatchView[]): Set<string> {
+  const ids = new Set<string>();
+  for (const batch of batches)
+    if (batch.destination === "agent" && (batch.phase === "fixing" || batch.phase === "sending"))
+      for (const id of batch.itemIds) ids.add(id);
+  return ids;
+}
 
 /** One consumer's memory of the review it last drew. */
 export class ReviewInterner {
   private items = new Interner<ReviewItem>();
   private drafts = new Interner<Draft>();
+  private batches = new Interner<BatchView>();
   private last: StableReview = EMPTY_STABLE;
 
   stable(review: ChangeReview | undefined): StableReview {
     if (!review) return EMPTY_STABLE;
-    const items = sameArray(this.last.items, this.items.all(review.items));
-    const drafts = sameArray(this.last.drafts, this.drafts.all(review.drafts));
-    const selected = new Set(review.selected);
-    const sameSelection =
-      selected.size === this.last.selected.size &&
-      [...selected].every((id) => this.last.selected.has(id));
-    const next = {
-      items,
-      drafts,
-      selected: sameSelection ? this.last.selected : selected,
+    const last = this.last;
+    const batches = sameArray(last.batches, this.batches.all(review.batches));
+    const tray =
+      JSON.stringify(review.tray) === JSON.stringify(last.tray) ? last.tray : review.tray;
+    const viewer =
+      JSON.stringify(review.viewer) === JSON.stringify(last.viewer) ? last.viewer : review.viewer;
+    const next: StableReview = {
+      items: sameArray(last.items, this.items.all(review.items)),
+      drafts: sameArray(last.drafts, this.drafts.all(review.drafts)),
+      selected: sameSet(last.selected, new Set(review.selected)),
+      batches,
+      fixing: batches === last.batches ? last.fixing : sameSet(last.fixing, fixingIds(batches)),
+      tray,
+      viewer,
     };
-    if (
-      next.items === this.last.items &&
-      next.drafts === this.last.drafts &&
-      next.selected === this.last.selected
-    )
-      return this.last;
+    if ((Object.keys(next) as (keyof StableReview)[]).every((name) => next[name] === last[name]))
+      return last;
     this.last = next;
     return next;
   }
+}
+
+/** The newest batch, which the header, the rail and the cards report on. */
+export function latestBatch(batches: readonly BatchView[]): BatchView | null {
+  return batches[0] ?? null;
+}
+
+/** "Agent fixing 2", "Verify 2", ... for a batch's phase. Never "done". */
+export function batchLabel(batch: BatchView): string {
+  const count = batch.itemIds.length + batch.draftIds.length;
+  switch (batch.phase) {
+    case "sending":
+      return `Sending ${count}…`;
+    case "queued":
+      return `${count} waiting to send`;
+    case "failed":
+      return `Couldn't send ${count}`;
+    case "fixing":
+      return `Agent fixing ${count}`;
+    case "verify":
+      return `Verify ${count}`;
+    case "stopped":
+      return "Agent stopped, no new commit";
+    case "posted":
+      return "Posted to GitHub";
+  }
+}
+
+/** The agent thread a batch went to, once known. */
+export function batchThread(batch: BatchView): string | null {
+  return batch.threadId ?? (batch.target.kind === "thread" ? batch.target.threadId : null);
 }
 
 // ── Labels ─────────────────────────────────────────────────────────────
@@ -116,6 +180,16 @@ export function countLabel(items: readonly ReviewItem[]): string {
     .join(" · ");
 }
 
+/** Every item in the rail's order: by group, then priority, file and line. */
+export function railOrder(items: readonly ReviewItem[]): ReviewItem[] {
+  return groupItems(items).flatMap((group) => group.items);
+}
+
+/** The drafts a send carries: the pending ones; an outdated draft waits for its author. */
+export function sendableDrafts(drafts: readonly Draft[]): Draft[] {
+  return drafts.filter((draft) => draft.state === "pending");
+}
+
 // ── Per file, for the diff ─────────────────────────────────────────────
 
 export type ItemEntry = {
@@ -129,6 +203,8 @@ export type ItemEntry = {
   label: string;
   /** The reader's unsent replies to it. */
   replies: readonly Draft[];
+  /** In an agent batch being fixed: progress shows instead of the checkbox. */
+  fixing: boolean;
 };
 export type DraftEntry = { kind: "draft"; id: string; draft: Draft };
 export type Entry = ItemEntry | DraftEntry;
@@ -141,6 +217,7 @@ function sameEntry(a: Entry, b: Entry): boolean {
   return (
     a.item === b.item &&
     a.checked === b.checked &&
+    a.fixing === b.fixing &&
     a.outdated === b.outdated &&
     a.label === b.label &&
     sameArray(a.replies, b.replies) === a.replies
@@ -185,6 +262,7 @@ export class FileReviewInterner {
         id: item.id,
         item,
         checked: review.selected.has(item.id),
+        fixing: review.fixing.has(item.id),
         outdated: item.state === "outdated" || item.anchor.head !== head,
         label: label.get(item.id) ?? itemGroup(item).label,
         replies: sameArray(

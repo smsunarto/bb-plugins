@@ -11,7 +11,15 @@ import type { Anchor, Draft } from "../../core/items.ts";
 import { cx } from "../format.ts";
 import { newDraftId, type ReviewActions } from "../review-data.ts";
 import { itemAuthor, type Entry, type ItemEntry } from "../review-model.ts";
-import { BotMark, Checkbox, PersonMark, PriorityChip, StatePill, YouMark } from "../review-ui.tsx";
+import {
+  BotMark,
+  Checkbox,
+  FixingMark,
+  Me,
+  PersonMark,
+  PriorityChip,
+  StatePill,
+} from "../review-ui.tsx";
 
 /** A new comment being written on a line. */
 export type ComposerEntry = { kind: "composer"; id: string; anchor: Anchor };
@@ -87,8 +95,7 @@ function Composer({
   return (
     <div className="flex min-w-0 flex-col gap-2" data-testid="sc-composer">
       <div className="flex items-center gap-2">
-        <YouMark />
-        <span className="text-[12px] leading-4 font-semibold text-foreground">You</span>
+        <Me />
       </div>
       <textarea
         // oxlint-disable-next-line jsx-a11y/no-autofocus -- opened by the reader's own click
@@ -167,8 +174,7 @@ const DraftBody = memo(function DraftBody({
   return (
     <div className="flex min-w-0 flex-col gap-2" data-testid="sc-draft" data-draft={draft.id}>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <YouMark />
-        <span className="text-[12px] leading-4 font-semibold text-foreground">You</span>
+        <Me />
         {draft.state === "outdated" ? (
           <StatePill tone="quiet">Outdated</StatePill>
         ) : (
@@ -211,6 +217,104 @@ function Reply({ author, body }: { author: string; body: string }) {
   );
 }
 
+function ItemMark({ item }: { item: ItemEntry["item"] }) {
+  if (item.priority !== null) return <PriorityChip priority={item.priority} />;
+  if (item.origin.kind === "forge" && !item.origin.bot)
+    return <PersonMark login={item.origin.author} size={14} />;
+  return <BotMark />;
+}
+
+/** "Ask agent to fix", or "Agent fixing" once a batch took it. */
+function FixToggle({ entry, actions }: { entry: ItemEntry; actions: ReviewActions }) {
+  const { item, checked } = entry;
+  if (entry.fixing)
+    return (
+      <span
+        className="flex h-6 shrink-0 items-center gap-2 px-2"
+        data-testid="sc-annotation-fixing"
+      >
+        <FixingMark />
+        <span className="text-[12px] leading-4 font-medium whitespace-pre text-warning">
+          Agent fixing
+        </span>
+      </span>
+    );
+  return (
+    <Checkbox
+      checked={checked}
+      label="Ask agent to fix"
+      testId="sc-annotation-check"
+      onChange={(next) => actions.setSelected([item.id], next)}
+      className={cx(
+        "h-6 gap-2 rounded-[6px] px-2",
+        checked
+          ? "bg-[color-mix(in_oklab,var(--primary)_12%,transparent)]"
+          : "hover:bg-surface-raised",
+      )}
+    >
+      <span className="text-[12px] leading-4 font-medium whitespace-pre text-foreground">
+        Ask agent to fix
+      </span>
+    </Checkbox>
+  );
+}
+
+/** Dismiss for a bb finding, which has no thread to answer; Reply for a GitHub thread. */
+function ItemAction({
+  item,
+  actions,
+  replying,
+  onReply,
+}: {
+  item: ItemEntry["item"];
+  actions: ReviewActions;
+  replying: boolean;
+  onReply: () => void;
+}) {
+  const [dismissing, setDismissing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (item.origin.kind !== "bb")
+    return (
+      <button
+        type="button"
+        className={TEXT_BUTTON}
+        data-testid="sc-reply"
+        disabled={replying}
+        onClick={onReply}
+      >
+        Reply
+      </button>
+    );
+  const onDismiss = async () => {
+    setDismissing(true);
+    setError(null);
+    try {
+      await actions.dismissItem(item.id);
+    } catch (reason) {
+      setDismissing(false);
+      setError(reason instanceof Error ? reason.message : "Couldn't dismiss it.");
+    }
+  };
+  return (
+    <>
+      <button
+        type="button"
+        className={TEXT_BUTTON}
+        data-testid="sc-dismiss"
+        disabled={dismissing}
+        onClick={() => void onDismiss()}
+      >
+        {dismissing ? "Dismissing…" : "Dismiss"}
+      </button>
+      {error ? (
+        <span role="alert" className="basis-full text-[12px] leading-4 text-warning">
+          {error}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 const ItemBlock = memo(function ItemBlock({
   entry,
   inset,
@@ -220,9 +324,8 @@ const ItemBlock = memo(function ItemBlock({
   inset: boolean;
   context: AnnotationContext;
 }) {
-  const { item, checked } = entry;
+  const { item } = entry;
   const [replying, setReplying] = useState<string | null>(null);
-  const finding = item.priority !== null;
   const thread = item.replies.length > 0 || entry.replies.length > 0 || replying !== null;
   return (
     <div
@@ -232,13 +335,7 @@ const ItemBlock = memo(function ItemBlock({
       data-item={item.id}
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        {finding ? (
-          <PriorityChip priority={item.priority!} />
-        ) : item.origin.kind === "forge" && !item.origin.bot ? (
-          <PersonMark login={item.origin.author} size={14} />
-        ) : (
-          <BotMark />
-        )}
+        <ItemMark item={item} />
         <span className="min-w-0 truncate text-[12px] leading-4 font-semibold text-foreground">
           {item.title ?? itemAuthor(item)}
         </span>
@@ -250,31 +347,13 @@ const ItemBlock = memo(function ItemBlock({
         {entry.outdated ? <StatePill tone="quiet">Outdated</StatePill> : null}
         {item.state === "resolved" ? <StatePill tone="quiet">Resolved</StatePill> : null}
         <span className="min-w-0 flex-1" />
-        <Checkbox
-          checked={checked}
-          label="Ask agent to fix"
-          testId="sc-annotation-check"
-          onChange={(next) => context.actions.setSelected([item.id], next)}
-          className={cx(
-            "h-6 gap-2 rounded-[6px] px-2",
-            checked
-              ? "bg-[color-mix(in_oklab,var(--primary)_12%,transparent)]"
-              : "hover:bg-surface-raised",
-          )}
-        >
-          <span className="text-[12px] leading-4 font-medium whitespace-pre text-foreground">
-            Ask agent to fix
-          </span>
-        </Checkbox>
-        <button
-          type="button"
-          className={TEXT_BUTTON}
-          data-testid="sc-reply"
-          disabled={replying !== null}
-          onClick={() => setReplying(newDraftId())}
-        >
-          Reply
-        </button>
+        <FixToggle entry={entry} actions={context.actions} />
+        <ItemAction
+          item={item}
+          actions={context.actions}
+          replying={replying !== null}
+          onReply={() => setReplying(newDraftId())}
+        />
       </div>
       <Markdown
         content={item.body}

@@ -3,7 +3,8 @@
  * the thread tab's card: the checkbox, the priority chip and the author
  * marks, drawn as boards A, A3 and B draw them.
  */
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
+import type { Viewer } from "../core/items.ts";
 import { cx } from "./format.ts";
 
 /** A 16 px box: the accent with a tick when checked, an outline when not. */
@@ -137,9 +138,45 @@ export function PersonMark({ login, size = 16 }: { login: string; size?: 14 | 16
   );
 }
 
+/** Who "You" is: the GitHub account the review is read as; null before any read. */
+export const ViewerContext = createContext<Viewer | null>(null);
+
 /** The reader's own mark on a draft, as board A3 draws "You". */
 export function YouMark() {
   return <span aria-hidden className="size-3.5 shrink-0 rounded-full bg-primary" />;
+}
+
+/** The reader on a draft or composer: their avatar and login, or the dot and "You" before bb knows them. */
+export function Me() {
+  const viewer = useContext(ViewerContext);
+  return (
+    <>
+      {viewer?.avatarUrl ? (
+        <img
+          src={viewer.avatarUrl}
+          alt=""
+          loading="lazy"
+          width={14}
+          height={14}
+          className="size-3.5 shrink-0 rounded-full bg-surface-raised"
+        />
+      ) : (
+        <YouMark />
+      )}
+      <span className="text-[12px] leading-4 font-semibold text-foreground" data-testid="sc-me">
+        {viewer?.login ?? "You"}
+      </span>
+    </>
+  );
+}
+
+/** An item an agent is fixing: the dashed warning ring, in the checkbox's 16 px box (board A4). */
+export function FixingMark() {
+  return (
+    <span aria-hidden className="flex size-4 shrink-0 items-center justify-center">
+      <RunGlyph state="running" />
+    </span>
+  );
 }
 
 /** The ✓, dashed ring and ✕ a review run's state is drawn with. */

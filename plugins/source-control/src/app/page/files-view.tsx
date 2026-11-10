@@ -48,6 +48,7 @@ import {
   type FileReview,
   type PatchLines,
 } from "../review-model.ts";
+import { ViewerContext } from "../review-ui.tsx";
 import {
   AddCommentButton,
   LineThread,
@@ -608,7 +609,7 @@ function useFileReviews(annotate: boolean, changeKey: ChangeKey, head: string) {
     () => (annotate ? fileReviews.build(stable, head) : null),
     [annotate, fileReviews, stable, head],
   );
-  return { byPath, actions: annotate ? writes : null };
+  return { byPath, actions: annotate ? writes : null, viewer: stable.viewer };
 }
 
 /** Answers the rail's picks while this column can show them: the card is picked, then its annotation chased. */
@@ -755,7 +756,7 @@ export function FilesView({
     [onPath, reveal],
   );
 
-  const { byPath, actions } = useFileReviews(annotate, changeKey, revision.head);
+  const { byPath, actions, viewer } = useFileReviews(annotate, changeKey, revision.head);
   // A rail row scrolls the diff to its item: the card first, then the item once its patch draws.
   useAttachReveal({ annotate, files, pick, column, scroller, store });
 
@@ -819,7 +820,7 @@ export function FilesView({
         <DiffColumn scroller={scroller}>
           <div className="flex min-w-0 flex-col gap-4 px-4 py-4 @3xl:px-6">
             {lead}
-            {cards}
+            <ViewerContext.Provider value={viewer}>{cards}</ViewerContext.Provider>
           </div>
         </DiffColumn>
       </div>

@@ -11,7 +11,15 @@ import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
 } from "@get-bb/plugin-sdk/app";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { describeProblem, readAgo, type ForgeResult } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import {
@@ -23,6 +31,7 @@ import {
 } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { cx, plural, shortRef } from "../format.ts";
+import { SendControls } from "../send.tsx";
 import { ShipPath } from "../status.tsx";
 import { Bar, Button, Pending } from "../ui.tsx";
 import { ChangesList } from "./changes-nav.tsx";
@@ -311,10 +320,13 @@ function Tabs({
   location,
   files,
   go,
+  children,
 }: {
   location: ReviewLocation & { key: ChangeKey };
   files: number | null;
   go: Go;
+  /** The review controls at the row's end (board A). */
+  children?: ReactNode;
 }) {
   const tabs: { id: ReviewTab; label: string; count: number | null }[] = [
     { id: "files", label: "Files", count: files },
@@ -323,37 +335,39 @@ function Tabs({
   ];
   return (
     <div
-      role="tablist"
-      aria-label="Review"
       className={cx(
-        "flex shrink-0 items-center gap-6 border-b border-solid border-border-hairline",
+        // Wrapping in reverse keeps the tabs on the bottom line, against their border.
+        "flex shrink-0 flex-wrap-reverse items-end gap-x-6 border-b border-solid border-border-hairline",
         PAD,
       )}
     >
-      {tabs.map((tab) => {
-        const active = tab.id === location.tab;
-        return (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            data-testid={`sc-tab-${tab.id}`}
-            onClick={() => go({ key: location.key, tab: tab.id })}
-            className={cx(
-              "-mb-px flex cursor-pointer gap-2 border-0 border-b-2 border-solid bg-transparent px-0 py-2 text-[13px] leading-5",
-              active
-                ? "border-b-foreground font-semibold text-foreground"
-                : "border-b-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {tab.label}
-            {tab.count !== null ? (
-              <span className="font-normal text-(--tertiary-foreground)">{tab.count}</span>
-            ) : null}
-          </button>
-        );
-      })}
+      <div role="tablist" aria-label="Review" className="flex shrink-0 items-center gap-6">
+        {tabs.map((tab) => {
+          const active = tab.id === location.tab;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              data-testid={`sc-tab-${tab.id}`}
+              onClick={() => go({ key: location.key, tab: tab.id })}
+              className={cx(
+                "-mb-px flex cursor-pointer gap-2 border-0 border-b-2 border-solid bg-transparent px-0 py-2 text-[13px] leading-5",
+                active
+                  ? "border-b-foreground font-semibold text-foreground"
+                  : "border-b-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {tab.label}
+              {tab.count !== null ? (
+                <span className="font-normal text-(--tertiary-foreground)">{tab.count}</span>
+              ) : null}
+            </button>
+          );
+        })}
+      </div>
+      {children}
     </div>
   );
 }
@@ -455,7 +469,7 @@ function Review({
   const rail = (
     <>
       <RailSections detail={detail} go={go} now={now} />
-      <ReviewSection changeKey={key} />
+      <ReviewSection changeKey={key} repo={detail.row.repo} number={detail.row.number} />
     </>
   );
   const lead = wide ? null : (
@@ -521,7 +535,14 @@ function Review({
       <div className={cx("shrink-0 pb-4", PAD)}>
         <ShipPath steps={detail.ship} />
       </div>
-      <Tabs location={location} files={detail.files} go={go} />
+      <Tabs location={location} files={detail.files} go={go}>
+        <SendControls
+          changeKey={key}
+          number={detail.row.number}
+          isDraft={detail.row.state === "draft"}
+          head={detail.head}
+        />
+      </Tabs>
       <div className="flex min-h-0 min-w-0 flex-1">
         {body}
         {wide ? (
