@@ -92,6 +92,7 @@ export function createReview(deps: {
     watchInbox: sources.watchInbox,
     refreshInboxes: sources.refreshInboxes,
     hostChanges: sources.hostChanges,
+    checkoutHosts: sources.checkoutHosts,
     watchHost: sources.watchHost,
     detail: change.detail,
     /**

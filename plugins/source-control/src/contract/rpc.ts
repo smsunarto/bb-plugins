@@ -148,6 +148,14 @@ export const sourceControlContract = defineRpcContract({
     output: z.record(z.string(), sourceRowsSchema),
     keyTags: (key: string) => [accountTag(key)],
   },
+  /** The hosts the placement table has checkouts on, from the table alone: no host is asked. */
+  checkoutHosts: {
+    input: z.object({}).strict(),
+    output: z
+      .object({ hosts: z.array(z.object({ hostId: z.string(), name: z.string() }).strict()) })
+      .strict(),
+    tags: () => [PAGE_SOURCES_TAG],
+  },
   hostChanges: {
     experimental_description:
       "Each host's Changes, keyed by host id: the branches of every checkout the placement table has on it, as list rows from their last read. Read again while watched.",

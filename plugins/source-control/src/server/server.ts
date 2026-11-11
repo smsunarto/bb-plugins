@@ -242,6 +242,7 @@ function registerRpc(
         runtime.run(changes.review.pageSources(), context.experimental_signal),
       inbox: ({ keys }) => changes.review.inbox(keys),
       hostChanges: ({ keys }) => changes.review.hostChanges(keys),
+      checkoutHosts: () => changes.review.checkoutHosts(),
       changeDetail: ({ keys }) => changes.review.detail(keys),
       changeFiles: ({ key, revision }, context) =>
         runtime.run(changes.review.files(key, revision), context.experimental_signal),

@@ -164,6 +164,12 @@ export function createReviewSources(deps: {
       return Object.fromEntries(keys.map((login) => [login, store.inbox(login)]));
     },
     watchInbox,
+    /** The hosts the placement table has checkouts on, without asking any of them. */
+    checkoutHosts() {
+      const names = new Map<string, string>();
+      for (const each of store.checkouts()) names.set(each.hostId, each.hostName);
+      return { hosts: [...names].map(([hostId, name]) => ({ hostId, name })) };
+    },
     hostChanges(keys: readonly string[]): Record<string, SourceRows> {
       return Object.fromEntries(keys.map((hostId) => [hostId, hostRows(store, hostId)]));
     },

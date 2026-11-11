@@ -38,6 +38,7 @@ import { BotIcon } from "./page/ask-panel.tsx";
 import { Bar, Button, Pending, SectionLabel } from "./ui.tsx";
 import { CommitControl } from "./commit.tsx";
 import { HistoryCard } from "./history.tsx";
+import { OtherMachinesCard } from "./other-machines.tsx";
 import { CARD, StackLane, UncommittedCard } from "./workspace-lane.tsx";
 import { attentionChips, summarize } from "../core/status.ts";
 import { Chips, useDraftToggle } from "./status.tsx";
@@ -336,6 +337,15 @@ function ReadyBody({
             ? "This checkout has a detached HEAD, so there is no branch to show."
             : "No branches are applied in this GitButler workspace."}
         </p>
+      ) : null}
+      {workspace.github ? (
+        <OtherMachinesCard
+          hostId={row.placement.hostId}
+          repo={`${workspace.github.repo.owner}/${workspace.github.repo.name}`}
+          changeKey={row.key}
+          now={now}
+          className={CARD}
+        />
       ) : null}
       {native ? null : (
         <HistoryCard threadId={threadId} path={workspace.path} now={now} className={CARD} />

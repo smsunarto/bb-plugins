@@ -2071,6 +2071,22 @@ describe("review items and drafts", () => {
   });
 });
 
+describe("other machines", () => {
+  test("checkoutHosts lists the placement table's hosts without asking any of them", async () => {
+    const world = twoHosts();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    world.hosts["host-b"]!.online = false;
+    expect(await harness.behavior.callRpc("checkoutHosts", {})).toEqual({
+      hosts: [
+        { hostId: "host-a", name: "studio-mac" },
+        { hostId: "host-b", name: "build-linux" },
+      ],
+    });
+  });
+});
+
 describe("grouped share", () => {
   const ROUTE = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
   const SECOND = "gh:smsunarto/bb-plugins:smsunarto:scott/second";
