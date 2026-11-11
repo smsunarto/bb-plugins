@@ -101,8 +101,9 @@ const DETAIL_TONE = {
 } as const;
 
 /**
- * Committed → Merged; a connector is green after a finished step. Narrower
- * than one line holds, the steps wrap without connectors.
+ * Committed → Merged; a connector is green after a finished step. Every
+ * width keeps the connectors; narrower than one line holds, the steps wrap
+ * and a continued line starts with one.
  */
 export const ShipPath = memo(function ShipPath({ steps }: { steps: readonly ShipStep[] }) {
   return (
@@ -117,8 +118,7 @@ export const ShipPath = memo(function ShipPath({ steps }: { steps: readonly Ship
             <span
               aria-hidden
               className={cx(
-                // Only where the path fits one line: a wrapped line never starts with a connector.
-                "hidden h-px w-7 shrink-0 @4xl:block",
+                "block h-px w-4 shrink-0 @4xl:w-7",
                 steps[index - 1]!.state === "done" ? "bg-success" : "bg-border",
               )}
             />
