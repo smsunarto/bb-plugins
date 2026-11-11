@@ -42,6 +42,7 @@ import { ConversationView } from "./conversation-view.tsx";
 import { FilesView } from "./files-view.tsx";
 import { GuidedView, ViewedProgress } from "./guided-view.tsx";
 import { PANEL_PATH, PHONE, WIDE, useGo, useNow, useWidth, type Go } from "./hooks.ts";
+import { AskHost, BotIcon, useAskAgent } from "./ask-panel.tsx";
 import { ArrowRight, Chevron, GitHubMark, StackIcon, StateIcon } from "./icons.tsx";
 import { revisionId } from "./patches.ts";
 import { RailSections } from "./rail.tsx";
@@ -195,6 +196,28 @@ function conflictText(row: Ready["row"]): string | null {
   return null;
 }
 
+/** "Ask agent" (board A): opens the floating conversation about this Change. */
+function AskButton({ compact }: { compact?: boolean }) {
+  const ask = useAskAgent();
+  if (!ask) return null;
+  return (
+    <button
+      type="button"
+      data-testid="sc-ask-agent"
+      aria-label={compact ? "Ask agent" : undefined}
+      title={compact ? "Ask agent" : undefined}
+      onClick={(event) => ask({ trigger: event.currentTarget })}
+      className={cx(
+        "flex shrink-0 cursor-pointer items-center justify-center rounded-[6px] border border-solid border-border bg-surface-raised text-foreground transition-colors hover:bg-surface-recessed motion-reduce:transition-none",
+        compact ? "size-7" : "h-8 gap-2 px-3 text-[13px] leading-5 font-medium",
+      )}
+    >
+      <BotIcon />
+      {compact ? null : "Ask agent"}
+    </button>
+  );
+}
+
 function Header({ detail, now }: { detail: Ready; now: number }) {
   const { row } = detail;
   const draft = useDraftToggle(detail);
@@ -295,6 +318,7 @@ function Header({ detail, now }: { detail: Ready; now: number }) {
             <GitHubMark />
           </a>
         ) : null}
+        <AskButton />
         {row.state === "draft" && draft.toggle ? (
           <Button
             data-testid="sc-mark-ready"
@@ -451,6 +475,7 @@ function PhoneHeader({ detail }: { detail: Ready }) {
             #{row.number}
           </span>
         ) : null}
+        <AskButton compact />
       </div>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-5 pt-1 pb-3">
         <span className="flex min-w-0 items-center gap-2 text-[13px] leading-5 text-foreground">
@@ -742,15 +767,17 @@ export function ReviewPage({ subPath }: { subPath: string }) {
       ref={root}
       data-bb-plugin="source-control"
       data-testid="sc-review-page"
-      className="@container flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground"
+      className="@container relative flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground"
     >
-      {key ? (
-        <Review key={key} location={{ ...location, key }} width={width} />
-      ) : width < PHONE ? (
-        <ChangesList subPath={subPath} variant="phone" />
-      ) : (
-        <NoSelection />
-      )}
+      <AskHost changeKey={key} phone={width < PHONE}>
+        {key ? (
+          <Review key={key} location={{ ...location, key }} width={width} />
+        ) : width < PHONE ? (
+          <ChangesList subPath={subPath} variant="phone" />
+        ) : (
+          <NoSelection />
+        )}
+      </AskHost>
     </div>
   );
 }

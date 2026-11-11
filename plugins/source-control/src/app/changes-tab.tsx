@@ -9,6 +9,7 @@ import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
   experimental_useTabVisible as useTabVisible,
+  useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -33,7 +34,8 @@ import { PullButton, PullStatus, WORKSPACE, useVcsActions } from "./branch-actio
 import { FindingsCard } from "./findings-card.tsx";
 import { cx, plural, shortId, shortRef } from "./format.ts";
 import { readSnapshot, writeSnapshot } from "./snapshot.ts";
-import { Bar, Button, SectionLabel } from "./ui.tsx";
+import { BotIcon } from "./page/ask-panel.tsx";
+import { Bar, Button, Pending, SectionLabel } from "./ui.tsx";
 import { StackLane, UncommittedCard } from "./workspace-lane.tsx";
 import { attentionChips, summarize } from "../core/status.ts";
 import { Chips, useDraftToggle } from "./status.tsx";
@@ -142,6 +144,7 @@ const ChangesView = memo(function ChangesView({
         ) : null}
         {view.kind === "failed" ? (
           <FailedBody
+            threadId={threadId}
             problem={view.problem}
             onRetry={onRetry}
             retrying={refresh.isPending}
@@ -405,13 +408,51 @@ function ReadAsGitNote({ onRestore, switching }: { onRestore(): void; switching:
   );
 }
 
+/** "Ask agent to fix" (board C): a thread on the checkout's host to install the missing tool. */
+function AskToFix({ threadId }: { threadId: string }) {
+  const navigate = useBbNavigate();
+  const mutation = useRpcMutation({ contract: sourceControlContract, method: "askToFix" });
+  const [error, setError] = useState<string | null>(null);
+  const onClick = async () => {
+    setError(null);
+    try {
+      const result = await mutation.mutate({ threadId });
+      if (result.ok) navigate.toThread(result.threadId);
+      else setError(result.message);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Couldn't start the agent.");
+    }
+  };
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="sc-ask-to-fix"
+        className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] border-0 bg-(--primary) px-2.5 text-[12px] leading-4 font-semibold text-primary-foreground disabled:cursor-default disabled:opacity-60"
+        onClick={() => void onClick()}
+        disabled={mutation.isPending}
+      >
+        {mutation.isPending ? <Pending pending /> : <BotIcon size={13} />}
+        Ask agent to fix
+      </button>
+      {error ? (
+        <span role="alert" className="basis-full text-[12px] leading-4 text-warning">
+          {error}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 function FailedBody({
+  threadId,
   problem,
   onRetry,
   retrying,
   onReadAsGit,
   switching,
 }: {
+  threadId: string;
   problem: Problem;
   onRetry(): void;
   retrying: boolean;
@@ -435,6 +476,7 @@ function FailedBody({
         </p>
       ) : null}
       <div className="flex flex-wrap items-center gap-1.5 pt-1">
+        {problem.kind === "tool-missing" ? <AskToFix threadId={threadId} /> : null}
         <Button onClick={onRetry} disabled={retrying}>
           {retrying ? "Trying…" : "Try again"}
         </Button>

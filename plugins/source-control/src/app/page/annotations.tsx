@@ -10,6 +10,7 @@ import { memo, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Anchor, Draft } from "../../core/items.ts";
 import { cx } from "../format.ts";
 import { newDraftId, type ReviewActions } from "../review-data.ts";
+import { useAskAgent } from "./ask-panel.tsx";
 import { itemAuthor, type Entry, type ItemEntry } from "../review-model.ts";
 import {
   BotMark,
@@ -67,6 +68,9 @@ function Composer({
   primary: boolean;
   onDone: () => void;
 }) {
+  // A new comment can be asked of the agent instead (a guess: A2 and A3 draw no line entry).
+  const askAgent = useAskAgent();
+  const canAsk = askAgent !== null && replyTo === null && initial === "";
   const [text, setText] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +119,28 @@ function Composer({
           <span role="alert" className="min-w-0 flex-1 text-[12px] leading-4 text-warning">
             {error}
           </span>
+        ) : null}
+        {canAsk ? (
+          <button
+            type="button"
+            data-testid="sc-ask-line"
+            className={cx(TEXT_BUTTON, "me-auto flex items-center gap-1.5 px-2")}
+            disabled={!body || saving}
+            onClick={(event) => {
+              askAgent({
+                trigger: event.currentTarget,
+                line: {
+                  path: anchor.path,
+                  line: anchor.line,
+                  old: anchor.side === "LEFT",
+                  text: body,
+                },
+              });
+              onDone();
+            }}
+          >
+            Ask agent
+          </button>
         ) : null}
         <button type="button" className={cx(TEXT_BUTTON, "px-2")} onClick={onDone}>
           Cancel

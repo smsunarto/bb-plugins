@@ -15,8 +15,12 @@ const ROOT = resolve(import.meta.dirname, "..");
 /** Tailwind's fallback for browsers without `@property`: old Safari and old Firefox. */
 const FALLBACK_SUPPORTS =
   "(((-webkit-hyphens:none)) and (not (margin-trim:inline))) or ((-moz-orient:inline) and (not (color:rgb(from red r g b))))";
-/** What a subject needs so Chrome files the rule under a key instead of the universal bucket. */
-const KEYED = new Set(["type", "class", "id", "attribute"]);
+/**
+ * What a subject needs so the rule is keyed, not universal. An attribute alone
+ * does not count: the budget treats it as universal, since not every engine
+ * buckets by attribute.
+ */
+const KEYED = new Set(["type", "class", "id"]);
 /** Subjects that match one element, the document root or a shadow host. */
 const ROOT_ONLY = new Set(["root", "host"]);
 
