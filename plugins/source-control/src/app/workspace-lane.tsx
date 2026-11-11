@@ -22,6 +22,7 @@ import type { ChangeKey } from "../core/ids.ts";
 import { reviewPath } from "../core/review.ts";
 import { BranchActions, type Dispatch, type Outcome } from "./branch-actions.tsx";
 import { MergeButton, repoOfKey, useThreadMerge } from "./merge.tsx";
+import { CreatePullRequest } from "./publish.tsx";
 import {
   FileDiffCard,
   FileRows,
@@ -570,6 +571,26 @@ function CardHeader({
   );
 }
 
+/**
+ * The thread's own branch's pull request action: Create PR when GitHub has
+ * none for it, Merge when it is open and ready. Other branches get neither.
+ */
+function prActionFor(
+  threadId: string,
+  reviewKey: ChangeKey | null,
+  branch: Branch,
+  forge: ForgeValue | undefined,
+  busy: boolean,
+): ReactNode {
+  if (forge === null && branch.head !== null && branch.commits.length > 0)
+    return (
+      <CreatePullRequest threadId={threadId} branch={branch.name} head={branch.head} busy={busy} />
+    );
+  if (reviewKey && forge?.state === "open" && !forge.isDraft)
+    return <TabMerge threadId={threadId} changeKey={reviewKey} forge={forge} />;
+  return null;
+}
+
 /** Merge for the thread's own open pull request, through the thread's forge action. */
 function TabMerge({
   threadId,
@@ -679,11 +700,7 @@ const BranchCard = memo(function BranchCard({
           running={running}
           busy={busy}
           dispatch={dispatch}
-          merge={
-            reviewKey && forge?.state === "open" && !forge.isDraft ? (
-              <TabMerge threadId={threadId} changeKey={reviewKey} forge={forge} />
-            ) : null
-          }
+          prAction={prActionFor(threadId, reviewKey, branch, forge, busy)}
         />
       )}
       {/* The label carries the meaning; the amber rail repeats it. */}

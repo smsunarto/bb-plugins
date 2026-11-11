@@ -370,6 +370,35 @@ export const sourceControlContract = defineRpcContract({
     input: z.object({ ref: prRefSchema, pinned: z.boolean() }).strict(),
     output: z.object({ ok: z.literal(true) }).strict(),
   },
+  /**
+   * Create PR on a branch of the thread's checkout, at the head the reader
+   * saw: a visible child thread writes the description and opens it with
+   * the checkout's driver. Returns the child already running for the branch
+   * when there is one.
+   */
+  createPullRequest: {
+    experimental_description:
+      "Create PR for `branch` of the thread's checkout, only while the branch is still at `head`: starts a visible child thread that reads the branch, writes the title and description, and opens the pull request with GitButler or native Git and gh. Returns the child already running for that branch instead of starting another.",
+    input: z
+      .object({
+        threadId: threadIdSchema,
+        branch: z.string().min(1),
+        head: z.string().min(4),
+      })
+      .strict(),
+    output: askResultSchema,
+  },
+  /** The Create PR children still around for the thread's checkout, and whether each still runs. */
+  publishRequests: {
+    input: z.object({ threadId: threadIdSchema }).strict(),
+    output: z
+      .object({
+        requests: z.array(
+          z.object({ branch: z.string(), threadId: z.string(), running: z.boolean() }).strict(),
+        ),
+      })
+      .strict(),
+  },
   /** "Ask agent to fix" on a checkout a tool is missing from: a thread on that host to install it. */
   askToFix: {
     input: z.object({ threadId: threadIdSchema }).strict(),

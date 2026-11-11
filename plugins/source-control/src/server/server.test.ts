@@ -2630,3 +2630,89 @@ describe("ask agent", () => {
     expect(run.prompt).toContain("/home/scott/bb-plugins");
   });
 });
+
+describe("create PR", () => {
+  test("Create PR starts one visible child with the checkout's own prompt, pinned to the head seen", async () => {
+    const world = twoHosts();
+    world.hosts["host-b"]!.workspace = workspace("/home/scott/bb-plugins", {
+      provider: "gitbutler",
+    });
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    const head = branch().head!;
+
+    expect(
+      await harness.behavior.callRpc("createPullRequest", {
+        threadId: "thread-a",
+        branch: "scott/route-gh",
+        head: "0ld0ld",
+      }),
+    ).toEqual({
+      ok: false,
+      message: "The branch changed since you looked. Review it and try again.",
+    });
+    expect(world.spawned ?? []).toHaveLength(0);
+
+    const git = await harness.behavior.callRpc("createPullRequest", {
+      threadId: "thread-a",
+      branch: "scott/route-gh",
+      head,
+    });
+    expect(git).toMatchObject({ ok: true });
+    expect(world.spawned).toHaveLength(1);
+    expect(world.spawned![0]).toMatchObject({
+      visibility: "visible",
+      parentThreadId: "thread-a",
+      title: "Create PR for scott/route-gh",
+      environment: { type: "reuse", environmentId: "env-thread-a" },
+    });
+    expect(world.spawned![0]!.prompt).toContain("ordinary Git checkout");
+    expect(world.spawned![0]!.prompt).toContain(
+      "git config --get 'branch.scott/route-gh.pushRemote'",
+    );
+
+    // While it runs, asking again returns the same child.
+    expect(
+      await harness.behavior.callRpc("createPullRequest", {
+        threadId: "thread-a",
+        branch: "scott/route-gh",
+        head,
+      }),
+    ).toEqual(git);
+    expect(world.spawned).toHaveLength(1);
+    expect(await harness.behavior.callRpc("publishRequests", { threadId: "thread-a" })).toEqual({
+      requests: [
+        {
+          branch: "scott/route-gh",
+          threadId: (git as { threadId: string }).threadId,
+          running: true,
+        },
+      ],
+    });
+
+    // A GitButler checkout opens it with `but pr new`.
+    await harness.behavior.callRpc("createPullRequest", {
+      threadId: "thread-b",
+      branch: "scott/route-gh",
+      head,
+    });
+    expect(world.spawned![1]!.prompt).toContain("but pr new 'scott/route-gh' -F <file>");
+  });
+
+  test("a stopped child no longer counts, so Create PR starts a new one", async () => {
+    const world = twoHosts();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    const input = { threadId: "thread-a", branch: "scott/route-gh", head: branch().head! };
+    await harness.behavior.callRpc("createPullRequest", input);
+    world.idle = [world.spawned![0]!.id];
+    expect(
+      await harness.behavior.callRpc("publishRequests", { threadId: "thread-a" }),
+    ).toMatchObject({
+      requests: [{ running: false }],
+    });
+    await harness.behavior.callRpc("createPullRequest", input);
+    expect(world.spawned).toHaveLength(2);
+  });
+});

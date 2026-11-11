@@ -18,6 +18,7 @@ import { shareDirective } from "../core/directive.ts";
 import { execGh } from "../forge/exec-gh.ts";
 import type { Exec } from "../forge/github.ts";
 import { createAsk, type Ask } from "./ask.ts";
+import { createPublish, type Publish } from "./publish.ts";
 import {
   createForgeSites,
   FORGE_DEADLINE_MS,
@@ -127,6 +128,14 @@ function guideHandlers(guides: Guides) {
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
 }
 
+/** Create PR: a child thread per branch that writes and opens the pull request. */
+function publishHandlers(publish: Publish) {
+  return {
+    createPullRequest: ({ threadId, branch, head }) => publish.create(threadId, branch, head),
+    publishRequests: async ({ threadId }) => ({ requests: await publish.requests(threadId) }),
+  } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
+}
+
 /** The Change's Ask thread, and a thread to fix a checkout's missing tool. */
 function askHandlers(ask: Ask) {
   return {
@@ -200,6 +209,7 @@ function registerRpc(
   guides: Guides,
   ask: Ask,
   moved: Moved,
+  publish: Publish,
 ) {
   const afterRegistration = activation(bb);
   const items = changes.review.items;
@@ -237,6 +247,7 @@ function registerRpc(
       ...reviewHandlers(runtime, changes.review, start),
       ...guideHandlers(guides),
       ...askHandlers(ask),
+      ...publishHandlers(publish),
       ...moved.handlers,
     },
     { experimental_discoverable: true },
@@ -480,7 +491,7 @@ export function createSourceControl(deps: SourceControlDeps) {
       pinsChanged: () => runtime.fork(changes.review.refreshInboxes()),
       now: deps.now,
     });
-    registerRpc(bb, runtime, changes, start, guides, ask, moved);
+    registerRpc(bb, runtime, changes, start, guides, ask, moved, createPublish({ bb, store }));
     registerAgents(bb, runtime, changes, guides, moved);
     listen(bb, runtime, host, changes, guides, moved);
   };

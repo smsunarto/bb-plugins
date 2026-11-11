@@ -491,7 +491,7 @@ export const BranchActions = memo(function BranchActions({
   running,
   busy,
   dispatch,
-  merge,
+  prAction,
 }: {
   branch: Branch;
   /** The target head the reader saw, which every write names. */
@@ -509,8 +509,8 @@ export const BranchActions = memo(function BranchActions({
   running: VcsAction["kind"] | null;
   busy: boolean;
   dispatch: Dispatch;
-  /** Merge for a branch whose open pull request GitHub can merge, beside Land. */
-  merge?: ReactNode;
+  /** The pull request's own action beside Land: Create PR without one, Merge for an open one. */
+  prAction?: ReactNode;
 }) {
   const [mode, setMode] = useState<Mode>(IDLE);
   const now: Revision = { head: branch.head, target: targetHead };
@@ -556,7 +556,7 @@ export const BranchActions = memo(function BranchActions({
           running={running}
           busy={busy}
           blocked={blocked}
-          merge={merge}
+          prAction={prAction}
           onPush={(force) => send({ kind: "push", branch: branch.name, force, acceptedLoss: [] })}
           onLand={() =>
             setMode({
@@ -663,7 +663,7 @@ function ActionRow({
   running,
   busy,
   blocked,
-  merge,
+  prAction,
   onPush,
   onLand,
   onDelete,
@@ -673,7 +673,7 @@ function ActionRow({
   running: VcsAction["kind"] | null;
   busy: boolean;
   blocked: string | null;
-  merge: ReactNode;
+  prAction: ReactNode;
   onPush: (force: boolean) => void;
   onLand: () => void;
   onDelete: () => void;
@@ -700,7 +700,7 @@ function ActionRow({
           Land
         </Button>
       ) : null}
-      {merge}
+      {prAction}
       {/* Apart from the rest and quiet, so it is never the button a hand drifts to. */}
       <Button
         variant="ghost"

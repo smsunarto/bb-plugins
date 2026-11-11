@@ -332,6 +332,14 @@ function renderRow(row: ThreadChange, rpc: Partial<Rpc> = {}) {
           "forgeAction",
           rpc.forgeAction ?? (() => ({ status: "done" as const })),
         ),
+        createPullRequest: record(
+          "createPullRequest",
+          rpc.createPullRequest ?? (() => ({ ok: true as const, threadId: "pr-child" })),
+        ),
+        publishRequests: record(
+          "publishRequests",
+          rpc.publishRequests ?? (() => ({ requests: [] })),
+        ),
         mergePolicy: record(
           "mergePolicy",
           rpc.mergePolicy ?? (() => ({ ok: true as const, policy: POLICY })),
@@ -565,6 +573,38 @@ test("Merge stays off with GitHub's reason, and a failed merge is reported, not 
   expect(of("forgeAction")).toHaveLength(1);
   // The requirements are read again before another try.
   expect(of("mergePolicy").length).toBeGreaterThanOrEqual(2);
+});
+
+test("Create PR on the thread's branch with no pull request names the head seen, then shows its child", async () => {
+  const row = stacked();
+  if (row.state !== "checkout") throw new Error("fixture");
+  row.forge = { read: { value: null, at: Date.now() }, problem: null };
+  let started = false;
+  const { slot, of } = renderRow(row, {
+    createPullRequest: () => {
+      started = true;
+      return { ok: true as const, threadId: "pr-child" };
+    },
+    publishRequests: () => ({
+      requests: started
+        ? [{ branch: "scott/forge-host", threadId: "pr-child", running: true }]
+        : [],
+    }),
+  });
+  await act(async () =>
+    (await slot.findByRole("button", { name: "Create PR for scott/forge-host" })).click(),
+  );
+  await waitFor(() => expect(of("createPullRequest")).toHaveLength(1));
+  expect(of("createPullRequest")[0]!.input).toEqual({
+    threadId: "thread-a",
+    branch: "scott/forge-host",
+    head: "f00d001",
+  });
+  expect((await slot.findByTestId("sc-create-pr-status")).textContent).toContain(
+    "A subthread is writing and opening the PR.",
+  );
+  // Only the thread's own branch gets it; the branch below has no pull request read.
+  expect(slot.queryByRole("button", { name: "Create PR for scott/core-schema" })).toBeNull();
 });
 
 test("a draft pull request has no Merge", async () => {
