@@ -93,6 +93,8 @@ const MIGRATIONS = [
   `CREATE INDEX guide_by_state ON guide (state, queued_at)`,
   `CREATE TABLE viewed (change_key TEXT NOT NULL, path TEXT NOT NULL, blob TEXT NOT NULL, PRIMARY KEY (change_key, path, blob))`,
   `CREATE TABLE viewer (repo TEXT PRIMARY KEY, login TEXT NOT NULL)`,
+  // Phase 7: the one Ask thread per Change.
+  `CREATE TABLE ask_thread (change_key TEXT PRIMARY KEY, thread_id TEXT NOT NULL, created_at INTEGER NOT NULL)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -299,6 +301,23 @@ function guideTables(db: Database) {
   };
 }
 
+/** The Ask thread of each Change: a hidden fork made on its first message. */
+function askTables(db: Database) {
+  const getAsk = db.prepare<[string], { thread_id: string }>(
+    `SELECT thread_id FROM ask_thread WHERE change_key = ?`,
+  );
+  const putAsk = db.prepare(
+    `INSERT INTO ask_thread (change_key, thread_id, created_at) VALUES (?, ?, ?)
+     ON CONFLICT (change_key) DO UPDATE SET thread_id = excluded.thread_id, created_at = excluded.created_at`,
+  );
+  return {
+    askThread: (key: ChangeKey): string | null => getAsk.get(key)?.thread_id ?? null,
+    setAskThread(key: ChangeKey, threadId: string, now: number): void {
+      putAsk.run(key, threadId, now);
+    },
+  };
+}
+
 /** The review page's own state: GitHub's threads, bb's findings and runs, drafts and the selection. */
 function reviewTables(db: Database) {
   const getThreads = db.prepare<[string], { json: string }>(
@@ -494,6 +513,7 @@ export function openStore(bb: BbPluginApi) {
 
   const review = reviewTables(db);
   const guides = guideTables(db);
+  const asks = askTables(db);
 
   const branch = (threadId: string): string | null => getBranch.get(threadId)?.branch ?? null;
   const readAs = (hostId: string, path: string): ReadAs =>
@@ -503,6 +523,7 @@ export function openStore(bb: BbPluginApi) {
   return {
     ...review,
     ...guides,
+    ...asks,
     /** One placement per checkout the placement table knows, by host: what the review page lists. */
     checkouts(): Placement[] {
       return placementRows.all().flatMap((row) => {

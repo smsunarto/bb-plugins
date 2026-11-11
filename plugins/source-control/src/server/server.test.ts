@@ -119,6 +119,8 @@ type Host = {
   patches?: Record<string, string>;
   /** A range read's file list, in place of one modified `src/a.ts`. */
   files?: unknown[];
+  /** Answers workspace reads with this failure, as a host missing a tool. */
+  failure?: { code: string; message: string };
   /** Runs GitHub reads itself, against the world's fake GitHub, as its `ghAccounts`. */
   forgeLive?: boolean;
   workspace: WorkspaceValue;
@@ -160,6 +162,12 @@ type World = {
     environment: unknown;
     visibility?: string;
   }[];
+  /** Threads the plugin forked, with what it asked for. */
+  forked?: { id: string; sourceThreadId: string; [field: string]: unknown }[];
+  /** Thread updates the plugin made. */
+  updated?: { threadId: string; visibility?: string }[];
+  /** bb projects, for a Change with no checkout. */
+  projects?: unknown[];
   /** Threads bb reports idle: stopped since the plugin last heard. */
   idle?: string[];
   /** Messages each thread received, in order. */
@@ -235,6 +243,7 @@ async function fakeWorkspace(world: World, host: Host) {
     await new Promise((resolve) => setTimeout(resolve, host.delayMs));
     world.inFlight -= 1;
   }
+  if (host.failure) return { ok: false, error: host.failure };
   return { ok: true, value: { state: "workspace", value: host.workspace } };
 }
 
@@ -395,6 +404,17 @@ function fakeSdk(world: World) {
         if (how === "lost") throw new Error("socket hang up");
         return { ok: true };
       }) as never,
+      fork: (async (args: { sourceThreadId: string }) => {
+        // Slow enough for a second question to arrive while the first forks.
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        const id = `ask-${(world.forked ??= []).length + 1}`;
+        world.forked.push({ id, ...args });
+        return makeThreadResponse({ id, status: "active" } as never);
+      }) as never,
+      update: (async (args: { threadId: string; visibility?: string }) => {
+        (world.updated ??= []).push(args);
+        return makeThreadResponse({ id: args.threadId } as never);
+      }) as never,
       promptHistory: (async ({ threadId }: { threadId: string }) => ({
         prompts: (world.messages?.[threadId] ?? []).map((text) => ({ text })),
       })) as never,
@@ -406,7 +426,7 @@ function fakeSdk(world: World) {
         return { ok: true };
       }) as never,
     },
-    projects: { list: (async () => []) as never },
+    projects: { list: (async () => world.projects ?? []) as never },
     environments: {
       get: (async ({ environmentId }: { environmentId: string }) => ({
         id: environmentId,
@@ -2208,4 +2228,169 @@ test("the Change's detail and its thread's row derive one status: pushed with no
   seen = await both();
   expect(seen.card).toEqual(seen.strip);
   expect(seen.card).toMatchObject({ label: "Unpushed" });
+});
+
+describe("ask agent", () => {
+  const KEY = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+  type Harness = Awaited<ReturnType<typeof start>>["harness"];
+  const askOf = async (harness: Harness, key: string) =>
+    ((await harness.behavior.callRpc("askForChange", { keys: [key] })) as Record<string, any>)[key]!
+      .threadId as string | null;
+
+  /** One thread on `scott/route-gh`, read once: the Change's owning thread. */
+  async function owned() {
+    const world = twoHosts();
+    delete world.threads["thread-b"];
+    const started = await start(world);
+    await started.harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    return { world, ...started };
+  }
+
+  test("opening and reading create nothing; two first questions at once fork the owner once, hidden, told the Change", async () => {
+    const { world, harness } = await owned();
+    expect(await askOf(harness, KEY)).toBeNull();
+    expect(world.forked ?? []).toEqual([]);
+
+    const [one, two] = (await Promise.all([
+      harness.behavior.callRpc("ask", { key: KEY, text: "Why is the account in the key?" }),
+      harness.behavior.callRpc("ask", { key: KEY, text: "And the timeout?" }),
+    ])) as { ok: true; threadId: string }[];
+    expect(world.forked).toHaveLength(1);
+    expect(one).toEqual({ ok: true, threadId: "ask-1" });
+    expect(two).toEqual({ ok: true, threadId: "ask-1" });
+    const fork = world.forked![0]! as Record<string, any>;
+    expect(fork).toMatchObject({
+      sourceThreadId: "thread-a",
+      visibility: "hidden",
+      permissionMode: "auto",
+      pluginMetadata: { kind: "ask", changeKey: KEY },
+      input: [{ type: "text", text: "Why is the account in the key?" }],
+    });
+    const seed = fork.agentContextSeed[0];
+    expect(seed.visibility).toBe("agent-only");
+    expect(seed.text).toContain("Head: `c0ffee`");
+    expect(seed.text).toContain("/Users/scott/bb-plugins");
+    expect(seed.text).toContain("git diff aaa111...c0ffee");
+    // The second waited for the fork, then went to the same thread.
+    expect(world.messages?.["ask-1"]).toEqual(["And the timeout?"]);
+    expect(await askOf(harness, KEY)).toBe("ask-1");
+  });
+
+  test("reopening reuses the Ask thread, from a line too, after a restart; Open as full thread unhides it", async () => {
+    const { world, harness, restart } = await owned();
+    await harness.behavior.callRpc("ask", { key: KEY, text: "First?" });
+    const after = await restart();
+    // Another client, or the same page after a restart, finds the stored thread.
+    expect(await askOf(after, KEY)).toBe("ask-1");
+    expect(
+      await after.behavior.callRpc("ask", {
+        key: KEY,
+        text: "Why optional?",
+        path: "src/host/client.ts",
+        line: 42,
+      }),
+    ).toEqual({ ok: true, threadId: "ask-1" });
+    expect(world.forked).toHaveLength(1);
+    expect(world.messages?.["ask-1"]).toEqual(["About `src/host/client.ts:42`:\n\nWhy optional?"]);
+
+    expect(await after.behavior.callRpc("openAskAsThread", { key: KEY })).toEqual({
+      ok: true,
+      threadId: "ask-1",
+    });
+    expect(world.updated).toEqual([{ threadId: "ask-1", visibility: "visible" }]);
+  });
+
+  test("a first question from a line names it in the forked thread's message", async () => {
+    const { world, harness } = await owned();
+    await harness.behavior.callRpc("ask", {
+      key: KEY,
+      text: "Is this right?",
+      path: "src/a.ts",
+      line: 7,
+    });
+    expect((world.forked![0] as Record<string, any>).input[0].text).toBe(
+      "About `src/a.ts:7`:\n\nIs this right?",
+    );
+  });
+
+  test("with several threads on the Change, the first question starts a hidden thread in its project instead of forking", async () => {
+    const world = twoHosts();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    expect(await harness.behavior.callRpc("ask", { key: KEY, text: "Which one?" })).toMatchObject({
+      ok: true,
+    });
+    expect(world.forked ?? []).toEqual([]);
+    expect(world.spawned).toHaveLength(1);
+    expect(world.spawned![0]).toMatchObject({
+      visibility: "hidden",
+      permissionMode: "auto",
+      pluginMetadata: { kind: "ask", changeKey: KEY },
+      environment: { type: "reuse" },
+    });
+    const parts = (
+      world.spawned![0] as unknown as { input: { text: string; visibility?: string }[] }
+    ).input;
+    expect(parts.map((part) => part.visibility ?? "visible")).toEqual(["agent-only", "visible"]);
+    expect(parts[1]!.text).toBe("Which one?");
+  });
+
+  test("a pull request with no checkout gets a hidden thread in a new worktree of its project", async () => {
+    vi.useFakeTimers();
+    const world = twoHosts();
+    world.pullRequests["fix/retry"] = [INBOX_PR];
+    world.rest = { "repos/acme/api/pulls/77/files?per_page=100": [[]] };
+    world.projects = [
+      {
+        id: "proj-acme",
+        gitRemoteUrl: "https://github.com/acme/api.git",
+        sources: [{ hostId: "host-b", isDefault: true }],
+      },
+    ];
+    const { harness } = await start(world);
+    const key = "gh:acme/api:acme:fix/retry";
+    const stop = harness.behavior.experimental_watchRpc("changeDetail", { key });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const asked = harness.behavior.callRpc("ask", { key, text: "What does it retry?" });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await asked).toMatchObject({ ok: true });
+    stop();
+    expect(world.forked ?? []).toEqual([]);
+    expect(world.spawned![0]).toMatchObject({
+      projectId: "proj-acme",
+      visibility: "hidden",
+      environment: { type: "host", hostId: "host-b", workspace: { type: "managed-worktree" } },
+    });
+    const [seed] = (world.spawned![0] as unknown as { input: { text: string }[] }).input;
+    expect(seed!.text).toContain("Pull request: #77");
+  });
+
+  test("Ask agent to fix on a checkout without but starts a visible thread on that host with the install prompt", async () => {
+    const world = twoHosts();
+    world.hosts["host-b"]!.failure = {
+      code: "but-missing",
+      message: "but: command not found",
+    };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    expect(await harness.behavior.callRpc("askToFix", { threadId: "thread-a" })).toEqual({
+      ok: false,
+      message: "No tool is missing from this checkout.",
+    });
+    expect(await harness.behavior.callRpc("askToFix", { threadId: "thread-b" })).toMatchObject({
+      ok: true,
+    });
+    expect(world.spawned).toHaveLength(1);
+    const run = world.spawned![0]!;
+    expect(run).toMatchObject({
+      visibility: "visible",
+      environment: { type: "reuse", environmentId: "env-thread-b" },
+      pluginMetadata: { kind: "install", tool: "but", hostId: "host-b" },
+    });
+    expect(run.prompt).toContain("`but` is not installed here");
+    expect(run.prompt).toContain("but: command not found");
+    expect(run.prompt).toContain("/home/scott/bb-plugins");
+  });
 });

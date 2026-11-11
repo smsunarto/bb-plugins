@@ -114,6 +114,8 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
   const invalidate = (tags: readonly string[]) => {
     if (!deps.disposed()) bb.rpc.experimental_invalidate(tags);
   };
+  const owners = (key: ChangeKey): string[] =>
+    threadsOnChange(store, key, keyThreads.get(key), keyOf);
   const placements = createPlacements({ bb, store, now });
   // Bound once the review page's reads exist; a checkout read reaches its lists through it.
   let checkoutRead: (hostId: string, path: string) => void = () => {};
@@ -182,7 +184,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     fork: deps.fork,
     now,
     deadlineMs: hostDeadlineMs,
-    threadsOnChange: (key) => threadsOnChange(store, key, keyThreads.get(key), keyOf),
+    threadsOnChange: owners,
   });
   checkoutRead = review.checkoutRead;
 
@@ -210,6 +212,8 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
   });
 
   return {
+    /** Threads on the Change's branch, from the store and recent reads. */
+    owners,
     /** Stored rows only: serving a read never calls a host. */
     read(keys: readonly string[]): Record<string, ThreadChange> {
       return Object.fromEntries(keys.map((threadId) => [threadId, row(threadId)]));

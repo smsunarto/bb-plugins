@@ -17,6 +17,7 @@ import type { ChangeKey } from "../core/ids.ts";
 import { shareDirective } from "../core/directive.ts";
 import { execGh } from "../forge/exec-gh.ts";
 import type { Exec } from "../forge/github.ts";
+import { createAsk, type Ask } from "./ask.ts";
 import { createForgeSites, FORGE_DEADLINE_MS, type HostForge } from "./forge-sites.ts";
 import {
   createGuides,
@@ -104,6 +105,16 @@ function guideHandlers(guides: Guides) {
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
 }
 
+/** The Change's Ask thread, and a thread to fix a checkout's missing tool. */
+function askHandlers(ask: Ask) {
+  return {
+    askForChange: ({ keys }) => ask.read(keys),
+    ask: (question) => ask.ask(question),
+    openAskAsThread: ({ key }) => ask.openAsThread(key),
+    askToFix: ({ threadId }) => ask.toFix(threadId),
+  } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
+}
+
 /** A Change's review items, drafts and selection, starting a bb review of it, and sending batches. */
 function reviewHandlers(runtime: Runtime, review: Changes["review"], start: Start) {
   const { items, batches } = review;
@@ -165,6 +176,7 @@ function registerRpc(
   changes: Changes,
   start: Start,
   guides: Guides,
+  ask: Ask,
 ) {
   const afterRegistration = activation(bb);
   const items = changes.review.items;
@@ -204,6 +216,7 @@ function registerRpc(
         runtime.run(changes.review.setDraft(key, action.draft, expected)),
       ...reviewHandlers(runtime, changes.review, start),
       ...guideHandlers(guides),
+      ...askHandlers(ask),
     },
     { experimental_discoverable: true },
   );
@@ -410,7 +423,15 @@ export function createSourceControl(deps: SourceControlDeps) {
         return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve()));
       },
     });
-    registerRpc(bb, runtime, changes, start, guides);
+    const ask = createAsk({
+      bb,
+      store,
+      detail: (key) => changes.review.detail([key])[key]!,
+      owners: changes.owners,
+      invalidate,
+      now: deps.now,
+    });
+    registerRpc(bb, runtime, changes, start, guides, ask);
     registerAgents(bb, runtime, changes, guides);
     listen(bb, runtime, host, changes, guides);
   };

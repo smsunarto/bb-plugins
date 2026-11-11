@@ -99,7 +99,7 @@ function fileList(list: readonly ChangeFile[]): string {
  * One complete diff command: the base is named, or resolved inside the
  * command, so the run spends no turn finding it.
  */
-function guideDiff(revision: ReviewRevision): string {
+export function guideDiff(revision: ReviewRevision): string {
   const head = revision.head;
   if (!revision.base.startsWith("branch:")) return `git diff ${revision.base}...${head}`;
   const name = revision.base.slice("branch:".length);

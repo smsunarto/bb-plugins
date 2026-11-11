@@ -122,6 +122,11 @@ export function reviewTag(key: ChangeKey): string {
   return `change:${key}:review`;
 }
 
+/** The tag of one Change's Ask thread. */
+export function askTag(key: ChangeKey): string {
+  return `change:${key}:ask`;
+}
+
 /** The tag of one Change's guide and viewed marks. */
 export function guideTag(key: ChangeKey): string {
   return `change:${key}:guide`;

@@ -40,6 +40,7 @@ import {
 } from "../core/items.ts";
 import {
   accountTag,
+  askTag,
   changeKeySchema,
   changeTag,
   checksTag,
@@ -54,6 +55,11 @@ import {
 export const MAX_THREAD_KEYS = 200;
 
 const threadIdSchema = z.string().min(1).max(128);
+
+const askResultSchema = z.discriminatedUnion("ok", [
+  z.object({ ok: z.literal(true), threadId: z.string() }).strict(),
+  z.object({ ok: z.literal(false), message: z.string() }).strict(),
+]);
 
 export const sourceControlContract = defineRpcContract({
   changeForThread: {
@@ -271,6 +277,45 @@ export const sourceControlContract = defineRpcContract({
   openGuide: {
     input: z.object({ key: changeKeySchema }).strict(),
     output: guideViewSchema,
+  },
+  /**
+   * Each Change's Ask thread, keyed by ChangeKey: null until the first
+   * question forks one. Stored state only.
+   */
+  askForChange: {
+    experimental_description:
+      "Each Change's Ask thread id, keyed by ChangeKey: the hidden thread the review page's Ask agent panel talks to, or null before the first question.",
+    input: z.object({ keys: z.array(changeKeySchema).min(1).max(20) }).strict(),
+    output: z.record(z.string(), z.object({ threadId: z.string().nullable() }).strict()),
+    keyTags: (key: string) => [askTag(key as ChangeKey)],
+  },
+  /**
+   * A question about the Change. The first one forks the Change's owning
+   * thread (hidden) and stores it as the Change's Ask thread; later ones are
+   * sent to that thread. Concurrent first questions fork once.
+   */
+  ask: {
+    input: z
+      .object({
+        key: changeKeySchema,
+        text: z.string().trim().min(1).max(20_000),
+        path: z.string().min(1).max(4096).optional(),
+        line: z.number().int().positive().optional(),
+        /** The line is numbered before the change (a removed line). */
+        old: z.boolean().optional(),
+      })
+      .strict(),
+    output: askResultSchema,
+  },
+  /** "Open as full thread": unhides the Change's Ask thread. */
+  openAskAsThread: {
+    input: z.object({ key: changeKeySchema }).strict(),
+    output: askResultSchema,
+  },
+  /** "Ask agent to fix" on a checkout a tool is missing from: a thread on that host to install it. */
+  askToFix: {
+    input: z.object({ threadId: threadIdSchema }).strict(),
+    output: askResultSchema,
   },
   /** Writes the guide again for the Change's current head: "Rewrite guide" and "Try again". */
   rewriteGuide: {
