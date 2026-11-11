@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import {
   experimental_PermissionModePicker as PermissionModePicker,
   useComposer,
@@ -6,6 +6,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { isAnchorInteractive } from "@/components/ui/overlay-anchor";
 import { useCatalogRouting, type CatalogRouting } from "./model-picker/catalog";
+import { markComposerHost } from "./composer-host";
 import { hasEditablePickers } from "./model-picker/ComposerModelControls";
 
 type PermissionMode = NonNullable<ComposerSelection["permissionMode"]>;
@@ -65,7 +66,13 @@ export function ComposerPermissionControl() {
       });
   }, []);
   const selection = composer.selection;
-  if (!editable || !routing || !selection?.providerId || !selection.permissionMode) return null;
+  const shown = Boolean(editable && routing && selection?.providerId && selection.permissionMode);
+  // While this picker shows, the stylesheet hides BB's copy in the tray (see app.css).
+  useLayoutEffect(
+    () => (shown ? markComposerHost(controlRef.current, "data-t3-permission-host") : undefined),
+    [shown],
+  );
+  if (!shown || !routing || !selection?.providerId || !selection.permissionMode) return null;
 
   return (
     <span ref={controlRef} data-t3-permission="" className="flex min-w-0 items-center">

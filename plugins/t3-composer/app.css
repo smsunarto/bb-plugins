@@ -315,11 +315,17 @@
   display: none;
 }
 
+/* `data-t3-composer-host` and `data-t3-permission-host` are set on BB's composer
+   wrapper by this plugin's composer and permission picker while they are mounted
+   (src/composer-host.ts); ancestor `:has()` rules made every layout in the page
+   dearer. Each is written twice to keep the specificity the `:has()` form had,
+   so the cascade against BB's own rules is unchanged. */
+
 /* BB's project, machine and branch row becomes ChatGPT's tray, attached above
    the card. There is no SDK input for the row, so it is reordered and restyled
    in place; BB still owns its pickers and hides it in narrow panes. */
-[data-follow-up-composer]:has(> [data-composer-box] [data-t3-composer]),
-[data-app-composer]:has(> [data-composer-box] [data-t3-composer]) {
+[data-follow-up-composer][data-t3-composer-host][data-t3-composer-host],
+[data-app-composer][data-t3-composer-host][data-t3-composer-host] {
   display: flex;
   flex-direction: column;
   /* Doubles BB's 8px gap below the composer. */
@@ -327,15 +333,15 @@
 }
 
 /* Banners keep order 0, so they stay above the tray (1) and the card (2). */
-:is([data-follow-up-composer], [data-app-composer]) > [data-composer-box]:has([data-t3-composer]) {
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host] > [data-composer-box] {
   position: relative;
   z-index: 1;
   order: 2;
 }
 
-:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > [data-follow-up-composer-footer],
-:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > [data-new-thread-footer] {
   --t3-tray-overlap: 12px;
   position: relative;
@@ -361,22 +367,22 @@
 }
 
 .dark
-  :is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  :is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > [data-follow-up-composer-footer],
 .dark
-  :is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+  :is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > [data-new-thread-footer] {
   background: color-mix(in srgb, var(--foreground) 8%, var(--background));
   box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 12%, transparent);
 }
 
-:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   button,
-:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   [data-option-display],
-:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   span:has(> svg[data-icon="Laptop"]) {
   display: inline-flex;
@@ -395,20 +401,20 @@
   font-size: 13px;
 }
 
-:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   button:is(:hover, [data-state="open"], [aria-expanded="true"]) {
   color: var(--foreground);
 }
 
-:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   svg:not([viewBox="0 0 16 16"]) {
   width: 16px;
   height: 16px;
 }
 
-:is([data-follow-up-composer], [data-app-composer]):has(> [data-composer-box] [data-t3-composer])
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   svg[data-icon="ChevronDown"] {
   display: none;
@@ -417,9 +423,10 @@
 /* Hide BB's copy only once the card's picker has rendered. While BB disables its
    copy (plan mode, a permission snapshot, a pending question), BB's copy shows
    the effective mode, so it stays and the card's picker is hidden instead. */
-:is([data-follow-up-composer], [data-app-composer]):has(
-    > [data-composer-box] [data-t3-permission] button
-  )
+:is(
+    [data-follow-up-composer],
+    [data-app-composer]
+  )[data-t3-permission-host][data-t3-permission-host]
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   button[aria-label="Permission mode"]:not(:disabled) {
   /* Outranks the tray's pill display. */

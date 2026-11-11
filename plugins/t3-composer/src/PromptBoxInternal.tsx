@@ -66,6 +66,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ComposerPopupHost } from "./ComposerPopupHost";
+import { markComposerHost } from "./composer-host";
 import {
   COARSE_POINTER_PROMPT_ACTION_BUTTON_CLASS,
   COARSE_POINTER_PROMPT_ICON_ACTION_BUTTON_CLASS,
@@ -1012,6 +1013,8 @@ export function PromptBoxInternal({
   const isIPadOSWebKitDevice = useMemo(isIPadOSWebKit, []);
   const editorEnterKeyHint = isPointerCoarse ? "enter" : "send";
   const formRef = useRef<HTMLFormElement>(null);
+  // The stylesheet finds BB's composer wrapper by this mark, not by an ancestor `:has()`.
+  useLayoutEffect(() => markComposerHost(formRef.current, "data-t3-composer-host"), []);
   const typeaheadMenuRef = useRef<HTMLDivElement>(null);
   const blurAfterPointerSubmitRef = useRef(false);
   const lastObservedHeightRef = useRef<number | null>(null);
