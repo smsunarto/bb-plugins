@@ -4,11 +4,31 @@
  * while the branch is still at the head the reader saw; anything else
  * uncommitted stays. Plain git commits onto its checked-out branch only.
  */
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import type { Branch, FileChange, Revision, VcsAction } from "../core/change.ts";
+import { useEscapeLayer } from "./escape.ts";
+import { useHostGate } from "./host-gate.ts";
 import { plural } from "./format.ts";
 import type { Dispatch } from "./branch-actions.tsx";
 import { Button, Pending } from "./ui.tsx";
+
+/**
+ * Opening moves focus to the message; closing returns it to Commit. Escape
+ * inside the form closes it, and the page stays.
+ */
+function useCommitFocus(open: boolean, setOpen: (open: boolean) => void) {
+  const field = useRef<HTMLTextAreaElement>(null);
+  const opener = useRef<HTMLButtonElement>(null);
+  const form = useRef<HTMLFormElement>(null);
+  const wasOpen = useRef(false);
+  useEscapeLayer(form, () => setOpen(false), { open });
+  useEffect(() => {
+    if (open) field.current?.focus();
+    else if (wasOpen.current) opener.current?.focus();
+    wasOpen.current = open;
+  }, [open]);
+  return { field, opener, form };
+}
 
 export function CommitControl({
   changes,
@@ -36,34 +56,24 @@ export function CommitControl({
   const [message, setMessage] = useState("");
   const [chosen, setChosen] = useState<string | null>(null);
   const id = useId();
-  const field = useRef<HTMLTextAreaElement>(null);
-  const opener = useRef<HTMLButtonElement>(null);
-  const wasOpen = useRef(false);
-  // Opening moves focus to the message; closing returns it to Commit.
-  useEffect(() => {
-    if (open) field.current?.focus();
-    else if (wasOpen.current) opener.current?.focus();
-    wasOpen.current = open;
-  }, [open]);
+  const { field, opener, form } = useCommitFocus(open, setOpen);
   const fallback = branches.find((branch) => branch.name === preferred) ?? branches[0];
   const branch = branches.find((each) => each.name === chosen) ?? fallback;
   const pending = [...running.values()].includes("commit");
+  const gate = useHostGate();
   if (!branch || changes.length === 0) return null;
   if (!open)
     return (
-      <div className="flex min-w-0 border-t border-border-hairline px-3 py-2">
-        <Button
-          ref={opener}
-          disabled={busy}
-          data-testid="sc-commit-open"
-          aria-label={`Commit ${plural(changes.length, "file")}`}
-          onClick={() => setOpen(true)}
-        >
-          <Pending pending={pending} icon="GitCommitHorizontal" />
-          Commit
-        </Button>
-      </div>
+      <CommitOpener
+        opener={opener}
+        files={changes.length}
+        pending={pending}
+        off={busy || gate !== null}
+        gate={gate}
+        onOpen={() => setOpen(true)}
+      />
     );
+  const canSend = message.trim() !== "" && !busy && gate === null;
   const send = () => {
     const seen: Revision = { head: branch.head, target: targetHead };
     dispatch.send(
@@ -80,11 +90,12 @@ export function CommitControl({
   };
   return (
     <form
+      ref={form}
       className="flex min-w-0 flex-col gap-2 border-t border-border-hairline px-3 py-2"
       aria-label="Commit uncommitted changes"
       onSubmit={(event) => {
         event.preventDefault();
-        if (message.trim() && !busy) send();
+        if (canSend) send();
       }}
     >
       <label htmlFor={`${id}-message`} className="text-[12px] leading-4 text-muted-foreground">
@@ -97,9 +108,6 @@ export function CommitControl({
         rows={3}
         value={message}
         onChange={(event) => setMessage(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") setOpen(false);
-        }}
         className="w-full min-w-0 resize-y rounded-[6px] border border-border-hairline bg-background px-2 py-1 text-[12px] leading-normal text-foreground focus-visible:outline-1"
       />
       {branches.length > 1 ? (
@@ -129,12 +137,51 @@ export function CommitControl({
         <Button
           type="submit"
           variant="primary"
+          data-host-bound="commit"
           data-testid="sc-commit-confirm"
-          disabled={busy || !message.trim()}
+          title={gate ?? undefined}
+          disabled={!canSend}
         >
           Commit
         </Button>
       </div>
     </form>
+  );
+}
+
+/** Commit, closed: the button that opens the form. */
+function CommitOpener({
+  opener,
+  files,
+  pending,
+  off,
+  gate,
+  onOpen,
+}: {
+  opener: RefObject<HTMLButtonElement | null>;
+  files: number;
+  pending: boolean;
+  off: boolean;
+  gate: string | null;
+  onOpen: () => void;
+}) {
+  return (
+    // A disabled button takes no hover, so the reason sits on the row.
+    <div
+      className="flex min-w-0 border-t border-border-hairline px-3 py-2"
+      title={gate ?? undefined}
+    >
+      <Button
+        ref={opener}
+        disabled={off}
+        data-host-bound="commit"
+        data-testid="sc-commit-open"
+        aria-label={`Commit ${plural(files, "file")}`}
+        onClick={onOpen}
+      >
+        <Pending pending={pending} icon="Check" />
+        Commit
+      </Button>
+    </div>
   );
 }

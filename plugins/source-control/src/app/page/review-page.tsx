@@ -31,6 +31,7 @@ import {
   type ReviewTab,
 } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
+import { useEscapeLayer } from "../escape.ts";
 import { cx, plural, shortRef } from "../format.ts";
 import { useOpenGuide } from "../guide-data.ts";
 import { MergeButton, mergeTarget, useChangeMerge } from "../merge.tsx";
@@ -126,6 +127,16 @@ function StatusMenu({
   draft: ReturnType<typeof useDraftToggle>;
 }) {
   const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLSpanElement>(null);
+  // Escape closes the menu and returns focus to its button; the page stays.
+  useEscapeLayer(
+    menu,
+    () => {
+      setOpen(false);
+      trigger.current?.focus();
+    },
+    { open },
+  );
   const trigger = useRef<HTMLButtonElement>(null);
   const item = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -161,13 +172,11 @@ function StatusMenu({
       </button>
       {open ? (
         <span
+          ref={menu}
           role="menu"
           tabIndex={-1}
           data-bb-plugin="source-control"
           className="absolute top-7 left-0 z-10 flex min-w-48 flex-col rounded-[8px] border border-solid border-border bg-popover p-1 shadow-md"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") close();
-          }}
         >
           <button
             type="button"

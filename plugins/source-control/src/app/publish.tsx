@@ -11,6 +11,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { useEffect, useState } from "react";
 import { sourceControlContract } from "../contract/rpc.ts";
+import { useHostGate } from "./host-gate.ts";
 import { Button, Pending } from "./ui.tsx";
 
 /** While a child works, the tab looks this often to see it finish. */
@@ -36,6 +37,7 @@ export function CreatePullRequest({
   });
   const mutation = useRpcMutation({ contract: sourceControlContract, method: "createPullRequest" });
   const [error, setError] = useState<string | null>(null);
+  const gate = useHostGate();
   const current = requests.data?.requests.find((request) => request.branch === branch);
   const running = current?.running ?? false;
   const { refetch } = requests;
@@ -57,15 +59,19 @@ export function CreatePullRequest({
   return (
     <>
       {running ? null : (
-        <Button
-          disabled={busy || mutation.isPending}
-          aria-label={`Create PR for ${branch}`}
-          data-testid="sc-create-pr"
-          onClick={() => void start()}
-        >
-          <Pending pending={mutation.isPending} icon="GitPullRequest" />
-          Create PR
-        </Button>
+        // A disabled button takes no hover, so the reason sits on a wrapper.
+        <span className="flex shrink-0" title={gate ?? undefined}>
+          <Button
+            disabled={busy || gate !== null || mutation.isPending}
+            data-host-bound="createPullRequest"
+            aria-label={`Create PR for ${branch}`}
+            data-testid="sc-create-pr"
+            onClick={() => void start()}
+          >
+            <Pending pending={mutation.isPending} icon="GitPullRequest" />
+            Create PR
+          </Button>
+        </span>
       )}
       {current ? (
         // `output` is the native polite live region, so the hand-off is announced.

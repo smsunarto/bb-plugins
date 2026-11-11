@@ -7,6 +7,7 @@ import type { Branch, ThreadChange, WorkspaceValue } from "../core/change.ts";
 import { changeKeySchema } from "../core/ids.ts";
 import { reviewPath } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+import { offlineReason } from "./host-gate.ts";
 import { writeSnapshot } from "./snapshot.ts";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
@@ -1212,4 +1213,38 @@ test("a thread that watches nothing draws no banner", async () => {
   const slot = renderBanner([], []);
   await new Promise((settle) => setTimeout(settle, 30));
   expect(slot.queryByTestId("sc-pr-watch")).toBeNull();
+});
+
+test("with the host offline, every host-bound control is off and says why", async () => {
+  const kinds = (root: ParentNode) =>
+    [...root.querySelectorAll("[data-host-bound]")]
+      .map((node) => node.getAttribute("data-host-bound"))
+      .toSorted();
+  const online = renderRow(stacked());
+  await online.slot.findAllByTestId("sc-branch");
+  const drawn = kinds(document);
+  // Every host-bound control but Create PR, which the fixture's branches do not offer.
+  expect(new Set(drawn)).toEqual(new Set(["pull", "commit", "push", "land", "rename", "delete"]));
+  cleanup();
+  const row = stacked();
+  if (row.state !== "checkout") throw new Error("fixture");
+  row.local.problem = { kind: "host-offline", host: row.placement.hostName };
+  const { slot, of } = renderRow(row);
+  await slot.findAllByTestId("sc-branch");
+  expect(kinds(document)).toEqual(drawn);
+  for (const control of document.querySelectorAll<HTMLButtonElement>("[data-host-bound]"))
+    expect(control.disabled).toBe(true);
+  expect(slot.getAllByText(offlineReason(row.placement.hostName)).length).toBeGreaterThan(0);
+  expect(of("vcsAction")).toHaveLength(0);
+  // Create PR, on a branch GitHub has no pull request for.
+  cleanup();
+  row.forge = { read: { value: null, at: Date.now() }, problem: null };
+  renderRow(row);
+  const create = await waitFor(() => {
+    const node = document.querySelector<HTMLButtonElement>("[data-host-bound=createPullRequest]");
+    if (!node) throw new Error("no Create PR");
+    return node;
+  });
+  expect(create.disabled).toBe(true);
+  expect(create.parentElement!.title).toBe(offlineReason(row.placement.hostName));
 });

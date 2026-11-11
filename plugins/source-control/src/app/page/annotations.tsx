@@ -6,8 +6,9 @@
  * redraws that composer and nothing else.
  */
 import { Markdown } from "@get-bb/plugin-sdk/app";
-import { memo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Anchor, Draft } from "../../core/items.ts";
+import { useEscapeLayer } from "../escape.ts";
 import { cx } from "../format.ts";
 import { newDraftId, type ReviewActions } from "../review-data.ts";
 import { useAskAgent } from "./ask-panel.tsx";
@@ -75,6 +76,9 @@ function Composer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const body = text.trim();
+  // Escape inside the composer closes it; the page stays.
+  const root = useRef<HTMLDivElement>(null);
+  useEscapeLayer(root, onDone);
   const submit = () => {
     if (!body || saving) return;
     setSaving(true);
@@ -91,13 +95,10 @@ function Composer({
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       submit();
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      onDone();
     }
   };
   return (
-    <div className="flex min-w-0 flex-col gap-2" data-testid="sc-composer">
+    <div ref={root} className="flex min-w-0 flex-col gap-2" data-testid="sc-composer">
       <div className="flex items-center gap-2">
         <Me />
       </div>

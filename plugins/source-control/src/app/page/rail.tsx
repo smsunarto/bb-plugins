@@ -229,7 +229,7 @@ function FixButton({ count, onFix }: { count: number; onFix: () => void }) {
         disabled={count === 0 || tooMany}
         onClick={onFix}
       >
-        <Icon name="Toolbox" fallback="Wrench" className="size-3.5 shrink-0" aria-hidden />
+        <Icon name="Toolbox" className="size-3.5 shrink-0" aria-hidden />
         {count > 1 ? `Fix ${count} checks` : "Fix"}
       </Button>
     </span>

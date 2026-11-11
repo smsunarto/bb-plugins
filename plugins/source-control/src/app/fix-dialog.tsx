@@ -12,11 +12,12 @@ import {
   useBbNavigate,
   type NewThreadRequest,
 } from "@get-bb/plugin-sdk/app";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { CheckRow } from "../core/change.ts";
 import { checkId, checkNames } from "../core/fix-checks.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+import { useEscapeLayer, useFocusContainment } from "./escape.ts";
 import { cx } from "./format.ts";
 import { Bar, Button } from "./ui.tsx";
 
@@ -55,7 +56,6 @@ function FixComposer({ target, onClose }: { target: FixTarget; onClose: () => vo
         <span className="flex items-center gap-1.5 text-muted-foreground">
           <Icon
             name="Spinner"
-            fallback="Loader"
             className="size-3 animate-spin motion-reduce:animate-none"
             aria-hidden
           />
@@ -117,31 +117,6 @@ function FixComposer({ target, onClose }: { target: FixTarget; onClose: () => vo
   );
 }
 
-/** An open picker of the composer's (a menu, list or popover), which Escape closes first. */
-const PICKER = "[data-radix-popper-content-wrapper], [role=menu], [role=listbox]";
-
-/**
- * Escape closes the dialog, and only the dialog: bb leaves the page on an
- * Escape nothing claimed. One meant for an open picker is left to it.
- */
-function useEscapeToClose(onClose: () => void) {
-  const close = useRef(onClose);
-  useEffect(() => {
-    close.current = onClose;
-  });
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      if (document.querySelector(PICKER)) return;
-      event.preventDefault();
-      close.current();
-    };
-    // Capture, so it runs before bb's own Escape.
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, []);
-}
-
 /**
  * The dialog, opened on the checks the reader picked. Not a native modal
  * dialog: the composer's pickers open outside it, and a modal one would keep
@@ -149,11 +124,10 @@ function useEscapeToClose(onClose: () => void) {
  * to what opened it.
  */
 export function FixDialog({ target, onClose }: { target: FixTarget; onClose: () => void }) {
-  useEscapeToClose(onClose);
-  useEffect(() => {
-    const opener = document.activeElement as HTMLElement | null;
-    return () => opener?.focus();
-  }, []);
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEscapeLayer(dialog, onClose, { modal: true });
+  // Off the top layer, the page behind stays focusable: Tab is kept inside.
+  useFocusContainment(dialog);
   return (
     <div
       data-bb-plugin="source-control"
@@ -161,6 +135,7 @@ export function FixDialog({ target, onClose }: { target: FixTarget; onClose: () 
     >
       {/* Open in place, not shown modal: see above. */}
       <dialog
+        ref={dialog}
         open
         aria-modal="true"
         aria-labelledby="sc-fix-title"

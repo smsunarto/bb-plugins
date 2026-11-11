@@ -14,6 +14,7 @@ import {
   type NavRow,
   type RepoShelf,
 } from "../../core/review.ts";
+import { useEscapeLayer } from "../escape.ts";
 import { cx, shortAge } from "../format.ts";
 import { Chips } from "../status.tsx";
 import { Bar } from "../ui.tsx";
@@ -281,6 +282,16 @@ function AccountPicker({
 }) {
   const choice = useAccountChoice();
   const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLSpanElement>(null);
+  // Escape closes the menu and returns focus to its button; the page stays.
+  useEscapeLayer(
+    menu,
+    () => {
+      setOpen(false);
+      trigger.current?.focus();
+    },
+    { open },
+  );
   const trigger = useRef<HTMLButtonElement>(null);
   const first = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -335,13 +346,11 @@ function AccountPicker({
       </button>
       {open ? (
         <span
+          ref={menu}
           role="menu"
           tabIndex={-1}
           data-bb-plugin="source-control"
           className="absolute top-full right-0 z-10 mt-1 flex min-w-44 flex-col rounded-[8px] border border-solid border-border bg-popover p-1 shadow-md"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") close();
-          }}
         >
           {[null, ...accounts.map((account) => account.login)].map((login, index) => (
             <button

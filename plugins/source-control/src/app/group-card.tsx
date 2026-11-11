@@ -139,7 +139,7 @@ function GroupFooter({
             disabled={busy || entries.length === 0}
             onClick={() => void ship.send()}
           >
-            <Pending pending={ship.pending} icon="Rocket" />
+            <Pending pending={ship.pending} icon="Sent" />
             Ship all {entries.length}
           </Button>
           {targets ? (

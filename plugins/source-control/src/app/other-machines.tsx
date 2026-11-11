@@ -189,7 +189,7 @@ function HostSection({
       data-testid="sc-other-host"
     >
       <header className="flex min-h-8 min-w-0 items-center gap-2 px-3 py-1.5">
-        <Icon name="Monitor" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+        <Icon name="Laptop" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <span className="min-w-0 truncate text-[12px] leading-4 font-medium text-foreground">
           {host.name}
         </span>

@@ -16,7 +16,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -28,6 +27,7 @@ import {
 import { sourceControlContract } from "../../contract/rpc.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import type { ChangeDetail } from "../../core/review.ts";
+import { useEscapeLayer } from "../escape.ts";
 import { cx } from "../format.ts";
 
 /** Where a question comes from: the header's button, or a diff line with its text. */
@@ -293,18 +293,7 @@ function AskPanel({
   }, [open, threadId]);
 
   // Escape closes the panel before bb's own Escape ("Back to app") sees it.
-  useEffect(() => {
-    const node = panel.current;
-    if (!node || !open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-    };
-    node.addEventListener("keydown", onKey, true);
-    return () => node.removeEventListener("keydown", onKey, true);
-  }, [open, onClose]);
+  useEscapeLayer(panel, onClose, { open });
 
   const openFull = async () => {
     if (!threadId) return;

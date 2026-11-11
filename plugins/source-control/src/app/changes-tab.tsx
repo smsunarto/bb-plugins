@@ -30,14 +30,10 @@ import {
   type WorkspaceValue,
 } from "../core/change.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import {
-  HostWritesBlocked,
-  PullButton,
-  PullStatus,
-  WORKSPACE,
-  useVcsActions,
-} from "./branch-actions.tsx";
+import { PullButton, PullStatus, WORKSPACE, useVcsActions } from "./branch-actions.tsx";
 import { FindingsCard } from "./findings-card.tsx";
+import { useEscapeLayer } from "./escape.ts";
+import { HostGate, NO_CHECKOUT, offlineReason } from "./host-gate.ts";
 import { cx, plural, shortId, shortRef } from "./format.ts";
 import { readSnapshot, writeSnapshot } from "./snapshot.ts";
 import { BotIcon } from "./page/ask-panel.tsx";
@@ -100,6 +96,17 @@ function readStateText(view: TabView, reading: boolean, live: boolean, now: numb
   return readAgo(view.readAt, now);
 }
 
+/** The one host gate (plan §3): every host-bound control and write reads it. */
+function hostGateOf(
+  checkout: Extract<ThreadChange, { state: "checkout" }> | null,
+  view: ReturnType<typeof tabView>,
+): string | null {
+  if (!checkout) return NO_CHECKOUT;
+  if (view.kind === "ready" && view.stale?.kind === "host-offline")
+    return offlineReason(checkout.placement.hostName);
+  return null;
+}
+
 const ChangesView = memo(function ChangesView({
   threadId,
   row,
@@ -115,73 +122,76 @@ const ChangesView = memo(function ChangesView({
   const onRetry = () => void refresh.mutate({ threadId }).catch(() => undefined);
   const onReadAs = (mode: "auto" | "git") =>
     void readAs.mutate({ threadId, readAs: mode }).catch(() => undefined);
-  const vcs = useVcsActions(threadId);
   const view = tabView(row);
-  const now = useNow();
   const checkout = row?.state === "checkout" ? row : null;
+  const gate = hostGateOf(checkout, view);
+  const vcs = useVcsActions(threadId, gate);
+  const now = useNow();
   const workspace = view.kind === "ready" ? view.workspace : null;
   const target = workspace?.target ?? null;
 
   return (
-    <div
-      data-bb-plugin="source-control"
-      data-testid="sc-changes"
-      className="@container flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground"
-    >
-      <Header
-        repo={checkout ? repoName(checkout) : null}
-        readState={readStateText(view, refresh.isPending, live, now)}
-        target={target}
-        vcs={vcs}
-        readOnly={checkout?.readAsGit === true}
-      />
-      {workspace ? (
-        <PullStatus
-          outcome={vcs.outcomes.get(WORKSPACE)}
-          targetHead={target?.head ?? null}
-          native={workspace.provider === "git"}
-          running={vcs.running.has(WORKSPACE)}
-          busy={vcs.busy}
-          dispatch={vcs.dispatch}
+    <HostGate value={gate}>
+      <div
+        data-bb-plugin="source-control"
+        data-testid="sc-changes"
+        className="@container flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground"
+      >
+        <Header
+          repo={checkout ? repoName(checkout) : null}
+          readState={readStateText(view, refresh.isPending, live, now)}
+          target={target}
+          vcs={vcs}
+          readOnly={checkout?.readAsGit === true}
         />
-      ) : null}
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
-        {view.kind === "loading" ? <LoadingBody /> : null}
-        {view.kind === "none" ? (
-          <p className="m-0 px-3 @md:px-4 py-8 text-[13px] leading-5 text-muted-foreground">
-            {view.reason}
-          </p>
-        ) : null}
-        {view.kind === "failed" ? (
-          <FailedBody
-            threadId={threadId}
-            problem={view.problem}
-            onRetry={onRetry}
-            retrying={refresh.isPending}
-            onReadAsGit={() => onReadAs("git")}
-            switching={readAs.isPending}
+        {workspace ? (
+          <PullStatus
+            outcome={vcs.outcomes.get(WORKSPACE)}
+            targetHead={target?.head ?? null}
+            native={workspace.provider === "git"}
+            running={vcs.running.has(WORKSPACE)}
+            busy={vcs.busy}
+            dispatch={vcs.dispatch}
           />
         ) : null}
-        {view.kind === "ready" && checkout ? (
-          <>
-            {view.stale ? (
-              <StaleBanner
-                problem={view.stale}
-                onRetry={onRetry}
-                retrying={refresh.isPending}
-                onReadAsGit={() => onReadAs("git")}
-                switching={readAs.isPending}
-              />
-            ) : null}
-            {checkout.readAsGit ? (
-              <ReadAsGitNote onRestore={() => onReadAs("auto")} switching={readAs.isPending} />
-            ) : null}
-            <ReadyBody threadId={threadId} row={checkout} view={view} vcs={vcs} now={now} />
-          </>
-        ) : null}
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+          {view.kind === "loading" ? <LoadingBody /> : null}
+          {view.kind === "none" ? (
+            <p className="m-0 px-3 @md:px-4 py-8 text-[13px] leading-5 text-muted-foreground">
+              {view.reason}
+            </p>
+          ) : null}
+          {view.kind === "failed" ? (
+            <FailedBody
+              threadId={threadId}
+              problem={view.problem}
+              onRetry={onRetry}
+              retrying={refresh.isPending}
+              onReadAsGit={() => onReadAs("git")}
+              switching={readAs.isPending}
+            />
+          ) : null}
+          {view.kind === "ready" && checkout ? (
+            <>
+              {view.stale ? (
+                <StaleBanner
+                  problem={view.stale}
+                  onRetry={onRetry}
+                  retrying={refresh.isPending}
+                  onReadAsGit={() => onReadAs("git")}
+                  switching={readAs.isPending}
+                />
+              ) : null}
+              {checkout.readAsGit ? (
+                <ReadAsGitNote onRestore={() => onReadAs("auto")} switching={readAs.isPending} />
+              ) : null}
+              <ReadyBody threadId={threadId} row={checkout} view={view} vcs={vcs} now={now} />
+            </>
+          ) : null}
+        </div>
+        {target ? <BaseFooter target={target} /> : null}
       </div>
-      {target ? <BaseFooter target={target} /> : null}
-    </div>
+    </HostGate>
   );
 });
 
@@ -286,12 +296,8 @@ function ReadyBody({
       branch.name === row.branch ? row.key : changeKeyForBranch(hostId, workspace, branch),
     [row.branch, row.key, hostId, workspace],
   );
-  const hostDown =
-    view.stale?.kind === "host-offline"
-      ? `${row.placement.hostName} is offline. Rename, push, land and delete need it.`
-      : null;
   return (
-    <HostWritesBlocked value={hostDown}>
+    <>
       <div className="flex min-w-0 flex-col gap-4 p-3 @md:p-4">
         <ThisThread
           threadId={threadId}
@@ -371,7 +377,7 @@ function ReadyBody({
           <HistoryCard threadId={threadId} path={workspace.path} now={now} className={CARD} />
         )}
       </div>
-    </HostWritesBlocked>
+    </>
   );
 }
 
@@ -576,6 +582,16 @@ function PullRequestChip({
   const label = chipLabel(forge, onGitHub);
   const draft = useDraftToggle(threadId, forge ?? null);
   const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLSpanElement>(null);
+  // Escape closes the menu and returns focus to its button; the page stays.
+  useEscapeLayer(
+    menu,
+    () => {
+      setOpen(false);
+      trigger.current?.focus();
+    },
+    { open },
+  );
   const trigger = useRef<HTMLButtonElement>(null);
   const item = useRef<HTMLButtonElement>(null);
   useEffect(() => {
@@ -616,12 +632,10 @@ function PullRequestChip({
       </button>
       {open ? (
         <span
+          ref={menu}
           role="menu"
           tabIndex={-1}
           className="absolute top-7 left-0 z-10 flex min-w-48 flex-col rounded-[8px] border border-solid border-border bg-popover p-1 shadow-md"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") close();
-          }}
         >
           <button
             type="button"

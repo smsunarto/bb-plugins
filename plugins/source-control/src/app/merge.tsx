@@ -27,6 +27,7 @@ import {
   type MergePolicy,
 } from "../core/merge.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+import { useEscapeLayer } from "./escape.ts";
 import { cx } from "./format.ts";
 import { Button, Pending, type ButtonVariant } from "./ui.tsx";
 
@@ -348,6 +349,8 @@ export function MergeDialog({
   const close = () => {
     if (!merge.pending) onClose();
   };
+  // Escape: a merge in flight keeps the dialog open, and bb never leaves the page.
+  useEscapeLayer(dialog, close, { modal: true });
   return (
     <dialog
       ref={dialog}

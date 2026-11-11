@@ -37,7 +37,6 @@ export function Pending({ pending, icon }: { pending: boolean; icon?: string }) 
     return (
       <Icon
         name="Spinner"
-        fallback="Loader"
         className="size-3.5 animate-spin motion-reduce:animate-none"
         aria-hidden
       />

@@ -13,7 +13,7 @@ import {
   experimental_useRpcQuery as useRpcQuery,
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
-import { memo, useCallback, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { describeProblem, type Problem } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import type {
@@ -25,6 +25,7 @@ import type {
   ReviewItem,
 } from "../core/items.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+import { useEscapeLayer } from "./escape.ts";
 import { cx, plural } from "./format.ts";
 import { useChangeReview, useReviewActions, useSend, type SendActions } from "./review-data.ts";
 import {
@@ -865,11 +866,6 @@ function Tray(facts: TrayFacts & { hidden: boolean }) {
       data-testid="sc-tray"
       // Focusable, so a click on its text keeps focus inside and the tray open.
       tabIndex={-1}
-      onKeyDown={(event: KeyboardEvent) => {
-        if (event.key !== "Escape") return;
-        event.stopPropagation();
-        facts.onClose();
-      }}
       className={cx(
         facts.hidden ? "hidden" : "flex",
         "absolute start-auto top-full right-0 z-20 m-0 mt-2 w-[440px] max-w-[calc(100cqw-2rem)] flex-col overflow-clip rounded-[10px] border border-solid border-border bg-popover p-0 text-start text-foreground shadow-xl outline-none",
@@ -986,6 +982,9 @@ export const SendControls = memo(function SendControls({
     setOpened(true);
     setOpen((value) => !value);
   };
+  // Escape with the tray open closes the tray, never the page behind it.
+  const trayScope = useRef<HTMLDivElement>(null);
+  useEscapeLayer(trayScope, () => setOpen(false), { open });
   let label = "Submit to GitHub";
   if (destination === "agent") label = count > 0 ? `Send ${count} to agent` : "Send to agent";
   return (
@@ -1004,6 +1003,7 @@ export const SendControls = memo(function SendControls({
       {pill ? <BatchPill batch={batch} commands={commands} /> : null}
       {!pill || count > 0 ? (
         <div
+          ref={trayScope}
           className="relative flex shrink-0"
           onBlur={(event) => {
             if (open && !event.currentTarget.contains(event.relatedTarget as Node | null))
@@ -1016,12 +1016,6 @@ export const SendControls = memo(function SendControls({
             aria-expanded={open}
             data-testid="sc-send"
             onClick={toggle}
-            // Escape with the tray open closes the tray, never the page behind it.
-            onKeyDown={(event: KeyboardEvent) => {
-              if (!open || event.key !== "Escape") return;
-              event.stopPropagation();
-              setOpen(false);
-            }}
             className="flex h-6 shrink-0 cursor-pointer items-center gap-2 rounded-[6px] border-0 bg-(--primary) px-3 text-[12px] leading-4 font-semibold text-primary-foreground"
           >
             {destination === "agent" ? <Robot size={13} /> : null}

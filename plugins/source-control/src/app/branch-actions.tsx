@@ -10,17 +10,7 @@ import {
   experimental_Icon as Icon,
   experimental_useRpcMutation as useRpcMutation,
 } from "@get-bb/plugin-sdk/app";
-import {
-  createContext,
-  memo,
-  useContext,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { memo, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   branchNameSchema,
   describeProblem,
@@ -31,14 +21,10 @@ import {
   type VcsResult,
 } from "../core/change.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+import { useEscapeLayer } from "./escape.ts";
+import { useHostGate } from "./host-gate.ts";
 import { cx, plural, squashMessage } from "./format.ts";
 import { Button, Pending } from "./ui.tsx";
-
-/**
- * Why the checkout's writes cannot run now, such as its host being offline;
- * null while they can. Branch footers disable their buttons and say why.
- */
-export const HostWritesBlocked = createContext<string | null>(null);
 
 /** The rename field takes focus, its name selected, when the reader opens it. */
 function focusOnMount(field: HTMLInputElement | null) {
@@ -108,17 +94,24 @@ const NO_OUTCOMES: ReadonlyMap<Scope, Outcome> = new Map();
  * in flight; `busy` holds every write button while any runs, since writes to
  * one checkout rewrite the same branches.
  */
-export function useVcsActions(threadId: string) {
+export function useVcsActions(threadId: string, gate: string | null) {
   const mutation = useRpcMutation({ contract: sourceControlContract, method: "vcsAction" });
   const [outcomes, setOutcomes] = useState(NO_OUTCOMES);
   const mutate = useRef(mutation.mutate);
+  const closed = useRef(gate);
   useLayoutEffect(() => {
     mutate.current = mutation.mutate;
+    closed.current = gate;
   });
   const dispatch = useMemo<Dispatch>(
     () => ({
       send(action, expected) {
         const scope = scopeOf(action);
+        // The host gate: every write goes through here, so none can skip it.
+        if (closed.current !== null) {
+          setOutcomes(withOutcome(scope, { kind: "failed", text: closed.current }));
+          return;
+        }
         setOutcomes(withOutcome(scope, null));
         mutate.current({ threadId, action, expected }).then(
           (result) => setOutcomes(withOutcome(scope, outcomeOf(result, action, expected))),
@@ -197,17 +190,18 @@ export function Confirm({
 }) {
   const promptId = useId();
   const look = CONFIRM_LOOK[tone];
+  const root = useRef<HTMLDivElement>(null);
+  // Escape from anywhere inside cancels, unless the answer is already running.
+  useEscapeLayer(root, () => {
+    if (!pending) onCancel();
+  });
   return (
-    // Escape from either button inside cancels.
-    // oxlint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
+      ref={root}
       className={cx(
         "flex flex-wrap items-center gap-2 text-[12px]",
         look && `rounded-[6px] border px-2.5 py-2 ${look.box}`,
       )}
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && !pending) onCancel();
-      }}
     >
       <p
         id={promptId}
@@ -567,7 +561,7 @@ export const BranchActions = memo(function BranchActions({
   prAction?: ReactNode;
 }) {
   const [mode, setMode] = useState<Mode>(IDLE);
-  const hostBlocked = useContext(HostWritesBlocked);
+  const hostBlocked = useHostGate();
   const now: Revision = { head: branch.head, target: targetHead };
   const pending = running !== null;
   const blocked = hostBlocked ?? (busy && !pending ? "Another action is running" : null);
@@ -807,6 +801,7 @@ function ActionRow({
       {available.push === "none" ? null : (
         <Button
           disabled={busy}
+          data-host-bound="push"
           aria-label={`${pushLabel} ${branch.name}`}
           onClick={() => onPush(force)}
         >
@@ -815,7 +810,12 @@ function ActionRow({
         </Button>
       )}
       {available.land ? (
-        <Button disabled={busy} aria-label={`Land ${branch.name}`} onClick={onLand}>
+        <Button
+          disabled={busy}
+          data-host-bound="land"
+          aria-label={`Land ${branch.name}`}
+          onClick={onLand}
+        >
           <Pending pending={running === "land"} icon="ArrowDown" />
           Land
         </Button>
@@ -825,6 +825,7 @@ function ActionRow({
         variant="ghost"
         className="ms-auto shrink-0 text-muted-foreground"
         disabled={busy}
+        data-host-bound="rename"
         aria-label={`Rename ${branch.name}`}
         onClick={onRename}
       >
@@ -836,6 +837,7 @@ function ActionRow({
         variant="ghost"
         className="shrink-0 text-muted-foreground enabled:hover:text-destructive"
         disabled={busy}
+        data-host-bound="delete"
         aria-label={`Delete ${branch.name}`}
         onClick={onDelete}
       >
@@ -860,19 +862,26 @@ export function PullButton({
   busy: boolean;
   dispatch: Dispatch;
 }) {
+  const gate = useHostGate();
+  let title = "Pull the target into the workspace";
+  if (gate) title = gate;
+  else if (busy && !running) title = "Another action is running";
   return (
-    <Button
-      variant="outline"
-      className="size-7 px-0!"
-      aria-label={behind > 0 ? `Pull ${plural(behind, "new commit")}` : "Pull"}
-      title={busy && !running ? "Another action is running" : "Pull the target into the workspace"}
-      disabled={busy}
-      onClick={() =>
-        dispatch.send({ kind: "pull", accepted: null }, { head: null, target: targetHead })
-      }
-    >
-      <Pending pending={running} icon="ArrowDown" />
-    </Button>
+    // A disabled button takes no hover, so the reason sits on a wrapper.
+    <span className="flex shrink-0" title={title}>
+      <Button
+        variant="outline"
+        className="size-7 px-0!"
+        aria-label={behind > 0 ? `Pull ${plural(behind, "new commit")}` : "Pull"}
+        data-host-bound="pull"
+        disabled={busy || gate !== null}
+        onClick={() =>
+          dispatch.send({ kind: "pull", accepted: null }, { head: null, target: targetHead })
+        }
+      >
+        <Pending pending={running} icon="ArrowDown" />
+      </Button>
+    </span>
   );
 }
 
@@ -892,6 +901,7 @@ export function PullStatus({
   busy: boolean;
   dispatch: Dispatch;
 }) {
+  const gate = useHostGate();
   if (!outcome) return null;
   const now: Revision = { head: null, target: targetHead };
   return (
@@ -910,7 +920,7 @@ export function PullStatus({
             prompt={pullRiskPrompt(outcome.risk, native)}
             label="Pull anyway"
             pending={running}
-            blocked={busy && !running ? "Another action is running" : null}
+            blocked={gate ?? (busy && !running ? "Another action is running" : null)}
             onCancel={() => dispatch.dismiss(WORKSPACE)}
             onConfirm={() => dispatch.send({ kind: "pull", accepted: outcome.risk }, now)}
           />
