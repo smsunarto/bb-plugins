@@ -7,15 +7,18 @@
  *
  * Folded, it reads nothing. Opened, it reads each host on its own: one that is
  * slow or offline stays pending, or shows its last read and why it is old,
- * without holding the others back.
+ * without holding the others back. Each of the repository's checkouts there
+ * can be opened, in a thread on it, or given a new chat; where to is read on
+ * the click, since it can change any time before.
  */
 import {
   experimental_Icon as Icon,
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcQuery as useRpcQuery,
   useBbNavigate,
+  useRpc,
 } from "@get-bb/plugin-sdk/app";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { describeProblem, readAgo } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { reviewPath, type ChangeRow, type SourceRows } from "../core/review.ts";
@@ -23,9 +26,10 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
 import { PANEL_PATH } from "./page/hooks.ts";
 import { STATE_CHIP } from "./page/rail.tsx";
-import { Bar } from "./ui.tsx";
+import { Bar, Button, Pending } from "./ui.tsx";
 
-type Host = { hostId: string; name: string };
+type Checkout = { path: string; repo: string | null };
+type Host = { hostId: string; name: string; checkouts: Checkout[] };
 
 /** The repository's rows on one host, this thread's Change first. */
 export function repositoryRows(
@@ -70,6 +74,90 @@ function BranchRow({ row, mine }: { row: ChangeRow; mine: boolean }) {
   );
 }
 
+/** The last segment of a checkout's path, which is what tells checkouts apart at a glance. */
+const leaf = (path: string) => path.replace(/\/+$/, "").split("/").at(-1) || path;
+
+type Opening = "open" | "chat" | null;
+
+/** Open checkout and New chat for one checkout: where to is read on the click. */
+function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Checkout }) {
+  const rpc = useRpc<typeof sourceControlContract>();
+  const navigate = useBbNavigate();
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const [opening, setOpening] = useState<Opening>(null);
+  const [reason, setReason] = useState<string | null>(null);
+  const go = async (kind: "open" | "chat") => {
+    setOpening(kind);
+    setReason(null);
+    try {
+      const answer = await rpc.call("checkoutChat", { hostId, path: checkout.path });
+      if (!mounted.current) return;
+      if (answer.state !== "ready") setReason(answer.reason);
+      else if (kind === "open") navigate.toThread(answer.threadId);
+      else
+        navigate.toCompose({
+          projectId: answer.projectId,
+          environmentId: answer.environmentId,
+          hostId: answer.hostId,
+          focusPrompt: true,
+        });
+    } catch (error) {
+      if (mounted.current)
+        setReason(error instanceof Error ? error.message : "bb could not find this checkout.");
+    } finally {
+      if (mounted.current) setOpening(null);
+    }
+  };
+  return (
+    <li
+      className="flex min-w-0 flex-col gap-1 border-t border-border-hairline px-3 py-1.5"
+      data-testid="sc-other-checkout"
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="flex min-w-0 flex-[1_1_8rem] items-center gap-1.5" title={checkout.path}>
+          <Icon name="Folder" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+          <code
+            className="min-w-0 truncate font-mono text-[11px] leading-4 text-muted-foreground"
+            translate="no"
+          >
+            {leaf(checkout.path)}
+          </code>
+        </span>
+        <span className="flex shrink-0 gap-1">
+          <Button
+            variant="ghost"
+            disabled={opening !== null}
+            aria-busy={opening === "open"}
+            aria-label={`Open checkout ${checkout.path}`}
+            onClick={() => void go("open")}
+          >
+            <Pending pending={opening === "open"} />
+            Open checkout
+          </Button>
+          <Button
+            disabled={opening !== null}
+            aria-busy={opening === "chat"}
+            aria-label={`New chat in ${checkout.path}`}
+            onClick={() => void go("chat")}
+          >
+            <Pending pending={opening === "chat"} icon="MessageSquarePlus" />
+            New chat
+          </Button>
+        </span>
+      </div>
+      {reason ? (
+        <output className="m-0 block text-[11px] leading-4 text-muted-foreground">{reason}</output>
+      ) : null}
+    </li>
+  );
+}
+
 function HostSection({
   host,
   source,
@@ -84,6 +172,10 @@ function HostSection({
   now: number;
 }) {
   const rows = useMemo(() => repositoryRows(source, repo, changeKey), [source, repo, changeKey]);
+  const checkouts = useMemo(
+    () => host.checkouts.filter((each) => each.repo?.toLowerCase() === repo.toLowerCase()),
+    [host.checkouts, repo],
+  );
   let note: string | null = null;
   if (source?.problem)
     note = source.read
@@ -114,10 +206,13 @@ function HostSection({
         ) : null}
       </header>
       {source?.read ? (
-        rows.length > 0 ? (
+        rows.length > 0 || checkouts.length > 0 ? (
           <ul className="m-0 list-none p-0">
             {rows.map((row) => (
               <BranchRow key={row.key} row={row} mine={row.key === changeKey} />
+            ))}
+            {checkouts.map((checkout) => (
+              <CheckoutActions key={checkout.path} hostId={host.hostId} checkout={checkout} />
             ))}
           </ul>
         ) : (

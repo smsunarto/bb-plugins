@@ -166,9 +166,25 @@ export function createReviewSources(deps: {
     watchInbox,
     /** The hosts the placement table has checkouts on, without asking any of them. */
     checkoutHosts() {
-      const names = new Map<string, string>();
-      for (const each of store.checkouts()) names.set(each.hostId, each.hostName);
-      return { hosts: [...names].map(([hostId, name]) => ({ hostId, name })) };
+      const hosts = new Map<
+        string,
+        { hostId: string; name: string; checkouts: { path: string; repo: string | null }[] }
+      >();
+      for (const each of store.checkouts()) {
+        const host = hosts.get(each.hostId) ?? {
+          hostId: each.hostId,
+          name: each.hostName,
+          checkouts: [],
+        };
+        hosts.set(each.hostId, host);
+        if (host.checkouts.some((checkout) => checkout.path === each.path)) continue;
+        const github = store.local(each.hostId, each.path).read?.value.github;
+        host.checkouts.push({
+          path: each.path,
+          repo: github ? `${github.repo.owner}/${github.repo.name}` : null,
+        });
+      }
+      return { hosts: [...hosts.values()] };
     },
     hostChanges(keys: readonly string[]): Record<string, SourceRows> {
       return Object.fromEntries(keys.map((hostId) => [hostId, hostRows(store, hostId)]));

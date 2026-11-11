@@ -164,11 +164,27 @@ export const sourceControlContract = defineRpcContract({
     output: z.record(z.string(), sourceRowsSchema),
     keyTags: (key: string) => [accountTag(key)],
   },
-  /** The hosts the placement table has checkouts on, from the table alone: no host is asked. */
+  /**
+   * The hosts the placement table has checkouts on, from the table alone: no
+   * host is asked. Each checkout's GitHub repository (`owner/name`) is from
+   * its last read; null before one, or off GitHub.
+   */
   checkoutHosts: {
     input: z.object({}).strict(),
     output: z
-      .object({ hosts: z.array(z.object({ hostId: z.string(), name: z.string() }).strict()) })
+      .object({
+        hosts: z.array(
+          z
+            .object({
+              hostId: z.string(),
+              name: z.string(),
+              checkouts: z.array(
+                z.object({ path: z.string(), repo: z.string().nullable() }).strict(),
+              ),
+            })
+            .strict(),
+        ),
+      })
       .strict(),
     tags: () => [PAGE_SOURCES_TAG],
   },
@@ -545,6 +561,26 @@ export const sourceControlContract = defineRpcContract({
     output: z.discriminatedUnion("ok", [
       z.object({ ok: z.literal(true), threadId: z.string() }).strict(),
       z.object({ ok: z.literal(false), message: z.string() }).strict(),
+    ]),
+  },
+  /**
+   * Where to open another checkout of the repository, read when the reader
+   * asks: a visible thread in that checkout's ready bb environment, or why
+   * there is none. Starts nothing and claims nothing.
+   */
+  checkoutChat: {
+    input: z.object({ hostId: z.string().min(1), path: z.string().min(1) }).strict(),
+    output: z.discriminatedUnion("state", [
+      z
+        .object({
+          state: z.literal("ready"),
+          projectId: z.string(),
+          environmentId: z.string(),
+          hostId: z.string(),
+          threadId: z.string(),
+        })
+        .strict(),
+      z.object({ state: z.literal("unavailable"), reason: z.string() }).strict(),
     ]),
   },
 });

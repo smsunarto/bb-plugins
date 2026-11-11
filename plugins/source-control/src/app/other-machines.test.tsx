@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test } from "vitest";
-import { act, cleanup, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { changeKeySchema } from "../core/ids.ts";
 import type { ChangeRow } from "../core/review.ts";
@@ -33,7 +33,10 @@ function row(branch: string, repo = "acme/api"): ChangeRow {
   };
 }
 
-function render(hostChanges: (keys: string[]) => unknown) {
+function render(
+  hostChanges: (keys: string[]) => unknown,
+  checkoutChat?: (input: unknown) => unknown,
+) {
   const calls: string[][] = [];
   const slot = renderSlot(
     { component: OtherMachinesCard as never },
@@ -44,11 +47,19 @@ function render(hostChanges: (keys: string[]) => unknown) {
       rpc: {
         checkoutHosts: () => ({
           hosts: [
-            { hostId: "host-a", name: "this-mac" },
-            { hostId: "host-b", name: "build-linux" },
-            { hostId: "host-c", name: "laptop" },
+            { hostId: "host-a", name: "this-mac", checkouts: [] },
+            {
+              hostId: "host-b",
+              name: "build-linux",
+              checkouts: [
+                { path: "/home/scott/api", repo: "acme/api" },
+                { path: "/home/scott/web", repo: "acme/web" },
+              ],
+            },
+            { hostId: "host-c", name: "laptop", checkouts: [] },
           ],
         }),
+        ...(checkoutChat ? { checkoutChat } : {}),
         hostChanges: ({ keys }: { keys: string[] }) => {
           calls.push(keys);
           return hostChanges(keys);
@@ -88,6 +99,7 @@ test("folded, it reads nothing; opened, it lists this repository's branches on e
   expect([...hosts[0]!.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
     "Unpushedscott/routeThis change",
     "Unpushedother",
+    "apiOpen checkoutNew chat",
   ]);
   expect(hosts[1]!.textContent).toContain("No checkout of acme/api here.");
   expect(calls.flat()).not.toContain("host-a");
@@ -130,4 +142,48 @@ test("a host not read yet stays pending while the others show", async () => {
   const hosts = await slot.findAllByTestId("sc-other-host");
   await waitFor(() => expect(hosts[0]!.textContent).toContain("other"));
   expect(hosts[1]!.querySelector('[aria-busy="true"]')).not.toBeNull();
+});
+
+test("Open checkout and New chat ask where on the click, and say why when there is nowhere", async () => {
+  const asked: unknown[] = [];
+  let answer: unknown = { state: "unavailable", reason: "build-linux must be connected." };
+  const { slot } = render(
+    (keys) =>
+      Object.fromEntries(
+        keys.map((key) => [key, { read: { rows: [], at: 1_000_000 }, problem: null }]),
+      ),
+    (input) => {
+      asked.push(input);
+      return answer;
+    },
+  );
+  await act(async () => slot.getByRole("button", { name: "Other machines" }).click());
+  const open = await slot.findByRole("button", { name: "Open checkout /home/scott/api" });
+  expect(asked).toEqual([]);
+  fireEvent.click(open);
+  await waitFor(() =>
+    expect(slot.getByRole("status").textContent).toBe("build-linux must be connected."),
+  );
+  expect(asked).toEqual([{ hostId: "host-b", path: "/home/scott/api" }]);
+  answer = {
+    state: "ready",
+    projectId: "proj_1",
+    environmentId: "env_b",
+    hostId: "host-b",
+    threadId: "thr_b",
+  };
+  fireEvent.click(open);
+  await waitFor(() =>
+    expect(slot.inspection.navigateCalls.at(-1)).toMatchObject({
+      method: "toThread",
+      threadId: "thr_b",
+    }),
+  );
+  fireEvent.click(slot.getByRole("button", { name: "New chat in /home/scott/api" }));
+  await waitFor(() =>
+    expect(slot.inspection.navigateCalls.at(-1)).toMatchObject({
+      method: "toCompose",
+      options: { projectId: "proj_1", environmentId: "env_b", hostId: "host-b", focusPrompt: true },
+    }),
+  );
 });

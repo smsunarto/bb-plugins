@@ -2080,8 +2080,16 @@ describe("other machines", () => {
     world.hosts["host-b"]!.online = false;
     expect(await harness.behavior.callRpc("checkoutHosts", {})).toEqual({
       hosts: [
-        { hostId: "host-a", name: "studio-mac" },
-        { hostId: "host-b", name: "build-linux" },
+        {
+          hostId: "host-a",
+          name: "studio-mac",
+          checkouts: [{ path: "/Users/scott/bb-plugins", repo: "smsunarto/bb-plugins" }],
+        },
+        {
+          hostId: "host-b",
+          name: "build-linux",
+          checkouts: [{ path: "/home/scott/bb-plugins", repo: "smsunarto/bb-plugins" }],
+        },
       ],
     });
   });

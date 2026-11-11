@@ -22,6 +22,7 @@ import type { Exec } from "../forge/github.ts";
 import { createAsk, type Ask } from "./ask.ts";
 import { createPublish, type Publish } from "./publish.ts";
 import { createFixChecks, type FixChecks } from "./fix-checks.ts";
+import { createCheckoutChat } from "./checkout-chat.ts";
 import {
   createForgeSites,
   FORGE_DEADLINE_MS,
@@ -120,6 +121,8 @@ function forgeHandlers(runtime: Runtime, changes: Changes) {
       runtime.run(changes.review.mergePolicy(key, number), context.experimental_signal),
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
 }
+
+type CheckoutChat = ReturnType<typeof createCheckoutChat>;
 
 /** Fix checks: the composer's prompt, then the thread the reader sends. Starting it is never retried. */
 function fixHandlers(runtime: Runtime, fix: FixChecks) {
@@ -237,6 +240,7 @@ function registerRpc(
   moved: Moved,
   publish: Publish,
   fix: FixChecks,
+  checkoutChat: CheckoutChat,
 ) {
   const afterRegistration = activation(bb);
   const items = changes.review.items;
@@ -253,6 +257,7 @@ function registerRpc(
         runtime.run(changes.patches(threadId, source), context.experimental_signal),
       ...historyHandlers(runtime, changes),
       ...fixHandlers(runtime, fix),
+      checkoutChat: (input) => checkoutChat(input),
       // A write is not stopped by its caller leaving: only unloading the plugin stops it.
       vcsAction: ({ threadId, action, expected }) =>
         runtime.run(changes.act(threadId, action, expected)),
@@ -576,6 +581,7 @@ export function createSourceControl(deps: SourceControlDeps) {
       moved,
       createPublish({ bb, store }),
       createFixChecks({ bb, store, sites }),
+      createCheckoutChat({ bb, store }),
     );
     registerAgents(bb, runtime, changes, guides, moved);
     listen(bb, runtime, host, changes, guides, moved);
