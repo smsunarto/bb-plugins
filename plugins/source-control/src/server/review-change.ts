@@ -100,10 +100,12 @@ function hostRevision(match: LocalMatch, pr: PullRequest | null): ReviewRevision
 
 /** The checkout says what is here; the forge, what is published. A reachable checkout wins. */
 function revisionOf(match: LocalMatch | null, pr: PullRequest | null): ReviewRevision | null {
-  const local = match && !match.problem ? hostRevision(match, pr) : null;
-  if (local) return local;
-  if (!pr || pr.state === "closed") return null;
-  return { head: pr.headRefOid, base: pr.baseRef, source: { kind: "forge", number: pr.number } };
+  const local = match ? hostRevision(match, pr) : null;
+  if (local && !match?.problem) return local;
+  if (pr && pr.state !== "closed")
+    return { head: pr.headRefOid, base: pr.baseRef, source: { kind: "forge", number: pr.number } };
+  // No pull request to read instead: the checkout's last read, whose files the server may still hold.
+  return local;
 }
 
 /** What the derivations read for the Change: its checkout's branch when one has it. */

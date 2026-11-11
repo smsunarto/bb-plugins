@@ -2033,6 +2033,44 @@ describe("guided diff", () => {
     expect(await guideOf(harness, keyOf(1))).toMatchObject({ revision: "d00d1e" });
   });
 
+  test("with its host away and no pull request, a checkout's Change keeps its last revision, files, guide and marks", async () => {
+    const { world, harness } = await opened(1);
+    const key = keyOf(1);
+    const detailOf = async () =>
+      (
+        (await harness.behavior.callRpc("changeDetail", { keys: [key] })) as Record<
+          string,
+          { revision: ReviewRevision | null; problem: unknown }
+        >
+      )[key]!;
+    const before = await detailOf();
+    await harness.behavior.callRpc("changeFiles", { key, revision: before.revision });
+    await harness.behavior.callRpc("openGuide", { key });
+    await vi.waitFor(() => expect(world.spawned).toHaveLength(1));
+    await write(harness, world.spawned![0]!.id, [
+      { title: "All", files: ["src/a.ts", "src/b.ts"] },
+    ]);
+    await harness.behavior.callRpc("setViewed", {
+      key,
+      path: "src/a.ts",
+      blob: blob("a"),
+      viewed: true,
+    });
+
+    world.hosts.h1!.online = false;
+    await harness.behavior.callRpc("refreshThread", { threadId: "t1" });
+    const after = await detailOf();
+    expect(after.problem).toMatchObject({ kind: "host-offline" });
+    expect(after.revision).toEqual(before.revision);
+    expect(
+      await harness.behavior.callRpc("changeFiles", { key, revision: after.revision }),
+    ).toMatchObject({ ok: true, files: [{ path: "src/a.ts" }, { path: "src/b.ts" }] });
+    expect(await guideOf(harness, key)).toMatchObject({
+      state: "done",
+      viewed: [{ path: "src/a.ts", blob: blob("a") }],
+    });
+  });
+
   test("a Change no run can start for says why and holds no slot", async () => {
     const world = changes(1);
     world.pullRequests["fix/retry"] = [INBOX_PR];
