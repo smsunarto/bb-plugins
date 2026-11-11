@@ -1,1 +1,1 @@
-Read the complete annotation history for one page, including resolved and dismissed feedback. Pass a `sessionId` from `agentation_list_sessions` or an annotation batch. Use `agentation_get_pending` when you only need that page's open feedback.
+Read a page’s complete annotation history, including resolved and dismissed items. Get `sessionId` from an annotation batch or `agentation_list_sessions`; use `agentation_get_pending` for open items only.

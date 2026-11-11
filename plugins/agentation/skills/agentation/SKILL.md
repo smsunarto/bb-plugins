@@ -1,6 +1,6 @@
 ---
 name: agentation
-description: Read and act on visual feedback the human left on the bb interface with the Agentation toolbar — annotations that name a bb route, the owning plugin, its SDK UI registration, and a DOM selector. Use when the user says they annotated, marked up, or left feedback on the UI, when they ask you to address annotation N, or when they ask for watch mode, hands-free mode, or a UI critique loop.
+description: Act on bb UI feedback from Agentation annotations or supplied batches. Use for annotated UI, numbered feedback, watch mode, hands-free mode, or critique loops.
 ---
 
 # Agentation
@@ -23,9 +23,9 @@ source context, not the delivery target.
      not call `agentation_get_all_pending`.
    - Otherwise, call `agentation_get_all_pending` before searching the code;
      the annotation already tells you where to look.
-2. `agentation_acknowledge` — for each item you are taking on, so the human sees
-   you picked it up.
-3. Find the code, make the change.
+2. Check status and assignment; leave work acknowledged by another thread with
+   that thread. Call `agentation_acknowledge` for each item you take on.
+3. Locate the code using the targeting fields below, then make and verify the change.
 4. `agentation_resolve` with a one-line summary of what you changed. The marker
    disappears from every open bb window.
 
@@ -61,17 +61,36 @@ workspace is not one, say so and reply on the annotation rather than guessing.
 - `Layout request` — a `placement` annotation asks for a new component in that
   spot; a `rearrange` annotation asks for a different section order.
 
+## Choosing a read tool
+
+- `agentation_get_all_pending` reads pending and acknowledged feedback across pages;
+  optionally filter by the owning `pluginId`.
+- For a known `sessionId` from a batch or `agentation_list_sessions`, use
+  `agentation_get_pending` for open items or `agentation_get_session` for complete
+  history, including resolved and dismissed items.
+- `agentation_list_sessions` discovers pages, routes, session IDs, and status counts;
+  it is unnecessary when the batch already identifies the page.
+- Read results carry the bb route and source-targeting fields described above.
+  Use their `annotationId` values for acknowledgement, replies, resolution, or dismissal.
+
 ## Watch mode
 
 When the human asks for watch mode or hands-free mode:
 
-1. Call `agentation_watch_annotations`. It blocks until new annotations appear,
-   then returns the batch.
-2. Acknowledge, fix, and resolve each one.
-3. Call it again. Keep looping until the human stops you.
+1. Handle existing feedback first: use the supplied batch, or
+   `agentation_get_all_pending` (`agentation_get_pending` for one known page).
+2. Call `agentation_watch_annotations`. It returns open annotations created or
+   changed since the call began, including replies and status updates; it does
+   not return all previously open feedback. Optionally limit it to a `sessionId`.
+3. Inspect each returned item's current status and assignment. Leave work already
+   acknowledged by another thread with that thread. Acknowledge the items you
+   take on, fix and verify them, then resolve; dismiss declined changes with a
+   reason or reply when clarification is needed.
+4. Report changes between batches, then watch again until the human stops you.
 
-A timeout is not a stop signal — call it again. Report what you changed between
-batches so the human can follow along without reading the diff.
+`timeoutSeconds` bounds waiting for activity (default 120); after the first
+change, `batchWindowSeconds` collects more changes (default 10). A timeout returns
+a notice, not a feedback batch or stop signal: call again to keep waiting.
 
 ## Shell equivalent
 

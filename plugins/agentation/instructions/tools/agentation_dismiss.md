@@ -1,1 +1,1 @@
-Dismiss an annotation when you decide not to act on its feedback. Pass its `annotationId` and a required `reason` explaining the decision; the human sees that reason. Use `agentation_resolve` after fixing the feedback, or `agentation_reply` if you need clarification.
+Decline an annotation with a required `reason` visible to the human. Use `agentation_resolve` for a completed fix or `agentation_reply` for clarification.
