@@ -86,26 +86,6 @@
       }
     },
     {
-      "id": "gitbutler",
-      "displayName": "GitButler",
-      "description": "Browse a GitButler workspace — stacks, branches, commits, uncommitted work, and diffs — from a bb thread panel.",
-      "icon": {
-        "url": "plugins/gitbutler/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/gitbutler",
-          "range": "*",
-          "tagPrefix": "gitbutler/"
-        }
-      }
-    },
-    {
       "id": "gtd-sidebar",
       "displayName": "GTD Sidebar",
       "description": "An action-oriented sidebar that groups threads by who can act next.",
@@ -142,6 +122,26 @@
           "subdir": "plugins/monokai",
           "range": "*",
           "tagPrefix": "monokai/"
+        }
+      }
+    },
+    {
+      "id": "source-control",
+      "displayName": "Source Control",
+      "description": "Review and ship your branches and pull requests — working changes, stacks, checks, and reviews — from a bb thread panel and a review page.",
+      "icon": {
+        "url": "plugins/source-control/assets/icon.svg"
+      },
+      "author": {
+        "name": "Scott Sunarto",
+        "github": "smsunarto"
+      },
+      "source": {
+        "git": {
+          "url": "https://github.com/smsunarto/bb-plugins",
+          "subdir": "plugins/source-control",
+          "range": "*",
+          "tagPrefix": "source-control/"
         }
       }
     },
