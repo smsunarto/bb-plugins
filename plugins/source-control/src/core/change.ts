@@ -5,6 +5,7 @@
  * legal state, and is what the offline card shows.
  */
 import { z } from "zod";
+import { mergeMethodSchema } from "./merge.ts";
 import { changeKeyOf, changeKeySchema, repoSchema, type ChangeKey } from "./ids.ts";
 
 /** Why a facet could not be read now. Each names where it happened. */
@@ -377,6 +378,10 @@ export type ChecksValue = z.infer<typeof checksValueSchema>;
 /** A write to the pull request, made only if its head is still `expected.head`. */
 export const forgeActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("setDraft"), draft: z.boolean() }).strict(),
+  /** Merge with `method`, only while it still targets `base`. Never retried. */
+  z
+    .object({ kind: z.literal("merge"), method: mergeMethodSchema, base: z.string().min(1) })
+    .strict(),
 ]);
 export type ForgeAction = z.infer<typeof forgeActionSchema>;
 

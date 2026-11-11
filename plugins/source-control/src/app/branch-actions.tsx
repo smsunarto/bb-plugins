@@ -491,6 +491,7 @@ export const BranchActions = memo(function BranchActions({
   running,
   busy,
   dispatch,
+  merge,
 }: {
   branch: Branch;
   /** The target head the reader saw, which every write names. */
@@ -508,6 +509,8 @@ export const BranchActions = memo(function BranchActions({
   running: VcsAction["kind"] | null;
   busy: boolean;
   dispatch: Dispatch;
+  /** Merge for a branch whose open pull request GitHub can merge, beside Land. */
+  merge?: ReactNode;
 }) {
   const [mode, setMode] = useState<Mode>(IDLE);
   const now: Revision = { head: branch.head, target: targetHead };
@@ -553,6 +556,7 @@ export const BranchActions = memo(function BranchActions({
           running={running}
           busy={busy}
           blocked={blocked}
+          merge={merge}
           onPush={(force) => send({ kind: "push", branch: branch.name, force, acceptedLoss: [] })}
           onLand={() =>
             setMode({
@@ -659,6 +663,7 @@ function ActionRow({
   running,
   busy,
   blocked,
+  merge,
   onPush,
   onLand,
   onDelete,
@@ -668,6 +673,7 @@ function ActionRow({
   running: VcsAction["kind"] | null;
   busy: boolean;
   blocked: string | null;
+  merge: ReactNode;
   onPush: (force: boolean) => void;
   onLand: () => void;
   onDelete: () => void;
@@ -694,6 +700,7 @@ function ActionRow({
           Land
         </Button>
       ) : null}
+      {merge}
       {/* Apart from the rest and quiet, so it is never the button a hand drifts to. */}
       <Button
         variant="ghost"

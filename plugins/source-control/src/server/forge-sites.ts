@@ -13,7 +13,10 @@ import { Effect, Schema } from "effect";
 import { problemSchema, type ForgeRead, type ForgeResult, type Problem } from "../core/change.ts";
 import type { ForgeAccount, HostFailure } from "../contract/host.ts";
 import { runReviewRead, type ReviewAnswer, type ReviewRead } from "../forge/review.ts";
+import type { Repo } from "../core/ids.ts";
 import type { PrRef } from "../core/watch.ts";
+import type { MergePolicy } from "../core/merge.ts";
+import { mergeAt, type MergeWrite } from "../forge/merge.ts";
 import {
   accountExec,
   GhError,
@@ -31,6 +34,8 @@ import {
 export const SERVER_SITE_NAME = "the bb server";
 const PROBE_TTL_MS = 5 * 60_000;
 export const FORGE_DEADLINE_MS = 15_000;
+/** A merge may take GitHub longer than a read; past this its outcome is unknown. */
+export const MERGE_DEADLINE_MS = 60_000;
 
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: HostFailure };
 
@@ -49,6 +54,11 @@ export type HostForge = {
   setDraft(
     hostId: string,
     write: DraftWrite & { account: ForgeAccount },
+    signal: AbortSignal,
+  ): Promise<Outcome<ForgeResult>>;
+  merge(
+    hostId: string,
+    write: MergeWrite & { account: ForgeAccount },
     signal: AbortSignal,
   ): Promise<Outcome<ForgeResult>>;
   review(
@@ -228,6 +238,18 @@ const writeAt = (asAccount: AsAccount, host: HostForge, access: Access, write: D
       })
     : hostAnswer(access, (signal) =>
         host.setDraft(access.hostId!, { ...write, account: access.account }, signal),
+      );
+
+/** Merges a pull request as the access's account, on the server or through its host. Never retried. */
+const mergeVia = (asAccount: AsAccount, host: HostForge, access: Access, write: MergeWrite) =>
+  access.hostId === null
+    ? Effect.tryPromise({
+        try: (signal) =>
+          mergeAt(asAccount(access.account.login, access.account.active), write, signal),
+        catch: (error) => ghRefused(access.site, error),
+      })
+    : hostAnswer(access, (signal) =>
+        host.merge(access.hostId!, { ...write, account: access.account }, signal),
       );
 
 /**
@@ -604,6 +626,58 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
           );
         }),
       ).pipe(
+        Effect.catchTag("ForgeUnavailable", (error) =>
+          Effect.succeed<ForgeResult>({ status: "failed", problem: error.problem }),
+        ),
+      ),
+    /**
+     * What merging the pull request needs, read as the account that read the
+     * repository (so the permission is the merging account's own).
+     */
+    mergePolicy: (target: { repo: Repo; number: number }, placements: readonly Placement[]) =>
+      repoRead({ kind: "mergePolicy", ...target }, placements).pipe(
+        Effect.flatMap((answer) =>
+          answer.kind === "mergePolicy"
+            ? Effect.succeed<MergePolicy>(answer.policy)
+            : Effect.fail(
+                unavailable({ kind: "failed", site: "GitHub", detail: "Unexpected answer." }),
+              ),
+        ),
+      ),
+    /**
+     * Merges the pull request as the account that read the repository, only
+     * while it is still at the head and base the reader saw. Never retried; a
+     * missing answer is reported as unknown so the reader looks again.
+     */
+    merge: (write: MergeWrite, placements: readonly Placement[]) =>
+      Effect.gen(function* () {
+        const repo = repoName(write);
+        if (!seen.has(repo))
+          yield* repoRead(
+            { kind: "mergePolicy", repo: write.repo, number: write.number },
+            placements,
+          );
+        const access = seen.get(repo);
+        if (!access)
+          return yield* unavailable({
+            kind: "no-site",
+            host: placements[0]?.hostName ?? SERVER_SITE_NAME,
+          });
+        return yield* mergeVia(asAccount, deps.host, access, write).pipe(
+          Effect.mapError((refused) => unavailable(refusedProblem(refused))),
+          Effect.timeoutOrElse({
+            duration: MERGE_DEADLINE_MS,
+            orElse: () =>
+              Effect.fail(
+                unavailable({
+                  kind: "failed",
+                  site: "GitHub",
+                  detail: `GitHub did not answer within ${MERGE_DEADLINE_MS / 1000} s. The pull request may have merged; refresh to see.`,
+                }),
+              ),
+          }),
+        );
+      }).pipe(
         Effect.catchTag("ForgeUnavailable", (error) =>
           Effect.succeed<ForgeResult>({ status: "failed", problem: error.problem }),
         ),

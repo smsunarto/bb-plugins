@@ -33,6 +33,7 @@ import {
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { cx, plural, shortRef } from "../format.ts";
 import { useOpenGuide } from "../guide-data.ts";
+import { MergeButton, mergeTarget, useChangeMerge } from "../merge.tsx";
 import { useChangeReview } from "../review-data.ts";
 import { SendControls } from "../send.tsx";
 import { ShipPath } from "../status.tsx";
@@ -279,6 +280,21 @@ function PinButton({ row, compact }: { row: Ready["row"]; compact?: boolean }) {
   );
 }
 
+/** Merge for an open pull request, at the head and base the header shows. */
+function PageMerge({ detail }: { detail: Ready }) {
+  const submit = useChangeMerge();
+  const target = mergeTarget(detail);
+  if (!target) return null;
+  return (
+    <MergeButton
+      submit={submit}
+      target={target}
+      className="h-8 px-3 text-[13px] font-semibold"
+      label="Merge"
+    />
+  );
+}
+
 function Header({ detail, now }: { detail: Ready; now: number }) {
   const { row } = detail;
   const draft = useDraftToggle(detail);
@@ -381,6 +397,7 @@ function Header({ detail, now }: { detail: Ready; now: number }) {
         ) : null}
         <PinButton row={row} />
         <AskButton />
+        <PageMerge detail={detail} />
         {row.state === "draft" && draft.toggle ? (
           <Button
             data-testid="sc-mark-ready"

@@ -14,12 +14,14 @@ import {
   type FileChange,
   type ForgeValue,
   type PatchSource,
+  type PullRequest,
   type Stack,
   type VcsAction,
 } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { reviewPath } from "../core/review.ts";
 import { BranchActions, type Dispatch, type Outcome } from "./branch-actions.tsx";
+import { MergeButton, repoOfKey, useThreadMerge } from "./merge.tsx";
 import {
   FileDiffCard,
   FileRows,
@@ -568,6 +570,32 @@ function CardHeader({
   );
 }
 
+/** Merge for the thread's own open pull request, through the thread's forge action. */
+function TabMerge({
+  threadId,
+  changeKey,
+  forge,
+}: {
+  threadId: string;
+  changeKey: ChangeKey;
+  forge: PullRequest;
+}) {
+  const submit = useThreadMerge(threadId);
+  return (
+    <MergeButton
+      submit={submit}
+      target={{
+        changeKey,
+        repo: repoOfKey(changeKey),
+        number: forge.number,
+        title: forge.title,
+        head: forge.headRefOid,
+        base: forge.baseRef,
+      }}
+    />
+  );
+}
+
 const BranchCard = memo(function BranchCard({
   threadId,
   reviewKey,
@@ -651,6 +679,11 @@ const BranchCard = memo(function BranchCard({
           running={running}
           busy={busy}
           dispatch={dispatch}
+          merge={
+            reviewKey && forge?.state === "open" && !forge.isDraft ? (
+              <TabMerge threadId={threadId} changeKey={reviewKey} forge={forge} />
+            ) : null
+          }
         />
       )}
       {/* The label carries the meaning; the amber rail repeats it. */}

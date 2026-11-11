@@ -11,6 +11,7 @@ import {
   remoteBranchName,
   succeeded,
   type Facet,
+  type ForgeAction,
   type ForgeResult,
   type ForgeValue,
   type Placement,
@@ -103,11 +104,11 @@ export function createForgeReads(deps: {
         .pipe(Effect.as(key));
     });
 
-  /** Mark the thread's pull request draft or ready, at the head the reader saw; then read it again. */
-  const setDraft = Effect.fnUntraced(function* (
+  /** One write on the thread's pull request, at the head the reader saw; then read it again. */
+  const act = Effect.fnUntraced(function* (
     threadId: string,
     placement: Placement,
-    draft: boolean,
+    action: ForgeAction,
     expected: { number: number; head: string },
   ) {
     const found = target(threadId, placement);
@@ -116,18 +117,28 @@ export function createForgeReads(deps: {
         status: "failed",
         problem: { kind: "moved", detail: "This thread's branch has no pull request here." },
       } satisfies ForgeResult;
-    const result = yield* deps.sites.setDraft(
-      { ...found.query, number: expected.number, draft, expectedHead: expected.head },
-      placement,
-    );
-    // Done, already so, or moved: the reader sees GitHub's state either way.
+    const write = { ...found.query, number: expected.number, expectedHead: expected.head };
+    const result =
+      action.kind === "setDraft"
+        ? yield* deps.sites.setDraft({ ...write, draft: action.draft }, placement)
+        : yield* deps.sites.merge(
+            {
+              repo: write.repo,
+              number: write.number,
+              method: action.method,
+              expectedHead: write.expectedHead,
+              expectedBase: action.base,
+            },
+            [placement],
+          );
+    // Done, already so, moved or unknown: the reader sees GitHub's state either way.
     yield* readForge(threadId, placement);
     return result;
   });
 
   return {
     readForge,
-    setDraft,
+    act,
     /** Whether the thread's pull request is due a watched read. */
     due(threadId: string, placement: Placement): boolean {
       const found = target(threadId, placement);

@@ -328,12 +328,43 @@ function renderRow(row: ThreadChange, rpc: Partial<Rpc> = {}) {
           "patches",
           rpc.patches ?? (() => ({ ok: true as const, value: { files: [] } })),
         ),
+        forgeAction: record(
+          "forgeAction",
+          rpc.forgeAction ?? (() => ({ status: "done" as const })),
+        ),
+        mergePolicy: record(
+          "mergePolicy",
+          rpc.mergePolicy ?? (() => ({ ok: true as const, policy: POLICY })),
+        ),
       } as Rpc,
     },
   );
   const of = (method: string) => calls.filter((call) => call.method === method);
   return { slot, calls, of };
 }
+
+const POLICY = {
+  state: "OPEN" as const,
+  isDraft: false,
+  headRefOid: "c0ffee",
+  baseRefName: "main",
+  mergeStateStatus: "CLEAN",
+  canMerge: true,
+  methods: ["merge" as const, "squash" as const],
+};
+
+/** `stacked()` with its pull request open and ready. */
+function readyToMerge(): ThreadChange {
+  const row = stacked();
+  if (row.state !== "checkout" || !row.forge.read?.value) throw new Error("fixture");
+  row.forge.read.value = { ...row.forge.read.value, isDraft: false };
+  return row;
+}
+
+// jsdom has no modal dialogs: showModal opens it in place.
+HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
+  this.open = true;
+};
 
 function stacked(): ThreadChange {
   const row = checkout("scott/forge-host", "Route gh through the checkout host");
@@ -480,6 +511,66 @@ test("Delete asks first, sends nothing until confirmed, then asks again about un
   expect(of("vcsAction")[1]!.input).toMatchObject({
     action: { kind: "delete", branch: "scott/forge-host", accepted: risk },
   });
+});
+
+test("Merge reads the policy fresh, then merges pinned to the head and base the reader saw", async () => {
+  const { slot, of } = renderRow(readyToMerge());
+  await act(async () => (await slot.findByRole("button", { name: "Merge #482" })).click());
+  const confirm = await slot.findByTestId("sc-merge-confirm");
+  await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false));
+  expect(of("mergePolicy")[0]!.input).toEqual({
+    key: "gh:smsunarto/bb-plugins:smsunarto:scott/forge-host",
+    number: 482,
+  });
+  // Squash is allowed, so the dialog starts there.
+  expect(confirm.textContent).toBe("Squash and merge");
+  const select = slot.getByTestId("sc-merge-method") as HTMLSelectElement;
+  act(() => {
+    select.value = "merge";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => (confirm as HTMLButtonElement).click());
+  await waitFor(() => expect(of("forgeAction")).toHaveLength(1));
+  expect(of("forgeAction")[0]!.input).toEqual({
+    threadId: "thread-a",
+    action: { kind: "merge", method: "merge", base: "main" },
+    expected: { number: 482, head: "c0ffee" },
+  });
+  await waitFor(() => expect(slot.queryByTestId("sc-merge-dialog")).toBeNull());
+});
+
+test("Merge stays off with GitHub's reason, and a failed merge is reported, not retried", async () => {
+  const blocked = renderRow(readyToMerge(), {
+    mergePolicy: () => ({ ok: true as const, policy: { ...POLICY, mergeStateStatus: "BLOCKED" } }),
+  });
+  await act(async () => (await blocked.slot.findByRole("button", { name: "Merge #482" })).click());
+  expect((await blocked.slot.findByTestId("sc-merge-issue")).textContent).toContain(
+    "GitHub blocks merging: BLOCKED",
+  );
+  expect((blocked.slot.getByTestId("sc-merge-confirm") as HTMLButtonElement).disabled).toBe(true);
+  cleanup();
+
+  const { slot, of } = renderRow(readyToMerge(), {
+    forgeAction: () => ({
+      status: "failed" as const,
+      problem: { kind: "failed" as const, site: "GitHub", detail: "Head branch was modified." },
+    }),
+  });
+  await act(async () => (await slot.findByRole("button", { name: "Merge #482" })).click());
+  const confirm = (await slot.findByTestId("sc-merge-confirm")) as HTMLButtonElement;
+  await waitFor(() => expect(confirm.disabled).toBe(false));
+  await act(async () => confirm.click());
+  expect(await slot.findByText(/Head branch was modified\. Refreshing/)).toBeTruthy();
+  await new Promise((settle) => setTimeout(settle, 30));
+  expect(of("forgeAction")).toHaveLength(1);
+  // The requirements are read again before another try.
+  expect(of("mergePolicy").length).toBeGreaterThanOrEqual(2);
+});
+
+test("a draft pull request has no Merge", async () => {
+  const { slot } = renderRow(stacked());
+  await slot.findByRole("button", { name: "Push scott/forge-host" });
+  expect(slot.queryByRole("button", { name: "Merge #482" })).toBeNull();
 });
 
 test("a workspace with no GitButler CLI offers to read again or read as plain git", async () => {

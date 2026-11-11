@@ -188,6 +188,16 @@ type World = {
     { body: string; html_url: string; commit_id: string; comments: unknown[] }[]
   >;
   postAs?: ("ok" | "lost")[];
+  /** GitHub's merge side: the repository's methods, the viewer's permission, and how merges go. */
+  merge?: {
+    methods?: ("merge" | "squash" | "rebase")[];
+    permission?: string;
+    mergeState?: string;
+    /** "lost": GitHub merged, but the answer never came back. */
+    answer?: "ok" | "refused" | "lost";
+  };
+  /** Merges GitHub was asked for, as whom and with what. */
+  merged?: { login: string; path: string; body: unknown }[];
 };
 
 type Run = Awaited<ReturnType<Exec>>;
@@ -288,13 +298,83 @@ function fakeReviews(world: World, args: readonly string[], stdin: unknown): Run
   return { code: 0, stdout: JSON.stringify(reviews.at(-1)), stderr: "" };
 }
 
+/** Every pull request the world holds, open ones by head branch. */
+const allPullRequests = (world: World) =>
+  Object.values(world.pullRequests).flat() as { number: number; [key: string]: unknown }[];
+
+/** GitHub's merge policy query and REST merge, against the world's pull requests. */
+function fakeMerge(
+  world: World,
+  args: readonly string[],
+  options: Parameters<Exec>[1],
+): Run | null {
+  const stdin = options?.stdin;
+  const login = options?.env?.GH_TOKEN?.replace(/^tok-/, "") ?? world.serverAccounts[0]!;
+  const body = JSON.parse(String(stdin ?? "{}")) as {
+    query?: string;
+    variables?: { number?: number };
+  };
+  if (body.query?.includes("query MergePolicy")) {
+    const pr = allPullRequests(world).find((each) => each.number === body.variables?.number);
+    const methods = world.merge?.methods ?? ["merge", "squash", "rebase"];
+    const repository = {
+      mergeCommitAllowed: methods.includes("merge"),
+      squashMergeAllowed: methods.includes("squash"),
+      rebaseMergeAllowed: methods.includes("rebase"),
+      viewerPermission: world.merge?.permission ?? "WRITE",
+      pullRequest: pr && {
+        state: pr.state,
+        isDraft: pr.isDraft,
+        headRefOid: pr.headRefOid,
+        baseRefName: pr.baseRefName,
+        mergeStateStatus: world.merge?.mergeState ?? "CLEAN",
+      },
+    };
+    return { code: 0, stdout: JSON.stringify({ data: { repository } }), stderr: "" };
+  }
+  const path = args.find((arg) => /\/pulls\/\d+\/merge$/.test(arg));
+  if (args[0] !== "api" || !path) return null;
+  const sent = JSON.parse(String(stdin)) as { sha: string; merge_method: string };
+  (world.merged ??= []).push({ login, path, body: sent });
+  const answer = world.merge?.answer ?? "ok";
+  if (answer === "refused")
+    return {
+      code: 1,
+      stdout: JSON.stringify({
+        message: "Head branch was modified. Review and try the merge again.",
+      }),
+      stderr: "gh: Head branch was modified. Review and try the merge again. (HTTP 409)",
+    };
+  const number = Number(path.split("/").at(-2));
+  for (const pr of allPullRequests(world)) if (pr.number === number) pr.state = "MERGED";
+  if (answer === "lost") return { code: 1, stdout: "", stderr: "gh: HTTP 502: Bad Gateway" };
+  return {
+    code: 0,
+    stdout: JSON.stringify({
+      sha: "m3rg3d",
+      merged: true,
+      message: "Pull Request successfully merged",
+    }),
+    stderr: "",
+  };
+}
+
+/** GitHub's REST side and merges: a merge, a pull request's reviews, or paginated reads. */
+function fakeApi(world: World, args: readonly string[], options: Parameters<Exec>[1]): Run | null {
+  const merge = fakeMerge(world, args, options);
+  if (merge) return merge;
+  if (args[0] !== "api") return null;
+  const review = fakeReviews(world, args, options?.stdin);
+  if (review) return review;
+  return args[1] === "--paginate" ? fakeRest(world, args) : null;
+}
+
 function serverGh(world: World): Exec {
   return async (args, options) => {
     (world.ghRuns ??= []).push(Date.now());
     if (args[0] === "auth") return fakeAuth(world, args);
-    const review = args[0] === "api" ? fakeReviews(world, args, options?.stdin) : null;
-    if (review) return review;
-    if (args[0] === "api" && args[1] === "--paginate") return fakeRest(world, args);
+    const special = fakeApi(world, args, options);
+    if (special) return special;
     const token = options?.env?.GH_TOKEN;
     const login = token ? token.replace(/^tok-/, "") : world.serverAccounts[0]!;
     if (args[0] === "pr" && args[1] === "ready") {
@@ -906,6 +986,131 @@ describe("accounts", () => {
       status: "upToDate",
     });
     expect(world.writes ?? []).toEqual([]);
+  });
+});
+
+describe("merge", () => {
+  function ready() {
+    const world = twoHosts();
+    world.serverAccounts = ["smsunarto", "sms-yui"];
+    world.cannotSee = ["smsunarto"];
+    world.pullRequests["scott/route-gh"] = [{ ...PR, isDraft: false }];
+    return world;
+  }
+  const merge = (head: string, base = "main", method: "squash" | "merge" = "squash") => ({
+    threadId: "thread-a",
+    action: { kind: "merge" as const, method, base },
+    expected: { number: 482, head },
+  });
+  const KEY = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+
+  test("Merge reads the policy as the account that read the pull request, and merges pinned to its head", async () => {
+    const world = ready();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("mergePolicy", { key: KEY, number: 482 })).toEqual({
+      ok: true,
+      policy: {
+        state: "OPEN",
+        isDraft: false,
+        headRefOid: "c0ffee",
+        baseRefName: "main",
+        mergeStateStatus: "CLEAN",
+        canMerge: true,
+        methods: ["merge", "squash", "rebase"],
+      },
+    });
+    expect(await harness.behavior.callRpc("forgeAction", merge("c0ffee"))).toEqual({
+      status: "done",
+    });
+    expect(world.merged).toEqual([
+      {
+        login: "sms-yui",
+        path: "repos/smsunarto/bb-plugins/pulls/482/merge",
+        body: { sha: "c0ffee", merge_method: "squash" },
+      },
+    ]);
+  });
+
+  test("a moved head or base is a conflict, and GitHub is not asked to merge", async () => {
+    const world = ready();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("forgeAction", merge("0ld"))).toEqual({
+      status: "conflict",
+      detail: "#482 moved to c0ffee since you looked.",
+    });
+    expect(await harness.behavior.callRpc("forgeAction", merge("c0ffee", "release"))).toEqual({
+      status: "conflict",
+      detail: "#482 now targets main, not release.",
+    });
+    expect(world.merged ?? []).toEqual([]);
+  });
+
+  test("an unmet requirement fails with GitHub's reason and merges nothing", async () => {
+    const world = ready();
+    world.merge = { mergeState: "BLOCKED" };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("forgeAction", merge("c0ffee"))).toMatchObject({
+      status: "failed",
+      problem: {
+        kind: "failed",
+        detail: expect.stringContaining("GitHub blocks merging: BLOCKED"),
+      },
+    });
+    world.merge = { methods: ["merge"] };
+    expect(await harness.behavior.callRpc("forgeAction", merge("c0ffee"))).toMatchObject({
+      status: "failed",
+      problem: { detail: "This repository does not allow that merge method." },
+    });
+    world.merge = { permission: "READ" };
+    expect(await harness.behavior.callRpc("forgeAction", merge("c0ffee"))).toMatchObject({
+      status: "failed",
+      problem: { detail: "This account cannot merge this pull request." },
+    });
+    expect(world.merged ?? []).toEqual([]);
+  });
+
+  test("a lost answer is never retried; asking again finds the pull request merged", async () => {
+    const world = ready();
+    world.merge = { answer: "lost" };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("forgeAction", merge("c0ffee"))).toMatchObject({
+      status: "failed",
+    });
+    expect(world.merged).toHaveLength(1);
+    expect(await harness.behavior.callRpc("forgeAction", merge("c0ffee"))).toEqual({
+      status: "upToDate",
+    });
+    expect(world.merged).toHaveLength(1);
+  });
+
+  test("GitHub refusing at merge time (the head moved under it) fails and is not retried", async () => {
+    const world = ready();
+    world.merge = { answer: "refused" };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("forgeAction", merge("c0ffee"))).toMatchObject({
+      status: "failed",
+      problem: { detail: expect.stringContaining("Head branch was modified") },
+    });
+    expect(world.merged).toHaveLength(1);
+  });
+
+  test("the review page merges a Change by its key", async () => {
+    const world = ready();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(
+      await harness.behavior.callRpc("changeForgeAction", {
+        key: KEY,
+        action: { kind: "merge", method: "merge", base: "main" },
+        expected: { number: 482, head: "c0ffee" },
+      }),
+    ).toEqual({ status: "done" });
+    expect(world.merged).toMatchObject([{ body: { merge_method: "merge" } }]);
   });
 });
 

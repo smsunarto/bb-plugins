@@ -18,7 +18,12 @@ import { shareDirective } from "../core/directive.ts";
 import { execGh } from "../forge/exec-gh.ts";
 import type { Exec } from "../forge/github.ts";
 import { createAsk, type Ask } from "./ask.ts";
-import { createForgeSites, FORGE_DEADLINE_MS, type HostForge } from "./forge-sites.ts";
+import {
+  createForgeSites,
+  FORGE_DEADLINE_MS,
+  MERGE_DEADLINE_MS,
+  type HostForge,
+} from "./forge-sites.ts";
 import {
   createGuides,
   type Guides,
@@ -87,10 +92,26 @@ function forgeCalls(host: HostClient): HostForge {
       host.call("forgeCall", { op: "pr.read", ...query }, options(hostId, signal)),
     setDraft: (hostId, write, signal) =>
       host.call("forgeWrite", { op: "pr.setDraft", ...write }, options(hostId, signal)),
+    // A merge is never retried, and may take GitHub longer than a read.
+    merge: (hostId, write, signal) =>
+      host.call("forgeMerge", write, { hostId, signal, timeoutMs: MERGE_DEADLINE_MS }),
     review: (hostId, input, signal) => host.call("forgeReview", input, options(hostId, signal)),
     submitReview: (hostId, write, signal) =>
       host.call("forgeSubmitReview", write, options(hostId, signal)),
   };
+}
+
+/** Writes to a pull request (draft or ready, merge), and what a merge needs. Never retried. */
+function forgeHandlers(runtime: Runtime, changes: Changes) {
+  return {
+    // A write is not stopped by its caller leaving: only unloading the plugin stops it.
+    forgeAction: ({ threadId, action, expected }) =>
+      runtime.run(changes.forgeAction(threadId, action, expected)),
+    changeForgeAction: ({ key, action, expected }) =>
+      runtime.run(changes.review.forgeAction(key, action, expected)),
+    mergePolicy: ({ key, number }, context) =>
+      runtime.run(changes.review.mergePolicy(key, number), context.experimental_signal),
+  } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
 }
 
 /** A Change's reading guide and viewed marks; only the review page's open starts a run. */
@@ -197,8 +218,6 @@ function registerRpc(
       vcsAction: ({ threadId, action, expected }) =>
         runtime.run(changes.act(threadId, action, expected)),
       checksForChange: ({ keys }) => changes.checks(keys),
-      forgeAction: ({ threadId, action, expected }) =>
-        runtime.run(changes.forgeAction(threadId, action, expected)),
       setReadAs: async ({ threadId, readAs }) => {
         await runtime.run(changes.setReadAs(threadId, readAs));
         return { ok: true as const };
@@ -214,8 +233,7 @@ function registerRpc(
         runtime.run(changes.review.patches(key, revision, paths), context.experimental_signal),
       changeCommits: ({ key, revision }, context) =>
         runtime.run(changes.review.commits(key, revision), context.experimental_signal),
-      changeForgeAction: ({ key, action, expected }) =>
-        runtime.run(changes.review.setDraft(key, action.draft, expected)),
+      ...forgeHandlers(runtime, changes),
       ...reviewHandlers(runtime, changes.review, start),
       ...guideHandlers(guides),
       ...askHandlers(ask),

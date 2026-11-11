@@ -25,6 +25,7 @@ import type { Checkout } from "./checkout.ts";
 import { forget, share } from "./memo.ts";
 import { act, hostFailure, problemOf, providers, resolveCheckout } from "./providers.ts";
 import { rangeCommits, rangeFiles, rangePatches, resolveBase } from "./range.ts";
+import { mergeAt } from "../forge/merge.ts";
 import { runReviewRead } from "../forge/review.ts";
 import { changed, keepWatching, renew, stopAll } from "./repository-state.ts";
 
@@ -236,6 +237,14 @@ export default experimental_defineHostEntry({
     async forgeSubmitReview({ account, ...write }, { signal }) {
       try {
         return { ok: true as const, value: await submitReviewAt(ghFor(account), write, signal) };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ok: false as const, error: ghFailure(error) };
+      }
+    },
+    async forgeMerge({ account, ...write }, { signal }) {
+      try {
+        return { ok: true as const, value: await mergeAt(ghFor(account), write, signal) };
       } catch (error) {
         if (signal.aborted) throw error;
         return { ok: false as const, error: ghFailure(error) };

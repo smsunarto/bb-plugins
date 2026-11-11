@@ -10,6 +10,7 @@ import {
   succeeded,
   uncommittedCount,
   type Facet,
+  type ForgeAction,
   type ForgeResult,
   type ForgeValue,
   type Placement,
@@ -18,6 +19,7 @@ import {
   type WorkspaceValue,
 } from "../core/change.ts";
 import { changeTag, checksTag, reviewTag, type ChangeKey } from "../core/ids.ts";
+import type { MergePolicy } from "../core/merge.ts";
 import {
   inboxRow,
   parseChangeKey,
@@ -288,8 +290,12 @@ export function createReviewChange(deps: {
           yield* Effect.sleep(FORGE_ACTIVE_MS);
         }
       }),
-    /** Mark the Change's pull request draft or ready, at the head the reader saw; then read it again. */
-    setDraft: (key: ChangeKey, draft: boolean, expected: { number: number; head: string }) =>
+    /** One write on the Change's pull request, at the head the reader saw; then read it again. */
+    forgeAction: (
+      key: ChangeKey,
+      action: ForgeAction,
+      expected: { number: number; head: string },
+    ) =>
       Effect.gen(function* () {
         const parsed = parseChangeKey(key);
         if (parsed?.kind !== "gh")
@@ -298,12 +304,47 @@ export function createReviewChange(deps: {
             problem: moved("This Change has no pull request."),
           } satisfies ForgeResult;
         const { repo, headOwner, branch } = parsed;
-        const result = yield* deps.sites.setDraft(
-          { repo, headOwner, branch, number: expected.number, draft, expectedHead: expected.head },
-          localMatch(store, key)?.placement ?? null,
-        );
+        const placement = localMatch(store, key)?.placement ?? null;
+        const result =
+          action.kind === "setDraft"
+            ? yield* deps.sites.setDraft(
+                {
+                  repo,
+                  headOwner,
+                  branch,
+                  number: expected.number,
+                  draft: action.draft,
+                  expectedHead: expected.head,
+                },
+                placement,
+              )
+            : yield* deps.sites.merge(
+                {
+                  repo,
+                  number: expected.number,
+                  method: action.method,
+                  expectedHead: expected.head,
+                  expectedBase: action.base,
+                },
+                placement ? [placement] : [],
+              );
+        // Done, already so, moved or unknown: the reader sees GitHub's state either way.
         yield* readForge(key);
         return result;
+      }),
+    /** What merging the Change's pull request needs, read fresh as the account that would merge it. */
+    mergePolicy: (key: ChangeKey, number: number) =>
+      Effect.gen(function* () {
+        const parsed = parseChangeKey(key);
+        if (parsed?.kind !== "gh")
+          return { ok: false as const, problem: moved("This Change has no pull request.") };
+        const placement = localMatch(store, key)?.placement;
+        const answer = yield* deps.sites
+          .mergePolicy({ repo: parsed.repo, number }, placement ? [placement] : [])
+          .pipe(Effect.result);
+        return answer._tag === "Success"
+          ? { ok: true as const, policy: answer.success satisfies MergePolicy }
+          : { ok: false as const, problem: answer.failure.problem };
       }),
   };
 }

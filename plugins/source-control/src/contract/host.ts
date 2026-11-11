@@ -17,6 +17,7 @@ import {
   workspaceValueSchema,
 } from "../core/change.ts";
 import { repoSchema } from "../core/ids.ts";
+import { mergeMethodSchema, mergePolicySchema } from "../core/merge.ts";
 import { timelineItemSchema } from "../core/items.ts";
 import { changeFileSchema, forgeFileSchema, inboxEntrySchema } from "../core/review.ts";
 import {
@@ -125,6 +126,14 @@ export const reviewReadSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("watch"), ref: prRefSchema }).strict(),
   /** The branch a pull request comes from. */
   z.object({ kind: z.literal("prHead"), ref: prRefSchema }).strict(),
+  /** What merging a pull request needs: its state, the merge methods allowed, and this account's permission. */
+  z
+    .object({
+      kind: z.literal("mergePolicy"),
+      repo: repoSchema,
+      number: z.number().int().positive(),
+    })
+    .strict(),
   /** Whether listed pull requests merged and commits reached their default branch. */
   z
     .object({
@@ -143,6 +152,7 @@ export const reviewAnswerSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("watch"), read: watchReadSchema }).strict(),
   z.object({ kind: z.literal("landed"), landed: landedSchema }).strict(),
   z.object({ kind: z.literal("prHead"), head: prHeadSchema }).strict(),
+  z.object({ kind: z.literal("mergePolicy"), policy: mergePolicySchema }).strict(),
 ]);
 
 export const reviewSubmittedSchema = z.discriminatedUnion("status", [
@@ -248,6 +258,24 @@ export const sourceControlHostContract = defineRpcContract({
         number: z.number().int().positive(),
         draft: z.boolean(),
         expectedHead: z.string().min(1),
+      })
+      .strict(),
+    output: outcome(forgeResultSchema),
+  },
+  /**
+   * Merges the pull request only while it is still at `expectedHead` into
+   * `expectedBase`. Never retried: a transport failure leaves the outcome
+   * unknown, and the reader reads the pull request again.
+   */
+  forgeMerge: {
+    input: z
+      .object({
+        repo: repoSchema,
+        number: z.number().int().positive(),
+        method: mergeMethodSchema,
+        expectedHead: z.string().regex(/^[0-9a-fA-F]{40,64}$/),
+        expectedBase: z.string().min(1),
+        account: forgeAccountSchema,
       })
       .strict(),
     output: outcome(forgeResultSchema),

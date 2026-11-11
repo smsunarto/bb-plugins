@@ -254,7 +254,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
           status: "failed",
           problem: { kind: "moved", detail: "This thread has no checkout." },
         } satisfies ForgeResult;
-      return yield* forge.setDraft(threadId, where.placement, action.draft, expected);
+      return yield* forge.act(threadId, where.placement, action, expected);
     }),
     refresh,
     /** The thread's Change from stored rows, if its checkout and branch are known. */

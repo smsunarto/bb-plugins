@@ -24,6 +24,7 @@ import { PANEL_PATH, useNow } from "./page/hooks.ts";
 import { STATE_CHIP } from "./page/rail.tsx";
 import type { ChangeState } from "../core/status.ts";
 import { useChangeReview, useReviewActions } from "./review-data.ts";
+import { MergeButton, mergeTarget, readyToMerge, useChangeMerge } from "./merge.tsx";
 import { latestBatch } from "./review-model.ts";
 import { BatchLine, useFixSelected } from "./send.tsx";
 import { Bar, Button } from "./ui.tsx";
@@ -212,6 +213,23 @@ function CardHeader({
   );
 }
 
+/** "Merge it" on a Change whose pull request is ready: today's merge dialog, pinned to the head shown. */
+function CardMerge({ detail }: { detail: Ready }) {
+  const submit = useChangeMerge();
+  const target = mergeTarget(detail);
+  if (!target) return null;
+  return (
+    <MergeButton
+      submit={submit}
+      target={target}
+      label="Merge it"
+      variant="primary"
+      testId="sc-card-merge"
+      className="min-w-0 flex-[1_1_8rem]"
+    />
+  );
+}
+
 function ReadyCard({
   detail,
   revision,
@@ -261,6 +279,7 @@ function ReadyCard({
           Open review
           <OpenReviewArrow />
         </button>
+        {readyToMerge(detail) ? <CardMerge detail={detail} /> : null}
         {hasItems ? (
           <button
             type="button"

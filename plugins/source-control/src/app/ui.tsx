@@ -3,7 +3,7 @@
  * loaded for them. Shapes follow the GitButler panel's outline buttons.
  */
 import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 import { cx } from "./format.ts";
 
 const BASE =
@@ -24,7 +24,10 @@ export function Button({
   className,
   type = "button",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: ButtonVariant;
+  ref?: Ref<HTMLButtonElement>;
+}) {
   return <button type={type} className={cx(BASE, VARIANT[variant], className)} {...props} />;
 }
 
