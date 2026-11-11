@@ -13,6 +13,7 @@ import type {
   VcsResult,
 } from "../core/change.ts";
 import type { Oplog } from "../core/oplog.ts";
+import type { BaseHistory } from "../core/history.ts";
 import type {
   HostFailure,
   HostWorkspace,
@@ -50,6 +51,11 @@ export type HostCalls = {
     options: CallOptions,
   ): Promise<Outcome<RangeAnswer>>;
   oplog(hostId: string, input: { path: string }, options: CallOptions): Promise<Outcome<Oplog>>;
+  baseHistory(
+    hostId: string,
+    input: { path: string; from: string; limit: number },
+    options: CallOptions,
+  ): Promise<Outcome<BaseHistory>>;
 };
 
 /** The host did not answer before the server's deadline. */

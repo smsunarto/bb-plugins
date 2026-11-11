@@ -23,6 +23,7 @@ import {
 } from "../forge/github.ts";
 import type { Checkout } from "./checkout.ts";
 import { runBut } from "./cli.ts";
+import { readBaseHistory } from "./history.ts";
 import { parseOplog } from "./parse.ts";
 import { forget, share } from "./memo.ts";
 import { act, hostFailure, problemOf, providers, resolveCheckout } from "./providers.ts";
@@ -125,6 +126,22 @@ export default experimental_defineHostEntry({
           return { ok: true as const, value: { entries: [] } };
         const payload = await runBut(resolved.checkout.path, ["oplog", "list"], signal);
         return { ok: true as const, value: { entries: parseOplog(payload) } };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ok: false as const, error: hostFailure(error) };
+      }
+    },
+
+    async baseHistory({ path, from, limit }, { signal }) {
+      try {
+        const resolved = await resolveCheckout(path, "git", signal);
+        if (resolved.state === "not-git")
+          return {
+            ok: false as const,
+            error: { code: "not-found" as const, message: "Not a Git checkout." },
+          };
+        const value = await readBaseHistory(resolved.checkout.path, from, limit, signal);
+        return { ok: true as const, value };
       } catch (error) {
         if (signal.aborted) throw error;
         return { ok: false as const, error: hostFailure(error) };

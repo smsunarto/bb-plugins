@@ -16,6 +16,7 @@ import type {
 } from "../core/change.ts";
 import type { HostFailure, ReadAs } from "../contract/host.ts";
 import type { Oplog } from "../core/oplog.ts";
+import type { BaseHistory } from "../core/history.ts";
 import {
   callProblem,
   failureProblem,
@@ -175,5 +176,16 @@ export function createActions(deps: {
     );
   });
 
-  return { act, setReadAs, patches, oplog };
+  /** The target's history under the thread's common base: immutable per base, read on request. */
+  const baseHistory = Effect.fn("baseHistory")(function* (
+    threadId: string,
+    from: string,
+    limit: number,
+  ) {
+    return yield* hostRead<BaseHistory>(threadId, (placement, options) =>
+      deps.host.baseHistory(placement.hostId, { path: placement.path, from, limit }, options),
+    );
+  });
+
+  return { act, setReadAs, patches, oplog, baseHistory };
 }

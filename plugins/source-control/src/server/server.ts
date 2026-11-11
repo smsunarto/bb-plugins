@@ -80,6 +80,8 @@ function checkoutCalls(host: HostClient): HostCalls {
     patches: (hostId, input, options) => host.call("patches", input, { hostId, ...options }),
     range: (hostId, input, options) => host.call("range", input, { hostId, ...options }),
     oplog: (hostId, input, options) => host.call("oplog", input, { hostId, ...options }),
+    baseHistory: (hostId, input, options) =>
+      host.call("baseHistory", input, { hostId, ...options }),
   };
 }
 
@@ -115,6 +117,16 @@ function forgeHandlers(runtime: Runtime, changes: Changes) {
       runtime.run(changes.review.forgeAction(key, action, expected)),
     mergePolicy: ({ key, number }, context) =>
       runtime.run(changes.review.mergePolicy(key, number), context.experimental_signal),
+  } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
+}
+
+/** Read-only histories of the thread's checkout: GitButler's oplog and the target under the base. */
+function historyHandlers(runtime: Runtime, changes: Changes) {
+  return {
+    oplog: ({ threadId }, context) =>
+      runtime.run(changes.oplog(threadId), context.experimental_signal),
+    baseHistory: ({ threadId, from, limit }, context) =>
+      runtime.run(changes.baseHistory(threadId, from, limit), context.experimental_signal),
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
 }
 
@@ -228,8 +240,7 @@ function registerRpc(
       },
       patches: ({ threadId, source }, context) =>
         runtime.run(changes.patches(threadId, source), context.experimental_signal),
-      oplog: ({ threadId }, context) =>
-        runtime.run(changes.oplog(threadId), context.experimental_signal),
+      ...historyHandlers(runtime, changes),
       // A write is not stopped by its caller leaving: only unloading the plugin stops it.
       vcsAction: ({ threadId, action, expected }) =>
         runtime.run(changes.act(threadId, action, expected)),

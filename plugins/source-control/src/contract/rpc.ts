@@ -7,6 +7,7 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { mergePolicySchema } from "../core/merge.ts";
 import { oplogSchema } from "../core/oplog.ts";
+import { BASE_HISTORY_MAX, baseHistorySchema, commitIdSchema } from "../core/history.ts";
 import {
   checksValueSchema,
   facetSchema,
@@ -102,6 +103,20 @@ export const sourceControlContract = defineRpcContract({
     input: z.object({ threadId: threadIdSchema }).strict(),
     output: z.discriminatedUnion("ok", [
       z.object({ ok: z.literal(true), value: oplogSchema }).strict(),
+      z.object({ ok: z.literal(false), problem: problemSchema }).strict(),
+    ]),
+  },
+  /** The target's commits under the common base `from`, newest first. Immutable per base, so never tagged. */
+  baseHistory: {
+    input: z
+      .object({
+        threadId: threadIdSchema,
+        from: commitIdSchema,
+        limit: z.number().int().min(1).max(BASE_HISTORY_MAX),
+      })
+      .strict(),
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), value: baseHistorySchema }).strict(),
       z.object({ ok: z.literal(false), problem: problemSchema }).strict(),
     ]),
   },

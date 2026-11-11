@@ -19,6 +19,11 @@ import {
 import { repoSchema } from "../core/ids.ts";
 import { mergeMethodSchema, mergePolicySchema } from "../core/merge.ts";
 import { oplogSchema } from "../core/oplog.ts";
+import {
+  BASE_HISTORY_MAX,
+  baseHistorySchema,
+  commitIdSchema as baseIdSchema,
+} from "../core/history.ts";
 import { timelineItemSchema } from "../core/items.ts";
 import { changeFileSchema, forgeFileSchema, inboxEntrySchema } from "../core/review.ts";
 import {
@@ -214,6 +219,18 @@ export const sourceControlHostContract = defineRpcContract({
     experimental_retryable: true,
     input: z.object({ path: pathSchema }).strict(),
     output: outcome(oplogSchema),
+  },
+  /** The target's commits under the common base `from`, newest first, `from` itself excluded. */
+  baseHistory: {
+    experimental_retryable: true,
+    input: z
+      .object({
+        path: pathSchema,
+        from: baseIdSchema,
+        limit: z.number().int().min(1).max(BASE_HISTORY_MAX),
+      })
+      .strict(),
+    output: outcome(baseHistorySchema),
   },
   /** Keeps a checkout watched for another lease without reading it. */
   renewWatch: {
