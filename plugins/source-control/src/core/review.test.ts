@@ -120,7 +120,7 @@ describe("deep links", () => {
   const viaBb = (subPath: string) => subPath.split("/").map(encodeURIComponent).join("/");
 
   test.each([
-    [{ key: K }, { key: K, tab: "files", commit: null, path: null, line: null }],
+    [{ key: K }, { key: K, tab: "guided", commit: null, path: null, line: null }],
     [
       { key: K, tab: "files" as const, path: "src/a b/c.ts", line: 46 },
       { key: K, tab: "files", commit: null, path: "src/a b/c.ts", line: 46 },

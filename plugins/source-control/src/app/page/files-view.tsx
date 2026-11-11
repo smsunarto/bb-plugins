@@ -25,6 +25,7 @@ import {
   type RefObject,
 } from "react";
 import { describeProblem, type FilePatch } from "../../core/change.ts";
+import { readingOrder, viewedAtHead, viewedBlob } from "../../core/guide.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import type { Anchor, ReviewItem } from "../../core/items.ts";
 import { startsCollapsed, type ChangeFile, type ReviewRevision } from "../../core/review.ts";
@@ -37,6 +38,7 @@ import {
   parsePatch,
 } from "../file-cards.tsx";
 import { cx, plural } from "../format.ts";
+import { useGuide, useViewedActions } from "../guide-data.ts";
 import { useChangeReview, useReviewActions, type ReviewActions } from "../review-data.ts";
 import {
   FileReviewInterner,
@@ -48,7 +50,7 @@ import {
   type FileReview,
   type PatchLines,
 } from "../review-model.ts";
-import { ViewerContext } from "../review-ui.tsx";
+import { Checkbox, ViewerContext } from "../review-ui.tsx";
 import {
   AddCommentButton,
   LineThread,
@@ -58,24 +60,15 @@ import {
 } from "./annotations.tsx";
 import { FileTree } from "./file-tree.tsx";
 import { Chevron } from "./icons.tsx";
-import { usePatch, usePatchStore, type PatchStore } from "./patches.ts";
+import { usePatch, usePatchStore, type PatchEntry, type PatchStore } from "./patches.ts";
 import { FocusContext } from "./review-focus.ts";
-
-/** Lockfiles and generated output last, as code-review's reading order puts them. */
-export function readingOrder(files: readonly ChangeFile[]): ChangeFile[] {
-  return files.toSorted(
-    (a, b) =>
-      Number(startsCollapsed(a.path)) - Number(startsCollapsed(b.path)) ||
-      a.path.localeCompare(b.path),
-  );
-}
 
 // ── Near the viewport ──────────────────────────────────────────────────
 
 /** Told when the card comes within AHEAD of the viewport, and when it leaves again. */
 type Watch = (path: string, element: Element | null, onNear: (near: boolean) => void) => void;
 
-type Column = {
+export type Column = {
   watch: Watch;
   /** The cards by path, for scrolling to one. */
   cards: Map<string, Element>;
@@ -83,15 +76,15 @@ type Column = {
   heights: Map<string, number>;
 };
 
-const ColumnContext = createContext<Column | null>(null);
+export const ColumnContext = createContext<Column | null>(null);
 
 /** Cards drawn before the observer reports: about a screen of them. */
-const EAGER_CARDS = 8;
+export const EAGER_CARDS = 8;
 
 /** How far ahead of the viewport a card asks for its patch, and draws at all. */
 const AHEAD = "1200px 0px";
 
-function useColumn(
+export function useColumn(
   scroller: RefObject<HTMLElement | null>,
   onCurrent: (path: string) => void,
 ): Column {
@@ -366,6 +359,19 @@ function emptyText(patch: FilePatch | null, file: ChangeFile): string {
   return "No text to show. The file is binary or its contents did not change.";
 }
 
+/**
+ * The path's patch, or, while a newer revision's patch loads in a new store,
+ * the last one this card drew: a card that stays mounted across a new head
+ * (the Guided tab's) keeps its diff and any open composer until the new
+ * patch replaces them.
+ */
+function useKeptPatch(store: PatchStore, path: string): PatchEntry | undefined {
+  const entry = usePatch(store, path);
+  const [kept, setKept] = useState(entry?.state === "ready" ? entry : undefined);
+  if (entry?.state === "ready" && entry !== kept) setKept(entry);
+  return entry && entry.state !== "loading" ? entry : (kept ?? entry);
+}
+
 function PatchBody({
   store,
   file,
@@ -382,7 +388,7 @@ function PatchBody({
   actions: ReviewActions | null;
   head: string;
 }) {
-  const entry = usePatch(store, file.path);
+  const entry = useKeptPatch(store, file.path);
   const { mode, name } = useCodeTheme();
   const commenting = actions !== null;
   const options = useMemo(
@@ -454,7 +460,10 @@ function PatchBody({
   );
 }
 
-const FileCard = memo(function FileCard({
+/** Where a card's viewed box writes; one stable function for every card. */
+export type OnViewed = (file: ChangeFile, viewed: boolean) => void;
+
+export const FileCard = memo(function FileCard({
   file,
   open,
   store,
@@ -464,6 +473,9 @@ const FileCard = memo(function FileCard({
   review,
   actions,
   head,
+  note = null,
+  viewed = null,
+  onViewed,
 }: {
   file: ChangeFile;
   open: boolean;
@@ -475,6 +487,11 @@ const FileCard = memo(function FileCard({
   head: string;
   /** The first cards draw at once; the rest wait for the observer to say they are near. */
   eager: boolean;
+  /** The guide's line on what the file does in this change. */
+  note?: string | null;
+  /** Whether the file is marked viewed at its blob; null draws no box (no blob known, or a commit's files). */
+  viewed?: boolean | null;
+  onViewed?: OnViewed;
 }) {
   const column = useContext(ColumnContext);
   const [near, setNear] = useState(eager);
@@ -507,36 +524,63 @@ const FileCard = memo(function FileCard({
       data-testid="sc-file-card"
       data-path={file.path}
       data-open={open}
+      data-viewed={viewed ?? undefined}
       aria-label={file.path}
       className={card}
     >
-      <button
-        type="button"
-        aria-expanded={open}
-        title={file.path}
-        onClick={() => onToggle(file.path)}
-        className="flex h-9 w-full min-w-0 cursor-pointer items-center gap-2 border-0 bg-surface-recessed ps-2.5 pe-3 text-start text-[12px] leading-4 hover:bg-surface-raised"
-      >
-        <Chevron
-          className={cx(
-            "shrink-0 transition-transform duration-150 motion-reduce:transition-none",
-            !open && "-rotate-90",
+      <div className="flex h-9 min-w-0 items-center bg-surface-recessed hover:bg-surface-raised">
+        <button
+          type="button"
+          aria-expanded={open}
+          title={file.path}
+          onClick={() => onToggle(file.path)}
+          className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent ps-2.5 pe-3 text-start text-[12px] leading-4"
+        >
+          <Chevron
+            className={cx(
+              "shrink-0 transition-transform duration-150 motion-reduce:transition-none",
+              !open && "-rotate-90",
+            )}
+          />
+          <FileStatus kind={file.kind} />
+          {note ? (
+            <>
+              {/* The path keeps its width; the note takes what is left. */}
+              <span className="flex max-w-full min-w-0">
+                <FileName path={file.path} />
+              </span>
+              <span
+                className="min-w-0 flex-1 basis-0 truncate text-(--tertiary-foreground)"
+                data-testid="sc-file-note"
+              >
+                {note}
+              </span>
+            </>
+          ) : (
+            <FileName path={file.path} />
           )}
-        />
-        <FileStatus kind={file.kind} />
-        <FileName path={file.path} />
-        {generated ? (
-          <span className="shrink-0 text-[11px] text-(--tertiary-foreground)">Generated</span>
+          {generated ? (
+            <span className="shrink-0 text-[11px] text-(--tertiary-foreground)">Generated</span>
+          ) : null}
+          {file.binary ? (
+            <span className="shrink-0 text-[11px] text-(--tertiary-foreground)">Binary</span>
+          ) : (
+            <span className="shrink-0 font-mono text-[11px] tabular-nums">
+              <span className="text-success-foreground">+{file.additions}</span>{" "}
+              <span className="text-destructive-text">−{file.deletions}</span>
+            </span>
+          )}
+        </button>
+        {viewed !== null && onViewed ? (
+          <Checkbox
+            checked={viewed}
+            label={`Viewed ${file.path}`}
+            testId="sc-viewed-check"
+            className="pe-3"
+            onChange={(next) => onViewed(file, next)}
+          />
         ) : null}
-        {file.binary ? (
-          <span className="shrink-0 text-[11px] text-(--tertiary-foreground)">Binary</span>
-        ) : (
-          <span className="shrink-0 font-mono text-[11px] tabular-nums">
-            <span className="text-success-foreground">+{file.additions}</span>{" "}
-            <span className="text-destructive-text">−{file.deletions}</span>
-          </span>
-        )}
-      </button>
+      </div>
       {open ? (
         <PatchBody
           store={store}
@@ -601,7 +645,7 @@ function chaseAnnotation(
 }
 
 /** The Change's review by file, for the Files tab; none for a commit's files. */
-function useFileReviews(annotate: boolean, changeKey: ChangeKey, head: string) {
+export function useFileReviews(annotate: boolean, changeKey: ChangeKey, head: string) {
   const { stable } = useChangeReview(annotate ? changeKey : null);
   const writes = useReviewActions(changeKey);
   const [fileReviews] = useState(() => new FileReviewInterner());
@@ -613,7 +657,7 @@ function useFileReviews(annotate: boolean, changeKey: ChangeKey, head: string) {
 }
 
 /** Answers the rail's picks while this column can show them: the card is picked, then its annotation chased. */
-function useAttachReveal({
+export function useAttachReveal({
   annotate,
   files,
   pick,
@@ -642,13 +686,124 @@ function useAttachReveal({
   }, [focus, annotate, files, pick, column, scroller, store]);
 }
 
+// ── Shared by the Files and Guided tabs ───────────────────────────────
+
+/** Which cards are open, by path: lockfiles and generated files start collapsed. */
+export function useOpenState() {
+  const [openState, setOpenState] = useState<Readonly<Record<string, boolean>>>({});
+  const toggle = useCallback(
+    (file: string) =>
+      setOpenState((state) => ({ ...state, [file]: !(state[file] ?? !startsCollapsed(file)) })),
+    [],
+  );
+  const setOpen = useCallback(
+    (file: string, open: boolean) =>
+      setOpenState((state) => (state[file] === open ? state : { ...state, [file]: open })),
+    [],
+  );
+  return { openState, toggle, setOpen };
+}
+
+export function isOpen(openState: Readonly<Record<string, boolean>>, path: string): boolean {
+  return openState[path] ?? !startsCollapsed(path);
+}
+
+/**
+ * Opens a file's card and scrolls the column to it: on a pick in the tree or
+ * outline, and once for the file a link names when the files are known (and
+ * again on back/forward). Returns the pick, which also tells the page.
+ */
+export function useRevealFile({
+  column,
+  scroller,
+  setOpen,
+  onCurrent,
+  path,
+  known,
+  onPath,
+}: {
+  column: Column;
+  scroller: RefObject<HTMLElement | null>;
+  setOpen: (path: string, open: boolean) => void;
+  onCurrent: (path: string) => void;
+  path: string | null;
+  known: boolean;
+  onPath: (path: string) => void;
+}): (path: string) => void {
+  const reveal = useCallback(
+    (file: string) => {
+      setOpen(file, true);
+      onCurrent(file);
+      // On the reader's action, after the card has opened.
+      // Only the diff column scrolls: `scrollIntoView` would also scroll bb's page around it.
+      requestAnimationFrame(() => {
+        const card = column.cards.get(file);
+        const box = scroller.current;
+        if (!card || !box) return;
+        const offset = card.getBoundingClientRect().top - box.getBoundingClientRect().top;
+        box.scrollTo({ top: box.scrollTop + offset });
+      });
+    },
+    [column, scroller, setOpen, onCurrent],
+  );
+  const revealed = useRef<string | null>(null);
+  useEffect(() => {
+    if (!known || !path || revealed.current === path) return;
+    revealed.current = path;
+    reveal(path);
+  }, [known, path, reveal]);
+  return useCallback(
+    (file: string) => {
+      revealed.current = file;
+      reveal(file);
+      onPath(file);
+    },
+    [onPath, reveal],
+  );
+}
+
+const NOT_VIEWED: ReadonlySet<string> = new Set();
+
+/**
+ * Viewed marks at this head for the cards: `of(file)` is the box's state, or
+ * null when the file's blob is unknown and it cannot be marked. Marking a file
+ * viewed collapses its card. A null key draws no boxes (a commit's files).
+ */
+export function useViewed(
+  key: ChangeKey | null,
+  files: readonly ChangeFile[] | null,
+  setOpen: (path: string, open: boolean) => void,
+) {
+  const { view } = useGuide(key);
+  const write = useViewedActions(key ?? ("" as ChangeKey));
+  const marks = view?.viewed;
+  const set = useMemo(
+    () => (files && marks ? viewedAtHead(files, marks) : NOT_VIEWED),
+    [files, marks],
+  );
+  const onViewed = useCallback<OnViewed>(
+    (file, viewed) => {
+      const blob = viewedBlob(file);
+      if (blob === null) return;
+      write.setViewed(file.path, blob, viewed);
+      if (viewed) setOpen(file.path, false);
+    },
+    [write, setOpen],
+  );
+  const of = useCallback(
+    (file: ChangeFile) => (key === null || viewedBlob(file) === null ? null : set.has(file.path)),
+    [key, set],
+  );
+  return { set, of, onViewed, view };
+}
+
 // ── The view ───────────────────────────────────────────────────────────
 
 /**
  * The column Pierre virtualizes against. Its size and scroll come from the
  * virtualizer's own observers; nothing is measured on mount.
  */
-function DiffColumn({
+export function DiffColumn({
   scroller,
   children,
 }: {
@@ -714,47 +869,20 @@ export function FilesView({
   const answer = query.data;
   const files = useMemo(() => (answer?.ok ? readingOrder(answer.files) : null), [answer]);
   const store = usePatchStore(changeKey, revision);
-  const [openState, setOpenState] = useState<Readonly<Record<string, boolean>>>({});
-  const toggle = useCallback(
-    (file: string) =>
-      setOpenState((state) => ({ ...state, [file]: !(state[file] ?? !startsCollapsed(file)) })),
-    [],
-  );
+  const { openState, toggle, setOpen } = useOpenState();
   const [current, setCurrent] = useState<string | null>(path);
   const scroller = useRef<HTMLDivElement>(null);
   const column = useColumn(scroller, setCurrent);
-  const reveal = useCallback(
-    (file: string) => {
-      setOpenState((state) => ({ ...state, [file]: true }));
-      setCurrent(file);
-      // On the reader's action, after the card has opened.
-      // Only the diff column scrolls: `scrollIntoView` would also scroll bb's page around it.
-      requestAnimationFrame(() => {
-        const card = column.cards.get(file);
-        const box = scroller.current;
-        if (!card || !box) return;
-        const offset = card.getBoundingClientRect().top - box.getBoundingClientRect().top;
-        box.scrollTo({ top: box.scrollTop + offset });
-      });
-    },
-    [column],
-  );
-  // A link naming a file scrolls to it once the files are known, and again on back/forward.
-  const revealed = useRef<string | null>(null);
-  const known = files !== null;
-  useEffect(() => {
-    if (!known || !path || revealed.current === path) return;
-    revealed.current = path;
-    reveal(path);
-  }, [known, path, reveal]);
-  const pick = useCallback(
-    (file: string) => {
-      revealed.current = file;
-      reveal(file);
-      onPath(file);
-    },
-    [onPath, reveal],
-  );
+  const pick = useRevealFile({
+    column,
+    scroller,
+    setOpen,
+    onCurrent: setCurrent,
+    path,
+    known: files !== null,
+    onPath,
+  });
+  const viewed = useViewed(annotate ? changeKey : null, answer?.ok ? answer.files : null, setOpen);
 
   const { byPath, actions, viewer } = useFileReviews(annotate, changeKey, revision.head);
   // A rail row scrolls the diff to its item: the card first, then the item once its patch draws.
@@ -785,13 +913,15 @@ export function FilesView({
             key={file.path}
             eager={index < EAGER_CARDS}
             file={file}
-            open={openState[file.path] ?? !startsCollapsed(file.path)}
+            open={isOpen(openState, file.path)}
             store={store}
             line={file.path === path ? line : null}
             onToggle={toggle}
             review={byPath?.get(file.path)}
             actions={actions}
             head={revision.head}
+            viewed={viewed.of(file)}
+            onViewed={viewed.onViewed}
           />
         ))}
         {answer.more ? (

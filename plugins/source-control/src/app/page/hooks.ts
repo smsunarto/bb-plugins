@@ -4,8 +4,8 @@
  */
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { reviewPath, type ReviewLocation } from "../../core/review.ts";
 import type { ChangeKey } from "../../core/ids.ts";
+import { reviewPath, type ReviewLocation } from "../../core/review.ts";
 
 export const PANEL_PATH = "source-control";
 

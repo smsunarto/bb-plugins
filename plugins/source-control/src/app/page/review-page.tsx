@@ -10,6 +10,7 @@
 import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
+  useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
 import {
   useCallback,
@@ -30,6 +31,8 @@ import {
 } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { cx, plural, shortRef } from "../format.ts";
+import { useOpenGuide } from "../guide-data.ts";
+import { useChangeReview } from "../review-data.ts";
 import { SendControls } from "../send.tsx";
 import { ShipPath } from "../status.tsx";
 import { Bar, Button, Pending } from "../ui.tsx";
@@ -37,7 +40,8 @@ import { ChangesList } from "./changes-nav.tsx";
 import { CommitsView } from "./commits-view.tsx";
 import { ConversationView } from "./conversation-view.tsx";
 import { FilesView } from "./files-view.tsx";
-import { PHONE, WIDE, useGo, useNow, useWidth, type Go } from "./hooks.ts";
+import { GuidedView, ViewedProgress } from "./guided-view.tsx";
+import { PANEL_PATH, PHONE, WIDE, useGo, useNow, useWidth, type Go } from "./hooks.ts";
 import { ArrowRight, Chevron, GitHubMark, StackIcon, StateIcon } from "./icons.tsx";
 import { revisionId } from "./patches.ts";
 import { RailSections } from "./rail.tsx";
@@ -320,6 +324,7 @@ function Tabs({
   children?: ReactNode;
 }) {
   const tabs: { id: ReviewTab; label: string; count: number | null }[] = [
+    { id: "guided", label: "Guided", count: null },
     { id: "files", label: "Files", count: files },
     { id: "commits", label: "Commits", count: null },
     { id: "conversation", label: "Conversation", count: null },
@@ -411,15 +416,278 @@ function Missing({ problem }: { problem: Extract<ChangeDetail, { state: "missing
   );
 }
 
+// ── Phone header (board E) ─────────────────────────────────────────────
+
+/** Board E's compact head: back to the list, the title and number, then state, findings and checks. */
+function PhoneHeader({ detail }: { detail: Ready }) {
+  const { row } = detail;
+  const navigate = useBbNavigate();
+  const draft = useDraftToggle(detail);
+  const { stable } = useChangeReview(row.key);
+  const open = stable.items.filter(
+    (item) => item.state === "open" && item.priority !== null,
+  ).length;
+  const checks = detail.ship.find((step) => step.id === "checks");
+  const checksText = checks?.detail.map((part) => part.text).join(" · ");
+  return (
+    <header className="flex shrink-0 flex-col" data-testid="sc-phone-header">
+      <div className="flex min-w-0 items-center gap-3 px-4 pt-2 pb-3">
+        <button
+          type="button"
+          aria-label="Back to changes"
+          onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: "" })}
+          className="flex size-5 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-foreground"
+        >
+          <Chevron className="rotate-90" />
+        </button>
+        <h1
+          className="m-0 min-w-0 flex-1 truncate text-[15px] leading-5 font-semibold text-foreground"
+          data-testid="sc-review-title"
+        >
+          {row.title}
+        </h1>
+        {row.number !== null ? (
+          <span className="shrink-0 text-[13px] leading-5 text-(--tertiary-foreground)">
+            #{row.number}
+          </span>
+        ) : null}
+      </div>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-5 pt-1 pb-3">
+        <span className="flex min-w-0 items-center gap-2 text-[13px] leading-5 text-foreground">
+          <StatusMenu detail={detail} draft={draft} />
+          {open > 0 ? <span>{plural(open, "finding")} to settle</span> : null}
+        </span>
+        {checks && checksText ? (
+          <span
+            className={cx(
+              "text-[13px] leading-5",
+              checks.state === "failed"
+                ? "text-destructive-text"
+                : checks.state === "running"
+                  ? "text-warning"
+                  : "text-muted-foreground",
+            )}
+          >
+            Checks {checksText}
+          </span>
+        ) : null}
+      </div>
+      {draft.message ? (
+        <output className="px-5 pb-2 text-[12px] leading-4 text-warning">{draft.message}</output>
+      ) : null}
+    </header>
+  );
+}
+
 // ── The selected Change ────────────────────────────────────────────────
 
-function Review({
+type Here = ReviewLocation & { key: ChangeKey };
+
+/** The tab's body: no files before a revision is known, else the tab's own view. */
+function TabBody({
   location,
-  width,
+  detail,
+  lead,
+  wide,
+  phone,
+  now,
+  send,
+  onPath,
+  onCommit,
 }: {
-  location: ReviewLocation & { key: ChangeKey };
-  width: number;
+  location: Here;
+  detail: Ready;
+  lead: ReactNode;
+  wide: boolean;
+  phone: boolean;
+  now: number;
+  send: ReactNode;
+  onPath: (path: string) => void;
+  onCommit: (commit: string) => void;
 }) {
+  const { key, tab } = location;
+  const { revision } = detail;
+  if (tab === "conversation")
+    return (
+      <ConversationView changeKey={key} hasPullRequest={detail.row.number !== null} lead={lead} />
+    );
+  if (!revision)
+    return (
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="flex flex-col gap-4 px-4 py-4 @3xl:px-6">
+          {lead}
+          <p
+            className="m-0 text-[13px] leading-5 text-muted-foreground"
+            data-testid="sc-no-revision"
+          >
+            {detail.problem
+              ? `${describeProblem(detail.problem)} Files appear once bb can read them.`
+              : "Files appear once bb has read this change's head and base."}
+          </p>
+        </div>
+      </div>
+    );
+  if (tab === "guided")
+    return (
+      <GuidedView
+        changeKey={key}
+        revision={revision}
+        path={location.path}
+        line={location.line}
+        onPath={onPath}
+        // Board E opens on the guide: the rail's sections stay on the other tabs.
+        lead={phone ? null : lead}
+        wide={wide}
+        phone={phone}
+        bar={phone ? send : null}
+      />
+    );
+  if (tab === "commits")
+    return (
+      <CommitsView
+        changeKey={key}
+        revision={revision}
+        commit={location.commit}
+        path={location.path}
+        line={location.line}
+        url={detail.row.url}
+        now={now}
+        lead={lead}
+        wide={wide}
+        onCommit={onCommit}
+        onPath={onPath}
+      />
+    );
+  return (
+    <FilesView
+      key={revisionId(key, revision)}
+      changeKey={key}
+      revision={revision}
+      path={location.path}
+      line={location.line}
+      onPath={onPath}
+      lead={lead}
+      showTree={wide}
+      annotate
+    />
+  );
+}
+
+/** The tab row's end: viewed progress on the file tabs, then the send controls unless the phone's bar has them. */
+function TabControls({
+  location,
+  detail,
+  send,
+  phoneGuided,
+}: {
+  location: Here;
+  detail: Ready;
+  send: ReactNode;
+  phoneGuided: boolean;
+}) {
+  const { revision } = detail;
+  const progress =
+    revision && (location.tab === "guided" || location.tab === "files") ? (
+      <ViewedProgress changeKey={location.key} revision={revision} />
+    ) : null;
+  if (!progress && phoneGuided) return null;
+  return (
+    <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-3">
+      {progress}
+      {phoneGuided ? null : (
+        <>
+          {progress ? <span aria-hidden className="h-4 w-px shrink-0 bg-border" /> : null}
+          {send}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ReviewReady({
+  location,
+  detail,
+  width,
+  focus,
+}: {
+  location: Here;
+  detail: Ready;
+  width: number;
+  focus: ReviewFocus;
+}) {
+  const { key } = location;
+  const go = useGo();
+  const now = useNow();
+  const wide = width >= WIDE;
+  const phone = width < PHONE;
+  const onPath = useCallback(
+    (path: string) =>
+      go({ key, tab: location.tab, commit: location.commit, path }, { replace: true }),
+    [go, key, location.tab, location.commit],
+  );
+  const onCommit = useCallback((commit: string) => go({ key, tab: "commits", commit }), [go, key]);
+  const rail = (
+    <>
+      <RailSections detail={detail} go={go} now={now} />
+      <ReviewSection changeKey={key} repo={detail.row.repo} number={detail.row.number} />
+    </>
+  );
+  const lead = wide ? null : (
+    <div className="flex flex-col gap-4 border-b border-solid border-border-hairline pb-4">
+      {rail}
+    </div>
+  );
+  const send = (
+    <SendControls
+      changeKey={key}
+      number={detail.row.number}
+      isDraft={detail.row.state === "draft"}
+      head={detail.head}
+    />
+  );
+  // On a phone the guided screen carries the send controls in its bottom bar (board E).
+  const phoneGuided = phone && location.tab === "guided";
+  return (
+    <FocusContext.Provider value={focus}>
+      {phoneGuided ? (
+        <PhoneHeader detail={detail} />
+      ) : (
+        <>
+          <Header detail={detail} now={now} />
+          <div className={cx("shrink-0 pb-4", PAD)}>
+            <ShipPath steps={detail.ship} />
+          </div>
+        </>
+      )}
+      <Tabs location={location} files={detail.files} go={go}>
+        <TabControls location={location} detail={detail} send={send} phoneGuided={phoneGuided} />
+      </Tabs>
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <TabBody
+          location={location}
+          detail={detail}
+          lead={lead}
+          wide={wide}
+          phone={phone}
+          now={now}
+          send={send}
+          onPath={onPath}
+          onCommit={onCommit}
+        />
+        {wide ? (
+          <aside
+            aria-label="Stack, checks and review"
+            className="flex w-84 shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain border-s border-solid border-border-hairline py-4 ps-5 pe-8"
+          >
+            {rail}
+          </aside>
+        ) : null}
+      </div>
+    </FocusContext.Provider>
+  );
+}
+
+function Review({ location, width }: { location: Here; width: number }) {
   const { key } = location;
   const query = useRpcKeyedQuery({
     contract: sourceControlContract,
@@ -428,16 +696,10 @@ function Review({
   });
   const detail = query.data?.[key];
   const go = useGo();
-  const now = useNow();
-  const wide = width >= WIDE;
-  const onPath = useCallback(
-    (path: string) =>
-      go({ key, tab: location.tab, commit: location.commit, path }, { replace: true }),
-    [go, key, location.tab, location.commit],
-  );
-  const onCommit = useCallback((commit: string) => go({ key, tab: "commits", commit }), [go, key]);
   // One per Change (this component is keyed by it): the rail's pick, and the diff that shows it.
   const [focus] = useState(() => new ReviewFocus());
+  // The one place a guide run starts: this page opening the Change, once per mount.
+  useOpenGuide(key, detail?.state === "change");
   useLayoutEffect(
     () => focus.onDetached((item) => go({ key, tab: "files", path: item.anchor.path })),
     [focus, go, key],
@@ -457,96 +719,7 @@ function Review({
     return <HeaderSkeleton />;
   }
   if (detail.state === "missing") return <Missing problem={detail.problem} />;
-  const rail = (
-    <>
-      <RailSections detail={detail} go={go} now={now} />
-      <ReviewSection changeKey={key} repo={detail.row.repo} number={detail.row.number} />
-    </>
-  );
-  const lead = wide ? null : (
-    <div className="flex flex-col gap-4 border-b border-solid border-border-hairline pb-4">
-      {rail}
-    </div>
-  );
-  const { revision } = detail;
-  let body;
-  if (location.tab === "conversation")
-    body = (
-      <ConversationView changeKey={key} hasPullRequest={detail.row.number !== null} lead={lead} />
-    );
-  else if (!revision)
-    body = (
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex flex-col gap-4 px-4 py-4 @3xl:px-6">
-          {lead}
-          <p
-            className="m-0 text-[13px] leading-5 text-muted-foreground"
-            data-testid="sc-no-revision"
-          >
-            {detail.problem
-              ? `${describeProblem(detail.problem)} Files appear once bb can read them.`
-              : "Files appear once bb has read this change's head and base."}
-          </p>
-        </div>
-      </div>
-    );
-  else if (location.tab === "commits")
-    body = (
-      <CommitsView
-        changeKey={key}
-        revision={revision}
-        commit={location.commit}
-        path={location.path}
-        line={location.line}
-        url={detail.row.url}
-        now={now}
-        lead={lead}
-        wide={wide}
-        onCommit={onCommit}
-        onPath={onPath}
-      />
-    );
-  else
-    body = (
-      <FilesView
-        key={revisionId(key, revision)}
-        changeKey={key}
-        revision={revision}
-        path={location.path}
-        line={location.line}
-        onPath={onPath}
-        lead={lead}
-        showTree={wide}
-        annotate
-      />
-    );
-  return (
-    <FocusContext.Provider value={focus}>
-      <Header detail={detail} now={now} />
-      <div className={cx("shrink-0 pb-4", PAD)}>
-        <ShipPath steps={detail.ship} />
-      </div>
-      <Tabs location={location} files={detail.files} go={go}>
-        <SendControls
-          changeKey={key}
-          number={detail.row.number}
-          isDraft={detail.row.state === "draft"}
-          head={detail.head}
-        />
-      </Tabs>
-      <div className="flex min-h-0 min-w-0 flex-1">
-        {body}
-        {wide ? (
-          <aside
-            aria-label="Stack, checks and review"
-            className="flex w-84 shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain border-s border-solid border-border-hairline py-4 ps-5 pe-8"
-          >
-            {rail}
-          </aside>
-        ) : null}
-      </div>
-    </FocusContext.Provider>
-  );
+  return <ReviewReady location={location} detail={detail} width={width} focus={focus} />;
 }
 
 function NoSelection() {
