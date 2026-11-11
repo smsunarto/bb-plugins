@@ -1029,3 +1029,66 @@ test("the chat card's chip and the composer strip say the same thing from one su
     cleanup();
   }
 });
+
+function renderInfo(kind: "row" | "section", row: ThreadChange) {
+  const registration =
+    kind === "row"
+      ? app.threadInfoRows.find((each) => each.id === "pull-request")!
+      : app.threadInfoSections.find((each) => each.id === "branches")!;
+  return renderSlot(
+    registration as never,
+    { threadId: "thread-a", projectId: "proj", environment: { id: "env" } } as never,
+    {
+      experimental_rpcContract: sourceControlContract,
+      rpc: { changeForThread: () => ({ "thread-a": row }) } as Rpc,
+    },
+  );
+}
+
+/** `stacked()` read as plain git: bb's own Branch and Pull request rows speak for it. */
+function plainGit(): ThreadChange {
+  const row = stacked();
+  if (row.state !== "checkout" || !row.local.read) throw new Error("fixture");
+  row.local.read.value = { ...row.local.read.value, provider: "git" };
+  return row;
+}
+
+test("the Info tab's Pull request row shows a GitButler thread's pull request, and nothing for plain git", async () => {
+  const slot = renderInfo("row", stacked());
+  const link = await slot.findByRole("link", { name: /Pull request 482: Draft/ });
+  expect(link.textContent).toContain("#482");
+  cleanup();
+  const plain = renderInfo("row", plainGit());
+  await new Promise((settle) => setTimeout(settle, 30));
+  expect(plain.queryByRole("link")).toBeNull();
+});
+
+test("the Info tab lists a GitButler workspace's branches, top first, and nothing for plain git", async () => {
+  const slot = renderInfo("section", stacked());
+  expect(await slot.findByText("scott/forge-host")).toBeTruthy();
+  expect(slot.getByText("scott/core-schema")).toBeTruthy();
+  expect(slot.getByText("on scott/core-schema")).toBeTruthy();
+  cleanup();
+  const plain = renderInfo("section", plainGit());
+  await new Promise((settle) => setTimeout(settle, 30));
+  expect(plain.queryByText("scott/forge-host")).toBeNull();
+});
+
+test("View in Source Control shows only for a thread with a checkout, and opens the tab", async () => {
+  const { headerActionItem, SOURCE_CONTROL_TAB } = await import("./thread-info.tsx");
+  const registration = app.threadActions.find((each) => each.id === "open")!;
+  expect(registration).toMatchObject({ placement: "header", title: "Source Control" });
+  const opened: unknown[] = [];
+  const panel = { openTab: (options: unknown) => opened.push(options) };
+  const input = (has: boolean) =>
+    ({
+      thread: { id: "thread-a" },
+      data: { "thread-a": has },
+      experimental_panel: panel,
+    }) as never;
+  expect(headerActionItem(input(false))).toBeNull();
+  const item = headerActionItem(input(true))!;
+  expect(item.label).toBe("View in Source Control");
+  item.run();
+  expect(opened).toEqual([{ tab: SOURCE_CONTROL_TAB }]);
+});

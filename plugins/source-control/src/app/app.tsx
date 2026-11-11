@@ -1,4 +1,8 @@
-import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import {
+  definePluginApp,
+  experimental_THREAD_INFO_ROW_GROUPS,
+  experimental_THREAD_INFO_SECTION_GROUPS,
+} from "@get-bb/plugin-sdk/app";
 import { ChangesTab } from "./changes-tab.tsx";
 import { ChangeDirective } from "./chat-card.tsx";
 import { DIRECTIVE_ID } from "../core/directive.ts";
@@ -6,6 +10,12 @@ import { LANDED_DIRECTIVE } from "../core/watch.ts";
 import { LandedDirective } from "./landed-card.tsx";
 import { StripAction, StripSummary, useStripVisible } from "./composer-strip.tsx";
 import { ReviewPanel, ReviewSidebar, useReviewBadge, useReviewTitle } from "./review-entry.tsx";
+import {
+  BranchesInfoSection,
+  headerActionItem,
+  PullRequestInfoRow,
+  useHeaderActionData,
+} from "./thread-info.tsx";
 
 export default definePluginApp((app) => {
   // The thread's Change, in its Source Control tab. Shown for threads with an environment; the tab
@@ -19,6 +29,31 @@ export default definePluginApp((app) => {
     component: ChangesTab,
     layout: "flush",
     useVisible: ({ environment }) => environment !== null,
+  });
+  // "View in Source Control" in the header of a thread that has a checkout; nothing otherwise.
+  app.slots.experimental_threadAction({
+    id: "open",
+    title: "Source Control",
+    icon: "GitBranch",
+    group: "workspace",
+    order: 10,
+    placement: "header",
+    useData: useHeaderActionData,
+    item: headerActionItem,
+  });
+  // The Info tab's GitButler branches, before bb's Commits (10): they name what those are on.
+  app.slots.experimental_threadInfoSection({
+    id: "branches",
+    group: experimental_THREAD_INFO_SECTION_GROUPS.changes,
+    order: 5,
+    component: BranchesInfoSection,
+  });
+  // The Info tab's Pull request row for a GitButler thread, where bb's own reads gitbutler/workspace.
+  app.slots.experimental_threadInfoRow({
+    id: "pull-request",
+    group: experimental_THREAD_INFO_ROW_GROUPS.pullRequest,
+    order: 11,
+    component: PullRequestInfoRow,
   });
   // The Change in one line above the composer, for threads that have one.
   app.slots.experimental_threadContextSegment({
