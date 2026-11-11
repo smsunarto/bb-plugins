@@ -10,8 +10,19 @@ import {
   experimental_Icon as Icon,
   experimental_useRpcMutation as useRpcMutation,
 } from "@get-bb/plugin-sdk/app";
-import { memo, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  createContext,
+  memo,
+  useContext,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  branchNameSchema,
   describeProblem,
   type ActionRisk,
   type Branch,
@@ -22,6 +33,18 @@ import {
 import { sourceControlContract } from "../contract/rpc.ts";
 import { cx, plural, squashMessage } from "./format.ts";
 import { Button, Pending } from "./ui.tsx";
+
+/**
+ * Why the checkout's writes cannot run now, such as its host being offline;
+ * null while they can. Branch footers disable their buttons and say why.
+ */
+export const HostWritesBlocked = createContext<string | null>(null);
+
+/** The rename field takes focus, its name selected, when the reader opens it. */
+function focusOnMount(field: HTMLInputElement | null) {
+  field?.focus();
+  field?.select();
+}
 
 /** What a write is about: a branch's name, or the whole workspace for Pull. */
 export type Scope = string;
@@ -156,11 +179,14 @@ export function Confirm({
   tone = "default",
   onConfirm,
   onCancel,
+  fieldFocus = false,
   children,
 }: {
   prompt: ReactNode;
   label: string;
   pending: boolean;
+  /** A field among `children` takes focus instead of Cancel, as Rename's name does. */
+  fieldFocus?: boolean;
   /** Why the answer can't run yet, shown on hover. Cancel still works. */
   blocked?: string | null;
   tone?: ConfirmTone;
@@ -205,7 +231,7 @@ export function Confirm({
           aria-describedby={promptId}
           // The safe answer takes focus, so a stray Enter cancels.
           // oxlint-disable-next-line jsx-a11y/no-autofocus
-          autoFocus
+          autoFocus={!fieldFocus}
           onClick={onCancel}
         >
           Cancel
@@ -471,8 +497,36 @@ export function OutcomeLine({
 type Mode =
   | { kind: "idle" }
   | { kind: "land"; message: string; seen: Revision }
-  | { kind: "delete"; seen: Revision };
+  | { kind: "delete"; seen: Revision }
+  | { kind: "rename"; name: string; seen: Revision };
 const IDLE: Mode = { kind: "idle" };
+
+/**
+ * Rename's question: the new name, checked as the server will check it. The
+ * remote branch and any pull request keep the old name until the next push.
+ */
+function renameConfirmation(branch: Branch, name: string, native: boolean): Confirmation {
+  const next = name.trim();
+  let blocked: string | undefined;
+  if (next === branch.name) blocked = "Type a new name.";
+  else if (!branchNameSchema.safeParse(next).success)
+    blocked = "A branch name has no spaces and does not start with - or refs/.";
+  const remote =
+    branch.status === "unpushed" || native
+      ? ""
+      : " GitButler keeps its stack, and the remote branch keeps the old name until you push.";
+  return {
+    prompt: (
+      <>
+        Rename <Name>{branch.name}</Name>?{remote}
+      </>
+    ),
+    label: "Rename",
+    action: { kind: "rename", branch: branch.name, name: next },
+    tone: "default",
+    ...(blocked ? { blocked } : {}),
+  };
+}
 
 /**
  * The footer under a branch header: Push, Land and Delete. Push goes straight
@@ -513,9 +567,11 @@ export const BranchActions = memo(function BranchActions({
   prAction?: ReactNode;
 }) {
   const [mode, setMode] = useState<Mode>(IDLE);
+  const hostBlocked = useContext(HostWritesBlocked);
   const now: Revision = { head: branch.head, target: targetHead };
   const pending = running !== null;
-  const blocked = busy && !pending ? "Another action is running" : null;
+  const blocked = hostBlocked ?? (busy && !pending ? "Another action is running" : null);
+  const off = busy || hostBlocked !== null;
   const available = availableFor(branch, landable, pushBlocked);
   const send = (action: VcsAction) => {
     setMode(IDLE);
@@ -532,29 +588,34 @@ export const BranchActions = memo(function BranchActions({
           blocked={blocked}
           onCancel={() => (asked.fromServer ? dispatch.dismiss(branch.name) : setMode(IDLE))}
           onReview={() =>
-            mode.kind === "land" && !asked.fromServer
+            (mode.kind === "land" || mode.kind === "rename") && !asked.fromServer
               ? setMode({ ...mode, seen: now })
               : dispatch.dismiss(branch.name)
           }
           onConfirm={() => send(asked.confirmation.action)}
+          fieldFocus={mode.kind === "rename" && !asked.fromServer}
         >
-          {mode.kind === "land" && !asked.fromServer && branch.commits.length > 1 ? (
-            <textarea
-              aria-label="Squashed commit message"
-              className="w-full min-w-0 basis-full resize-y rounded-[6px] border border-border-hairline bg-background px-2 py-1 text-[12px] leading-normal text-foreground focus-visible:outline-1"
-              rows={Math.min(8, mode.message.split("\n").length + 1)}
-              value={mode.message}
-              readOnly={pending}
-              onChange={(event) => setMode({ ...mode, message: event.target.value })}
+          {asked.fromServer ? null : (
+            <ModeField
+              mode={mode}
+              branch={branch}
+              pending={pending}
+              onChange={setMode}
+              onSubmit={() => {
+                const confirmation = asked.confirmation;
+                // A branch that moved since asks to be looked at again first.
+                if (!confirmation.blocked && !blocked && !moved(asked.seen, now))
+                  send(confirmation.action);
+              }}
             />
-          ) : null}
+          )}
         </Question>
       ) : (
         <ActionRow
           branch={branch}
           available={available}
           running={running}
-          busy={busy}
+          busy={off}
           blocked={blocked}
           prAction={prAction}
           onPush={(force) => send({ kind: "push", branch: branch.name, force, acceptedLoss: [] })}
@@ -566,12 +627,60 @@ export const BranchActions = memo(function BranchActions({
             })
           }
           onDelete={() => setMode({ kind: "delete", seen: now })}
+          onRename={() => setMode({ kind: "rename", name: branch.name, seen: now })}
         />
       )}
+      {hostBlocked && !asked ? (
+        <p className="m-0 text-[12px] leading-4 text-muted-foreground">{hostBlocked}</p>
+      ) : null}
       <OutcomeLine outcome={outcome} scope={branch.name} dispatch={dispatch} />
     </div>
   );
 });
+
+/** What a question asks for besides its answer: Rename's new name, or Land's squashed message. */
+function ModeField({
+  mode,
+  branch,
+  pending,
+  onChange,
+  onSubmit,
+}: {
+  mode: Mode;
+  branch: Branch;
+  pending: boolean;
+  onChange: (mode: Mode) => void;
+  onSubmit: () => void;
+}) {
+  if (mode.kind === "rename")
+    return (
+      <input
+        aria-label={`New name for ${branch.name}`}
+        className="h-7 w-full min-w-0 basis-full rounded-[6px] border border-border-hairline bg-background px-2 font-mono text-[12px] text-foreground focus-visible:outline-1"
+        value={mode.name}
+        readOnly={pending}
+        spellCheck={false}
+        autoCapitalize="off"
+        autoCorrect="off"
+        ref={focusOnMount}
+        onChange={(event) => onChange({ ...mode, name: event.target.value })}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !pending) onSubmit();
+        }}
+      />
+    );
+  if (mode.kind !== "land" || branch.commits.length <= 1) return null;
+  return (
+    <textarea
+      aria-label="Squashed commit message"
+      className="w-full min-w-0 basis-full resize-y rounded-[6px] border border-border-hairline bg-background px-2 py-1 text-[12px] leading-normal text-foreground focus-visible:outline-1"
+      rows={Math.min(8, mode.message.split("\n").length + 1)}
+      value={mode.message}
+      readOnly={pending}
+      onChange={(event) => onChange({ ...mode, message: event.target.value })}
+    />
+  );
+}
 
 type Available = { push: Branch["push"]; land: boolean };
 
@@ -603,6 +712,12 @@ function question(
       seen: mode.seen,
       fromServer: false,
     };
+  if (mode.kind === "rename")
+    return {
+      confirmation: renameConfirmation(branch, mode.name, native),
+      seen: mode.seen,
+      fromServer: false,
+    };
   if (mode.kind !== "land") return null;
   return {
     confirmation: landConfirmation(branch, mode.message, null, behind, native),
@@ -620,6 +735,7 @@ function Question({
   onCancel,
   onReview,
   onConfirm,
+  fieldFocus = false,
   children,
 }: {
   asked: Confirmation;
@@ -629,6 +745,7 @@ function Question({
   onCancel: () => void;
   onReview: () => void;
   onConfirm: () => void;
+  fieldFocus?: boolean;
   children?: ReactNode;
 }) {
   if (changed)
@@ -651,6 +768,7 @@ function Question({
       tone={asked.tone}
       onCancel={onCancel}
       onConfirm={onConfirm}
+      fieldFocus={fieldFocus}
     >
       {children}
     </Confirm>
@@ -667,6 +785,7 @@ function ActionRow({
   onPush,
   onLand,
   onDelete,
+  onRename,
 }: {
   branch: Branch;
   available: Available;
@@ -677,6 +796,7 @@ function ActionRow({
   onPush: (force: boolean) => void;
   onLand: () => void;
   onDelete: () => void;
+  onRename: () => void;
 }) {
   const force = available.push === "force";
   // Rewritten commits replace the remote branch, so the label says so.
@@ -701,10 +821,20 @@ function ActionRow({
         </Button>
       ) : null}
       {prAction}
+      <Button
+        variant="ghost"
+        className="ms-auto shrink-0 text-muted-foreground"
+        disabled={busy}
+        aria-label={`Rename ${branch.name}`}
+        onClick={onRename}
+      >
+        <Pending pending={running === "rename"} icon="Edit" />
+        Rename
+      </Button>
       {/* Apart from the rest and quiet, so it is never the button a hand drifts to. */}
       <Button
         variant="ghost"
-        className="ms-auto shrink-0 text-muted-foreground enabled:hover:text-destructive"
+        className="shrink-0 text-muted-foreground enabled:hover:text-destructive"
         disabled={busy}
         aria-label={`Delete ${branch.name}`}
         onClick={onDelete}

@@ -221,6 +221,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     placements,
     startRefresh: (threadId) => Effect.asVoid(Effect.forkDetach(refresh(threadId))),
     refresh,
+    renamed: deps.branches.renamed.bind(deps.branches),
     announce,
     actionDeadlineMs: deps.actionDeadlineMs,
     hostDeadlineMs,

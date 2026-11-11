@@ -252,6 +252,44 @@ describe.each(cases)("$provider provider deletes a branch", ({ provider }) => {
   });
 });
 
+/** Rename changes X's name, so it gets its own repositories. */
+describe.each(cases)("$provider provider renames a branch", ({ provider }) => {
+  let own: Repos;
+  beforeAll(async () => {
+    own = await buildRepos(
+      env.root,
+      provider === "gitbutler",
+      join(env.root, `rename-${provider}`),
+    );
+  }, 60_000);
+  const path = () => (provider === "git" ? own.plain : own.gitbutler!);
+  const rename = (name: string, head: string) =>
+    host.experimental_call("vcsAction", {
+      path: path(),
+      readAs: "auto",
+      action: { kind: "rename", branch: BRANCH, name },
+      expected: { head, target: own.base },
+    });
+
+  test("refuses a rename against a stale head, or to a name a branch here has", async () => {
+    expect(await rename("scott/renamed", STALE)).toMatchObject({ status: "conflict" });
+    expect(await rename(BRANCH, own.unpushed)).toEqual({
+      status: "conflict",
+      detail: `A branch named ${BRANCH} is already here.`,
+    });
+    expect(ref(path(), `refs/heads/${BRANCH}`)).toBe(own.unpushed);
+  });
+
+  test("renames the branch at the revision it was read at, keeping its commits", async () => {
+    expect(await rename("scott/renamed", own.unpushed)).toEqual({ status: "done" });
+    expect(ref(path(), "refs/heads/scott/renamed")).toBe(own.unpushed);
+    expect(ref(path(), `refs/heads/${BRANCH}`)).toBeNull();
+    const value = await read(path());
+    expect(findBranch(value, "scott/renamed")).toMatchObject({ head: own.unpushed });
+    if (provider === "git") expect(value.checkedOut).toBe("scott/renamed");
+  });
+});
+
 /** Commit adds commits to X, so it gets its own repositories too. */
 describe.each(cases)("$provider provider commits the reader's files", ({ provider }) => {
   let own: Repos;

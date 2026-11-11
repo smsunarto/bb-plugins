@@ -102,6 +102,8 @@ export function revisionConflict(
     if (branch.head !== expected.head)
       return `${action.branch} moved since it was read: its head is now ${branch.head ?? "empty"}.`;
   }
+  if (action.kind === "rename" && findBranch(value, action.name))
+    return `A branch named ${action.name} is already here.`;
   if (action.kind === "commit") {
     const missing = action.paths.find((path) => !uncommittedPaths(value).has(path));
     if (missing !== undefined) return `${missing} has no uncommitted change here any more.`;

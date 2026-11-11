@@ -1,7 +1,7 @@
 /**
  * The plain-git workspace provider's writes: push, pull (rebase onto the
  * target), and land (publish one commit onto the target). Ported from
- * `plugins/gitbutler/src/host/git-actions.ts`; rename and delete stay there.
+ * `plugins/gitbutler/src/host/git-actions.ts`.
  * A write that finds a risk the reader did not accept returns `confirm` and
  * changes nothing; a refusal throws.
  */
@@ -557,6 +557,10 @@ export async function runGitWrite(
     }
     case "commit":
       return commit(action, before.path, signal);
+    case "rename":
+      await runGit(before.path, ["check-ref-format", "--branch", action.name], signal);
+      await runGit(before.path, ["branch", "-m", before.branch, action.name], signal);
+      return DONE;
   }
 }
 

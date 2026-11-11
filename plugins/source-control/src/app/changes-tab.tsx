@@ -30,7 +30,13 @@ import {
   type WorkspaceValue,
 } from "../core/change.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { PullButton, PullStatus, WORKSPACE, useVcsActions } from "./branch-actions.tsx";
+import {
+  HostWritesBlocked,
+  PullButton,
+  PullStatus,
+  WORKSPACE,
+  useVcsActions,
+} from "./branch-actions.tsx";
 import { FindingsCard } from "./findings-card.tsx";
 import { cx, plural, shortId, shortRef } from "./format.ts";
 import { readSnapshot, writeSnapshot } from "./snapshot.ts";
@@ -279,78 +285,84 @@ function ReadyBody({
       branch.name === row.branch ? row.key : changeKeyForBranch(hostId, workspace, branch),
     [row.branch, row.key, hostId, workspace],
   );
+  const hostDown =
+    view.stale?.kind === "host-offline"
+      ? `${row.placement.hostName} is offline. Rename, push, land and delete need it.`
+      : null;
   return (
-    <div className="flex min-w-0 flex-col gap-4 p-3 @md:p-4">
-      <ThisThread
-        threadId={threadId}
-        row={row}
-        branchName={row.branch}
-        branch={view.branch}
-        workspace={workspace}
-        forge={row.forge}
-        offline={view.stale?.kind === "host-offline"}
-      />
-      <UncommittedCard
-        threadId={threadId}
-        changes={workspace.uncommitted}
-        more={workspace.moreUncommitted}
-        conflicted={workspace.conflicted.length}
-        commit={
-          row.readAsGit ? null : (
-            <CommitControl
-              changes={workspace.uncommitted}
-              more={workspace.moreUncommitted}
-              branches={commitBranches(workspace)}
-              preferred={row.branch}
-              targetHead={workspace.target?.head ?? null}
-              running={vcs.running}
-              busy={vcs.busy}
-              dispatch={vcs.dispatch}
-            />
-          )
-        }
-      />
-      {workspace.stacks.map((stack) => (
-        <StackLane
-          key={stack.key}
+    <HostWritesBlocked value={hostDown}>
+      <div className="flex min-w-0 flex-col gap-4 p-3 @md:p-4">
+        <ThisThread
           threadId={threadId}
-          keyOf={keyOf}
-          stack={stack}
-          threadBranch={row.branch}
-          forge={row.forge.read?.value}
-          behind={workspace.target?.behind ?? 0}
-          targetHead={workspace.target?.head ?? null}
-          native={native}
-          outcomes={vcs.outcomes}
-          running={vcs.running}
-          busy={vcs.busy}
-          dispatch={vcs.dispatch}
-          readOnly={row.readAsGit}
-          expanded={expanded}
-          now={now}
-          onToggleCommit={toggleCommit}
+          row={row}
+          branchName={row.branch}
+          branch={view.branch}
+          workspace={workspace}
+          forge={row.forge}
+          offline={view.stale?.kind === "host-offline"}
         />
-      ))}
-      {workspace.stacks.length === 0 ? (
-        <p className="m-0 text-[12px] leading-4 text-muted-foreground">
-          {native
-            ? "This checkout has a detached HEAD, so there is no branch to show."
-            : "No branches are applied in this GitButler workspace."}
-        </p>
-      ) : null}
-      {workspace.github ? (
-        <OtherMachinesCard
-          hostId={row.placement.hostId}
-          repo={`${workspace.github.repo.owner}/${workspace.github.repo.name}`}
-          changeKey={row.key}
-          now={now}
-          className={CARD}
+        <UncommittedCard
+          threadId={threadId}
+          changes={workspace.uncommitted}
+          more={workspace.moreUncommitted}
+          conflicted={workspace.conflicted.length}
+          commit={
+            row.readAsGit ? null : (
+              <CommitControl
+                changes={workspace.uncommitted}
+                more={workspace.moreUncommitted}
+                branches={commitBranches(workspace)}
+                preferred={row.branch}
+                targetHead={workspace.target?.head ?? null}
+                running={vcs.running}
+                busy={vcs.busy}
+                dispatch={vcs.dispatch}
+              />
+            )
+          }
         />
-      ) : null}
-      {native ? null : (
-        <HistoryCard threadId={threadId} path={workspace.path} now={now} className={CARD} />
-      )}
-    </div>
+        {workspace.stacks.map((stack) => (
+          <StackLane
+            key={stack.key}
+            threadId={threadId}
+            keyOf={keyOf}
+            stack={stack}
+            threadBranch={row.branch}
+            forge={row.forge.read?.value}
+            behind={workspace.target?.behind ?? 0}
+            targetHead={workspace.target?.head ?? null}
+            native={native}
+            outcomes={vcs.outcomes}
+            running={vcs.running}
+            busy={vcs.busy}
+            dispatch={vcs.dispatch}
+            readOnly={row.readAsGit}
+            expanded={expanded}
+            now={now}
+            onToggleCommit={toggleCommit}
+          />
+        ))}
+        {workspace.stacks.length === 0 ? (
+          <p className="m-0 text-[12px] leading-4 text-muted-foreground">
+            {native
+              ? "This checkout has a detached HEAD, so there is no branch to show."
+              : "No branches are applied in this GitButler workspace."}
+          </p>
+        ) : null}
+        {workspace.github ? (
+          <OtherMachinesCard
+            hostId={row.placement.hostId}
+            repo={`${workspace.github.repo.owner}/${workspace.github.repo.name}`}
+            changeKey={row.key}
+            now={now}
+            className={CARD}
+          />
+        ) : null}
+        {native ? null : (
+          <HistoryCard threadId={threadId} path={workspace.path} now={now} className={CARD} />
+        )}
+      </div>
+    </HostWritesBlocked>
   );
 }
 

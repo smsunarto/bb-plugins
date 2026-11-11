@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -537,6 +537,37 @@ test("Delete asks first, sends nothing until confirmed, then asks again about un
   expect(of("vcsAction")[1]!.input).toMatchObject({
     action: { kind: "delete", branch: "scott/forge-host", accepted: risk },
   });
+});
+
+test("Rename asks for a valid new name, then renames pinned to the head the reader saw, once", async () => {
+  const { slot, of } = renderRow(stacked(), {
+    vcsAction: () => ({ status: "conflict" as const, detail: "scott/forge-host moved." }),
+  });
+  await act(async () =>
+    (await slot.findByRole("button", { name: "Rename scott/forge-host" })).click(),
+  );
+  const field = (await slot.findByRole("textbox", {
+    name: "New name for scott/forge-host",
+  })) as HTMLInputElement;
+  const confirm = slot.getByRole("button", { name: "Rename" }) as HTMLButtonElement;
+  // The name takes focus, not Cancel, so the reader types straight away.
+  expect(document.activeElement).toBe(field);
+  // The unchanged name, or one git would refuse, cannot be sent.
+  expect(confirm.disabled).toBe(true);
+  fireEvent.change(field, { target: { value: "has space" } });
+  expect(confirm.disabled).toBe(true);
+  fireEvent.change(field, { target: { value: "scott/forge-host-2" } });
+  expect(confirm.disabled).toBe(false);
+  await act(async () => confirm.click());
+  await waitFor(() => expect(of("vcsAction")).toHaveLength(1));
+  expect(of("vcsAction")[0]!.input).toEqual({
+    threadId: "thread-a",
+    action: { kind: "rename", branch: "scott/forge-host", name: "scott/forge-host-2" },
+    expected: { head: "f00d001", target: "a41c9e2ffff" },
+  });
+  // A refusal is shown, not retried.
+  await waitFor(() => expect(slot.getByRole("alert").textContent).toBeTruthy());
+  expect(of("vcsAction")).toHaveLength(1);
 });
 
 test("Merge reads the policy fresh, then merges pinned to the head and base the reader saw", async () => {

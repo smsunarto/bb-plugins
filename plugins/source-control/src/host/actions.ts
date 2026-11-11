@@ -1,7 +1,7 @@
 /**
  * The GitButler workspace provider's writes. Ported from
- * `plugins/gitbutler/src/host/actions.ts` (push, the workspace pull, land
- * and delete; rename and the per-branch pull stay in that plugin).
+ * `plugins/gitbutler/src/host/actions.ts` (push, the workspace pull, land,
+ * rename and delete; the per-branch pull stays in that plugin).
  * Branches are named, not given by CLI id, because ids are reassigned on
  * every `but` invocation. A write that finds a risk the reader did not
  * accept returns `confirm` and changes nothing; a refusal throws.
@@ -29,6 +29,11 @@ export async function runButWrite(
 ): Promise<VcsResult> {
   if (action.kind === "pull") return updateWorkspace(cwd, action.accepted, signal);
   if (action.kind === "delete") return deleteBranch(cwd, action, signal);
+  if (action.kind === "rename") {
+    // `but reword` on a branch renames it; GitButler keeps its stack and review.
+    await runButAction(cwd, ["reword", action.branch, "-m", action.name], signal);
+    return DONE;
+  }
   if (action.kind === "commit") {
     // Named by path, not CLI id: ids are reassigned on every `but` invocation.
     await runButAction(

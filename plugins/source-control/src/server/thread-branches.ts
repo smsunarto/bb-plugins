@@ -306,6 +306,27 @@ export function createThreadBranches(
      * since their answer may come from it. Returns every thread whose answer
      * may have changed.
      */
+    /**
+     * A rename made from the tab rather than by the thread's commands, kept as
+     * if the thread had run it, so its branch keeps following the new name.
+     */
+    async renamed(threadId: string, place: ThreadPlace, from: string, to: string): Promise<void> {
+      const key = `${threadId}:${place.environmentId}`;
+      const { record } = await readOwn(threadId, place);
+      const at = Date.now();
+      const mine = record.branch === from;
+      const next: OwnBranch = {
+        ...record,
+        branch: mine ? to : record.branch,
+        namedAt: mine ? at : record.namedAt,
+        renames: [...record.renames, { from, to, at }].slice(-RENAMES_KEPT),
+      };
+      own.set(key, next);
+      await bb.storage.kv.set(KEY_PREFIX + key, next);
+      generations.set(threadId, (generations.get(threadId) ?? 0) + 1);
+      answers.delete(key);
+    },
+
     async turnEnded(threadId: string, place: ThreadPlace): Promise<string[]> {
       const key = `${threadId}:${place.environmentId}`;
       await resolving.get(key)?.promise.catch(() => null);

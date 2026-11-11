@@ -264,7 +264,7 @@ export const actionRiskSchema = z
   .strict();
 export type ActionRisk = z.infer<typeof actionRiskSchema>;
 
-const branchNameSchema = z
+export const branchNameSchema = z
   .string()
   .min(1)
   .max(255)
@@ -303,6 +303,10 @@ export const vcsActionSchema = z.discriminatedUnion("kind", [
       branch: branchNameSchema,
       accepted: actionRiskSchema.nullable(),
     })
+    .strict(),
+  /** Renames `branch` to `name`, only while it is still at the expected head. */
+  z
+    .object({ kind: z.literal("rename"), branch: branchNameSchema, name: branchNameSchema })
     .strict(),
   /**
    * Commits exactly `paths`, as the reader saw them uncommitted, onto

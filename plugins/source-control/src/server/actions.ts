@@ -38,6 +38,8 @@ export function createActions(deps: {
   /** Read the thread again without waiting for it. */
   startRefresh: (threadId: string) => Effect.Effect<void>;
   refresh: (threadId: string) => Effect.Effect<void>;
+  /** A rename from the tab: the thread's GitButler branch follows it. */
+  renamed: (threadId: string, place: Placement, from: string, to: string) => Promise<void>;
   announce: (threadIds: Iterable<string>) => void;
   actionDeadlineMs: number;
   hostDeadlineMs: number;
@@ -100,6 +102,10 @@ export function createActions(deps: {
         }),
       ),
     );
+    if (action.kind === "rename" && result.status === "done")
+      yield* Effect.promise(() =>
+        deps.renamed(threadId, placement, action.branch, action.name).catch(() => undefined),
+      );
     // The checkout moved or was written: read it again either way.
     yield* deps.startRefresh(threadId);
     return result;

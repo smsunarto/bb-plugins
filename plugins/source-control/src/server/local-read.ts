@@ -28,6 +28,13 @@ export type ThreadBranchLookup = {
   ): Promise<string | null>;
   /** After a turn: reads the thread's new commands; returns every thread whose answer may have moved. */
   turnEnded(threadId: string, place: { environmentId: string; path: string }): Promise<string[]>;
+  /** A rename made from the tab: the thread's branch follows it. */
+  renamed(
+    threadId: string,
+    place: { environmentId: string; path: string },
+    from: string,
+    to: string,
+  ): Promise<void>;
 };
 
 export function createLocalReads(deps: {
