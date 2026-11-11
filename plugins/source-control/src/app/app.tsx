@@ -8,6 +8,7 @@ import { ChangeDirective } from "./chat-card.tsx";
 import { DIRECTIVE_ID } from "../core/directive.ts";
 import { LANDED_DIRECTIVE } from "../core/watch.ts";
 import { LandedDirective } from "./landed-card.tsx";
+import { PrWatchBanner } from "./pr-watch-banner.tsx";
 import { StripAction, StripSummary, useStripVisible } from "./composer-strip.tsx";
 import { ReviewPanel, ReviewSidebar, useReviewBadge, useReviewTitle } from "./review-entry.tsx";
 import {
@@ -54,6 +55,13 @@ export default definePluginApp((app) => {
     group: experimental_THREAD_INFO_ROW_GROUPS.pullRequest,
     order: 11,
     component: PullRequestInfoRow,
+  });
+  // A card above the composer of a thread whose agent watches pull requests: their checks, and
+  // Unwatch. Mounted for every thread composer, so a thread with no watch reads one stored row.
+  app.composer.customize({
+    id: "pr-watch",
+    scopes: ["thread"],
+    banners: [{ id: "pr-watch", component: PrWatchBanner }],
   });
   // The Change in one line above the composer, for threads that have one.
   app.slots.experimental_threadContextSegment({

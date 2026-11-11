@@ -20,7 +20,7 @@ import { instructionFiles } from "@bb-plugins/instructions";
 import type { Effect } from "effect";
 import { z } from "zod";
 import type { Placement } from "../core/change.ts";
-import { changeKeySchema, type ChangeKey } from "../core/ids.ts";
+import { changeKeySchema, prWatchTag, type ChangeKey } from "../core/ids.ts";
 import {
   loginSchema,
   parsePrReference,
@@ -78,6 +78,33 @@ function prChangeKey(ref: PrRef, head: { headOwner: string; branch: string }): C
 
 const repoOf = (ref: { owner: string; repo: string }) => ({ owner: ref.owner, name: ref.repo });
 
+/** The composer banner's reads of a thread's watches, and its Unwatch. */
+function watchHandlers(watcher: ReturnType<typeof createPrWatcher>) {
+  return {
+    prWatches: ({ keys }) =>
+      Object.fromEntries(keys.map((threadId) => [threadId, watchesOf(watcher, threadId)])),
+    stopPrWatch: async ({ threadId, ref }) => ({ stopped: await watcher.stop(threadId, ref) }),
+  } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
+}
+
+/** One thread's watches as the banner shows them. */
+function watchesOf(watcher: ReturnType<typeof createPrWatcher>, threadId: string) {
+  return {
+    watches: watcher.list(threadId).map((record) => ({
+      ref: record.ref,
+      account: record.account,
+      url: record.url,
+      title: record.title,
+      state: record.state,
+      mergeState: record.mergeState,
+      checks: record.checks,
+      polledAt: record.polledAt,
+      error: record.error,
+      ended: record.ended,
+    })),
+  };
+}
+
 export function createMoved(deps: {
   bb: BbPluginApi;
   store: Store;
@@ -118,6 +145,7 @@ export function createMoved(deps: {
         : { ok: false, reason: "failed", message: "GitHub answered something else." };
 
   const watcher = createPrWatcher({
+    changed: (threadId) => deps.invalidate([prWatchTag(threadId)]),
     bb,
     store,
     now: deps.now,
@@ -262,6 +290,7 @@ export function createMoved(deps: {
         away: !outcome.ok && (outcome.reason === "away" || outcome.reason === "rate-limited"),
       };
     },
+    ...watchHandlers(watcher),
     pins: () => ({ pins: pinsOf(store) }),
     setPinned: ({ ref, pinned }) => {
       const changed = pinned

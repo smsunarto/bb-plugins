@@ -22,7 +22,7 @@ import {
 } from "../core/change.ts";
 import { threadStatusSchema } from "../core/status.ts";
 import { importReportSchema } from "../core/cutover.ts";
-import { landedSchema, landedTargetSchema, prRefSchema } from "../core/watch.ts";
+import { landedSchema, landedTargetSchema, prRefSchema, prWatchViewSchema } from "../core/watch.ts";
 import { guideViewSchema } from "../core/guide.ts";
 import {
   changeDetailSchema,
@@ -54,6 +54,7 @@ import {
   reviewTag,
   threadTag,
   type ChangeKey,
+  prWatchTag,
 } from "../core/ids.ts";
 
 export const MAX_THREAD_KEYS = 200;
@@ -407,6 +408,23 @@ export const sourceControlContract = defineRpcContract({
         ),
       })
       .strict(),
+  },
+  /** The pull requests the thread's agent watches, for the composer banner. */
+  /** Keyed by thread id, so a thread switched back to reads nothing until its watches change. */
+  prWatches: {
+    input: z.object({ keys: z.array(threadIdSchema).min(1).max(20) }).strict(),
+    output: z.record(
+      z.string(),
+      z.object({ watches: z.array(prWatchViewSchema).max(20) }).strict(),
+    ),
+    keyTags: (key: string) => [prWatchTag(key)],
+  },
+  /** Unwatch: stops the thread's watch of `ref`. The agent is not told. */
+  stopPrWatch: {
+    experimental_description:
+      "Stop the thread's watch of pull request `ref`, as the banner's Unwatch does. The thread's agent is not told. Returns whether there was a watch.",
+    input: z.object({ threadId: threadIdSchema, ref: prRefSchema }).strict(),
+    output: z.object({ stopped: z.boolean() }).strict(),
   },
   /** "Ask agent to fix" on a checkout a tool is missing from: a thread on that host to install it. */
   askToFix: {

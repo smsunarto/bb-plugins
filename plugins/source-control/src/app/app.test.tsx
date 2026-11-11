@@ -1128,3 +1128,57 @@ test("a plain git checkout has no operation history", async () => {
   await slot.findByRole("button", { name: "Push scott/forge-host" });
   expect(slot.queryByTestId("sc-history")).toBeNull();
 });
+
+const WATCH = {
+  ref: { owner: "smsunarto", repo: "bb-plugins", number: 482 },
+  account: "smsunarto",
+  url: "https://github.com/smsunarto/bb-plugins/pull/482",
+  title: "Route gh through the checkout host",
+  state: "open" as const,
+  mergeState: "BEHIND",
+  checks: {
+    headRefOid: "c0ffee1",
+    checks: [
+      { id: "run:1", name: "lint", state: "failure" as const, detailsUrl: null },
+      { id: "run:2", name: "test", state: "success" as const, detailsUrl: null },
+    ],
+  },
+  polledAt: iso(1),
+  error: null,
+  ended: false,
+};
+
+function renderBanner(watches: unknown[], stops: unknown[]) {
+  const banner = app.composerCustomizations.find((each) => each.id === "pr-watch")!.banners![0]!;
+  return renderSlot(banner as never, {} as never, {
+    experimental_rpcContract: sourceControlContract,
+    composer: { scope: { kind: "thread", threadId: "thread-a" } as never },
+    rpc: {
+      prWatches: ({ keys }: { keys: string[] }) =>
+        Object.fromEntries(keys.map((key) => [key, { watches }])),
+      stopPrWatch: (input: unknown) => {
+        stops.push(input);
+        return { stopped: true };
+      },
+    } as Rpc,
+  });
+}
+
+test("the composer banner shows each watched pull request's checks, and Unwatch stops it", async () => {
+  const stops: unknown[] = [];
+  const slot = renderBanner([WATCH], stops);
+  const row = await slot.findByRole("button", { name: /Show checks$/ });
+  expect(row.textContent).toContain("lint failing · Behind base");
+  await act(async () => row.click());
+  expect(slot.getByRole("list", { name: "2 checks on smsunarto/bb-plugins#482" })).toBeTruthy();
+  await act(async () =>
+    slot.getByRole("button", { name: "Unwatch smsunarto/bb-plugins#482" }).click(),
+  );
+  await waitFor(() => expect(stops).toEqual([{ threadId: "thread-a", ref: WATCH.ref }]));
+});
+
+test("a thread that watches nothing draws no banner", async () => {
+  const slot = renderBanner([], []);
+  await new Promise((settle) => setTimeout(settle, 30));
+  expect(slot.queryByTestId("sc-pr-watch")).toBeNull();
+});

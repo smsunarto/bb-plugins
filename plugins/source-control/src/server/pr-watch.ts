@@ -287,8 +287,24 @@ export function createPrWatcher(deps: {
   now: () => number;
   /** Whether the old code-review plugin still runs: its watches are the live ones until the cutover. */
   standingDown: () => boolean;
+  /** The thread's watches changed: its composer banner reads them again. */
+  changed?: (threadId: string) => void;
 }) {
-  const { bb, store, now } = deps;
+  const { bb, now } = deps;
+  // Every write to a thread's watches tells its banner, wherever it comes from.
+  const told =
+    <A extends unknown[], R>(write: (threadId: string, ...rest: A) => R) =>
+    (threadId: string, ...rest: A): R => {
+      const result = write(threadId, ...rest);
+      deps.changed?.(threadId);
+      return result;
+    };
+  const store = {
+    ...deps.store,
+    putWatch: told(deps.store.putWatch),
+    dropWatch: told(deps.store.dropWatch),
+    dropWatches: told(deps.store.dropWatches),
+  };
   const withLock = createLocks();
 
   const parse = (json: string | null): WatchRecord | null => {

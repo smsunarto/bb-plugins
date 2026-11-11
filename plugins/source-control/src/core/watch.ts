@@ -113,6 +113,23 @@ export type WatchRead = z.infer<typeof watchReadSchema>;
 export const checksRunning = (checks: WatchChecks) =>
   checks.checks.some((check) => check.state === "pending");
 
+/** A watch as the thread's composer banner shows it. */
+export const prWatchViewSchema = z
+  .object({
+    ref: prRefSchema,
+    account: z.string(),
+    url: z.string(),
+    title: z.string(),
+    state: prStateSchema,
+    mergeState: z.string().nullable(),
+    checks: watchChecksSchema,
+    polledAt: z.string(),
+    error: z.string().nullable(),
+    ended: z.boolean(),
+  })
+  .strict();
+export type PrWatchView = z.infer<typeof prWatchViewSchema>;
+
 /** The branch a pull request comes from. */
 export const prHeadSchema = z
   .object({ branch: z.string().min(1), head: z.string(), headOwner: z.string().min(1) })

@@ -131,3 +131,8 @@ export function askTag(key: ChangeKey): string {
 export function guideTag(key: ChangeKey): string {
   return `change:${key}:guide`;
 }
+
+/** A thread's pull request watches, as its composer banner reads them. */
+export function prWatchTag(threadId: string): string {
+  return `pr-watch:${threadId}`;
+}
