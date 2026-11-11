@@ -118,7 +118,7 @@ export function FilesSection(props: PluginNavPanelProps & { workflows: boolean }
           </div>
           <UrlLink
             className="block w-full rounded-md px-2 py-1 text-left text-sm text-foreground hover:bg-accent/50"
-            href="/plugins/agent-instructions/instructions/prompts/code-review/file/skills/request-review/SKILL.md"
+            href="/plugins/agent-instructions/instructions/prompts/source-control/file/skills/request-review/SKILL.md"
           >
             Review workflow
             <span className="block text-xs text-muted-foreground">Edit in Agent Instructions</span>

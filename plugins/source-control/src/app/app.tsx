@@ -6,9 +6,10 @@ import {
 import { ChangesTab } from "./changes-tab.tsx";
 import { ChangeDirective } from "./chat-card.tsx";
 import { DIRECTIVE_ID } from "../core/directive.ts";
-import { LANDED_DIRECTIVE } from "../core/watch.ts";
+import { LANDED_DIRECTIVE, LEGACY_LANDED_DIRECTIVE } from "../core/watch.ts";
 import { LandedDirective } from "./landed-card.tsx";
 import { PrWatchBanner } from "./pr-watch-banner.tsx";
+import { LEGACY_REVIEW_DIRECTIVE, LegacyReviewDirective } from "./legacy-card.tsx";
 import { StripAction, StripSummary, useStripVisible } from "./composer-strip.tsx";
 import { ReviewPanel, ReviewSidebar, useReviewBadge, useReviewTitle } from "./review-entry.tsx";
 import {
@@ -78,6 +79,11 @@ export default definePluginApp((app) => {
   app.slots.messageDirective({ id: DIRECTIVE_ID, component: ChangeDirective });
   // What a thread landed: `::source-control-landed{prs="…" commits="…" account="…"}`.
   app.slots.messageDirective({ id: LANDED_DIRECTIVE, component: LandedDirective });
+  // Cards the retired Code Review plugin left in old threads. A directive id has one owner and
+  // bb fails both registrations on a clash, so this commit assumes Code Review is disabled.
+  // Rolling back means running Source Control from the commit before this one.
+  app.slots.messageDirective({ id: LEGACY_REVIEW_DIRECTIVE, component: LegacyReviewDirective });
+  app.slots.messageDirective({ id: LEGACY_LANDED_DIRECTIVE, component: LandedDirective });
   // The review page, with the Changes nav as its sidebar.
   app.slots.navPanel({
     id: "source-control",
