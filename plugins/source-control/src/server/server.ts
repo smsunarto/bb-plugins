@@ -21,6 +21,7 @@ import { execGh } from "../forge/exec-gh.ts";
 import type { Exec } from "../forge/github.ts";
 import { createAsk, type Ask } from "./ask.ts";
 import { createPublish, type Publish } from "./publish.ts";
+import { createFixChecks, type FixChecks } from "./fix-checks.ts";
 import {
   createForgeSites,
   FORGE_DEADLINE_MS,
@@ -117,6 +118,15 @@ function forgeHandlers(runtime: Runtime, changes: Changes) {
       runtime.run(changes.review.forgeAction(key, action, expected)),
     mergePolicy: ({ key, number }, context) =>
       runtime.run(changes.review.mergePolicy(key, number), context.experimental_signal),
+  } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
+}
+
+/** Fix checks: the composer's prompt, then the thread the reader sends. Starting it is never retried. */
+function fixHandlers(runtime: Runtime, fix: FixChecks) {
+  return {
+    fixChecksPrompt: ({ key, head, checks }, context) =>
+      runtime.run(fix.prompt(key, head, checks), context.experimental_signal),
+    startFix: ({ key, head, request }) => fix.start(key, head, request),
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
 }
 
@@ -226,6 +236,7 @@ function registerRpc(
   ask: Ask,
   moved: Moved,
   publish: Publish,
+  fix: FixChecks,
 ) {
   const afterRegistration = activation(bb);
   const items = changes.review.items;
@@ -241,6 +252,7 @@ function registerRpc(
       patches: ({ threadId, source }, context) =>
         runtime.run(changes.patches(threadId, source), context.experimental_signal),
       ...historyHandlers(runtime, changes),
+      ...fixHandlers(runtime, fix),
       // A write is not stopped by its caller leaving: only unloading the plugin stops it.
       vcsAction: ({ threadId, action, expected }) =>
         runtime.run(changes.act(threadId, action, expected)),
@@ -554,7 +566,17 @@ export function createSourceControl(deps: SourceControlDeps) {
       pinsChanged: () => runtime.fork(changes.review.refreshInboxes()),
       now: deps.now,
     });
-    registerRpc(bb, runtime, changes, start, guides, ask, moved, createPublish({ bb, store }));
+    registerRpc(
+      bb,
+      runtime,
+      changes,
+      start,
+      guides,
+      ask,
+      moved,
+      createPublish({ bb, store }),
+      createFixChecks({ bb, store, sites }),
+    );
     registerAgents(bb, runtime, changes, guides, moved);
     listen(bb, runtime, host, changes, guides, moved);
   };

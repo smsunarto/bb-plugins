@@ -9,6 +9,7 @@ import type { TimelineItem } from "../core/items.ts";
 import type { MergePolicy } from "../core/merge.ts";
 import type { ChangeFile, ForgeFile, InboxEntry } from "../core/review.ts";
 import { classifyFailure, GhError, type Exec } from "./github.ts";
+import { readJobLogs, type JobLog } from "./job-logs.ts";
 import { readMergePolicy } from "./merge.ts";
 import { readTimeline } from "./timeline.ts";
 import { readLanded, readPrHead, readWatch } from "./watch.ts";
@@ -412,7 +413,8 @@ export type ReviewRead =
   | { kind: "watch"; ref: PrRef }
   | { kind: "prHead"; ref: PrRef }
   | { kind: "landed"; prs: PrRef[]; commits: CommitRef[] }
-  | { kind: "mergePolicy"; repo: Repo; number: number };
+  | { kind: "mergePolicy"; repo: Repo; number: number }
+  | { kind: "jobLogs"; repo: Repo; jobIds: number[] };
 export type ReviewAnswer =
   | { kind: "inbox"; entries: InboxEntry[] }
   | { kind: "files"; files: ForgeFile[] }
@@ -421,7 +423,8 @@ export type ReviewAnswer =
   | { kind: "watch"; read: WatchRead }
   | { kind: "landed"; landed: Landed }
   | { kind: "prHead"; head: PrHead }
-  | { kind: "mergePolicy"; policy: MergePolicy };
+  | { kind: "mergePolicy"; policy: MergePolicy }
+  | { kind: "jobLogs"; logs: JobLog[] };
 
 export async function runReviewRead(
   exec: Exec,
@@ -456,5 +459,7 @@ export async function runReviewRead(
       return { kind: "prHead", head: await readPrHead(exec, read.ref, signal) };
     case "mergePolicy":
       return { kind: "mergePolicy", policy: await readMergePolicy(exec, read, signal) };
+    case "jobLogs":
+      return { kind: "jobLogs", logs: await readJobLogs(exec, read.repo, read.jobIds, signal) };
   }
 }

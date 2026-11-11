@@ -146,7 +146,11 @@ export function pullRequestPrompt(input: {
 
 type Project = Awaited<ReturnType<BbPluginApi["sdk"]["projects"]["list"]>>[number];
 
-async function projectFor(bb: BbPluginApi, owner: string, name: string): Promise<Project | null> {
+export async function projectFor(
+  bb: BbPluginApi,
+  owner: string,
+  name: string,
+): Promise<Project | null> {
   const projects = await bb.sdk.projects.list();
   return (
     projects.find((project) => {

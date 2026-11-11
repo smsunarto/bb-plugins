@@ -5,6 +5,7 @@
  */
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { MAX_FIX_CHECKS, newThreadRequestSchema } from "../core/fix-checks.ts";
 import { mergePolicySchema } from "../core/merge.ts";
 import { oplogSchema } from "../core/oplog.ts";
 import { BASE_HISTORY_MAX, baseHistorySchema, commitIdSchema } from "../core/history.ts";
@@ -501,5 +502,49 @@ export const sourceControlContract = defineRpcContract({
   setReadAs: {
     input: z.object({ threadId: threadIdSchema, readAs: z.enum(["auto", "git"]) }).strict(),
     output: z.object({ ok: z.literal(true) }).strict(),
+  },
+  fixChecksPrompt: {
+    experimental_description:
+      "The prompt a new thread opens with to fix the Change's failing checks `checks` (ids `workflow:name`) on pull request head `head`: each check with the end of its Actions log (up to three logs), and the bb project and new worktree to start it in. Fails without reading when the checks bb has are not on `head`.",
+    input: z
+      .object({
+        key: changeKeySchema,
+        head: z.string().min(1),
+        checks: z.array(z.string().min(1)).min(1).max(MAX_FIX_CHECKS),
+      })
+      .strict(),
+    output: z.discriminatedUnion("ok", [
+      z
+        .object({
+          ok: z.literal(true),
+          prompt: z.string(),
+          projectId: z.string().nullable(),
+          environment: z
+            .object({
+              type: z.literal("host"),
+              hostId: z.string().optional(),
+              workspace: z
+                .object({
+                  type: z.literal("managed-worktree"),
+                  baseBranch: z.object({ kind: z.literal("default") }).strict(),
+                })
+                .strict(),
+            })
+            .strict()
+            .nullable(),
+        })
+        .strict(),
+      z.object({ ok: z.literal(false), message: z.string() }).strict(),
+    ]),
+  },
+  /** Starts the thread the reader composed to fix failing checks. Never retried: a retry could start a second thread. */
+  startFix: {
+    input: z
+      .object({ key: changeKeySchema, head: z.string().min(1), request: newThreadRequestSchema })
+      .strict(),
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), threadId: z.string() }).strict(),
+      z.object({ ok: z.literal(false), message: z.string() }).strict(),
+    ]),
   },
 });

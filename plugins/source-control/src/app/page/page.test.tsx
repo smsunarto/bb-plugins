@@ -478,3 +478,133 @@ test("a lockfile starts collapsed and its patch is not read", async () => {
     ["pnpm-lock.yaml"],
   ]);
 });
+
+test("Fix sends the failing checks the reader kept to a composed thread", async () => {
+  const selected = row("scott/forge-host", { number: 482, title: "Checks fail" });
+  const head = "abc1234def";
+  const check = (name: string, outcome: "passed" | "failed", job: number) => ({
+    name,
+    workflow: "CI",
+    outcome,
+    url: `https://github.com/smsunarto/bb-plugins/actions/runs/1/job/${job}`,
+    startedAt: null,
+    completedAt: null,
+  });
+  const prompts: { head: string; checks: string[] }[] = [];
+  const started: { head: string; projectId: string }[] = [];
+  const slot = render(
+    {
+      inbox: () => ({ smsunarto: read([selected]) }),
+      changeDetail: ({ keys }) => Object.fromEntries(keys.map((k) => [k, detail(selected)])),
+      checksForChange: ({ keys }) =>
+        Object.fromEntries(
+          keys.map((k) => [
+            k,
+            {
+              read: {
+                value: {
+                  head,
+                  rows: [
+                    check("lint", "failed", 11),
+                    check("test", "failed", 12),
+                    check("build", "passed", 13),
+                  ],
+                  more: false,
+                },
+                at: Date.now(),
+              },
+              problem: null,
+            },
+          ]),
+        ),
+      fixChecksPrompt: ({ head: at, checks }) => {
+        prompts.push({ head: at, checks });
+        return {
+          ok: true as const,
+          prompt: "Fix the failing checks",
+          projectId: "proj_1",
+          environment: {
+            type: "host" as const,
+            hostId: "host-a",
+            workspace: {
+              type: "managed-worktree" as const,
+              baseBranch: { kind: "default" as const },
+            },
+          },
+        };
+      },
+      startFix: ({ head: at, request }) => {
+        started.push({ head: at, projectId: request.projectId });
+        return { ok: true as const, threadId: "thr_fix" };
+      },
+    },
+    reviewPath({ key: selected.key }),
+  );
+  expect((await slot.findByTestId("sc-fix-checks")).textContent).toBe("Fix 2 checks");
+  // Leaving one out: Fix takes the rest.
+  fireEvent.click(slot.getByRole("checkbox", { name: "Include test (CI) in Fix" }));
+  expect(slot.getByTestId("sc-fix-checks").textContent).toBe("Fix");
+  fireEvent.click(slot.getByTestId("sc-fix-checks"));
+  const composer = await slot.findByTestId("bb-new-thread-composer");
+  expect(prompts).toEqual([{ head, checks: ["CI:lint"] }]);
+  expect(composer.getAttribute("data-default-project-id")).toBe("proj_1");
+  expect(composer.getAttribute("data-draft-key")).toBe(
+    `source-control-fix:${selected.key}@${head}:CI:lint`,
+  );
+  expect(slot.getByTestId("sc-fix-dialog").textContent).toContain("failing logs of lint");
+  fireEvent.click(slot.getByTestId("bb-new-thread-composer-submit"));
+  await waitFor(() => expect(slot.queryByTestId("sc-fix-dialog")).toBeNull());
+  expect(started).toEqual([{ head, projectId: "proj_1" }]);
+  expect(slot.inspection.navigateCalls.at(-1)).toMatchObject({
+    method: "toThread",
+    threadId: "thr_fix",
+  });
+});
+
+test("Fix says so when the checks moved, and starts nothing", async () => {
+  const selected = row("scott/forge-host", { number: 482, title: "Checks fail" });
+  const slot = render(
+    {
+      inbox: () => ({ smsunarto: read([selected]) }),
+      changeDetail: ({ keys }) => Object.fromEntries(keys.map((k) => [k, detail(selected)])),
+      checksForChange: ({ keys }) =>
+        Object.fromEntries(
+          keys.map((k) => [
+            k,
+            {
+              read: {
+                value: {
+                  head: "abc1234def",
+                  rows: [
+                    {
+                      name: "lint",
+                      workflow: null,
+                      outcome: "failed" as const,
+                      url: null,
+                      startedAt: null,
+                      completedAt: null,
+                    },
+                  ],
+                  more: false,
+                },
+                at: Date.now(),
+              },
+              problem: null,
+            },
+          ]),
+        ),
+      fixChecksPrompt: () => ({
+        ok: false as const,
+        message: "The pull request has a new head since you looked.",
+      }),
+    },
+    reviewPath({ key: selected.key }),
+  );
+  fireEvent.click(await slot.findByTestId("sc-fix-checks"));
+  const dialog = await slot.findByTestId("sc-fix-dialog");
+  await waitFor(() => expect(dialog.textContent).toContain("has a new head"));
+  expect(slot.queryByTestId("bb-new-thread-composer")).toBeNull();
+  // Escape closes the dialog and is claimed, so bb does not also leave the page.
+  expect(fireEvent.keyDown(document.body, { key: "Escape" })).toBe(false);
+  expect(slot.queryByTestId("sc-fix-dialog")).toBeNull();
+});

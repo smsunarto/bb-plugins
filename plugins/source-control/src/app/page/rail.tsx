@@ -1,8 +1,12 @@
 /**
  * The review page's right rail (board A): the Change's stack, top first, and
- * the checks on its pull request's head.
+ * the checks on its pull request's head, where failing ones can be sent to a
+ * new thread to fix.
  */
-import { experimental_useRpcKeyedQuery as useRpcKeyedQuery } from "@get-bb/plugin-sdk/app";
+import {
+  experimental_Icon as Icon,
+  experimental_useRpcKeyedQuery as useRpcKeyedQuery,
+} from "@get-bb/plugin-sdk/app";
 import { memo, useMemo, useState } from "react";
 import {
   describeProblem,
@@ -10,11 +14,14 @@ import {
   type ChecksValue,
   type Problem,
 } from "../../core/change.ts";
+import { checkId, MAX_FIX_CHECKS } from "../../core/fix-checks.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import type { ChangeDetail, RowState } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
+import { FixDialog, type FixTarget } from "../fix-dialog.tsx";
 import { cx } from "../format.ts";
-import { Bar } from "../ui.tsx";
+import { Checkbox } from "../review-ui.tsx";
+import { Bar, Button } from "../ui.tsx";
 import type { Go } from "./hooks.ts";
 import { CheckIcon, Chevron, StackIcon } from "./icons.tsx";
 
@@ -124,7 +131,18 @@ function duration(check: CheckRow, now: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-function CheckLine({ check, now }: { check: CheckRow; now: number }) {
+function CheckLine({
+  check,
+  now,
+  selected,
+  onSelect,
+}: {
+  check: CheckRow;
+  now: number;
+  /** Null for a check that is not failing, which Fix does not take. */
+  selected: boolean | null;
+  onSelect: (id: string, include: boolean) => void;
+}) {
   const name = check.workflow ? `${check.name} (${check.workflow})` : check.name;
   const body = (
     <>
@@ -145,18 +163,26 @@ function CheckLine({ check, now }: { check: CheckRow; now: number }) {
     </>
   );
   return (
-    <li className="min-w-0">
+    <li className="flex min-w-0 items-center">
+      {selected !== null ? (
+        <Checkbox
+          className="ms-2"
+          checked={selected}
+          label={`Include ${name} in Fix`}
+          onChange={(include) => onSelect(checkId(check), include)}
+        />
+      ) : null}
       {check.url ? (
         <a
           href={check.url}
           target="_blank"
           rel="noreferrer"
-          className="flex min-w-0 items-center gap-2 rounded-[6px] px-2 py-1 no-underline hover:bg-surface-raised"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-[6px] px-2 py-1 no-underline hover:bg-surface-raised"
         >
           {body}
         </a>
       ) : (
-        <span className="flex min-w-0 items-center gap-2 px-2 py-1">{body}</span>
+        <span className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1">{body}</span>
       )}
     </li>
   );
@@ -189,47 +215,98 @@ function passedLine(passed: readonly CheckRow[]): string {
 
 const RAIL_NOTE = "m-0 px-2 text-[12px] leading-4 text-muted-foreground";
 
+function FixButton({ count, onFix }: { count: number; onFix: () => void }) {
+  const tooMany = count > MAX_FIX_CHECKS;
+  let reason = `Start a thread that fixes ${count === 1 ? "this check" : `these ${count} checks`}`;
+  if (count === 0) reason = "Select at least one failing check";
+  else if (tooMany) reason = `Fix takes up to ${MAX_FIX_CHECKS} checks at a time`;
+  return (
+    // A disabled button shows no tooltip of its own, so the reason sits on a wrapper.
+    <span className="flex px-2 pb-1" title={reason}>
+      <Button
+        className="min-w-0 flex-1"
+        data-testid="sc-fix-checks"
+        disabled={count === 0 || tooMany}
+        onClick={onFix}
+      >
+        <Icon name="Toolbox" fallback="Wrench" className="size-3.5 shrink-0" aria-hidden />
+        {count > 1 ? `Fix ${count} checks` : "Fix"}
+      </Button>
+    </span>
+  );
+}
+
 function CheckList({
+  changeKey,
   value,
   problem,
   now,
 }: {
+  changeKey: ChangeKey;
   value: NonNullable<ChecksValue>;
   problem: Problem | null;
   now: number;
 }) {
   const [expanded, setExpanded] = useState(false);
+  // Every failure starts selected, including ones that fail later, so the reader's choice is what they left out.
+  const [excluded, setExcluded] = useState<ReadonlySet<string>>(() => new Set());
+  const [fix, setFix] = useState<FixTarget | null>(null);
   if (value.rows.length === 0) return <p className={RAIL_NOTE}>No checks on this head.</p>;
   const attention = value.rows.filter((row) => !settled(row));
   const passed = value.rows.filter(settled);
   const shown = expanded ? [...attention, ...passed] : attention;
+  const failing = value.rows.filter((row) => row.outcome === "failed");
+  const chosen = failing.filter((row) => !excluded.has(checkId(row)));
+  const onSelect = (id: string, include: boolean) =>
+    setExcluded((current) => {
+      const next = new Set(current);
+      if (include) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   return (
-    <ul className="m-0 flex list-none flex-col p-0" data-testid="sc-rail-checks">
-      {shown.map((check) => (
-        <CheckLine key={`${check.workflow}:${check.name}`} check={check} now={now} />
-      ))}
-      {!expanded && passed.length > 0 ? (
-        <li>
-          <button
-            type="button"
-            aria-expanded={false}
-            onClick={() => setExpanded(true)}
-            className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 py-1 text-start hover:bg-surface-raised"
-          >
-            <CheckIcon outcome="passed" />
-            <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-muted-foreground">
-              {passedLine(passed)}
-            </span>
-            <Chevron />
-          </button>
-        </li>
+    <>
+      {failing.length > 0 ? (
+        <FixButton
+          count={chosen.length}
+          // The dialog keeps the head and checks seen now, whatever arrives meanwhile.
+          onFix={() => setFix({ changeKey, head: value.head, checks: chosen })}
+        />
       ) : null}
-      {problem ? (
-        <li className="px-2 pt-1 text-[12px] leading-4 text-muted-foreground">
-          {describeProblem(problem)} These are the last checks bb read.
-        </li>
-      ) : null}
-    </ul>
+      {fix ? <FixDialog target={fix} onClose={() => setFix(null)} /> : null}
+      <ul className="m-0 flex list-none flex-col p-0" data-testid="sc-rail-checks">
+        {shown.map((check) => (
+          <CheckLine
+            key={checkId(check)}
+            check={check}
+            now={now}
+            selected={check.outcome === "failed" ? !excluded.has(checkId(check)) : null}
+            onSelect={onSelect}
+          />
+        ))}
+        {!expanded && passed.length > 0 ? (
+          <li>
+            <button
+              type="button"
+              aria-expanded={false}
+              onClick={() => setExpanded(true)}
+              className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 py-1 text-start hover:bg-surface-raised"
+            >
+              <CheckIcon outcome="passed" />
+              <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-muted-foreground">
+                {passedLine(passed)}
+              </span>
+              <Chevron />
+            </button>
+          </li>
+        ) : null}
+        {problem ? (
+          <li className="px-2 pt-1 text-[12px] leading-4 text-muted-foreground">
+            {describeProblem(problem)} These are the last checks bb read.
+          </li>
+        ) : null}
+      </ul>
+    </>
   );
 }
 
@@ -254,7 +331,9 @@ function ChecksSection({
   if (!hasPullRequest)
     body = <p className={RAIL_NOTE}>Checks run once the branch has a pull request.</p>;
   else if (facet?.read)
-    body = value ? <CheckList value={value} problem={facet.problem} now={now} /> : null;
+    body = value ? (
+      <CheckList changeKey={changeKey} value={value} problem={facet.problem} now={now} />
+    ) : null;
   else if (facet?.problem) body = <p className={RAIL_NOTE}>{describeProblem(facet.problem)}</p>;
   else
     body = (

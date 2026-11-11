@@ -16,6 +16,7 @@ import {
   vcsResultSchema,
   workspaceValueSchema,
 } from "../core/change.ts";
+import { LOG_CHARS, MAX_LOGS, MISSING_CHARS } from "../core/fix-checks.ts";
 import { repoSchema } from "../core/ids.ts";
 import { mergeMethodSchema, mergePolicySchema } from "../core/merge.ts";
 import { oplogSchema } from "../core/oplog.ts";
@@ -148,6 +149,14 @@ export const reviewReadSchema = z.discriminatedUnion("kind", [
       commits: z.array(commitRefSchema).max(MAX_LANDED),
     })
     .strict(),
+  /** The end of failed Actions jobs' logs, for the Fix checks prompt. */
+  z
+    .object({
+      kind: z.literal("jobLogs"),
+      repo: repoSchema,
+      jobIds: z.array(z.number().int().positive()).min(1).max(MAX_LOGS),
+    })
+    .strict(),
 ]);
 
 export const reviewAnswerSchema = z.discriminatedUnion("kind", [
@@ -159,6 +168,22 @@ export const reviewAnswerSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("landed"), landed: landedSchema }).strict(),
   z.object({ kind: z.literal("prHead"), head: prHeadSchema }).strict(),
   z.object({ kind: z.literal("mergePolicy"), policy: mergePolicySchema }).strict(),
+  z
+    .object({
+      kind: z.literal("jobLogs"),
+      logs: z
+        .array(
+          z
+            .object({
+              jobId: z.number().int().positive(),
+              text: z.string().max(LOG_CHARS).nullable(),
+              missing: z.string().max(MISSING_CHARS).nullable(),
+            })
+            .strict(),
+        )
+        .max(MAX_LOGS),
+    })
+    .strict(),
 ]);
 
 export const reviewSubmittedSchema = z.discriminatedUnion("status", [

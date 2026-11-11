@@ -644,6 +644,17 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
               ),
         ),
       ),
+    /** The end of failed Actions jobs' logs, each one's tail or why it is missing. */
+    jobLogs: (target: { repo: Repo; jobIds: number[] }, placements: readonly Placement[]) =>
+      repoRead({ kind: "jobLogs", ...target }, placements).pipe(
+        Effect.flatMap((answer) =>
+          answer.kind === "jobLogs"
+            ? Effect.succeed(answer.logs)
+            : Effect.fail(
+                unavailable({ kind: "failed", site: "GitHub", detail: "Unexpected answer." }),
+              ),
+        ),
+      ),
     /**
      * Merges the pull request as the account that read the repository, only
      * while it is still at the head and base the reader saw. Never retried; a
