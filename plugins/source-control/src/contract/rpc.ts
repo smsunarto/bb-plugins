@@ -6,6 +6,7 @@
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import { mergePolicySchema } from "../core/merge.ts";
+import { oplogSchema } from "../core/oplog.ts";
 import {
   checksValueSchema,
   facetSchema,
@@ -94,6 +95,14 @@ export const sourceControlContract = defineRpcContract({
     ]),
     tags: (input: { threadId: string; source: { kind: string } }) =>
       input.source.kind === "uncommitted" ? [threadTag(input.threadId)] : [],
+  },
+  /** GitButler's recent operations on the thread's checkout, newest first. Read only. */
+  oplog: {
+    input: z.object({ threadId: threadIdSchema }).strict(),
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), value: oplogSchema }).strict(),
+      z.object({ ok: z.literal(false), problem: problemSchema }).strict(),
+    ]),
   },
   vcsAction: {
     experimental_description:

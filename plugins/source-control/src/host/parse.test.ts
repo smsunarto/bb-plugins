@@ -7,6 +7,7 @@ import {
   judgeBranchUpdate,
   namedBranch,
   parseGitLog,
+  parseOplog,
   parseWorkspace,
   patchesFor,
   patchesFromGit,
@@ -505,4 +506,44 @@ test("namedBranch finds the branch, and refuses one whose name is another item's
   expect(() => namedBranch(status, "scott/gone")).toThrow(
     "scott/gone is no longer in the workspace.",
   );
+});
+
+/** `but oplog list --json` from `but` 0.22.3, trimmed to three entries, newest first (gitbutler's fixture). */
+const oplogPayload = [
+  ["22c2d57fb4e93d0fbb45aad16aea1b513b6596d5", 1791501579000, "SquashCommit"],
+  ["95ff0df18673fdc3ef01df172daa35de0c719031", 1791501301000, "CreateCommit"],
+  ["d208d31c7e523857c33880daea4241514e0acc3c", 1791333694000, "MergeUpstream"],
+].map(([id, createdAt, operation]) => ({
+  id,
+  createdAt,
+  details: { version: 3, operation, title: operation, body: null, trailers: [] },
+}));
+
+test("parseOplog reads each operation newest first, with an ISO time", () => {
+  expect(parseOplog(oplogPayload)).toEqual([
+    {
+      id: "22c2d57fb4e93d0fbb45aad16aea1b513b6596d5",
+      operation: "SquashCommit",
+      title: "SquashCommit",
+      body: null,
+      createdAt: "2026-10-08T23:19:39.000Z",
+    },
+    {
+      id: "95ff0df18673fdc3ef01df172daa35de0c719031",
+      operation: "CreateCommit",
+      title: "CreateCommit",
+      body: null,
+      createdAt: "2026-10-08T23:15:01.000Z",
+    },
+    {
+      id: "d208d31c7e523857c33880daea4241514e0acc3c",
+      operation: "MergeUpstream",
+      title: "MergeUpstream",
+      body: null,
+      createdAt: "2026-10-07T00:41:34.000Z",
+    },
+  ]);
+  expect(parseOplog([{ id: "" }, { id: "abc", details: null }, "junk"])).toEqual([
+    { id: "abc", operation: "Unknown", title: "Unknown", body: null, createdAt: "" },
+  ]);
 });

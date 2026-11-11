@@ -340,6 +340,24 @@ function renderRow(row: ThreadChange, rpc: Partial<Rpc> = {}) {
           "publishRequests",
           rpc.publishRequests ?? (() => ({ requests: [] })),
         ),
+        oplog: record(
+          "oplog",
+          rpc.oplog ??
+            (() => ({
+              ok: true as const,
+              value: {
+                entries: [
+                  {
+                    id: "22c2d57fb4e93d0fbb45aad16aea1b513b6596d5",
+                    operation: "CreateCommit",
+                    title: "CreateCommit",
+                    body: null,
+                    createdAt: iso(5),
+                  },
+                ],
+              },
+            })),
+        ),
         mergePolicy: record(
           "mergePolicy",
           rpc.mergePolicy ?? (() => ({ ok: true as const, policy: POLICY })),
@@ -1091,4 +1109,22 @@ test("View in Source Control shows only for a thread with a checkout, and opens 
   expect(item.label).toBe("View in Source Control");
   item.run();
   expect(opened).toEqual([{ tab: SOURCE_CONTROL_TAB }]);
+});
+
+test("GitButler's operation history reads only once opened, and lists each operation", async () => {
+  const { slot, of } = renderRow(stacked());
+  const card = await slot.findByTestId("sc-history");
+  await new Promise((settle) => setTimeout(settle, 30));
+  expect(of("oplog")).toHaveLength(0);
+  await act(async () => slot.getByRole("button", { name: "Operation history" }).click());
+  expect((await slot.findByTestId("sc-oplog-row")).textContent).toContain("Create commit");
+  expect(of("oplog")[0]!.input).toEqual({ threadId: "thread-a" });
+  expect(card.textContent).toContain("22c2d57");
+  expect(slot.getByRole("button", { name: "Copy snapshot id 22c2d57" })).toBeTruthy();
+});
+
+test("a plain git checkout has no operation history", async () => {
+  const { slot } = renderRow(plainGit());
+  await slot.findByRole("button", { name: "Push scott/forge-host" });
+  expect(slot.queryByTestId("sc-history")).toBeNull();
 });

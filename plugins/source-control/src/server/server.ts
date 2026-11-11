@@ -77,6 +77,7 @@ function checkoutCalls(host: HostClient): HostCalls {
     vcsAction: (hostId, input, options) => host.call("vcsAction", input, { hostId, ...options }),
     patches: (hostId, input, options) => host.call("patches", input, { hostId, ...options }),
     range: (hostId, input, options) => host.call("range", input, { hostId, ...options }),
+    oplog: (hostId, input, options) => host.call("oplog", input, { hostId, ...options }),
   };
 }
 
@@ -224,6 +225,8 @@ function registerRpc(
       },
       patches: ({ threadId, source }, context) =>
         runtime.run(changes.patches(threadId, source), context.experimental_signal),
+      oplog: ({ threadId }, context) =>
+        runtime.run(changes.oplog(threadId), context.experimental_signal),
       // A write is not stopped by its caller leaving: only unloading the plugin stops it.
       vcsAction: ({ threadId, action, expected }) =>
         runtime.run(changes.act(threadId, action, expected)),

@@ -37,7 +37,8 @@ import { readSnapshot, writeSnapshot } from "./snapshot.ts";
 import { BotIcon } from "./page/ask-panel.tsx";
 import { Bar, Button, Pending, SectionLabel } from "./ui.tsx";
 import { CommitControl } from "./commit.tsx";
-import { StackLane, UncommittedCard } from "./workspace-lane.tsx";
+import { HistoryCard } from "./history.tsx";
+import { CARD, StackLane, UncommittedCard } from "./workspace-lane.tsx";
 import { attentionChips, summarize } from "../core/status.ts";
 import { Chips, useDraftToggle } from "./status.tsx";
 
@@ -336,6 +337,9 @@ function ReadyBody({
             : "No branches are applied in this GitButler workspace."}
         </p>
       ) : null}
+      {native ? null : (
+        <HistoryCard threadId={threadId} path={workspace.path} now={now} className={CARD} />
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import type {
   VcsAction,
   VcsResult,
 } from "../core/change.ts";
+import type { Oplog } from "../core/oplog.ts";
 import type {
   HostFailure,
   HostWorkspace,
@@ -48,6 +49,7 @@ export type HostCalls = {
     input: { path: string; base: string; head: string; read: RangeRead },
     options: CallOptions,
   ): Promise<Outcome<RangeAnswer>>;
+  oplog(hostId: string, input: { path: string }, options: CallOptions): Promise<Outcome<Oplog>>;
 };
 
 /** The host did not answer before the server's deadline. */

@@ -22,6 +22,8 @@ import {
   submitReviewAt,
 } from "../forge/github.ts";
 import type { Checkout } from "./checkout.ts";
+import { runBut } from "./cli.ts";
+import { parseOplog } from "./parse.ts";
 import { forget, share } from "./memo.ts";
 import { act, hostFailure, problemOf, providers, resolveCheckout } from "./providers.ts";
 import { rangeCommits, rangeFiles, rangePatches, resolveBase } from "./range.ts";
@@ -110,6 +112,19 @@ export default experimental_defineHostEntry({
         const provider = resolved.state === "detached" ? "git" : resolved.provider;
         const { files } = await providers[provider].patches(resolved.checkout, source, signal);
         return { ok: true as const, value: { files } };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ok: false as const, error: hostFailure(error) };
+      }
+    },
+
+    async oplog({ path }, { signal }) {
+      try {
+        const resolved = await resolveCheckout(path, "auto", signal);
+        if (resolved.state !== "checkout" || resolved.provider !== "gitbutler")
+          return { ok: true as const, value: { entries: [] } };
+        const payload = await runBut(resolved.checkout.path, ["oplog", "list"], signal);
+        return { ok: true as const, value: { entries: parseOplog(payload) } };
       } catch (error) {
         if (signal.aborted) throw error;
         return { ok: false as const, error: hostFailure(error) };

@@ -34,7 +34,7 @@ import {
 import { absoluteTime, cx, plural, shortAge } from "./format.ts";
 import { Count, SectionLabel } from "./ui.tsx";
 
-const CARD =
+export const CARD =
   "min-w-0 overflow-hidden rounded-[8px] border border-border-hairline bg-surface-recessed";
 // Inside a card: a divider and a muted label, as GitButler heads a sub-list.
 const CARD_LABEL =

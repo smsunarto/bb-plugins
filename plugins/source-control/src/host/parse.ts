@@ -4,6 +4,7 @@
  * narrowing: the CLI owns its own schema and can add fields or statuses, so
  * an unrecognised value degrades to a neutral one instead of failing the read.
  */
+import { MAX_OPLOG, type OplogEntry } from "../core/oplog.ts";
 import type { Branch, BranchStatus, FileChange, FilePatch } from "../core/change.ts";
 
 export type ChangeKind = FileChange["kind"];
@@ -676,3 +677,27 @@ export function parseGitLog(output: string): GitLogCommit[] {
 
 /** The format `parseGitLog` reads. */
 export const GIT_LOG_FORMAT = "--format=%H%x00%aI%x00%B";
+
+/** `but oplog list --json` to its entries, newest first as `but` lists them. Ported from gitbutler. */
+export function parseOplog(payload: unknown): OplogEntry[] {
+  return (Array.isArray(payload) ? payload : []).slice(0, MAX_OPLOG).flatMap((entry) => {
+    const record = asObject(entry);
+    const id = asString(record?.["id"]);
+    if (id === "") return [];
+    const details = asObject(record?.["details"]);
+    const operation = asString(details?.["operation"], "Unknown");
+    const created = record?.["createdAt"];
+    return [
+      {
+        id,
+        operation,
+        title: asString(details?.["title"], operation),
+        body: asNullableString(details?.["body"]),
+        createdAt:
+          typeof created === "number"
+            ? new Date(created).toISOString()
+            : (isoTime(typeof created === "string" ? created : null) ?? ""),
+      },
+    ];
+  });
+}

@@ -18,6 +18,7 @@ import {
 } from "../core/change.ts";
 import { repoSchema } from "../core/ids.ts";
 import { mergeMethodSchema, mergePolicySchema } from "../core/merge.ts";
+import { oplogSchema } from "../core/oplog.ts";
 import { timelineItemSchema } from "../core/items.ts";
 import { changeFileSchema, forgeFileSchema, inboxEntrySchema } from "../core/review.ts";
 import {
@@ -207,6 +208,12 @@ export const sourceControlHostContract = defineRpcContract({
         z.object({ kind: z.literal("commits"), commits: z.array(commitSchema) }).strict(),
       ]),
     ),
+  },
+  /** GitButler's recent operations on the checkout, newest first; none for a plain git one. */
+  oplog: {
+    experimental_retryable: true,
+    input: z.object({ path: pathSchema }).strict(),
+    output: outcome(oplogSchema),
   },
   /** Keeps a checkout watched for another lease without reading it. */
   renewWatch: {

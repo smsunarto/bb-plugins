@@ -8,12 +8,14 @@ import { Effect } from "effect";
 import type {
   Patches,
   PatchSource,
+  Placement,
   Problem,
   Revision,
   VcsAction,
   VcsResult,
 } from "../core/change.ts";
-import type { ReadAs } from "../contract/host.ts";
+import type { HostFailure, ReadAs } from "../contract/host.ts";
+import type { Oplog } from "../core/oplog.ts";
 import {
   callProblem,
   failureProblem,
@@ -21,8 +23,11 @@ import {
   message,
   named,
   offline,
+  type CallOptions,
   type HostCalls,
 } from "./host-calls.ts";
+
+type Read<T> = { ok: true; value: T } | { ok: false; problem: Problem };
 import { checkoutId, type Placements } from "./placement.ts";
 import type { Store } from "./store.ts";
 
@@ -108,17 +113,43 @@ export function createActions(deps: {
     yield* deps.refresh(threadId);
   });
 
+  /** One read on the thread's checkout host, as `{ ok, value }` or the problem naming the host. */
+  const hostRead = <T>(
+    threadId: string,
+    call: (
+      placement: Placement,
+      options: CallOptions,
+    ) => Promise<{ ok: true; value: T } | { ok: false; error: HostFailure }>,
+  ) =>
+    Effect.gen(function* () {
+      const where = store.placement(threadId);
+      if (where?.state !== "checkout")
+        return {
+          ok: false,
+          problem: { kind: "moved", detail: "This thread has no checkout." },
+        } as Read<T>;
+      const { placement } = where;
+      if (!(yield* placements.connected(placement.hostId)))
+        return { ok: false, problem: offline(placement) } as Read<T>;
+      const answer = yield* hostCall(deps.hostDeadlineMs, (options) =>
+        call(placement, options),
+      ).pipe(Effect.result);
+      if (answer._tag === "Failure") {
+        const stillConnected = yield* placements.connected(placement.hostId);
+        return {
+          ok: false,
+          problem: callProblem(placement, answer.failure, stillConnected),
+        } as Read<T>;
+      }
+      return (
+        answer.success.ok
+          ? { ok: true, value: answer.success.value }
+          : { ok: false, problem: failureProblem(placement, answer.success.error) }
+      ) as Read<T>;
+    });
+
   const patches = Effect.fn("patches")(function* (threadId: string, source: PatchSource) {
-    const where = store.placement(threadId);
-    if (where?.state !== "checkout")
-      return {
-        ok: false,
-        problem: { kind: "moved", detail: "This thread has no checkout." },
-      } as const;
-    const { placement } = where;
-    if (!(yield* placements.connected(placement.hostId)))
-      return { ok: false, problem: offline(placement) } as const;
-    const answer = yield* hostCall(deps.hostDeadlineMs, (options) =>
+    return yield* hostRead<Patches>(threadId, (placement, options) =>
       deps.host.patches(
         placement.hostId,
         {
@@ -128,21 +159,15 @@ export function createActions(deps: {
         },
         options,
       ),
-    ).pipe(Effect.result);
-    if (answer._tag === "Failure") {
-      const stillConnected = yield* placements.connected(placement.hostId);
-      return {
-        ok: false,
-        problem: callProblem(placement, answer.failure, stillConnected),
-      } as const;
-    }
-    return answer.success.ok
-      ? ({ ok: true, value: answer.success.value } as { ok: true; value: Patches })
-      : ({ ok: false, problem: failureProblem(placement, answer.success.error) } as {
-          ok: false;
-          problem: Problem;
-        });
+    );
   });
 
-  return { act, setReadAs, patches };
+  /** GitButler's operation log for the thread's checkout; none for plain git. */
+  const oplog = Effect.fn("oplog")(function* (threadId: string) {
+    return yield* hostRead<Oplog>(threadId, (placement, options) =>
+      deps.host.oplog(placement.hostId, { path: placement.path }, options),
+    );
+  });
+
+  return { act, setReadAs, patches, oplog };
 }

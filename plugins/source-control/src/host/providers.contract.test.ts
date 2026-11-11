@@ -330,6 +330,20 @@ describe.skipIf(env.but === null)("a GitButler workspace", () => {
     });
   });
 
+  test("lists GitButler's operations newest first; a plain git checkout has none", async () => {
+    const butler = await host.experimental_call("oplog", { path: repos.gitbutler! });
+    expect(butler.ok).toBe(true);
+    const entries = butler.ok ? butler.value.entries : [];
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries[0]).toMatchObject({ id: expect.stringMatching(/^[0-9a-f]{40}$/) });
+    const times = entries.map((entry) => entry.createdAt);
+    expect(times).toEqual(times.toSorted().toReversed());
+    expect(await host.experimental_call("oplog", { path: repos.plain })).toEqual({
+      ok: true,
+      value: { entries: [] },
+    });
+  });
+
   test("on a host without `but` says so, once", async () => {
     const path = process.env["PATH"];
     // Only the system directories, where git is and `but` is not.
