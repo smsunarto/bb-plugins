@@ -357,6 +357,7 @@ function ChangesCard({
   defaultOpen,
   attention = false,
   testId,
+  footer,
 }: {
   threadId: string;
   title: string;
@@ -366,6 +367,8 @@ function ChangesCard({
   defaultOpen: boolean;
   attention?: boolean;
   testId?: string;
+  /** Below the files, shown folded or not: the card's own action. */
+  footer?: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -421,6 +424,7 @@ function ChangesCard({
           />
         </div>
       ) : null}
+      {footer}
     </section>
   );
 }
@@ -434,14 +438,18 @@ export function UncommittedCard({
   changes,
   more,
   conflicted,
+  commit,
 }: {
   threadId: string;
   changes: readonly FileChange[];
   more: number;
   conflicted: number;
+  /** Commit, where the reader may write. */
+  commit?: ReactNode;
 }) {
   return (
     <ChangesCard
+      footer={commit}
       threadId={threadId}
       title="Uncommitted changes"
       changes={changes}

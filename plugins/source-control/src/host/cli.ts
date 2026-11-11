@@ -208,8 +208,11 @@ export async function runButAction(
   cwd: string,
   args: readonly string[],
   signal: AbortSignal,
+  /** Operands after `--`, so a file named like an option stays a file. */
+  operands: readonly string[] = [],
 ): Promise<{ payload: unknown; stderr: string }> {
-  const result = await run("but", [...args, "--json"], cwd, signal);
+  const tail = operands.length > 0 ? ["--", ...operands] : [];
+  const result = await run("but", [...args, "--json", ...tail], cwd, signal);
   if (signal.aborted) throw aborted(signal);
   if (result.spawnFailed) throw await spawnFailure("but", cwd);
   const payload = parseJson(result.stdout);

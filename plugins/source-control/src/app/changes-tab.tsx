@@ -36,6 +36,7 @@ import { cx, plural, shortId, shortRef } from "./format.ts";
 import { readSnapshot, writeSnapshot } from "./snapshot.ts";
 import { BotIcon } from "./page/ask-panel.tsx";
 import { Bar, Button, Pending, SectionLabel } from "./ui.tsx";
+import { CommitControl } from "./commit.tsx";
 import { StackLane, UncommittedCard } from "./workspace-lane.tsx";
 import { attentionChips, summarize } from "../core/status.ts";
 import { Chips, useDraftToggle } from "./status.tsx";
@@ -292,6 +293,20 @@ function ReadyBody({
         changes={workspace.uncommitted}
         more={workspace.moreUncommitted}
         conflicted={workspace.conflicted.length}
+        commit={
+          row.readAsGit ? null : (
+            <CommitControl
+              changes={workspace.uncommitted}
+              more={workspace.moreUncommitted}
+              branches={commitBranches(workspace)}
+              preferred={row.branch}
+              targetHead={workspace.target?.head ?? null}
+              running={vcs.running}
+              busy={vcs.busy}
+              dispatch={vcs.dispatch}
+            />
+          )
+        }
       />
       {workspace.stacks.map((stack) => (
         <StackLane
@@ -323,6 +338,14 @@ function ReadyBody({
       ) : null}
     </div>
   );
+}
+
+/** Where a commit may go: any applied branch in GitButler, the checked-out one in plain git. */
+function commitBranches(workspace: WorkspaceValue): Branch[] {
+  const all = workspace.stacks.flatMap((stack) => stack.branches);
+  return workspace.provider === "git"
+    ? all.filter((branch) => branch.name === workspace.checkedOut)
+    : all;
 }
 
 function LoadingBody() {

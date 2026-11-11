@@ -29,6 +29,16 @@ export async function runButWrite(
 ): Promise<VcsResult> {
   if (action.kind === "pull") return updateWorkspace(cwd, action.accepted, signal);
   if (action.kind === "delete") return deleteBranch(cwd, action, signal);
+  if (action.kind === "commit") {
+    // Named by path, not CLI id: ids are reassigned on every `but` invocation.
+    await runButAction(
+      cwd,
+      ["commit", "--message", action.message, "--branch", action.branch],
+      signal,
+      action.paths,
+    );
+    return DONE;
+  }
   // Fetched first, so the status read next knows the remote's latest commits.
   const fetched = await fetchRemotes(cwd, signal);
   const status = await runBut(cwd, ["status", "-u"], signal);

@@ -304,6 +304,18 @@ export const vcsActionSchema = z.discriminatedUnion("kind", [
       accepted: actionRiskSchema.nullable(),
     })
     .strict(),
+  /**
+   * Commits exactly `paths`, as the reader saw them uncommitted, onto
+   * `branch` with `message`. Every other uncommitted change stays.
+   */
+  z
+    .object({
+      kind: z.literal("commit"),
+      branch: branchNameSchema,
+      message: z.string().max(20_000).regex(/\S/),
+      paths: z.array(z.string().min(1).max(4096)).min(1).max(MAX_UNCOMMITTED),
+    })
+    .strict(),
 ]);
 export type VcsAction = z.infer<typeof vcsActionSchema>;
 

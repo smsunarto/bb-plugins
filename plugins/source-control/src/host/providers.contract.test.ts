@@ -252,6 +252,54 @@ describe.each(cases)("$provider provider deletes a branch", ({ provider }) => {
   });
 });
 
+/** Commit adds commits to X, so it gets its own repositories too. */
+describe.each(cases)("$provider provider commits the reader's files", ({ provider }) => {
+  let own: Repos;
+  beforeAll(async () => {
+    own = await buildRepos(
+      env.root,
+      provider === "gitbutler",
+      join(env.root, `commit-${provider}`),
+    );
+  }, 60_000);
+  const path = () => (provider === "git" ? own.plain : own.gitbutler!);
+  const write = (action: VcsAction, expected: Revision) =>
+    host.experimental_call("vcsAction", { path: path(), readAs: "auto", action, expected });
+  const commit = (paths: string[], head: string) =>
+    write(
+      { kind: "commit", branch: BRANCH, message: "feat: three", paths },
+      { head, target: own.base },
+    );
+
+  test("refuses a commit against a stale head, or of a file that is no longer changed", async () => {
+    await writeFile(join(path(), "three.txt"), "three\n");
+    const before = ref(path(), `refs/heads/${BRANCH}`);
+    expect(await commit(["three.txt"], STALE)).toMatchObject({ status: "conflict" });
+    expect(await commit(["gone.txt"], own.unpushed)).toEqual({
+      status: "conflict",
+      detail: "gone.txt has no uncommitted change here any more.",
+    });
+    expect(ref(path(), `refs/heads/${BRANCH}`)).toBe(before);
+  });
+
+  test("commits exactly the named files onto the branch, a literal `*` included, and leaves the rest", async () => {
+    await writeFile(join(path(), "three.txt"), "three\n");
+    await writeFile(join(path(), "*.txt"), "star\n");
+    await writeFile(join(path(), "four.txt"), "four\n");
+    const result = await commit(["three.txt", "*.txt"], own.unpushed);
+    expect(result).toEqual({ status: "done" });
+    const head = ref(path(), `refs/heads/${BRANCH}`)!;
+    expect(git(path(), "log", "-1", "--format=%P %s", head).trim()).toBe(
+      `${own.unpushed} feat: three`,
+    );
+    expect(
+      git(path(), "show", "--name-only", "--format=", head).trim().split("\n").toSorted(),
+    ).toEqual(["*.txt", "three.txt"]);
+    const value = await read(path());
+    expect(value.uncommitted.map((change) => change.path)).toEqual(["four.txt"]);
+  });
+});
+
 describe("checkouts that are not a branch of a repository", () => {
   test("a directory outside any repository reads as not-git", async () => {
     expect(await host.experimental_call("workspace", { path: env.root, readAs: "auto" })).toEqual({

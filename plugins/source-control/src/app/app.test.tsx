@@ -607,6 +607,38 @@ test("Create PR on the thread's branch with no pull request names the head seen,
   expect(slot.queryByRole("button", { name: "Create PR for scott/core-schema" })).toBeNull();
 });
 
+test("Commit sends the files the reader sees, onto the chosen branch at the head seen", async () => {
+  const { slot, of } = renderRow(stacked());
+  await act(async () => (await slot.findByTestId("sc-commit-open")).click());
+  const field = slot.getByTestId("sc-commit-message") as HTMLTextAreaElement;
+  expect(document.activeElement).toBe(field);
+  const confirm = slot.getByTestId("sc-commit-confirm") as HTMLButtonElement;
+  expect(confirm.disabled).toBe(true);
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    setter.call(field, "fix: route reads");
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const select = slot.getByTestId("sc-commit-branch") as HTMLSelectElement;
+  expect(select.value).toBe("scott/forge-host");
+  await act(async () => {
+    select.value = "scott/core-schema";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await act(async () => confirm.click());
+  await waitFor(() => expect(of("vcsAction")).toHaveLength(1));
+  expect(of("vcsAction")[0]!.input).toEqual({
+    threadId: "thread-a",
+    action: {
+      kind: "commit",
+      branch: "scott/core-schema",
+      message: "fix: route reads",
+      paths: ["src/host/host.ts"],
+    },
+    expected: { head: "beef001", target: "a41c9e2ffff" },
+  });
+});
+
 test("a draft pull request has no Merge", async () => {
   const { slot } = renderRow(stacked());
   await slot.findByRole("button", { name: "Push scott/forge-host" });

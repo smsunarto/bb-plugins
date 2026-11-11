@@ -76,6 +76,15 @@ export function problemOf(error: unknown): Problem {
   return { kind: "failed", site: "host", detail: message(error) };
 }
 
+/** Every uncommitted path the reader could have seen: unassigned, and assigned to a stack. */
+function uncommittedPaths(value: WorkspaceValue): Set<string> {
+  return new Set(
+    [...value.uncommitted, ...value.stacks.flatMap((stack) => stack.assigned)].map(
+      (change) => change.path,
+    ),
+  );
+}
+
 /**
  * Why the checkout is no longer at the revision the write was asked for, or
  * null when it still is. Push, Land and Delete name a branch whose head must
@@ -92,6 +101,10 @@ export function revisionConflict(
     if (!branch) return `${action.branch} is no longer in this checkout.`;
     if (branch.head !== expected.head)
       return `${action.branch} moved since it was read: its head is now ${branch.head ?? "empty"}.`;
+  }
+  if (action.kind === "commit") {
+    const missing = action.paths.find((path) => !uncommittedPaths(value).has(path));
+    if (missing !== undefined) return `${missing} has no uncommitted change here any more.`;
   }
   if (action.kind === "pull" || action.kind === "land") {
     const head = value.target?.head ?? null;

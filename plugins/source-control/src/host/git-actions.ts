@@ -555,5 +555,34 @@ export async function runGitWrite(
       await remove(before, before.head, signal);
       return DONE;
     }
+    case "commit":
+      return commit(action, before.path, signal);
   }
+}
+
+/**
+ * Commits exactly the reader's paths, whatever else is staged: they are
+ * staged (new, changed or deleted) and committed alone. Pathspecs are
+ * literal, so a file named `*.ts` is that file.
+ */
+async function commit(
+  action: Extract<VcsAction, { kind: "commit" }>,
+  cwd: string,
+  signal: AbortSignal,
+): Promise<VcsResult> {
+  await runGit(cwd, ["--literal-pathspecs", "add", "--all", "--", ...action.paths], signal);
+  await runGit(
+    cwd,
+    [
+      "--literal-pathspecs",
+      "commit",
+      "--quiet",
+      "--message",
+      action.message,
+      "--",
+      ...action.paths,
+    ],
+    signal,
+  );
+  return DONE;
 }
