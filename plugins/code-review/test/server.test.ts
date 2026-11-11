@@ -78,6 +78,7 @@ test("registers every RPC and answers them over the host boundary", async () => 
     "deleteDraft",
     "discardReview",
     "editDraft",
+    "exportForCutover",
     "fileBlobs",
     "fixChecksPrompt",
     "inbox",

@@ -26,6 +26,7 @@ import { changedFiles, changedFilesContract } from "./rpc/changed-files.ts";
 import { checks, checksContract } from "./rpc/checks.ts";
 import { fileBlobs, fileBlobsContract } from "./rpc/file-blobs.ts";
 import { landed, landedContract } from "./rpc/landed.ts";
+import { exportForCutover, exportForCutoverContract } from "./rpc/export-for-cutover.ts";
 import { deleteDraft, deleteDraftContract } from "./rpc/delete-draft.ts";
 import { discardReview, discardReviewContract } from "./rpc/discard-review.ts";
 import { editDraft, editDraftContract } from "./rpc/edit-draft.ts";
@@ -163,6 +164,12 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     stopPrWatch: (input) => stopPrWatch(ctx, input),
     landed: (input) => landed(ctx, input),
   });
+  // Read-only, for Source Control's import at the cutover: storage is per plugin id.
+  bb.rpc.register(
+    defineRpcContract({ exportForCutover: exportForCutoverContract }),
+    { exportForCutover: () => exportForCutover(ctx) },
+    { experimental_discoverable: true },
+  );
   bb.cli.register(
     defineCli({
       name: "review",

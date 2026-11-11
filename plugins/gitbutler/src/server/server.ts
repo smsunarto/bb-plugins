@@ -9,6 +9,7 @@ import { branchPatches, branchPatchesContract } from "./rpc/branch-patches.ts";
 import { butAction, butActionContract } from "./rpc/but-action.ts";
 import { checkoutChatTarget, checkoutChatTargetContract } from "./rpc/checkout-chat-target.ts";
 import { conflictResolution, conflictResolutionContract } from "./rpc/conflict-resolution.ts";
+import { exportForCutover, exportForCutoverContract } from "./rpc/export-for-cutover.ts";
 import { oplog, oplogContract } from "./rpc/oplog.ts";
 import { otherMachines, otherMachinesContract } from "./rpc/other-machines.ts";
 import { parkedBranches, parkedBranchesContract } from "./rpc/parked-branches.ts";
@@ -59,6 +60,12 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   const ctx: GitButlerContext = Object.freeze({ bb });
   const pullRequests = createThreadPullRequests(bb);
   bb.onDispose(() => pullRequests.dispose());
+  // Read-only, for Source Control's import at the cutover: storage is per plugin id.
+  bb.rpc.register(
+    defineRpcContract({ exportForCutover: exportForCutoverContract }),
+    { exportForCutover: () => exportForCutover(ctx) },
+    { experimental_discoverable: true },
+  );
   bb.rpc.register(contract, {
     repositories: (input) => repositories(ctx, input),
     workspace: (input) => workspace(ctx, input),
