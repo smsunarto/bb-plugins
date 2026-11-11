@@ -405,6 +405,16 @@ export const changeFileSchema = z
     additions: z.number().int().nonnegative(),
     deletions: z.number().int().nonnegative(),
     binary: z.boolean(),
+    /**
+     * The file's blob at the head: what a guide and a viewed mark are bound
+     * to, so they carry across commits that leave the file alone. Null for a
+     * deleted file; absent when the source did not say.
+     */
+    blob: z
+      .string()
+      .regex(/^[0-9a-f]{40,64}$/)
+      .nullable()
+      .optional(),
   })
   .strict();
 export type ChangeFile = z.infer<typeof changeFileSchema>;

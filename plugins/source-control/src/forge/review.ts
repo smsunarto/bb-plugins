@@ -223,6 +223,8 @@ type RestFile = {
   deletions?: number;
   patch?: string;
   previous_filename?: string;
+  /** The blob at the head; for a removed file, the blob it had. */
+  sha?: string;
 };
 
 /** GitHub lists at most this many files of a pull request. */
@@ -279,6 +281,8 @@ export async function readCompareFiles(
   }
 }
 
+const BLOB = /^[0-9a-f]{40,64}$/;
+
 function forgeFiles(pages: readonly RestFile[]): ForgeFile[] {
   return pages.flatMap((raw) => {
     if (!raw.filename) return [];
@@ -292,6 +296,8 @@ function forgeFiles(pages: readonly RestFile[]): ForgeFile[] {
       deletions: raw.deletions ?? 0,
       // GitHub sends no hunks for a binary file, nor for one past its size limit.
       binary: raw.patch === undefined && (raw.additions ?? 0) + (raw.deletions ?? 0) === 0,
+      // Left out when GitHub did not say, as an RPC result cannot carry undefined.
+      ...(kind === "deleted" ? { blob: null } : BLOB.test(raw.sha ?? "") ? { blob: raw.sha! } : {}),
     };
     return [{ file, patch: raw.patch === undefined ? null : gitPatch(file, raw.patch) }];
   });

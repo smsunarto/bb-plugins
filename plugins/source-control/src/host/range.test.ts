@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { isolate } from "../../test/isolate.ts";
 import { git } from "../../test/repos.ts";
-import { rangeCommits, rangeFiles, rangePatches, resolveBase } from "./range.ts";
+import { parseRawBlobs, rangeCommits, rangeFiles, rangePatches, resolveBase } from "./range.ts";
 
 await isolate("source-control-range");
 const signal = new AbortController().signal;
@@ -33,9 +33,15 @@ beforeAll(async () => {
 });
 afterAll(() => rm(repo, { recursive: true, force: true }));
 
-test("files say their kind, old path and size; a binary counts nothing", async () => {
+test("files say their kind, old path, size and head blob; a binary counts nothing", async () => {
   const files = await rangeFiles(repo, base, head, signal);
-  expect(files.toSorted((a, b) => a.path.localeCompare(b.path))).toEqual([
+  const blob = (path: string) => git(repo, "rev-parse", `${head}:${path}`).trim();
+  expect(files.map((file) => [file.path, file.blob]).toSorted()).toEqual(
+    ["keep.ts", "logo.bin", "new.ts"].map((path) => [path, blob(path)]),
+  );
+  expect(
+    files.map(({ blob: _blob, ...file }) => file).toSorted((a, b) => a.path.localeCompare(b.path)),
+  ).toEqual([
     {
       path: "keep.ts",
       kind: "modified",
@@ -99,4 +105,25 @@ test("a base named by branch is that branch on the remote, else the remote's def
     git(repo, "remote", "remove", "origin");
     await rm(remote, { recursive: true, force: true });
   }
+});
+
+test("raw records give each head path its blob: none for a deletion, the new path's for a rename", () => {
+  const a = "a".repeat(40);
+  const b = "b".repeat(40);
+  const zero = "0".repeat(40);
+  const raw = [
+    `:100644 000000 ${a} ${zero} D`,
+    "gone.ts",
+    `:100644 100644 ${a} ${b} R087`,
+    "old.ts",
+    "new.ts",
+    `:000000 100644 ${zero} ${b} A`,
+    "added.ts",
+    "",
+  ].join("\0");
+  expect([...parseRawBlobs(raw)]).toEqual([
+    ["gone.ts", null],
+    ["new.ts", b],
+    ["added.ts", b],
+  ]);
 });

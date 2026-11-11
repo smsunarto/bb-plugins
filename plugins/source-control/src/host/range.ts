@@ -114,6 +114,28 @@ export function parseNumstat(
   return sizes;
 }
 
+/**
+ * `git diff --raw --no-abbrev -z` records: `:<modes> <old blob> <new blob> <status>`,
+ * then one path, or two for a rename or copy. The head blob of each file by its
+ * path at the head; null for a deleted file.
+ */
+export function parseRawBlobs(output: string): Map<string, string | null> {
+  const fields = output.split("\0");
+  const blobs = new Map<string, string | null>();
+  for (let index = 0; index < fields.length;) {
+    const meta = fields[index++] ?? "";
+    if (!meta.startsWith(":")) continue;
+    const parts = meta.slice(1).split(" ");
+    const blob = parts[3] ?? "";
+    const status = parts[4] ?? "";
+    if (status.startsWith("R") || status.startsWith("C")) index++; // the old path
+    const path = fields[index++] ?? "";
+    if (path === "") continue;
+    blobs.set(path, status.startsWith("D") || /^0+$/.test(blob) ? null : blob);
+  }
+  return blobs;
+}
+
 export async function rangeFiles(
   cwd: string,
   base: string,
@@ -121,13 +143,20 @@ export async function rangeFiles(
   signal: AbortSignal,
 ): Promise<ChangeFile[]> {
   const args = ["-c", "core.quotePath=false", "diff", "--no-color", "--no-ext-diff", "-M", "-z"];
-  const [names, numstat] = await Promise.all([
+  const [names, numstat, raw] = await Promise.all([
     runGit(cwd, [...args, "--name-status", range(base, head), "--"], signal),
     runGit(cwd, [...args, "--numstat", range(base, head), "--"], signal),
+    runGit(cwd, [...args, "--raw", "--no-abbrev", range(base, head), "--"], signal),
   ]);
   const sizes = parseNumstat(numstat);
+  const blobs = parseRawBlobs(raw);
   return parseNameStatus(names).map((file) =>
-    Object.assign(file, sizes.get(file.path) ?? { additions: 0, deletions: 0, binary: false }),
+    Object.assign(
+      file,
+      sizes.get(file.path) ?? { additions: 0, deletions: 0, binary: false },
+      // Left out when git did not say, as an RPC result cannot carry undefined.
+      blobs.has(file.path) ? { blob: blobs.get(file.path) } : {},
+    ),
   );
 }
 
