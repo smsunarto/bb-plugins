@@ -10,6 +10,7 @@
 import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
+  experimental_useRpcQuery as useRpcQuery,
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
 import {
@@ -218,6 +219,66 @@ function AskButton({ compact }: { compact?: boolean }) {
   );
 }
 
+/** The pull request in `owner/name`, from a row of a GitHub Change; null for a branch without one. */
+function prRefOf(row: Ready["row"]) {
+  const slash = row.repo.indexOf("/");
+  if (row.number === null || slash <= 0) return null;
+  return { owner: row.repo.slice(0, slash), repo: row.repo.slice(slash + 1), number: row.number };
+}
+
+/** Pins the pull request to the Changes list, or unpins it: the list's Pinned filter. */
+function PinButton({ row, compact }: { row: Ready["row"]; compact?: boolean }) {
+  const ref = useMemo(() => prRefOf(row), [row]);
+  const pins = useRpcQuery({ contract: sourceControlContract, method: "pins", input: {} });
+  const setPinned = useRpcMutation({ contract: sourceControlContract, method: "setPinned" });
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  if (!ref) return null;
+  const listed =
+    pins.data?.pins.some(
+      (pin) =>
+        pin.number === ref.number &&
+        `${pin.owner}/${pin.repo}`.toLowerCase() === `${ref.owner}/${ref.repo}`.toLowerCase(),
+    ) ?? false;
+  const pinned = chosen ?? listed;
+  const label = pinned ? "Unpin from the Changes list" : "Pin to the Changes list";
+  return (
+    <button
+      type="button"
+      data-testid="sc-pin"
+      aria-pressed={pinned}
+      aria-label={label}
+      title={label}
+      disabled={pins.data === undefined || setPinned.isPending}
+      onClick={() => {
+        const next = !pinned;
+        setChosen(next);
+        setPinned.mutate({ ref, pinned: next }).catch(() => setChosen(null));
+      }}
+      className={cx(
+        "flex shrink-0 cursor-pointer items-center justify-center rounded-[6px] border border-solid border-border transition-colors hover:bg-surface-raised disabled:cursor-default disabled:opacity-60 motion-reduce:transition-none",
+        compact ? "size-7" : "size-8",
+        pinned ? "bg-surface-raised text-foreground" : "bg-transparent text-muted-foreground",
+      )}
+    >
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 16 16"
+        fill={pinned ? "currentColor" : "none"}
+        aria-hidden
+      >
+        <path
+          d="M9.5 1.5 14.5 6.5 12 7.5 9.5 10 9 13.5 2.5 7 6 6.5 8.5 4z M5.5 10.5 2 14"
+          stroke="currentColor"
+          strokeWidth="1.3"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
+      </svg>
+    </button>
+  );
+}
+
 function Header({ detail, now }: { detail: Ready; now: number }) {
   const { row } = detail;
   const draft = useDraftToggle(detail);
@@ -318,6 +379,7 @@ function Header({ detail, now }: { detail: Ready; now: number }) {
             <GitHubMark />
           </a>
         ) : null}
+        <PinButton row={row} />
         <AskButton />
         {row.state === "draft" && draft.toggle ? (
           <Button
@@ -475,6 +537,7 @@ function PhoneHeader({ detail }: { detail: Ready }) {
             #{row.number}
           </span>
         ) : null}
+        <PinButton row={detail.row} compact />
         <AskButton compact />
       </div>
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-5 pt-1 pb-3">

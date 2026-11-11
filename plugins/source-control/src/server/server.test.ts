@@ -154,6 +154,8 @@ type World = {
   /** Host workspace reads in flight now, and the most at once. */
   inFlight?: number;
   maxInFlight?: number;
+  /** code-review is still enabled and running, as before the cutover. */
+  codeReviewRunning?: boolean;
   /** Threads the plugin spawned, with what it asked for. */
   spawned?: {
     id: string;
@@ -373,6 +375,14 @@ function fakeRange(
 
 function fakeSdk(world: World) {
   return {
+    // By default code-review is gone: Source Control's watch and landed services run.
+    plugins: {
+      list: (async () => ({
+        plugins: world.codeReviewRunning
+          ? [{ id: "code-review", enabled: true, status: "running" }]
+          : [],
+      })) as never,
+    },
     threads: {
       get: (async ({ threadId }: { threadId: string }) => {
         if (world.idle?.includes(threadId))
@@ -450,6 +460,7 @@ function fakeSdk(world: World) {
 async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
   const { bb, harness } = createFakePluginHost({
     pluginId: PLUGIN,
+    agentSkillIds: ["request-review", "babysit-pr"],
     sdk: fakeSdk(world),
     experimental_callHostRpc: async ({ method, hostId, input }) => {
       const host = world.hosts[hostId]!;
@@ -1550,6 +1561,16 @@ describe("review items and drafts", () => {
     ]);
   });
 
+  test("bb gives a plugin one command: import while code-review runs, bb review once it is gone", async () => {
+    const before = { ...twoHosts(), codeReviewRunning: true };
+    const old = (await start(before)).harness;
+    await vi.waitFor(() => expect(old.inspection.registrations.cli?.name).toBe("source-control"));
+    const after = (await start(twoHosts())).harness;
+    await vi.waitFor(() => expect(after.inspection.registrations.cli?.name).toBe("review"));
+    const prompt = await after.behavior.runCli(["prompt", "--request", "Intent: test"]);
+    expect(prompt.exitCode).toBe(0);
+  });
+
   test("only review threads get the findings tool, and a thread that is not one cannot report", async () => {
     const world = twoHosts();
     const { harness } = await start(world);
@@ -1563,7 +1584,12 @@ describe("review items and drafts", () => {
       "source_control_report_findings",
       "source_control_share_change",
     ]);
-    expect(await tools({})).toEqual(["source_control_share_change"]);
+    // An author thread, once code-review is gone, also watches and lands its pull requests.
+    expect(await tools({})).toEqual([
+      "source_control_share_change",
+      "source_control_watch_pr",
+      "source_control_share_landed",
+    ]);
     await expect(
       harness.behavior.callAgentTool(
         "source_control_report_findings",
@@ -2008,7 +2034,12 @@ describe("guided diff", () => {
     expect(await tools({ kind: "review", changeKey: keyOf(1) })).not.toContain(
       "source_control_write_guide",
     );
-    expect(await tools({})).toEqual(["source_control_share_change"]);
+    // An author thread, once code-review is gone, also watches and lands its pull requests.
+    expect(await tools({})).toEqual([
+      "source_control_share_change",
+      "source_control_watch_pr",
+      "source_control_share_landed",
+    ]);
     await expect(write(harness, "t1", [{ title: "All", files: ["src/a.ts"] }])).rejects.toThrow(
       /not a Source Control guide run/,
     );

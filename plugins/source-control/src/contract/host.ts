@@ -19,6 +19,14 @@ import {
 import { repoSchema } from "../core/ids.ts";
 import { timelineItemSchema } from "../core/items.ts";
 import { changeFileSchema, forgeFileSchema, inboxEntrySchema } from "../core/review.ts";
+import {
+  commitRefSchema,
+  landedSchema,
+  MAX_LANDED,
+  prHeadSchema,
+  prRefSchema,
+  watchReadSchema,
+} from "../core/watch.ts";
 
 const pathSchema = z.string().min(1).max(4096);
 /** A commit id (four characters or more), or its first parent as `<id>^` for one commit's own diff. */
@@ -95,7 +103,7 @@ export type ForgeOperation = z.infer<typeof forgeOperationSchema>;
 
 /** The review page's GitHub reads a host runs as one of its accounts. */
 export const reviewReadSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("inbox") }).strict(),
+  z.object({ kind: z.literal("inbox"), pins: z.array(prRefSchema).max(50).optional() }).strict(),
   z
     .object({ kind: z.literal("files"), repo: repoSchema, number: z.number().int().positive() })
     .strict(),
@@ -113,13 +121,28 @@ export const reviewReadSchema = z.discriminatedUnion("kind", [
   z
     .object({ kind: z.literal("timeline"), repo: repoSchema, number: z.number().int().positive() })
     .strict(),
+  /** A watched pull request: its state, checks, and what others said. */
+  z.object({ kind: z.literal("watch"), ref: prRefSchema }).strict(),
+  /** The branch a pull request comes from. */
+  z.object({ kind: z.literal("prHead"), ref: prRefSchema }).strict(),
+  /** Whether listed pull requests merged and commits reached their default branch. */
+  z
+    .object({
+      kind: z.literal("landed"),
+      prs: z.array(prRefSchema).max(MAX_LANDED),
+      commits: z.array(commitRefSchema).max(MAX_LANDED),
+    })
+    .strict(),
 ]);
 
 export const reviewAnswerSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("inbox"), entries: z.array(inboxEntrySchema).max(200) }).strict(),
+  z.object({ kind: z.literal("inbox"), entries: z.array(inboxEntrySchema).max(250) }).strict(),
   z.object({ kind: z.literal("files"), files: z.array(forgeFileSchema).max(3_000) }).strict(),
   z.object({ kind: z.literal("commits"), commits: z.array(commitSchema).max(1_000) }).strict(),
   z.object({ kind: z.literal("timeline"), items: z.array(timelineItemSchema).max(100) }).strict(),
+  z.object({ kind: z.literal("watch"), read: watchReadSchema }).strict(),
+  z.object({ kind: z.literal("landed"), landed: landedSchema }).strict(),
+  z.object({ kind: z.literal("prHead"), head: prHeadSchema }).strict(),
 ]);
 
 export const reviewSubmittedSchema = z.discriminatedUnion("status", [

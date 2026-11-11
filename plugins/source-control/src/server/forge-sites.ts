@@ -13,6 +13,7 @@ import { Effect, Schema } from "effect";
 import { problemSchema, type ForgeRead, type ForgeResult, type Problem } from "../core/change.ts";
 import type { ForgeAccount, HostFailure } from "../contract/host.ts";
 import { runReviewRead, type ReviewAnswer, type ReviewRead } from "../forge/review.ts";
+import type { PrRef } from "../core/watch.ts";
 import {
   accountExec,
   GhError,
@@ -32,6 +33,11 @@ const PROBE_TTL_MS = 5 * 60_000;
 export const FORGE_DEADLINE_MS = 15_000;
 
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: HostFailure };
+
+/** A background read's answer and the login it ran as, or why there is none. */
+export type SiteOutcome<T> =
+  | { ok: true; value: T; login: string }
+  | { ok: false; reason: "away" | "gone" | "rate-limited" | "failed"; message: string };
 
 export type HostForge = {
   accounts(hostId: string, signal: AbortSignal): Promise<Outcome<{ accounts: string[] }>>;
@@ -135,11 +141,16 @@ const toSiteAccount = (access: Access): SiteAccount => ({
 });
 
 /** A host's answer as a value, or the site's refusal. */
-const hostAnswer = <T>(access: Access, call: (signal: AbortSignal) => Promise<Outcome<T>>) =>
+const hostAnswer = <T>(
+  access: Access,
+  call: (signal: AbortSignal) => Promise<Outcome<T>>,
+  /** What a host that does not answer at all means to the caller. */
+  unreachable: "failed" | "away" = "failed",
+) =>
   Effect.tryPromise({
     try: call,
     catch: (error) =>
-      new SiteRefused({ code: "failed", message: String(error), site: access.site }),
+      new SiteRefused({ code: unreachable, message: String(error), site: access.site }),
   }).pipe(
     Effect.flatMap((answer) =>
       answer.ok
@@ -155,6 +166,45 @@ const hostAnswer = <T>(access: Access, call: (signal: AbortSignal) => Promise<Ou
   );
 
 type AsAccount = ReturnType<typeof accountExec>;
+
+/** A review read as the access's account, on the server or through its host. */
+const reviewVia = (
+  asAccount: AsAccount,
+  host: HostForge,
+  access: Access,
+  read: ReviewRead,
+  unreachable: "failed" | "away" = "failed",
+) =>
+  access.hostId === null
+    ? Effect.tryPromise({
+        try: (signal) =>
+          runReviewRead(asAccount(access.account.login, access.account.active), read, signal),
+        catch: (error) => ghRefused(access.site, error),
+      })
+    : hostAnswer(
+        access,
+        (signal) => host.review(access.hostId!, { read, account: access.account }, signal),
+        unreachable,
+      );
+
+/** Why a background read failed, from the code its site refused with. */
+function refusedReason(code: string): BackgroundReason {
+  if (code === "not-found") return "gone";
+  if (code === "rate-limited") return "rate-limited";
+  if (code === "failed" || code === "forbidden") return "failed";
+  return "away";
+}
+
+/** Why a background read with no account named failed, from the first-that-sees problem. */
+function problemReason(problem: { kind: string; detail?: string }): BackgroundReason {
+  if (problem.kind === "rate-limited") return "rate-limited";
+  if (problem.kind === "failed") return "failed";
+  if (problem.kind === "auth" && problem.detail?.startsWith("No signed-in GitHub account can see"))
+    return "gone";
+  return "away";
+}
+
+type BackgroundReason = "away" | "gone" | "rate-limited" | "failed";
 
 /** Posts a review as the access's account, on the server or through its host. */
 const submitAt = (asAccount: AsAccount, host: HostForge, access: Access, write: ReviewWrite) =>
@@ -180,12 +230,13 @@ const writeAt = (asAccount: AsAccount, host: HostForge, access: Access, write: D
         host.setDraft(access.hostId!, { ...write, account: access.account }, signal),
       );
 
-export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now: () => number }) {
+/**
+ * The signed-in `gh` accounts on the server and on each host, probed at most
+ * once per PROBE_TTL_MS. An unreachable site has no accounts until asked again.
+ */
+function createAccountProbes(deps: { serverExec: Exec; host: HostForge; now: () => number }) {
   let server: Probe | null = null;
   const hosts = new Map<string, Probe>();
-  /** The access that last read each repository. */
-  const seen = new Map<string, Access>();
-  const asAccount = accountExec(deps.serverExec, deps.now);
   const fresh = (probe: Probe | null | undefined): probe is Probe =>
     !!probe && deps.now() - probe.at < PROBE_TTL_MS;
 
@@ -234,6 +285,63 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
         })),
       ),
     );
+
+  /**
+   * Every account the page can read an inbox as: the server's, then those
+   * already known on each host in `placements`. Never waits on a host.
+   */
+  const knownAccounts = (placements: readonly Placement[]) =>
+    serverAccesses.pipe(
+      Effect.map((server) => {
+        const all = [...server];
+        for (const placement of uniqueHosts(placements)) {
+          const known = hosts.get(placement.hostId);
+          if (!fresh(known)) continue;
+          known.accounts.forEach((login, index) =>
+            all.push({
+              hostId: placement.hostId,
+              site: placement.hostName,
+              account: { login, active: index === 0 },
+            }),
+          );
+        }
+        const byLogin = new Map<string, Access>();
+        for (const access of all)
+          if (!byLogin.has(access.account.login)) byLogin.set(access.account.login, access);
+        return [...byLogin.values()];
+      }),
+    );
+
+  /** Learn the accounts of the hosts not probed lately, three at a time; true when one was new. */
+  const probeHosts = (placements: readonly Placement[]) =>
+    Effect.gen(function* () {
+      const stale = uniqueHosts(placements).filter((each) => !fresh(hosts.get(each.hostId)));
+      if (stale.length === 0) return false;
+      const found = yield* Effect.forEach(stale, (each) => hostAccounts(each.hostId), {
+        concurrency: 3,
+      });
+      return found.some((logins) => logins.length > 0);
+    });
+
+  return {
+    serverAccesses,
+    hostAccesses,
+    knownAccounts,
+    probeHosts,
+    /** Forget every probe, as an explicit retry does. */
+    reset() {
+      server = null;
+      hosts.clear();
+    },
+  };
+}
+
+export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now: () => number }) {
+  /** The access that last read each repository. */
+  const seen = new Map<string, Access>();
+  const asAccount = accountExec(deps.serverExec, deps.now);
+  const probes = createAccountProbes(deps);
+  const { serverAccesses, hostAccesses, knownAccounts, probeHosts } = probes;
 
   const readAt = (access: Access, query: PullRequestQuery) =>
     access.hostId === null
@@ -330,15 +438,7 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     );
 
   const reviewAt = (access: Access, read: ReviewRead) =>
-    access.hostId === null
-      ? Effect.tryPromise({
-          try: (signal) =>
-            runReviewRead(asAccount(access.account.login, access.account.active), read, signal),
-          catch: (error) => ghRefused(access.site, error),
-        })
-      : hostAnswer(access, (signal) =>
-          deps.host.review(access.hostId!, { read, account: access.account }, signal),
-        );
+    reviewVia(asAccount, deps.host, access, read);
 
   /**
    * A pull request's files or commits: the account that read the repository
@@ -358,45 +458,8 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
       ),
     );
 
-  /**
-   * Every account the page can read an inbox as: the server's, then those
-   * already known on each host in `placements`. Never waits on a host.
-   */
-  const knownAccounts = (placements: readonly Placement[]) =>
-    serverAccesses.pipe(
-      Effect.map((server) => {
-        const all = [...server];
-        for (const placement of uniqueHosts(placements)) {
-          const known = hosts.get(placement.hostId);
-          if (!fresh(known)) continue;
-          known.accounts.forEach((login, index) =>
-            all.push({
-              hostId: placement.hostId,
-              site: placement.hostName,
-              account: { login, active: index === 0 },
-            }),
-          );
-        }
-        const byLogin = new Map<string, Access>();
-        for (const access of all)
-          if (!byLogin.has(access.account.login)) byLogin.set(access.account.login, access);
-        return [...byLogin.values()];
-      }),
-    );
-
-  /** Learn the accounts of the hosts not probed lately, three at a time; true when one was new. */
-  const probeHosts = (placements: readonly Placement[]) =>
-    Effect.gen(function* () {
-      const stale = uniqueHosts(placements).filter((each) => !fresh(hosts.get(each.hostId)));
-      if (stale.length === 0) return false;
-      const found = yield* Effect.forEach(stale, (each) => hostAccounts(each.hostId), {
-        concurrency: 3,
-      });
-      return found.some((logins) => logins.length > 0);
-    });
-
   /** One account's inbox, on the site it is signed in on. */
-  const inbox = (login: string, placements: readonly Placement[]) =>
+  const inbox = (login: string, placements: readonly Placement[], pins: readonly PrRef[] = []) =>
     withinDeadline(
       Effect.gen(function* () {
         const access = (yield* knownAccounts(placements)).find(
@@ -408,12 +471,89 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
             site: SERVER_SITE_NAME,
             detail: `${login} is not signed in to gh on the bb server or a checkout's host.`,
           });
-        const answer = yield* reviewAt(access, { kind: "inbox" }).pipe(
-          Effect.mapError((refused) => unavailable(refusedProblem(refused))),
-        );
+        const answer = yield* reviewAt(access, {
+          kind: "inbox",
+          ...(pins.length ? { pins: [...pins] } : {}),
+        }).pipe(Effect.mapError((refused) => unavailable(refusedProblem(refused))));
         return answer.kind === "inbox" ? answer.entries : [];
       }),
     );
+
+  /** Where `login` is signed in: the server first, then each host in `placements`. */
+  const accessFor = (login: string, placements: readonly Placement[]) =>
+    Effect.gen(function* () {
+      const want = login.toLowerCase();
+      const match = (accesses: Access[]) =>
+        accesses.find((each) => each.account.login.toLowerCase() === want);
+      const server = match(yield* serverAccesses);
+      if (server) return server;
+      for (const placement of uniqueHosts(placements)) {
+        const found = match(yield* hostAccesses(placement));
+        if (found) return found;
+      }
+      return null;
+    });
+
+  /**
+   * A background read (a pull request watch, a landed check) as `login`, or
+   * as the first account that sees `repo` when `login` is null. Never fails:
+   * a site that is away, or a `gh` that is missing or signed out there, is
+   * `away`, which a background job waits out; only GitHub saying the thing
+   * is not there is `gone`.
+   */
+  const backgroundRead = (
+    login: string | null,
+    repo: { owner: string; name: string },
+    read: ReviewRead,
+    placements: readonly Placement[],
+  ): Effect.Effect<SiteOutcome<ReviewAnswer>> =>
+    Effect.gen(function* () {
+      if (login === null) {
+        const answer = yield* withinDeadline(
+          firstThatSees(
+            repoName({ repo }),
+            [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)],
+            (access) => reviewAt(access, read),
+            { kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME },
+          ),
+        ).pipe(Effect.result);
+        if (answer._tag === "Success") {
+          const access = seen.get(repoName({ repo }));
+          return access
+            ? { ok: true as const, value: answer.success, login: access.account.login }
+            : { ok: false as const, reason: "away" as const, message: "No account read it." };
+        }
+        const { problem } = answer.failure;
+        return {
+          ok: false as const,
+          reason: problemReason(problem),
+          message: "detail" in problem ? problem.detail : `${problem.kind}`,
+        };
+      }
+      const access = yield* accessFor(login, placements);
+      if (!access)
+        return {
+          ok: false as const,
+          reason: "away" as const,
+          message: `${login} is not signed in to gh on the bb server${placements[0] ? ` or ${placements[0].hostName}` : ""} right now.`,
+        };
+      // A host that does not answer is away: the job waits for it rather than ending.
+      const run = reviewVia(asAccount, deps.host, access, read, "away");
+      const answer = yield* run.pipe(
+        Effect.timeoutOrElse({
+          duration: FORGE_DEADLINE_MS,
+          orElse: () =>
+            Effect.fail(
+              new SiteRefused({ code: "away", message: "No answer in time.", site: access.site }),
+            ),
+        }),
+        Effect.result,
+      );
+      if (answer._tag === "Success")
+        return { ok: true as const, value: answer.success, login: access.account.login };
+      const { code, message } = answer.failure;
+      return { ok: false as const, reason: refusedReason(code), message };
+    });
 
   return {
     /** Accounts the page can read an inbox as, without waiting on a host. */
@@ -422,11 +562,9 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     probeHosts,
     inbox,
     repoRead,
+    backgroundRead,
     /** Forget every probe, as an explicit retry does. */
-    reprobe() {
-      server = null;
-      hosts.clear();
-    },
+    reprobe: probes.reset,
     pullRequest,
     pullRequestVia,
     /** The login the repository was last read as, if any: who "You" is on its pull requests. */

@@ -366,6 +366,7 @@ const FILTERS: readonly { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "mine", label: "Mine" },
   { id: "asked", label: "Asked" },
+  { id: "pinned", label: "Pinned" },
 ];
 
 function Filters({ counts, variant }: { counts: Record<Filter, number>; variant: Variant }) {
@@ -381,6 +382,8 @@ function Filters({ counts, variant }: { counts: Record<Filter, number>; variant:
       <legend className="sr-only">Show</legend>
       {FILTERS.map((option) => {
         const active = option.id === filter;
+        // Pinned shows only for a reader who pins, or while it is the chosen filter.
+        if (option.id === "pinned" && counts.pinned === 0 && !active) return null;
         return (
           <button
             key={option.id}
@@ -543,6 +546,7 @@ const FILTER_EMPTY: Record<Filter, string> = {
   all: "No changes. Open pull requests and checkout branches appear here.",
   mine: "None of these changes are yours.",
   asked: "No one has asked you to review a change.",
+  pinned: "No pinned pull requests. Pin one from its review page.",
 };
 
 /** What the list says instead of rows, or null when it has rows to show. */

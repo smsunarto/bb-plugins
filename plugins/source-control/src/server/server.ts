@@ -37,6 +37,7 @@ import {
 import { openStore, type Store } from "./store.ts";
 import { createThreadBranches } from "./thread-branches.ts";
 import { createThreadChanges } from "./thread-changes.ts";
+import { createMoved, type Moved } from "./moved.ts";
 
 export type SourceControlDeps = {
   serverExec: Exec;
@@ -177,6 +178,7 @@ function registerRpc(
   start: Start,
   guides: Guides,
   ask: Ask,
+  moved: Moved,
 ) {
   const afterRegistration = activation(bb);
   const items = changes.review.items;
@@ -217,6 +219,7 @@ function registerRpc(
       ...reviewHandlers(runtime, changes.review, start),
       ...guideHandlers(guides),
       ...askHandlers(ask),
+      ...moved.handlers,
     },
     { experimental_discoverable: true },
   );
@@ -261,6 +264,7 @@ function listen(
   host: HostClient,
   changes: Changes,
   guides: Guides,
+  moved: Moved,
 ) {
   bb.onDispose(
     host.experimental_onSignal("checkoutChanged", ({ hostId, payload }) =>
@@ -281,6 +285,8 @@ function listen(
       changes.review.batches.threadStatus(thread.id, event === "thread.idle" ? "idle" : "failed");
       // A guide run that stops without writing failed; either way its slot is free.
       guides.threadEnded(thread.id);
+      // A thread that stops working hears what its watched pull requests did meanwhile.
+      moved.threadSettled(thread.id);
     });
   // An agent a batch went to: "fixing" while it runs, gone once archived.
   bb.events.on("thread.active", ({ thread }) =>
@@ -289,7 +295,9 @@ function listen(
   bb.events.on("thread.archived", ({ thread }) => {
     changes.review.batches.threadStatus(thread.id, "gone");
     guides.threadEnded(thread.id);
+    moved.threadGone(thread.id);
   });
+  bb.events.on("thread.deleted", ({ thread }) => moved.threadGone(thread.id));
 }
 
 /** The calling thread's Change as a card: the directive names its key and head, nothing else. */
@@ -317,18 +325,29 @@ function shareChangeTool(runtime: Runtime, changes: Changes) {
 }
 
 /** Review threads get the findings tool, guide runs the guide tool; every thread can share its Change. */
-function registerAgents(bb: BbPluginApi, runtime: Runtime, changes: Changes, guides: Guides) {
+function registerAgents(
+  bb: BbPluginApi,
+  runtime: Runtime,
+  changes: Changes,
+  guides: Guides,
+  moved: Moved,
+) {
   bb.agents.registerTool(reportFindingsTool(changes.review.items));
   bb.agents.registerTool(writeGuideTool(guides));
   bb.agents.registerTool(shareChangeTool(runtime, changes));
-  bb.agents.configure((session) => ({
-    tools: [
-      ...(reportFindingsEnabled(session) ? [REPORT_FINDINGS] : []),
-      ...(writeGuideEnabled(session) ? [WRITE_GUIDE] : []),
-      SHARE_CHANGE,
-    ],
-    skills: [],
-  }));
+  moved.register();
+  bb.agents.configure((session) => {
+    const authors = moved.configure(session);
+    return {
+      tools: [
+        ...(reportFindingsEnabled(session) ? [REPORT_FINDINGS] : []),
+        ...(writeGuideEnabled(session) ? [WRITE_GUIDE] : []),
+        SHARE_CHANGE,
+        ...authors.tools,
+      ],
+      skills: authors.skills,
+    };
+  });
 }
 
 /** Which model writes guides; empty fields take the project's default. */
@@ -368,14 +387,15 @@ export function createSourceControl(deps: SourceControlDeps) {
     const host = hostClient(bb);
     const store: Store = openStore(bb);
     const share = await runtime.run(SharedWork);
+    const sites = createForgeSites({
+      serverExec: deps.serverExec,
+      now: deps.now,
+      host: forgeCalls(host),
+    });
     const changes: Changes = createThreadChanges({
       bb,
       store,
-      sites: createForgeSites({
-        serverExec: deps.serverExec,
-        now: deps.now,
-        host: forgeCalls(host),
-      }),
+      sites,
       share,
       host: checkoutCalls(host),
       now: deps.now,
@@ -399,6 +419,7 @@ export function createSourceControl(deps: SourceControlDeps) {
         if (!disposed) bb.rpc.experimental_invalidate(tags);
       },
       now: deps.now,
+      instructions: () => moved.instructions.get(),
     });
     const invalidate = (tags: readonly string[]) => {
       if (!disposed) bb.rpc.experimental_invalidate(tags);
@@ -431,9 +452,19 @@ export function createSourceControl(deps: SourceControlDeps) {
       invalidate,
       now: deps.now,
     });
-    registerRpc(bb, runtime, changes, start, guides, ask);
-    registerAgents(bb, runtime, changes, guides);
-    listen(bb, runtime, host, changes, guides);
+    const moved = createMoved({
+      bb,
+      store,
+      host: checkoutCalls(host),
+      read: sites.backgroundRead,
+      run: (effect) => runtime.run(effect),
+      invalidate,
+      pinsChanged: () => runtime.fork(changes.review.refreshInboxes()),
+      now: deps.now,
+    });
+    registerRpc(bb, runtime, changes, start, guides, ask, moved);
+    registerAgents(bb, runtime, changes, guides, moved);
+    listen(bb, runtime, host, changes, guides, moved);
   };
 }
 

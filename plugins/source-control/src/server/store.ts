@@ -95,6 +95,13 @@ const MIGRATIONS = [
   `CREATE TABLE viewer (repo TEXT PRIMARY KEY, login TEXT NOT NULL)`,
   // Phase 7: the one Ask thread per Change.
   `CREATE TABLE ask_thread (change_key TEXT PRIMARY KEY, thread_id TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+  // Phase 8: pull request watches, landed work a thread still waits on, and pinned pull requests.
+  `CREATE TABLE pr_watch (thread_id TEXT NOT NULL, pr_key TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (thread_id, pr_key))`,
+  `CREATE INDEX pr_watch_by_pr ON pr_watch (pr_key)`,
+  `CREATE TABLE landed_track (thread_id TEXT PRIMARY KEY, json TEXT NOT NULL)`,
+  `CREATE TABLE pin (pr_key TEXT PRIMARY KEY, json TEXT NOT NULL, created_at INTEGER NOT NULL)`,
+  // An old `::code-review{branch=…}` card names a GitButler branch id; this is its Change.
+  `CREATE TABLE legacy_branch (branch_id TEXT PRIMARY KEY, change_key TEXT NOT NULL)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -318,6 +325,84 @@ function askTables(db: Database) {
   };
 }
 
+/** Pull request watches, landed work, pins and old branch ids: rows the cutover imports into. */
+function cutoverTables(db: Database) {
+  const watchesOf = db.prepare<[string], { pr_key: string; json: string }>(
+    `SELECT pr_key, json FROM pr_watch WHERE thread_id = ?`,
+  );
+  const allWatches = db.prepare<[], { thread_id: string; pr_key: string; json: string }>(
+    `SELECT thread_id, pr_key, json FROM pr_watch`,
+  );
+  const watchersOf = db.prepare<[string], { thread_id: string }>(
+    `SELECT thread_id FROM pr_watch WHERE pr_key = ?`,
+  );
+  const getWatch = db.prepare<[string, string], { json: string }>(
+    `SELECT json FROM pr_watch WHERE thread_id = ? AND pr_key = ?`,
+  );
+  const putWatch = db.prepare(
+    `INSERT INTO pr_watch (thread_id, pr_key, json) VALUES (?, ?, ?)
+     ON CONFLICT (thread_id, pr_key) DO UPDATE SET json = excluded.json`,
+  );
+  const dropWatch = db.prepare(`DELETE FROM pr_watch WHERE thread_id = ? AND pr_key = ?`);
+  const dropWatches = db.prepare(`DELETE FROM pr_watch WHERE thread_id = ?`);
+  const getLanded = db.prepare<[string], { json: string }>(
+    `SELECT json FROM landed_track WHERE thread_id = ?`,
+  );
+  const allLanded = db.prepare<[], { thread_id: string }>(`SELECT thread_id FROM landed_track`);
+  const putLanded = db.prepare(
+    `INSERT INTO landed_track (thread_id, json) VALUES (?, ?)
+     ON CONFLICT (thread_id) DO UPDATE SET json = excluded.json`,
+  );
+  const dropLanded = db.prepare(`DELETE FROM landed_track WHERE thread_id = ?`);
+  const allPins = db.prepare<[], { json: string }>(
+    `SELECT json FROM pin ORDER BY created_at DESC, pr_key LIMIT 50`,
+  );
+  const putPin = db.prepare(
+    `INSERT INTO pin (pr_key, json, created_at) VALUES (?, ?, ?) ON CONFLICT (pr_key) DO NOTHING`,
+  );
+  const dropPin = db.prepare(`DELETE FROM pin WHERE pr_key = ?`);
+  const getLegacy = db.prepare<[string], { change_key: string }>(
+    `SELECT change_key FROM legacy_branch WHERE branch_id = ?`,
+  );
+  const putLegacy = db.prepare(
+    `INSERT INTO legacy_branch (branch_id, change_key) VALUES (?, ?) ON CONFLICT (branch_id) DO NOTHING`,
+  );
+  const watchKey = (key: string) => key.toLowerCase();
+  return {
+    /** Every watch, as stored: the watch service parses them. */
+    watchRows: () => allWatches.all(),
+    watchRowsOf: (threadId: string) => watchesOf.all(threadId),
+    watchRow: (threadId: string, prKey: string): string | null =>
+      getWatch.get(threadId, watchKey(prKey))?.json ?? null,
+    /** Threads that watch the pull request. */
+    watchersOf: (prKey: string) => watchersOf.all(watchKey(prKey)).map((row) => row.thread_id),
+    putWatch(threadId: string, prKey: string, json: string): void {
+      putWatch.run(threadId, watchKey(prKey), json);
+    },
+    dropWatch: (threadId: string, prKey: string): boolean =>
+      dropWatch.run(threadId, watchKey(prKey)).changes > 0,
+    dropWatches: (threadId: string): boolean => dropWatches.run(threadId).changes > 0,
+    landedRow: (threadId: string): string | null => getLanded.get(threadId)?.json ?? null,
+    landedThreads: () => allLanded.all().map((row) => row.thread_id),
+    putLanded(threadId: string, json: string): void {
+      putLanded.run(threadId, json);
+    },
+    dropLanded(threadId: string): void {
+      dropLanded.run(threadId);
+    },
+    pinRows: () => allPins.all().map((row) => row.json),
+    /** True when the pin is new. */
+    putPin: (prKey: string, json: string, now: number): boolean =>
+      putPin.run(prKey.toLowerCase(), json, now).changes > 0,
+    dropPin: (prKey: string): boolean => dropPin.run(prKey.toLowerCase()).changes > 0,
+    legacyBranch: (branchId: string): ChangeKey | null =>
+      (getLegacy.get(branchId)?.change_key as ChangeKey | undefined) ?? null,
+    /** True when the mapping is new. */
+    putLegacyBranch: (branchId: string, key: ChangeKey): boolean =>
+      putLegacy.run(branchId, key).changes > 0,
+  };
+}
+
 /** The review page's own state: GitHub's threads, bb's findings and runs, drafts and the selection. */
 function reviewTables(db: Database) {
   const getThreads = db.prepare<[string], { json: string }>(
@@ -514,6 +599,7 @@ export function openStore(bb: BbPluginApi) {
   const review = reviewTables(db);
   const guides = guideTables(db);
   const asks = askTables(db);
+  const cutover = cutoverTables(db);
 
   const branch = (threadId: string): string | null => getBranch.get(threadId)?.branch ?? null;
   const readAs = (hostId: string, path: string): ReadAs =>
@@ -524,6 +610,7 @@ export function openStore(bb: BbPluginApi) {
     ...review,
     ...guides,
     ...asks,
+    ...cutover,
     /** One placement per checkout the placement table knows, by host: what the review page lists. */
     checkouts(): Placement[] {
       return placementRows.all().flatMap((row) => {

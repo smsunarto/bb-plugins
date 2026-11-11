@@ -91,6 +91,8 @@ export const changeRowSchema = z
     mine: z.boolean(),
     /** Review requested from the account reading it. */
     asked: z.boolean(),
+    /** Pinned to the list by the reader. */
+    pinned: z.boolean().optional(),
     stack: stackPlaceSchema.nullable(),
     /** The host whose checkout has it, for a local source's row. */
     hostId: z.string().nullable(),
@@ -151,6 +153,7 @@ export function inboxRow(entry: {
   updatedAt: string | null;
   mine: boolean;
   asked: boolean;
+  pinned?: boolean;
   pullRequest: PullRequest;
 }): ChangeRow {
   const pr = entry.pullRequest;
@@ -170,6 +173,7 @@ export function inboxRow(entry: {
     state: rowState(pr),
     mine: entry.mine,
     asked: entry.asked,
+    ...(entry.pinned ? { pinned: true } : {}),
     stack: null,
     hostId: null,
     ...derived({
@@ -250,7 +254,7 @@ export function workspaceRows(input: {
 
 // ── Merge ──────────────────────────────────────────────────────────────
 
-export type Filter = "all" | "mine" | "asked";
+export type Filter = "all" | "mine" | "asked" | "pinned";
 
 export type NavRow = ChangeRow & {
   /** Every host whose checkout has it. */
@@ -284,6 +288,7 @@ function combine(a: NavRow, b: ChangeRow): NavRow {
     ...forge,
     mine: a.mine || b.mine,
     asked: a.asked || b.asked,
+    ...(a.pinned || b.pinned ? { pinned: true } : {}),
     stack: local.stack ?? forge.stack,
     hostId: local.hostId,
     hosts,
@@ -302,6 +307,7 @@ const byShipping = (a: NavRow, b: NavRow) =>
 function matches(row: NavRow, filter: Filter): boolean {
   if (filter === "mine") return row.mine;
   if (filter === "asked") return row.asked;
+  if (filter === "pinned") return row.pinned === true;
   return true;
 }
 
@@ -360,6 +366,7 @@ export function mergeChanges(
     all: all.length,
     mine: all.filter((row) => row.mine).length,
     asked: all.filter((row) => row.asked).length,
+    pinned: all.filter((row) => row.pinned === true).length,
   };
   const shown = all.filter((row) => matches(row, filter));
   const repos = new Map<string, NavRow[]>();
@@ -430,6 +437,8 @@ export const inboxEntrySchema = z
     updatedAt: z.string().nullable(),
     mine: z.boolean(),
     asked: z.boolean(),
+    /** One of the reader's pinned pull requests. */
+    pinned: z.boolean().optional(),
     pullRequest: pullRequestSchema,
   })
   .strict();

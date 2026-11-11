@@ -247,6 +247,8 @@ export function createReviewStart(deps: {
   detail: (key: ChangeKey) => ChangeDetail;
   invalidate: (tags: readonly string[]) => void;
   now: () => number;
+  /** The reviewer's standing instructions, from the plugin's settings. */
+  instructions?: () => Promise<string>;
 }) {
   const { bb, store } = deps;
   const starting = new Map<ChangeKey, Promise<StartResult>>();
@@ -274,6 +276,10 @@ export function createReviewStart(deps: {
     if (reused) return { ok: true, threadId: reused, reused: true };
     const target = await reviewTarget(bb, store, key, detail, revision);
     if (typeof target === "string") return { ok: false, message: target };
+    const standing = (await deps.instructions?.().catch(() => ""))?.trim() ?? "";
+    const prompt = standing
+      ? `${target.prompt}\n\n## The reader's standing review instructions\n\n${standing}\n`
+      : target.prompt;
     const thread = await bb.sdk.threads.spawn({
       projectId: target.projectId,
       environment: target.environment,
@@ -281,7 +287,7 @@ export function createReviewStart(deps: {
       visibility: "visible",
       title: `Review ${detail.row.number ? `#${detail.row.number}` : detail.row.branch}`,
       pluginMetadata: { kind: "review", changeKey: key, head: revision.head },
-      prompt: target.prompt,
+      prompt,
     });
     store.putRun(key, {
       threadId: thread.id,

@@ -1,0 +1,1 @@
+Import what the old code-review and gitbutler plugins keep in their own storage: pins, review instructions, viewed marks, pull request watches and landed records. Safe to run twice; reports counts per kind. Both old plugins must be running.

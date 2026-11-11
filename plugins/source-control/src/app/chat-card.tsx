@@ -282,7 +282,7 @@ function ReadyCard({
   );
 }
 
-function ChangeCard({
+export function ChangeCard({
   changeKey,
   revision,
   threadId,

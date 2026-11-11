@@ -19,6 +19,8 @@ import {
   vcsResultSchema,
 } from "../core/change.ts";
 import { threadStatusSchema } from "../core/status.ts";
+import { importReportSchema } from "../core/cutover.ts";
+import { landedSchema, landedTargetSchema, prRefSchema } from "../core/watch.ts";
 import { guideViewSchema } from "../core/guide.ts";
 import {
   changeDetailSchema,
@@ -311,6 +313,52 @@ export const sourceControlContract = defineRpcContract({
   openAskAsThread: {
     input: z.object({ key: changeKeySchema }).strict(),
     output: askResultSchema,
+  },
+  /**
+   * The cutover: imports what the old code-review and gitbutler plugins keep
+   * in their own storage, through their read-only exports. Idempotent by
+   * natural key; safe to run twice and to resume. Never writes to them.
+   */
+  importFromOldPlugins: {
+    experimental_description:
+      "Import pins, review instructions, viewed marks, pull request watches and landed records from the old code-review and gitbutler plugins. Idempotent; reports counts per kind.",
+    input: z.object({}).strict(),
+    output: importReportSchema,
+  },
+  /**
+   * An old `::code-review` card's target as a Change, keyed by
+   * `pr:<owner>/<repo>#<n>` or `branch:<GitButler branch id>`.
+   */
+  legacyChange: {
+    input: z.object({ keys: z.array(z.string().min(1).max(300)).min(1).max(25) }).strict(),
+    output: z.record(
+      z.string(),
+      z
+        .object({
+          key: changeKeySchema.nullable(),
+          /** Why there is no Change, when `key` is null. */
+          problem: z.string().nullable(),
+        })
+        .strict(),
+    ),
+    keyTags: (key: string) => [`legacy:${key}`],
+  },
+  /** What a landed card lists, as GitHub reports it now. */
+  landedCard: {
+    input: landedTargetSchema,
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true), landed: landedSchema }).strict(),
+      z.object({ ok: z.literal(false), message: z.string(), away: z.boolean() }).strict(),
+    ]),
+  },
+  /** Pull requests pinned to the Changes list, newest first. */
+  pins: {
+    input: z.object({}).strict(),
+    output: z.object({ pins: z.array(prRefSchema) }).strict(),
+  },
+  setPinned: {
+    input: z.object({ ref: prRefSchema, pinned: z.boolean() }).strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
   },
   /** "Ask agent to fix" on a checkout a tool is missing from: a thread on that host to install it. */
   askToFix: {

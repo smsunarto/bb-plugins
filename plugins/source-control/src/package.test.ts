@@ -22,6 +22,8 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect a
       /^@bb-plugins\/instructions$/,
       // GitButler's branch metadata, read on the host.
       /^smol-toml$/,
+      // Review playbooks' frontmatter, read by `bb review playbook` on the server.
+      /^yaml$/,
       // The review page's list window.
       /^@tanstack\/virtual-core$/,
     ],

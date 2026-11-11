@@ -81,7 +81,7 @@ describe("mergeChanges", () => {
       hosts: ["h1"],
       stack: stack(2),
     });
-    expect(merged.counts).toEqual({ all: 4, mine: 3, asked: 1 });
+    expect(merged.counts).toEqual({ all: 4, mine: 3, asked: 1, pinned: 0 });
   });
 
   test("shelves by repository, closest to shipping first; a stack keeps bottom last", () => {
@@ -96,7 +96,7 @@ describe("mergeChanges", () => {
   test("filters keep their counts", () => {
     const asked = mergeChanges([host, inbox], "asked");
     expect(asked.order.map((each) => each.key)).toEqual([X]);
-    expect(asked.counts).toEqual({ all: 4, mine: 3, asked: 1 });
+    expect(asked.counts).toEqual({ all: 4, mine: 3, asked: 1, pinned: 0 });
   });
 
   const failed = { id: "failed", label: "1 Failed", tone: "error", icon: "cross" } as const;

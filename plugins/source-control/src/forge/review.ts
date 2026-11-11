@@ -9,6 +9,8 @@ import type { TimelineItem } from "../core/items.ts";
 import type { ChangeFile, ForgeFile, InboxEntry } from "../core/review.ts";
 import { classifyFailure, GhError, type Exec } from "./github.ts";
 import { readTimeline } from "./timeline.ts";
+import { readLanded, readPrHead, readWatch } from "./watch.ts";
+import type { CommitRef, Landed, PrHead, PrRef, WatchRead } from "../core/watch.ts";
 
 export type { InboxEntry };
 
@@ -132,7 +134,7 @@ function pullRequestOf(node: CompleteNode): PullRequest {
   };
 }
 
-function entryOf(node: InboxNode, list: "mine" | "asked"): InboxEntry | null {
+function entryOf(node: InboxNode, list: "mine" | "asked" | "pinned"): InboxEntry | null {
   const owner = node.repository?.owner?.login;
   const name = node.repository?.name;
   if (!node.number || !node.url || !owner || !name || !node.headRefName || !node.headRefOid)
@@ -145,11 +147,17 @@ function entryOf(node: InboxNode, list: "mine" | "asked"): InboxEntry | null {
     updatedAt: node.updatedAt ?? null,
     mine: list === "mine",
     asked: list === "asked",
+    ...(list === "pinned" ? { pinned: true } : {}),
     pullRequest: pullRequestOf(node as CompleteNode),
   };
 }
 
-async function graphql<T>(exec: Exec, query: string, variables: object, signal?: AbortSignal) {
+export async function graphql<T>(
+  exec: Exec,
+  query: string,
+  variables: object,
+  signal?: AbortSignal,
+) {
   const result = await exec(["api", "graphql", "--input", "-"], {
     stdin: JSON.stringify({ query, variables }),
     signal,
@@ -178,30 +186,63 @@ async function graphql<T>(exec: Exec, query: string, variables: object, signal?:
  * The account's open pull requests: the ones it opened and the ones it is
  * asked to review, newest first, one entry per pull request.
  */
-export async function readInbox(exec: Exec, signal?: AbortSignal): Promise<InboxEntry[]> {
-  const data = await graphql<{
-    mine?: { nodes?: (InboxNode | null)[] };
-    asked?: { nodes?: (InboxNode | null)[] };
-  }>(
-    exec,
-    INBOX,
+export async function readInbox(
+  exec: Exec,
+  signal?: AbortSignal,
+  pins: readonly PrRef[] = [],
+): Promise<InboxEntry[]> {
+  // Pinned pull requests ride in the same call, one alias each, values as variables.
+  const pinVars = pins.map((_, i) => `$o${i}: String!, $r${i}: String!, $n${i}: Int!`).join(", ");
+  const pinFields = pins
+    .map(
+      (_, i) =>
+        `p${i}: repository(owner: $o${i}, name: $r${i}) { pullRequest(number: $n${i}) { ${PR_FIELDS} } }`,
+    )
+    .join("\n  ");
+  const query = pins.length
+    ? INBOX.replace(
+        "query($mine: String!, $asked: String!) {",
+        `query($mine: String!, $asked: String!, ${pinVars}) {\n  ${pinFields}`,
+      )
+    : INBOX;
+  const variables: Record<string, string | number> = {
+    mine: "is:pr is:open archived:false author:@me sort:updated-desc",
+    asked: "is:pr is:open archived:false review-requested:@me sort:updated-desc",
+  };
+  pins.forEach((pin, i) => {
+    variables[`o${i}`] = pin.owner;
+    variables[`r${i}`] = pin.repo;
+    variables[`n${i}`] = pin.number;
+  });
+  const data = await graphql<
     {
-      mine: "is:pr is:open archived:false author:@me sort:updated-desc",
-      asked: "is:pr is:open archived:false review-requested:@me sort:updated-desc",
-    },
-    signal,
-  );
+      mine?: { nodes?: (InboxNode | null)[] };
+      asked?: { nodes?: (InboxNode | null)[] };
+    } & Record<string, { pullRequest?: InboxNode | null } | null | undefined | { nodes?: unknown }>
+  >(exec, query, variables, signal);
   const byUrl = new Map<string, InboxEntry>();
+  const add = (entry: InboxEntry | null) => {
+    if (!entry) return;
+    const seen = byUrl.get(entry.pullRequest.url);
+    byUrl.set(
+      entry.pullRequest.url,
+      seen
+        ? {
+            ...seen,
+            mine: seen.mine || entry.mine,
+            asked: seen.asked || entry.asked,
+            ...(seen.pinned || entry.pinned ? { pinned: true } : {}),
+          }
+        : entry,
+    );
+  };
   for (const list of ["mine", "asked"] as const)
-    for (const node of data[list]?.nodes ?? []) {
-      const entry = node ? entryOf(node, list) : null;
-      if (!entry) continue;
-      const seen = byUrl.get(entry.pullRequest.url);
-      byUrl.set(
-        entry.pullRequest.url,
-        seen ? { ...seen, mine: seen.mine || entry.mine, asked: seen.asked || entry.asked } : entry,
-      );
-    }
+    for (const node of data[list]?.nodes ?? []) add(node ? entryOf(node, list) : null);
+  pins.forEach((_, i) => {
+    const node = (data[`p${i}`] as { pullRequest?: InboxNode | null } | null | undefined)
+      ?.pullRequest;
+    add(node ? entryOf(node, "pinned") : null);
+  });
   return [...byUrl.values()];
 }
 
@@ -361,16 +402,22 @@ export async function readPullRequestCommits(
 
 /** The review page's GitHub reads, as one closed union a host can run too. */
 export type ReviewRead =
-  | { kind: "inbox" }
+  | { kind: "inbox"; pins?: PrRef[] }
   | { kind: "files"; repo: Repo; number: number }
   | { kind: "commits"; repo: Repo; number: number }
   | { kind: "compare"; repo: Repo; base: string; head: string }
-  | { kind: "timeline"; repo: Repo; number: number };
+  | { kind: "timeline"; repo: Repo; number: number }
+  | { kind: "watch"; ref: PrRef }
+  | { kind: "prHead"; ref: PrRef }
+  | { kind: "landed"; prs: PrRef[]; commits: CommitRef[] };
 export type ReviewAnswer =
   | { kind: "inbox"; entries: InboxEntry[] }
   | { kind: "files"; files: ForgeFile[] }
   | { kind: "commits"; commits: Commit[] }
-  | { kind: "timeline"; items: TimelineItem[] };
+  | { kind: "timeline"; items: TimelineItem[] }
+  | { kind: "watch"; read: WatchRead }
+  | { kind: "landed"; landed: Landed }
+  | { kind: "prHead"; head: PrHead };
 
 export async function runReviewRead(
   exec: Exec,
@@ -379,7 +426,7 @@ export async function runReviewRead(
 ): Promise<ReviewAnswer> {
   switch (read.kind) {
     case "inbox":
-      return { kind: "inbox", entries: await readInbox(exec, signal) };
+      return { kind: "inbox", entries: await readInbox(exec, signal, read.pins ?? []) };
     case "files":
       return {
         kind: "files",
@@ -397,5 +444,11 @@ export async function runReviewRead(
       };
     case "timeline":
       return { kind: "timeline", items: await readTimeline(exec, read.repo, read.number, signal) };
+    case "watch":
+      return { kind: "watch", read: await readWatch(exec, read.ref, signal) };
+    case "landed":
+      return { kind: "landed", landed: await readLanded(exec, read, signal) };
+    case "prHead":
+      return { kind: "prHead", head: await readPrHead(exec, read.ref, signal) };
   }
 }

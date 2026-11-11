@@ -28,7 +28,10 @@
     },
     "server": "./src/server/server.ts",
     "host": "./src/host/host.ts",
-    "app": "./src/app/app.tsx"
+    "app": "./src/app/app.tsx",
+    "skills": [
+      "skills"
+    ]
   },
   "files": [
     "dist/*.js",
@@ -37,6 +40,7 @@
     "dist/*.map",
     "assets/",
     "instructions/",
+    "skills/",
     "playbooks/",
     "src/",
     "!src/**/*.test.ts",
@@ -50,6 +54,7 @@
     "@tanstack/virtual-core": "3.17.11",
     "effect": "4.1.0",
     "smol-toml": "1.8.0",
+    "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
