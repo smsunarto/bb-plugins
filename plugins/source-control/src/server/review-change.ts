@@ -26,7 +26,7 @@ import {
   type ParsedKey,
   type ReviewRevision,
 } from "../core/review.ts";
-import { shipPath, type ChangeSummary } from "../core/status.ts";
+import { changeState, shipPath, type ChangeSummary } from "../core/status.ts";
 import { forgeInterval, FORGE_ACTIVE_MS } from "./forge-read.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import { rowsOf } from "./review-sources.ts";
@@ -189,6 +189,7 @@ export function changeDetail(
       ? { state: "pending" }
       : { state: "missing", problem: forge.problem };
   const revision = revisionOf(match, pr);
+  const summary = summaryOf(key, match, forge.read ? pr : undefined);
   return {
     state: "change",
     row,
@@ -199,7 +200,8 @@ export function changeDetail(
     revision,
     stack: stackOf(key, match),
     canMarkReady: pr?.state === "open" && pr.isDraft,
-    ship: shipPath(summaryOf(key, match, forge.read ? pr : undefined)),
+    ship: shipPath(summary),
+    status: changeState(summary),
     problem: match?.problem ?? forge.problem,
     at: Math.max(forge.read?.at ?? 0, match?.at ?? 0),
   };

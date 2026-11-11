@@ -83,6 +83,7 @@ function detail(
     stack: null,
     canMarkReady: false,
     ship: [],
+    status: { label: "Draft", tone: "draft", number: r.number, noPullRequest: false },
     problem: null,
     at: Date.now(),
     ...overrides,

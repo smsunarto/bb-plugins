@@ -22,6 +22,7 @@ import { FindingList, OpenReviewArrow, fixLabel } from "./findings-card.tsx";
 import { cx, plural, shortId } from "./format.ts";
 import { PANEL_PATH, useNow } from "./page/hooks.ts";
 import { STATE_CHIP } from "./page/rail.tsx";
+import type { ChangeState } from "../core/status.ts";
 import { useChangeReview, useReviewActions } from "./review-data.ts";
 import { latestBatch } from "./review-model.ts";
 import { BatchLine, useFixSelected } from "./send.tsx";
@@ -30,6 +31,12 @@ import { Bar, Button } from "./ui.tsx";
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 
 /** True once the element has been on screen; IntersectionObserver reports it without forcing layout. */
+/** The chip for `changeState`, the words the composer strip leads with. */
+function statusChip(status: ChangeState): { label: string; className: string } {
+  const tone = status.tone === "pushed" ? "local" : status.tone;
+  return { label: status.label, className: STATE_CHIP[tone].className };
+}
+
 function useSeen(ref: RefObject<HTMLElement | null>): boolean {
   const [seen, setSeen] = useState(() => typeof IntersectionObserver === "undefined");
   const [onScreen, setOnScreen] = useState(seen);
@@ -141,7 +148,7 @@ function CardHeader({
     enabled: visible && row.number !== null,
   });
   const checkRows = checks.data?.[row.key]?.read?.value?.rows ?? [];
-  const chip = STATE_CHIP[row.state];
+  const chip = statusChip(detail.status);
   const head = detail.head;
   const moved =
     revision !== null && head !== null && !head.startsWith(revision) && !revision.startsWith(head);

@@ -12,9 +12,11 @@ import { useMemo } from "react";
 import type { ThreadChange } from "../core/change.ts";
 import {
   attentionChips,
+  changeState,
   conflictsWithBase,
   primaryAction,
   summarize,
+  type ChangeState,
   type ChangeSummary,
 } from "../core/status.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
@@ -49,18 +51,12 @@ export function useStripVisible(input: ExperimentalThreadContextSegmentInput): b
 
 type Part = { text: string; tone: string };
 
-const PR_STATE = { merged: "Merged", closed: "Closed" } as const;
-
-/** "Draft #482", or how far a branch without a pull request got. */
-function lead(summary: ChangeSummary): string {
-  const pr = summary.pullRequest;
-  // Undefined until GitHub has answered: say only what the checkout knows.
-  if (!pr) {
-    if (!summary.branch?.remote) return "Local branch";
-    return pr === null ? "Pushed, no pull request" : "Pushed";
-  }
-  const state = pr.state === "open" ? (pr.isDraft ? "Draft" : "Open") : PR_STATE[pr.state];
-  return `${state} #${pr.number}`;
+/** "Draft #482", or how far a branch without a pull request got: the chat card's chip, in words. */
+export function lead(state: ChangeState): string {
+  if (state.number !== null) return `${state.label} #${state.number}`;
+  return state.noPullRequest && state.tone === "pushed"
+    ? `${state.label}, no pull request`
+    : state.label;
 }
 
 const checks = (count: number, verb: string) =>
@@ -73,7 +69,9 @@ const checks = (count: number, verb: string) =>
 export function stripParts(summary: ChangeSummary, countUncommitted: boolean): Part[] {
   const pr = summary.pullRequest;
   const counts = pr?.state === "open" ? pr.checks : null;
-  const parts: Part[] = [{ text: lead(summary), tone: "font-semibold text-foreground" }];
+  const parts: Part[] = [
+    { text: lead(changeState(summary)), tone: "font-semibold text-foreground" },
+  ];
   if (summary.findings > 0)
     parts.push({ text: `${summary.findings} findings`, tone: "text-muted-foreground" });
   if (pr && conflictsWithBase(pr))

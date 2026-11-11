@@ -2139,3 +2139,35 @@ describe("guided diff", () => {
     expect([...viewedAtHead(listed.files, view.viewed)]).toEqual(["src/b.ts"]);
   });
 });
+
+test("the Change's detail and its thread's row derive one status: pushed with no pull request, then ahead", async () => {
+  const { changeState, summarize } = await import("../core/status.ts");
+  const world = twoHosts();
+  const { harness, read } = await start(world);
+  const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+  const both = async () => {
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    const detail = (
+      (await harness.behavior.callRpc("changeDetail", { keys: [key] })) as Record<
+        string,
+        { status: unknown }
+      >
+    )[key]!;
+    return { card: detail.status, strip: changeState(summarize(await read("thread-a"))!) };
+  };
+  let seen = await both();
+  expect(seen.card).toEqual(seen.strip);
+  expect(seen.card).toMatchObject({ label: "Pushed", noPullRequest: true });
+  world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", {
+    stacks: [
+      {
+        key: "scott/route-gh",
+        branches: [branch({ status: "ahead", push: "push", ahead: 1 })],
+        assigned: [],
+      },
+    ],
+  });
+  seen = await both();
+  expect(seen.card).toEqual(seen.strip);
+  expect(seen.card).toMatchObject({ label: "Unpushed" });
+});

@@ -11,6 +11,7 @@ import {
   attentionChips,
   chipSchema,
   shipStepSchema,
+  changeStateSchema,
   sortKey,
   statusLine,
   type ChangeSummary,
@@ -488,6 +489,8 @@ export const changeDetailSchema = z.discriminatedUnion("state", [
       canMarkReady: z.boolean(),
       /** `shipPath` of the Change's summary: Committed → Merged, as the header draws it. */
       ship: z.array(shipStepSchema).max(6),
+      /** `changeState` of the same summary: the chip the chat card shows, as the strip words it. */
+      status: changeStateSchema,
       problem: problemSchema.nullable(),
       at: z.number().int().nonnegative(),
     })

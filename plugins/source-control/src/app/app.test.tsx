@@ -741,3 +741,98 @@ test("the strip hides for a thread with no Change of its own", async () => {
   expect(visible.at(-1)).toBe(false);
   expect(segment.useVisible).toBe(useStripVisible);
 });
+
+test("the chat card's chip and the composer strip say the same thing from one summary", async () => {
+  const { changeState, summarize } = await import("../core/status.ts");
+  const { ChangeDirective } = await import("./chat-card.tsx");
+  const pushedNoPr = checkout("scott/pushed", null);
+  if (pushedNoPr.state !== "checkout" || !pushedNoPr.local.read) throw new Error("fixture");
+  pushedNoPr.local.read.value = local("scott/pushed", {
+    stacks: [
+      {
+        key: "scott/pushed",
+        branches: [branchOf("scott/pushed", { status: "pushed", push: "none", ahead: 0 })],
+        assigned: [],
+      },
+    ],
+  });
+  // One commit ahead of its remote: the strip used to say "Pushed" here.
+  const ahead = checkout("scott/ahead", null);
+  if (ahead.state !== "checkout" || !ahead.local.read) throw new Error("fixture");
+  ahead.local.read.value = local("scott/ahead", {
+    stacks: [
+      {
+        key: "scott/ahead",
+        branches: [branchOf("scott/ahead", { status: "ahead", push: "push", ahead: 2 })],
+        assigned: [],
+      },
+    ],
+  });
+  const cases: [ThreadChange, string, string][] = [
+    [pushedNoPr, "Pushed", "Pushed, no pull request"],
+    [ahead, "Unpushed", "Unpushed"],
+    [boardB(), "Draft", "Draft #482"],
+  ];
+  for (const [row, chip, lead] of cases) {
+    if (row.state !== "checkout") throw new Error("fixture");
+    const summary = summarize(row)!;
+    const strip = renderStrip(row);
+    expect((await strip.summary.findByTestId("sc-strip")).firstChild?.textContent).toBe(lead);
+    const detail = {
+      state: "change" as const,
+      row: {
+        key: row.key!,
+        repo: "smsunarto/bb-plugins",
+        title: "A change",
+        branch: row.branch!,
+        baseRef: "main",
+        number: summary.pullRequest?.number ?? null,
+        url: null,
+        author: null,
+        mine: true,
+        asked: false,
+        state: summary.pullRequest ? ("draft" as const) : ("local" as const),
+        stack: null,
+        hostId: "host-a",
+        line: "",
+        chips: [],
+        sort: 0,
+        updatedAt: null,
+      },
+      head: "c0ffee",
+      files: null,
+      additions: null,
+      deletions: null,
+      revision: null,
+      stack: null,
+      canMarkReady: false,
+      ship: [],
+      status: changeState(summary),
+      problem: null,
+      at: Date.now(),
+    };
+    const card = renderSlot(
+      { component: ChangeDirective },
+      {
+        attributes: { key: encodeURIComponent(row.key!), revision: "c0ffee" },
+        source: "",
+        message: { id: "m1", threadId: "thread-a", turnId: null, projectId: null },
+        openWorkspaceFile: null,
+      },
+      {
+        experimental_rpcContract: sourceControlContract,
+        pluginId: "source-control",
+        rpc: {
+          changeDetail: ({ keys }: { keys: string[] }) =>
+            Object.fromEntries(keys.map((key) => [key, detail])),
+          checksForChange: ({ keys }: { keys: string[] }) =>
+            Object.fromEntries(keys.map((key) => [key, { read: null, problem: null }])),
+          reviewForChange: () => ({}),
+        } as never,
+      },
+    );
+    const header = await card.findByTestId("sc-card");
+    expect(header.textContent!.startsWith(chip)).toBe(true);
+    cleanup();
+  }
+});

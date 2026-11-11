@@ -147,17 +147,56 @@ function approvalStep(pr: PullRequest | null | undefined): ShipStep {
  * request, so the path ends at Pushed when the branch has a remote to push
  * to, else at Committed.
  */
-export function shipPath(summary: ChangeSummary): ShipStep[] {
+/** Whether the Change has commits, and whether all of them are on the remote. */
+function progress(summary: ChangeSummary): { committed: boolean; pushed: boolean } {
   const { branch, pullRequest: pr } = summary;
   const merged = pr?.state === "merged";
-  const commits = commitCount(branch);
   // A pull request read with no checkout of its branch was committed and pushed by someone.
   const published = !branch && !!pr;
-  const committed = merged || published || commits > 0;
+  const committed = merged || published || commitCount(branch) > 0;
   const pushed =
     merged ||
     published ||
     (committed && !!branch?.remote && !unpushed(branch) && branch.status !== "unknown");
+  return { committed, pushed };
+}
+
+export const changeStateSchema = z
+  .object({
+    /** "Draft", "Open", "Merged", "Closed", "Pushed", "Unpushed" or "Local branch". */
+    label: z.string(),
+    tone: z.enum(["local", "pushed", "draft", "open", "merged", "closed"]),
+    /** The pull request's number, when there is one. */
+    number: z.number().int().positive().nullable(),
+    /** Read from GitHub and there is none: "Pushed, no pull request". */
+    noPullRequest: z.boolean(),
+  })
+  .strict();
+export type ChangeState = z.infer<typeof changeStateSchema>;
+
+const PR_LABEL = { draft: "Draft", open: "Open", merged: "Merged", closed: "Closed" } as const;
+
+/**
+ * Where the Change stands, as the chat card's chip and the composer strip's
+ * lead both say it: the pull request's state, or how far the branch got.
+ */
+export function changeState(summary: ChangeSummary): ChangeState {
+  const pr = summary.pullRequest;
+  if (pr) {
+    const tone = pr.state === "open" ? (pr.isDraft ? "draft" : "open") : pr.state;
+    return { label: PR_LABEL[tone], tone, number: pr.number, noPullRequest: false };
+  }
+  const { pushed } = progress(summary);
+  const noPullRequest = pr === null;
+  if (pushed) return { label: "Pushed", tone: "pushed", number: null, noPullRequest };
+  if (summary.branch?.remote)
+    return { label: "Unpushed", tone: "local", number: null, noPullRequest };
+  return { label: "Local branch", tone: "local", number: null, noPullRequest };
+}
+
+export function shipPath(summary: ChangeSummary): ShipStep[] {
+  const { branch, pullRequest: pr } = summary;
+  const { committed, pushed } = progress(summary);
   const steps = [
     step(
       "committed",

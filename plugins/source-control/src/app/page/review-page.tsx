@@ -27,7 +27,6 @@ import {
   type ChangeDetail,
   type ReviewLocation,
   type ReviewTab,
-  type RowState,
 } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { cx, plural, shortRef } from "../format.ts";
@@ -50,14 +49,6 @@ type Ready = Extract<ChangeDetail, { state: "change" }>;
 const PAD = "px-4 @3xl:px-8";
 
 // ── Status menu ────────────────────────────────────────────────────────
-
-const STATE_LABEL: Record<RowState, string> = {
-  local: "Local",
-  draft: "Draft",
-  open: "Open",
-  merged: "Merged",
-  closed: "Closed",
-};
 
 type Outcome = { head: string; result: ForgeResult } | null;
 
@@ -139,7 +130,7 @@ function StatusMenu({
     return (
       <span className={CHIP} data-testid="sc-review-state">
         {icon}
-        {STATE_LABEL[state]}
+        {detail.status.label}
       </span>
     );
   const close = () => {
@@ -158,7 +149,7 @@ function StatusMenu({
         className={cx(CHIP, "cursor-pointer")}
       >
         {icon}
-        {STATE_LABEL[state]}
+        {detail.status.label}
         <Chevron />
       </button>
       {open ? (

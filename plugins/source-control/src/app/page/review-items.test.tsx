@@ -80,6 +80,7 @@ const DETAIL: ChangeDetail = {
   stack: null,
   canMarkReady: false,
   ship: [],
+  status: { label: "Pushed", tone: "pushed", number: null, noPullRequest: true },
   problem: null,
   at: Date.now(),
 };
