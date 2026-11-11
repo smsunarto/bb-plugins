@@ -1,14 +1,21 @@
 /**
  * The GitButler workspace provider's writes. Ported from
- * `plugins/gitbutler/src/host/actions.ts` (push, the workspace pull, and
- * land; rename, delete, and the per-branch pull stay in that plugin).
+ * `plugins/gitbutler/src/host/actions.ts` (push, the workspace pull, land
+ * and delete; rename and the per-branch pull stay in that plugin).
  * Branches are named, not given by CLI id, because ids are reassigned on
  * every `but` invocation. A write that finds a risk the reader did not
  * accept returns `confirm` and changes nothing; a refusal throws.
  */
 import type { ActionRisk, VcsAction, VcsResult } from "../core/change.ts";
 import { CommandFailedError, runBut, runButAction, runGit } from "./cli.ts";
-import { checkedTarget, namedBranch, parseWorkspace, pullCheck, type ButBranch } from "./parse.ts";
+import {
+  checkedTarget,
+  namedBranch,
+  parseWorkspace,
+  pullCheck,
+  uncommittedKinds,
+  type ButBranch,
+} from "./parse.ts";
 import { compareWithRemotes, upstreamLoss } from "./upstream.ts";
 
 const DONE: VcsResult = { status: "done" };
@@ -21,6 +28,7 @@ export async function runButWrite(
   signal: AbortSignal,
 ): Promise<VcsResult> {
   if (action.kind === "pull") return updateWorkspace(cwd, action.accepted, signal);
+  if (action.kind === "delete") return deleteBranch(cwd, action, signal);
   // Fetched first, so the status read next knows the remote's latest commits.
   const fetched = await fetchRemotes(cwd, signal);
   const status = await runBut(cwd, ["status", "-u"], signal);
@@ -34,6 +42,55 @@ export async function runButWrite(
     signal,
   );
   return DONE;
+}
+
+/**
+ * Deletes a branch with `but branch delete`, not `but discard`, which can also
+ * discard files and commits. Asks first when the branch's commits touch files
+ * with uncommitted changes: deleting it takes those lines back out from under
+ * them, and `but branch delete` then writes conflict markers into the files.
+ */
+async function deleteBranch(
+  cwd: string,
+  action: Extract<VcsAction, { kind: "delete" }>,
+  signal: AbortSignal,
+): Promise<VcsResult> {
+  const status = await runBut(cwd, ["status", "-u"], signal);
+  const branch = namedBranch(status, action.branch);
+  const risk: ActionRisk = {
+    conflicted: [],
+    overlapsUncommitted: await deleteTouchesUncommitted(cwd, status, branch, signal),
+  };
+  if (!accepts(action.accepted, risk)) return { status: "confirm", risk, loss: null };
+  await runButAction(cwd, ["branch", "delete", action.branch], signal);
+  return DONE;
+}
+
+/** Whether uncommitted changes sit in files the branch's commits touch. */
+async function deleteTouchesUncommitted(
+  cwd: string,
+  status: unknown,
+  branch: ButBranch,
+  signal: AbortSignal,
+): Promise<boolean> {
+  const uncommitted = uncommittedKinds(status);
+  if (uncommitted.size === 0 || branch.commits.length === 0) return false;
+  const touched = await runGit(
+    cwd,
+    [
+      "log",
+      "-z",
+      "--no-walk=unsorted",
+      // A merge's own changes, its conflict resolution included, count too.
+      "--diff-merges=first-parent",
+      "--no-renames",
+      "--name-only",
+      "--format=",
+      ...branch.commits.map((commit) => commit.commitId),
+    ],
+    signal,
+  );
+  return touched.split("\0").some((file) => uncommitted.has(file));
 }
 
 type Land = Extract<VcsAction, { kind: "land" }>;

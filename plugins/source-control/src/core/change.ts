@@ -292,6 +292,17 @@ export const vcsActionSchema = z.discriminatedUnion("kind", [
       accepted: actionRiskSchema.nullable(),
     })
     .strict(),
+  /**
+   * Deletes the local branch. A GitButler branch whose commits touch files
+   * with uncommitted changes asks first (`overlapsUncommitted`).
+   */
+  z
+    .object({
+      kind: z.literal("delete"),
+      branch: branchNameSchema,
+      accepted: actionRiskSchema.nullable(),
+    })
+    .strict(),
 ]);
 export type VcsAction = z.infer<typeof vcsActionSchema>;
 

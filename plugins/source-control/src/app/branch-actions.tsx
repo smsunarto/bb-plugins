@@ -363,7 +363,67 @@ function serverConfirmation(
     const asked = landConfirmation(branch, action.message ?? "", outcome.risk, behind, native);
     return { ...asked, action: { ...action, accepted: outcome.risk } };
   }
+  if (action.kind === "delete" && outcome.risk) {
+    return {
+      prompt: (
+        <>
+          Your uncommitted changes touch files <Name>{branch.name}</Name>'s commits change, so
+          deleting it writes conflict markers into them.
+        </>
+      ),
+      label: "Delete anyway",
+      action: { ...action, accepted: outcome.risk },
+      tone: "destructive",
+    };
+  }
   return null;
+}
+
+/** Statuses whose commits the remote already has, so a delete loses nothing it lacks. */
+const ON_REMOTE: ReadonlySet<Branch["status"]> = new Set(["pushed", "behind", "integrated"]);
+
+/** What deleting a branch loses, from how much of it the remote already has. */
+function deleteLoss(branch: Branch, native: boolean): string {
+  const count = branch.commits.length;
+  if (count === 0) return "It has no commits.";
+  const one = count === 1;
+  const its = one ? "Its commit" : `Its ${count} commits`;
+  const history = native ? "git's reflog" : "GitButler's undo history";
+  if (branch.status === "unpushed")
+    return `${its} ${one ? "was" : "were"} never pushed, so only ${history} keeps ${one ? "it" : "them"} afterwards.`;
+  const leave = `${its} ${one ? "leaves" : "leave"} ${native ? "the checkout" : "the workspace"}`;
+  return ON_REMOTE.has(branch.status)
+    ? `${leave}.`
+    : `${leave}, and any not yet pushed stay only in ${history}.`;
+}
+
+/**
+ * Delete's question. `but branch delete` drops the local branch and its
+ * commits and rebases the branches above it; plain git leaves the checkout
+ * detached at the branch's head. Neither touches the remote or a pull request.
+ */
+function deleteConfirmation(branch: Branch, above: number, native: boolean): Confirmation {
+  const remote = branch.status === "unpushed" ? "" : " The remote branch and any PR stay.";
+  const moves =
+    native || above === 0
+      ? ""
+      : above === 1
+        ? " The branch above it moves down onto the base."
+        : ` The ${above} branches above it move down onto the base.`;
+  const detached = native ? " The checkout is left detached at its last commit." : "";
+  return {
+    prompt: (
+      <>
+        Delete <Name>{branch.name}</Name>? {deleteLoss(branch, native)}
+        {remote}
+        {moves}
+        {detached}
+      </>
+    ),
+    label: "Delete",
+    action: { kind: "delete", branch: branch.name, accepted: null },
+    tone: "destructive",
+  };
 }
 
 /** The new state of a revision a question was asked about, if it moved. */
@@ -408,18 +468,22 @@ export function OutcomeLine({
 }
 
 /** A branch footer's local state: its buttons, or Land's first question. */
-type Mode = { kind: "idle" } | { kind: "land"; message: string; seen: Revision };
+type Mode =
+  | { kind: "idle" }
+  | { kind: "land"; message: string; seen: Revision }
+  | { kind: "delete"; seen: Revision };
 const IDLE: Mode = { kind: "idle" };
 
 /**
- * The footer under a branch header: Push and Land. Push goes straight out;
- * the server asks first when it would delete remote commits. Land always
- * asks, and asks again when the pull before it carries a risk.
+ * The footer under a branch header: Push, Land and Delete. Push goes straight
+ * out; the server asks first when it would delete remote commits. Land and
+ * Delete always ask, and ask again when the server finds a risk.
  */
 export const BranchActions = memo(function BranchActions({
   branch,
   targetHead,
   landable,
+  above,
   pushBlocked,
   behind,
   native,
@@ -433,6 +497,8 @@ export const BranchActions = memo(function BranchActions({
   targetHead: string | null;
   /** Land refuses a branch with other branches below it in its stack. */
   landable: boolean;
+  /** Branches stacked above this one. */
+  above: number;
   /** A conflicted commit here or below, which a push would take along. */
   pushBlocked: boolean;
   /** Commits the target has that the workspace lacks. */
@@ -452,8 +518,7 @@ export const BranchActions = memo(function BranchActions({
     setMode(IDLE);
     dispatch.send(action, now);
   };
-  const asked = question(outcome, mode, branch, behind, native);
-  if (!asked && available.push === "none" && !available.land && !outcome) return null;
+  const asked = question(outcome, mode, branch, behind, native, above);
   return (
     <div className="flex min-w-0 flex-col gap-2 border-t border-border-hairline px-3 py-2">
       {asked ? (
@@ -496,6 +561,7 @@ export const BranchActions = memo(function BranchActions({
               seen: now,
             })
           }
+          onDelete={() => setMode({ kind: "delete", seen: now })}
         />
       )}
       <OutcomeLine outcome={outcome} scope={branch.name} dispatch={dispatch} />
@@ -521,11 +587,18 @@ function question(
   branch: Branch,
   behind: number,
   native: boolean,
+  above: number,
 ): { confirmation: Confirmation; seen: Revision; fromServer: boolean } | null {
   if (outcome?.kind === "confirm") {
     const confirmation = serverConfirmation(outcome, branch, behind, native);
     return confirmation ? { confirmation, seen: outcome.seen, fromServer: true } : null;
   }
+  if (mode.kind === "delete")
+    return {
+      confirmation: deleteConfirmation(branch, above, native),
+      seen: mode.seen,
+      fromServer: false,
+    };
   if (mode.kind !== "land") return null;
   return {
     confirmation: landConfirmation(branch, mode.message, null, behind, native),
@@ -588,6 +661,7 @@ function ActionRow({
   blocked,
   onPush,
   onLand,
+  onDelete,
 }: {
   branch: Branch;
   available: Available;
@@ -596,6 +670,7 @@ function ActionRow({
   blocked: string | null;
   onPush: (force: boolean) => void;
   onLand: () => void;
+  onDelete: () => void;
 }) {
   const force = available.push === "force";
   // Rewritten commits replace the remote branch, so the label says so.
@@ -619,6 +694,17 @@ function ActionRow({
           Land
         </Button>
       ) : null}
+      {/* Apart from the rest and quiet, so it is never the button a hand drifts to. */}
+      <Button
+        variant="ghost"
+        className="ms-auto shrink-0 text-muted-foreground enabled:hover:text-destructive"
+        disabled={busy}
+        aria-label={`Delete ${branch.name}`}
+        onClick={onDelete}
+      >
+        <Pending pending={running === "delete"} icon="Trash2" />
+        Delete
+      </Button>
     </div>
   );
 }

@@ -49,12 +49,14 @@ async function commitFile(cwd: string, file: string, content: string, message: s
   return git(cwd, "rev-parse", "HEAD").trim();
 }
 
-export async function buildRepos(root: string, withButler: boolean): Promise<Repos> {
-  const origin = join(root, "origin.git");
-  const seed = join(root, "seed");
-  const plain = join(root, "plain");
-  const gitbutler = join(root, "gitbutler");
-  git(root, "init", "--quiet", "--bare", "--initial-branch=main", origin);
+/** `dir` holds the repositories; `root` stays the isolated root `but` checks against. */
+export async function buildRepos(root: string, withButler: boolean, dir = root): Promise<Repos> {
+  await mkdir(dir, { recursive: true });
+  const origin = join(dir, "origin.git");
+  const seed = join(dir, "seed");
+  const plain = join(dir, "plain");
+  const gitbutler = join(dir, "gitbutler");
+  git(dir, "init", "--quiet", "--bare", "--initial-branch=main", origin);
   await mkdir(seed);
   git(seed, "init", "--quiet", "--initial-branch=main", ".");
   await writeFile(join(seed, ".gitignore"), "build/\n");
@@ -63,14 +65,14 @@ export async function buildRepos(root: string, withButler: boolean): Promise<Rep
   git(seed, "remote", "add", "origin", origin);
   git(seed, "push", "--quiet", "origin", "main");
 
-  git(root, "clone", "--quiet", origin, plain);
+  git(dir, "clone", "--quiet", origin, plain);
   git(plain, "switch", "--quiet", "-c", BRANCH);
   const pushed = await commitFile(plain, "one.txt", "one\n", "feat: one\n\nWith a body.");
   git(plain, "push", "--quiet", "-u", "origin", BRANCH);
   const unpushed = await commitFile(plain, "two.txt", "two\n", "feat: two");
 
   if (!withButler) return { origin, plain, gitbutler: null, base, pushed, unpushed };
-  git(root, "clone", "--quiet", origin, gitbutler);
+  git(dir, "clone", "--quiet", origin, gitbutler);
   git(gitbutler, "fetch", "--quiet", plain, `${BRANCH}:${BRANCH}`);
   git(gitbutler, "branch", "--quiet", `--set-upstream-to=origin/${BRANCH}`, BRANCH);
   but(gitbutler, root, "apply", BRANCH);

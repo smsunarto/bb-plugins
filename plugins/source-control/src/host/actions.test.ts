@@ -2,7 +2,7 @@
  * The GitButler provider's writes against a scripted `but`, in a real
  * repository: a pull reads the target's new commits from git, and a push
  * compares the branch with its remote there. Ported from
- * `plugins/gitbutler/src/host/actions.test.ts` (push, the workspace pull, and land).
+ * `plugins/gitbutler/src/host/actions.test.ts` (push, the workspace pull, land and delete).
  */
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -66,7 +66,7 @@ afterAll(async () => {
 });
 
 /** `but status -u --json` for the repository, with `upstream` remote commits on scott/top. */
-function statusWith(upstream: number) {
+function statusWith(upstream: number, uncommitted: string[] = []) {
   const commit = (id: string, cliId: string) => ({
     cliId,
     commitId: id,
@@ -74,7 +74,7 @@ function statusWith(upstream: number) {
     conflicted: false,
   });
   return {
-    uncommittedChanges: [],
+    uncommittedChanges: uncommitted.map((filePath) => ({ filePath, changeType: "modified" })),
     stacks: [
       {
         branches: [
@@ -392,4 +392,32 @@ test.each([
     `Land stopped before changing anything: ${refusal}`,
   );
   expect(await calls()).toEqual(["pull --check --json", "status -u --json"]);
+});
+
+test("Delete runs straight away when no uncommitted change is in the branch's files", async () => {
+  const calls = await script({
+    "status -u": statusWith(0, ["notes.md"]),
+    "branch delete scott/top": "{}",
+  });
+  const action = { kind: "delete" as const, branch: "scott/top", accepted: null };
+  expect(await runButWrite(repository, action, signal)).toEqual({ status: "done" });
+  expect(await calls()).toEqual(["status -u --json", "branch delete scott/top --json"]);
+});
+
+test("Delete asks first when uncommitted changes are in files the branch changed", async () => {
+  const calls = await script({
+    "status -u": statusWith(0, ["top.txt"]),
+    "branch delete scott/top": "{}",
+  });
+  const risk: ActionRisk = { conflicted: [], overlapsUncommitted: true };
+  const action = { kind: "delete" as const, branch: "scott/top", accepted: null };
+  expect(await runButWrite(repository, action, signal)).toEqual({
+    status: "confirm",
+    risk,
+    loss: null,
+  });
+  expect(await calls()).toEqual(["status -u --json"]);
+  expect(await runButWrite(repository, { ...action, accepted: risk }, signal)).toEqual({
+    status: "done",
+  });
 });

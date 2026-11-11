@@ -452,6 +452,36 @@ test("a force-push question waits for the reader, then sends the loss they accep
   });
 });
 
+test("Delete asks first, sends nothing until confirmed, then asks again about uncommitted overlap", async () => {
+  let answers = 0;
+  const risk = { conflicted: [], overlapsUncommitted: true };
+  const { slot, of } = renderRow(stacked(), {
+    vcsAction: () =>
+      answers++ === 0
+        ? { status: "confirm" as const, risk, loss: null }
+        : { status: "done" as const },
+  });
+  await act(async () =>
+    (await slot.findByRole("button", { name: "Delete scott/forge-host" })).click(),
+  );
+  expect(await slot.findByText(/The remote branch and any PR stay/)).toBeTruthy();
+  // The branch above it moves down: scott/forge-host is the top of a two-branch stack.
+  expect(of("vcsAction")).toHaveLength(0);
+  await act(async () => slot.getByRole("button", { name: "Delete" }).click());
+  await waitFor(() => expect(of("vcsAction")).toHaveLength(1));
+  expect(of("vcsAction")[0]!.input).toEqual({
+    threadId: "thread-a",
+    action: { kind: "delete", branch: "scott/forge-host", accepted: null },
+    expected: { head: "f00d001", target: "a41c9e2ffff" },
+  });
+  expect(await slot.findByText(/writes conflict markers into them/)).toBeTruthy();
+  await act(async () => slot.getByRole("button", { name: "Delete anyway" }).click());
+  await waitFor(() => expect(of("vcsAction")).toHaveLength(2));
+  expect(of("vcsAction")[1]!.input).toMatchObject({
+    action: { kind: "delete", branch: "scott/forge-host", accepted: risk },
+  });
+});
+
 test("a workspace with no GitButler CLI offers to read again or read as plain git", async () => {
   const row: ThreadChange = {
     state: "checkout",

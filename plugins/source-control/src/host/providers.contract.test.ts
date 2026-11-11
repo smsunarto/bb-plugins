@@ -216,6 +216,41 @@ describe.each(cases)("$provider provider", ({ path }) => {
     expect(branch).toMatchObject({ status: "pushed", ahead: 0, behind: 0, push: "none" });
   });
 });
+/** Delete removes the branch the shared repositories hold, so it gets its own. */
+describe.each(cases)("$provider provider deletes a branch", ({ provider }) => {
+  let own: Repos;
+  beforeAll(async () => {
+    own = await buildRepos(
+      env.root,
+      provider === "gitbutler",
+      join(env.root, `delete-${provider}`),
+    );
+  }, 60_000);
+  const path = () => (provider === "git" ? own.plain : own.gitbutler!);
+  const write = (action: VcsAction, expected: Revision) =>
+    host.experimental_call("vcsAction", { path: path(), readAs: "auto", action, expected });
+
+  test("refuses a delete against a stale head, changing nothing", async () => {
+    const before = ref(path(), `refs/heads/${BRANCH}`);
+    const result = await write(
+      { kind: "delete", branch: BRANCH, accepted: null },
+      { head: STALE, target: own.base },
+    );
+    expect(result).toMatchObject({ status: "conflict" });
+    expect(ref(path(), `refs/heads/${BRANCH}`)).toBe(before);
+  });
+
+  test("deletes the local branch at the revision it was read at, leaving origin's", async () => {
+    const remote = ref(own.origin, `refs/heads/${BRANCH}`);
+    const result = await write(
+      { kind: "delete", branch: BRANCH, accepted: null },
+      { head: own.unpushed, target: own.base },
+    );
+    expect(result).toEqual({ status: "done" });
+    expect(ref(path(), `refs/heads/${BRANCH}`)).toBeNull();
+    expect(ref(own.origin, `refs/heads/${BRANCH}`)).toBe(remote);
+  });
+});
 
 describe("checkouts that are not a branch of a repository", () => {
   test("a directory outside any repository reads as not-git", async () => {

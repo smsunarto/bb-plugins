@@ -78,8 +78,8 @@ export function problemOf(error: unknown): Problem {
 
 /**
  * Why the checkout is no longer at the revision the write was asked for, or
- * null when it still is. Push and Land name a branch whose head must be
- * unchanged; Pull and Land bring in a target whose head, as last fetched,
+ * null when it still is. Push, Land and Delete name a branch whose head must
+ * be unchanged; Pull and Land bring in a target whose head, as last fetched,
  * must be the one the reader saw.
  */
 export function revisionConflict(
@@ -93,7 +93,7 @@ export function revisionConflict(
     if (branch.head !== expected.head)
       return `${action.branch} moved since it was read: its head is now ${branch.head ?? "empty"}.`;
   }
-  if (action.kind !== "push") {
+  if (action.kind === "pull" || action.kind === "land") {
     const head = value.target?.head ?? null;
     if (head !== expected.target)
       return `The target moved since it was read: it is now at ${head ?? "nothing"}.`;

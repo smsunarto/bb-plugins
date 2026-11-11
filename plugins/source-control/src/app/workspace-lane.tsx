@@ -574,6 +574,7 @@ const BranchCard = memo(function BranchCard({
   branch,
   forge,
   last,
+  above,
   pushBlocked,
   behind,
   targetHead,
@@ -595,6 +596,8 @@ const BranchCard = memo(function BranchCard({
   forge: ForgeValue | undefined;
   /** The bottom branch of its stack: its last segment runs on to the base. */
   last: boolean;
+  /** Branches stacked above this one, which a delete moves down onto the base. */
+  above: number;
   pushBlocked: boolean;
   behind: number;
   targetHead: string | null;
@@ -640,6 +643,7 @@ const BranchCard = memo(function BranchCard({
           branch={branch}
           targetHead={targetHead}
           landable={last}
+          above={above}
           pushBlocked={pushBlocked}
           behind={behind}
           native={native}
@@ -796,6 +800,7 @@ export const StackLane = memo(function StackLane({
                 branch={branch}
                 forge={branch.name === threadBranch ? forge : undefined}
                 last={last}
+                above={index}
                 pushBlocked={pushBlocked}
                 behind={behind}
                 targetHead={targetHead}

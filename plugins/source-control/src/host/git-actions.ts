@@ -548,5 +548,12 @@ export async function runGitWrite(
       return rebase(action, before, signal);
     case "land":
       return land(action, before, signal);
+    case "delete": {
+      if (!before.head)
+        throw new CommandFailedError("An unborn branch has no commit to preserve before deletion.");
+      // Plain git deletes the checked-out branch: the checkout is left detached at its head.
+      await remove(before, before.head, signal);
+      return DONE;
+    }
   }
 }
