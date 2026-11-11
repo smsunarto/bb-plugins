@@ -27,7 +27,7 @@ import {
   type FilesResult,
   type ReviewRevision,
 } from "../core/review.ts";
-import { baseOf, changeHome, fenced, inlineCode, quote } from "./review-start.ts";
+import { changeHome, fenced, inlineCode, quote } from "./review-start.ts";
 import type { GuideRow, Store } from "./store.ts";
 
 const files = instructionFiles(import.meta.url);
@@ -37,6 +37,8 @@ export const WRITE_GUIDE = "source_control_write_guide";
 export const MAX_RUNS = 2;
 /** Files listed in the prompt; a bigger change lists these and says how many more. */
 const PROMPT_FILES = 1000;
+/** Above this many files the prompt lists directories, each with its count and size. */
+const LIST_BY_DIRECTORY = 80;
 
 const RUNNING = new Set(["pending", "starting", "active", "stopping"]);
 
@@ -55,10 +57,54 @@ function fileLine(file: ChangeFile): string {
   return `- ${inlineCode(file.path)} (${file.kind}${from}, ${size})`;
 }
 
+const directoryOf = (path: string) => path.slice(0, path.lastIndexOf("/") + 1) || "./";
+
+/** One line per directory: how many files, of which kinds, and the lines they change. */
+function directoryList(list: readonly ChangeFile[]): string {
+  const dirs = new Map<
+    string,
+    { files: number; kinds: Map<string, number>; add: number; del: number }
+  >();
+  for (const file of list) {
+    const dir = directoryOf(file.path);
+    const entry = dirs.get(dir) ?? { files: 0, kinds: new Map(), add: 0, del: 0 };
+    entry.files += 1;
+    entry.kinds.set(file.kind, (entry.kinds.get(file.kind) ?? 0) + 1);
+    entry.add += file.additions;
+    entry.del += file.deletions;
+    dirs.set(dir, entry);
+  }
+  return [...dirs]
+    .map(([dir, entry]) => {
+      const kinds = [...entry.kinds].map(([kind, count]) => `${count} ${kind}`).join(", ");
+      return `- ${inlineCode(dir)}: ${entry.files} files (${kinds}), +${entry.add} −${entry.del}`;
+    })
+    .join("\n");
+}
+
+/** Every file with its change; a big change by directory, which the write tool also accepts. */
 function fileList(list: readonly ChangeFile[]): string {
+  if (list.length > LIST_BY_DIRECTORY)
+    return [
+      `${list.length} files, by directory. You can place a directory without listing its files; list one only if you need a file from it by name.`,
+      "",
+      directoryList(list),
+    ].join("\n");
   const shown = list.slice(0, PROMPT_FILES).map(fileLine);
   const more = list.length - shown.length;
   return more > 0 ? `${shown.join("\n")}\n- …and ${more} more files` : shown.join("\n");
+}
+
+/**
+ * One complete diff command: the base is named, or resolved inside the
+ * command, so the run spends no turn finding it.
+ */
+function guideDiff(revision: ReviewRevision): string {
+  const head = revision.head;
+  if (!revision.base.startsWith("branch:")) return `git diff ${revision.base}...${head}`;
+  const name = revision.base.slice("branch:".length);
+  if (name) return `git diff ${quote(`origin/${name}`)}...${head}`;
+  return `git diff "$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)"...${head}`;
 }
 
 /** Where the run reads the change: its checkout, or the pull request fetched into a new worktree. */
@@ -68,15 +114,13 @@ function whereText(
   pr: { number: number; url: string; baseRef: string } | null,
 ): string {
   if (placement) {
-    const { base, diff } = baseOf(revision);
     return [
       `- Checkout: ${inlineCode(placement.path)} on ${placement.hostName}`,
-      `- Base: ${base}`,
       `- Head: \`${revision.head}\``,
       "",
       "Run git in the checkout. This checkout is someone's working copy and may hold their other work; read only this diff:",
       "",
-      diff,
+      fenced(guideDiff(revision)),
       "",
       `Read a file as the branch has it with \`git show ${revision.head}:<path>\`.`,
     ].join("\n");
@@ -117,7 +161,12 @@ const parameters = z.strictObject({
         files: z
           .array(
             z.strictObject({
-              path: z.string().min(1).describe("A path from the file list in your instructions."),
+              path: z
+                .string()
+                .min(1)
+                .describe(
+                  "A file path from the change, or a directory ending in `/` for all its files you do not place elsewhere.",
+                ),
               note: z
                 .string()
                 .max(300)
@@ -143,6 +192,50 @@ const slug = (title: string, index: number) =>
     .replaceAll(/[^a-z0-9]+/g, "-")
     .replaceAll(/^-|-$/g, "")
     .slice(0, 40)}`;
+
+type WrittenGroup = z.output<typeof parameters>["groups"][number];
+
+/**
+ * Directory entries (`src/mod00/`) replaced by the change's files under
+ * them, in path order. A file named on its own stays where it is named; one
+ * no group names is left to the page's "Not in the guide" group.
+ */
+export function expandDirectories(
+  groups: readonly WrittenGroup[],
+  paths: readonly string[],
+): { placed: WrittenGroup[]; unknown: string[] } {
+  const known = new Set(paths);
+  const named = new Set(
+    groups.flatMap((group) =>
+      group.files.flatMap((file) => (known.has(file.path) ? [file.path] : [])),
+    ),
+  );
+  const taken = new Set<string>();
+  const unknown: string[] = [];
+  const placed = groups.map((group) => ({
+    ...group,
+    files: group.files.flatMap((file) => {
+      if (known.has(file.path)) {
+        if (taken.has(file.path)) return [];
+        taken.add(file.path);
+        return [file];
+      }
+      if (!file.path.endsWith("/")) {
+        unknown.push(file.path);
+        return [];
+      }
+      const inDir = (path: string) =>
+        file.path === "./" ? !path.includes("/") : path.startsWith(file.path);
+      const under = paths
+        .filter((path) => inDir(path) && !named.has(path) && !taken.has(path))
+        .toSorted();
+      if (under.length === 0 && !paths.some(inDir)) unknown.push(file.path);
+      for (const path of under) taken.add(path);
+      return under.map((path) => ({ path }));
+    }),
+  }));
+  return { placed, unknown };
+}
 
 // ── Runs ───────────────────────────────────────────────────────────────
 
@@ -366,33 +459,39 @@ export function createGuides(deps: {
         );
       const { key, row } = found;
       const blobs = new Map(row.files!.map((file) => [file.path, file.blob]));
-      const unknown = input.groups.flatMap((group) =>
-        group.files.flatMap((file) => (blobs.has(file.path) ? [] : [file.path])),
-      );
-      if (unknown.length > 0)
+      const groups = expandDirectories(input.groups, [...blobs.keys()]);
+      if (groups.unknown.length > 0) {
+        const { unknown } = groups;
         throw new Error(
-          `These paths are not in the change: ${unknown.slice(0, 20).join(", ")}${unknown.length > 20 ? ` and ${unknown.length - 20} more` : ""}. Use paths from the file list exactly as given.`,
+          `These paths are not in the change: ${unknown.slice(0, 20).join(", ")}${unknown.length > 20 ? ` and ${unknown.length - 20} more` : ""}. Use paths from the file list exactly as given, or a directory of them ending in \`/\`.`,
         );
+      }
       const guide: Guide = {
         changeKey: key,
         revision: row.revision!,
         summary: input.summary.trim() || null,
-        groups: input.groups.map((group, index) => ({
-          id: slug(group.title, index),
-          title: group.title.trim(),
-          intro: group.intro.trim(),
-          files: group.files.map((file) => ({
-            path: file.path,
-            blob: blobs.get(file.path) ?? null,
-            note: file.note?.trim() || null,
-          })),
-        })),
+        groups: groups.placed.flatMap((group, index) =>
+          group.files.length === 0
+            ? []
+            : [
+                {
+                  id: slug(group.title, index),
+                  title: group.title.trim(),
+                  intro: group.intro.trim(),
+                  files: group.files.map((file) => ({
+                    path: file.path,
+                    blob: blobs.get(file.path) ?? null,
+                    note: file.note?.trim() || null,
+                  })),
+                },
+              ],
+        ),
       };
       store.putGuide(key, { ...row, state: "done", guide, problem: null });
       changed(key);
       startPump();
-      const count = input.groups.reduce((sum, group) => sum + group.files.length, 0);
-      return `Saved the guide: ${input.groups.length} groups, ${count} files.`;
+      const count = guide.groups.reduce((sum, group) => sum + group.files.length, 0);
+      return `Saved the guide: ${guide.groups.length} groups, ${count} of ${blobs.size} files.`;
     },
   };
 }
