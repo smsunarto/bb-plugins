@@ -12,9 +12,9 @@ import {
   useRealtimeConnectionState,
   type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { describeProblem, readAgo, type CheckRow } from "../core/change.ts";
-import { parseDirective } from "../core/directive.ts";
+import { parseDirective, parseGroup } from "../core/directive.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { reviewPath, type ChangeDetail } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
@@ -27,6 +27,7 @@ import { useChangeReview, useReviewActions } from "./review-data.ts";
 import { MergeButton, mergeTarget, readyToMerge, useChangeMerge } from "./merge.tsx";
 import { latestBatch } from "./review-model.ts";
 import { BatchLine, useFixSelected } from "./send.tsx";
+import { ChangeGroup } from "./group-card.tsx";
 import { Bar, Button } from "./ui.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
@@ -38,7 +39,7 @@ function statusChip(status: ChangeState): { label: string; className: string } {
   return { label: status.label, className: STATE_CHIP[tone].className };
 }
 
-function useSeen(ref: RefObject<HTMLElement | null>): boolean {
+export function useSeen(ref: RefObject<HTMLElement | null>): boolean {
   const [seen, setSeen] = useState(() => typeof IntersectionObserver === "undefined");
   const [onScreen, setOnScreen] = useState(seen);
   useEffect(() => {
@@ -236,12 +237,15 @@ function ReadyCard({
   threadId,
   visible,
   offline,
+  grouped,
 }: {
   detail: Ready;
   revision: string | null;
   threadId: string;
   visible: boolean;
   offline: boolean;
+  /** On a grouped card, whose Merge all merges it. */
+  grouped: boolean;
 }) {
   const key = detail.row.key;
   const navigate = useBbNavigate();
@@ -279,7 +283,7 @@ function ReadyCard({
           Open review
           <OpenReviewArrow />
         </button>
-        {readyToMerge(detail) ? <CardMerge detail={detail} /> : null}
+        {!grouped && readyToMerge(detail) ? <CardMerge detail={detail} /> : null}
         {hasItems ? (
           <button
             type="button"
@@ -305,10 +309,12 @@ export function ChangeCard({
   changeKey,
   revision,
   threadId,
+  grouped = false,
 }: {
   changeKey: ChangeKey;
   revision: string | null;
   threadId: string;
+  grouped?: boolean;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const visible = useSeen(root);
@@ -353,6 +359,7 @@ export function ChangeCard({
         threadId={threadId}
         visible={visible}
         offline={connection !== "connected"}
+        grouped={grouped}
       />
     );
   return (
@@ -362,8 +369,23 @@ export function ChangeCard({
   );
 }
 
-/** `::source-control{key revision}` in an agent's reply. */
+/** `::source-control{key revision}`, or `{changes}` for several, in an agent's reply. */
 export function ChangeDirective({ attributes, message }: PluginMessageDirectiveProps) {
+  const group = useMemo(() => {
+    const entries = parseGroup(attributes);
+    return entries?.map((entry) => ({ id: entry.key, entry }));
+  }, [attributes]);
+  if (group) return <ChangeGroup items={group} threadId={message.threadId} />;
+  return <OneChange attributes={attributes} threadId={message.threadId} />;
+}
+
+function OneChange({
+  attributes,
+  threadId,
+}: {
+  attributes: PluginMessageDirectiveProps["attributes"];
+  threadId: string;
+}) {
   const parsed = parseDirective(attributes);
   if (!parsed)
     return (
@@ -380,7 +402,7 @@ export function ChangeDirective({ attributes, message }: PluginMessageDirectiveP
       key={parsed.key}
       changeKey={parsed.key}
       revision={parsed.revision}
-      threadId={message.threadId}
+      threadId={threadId}
     />
   );
 }

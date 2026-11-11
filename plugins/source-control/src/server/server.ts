@@ -14,7 +14,9 @@ import {
 } from "../contract/host.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import type { ChangeKey } from "../core/ids.ts";
-import { shareDirective } from "../core/directive.ts";
+import { createShipGroup } from "./ship-group.ts";
+import { parsePrReference, prKey } from "../core/watch.ts";
+import { groupDirective, MAX_GROUP, shareDirective, type GroupEntry } from "../core/directive.ts";
 import { execGh } from "../forge/exec-gh.ts";
 import type { Exec } from "../forge/github.ts";
 import { createAsk, type Ask } from "./ask.ts";
@@ -129,9 +131,10 @@ function guideHandlers(guides: Guides) {
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
 }
 
-/** Create PR: a child thread per branch that writes and opens the pull request. */
-function publishHandlers(publish: Publish) {
+/** Create PR: a child thread per branch that writes and opens the pull request; Ship all: one message. */
+function publishHandlers(publish: Publish, shipGroup: ReturnType<typeof createShipGroup>) {
   return {
+    shipGroup: ({ threadId, changes }) => shipGroup(threadId, changes),
     createPullRequest: ({ threadId, branch, head }) => publish.create(threadId, branch, head),
     publishRequests: async ({ threadId }) => ({ requests: await publish.requests(threadId) }),
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
@@ -250,7 +253,7 @@ function registerRpc(
       ...reviewHandlers(runtime, changes.review, start),
       ...guideHandlers(guides),
       ...askHandlers(ask),
-      ...publishHandlers(publish),
+      ...publishHandlers(publish, createShipGroup({ bb, detail: changes.review.detail })),
       ...moved.handlers,
     },
     { experimental_discoverable: true },
@@ -332,18 +335,63 @@ function listen(
   bb.events.on("thread.deleted", ({ thread }) => moved.threadGone(thread.id));
 }
 
-/** The calling thread's Change as a card: the directive names its key and head, nothing else. */
-function shareChangeTool(runtime: Runtime, changes: Changes) {
+const shareTargetSchema = z.union([
+  z.object({ branch: z.string().min(1) }).strict(),
+  z.object({ pullRequest: z.string().min(1) }).strict(),
+]);
+const shareChangeInput = z
+  .object({ targets: z.array(shareTargetSchema).min(2).max(MAX_GROUP).optional() })
+  .strict();
+
+/** One share target as a Change at the head shared, or why it is not one. */
+async function shareTarget(
+  threadId: string,
+  target: z.infer<typeof shareTargetSchema>,
+  changes: Changes,
+  moved: Moved,
+): Promise<GroupEntry | string> {
+  if ("branch" in target) {
+    const found = changes.branchChange(threadId, target.branch);
+    return "problem" in found ? found.problem : { key: found.key, revision: found.head };
+  }
+  const ref = parsePrReference(target.pullRequest);
+  if (!ref) return `${target.pullRequest} is not a GitHub pull request.`;
+  const lookup = `pr:${prKey(ref).toLowerCase()}`;
+  const found = (await moved.handlers.legacyChange({ keys: [lookup] }))[lookup];
+  return found?.key
+    ? { key: found.key, revision: null }
+    : `${target.pullRequest}: ${found?.problem ?? "Source Control cannot find it."}`;
+}
+
+/**
+ * The calling thread's Change as a card, or several branches and pull
+ * requests as one card: the directive names their keys and heads, nothing else.
+ */
+function shareChangeTool(runtime: Runtime, changes: Changes, moved: Moved) {
   return {
     name: SHARE_CHANGE,
     ...files.tool(SHARE_CHANGE),
     presentation: {
       label: { pending: "Sharing the Change", completed: "Shared the Change" },
     },
-    parameters: z.object({}),
-    async execute(_input: Record<string, never>, { threadId }: PluginAgentToolContext) {
+    parameters: shareChangeInput,
+    async execute(input: z.infer<typeof shareChangeInput>, { threadId }: PluginAgentToolContext) {
       // A thread whose Change was never read is read once, now.
       if (!changes.keyOf(threadId)) await runtime.run(changes.retry(threadId));
+      if (input.targets) {
+        const found = await Promise.all(
+          input.targets.map((target) => shareTarget(threadId, target, changes, moved)),
+        );
+        const problems = found.filter((entry) => typeof entry === "string");
+        if (problems.length > 0)
+          throw new Error(`Nothing was shared. Fix these and call again:\n${problems.join("\n")}`);
+        const entries = found.filter((entry) => typeof entry !== "string");
+        if (new Set(entries.map((entry) => entry.key)).size !== entries.length)
+          throw new Error(
+            "Two targets are the same Change. Name each branch or pull request once.",
+          );
+        return groupDirective(entries);
+      }
       const key = changes.keyOf(threadId);
       if (!key)
         throw new Error(
@@ -366,7 +414,7 @@ function registerAgents(
 ) {
   bb.agents.registerTool(reportFindingsTool(changes.review.items));
   bb.agents.registerTool(writeGuideTool(guides));
-  bb.agents.registerTool(shareChangeTool(runtime, changes));
+  bb.agents.registerTool(shareChangeTool(runtime, changes, moved));
   moved.register();
   bb.agents.configure((session) => {
     const authors = moved.configure(session);

@@ -66,6 +66,21 @@ function threadsOnChange(
   return [...threads];
 }
 
+/** A branch of the thread's own checkout as a Change at its head, or why it is not one. */
+function branchChange(
+  store: Store,
+  threadId: string,
+  name: string,
+): { key: ChangeKey; head: string | null } | { problem: string } {
+  const where = store.placement(threadId);
+  if (where?.state !== "checkout") return { problem: "This thread has no checkout." };
+  const workspace = store.local(where.placement.hostId, where.placement.path).read?.value;
+  const branch = workspace ? findBranch(workspace, name) : null;
+  if (!workspace || !branch)
+    return { problem: `${name} is not a branch in this thread's checkout.` };
+  return { key: changeKeyForBranch(where.placement.hostId, workspace, branch), head: branch.head };
+}
+
 export function createThreadChanges(deps: ThreadChangesDeps) {
   const { bb, store, now, share } = deps;
   const hostDeadlineMs = deps.hostDeadlineMs ?? HOST_DEADLINE_MS;
@@ -259,6 +274,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     refresh,
     /** The thread's Change from stored rows, if its checkout and branch are known. */
     keyOf,
+    branchChange: branchChange.bind(null, store),
     review,
     /** Explicit retry: probe forge sites again, then read. */
     retry: (threadId: string) =>

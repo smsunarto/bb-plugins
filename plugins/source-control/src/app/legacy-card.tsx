@@ -14,7 +14,9 @@ import {
 import { useMemo } from "react";
 import { parsePrReference, prKey } from "../core/watch.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+import type { ChangeKey } from "../core/ids.ts";
 import { ChangeCard } from "./chat-card.tsx";
+import { ChangeGroup, type GroupItem } from "./group-card.tsx";
 
 export const LEGACY_REVIEW_DIRECTIVE = "code-review";
 
@@ -77,49 +79,60 @@ export function LegacyReviewDirective({
   return <LegacyCards targets={targets} threadId={message.threadId} />;
 }
 
+function LegacyNote({ target, found, failed }: { target: Target; found: Found; failed: boolean }) {
+  return (
+    <div className="w-full max-w-[576px] rounded-[8px] border border-solid border-border bg-background px-3 py-2 text-[12px] leading-4 text-muted-foreground">
+      {found ? (
+        <>
+          {found.problem ?? `Source Control cannot find ${target.label}.`}
+          {target.url ? (
+            <>
+              {" "}
+              <UrlLink href={target.url}>Open {target.label} on GitHub</UrlLink>
+            </>
+          ) : null}
+        </>
+      ) : failed ? (
+        `Could not look up ${target.label}.`
+      ) : (
+        <span className="inline-block h-4 w-40 animate-pulse rounded bg-surface-raised motion-reduce:animate-none" />
+      )}
+    </div>
+  );
+}
+
+type Found = { key: ChangeKey | null; problem: string | null } | undefined;
+
+/** One target as its Change card; several as one grouped card with Ship all and Merge all. */
 function LegacyCards({ targets, threadId }: { targets: Target[]; threadId: string }) {
   const keys = useMemo(() => targets.map((each) => each.lookup), [targets]);
   const query = useRpcKeyedQuery({ contract: sourceControlContract, method: "legacyChange", keys });
+  const data = query.data;
+  const failed = query.error !== null;
+  const items = useMemo(
+    () =>
+      targets.map((each): GroupItem => {
+        const found = data?.[each.lookup];
+        return found?.key
+          ? { id: each.lookup, entry: { key: found.key, revision: each.head } }
+          : { id: each.lookup, note: <LegacyNote target={each} found={found} failed={failed} /> };
+      }),
+    [targets, data, failed],
+  );
+  if (items.length > 1)
+    return (
+      <div data-bb-plugin="source-control" data-testid="sc-legacy-card">
+        <ChangeGroup items={items} threadId={threadId} />
+      </div>
+    );
+  const [only] = items;
   return (
-    <div
-      data-bb-plugin="source-control"
-      data-testid="sc-legacy-card"
-      className="flex flex-col gap-2"
-    >
-      {targets.map((each) => {
-        const found = query.data?.[each.lookup];
-        if (found?.key)
-          return (
-            <ChangeCard
-              key={each.lookup}
-              changeKey={found.key}
-              revision={each.head}
-              threadId={threadId}
-            />
-          );
-        return (
-          <div
-            key={each.lookup}
-            className="w-full max-w-[576px] rounded-[8px] border border-solid border-border bg-background px-3 py-2 text-[12px] leading-4 text-muted-foreground"
-          >
-            {found ? (
-              <>
-                {found.problem ?? `Source Control cannot find ${each.label}.`}
-                {each.url ? (
-                  <>
-                    {" "}
-                    <UrlLink href={each.url}>Open {each.label} on GitHub</UrlLink>
-                  </>
-                ) : null}
-              </>
-            ) : query.error ? (
-              `Could not look up ${each.label}.`
-            ) : (
-              <span className="inline-block h-4 w-40 animate-pulse rounded bg-surface-raised motion-reduce:animate-none" />
-            )}
-          </div>
-        );
-      })}
+    <div data-bb-plugin="source-control" data-testid="sc-legacy-card" className="flex flex-col">
+      {only && "entry" in only ? (
+        <ChangeCard changeKey={only.entry.key} revision={only.entry.revision} threadId={threadId} />
+      ) : (
+        only?.note
+      )}
     </div>
   );
 }

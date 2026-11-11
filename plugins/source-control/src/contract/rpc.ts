@@ -398,6 +398,24 @@ export const sourceControlContract = defineRpcContract({
       .strict(),
     output: askResultSchema,
   },
+  /** Ship all on a grouped card: asks the thread's agent to ship every Change on it. Merges nothing. */
+  shipGroup: {
+    experimental_description:
+      "Ship all on a grouped Source Control card: sends the thread one message naming each Change on the card (its branch or pull request, and the head the card showed) for its agent to ship with the repository's workflow. Merges nothing and changes no review state.",
+    input: z
+      .object({
+        threadId: threadIdSchema,
+        changes: z
+          .array(z.object({ key: changeKeySchema, revision: z.string().nullable() }).strict())
+          .min(1)
+          .max(25),
+      })
+      .strict(),
+    output: z.discriminatedUnion("ok", [
+      z.object({ ok: z.literal(true) }).strict(),
+      z.object({ ok: z.literal(false), message: z.string() }).strict(),
+    ]),
+  },
   /** The Create PR children still around for the thread's checkout, and whether each still runs. */
   publishRequests: {
     input: z.object({ threadId: threadIdSchema }).strict(),

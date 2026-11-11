@@ -17,6 +17,8 @@ import type { ChangeFile, ReviewRevision } from "../core/review.ts";
 import { readPullRequest, type Exec } from "../forge/github.ts";
 import { runReviewRead } from "../forge/review.ts";
 import { createSourceControl } from "./server.ts";
+import { groupDirective } from "../core/directive.ts";
+import { changeKeySchema } from "../core/ids.ts";
 
 const PLUGIN = "source-control";
 
@@ -2066,6 +2068,82 @@ describe("review items and drafts", () => {
         ),
       ).toBe(`::source-control{key="${encodeURIComponent(KEY)}" revision="c0ffee"}`);
     });
+  });
+});
+
+describe("grouped share", () => {
+  const ROUTE = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+  const SECOND = "gh:smsunarto/bb-plugins:smsunarto:scott/second";
+
+  async function twoBranches() {
+    const world = twoHosts();
+    delete world.threads["thread-b"];
+    const second = branch({
+      name: "scott/second",
+      head: "beef01",
+      remote: { ref: "origin/scott/second", name: "scott/second" },
+    });
+    world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", {
+      stacks: [
+        { key: "scott/route-gh", branches: [branch()], assigned: [] },
+        { key: "scott/second", branches: [second], assigned: [] },
+      ],
+    });
+    const started = await start(world);
+    await started.harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    return { world, ...started };
+  }
+
+  test("share_change with targets returns one grouped card at each branch's head", async () => {
+    const { harness } = await twoBranches();
+    expect(
+      await harness.behavior.callAgentTool(
+        "source_control_share_change",
+        { targets: [{ branch: "scott/route-gh" }, { branch: "scott/second" }] },
+        { threadId: "thread-a" },
+      ),
+    ).toBe(
+      groupDirective([
+        { key: changeKeySchema.parse(ROUTE), revision: "c0ffee" },
+        { key: changeKeySchema.parse(SECOND), revision: "beef01" },
+      ]),
+    );
+  });
+
+  test("a target that is not a Change, or the same Change twice, shares nothing and says which", async () => {
+    const { harness } = await twoBranches();
+    const share = (targets: unknown[]) =>
+      harness.behavior.callAgentTool(
+        "source_control_share_change",
+        { targets },
+        { threadId: "thread-a" },
+      );
+    await expect(
+      share([{ branch: "scott/route-gh" }, { branch: "nope" }, { pullRequest: "not a pr" }]),
+    ).rejects.toThrow(
+      /Nothing was shared[\s\S]*nope is not a branch[\s\S]*not a pr is not a GitHub pull request/,
+    );
+    await expect(
+      share([{ branch: "scott/route-gh" }, { branch: "scott/route-gh" }]),
+    ).rejects.toThrow(/same Change/);
+  });
+
+  test("Ship all sends the thread one message naming each branch and the head the card showed", async () => {
+    const { world, harness } = await twoBranches();
+    expect(
+      await harness.behavior.callRpc("shipGroup", {
+        threadId: "thread-a",
+        changes: [
+          { key: ROUTE, revision: "c0ffee" },
+          { key: SECOND, revision: "beef01" },
+        ],
+      }),
+    ).toEqual({ ok: true });
+    const [text] = world.messages!["thread-a"]!;
+    expect(text).toContain("Ship the changes on this Source Control card");
+    expect(text).toContain('"branch": "scott/second"');
+    expect(text).toContain('"head": "beef01"');
+    expect(text).toContain("source_control_share_change");
   });
 });
 
