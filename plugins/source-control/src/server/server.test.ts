@@ -12,6 +12,8 @@ import type {
   VcsResult,
   WorkspaceValue,
 } from "../core/change.ts";
+import { resolveGuide, viewedAtHead, type GuideView } from "../core/guide.ts";
+import type { ChangeFile, ReviewRevision } from "../core/review.ts";
 import { readPullRequest, type Exec } from "../forge/github.ts";
 import { runReviewRead } from "../forge/review.ts";
 import { createSourceControl } from "./server.ts";
@@ -85,6 +87,25 @@ const PR = {
   },
 };
 
+/** A pull request asked of the viewer, with no checkout anywhere. */
+const INBOX_PR = {
+  ...PR,
+  number: 77,
+  url: "https://github.com/acme/api/pull/77",
+  title: "Asked of me",
+  isDraft: false,
+  headRefName: "fix/retry",
+  headRefOid: "beef01",
+  updatedAt: "2026-11-09T10:00:00Z",
+  mergeable: "MERGEABLE",
+  additions: 5,
+  deletions: 2,
+  changedFiles: 2,
+  author: { login: "someone" },
+  repository: { name: "api", owner: { login: "acme" } },
+  headRepositoryOwner: { login: "acme" },
+};
+
 type Host = {
   name: string;
   online: boolean;
@@ -96,6 +117,8 @@ type Host = {
   rangeHung?: boolean;
   /** A range read's patch text by path, between whatever two commits were asked. */
   patches?: Record<string, string>;
+  /** A range read's file list, in place of one modified `src/a.ts`. */
+  files?: unknown[];
   /** Runs GitHub reads itself, against the world's fake GitHub, as its `ghAccounts`. */
   forgeLive?: boolean;
   workspace: WorkspaceValue;
@@ -130,7 +153,15 @@ type World = {
   inFlight?: number;
   maxInFlight?: number;
   /** Threads the plugin spawned, with what it asked for. */
-  spawned?: { id: string; pluginMetadata: unknown; prompt: string; environment: unknown }[];
+  spawned?: {
+    id: string;
+    pluginMetadata: unknown;
+    prompt: string;
+    environment: unknown;
+    visibility?: string;
+  }[];
+  /** Threads bb reports idle: stopped since the plugin last heard. */
+  idle?: string[];
   /** Messages each thread received, in order. */
   messages?: Record<string, string[]>;
   /**
@@ -296,13 +327,14 @@ function serverGh(world: World): Exec {
 function fakeRange(
   { read }: { read: { kind: string; paths?: string[] } },
   patches: Record<string, string> = {},
+  files?: unknown[],
 ) {
   if (read.kind === "files")
     return {
       ok: true,
       value: {
         kind: "files",
-        files: [
+        files: files ?? [
           {
             path: "src/a.ts",
             kind: "modified",
@@ -334,6 +366,8 @@ function fakeSdk(world: World) {
   return {
     threads: {
       get: (async ({ threadId }: { threadId: string }) => {
+        if (world.idle?.includes(threadId))
+          return makeThreadResponse({ id: threadId, status: "idle" } as never);
         const where = world.threads[threadId];
         if (!where) return makeThreadResponse({ id: threadId, status: "active" } as never);
         return {
@@ -372,6 +406,7 @@ function fakeSdk(world: World) {
         return { ok: true };
       }) as never,
     },
+    projects: { list: (async () => []) as never },
     environments: {
       get: (async ({ environmentId }: { environmentId: string }) => ({
         id: environmentId,
@@ -404,7 +439,11 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
       if (method === "range")
         return host.rangeHung
           ? new Promise(() => undefined)
-          : fakeRange(input as { read: { kind: string; paths?: string[] } }, host.patches);
+          : fakeRange(
+              input as { read: { kind: string; paths?: string[] } },
+              host.patches,
+              host.files,
+            );
       if (method === "renewWatch") return { watching: true };
       if (method === "forgeAccounts") return { ok: true, value: { accounts: host.ghAccounts } };
       if (host.forgeLive && (method === "forgeReview" || method === "forgeCall"))
@@ -1052,24 +1091,6 @@ describe("review page", () => {
     expect(hostCalls().some((call) => call.hostId === "h6")).toBe(false);
   });
 
-  const INBOX_PR = {
-    ...PR,
-    number: 77,
-    url: "https://github.com/acme/api/pull/77",
-    title: "Asked of me",
-    isDraft: false,
-    headRefName: "fix/retry",
-    headRefOid: "beef01",
-    updatedAt: "2026-11-09T10:00:00Z",
-    mergeable: "MERGEABLE",
-    additions: 5,
-    deletions: 2,
-    changedFiles: 2,
-    author: { login: "someone" },
-    repository: { name: "api", owner: { login: "acme" } },
-    headRepositoryOwner: { login: "acme" },
-  };
-
   test("an account's inbox is read once a minute while watched, and never while not", async () => {
     vi.useFakeTimers();
     const world = twoHosts();
@@ -1431,8 +1452,8 @@ describe("review items and drafts", () => {
       avatarUrl: "https://github.com/smsunarto.png?size=48",
     });
     const after = await restart();
-    // Who "You" is comes back with the next read of the pull request; the rest is stored.
-    expect(await reviewOf(after, KEY)).toEqual({ ...before, viewer: null });
+    // All of it is stored, "You" included, before GitHub is asked again.
+    expect(await reviewOf(after, KEY)).toEqual(before);
   });
 
   test("a new head moves findings and drafts past the edits above them, outdates the ones whose lines changed, and drops none", async () => {
@@ -1794,5 +1815,327 @@ describe("review items and drafts", () => {
         ),
       ).toBe(`::source-control{key="${encodeURIComponent(KEY)}" revision="c0ffee"}`);
     });
+  });
+});
+
+describe("guided diff", () => {
+  const blob = (tag: string) => tag.repeat(40);
+  const file = (path: string, tag: string) => ({
+    path,
+    kind: "modified",
+    previousPath: null,
+    additions: 2,
+    deletions: 1,
+    binary: false,
+    blob: blob(tag),
+  });
+  const keyOf = (n: number) => `gh:smsunarto/bb-plugins:smsunarto:scott/g${n}`;
+
+  /** `count` hosts, each with one thread on its own branch `scott/g<n>`, so `count` Changes. */
+  function changes(count: number): World {
+    const world: World = { ...twoHosts(), hosts: {}, threads: {} };
+    for (let n = 1; n <= count; n++) {
+      const path = `/srv/h${n}/bb-plugins`;
+      const only = branch({
+        name: `scott/g${n}`,
+        remote: { ref: `origin/scott/g${n}`, name: `scott/g${n}` },
+      });
+      world.hosts[`h${n}`] = {
+        name: `host-${n}`,
+        online: true,
+        workspace: workspace(path, {
+          checkedOut: only.name,
+          stacks: [{ key: only.name, branches: [only], assigned: [] }],
+        }),
+        ghAccounts: [],
+        files: [file("src/a.ts", "a"), file("src/b.ts", "b")],
+      };
+      world.threads[`t${n}`] = { hostId: `h${n}`, path };
+    }
+    return world;
+  }
+
+  async function opened(count: number) {
+    const world = changes(count);
+    const started = await start(world);
+    for (let n = 1; n <= count; n++)
+      await started.harness.behavior.callRpc("refreshThread", { threadId: `t${n}` });
+    return { world, ...started };
+  }
+
+  type Harness = Awaited<ReturnType<typeof start>>["harness"];
+  const guideOf = async (harness: Harness, key: string) =>
+    (
+      (await harness.behavior.callRpc("guideForChange", { keys: [key] })) as Record<
+        string,
+        GuideView
+      >
+    )[key]!;
+  const write = (
+    harness: Harness,
+    threadId: string,
+    groups: { title: string; files: string[] }[],
+  ) =>
+    harness.behavior.callAgentTool(
+      "source_control_write_guide",
+      {
+        summary: "Read the client, then its tests.",
+        groups: groups.map((group) => ({
+          title: group.title,
+          intro: `Why ${group.title} matters.`,
+          files: group.files.map((path) => ({ path })),
+        })),
+      },
+      { threadId },
+    );
+
+  test("reads from every other surface start no run; two opens at once start one hidden run", async () => {
+    const { world, harness } = await opened(1);
+    const key = keyOf(1);
+    await harness.behavior.callRpc("guideForChange", { keys: [key] });
+    await harness.behavior.callRpc("changeDetail", { keys: [key] });
+    await harness.behavior.callRpc("reviewForChange", { keys: [key] });
+    await harness.behavior.callRpc("changeForThread", { keys: ["t1"] });
+    await harness.behavior.callRpc("statusForThread", { keys: ["t1"] });
+    expect(await guideOf(harness, key)).toMatchObject({ state: "none", phase: "none" });
+    expect(world.spawned ?? []).toEqual([]);
+
+    const [one, two] = (await Promise.all([
+      harness.behavior.callRpc("openGuide", { key }),
+      harness.behavior.callRpc("openGuide", { key }),
+    ])) as GuideView[];
+    expect([one!.state, two!.state]).toEqual(["running", "running"]);
+    await vi.waitFor(() => expect(world.spawned).toHaveLength(1));
+    await harness.behavior.callRpc("openGuide", { key });
+    expect(world.spawned).toHaveLength(1);
+    const run = world.spawned![0]!;
+    expect(run).toMatchObject({
+      visibility: "hidden",
+      pluginMetadata: { kind: "guide", changeKey: key, revision: "c0ffee" },
+      environment: { type: "reuse", environmentId: "env-t1" },
+    });
+    // The file list with stats; the agent reads the diff itself.
+    expect(run.prompt).toContain("`src/a.ts` (modified, +2 −1)");
+    expect(run.prompt).toContain("git diff aaa111...c0ffee");
+    expect(run.prompt).not.toContain("@@");
+    expect(await guideOf(harness, key)).toMatchObject({
+      state: "running",
+      phase: "writing",
+      threadId: run.id,
+      revision: "c0ffee",
+    });
+  });
+
+  test("three Changes opened at once: two run, the third waits in order until a slot frees", async () => {
+    const { world, harness } = await opened(3);
+    for (const n of [1, 2, 3]) await harness.behavior.callRpc("openGuide", { key: keyOf(n) });
+    await vi.waitFor(() => expect(world.spawned).toHaveLength(2));
+    expect(
+      world.spawned!.map((run) => (run.pluginMetadata as { changeKey: string }).changeKey),
+    ).toEqual([keyOf(1), keyOf(2)]);
+    expect(await guideOf(harness, keyOf(3))).toMatchObject({ state: "running", phase: "waiting" });
+    await write(harness, world.spawned![0]!.id, [
+      { title: "All", files: ["src/a.ts", "src/b.ts"] },
+    ]);
+    await vi.waitFor(() => expect(world.spawned).toHaveLength(3));
+    expect(await guideOf(harness, keyOf(3))).toMatchObject({ phase: "writing" });
+  });
+
+  test("a run that stops without a guide fails; after a restart it fails on the next read, and Try again starts one", async () => {
+    const { world, harness, restart } = await opened(2);
+    await harness.behavior.callRpc("openGuide", { key: keyOf(1) });
+    await harness.behavior.callRpc("openGuide", { key: keyOf(2) });
+    await vi.waitFor(() => expect(world.spawned).toHaveLength(2));
+    // Idle without writing, while the server runs.
+    await harness.behavior.emitThreadEvent("thread.idle", {
+      thread: makeThreadResponse({ id: world.spawned![0]!.id }),
+    } as never);
+    expect(await guideOf(harness, keyOf(1))).toMatchObject({
+      state: "failed",
+      problem: { detail: "The guide run ended without writing a guide." },
+    });
+
+    // The server restarts while the second runs, and the run stops meanwhile.
+    world.idle = [world.spawned![1]!.id];
+    const after = await restart();
+    await vi.waitFor(async () =>
+      expect(await guideOf(after, keyOf(2))).toMatchObject({ state: "failed", phase: "failed" }),
+    );
+    expect(world.spawned).toHaveLength(2);
+    // Opening again does not retry; Try again does, once.
+    await after.behavior.callRpc("openGuide", { key: keyOf(2) });
+    expect(world.spawned).toHaveLength(2);
+    await Promise.all([
+      after.behavior.callRpc("rewriteGuide", { key: keyOf(2) }),
+      after.behavior.callRpc("rewriteGuide", { key: keyOf(2) }),
+    ]);
+    await vi.waitFor(() => expect(world.spawned).toHaveLength(3));
+    expect(await guideOf(after, keyOf(2))).toMatchObject({ phase: "writing", problem: null });
+  });
+
+  test("only guide runs get the guide tool; it refuses other threads and unknown paths, and a second call replaces the first", async () => {
+    const { world, harness } = await opened(1);
+    const tools = async (pluginMetadata: Record<string, string>) =>
+      (
+        await harness.behavior.resolveAgentConfiguration(
+          makePluginAgentConfigurationContext({ pluginMetadata }),
+        )
+      ).tools.map((tool) => tool.name);
+    expect(await tools({ kind: "guide", changeKey: keyOf(1) })).toEqual([
+      "source_control_write_guide",
+      "source_control_share_change",
+    ]);
+    expect(await tools({ kind: "review", changeKey: keyOf(1) })).not.toContain(
+      "source_control_write_guide",
+    );
+    expect(await tools({})).toEqual(["source_control_share_change"]);
+    await expect(write(harness, "t1", [{ title: "All", files: ["src/a.ts"] }])).rejects.toThrow(
+      /not a Source Control guide run/,
+    );
+
+    await harness.behavior.callRpc("openGuide", { key: keyOf(1) });
+    await vi.waitFor(() => expect(world.spawned).toHaveLength(1));
+    const run = world.spawned![0]!.id;
+    await expect(
+      write(harness, run, [{ title: "All", files: ["src/a.ts", "src/nope.ts"] }]),
+    ).rejects.toThrow(/not in the change: src\/nope\.ts/);
+    expect(await guideOf(harness, keyOf(1))).toMatchObject({ state: "running", guide: null });
+
+    await write(harness, run, [{ title: "Everything", files: ["src/b.ts", "src/a.ts"] }]);
+    await write(harness, run, [
+      { title: "Client", files: ["src/a.ts"] },
+      { title: "Host", files: ["src/b.ts"] },
+    ]);
+    const view = await guideOf(harness, keyOf(1));
+    expect(view).toMatchObject({ state: "done", phase: "done", revision: "c0ffee" });
+    expect(view.guide!.groups.map((group) => [group.title, group.files])).toEqual([
+      ["Client", [{ path: "src/a.ts", blob: blob("a"), note: null }]],
+      ["Host", [{ path: "src/b.ts", blob: blob("b"), note: null }]],
+    ]);
+  });
+
+  test("a run is given the head the checkout has now, not the last one stored", async () => {
+    const { world, harness } = await opened(1);
+    // The branch moved since the server last read it, and nothing has read it again.
+    const host = world.hosts.h1!;
+    const next = branch({
+      name: "scott/g1",
+      head: "d00d1e",
+      remote: { ref: "origin/scott/g1", name: "scott/g1" },
+    });
+    host.workspace = {
+      ...host.workspace,
+      stacks: [{ key: next.name, branches: [next], assigned: [] }],
+    };
+    await harness.behavior.callRpc("openGuide", { key: keyOf(1) });
+    await vi.waitFor(() => expect(world.spawned).toHaveLength(1));
+    expect(world.spawned![0]!.pluginMetadata).toMatchObject({ revision: "d00d1e" });
+    expect(await guideOf(harness, keyOf(1))).toMatchObject({ revision: "d00d1e" });
+  });
+
+  test("a Change no run can start for says why and holds no slot", async () => {
+    const world = changes(1);
+    world.pullRequests["fix/retry"] = [INBOX_PR];
+    world.rest = {
+      "repos/acme/api/pulls/77/files?per_page=100": [
+        [
+          {
+            filename: "src/retry.ts",
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            sha: blob("e"),
+          },
+        ],
+      ],
+    };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "t1" });
+    const forgeOnly = "gh:acme/api:acme:fix/retry";
+    const stop = harness.behavior.experimental_watchRpc("changeDetail", { key: forgeOnly });
+    await vi.waitFor(async () =>
+      expect(
+        (
+          (await harness.behavior.callRpc("changeDetail", { keys: [forgeOnly] })) as Record<
+            string,
+            { state: string }
+          >
+        )[forgeOnly],
+      ).toMatchObject({ state: "change" }),
+    );
+    stop();
+    await harness.behavior.callRpc("openGuide", { key: forgeOnly });
+    await harness.behavior.callRpc("openGuide", { key: keyOf(1) });
+    await vi.waitFor(async () =>
+      expect(await guideOf(harness, forgeOnly)).toMatchObject({
+        state: "failed",
+        problem: { detail: "Add acme/api as a bb project first." },
+      }),
+    );
+    await vi.waitFor(() => expect(world.spawned).toHaveLength(1));
+    // Viewed marks need no run and no checkout.
+    await harness.behavior.callRpc("setViewed", {
+      key: forgeOnly,
+      path: "src/retry.ts",
+      blob: blob("e"),
+      viewed: true,
+    });
+    expect((await guideOf(harness, forgeOnly)).viewed).toEqual([
+      { path: "src/retry.ts", blob: blob("e") },
+    ]);
+  });
+
+  test("a new head starts no run: unchanged files keep their group and viewed mark, changed ones regroup", async () => {
+    const { world, harness } = await opened(1);
+    const key = keyOf(1);
+    await harness.behavior.callRpc("openGuide", { key });
+    await vi.waitFor(() => expect(world.spawned).toHaveLength(1));
+    await write(harness, world.spawned![0]!.id, [
+      { title: "Client", files: ["src/a.ts"] },
+      { title: "Host", files: ["src/b.ts"] },
+    ]);
+    for (const tag of ["a", "b"]) {
+      const path = `src/${tag}.ts`;
+      await harness.behavior.callRpc("setViewed", { key, path, blob: blob(tag), viewed: true });
+      // Convergent: a retry changes nothing.
+      await harness.behavior.callRpc("setViewed", { key, path, blob: blob(tag), viewed: true });
+    }
+    expect((await guideOf(harness, key)).viewed).toHaveLength(2);
+
+    // A commit changes a.ts and adds c.ts.
+    const host = world.hosts.h1!;
+    const next = branch({
+      name: "scott/g1",
+      head: "d00d1e",
+      remote: { ref: "origin/scott/g1", name: "scott/g1" },
+    });
+    host.workspace = {
+      ...host.workspace,
+      stacks: [{ key: next.name, branches: [next], assigned: [] }],
+    };
+    host.files = [file("src/a.ts", "c"), file("src/b.ts", "b"), file("src/c.ts", "d")];
+    await harness.behavior.callRpc("refreshThread", { threadId: "t1" });
+    const detail = (
+      (await harness.behavior.callRpc("changeDetail", { keys: [key] })) as Record<
+        string,
+        { revision: ReviewRevision }
+      >
+    )[key]!;
+    expect(detail.revision.head).toBe("d00d1e");
+    await harness.behavior.callRpc("openGuide", { key });
+    expect(world.spawned).toHaveLength(1);
+
+    const listed = (await harness.behavior.callRpc("changeFiles", {
+      key,
+      revision: detail.revision,
+    })) as { ok: true; files: ChangeFile[] };
+    const view = await guideOf(harness, key);
+    const resolved = resolveGuide(view.guide, listed.files, detail.revision.head);
+    expect(resolved.source).toBe("carried");
+    expect(resolved.groups.map((group) => [group.title, group.files.map((f) => f.path)])).toEqual([
+      ["Host", ["src/b.ts"]],
+      ["Changed since the guide", ["src/a.ts", "src/c.ts"]],
+    ]);
+    expect([...viewedAtHead(listed.files, view.viewed)]).toEqual(["src/b.ts"]);
   });
 });

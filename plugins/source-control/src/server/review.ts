@@ -8,13 +8,13 @@
  */
 import { changeTag, hostTag, type ChangeKey } from "../core/ids.ts";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
-import type { Effect } from "effect";
+import { Effect } from "effect";
 import { parseChangeKey } from "../core/review.ts";
 import { createBatches } from "./batches.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import type { HostCalls } from "./host-calls.ts";
 import type { LocalReads } from "./local-read.ts";
-import { createReviewChange } from "./review-change.ts";
+import { createReviewChange, localMatch } from "./review-change.ts";
 import { createReviewItems } from "./review-items.ts";
 import { createRevisionReads } from "./review-revision.ts";
 import { checkoutsOn, createReviewSources, rowsOf } from "./review-sources.ts";
@@ -58,9 +58,15 @@ export function createReview(deps: {
     fork: deps.fork,
     now: deps.now,
     batches: (key) => batches.batches(key),
+    // Stored with the repository once learned, so "You" survives a restart before GitHub is asked again.
     viewer: (key) => {
       const parsed = parseChangeKey(key);
-      const login = parsed?.kind === "gh" ? deps.sites.viewerOf(parsed.repo) : null;
+      if (parsed?.kind !== "gh") return null;
+      const repo = `${parsed.repo.owner}/${parsed.repo.name}`;
+      const stored = deps.store.viewer(repo);
+      const known = deps.sites.viewerOf(parsed.repo);
+      if (known && known !== stored) deps.store.setViewer(repo, known);
+      const login = known ?? stored;
       return login ? { login, avatarUrl: `https://github.com/${login}.png?size=48` } : null;
     },
   });
@@ -87,6 +93,21 @@ export function createReview(deps: {
     hostChanges: sources.hostChanges,
     watchHost: sources.watchHost,
     detail: change.detail,
+    /**
+     * Read the Change's checkout and pull request now, so a run starts at the
+     * head they have rather than the last one stored. Failures keep the stored read.
+     */
+    refresh: (key: ChangeKey) =>
+      Effect.all(
+        [
+          Effect.suspend(() => {
+            const placement = localMatch(deps.store, key)?.placement;
+            return placement ? deps.local.readCheckout(placement) : Effect.void;
+          }),
+          change.readForge(key),
+        ],
+        { concurrency: "unbounded", discard: true },
+      ).pipe(Effect.ignore),
     watchChange: change.watchChange,
     setDraft: change.setDraft,
     files: revision.files,

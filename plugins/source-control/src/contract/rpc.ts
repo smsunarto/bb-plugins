@@ -19,6 +19,7 @@ import {
   vcsResultSchema,
 } from "../core/change.ts";
 import { threadStatusSchema } from "../core/status.ts";
+import { guideViewSchema } from "../core/guide.ts";
 import {
   changeDetailSchema,
   commitsResultSchema,
@@ -44,6 +45,7 @@ import {
   checksTag,
   hostTag,
   PAGE_SOURCES_TAG,
+  guideTag,
   reviewTag,
   threadTag,
   type ChangeKey,
@@ -250,6 +252,44 @@ export const sourceControlContract = defineRpcContract({
       z.object({ ok: z.literal(true), threadId: z.string(), reused: z.boolean() }).strict(),
       z.object({ ok: z.literal(false), message: z.string() }).strict(),
     ]),
+  },
+  /**
+   * Each Change's guide and viewed marks, keyed by ChangeKey. Stored state
+   * only: reading it never starts a guide run.
+   */
+  guideForChange: {
+    experimental_description:
+      "Each Change's reading guide, keyed by ChangeKey: the agent-written groups and notes with the head they were written for, the guide run's state, and the files marked viewed at their blobs. Reading never starts a run.",
+    input: z.object({ keys: z.array(changeKeySchema).min(1).max(20) }).strict(),
+    output: z.record(z.string(), guideViewSchema),
+    keyTags: (key: string) => [guideTag(key as ChangeKey)],
+  },
+  /**
+   * The review page opened the Change: starts its one guide run if it has
+   * none yet. Every other surface reads `guideForChange` only.
+   */
+  openGuide: {
+    input: z.object({ key: changeKeySchema }).strict(),
+    output: guideViewSchema,
+  },
+  /** Writes the guide again for the Change's current head: "Rewrite guide" and "Try again". */
+  rewriteGuide: {
+    experimental_description:
+      "Start a new guide run for the Change's current head, replacing the stored guide when it lands. Returns the run already writing when there is one.",
+    input: z.object({ key: changeKeySchema }).strict(),
+    output: guideViewSchema,
+  },
+  /** Marks one file viewed or not at its blob. Convergent. */
+  setViewed: {
+    input: z
+      .object({
+        key: changeKeySchema,
+        path: z.string().min(1).max(4096),
+        blob: z.string().min(1).max(64),
+        viewed: z.boolean(),
+      })
+      .strict(),
+    output: z.object({ ok: z.literal(true) }).strict(),
   },
   /** The pull request's conversation, read on demand while the tab shows it. */
   changeConversation: {

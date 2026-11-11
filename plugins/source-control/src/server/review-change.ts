@@ -274,6 +274,8 @@ export function createReviewChange(deps: {
         ]),
       );
     },
+    /** Read the Change's pull request now. */
+    readForge,
     /** While the Change is open: its pull request when due, as often as the thread tab reads it. */
     watchChange: (key: ChangeKey) =>
       Effect.gen(function* () {

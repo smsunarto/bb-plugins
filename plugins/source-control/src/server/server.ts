@@ -18,6 +18,13 @@ import { shareDirective } from "../core/directive.ts";
 import { execGh } from "../forge/exec-gh.ts";
 import type { Exec } from "../forge/github.ts";
 import { createForgeSites, FORGE_DEADLINE_MS, type HostForge } from "./forge-sites.ts";
+import {
+  createGuides,
+  type Guides,
+  WRITE_GUIDE,
+  writeGuideEnabled,
+  writeGuideTool,
+} from "./guides.ts";
 import type { HostCalls } from "./host-calls.ts";
 import { SharedWork } from "./shared.ts";
 import {
@@ -84,6 +91,19 @@ function forgeCalls(host: HostClient): HostForge {
   };
 }
 
+/** A Change's reading guide and viewed marks; only the review page's open starts a run. */
+function guideHandlers(guides: Guides) {
+  return {
+    guideForChange: ({ keys }) => guides.read(keys),
+    openGuide: ({ key }) => guides.open(key),
+    rewriteGuide: ({ key }) => guides.rewrite(key),
+    setViewed: ({ key, path, blob, viewed }) => {
+      guides.setViewed(key, path, blob, viewed);
+      return { ok: true as const };
+    },
+  } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
+}
+
 /** A Change's review items, drafts and selection, starting a bb review of it, and sending batches. */
 function reviewHandlers(runtime: Runtime, review: Changes["review"], start: Start) {
   const { items, batches } = review;
@@ -139,7 +159,13 @@ function activation(bb: BbPluginApi) {
     );
 }
 
-function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes, start: Start) {
+function registerRpc(
+  bb: BbPluginApi,
+  runtime: Runtime,
+  changes: Changes,
+  start: Start,
+  guides: Guides,
+) {
   const afterRegistration = activation(bb);
   const items = changes.review.items;
   bb.rpc.register(
@@ -177,6 +203,7 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes, start:
       changeForgeAction: ({ key, action, expected }) =>
         runtime.run(changes.review.setDraft(key, action.draft, expected)),
       ...reviewHandlers(runtime, changes.review, start),
+      ...guideHandlers(guides),
     },
     { experimental_discoverable: true },
   );
@@ -215,7 +242,13 @@ function registerRpc(bb: BbPluginApi, runtime: Runtime, changes: Changes, start:
   });
 }
 
-function listen(bb: BbPluginApi, runtime: Runtime, host: HostClient, changes: Changes) {
+function listen(
+  bb: BbPluginApi,
+  runtime: Runtime,
+  host: HostClient,
+  changes: Changes,
+  guides: Guides,
+) {
   bb.onDispose(
     host.experimental_onSignal("checkoutChanged", ({ hostId, payload }) =>
       runtime.run(
@@ -233,14 +266,17 @@ function listen(bb: BbPluginApi, runtime: Runtime, host: HostClient, changes: Ch
       // A review that stops without reporting ends with no findings, or failed.
       changes.review.items.runEnded(thread.id, event === "thread.failed");
       changes.review.batches.threadStatus(thread.id, event === "thread.idle" ? "idle" : "failed");
+      // A guide run that stops without writing failed; either way its slot is free.
+      guides.threadEnded(thread.id);
     });
   // An agent a batch went to: "fixing" while it runs, gone once archived.
   bb.events.on("thread.active", ({ thread }) =>
     changes.review.batches.threadStatus(thread.id, "running"),
   );
-  bb.events.on("thread.archived", ({ thread }) =>
-    changes.review.batches.threadStatus(thread.id, "gone"),
-  );
+  bb.events.on("thread.archived", ({ thread }) => {
+    changes.review.batches.threadStatus(thread.id, "gone");
+    guides.threadEnded(thread.id);
+  });
 }
 
 /** The calling thread's Change as a card: the directive names its key and head, nothing else. */
@@ -267,14 +303,45 @@ function shareChangeTool(runtime: Runtime, changes: Changes) {
   };
 }
 
-/** Review threads get the findings tool; every thread can share its Change. */
-function registerAgents(bb: BbPluginApi, runtime: Runtime, changes: Changes) {
+/** Review threads get the findings tool, guide runs the guide tool; every thread can share its Change. */
+function registerAgents(bb: BbPluginApi, runtime: Runtime, changes: Changes, guides: Guides) {
   bb.agents.registerTool(reportFindingsTool(changes.review.items));
+  bb.agents.registerTool(writeGuideTool(guides));
   bb.agents.registerTool(shareChangeTool(runtime, changes));
   bb.agents.configure((session) => ({
-    tools: reportFindingsEnabled(session) ? [REPORT_FINDINGS, SHARE_CHANGE] : [SHARE_CHANGE],
+    tools: [
+      ...(reportFindingsEnabled(session) ? [REPORT_FINDINGS] : []),
+      ...(writeGuideEnabled(session) ? [WRITE_GUIDE] : []),
+      SHARE_CHANGE,
+    ],
     skills: [],
   }));
+}
+
+/** Which model writes guides; empty fields take the project's default. */
+function guideSettings(bb: BbPluginApi) {
+  const settings = bb.settings.define({
+    guideProvider: {
+      type: "string",
+      label: "Guide provider",
+      description:
+        "Provider for the hidden runs that write a Change's reading guide. Leave empty for the project's default.",
+      default: "",
+    },
+    guideModel: {
+      type: "string",
+      label: "Guide model",
+      description:
+        "Model for those runs, such as a fast, small one. Leave empty for the provider's default.",
+      default: "",
+    },
+  });
+  return async () => {
+    const values = await settings.get();
+    const providerId = values.guideProvider.trim();
+    const model = values.guideModel.trim();
+    return { ...(providerId ? { providerId } : {}), ...(model ? { model } : {}) };
+  };
 }
 
 /** The plugin with its outside world injected, for tests. */
@@ -287,6 +354,7 @@ export function createSourceControl(deps: SourceControlDeps) {
     const runtime = await makePluginRuntime(bb, SharedWork.layer);
     const host = hostClient(bb);
     const store: Store = openStore(bb);
+    const share = await runtime.run(SharedWork);
     const changes: Changes = createThreadChanges({
       bb,
       store,
@@ -295,7 +363,7 @@ export function createSourceControl(deps: SourceControlDeps) {
         now: deps.now,
         host: forgeCalls(host),
       }),
-      share: await runtime.run(SharedWork),
+      share,
       host: checkoutCalls(host),
       now: deps.now,
       disposed: () => disposed,
@@ -319,9 +387,32 @@ export function createSourceControl(deps: SourceControlDeps) {
       },
       now: deps.now,
     });
-    registerRpc(bb, runtime, changes, start);
-    registerAgents(bb, runtime, changes);
-    listen(bb, runtime, host, changes);
+    const invalidate = (tags: readonly string[]) => {
+      if (!disposed) bb.rpc.experimental_invalidate(tags);
+    };
+    const guides = createGuides({
+      bb,
+      store,
+      detail: (key) => changes.review.detail([key])[key]!,
+      refresh: changes.review.refresh,
+      files: changes.review.files,
+      invalidate,
+      fork: (work) => {
+        if (!disposed) runtime.fork(work);
+      },
+      now: deps.now,
+      model: guideSettings(bb),
+    });
+    // Once active: waiting runs start, and running ones a restart left are asked about.
+    bb.background.service("guides", {
+      start(signal) {
+        guides.resume();
+        return new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve()));
+      },
+    });
+    registerRpc(bb, runtime, changes, start, guides);
+    registerAgents(bb, runtime, changes, guides);
+    listen(bb, runtime, host, changes, guides);
   };
 }
 

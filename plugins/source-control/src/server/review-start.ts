@@ -32,14 +32,14 @@ const RUNNING = new Set(["pending", "starting", "active", "stopping"]);
 // ── Prompt text ────────────────────────────────────────────────────────
 
 /** CommonMark inline code that shows `text` as is, whatever backticks it holds. */
-function inlineCode(text: string): string {
+export function inlineCode(text: string): string {
   const fence = "`".repeat(longestBacktickRun(text) + 1);
   const pad = /^[` ]|[` ]$/.test(text) ? " " : "";
   return `${fence}${pad}${text}${pad}${fence}`;
 }
 
 /** A fence longer than any backtick run inside, so the content cannot close it. */
-function fenced(code: string, language = "sh"): string {
+export function fenced(code: string, language = "sh"): string {
   const fence = "`".repeat(Math.max(3, longestBacktickRun(code) + 1));
   return `${fence}${language}\n${code}\n${fence}`;
 }
@@ -48,7 +48,7 @@ function longestBacktickRun(text: string): number {
   return Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length));
 }
 
-function quote(value: string): string {
+export function quote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
 
@@ -71,7 +71,7 @@ function playbooks(): string {
 const criteria = () => files.read("review-criteria", { playbooks: playbooks() });
 
 /** A host revision's base as the reviewer reads it, and the diff to review. */
-function baseOf(revision: ReviewRevision): { base: string; diff: string } {
+export function baseOf(revision: ReviewRevision): { base: string; diff: string } {
   const range = (from: string) => fenced(`git diff ${from}...${revision.head}`);
   if (!revision.base.startsWith("branch:")) {
     return { base: `\`${revision.base}\``, diff: range(revision.base) };

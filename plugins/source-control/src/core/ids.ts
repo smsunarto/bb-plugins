@@ -121,3 +121,8 @@ export const PAGE_SOURCES_TAG = "page:sources";
 export function reviewTag(key: ChangeKey): string {
   return `change:${key}:review`;
 }
+
+/** The tag of one Change's guide and viewed marks. */
+export function guideTag(key: ChangeKey): string {
+  return `change:${key}:guide`;
+}

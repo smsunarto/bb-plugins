@@ -13,6 +13,7 @@ import {
   facetSchema,
   forgeValueSchema,
   placementSchema,
+  problemSchema,
   workspaceValueSchema,
   type ChecksValue,
   type Facet,
@@ -21,6 +22,7 @@ import {
   type WorkspaceValue,
 } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
+import { guideSchema, guideStateSchema, type Viewed } from "../core/guide.ts";
 import {
   batchSchema,
   DEFAULT_TRAY,
@@ -85,6 +87,12 @@ const MIGRATIONS = [
   `CREATE TABLE batch (id TEXT PRIMARY KEY, change_key TEXT NOT NULL, created_at INTEGER NOT NULL, json TEXT NOT NULL, payload TEXT NOT NULL)`,
   `CREATE INDEX batch_by_change ON batch (change_key, created_at)`,
   `CREATE TABLE tray (change_key TEXT PRIMARY KEY, json TEXT NOT NULL)`,
+  // Phase 6: the guide per Change, viewed marks by blob, and who "You" is per repository.
+  `CREATE TABLE guide (change_key TEXT PRIMARY KEY, state TEXT NOT NULL, thread_id TEXT, queued_at INTEGER NOT NULL, json TEXT NOT NULL)`,
+  `CREATE INDEX guide_by_thread ON guide (thread_id)`,
+  `CREATE INDEX guide_by_state ON guide (state, queued_at)`,
+  `CREATE TABLE viewed (change_key TEXT NOT NULL, path TEXT NOT NULL, blob TEXT NOT NULL, PRIMARY KEY (change_key, path, blob))`,
+  `CREATE TABLE viewer (repo TEXT PRIMARY KEY, login TEXT NOT NULL)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -183,6 +191,110 @@ function sendingTables(
       const changed = JSON.stringify(tray(key)) !== JSON.stringify(value);
       putTray.run(key, JSON.stringify(value));
       return changed;
+    },
+  };
+}
+
+/**
+ * A guide run's stored record. `state` is the row's; a `running` row with no
+ * thread is waiting for a free slot. `files` is the revision's file list the
+ * run was given: the write tool accepts only these paths and takes their blobs.
+ */
+export const guideRowSchema = z
+  .object({
+    state: guideStateSchema,
+    threadId: z.string().nullable(),
+    revision: z.string().nullable(),
+    guide: guideSchema.nullable(),
+    problem: problemSchema.nullable(),
+    queuedAt: z.number(),
+    startedAt: z.number().nullable(),
+    files: z.array(z.object({ path: z.string(), blob: z.string().nullable() }).strict()).nullable(),
+  })
+  .strict();
+export type GuideRow = z.infer<typeof guideRowSchema>;
+
+/** Guide runs, viewed marks and the viewer per repository. */
+function guideTables(db: Database) {
+  const getGuide = db.prepare<[string], { json: string }>(
+    `SELECT json FROM guide WHERE change_key = ?`,
+  );
+  const putGuide = db.prepare(
+    `INSERT INTO guide (change_key, state, thread_id, queued_at, json) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (change_key) DO UPDATE SET state = excluded.state, thread_id = excluded.thread_id,
+       queued_at = excluded.queued_at, json = excluded.json`,
+  );
+  const byThread = db.prepare<[string], { change_key: string; json: string }>(
+    `SELECT change_key, json FROM guide WHERE thread_id = ?`,
+  );
+  const running = db.prepare<[], { change_key: string; json: string }>(
+    `SELECT change_key, json FROM guide WHERE state = 'running' ORDER BY queued_at, change_key`,
+  );
+  const viewedOf = db.prepare<[string], { path: string; blob: string }>(
+    `SELECT path, blob FROM viewed WHERE change_key = ? LIMIT 10000`,
+  );
+  const markViewed = db.prepare(
+    `INSERT INTO viewed (change_key, path, blob) VALUES (?, ?, ?) ON CONFLICT DO NOTHING`,
+  );
+  const unmarkViewed = db.prepare(
+    `DELETE FROM viewed WHERE change_key = ? AND path = ? AND blob = ?`,
+  );
+  const getViewer = db.prepare<[string], { login: string }>(
+    `SELECT login FROM viewer WHERE repo = ?`,
+  );
+  const putViewer = db.prepare(
+    `INSERT INTO viewer (repo, login) VALUES (?, ?) ON CONFLICT (repo) DO UPDATE SET login = excluded.login`,
+  );
+
+  const guide = (key: ChangeKey): GuideRow | null => {
+    const row = getGuide.get(key);
+    return row ? parsed(guideRowSchema, row.json) : null;
+  };
+  const put = (key: ChangeKey, row: GuideRow) =>
+    putGuide.run(key, row.state, row.threadId, row.queuedAt, JSON.stringify(row));
+  return {
+    guide,
+    putGuide: put,
+    /**
+     * Queues the Change's guide run when it has none, or when `again` and
+     * none is running: one transaction, so two clients claim once.
+     */
+    claimGuide: db.transaction((key: ChangeKey, now: number, again: boolean): boolean => {
+      const before = guide(key);
+      if (before?.state === "running") return false;
+      if (before && before.state !== "none" && !again) return false;
+      put(key, {
+        state: "running",
+        threadId: null,
+        revision: null,
+        guide: before?.guide ?? null,
+        problem: null,
+        queuedAt: now,
+        startedAt: null,
+        files: null,
+      });
+      return true;
+    }),
+    guideByThread(threadId: string): { key: ChangeKey; row: GuideRow } | null {
+      const row = byThread.get(threadId);
+      const value = row ? parsed(guideRowSchema, row.json) : null;
+      return row && value ? { key: row.change_key as ChangeKey, row: value } : null;
+    },
+    /** Running rows, oldest queued first: started ones and those waiting. */
+    runningGuides(): { key: ChangeKey; row: GuideRow }[] {
+      return running.all().flatMap((row) => {
+        const value = parsed(guideRowSchema, row.json);
+        return value ? [{ key: row.change_key as ChangeKey, row: value }] : [];
+      });
+    },
+    viewed: (key: ChangeKey): Viewed[] => viewedOf.all(key),
+    /** Marks or unmarks a file at a blob; true when that changed anything. */
+    setViewed(key: ChangeKey, path: string, blob: string, viewed: boolean): boolean {
+      return (viewed ? markViewed : unmarkViewed).run(key, path, blob).changes > 0;
+    },
+    viewer: (repo: string): string | null => getViewer.get(repo.toLowerCase())?.login ?? null,
+    setViewer(repo: string, login: string): void {
+      putViewer.run(repo.toLowerCase(), login);
     },
   };
 }
@@ -381,6 +493,7 @@ export function openStore(bb: BbPluginApi) {
     JSON.stringify([after.read?.rows ?? null, after.problem]);
 
   const review = reviewTables(db);
+  const guides = guideTables(db);
 
   const branch = (threadId: string): string | null => getBranch.get(threadId)?.branch ?? null;
   const readAs = (hostId: string, path: string): ReadAs =>
@@ -389,6 +502,7 @@ export function openStore(bb: BbPluginApi) {
   // Every setter stores its value and returns whether a reader would see a change.
   return {
     ...review,
+    ...guides,
     /** One placement per checkout the placement table knows, by host: what the review page lists. */
     checkouts(): Placement[] {
       return placementRows.all().flatMap((row) => {
