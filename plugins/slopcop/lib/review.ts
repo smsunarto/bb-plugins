@@ -137,7 +137,7 @@ export function parseReviewRequest(input: {
   if (input.run && untagged !== -1) {
     return {
       ok: false,
-      error: `--comments at ${untagged}: every inline comment in a SlopCop review needs "priority" (0-3) and "category" (${Object.keys(REVIEW_CATEGORIES).join(", ")})`,
+      error: `--comments at ${untagged}: every inline comment in a SlopCop review needs "priority" (0-2) and "category" (${Object.keys(REVIEW_CATEGORIES).join(", ")})`,
     };
   }
   return {

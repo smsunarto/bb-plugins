@@ -173,8 +173,12 @@ export type RunStatus = z.infer<typeof runStatusSchema>;
 export const commentKindSchema = z.enum(["summary", "inline", "reply"]);
 export type CommentKind = z.infer<typeof commentKindSchema>;
 
-/** A finding's priority: 0 is P0 (blocks merge) through 3, P3 (nit). */
-export const prioritySchema = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
+/** A finding's priority: 0 is P0 (blocks merge), 1 is P1 (fix before merge), 2 is P2 (the rest, nits included). */
+export const prioritySchema = z.union([z.literal(0), z.literal(1), z.literal(2)]);
+/** Reads a recorded priority. Findings from before P3 folded into P2 read as P2. */
+export const recordedPrioritySchema = z
+  .union([prioritySchema, z.literal(3)])
+  .transform((priority): Priority => (priority === 3 ? 2 : priority));
 export type Priority = z.infer<typeof prioritySchema>;
 
 /**

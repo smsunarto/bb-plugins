@@ -202,7 +202,7 @@ it("submits one review with its verdict and inline comments, anchored to the run
       { threadId: "thr_live" },
     );
     expect(untagged.exitCode).not.toBe(0);
-    expect(untagged.stderr + untagged.stdout).toContain('needs "priority" (0-3) and "category"');
+    expect(untagged.stderr + untagged.stdout).toContain('needs "priority" (0-2) and "category"');
     expect(github.submittedReviews).toEqual([]);
 
     const result = await harness.behavior.runCli(

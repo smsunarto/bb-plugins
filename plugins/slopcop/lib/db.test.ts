@@ -157,9 +157,10 @@ describe("run comments", () => {
         url: null,
         bodyExcerpt: "",
         attribution: "marker",
-        priority: 3,
+        priority: 3 as never,
       },
     ]);
-    expect(store.listComments("run_1")[0]?.priority).toBe(3);
+    // P3 folded into P2, so a row recorded as P3 reads as P2.
+    expect(store.listComments("run_1")[0]?.priority).toBe(2);
   });
 });

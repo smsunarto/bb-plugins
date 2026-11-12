@@ -19,11 +19,12 @@ EOF
 - Use `--event comment` for most reviews, `request-changes` only for something
   genuinely blocking, and `approve` only when the rule instructions ask you to
   approve.
-- Give every inline comment a `priority` from 0 to 3:
+- Give every inline comment a `priority` from 0 to 2:
   - `0` (P0): blocks merging: data loss, a security hole, a crash, or a broken build.
   - `1` (P1): a real bug or regression to fix before merging.
-  - `2` (P2): worth fixing: an edge case, a missing test, or a maintainability risk.
-  - `3` (P3): optional polish or a nit.
+  - `2` (P2): everything else worth saying: an edge case, a missing test, a
+    maintainability risk, optional polish, or a nit. Mark optional ones as nits
+    in the text.
 - Give every inline comment a `category`: the lens letter (`A`–`K`) whose report
   raised it, or `premise` / `architecture` for your own passes. When several
   lenses found the same site, use the one whose concern the comment states.

@@ -352,6 +352,13 @@ describe("markers", () => {
     expect(
       parseMarker("<!-- slopcop:rule=r run=run_1 sha=s kind=inline priority=7 -->"),
     ).not.toHaveProperty("priority");
+    expect(
+      parseMarker("<!-- slopcop:rule=r run=run_1 sha=s kind=inline priority= -->"),
+    ).not.toHaveProperty("priority");
+    // A P3 marker from before P3 folded into P2 reads as P2.
+    expect(
+      parseMarker("<!-- slopcop:rule=r run=run_1 sha=s kind=inline priority=3 -->")?.priority,
+    ).toBe(2);
   });
 
   it("neutralizes rule names that would break out of the comment", () => {

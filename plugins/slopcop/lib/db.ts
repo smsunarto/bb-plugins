@@ -1,7 +1,7 @@
 // Persistence. Migrations are append-only by statement index — never reorder
 // or edit a shipped statement, only push new ones.
 import {
-  prioritySchema,
+  recordedPrioritySchema,
   runStatusSchema,
   triggerSchema,
   type Rule,
@@ -131,7 +131,7 @@ export const MIGRATIONS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_comment_events_pending
      ON comment_trigger_events(repo, status, created_at)`,
   `ALTER TABLE rules ADD COLUMN comment_trigger_enabled_at INTEGER`,
-  // A finding's P0-P3 priority, read from its marker. Null for summaries and
+  // A finding's P0-P2 priority (P3 before it folded into P2), read from its marker. Null for summaries and
   // for comments recorded before priorities existed.
   `ALTER TABLE run_comments ADD COLUMN priority INTEGER`,
   // One review thread per rule and PR, kept open for follow-up reviews until
@@ -583,7 +583,7 @@ export function createStore(db: Database) {
         url: typeof row.url === "string" ? row.url : null,
         bodyExcerpt: text(row, "body_excerpt"),
         attribution: text(row, "attribution", "marker") as RunComment["attribution"],
-        priority: prioritySchema.safeParse(row.priority).data ?? null,
+        priority: recordedPrioritySchema.safeParse(row.priority).data ?? null,
       }));
     },
 

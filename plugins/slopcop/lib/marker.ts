@@ -9,7 +9,7 @@
 //
 // The header is NOT authoritative for matching. It is ordinary editable text
 // that anyone can type into a comment; only the marker is treated as proof.
-import type { CommentKind, Priority } from "./types";
+import { recordedPrioritySchema, type CommentKind, type Priority } from "./types";
 
 export interface Marker {
   rule: string;
@@ -17,8 +17,8 @@ export interface Marker {
   sha: string;
   kind: CommentKind;
   /**
-   * The finding's priority, P0 (blocks merge) to P3 (nit). Inline comments
-   * carry it as `priority=<0-3>`; other plugins read that field from the
+   * The finding's priority, P0 (blocks merge) to P2 (the rest). Inline comments
+   * carry it as `priority=<0-2>`; other plugins read that field from the
    * comment body, so its spelling is a public contract. Absent on summaries
    * and on comments posted before priorities existed.
    */
@@ -73,8 +73,8 @@ export function parseMarker(body: string): Marker | null {
 }
 
 function parsePriority(value: string | undefined): Priority | undefined {
-  return value === "0" || value === "1" || value === "2" || value === "3"
-    ? (Number(value) as Priority)
+  return value !== undefined && /^[0-3]$/.test(value)
+    ? recordedPrioritySchema.parse(Number(value))
     : undefined;
 }
 
