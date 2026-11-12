@@ -1,6 +1,6 @@
 /**
- * The thread header's "View in Source Control", and the Info tab's Pull
- * request row and GitButler branches section. Ported from gitbutler
+ * The thread header's button into Source Control, labelled with the Change's
+ * status, and the Info tab's Pull request row and GitButler branches section. Ported from gitbutler
  * (`src/app/app.tsx` `useHeaderActionData`, `BranchesInfo`;
  * `src/app/pull-request/pull-request.tsx` `PullRequestInfoRow`). Each draws
  * nothing for a thread it has nothing to say about, and all read the same
@@ -16,12 +16,13 @@ import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   UrlLink,
   type ExperimentalThreadInfoProps,
+  type PluginThreadAction,
   type PluginThreadActionDataInput,
   type PluginThreadActionItemInput,
 } from "@get-bb/plugin-sdk/app";
 import { useMemo } from "react";
 import type { ThreadChange } from "../core/change.ts";
-import { attentionChips, summarize } from "../core/status.ts";
+import { attentionChips, headerLabel, summarize } from "../core/status.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { GitHubMark, StateIcon } from "./page/icons.tsx";
 
@@ -32,7 +33,16 @@ export const SOURCE_CONTROL_TAB = {
   availability: "fixed",
 } as const;
 
+/** What the button does: its label until the checkout is read, and the line under its status in a menu. */
 export const HEADER_LABEL = "View in Source Control";
+
+/**
+ * A header's answer for one thread: null for a thread with no checkout, which
+ * gets no button. `status` is the Change in a few words ("#482 · 2 checks
+ * running"), or null while the checkout has not been read.
+ */
+export type HeaderAnswer = { status: string | null } | null;
+type HeaderAnswers = Readonly<Record<string, HeaderAnswer>>;
 
 /**
  * The last answer for each thread a header has shown. bb publishes a newly
@@ -41,12 +51,10 @@ export const HEADER_LABEL = "View in Source Control";
  * the switch instead of losing it for a frame and making bb draw the header
  * twice. Only `useData`'s reads write it; it never causes one.
  */
-const lastKnown = new Map<string, boolean>();
+const lastKnown = new Map<string, HeaderAnswer>();
 
-/** Each header's thread: whether it has a checkout to show. Loads only ids not loaded yet. */
-export function useHeaderActionData({
-  threadIds,
-}: PluginThreadActionDataInput): Readonly<Record<string, boolean>> {
+/** Each header's thread: its checkout's status, if it has one. Loads only ids not loaded yet. */
+export function useHeaderActionData({ threadIds }: PluginThreadActionDataInput): HeaderAnswers {
   const query = useRpcKeyedQuery({
     contract: sourceControlContract,
     method: "changeForThread",
@@ -55,29 +63,41 @@ export function useHeaderActionData({
   });
   const data = query.data;
   return useMemo(() => {
-    const answers: Record<string, boolean> = {};
+    const answers: Record<string, HeaderAnswer> = {};
     for (const threadId of threadIds) {
       const row = data?.[threadId];
       // A read not in yet says nothing; the last answer stands until it is.
       if (row === undefined) continue;
-      answers[threadId] = row.state === "checkout";
-      lastKnown.set(threadId, answers[threadId]);
+      const summary = summarize(row);
+      const answer =
+        row.state === "checkout" ? { status: summary ? headerLabel(summary) : null } : null;
+      answers[threadId] = answer;
+      lastKnown.set(threadId, answer);
     }
     return answers;
   }, [threadIds, data]);
 }
 
+/**
+ * bb draws a header action as its label alone, so the label is the status; at
+ * compact width the action is a menu row, where `detail` says what it does.
+ */
 export function headerActionItem({
   thread,
   data,
   experimental_panel,
-}: PluginThreadActionItemInput<Readonly<Record<string, boolean>>>) {
-  if (!(data?.[thread.id] ?? lastKnown.get(thread.id))) return null;
+}: PluginThreadActionItemInput<HeaderAnswers>): PluginThreadAction | null {
+  const fresh = data?.[thread.id];
+  const answer = fresh === undefined ? lastKnown.get(thread.id) : fresh;
+  if (!answer) return null;
   return {
-    label: HEADER_LABEL,
+    ...(answer.status === null
+      ? { label: HEADER_LABEL }
+      : { label: answer.status, detail: HEADER_LABEL }),
     icon: "GitBranch",
+    // A second click closes the side panel while the tab is the one showing.
     run: () => {
-      experimental_panel.openTab({ tab: SOURCE_CONTROL_TAB });
+      experimental_panel.toggleTab({ tab: SOURCE_CONTROL_TAB });
     },
   };
 }

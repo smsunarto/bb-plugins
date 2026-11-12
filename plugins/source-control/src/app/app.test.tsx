@@ -1220,29 +1220,68 @@ test("the Info tab lists a GitButler workspace's branches, top first, and nothin
   expect(plain.queryByText("scott/forge-host")).toBeNull();
 });
 
-test("View in Source Control shows only for a thread with a checkout, and opens the tab", async () => {
-  const { headerActionItem, SOURCE_CONTROL_TAB } = await import("./thread-info.tsx");
+/** The header action bb would draw for each thread, after `useData` has read `rows`. */
+async function headerItems(rows: Record<string, ThreadChange>) {
+  const { headerActionItem, useHeaderActionData } = await import("./thread-info.tsx");
+  const ids = Object.keys(rows);
+  const shown: { current: ReturnType<typeof useHeaderActionData> | null } = { current: null };
+  function Probe() {
+    const data = useHeaderActionData({ threadIds: ids });
+    useLayoutEffect(() => {
+      shown.current = data;
+    });
+    return null;
+  }
+  const opened: unknown[] = [];
+  const slot = renderSlot({ component: Probe }, {} as never, {
+    experimental_rpcContract: sourceControlContract,
+    rpc: {
+      changeForThread: ({ keys }: { keys: string[] }) =>
+        Object.fromEntries(keys.map((key) => [key, rows[key]])),
+    } as Rpc,
+  });
+  await waitFor(() => expect(Object.keys(shown.current ?? {})).toHaveLength(ids.length));
+  slot.unmount();
+  const item = (id: string) =>
+    headerActionItem({
+      thread: { id },
+      data: shown.current,
+      experimental_panel: { toggleTab: (options: unknown) => opened.push(options) },
+    } as never);
+  return { item, opened };
+}
+
+test("the header button shows only for a thread with a checkout, says where its Change stands, and toggles the tab", async () => {
+  const { SOURCE_CONTROL_TAB } = await import("./thread-info.tsx");
   const registration = app.threadActions.find((each) => each.id === "open")!;
   expect(registration).toMatchObject({ placement: "header", title: "Source Control" });
-  const opened: unknown[] = [];
-  const panel = { openTab: (options: unknown) => opened.push(options) };
-  const input = (has: boolean) =>
-    ({
-      thread: { id: "thread-a" },
-      data: { "thread-a": has },
-      experimental_panel: panel,
-    }) as never;
-  expect(headerActionItem(input(false))).toBeNull();
-  const item = headerActionItem(input(true))!;
-  expect(item.label).toBe("View in Source Control");
-  item.run();
+  const unread = checkout("scott/unread", null);
+  if (unread.state !== "checkout") throw new Error("fixture");
+  unread.local = { read: null, problem: null };
+  const { item, opened } = await headerItems({
+    "thread-draft": stacked(),
+    "thread-local": checkout("scott/local", null),
+    "thread-unread": unread,
+    "thread-none": { state: "none", reason: "No checkout" },
+  });
+  expect(item("thread-none")).toBeNull();
+  // A pull request: its number, then what it waits on. The menu row keeps the verb.
+  expect(item("thread-draft")).toMatchObject({
+    label: "#482 · Draft",
+    detail: "View in Source Control",
+  });
+  expect(item("thread-local")?.label).toBe("Local, not pushed");
+  // Nothing read to describe: the button says only what it does.
+  expect(item("thread-unread")).toMatchObject({ label: "View in Source Control" });
+  expect(item("thread-unread")?.detail).toBeUndefined();
+  item("thread-draft")!.run({ requestRename: () => {} });
   expect(opened).toEqual([{ tab: SOURCE_CONTROL_TAB }]);
 });
 
 test("a header switched to a thread it has shown keeps its action before bb publishes the id", async () => {
   const { headerActionItem, useHeaderActionData } = await import("./thread-info.tsx");
   const reads: string[][] = [];
-  const shown: { current: Readonly<Record<string, boolean>> | null } = { current: null };
+  const shown: { current: ReturnType<typeof useHeaderActionData> | null } = { current: null };
   function Probe({ ids }: { ids: string[] }) {
     const data = useHeaderActionData({ threadIds: ids });
     useLayoutEffect(() => {
@@ -1267,18 +1306,18 @@ test("a header switched to a thread it has shown keeps its action before bb publ
       } as Rpc,
     },
   );
-  await waitFor(() => expect(shown.current?.["thread-shown"]).toBe(true));
+  await waitFor(() => expect(shown.current?.["thread-shown"]).toBeTruthy());
   slot.unmount();
   // The header now shows another thread; bb has not published its id yet, so data lacks it.
   const input = (id: string) => ({ thread: { id }, data: {}, experimental_panel: {} }) as never;
-  expect(headerActionItem(input("thread-shown"))?.label).toBe("View in Source Control");
+  expect(headerActionItem(input("thread-shown"))?.label).toBe("#482 · Draft");
   expect(headerActionItem(input("thread-plain"))).toBeNull();
   expect(headerActionItem(input("thread-never-shown"))).toBeNull();
   // Fresh data still wins over the last answer.
   expect(
     headerActionItem({
       thread: { id: "thread-shown" },
-      data: { "thread-shown": false },
+      data: { "thread-shown": null },
       experimental_panel: {},
     } as never),
   ).toBeNull();

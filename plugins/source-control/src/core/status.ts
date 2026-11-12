@@ -295,6 +295,18 @@ export function statusLine(summary: ChangeSummary): string {
   return readyToMerge(pr) ? "Ready to merge" : "Review requested";
 }
 
+// ── Thread header ──────────────────────────────────────────────────────
+
+/**
+ * The thread header's button, which shows only text: the pull request's
+ * number, then what the Change is waiting on, as the phone list words it.
+ */
+export function headerLabel(summary: ChangeSummary): string {
+  const pr = summary.pullRequest;
+  const line = statusLine(summary);
+  return pr ? `#${pr.number} · ${line}` : line;
+}
+
 // ── Primary action ─────────────────────────────────────────────────────
 
 export type PrimaryAction =

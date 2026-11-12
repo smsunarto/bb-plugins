@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import type { Branch, PullRequest } from "./change.ts";
 import {
   attentionChips,
+  headerLabel,
   primaryAction,
   shipPath,
   sortKey,
@@ -305,6 +306,22 @@ describe("phone status line", () => {
     ],
   ])("%s", (_name, input, expected) => {
     expect(statusLine(input)).toBe(expected);
+  });
+});
+
+describe("thread header label", () => {
+  test.each([
+    ["a draft whose checks run", BOARD_B, "#482 · Draft · 2 checks running"],
+    ["failing checks", FAILING, "#482 · 2 checks failed"],
+    ["approved and green", READY, "#482 · Ready to merge"],
+    ["merged", MERGED, "#482 · Merged"],
+    ["conflicts with the base", CONFLICTS, "#482 · Conflicts with main"],
+    ["local: no pull request to number", LOCAL, "Local, not pushed"],
+    ["only uncommitted work", NOT_COMMITTED, "3 uncommitted"],
+    ["pushed, no pull request", PUSHED_NO_PR, "Pushed, no pull request"],
+    ["pushed, GitHub not read yet", summary({ pullRequest: undefined, uncommitted: 0 }), "Pushed"],
+  ])("%s", (_name, input, expected) => {
+    expect(headerLabel(input)).toBe(expected);
   });
 });
 

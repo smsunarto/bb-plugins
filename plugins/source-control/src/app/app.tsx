@@ -32,7 +32,7 @@ export default definePluginApp((app) => {
     layout: "flush",
     useVisible: ({ environment }) => environment !== null,
   });
-  // "View in Source Control" in the header of a thread that has a checkout; nothing otherwise.
+  // The Change's status in the header of a thread that has a checkout, opening the tab; nothing otherwise.
   app.slots.experimental_threadAction({
     id: "open",
     title: "Source Control",
