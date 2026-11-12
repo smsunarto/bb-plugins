@@ -34,6 +34,15 @@ export const SOURCE_CONTROL_TAB = {
 
 export const HEADER_LABEL = "View in Source Control";
 
+/**
+ * The last answer for each thread a header has shown. bb publishes a newly
+ * opened header's id to `useData` about 32 ms after the switch; until then
+ * `item` answers from here, so a thread seen before keeps its action through
+ * the switch instead of losing it for a frame and making bb draw the header
+ * twice. Only `useData`'s reads write it; it never causes one.
+ */
+const lastKnown = new Map<string, boolean>();
+
 /** Each header's thread: whether it has a checkout to show. Loads only ids not loaded yet. */
 export function useHeaderActionData({
   threadIds,
@@ -45,13 +54,17 @@ export function useHeaderActionData({
     enabled: threadIds.length > 0,
   });
   const data = query.data;
-  return useMemo(
-    () =>
-      Object.fromEntries(
-        threadIds.map((threadId) => [threadId, data?.[threadId]?.state === "checkout"]),
-      ),
-    [threadIds, data],
-  );
+  return useMemo(() => {
+    const answers: Record<string, boolean> = {};
+    for (const threadId of threadIds) {
+      const row = data?.[threadId];
+      // A read not in yet says nothing; the last answer stands until it is.
+      if (row === undefined) continue;
+      answers[threadId] = row.state === "checkout";
+      lastKnown.set(threadId, answers[threadId]);
+    }
+    return answers;
+  }, [threadIds, data]);
 }
 
 export function headerActionItem({
@@ -59,7 +72,7 @@ export function headerActionItem({
   data,
   experimental_panel,
 }: PluginThreadActionItemInput<Readonly<Record<string, boolean>>>) {
-  if (!data?.[thread.id]) return null;
+  if (!(data?.[thread.id] ?? lastKnown.get(thread.id))) return null;
   return {
     label: HEADER_LABEL,
     icon: "GitBranch",

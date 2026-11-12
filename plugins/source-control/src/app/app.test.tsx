@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
-import type { ComponentType } from "react";
+import { useLayoutEffect, type ComponentType } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { Branch, ThreadChange, WorkspaceValue } from "../core/change.ts";
@@ -1141,6 +1141,52 @@ test("View in Source Control shows only for a thread with a checkout, and opens 
   expect(item.label).toBe("View in Source Control");
   item.run();
   expect(opened).toEqual([{ tab: SOURCE_CONTROL_TAB }]);
+});
+
+test("a header switched to a thread it has shown keeps its action before bb publishes the id", async () => {
+  const { headerActionItem, useHeaderActionData } = await import("./thread-info.tsx");
+  const reads: string[][] = [];
+  const shown: { current: Readonly<Record<string, boolean>> | null } = { current: null };
+  function Probe({ ids }: { ids: string[] }) {
+    const data = useHeaderActionData({ threadIds: ids });
+    useLayoutEffect(() => {
+      shown.current = data;
+    });
+    return null;
+  }
+  const rows: Record<string, ThreadChange> = {
+    "thread-shown": stacked(),
+    "thread-plain": { state: "none", reason: "No checkout" },
+  };
+  const slot = renderSlot(
+    { component: Probe },
+    { ids: ["thread-shown", "thread-plain"] } as never,
+    {
+      experimental_rpcContract: sourceControlContract,
+      rpc: {
+        changeForThread: ({ keys }: { keys: string[] }) => {
+          reads.push(keys);
+          return Object.fromEntries(keys.map((key) => [key, rows[key]]));
+        },
+      } as Rpc,
+    },
+  );
+  await waitFor(() => expect(shown.current?.["thread-shown"]).toBe(true));
+  slot.unmount();
+  // The header now shows another thread; bb has not published its id yet, so data lacks it.
+  const input = (id: string) => ({ thread: { id }, data: {}, experimental_panel: {} }) as never;
+  expect(headerActionItem(input("thread-shown"))?.label).toBe("View in Source Control");
+  expect(headerActionItem(input("thread-plain"))).toBeNull();
+  expect(headerActionItem(input("thread-never-shown"))).toBeNull();
+  // Fresh data still wins over the last answer.
+  expect(
+    headerActionItem({
+      thread: { id: "thread-shown" },
+      data: { "thread-shown": false },
+      experimental_panel: {},
+    } as never),
+  ).toBeNull();
+  expect(reads.flat().toSorted()).toEqual(["thread-plain", "thread-shown"]);
 });
 
 test("GitButler's operation history reads only once opened, and lists each operation", async () => {
