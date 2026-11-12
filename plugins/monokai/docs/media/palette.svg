@@ -3,24 +3,26 @@
 <style>.heading{font:600 13px system-ui;fill:#e3e3dd}.label{font:12px system-ui;fill:#e3e3ddbd}</style>
 <rect width="852" height="376" rx="10" fill="#181818"/>
 <text class="heading" x="24" y="30">Opaque grounds</text>
-<rect x="24" y="44" width="148" height="48" rx="6" fill="#151515"/>
-<text class="label" x="24" y="113">Conversation</text>
-<rect x="188" y="44" width="148" height="48" rx="6" fill="#181818"/>
-<text class="label" x="188" y="113">Chrome / code</text>
-<rect x="352" y="44" width="148" height="48" rx="6" fill="#1d1d1d"/>
-<text class="label" x="352" y="113">Popover / recessed</text>
-<rect x="516" y="44" width="148" height="48" rx="6" fill="#242424"/>
-<text class="label" x="516" y="113">Raised solid</text>
+<rect x="24" y="44" width="148" height="48" rx="6" fill="#09090a"/>
+<text class="label" x="24" y="113">Shell frame</text>
+<rect x="188" y="44" width="148" height="48" rx="6" fill="#121213"/>
+<text class="label" x="188" y="113">Shell panel</text>
+<rect x="352" y="44" width="148" height="48" rx="6" fill="#181818"/>
+<text class="label" x="352" y="113">Chrome / code</text>
+<rect x="516" y="44" width="148" height="48" rx="6" fill="#1b1b1c"/>
+<text class="label" x="516" y="113">Popover / recessed</text>
+<rect x="680" y="44" width="148" height="48" rx="6" fill="#1f1f20"/>
+<text class="label" x="680" y="113">Raised solid</text>
 <text class="heading" x="24" y="154">Relative layers</text>
-<rect x="24" y="168" width="148" height="48" rx="6" fill="#e3e3dd0a"/>
+<rect x="24" y="168" width="148" height="48" rx="6" fill="#ebebec0a"/>
 <text class="label" x="24" y="237">Card / field 4%</text>
-<rect x="188" y="168" width="148" height="48" rx="6" fill="#e3e3dd0f"/>
+<rect x="188" y="168" width="148" height="48" rx="6" fill="#ebebec0f"/>
 <text class="label" x="188" y="237">User / control 6%</text>
-<rect x="352" y="168" width="148" height="48" rx="6" fill="#e3e3dd14"/>
+<rect x="352" y="168" width="148" height="48" rx="6" fill="#ebebec14"/>
 <text class="label" x="352" y="237">Hover / code 8%</text>
-<rect x="516" y="168" width="148" height="48" rx="6" fill="#e3e3dd24"/>
+<rect x="516" y="168" width="148" height="48" rx="6" fill="#ebebec24"/>
 <text class="label" x="516" y="237">Selected 14%</text>
-<rect x="680" y="168" width="148" height="48" rx="6" fill="#e3e3dd33"/>
+<rect x="680" y="168" width="148" height="48" rx="6" fill="#ebebec33"/>
 <text class="label" x="680" y="237">Active 20%</text>
 <text class="heading" x="24" y="278">Accent and feedback</text>
 <rect x="24" y="292" width="148" height="48" rx="6" fill="#88c0d0"/>

@@ -14,7 +14,7 @@ contradicts this table per-language is a bug — unless it appears in
 
 **Philosophy: calibrated Monokai.** Identifiers are white unless they carry a
 distinct semantic role. A hue has exactly one meaning; scarcity is what makes
-each hue legible. The axis is *kind-based* (what a token is), not
+each hue legible. The axis is _kind-based_ (what a token is), not
 provenance-based (where it comes from) — stdlib and user code get the same
 colors.
 
@@ -23,7 +23,7 @@ colors.
 | Color  | Hex         | Meaning                  | Covers                                                                                                                                                                | Explicitly excludes                                                        |
 | ------ | ----------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | Pink   | `#FE5D86`   | Language machinery       | keywords, operators, control flow, tags, template-expression delimiters                                                                                               | declaration keywords (exception 1)                                         |
-| Cyan   | `#51DAE9`   | Compile-time structure   | named types, primitives, type parameters, interfaces/classes/enums *as types*, regardless of origin; namespaces/packages/modules                                      | properties, builtins-as-such, decorators                                   |
+| Cyan   | `#51DAE9`   | Compile-time structure   | named types, primitives, type parameters, interfaces/classes/enums _as types_, regardless of origin; namespaces/packages/modules                                      | properties, builtins-as-such, decorators                                   |
 | Green  | `#9DDD54`   | Callables                | functions and methods, at declaration **and** call site; own and stdlib alike; decorators and macros (they are callables)                                             | types                                                                      |
 | Orange | `#FF8342`   | Values passed into scope | parameters everywhere — italic at the declaration, regular at references; implicit ones (`this`, `super`, `self`) at every use                                        | locals, stdlib globals                                                     |
 | Purple | `#A895FE`   | Constant values          | numbers, `true`/`false`/`null`/`undefined`, enum members, string escapes; named constants where the language has real ones (Go `const`, at declaration and reference) | `const` bindings in languages where it only means "not reassigned" (TS/JS) |
@@ -81,7 +81,7 @@ Weakest hue: pink at 6.0:1.
    constant value that happens to have a name, the same kind as the literals
    and enum members already purple, so white made it indistinguishable from a
    variable. The underline carries what colour alone cannot: purple is shared
-   with namespaces and literals, and the mark says *this name never changes*.
+   with namespaces and literals, and the mark says _this name never changes_.
    Language-qualified on purpose: Go `const` is a compile-time constant, TS
    `const` is merely a non-reassignable binding and colouring it would flood a
    TS file. Other languages with real constants (Rust, Java `static final`)
@@ -89,18 +89,18 @@ Weakest hue: pink at 6.0:1.
 
 ## Style axes
 
-| Style | Meaning |
-|---|---|
-| Italic | parameter declarations; declaration keywords (the two carve-outs above) |
-| Bold | callable definition sites (`function.declaration`, `method.declaration`); Markdown headings and bold emphasis. Callable definitions pop while call sites stay quiet. Their bold is semantic-only because TextMate cannot tell a declaration from a call, so the weight arriving late is a permitted flash. Markdown weight is immediate because its grammar identifies the syntax. |
-| Underline | **Immutability and type-level binding.** Named constants (`variable.readonly:go`) — the mark that separates a constant from a variable when both would otherwise be a colour alone. Also type parameters (`T`) at every occurrence, where italic + underline separate a generic from a value parameter now that both are orange. `*.modification` (reassigned after declaration) was **removed**: it never rendered — gopls and TypeScript do not emit the modifier — and it asserted the exact opposite of the constant rule, so keeping a dead rule that contradicts a live one is worse than losing it. If a server that emits `modification` is added later, it needs a different mark, not this one. |
-| Strikethrough | `*.deprecated` |
+| Style         | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Italic        | parameter declarations; declaration keywords (the two carve-outs above)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Bold          | callable definition sites (`function.declaration`, `method.declaration`); Markdown headings and bold emphasis. Callable definitions pop while call sites stay quiet. Their bold is semantic-only because TextMate cannot tell a declaration from a call, so the weight arriving late is a permitted flash. Markdown weight is immediate because its grammar identifies the syntax.                                                                                                                                                                                                                                                                                                                        |
+| Underline     | **Immutability and type-level binding.** Named constants (`variable.readonly:go`) — the mark that separates a constant from a variable when both would otherwise be a colour alone. Also type parameters (`T`) at every occurrence, where italic + underline separate a generic from a value parameter now that both are orange. `*.modification` (reassigned after declaration) was **removed**: it never rendered — gopls and TypeScript do not emit the modifier — and it asserted the exact opposite of the constant rule, so keeping a dead rule that contradicts a live one is worse than losing it. If a server that emits `modification` is added later, it needs a different mark, not this one. |
+| Strikethrough | `*.deprecated`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 ## Depth is separated by lightness
 
 The editor's bracket-pair colorizer computes a nesting depth for every bracket
 and offers six color slots. Depth is real information and the colorizer earns
-its keep in nested TSX — but it is not a *kind*, so it may not spend a hue.
+its keep in nested TSX — but it is not a _kind_, so it may not spend a hue.
 It gets a **darker register** instead: six slots that sit below every kind in
 lightness, so depth never competes with meaning.
 
@@ -110,7 +110,7 @@ unlike the purple exception, depth and kind share every syntactic position: at
 `foo()` a green `(` would sit against a green callable and the call collapses
 into one blob. It also inverts the coverage cap — brackets outnumber every
 other colored glyph. Pure brightness cycling is refused too: the ladder means
-information tier, so cycling *through the ladder* would assert that deeply
+information tier, so cycling _through the ladder_ would assert that deeply
 nested code matters less. (Lightness still varies within the depth palette
 below — but as a discrimination cue between three chromatic colors, not as a
 claim about importance.)
@@ -137,7 +137,7 @@ in OKLab, a teal at 168° sits 0.105 from cyan — nominally 37° of hue
 separation, but hue discrimination is weakest in that region, so it read as
 cyan's cousin. Blue at 258° and rose at 334° sit 0.156 and 0.252 from cyan
 respectively. Nominal hue angle is not the test; perceptual distance is. Note
-that no rule in this document can *predict* bracket colors: they come from
+that no rule in this document can _predict_ bracket colors: they come from
 neither TextMate nor the language server, but from a parse the editor performs
 itself.
 
@@ -402,9 +402,17 @@ keeps its palette policy available without an editor-theme checkout. Updates
 to the upstream contract require an explicit copy and review here. bb names
 and composes its surfaces differently, so the adapter maps the shared roles as follows:
 
-- `--background` is the bb-only conversation ground `#151515`; both navigation
-  sidebars remain content `#181818`. Terminal chrome and the thread-side panel
-  frame share chrome `#181818`. Popovers use the opaque 4% ink layer over conversation (`#1D1D1D`), a
+- **The UI shell takes Capy's neutral palette; everything that carries meaning
+  stays Monokai.** The shell is the window frame, sidebars, panes, popovers,
+  chrome text, and the neutral layers and edges over them. It uses Capy's
+  violet-tinted greys: frame and sidebars `#09090A`, the inset page panel
+  `#121213`, shell ink `#EBEBEC`, and secondary text `#99999A`. Code bodies,
+  diffs, terminals, ANSI, syntax hues, the accent, feedback, and machine
+  identity keep this contract's colors. The code theme's ink and ground do not
+  change.
+- `--background` is the shell panel `#121213`; both navigation sidebars sit on
+  the shell frame `#09090A`. Terminal chrome and the thread-side panel
+  frame share chrome `#181818`. Popovers use the opaque 4% shell-ink layer over the panel, a
   translucent edge, and the host shadow so underlying content cannot bleed
   through. User request bubbles and the
   composer use the shared 6% ink surface. Layout children stay transparent
@@ -419,7 +427,7 @@ and composes its surfaces differently, so the adapter maps the shared roles as f
   Neutral diff gutters share the content ground. Hunk
   separators use 6% ink. Neutral diff selections and their gutters use 14%
   ink, and hover uses 8%. Change highlights retain their feedback fills.
-- Neutral in-flow surfaces use `#E3E3DD` alpha layers, modeled on Cursor's
+- Neutral in-flow surfaces use shell-ink `#EBEBEC` alpha layers, modeled on Cursor's
   live foreground-relative ladder: 4%, 6%, 8%, 14%, and 20%. These are
   composited over the actual parent, never flattened to a fixed control color.
   Cards and editable fields use 4%, user surfaces and secondary buttons use 6%,
@@ -440,23 +448,32 @@ and composes its surfaces differently, so the adapter maps the shared roles as f
   outer shadow. Their translucent edge provides the boundary.
 - Opaque grounds remain for panes, code, terminals, occluding popovers,
   scrims, and BB's explicitly named `*-solid` fallbacks. Recessed solid
-  fallbacks derive from 4% ink over the conversation ground; raised solid
-  fallbacks derive from 6% ink over content. These are occlusion roles, not
+  fallbacks derive from 4% shell ink over the panel; raised solid
+  fallbacks derive from 6% shell ink over the panel. These are occlusion roles, not
   another independently tuned palette. Context-specific
   control colors are forbidden. The existing BB selector adapter maps host
   component variants to roles; it must not choose colors by parent surface.
 - Both outer sidebar edges use the shared 12% ink edge. The right resize
   divider owns that edge while active, so a panel border cannot stack beneath
   it and brighten the result.
-- Desktop framed sidebar cards and the main-pane outline use 0.5 CSS px
-  strokes, retaining their existing edge colors and open sides. The title-bar
-  continuation uses the same width. Unframed layouts keep the host widths.
+- The macOS framed window takes Capy's desktop shell: the sidebar lies flat on
+  the frame with no card or outline, and the page fills the window to its right
+  and bottom edges with only its top-left corner rounded. bb's frame lip, card
+  mask, page outline, and title-bar seam are removed.
 - bb's native `--primary` name maps to the shared accent `#88C0D0`, not to the
   primary-button fill. Links, mentions, file accents, and search matches use
   it; component selectors map filled buttons to their neutral control roles.
   Conversation links drop the underline and reveal a rounded `#88C0D026`
   accent-alpha surface on hover, preserving the conversation ground beneath it.
-- Feedback, text-ladder, comment, and ANSI hue roles are byte-identical to this
+- Chrome text is the shell ladder: `--foreground` is shell ink, secondary
+  text is the opaque `#99999A`, and readback, faint, and focus tiers are shell
+  ink at 55%, 30%, and 25%. Capy's dimmer `#737374` tier is not used because
+  it reaches only 3.95:1 on the panel.
+- On desktop widths the page sits in Capy's inset panel: an 8px gap from the
+  frame on every side, 12px corners, and a 0.5 CSS px 8%
+  shell-ink edge. The New thread screen drops this edge. The New thread screen centers its composer and paints a
+  static dither of `#566A9E` squares behind it, Capy's halftone ink.
+- Feedback, code-text, comment, and ANSI hue roles are byte-identical to this
   contract. bb gives backtick-delimited inline code the shared 8% ink layer
   while fenced code remains on content `#181818`. bb maps ANSI black
   and its dark background
@@ -602,7 +619,7 @@ grammar nor the language server exposes:
 Some renderings need cooperation from language servers, not theme rules:
 
 - `"[typescript][typescriptreact]": { "editor.language.colorizedBracketPairs":
-  [["(",")"],["[","]"],["{","}"]] }` — TypeScript opts `<`/`>` into bracket
+[["(",")"],["[","]"],["{","}"]] }` — TypeScript opts `<`/`>` into bracket
   colorization (Go does not); they are absent from its own `brackets` list, so
   colorizing them buys no matching behavior while an unpaired `>` in a
   comparison can render as `unexpectedBracket` red on correct code. Narrowing
@@ -631,24 +648,20 @@ Some renderings need cooperation from language servers, not theme rules:
   [
     { "token_modifiers": ["deprecated"], "strikethrough": true },
     { "token_type": "typeParameter", "font_style": "italic", "underline": true },
-    { "token_type": "parameter", "token_modifiers": ["declaration"],
-      "font_style": "italic" },
-    { "token_type": "parameter", "token_modifiers": ["definition"],
-      "font_style": "italic" },
+    { "token_type": "parameter", "token_modifiers": ["declaration"], "font_style": "italic" },
+    { "token_type": "parameter", "token_modifiers": ["definition"], "font_style": "italic" },
     { "token_type": "parameter", "font_style": "normal" },
-    { "token_type": "function", "token_modifiers": ["declaration"],
-      "font_weight": "bold" },
-    { "token_type": "function", "token_modifiers": ["definition"],
-      "font_weight": "bold" },
-    { "token_type": "method", "token_modifiers": ["declaration"],
-      "font_weight": "bold" },
-    { "token_type": "method", "token_modifiers": ["definition"],
-      "font_weight": "bold" },
-    { "token_type": "variable", "token_modifiers": ["readonly", "defaultLibrary"],
-      "style": ["constant.builtin"] },
-    { "token_type": "variable", "token_modifiers": ["signature"],
-      "style": ["function"] },
-    { "token_type": "arithmetic", "style": ["operator"] }
+    { "token_type": "function", "token_modifiers": ["declaration"], "font_weight": "bold" },
+    { "token_type": "function", "token_modifiers": ["definition"], "font_weight": "bold" },
+    { "token_type": "method", "token_modifiers": ["declaration"], "font_weight": "bold" },
+    { "token_type": "method", "token_modifiers": ["definition"], "font_weight": "bold" },
+    {
+      "token_type": "variable",
+      "token_modifiers": ["readonly", "defaultLibrary"],
+      "style": ["constant.builtin"],
+    },
+    { "token_type": "variable", "token_modifiers": ["signature"], "style": ["function"] },
+    { "token_type": "arithmetic", "style": ["operator"] },
   ]
   ```
 
@@ -714,7 +727,7 @@ Some renderings need cooperation from language servers, not theme rules:
   predict the semantic layer's verdict — semantic refines, it never
   contradicts. A cold-open color flash (TextMate color ≠ settled semantic
   color for the same token) is a bug. Flashes are acceptable only where
-  TextMate *cannot* know (parameter usages, callable-typed identifiers).
+  TextMate _cannot_ know (parameter usages, callable-typed identifiers).
   The Zed adapter's grammars are fixed, so its accepted flashes are named
   under **Zed adapter**.
 
@@ -730,19 +743,19 @@ found in review are queued here.
 
 Packages need to be distinct from **variables** — `url.Parse` and `url.Host`
 are unresolvable by spelling when a variable shadows a package — and cyan vs
-white carries that. Giving them a *seventh* colour, distinct from types too,
+white carries that. Giving them a _seventh_ colour, distinct from types too,
 was tried and abandoned: the wheel is full. Six kinds sit at 8° pink, 46°
 orange, 91° yellow, 131° green, 205° cyan, 291° purple, with white reading at
 107°, so every candidate was marginal against two neighbours at once:
 
-| Candidate | Worst-case OKLab distance | Rejected because |
-|---|---|---|
-| Recessed cyan `#4E9DA6` | 0.121 | read muddy |
-| Steel `#8CA3B8` | 0.127 | read muddy |
-| Blue `#3093F4` → `#30AFF8` | 0.128 | clashed with yellow, then green, then purple |
-| Rose `#EE8FC8` | 0.115 | closest of all to a kind |
-| Ladder `#E3E3DDA6` | 0.160 | best measured, but reads as absence rather than kind |
-| Dark gold `#B49532` | 0.134 | — |
+| Candidate                  | Worst-case OKLab distance | Rejected because                                     |
+| -------------------------- | ------------------------- | ---------------------------------------------------- |
+| Recessed cyan `#4E9DA6`    | 0.121                     | read muddy                                           |
+| Steel `#8CA3B8`            | 0.127                     | read muddy                                           |
+| Blue `#3093F4` → `#30AFF8` | 0.128                     | clashed with yellow, then green, then purple         |
+| Rose `#EE8FC8`             | 0.115                     | closest of all to a kind                             |
+| Ladder `#E3E3DDA6`         | 0.160                     | best measured, but reads as absence rather than kind |
+| Dark gold `#B49532`        | 0.134                     | —                                                    |
 
 Two findings survive the search and generalize: **mud is chroma 0.04–0.10 at
 mid lightness** — a near-neutral there reads as dirt, not restraint — and

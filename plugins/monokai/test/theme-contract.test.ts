@@ -40,11 +40,11 @@ function styleRules(css: string): Array<{ selector: string; atRules: string[] }>
 }
 
 describe("bb Monokai surface palette", () => {
-  test("assigns conversation, sidebar, user, and chrome grounds", () => {
-    expect(theme).toContain("--background: #151515");
-    expect(theme).toContain("--sidebar: #181818");
-    expect(theme).toContain("--popover: #1d1d1d");
-    expect(theme).toContain("--agent-surface-background: #e3e3dd0f");
+  test("assigns the Capy shell grounds and keeps the Monokai terminal ground", () => {
+    expect(theme).toContain("--background: #121213");
+    expect(theme).toContain("--sidebar: #09090a");
+    expect(theme).toContain("--popover: #1b1b1c");
+    expect(theme).toContain("--agent-surface-background: #ebebec0f");
     expect(theme).toContain(
       ".dark [data-promptbox] {\n  background-color: var(--agent-surface-background)",
     );
@@ -59,13 +59,13 @@ describe("bb Monokai surface palette", () => {
 
   test("names remote machines with hues outside the feedback families", () => {
     expect(theme).toContain(
-      "--machine-1: #2987f8; /* 5.00:1 */\n  --machine-2: #07c3de; /* 8.35:1 */\n  --machine-3: #6dfee5; /* 14.34:1 */\n  --machine-4: #fd7ec8; /* 7.61:1 */\n  --machine-5: #aaa0fb; /* 7.72:1 */\n  --machine-6: #fec4ff; /* 12.31:1 */",
+      "--machine-1: #2987f8; /* 5.61:1 */\n  --machine-2: #07c3de; /* 9.35:1 */\n  --machine-3: #6dfee5; /* 16.07:1 */\n  --machine-4: #fd7ec8; /* 8.53:1 */\n  --machine-5: #aaa0fb; /* 8.65:1 */\n  --machine-6: #fec4ff; /* 13.79:1 */",
     );
   });
 
   test("pins annotated bb surfaces to their intended grounds", () => {
     expect(theme).toContain(
-      ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col {\n  background-color: #151515",
+      ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col {\n  background-color: #121213",
     );
     expect(theme).toContain(
       ".dark [data-promptbox] [data-promptbox-editor-scroll] {\n  background-color: transparent;\n  border-radius: 11px 11px 0 0",
@@ -101,7 +101,7 @@ describe("bb Monokai contract audit", () => {
     for (const role of ["context-gutter", "buffer", "addition-number", "deletion-number"]) {
       expect(theme).toContain(`--diffs-bg-${role}-override: #181818`);
     }
-    expect(theme).toContain("--diffs-bg-separator-override: #e3e3dd0f");
+    expect(theme).toContain("--diffs-bg-separator-override: #ebebec0f");
     expect(theme).toContain(
       ".dark [data-monokai-diff-shell] {\n  background-color: var(--agent-surface-background);",
     );
@@ -202,6 +202,50 @@ describe("bb Monokai contract audit", () => {
     expect(toastRules.filter((rule) => rule.atRules[0] !== "@media (min-width: 768px)")).toEqual(
       [],
     );
+  });
+
+  test("gives the framed macOS window Capy's flat desktop shell", () => {
+    expect(theme).toContain(
+      '.dark [data-testid="app-layout-root"][data-framed] {\n  --bb-window-frame-lip: 0px;\n  --bb-window-frame-leading-lip: 0px;\n  background-image: none;',
+    );
+    expect(theme).toContain(
+      '.dark [data-framed] [data-sidebar="collapsible-body"] {\n  border-color: transparent;',
+    );
+    expect(theme).toContain(
+      '.dark [data-framed] [data-sidebar="inset"] {\n  mask-image: none;\n  clip-path: inset(0 round var(--bb-frame-card-radius, 10px) 0 0 0);',
+    );
+    expect(theme).toContain(
+      '.dark [data-framed] [data-sidebar="inset-edge"],\n.dark [data-framed] [data-sidebar="inset"]::after {\n  display: none;',
+    );
+  });
+
+  test("insets the unframed desktop page and centers the new-thread composer, as Capy does", () => {
+    const inset = styleRules(theme).filter(({ selector }) =>
+      selector.includes('[data-testid="app-layout-root"]:not([data-framed])'),
+    );
+    expect(inset.length).toBeGreaterThan(0);
+    for (const rule of inset) expect(rule.atRules).toEqual(["@media (min-width: 768px)"]);
+    expect(theme).toContain(
+      '.dark [data-testid="app-layout-root"]:not([data-framed]) {\n    padding: 8px;\n    background-color: var(--sidebar);',
+    );
+    expect(theme).toContain(
+      "[data-app-content-shell]::after {\n    position: absolute;\n    inset: 0;\n    z-index: 40;",
+    );
+    expect(theme).toContain("border: 0.5px solid #ebebec14;\n    border-radius: 12px;");
+    // The New thread screen drops that overlay.
+    expect(theme).toContain(
+      ".dark[data-monokai-home] [data-app-content-shell]::after {\n  display: none;",
+    );
+    expect(theme).toContain("order: 1;\n  margin-top: auto;\n  margin-bottom: auto;");
+    // The halftone starts below the macOS title bar, which bb tints translucent.
+    expect(theme).toContain(
+      ".dark #root-compose-main-panel::after {\n  position: absolute;\n  inset: var(--bb-window-frame-top, 0px) 0 0;",
+    );
+    // The halftone is a still image: no animation or transition rides on it.
+    const halftone = theme.slice(theme.indexOf(".dark #root-compose-main-panel::before,"));
+    expect(
+      halftone.slice(0, halftone.indexOf("\n}\n\n.dark #root-compose-main-panel::after")),
+    ).not.toMatch(/animation|transition/);
   });
 
   test("rejects an unknown template role", () => {
@@ -389,11 +433,11 @@ describe("bb Monokai contract audit", () => {
     expect(() =>
       auditTheme(
         theme.replace(
-          "--agent-surface-background: #e3e3dd0f",
+          "--agent-surface-background: #ebebec0f",
           "--agent-surface-background: #262626",
         ),
       ),
-    ).toThrow("--agent-surface-background: expected #e3e3dd0f");
+    ).toThrow("--agent-surface-background: expected #ebebec0f");
     expect(() =>
       auditTheme(
         theme.replace(
@@ -405,9 +449,9 @@ describe("bb Monokai contract audit", () => {
   });
 
   test("derives occluding fallbacks and keeps sticky headers opaque", () => {
-    // 4% ink over conversation; 6% ink over content, byte-rounded in sRGB.
-    expect(theme).toContain("--surface-recessed-solid: #1d1d1d");
-    expect(theme).toContain("--surface-raised-solid: #242424");
+    // 4% and 6% shell ink over the panel, byte-rounded in sRGB.
+    expect(theme).toContain("--surface-recessed-solid: #1b1b1c");
+    expect(theme).toContain("--surface-raised-solid: #1f1f20");
     expect(() =>
       auditTheme(
         theme.replace(
@@ -431,7 +475,7 @@ describe("bb Monokai contract audit", () => {
   });
 
   test("rejects an off-contract rendered color", () => {
-    const changed = theme.replace("--background: #151515", "--background: #123456");
+    const changed = theme.replace("--background: #121213", "--background: #123456");
     expect(() => auditTheme(changed)).toThrow("#123456 is off-contract");
   });
 
@@ -467,7 +511,7 @@ describe("bb Monokai contract audit", () => {
 
   test("holds machine globes to the 3:1 non-text floor on the sidebar", () => {
     const changed = theme.replace("--machine-1: #2987f8", "--machine-1: #e3e3dd1f");
-    expect(() => auditTheme(changed)).toThrow("--machine-1 on --sidebar: 1.36:1 (needs 3.0:1)");
+    expect(() => auditTheme(changed)).toThrow("--machine-1 on --sidebar: 1.28:1 (needs 3.0:1)");
   });
 });
 

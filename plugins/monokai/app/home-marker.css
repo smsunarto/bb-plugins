@@ -1,0 +1,6 @@
+/* bb draws a homepage section's title as a heading. The New thread marker
+ * (home-marker.ts) has nothing to show, so its whole section stays hidden,
+ * under every theme. */
+#plugin-homepage\:monokai\:home-marker {
+  display: none;
+}

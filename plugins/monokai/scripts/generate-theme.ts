@@ -10,7 +10,6 @@ function withAlpha(color: string, alpha: number): string {
 const palette = {
   ground: {
     chrome: "#181818",
-    conversation: "#151515",
     content: "#181818",
   },
   text: {
@@ -61,17 +60,27 @@ const palette = {
     lavender: "#aaa0fb",
     orchid: "#fec4ff",
   },
+  // The UI shell: Capy's dark neutrals (capy.ai, sampled 2026-11-12 from its
+  // oklch tokens). Frame, sidebars, panes, chrome text, and the neutral layers
+  // over them use these; code, terminal, and every hue above stay Monokai.
+  shell: {
+    frame: "#09090a", // Capy --bg: window frame and sidebars
+    panel: "#121213", // Capy --panel: the inset page
+    ink: "#ebebec", // Capy --fg
+    secondary: "#99999a", // Capy --muted-foreground-1
+    halftone: "#566a9e", // Capy --shader-ink: the New thread dither
+  },
 } as const satisfies Record<string, unknown>;
 
-// One neutral ladder for the whole adapter. Solid fallbacks composite these
+// One neutral ladder for the whole shell. Solid fallbacks composite these
 // same layers only where a surface must occlude unrelated scrolling content.
 const layers = {
-  subtle: withAlpha(palette.text.ink, 0x0a), // 4%: card / field
-  control: withAlpha(palette.text.ink, 0x0f), // 6%: user surface / secondary
-  hover: withAlpha(palette.text.ink, 0x14), // 8%: hover / inline code / seam
-  selected: withAlpha(palette.text.ink, 0x24), // 14%: action / selection
-  active: withAlpha(palette.text.ink, 0x33), // 20%: pressed / strong edge
-  edge: withAlpha(palette.text.ink, 0x1f), // 12%: control / pane edge
+  subtle: withAlpha(palette.shell.ink, 0x0a), // 4%: card / field
+  control: withAlpha(palette.shell.ink, 0x0f), // 6%: user surface / secondary
+  hover: withAlpha(palette.shell.ink, 0x14), // 8%: hover / inline code / seam
+  selected: withAlpha(palette.shell.ink, 0x24), // 14%: action / selection
+  active: withAlpha(palette.shell.ink, 0x33), // 20%: pressed / strong edge
+  edge: withAlpha(palette.shell.ink, 0x1f), // 12%: control / pane edge
 } as const;
 
 // Every rendered color is named by role here. The CSS template refers to these
@@ -80,11 +89,21 @@ const layers = {
 // opacity is part of the role.
 export const roleValues = {
   "ground.chrome": palette.ground.chrome,
-  "ground.conversation": palette.ground.conversation,
-  "ground.conversationScrim": withAlpha(palette.ground.conversation, 0xeb),
   "ground.content": palette.ground.content,
-  "solid.recessed": flatten(layers.subtle, palette.ground.conversation),
-  "solid.raised": flatten(layers.control, palette.ground.content),
+  "shell.frame": palette.shell.frame,
+  "shell.panel": palette.shell.panel,
+  "shell.panelScrim": withAlpha(palette.shell.panel, 0xeb),
+  "shell.ink": palette.shell.ink,
+  "shell.ink08": withAlpha(palette.shell.ink, 0x14),
+  "shell.ink25": withAlpha(palette.shell.ink, 0x40),
+  "shell.ink30": withAlpha(palette.shell.ink, 0x4d),
+  "shell.ink55": withAlpha(palette.shell.ink, 0x8c),
+  "shell.secondary": palette.shell.secondary,
+  "shell.halftone": palette.shell.halftone,
+  "shell.halftone40": withAlpha(palette.shell.halftone, 0x66),
+  "shell.halftone70": withAlpha(palette.shell.halftone, 0xb3),
+  "solid.recessed": flatten(layers.subtle, palette.shell.panel),
+  "solid.raised": flatten(layers.control, palette.shell.panel),
   // Pierre mixes the diff selection target into a line at 25% (40% in the
   // gutter) in lab. These opaque targets land that mix on the 14% selected
   // layer over the content ground.
@@ -102,7 +121,7 @@ export const roleValues = {
   // bb lifts a hovered or open desktop Send segment with 15% of --background.
   // At this alpha that 15% lands the segment on the 20% active layer over the
   // wrapper's 14% fill, the same step compact Send hovers to.
-  "layer.sendSegmentLift": withAlpha(palette.text.ink, 0x74),
+  "layer.sendSegmentLift": withAlpha(palette.shell.ink, 0x74),
   "text.ink": palette.text.ink,
   "text.ink07": withAlpha(palette.text.ink, 0x11),
   "text.ink17": withAlpha(palette.text.ink, 0x2c),
@@ -171,7 +190,8 @@ export function renderPalettePreview(): string {
     [
       "Opaque grounds",
       [
-        ["Conversation", "ground.conversation"],
+        ["Shell frame", "shell.frame"],
+        ["Shell panel", "shell.panel"],
         ["Chrome / code", "ground.content"],
         ["Popover / recessed", "solid.recessed"],
         ["Raised solid", "solid.raised"],
@@ -461,9 +481,9 @@ const ansiForegrounds = [
 const darkExpected = declarationMap({
   "--bb-monokai-active": "1",
   "--bb-monokai-code-entity": palette.code.entity,
-  "--canvas": palette.ground.conversation,
-  "--ink": palette.text.ink,
-  "--background": palette.ground.conversation,
+  "--canvas": palette.shell.panel,
+  "--ink": palette.shell.ink,
+  "--background": palette.shell.panel,
   "--card": roleValues["layer.subtle"],
   "--popover": roleValues["solid.recessed"],
   "--secondary": roleValues["layer.control"],
@@ -478,7 +498,7 @@ const darkExpected = declarationMap({
   "--surface-recessed-soft-solid": roleValues["solid.recessed"],
   "--surface-raised": roleValues["layer.control"],
   "--surface-raised-solid": roleValues["solid.raised"],
-  "--surface-scrim": roleValues["ground.conversationScrim"],
+  "--surface-scrim": roleValues["shell.panelScrim"],
   "--agent-surface-background": roleValues["layer.control"],
   "--agent-surface-border": roleValues["layer.hover"],
   "--state-hover": roleValues["layer.hover"],
@@ -489,21 +509,21 @@ const darkExpected = declarationMap({
   "--border-seam-vertical": "var(--border-seam)",
   "--border": roleValues["layer.edge"],
   "--border-hairline": roleValues["layer.hover"],
-  "--foreground": palette.text.ink,
-  "--muted-foreground": roleValues["text.ink74"],
-  "--readback-foreground": roleValues["text.ink55"],
-  "--subtle-foreground": roleValues["text.ink30"],
+  "--foreground": palette.shell.ink,
+  "--muted-foreground": palette.shell.secondary,
+  "--readback-foreground": roleValues["shell.ink55"],
+  "--subtle-foreground": roleValues["shell.ink30"],
   // The contract's normal-white gray (#ADADA9): opaque, so it holds on tinted fills.
   "--tertiary-foreground": palette.contentTint.white,
   "--info": palette.feedback.info,
-  "--accent-foreground": palette.text.ink,
-  "--secondary-foreground": palette.text.ink,
+  "--accent-foreground": palette.shell.ink,
+  "--secondary-foreground": palette.shell.ink,
   "--primary": palette.accent,
   "--primary-foreground": palette.ground.chrome,
   "--timeline-accent": palette.accent,
   "--file-accent": palette.accent,
-  "--ring": roleValues["text.ink25"],
-  "--sidebar-ring": roleValues["text.ink25"],
+  "--ring": roleValues["shell.ink25"],
+  "--sidebar-ring": roleValues["shell.ink25"],
   "--sidebar-search-match": roleValues["accent.match"],
   "--destructive": palette.feedback.error,
   "--destructive-foreground": palette.ground.chrome,
@@ -525,10 +545,10 @@ const darkExpected = declarationMap({
   "--terminal-font-size": "13",
   "--terminal-line-height": "1.4",
   "--agent-fluid-size": "max(calc(12.5px + 0.1vw), var(--text-sm))",
-  "--sidebar": palette.ground.content,
-  "--sidebar-foreground": roleValues["text.ink74"],
+  "--sidebar": palette.shell.frame,
+  "--sidebar-foreground": palette.shell.secondary,
   "--sidebar-accent": roleValues["layer.hover"],
-  "--sidebar-accent-foreground": palette.text.ink,
+  "--sidebar-accent-foreground": palette.shell.ink,
   "--sidebar-border": roleValues["layer.edge"],
   "--machine-1": palette.identity.blue,
   "--machine-2": palette.identity.cyan,
@@ -538,8 +558,8 @@ const darkExpected = declarationMap({
   "--machine-6": palette.identity.orchid,
   "--pill-surface": `linear-gradient(to bottom, ${roleValues["layer.control"]}, ${roleValues["layer.control"]})`,
   "--pill-surface-border": roleValues["layer.edge"],
-  "--pill-foreground": palette.text.ink,
-  "--pill-icon": roleValues["text.ink74"],
+  "--pill-foreground": palette.shell.ink,
+  "--pill-icon": palette.shell.secondary,
   "--pill-surface-selected": `linear-gradient(to bottom, ${roleValues["layer.selected"]}, ${roleValues["layer.selected"]})`,
   "--pill-surface-selected-border": roleValues["layer.active"],
   ...indexed("--ansi-", ansi),
@@ -567,15 +587,15 @@ const darkExpected = declarationMap({
   "--trees-status-renamed-override": palette.feedback.success,
   "--trees-status-modified-override": palette.feedback.warning,
   "--trees-status-deleted-override": palette.feedback.error,
-  "--trees-status-ignored-override": roleValues["text.ink30"],
+  "--trees-status-ignored-override": roleValues["shell.ink30"],
   "--trees-input-bg-override": roleValues["layer.subtle"],
   "--trees-accent-override": palette.accent,
   "--trees-indent-guide-bg-override": roleValues["layer.edge"],
-  "--trees-fg-muted-override": roleValues["text.ink55"],
-  "--trees-focus-ring-color-override": roleValues["text.ink25"],
-  "--trees-file-icon-color": roleValues["text.ink55"],
-  "--trees-file-icon-vermilion": roleValues["text.ink55"],
-  "--trees-file-icon-cyan": roleValues["text.ink55"],
+  "--trees-fg-muted-override": roleValues["shell.ink55"],
+  "--trees-focus-ring-color-override": roleValues["shell.ink25"],
+  "--trees-file-icon-color": roleValues["shell.ink55"],
+  "--trees-file-icon-vermilion": roleValues["shell.ink55"],
+  "--trees-file-icon-cyan": roleValues["shell.ink55"],
 });
 
 const requiredRules: Array<{
@@ -683,7 +703,7 @@ const requiredRules: Array<{
   },
   {
     selector: ".dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col",
-    declarations: { "background-color": palette.ground.conversation },
+    declarations: { "background-color": palette.shell.panel },
   },
   {
     selector: ".dark [data-monokai-diff-shell]",

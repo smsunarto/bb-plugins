@@ -5,11 +5,13 @@ import "./app/diff-header.css";
 import "./app/project-control.css";
 import { mountProjectControl } from "./app/project-control.ts";
 import "./app/secondary-panel-resize.css";
+import "./app/home-marker.css";
 import { mountDiffHeader } from "./app/diff-header.ts";
 
 import { mountTerminalAppearance } from "./app/terminal-appearance.ts";
 import { mountMonacoSyntaxTokens } from "./app/monaco-syntax-tokens.ts";
 import { UiFontBridge } from "./app/ui-font-bridge.ts";
+import { HomeMarker } from "./app/home-marker.ts";
 
 export default definePluginApp((app) => {
   app.contentScripts.register({ id: "diff-header", mount: mountDiffHeader });
@@ -21,6 +23,11 @@ export default definePluginApp((app) => {
   app.slots.experimental_appOverlay({
     id: "ui-font",
     component: UiFontBridge,
+  });
+  app.slots.homepageSection({
+    id: "home-marker",
+    title: "New thread screen marker",
+    component: HomeMarker,
   });
   app.contentScripts.register({
     id: "monaco-syntax-tokens",

@@ -202,25 +202,25 @@
   /* Opaque anchors occlude content. In-flow layers composite over their
    * actual parent. Cursor uses the same ink-relative 4/6/8/14/20% ladder.
    * Only explicit *-solid fallbacks may flatten a layer to a fixed ground. */
-  --canvas: #151515;
-  --ink: #e3e3dd;
-  --background: #151515;
-  --card: #e3e3dd0a;
-  --popover: #1d1d1d;
-  --secondary: #e3e3dd0f;
-  --accent: #e3e3dd14;
-  --muted: #e3e3dd24;
-  --input: #e3e3dd1f;
-  --control-background: #e3e3dd0a;
-  --control-primary: #e3e3dd24;
-  --control-primary-hover: #e3e3dd33;
+  --canvas: #121213;
+  --ink: #ebebec;
+  --background: #121213;
+  --card: #ebebec0a;
+  --popover: #1b1b1c;
+  --secondary: #ebebec0f;
+  --accent: #ebebec14;
+  --muted: #ebebec24;
+  --input: #ebebec1f;
+  --control-background: #ebebec0a;
+  --control-primary: #ebebec24;
+  --control-primary-hover: #ebebec33;
 
-  --surface-recessed: #e3e3dd0a;
-  --surface-recessed-solid: #1d1d1d;
-  --surface-recessed-soft-solid: #1d1d1d;
-  --surface-raised: #e3e3dd0f;
-  --surface-raised-solid: #242424;
-  --surface-scrim: #151515eb; /* not a veil: bb paints the page
+  --surface-recessed: #ebebec0a;
+  --surface-recessed-solid: #1b1b1c;
+  --surface-recessed-soft-solid: #1b1b1c;
+  --surface-raised: #ebebec0f;
+  --surface-raised-solid: #1f1f20;
+  --surface-scrim: #121213eb; /* not a veil: bb paints the page
                                            * header and floating control
                                            * clusters with it, over the pane.
                                            * On the content ground it flattens
@@ -229,38 +229,38 @@
                                            * than the safe-area strip above it
                                            * on phones. */
 
-  --agent-surface-background: #e3e3dd0f;
-  --agent-surface-border: #e3e3dd14;
+  --agent-surface-background: #ebebec0f;
+  --agent-surface-border: #ebebec14;
 
-  --state-hover: #e3e3dd14;
-  --state-active: #e3e3dd33;
+  --state-hover: #ebebec14;
+  --state-active: #ebebec33;
 
   /* Selected rows are ladder, not accent: the contract keeps counters and
    * selection quiet. Both names default to a --primary mix, so both are pinned
    * or they would tint cyan. */
-  --surface-selected: #e3e3dd24;
-  --surface-selected-border: #e3e3dd33;
+  --surface-selected: #ebebec24;
+  --surface-selected-border: #ebebec33;
 
   /* ---- Borders --------------------------------------------------------- */
-  --border-seam: #e3e3dd0a;
+  --border-seam: #ebebec0a;
   --border-seam-vertical: var(--border-seam);
-  --border: #e3e3dd1f;
-  --border-hairline: #e3e3dd14;
+  --border: #ebebec1f;
+  --border-hairline: #ebebec14;
 
   /* ---- Text ladder -----------------------------------------------------
    * One white at four alphas, ≥20 alpha points apart.
    * --foreground stays opaque: it is also the xterm foreground and cursor, and
    * ANSI bright-white is #E3E3DD. */
-  --foreground: #e3e3dd; /* 14.17:1 on --background */
-  --muted-foreground: #e3e3ddbd; /* secondary 74% — 8.20:1 */
-  --readback-foreground: #e3e3dd8c; /* muted 55% — 5.00:1 */
-  --subtle-foreground: #e3e3dd4d; /* faint 30% — the deliberately ghosted
+  --foreground: #ebebec; /* 15.72:1 on --background */
+  --muted-foreground: #99999a; /* opaque secondary — 6.58:1 */
+  --readback-foreground: #ebebec8c; /* muted 55% — 5.36:1 */
+  --subtle-foreground: #ebebec4d; /* faint 30% — the deliberately ghosted
                                    * "where, not what" tier */
   --tertiary-foreground: #adada9; /* opaque tertiary gray (CONTRACT normal
                                    * white), for labels on tinted fills */
 
-  --accent-foreground: #e3e3dd; /* on --accent over --background (#252525) — 11.90:1 */
-  --secondary-foreground: #e3e3dd;
+  --accent-foreground: #ebebec; /* on --accent over --background (#232324) — 13.18:1 */
+  --secondary-foreground: #ebebec;
 
   /* ---- Accent ----------------------------------------------------------
    * #88C0D0 is the only chromatic voice in the chrome and means
@@ -273,8 +273,8 @@
   --file-accent: #88c0d0;
 
   /* Focus is position, not colour: ladder outlines, never the accent. */
-  --ring: #e3e3dd40;
-  --sidebar-ring: #e3e3dd40;
+  --ring: #ebebec40;
+  --sidebar-ring: #ebebec40;
 
   /* Sidebar search match is a find match, so the accent is legal here; the
    * upstream gold is not in this palette. Alphas match editor.findMatch*. */
@@ -307,34 +307,34 @@
   /* ---- Sidebar ---------------------------------------------------------
    * Keep both navigation sidebars on the content ground. Terminal chrome stays
    * on its separate --terminal-background token above. */
-  --sidebar: #181818;
-  --sidebar-foreground: #e3e3ddbd; /* 7.98:1 */
-  --sidebar-accent: #e3e3dd14;
-  --sidebar-accent-foreground: #e3e3dd; /* hover text; the selected-row rule
+  --sidebar: #09090a;
+  --sidebar-foreground: #99999a; /* 6.99:1 */
+  --sidebar-accent: #ebebec14;
+  --sidebar-accent-foreground: #ebebec; /* hover text; the selected-row rule
                                          * below reuses it */
-  --sidebar-border: #e3e3dd1f; /* shared alpha edge; one owner per boundary */
+  --sidebar-border: #ebebec1f; /* shared alpha edge; one owner per boundary */
 
   /* ---- Machine identity ------------------------------------------------
    * Categorical, like the chart series: a hue names a remote machine and
    * nothing else. Plugin globes sit beside status glyphs, so no entry comes
    * from a feedback family. Contrast is on --sidebar, against the 3:1 floor
    * for glyphs. */
-  --machine-1: #2987f8; /* 5.00:1 */
-  --machine-2: #07c3de; /* 8.35:1 */
-  --machine-3: #6dfee5; /* 14.34:1 */
-  --machine-4: #fd7ec8; /* 7.61:1 */
-  --machine-5: #aaa0fb; /* 7.72:1 */
-  --machine-6: #fec4ff; /* 12.31:1 */
+  --machine-1: #2987f8; /* 5.61:1 */
+  --machine-2: #07c3de; /* 9.35:1 */
+  --machine-3: #6dfee5; /* 16.07:1 */
+  --machine-4: #fd7ec8; /* 8.53:1 */
+  --machine-5: #aaa0fb; /* 8.65:1 */
+  --machine-6: #fec4ff; /* 13.79:1 */
 
   /* ---- Mention pills ---------------------------------------------------
    * The gradient syntax is required (the token is consumed as a
    * background-image); the stops are flat so the chip stays on the ramp. */
-  --pill-surface: linear-gradient(to bottom, #e3e3dd0f, #e3e3dd0f);
-  --pill-surface-border: #e3e3dd1f;
-  --pill-foreground: #e3e3dd;
-  --pill-icon: #e3e3ddbd;
-  --pill-surface-selected: linear-gradient(to bottom, #e3e3dd24, #e3e3dd24);
-  --pill-surface-selected-border: #e3e3dd33;
+  --pill-surface: linear-gradient(to bottom, #ebebec0f, #ebebec0f);
+  --pill-surface-border: #ebebec1f;
+  --pill-foreground: #ebebec;
+  --pill-icon: #99999a;
+  --pill-surface-selected: linear-gradient(to bottom, #ebebec24, #ebebec24);
+  --pill-surface-selected-border: #ebebec33;
 
   /* ---- Terminal ANSI ---------------------------------------------------
    * Content palette, not chrome: the program assigns the meaning. Normal tier
@@ -395,7 +395,7 @@
   --diffs-bg-context-override: #181818;
   --diffs-bg-context-gutter-override: #181818;
   --diffs-bg-buffer-override: #181818;
-  --diffs-bg-separator-override: #e3e3dd0f;
+  --diffs-bg-separator-override: #ebebec0f;
   --diffs-bg-addition-emphasis-override: #3fa26644;
   --diffs-bg-deletion-emphasis-override: #e3467144;
 
@@ -432,20 +432,20 @@
   --trees-status-renamed-override: #3fa266;
   --trees-status-modified-override: #f1b467;
   --trees-status-deleted-override: #e34671;
-  --trees-status-ignored-override: #e3e3dd4d;
+  --trees-status-ignored-override: #ebebec4d;
 
-  --trees-input-bg-override: #e3e3dd0a;
+  --trees-input-bg-override: #ebebec0a;
   --trees-accent-override: #88c0d0; /* default is #009fff */
-  --trees-indent-guide-bg-override: #e3e3dd1f;
-  --trees-fg-muted-override: #e3e3dd8c;
-  --trees-focus-ring-color-override: #e3e3dd40;
+  --trees-indent-guide-bg-override: #ebebec1f;
+  --trees-fg-muted-override: #ebebec8c;
+  --trees-focus-ring-color-override: #ebebec40;
 
   /* 48 language icons resolve to 13 :host-declared swatches that no selector
    * can reach; the single reachable handle flattens them all. The git and oxc
    * icons read two extra names (an upstream bug), so they are set as well. */
-  --trees-file-icon-color: #e3e3dd8c;
-  --trees-file-icon-vermilion: #e3e3dd8c;
-  --trees-file-icon-cyan: #e3e3dd8c;
+  --trees-file-icon-color: #ebebec8c;
+  --trees-file-icon-vermilion: #ebebec8c;
+  --trees-file-icon-cyan: #ebebec8c;
 }
 
 /* The current BB terminal canvas sits inside this padded sidebar surface.
@@ -457,28 +457,66 @@
   background-color: var(--terminal-background);
 }
 
-/* Desktop frame outlines use half-pixel strokes. Keep the host's absent
- * edges absent: the sidebar body and footer form one continuous card. */
+/* The macOS framed window takes Capy's desktop shell. The sidebar lies flat
+ * on the frame with no card or outline, and the page fills the window to its
+ * right and bottom edges with only its top-left corner rounded. bb's frame
+ * lip, card mask, outlines, title-bar seam, and the rail's own 4% fill all go. */
+.dark [data-testid="app-layout-root"][data-framed] {
+  --bb-window-frame-lip: 0px;
+  --bb-window-frame-leading-lip: 0px;
+  background-image: none;
+}
+
+.dark [data-framed] [data-testid="sidebar-navigation-rail"] {
+  background-color: transparent;
+}
+
 .dark [data-framed] [data-sidebar="collapsible-body"] {
-  border-left-width: 0.5px;
+  border-color: transparent;
+  border-radius: 0;
+  background-color: transparent;
+  clip-path: inset(0 -6px 0 0);
 }
 
-.dark [data-framed] [data-sidebar="collapsible-body"]:not(.border-t-0) {
-  border-top-width: 0.5px;
+.dark [data-framed] [data-sidebar="inset"] {
+  mask-image: none;
+  clip-path: inset(0 round var(--bb-frame-card-radius, 10px) 0 0 0);
 }
 
-.dark [data-framed] [data-sidebar="collapsible-body"]:not(.border-b-0) {
-  border-bottom-width: 0.5px;
-}
-
-/* BB 0.49 moved the inset outline from ::before (now the fill) to a
- * separate inset-edge span. A border on ::before paints currentColor. */
-.dark [data-framed] [data-sidebar="inset-edge"] {
-  border-width: 0.5px;
-}
-
+.dark [data-framed] [data-sidebar="inset-edge"],
 .dark [data-framed] [data-sidebar="inset"]::after {
-  width: 0.5px;
+  display: none;
+}
+
+/* Unframed desktop layouts (Linux, the web app) take Capy's inset page: the
+ * frame shows 8px around the page on every side, so the gap holds while the
+ * sidebar slides away; the sidebar shares the frame's color, so the extra
+ * left gap is invisible beside it. The page is a rounded panel
+ * with a hairline edge. The left sidebar keeps its own shared hairline edge.
+ * Compact viewports keep bb's full-bleed layout. */
+@media (min-width: 768px) {
+  .dark [data-testid="app-layout-root"]:not([data-framed]) {
+    padding: 8px;
+    background-color: var(--sidebar);
+  }
+
+  .dark [data-testid="app-layout-root"]:not([data-framed]) > [data-sidebar="inset"] {
+    overflow: clip;
+    border-radius: 12px;
+  }
+
+  /* The page's hairline is an overlay inside the content shell, matching
+   * bb's framed inset-edge, so the New thread screen can drop both the same
+   * way (see data-monokai-home below). */
+  .dark [data-testid="app-layout-root"]:not([data-framed]) [data-app-content-shell]::after {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    content: "";
+    pointer-events: none;
+    border: 0.5px solid #ebebec14;
+    border-radius: 12px;
+  }
 }
 
 /* Both outer sidebars spend the shared alpha edge. The active right
@@ -683,7 +721,7 @@
 /* The bottom-anchored conversation body is transparent upstream. Pin its
  * concrete child as well as --background so split-pane wrappers cannot leak. */
 .dark .thread-scrollbar > .flex.min-h-full.min-w-0.flex-col {
-  background-color: #151515;
+  background-color: #121213;
 }
 
 /* Conversation links copy T3 Code: plain accent text with no underline, then
@@ -713,14 +751,15 @@
   }
 }
 
-/* Keep the new-thread composer at the conversation footer's position in both
- * color modes. Current home wraps it in root-compose-compact-composer; older
- * layouts put the prompt shell directly inside the column's child. Move that
- * outer wrapper so additional composer wrappers do not break the alignment.
- * Homepage sections stay above it; the column keeps its 0.5rem bottom padding. */
+/* Center the new-thread composer in the page, as Capy's home does, with the
+ * column's bottom padding lifting it a tenth of the viewport above center.
+ * Current home wraps it in root-compose-compact-composer; older layouts put
+ * the prompt shell directly inside the column's child. Move that outer
+ * wrapper so additional composer wrappers do not break the alignment.
+ * Homepage sections stay above it. */
 #root-compose-main-panel .\@container\/page > .mx-auto.flex-col {
   min-height: 100%;
-  padding-bottom: 0.5rem;
+  padding-bottom: calc(0.5rem + 10dvh);
 }
 
 #root-compose-main-panel [data-testid="root-compose-compact-composer"],
@@ -730,6 +769,72 @@
   > [data-promptbox-shell] {
   order: 1;
   margin-top: auto;
+  margin-bottom: auto;
+}
+
+/* Capy's halftone backdrop, held still: a 6px lattice of 2px squares in
+ * Capy's shader ink. Two half-lattices take separate masks, so density rises
+ * in steps toward the top corners. A thresholded fractal noise in each mask
+ * breaks the steps into blobs. The noise is an SVG rendered once at the
+ * panel's size; nothing animates. */
+.dark #root-compose-main-panel {
+  position: relative;
+  isolation: isolate;
+}
+
+/* The New thread screen has no page outline. app/home-marker.ts sets the
+ * attribute while that screen is open; bb marks no route itself. The framed
+ * macOS shell draws no outlines at all (see above). */
+.dark[data-monokai-home] [data-app-content-shell]::after {
+  display: none;
+}
+
+/* The hidden marker section still sits in bb's homepage section list, whose
+ * 24px top margin would push the centered composer down. The column's own
+ * top padding already spaces any visible sections. */
+#root-compose-main-panel [data-testid="plugin-homepage-sections"] {
+  margin-top: 0;
+}
+
+/* The macOS window's title bar strip belongs to the page and wears bb's
+ * translucent header tint, so the dither starts below it. bb sets
+ * --bb-window-frame-top to the title bar's height there and 0px elsewhere. */
+.dark #root-compose-main-panel::before,
+.dark #root-compose-main-panel::after {
+  position: absolute;
+  inset: var(--bb-window-frame-top, 0px) 0 0;
+  z-index: -1;
+  content: "";
+  pointer-events: none;
+  background-image:
+    conic-gradient(from 270deg at 2px 2px, #566a9e66 25%, transparent 0),
+    conic-gradient(from 270deg at 2px 2px, #566a9e66 25%, transparent 0);
+  background-size: 12px 12px;
+  mask-composite: intersect;
+  mask-size: 100% 100%;
+}
+
+.dark #root-compose-main-panel::before {
+  background-position:
+    0 0,
+    6px 6px;
+  mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='500' preserveAspectRatio='none'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.012' numOctaves='3' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 7 -2.6'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(120% 75% at 50% 0, black, transparent 80%);
+}
+
+.dark #root-compose-main-panel::after {
+  background-image:
+    conic-gradient(from 270deg at 2px 2px, #566a9eb3 25%, transparent 0),
+    conic-gradient(from 270deg at 2px 2px, #566a9eb3 25%, transparent 0);
+  background-position:
+    6px 0,
+    0 6px;
+  mask-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='500' preserveAspectRatio='none'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.016' numOctaves='3' seed='3'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 9 -4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(60% 55% at 100% 0, black, transparent),
+    radial-gradient(40% 45% at 0 0, black, transparent);
+  mask-composite: intersect, add;
 }
 
 [data-testid="root-compose-compact-composer"] > .bg-background,
@@ -846,7 +951,7 @@
  * through an !important utility the theme cannot outrank, so --background here
  * is the ink alpha that makes that lift land on compact Send's 20% hover. */
 .dark [data-promptbox-send-menu].bg-foreground {
-  --background: #e3e3dd74;
+  --background: #ebebec74;
   background-color: var(--control-primary);
   color: var(--foreground);
 }
