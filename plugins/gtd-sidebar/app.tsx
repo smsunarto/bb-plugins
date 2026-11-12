@@ -11,6 +11,7 @@ import "./bot-shelf.css";
 import "@smsunarto/bb-plugin-bots/bots.css";
 import { registerBotShelfActions } from "@smsunarto/bb-plugin-bots/shelf";
 import { ThreadInbox } from "./components/inbox/thread-inbox";
+import { CapyNavigation, CapyNavigationHeader } from "./components/nav/capy-navigation";
 import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";
 
 export default definePluginApp((app) => {
@@ -29,6 +30,15 @@ export default definePluginApp((app) => {
     title: "GTD Sidebar (inbox)",
     description: "Next Action and Waiting, with the newest arrivals first, and Bots when enabled.",
     component: ThreadInbox,
+  });
+
+  app.slots.experimental_sidebarNavigation({
+    id: "capy-list",
+    title: "GTD Sidebar (Capy list)",
+    description: "Capy-style rows above the thread list, with Search in the sidebar header.",
+    placement: "list",
+    component: CapyNavigation,
+    headerComponent: CapyNavigationHeader,
   });
 
   registerBotShelfActions(app);

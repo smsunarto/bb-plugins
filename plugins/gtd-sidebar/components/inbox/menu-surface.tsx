@@ -90,7 +90,7 @@ const MENU_CONTENT_RESET_STYLE = {
   animation: "none",
   transition: "none",
 } as const;
-const MENU_MATERIAL_CLASS = cn(
+export const MENU_MATERIAL_CLASS = cn(
   "rounded-[15px] p-[5px]",
   // Translucent on purpose: the blurred sidebar shows through. A one-item
   // menu is too short for the blur to hide the rows behind it, so the ground
