@@ -39,6 +39,7 @@ import type { ReviewItem } from "../../core/items.ts";
 import type { ChangeFile, ReviewRevision } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { FileRowsSkeleton, PatchesProblem } from "../file-cards.tsx";
+import { Button } from "../components/ui/button.tsx";
 import { cx, plural } from "../format.ts";
 import { useGuide, useRewriteGuide, type GuideRead, type Rewrite } from "../guide-data.ts";
 import { useChangeReview } from "../review-data.ts";
@@ -607,14 +608,9 @@ function Step({
   label: string;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={onClick}
-      className="flex size-11 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent text-foreground"
-    >
+    <Button variant="ghost" aria-label={label} onClick={onClick} className="size-11 px-0">
       <Chevron className={direction < 0 ? "rotate-90" : "-rotate-90"} />
-    </button>
+    </Button>
   );
 }
 

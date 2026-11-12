@@ -34,7 +34,8 @@ import {
 } from "../review-ui.tsx";
 import { BatchBanner } from "../send.tsx";
 import { SLOPCOP_PLUGIN_ID, slopCopContract, slopCopInput } from "../slopcop-contract.ts";
-import { Bar } from "../ui.tsx";
+import { Button } from "../components/ui/button.tsx";
+import { Skeleton } from "../components/ui/skeleton.tsx";
 import { useNow } from "./hooks.ts";
 import { FocusContext, useIsFocused } from "./review-focus.ts";
 
@@ -388,9 +389,9 @@ function ReviewUnread({ error, refetch }: { error: string | null; refetch: () =>
     );
   return (
     <div aria-busy="true" aria-label="Reading the review" className="flex flex-col gap-2 px-2 py-1">
-      <Bar className="h-3 w-40" />
-      <Bar className="h-3 w-48" />
-      <Bar className="h-3 w-32" />
+      <Skeleton className="h-3 w-40" />
+      <Skeleton className="h-3 w-48" />
+      <Skeleton className="h-3 w-32" />
     </div>
   );
 }
@@ -425,14 +426,14 @@ function SelectionBar({
   };
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 px-2 pt-2">
-      <button
-        type="button"
+      <Button
+        variant="default"
         data-testid="sc-review-select-all"
         onClick={onClick}
-        className="flex h-6 shrink-0 cursor-pointer items-center rounded-[6px] border-0 bg-foreground px-2 text-[12px] leading-4 font-semibold whitespace-pre text-background hover:opacity-90"
+        className="h-6 px-2 font-semibold whitespace-pre"
       >
         {allChosen ? "Clear selection" : "Select all"}
-      </button>
+      </Button>
       {summary ? (
         <span
           className="min-w-0 truncate text-[12px] leading-4 text-(--tertiary-foreground)"

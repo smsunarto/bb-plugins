@@ -33,7 +33,7 @@ import {
   type PrRef,
 } from "../core/watch.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { Button } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
 
 /** bb's own Archive, which the sidebar calls Settle. */
 const ARCHIVE_KEYS = ["bb--core/archive"];
@@ -268,7 +268,7 @@ function SettleButton({ threadId }: { threadId: string }) {
     return <ArchiveButton target={target} onDone={() => setAsked((n) => n + 1)} />;
   const settled = target !== null;
   return (
-    <Button className="h-7 w-full gap-1.5 text-[12px]" disabled>
+    <Button variant="outline" className="h-7 w-full gap-1.5 text-[12px]" disabled>
       {settled ? "Settled" : "Settle thread"}
       {settled ? <Icon name="Check" className="size-3" aria-hidden /> : null}
     </Button>
@@ -286,7 +286,7 @@ function ArchiveButton({
   const [running, setRunning] = useState(false);
   return (
     <Button
-      variant="primary"
+      variant="default"
       data-testid="sc-landed-settle"
       className="h-7 w-full gap-1.5 text-[12px]"
       disabled={!entry || entry.action.disabled === true || running}

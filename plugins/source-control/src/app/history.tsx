@@ -16,7 +16,7 @@ import { describeProblem } from "../core/change.ts";
 import type { OplogEntry } from "../core/oplog.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { absoluteTime, cx, shortAge, shortId } from "./format.ts";
-import { Button } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
 
 /**
  * `but` titles most entries with the operation's own name, as in
@@ -52,8 +52,7 @@ function useAskAgent(): ((text: string) => void) | null {
   return composer.scope.kind === "new-thread" ? null : ask;
 }
 
-const ICON_BUTTON =
-  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent text-muted-foreground hover:bg-surface-raised hover:text-foreground";
+const ICON_BUTTON = "size-6 text-muted-foreground";
 
 function OperationRow({ entry, path, now }: { entry: OplogEntry; path: string; now: number }) {
   const ask = useAskAgent();
@@ -84,25 +83,27 @@ function OperationRow({ entry, path, now }: { entry: OplogEntry; path: string; n
           ) : null}
         </span>
       </span>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon"
         className={ICON_BUTTON}
         aria-label={`Copy snapshot id ${short}`}
         title={`Copy snapshot id ${short}`}
         onClick={() => void copyToClipboard({ text: entry.id })}
       >
         <Icon name="Copy" className="size-3" aria-hidden />
-      </button>
+      </Button>
       {ask ? (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           className={ICON_BUTTON}
           aria-label={`Ask agent to restore snapshot ${short}`}
           title={`Ask agent to restore snapshot ${short}`}
           onClick={() => ask(restoreRequest(entry, title, path))}
         >
           <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
-        </button>
+        </Button>
       ) : null}
     </li>
   );
@@ -119,7 +120,9 @@ function Operations({ threadId, path, now }: { threadId: string; path: string; n
     <p className="m-0 flex flex-wrap items-center gap-2 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
       {text}
       {data?.ok === false || oplog.error ? (
-        <Button onClick={() => void oplog.refetch()}>Try again</Button>
+        <Button variant="outline" onClick={() => void oplog.refetch()}>
+          Try again
+        </Button>
       ) : null}
     </p>
   );

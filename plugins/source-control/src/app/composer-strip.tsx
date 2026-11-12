@@ -23,6 +23,7 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
 import { Pending } from "./ui.tsx";
 import { useDraftToggle } from "./status.tsx";
+import { Button } from "./components/ui/button.tsx";
 
 /** bb's own changed-files segment, which already counts uncommitted files. */
 const CHANGED_FILES_SEGMENT = "bb--git/changed-files";
@@ -132,16 +133,16 @@ export function StripAction({ threadId, environment }: ExperimentalThreadContext
           {draft.message}
         </output>
       ) : null}
-      <button
-        type="button"
+      <Button
+        variant="outline"
         data-testid="sc-strip-mark-ready"
         onClick={draft.toggle}
         disabled={draft.pending}
-        className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] border border-solid border-border bg-transparent px-3 text-[12px] leading-4 font-semibold text-foreground transition-colors enabled:hover:bg-surface-raised disabled:cursor-default disabled:opacity-60 motion-reduce:transition-none"
+        className="h-6 px-3 font-semibold"
       >
         <Pending pending={draft.pending} />
         Mark ready
-      </button>
+      </Button>
     </span>
   );
 }

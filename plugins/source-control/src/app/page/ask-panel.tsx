@@ -27,6 +27,7 @@ import {
 import { sourceControlContract } from "../../contract/rpc.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import type { ChangeDetail } from "../../core/review.ts";
+import { Button } from "../components/ui/button.tsx";
 import { useEscapeLayer } from "../escape.ts";
 import { cx } from "../format.ts";
 
@@ -166,8 +167,7 @@ type Ready = Extract<ChangeDetail, { state: "change" }>;
  */
 const PHONE_CHAT = "[&_div[data-follow-up-composer-footer]]:hidden";
 
-const ICON_BUTTON =
-  "flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-[6px] border-0 bg-transparent p-0 text-muted-foreground enabled:hover:bg-surface-raised enabled:hover:text-foreground disabled:cursor-default disabled:opacity-50";
+const ICON_BUTTON = "size-6 px-0 text-muted-foreground hover:text-foreground";
 
 /** Why questions cannot be sent now, or null. */
 function unavailable(detail: Ready | null): string | null {
@@ -231,15 +231,15 @@ function FirstQuestion({
           className="w-full min-w-0 resize-none border-0 bg-transparent p-0 font-sans text-[13px] leading-5 text-foreground outline-none placeholder:text-(--tertiary-foreground)"
         />
         <div className="flex items-center justify-end">
-          <button
-            type="button"
+          <Button
+            variant="default"
             aria-label="Send question"
             disabled={!canSend}
             onClick={submit}
-            className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full border-0 bg-foreground p-0 text-background disabled:cursor-default disabled:opacity-40"
+            className="size-6 rounded-full px-0 disabled:opacity-40"
           >
             <SendIcon />
-          </button>
+          </Button>
         </div>
       </div>
     </div>
@@ -339,8 +339,8 @@ function AskPanel({
         <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-muted-foreground">
           {row?.title ?? ""}
         </span>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           aria-label="Open as full thread"
           title="Open as full thread"
           disabled={!threadId || full.isPending}
@@ -348,16 +348,16 @@ function AskPanel({
           className={ICON_BUTTON}
         >
           <OpenIcon />
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          variant="ghost"
           aria-label="Close"
           title="Close"
           onClick={onClose}
           className={ICON_BUTTON}
         >
           <CloseIcon />
-        </button>
+        </Button>
       </div>
       {blocked ? (
         <output

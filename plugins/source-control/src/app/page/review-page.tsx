@@ -13,15 +13,7 @@ import {
   experimental_useRpcQuery as useRpcQuery,
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { describeProblem, readAgo, type ForgeResult } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import {
@@ -31,14 +23,22 @@ import {
   type ReviewTab,
 } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
-import { useEscapeLayer } from "../escape.ts";
 import { cx, plural, shortRef } from "../format.ts";
 import { useOpenGuide } from "../guide-data.ts";
 import { MergeButton, mergeTarget, useChangeMerge } from "../merge.tsx";
 import { useChangeReview } from "../review-data.ts";
 import { SendControls } from "../send.tsx";
 import { ShipPath } from "../status.tsx";
-import { Bar, Button, Pending } from "../ui.tsx";
+import { Button } from "../components/ui/button.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu.tsx";
+import { Skeleton } from "../components/ui/skeleton.tsx";
+import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.tsx";
+import { Pending } from "../ui.tsx";
 import { ChangesList } from "./changes-nav.tsx";
 import { CommitsView } from "./commits-view.tsx";
 import { ConversationView } from "./conversation-view.tsx";
@@ -126,22 +126,6 @@ function StatusMenu({
   detail: Ready;
   draft: ReturnType<typeof useDraftToggle>;
 }) {
-  const [open, setOpen] = useState(false);
-  const menu = useRef<HTMLSpanElement>(null);
-  // Escape closes the menu and returns focus to its button; the page stays.
-  useEscapeLayer(
-    menu,
-    () => {
-      setOpen(false);
-      trigger.current?.focus();
-    },
-    { open },
-  );
-  const trigger = useRef<HTMLButtonElement>(null);
-  const item = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (open) item.current?.focus();
-  }, [open]);
   const { state } = detail.row;
   const icon = <StateIcon state={state} size={11} />;
   if (!draft.toggle)
@@ -151,49 +135,21 @@ function StatusMenu({
         {detail.status.label}
       </span>
     );
-  const close = () => {
-    setOpen(false);
-    trigger.current?.focus();
-  };
   return (
-    <span className="relative flex shrink-0 flex-col">
-      <button
-        ref={trigger}
-        type="button"
-        data-testid="sc-review-state"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className={cx(CHIP, "cursor-pointer")}
-      >
-        {icon}
-        {detail.status.label}
-        <Chevron />
-      </button>
-      {open ? (
-        <span
-          ref={menu}
-          role="menu"
-          tabIndex={-1}
-          data-bb-plugin="source-control"
-          className="absolute top-7 left-0 z-10 flex min-w-48 flex-col rounded-[8px] border border-solid border-border bg-popover p-1 shadow-md"
-        >
-          <button
-            type="button"
-            ref={item}
-            role="menuitem"
-            disabled={draft.pending}
-            onClick={() => {
-              draft.toggle?.();
-              close();
-            }}
-            className="flex h-7 cursor-pointer items-center rounded-[6px] border-0 bg-transparent px-2 text-left text-[12px] leading-4 text-foreground enabled:hover:bg-surface-raised"
-          >
-            {state === "draft" ? "Mark ready for review" : "Convert to draft"}
-          </button>
-        </span>
-      ) : null}
-    </span>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" data-testid="sc-review-state" className={cx(CHIP, "cursor-pointer")}>
+          {icon}
+          {detail.status.label}
+          <Chevron />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent>
+        <DropdownMenuItem disabled={draft.pending} onSelect={() => draft.toggle?.()}>
+          {state === "draft" ? "Mark ready for review" : "Convert to draft"}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -212,20 +168,20 @@ function AskButton({ compact }: { compact?: boolean }) {
   const ask = useAskAgent();
   if (!ask) return null;
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
       data-testid="sc-ask-agent"
       aria-label={compact ? "Ask agent" : undefined}
       title={compact ? "Ask agent" : undefined}
       onClick={(event) => ask({ trigger: event.currentTarget })}
       className={cx(
-        "flex shrink-0 cursor-pointer items-center justify-center rounded-[6px] border border-solid border-border bg-surface-raised text-foreground transition-colors hover:bg-surface-recessed motion-reduce:transition-none",
-        compact ? "size-7" : "h-8 gap-2 px-3 text-[13px] leading-5 font-medium",
+        "border-border bg-surface-raised hover:bg-surface-recessed",
+        compact ? "size-7 px-0" : "h-8 gap-2 px-3 text-[13px] leading-5",
       )}
     >
       <BotIcon />
       {compact ? null : "Ask agent"}
-    </button>
+    </Button>
   );
 }
 
@@ -252,8 +208,8 @@ function PinButton({ row, compact }: { row: Ready["row"]; compact?: boolean }) {
   const pinned = chosen ?? listed;
   const label = pinned ? "Unpin from the Changes list" : "Pin to the Changes list";
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
       data-testid="sc-pin"
       aria-pressed={pinned}
       aria-label={label}
@@ -265,7 +221,7 @@ function PinButton({ row, compact }: { row: Ready["row"]; compact?: boolean }) {
         setPinned.mutate({ ref, pinned: next }).catch(() => setChosen(null));
       }}
       className={cx(
-        "flex shrink-0 cursor-pointer items-center justify-center rounded-[6px] border border-solid border-border transition-colors hover:bg-surface-raised disabled:cursor-default disabled:opacity-60 motion-reduce:transition-none",
+        "border-border px-0 hover:bg-surface-raised",
         compact ? "size-7" : "size-8",
         pinned ? "bg-surface-raised text-foreground" : "bg-transparent text-muted-foreground",
       )}
@@ -285,7 +241,7 @@ function PinButton({ row, compact }: { row: Ready["row"]; compact?: boolean }) {
           strokeLinecap="round"
         />
       </svg>
-    </button>
+    </Button>
   );
 }
 
@@ -409,6 +365,7 @@ function Header({ detail, now }: { detail: Ready; now: number }) {
         <PageMerge detail={detail} />
         {row.state === "draft" && draft.toggle ? (
           <Button
+            variant="outline"
             data-testid="sc-mark-ready"
             className="h-8 px-3 text-[13px] font-semibold"
             disabled={draft.pending}
@@ -423,7 +380,7 @@ function Header({ detail, now }: { detail: Ready; now: number }) {
   );
 }
 
-function Tabs({
+function ReviewTabs({
   location,
   files,
   go,
@@ -442,41 +399,34 @@ function Tabs({
     { id: "conversation", label: "Conversation", count: null },
   ];
   return (
-    <div
+    <Tabs
+      value={location.tab}
+      // Arrow keys move focus along the tabs; Enter or a click opens one.
+      activationMode="manual"
+      onValueChange={(tab) => go({ key: location.key, tab: tab as ReviewTab })}
       className={cx(
         // Wrapping in reverse keeps the tabs on the bottom line, against their border.
-        "flex shrink-0 flex-wrap-reverse items-end gap-x-6 border-b border-solid border-border-hairline",
+        "shrink-0 flex-row flex-wrap-reverse items-end gap-x-6 border-b border-solid border-border-hairline",
         PAD,
       )}
     >
-      <div role="tablist" aria-label="Review" className="flex shrink-0 items-center gap-6">
-        {tabs.map((tab) => {
-          const active = tab.id === location.tab;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              data-testid={`sc-tab-${tab.id}`}
-              onClick={() => go({ key: location.key, tab: tab.id })}
-              className={cx(
-                "-mb-px flex cursor-pointer gap-2 border-0 border-b-2 border-solid bg-transparent px-0 py-2 text-[13px] leading-5",
-                active
-                  ? "border-b-foreground font-semibold text-foreground"
-                  : "border-b-transparent text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {tab.label}
-              {tab.count !== null ? (
-                <span className="font-normal text-(--tertiary-foreground)">{tab.count}</span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
+      <TabsList aria-label="Review" className="gap-6">
+        {tabs.map((tab) => (
+          <TabsTrigger
+            key={tab.id}
+            value={tab.id}
+            data-testid={`sc-tab-${tab.id}`}
+            className="-mb-px gap-2 border-b-2 border-solid border-b-transparent px-0 py-2 text-[13px] leading-5 hover:text-foreground data-[state=active]:border-b-foreground data-[state=active]:font-semibold"
+          >
+            {tab.label}
+            {tab.count !== null ? (
+              <span className="font-normal text-(--tertiary-foreground)">{tab.count}</span>
+            ) : null}
+          </TabsTrigger>
+        ))}
+      </TabsList>
       {children}
-    </div>
+    </Tabs>
   );
 }
 
@@ -491,19 +441,19 @@ function HeaderSkeleton() {
       className="flex flex-col"
     >
       <div className={cx("flex flex-col gap-3 pt-5 pb-4", PAD)}>
-        <Bar className="h-3 w-40" />
-        <Bar className="h-6 w-96 max-w-full" />
+        <Skeleton className="h-3 w-40" />
+        <Skeleton className="h-6 w-96 max-w-full" />
         <div className="flex items-center gap-2">
-          <Bar className="h-6 w-16 rounded-full" />
-          <Bar className="h-3 w-72 max-w-full" />
+          <Skeleton className="h-6 w-16 rounded-full" />
+          <Skeleton className="h-3 w-72 max-w-full" />
         </div>
       </div>
       <div className={cx("pb-4", PAD)}>
-        <Bar className="h-3.5 w-[36rem] max-w-full" />
+        <Skeleton className="h-3.5 w-[36rem] max-w-full" />
       </div>
       <div className={cx("flex gap-6 border-b border-solid border-border-hairline py-2.5", PAD)}>
-        <Bar className="h-4 w-12" />
-        <Bar className="h-4 w-16" />
+        <Skeleton className="h-4 w-12" />
+        <Skeleton className="h-4 w-16" />
       </div>
     </div>
   );
@@ -773,9 +723,9 @@ function ReviewReady({
           </div>
         </>
       )}
-      <Tabs location={location} files={detail.files} go={go}>
+      <ReviewTabs location={location} files={detail.files} go={go}>
         <TabControls location={location} detail={detail} send={send} phoneGuided={phoneGuided} />
-      </Tabs>
+      </ReviewTabs>
       <div className="flex min-h-0 min-w-0 flex-1">
         <TabBody
           location={location}
@@ -826,7 +776,9 @@ function Review({ location, width }: { location: Here; width: number }) {
             Couldn't read this change. {query.error.message}
           </p>
           <div>
-            <Button onClick={() => void query.refetch()}>Try again</Button>
+            <Button variant="outline" onClick={() => void query.refetch()}>
+              Try again
+            </Button>
           </div>
         </div>
       );

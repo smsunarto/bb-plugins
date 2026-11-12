@@ -10,7 +10,16 @@ import { useEscapeLayer } from "./escape.ts";
 import { useHostGate } from "./host-gate.ts";
 import { plural } from "./format.ts";
 import type { Dispatch } from "./branch-actions.tsx";
-import { Button, Pending } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select.tsx";
+import { Textarea } from "./components/ui/textarea.tsx";
+import { Pending } from "./ui.tsx";
 
 /**
  * Opening moves focus to the message; closing returns it to Commit. Escape
@@ -101,31 +110,35 @@ export function CommitControl({
       <label htmlFor={`${id}-message`} className="text-[12px] leading-4 text-muted-foreground">
         Commit message
       </label>
-      <textarea
+      <Textarea
         id={`${id}-message`}
         data-testid="sc-commit-message"
         ref={field}
         rows={3}
         value={message}
         onChange={(event) => setMessage(event.target.value)}
-        className="w-full min-w-0 resize-y rounded-[6px] border border-border-hairline bg-background px-2 py-1 text-[12px] leading-normal text-foreground focus-visible:outline-1"
+        className="min-h-0 w-full min-w-0 resize-y border-border-hairline bg-background px-2 py-1 text-[12px] leading-normal"
       />
       {branches.length > 1 ? (
-        <label className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] leading-4 text-muted-foreground">
-          Onto
-          <select
-            data-testid="sc-commit-branch"
-            value={branch.name}
-            onChange={(event) => setChosen(event.target.value)}
-            className="h-7 min-w-0 max-w-full rounded-[6px] border border-border-hairline bg-background px-2 text-[12px] text-foreground"
-          >
-            {branches.map((each) => (
-              <option key={each.name} value={each.name}>
-                {each.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="flex min-w-0 flex-wrap items-center gap-2 text-[12px] leading-4 text-muted-foreground">
+          <span id={`${id}-branch`}>Onto</span>
+          <Select value={branch.name} onValueChange={setChosen}>
+            <SelectTrigger
+              aria-labelledby={`${id}-branch`}
+              data-testid="sc-commit-branch"
+              className="max-w-full border-border-hairline bg-background"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {branches.map((each) => (
+                <SelectItem key={each.name} value={each.name}>
+                  {each.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       ) : null}
       <p className="m-0 text-[12px] leading-4 text-muted-foreground">
         Commits the {plural(changes.length, "file")} listed onto{" "}
@@ -133,10 +146,12 @@ export function CommitControl({
         {more > 0 ? `; ${plural(more, "more file")} stay uncommitted.` : "."}
       </p>
       <div className="flex min-w-0 flex-wrap justify-end gap-2">
-        <Button onClick={() => setOpen(false)}>Cancel</Button>
+        <Button variant="outline" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
         <Button
           type="submit"
-          variant="primary"
+          variant="default"
           data-host-bound="commit"
           data-testid="sc-commit-confirm"
           title={gate ?? undefined}
@@ -172,6 +187,7 @@ function CommitOpener({
       title={gate ?? undefined}
     >
       <Button
+        variant="outline"
         ref={opener}
         disabled={off}
         data-host-bound="commit"

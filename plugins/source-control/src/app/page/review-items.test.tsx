@@ -245,7 +245,7 @@ function render(review: Partial<Handlers>, detail: ChangeDetail = DETAIL) {
   );
 }
 
-const checked = (element: Element) => String((element as HTMLInputElement).checked);
+const checked = (element: Element) => String(element.getAttribute("aria-checked"));
 
 beforeEach(() => {
   localStorage.clear();

@@ -18,7 +18,7 @@ import type { TimelineItem } from "../../core/items.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { PatchesProblem } from "../file-cards.tsx";
 import { absoluteTime, cx, plural, shortId } from "../format.ts";
-import { Bar } from "../ui.tsx";
+import { Skeleton } from "../components/ui/skeleton.tsx";
 
 // ── code-review's helpers ──────────────────────────────────────────────
 
@@ -275,10 +275,10 @@ function Timeline({ changeKey }: { changeKey: ChangeKey }) {
         data-testid="sc-conversation-loading"
         className="flex flex-col gap-2"
       >
-        <Bar className="h-3 w-16" />
-        <Bar className="h-20 w-full rounded-lg" />
-        <Bar className="h-3 w-2/3" />
-        <Bar className="h-20 w-full rounded-lg" />
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="h-20 w-full rounded-lg" />
+        <Skeleton className="h-3 w-2/3" />
+        <Skeleton className="h-20 w-full rounded-lg" />
       </div>
     );
   if (!answer.ok)

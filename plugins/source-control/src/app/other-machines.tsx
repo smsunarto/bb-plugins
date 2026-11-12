@@ -26,7 +26,9 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
 import { PANEL_PATH } from "./page/hooks.ts";
 import { STATE_CHIP } from "./page/rail.tsx";
-import { Bar, Button, Pending } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Skeleton } from "./components/ui/skeleton.tsx";
+import { Pending } from "./ui.tsx";
 
 type Checkout = { path: string; repo: string | null };
 type Host = { hostId: string; name: string; checkouts: Checkout[] };
@@ -141,6 +143,7 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
             Open checkout
           </Button>
           <Button
+            variant="outline"
             disabled={opening !== null}
             aria-busy={opening === "chat"}
             aria-label={`New chat in ${checkout.path}`}
@@ -222,7 +225,7 @@ function HostSection({
         )
       ) : source?.problem ? null : (
         <div className="px-3 pb-2" aria-busy="true" aria-label={`Reading ${host.name}`}>
-          <Bar className="h-4 w-48 max-w-full" />
+          <Skeleton className="h-4 w-48 max-w-full" />
         </div>
       )}
     </section>
@@ -260,7 +263,7 @@ function Hosts({
       </p>
     ) : (
       <div className="px-3 py-2" aria-busy="true">
-        <Bar className="h-4 w-40 max-w-full" />
+        <Skeleton className="h-4 w-40 max-w-full" />
       </div>
     );
   if (hosts.length === 0)

@@ -32,7 +32,9 @@ import {
   usePatches,
 } from "./file-cards.tsx";
 import { absoluteTime, cx, plural, shortAge } from "./format.ts";
-import { Count, SectionLabel } from "./ui.tsx";
+import { Badge } from "./components/ui/badge.tsx";
+import { SectionLabel } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
 
 export const CARD =
   "min-w-0 overflow-hidden rounded-[8px] border border-border-hairline bg-surface-recessed";
@@ -128,19 +130,19 @@ function ReviewJump({
   const navigate = useBbNavigate();
   return (
     <div className="flex justify-end border-t border-border-hairline px-3.5 py-1">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         data-testid="sc-review-jump"
         onClick={() =>
           navigate.toPluginPanel("source-control", {
             subPath: reviewPath({ key: changeKey, tab: "commits", commit: commitId, path }),
           })
         }
-        className="flex h-6 cursor-pointer items-center gap-1 rounded-[6px] border-0 bg-transparent px-1.5 text-[11px] leading-4 text-muted-foreground hover:bg-surface-raised hover:text-foreground"
+        className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
       >
         Open in Review
         <Icon name="ArrowUpRight" fallback="ExternalLink" className="size-3" aria-hidden />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -405,7 +407,7 @@ function ChangesCard({
           <span className="truncate text-[13px] leading-5 font-semibold text-foreground">
             {empty ? `No ${title.toLowerCase()}` : title}
           </span>
-          {empty ? null : <Count>{count}</Count>}
+          {empty ? null : <Badge variant="count">{count}</Badge>}
         </button>
         {conflicted > 0 ? (
           <span className="shrink-0 text-[11px] leading-4 text-destructive">
@@ -715,7 +717,7 @@ const BranchCard = memo(function BranchCard({
       {upstream.length > 0 ? (
         <>
           <p className={cx(CARD_LABEL, "text-warning")}>
-            Upstream, not in this branch <Count>{upstream.length}</Count>
+            Upstream, not in this branch <Badge variant="count">{upstream.length}</Badge>
           </p>
           <ul className="m-0 list-none p-0">
             {upstream.map((commit, index) => (
@@ -744,7 +746,7 @@ const BranchCard = memo(function BranchCard({
       ) : null}
       {upstream.length > 0 && branch.commits.length > 0 ? (
         <p className={CARD_LABEL}>
-          In this branch <Count>{branch.commits.length}</Count>
+          In this branch <Badge variant="count">{branch.commits.length}</Badge>
         </p>
       ) : null}
       {branch.commits.length > 0 ? (

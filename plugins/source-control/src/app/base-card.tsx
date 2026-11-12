@@ -15,7 +15,8 @@ import { describeProblem, type Target } from "../core/change.ts";
 import { BASE_HISTORY_MAX, BASE_HISTORY_PAGE, type BaseCommit } from "../core/history.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { absoluteTime, cx, shortAge, shortId } from "./format.ts";
-import { Bar, Button } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Skeleton } from "./components/ui/skeleton.tsx";
 
 /**
  * How many commits to list. The window belongs to the base it was opened on:
@@ -78,7 +79,9 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
         <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
           History unavailable. {describeProblem(answer.problem)}
         </p>
-        <Button onClick={() => void query.refetch()}>Try again</Button>
+        <Button variant="outline" onClick={() => void query.refetch()}>
+          Try again
+        </Button>
       </div>
     );
   if (!commits)
@@ -87,13 +90,15 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
         <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
           History failed to load. {query.error.message}
         </p>
-        <Button onClick={() => void query.refetch()}>Try again</Button>
+        <Button variant="outline" onClick={() => void query.refetch()}>
+          Try again
+        </Button>
       </div>
     ) : (
       <div className="flex flex-col gap-2 px-3 py-2" aria-busy="true" aria-label="Loading history">
-        <Bar className="h-3.5 w-64 max-w-full" />
-        <Bar className="h-3.5 w-56 max-w-full" />
-        <Bar className="h-3.5 w-60 max-w-full" />
+        <Skeleton className="h-3.5 w-64 max-w-full" />
+        <Skeleton className="h-3.5 w-56 max-w-full" />
+        <Skeleton className="h-3.5 w-60 max-w-full" />
       </div>
     );
   const more = answer?.ok === true && answer.value.hasMore && limit < BASE_HISTORY_MAX;
@@ -112,7 +117,12 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
       )}
       {more || (fresh === null && commits.length > 0) ? (
         <div className="border-t border-border-hairline px-3 py-2">
-          <Button disabled={fresh === null} aria-busy={fresh === null} onClick={grow}>
+          <Button
+            variant="outline"
+            disabled={fresh === null}
+            aria-busy={fresh === null}
+            onClick={grow}
+          >
             Show earlier commits
           </Button>
         </div>

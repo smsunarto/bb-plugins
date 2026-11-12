@@ -38,7 +38,12 @@ import {
   type StableReview,
 } from "./review-model.ts";
 import { PriorityChip, RunGlyph } from "./review-ui.tsx";
-import { Bar } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Skeleton } from "./components/ui/skeleton.tsx";
+
+/** The review's send actions keep the theme's accent, not the default foreground fill. */
+const PRIMARY =
+  "bg-(--primary) px-3 font-semibold text-primary-foreground enabled:hover:bg-(--primary) enabled:hover:opacity-90";
 
 const LINK =
   "shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[12px] leading-4 whitespace-nowrap text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-60";
@@ -619,8 +624,8 @@ function TargetPicker({
             aria-label="Listing threads"
             className="flex flex-col gap-2 px-2 py-1"
           >
-            <Bar className="h-3 w-48" />
-            <Bar className="h-3 w-40" />
+            <Skeleton className="h-3 w-48" />
+            <Skeleton className="h-3 w-40" />
           </div>
         )
       ) : (
@@ -899,15 +904,15 @@ function Tray(facts: TrayFacts & { hidden: boolean }) {
         >
           {trayNote({ error, agent, target, isDraft: facts.isDraft, number })}
         </span>
-        <button
-          type="button"
+        <Button
+          variant="default"
           data-testid="sc-tray-send"
           disabled={!canSend}
           onClick={() => void onSend()}
-          className="flex h-7 shrink-0 cursor-pointer items-center rounded-[6px] border-0 bg-(--primary) px-3 text-[12px] leading-4 font-semibold text-primary-foreground disabled:cursor-default disabled:opacity-50"
+          className={PRIMARY}
         >
           {sendLabel(send.pending, agent, count)}
-        </button>
+        </Button>
       </div>
     </dialog>
   );
@@ -1010,18 +1015,18 @@ export const SendControls = memo(function SendControls({
               setOpen(false);
           }}
         >
-          <button
-            type="button"
+          <Button
+            variant="default"
             aria-haspopup="dialog"
             aria-expanded={open}
             data-testid="sc-send"
             onClick={toggle}
-            className="flex h-6 shrink-0 cursor-pointer items-center gap-2 rounded-[6px] border-0 bg-(--primary) px-3 text-[12px] leading-4 font-semibold text-primary-foreground"
+            className={cx(PRIMARY, "h-6 gap-2")}
           >
             {destination === "agent" ? <Robot size={13} /> : null}
             {label}
             <ChevronDown />
-          </button>
+          </Button>
           {opened ? (
             <Tray
               hidden={!open}

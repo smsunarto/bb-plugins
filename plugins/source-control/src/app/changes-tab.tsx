@@ -11,7 +11,7 @@ import {
   experimental_useTabVisible as useTabVisible,
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   describeProblem,
   forgeIsBehind,
@@ -32,12 +32,19 @@ import {
 import { sourceControlContract } from "../contract/rpc.ts";
 import { PullButton, PullStatus, WORKSPACE, useVcsActions } from "./branch-actions.tsx";
 import { FindingsCard } from "./findings-card.tsx";
-import { useEscapeLayer } from "./escape.ts";
 import { HostGate, NO_CHECKOUT, offlineReason } from "./host-gate.ts";
 import { cx, plural, shortId, shortRef } from "./format.ts";
 import { readSnapshot, writeSnapshot } from "./snapshot.ts";
 import { BotIcon } from "./page/ask-panel.tsx";
-import { Bar, Button, Pending, SectionLabel } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./components/ui/dropdown-menu.tsx";
+import { Skeleton } from "./components/ui/skeleton.tsx";
+import { Pending, SectionLabel } from "./ui.tsx";
 import { CommitControl } from "./commit.tsx";
 import { BaseCard } from "./base-card.tsx";
 import { HistoryCard } from "./history.tsx";
@@ -398,23 +405,23 @@ function LoadingBody() {
       className="flex flex-col gap-4 p-3 @md:p-4"
     >
       <div className="flex flex-col gap-3">
-        <Bar className="h-2.5 w-18" />
+        <Skeleton className="h-2.5 w-18" />
         <div className="flex items-center gap-2">
-          <Bar className="h-6 w-16 rounded-full" />
-          <Bar className="h-5 w-57.5 max-w-full" />
+          <Skeleton className="h-6 w-16 rounded-full" />
+          <Skeleton className="h-5 w-57.5 max-w-full" />
         </div>
-        <Bar className="h-2.5 w-50 max-w-full" />
+        <Skeleton className="h-2.5 w-50 max-w-full" />
       </div>
-      <Bar className="h-10 w-full rounded-[8px]" />
+      <Skeleton className="h-10 w-full rounded-[8px]" />
       <div className="flex flex-col gap-3 rounded-[8px] border border-border-hairline p-3">
-        <Bar className="h-2.5 w-30" />
+        <Skeleton className="h-2.5 w-30" />
         <div className="flex items-center gap-2">
-          <Bar className="size-4" />
-          <Bar className="h-2.5 w-52.5 max-w-full" />
+          <Skeleton className="size-4" />
+          <Skeleton className="h-2.5 w-52.5 max-w-full" />
         </div>
         <div className="flex items-center gap-2">
-          <Bar className="size-4" />
-          <Bar className="h-2.5 w-42.5 max-w-full" />
+          <Skeleton className="size-4" />
+          <Skeleton className="h-2.5 w-42.5 max-w-full" />
         </div>
       </div>
     </div>
@@ -489,16 +496,16 @@ function AskToFix({ threadId }: { threadId: string }) {
   };
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="default"
         data-testid="sc-ask-to-fix"
-        className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-[6px] border-0 bg-(--primary) px-2.5 text-[12px] leading-4 font-semibold text-primary-foreground disabled:cursor-default disabled:opacity-60"
+        className="bg-(--primary) font-semibold text-primary-foreground enabled:hover:bg-(--primary) enabled:hover:opacity-90"
         onClick={() => void onClick()}
         disabled={mutation.isPending}
       >
         {mutation.isPending ? <Pending pending /> : <BotIcon size={13} />}
         Ask agent to fix
-      </button>
+      </Button>
       {error ? (
         <span role="alert" className="basis-full text-[12px] leading-4 text-warning">
           {error}
@@ -541,11 +548,11 @@ function FailedBody({
       ) : null}
       <div className="flex flex-wrap items-center gap-1.5 pt-1">
         {problem.kind === "tool-missing" ? <AskToFix threadId={threadId} /> : null}
-        <Button onClick={onRetry} disabled={retrying}>
+        <Button variant="outline" onClick={onRetry} disabled={retrying}>
           {retrying ? "Trying…" : "Try again"}
         </Button>
         {noBut ? (
-          <Button onClick={onReadAsGit} disabled={switching}>
+          <Button variant="outline" onClick={onReadAsGit} disabled={switching}>
             Read as plain git
           </Button>
         ) : null}
@@ -568,7 +575,7 @@ const CHIP =
 
 /**
  * The pull request's state; for an open one, a menu with Mark ready for
- * review or Convert to draft. Escape closes it and returns focus.
+ * review or Convert to draft.
  */
 function PullRequestChip({
   threadId,
@@ -581,78 +588,44 @@ function PullRequestChip({
 }) {
   const label = chipLabel(forge, onGitHub);
   const draft = useDraftToggle(threadId, forge ?? null);
-  const [open, setOpen] = useState(false);
-  const menu = useRef<HTMLSpanElement>(null);
-  // Escape closes the menu and returns focus to its button; the page stays.
-  useEscapeLayer(
-    menu,
-    () => {
-      setOpen(false);
-      trigger.current?.focus();
-    },
-    { open },
-  );
-  const trigger = useRef<HTMLButtonElement>(null);
-  const item = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (open) item.current?.focus();
-  }, [open]);
   if (!draft.toggle || !forge)
     return (
       <span data-testid="sc-pr-chip" className={CHIP}>
         {label}
       </span>
     );
-  const close = () => {
-    setOpen(false);
-    trigger.current?.focus();
-  };
   return (
     <span className="relative flex shrink-0 flex-col">
-      <button
-        ref={trigger}
-        type="button"
-        data-testid="sc-pr-chip"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className={cx(CHIP, "cursor-pointer border-0 enabled:hover:bg-border")}
-      >
-        {label}
-        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden className="shrink-0">
-          <path
-            d="M3 4.5L6 7.5L9 4.5"
-            fill="none"
-            stroke="var(--tertiary-foreground)"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </button>
-      {open ? (
-        <span
-          ref={menu}
-          role="menu"
-          tabIndex={-1}
-          className="absolute top-7 left-0 z-10 flex min-w-48 flex-col rounded-[8px] border border-solid border-border bg-popover p-1 shadow-md"
-        >
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <button
             type="button"
-            ref={item}
-            role="menuitem"
+            data-testid="sc-pr-chip"
+            className={cx(CHIP, "cursor-pointer border-0 enabled:hover:bg-border")}
+          >
+            {label}
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden className="shrink-0">
+              <path
+                d="M3 4.5L6 7.5L9 4.5"
+                fill="none"
+                stroke="var(--tertiary-foreground)"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent>
+          <DropdownMenuItem
             data-testid="sc-draft-toggle"
             disabled={draft.pending}
-            onClick={() => {
-              draft.toggle?.();
-              close();
-            }}
-            className="flex h-7 cursor-pointer items-center rounded-[6px] border-0 bg-transparent px-2 text-left text-[12px] leading-4 text-foreground enabled:hover:bg-surface-raised"
+            onSelect={() => draft.toggle?.()}
           >
             {forge.isDraft ? "Mark ready for review" : "Convert to draft"}
-          </button>
-        </span>
-      ) : null}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {draft.message ? (
         <output className="text-[12px] leading-4 text-warning">{draft.message}</output>
       ) : null}

@@ -23,6 +23,7 @@ import {
 } from "./review-model.ts";
 import { Checkbox, FixingMark, PriorityChip } from "./review-ui.tsx";
 import { BatchLine, useFixSelected, type FixSelected } from "./send.tsx";
+import { Button } from "./components/ui/button.tsx";
 
 /** How many lines a card shows before "Show all N". Board B shows four and says no more. */
 export const CARD_ROWS = 5;
@@ -229,31 +230,31 @@ export const FindingsCard = memo(function FindingsCard({
         </div>
       ) : null}
       <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-solid border-border-hairline bg-surface-recessed px-3 py-2">
-        <button
-          type="button"
+        <Button
+          variant="outline"
           data-testid="sc-fix-selected"
           disabled={fix.count === 0 || fix.pending || head === null}
           onClick={fix.fix}
-          className="flex h-7 shrink-0 cursor-pointer items-center rounded-[6px] border border-solid border-border bg-transparent px-3 text-[12px] leading-4 font-semibold text-foreground enabled:hover:bg-surface-raised disabled:cursor-default disabled:opacity-60"
+          className="px-3 font-semibold"
         >
           {fixLabel(fix)}
-        </button>
+        </Button>
         {fix.error ? (
           <span role="alert" className="min-w-0 truncate text-[12px] leading-4 text-warning">
             {fix.error}
           </span>
         ) : null}
         <span className="min-w-0 flex-1" />
-        <button
-          type="button"
+        <Button
+          variant="outline"
           onClick={() =>
             navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key: changeKey }) })
           }
-          className="flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-[6px] border border-solid border-border bg-transparent px-3 text-[12px] leading-4 text-foreground hover:bg-surface-raised"
+          className="gap-1 px-3 font-normal"
         >
           Open review
           <OpenReviewArrow />
-        </button>
+        </Button>
       </div>
     </section>
   );

@@ -5,32 +5,10 @@
  */
 import { createContext, useContext, type ReactNode } from "react";
 import type { Viewer } from "../core/items.ts";
+import { Checkbox as UiCheckbox } from "./components/ui/checkbox.tsx";
 import { cx } from "./format.ts";
 
-/** A 16 px box: the accent with a tick when checked, an outline when not. */
-export function CheckMark({ checked }: { checked: boolean }) {
-  return checked ? (
-    <span
-      aria-hidden
-      className="flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-primary text-primary-foreground"
-    >
-      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-        <path
-          d="M2 5.2L4.1 7.2L8 3"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </span>
-  ) : (
-    <span aria-hidden className="size-4 shrink-0 rounded-[4px] border border-solid border-border" />
-  );
-}
-
-/** A checkbox on its own: a real input, drawn as the mark. */
+/** shadcn's Checkbox with its label: `label` names it when no visible `children` follow the mark. */
 export function Checkbox({
   checked,
   label,
@@ -48,21 +26,14 @@ export function Checkbox({
   children?: ReactNode;
 }) {
   return (
-    <label
-      className={cx(
-        "relative flex shrink-0 cursor-pointer items-center has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1",
-        className,
-      )}
-    >
-      <input
-        type="checkbox"
-        className="sr-only"
+    <label className={cx("relative flex shrink-0 cursor-pointer items-center", className)}>
+      <UiCheckbox
         checked={checked}
         aria-label={children ? undefined : label}
         data-testid={testId}
-        onChange={(event) => onChange(event.target.checked)}
+        onCheckedChange={(next) => onChange(next === true)}
+        className="size-4 data-[state=checked]:border-transparent data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
       />
-      <CheckMark checked={checked} />
       {children}
     </label>
   );

@@ -20,7 +20,8 @@ import { ChangeCard, useSeen } from "./chat-card.tsx";
 import { plural } from "./format.ts";
 import { mergeAll, mergeAllText } from "./merge-all.ts";
 import { mergeTarget, readyToMerge, useChangeMerge, type MergeTarget } from "./merge.tsx";
-import { Button, Pending } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Pending } from "./ui.tsx";
 
 /** One place on the card: a Change, or a note for a target that did not resolve. */
 export type GroupItem = { id: string; entry: GroupEntry } | { id: string; note: ReactNode };
@@ -119,11 +120,11 @@ function GroupFooter({
             at the head shown here. It stops at the first that does not merge.
           </p>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button ref={cancel} onClick={() => merging.setConfirming(null)}>
+            <Button variant="outline" ref={cancel} onClick={() => merging.setConfirming(null)}>
               Cancel
             </Button>
             <Button
-              variant="primary"
+              variant="default"
               data-testid="sc-group-merge-confirm"
               onClick={() => void merging.run(confirming)}
             >
@@ -134,6 +135,7 @@ function GroupFooter({
       ) : (
         <div className="flex min-w-0 flex-wrap gap-2">
           <Button
+            variant="outline"
             className="min-w-0 flex-[1_1_8rem]"
             data-testid="sc-group-ship"
             disabled={busy || entries.length === 0}
@@ -144,7 +146,7 @@ function GroupFooter({
           </Button>
           {targets ? (
             <Button
-              variant="primary"
+              variant="default"
               className="min-w-0 flex-[1_1_8rem]"
               data-testid="sc-group-merge"
               disabled={busy}

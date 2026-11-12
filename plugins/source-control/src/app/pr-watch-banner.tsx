@@ -22,6 +22,7 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { cx, plural, shortAge, shortId } from "./format.ts";
 import { CheckIcon } from "./page/icons.tsx";
 import { useNow } from "./page/hooks.ts";
+import { Button } from "./components/ui/button.tsx";
 
 const NO_WATCHES: PrWatchView[] = [];
 
@@ -173,16 +174,16 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
         >
           <Icon name="ArrowUpRight" className="size-3.5" aria-hidden />
         </UrlLink>
-        <button
-          type="button"
-          className={cx(ACTION, "px-1.5 text-[12px]")}
+        <Button
+          variant="ghost"
+          className="h-6 px-1.5 text-muted-foreground"
           aria-label={`Unwatch ${key}`}
           title="Stop watching. The agent is not told."
           disabled={stop.isPending}
           onClick={() => void stop.mutate({ threadId, ref: watch.ref }).catch(() => undefined)}
         >
           Unwatch
-        </button>
+        </Button>
       </div>
       {stop.error ? (
         <p className="m-0 px-2 pb-1 text-[11px] text-destructive-text">{stop.error.message}</p>

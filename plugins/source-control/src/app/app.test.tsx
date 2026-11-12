@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useLayoutEffect, type ComponentType } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -388,10 +388,23 @@ function readyToMerge(): ThreadChange {
   return row;
 }
 
-// jsdom has no modal dialogs: showModal opens it in place.
-HTMLDialogElement.prototype.showModal ??= function (this: HTMLDialogElement) {
-  this.open = true;
-};
+// jsdom lacks what Radix Select calls as it opens and scrolls to the chosen option.
+Element.prototype.scrollIntoView ??= function () {};
+Element.prototype.hasPointerCapture ??= () => false;
+
+/** Picks `name` from a Select, as a keyboard reader does: Enter opens it, Enter on the option chooses. */
+async function choose(trigger: HTMLElement, name: string) {
+  act(() => {
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "Enter" });
+  });
+  const option = await screen.findByRole("option", { name });
+  act(() => {
+    option.focus();
+    fireEvent.keyDown(option, { key: "Enter" });
+  });
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+}
 
 function stacked(): ThreadChange {
   const row = checkout("scott/forge-host", "Route gh through the checkout host");
@@ -582,11 +595,9 @@ test("Merge reads the policy fresh, then merges pinned to the head and base the 
   });
   // Squash is allowed, so the dialog starts there.
   expect(confirm.textContent).toBe("Squash and merge");
-  const select = slot.getByTestId("sc-merge-method") as HTMLSelectElement;
-  act(() => {
-    select.value = "merge";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  const select = slot.getByTestId("sc-merge-method");
+  await choose(select, "Create a merge commit");
+  expect(confirm.textContent).toBe("Create a merge commit");
   await act(async () => (confirm as HTMLButtonElement).click());
   await waitFor(() => expect(of("forgeAction")).toHaveLength(1));
   expect(of("forgeAction")[0]!.input).toEqual({
@@ -595,6 +606,23 @@ test("Merge reads the policy fresh, then merges pinned to the head and base the 
     expected: { number: 482, head: "c0ffee" },
   });
   await waitFor(() => expect(slot.queryByTestId("sc-merge-dialog")).toBeNull());
+});
+
+test("Escape closes the merge dialog and returns focus to Merge, never leaving the page", async () => {
+  const left: string[] = [];
+  const leave = (event: KeyboardEvent) => {
+    if (event.key === "Escape") left.push(event.key);
+  };
+  document.addEventListener("keydown", leave);
+  const { slot } = renderRow(readyToMerge());
+  const opener = await slot.findByRole("button", { name: "Merge #482" });
+  await act(async () => opener.click());
+  expect(screen.getByRole("dialog", { name: "Merge pull request" })).toBeTruthy();
+  act(() => void fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" }));
+  await waitFor(() => expect(slot.queryByTestId("sc-merge-dialog")).toBeNull());
+  await waitFor(() => expect(document.activeElement).toBe(opener));
+  expect(left).toEqual([]);
+  document.removeEventListener("keydown", leave);
 });
 
 test("Merge stays off with GitHub's reason, and a failed merge is reported, not retried", async () => {
@@ -669,12 +697,10 @@ test("Commit sends the files the reader sees, onto the chosen branch at the head
     setter.call(field, "fix: route reads");
     field.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  const select = slot.getByTestId("sc-commit-branch") as HTMLSelectElement;
-  expect(select.value).toBe("scott/forge-host");
-  await act(async () => {
-    select.value = "scott/core-schema";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  const select = slot.getByTestId("sc-commit-branch");
+  expect(select.textContent).toBe("scott/forge-host");
+  await choose(select, "scott/core-schema");
+  expect(select.textContent).toBe("scott/core-schema");
   await act(async () => confirm.click());
   await waitFor(() => expect(of("vcsAction")).toHaveLength(1));
   expect(of("vcsAction")[0]!.input).toEqual({
@@ -920,6 +946,38 @@ test("strip, tab header and the sidebar's row say the same for one Change", asyn
     chips: [{ label: "2 Running", tone: "warning" }],
   });
   expect(slot.getByTestId("sc-pr-chip").textContent).toBe("Draft");
+});
+
+test("the pull request chip's menu marks a draft ready, and Escape closes the menu, not the page", async () => {
+  const left: string[] = [];
+  const leave = (event: KeyboardEvent) => {
+    if (event.key === "Escape") left.push(event.key);
+  };
+  document.addEventListener("keydown", leave);
+  const { slot, of } = renderRow(boardB());
+  const chip = await slot.findByTestId("sc-pr-chip");
+  act(() => {
+    chip.focus();
+    fireEvent.keyDown(chip, { key: "Enter" });
+  });
+  expect(screen.getByRole("menuitem", { name: "Mark ready for review" })).toBeTruthy();
+  act(() => void fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" }));
+  expect(screen.queryByRole("menu")).toBeNull();
+  expect(left).toEqual([]);
+  document.removeEventListener("keydown", leave);
+
+  act(() => {
+    chip.focus();
+    fireEvent.keyDown(chip, { key: "Enter" });
+  });
+  const item = screen.getByTestId("sc-draft-toggle");
+  act(() => {
+    item.focus();
+    fireEvent.keyDown(item, { key: "Enter" });
+  });
+  await waitFor(() => expect(of("forgeAction")).toHaveLength(1));
+  expect(of("forgeAction")[0]!.input).toMatchObject({ action: { kind: "setDraft", draft: false } });
+  expect(screen.queryByRole("menu")).toBeNull();
 });
 
 test("a pull request that conflicts with its base says so before its failed checks, everywhere", async () => {

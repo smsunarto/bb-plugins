@@ -1,6 +1,6 @@
 /**
  * Merge a pull request: today's merge dialog from code-review
- * (`plugins/code-review/src/app/pr-actions.tsx`), as a native modal dialog.
+ * (`plugins/code-review/src/app/pr-actions.tsx`), as a modal shadcn Dialog.
  * It reads the merge policy fresh when it opens, and again every two seconds
  * while GitHub is still computing the merge state. The merge is pinned to the
  * head and base the reader saw when they opened it, and never retried.
@@ -27,9 +27,24 @@ import {
   type MergePolicy,
 } from "../core/merge.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { useEscapeLayer } from "./escape.ts";
 import { cx } from "./format.ts";
-import { Button, Pending, type ButtonVariant } from "./ui.tsx";
+import { Button, type ButtonProps } from "./components/ui/button.tsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog.tsx";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select.tsx";
+import { Pending } from "./ui.tsx";
 
 /** The pull request as the reader saw it when they chose to merge. */
 export type MergeTarget = {
@@ -190,7 +205,7 @@ export function MergeButton({
   target: MergeTarget;
   submit: SubmitMerge;
   label?: ReactNode;
-  variant?: ButtonVariant;
+  variant?: ButtonProps["variant"];
   className?: string;
   testId?: string;
   disabled?: boolean;
@@ -216,10 +231,8 @@ export function MergeButton({
         <MergeDialog
           target={open}
           submit={submit}
-          onClose={() => {
-            setOpen(null);
-            trigger.current?.focus();
-          }}
+          onClose={() => setOpen(null)}
+          returnFocus={() => trigger.current?.focus()}
         />
       ) : null}
     </>
@@ -266,29 +279,35 @@ function MethodSelect({
   onChange: (method: MergeMethod) => void;
 }) {
   return (
-    <label className="flex flex-col gap-2 text-[12px] leading-4">
-      Merge method
-      <select
-        aria-label="Merge method"
-        data-testid="sc-merge-method"
-        className="h-8 rounded-[6px] border border-solid border-border bg-background px-2 text-[12px] text-foreground"
+    <div className="flex flex-col gap-2 text-[12px] leading-4">
+      <span>Merge method</span>
+      <Select
         value={method}
         disabled={disabled}
-        onChange={(event) => {
-          const value = mergeMethodSchema.safeParse(event.target.value);
+        onValueChange={(next) => {
+          const value = mergeMethodSchema.safeParse(next);
           if (value.success) onChange(value.data);
         }}
       >
-        {methods.map((value) => (
-          <option key={value} value={value}>
-            {MERGE_METHOD_LABEL[value]}
-          </option>
-        ))}
-      </select>
+        <SelectTrigger
+          aria-label="Merge method"
+          data-testid="sc-merge-method"
+          className="h-8 w-full border-border bg-background"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {methods.map((value) => (
+            <SelectItem key={value} value={value}>
+              {MERGE_METHOD_LABEL[value]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
       <span className="text-muted-foreground">
         Merges directly. Use GitHub for repositories requiring a merge queue.
       </span>
-    </label>
+    </div>
   );
 }
 
@@ -327,19 +346,17 @@ export function MergeDialog({
   target,
   submit,
   onClose,
+  returnFocus,
 }: {
   target: MergeTarget;
   submit: SubmitMerge;
   onClose: () => void;
+  /** Where focus goes once the dialog is gone; Radix's trap would undo it any earlier. */
+  returnFocus?: () => void;
 }) {
-  const dialog = useRef<HTMLDialogElement>(null);
   const [chosen, setChosen] = useState<MergeMethod>("squash");
   const merge = useConfirmMerge(target, submit, onClose);
   const read = useMergePolicy(target.changeKey, target.number, merge.attempt);
-  useLayoutEffect(() => {
-    const node = dialog.current;
-    if (node && !node.open) node.showModal();
-  }, []);
   const policy = read.state === "ready" ? read.policy : null;
   const method = policy ? initialMethod(policy.methods, chosen) : chosen;
   let issue: string | null = null;
@@ -349,30 +366,29 @@ export function MergeDialog({
   const close = () => {
     if (!merge.pending) onClose();
   };
-  // Escape: a merge in flight keeps the dialog open, and bb never leaves the page.
-  useEscapeLayer(dialog, close, { modal: true });
   return (
-    <dialog
-      ref={dialog}
-      aria-labelledby="sc-merge-title"
-      data-bb-plugin="source-control"
-      data-testid="sc-merge-dialog"
-      onCancel={(event) => {
-        // Escape: a merge in flight keeps the dialog open.
-        event.preventDefault();
-        close();
+    // Escape or a click outside: a merge in flight keeps the dialog open.
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
       }}
-      className="m-auto w-[440px] max-w-[calc(100vw-2rem)] rounded-[10px] border border-solid border-border bg-popover p-0 text-start text-foreground shadow-xl backdrop:bg-black/50"
     >
-      <div className="flex min-w-0 flex-col gap-3 p-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2 id="sc-merge-title" className="m-0 text-[15px] leading-5 font-semibold">
-            Merge pull request
-          </h2>
-          <p className="m-0 text-[12px] leading-4 break-words text-muted-foreground">
+      <DialogContent
+        showCloseButton={false}
+        data-testid="sc-merge-dialog"
+        onCloseAutoFocus={(event) => {
+          if (!returnFocus) return;
+          event.preventDefault();
+          returnFocus();
+        }}
+      >
+        <DialogHeader className="pr-0">
+          <DialogTitle>Merge pull request</DialogTitle>
+          <DialogDescription>
             {target.repo}#{target.number}: {target.title}. Destination: {target.base}.
-          </p>
-        </div>
+          </DialogDescription>
+        </DialogHeader>
         <MethodSelect
           methods={policy?.methods ?? [method]}
           method={method}
@@ -385,12 +401,12 @@ export function MergeDialog({
             {merge.outcome}
           </p>
         ) : null}
-        <div className="flex min-w-0 flex-wrap justify-end gap-2">
-          <Button disabled={merge.pending} onClick={close}>
+        <DialogFooter>
+          <Button variant="outline" disabled={merge.pending} onClick={close}>
             Cancel
           </Button>
           <Button
-            variant="primary"
+            variant="default"
             data-testid="sc-merge-confirm"
             disabled={!canConfirm}
             onClick={() => void merge.confirm(method)}
@@ -399,8 +415,8 @@ export function MergeDialog({
             <Pending pending={merge.pending} />
             {merge.pending ? "Merging…" : MERGE_METHOD_LABEL[method]}
           </Button>
-        </div>
-      </div>
-    </dialog>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

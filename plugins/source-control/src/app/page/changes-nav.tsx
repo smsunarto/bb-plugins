@@ -4,7 +4,7 @@
  * first. Rows have fixed heights per kind, so the list windows past 50 rows
  * without measuring anything.
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { describeProblem, readAgo } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import {
@@ -14,10 +14,16 @@ import {
   type NavRow,
   type RepoShelf,
 } from "../../core/review.ts";
-import { useEscapeLayer } from "../escape.ts";
 import { cx, shortAge } from "../format.ts";
 import { Chips } from "../status.tsx";
-import { Bar } from "../ui.tsx";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu.tsx";
+import { Skeleton } from "../components/ui/skeleton.tsx";
 import { useGo, useNow } from "./hooks.ts";
 import { Chevron, HostIcon, StackIcon, StateIcon } from "./icons.tsx";
 import {
@@ -281,95 +287,62 @@ function AccountPicker({
   variant: Variant;
 }) {
   const choice = useAccountChoice();
-  const [open, setOpen] = useState(false);
-  const menu = useRef<HTMLSpanElement>(null);
-  // Escape closes the menu and returns focus to its button; the page stays.
-  useEscapeLayer(
-    menu,
-    () => {
-      setOpen(false);
-      trigger.current?.focus();
-    },
-    { open },
-  );
-  const trigger = useRef<HTMLButtonElement>(null);
-  const first = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (open) first.current?.focus();
-  }, [open]);
   const accounts = sources?.accounts ?? [];
   if (accounts.length === 0) return null;
   const chosen = accounts.find((account) => account.login === choice);
   const label = chosen ? chosen.login : accounts.length === 1 ? accounts[0]!.login : "All accounts";
-  const close = () => {
-    setOpen(false);
-    trigger.current?.focus();
-  };
-  const pick = (login: string | null) => {
-    chooseAccount(login);
-    close();
-  };
   const phone = variant === "phone";
   const dots = (chosen ? [chosen] : accounts).slice(0, 3);
   return (
-    <span className="relative flex shrink-0 flex-col">
-      <button
-        ref={trigger}
-        type="button"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={accounts.length < 2}
-        data-testid="sc-account-picker"
-        onClick={() => setOpen((value) => !value)}
-        className={cx(
-          "flex cursor-pointer items-center gap-2 rounded-[6px] bg-transparent text-muted-foreground disabled:cursor-default",
-          phone
-            ? "h-8 border-0 px-1 text-[14px] leading-5"
-            : "h-6 border border-solid border-border px-2 text-[12px] leading-4 enabled:hover:bg-surface-raised",
-        )}
-      >
-        {phone ? null : (
-          <span className="flex" aria-hidden>
-            {dots.map((account) => (
-              <span
-                key={account.login}
-                className={cx(
-                  "-ms-1 size-3.5 shrink-0 rounded-full border-[1.5px] border-solid border-popover first:ms-0",
-                  ACCOUNT_DOTS[accounts.indexOf(account) % ACCOUNT_DOTS.length],
-                )}
-              />
-            ))}
-          </span>
-        )}
-        <span className="max-w-36 truncate">{label}</span>
-        {accounts.length > 1 ? <Chevron /> : null}
-      </button>
-      {open ? (
-        <span
-          ref={menu}
-          role="menu"
-          tabIndex={-1}
-          data-bb-plugin="source-control"
-          className="absolute top-full right-0 z-10 mt-1 flex min-w-44 flex-col rounded-[8px] border border-solid border-border bg-popover p-1 shadow-md"
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          disabled={accounts.length < 2}
+          data-testid="sc-account-picker"
+          className={cx(
+            "flex shrink-0 cursor-pointer items-center gap-2 rounded-[6px] bg-transparent text-muted-foreground disabled:cursor-default",
+            phone
+              ? "h-8 border-0 px-1 text-[14px] leading-5"
+              : "h-6 border border-solid border-border px-2 text-[12px] leading-4 enabled:hover:bg-surface-raised",
+          )}
         >
-          {[null, ...accounts.map((account) => account.login)].map((login, index) => (
-            <button
-              key={login ?? "all"}
-              ref={index === 0 ? first : undefined}
-              type="button"
-              role="menuitemradio"
-              aria-checked={(chosen?.login ?? null) === login}
-              onClick={() => pick(login)}
-              className="flex h-7 cursor-pointer items-center rounded-[6px] border-0 bg-transparent px-2 text-left text-[12px] leading-4 text-foreground enabled:hover:bg-surface-raised aria-checked:font-semibold"
-            >
-              {login ?? "All accounts"}
-            </button>
+          {phone ? null : (
+            <span className="flex" aria-hidden>
+              {dots.map((account) => (
+                <span
+                  key={account.login}
+                  className={cx(
+                    "-ms-1 size-3.5 shrink-0 rounded-full border-[1.5px] border-solid border-popover first:ms-0",
+                    ACCOUNT_DOTS[accounts.indexOf(account) % ACCOUNT_DOTS.length],
+                  )}
+                />
+              ))}
+            </span>
+          )}
+          <span className="max-w-36 truncate">{label}</span>
+          {accounts.length > 1 ? <Chevron /> : null}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44">
+        <DropdownMenuRadioGroup
+          value={chosen?.login ?? ALL_ACCOUNTS}
+          onValueChange={(value) => chooseAccount(value === ALL_ACCOUNTS ? null : value)}
+        >
+          <DropdownMenuRadioItem value={ALL_ACCOUNTS}>All accounts</DropdownMenuRadioItem>
+          {accounts.map((account) => (
+            <DropdownMenuRadioItem key={account.login} value={account.login}>
+              {account.login}
+            </DropdownMenuRadioItem>
           ))}
-        </span>
-      ) : null}
-    </span>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
+
+/** The radio value for "All accounts": no GitHub login starts with a space. */
+const ALL_ACCOUNTS = " all";
 
 const FILTERS: readonly { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
@@ -526,14 +499,14 @@ function SourcesFooter({
 function LoadingRows() {
   return (
     <div aria-busy="true" aria-label="Reading changes" className="flex flex-col gap-1 px-2 pt-2">
-      <Bar className="mx-2 my-2 h-2.5 w-32" />
+      <Skeleton className="mx-2 my-2 h-2.5 w-32" />
       {[0, 1, 2, 3].map((index) => (
         <div key={index} className="flex h-14 flex-col gap-2 p-2">
           <div className="flex items-center gap-2">
-            <Bar className="size-3.5" />
-            <Bar className={cx("h-3 max-w-full", ["w-48", "w-36", "w-52", "w-40"][index]!)} />
+            <Skeleton className="size-3.5" />
+            <Skeleton className={cx("h-3 max-w-full", ["w-48", "w-36", "w-52", "w-40"][index]!)} />
           </div>
-          <Bar className="ms-6 h-2.5 w-28" />
+          <Skeleton className="ms-6 h-2.5 w-28" />
         </div>
       ))}
     </div>

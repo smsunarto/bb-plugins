@@ -8,6 +8,8 @@
 import { Markdown } from "@get-bb/plugin-sdk/app";
 import { memo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { Anchor, Draft } from "../../core/items.ts";
+import { Button } from "../components/ui/button.tsx";
+import { Textarea } from "../components/ui/textarea.tsx";
 import { useEscapeLayer } from "../escape.ts";
 import { cx } from "../format.ts";
 import { newDraftId, type ReviewActions } from "../review-data.ts";
@@ -102,7 +104,7 @@ function Composer({
       <div className="flex items-center gap-2">
         <Me />
       </div>
-      <textarea
+      <Textarea
         // oxlint-disable-next-line jsx-a11y/no-autofocus -- opened by the reader's own click
         autoFocus
         value={text}
@@ -111,7 +113,7 @@ function Composer({
         onChange={(event) => setText(event.target.value)}
         onKeyDown={onKeyDown}
         className={cx(
-          "w-full min-w-0 resize-y rounded-[8px] border border-solid border-primary bg-background px-3 py-2 font-sans text-[13px] leading-5 text-foreground shadow-[0_0_0_3px_color-mix(in_oklab,var(--primary)_15%,transparent)] outline-none placeholder:text-(--tertiary-foreground)",
+          "w-full min-w-0 resize-y rounded-[8px] border border-solid border-primary bg-background px-3 py-2 font-sans text-[13px] leading-5 text-foreground shadow-[0_0_0_3px_color-mix(in_oklab,var(--primary)_15%,transparent)] outline-none placeholder:text-(--tertiary-foreground) focus-visible:ring-0",
           replyTo ? "min-h-10" : "min-h-14",
         )}
       />
@@ -146,19 +148,14 @@ function Composer({
         <button type="button" className={cx(TEXT_BUTTON, "px-2")} onClick={onDone}>
           Cancel
         </button>
-        <button
-          type="button"
+        <Button
+          variant={primary ? "default" : "outline"}
           disabled={!body || saving}
           onClick={submit}
-          className={cx(
-            "flex h-6 shrink-0 cursor-pointer items-center rounded-[6px] px-3 text-[12px] leading-4 font-semibold disabled:cursor-default disabled:opacity-60",
-            primary
-              ? "border-0 bg-foreground text-background enabled:hover:opacity-90"
-              : "border border-solid border-border bg-transparent text-foreground enabled:hover:bg-surface-raised",
-          )}
+          className={cx("h-6 px-3 font-semibold", !primary && "border-border")}
         >
           {saving ? "Saving…" : submitLabel}
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -28,7 +28,8 @@ import { MergeButton, mergeTarget, readyToMerge, useChangeMerge } from "./merge.
 import { latestBatch } from "./review-model.ts";
 import { BatchLine, useFixSelected } from "./send.tsx";
 import { ChangeGroup } from "./group-card.tsx";
-import { Bar, Button } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Skeleton } from "./components/ui/skeleton.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 
@@ -105,17 +106,17 @@ function CardSkeleton() {
       data-testid="sc-card-loading"
     >
       <div className="flex flex-col gap-2 p-3">
-        <Bar className="h-4 w-56 max-w-full" />
-        <Bar className="h-5 w-80 max-w-full" />
+        <Skeleton className="h-4 w-56 max-w-full" />
+        <Skeleton className="h-5 w-80 max-w-full" />
       </div>
       <div className="flex flex-col gap-3 border-t border-solid border-border px-3 py-3">
-        <Bar className="h-3.5 w-64 max-w-full" />
-        <Bar className="h-3.5 w-72 max-w-full" />
-        <Bar className="h-3.5 w-52 max-w-full" />
+        <Skeleton className="h-3.5 w-64 max-w-full" />
+        <Skeleton className="h-3.5 w-72 max-w-full" />
+        <Skeleton className="h-3.5 w-52 max-w-full" />
       </div>
       <div className="flex gap-2 px-3 pt-1 pb-3">
-        <Bar className="h-7 flex-1" />
-        <Bar className="h-7 flex-1" />
+        <Skeleton className="h-7 flex-1" />
+        <Skeleton className="h-7 flex-1" />
       </div>
     </div>
   );
@@ -224,7 +225,7 @@ function CardMerge({ detail }: { detail: Ready }) {
       submit={submit}
       target={target}
       label="Merge it"
-      variant="primary"
+      variant="default"
       testId="sc-card-merge"
       className="min-w-0 flex-[1_1_8rem]"
     />
@@ -275,25 +276,25 @@ function ReadyCard({
         </div>
       ) : null}
       <div className="flex min-w-0 flex-wrap gap-2 px-3 pt-1 pb-3">
-        <button
-          type="button"
+        <Button
+          variant="outline"
           onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key }) })}
-          className="flex h-7 min-w-0 flex-[1_1_8rem] cursor-pointer items-center justify-center gap-2 rounded-[6px] border border-solid border-border bg-transparent px-3 text-[12px] leading-4 font-medium text-foreground hover:bg-surface-raised"
+          className="min-w-0 flex-[1_1_8rem] gap-2 px-3"
         >
           Open review
           <OpenReviewArrow />
-        </button>
+        </Button>
         {!grouped && readyToMerge(detail) ? <CardMerge detail={detail} /> : null}
         {hasItems ? (
-          <button
-            type="button"
+          <Button
+            variant="default"
             data-testid="sc-card-fix"
             disabled={fix.count === 0 || fix.pending || detail.head === null}
             onClick={fix.fix}
-            className="flex h-7 min-w-0 flex-[1_1_8rem] cursor-pointer items-center justify-center rounded-[6px] border-0 bg-(--foreground) px-3 text-[12px] leading-4 font-semibold text-background enabled:hover:opacity-90 disabled:cursor-default disabled:opacity-50"
+            className="min-w-0 flex-[1_1_8rem] px-3 font-semibold"
           >
             {fixLabel(fix)}
-          </button>
+          </Button>
         ) : null}
       </div>
       {fix.error ? (
@@ -335,7 +336,9 @@ export function ChangeCard({
             Couldn't read this change. {query.error.message}
           </p>
           <div>
-            <Button onClick={() => void query.refetch()}>Try again</Button>
+            <Button variant="outline" onClick={() => void query.refetch()}>
+              Try again
+            </Button>
           </div>
         </CardNote>
       ) : (

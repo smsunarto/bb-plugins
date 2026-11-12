@@ -21,7 +21,8 @@ import { sourceControlContract } from "../../contract/rpc.ts";
 import { FixDialog, type FixTarget } from "../fix-dialog.tsx";
 import { cx } from "../format.ts";
 import { Checkbox } from "../review-ui.tsx";
-import { Bar, Button } from "../ui.tsx";
+import { Button } from "../components/ui/button.tsx";
+import { Skeleton } from "../components/ui/skeleton.tsx";
 import type { Go } from "./hooks.ts";
 import { CheckIcon, Chevron, StackIcon } from "./icons.tsx";
 
@@ -224,6 +225,7 @@ function FixButton({ count, onFix }: { count: number; onFix: () => void }) {
     // A disabled button shows no tooltip of its own, so the reason sits on a wrapper.
     <span className="flex px-2 pb-1" title={reason}>
       <Button
+        variant="outline"
         className="min-w-0 flex-1"
         data-testid="sc-fix-checks"
         disabled={count === 0 || tooMany}
@@ -338,8 +340,8 @@ function ChecksSection({
   else
     body = (
       <div aria-busy="true" aria-label="Reading checks" className="flex flex-col gap-2 px-2 py-1">
-        <Bar className="h-3 w-40" />
-        <Bar className="h-3 w-32" />
+        <Skeleton className="h-3 w-40" />
+        <Skeleton className="h-3 w-32" />
       </div>
     );
   const summary = value ? checksSummary(value.rows) : "";

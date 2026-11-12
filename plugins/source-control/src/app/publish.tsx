@@ -12,7 +12,8 @@ import {
 import { useEffect, useState } from "react";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { useHostGate } from "./host-gate.ts";
-import { Button, Pending } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Pending } from "./ui.tsx";
 
 /** While a child works, the tab looks this often to see it finish. */
 const PUBLISH_POLL_MS = 5_000;
@@ -62,6 +63,7 @@ export function CreatePullRequest({
         // A disabled button takes no hover, so the reason sits on a wrapper.
         <span className="flex shrink-0" title={gate ?? undefined}>
           <Button
+            variant="outline"
             disabled={busy || gate !== null || mutation.isPending}
             data-host-bound="createPullRequest"
             aria-label={`Create PR for ${branch}`}

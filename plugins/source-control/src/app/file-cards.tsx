@@ -21,7 +21,8 @@ import {
 } from "../core/change.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
-import { Bar, Button } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Skeleton } from "./components/ui/skeleton.tsx";
 
 type ChangeKind = FileChange["kind"];
 
@@ -238,8 +239,8 @@ export function FileRowsSkeleton({ rows = 3, label }: { rows?: number; label: st
     <div aria-busy="true" aria-label={label} className="flex flex-col">
       {Array.from({ length: rows }, (_, index) => (
         <div key={index} className="flex h-8 items-center gap-2 ps-3.5 pe-3">
-          <Bar className={cx("h-2.5", ["w-3/4", "w-1/2", "w-2/3"][index % 3]!)} />
-          <Bar className="ms-auto size-3.5" />
+          <Skeleton className={cx("h-2.5", ["w-3/4", "w-1/2", "w-2/3"][index % 3]!)} />
+          <Skeleton className="ms-auto size-3.5" />
         </div>
       ))}
     </div>

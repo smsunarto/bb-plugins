@@ -24,7 +24,10 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { useEscapeLayer } from "./escape.ts";
 import { useHostGate } from "./host-gate.ts";
 import { cx, plural, squashMessage } from "./format.ts";
-import { Button, Pending } from "./ui.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Pending } from "./ui.tsx";
+import { Input } from "./components/ui/input.tsx";
+import { Textarea } from "./components/ui/textarea.tsx";
 
 /** The rename field takes focus, its name selected, when the reader opens it. */
 function focusOnMount(field: HTMLInputElement | null) {
@@ -232,7 +235,7 @@ export function Confirm({
         </Button>
         <span className="flex" title={blocked ?? undefined}>
           <Button
-            variant={tone === "destructive" ? "destructive" : "primary"}
+            variant={tone === "destructive" ? "destructive" : "default"}
             disabled={pending || blocked !== null}
             aria-describedby={promptId}
             onClick={onConfirm}
@@ -475,14 +478,15 @@ export function OutcomeLine({
       >
         {outcome.kind === "conflict" ? CONFLICT_TEXT : outcome.text}
       </p>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon"
         aria-label="Dismiss"
-        className="inline-flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-[4px] text-muted-foreground hover:text-foreground"
+        className="size-4 rounded-[4px] text-muted-foreground"
         onClick={() => dispatch.dismiss(scope)}
       >
         <Icon name="X" className="size-3" aria-hidden />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -648,9 +652,9 @@ function ModeField({
 }) {
   if (mode.kind === "rename")
     return (
-      <input
+      <Input
         aria-label={`New name for ${branch.name}`}
-        className="h-7 w-full min-w-0 basis-full rounded-[6px] border border-border-hairline bg-background px-2 font-mono text-[12px] text-foreground focus-visible:outline-1"
+        className="h-7 w-full min-w-0 basis-full border-border-hairline bg-background px-2 font-mono text-[12px]"
         value={mode.name}
         readOnly={pending}
         spellCheck={false}
@@ -665,9 +669,9 @@ function ModeField({
     );
   if (mode.kind !== "land" || branch.commits.length <= 1) return null;
   return (
-    <textarea
+    <Textarea
       aria-label="Squashed commit message"
-      className="w-full min-w-0 basis-full resize-y rounded-[6px] border border-border-hairline bg-background px-2 py-1 text-[12px] leading-normal text-foreground focus-visible:outline-1"
+      className="min-h-0 w-full min-w-0 basis-full resize-y border-border-hairline bg-background px-2 py-1 text-[12px] leading-normal"
       rows={Math.min(8, mode.message.split("\n").length + 1)}
       value={mode.message}
       readOnly={pending}
@@ -800,6 +804,7 @@ function ActionRow({
     <div className="flex min-w-0 flex-wrap items-center gap-1.5" title={blocked ?? undefined}>
       {available.push === "none" ? null : (
         <Button
+          variant="outline"
           disabled={busy}
           data-host-bound="push"
           aria-label={`${pushLabel} ${branch.name}`}
@@ -811,6 +816,7 @@ function ActionRow({
       )}
       {available.land ? (
         <Button
+          variant="outline"
           disabled={busy}
           data-host-bound="land"
           aria-label={`Land ${branch.name}`}
