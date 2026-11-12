@@ -134,6 +134,16 @@ export const MIGRATIONS: string[] = [
   // A finding's P0-P3 priority, read from its marker. Null for summaries and
   // for comments recorded before priorities existed.
   `ALTER TABLE run_comments ADD COLUMN priority INTEGER`,
+  // One review thread per rule and PR, kept open for follow-up reviews until
+  // the PR closes. `settled_at` ends its reuse.
+  `CREATE TABLE IF NOT EXISTS review_threads (
+     rule_id TEXT NOT NULL,
+     repo TEXT NOT NULL,
+     pr_number INTEGER NOT NULL,
+     thread_id TEXT NOT NULL,
+     settled_at INTEGER,
+     PRIMARY KEY (rule_id, repo, pr_number)
+   )`,
 ];
 
 function hasColumn(db: Database, table: string, column: string): boolean {
@@ -449,7 +459,10 @@ export function createStore(db: Database) {
      */
     claimFinished(threadId: string, finishedAt: number): ThreadRun | null {
       const row = db
-        .prepare(`SELECT * FROM runs WHERE thread_id = ? AND finished_at IS NULL`)
+        .prepare(
+          `SELECT * FROM runs WHERE thread_id = ? AND finished_at IS NULL
+           ORDER BY started_at LIMIT 1`,
+        )
         .get(threadId) as Row | undefined;
       if (row === undefined) return null;
       const run = { ...rowToRun(row), threadId, finishedAt };
@@ -509,6 +522,54 @@ export function createStore(db: Database) {
         )
         .all(repo, prNumber, limit) as Row[];
       return rows.map(rowToRun);
+    },
+
+    /** The open review thread a rule keeps for a PR, or null once settled. */
+    getOpenReviewThread(ruleId: string, repo: string, prNumber: number): string | null {
+      const row = db
+        .prepare(
+          `SELECT thread_id FROM review_threads
+           WHERE rule_id = ? AND repo = ? AND pr_number = ? AND settled_at IS NULL`,
+        )
+        .get(ruleId, repo, prNumber) as Row | undefined;
+      return row === undefined ? null : text(row, "thread_id");
+    },
+
+    isOpenReviewThread(threadId: string): boolean {
+      return (
+        db
+          .prepare(`SELECT 1 AS hit FROM review_threads WHERE thread_id = ? AND settled_at IS NULL`)
+          .get(threadId) !== undefined
+      );
+    },
+
+    /** Makes `threadId` the PR's review thread, replacing any earlier one. */
+    recordReviewThread(ruleId: string, repo: string, prNumber: number, threadId: string): void {
+      db.prepare(
+        `INSERT INTO review_threads (rule_id, repo, pr_number, thread_id, settled_at)
+         VALUES (?, ?, ?, ?, NULL)
+         ON CONFLICT(rule_id, repo, pr_number) DO UPDATE SET
+           thread_id = excluded.thread_id, settled_at = NULL`,
+      ).run(ruleId, repo, prNumber, threadId);
+    },
+
+    listOpenReviewThreads(repo: string): { prNumber: number; threadId: string }[] {
+      const rows = db
+        .prepare(
+          `SELECT pr_number, thread_id FROM review_threads
+           WHERE repo = ? AND settled_at IS NULL`,
+        )
+        .all(repo) as Row[];
+      return rows.map((row) => ({
+        prNumber: num(row, "pr_number"),
+        threadId: text(row, "thread_id"),
+      }));
+    },
+
+    settleReviewThread(threadId: string, now: number): void {
+      db.prepare(
+        `UPDATE review_threads SET settled_at = ? WHERE thread_id = ? AND settled_at IS NULL`,
+      ).run(now, threadId);
     },
 
     listComments(runId: string): RunComment[] {

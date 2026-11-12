@@ -75,9 +75,11 @@ bb plugin config slopcop set defaultThreadSection "Automated reviews"
 
 Clear the setting to create review threads without a section.
 
-SlopCop settles (archives) a review thread once it verifies the review on GitHub or
-records the shadow review. Failed runs, runs that posted nothing, and runs with
-attribution problems stay open for you to inspect. To keep every thread open:
+SlopCop keeps one review thread per rule and pull request open until the PR is
+merged or closed, then settles (archives) it, so a requested re-review continues
+the same thread. Issue threads settle once SlopCop records their outcome; failed
+issue runs, runs that posted nothing, and runs with attribution problems stay open
+for you to inspect. To keep every thread open:
 
 ```sh
 bb plugin config slopcop set settleFinishedThreads false
@@ -262,6 +264,20 @@ bb slopcop rules add \
   --keyword "@slopcop" \
   --requester-trust write_access \
   --dedupe once_per_trigger_event
+```
+
+With a keyword trigger, every review summary tells the author to comment the keyword
+after pushing changes. Each request comment gets its own review whatever the rule's
+`dedupe` policy, which governs only automatic triggers. A request continues the PR's
+existing review thread: SlopCop moves its worktree to the new head and sends a
+follow-up turn that checks the new commits and the replies to its earlier comments.
+A request made while that thread is still reviewing waits for it.
+
+To review each PR once when it is ready and afterwards only on request:
+
+```sh
+bb slopcop rules edit <rule> --trigger ready_for_review,comment_matches \
+  --keyword "@slopcop" --dedupe once_per_pr
 ```
 
 Keywords use case-insensitive, complete-token matches. `@slopcop-test` does not

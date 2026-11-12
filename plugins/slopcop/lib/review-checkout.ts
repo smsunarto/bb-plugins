@@ -1,8 +1,15 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import path from "node:path";
+import type { z } from "zod";
 import { checkoutResource, reviewCheckoutContract, reviewTarget } from "./review-checkout-contract";
 
-export function registerReviewCheckout(bb: BbPluginApi) {
+/** Moves a review thread's worktree to a newer PR head; see `advanceCheckout` in host.ts. */
+export type AdvanceCheckout = (
+  hostId: string,
+  input: z.infer<typeof reviewCheckoutContract.advance.input>,
+) => Promise<void>;
+
+export function registerReviewCheckout(bb: BbPluginApi): AdvanceCheckout {
   const host = bb.hosts.experimental_client({ contract: reviewCheckoutContract });
   bb.experimental_environments.register({
     id: "slopcop-review",
@@ -54,4 +61,7 @@ export function registerReviewCheckout(bb: BbPluginApi) {
       return { status: "removed" };
     },
   });
+  return async (hostId, input) => {
+    await host.call("advance", input, { hostId, timeoutMs: 300_000 });
+  };
 }

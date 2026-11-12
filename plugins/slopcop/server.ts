@@ -24,8 +24,13 @@ import {
   type Store,
   type ThreadRun,
 } from "./lib/db";
-import { buildPrompt, buildThreadTitle, isAwaitingChildren } from "./lib/dispatch";
-import { registerReviewCheckout } from "./lib/review-checkout";
+import {
+  buildFollowUpPrompt,
+  buildPrompt,
+  buildThreadTitle,
+  isAwaitingChildren,
+} from "./lib/dispatch";
+import { registerReviewCheckout, type AdvanceCheckout } from "./lib/review-checkout";
 import { reviewWorktree } from "./lib/review-environment";
 import { parseReviewRequest } from "./lib/review";
 import { canonicalRepo, isRunning, pullRequestReview, rerunRule } from "./lib/pull-request-review";
@@ -271,7 +276,20 @@ function recover<B, E2, R2>(onError: (error: unknown) => Effect.Effect<B, E2, R2
     );
 }
 
-function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
+/**
+ * A rule's open review thread for a PR. A re-review continues it as a
+ * follow-up turn; `busy` means its last turn has not finished yet.
+ */
+type ReviewThread =
+  | { kind: "none" }
+  | { kind: "busy"; threadId: string }
+  | { kind: "reuse"; threadId: string; hostId: string; path: string; previousHeadSha: string };
+
+function createServices(
+  bb: BbPluginApi,
+  runtime: PluginRuntime<never>,
+  advanceCheckout: AdvanceCheckout,
+) {
   const settings = bb.settings.define({
     pollSeconds: {
       type: "string",
@@ -302,7 +320,7 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
       type: "boolean",
       label: "Settle finished review threads",
       description:
-        "Archive a review thread once its review is verified on GitHub or its shadow review is recorded. Failed runs, runs that posted nothing, and runs with attribution problems stay open.",
+        "Archive a pull request's review thread once the PR is merged or closed, and an issue thread once its response is verified. Failed issue runs, runs that posted nothing, and runs with attribution problems stay open.",
       default: true,
     },
   });
@@ -369,9 +387,44 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
     );
   });
 
+  /** Finds the PR's open review thread and whether it can take a follow-up now. */
+  async function findReviewThread(rule: Rule, target: GitHubTarget): Promise<ReviewThread> {
+    if (target.kind !== "pull_request") return { kind: "none" };
+    const threadId = store.getOpenReviewThread(rule.id, rule.repo, target.number);
+    if (threadId === null) return { kind: "none" };
+    const forget = (): ReviewThread => {
+      store.settleReviewThread(threadId, Date.now());
+      return { kind: "none" };
+    };
+    const previous = store.findRunByThread(threadId);
+    if (previous !== null && previous.finishedAt === null) return { kind: "busy", threadId };
+    let thread: Awaited<ReturnType<typeof bb.sdk.threads.get>>;
+    try {
+      thread = await bb.sdk.threads.get({ threadId });
+    } catch (error) {
+      if (sdkErrorCode(error) === "thread_not_found") return forget();
+      throw error;
+    }
+    if (thread.archivedAt !== null || previous === null) return forget();
+    if (thread.status !== "idle" && thread.status !== "error") return { kind: "busy", threadId };
+    const environment =
+      thread.environmentId === null || thread.environmentId === undefined
+        ? null
+        : await bb.sdk.environments.get({ environmentId: thread.environmentId });
+    if (!environment?.hostId || !environment.path) return forget();
+    return {
+      kind: "reuse",
+      threadId,
+      hostId: environment.hostId,
+      path: environment.path,
+      previousHeadSha: previous.headSha,
+    };
+  }
+
   /**
-   * Creates the run row and spawns the review thread. Returns the run id so a
-   * manual dispatch can report it even when the spawn itself fails.
+   * Creates the run row and spawns the review thread, or continues the PR's
+   * open review thread with a follow-up turn. Returns the run id so a manual
+   * dispatch can report it even when the spawn itself fails.
    */
   async function dispatch(
     rule: Rule,
@@ -385,6 +438,7 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
         keyword: string;
         url: string | null;
       };
+      reviewThread?: ReviewThread;
     } = {},
   ): Promise<{ runId: string; threadId: string | null }> {
     const runId = newId("run");
@@ -463,6 +517,47 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
         defaultThreadSection.length > 0 ? await bb.sdk.threadSections.list() : [],
       );
       if (target.kind === "pull_request") {
+        const reviewThread = options.reviewThread ?? (await findReviewThread(rule, target));
+        if (reviewThread.kind === "busy") {
+          throw new Error(
+            `the PR's review thread ${reviewThread.threadId} is still reviewing; request again once it finishes`,
+          );
+        }
+        if (reviewThread.kind === "reuse") {
+          const { threadId } = reviewThread;
+          try {
+            await advanceCheckout(reviewThread.hostId, {
+              path: reviewThread.path,
+              ref: `refs/slopcop/${threadId}`,
+              number: target.number,
+              head: target.headRefOid,
+              ...(target.baseRefName ? { base: target.baseRefName } : {}),
+            });
+            await bb.sdk.threads.send({
+              threadId,
+              mode: "queue-if-active",
+              input: [
+                {
+                  type: "text",
+                  text: buildFollowUpPrompt({ ...context, target }, reviewThread.previousHeadSha),
+                  mentions: [],
+                },
+              ],
+            });
+            store.updateRun(runId, { status: "reviewing", threadId });
+            announce();
+            bb.log.info(
+              `continued ${rule.name} for ${rule.repo}#${target.number} in ${threadId} (${rule.mode})`,
+            );
+            return { runId, threadId };
+          } catch (error) {
+            // The thread cannot take the follow-up, so a fresh review replaces it.
+            bb.log.warn(
+              `could not continue review thread ${threadId}: ${messageOf(error)}; starting a new one`,
+            );
+            store.settleReviewThread(threadId, Date.now());
+          }
+        }
         execution.environment = await reviewWorktree(bb, execution.environment, target);
       }
       const thread = await bb.sdk.threads.spawn({
@@ -474,6 +569,9 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
       } as never);
       const threadId = (thread as { id: string }).id;
       store.updateRun(runId, { status: "reviewing", threadId });
+      if (target.kind === "pull_request") {
+        store.recordReviewThread(rule.id, rule.repo, target.number, threadId);
+      }
       announce();
       bb.log.info(
         `dispatched ${rule.name} for ${target.kind} ${rule.repo}#${target.number} (${rule.mode}) -> ${threadId}`,
@@ -648,7 +746,9 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
         );
         continue;
       }
-      if (hasAlreadyRun(rule, pullRequest, eventId)) {
+      // Every request comment is its own explicit ask, so the rule's dedupe
+      // policy, which governs automatic triggers, never swallows one.
+      if (store.hasRunFor(rule.id, rule.repo, "pull_request", pullRequest.number, null, eventId)) {
         store.finishCommentEvent(
           event.ruleId,
           event.source,
@@ -659,6 +759,10 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
         continue;
       }
       if (store.countReviewing() >= maxConcurrent) return;
+      // A request made while the PR's review is still running waits for it,
+      // then continues the same thread.
+      const reviewThread = yield* Effect.promise(() => findReviewThread(rule, pullRequest));
+      if (reviewThread.kind === "busy") continue;
 
       // A stop waits for the dispatch and its record; a request left pending
       // would be dispatched again once the PR's head moves.
@@ -667,6 +771,7 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
           await dispatch(rule, pullRequest, {
             trigger: "comment_matches",
             triggerEventId: eventId,
+            reviewThread,
             triggerRequest: {
               author: event.author,
               keyword: event.matchedKeyword,
@@ -718,6 +823,7 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
           const pullRequestsByNumber = new Map(
             pullRequests.map((pullRequest) => [pullRequest.number, pullRequest]),
           );
+          yield* settleClosedReviewThreads(repo, pullRequestsByNumber);
           yield* ingestCommentEvents(repo, repoRules, pullRequestsByNumber);
           yield* processCommentEvents(repo, repoRules, pullRequestsByNumber, maxConcurrent);
 
@@ -1010,6 +1116,8 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
    */
   const settleThread = Effect.fnUntraced(function* (threadId: string, status: VerifiedStatus) {
     if (!SETTLED_STATUSES.has(status)) return;
+    // A PR's review thread stays open for follow-up reviews until the PR closes.
+    if (store.isOpenReviewThread(threadId)) return;
     if (!(yield* Effect.promise(() => readSettings())).settleFinishedThreads) return;
     yield* Effect.gen(function* () {
       const thread = yield* Effect.promise(async () => bb.sdk.threads.get({ threadId }));
@@ -1020,6 +1128,40 @@ function createServices(bb: BbPluginApi, runtime: PluginRuntime<never>) {
         Effect.logWarning(`could not settle review thread ${threadId}: ${messageOf(error)}`),
       ),
     );
+  });
+
+  /**
+   * Settles the review threads of PRs that are no longer open, merged or
+   * closed. A thread still running waits for a later poll.
+   */
+  const settleClosedReviewThreads = Effect.fnUntraced(function* (
+    repo: string,
+    openPullRequests: Map<number, PullRequest>,
+  ) {
+    const closed = store
+      .listOpenReviewThreads(repo)
+      .filter(({ prNumber }) => !openPullRequests.has(prNumber));
+    if (closed.length === 0) return;
+    const { settleFinishedThreads } = yield* Effect.promise(() => readSettings());
+    for (const { threadId } of closed) {
+      const settle = Effect.sync(() => store.settleReviewThread(threadId, Date.now()));
+      yield* Effect.gen(function* () {
+        const thread = yield* Effect.promise(async () => bb.sdk.threads.get({ threadId }));
+        if (thread.archivedAt === null) {
+          if (thread.status !== "idle" && thread.status !== "error") return;
+          if (settleFinishedThreads) {
+            yield* Effect.promise(async () => bb.sdk.threads.archive({ threadId }));
+          }
+        }
+        yield* settle;
+      }).pipe(
+        recover((error) =>
+          sdkErrorCode(error) === "thread_not_found"
+            ? settle
+            : Effect.logWarning(`could not settle review thread ${threadId}: ${messageOf(error)}`),
+        ),
+      );
+    }
   });
 
   /**
@@ -1840,9 +1982,12 @@ function forwardCommand(ctx: PluginContext, spec: CommandSpec) {
 }
 
 export default async function plugin(bb: BbPluginApi): Promise<void> {
-  registerReviewCheckout(bb);
+  const advanceCheckout = registerReviewCheckout(bb);
   const runtime = await makePluginRuntime(bb, Layer.empty);
-  const ctx: PluginContext = Object.freeze({ bb, ...createServices(bb, runtime) });
+  const ctx: PluginContext = Object.freeze({
+    bb,
+    ...createServices(bb, runtime, advanceCheckout),
+  });
   bb.rpc.register(rpcContract, ctx.handlers);
   // A separate registration, so only these two methods are discoverable.
   bb.rpc.register(sourceControlRpcContract, ctx.sourceControlHandlers, {

@@ -149,6 +149,31 @@ export async function prepareCheckout(
   return { path: input.path };
 }
 
+/**
+ * Moves a review worktree to the PR's new head for a follow-up review in the
+ * same thread. A plain (non-forced) checkout refuses to overwrite local edits,
+ * so anything a reviewer left behind fails the advance instead of vanishing.
+ */
+export async function advanceCheckout(
+  input: z.infer<typeof reviewCheckoutContract.advance.input>,
+  signal: AbortSignal,
+  runGit: typeof git = git,
+) {
+  const refspecs = [`+refs/pull/${input.number}/head:${input.ref}`];
+  if (input.base) refspecs.push(`+refs/heads/${input.base}:refs/remotes/origin/${input.base}`);
+  await runGit(input.path, ["fetch", "--no-tags", "origin", ...refspecs], signal);
+  const head = await runGit(input.path, ["rev-parse", input.ref], signal);
+  if (head !== input.head) throw new Error("PR head changed before checkout; request again");
+  await runGit(
+    input.path,
+    ["checkout", "--quiet", "--detach", input.head],
+    signal,
+    PREPARE_BUDGET_MS,
+    { GIT_LFS_SKIP_SMUDGE: "1" },
+  );
+  return { path: input.path };
+}
+
 export default experimental_defineHostEntry({
   contract: reviewCheckoutContract,
   handlers: {
@@ -157,6 +182,9 @@ export default experimental_defineHostEntry({
     },
     prepare(input, { signal }) {
       return prepareCheckout(input, signal);
+    },
+    advance(input, { signal }) {
+      return advanceCheckout(input, signal);
     },
     async remove(input, { signal }) {
       if (await exists(input.path)) {

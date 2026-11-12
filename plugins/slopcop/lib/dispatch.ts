@@ -76,10 +76,18 @@ function formatBodyContract(context: DispatchContext): string {
     });
   }
 
+  const keyword = rereviewKeyword(rule);
   return prompts.read("review-body-format", {
     summaryHeader: buildHeader("summary", rule.name),
+    rereviewGuide:
+      keyword === null ? "" : "\n" + prompts.read("rereview-guide", { keyword: keyword }) + "\n",
     summaryMarker: summaryMarker,
   });
+}
+
+/** The keyword that requests a re-review, when the rule listens for one. */
+export function rereviewKeyword(rule: Rule): string | null {
+  return rule.triggers.includes("comment_matches") ? (rule.commentKeywords[0] ?? null) : null;
 }
 
 function formatIssue(issue: GitHubIssue, repo: string): string {
@@ -162,6 +170,35 @@ export function buildPrompt(context: DispatchContext): string {
       : liveBanner(context.ghCommand?.trim() || "gh", target, rule.repo),
     bodyFormat: formatBodyContract(context),
     finishingInstructions: shadow ? prompts.read("finish-shadow") : prompts.read("finish-live"),
+  });
+}
+
+/**
+ * The follow-up turn for a re-review in the PR's existing review thread. It
+ * carries a fresh body contract, because each run verifies its own marker.
+ */
+export function buildFollowUpPrompt(
+  context: DispatchContext & { target: PullRequest },
+  previousHeadSha: string,
+): string {
+  const { rule, target } = context;
+  const request = context.triggerRequest;
+  const ghCommand = context.ghCommand?.trim() || "gh";
+  return prompts.read("rereview", {
+    author: request?.author ?? "a maintainer",
+    number: target.number,
+    keyword: request?.keyword ?? rereviewKeyword(rule) ?? "a manual dispatch",
+    requestLink: request?.url ? `Request URL: ${request.url}\n` : "",
+    previousHeadSha: previousHeadSha,
+    headSha: target.headRefOid,
+    targetDetails: formatPullRequest(target, rule.repo),
+    ghCommand: ghCommand,
+    repo: rule.repo,
+    postingInstructions:
+      rule.mode === "shadow" ? shadowBanner(target) : liveBanner(ghCommand, target, rule.repo),
+    bodyFormat: formatBodyContract(context),
+    finishingInstructions:
+      rule.mode === "shadow" ? prompts.read("finish-shadow") : prompts.read("finish-live"),
   });
 }
 

@@ -1250,3 +1250,190 @@ describe("Source Control review state", () => {
     }
   });
 });
+
+describe("follow-up reviews in the PR's review thread", () => {
+  const SHA_A = "a".repeat(40);
+  const SHA_B = "b".repeat(40);
+
+  function requestComment(id: string, body: string): TriggerComment {
+    return {
+      id,
+      source: "issue",
+      repo: "example/example",
+      prNumber: 2,
+      body,
+      url: `https://github.com/example/example/pull/2#issuecomment-${id}`,
+      author: "dana",
+      authorAssociation: "MEMBER",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+  }
+
+  it("keeps the thread, continues it on request, and settles it when the PR closes", async () => {
+    let threadStatus: "active" | "idle" = "active";
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "slopcop",
+      sdk: {
+        threads: {
+          spawn: () => ({ id: "thr_review" }),
+          get: ({ threadId }) =>
+            makeThreadResponse({ id: threadId, status: threadStatus, environmentId: "env_1" }),
+          send: () => ({ ok: true, delivery: "sent" }),
+          archive: ({ threadId }) => ({ archivedThreadIds: [threadId] }),
+        },
+        environments: {
+          get: () => ({ id: "env_1", hostId: "host_1", path: "/reviews/thr_review" }) as never,
+        },
+      },
+      experimental_callHostRpc: () => ({ path: "/reviews/thr_review" }),
+    });
+    try {
+      await plugin(bb);
+      await harness.behavior.callRpc("saveRule", {
+        id: null,
+        rule: {
+          name: "on request",
+          repo: "example/example",
+          triggers: ["ready_for_review", "comment_matches"],
+          commentKeywords: ["@slopcop"],
+          dedupe: "once_per_pr",
+          request: { projectId: "project-test", providerId: "codex", model: "test-model" },
+        },
+      });
+      const store = createStore(bb.storage.database() as never);
+      const pollUntil = async (passed: () => void) => {
+        const service = harness.behavior.runService("watcher");
+        await vi.waitFor(passed);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        service.controller.abort();
+        await service.done;
+      };
+      const sent = () =>
+        harness.sdk
+          .callsTo("threads.send")
+          .map(([args]) => args as { threadId: string; input: { text: string }[] });
+
+      // The ready PR gets one full review, whose summary explains how to ask again.
+      github.pullRequests = [makePullRequest({ headRefOid: SHA_A })];
+      await pollUntil(() => expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1));
+      const [spawnArgs] = harness.sdk.callsTo("threads.spawn")[0]! as [{ prompt: string }];
+      expect(spawnArgs.prompt).toContain("then comment `@slopcop` on this PR");
+
+      // A request made while that review runs waits for it.
+      github.recentIssueComments = [requestComment("c1", "@slopcop again please")];
+      await pollUntil(() =>
+        expect(store.listPendingCommentEvents("example/example")).toHaveLength(1),
+      );
+      expect(sent()).toEqual([]);
+
+      const first = store.listRuns()[0]!;
+      threadStatus = "idle";
+      await harness.behavior.emitThreadEvent("thread.idle", {
+        thread: makeThreadResponse({ id: "thr_review" }),
+        lastAssistantText: `${buildHeader("summary", "on request")}\n\nok\n\n${buildMarker({
+          rule: "on request",
+          run: first.id,
+          sha: SHA_A,
+          kind: "summary",
+        })}`,
+      });
+      await vi.waitFor(() => expect(store.getRun(first.id)?.status).toBe("shadowed"));
+      expect(harness.sdk.callsTo("threads.archive")).toEqual([]);
+
+      // After a push, the waiting request continues the same thread at the new head.
+      github.pullRequests = [makePullRequest({ headRefOid: SHA_B })];
+      await pollUntil(() => expect(sent()).toHaveLength(1));
+      expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
+      expect(harness.inspection.experimental_hostRpcCalls).toMatchObject([
+        {
+          method: "advance",
+          hostId: "host_1",
+          input: { path: "/reviews/thr_review", ref: "refs/slopcop/thr_review", head: SHA_B },
+        },
+      ]);
+      const followUp = sent()[0]!;
+      expect(followUp.threadId).toBe("thr_review");
+      expect(followUp.input[0]!.text).toContain(`You last reviewed head \`${SHA_A}\``);
+      expect(followUp.input[0]!.text).toContain(`git diff ${SHA_A} ${SHA_B}`);
+      const second = store.listRuns()[0]!;
+      expect(second).toMatchObject({
+        trigger: "comment_matches",
+        status: "reviewing",
+        threadId: "thr_review",
+      });
+      expect(followUp.input[0]!.text).toContain(`run=${second.id}`);
+
+      // The merged PR leaves the open list, and its thread is settled.
+      store.updateRun(second.id, { status: "shadowed", finishedAt: Date.now() });
+      github.pullRequests = [];
+      github.recentIssueComments = [];
+      await pollUntil(() =>
+        expect(harness.sdk.callsTo("threads.archive")).toEqual([[{ threadId: "thr_review" }]]),
+      );
+      expect(store.isOpenReviewThread("thr_review")).toBe(false);
+    } finally {
+      github.pullRequests = [];
+      github.recentIssueComments = [];
+      await harness.lifecycle.dispose();
+    }
+  });
+
+  it("starts a fresh review when the old thread cannot continue", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "slopcop",
+      sdk: {
+        threads: {
+          spawn: () => ({ id: "thr_fresh" }),
+          get: ({ threadId }) =>
+            makeThreadResponse({ id: threadId, status: "idle", environmentId: "env_1" }),
+          send: () => ({ ok: true, delivery: "sent" }),
+        },
+        environments: {
+          get: () => ({ id: "env_1", hostId: "host_1", path: "/reviews/thr_old" }) as never,
+        },
+      },
+      experimental_callHostRpc: () => {
+        throw new Error("worktree has local changes");
+      },
+    });
+    try {
+      await plugin(bb);
+      await harness.behavior.callRpc("saveRule", {
+        id: null,
+        rule: {
+          name: "on request",
+          repo: "example/example",
+          triggers: ["comment_matches"],
+          commentKeywords: ["@slopcop"],
+          request: { projectId: "project-test", providerId: "codex", model: "test-model" },
+        },
+      });
+      const store = createStore(bb.storage.database() as never);
+      const rule = store.listRules()[0]!;
+      store.insertRun(
+        makeRun({
+          id: "run_old",
+          ruleId: rule.id,
+          repo: "example/example",
+          prNumber: 2,
+          headSha: SHA_A,
+          threadId: "thr_old",
+          status: "shadowed",
+          finishedAt: Date.now(),
+        }),
+      );
+      store.recordReviewThread(rule.id, "example/example", 2, "thr_old");
+      github.pullRequests = [makePullRequest({ headRefOid: SHA_B })];
+
+      const result = await harness.behavior.runCli(["dispatch", "on request", "2"]);
+      expect(result, result.stderr).toMatchObject({ exitCode: 0 });
+      expect(harness.sdk.callsTo("threads.send")).toEqual([]);
+      expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
+      expect(store.getOpenReviewThread(rule.id, "example/example", 2)).toBe("thr_fresh");
+    } finally {
+      github.pullRequests = [];
+      await harness.lifecycle.dispose();
+    }
+  });
+});

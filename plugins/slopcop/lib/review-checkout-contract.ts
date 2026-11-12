@@ -25,4 +25,9 @@ export const reviewCheckoutContract = defineRpcContract({
     output: z.object({ path: z.string() }),
   },
   remove: { input: checkoutResource, output: z.object({}) },
+  /** Moves an existing review worktree to a newer PR head for a follow-up review. */
+  advance: {
+    input: checkoutResource.pick({ path: true, ref: true }).extend(reviewTarget.shape),
+    output: z.object({ path: z.string() }),
+  },
 });
