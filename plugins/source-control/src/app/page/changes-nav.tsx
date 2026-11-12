@@ -174,11 +174,11 @@ const ChangeRowView = memo(function ChangeRowView({
       aria-current={selected ? "page" : undefined}
       onClick={() => onSelect(row.key)}
       className={cx(
-        "flex h-14 w-full min-w-0 cursor-pointer flex-col gap-1 rounded-[8px] border-0 bg-transparent p-2 text-start transition-colors duration-150 hover:bg-border-hairline focus-visible:-outline-offset-2 motion-reduce:transition-none",
+        "flex h-14 w-full min-w-0 cursor-pointer flex-col gap-1 rounded-[8px] border-0 bg-transparent px-2 py-1.5 text-start transition-colors duration-150 hover:bg-border-hairline focus-visible:-outline-offset-2 motion-reduce:transition-none",
         selected && "bg-border-hairline",
       )}
     >
-      <span className="flex w-full min-w-0 items-start gap-2">
+      <span className="flex w-full min-w-0 shrink-0 items-start gap-2">
         <span className="flex h-5 w-4 shrink-0 items-center justify-center">
           <StateIcon state={row.state} phone={phone} />
         </span>
@@ -194,7 +194,8 @@ const ChangeRowView = memo(function ChangeRowView({
           <span className="shrink-0 text-[12px] leading-5 text-(--tertiary-foreground)">{age}</span>
         ) : null}
       </span>
-      <span className="flex h-5 w-full min-w-0 items-center gap-2 overflow-hidden ps-6">
+      {/* Two 20px lines and the gap fill the 56px row exactly: a squeezed line would clip its chips' borders. */}
+      <span className="flex h-5 w-full min-w-0 shrink-0 items-center gap-2 overflow-hidden ps-6">
         {phone ? (
           <>
             <span className={cx("min-w-0 shrink truncate text-[12px] leading-4", LINE_TONE[tone])}>
