@@ -46,7 +46,7 @@ export async function runButWrite(
   }
   // Fetched first, so the status read next knows the remote's latest commits.
   const fetched = await fetchRemotes(cwd, signal);
-  const status = await runBut(cwd, ["status", "-u"], signal);
+  const status = await runBut(cwd, ["status"], signal);
   const branch = namedBranch(status, action.branch);
   if (action.kind === "land") return land(cwd, fetched, status, branch, action, signal);
   const loss = await unacceptedLoss(cwd, status, branch, action.acceptedLoss, signal);
@@ -70,7 +70,7 @@ async function deleteBranch(
   action: Extract<VcsAction, { kind: "delete" }>,
   signal: AbortSignal,
 ): Promise<VcsResult> {
-  const status = await runBut(cwd, ["status", "-u"], signal);
+  const status = await runBut(cwd, ["status"], signal);
   const branch = namedBranch(status, action.branch);
   const risk: ActionRisk = {
     conflicted: [],
@@ -201,7 +201,7 @@ async function afterPull(
   target: CheckedTarget,
   signal: AbortSignal,
 ): Promise<ButBranch> {
-  const status = await runBut(cwd, ["status", "-u"], signal);
+  const status = await runBut(cwd, ["status"], signal);
   // GitButler drops a branch from the workspace once the target has its changes.
   const pulled = namedBranch(status, before.name);
   const changed = changedCommits(pulled.name, before.commits.length, pulled.commits.length);

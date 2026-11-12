@@ -255,11 +255,14 @@ test("a read that writes GitButler's state never wakes the server, even while it
   git(workspace, "add", "file.txt");
   git(workspace, "commit", "--quiet", "-m", "chore: base");
   const status = join(env.root, "status.json");
-  await writeFile(status, JSON.stringify({ uncommittedChanges: [], stacks: [] }));
+  await writeFile(
+    status,
+    JSON.stringify({ uncommittedChanges: [], stacks: [], upstreamState: null }),
+  );
   const restore = await fakeBut(
     [
       `case "$1 $2" in`,
-      `  "status -u") mkdir -p .git/gitbutler; date +%s%N >> .git/gitbutler/but.sqlite; sleep 0.4; cat '${status}' ;;`,
+      `  "status --json") mkdir -p .git/gitbutler; date +%s%N >> .git/gitbutler/but.sqlite; sleep 0.4; cat '${status}' ;;`,
       `  *) echo '{}' ;;`,
       `esac`,
     ].join("\n"),

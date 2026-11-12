@@ -65,7 +65,7 @@ afterAll(async () => {
   await env.cleanup();
 });
 
-/** `but status -u --json` for the repository, with `upstream` remote commits on scott/top. */
+/** `but status --json` for the repository, with `upstream` remote commits on scott/top. */
 function statusWith(upstream: number, uncommitted: string[] = []) {
   const commit = (id: string, cliId: string) => ({
     cliId,
@@ -106,19 +106,19 @@ test("a write refuses a branch whose name is also another item's id", async () =
   // Observed on but 0.22.3: `but branch delete fi` deleted the branch whose id was fi.
   const status = statusWith(0);
   status.stacks[0]!.branches[0]!.commits[0]!.cliId = "scott/bottom";
-  const calls = await script({ "pull --check": CHECK_CLEAN, "status -u": status });
+  const calls = await script({ "pull --check": CHECK_CLEAN, status: status });
   const push = { kind: "push" as const, branch: "scott/bottom", force: false, acceptedLoss: [] };
   await expect(runButWrite(repository, push, signal)).rejects.toThrow(
     "GitButler also uses scott/bottom as the id of something else",
   );
-  expect(await calls()).toEqual(["pull --check --json", "status -u --json"]);
+  expect(await calls()).toEqual(["pull --check --json", "status --json"]);
 });
 
 test("Push fetches, then asks about every upstream commit it would delete that the reader did not agree to", async () => {
   // origin has one new commit on scott/top and one on scott/bottom, which `but push` forces along.
   const calls = await script({
     "pull --check": CHECK_CLEAN,
-    "status -u": statusWith(1),
+    status: statusWith(1),
     "push scott/top --with-force": "{}",
   });
   const push = (acceptedLoss: string[]) =>
@@ -136,7 +136,7 @@ test("Push fetches, then asks about every upstream commit it would delete that t
   expect(await runButWrite(repository, push(both), signal)).toEqual({ status: "done" });
   expect((await calls()).slice(-3)).toEqual([
     "pull --check --json",
-    "status -u --json",
+    "status --json",
     "push scott/top --with-force --json",
   ]);
 });
@@ -226,7 +226,7 @@ const checkAt = (target: string) => ({
   baseBranch: { name: "origin/main", currentSha: target },
 });
 
-/** `but status -u --json` with scott/top holding `commits`, newest first, alone in its stack unless stacked. */
+/** `but status --json` with scott/top holding `commits`, newest first, alone in its stack unless stacked. */
 function statusOfTop(commits: string[], { stacked = false } = {}) {
   const status = statusWith(0);
   const [top] = status.stacks[0]!.branches;
@@ -253,14 +253,14 @@ const main = () => git(repository, "rev-parse", "main").trim();
 test("Land squashes a branch of several commits into one, then lands it", async () => {
   const calls = await script({
     "pull --check": checkAt(main()),
-    "status -u": statusOfTop(TWO()),
+    status: statusOfTop(TWO()),
     [`squash scott/top --message=${MESSAGE}`]: "{}",
     "land scott/top --yes": "{}",
   });
   expect(await runButWrite(repository, land(MESSAGE), signal)).toEqual({ status: "done" });
   expect(await calls()).toEqual([
     "pull --check --json",
-    "status -u --json",
+    "status --json",
     `squash scott/top --message=${MESSAGE} --json`,
     "land scott/top --yes --json",
   ]);
@@ -269,13 +269,13 @@ test("Land squashes a branch of several commits into one, then lands it", async 
 test("Land lands a branch of one commit as it is", async () => {
   const calls = await script({
     "pull --check": checkAt(main()),
-    "status -u": statusOfTop([sha["scott/top"]!]),
+    status: statusOfTop([sha["scott/top"]!]),
     "land scott/top --yes": "{}",
   });
   expect(await runButWrite(repository, land(null), signal)).toEqual({ status: "done" });
   expect(await calls()).toEqual([
     "pull --check --json",
-    "status -u --json",
+    "status --json",
     "land scott/top --yes --json",
   ]);
 });
@@ -291,7 +291,7 @@ const PULLED = () => statusOfTop([sha["scott/bottom@remote"]!, sha["scott/bottom
 test("Land pulls a branch behind the target up to it, then squashes and lands it", async () => {
   const calls = await script({
     "pull --check": BEHIND(),
-    "status -u": turns(statusOfTop(TWO()), PULLED()),
+    status: turns(statusOfTop(TWO()), PULLED()),
     pull: "{}",
     [`squash scott/top --message=${MESSAGE}`]: "{}",
     "land scott/top --yes": "{}",
@@ -299,9 +299,9 @@ test("Land pulls a branch behind the target up to it, then squashes and lands it
   expect(await runButWrite(repository, land(MESSAGE), signal)).toEqual({ status: "done" });
   expect(await calls()).toEqual([
     "pull --check --json",
-    "status -u --json",
+    "status --json",
     "pull --json",
-    "status -u --json",
+    "status --json",
     `squash scott/top --message=${MESSAGE} --json`,
     "land scott/top --yes --json",
   ]);
@@ -315,29 +315,29 @@ test("Land asks before a pull that leaves conflicts elsewhere", async () => {
       branchStatuses: [{ name: "scott/other", status: "conflicted" }],
       hasWorktreeConflicts: true,
     },
-    "status -u": statusOfTop(TWO()),
+    status: statusOfTop(TWO()),
   });
   expect(await runButWrite(repository, land(MESSAGE), signal)).toEqual({
     status: "confirm",
     risk,
     loss: null,
   });
-  expect(await calls()).toEqual(["pull --check --json", "status -u --json"]);
+  expect(await calls()).toEqual(["pull --check --json", "status --json"]);
 });
 
 test("Land refuses, before changing anything, a branch the pull would leave conflicted", async () => {
   const calls = await script({
     "pull --check": { ...BEHIND(), branchStatuses: [{ name: "scott/top", status: "conflicted" }] },
-    "status -u": statusOfTop(TWO()),
+    status: statusOfTop(TWO()),
   });
   await expect(runButWrite(repository, land(MESSAGE), signal)).rejects.toThrow(
     "Land stopped before changing anything: scott/top conflicts with the new commits on origin/main. Pull the workspace, resolve the conflicts, then land it.",
   );
-  expect(await calls()).toEqual(["pull --check --json", "status -u --json"]);
+  expect(await calls()).toEqual(["pull --check --json", "status --json"]);
 });
 
 test("Land stops after the pull when the branch is still behind the target", async () => {
-  await script({ "pull --check": BEHIND(), "status -u": statusOfTop(TWO()), pull: "{}" });
+  await script({ "pull --check": BEHIND(), status: statusOfTop(TWO()), pull: "{}" });
   await expect(runButWrite(repository, land(MESSAGE), signal)).rejects.toThrow(
     "Land pulled the workspace, then stopped: scott/top is still a commit behind origin/main, so `but land` would merge it. Land it again.",
   );
@@ -346,7 +346,7 @@ test("Land stops after the pull when the branch is still behind the target", asy
 test("Land stops after a pull that took commits the target already has, before squashing the rest", async () => {
   await script({
     "pull --check": BEHIND(),
-    "status -u": turns(statusOfTop(TWO()), statusOfTop([sha["scott/bottom@remote"]!])),
+    status: turns(statusOfTop(TWO()), statusOfTop([sha["scott/bottom@remote"]!])),
     pull: "{}",
   });
   await expect(runButWrite(repository, land(MESSAGE), signal)).rejects.toThrow(
@@ -357,7 +357,7 @@ test("Land stops after a pull that took commits the target already has, before s
 test("a land that fails after the squash says the branch stays squashed", async () => {
   await script({
     "pull --check": checkAt(main()),
-    "status -u": statusOfTop(TWO()),
+    status: statusOfTop(TWO()),
     [`squash scott/top --message=${MESSAGE}`]: "{}",
   });
   await expect(runButWrite(repository, land(MESSAGE), signal)).rejects.toThrow(
@@ -387,26 +387,26 @@ test.each([
       "scott/top is down to one commit since you chose Land. Land it again to land that commit as it is.",
   },
 ])("Land refuses $name, before changing anything", async ({ status, message, refusal }) => {
-  const calls = await script({ "pull --check": checkAt(main()), "status -u": status() });
+  const calls = await script({ "pull --check": checkAt(main()), status: status() });
   await expect(runButWrite(repository, land(message), signal)).rejects.toThrow(
     `Land stopped before changing anything: ${refusal}`,
   );
-  expect(await calls()).toEqual(["pull --check --json", "status -u --json"]);
+  expect(await calls()).toEqual(["pull --check --json", "status --json"]);
 });
 
 test("Delete runs straight away when no uncommitted change is in the branch's files", async () => {
   const calls = await script({
-    "status -u": statusWith(0, ["notes.md"]),
+    status: statusWith(0, ["notes.md"]),
     "branch delete scott/top": "{}",
   });
   const action = { kind: "delete" as const, branch: "scott/top", accepted: null };
   expect(await runButWrite(repository, action, signal)).toEqual({ status: "done" });
-  expect(await calls()).toEqual(["status -u --json", "branch delete scott/top --json"]);
+  expect(await calls()).toEqual(["status --json", "branch delete scott/top --json"]);
 });
 
 test("Delete asks first when uncommitted changes are in files the branch changed", async () => {
   const calls = await script({
-    "status -u": statusWith(0, ["top.txt"]),
+    status: statusWith(0, ["top.txt"]),
     "branch delete scott/top": "{}",
   });
   const risk: ActionRisk = { conflicted: [], overlapsUncommitted: true };
@@ -416,7 +416,7 @@ test("Delete asks first when uncommitted changes are in files the branch changed
     risk,
     loss: null,
   });
-  expect(await calls()).toEqual(["status -u --json"]);
+  expect(await calls()).toEqual(["status --json"]);
   expect(await runButWrite(repository, { ...action, accepted: risk }, signal)).toEqual({
     status: "done",
   });

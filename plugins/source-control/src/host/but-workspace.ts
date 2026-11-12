@@ -180,13 +180,23 @@ export async function workspaceFromStatus(
   };
 }
 
-/** One call carries the whole workspace. `-u` attaches the upstream commits not integrated yet. */
+/**
+ * One call carries the whole workspace. `but` 0.23 reports the target's
+ * `upstreamState` in plain `status`; `-u` adds only a per-branch merge
+ * simulation nothing here reads, which took 23 s on a large Unity checkout and
+ * pushed the read past the host deadline. Older versions without it get `-u`.
+ */
 export async function readButWorkspace(
   checkout: Checkout,
   signal: AbortSignal,
 ): Promise<WorkspaceValue> {
-  const payload = await runBut(checkout.path, ["status", "-u"], signal);
+  let payload = await runBut(checkout.path, ["status"], signal);
+  if (!hasUpstreamState(payload)) payload = await runBut(checkout.path, ["status", "-u"], signal);
   return workspaceFromStatus(checkout, payload, signal);
+}
+
+function hasUpstreamState(payload: unknown): boolean {
+  return typeof payload === "object" && payload !== null && "upstreamState" in payload;
 }
 
 export async function readButPatches(
