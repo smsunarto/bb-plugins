@@ -442,21 +442,32 @@ function SourceLine({
       </li>
     );
   const problem = state.problem ? describeProblem(state.problem) : "";
+  // One line per source: the full problem waits in the tooltip, so two
+  // sleeping hosts don't push three-line paragraphs over the list.
+  const offline = state.problem?.kind === "host-offline";
+  const stale = state.status === "stale" && state.at !== null;
+  const label = stale
+    ? `${where} ${offline ? "offline" : "not refreshed"} · ${readAgo(state.at!, now).toLowerCase()}`
+    : offline
+      ? `${where} offline`
+      : `Couldn't read ${where}`;
   const retry = () =>
     state.kind === "host" ? sources.refetchHost(state.id) : sources.refetchAccount(state.id);
   return (
-    <li className="flex items-start gap-2" data-testid="sc-source-problem" data-source={state.id}>
+    <li className="flex items-center gap-2" data-testid="sc-source-problem" data-source={state.id}>
       <span
         aria-hidden
         className={cx(
-          "mt-1.5 size-1.5 shrink-0 rounded-full",
+          "size-1.5 shrink-0 rounded-full",
           state.status === "failed" ? "bg-destructive" : "bg-warning",
         )}
       />
-      <span className="min-w-0 flex-1 text-[12px] leading-4 text-(--tertiary-foreground)">
-        {state.status === "stale" && state.at !== null
-          ? `${problem} Showing ${where}'s last read. ${readAgo(state.at, now)}.`
-          : `Couldn't read ${where}. ${problem}`}
+      <span
+        title={problem || undefined}
+        className="min-w-0 flex-1 truncate text-[12px] leading-4 text-(--tertiary-foreground)"
+      >
+        {label}
+        {problem ? <span className="sr-only">. {problem}</span> : null}
       </span>
       <Button variant="link" size="sm" onClick={retry} className={TEXT_LINK}>
         Retry
