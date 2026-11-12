@@ -140,6 +140,23 @@ pnpm bb:dev plugin dev /absolute/path/to/bb-plugins/plugins/monokai
 The launcher reports the build's URLs, data directory, and logs. Use `scripts/bb-dev-app stop` when finished.
 This repository does not manage BB checkouts, ports, or server processes.
 
+## Amp orbs
+
+Fresh orbs run `.agents/setup`: it installs missing native-build prerequisites,
+matches CI's Bun 1.4.4 and Node 22.19+ toolchain, installs the latest BB CLI,
+checks its native modules, and installs the frozen workspace lockfile. Repeated
+runs reuse installed tools and dependencies. If the registry is unavailable,
+setup keeps an already installed BB release; a fresh install requires network access.
+
+`.agents/resume` only checks the installed tools and dependencies; it does not
+install packages, authenticate, or start a BB instance. No secrets are required
+for setup, builds, or local unit tests. For integration work, create a separate
+test instance and reproduce the live configuration as described in `AGENTS.md`.
+Configure provider credentials privately only when the affected flow needs them.
+
+Run `.agents/setup` to repair an incomplete orb. To apply lifecycle changes to
+future orbs, publish them to the Amp project's default branch.
+
 ## Documentation screenshots
 
 `bun run screenshots` renders static documentation heroes without a BB server.

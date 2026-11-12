@@ -21,5 +21,8 @@ __pycache__/
 .claude/
 .scratch/
 
+# Amp generates portal metadata separately in each orb.
+.amp/portals/*
+
 # One-off verification screenshots belong in .scratch/ or thread storage.
 /final-*.png

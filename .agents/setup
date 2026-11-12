@@ -1,24 +1,63 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# bb 0.36 requires Node 22.19+, while the base orb may still provide Node 20.
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
+echo "[setup +${SECONDS}s] Checking system prerequisites"
+missing_packages=()
+for tool_package in curl:curl unzip:unzip make:build-essential g++:build-essential python3:python3; do
+  if ! command -v "${tool_package%%:*}" >/dev/null; then
+    missing_packages+=("${tool_package#*:}")
+  fi
+done
+if (( ${#missing_packages[@]} )); then
+  sudo apt-get update -qq
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing_packages[@]}"
+fi
+
+# Match CI rather than relying on the base orb's Bun version.
+echo "[setup +${SECONDS}s] Preparing Bun 1.4.4 and Node 22.19+"
+export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PWD/node_modules/.bin:$PATH"
+if ! command -v bun >/dev/null || [[ "$(bun --version)" != 1.4.4 ]]; then
+  curl -fsSL --connect-timeout 10 --max-time 60 https://bun.sh/install | bash -s "bun-v1.4.4"
+fi
+
+# BB and the repository's SQLite postinstall must use the same Node ABI.
 node_package_bin="$HOME/.bun/install/global/node_modules/node/bin"
-if [[ ! -x "$node_package_bin/node" ]] || [[ "$($node_package_bin/node --version)" != v22.* ]]; then
+if [[ ! -x "$node_package_bin/node" ]] || ! "$node_package_bin/node" -e '
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  process.exit(major === 22 && minor >= 19 ? 0 : 1);
+'; then
   bun install -g node@22
 fi
 
 mkdir -p "$HOME/.local/bin"
 ln -sfn "$node_package_bin/node" "$HOME/.local/bin/node"
-export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+
+# Setup's exports do not reach later Amp commands or supervised services.
+profile_marker="# bb-plugins orb toolchain"
+if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
+  cat >> "$HOME/.bash_profile" <<PROFILE
+
+# bb-plugins orb toolchain
+case "\$PWD/" in
+  "$PWD/"*) export PATH="\$HOME/.local/bin:\$HOME/.bun/bin:$PWD/node_modules/.bin:\$PATH" ;;
+esac
+PROFILE
+fi
 
 # The bb CLI tracks the latest bb-app release. A registry lookup that fails
 # keeps an installed bb rather than failing setup offline.
-bb_version="$(curl -fsSL https://registry.npmjs.org/bb-app/latest 2>/dev/null \
-  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).version))' \
+echo "[setup +${SECONDS}s] Checking the latest BB release"
+bb_version="$(curl -fsSL --connect-timeout 5 --max-time 15 https://registry.npmjs.org/bb-app/latest 2>/dev/null \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).version))' 2>/dev/null \
   || true)"
 if [[ -z "$bb_version" ]] && ! command -v bb >/dev/null; then
   echo "Could not resolve the latest bb-app release and no bb is installed." >&2
   exit 1
+fi
+if [[ -z "$bb_version" ]]; then
+  echo "Registry unavailable; keeping the installed BB release."
 fi
 if [[ -n "$bb_version" ]] && { ! command -v bb >/dev/null || [[ "$(bb --version 2>/dev/null || true)" != "$bb_version" ]]; }; then
   bun install -g "bb-app@$bb_version"
@@ -26,13 +65,23 @@ fi
 ln -sfn "$HOME/.bun/bin/bb" "$HOME/.local/bin/bb"
 ln -sfn "$HOME/.bun/bin/bb-app" "$HOME/.local/bin/bb-app"
 
-# Repair an interrupted global install before trying to launch the bb server.
-global_modules="$HOME/.bun/install/global/node_modules"
-if [[ ! -f "$global_modules/better-sqlite3/build/Release/better_sqlite3.node" ]]; then
-  (cd "$global_modules/better-sqlite3" && node ../.bin/prebuild-install)
+# Load modules instead of looking for a particular build layout: newer releases
+# ship working prebuilds without build/Release or a prebuild-install dependency.
+echo "[setup +${SECONDS}s] Checking BB's native modules"
+bb_package="$HOME/.bun/install/global/node_modules/bb-app/package.json"
+sqlite_entry="$(node -p 'require.resolve("better-sqlite3", { paths: [process.argv[1]] })' "$bb_package")"
+if ! node -e 'new (require(process.argv[1]))(":memory:").close()' "$sqlite_entry"; then
+  sqlite_dir="$(dirname "$(dirname "$sqlite_entry")")"
+  prebuild_install="$(node -p 'require.resolve("prebuild-install/bin.js", { paths: [process.argv[1]] })' "$sqlite_dir")"
+  (cd "$sqlite_dir" && node "$prebuild_install")
 fi
-if [[ ! -f "$global_modules/node-pty/build/Release/pty.node" ]]; then
-  (cd "$global_modules/node-pty" && bunx node-gyp@11.4.2 rebuild && node scripts/post-install.js)
+pty_entry="$(node -p 'require.resolve("node-pty", { paths: [process.argv[1]] })' "$bb_package")"
+if ! node -e 'require(process.argv[1])' "$pty_entry"; then
+  pty_dir="$(dirname "$(dirname "$pty_entry")")"
+  (cd "$pty_dir" && bunx node-gyp@11.4.2 rebuild && node scripts/post-install.js)
 fi
+node -e 'new (require(process.argv[1]))(":memory:").close(); require(process.argv[2]);' "$sqlite_entry" "$pty_entry"
 
+echo "[setup +${SECONDS}s] Installing workspace dependencies"
 bun install --frozen-lockfile
+echo "[setup +${SECONDS}s] Ready: Bun $(bun --version), Node $(node --version), BB $(bb --version)"

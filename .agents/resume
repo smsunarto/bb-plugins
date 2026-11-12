@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PWD/node_modules/.bin:$PATH"
+
+# Snapshots preserve dependencies and toolchains. Never install or start a BB
+# instance here: each task owns its isolated test server and configuration.
+for tool in bun node bb; do
+  if ! command -v "$tool" >/dev/null; then
+    echo "Missing $tool; run .agents/setup to repair this orb." >&2
+    exit 1
+  fi
+done
+if [[ ! -d node_modules ]]; then
+  echo "Missing workspace dependencies; run .agents/setup to repair this orb." >&2
+  exit 1
+fi
+
+bun_version="$(bun --version)"
+node_version="$(node --version)"
+bb_version="$(bb --version)"
+echo "[resume] Ready: Bun $bun_version, Node $node_version, BB $bb_version"
