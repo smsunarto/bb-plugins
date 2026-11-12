@@ -28,7 +28,7 @@ import {
   BotMark,
   Checkbox,
   FixingMark,
-  PersonMark,
+  GitHubAvatar,
   PriorityChip,
   RunGlyph,
 } from "../review-ui.tsx";
@@ -248,7 +248,7 @@ function GroupHeader({
       data-testid="sc-review-group"
       data-group={group.id}
     >
-      {group.kind === "person" ? <PersonMark login={group.label} /> : <BotMark />}
+      {group.kind === "person" ? <GitHubAvatar login={group.label} /> : <BotMark />}
       <span className="shrink-0 text-[12px] leading-4 font-semibold whitespace-pre text-muted-foreground">
         {group.label}
       </span>

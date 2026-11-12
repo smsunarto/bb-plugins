@@ -20,7 +20,7 @@ import {
   Checkbox,
   FixingMark,
   Me,
-  PersonMark,
+  GitHubAvatar,
   PriorityChip,
   StatePill,
 } from "../review-ui.tsx";
@@ -230,7 +230,7 @@ function Reply({ author, body }: { author: string; body: string }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-center gap-2">
-        <PersonMark login={author} size={14} />
+        <GitHubAvatar login={author} className="size-3.5" />
         <span className="text-[12px] leading-4 font-semibold text-foreground">{author}</span>
       </div>
       <Markdown
@@ -244,7 +244,7 @@ function Reply({ author, body }: { author: string; body: string }) {
 function ItemMark({ item }: { item: ItemEntry["item"] }) {
   if (item.priority !== null) return <PriorityChip priority={item.priority} />;
   if (item.origin.kind === "forge" && !item.origin.bot)
-    return <PersonMark login={item.origin.author} size={14} />;
+    return <GitHubAvatar login={item.origin.author} className="size-3.5" />;
   return <BotMark />;
 }
 

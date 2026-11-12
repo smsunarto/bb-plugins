@@ -24,6 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "../components/ui/dropdown-menu.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
+import { GitHubAvatar } from "../review-ui.tsx";
 import { useGo, useNow } from "./hooks.ts";
 import { Chevron, HostIcon, StackIcon, StateIcon } from "./icons.tsx";
 import {
@@ -153,12 +154,10 @@ const ChangeRowView = memo(function ChangeRowView({
   const author = row.author ? (
     <>
       {phone ? null : (
-        <span
-          aria-hidden
-          className={cx(
-            "size-3.5 shrink-0 rounded-full",
-            dots.get(row.author.toLowerCase()) ?? "bg-(--tertiary-foreground)",
-          )}
+        <GitHubAvatar
+          login={row.author}
+          className="size-3.5"
+          fallbackClassName={dots.get(row.author.toLowerCase()) ?? "bg-(--tertiary-foreground)"}
         />
       )}
       <span className="shrink-0 text-[12px] leading-4 text-(--tertiary-foreground)">
@@ -311,12 +310,11 @@ function AccountPicker({
           {phone ? null : (
             <span className="flex" aria-hidden>
               {dots.map((account) => (
-                <span
+                <GitHubAvatar
                   key={account.login}
-                  className={cx(
-                    "-ms-1 size-3.5 shrink-0 rounded-full border-[1.5px] border-solid border-popover first:ms-0",
-                    ACCOUNT_DOTS[accounts.indexOf(account) % ACCOUNT_DOTS.length],
-                  )}
+                  login={account.login}
+                  className="-ms-1 size-3.5 border-[1.5px] border-solid border-popover first:ms-0"
+                  fallbackClassName={ACCOUNT_DOTS[accounts.indexOf(account) % ACCOUNT_DOTS.length]}
                 />
               ))}
             </span>

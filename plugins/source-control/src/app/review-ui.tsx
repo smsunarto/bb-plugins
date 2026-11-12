@@ -7,6 +7,7 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { Viewer } from "../core/items.ts";
 import { Checkbox as UiCheckbox } from "./components/ui/checkbox.tsx";
 import { cx } from "./format.ts";
+import { Avatar, AvatarFallback, AvatarImage } from "./components/ui/avatar.tsx";
 
 /** shadcn's Checkbox with its label: `label` names it when no visible `children` follow the mark. */
 export function Checkbox({
@@ -95,17 +96,33 @@ export function BotMark() {
   );
 }
 
-/** A GitHub login's avatar, GitHub serves any login's at a fixed URL. */
-export function PersonMark({ login, size = 16 }: { login: string; size?: 14 | 16 }) {
+/**
+ * A GitHub login's avatar. GitHub serves any login's at a fixed URL, used
+ * when the forge gave none; one size for every mark, so the browser fetches
+ * each login once. Until it loads, or offline, the login's initial shows, or
+ * a plain disc in `fallbackClassName`.
+ */
+export function GitHubAvatar({
+  login,
+  url,
+  className,
+  fallbackClassName,
+}: {
+  login: string;
+  url?: string | null;
+  className?: string;
+  fallbackClassName?: string;
+}) {
   return (
-    <img
-      src={`https://github.com/${encodeURIComponent(login)}.png?size=32`}
-      alt=""
-      loading="lazy"
-      width={size}
-      height={size}
-      className="shrink-0 rounded-full bg-surface-raised"
-    />
+    <Avatar aria-hidden className={className}>
+      <AvatarImage
+        src={url ?? `https://github.com/${encodeURIComponent(login)}.png?size=48`}
+        alt=""
+      />
+      <AvatarFallback className={fallbackClassName}>
+        {fallbackClassName ? null : login.charAt(0)}
+      </AvatarFallback>
+    </Avatar>
   );
 }
 
@@ -122,15 +139,8 @@ export function Me() {
   const viewer = useContext(ViewerContext);
   return (
     <>
-      {viewer?.avatarUrl ? (
-        <img
-          src={viewer.avatarUrl}
-          alt=""
-          loading="lazy"
-          width={14}
-          height={14}
-          className="size-3.5 shrink-0 rounded-full bg-surface-raised"
-        />
+      {viewer ? (
+        <GitHubAvatar login={viewer.login} url={viewer.avatarUrl} className="size-3.5" />
       ) : (
         <YouMark />
       )}

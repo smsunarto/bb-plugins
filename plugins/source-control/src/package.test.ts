@@ -27,7 +27,7 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect a
       // The review page's list window.
       /^@tanstack\/virtual-core$/,
       // shadcn components in src/app/components/ui: Radix primitives and their class helpers.
-      /^@radix-ui\/react-(checkbox|dialog|dropdown-menu|select|tabs)$/,
+      /^@radix-ui\/react-(avatar|checkbox|dialog|dropdown-menu|select|tabs)$/,
       /^class-variance-authority$/,
       /^clsx$/,
       /^tailwind-merge$/,

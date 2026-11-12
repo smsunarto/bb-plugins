@@ -19,6 +19,7 @@ import { sourceControlContract } from "../../contract/rpc.ts";
 import { PatchesProblem } from "../file-cards.tsx";
 import { absoluteTime, cx, plural, shortId } from "../format.ts";
 import { Skeleton } from "../components/ui/skeleton.tsx";
+import { GitHubAvatar } from "../review-ui.tsx";
 
 // ── code-review's helpers ──────────────────────────────────────────────
 
@@ -50,20 +51,6 @@ function Timestamp({ iso }: { iso: string }) {
       {relativeTime(iso)}
     </time>
   );
-}
-
-function Avatar({ login, url }: { login: string; url: string | null }): ReactNode {
-  const box = "size-4 shrink-0 rounded-full bg-secondary";
-  if (!url)
-    return (
-      <span
-        aria-hidden
-        className={cx(box, "inline-flex items-center justify-center text-[9px] uppercase")}
-      >
-        {login.charAt(0)}
-      </span>
-    );
-  return <img src={url} alt="" className={box} loading="lazy" />;
 }
 
 type ReviewState = Extract<TimelineItem, { kind: "review" }>["state"];
@@ -119,7 +106,7 @@ function When({ at, href }: { at: string; href?: string }) {
 function Who({ login, avatarUrl }: { login: string; avatarUrl: string | null }) {
   return (
     <>
-      <Avatar login={login} url={avatarUrl} />
+      <GitHubAvatar login={login} url={avatarUrl} />
       <span className="font-medium text-foreground">{login}</span>
     </>
   );
