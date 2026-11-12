@@ -9,4 +9,4 @@
   {{summaryMarker}}
 
 - Write inline comments and replies as plain review notes. Do not add Slopcop headers, prefixes, or attribution markers to them.
-- SlopCop adds its own hidden marker, carrying the comment's `priority`, to each inline comment posted through `bb slopcop review`.
+- SlopCop adds a visible priority and category tag and its own hidden marker to each inline comment posted through `bb slopcop review`.

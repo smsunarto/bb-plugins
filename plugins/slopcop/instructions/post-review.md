@@ -11,7 +11,7 @@ bb slopcop review {{number}} --repo {{repo}} --event comment \
 EOF
 )" \
   --comments "$(cat <<'EOF'
-[{"path": "src/file.ts", "line": 42, "priority": 1, "body": "<finding>"}]
+[{"path": "src/file.ts", "line": 42, "priority": 1, "category": "J", "body": "<finding>"}]
 EOF
 )"
 ```
@@ -24,6 +24,11 @@ EOF
   - `1` (P1): a real bug or regression to fix before merging.
   - `2` (P2): worth fixing: an edge case, a missing test, or a maintainability risk.
   - `3` (P3): optional polish or a nit.
+- Give every inline comment a `category`: the lens letter (`A`–`K`) whose report
+  raised it, or `premise` / `architecture` for your own passes. When several
+  lenses found the same site, use the one whose concern the comment states.
+- SlopCop prefixes each comment with its priority and category tag, such as
+  `` `P1` `J · lost behavior` ``; do not write your own tag.
 - Each inline `line` must fall inside the PR's diff. `side` defaults to `RIGHT`
   (new code); use `LEFT` for removed lines and `startLine` for a range.
 - The command is not idempotent. If a call's outcome is unknown, report the

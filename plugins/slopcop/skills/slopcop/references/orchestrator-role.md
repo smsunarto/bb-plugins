@@ -71,7 +71,7 @@ python3 <installed-slopcop-skill>/scripts/start_review.py \
 
 - In shadow mode, output what would be posted using the supplied formatting; write nothing to GitHub.
 - In live mode, submit the complete report with one `bb slopcop review <number> --repo <owner/repo> --event comment --commit <pinned-head-sha> --body <summary-markdown> --comments <inline-comments-json>` call. It posts the summary and inline comments together under Slopcop's configured identity.
-- Preserve the supplied header, re-review guide, and marker in the summary only. Write inline comments as plain review notes without Slopcop prefixes or markers. Each comment uses a diff line and `path`, `line`, `body`, plus `side` when needed. Consult `bb slopcop review --help` for the schema; pass text as literal subprocess arguments or safely quoted files, not interpolated shell source.
+- Preserve the supplied header, re-review guide, and marker in the summary only. Write inline comments as plain review notes without Slopcop prefixes or markers. Each comment uses a diff line and `path`, `line`, `body`, `priority` (0–3), and `category` (the raising lens letter, `premise`, or `architecture`), plus `side` when needed; Slopcop renders the tag. Consult `bb slopcop review --help` for the schema; pass text as literal subprocess arguments or safely quoted files, not interpolated shell source.
 - If submission succeeds, include its returned review URL in the final response. If its outcome is uncertain, report the uncertainty without retrying or reading other PR reviews; Slopcop's backend handles attribution verification.
 - Keep the lens ledger, coverage, and premise/architecture verdicts in your final response, not in the GitHub review.
 

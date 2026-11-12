@@ -2093,7 +2093,7 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
             comments: {
               type: "string",
               description:
-                'Inline comments as a JSON array of {"path","line","body"} objects, with optional "priority" (0-3 for P0-P3), "side" (RIGHT or LEFT), "startLine", and "startSide".',
+                'Inline comments as a JSON array of {"path","line","body"} objects, with "priority" (0-3 for P0-P3) and "category" (premise, architecture, or lens letter A-K), required inside a SlopCop review, and optional "side" (RIGHT or LEFT), "startLine", and "startSide". SlopCop prefixes each body with its priority and category tag.',
             },
             commit: { type: "string", description: "Commit SHA the inline comments refer to." },
             json: options.json,

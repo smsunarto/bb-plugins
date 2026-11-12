@@ -177,9 +177,34 @@ it("submits one review with its verdict and inline comments, anchored to the run
     const store = createStore(bb.storage.database() as never);
     store.insertRun(makeRun({ id: "run_live", threadId: "thr_live", mode: "live" }));
     const comments = JSON.stringify([
-      { path: "src/a.ts", line: 12, body: "Off by one.", priority: 1 },
-      { path: "src/b.ts", line: 9, startLine: 4, side: "LEFT", body: "Removed guard." },
+      { path: "src/a.ts", line: 12, body: "Off by one.", priority: 1, category: "J" },
+      {
+        path: "src/b.ts",
+        line: 9,
+        startLine: 4,
+        side: "LEFT",
+        body: "Removed guard.",
+        priority: 0,
+        category: "premise",
+      },
     ]);
+    // Inside a run, an untagged finding is refused before anything posts.
+    const untagged = await harness.behavior.runCli(
+      [
+        "review",
+        "--event",
+        "comment",
+        "--body",
+        "Looks good.",
+        "--comments",
+        JSON.stringify([{ path: "src/a.ts", line: 12, body: "Off by one.", priority: 1 }]),
+      ],
+      { threadId: "thr_live" },
+    );
+    expect(untagged.exitCode).not.toBe(0);
+    expect(untagged.stderr + untagged.stdout).toContain('needs "priority" (0-3) and "category"');
+    expect(github.submittedReviews).toEqual([]);
+
     const result = await harness.behavior.runCli(
       ["review", "--event", "approve", "--body", "Looks good.", "--comments", comments],
       { threadId: "thr_live" },
@@ -195,18 +220,17 @@ it("submits one review with its verdict and inline comments, anchored to the run
           body: "Looks good.",
           commit_id: "abc123",
           comments: [
-            // Inside a run, SlopCop marks each inline comment itself; the
-            // priority travels in that marker, and a comment without one
-            // gets a marker without the field.
+            // Inside a run, SlopCop tags and marks each inline comment itself;
+            // the priority also travels in the marker for other plugins.
             {
               path: "src/a.ts",
               line: 12,
-              body: "Off by one.\n\n<!-- slopcop:rule=settle run=run_live sha=abc123 kind=inline priority=1 -->",
+              body: "`P1` `J · lost behavior`\n\nOff by one.\n\n<!-- slopcop:rule=settle run=run_live sha=abc123 kind=inline priority=1 -->",
             },
             {
               path: "src/b.ts",
               line: 9,
-              body: "Removed guard.\n\n<!-- slopcop:rule=settle run=run_live sha=abc123 kind=inline -->",
+              body: "`P0` `premise`\n\nRemoved guard.\n\n<!-- slopcop:rule=settle run=run_live sha=abc123 kind=inline priority=0 -->",
               side: "LEFT",
               start_line: 4,
               start_side: "LEFT",

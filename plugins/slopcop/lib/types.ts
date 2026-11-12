@@ -177,6 +177,33 @@ export type CommentKind = z.infer<typeof commentKindSchema>;
 export const prioritySchema = z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]);
 export type Priority = z.infer<typeof prioritySchema>;
 
+/**
+ * What raised an inline finding: the orchestrator's premise or architecture
+ * pass, or one of the review profile's lenses by letter.
+ */
+export const REVIEW_CATEGORIES = {
+  premise: "premise",
+  architecture: "architecture",
+  A: "reuse",
+  B: "dead code",
+  C: "constants & shape",
+  D: "claims & tests",
+  E: "rollout",
+  F: "permissions",
+  G: "perf & concurrency",
+  H: "field choice",
+  I: "user-visible",
+  J: "lost behavior",
+  K: "external context",
+} as const;
+export const categorySchema = z.enum(
+  Object.keys(REVIEW_CATEGORIES) as [
+    keyof typeof REVIEW_CATEGORIES,
+    ...(keyof typeof REVIEW_CATEGORIES)[],
+  ],
+);
+export type Category = z.infer<typeof categorySchema>;
+
 export interface RunComment {
   runId: string;
   githubId: string | null;

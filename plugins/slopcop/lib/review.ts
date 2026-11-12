@@ -5,7 +5,7 @@
 // exact body GitHub's create-review endpoint takes.
 import { z } from "zod";
 import { buildMarker } from "./marker";
-import { prioritySchema } from "./types";
+import { categorySchema, prioritySchema, REVIEW_CATEGORIES } from "./types";
 
 /** CLI verdict names mapped to GitHub's review events. */
 export const REVIEW_EVENTS = {
@@ -26,6 +26,7 @@ const inlineCommentSchema = z
     startLine: z.number().int().positive().optional(),
     startSide: sideSchema.optional(),
     priority: prioritySchema.optional(),
+    category: categorySchema.optional(),
   })
   .strict()
   .refine((comment) => comment.startLine === undefined || comment.startLine < comment.line, {
@@ -72,6 +73,17 @@ export interface ReviewRun {
   sha: string;
 }
 
+/** The visible tag a reader scans first, such as `` `P1` `J · lost behavior` ``. */
+function tag(comment: InlineComment): string {
+  const parts: string[] = [];
+  if (comment.priority !== undefined) parts.push(`\`P${comment.priority}\``);
+  if (comment.category !== undefined) {
+    const label = REVIEW_CATEGORIES[comment.category];
+    parts.push(`\`${label === comment.category ? label : `${comment.category} · ${label}`}\``);
+  }
+  return parts.length === 0 ? "" : `${parts.join(" ")}\n\n`;
+}
+
 function toGitHubComment(
   comment: InlineComment,
   run: ReviewRun | null,
@@ -90,7 +102,7 @@ function toGitHubComment(
   const out: ReviewPayload["comments"][number] = {
     path: comment.path,
     line: comment.line,
-    body: `${comment.body}${marker}`,
+    body: `${tag(comment)}${comment.body}${marker}`,
   };
   if (comment.side !== undefined) out.side = comment.side;
   if (comment.startLine !== undefined) out.start_line = comment.startLine;
@@ -118,6 +130,16 @@ export function parseReviewRequest(input: {
   if (body === "") return { ok: false, error: "--body is required: the overall review comment" };
   const comments = parseComments(input.comments);
   if (typeof comments === "string") return { ok: false, error: comments };
+  // A run's findings are always tagged, so every one must say what it is.
+  const untagged = comments.findIndex(
+    (comment) => comment.priority === undefined || comment.category === undefined,
+  );
+  if (input.run && untagged !== -1) {
+    return {
+      ok: false,
+      error: `--comments at ${untagged}: every inline comment in a SlopCop review needs "priority" (0-3) and "category" (${Object.keys(REVIEW_CATEGORIES).join(", ")})`,
+    };
+  }
   return {
     ok: true,
     payload: {
