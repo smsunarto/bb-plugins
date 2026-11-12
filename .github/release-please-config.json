@@ -42,6 +42,11 @@
       "release-type": "node",
       "component": "monokai",
       "package-name": "@smsunarto/bb-plugin-monokai"
+    },
+    "plugins/source-control": {
+      "release-type": "node",
+      "component": "source-control",
+      "package-name": "@smsunarto/bb-plugin-source-control"
     }
   }
 }

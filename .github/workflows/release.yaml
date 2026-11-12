@@ -37,6 +37,7 @@ jobs:
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
       paths_released: ${{ steps.release.outputs.paths_released }}
+      npm_paths: ${{ steps.npm.outputs.paths }}
     steps:
       - name: Create package release PRs or GitHub Releases
         id: release
@@ -46,14 +47,32 @@ jobs:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
 
+      # A tag-only plugin (private, listed in marketplace.json) is released by
+      # the tag and GitHub Release above; npm publishes only the other paths.
+      - if: ${{ steps.release.outputs.releases_created == 'true' }}
+        uses: actions/checkout@v6
+
+      - if: ${{ steps.release.outputs.releases_created == 'true' }}
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+          no-cache: true
+
+      - name: Choose the released packages npm publishes
+        id: npm
+        if: ${{ steps.release.outputs.releases_created == 'true' }}
+        env:
+          PATHS_RELEASED: ${{ steps.release.outputs.paths_released }}
+        run: echo "paths=$(bun scripts/release-npm-paths.ts "$PATHS_RELEASED")" >> "$GITHUB_OUTPUT"
+
   publish:
     name: Publish (${{ matrix.path }})
     needs: release-please
-    if: ${{ always() && (github.event_name == 'workflow_dispatch' || needs.release-please.outputs.releases_created == 'true') }}
+    if: ${{ always() && (github.event_name == 'workflow_dispatch' || (needs.release-please.outputs.releases_created == 'true' && needs.release-please.outputs.npm_paths != '[]')) }}
     strategy:
       fail-fast: false
       matrix:
-        path: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.package_path)) || fromJSON(needs.release-please.outputs.paths_released) }}
+        path: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', inputs.package_path)) || fromJSON(needs.release-please.outputs.npm_paths) }}
     # npm trusted publishing accepts OIDC identities from GitHub-hosted runners,
     # not self-hosted Namespace runners.
     runs-on: ubuntu-24.04

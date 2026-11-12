@@ -113,3 +113,32 @@ export function workspacePlugins(root: string): WorkspacePlugin[] {
 export function publishableWorkspacePlugins(root: string): WorkspacePlugin[] {
   return workspacePlugins(root).filter((plugin) => plugin.manifest.private !== true);
 }
+
+/** Plugin ids `marketplace.json` lists. */
+export function marketplacePluginIds(root: string): Set<string> {
+  const marketplace = JSON.parse(readFileSync(join(root, "marketplace.json"), "utf8")) as {
+    plugins: { id: string }[];
+  };
+  return new Set(marketplace.plugins.map((entry) => entry.id));
+}
+
+/**
+ * Private plugins `marketplace.json` lists. Release Please still tags them, so
+ * the marketplace can resolve a `<id>/vX.Y.Z` release, but npm never sees them.
+ */
+export function tagOnlyWorkspacePlugins(root: string): WorkspacePlugin[] {
+  const listed = marketplacePluginIds(root);
+  return workspacePlugins(root).filter(
+    (plugin) => plugin.manifest.private === true && listed.has(plugin.id),
+  );
+}
+
+/** The released package paths npm publishes: every one whose package.json is not private. */
+export function npmPublishPaths(root: string, paths: readonly string[]): string[] {
+  return paths.filter((path) => {
+    const manifest = JSON.parse(readFileSync(join(root, path, "package.json"), "utf8")) as {
+      private?: unknown;
+    };
+    return manifest.private !== true;
+  });
+}
