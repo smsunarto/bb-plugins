@@ -7,6 +7,7 @@ import { mountProjectControl } from "./app/project-control.ts";
 import "./app/secondary-panel-resize.css";
 import "./app/home-marker.css";
 import { mountDiffHeader } from "./app/diff-header.ts";
+import { mountContextCardState } from "./app/context-card-state.ts";
 
 import { mountTerminalAppearance } from "./app/terminal-appearance.ts";
 import { mountMonacoSyntaxTokens } from "./app/monaco-syntax-tokens.ts";
@@ -16,6 +17,7 @@ import { HomeMarker } from "./app/home-marker.ts";
 export default definePluginApp((app) => {
   app.contentScripts.register({ id: "diff-header", mount: mountDiffHeader });
   app.contentScripts.register({ id: "project-control", mount: mountProjectControl });
+  app.contentScripts.register({ id: "context-card-state", mount: mountContextCardState });
   app.contentScripts.register({
     id: "terminal-appearance",
     mount: mountTerminalAppearance,

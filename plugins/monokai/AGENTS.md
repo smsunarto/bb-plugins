@@ -34,6 +34,12 @@
 - A DOM fallback colors `.monaco-editor .view-line` spans with the `!important` classes in `app/monaco-syntax-tokens.css`. It mounts whenever the theme is active. If BB renames or moves the bundle, the adapter attaches nothing, reports nothing, and only the fallback colors editors.
 - `semanticHighlighting.enabled` lives in the configuration service that every standalone editor shares. Record the first value the theme replaces. Restore it on theme deselection, plugin reload, and disposal, even after every editor has closed.
 
+## Context card adapter
+
+- `app/context-card-state.ts` marks each `[data-thread-window]` with `data-monokai-context-card="shown" | "hidden"` while its floating context card is mounted, and removes the mark when the card unmounts. The theme's `thread-pane` container queries read it to apply bb's 312px chat shift on the same frame as a width change.
+- Private contracts: the `[data-thread-window]` pane (the `thread-pane` container), `[data-scroll-overlay]` (the `scroll-overlay` container), the card's `hidden` attribute, the single `.thread-scrollbar > div` that bb pads with an inline `padding-inline-end`, and bb's layout bands (card floats from 1072px, shift below 1384px). Recheck them after bb upgrades.
+- `test/context-card-state.test.ts` covers mount, late mount, re-render, unmount, and disposal. Verify a change with the open/close width sweep in a browser: nothing may move after the first frame at 1440–3440px.
+
 ## Palette-independent files
 
 - `app/ui-font-bridge.ts` writes `--bb-monokai-ui-font` on `<html>`. Only the theme's `--font-sans` reads it, so the UI font setting does nothing under another palette.

@@ -519,6 +519,143 @@
   }
 }
 
+/* Sidebar motion follows Capy's shell, measured frame by frame on its web app.
+ * The left sidebar eases out (quint) over 200ms to open and 150ms to close,
+ * where bb slides it linearly over 200ms both ways. Its contents fade and
+ * drift 16px with it: in over 200ms after a 40ms lag, out over 120ms. Rules
+ * key on the state being entered, so a closing sidebar runs the close
+ * timing. bb's left/right/width/visibility list is restated whole, or the
+ * closing panel would go hidden on its first frame. A sidebar collapsed to a
+ * rail keeps its rail in view, so only the off-canvas sidebar fades.
+ * bb's resize drag still wins with its own !important zero duration.
+ *
+ * The right panel has no width animation: the timeline panel, resize handle,
+ * and secondary panel (ids prefixed per split pane) take their size at once.
+ * Opening shows the panel's ground and edge at once and fades its contents
+ * in from 4px right over 150ms. Fading the whole panel flickered: it is
+ * darker than the page, so the page showed through and the edge ghosted in.
+ * The fade is scaled from bb's --panel-collapse-duration (220ms), so it stays
+ * still wherever bb sets that to 0ms: before its transitions are ready on
+ * load, and while dragging.
+ * Closing is instant. Compact viewports keep bb's drawer and shelf motion. */
+@media (min-width: 768px) {
+  .dark [data-variant="sidebar"][data-side="left"][data-state="expanded"] > [data-sidebar="gap"] {
+    transition: width 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .dark [data-variant="sidebar"][data-side="left"][data-state="collapsed"] > [data-sidebar="gap"] {
+    transition: width 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .dark [data-variant="sidebar"][data-side="left"][data-state="expanded"] > [data-sidebar="panel"] {
+    transition:
+      left 200ms cubic-bezier(0.23, 1, 0.32, 1),
+      right 200ms cubic-bezier(0.23, 1, 0.32, 1),
+      width 200ms cubic-bezier(0.23, 1, 0.32, 1),
+      visibility 0s linear 0s;
+  }
+
+  .dark [data-variant="sidebar"][data-side="left"][data-state="collapsed"] > [data-sidebar="panel"] {
+    transition:
+      left 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      right 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      width 150ms cubic-bezier(0.23, 1, 0.32, 1),
+      visibility 0s linear 150ms;
+  }
+
+  .dark [data-collapsible="rail"] [data-sidebar="collapsible-body"] {
+    transition: visibility 0s linear 150ms;
+  }
+
+  .dark
+    [data-variant="sidebar"][data-side="left"][data-state="expanded"]
+    > [data-sidebar="panel"]
+    > [data-sidebar="sidebar"] {
+    transition:
+      opacity 200ms cubic-bezier(0.23, 1, 0.32, 1) 40ms,
+      translate 200ms cubic-bezier(0.23, 1, 0.32, 1) 40ms;
+  }
+
+  .dark
+    [data-variant="sidebar"][data-side="left"][data-collapsible="offcanvas"]
+    > [data-sidebar="panel"]
+    > [data-sidebar="sidebar"] {
+    opacity: 0;
+    translate: -16px 0;
+    transition:
+      opacity 120ms cubic-bezier(0.23, 1, 0.32, 1),
+      translate 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .dark [id^="thread-detail-timeline-panel"],
+  .dark [id^="thread-detail-secondary-panel"] {
+    transition-duration: 0ms;
+  }
+
+  .dark [id^="thread-detail-secondary-panel"] > aside[aria-hidden="false"] > div {
+    --monokai-panel-fade: calc(var(--panel-collapse-duration, 220ms) * 15 / 22);
+    transition:
+      opacity var(--monokai-panel-fade) cubic-bezier(0.23, 1, 0.32, 1),
+      translate var(--monokai-panel-fade) cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .dark [id^="thread-detail-secondary-panel"] > aside[aria-hidden="true"] > div {
+    opacity: 0;
+    translate: 4px 0;
+    transition: none;
+  }
+
+  /* bb floats the thread context card only while its scroll overlay is at
+   * least 1072px wide (12px padding each side, so 1048px of content), and
+   * reads that width through a ResizeObserver, a frame late. When the right
+   * panel snaps open, the stale card would flash at the narrowed chat's edge
+   * before bb swaps it for the banner, so hide it on the same frame. */
+  @container scroll-overlay (width < 1048px) {
+    .dark [data-scroll-overlay] [data-thread-context-card] {
+      visibility: hidden;
+    }
+  }
+
+  /* The same late layout leaves the chat column's 312px shift wrong for a
+   * frame: bb shifts the column only while the card is open and its pane is
+   * 1072px to 1383px wide. Outside that band, cancel a stale inline shift;
+   * inside it, app/context-card-state.ts marks whether the card is open. */
+  @container thread-pane (width < 1072px) or (width >= 1384px) {
+    .dark [data-thread-window] .thread-scrollbar > div[style*="padding-inline-end"] {
+      padding-inline-end: 0 !important;
+    }
+  }
+
+  @container thread-pane (1072px <= width < 1384px) {
+    .dark [data-thread-window][data-monokai-context-card="shown"] .thread-scrollbar > div {
+      padding-inline-end: 312px !important;
+    }
+
+    .dark [data-thread-window][data-monokai-context-card="hidden"] .thread-scrollbar > div {
+      padding-inline-end: 0 !important;
+    }
+  }
+}
+
+/* Reduced motion keeps only the left sidebar's content fade, at 110ms, as
+ * Capy does. bb's own motion-reduce utilities lose to the rules above, so
+ * each selector here matches the specificity of the rule it overrides. */
+@media (min-width: 768px) and (prefers-reduced-motion: reduce) {
+  .dark [data-variant="sidebar"][data-side="left"][data-state] > [data-sidebar="gap"],
+  .dark [data-variant="sidebar"][data-side="left"][data-state] > [data-sidebar="panel"],
+  .dark [data-collapsible="rail"] [data-sidebar="collapsible-body"],
+  .dark [id^="thread-detail-secondary-panel"] > aside[aria-hidden] > div {
+    transition: none;
+  }
+
+  .dark
+    [data-variant="sidebar"][data-side="left"][data-state]
+    > [data-sidebar="panel"]
+    > [data-sidebar="sidebar"] {
+    transition: opacity 110ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+}
+
 /* Both outer sidebars spend the shared alpha edge. The active right
  * resize handle owns that boundary, so suppress the panel border beneath it
  * instead of painting the divider twice. */

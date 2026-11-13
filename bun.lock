@@ -773,6 +773,7 @@
         "@get-bb/plugin-sdk": "0.6.132",
       },
       "devDependencies": {
+        "@bb-plugins/testing": "workspace:*",
         "@pierre/diffs": "^1.2.9",
         "@types/better-sqlite3": "^7.6.12",
         "@types/node": "^22.0.0",

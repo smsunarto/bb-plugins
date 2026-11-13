@@ -460,6 +460,12 @@ and composes its surfaces differently, so the adapter maps the shared roles as f
   the frame with no card or outline, and the page fills the window to its right
   and bottom edges with only its top-left corner rounded. bb's frame lip, card
   mask, page outline, and title-bar seam are removed.
+- On desktop widths the outer sidebars move on Capy's timing, with its
+  ease-out-quint curve. The left sidebar opens over 200ms and closes over
+  150ms, and its contents fade and drift 16px behind it. The right panel takes
+  its width and ground at once, fades its contents in from 4px over
+  150ms, and closes instantly.
+  Reduced motion keeps only a 110ms fade of the left sidebar's contents.
 - bb's native `--primary` name maps to the shared accent `#88C0D0`, not to the
   primary-button fill. Links, mentions, file accents, and search matches use
   it; component selectors map filled buttons to their neutral control roles.

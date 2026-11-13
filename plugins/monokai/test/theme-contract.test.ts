@@ -254,6 +254,57 @@ describe("bb Monokai contract audit", () => {
     ).not.toMatch(/animation|transition/);
   });
 
+  test("moves the outer sidebars on Capy's timing, desktop only", () => {
+    const motion = styleRules(theme).filter(
+      ({ selector }) =>
+        selector.includes('[data-side="left"]') ||
+        selector.includes('[id^="thread-detail-timeline-panel"]') ||
+        selector.includes('[id^="thread-detail-secondary-panel"]'),
+    );
+    expect(motion.length).toBeGreaterThan(0);
+    for (const rule of motion) expect(rule.atRules[0]).toStartWith("@media (min-width: 768px)");
+    const quint = "cubic-bezier(0.23, 1, 0.32, 1)";
+    // Opening runs 200ms, closing 150ms; the closed panel hides only after its slide.
+    expect(theme).toContain(
+      `[data-state="expanded"] > [data-sidebar="gap"] {\n    transition: width 200ms ${quint};`,
+    );
+    expect(theme).toContain(
+      `[data-state="collapsed"] > [data-sidebar="gap"] {\n    transition: width 150ms ${quint};`,
+    );
+    expect(theme).toContain(`width 150ms ${quint},\n      visibility 0s linear 150ms;`);
+    // Only the off-canvas sidebar fades its contents; a rail stays in view.
+    expect(theme).toContain(
+      '[data-collapsible="offcanvas"]\n    > [data-sidebar="panel"]\n    > [data-sidebar="sidebar"] {\n    opacity: 0;\n    translate: -16px 0;',
+    );
+    // The right panel takes its width at once; only its contents fade in, over its
+    // own ground, so the lighter page never shows through.
+    expect(theme).toContain(
+      '.dark [id^="thread-detail-timeline-panel"],\n  .dark [id^="thread-detail-secondary-panel"] {\n    transition-duration: 0ms;',
+    );
+    // The fade follows bb's own duration, so it stays still when bb suppresses motion.
+    expect(theme).toContain("calc(var(--panel-collapse-duration, 220ms) * 15 / 22)");
+    expect(theme).toContain(
+      '> aside[aria-hidden="true"] > div {\n    opacity: 0;\n    translate: 4px 0;\n    transition: none;',
+    );
+    // The floating context card hides on the frame its overlay drops below bb's
+    // 1072px float width (1048px of content), not a ResizeObserver frame later.
+    const card = styleRules(theme).filter(({ selector }) =>
+      selector.includes("[data-thread-context-card]"),
+    );
+    expect(card.map(({ atRules }) => atRules)).toEqual([
+      ["@media (min-width: 768px)", "@container scroll-overlay (width < 1048px)"],
+    ]);
+    // The chat column's 312px shift follows bb's 1072-1383px band on the same frame.
+    const shift = styleRules(theme).filter(({ selector }) =>
+      selector.includes(".thread-scrollbar > div"),
+    );
+    expect(shift.map(({ atRules }) => atRules[1])).toEqual([
+      "@container thread-pane (width < 1072px) or (width >= 1384px)",
+      "@container thread-pane (1072px <= width < 1384px)",
+      "@container thread-pane (1072px <= width < 1384px)",
+    ]);
+  });
+
   test("rejects an unknown template role", () => {
     expect(() => renderTheme(`${template}\n.x { color: {{text.foreign}}; }\n`)).toThrow(
       "Unknown theme role(s): text.foreign",
