@@ -11,7 +11,8 @@
 - Author plugins directly against `@get-bb/plugin-sdk`: `defineRpcContract` + `bb.rpc.register`, `cliCommand`/`defineCli` + `bb.cli.register`, `bb.agents.registerTool`, and `useRpc` with TanStack Query in the app. Read `plugins/html` for the reference layout. Workspace packages under `packages/` export source, never `dist/`.
 - If something can be done through bb-plugin, do it through bb-plugin. If it's possible through bb-plugin, but it is hacky (no easy way to do it via the bb SDK, flag it to the user for approval first).
 - If an implementation is ONLY possible through modification of bb's core app, flag to the user for approval first. DO NOT start work on bb core app without explicit approval.
-- UI components: https://ui.shadcn.com
+- UI components: take Button, Input, Textarea, Card, Separator, Badge, and the `surface` edge classes from `@bb-plugins/ui`, re-exported from the plugin's `components/ui`. Add other shadcn components (https://ui.shadcn.com) from the `@bb` registry in the plugin's `components.json`; when `packages/ui/registry` holds the file, edit that copy and run `bun scripts/style-contract.ts --sync <plugin>`.
+- `scripts/style-contract.test.ts` fails on new style drift (hand-picked edges, raw colors, local primitive copies, CSS selecting bb's DOM by Tailwind class) and names the fix. After removing drift, run `bun scripts/style-contract.ts --update plugins/<id>`.
 - Code diffs, syntax highlighting: https://diffs.com
 - Prefer to use an existing color palette from `/plugins/monokai` theme. If a new color is needed, it should be added to the theme before being used. This is so that when we update the theme, the color change is applied to all plugins that use it.
 - Always check whether the SDK provides an API that can be used to achieve the desired functionality before handrolling our own solution.
