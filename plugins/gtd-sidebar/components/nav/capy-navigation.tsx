@@ -86,6 +86,9 @@ const NavigationRow = memo(function NavigationRow({
     <button
       type="button"
       {...splitProps}
+      // bb's own list rows carry the item id here; keyboard tools such as
+      // Vimium find rows by it rather than by their translatable labels.
+      data-sidebar-navigation-item={item.id}
       className={ROW_CLASS}
       disabled={item.isDisabled}
       aria-busy={item.isLoading || undefined}
@@ -121,7 +124,7 @@ function MoreRow({ hidden, actions }: { hidden: NavigationItem[]; actions: Navig
   return (
     <DropdownMenu.Root>
       <DropdownMenu.Trigger asChild>
-        <button type="button" className={ROW_CLASS}>
+        <button type="button" data-sidebar-navigation-more="" className={ROW_CLASS}>
           <Icon name="MoreHorizontal" className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate">More</span>
         </button>
