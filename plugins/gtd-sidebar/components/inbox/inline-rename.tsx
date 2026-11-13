@@ -10,16 +10,19 @@
 import { flushSync } from "react-dom";
 import {
   createContext,
+  createRef,
   useCallback,
   useContext,
   useRef,
   useState,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { useStore } from "zustand";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { useIsCompactViewport } from "../ui/hooks/use-compact-viewport";
+import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { RenameEditor, renameError } from "./rename-editor";
 
 export interface RenameSession {
@@ -41,7 +44,7 @@ export interface RenameState {
   change(draft: string): void;
 }
 
-function createRenameStore(rename: { current: RenameThread }) {
+function createRenameStore(rename: RenameThread) {
   let startRequest = 0;
   return createStore<RenameState>()((set, get) => {
     const update = (session: RenameSession | null) => set({ session });
@@ -61,7 +64,7 @@ function createRenameStore(rename: { current: RenameThread }) {
         return Promise.resolve(true);
       }
       const pending = Promise.resolve()
-        .then(() => rename.current(current.threadId, value))
+        .then(() => rename(current.threadId, value))
         .then(
           () => {
             update(null);
@@ -106,7 +109,15 @@ function createRenameStore(rename: { current: RenameThread }) {
 }
 
 export type RenameStore = StoreApi<RenameState>;
-const RenameContext = createContext<RenameStore | null>(null);
+/**
+ * The session and the one editor input it can have. The input is shared so
+ * the list's menu, which is not the row drawing the editor, can focus it.
+ */
+interface RenameScope {
+  store: RenameStore;
+  inputRef: RefObject<HTMLInputElement | null>;
+}
+const RenameContext = createContext<RenameScope | null>(null);
 
 /**
  * One rename session for the whole list, saved through bb's silent `rename`.
@@ -119,10 +130,12 @@ export function RenameProvider({
   renameThread: RenameThread;
   children: ReactNode;
 }) {
-  const rename = useRef(renameThread);
-  rename.current = renameThread;
-  const [store] = useState(() => createRenameStore(rename));
-  return <RenameContext.Provider value={store}>{children}</RenameContext.Provider>;
+  const rename = useCommittedEvent(renameThread);
+  const [scope] = useState<RenameScope>(() => ({
+    store: createRenameStore(rename),
+    inputRef: createRef<HTMLInputElement>(),
+  }));
+  return <RenameContext.Provider value={scope}>{children}</RenameContext.Provider>;
 }
 
 /**
@@ -135,10 +148,10 @@ export function RenameProvider({
  * close and focus synchronously to preserve keyboard activation from the tap.
  */
 export function useThreadRename(threadId: string, name: string) {
-  const store = useContext(RenameContext);
-  if (store === null) throw new Error("useThreadRename needs a RenameProvider");
+  const scope = useContext(RenameContext);
+  if (scope === null) throw new Error("useThreadRename needs a RenameProvider");
+  const { store, inputRef } = scope;
   const compact = useIsCompactViewport();
-  const inputRef = useRef<HTMLInputElement>(null);
   const pendingMenuRename = useRef<(() => void) | null>(null);
   const isEditing = useStore(store, (state) => state.session?.threadId === threadId);
   const startEditing = useCallback(() => {

@@ -21,10 +21,15 @@ export function MenuSurface({
       <ContextMenu.Content
         {...usePortalScopeProps()}
         {...props}
-        className={MENU_CONTENT_CLASS}
+        // In a window too short for the menu, the material scrolls inside
+        // the space Radix reports, so the last actions stay reachable.
+        className={cn(
+          MENU_CONTENT_CLASS,
+          "flex max-h-[var(--radix-context-menu-content-available-height)] flex-col",
+        )}
         style={MENU_CONTENT_RESET_STYLE}
       >
-        <div className={MENU_MATERIAL_CLASS}>{children}</div>
+        <div className={cn(MENU_MATERIAL_CLASS, "min-h-0 overflow-y-auto")}>{children}</div>
       </ContextMenu.Content>
     </ContextMenu.Portal>
   );
@@ -54,6 +59,24 @@ export function MenuSubSurface({
     </ContextMenu.Portal>
   );
 }
+
+/**
+ * The rule between two groups of a right-click menu: a hairline as wide as
+ * the items' highlight, so the two share their edges. The theme draws
+ * context-menu separators 1px thick and inset 8px; like the surface's resets
+ * below, the inline style outranks that selector. A sub-pixel border snaps to
+ * one device pixel, where a sub-pixel box could round away.
+ */
+export function MenuSeparator() {
+  return <ContextMenu.Separator style={MENU_SEPARATOR_STYLE} />;
+}
+
+const MENU_SEPARATOR_STYLE = {
+  height: 0,
+  margin: "6px 0",
+  background: "none",
+  borderTop: "0.5px solid var(--border)",
+} as const;
 
 const MENU_CONTENT_CLASS = "z-50 min-w-44 text-popover-foreground";
 // The theme paints context-menu content as an opaque, bordered 15px card.

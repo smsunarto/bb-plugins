@@ -4,6 +4,23 @@
 
 ### Patch Changes
 
+- The thread list shares one right-click menu and one touch sheet between its
+  rows instead of mounting a menu per row. A row no longer adds a document key
+  listener (one per row on desktop, two on a phone), so typing anywhere in bb
+  no longer runs a handler for every thread in view.
+
+- A right-clicked row stays highlighted while its menu is open, and the menu
+  scrolls inside a window too short to hold it.
+
+- The phone's long-press sheet opens beside the row with room for all its
+  actions: below a row in the top half of the screen, above one in the bottom
+  half, and on a short screen the row slides to make room before the sheet
+  has to scroll. The lifted row is the row itself, other plugins' badges
+  included. One blur now sits behind the sheet instead of two stacked.
+
+- On a tablet, holding a row for half a second opens its menu, at iOS's timing
+  instead of the previous 700 ms.
+
 - Other plugins' row badges draw as chips under the title, and the card no
   longer draws its own pull request number beside the title, so a pull request
   shows once, through GitHub PR Status's badge.

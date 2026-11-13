@@ -270,9 +270,10 @@ the task has not changed.
   Escape cancels, and a failed save keeps your text for another try.
   Moving to a section also unpins the thread, as in bb's normal sidebar.
 - On a phone, hold a row for half a second (iOS's own long-press timing) for the same
-  menu, drawn as an iOS-style frosted sheet. A choice list, such as notification
-  levels, opens in place with Back. Menu taps can play a haptic on iOS when enabled
-  in settings.
+  menu, drawn as an iOS-style frosted sheet beside the lifted row: below a row in the
+  top half of the screen, above one in the bottom half. A choice list, such as
+  notification levels, opens in place with Back. Menu taps can play a haptic on iOS
+  when enabled in settings. On a tablet the same hold opens the desktop menu.
 - Drag a card to a split pane, or Cmd/Ctrl-click to open one.
 - Drag a card onto another to nest it, or onto a project header to un-nest it.
 - Drag a project group header onto another group to reorder the project in bb.

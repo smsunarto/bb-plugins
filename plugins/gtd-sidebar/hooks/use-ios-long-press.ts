@@ -1,14 +1,11 @@
 import {
-  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
-  useState,
-  type CSSProperties,
   type MouseEvent,
   type TouchEvent,
 } from "react";
-import { useLongPress } from "@uidotdev/usehooks";
 import { nativeHaptic } from "../lib/native-haptics";
 
 /**
@@ -32,182 +29,166 @@ export const IOS_LONG_PRESS_ALLOWABLE_MOVEMENT_PX = 10;
  */
 export const TOUCH_PRESS_FEEDBACK_MS = 100;
 
+/** A hold that landed: the element it started on and where the finger is. */
+export interface LongPress<Target> {
+  target: Target;
+  x: number;
+  y: number;
+}
+
+interface LongPressOptions<Target> {
+  enabled?: boolean;
+  /**
+   * The thing a press on `element` holds, or null to leave the press alone.
+   * One recognizer on a list's container serves every row this way, so a row
+   * mounts no handlers or timers of its own.
+   */
+  resolve: (element: Element) => Target | null;
+  /** Whether a held primary mouse button counts, as on a narrow desktop window. */
+  mouse?: boolean;
+  /** The target under a resting finger, for press feedback; null once it lifts. */
+  onPressChange?: (target: Target | null) => void;
+}
+
 /**
- * A touch long press with UIKit's defaults: fires after 500 ms unless the
- * finger drifts more than 10 px or a second finger lands. `useLongPress`
- * supplies the timer; movement tracking is added here because the hook only
- * cancels on touch end.
+ * A long press with UIKit's defaults: fires after 500 ms unless the pointer
+ * drifts more than 10 px, a second finger lands, or the press ends.
  *
- * Touch and mobile-compact mouse clicks are tracked.
+ * `onPressChange` reports the target after 100 ms of touch (the native tap
+ * timeout, so scroll flicks don't flash) and at once for a mouse.
  *
- * Exposes `isPressing` for touch-down feedback after 100ms (matches native tap
- * timeout so scroll flicks don't flash) before the menu appears. A mouse press
- * still tints at once.
- *
- * After a fire, the tap's trailing `click` on the row itself is swallowed so
- * the row's anchor does not also navigate. Only the row's own DOM subtree
- * counts: React portals bubble through the React tree, so a menu rendered
- * by the row must not be caught, or its first tap would be cancelled (and
- * with it the `<input switch>` toggle that plays the iOS haptic).
+ * After a fire, the tap's trailing `click` inside the element is swallowed so
+ * the row's anchor does not also navigate. Only the element's own DOM subtree
+ * counts: React portals bubble through the React tree, so a menu rendered by
+ * the same component must not be caught, or its first tap would be cancelled
+ * (and with it the `<input switch>` toggle that plays the iOS haptic).
  */
-export function useIosLongPress(
-  onLongPress: () => void,
-  { enabled = true }: { enabled?: boolean } = {},
+export function useIosLongPress<Target>(
+  onLongPress: (press: LongPress<Target>) => void,
+  { enabled = true, resolve, mouse = true, onPressChange }: LongPressOptions<Target>,
 ) {
-  const [isPressing, setIsPressing] = useState(false);
-  const origin = useRef<{ x: number; y: number } | null>(null);
+  // The latest callbacks, read when a timer or event lands, so the handlers
+  // below keep one identity for the life of the element.
+  const latest = useRef({ onLongPress, resolve, onPressChange });
+  useLayoutEffect(() => {
+    latest.current = { onLongPress, resolve, onPressChange };
+  });
+
+  const press = useRef<{
+    target: Target;
+    x: number;
+    y: number;
+    fire: ReturnType<typeof setTimeout>;
+    feedback: ReturnType<typeof setTimeout> | null;
+  } | null>(null);
   const fired = useRef(false);
   const clearFired = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pressTimerRef = useRef<number | null>(null);
-  const armed = useRef(enabled);
-
-  // Every path that ends a press goes through here, so a pending tint can
-  // never land after the finger has gone. That includes the handlers going
-  // away mid-press, which would otherwise leave no touchend to clear it.
-  const endPress = useCallback(() => {
-    if (pressTimerRef.current !== null) window.clearTimeout(pressTimerRef.current);
-    pressTimerRef.current = null;
-    setIsPressing(false);
-  }, []);
-  // `useLongPress` keeps its own timer and only an event cancels it, so a
-  // hold that outlives its handlers (disabled or unmounted) still fires.
-  // `armed` drops that fire.
-  useEffect(() => {
-    armed.current = enabled;
-    return () => {
-      armed.current = false;
-      endPress();
-    };
-  }, [enabled, endPress]);
-
-  const callback = useCallback(() => {
-    if (!armed.current) return;
-    fired.current = true;
-    endPress();
-    // UIKit plays a medium impact as a context menu lifts. Outside BB's
-    // mobile app, Android browsers can still vibrate.
-    if (
-      !nativeHaptic("impact-medium") &&
-      typeof navigator !== "undefined" &&
-      "vibrate" in navigator
-    ) {
-      try {
-        navigator.vibrate(10);
-      } catch {}
-    }
-    onLongPress();
-  }, [onLongPress, endPress]);
-
-  const onCancel = useCallback(() => {
-    origin.current = null;
-    endPress();
-  }, [endPress]);
-
-  const press = useLongPress(callback, { threshold: IOS_LONG_PRESS_MS, onCancel });
 
   const handlers = useMemo(() => {
-    if (!enabled) return {};
+    // Every path that ends a press goes through here, so a pending tint or
+    // fire can never land after the finger has gone.
+    const end = () => {
+      const current = press.current;
+      if (current === null) return;
+      press.current = null;
+      clearTimeout(current.fire);
+      if (current.feedback !== null) clearTimeout(current.feedback);
+      latest.current.onPressChange?.(null);
+    };
 
-    const onTouchStart = (event: TouchEvent<HTMLElement>) => {
+    const begin = (element: Element, x: number, y: number, feedbackDelay: number) => {
+      end();
       fired.current = false;
-      if (event.touches.length !== 1) return;
-      const touch = event.touches[0]!;
-      origin.current = { x: touch.clientX, y: touch.clientY };
-      if (pressTimerRef.current !== null) window.clearTimeout(pressTimerRef.current);
-      pressTimerRef.current = window.setTimeout(() => {
-        pressTimerRef.current = null;
-        setIsPressing(true);
-      }, TOUCH_PRESS_FEEDBACK_MS);
-      press.onTouchStart(event);
+      const target = latest.current.resolve(element);
+      if (target === null) return;
+      const showFeedback = () => latest.current.onPressChange?.(target);
+      press.current = {
+        target,
+        x,
+        y,
+        feedback: feedbackDelay > 0 ? setTimeout(showFeedback, feedbackDelay) : null,
+        fire: setTimeout(() => {
+          const current = press.current;
+          if (current === null) return;
+          fired.current = true;
+          // UIKit plays a medium impact as a context menu lifts. Outside BB's
+          // mobile app, Android browsers can still vibrate.
+          if (
+            !nativeHaptic("impact-medium") &&
+            typeof navigator !== "undefined" &&
+            "vibrate" in navigator
+          ) {
+            try {
+              navigator.vibrate(10);
+            } catch {}
+          }
+          // The press ends after the callback, which may want the target
+          // as it looks while held.
+          latest.current.onLongPress({ target: current.target, x: current.x, y: current.y });
+          end();
+        }, IOS_LONG_PRESS_MS),
+      };
+      if (feedbackDelay === 0) showFeedback();
     };
 
-    const onTouchMove = (event: TouchEvent<HTMLElement>) => {
-      const start = origin.current;
-      if (start === null) return;
-      const touch = event.touches[0];
-      const moved =
-        event.touches.length !== 1 ||
-        touch === undefined ||
-        Math.hypot(touch.clientX - start.x, touch.clientY - start.y) >
-          IOS_LONG_PRESS_ALLOWABLE_MOVEMENT_PX;
-      // `onTouchEnd` is the hook's cancel path: it clears the timer and resets.
-      if (moved) {
-        endPress();
-        press.onTouchEnd(event);
-      }
+    const move = (x: number, y: number) => {
+      const current = press.current;
+      if (current === null) return;
+      if (Math.hypot(x - current.x, y - current.y) > IOS_LONG_PRESS_ALLOWABLE_MOVEMENT_PX) end();
     };
 
-    const onTouchEnd = (event: TouchEvent<HTMLElement>) => {
-      endPress();
-      press.onTouchEnd(event);
-      // Safari's synthetic click follows touchend at once when it comes at
-      // all; a later click is a new tap and must go through.
+    // Safari's synthetic click follows touchend at once when it comes at
+    // all; a later click is a new tap and must go through.
+    const release = () => {
+      end();
       if (clearFired.current) clearTimeout(clearFired.current);
       clearFired.current = setTimeout(() => {
         fired.current = false;
       }, 300);
-    };
-
-    const onMouseDown = (event: MouseEvent<HTMLElement>) => {
-      if (event.button !== 0) return;
-      fired.current = false;
-      origin.current = { x: event.clientX, y: event.clientY };
-      setIsPressing(true);
-      press.onMouseDown(event);
-    };
-
-    const onMouseMove = (event: MouseEvent<HTMLElement>) => {
-      const start = origin.current;
-      if (start === null) return;
-      const moved =
-        Math.hypot(event.clientX - start.x, event.clientY - start.y) >
-        IOS_LONG_PRESS_ALLOWABLE_MOVEMENT_PX;
-      if (moved) {
-        setIsPressing(false);
-        press.onMouseUp(event);
-      }
-    };
-
-    const onMouseUp = (event: MouseEvent<HTMLElement>) => {
-      setIsPressing(false);
-      press.onMouseUp(event);
-      if (clearFired.current) clearTimeout(clearFired.current);
-      clearFired.current = setTimeout(() => {
-        fired.current = false;
-      }, 300);
-    };
-
-    const onMouseLeave = (event: MouseEvent<HTMLElement>) => {
-      setIsPressing(false);
-      press.onMouseLeave(event);
     };
 
     return {
-      onTouchStart,
-      onTouchMove,
-      onTouchEnd,
-      onTouchCancel: onTouchEnd,
-      onMouseDown,
-      onMouseMove,
-      onMouseUp,
-      onMouseLeave,
-      onClickCapture: (event: MouseEvent<HTMLElement>) => {
-        if (!fired.current) return;
-        if (!event.currentTarget.contains(event.target as Node)) return;
-        fired.current = false;
-        event.preventDefault();
-        event.stopPropagation();
+      end,
+      props: {
+        onTouchStart: (event: TouchEvent<HTMLElement>) => {
+          if (event.touches.length !== 1) return end();
+          const touch = event.touches[0]!;
+          begin(event.target as Element, touch.clientX, touch.clientY, TOUCH_PRESS_FEEDBACK_MS);
+        },
+        onTouchMove: (event: TouchEvent<HTMLElement>) => {
+          const touch = event.touches[0];
+          if (event.touches.length !== 1 || touch === undefined) end();
+          else move(touch.clientX, touch.clientY);
+        },
+        onTouchEnd: release,
+        onTouchCancel: release,
+        onMouseMove: (event: MouseEvent<HTMLElement>) => move(event.clientX, event.clientY),
+        onMouseUp: release,
+        onMouseLeave: end,
+        onClickCapture: (event: MouseEvent<HTMLElement>) => {
+          if (!fired.current) return;
+          if (!event.currentTarget.contains(event.target as Node)) return;
+          fired.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+        },
       },
-      // Android fires a native contextmenu at its own long-press timing;
-      // iOS shows the link callout instead, which `WebkitTouchCallout` mutes.
-      onContextMenu: (event: MouseEvent<HTMLElement>) => event.preventDefault(),
-      style: {
-        WebkitTouchCallout: "none",
-        WebkitUserSelect: "none",
-        userSelect: "none",
-      } satisfies CSSProperties,
+      onMouseDown: (event: MouseEvent<HTMLElement>) => {
+        if (event.button === 0) begin(event.target as Element, event.clientX, event.clientY, 0);
+      },
     };
-  }, [enabled, press, endPress]);
+  }, []);
 
-  return { isPressing, handlers };
+  // A hold that outlives its handlers (disabled or unmounted) must not fire.
+  const { end } = handlers;
+  useEffect(() => {
+    if (!enabled) end();
+    return end;
+  }, [enabled, end]);
+
+  return useMemo(
+    () =>
+      enabled ? { ...handlers.props, ...(mouse ? { onMouseDown: handlers.onMouseDown } : {}) } : {},
+    [enabled, mouse, handlers],
+  );
 }

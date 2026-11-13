@@ -180,36 +180,6 @@
     "source": "set: (value: number) => void scrolls.push(value),"
   },
   {
-    "filename": "plugins/gtd-sidebar/components/inbox/inline-rename.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "const [store] = useState(() => createRenameStore(rename));"
-  },
-  {
-    "filename": "plugins/gtd-sidebar/components/inbox/inline-rename.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "rename.current = renameThread;"
-  },
-  {
-    "filename": "plugins/gtd-sidebar/components/inbox/slim-row.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "if (!isCompactViewport) setMenuOpen(false);"
-  },
-  {
-    "filename": "plugins/gtd-sidebar/components/inbox/thread-card.tsx",
-    "code": "react(purity)",
-    "message": "Cannot call impure function during render",
-    "source": "command({ kind: \"snooze\", threadId: thread.id, until: snoozeUntilTomorrow(new Date()) }),"
-  },
-  {
-    "filename": "plugins/gtd-sidebar/components/inbox/thread-card.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "if (!isCompactViewport) setMenuOpen(false);"
-  },
-  {
     "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
     "code": "react(refs)",
     "message": "Cannot access refs during render",

@@ -103,16 +103,6 @@ Source: <https://github.com/tijnjh/ios-haptics>
 
 ---
 
-## @uidotdev/usehooks
-
-MIT License, Copyright (c) 2023 ui.dev.
-
-`useLongPress` times the compact row's long press. Compiled into `dist/app.js`.
-
-Source: <https://github.com/uidotdev/usehooks>
-
----
-
 ## TanStack Virtual — `@tanstack/react-virtual`, `@tanstack/virtual-core`
 
 MIT License, Copyright (c) 2021-present Tanner Linsley.

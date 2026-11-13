@@ -3,7 +3,7 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { Icon, type IconName } from "../ui/icon";
 import { cn } from "../../lib/utils";
-import { MENU_ITEM_CLASS, MenuSurface, openMenuFromKeyboard } from "./menu-surface";
+import { MENU_ITEM_CLASS, MenuSeparator, MenuSurface, openMenuFromKeyboard } from "./menu-surface";
 import {
   SidebarBotIcon,
   type BotMetadata,
@@ -263,10 +263,7 @@ function BotMenu({
       <MenuSurface aria-label={`${bot.name} bot actions`}>
         {entries.map((entry, index) =>
           entry === null ? (
-            <ContextMenu.Separator
-              key={`separator-after-${entries[index - 1]?.label ?? "start"}`}
-              className="mx-2 my-1.5 h-px bg-border"
-            />
+            <MenuSeparator key={`separator-after-${entries[index - 1]?.label ?? "start"}`} />
           ) : (
             <ContextMenu.Item
               key={entry.label}

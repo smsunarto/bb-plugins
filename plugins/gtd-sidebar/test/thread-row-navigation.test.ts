@@ -239,9 +239,10 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       return useHost().awaitMachineVisibility ? visibility : { ...visibility, ready: true };
     },
   }));
+  // Every row body calls this once per render, and nothing else does.
   const rowBodyRender = spyOn(
-    await import("../components/inbox/row-context-menu.tsx"),
-    "RowContextMenu",
+    await import("../components/inbox/status-slot.tsx"),
+    "useRowDescribedBy",
   );
   const { ThreadInbox } = await import("../components/inbox/thread-inbox.tsx");
   const { useCommittedEvent } = await import("../hooks/use-committed-event.ts");
@@ -1330,23 +1331,23 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
             ),
           );
         // A touch press tints a resting row and leaves the open one selected.
-        const press = async (ids: readonly string[], pressed: string[][]) => {
+        const press = async (id: string, pressed: string[][]) => {
           if (!isCompactViewport) return;
-          for (const id of ids) {
-            fireEvent.touchStart(card(id), { touches: [{ clientX: 0, clientY: 0 }] });
-          }
+          fireEvent.touchStart(card(id), { touches: [{ clientX: 0, clientY: 0 }] });
           await restPastTapDelay();
           assert.deepEqual(fills(), pressed);
-          for (const id of ids) fireEvent.touchEnd(card(id));
+          fireEvent.touchEnd(card(id));
         };
         const active = ["bg-state-active"];
         const rest = ["hover:bg-sidebar-accent"];
         const pressedRest = ["bg-sidebar-accent", ...rest];
         assert.deepEqual(fills(), [active, rest, rest]);
-        await press(["a", "snoozed"], [active, rest, pressedRest]);
+        await press("a", [active, rest, rest]);
+        await press("snoozed", [active, rest, pressedRest]);
         view.updateInbox({ activeThreadId: "snoozed" });
         assert.deepEqual(fills(), [rest, rest, active]);
-        await press(["b", "snoozed"], [rest, pressedRest, active]);
+        await press("b", [rest, pressedRest, active]);
+        await press("snoozed", [rest, rest, active]);
         assert.deepEqual(fills(), [rest, rest, active]);
       },
     );
@@ -1356,49 +1357,51 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       host.lifecycle = lifecycle(["snoozed"]);
       const view = mount(host, { isCompactViewport: true });
       fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
-      const tinted = () =>
-        ["card", "snoozed"].map((id) =>
-          row(view.slot, id).parentElement!.classList.contains("bg-sidebar-accent"),
-        );
+      // One finger, one row: the list runs a single recognizer for its rows.
       for (const id of ["card", "snoozed"]) {
         const target = row(view.slot, id).parentElement!;
+        const tinted = () => target.classList.contains("bg-sidebar-accent");
         fireEvent.touchStart(target, { touches: [{ clientX: 0, clientY: 0 }] });
         fireEvent.touchMove(target, { touches: [{ clientX: 0, clientY: -30 }] });
-      }
-      await restPastTapDelay();
-      assert.deepEqual(tinted(), [false, false]);
-      for (const id of ["card", "snoozed"]) fireEvent.touchEnd(row(view.slot, id).parentElement!);
+        await restPastTapDelay();
+        assert.equal(tinted(), false);
+        fireEvent.touchEnd(target);
 
-      for (const id of ["card", "snoozed"]) {
-        const target = row(view.slot, id).parentElement!;
         fireEvent.touchStart(target, { touches: [{ clientX: 0, clientY: 0 }] });
+        assert.equal(tinted(), false);
+        await restPastTapDelay();
+        assert.equal(tinted(), true);
+        fireEvent.touchEnd(target);
+        assert.equal(tinted(), false);
       }
-      assert.deepEqual(tinted(), [false, false]);
-      await restPastTapDelay();
-      assert.deepEqual(tinted(), [true, true]);
-      for (const id of ["card", "snoozed"]) fireEvent.touchEnd(row(view.slot, id).parentElement!);
-      assert.deepEqual(tinted(), [false, false]);
     });
 
-    it("keeps the hold's no-select style beside a touch row's own padding", () => {
+    it("mutes selection on a touch row, beside its own padding, until it is renamed", async () => {
       const host = hostState([thread("card"), thread("snoozed")]);
       host.lifecycle = lifecycle(["snoozed"]);
       const view = mount(host, { isCompactViewport: true });
       fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
-      // jsdom drops -webkit-touch-callout; user-select rides the same object.
-      assert.deepEqual(
+      // app.css mutes the link callout and selection on `.gtd-touch-row`.
+      const touchRows = () =>
         ["card", "snoozed"].map((id) => {
-          const { style } = row(view.slot, id).parentElement!;
-          return [style.userSelect, style.paddingLeft];
-        }),
-        [
-          ["none", "calc(22px + var(--gtd-leaf-group-indent, 0px))"],
-          ["none", "calc(22px + var(--gtd-leaf-group-indent, 0px))"],
-        ],
+          const element = row(view.slot, id).parentElement!;
+          return [element.classList.contains("gtd-touch-row"), element.style.paddingLeft];
+        });
+      assert.deepEqual(touchRows(), [
+        [true, "calc(22px + var(--gtd-leaf-group-indent, 0px))"],
+        [true, "calc(22px + var(--gtd-leaf-group-indent, 0px))"],
+      ]);
+      // The editor's input would inherit the muted selection.
+      await openMenu(row(view.slot, "card"), true);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+      await screen.findByRole("textbox", { name: "Thread name" });
+      assert.deepEqual(
+        touchRows().map(([muted]) => muted),
+        [false, true],
       );
     });
 
-    it("lifts the row's own line: its padding, chevron and restore glyph", async () => {
+    it("lifts a copy of the pressed row: its line, padding, chevron and restore glyph", async () => {
       const host = hostState([
         thread("root"),
         thread("child", { parentThreadId: "root" }),
@@ -1409,24 +1412,31 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
       const lifted = async (id: string) => {
         await openMenu(row(view.slot, id), true);
-        const copy = document.body.querySelector('[data-state="open"].fixed.z-50');
+        const copy = document.body.querySelector<HTMLElement>(".gtd-sheet-lift > *");
         assert.ok(copy);
-        const content = copy.firstElementChild as HTMLElement;
-        const icons = Array.from(content.querySelectorAll("[data-icon]"), (icon) =>
+        const icons = Array.from(copy.querySelectorAll("[data-icon]"), (icon) =>
           icon.getAttribute("data-icon"),
         );
+        // The copy is a picture: nothing in it can be found, focused or run
+        // as the thread, and no id repeats the row's.
+        const live = [
+          copy.querySelectorAll("a, [id], [data-sidebar-thread-id]").length,
+          copy.hasAttribute("data-gtd-menu-row"),
+          copy.parentElement!.hasAttribute("inert"),
+        ];
         fireEvent.keyDown(screen.getByRole("menu", { name: "Thread actions" }), {
           key: "Escape",
         });
         await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
-        return [content.style.paddingLeft, icons];
+        return [copy.textContent?.includes(id), copy.style.paddingLeft, icons, live];
       };
+      const picture = [0, false, true];
       assert.deepEqual(
         [await lifted("root"), await lifted("child"), await lifted("sleeper")],
         [
-          ["calc(40px + var(--gtd-group-indent, 0px))", ["ChevronDown"]],
-          ["calc(56px + var(--gtd-group-indent, 0px))", []],
-          ["calc(22px + var(--gtd-leaf-group-indent, 0px))", ["AlarmClock"]],
+          [true, "calc(40px + var(--gtd-group-indent, 0px))", ["ChevronDown"], picture],
+          [true, "calc(56px + var(--gtd-group-indent, 0px))", [], picture],
+          [true, "calc(22px + var(--gtd-leaf-group-indent, 0px))", ["AlarmClock"], picture],
         ],
       );
     });
@@ -1435,23 +1445,25 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const host = hostState([thread("a"), thread("b"), thread("snoozed")]);
       host.lifecycle = lifecycle(["snoozed"]);
       const view = mount(host, { activeThreadId: "a", isCompactViewport: true });
-      const ACTIVE_LIFT =
-        "linear-gradient(var(--state-active), var(--state-active)), var(--sidebar)";
-      const RESTING_LIFT =
-        "linear-gradient(var(--sidebar-accent), var(--sidebar-accent)), var(--sidebar)";
       fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
       const lifted = async (id: string) => {
         await openMenu(row(view.slot, id), true);
-        const copy = document.body.querySelector('[data-state="open"].fixed.z-50');
+        const copy = document.body.querySelector<HTMLElement>(".gtd-sheet-lift > *");
         assert.ok(copy);
-        // The fill, laid over the opaque sidebar so the scrim can't shade it.
-        const fill = (copy as HTMLElement).style.background;
+        // The copy keeps the row's fill while the row itself steps out.
+        const fill = ["bg-state-active", "bg-sidebar-accent", "opacity-0"].filter((name) =>
+          copy.classList.contains(name),
+        );
+        const hidden = row(view.slot, id).parentElement!.classList.contains("opacity-0");
         fireEvent.keyDown(screen.getByRole("menu", { name: "Thread actions" }), {
           key: "Escape",
         });
         await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
-        return fill;
+        assert.equal(row(view.slot, id).parentElement!.classList.contains("opacity-0"), false);
+        return [fill, hidden];
       };
+      const ACTIVE_LIFT = [["bg-state-active"], true];
+      const RESTING_LIFT = [["bg-sidebar-accent"], true];
       assert.deepEqual([await lifted("a"), await lifted("snoozed")], [ACTIVE_LIFT, RESTING_LIFT]);
       view.updateInbox({ activeThreadId: "snoozed" });
       assert.deepEqual([await lifted("snoozed"), await lifted("b")], [ACTIVE_LIFT, RESTING_LIFT]);
@@ -1463,13 +1475,14 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const menu = screen.getByRole("menu", { name: "Thread actions" });
       // A plugin's `dark:` variant follows the OS, not bb's theme, so a dark bb
       // on a light OS drew a white sheet. The sheet takes theme tokens only.
-      const classes = [menu, ...menu.querySelectorAll("*")].flatMap((element) =>
+      const sheet = menu.closest(".gtd-sheet")!;
+      const classes = [sheet, ...sheet.querySelectorAll("*")].flatMap((element) =>
         Array.from(element.classList),
       );
       assert.deepEqual(
         [
           classes.filter((name) => name.startsWith("dark:")),
-          classes.includes("bg-popover/70"),
+          classes.includes("bg-popover/80"),
           within(menu)
             .getByRole("menuitem", { name: "Rename" })
             .classList.contains("active:bg-state-active"),
@@ -2987,6 +3000,116 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         assert.deepEqual(currentActions.rename.mock.calls, [["a", "New title"]]);
       },
     );
+
+    it.each([false, true])(
+      "shares one menu between the rows, so a row adds no document listener, mobile=%s",
+      async (isCompactViewport) => {
+        // A menu per row gave each row its own Radix root, and each root a
+        // capturing keydown listener on the document: every key typed
+        // anywhere in bb ran one handler per mounted row.
+        const added = spyOn(document, "addEventListener");
+        const keyListeners = (ids: string[]) => {
+          added.mockClear();
+          mount(hostState(ids.map((id) => thread(id))), { isCompactViewport });
+          const count = added.mock.calls.filter(([type]) => type === "keydown").length;
+          cleanup();
+          return count;
+        };
+        try {
+          const one = keyListeners(["a"]);
+          assert.ok(one > 0, "the spy sees the shared menu's own listener");
+          assert.equal(keyListeners(["a", "b", "c", "d", "e", "f", "g", "h"]), one);
+        } finally {
+          added.mockRestore();
+        }
+      },
+    );
+
+    it("opens the one menu for whichever row asked last, and marks that row", async () => {
+      const currentActions = actions();
+      const view = mount(
+        { ...hostState([thread("a"), thread("b"), thread("c")]), actions: currentActions },
+        { activeThreadId: "c" },
+      );
+      const marked = () =>
+        ["a", "b", "c"].filter((id) =>
+          row(view.slot, id).parentElement!.classList.contains("bg-sidebar-accent"),
+        );
+      for (const id of ["a", "b"]) {
+        fireEvent.contextMenu(row(view.slot, id));
+        assert.equal(screen.getAllByRole("menu", { name: "Thread actions" }).length, 1);
+        // The pointer is on the menu now; the fill says which row it is for.
+        assert.deepEqual(marked(), [id]);
+        fireEvent.click(screen.getByRole("menuitem", { name: "Mark unread" }));
+        await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
+        assert.deepEqual(marked(), []);
+      }
+      assert.deepEqual(currentActions.setRead.mock.calls, [
+        ["a", false],
+        ["b", false],
+      ]);
+    });
+
+    it("closes the touch sheet behind an action or a choice, not behind Back", async () => {
+      const currentActions = actions();
+      const host = {
+        ...hostState([thread("a"), thread("b")]),
+        actions: currentActions,
+        notifications: { a: "all" },
+      };
+      const view = mount(host, { activeThreadId: "b", isCompactViewport: true });
+      const closed = () => waitFor(() => assert.ok(screen.queryByRole("menu") === null));
+
+      await openMenu(row(view.slot, "a"), true);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Mark unread" }));
+      assert.deepEqual(currentActions.setRead.mock.calls, [["a", false]]);
+      await closed();
+      // The row steps back in once its lifted copy is gone.
+      assert.equal(row(view.slot, "a").parentElement!.classList.contains("opacity-0"), false);
+
+      await openMenu(row(view.slot, "a"), true);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Notifications, All activity" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Back" }));
+      assert.ok(screen.getByRole("menuitem", { name: "Notifications, All activity" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Notifications, All activity" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Muted" }));
+      await closed();
+    });
+
+    it("opens the desktop menu from a touch hold on a wide screen", async () => {
+      // A tablet is not compact and has no right-click.
+      const view = mount(hostState([thread("a"), thread("b")]));
+      const target = row(view.slot, "b").parentElement!;
+      fireEvent.touchStart(target, { touches: [{ clientX: 40, clientY: 60 }] });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+      });
+      fireEvent.touchEnd(target);
+      const menu = screen.getByRole("menu", { name: "Thread actions" });
+      assert.ok(within(menu).getByRole("menuitem", { name: "Open in split" }));
+      assert.equal(document.querySelector(".gtd-sheet"), null);
+      // A held mouse button is a drag or a click there, never the menu.
+      fireEvent.keyDown(menu, { key: "Escape" });
+      fireEvent.mouseDown(row(view.slot, "a"), { button: 0 });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 600));
+      });
+      assert.equal(screen.queryByRole("menu"), null);
+    });
+
+    it("closes the menu when its thread leaves the list", async () => {
+      for (const isCompactViewport of [false, true]) {
+        const host = hostState([thread("a"), thread("b")]);
+        const view = mount(host, { isCompactViewport });
+        await openMenu(row(view.slot, "a"), isCompactViewport);
+        assert.ok(screen.getByRole("menu", { name: "Thread actions" }));
+        view.update({
+          host: { ...host, sidebar: { ...host.sidebar, threads: [host.sidebar.threads[1]!] } },
+        });
+        await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
+        cleanup();
+      }
+    });
 
     it.each([false, true])(
       "marks the target row read with mobile=%s",

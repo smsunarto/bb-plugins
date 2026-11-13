@@ -1,4 +1,5 @@
 import type { IconName } from "../ui/icon";
+import { snoozeUntilTomorrow } from "../../lib/lifecycle";
 
 export type ActiveThreadShelf = "pinned" | "bots" | "nextAction" | "waiting" | "slopcop";
 
@@ -35,7 +36,7 @@ export interface ThreadAction {
 /**
  * The GTD lifecycle moves for one row. Both menus lead with them, then list
  * bb's thread actions (split, copy link, pin, read, rename, delete, and every
- * plugin's) from its registry through ThreadMenuActions. The card's hover
+ * plugin's) from its registry (thread-menu-actions). The card's hover
  * buttons pick single entries out of it.
  */
 export type ThreadActionPlan = readonly ThreadAction[];
@@ -72,6 +73,33 @@ export function buildThreadActionPlan(lifecycle: RowLifecycleState): ThreadActio
         },
       ];
   }
+}
+
+/**
+ * The plan for a row on `shelf`. The row draws its hover buttons from it and
+ * the list's shared menu leads with it, so both offer the same moves.
+ */
+export function rowActionPlan(
+  shelf: "active" | "snoozed" | "settled",
+  threadId: string,
+  canPark: boolean,
+  command: DispatchRowCommand,
+): ThreadActionPlan {
+  if (shelf === "active") {
+    return buildThreadActionPlan({
+      kind: "active",
+      canPark,
+      snoozeUntilTomorrow: () =>
+        command({ kind: "snooze", threadId, until: snoozeUntilTomorrow(new Date()) }),
+      settle: () => command({ kind: "settle", threadId }),
+    });
+  }
+  const restore = () => command({ kind: "restore", threadId, shelf });
+  return buildThreadActionPlan(
+    shelf === "snoozed"
+      ? { kind: "snoozed", wakeNow: restore }
+      : { kind: "settled", unsettle: restore },
+  );
 }
 
 export function findThreadAction(

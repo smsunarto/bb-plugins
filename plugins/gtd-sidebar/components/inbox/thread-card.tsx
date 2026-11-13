@@ -1,10 +1,7 @@
 import {
   memo,
   useCallback,
-  useEffect,
   useId,
-  useRef,
-  useState,
   type KeyboardEvent,
   type PointerEvent,
   type CSSProperties,
@@ -19,14 +16,13 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { Icon, type IconName } from "../ui/icon";
 import { cn } from "../../lib/utils";
-import { RowContextMenu } from "./row-context-menu";
 import { openMenuFromKeyboard } from "./menu-surface";
 import { useThreadRename, type ThreadRename } from "./inline-rename";
 import { LIST_HOVER_TRANSITION } from "./row-motion";
-import { CompactThreadActionMenu } from "./thread-action-menu";
+import { ROW_MENU_ATTRIBUTE, useRowMenuState, type RowMenuState } from "./row-menu";
 import {
-  buildThreadActionPlan,
   findThreadAction,
+  rowActionPlan,
   SNOOZE_TOMORROW_LABEL,
   type ActiveThreadShelf,
   type DispatchRowCommand,
@@ -35,8 +31,6 @@ import {
 import type { ProviderGlyphInfo } from "./provider-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime, useRowDescribedBy } from "./status-slot";
 import { FadingText, HostLead, ThreadDetails } from "./thread-details";
-import { snoozeUntilTomorrow } from "../../lib/lifecycle";
-import { useIosLongPress } from "../../hooks/use-ios-long-press";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { useNestRow, type SidebarDragApi } from "../../hooks/use-nest-drag";
 
@@ -164,36 +158,9 @@ const ThreadCardBody = memo(function ThreadCardBody({
   nestIsOver: boolean;
   setNestRef: (node: HTMLDivElement | null) => void;
 }) {
-  const plan = buildThreadActionPlan({
-    kind: "active",
-    canPark,
-    snoozeUntilTomorrow: () =>
-      command({ kind: "snooze", threadId: thread.id, until: snoozeUntilTomorrow(new Date()) }),
-    settle: () => command({ kind: "settle", threadId: thread.id }),
-  });
   const titleText = thread.displayTitle;
   const rename = useThreadRename(thread.id, titleText);
-  const [isMenuOpen, setMenuOpen] = useState(false);
-  const cardRef = useRef<HTMLDivElement>(null);
-  const { isPressing, handlers } = useIosLongPress(() => setMenuOpen(true), {
-    enabled: isCompactViewport && !rename.isEditing,
-  });
-  // The sheet only renders on a compact viewport. Leaving it with the sheet
-  // open must not strand the row hidden under a sheet that is gone.
-  useEffect(() => {
-    if (!isCompactViewport) setMenuOpen(false);
-  }, [isCompactViewport]);
-
-  // Stable, or React detaches it on every render and the touch menu's layout
-  // effect reads a null card: the lifted copy never draws and the row, faded
-  // out for the menu, simply vanishes.
-  const setCardRef = useCallback(
-    (node: HTMLDivElement | null) => {
-      cardRef.current = node;
-      setNestRef(node);
-    },
-    [setNestRef],
-  );
+  const menuState = useRowMenuState(thread.id);
 
   const shortcut = useSidebarThreadShortcut(thread.id);
   const showActions = shelf === "nextAction" || canPark;
@@ -215,151 +182,113 @@ const ThreadCardBody = memo(function ThreadCardBody({
     isCompactViewport,
     isActive,
     isOpenInSplit,
-    isPressing,
-    isMenuOpen,
+    menuState,
+    isEditing: rename.isEditing,
   });
 
-  const title = (editable: boolean) => (
-    <ThreadTitle
-      editor={editable ? rename.editor : null}
-      title={titleText}
-      isNaming={isNaming}
-      isActive={isActive}
-      isUnread={thread.isUnread}
-      isChild={depth > 0}
-      mobile={isCompactViewport}
-    />
-  );
   // The project lives in the group header above the row. The row leads with
   // the machine globe only when the thread runs elsewhere; a local title
   // starts straight after the disclosure column.
-  const rowTitle = (editable: boolean) => (
+  const title = (
     <>
       <HostLead host={thread.host} />
-      {title(editable)}
+      <ThreadTitle
+        editor={rename.editor}
+        title={titleText}
+        isNaming={isNaming}
+        isActive={isActive}
+        isUnread={thread.isUnread}
+        isChild={depth > 0}
+        mobile={isCompactViewport}
+      />
     </>
   );
-  // The touch menu's lifted copy leaves the badges out: they are other
-  // plugins' mounts, and a second copy would mount them twice.
-  const metadata = (interactive: boolean) =>
-    interactive ? <RowMetadata thread={thread} hidden={rename.isEditing} /> : null;
-  const mobileRow = (interactive: boolean) => (
-    <MobileThreadSummary
-      title={rowTitle(interactive)}
-      metadata={metadata(interactive)}
-      thread={statusThread}
-      isUnread={isUnread}
-      shortcut={shortcut}
-      activity={thread.activity}
-      interactive={interactive}
-      statusId={statusId}
-    />
-  );
+  const metadata = <RowMetadata thread={thread} hidden={rename.isEditing} />;
 
   return (
-    <RowContextMenu thread={thread} plan={plan} rename={rename} disabled={isCompactViewport}>
-      <div>
-        <div
-          ref={setCardRef}
-          data-sidebar-rename-row=""
-          data-sidebar-thread-active={isActive ? "true" : undefined}
-          data-sidebar-thread-focused={isFocusedInSplit}
-          {...handlers}
-          data-action-count={!isCompactViewport && showActions ? 2 : 0}
-          data-dragging={nestIsDragging ? "true" : undefined}
-          data-drop-target={nestIsOver ? "true" : undefined}
-          {...presentation}
-          // Merged: the hold's style mutes iOS's link callout and selection,
-          // and a second `style` prop would replace it.
-          style={{ ...handlers.style, ...presentation.style }}
-        >
-          <ThreadHierarchy
-            threadId={thread.id}
-            title={titleText}
-            depth={depth}
-            childCount={childCount}
-            expanded={expanded}
-            guides={guides}
-            lastChild={lastChild}
-            mobile={isCompactViewport}
-            toggleThread={toggleThread}
-          />
-          <ThreadRowLink
-            thread={thread}
-            projectName={projectName}
-            branchName={branchName}
-            provider={provider}
-            relation={relation}
-            showDetails={!isCompactViewport}
+    <div
+      ref={setNestRef}
+      {...{ [ROW_MENU_ATTRIBUTE]: thread.id }}
+      data-sidebar-rename-row=""
+      data-sidebar-thread-active={isActive ? "true" : undefined}
+      data-sidebar-thread-focused={isFocusedInSplit}
+      data-action-count={!isCompactViewport && showActions ? 2 : 0}
+      data-dragging={nestIsDragging ? "true" : undefined}
+      data-drop-target={nestIsOver ? "true" : undefined}
+      {...presentation}
+    >
+      <ThreadHierarchy
+        threadId={thread.id}
+        title={titleText}
+        depth={depth}
+        childCount={childCount}
+        expanded={expanded}
+        guides={guides}
+        lastChild={lastChild}
+        mobile={isCompactViewport}
+        toggleThread={toggleThread}
+      />
+      <ThreadRowLink
+        thread={thread}
+        projectName={projectName}
+        branchName={branchName}
+        provider={provider}
+        relation={relation}
+        showDetails={!isCompactViewport}
+        shortcut={shortcut}
+        threadId={thread.id}
+        title={titleText}
+        describedBy={describedBy}
+        isActive={isActive}
+        mobile={isCompactViewport}
+        parentId={parentId}
+        childCount={childCount}
+        expanded={expanded}
+        toggleThread={toggleThread}
+        onSplitPointerDown={onSplitPointerDown}
+        onNestPointerDown={onNestPointerDown}
+        onNestKeyDown={onNestKeyDown}
+        nestActive={drag?.source?.kind === "thread"}
+        rename={rename}
+        command={command}
+      />
+      {isUnread ? (
+        <span id={unreadId} className="sr-only">
+          {thread.isUnread ? "Unread response" : "Unread response in subthreads"}
+        </span>
+      ) : null}
+      <div
+        className={cn(
+          "pointer-events-none relative flex items-center gap-1.5",
+          isCompactViewport ? "h-10" : "gtd-summary h-8",
+        )}
+      >
+        {isCompactViewport ? (
+          <MobileThreadSummary
+            title={title}
+            metadata={metadata}
+            thread={statusThread}
+            isUnread={isUnread}
             shortcut={shortcut}
-            threadId={thread.id}
-            title={titleText}
-            describedBy={describedBy}
-            isActive={isActive}
-            mobile={isCompactViewport}
-            parentId={parentId}
-            childCount={childCount}
-            expanded={expanded}
-            toggleThread={toggleThread}
-            onSplitPointerDown={onSplitPointerDown}
-            onNestPointerDown={onNestPointerDown}
-            onNestKeyDown={onNestKeyDown}
-            nestActive={drag?.source?.kind === "thread"}
-            rename={rename}
-            command={command}
+            activity={thread.activity}
+            statusId={statusId}
           />
-          {isUnread ? (
-            <span id={unreadId} className="sr-only">
-              {thread.isUnread ? "Unread response" : "Unread response in subthreads"}
-            </span>
-          ) : null}
-          {isCompactViewport ? (
-            <CompactThreadActionMenu
-              thread={thread}
-              rename={rename}
-              plan={plan}
-              open={isMenuOpen}
-              onOpenChange={setMenuOpen}
-              anchorRef={cardRef}
-              isActive={isActive}
-              highlightContent={
-                // The menu pads this copy the way the row is padded, so the
-                // chevron and title hold their places as the row lifts.
-                <>
-                  <TouchDisclosureGlyph depth={depth} childCount={childCount} expanded={expanded} />
-                  <div className="pointer-events-none relative flex h-full items-center gap-1.5">
-                    {mobileRow(false)}
-                  </div>
-                </>
-              }
-            />
-          ) : null}
-          <div
-            className={cn(
-              "pointer-events-none relative flex items-center gap-1.5",
-              isCompactViewport ? "h-10" : "gtd-summary h-8",
-            )}
-          >
-            {isCompactViewport ? (
-              mobileRow(true)
-            ) : (
-              <DesktopThreadSummary
-                title={rowTitle(true)}
-                metadata={metadata(true)}
-                thread={statusThread}
-                isUnread={isUnread}
-                shortcut={shortcut}
-                plan={plan}
-                showActions={showActions}
-                canPark={canPark}
-                activity={thread.activity}
-                statusId={statusId}
-              />
-            )}
-          </div>
-        </div>
+        ) : (
+          <DesktopThreadSummary
+            title={title}
+            metadata={metadata}
+            thread={statusThread}
+            isUnread={isUnread}
+            shortcut={shortcut}
+            plan={rowActionPlan("active", thread.id, canPark, command)}
+            showActions={showActions}
+            canPark={canPark}
+            activity={thread.activity}
+            statusId={statusId}
+          />
+        )}
       </div>
-    </RowContextMenu>
+    </div>
   );
 });
 
@@ -384,12 +313,12 @@ function threadCardPresentation({
   isCompactViewport,
   isActive,
   isOpenInSplit,
-  isPressing,
-  isMenuOpen,
+  menuState,
+  isEditing,
 }: Pick<ThreadCardProps, "depth" | "childCount" | "isCompactViewport" | "isActive"> & {
   isOpenInSplit: boolean;
-  isPressing: boolean;
-  isMenuOpen: boolean;
+  menuState: RowMenuState;
+  isEditing: boolean;
 }) {
   return {
     style: {
@@ -399,14 +328,39 @@ function threadCardPresentation({
     className: cn(
       "group/card relative rounded-xl px-2.5",
       !isCompactViewport && "gtd-thread-row",
+      touchRowClass(isCompactViewport, isEditing),
       LIST_HOVER_TRANSITION,
       isCompactViewport ? "min-h-10 py-0" : "rounded-md",
       isActive ? "bg-state-active" : "hover:bg-sidebar-accent",
       !isActive && isOpenInSplit && "bg-sidebar-accent/30",
-      isPressing && !isActive && "bg-sidebar-accent",
-      isMenuOpen && "bg-sidebar-accent opacity-0",
+      ...rowMenuFill(menuState, isActive, isCompactViewport),
     ),
   };
+}
+
+/**
+ * A touch row mutes iOS's link callout and text selection under a hold
+ * (app.css). Not while it is renamed: the editor's input would inherit it.
+ */
+export function touchRowClass(isCompactViewport: boolean, isEditing: boolean): string | false {
+  return isCompactViewport && !isEditing && "gtd-touch-row";
+}
+
+/**
+ * How the list's menu shows on a row, shared by cards and slim rows. A held
+ * row and the row a desktop menu is open for take the hover fill, so the
+ * menu's subject stays marked once the pointer is on the menu. The touch
+ * sheet draws a lifted copy of its row, so the row itself steps out.
+ */
+export function rowMenuFill(
+  menuState: RowMenuState,
+  isActive: boolean,
+  isCompactViewport: boolean,
+): (string | false)[] {
+  return [
+    menuState !== null && !isActive && "bg-sidebar-accent",
+    menuState === "open" && isCompactViewport && "opacity-0",
+  ];
 }
 
 /**
@@ -485,7 +439,6 @@ function MobileThreadSummary({
   isUnread,
   shortcut,
   activity,
-  interactive,
   statusId,
 }: {
   title: ReactNode;
@@ -495,7 +448,6 @@ function MobileThreadSummary({
   isUnread: boolean;
   shortcut: PluginSidebarThreadShortcut | null;
   activity: PluginSidebarThread["activity"];
-  interactive: boolean;
   /** The slot's id, which the row's link names as its description. */
   statusId: string;
 }) {
@@ -505,9 +457,7 @@ function MobileThreadSummary({
       {metadata}
       <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
         <ActivityCounts activity={activity} isCompactViewport />
-        {/* Only the live row names its slot: the touch menu's lifted copy
-           would otherwise duplicate the id. */}
-        <span id={interactive ? statusId : undefined} className={STATUS_SLOT_CLASS}>
+        <span id={statusId} className={STATUS_SLOT_CLASS}>
           <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} isCompactViewport />
         </span>
       </span>
@@ -576,34 +526,6 @@ export function ThreadHierarchy({
         </button>
       ) : null}
     </>
-  );
-}
-
-/**
- * The touch chevron as a picture, for the copy of a row the touch menu lifts.
- * It sits where ThreadHierarchy's button does and takes no input.
- */
-export function TouchDisclosureGlyph({
-  depth,
-  childCount,
-  expanded,
-}: {
-  depth: number;
-  childCount: number;
-  expanded: boolean;
-}) {
-  if (childCount === 0) return null;
-  return (
-    <span
-      aria-hidden
-      className="gtd-disclosure gtd-disclosure-touch"
-      style={{ "--gtd-depth": depth } as CSSProperties}
-    >
-      <Icon
-        name="ChevronDown"
-        className={cn("size-4 gtd-chevron-motion", !expanded && "-rotate-90")}
-      />
-    </span>
   );
 }
 

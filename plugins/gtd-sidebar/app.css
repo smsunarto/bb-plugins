@@ -1,6 +1,8 @@
-/* Keyframe animations for the sheet and dimming overlay. */
+/* The touch menu (thread-action-menu.tsx): a scrim, then a full-screen flex
+   column holding the lifted row and its sheet of actions. */
 @keyframes gtd-sheet-in {
   from {
+    opacity: 0;
     transform: scale(0.82);
   }
 }
@@ -11,8 +13,7 @@
   }
 }
 
-/* Reduce Motion: the sheet fades instead of zooming. The names and durations
-   stay, so Radix Presence still unmounts it when the exit ends. */
+/* Reduce Motion: the sheet fades instead of zooming. */
 @media (prefers-reduced-motion: reduce) {
   @keyframes gtd-sheet-in {
     from {
@@ -26,46 +27,128 @@
   }
 }
 
-@keyframes gtd-sheet-fade-in {
-  from {
-    opacity: 0;
-  }
-}
-
-@keyframes gtd-sheet-fade-out {
-  to {
-    opacity: 0;
-  }
-}
-
 @keyframes gtd-dim-in {
   from {
     opacity: 0;
   }
-  to {
-    opacity: 1;
-  }
 }
 
+/* The names and durations of the two exits matter: Radix keeps the scrim
+   and the layer mounted until each one's own exit animation ends. */
 @keyframes gtd-dim-out {
   to {
     opacity: 0;
   }
 }
 
-@keyframes gtd-highlight-in {
-  from {
-    opacity: 0.8;
-  }
-  to {
-    opacity: 1;
-  }
+/* One blur for the whole menu. The sheet above is translucent over it, so
+   it reads as frosted without a second backdrop filter, which the sheet's
+   scale would have re-blurred on every frame. */
+.gtd-sheet-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: rgb(0 0 0 / 0.3);
+  /* Unprefixed only: the builder adds the WebKit form, and drops this one
+     when both are written. */
+  backdrop-filter: blur(8px);
 }
-
-@keyframes gtd-highlight-out {
-  to {
-    opacity: 0;
-  }
+.gtd-sheet-scrim[data-state="open"] {
+  animation: gtd-dim-in 200ms ease-out both;
+}
+.gtd-sheet-scrim[data-state="closed"] {
+  animation: gtd-dim-out 150ms ease-in both;
+}
+.gtd-sheet-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  /* Clear of the status bar, notch and home indicator as well as the screen
+     edge, so a Dynamic Island cannot cover the first items. */
+  padding-block: calc(12px + env(safe-area-inset-top, 0px))
+    calc(12px + env(safe-area-inset-bottom, 0px));
+  outline: none;
+}
+.gtd-sheet-layer[data-state="closed"] {
+  animation: gtd-dim-out 150ms ease-in both;
+}
+/* The row's distance from the layer's padded edge. It alone shrinks, so the
+   row moves toward the middle only as far as the sheet needs. */
+.gtd-sheet-spacer {
+  flex: 0 1 calc(var(--gtd-lift-top) - 12px - env(safe-area-inset-top, 0px));
+  min-height: 0;
+}
+.gtd-sheet-group {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  max-height: 100%;
+}
+/* A row in the lower half hangs its sheet above it: the same column, read
+   from the bottom edge. */
+.gtd-sheet-layer[data-side="above"],
+.gtd-sheet-layer[data-side="above"] > .gtd-sheet-group {
+  flex-direction: column-reverse;
+}
+.gtd-sheet-layer[data-side="above"] > .gtd-sheet-spacer {
+  flex-basis: calc(var(--gtd-lift-bottom) - 12px - env(safe-area-inset-bottom, 0px));
+}
+/* The pressed row's own DOM, on the opaque sidebar ground so the scrim
+   cannot shade the row's translucent fill. The ring sits outside the box,
+   so nothing inside shifts as the row lifts. */
+.gtd-sheet-lift {
+  flex: none;
+  width: var(--gtd-lift-width);
+  height: var(--gtd-lift-height);
+  margin-left: var(--gtd-lift-left);
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--sidebar);
+  box-shadow:
+    0 0 0 1px var(--border),
+    var(--shadow-xl);
+}
+/* On the row's leading edge, as wide as the row or as its longest label,
+   and never off screen. */
+.gtd-sheet {
+  --gtd-sheet-inset-start: calc(12px + env(safe-area-inset-left, 0px));
+  --gtd-sheet-inset-end: calc(12px + env(safe-area-inset-right, 0px));
+  flex: 0 1 auto;
+  align-self: flex-start;
+  box-sizing: border-box;
+  min-width: min(
+    var(--gtd-lift-width),
+    100% - var(--gtd-sheet-inset-start) - var(--gtd-sheet-inset-end)
+  );
+  max-width: calc(100% - var(--gtd-sheet-inset-start) - var(--gtd-sheet-inset-end));
+  min-height: 0;
+  margin-inline: var(--gtd-sheet-inset-start) var(--gtd-sheet-inset-end);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  border-radius: 12px;
+  transform-origin: top left;
+  will-change: transform;
+}
+.gtd-sheet-layer[data-side="above"] .gtd-sheet {
+  transform-origin: bottom left;
+}
+/* UIKit's context-menu spring: a fast rise with a small overshoot. */
+.gtd-sheet-layer[data-state="open"] .gtd-sheet {
+  animation: gtd-sheet-in 280ms cubic-bezier(0.32, 1.25, 0.4, 1) both;
+}
+.gtd-sheet-layer[data-state="closed"] .gtd-sheet {
+  animation: gtd-sheet-out 150ms ease-in both;
+}
+/* A held row shows no link callout or text selection. A row being renamed
+   drops the class, or the editor's input would inherit it. */
+.gtd-touch-row {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 [data-gtd-sidebar-thread-list] {

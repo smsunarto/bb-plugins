@@ -1,39 +1,57 @@
-import type { ReactNode } from "react";
+import type { RefObject } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
-import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
-import type { ThreadActionPlan } from "./thread-actions";
 import { MenuSurface } from "./menu-surface";
-import { ThreadMenuActions } from "./thread-menu-actions";
-import type { ThreadRename } from "./inline-rename";
+import { ThreadContextMenuItems } from "./thread-menu-actions";
+import { useThreadRename } from "./inline-rename";
+import type { RowMenuTarget } from "./row-menu";
 
 /**
- * The desktop menu: the GTD lifecycle moves, then bb's thread actions.
- * Pass `disabled` on the compact viewport, where the row runs
- * its own 500 ms long press: Radix keeps a 700 ms touch timer of its own and
- * would open a second menu on top.
+ * The desktop menu for whichever row was right-clicked: the GTD lifecycle
+ * moves, then bb's thread actions.
+ *
+ * One menu serves the list. Radix opens a context menu only from its own
+ * trigger, so the list forwards a row's `contextmenu` to the hidden trigger
+ * here (`openRowContextMenu`); the menu still opens at the pointer, which is
+ * all Radix reads from the event.
  */
 export function RowContextMenu({
-  thread,
-  plan,
-  rename,
-  disabled = false,
-  children,
+  target,
+  triggerRef,
+  onOpenChange,
 }: {
-  thread: PluginSidebarThread;
-  plan: ThreadActionPlan;
-  /** The row's in-place title editor, which Rename opens. */
-  rename: ThreadRename;
-  disabled?: boolean;
-  children: ReactNode;
+  /** The row the menu is for; null before the first right-click. */
+  target: RowMenuTarget | null;
+  triggerRef: RefObject<HTMLSpanElement | null>;
+  onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger asChild disabled={disabled}>
-        {children}
+    <ContextMenu.Root onOpenChange={onOpenChange}>
+      <ContextMenu.Trigger asChild>
+        <span ref={triggerRef} hidden />
       </ContextMenu.Trigger>
-      <MenuSurface aria-label="Thread actions" onCloseAutoFocus={rename.onCloseAutoFocus}>
-        <ThreadMenuActions thread={thread} plan={plan} rename={rename} />
-      </MenuSurface>
+      {target === null ? null : <RowContextMenuSurface target={target} />}
     </ContextMenu.Root>
+  );
+}
+
+function RowContextMenuSurface({ target }: { target: RowMenuTarget }) {
+  // The row draws the editor; this instance only starts it, once the menu
+  // has handed focus back.
+  const rename = useThreadRename(target.thread.id, target.thread.displayTitle);
+  return (
+    <MenuSurface aria-label="Thread actions" onCloseAutoFocus={rename.onCloseAutoFocus}>
+      <ThreadContextMenuItems
+        thread={target.thread}
+        plan={target.plan}
+        requestRename={() => rename.startEditingFromMenu()}
+      />
+    </MenuSurface>
+  );
+}
+
+/** Opens the shared menu at a point, the way a right-click on its trigger would. */
+export function openRowContextMenu(trigger: HTMLElement | null, x: number, y: number): void {
+  trigger?.dispatchEvent(
+    new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y }),
   );
 }

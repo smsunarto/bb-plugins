@@ -31,7 +31,8 @@ import { cn } from "../../lib/utils";
 import { Select, SelectContent, SelectItem, SelectValue } from "../ui/select";
 import { ThreadCard } from "./thread-card";
 import { SlimRow } from "./slim-row";
-import type { ActiveThreadShelf, RowCommand } from "./thread-actions";
+import { rowActionPlan, type ActiveThreadShelf, type RowCommand } from "./thread-actions";
+import { RowMenuArea, type RowMenuTarget } from "./row-menu";
 import { gtdSidebarRpcContract } from "../../lib/rpc-contract";
 import { useCollapsedThreads } from "../../hooks/use-collapsed-threads";
 import { useMachineVisibility } from "../../hooks/use-machine-visibility";
@@ -615,6 +616,25 @@ function InboxList({
     threads: sidebar.threads,
     archive: pendingArchives.archive,
   });
+  // The shared menu asks for its row as the list has it now, so an open menu
+  // follows the thread's state and closes when the thread leaves the list.
+  const resolveMenuTarget = (threadId: string): RowMenuTarget | null => {
+    for (const shelf of Object.keys(shelves) as InboxShelf[]) {
+      const row = shelves[shelf].find((entry) => entry.node.thread.id === threadId);
+      if (row === undefined) continue;
+      const parked = shelf === "snoozed" || shelf === "settled";
+      return {
+        thread: row.node.thread,
+        plan: rowActionPlan(
+          parked ? shelf : "active",
+          threadId,
+          !parked && canParkFamily(row.node, lifecycle),
+          command,
+        ),
+      };
+    }
+    return null;
+  };
   const scrollRef = useRef<HTMLDivElement>(null);
   const focusedRow = useFocusedRow();
   const inboxWindow = useInboxWindow({
@@ -697,7 +717,9 @@ function InboxList({
               </div>
             ) : null}
 
-            <div
+            <RowMenuArea
+              resolveTarget={resolveMenuTarget}
+              isCompactViewport={isCompactViewport}
               ref={scrollRef}
               className={cn(
                 "min-h-0 flex-1 overflow-y-auto px-1.5",
@@ -812,7 +834,7 @@ function InboxList({
                   )}
                 </InboxContent>
               </DisclosureViewContext.Provider>
-            </div>
+            </RowMenuArea>
           </div>
           {/* The ghost rides the pointer from document.body, clear of the list's
           scroll clip, so the rows themselves never shift under the drag. */}

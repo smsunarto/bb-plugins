@@ -87,7 +87,6 @@
     "@hugeicons/react": "^1.1.6",
     "@smsunarto/bb-plugin-bots": "workspace:*",
     "@tanstack/react-virtual": "3.14.13",
-    "@uidotdev/usehooks": "2.4.1",
     "motion": "^14.7.1",
     "radix-ui": "^1.8.1",
     "zod": "^4.3.6",

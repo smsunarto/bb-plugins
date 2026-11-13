@@ -1,283 +1,186 @@
-import {
-  useState,
-  useLayoutEffect,
-  type CSSProperties,
-  type ReactNode,
-  type RefObject,
-} from "react";
-import { createPortal } from "react-dom";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { cn } from "../../lib/utils";
+import { useCallback, useState, type CSSProperties } from "react";
+import * as Dialog from "@radix-ui/react-dialog";
 import { usePortalScopeProps } from "../../lib/portal-scope";
-import { ThreadMenuActions, type ThreadMenuActionsProps } from "./thread-menu-actions";
+import { getMediaQuerySnapshot, REDUCED_MOTION_QUERY } from "../ui/hooks/use-media-query";
+import { useThreadRename } from "./inline-rename";
+import type { RowMenuTarget } from "./row-menu";
+import { moveSheetFocus, ThreadSheetMenu } from "./thread-menu-actions";
+
+/** Where the pressed row sat when the sheet opened, and a picture of it. */
+export interface SheetOrigin {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+  /** The layout viewport's height, which the layer below fills. */
+  viewportHeight: number;
+  /** The row's own DOM, copied as the press landed. */
+  lift: HTMLElement;
+  /** The custom properties the row's padding resolves against in its group. */
+  groupIndent: string;
+  leafGroupIndent: string;
+}
 
 /**
- * The compact row's action menu, drawn like an iOS context menu: the rest of
- * the screen dims, the target thread row lifts in the foreground above the scrim,
- * and a frosted sheet springs out from under the pressed row, hanging from the
- * row's leading edge the way UIKit hangs it from the pressed cell.
- *
- * Controlled: a long press on the row opens it, as on iOS, and the row shows
- * no button. Radix still needs a trigger to hang the sheet from, so an
- * invisible one covers the row and takes no pointer events. Aligning to its
- * start puts the sheet on the row's left edge.
+ * Photographs a row for the sheet: its box, and a copy of its DOM with
+ * everything that identifies or activates it removed. A copy rather than a
+ * second render, so the lifted row is the pressed row to the pixel — status,
+ * other plugins' badges and all — with nothing to keep in step.
  */
-const SHARED_LAYER_CLASS = cn(
-  "rounded-xl",
-  "border border-border-hairline",
-  // bb's largest elevation token, so light and dark themes each set the depth.
-  "shadow-[var(--shadow-xl)]",
-);
+export function captureSheetOrigin(row: HTMLElement): SheetOrigin {
+  const rect = row.getBoundingClientRect();
+  const style = getComputedStyle(row);
+  const lift = row.cloneNode(true) as HTMLElement;
+  for (const element of [lift, ...lift.querySelectorAll<HTMLElement>("*")]) {
+    // The row's link is an overlay with nothing to draw. Left in, bb's thread
+    // keys would find the thread twice.
+    if (element.tagName === "A") {
+      element.remove();
+      continue;
+    }
+    element.removeAttribute("id");
+    for (const name of element.getAttributeNames()) {
+      if (name.startsWith("data-sidebar-") || name === "data-gtd-menu-row") {
+        element.removeAttribute(name);
+      }
+    }
+  }
+  return {
+    top: rect.top,
+    left: rect.left,
+    width: rect.width,
+    height: rect.height,
+    viewportHeight: window.innerHeight,
+    lift,
+    groupIndent: style.getPropertyValue("--gtd-group-indent"),
+    leafGroupIndent: style.getPropertyValue("--gtd-leaf-group-indent"),
+  };
+}
 
-export function CompactThreadActionMenu({
-  plan,
-  thread,
-  rename,
+/**
+ * The touch menu, drawn like an iOS context menu: the screen dims, the
+ * pressed row lifts above the scrim, and a sheet of actions springs out
+ * beside it — below a row in the top half of the screen, above one in the
+ * bottom half.
+ *
+ * The layer is a flex column: a spacer as tall as the row's offset, then the
+ * row and the sheet. The spacer is the only part that shrinks, so when the
+ * sheet has no room the row slides toward the middle to make it, as UIKit's
+ * does, and the sheet scrolls only on a screen too short to hold it at all.
+ * CSS does all of it (app.css), with the safe-area insets read where they
+ * are defined.
+ */
+export function ThreadActionSheet({
+  target,
+  origin,
   open,
   onOpenChange,
-  anchorRef,
-  highlightContent,
-  isActive = false,
-}: ThreadMenuActionsProps & {
+}: {
+  target: RowMenuTarget;
+  origin: SheetOrigin;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  anchorRef?: RefObject<HTMLElement | null>;
-  highlightContent?: ReactNode;
-  /** The row is the open thread, so its lifted copy keeps the selected fill. */
-  isActive?: boolean;
 }) {
-  const [content, setContent] = useState<HTMLDivElement | null>(null);
+  const scope = usePortalScopeProps();
+  const rename = useThreadRename(target.thread.id, target.thread.displayTitle);
+  const close = () => onOpenChange(false);
+  const side = origin.top + origin.height / 2 > origin.viewportHeight / 2 ? "above" : "below";
+
+  // Runs as the row and sheet mount, which Radix does a commit after `open`.
+  const mountGroup = useCallback(
+    (group: HTMLDivElement | null) => {
+      const lift = group?.querySelector<HTMLElement>(".gtd-sheet-lift");
+      if (!group || !lift) return;
+      lift.replaceChildren(origin.lift);
+      // Where the row had to move to make room, it travels from its place in
+      // the list and takes the sheet with it.
+      const moved = origin.top - lift.getBoundingClientRect().top;
+      if (Math.abs(moved) < 1 || getMediaQuerySnapshot(REDUCED_MOTION_QUERY)) return;
+      group.animate([{ transform: `translateY(${moved}px)` }, { transform: "none" }], {
+        duration: 280,
+        easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+      });
+    },
+    [origin],
+  );
+
+  // The iOS haptic rides an invisible switch over each item, which swallows a
+  // scroll that starts on it (lib/ios-haptics). A sheet too tall for its
+  // screen, as on a phone held sideways, gives the tick up to stay scrollable.
   const [scrollable, setScrollable] = useState(false);
-  useLayoutEffect(() => {
-    if (!content) return;
-    const measure = () => setScrollable(content.scrollHeight > content.clientHeight);
+  const watchOverflow = useCallback((sheet: HTMLDivElement | null) => {
+    if (sheet === null) return;
+    const measure = () => setScrollable(sheet.scrollHeight > sheet.clientHeight);
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(content);
-    if (content.firstElementChild) observer.observe(content.firstElementChild);
+    observer.observe(sheet);
+    if (sheet.firstElementChild) observer.observe(sheet.firstElementChild);
     return () => observer.disconnect();
-  }, [content]);
-  const [rect, setRect] = useState<DOMRect | null>(null);
-  const [padding, setPadding] = useState<AnchorPadding | null>(null);
-  const [insets, setInsets] = useState(NO_INSETS);
-
-  useLayoutEffect(() => {
-    if (!open) return;
-    const anchor = anchorRef?.current;
-    if (anchor) {
-      setRect(anchor.getBoundingClientRect());
-      // The row's padding depends on its depth and group, so the lifted copy
-      // reads it rather than guessing, and draws its content where it was.
-      const style = getComputedStyle(anchor);
-      setPadding({
-        paddingLeft: style.paddingLeft,
-        paddingRight: style.paddingRight,
-        groupIndent: style.getPropertyValue("--gtd-group-indent"),
-      });
-    }
-    setInsets(readSafeAreaInsets());
-  }, [open, anchorRef]);
+  }, []);
 
   return (
-    <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>
-      <DropdownMenu.Trigger asChild>
-        <button
-          type="button"
-          aria-hidden
-          tabIndex={-1}
-          className="pointer-events-none absolute inset-0 opacity-0"
-        />
-      </DropdownMenu.Trigger>
-      <DimOverlay open={open} />
-      <HighlightedThreadAnchor open={open} rect={rect} padding={padding} isActive={isActive}>
-        {highlightContent}
-      </HighlightedThreadAnchor>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          ref={setContent}
-          {...usePortalScopeProps()}
-          aria-label="Thread actions"
-          aria-labelledby={undefined}
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay {...scope} className="gtd-sheet-scrim" />
+        <Dialog.Content
+          {...scope}
+          aria-describedby={undefined}
+          data-side={side}
+          className="gtd-sheet-layer"
+          style={
+            {
+              "--gtd-lift-top": `${origin.top}px`,
+              "--gtd-lift-bottom": `${origin.viewportHeight - origin.top - origin.height}px`,
+              "--gtd-lift-left": `${origin.left}px`,
+              "--gtd-lift-width": `${origin.width}px`,
+              "--gtd-lift-height": `${origin.height}px`,
+            } as CSSProperties
+          }
+          // No item starts highlighted under a finger; the layer takes
+          // focus, and the arrow keys walk the items from there.
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            (event.currentTarget as HTMLElement).focus({ preventScroll: true });
+          }}
+          onKeyDown={moveSheetFocus}
           onCloseAutoFocus={rename.onCloseAutoFocus}
-          side="top"
-          align="start"
-          sideOffset={6}
-          // Clear of the status bar, notch and home indicator as well as the
-          // screen edge, so a Dynamic Island cannot cover the first items.
-          collisionPadding={{
-            top: 12 + insets.top,
-            bottom: 12 + insets.bottom,
-            left: 12 + insets.left,
-            right: 12 + insets.right,
+          // The layer fills the screen, so a press anywhere but the sheet is
+          // the press outside that closes it.
+          onPointerDown={(event) => {
+            if (!(event.target as Element).closest(".gtd-sheet")) close();
           }}
-          // As wide as the row, wider when a label needs it, never off screen.
-          style={{
-            maxHeight: "var(--radix-dropdown-menu-content-available-height)",
-            minWidth: rect ? `${rect.width}px` : "var(--radix-dropdown-menu-trigger-width)",
-            maxWidth: "var(--radix-dropdown-menu-content-available-width)",
-          }}
-          onPointerDown={(event) => event.stopPropagation()}
-          className={cn(
-            "group/sheet relative isolate z-50 overflow-x-hidden overflow-y-auto text-popover-foreground",
-            SHARED_LAYER_CLASS,
-            "origin-[var(--radix-dropdown-menu-content-transform-origin)] will-change-transform",
-            // UIKit's context-menu spring: a fast rise with a small overshoot.
-            "data-[state=open]:animate-[gtd-sheet-in_280ms_cubic-bezier(0.32,1.25,0.4,1)_both]",
-            "data-[state=closed]:animate-[gtd-sheet-out_150ms_ease-in_both]",
-          )}
         >
-          <div
-            className={cn(
-              "relative rounded-[11px] py-1",
-              // Translucent over a saturated blur, like a UIKit menu material.
-              // 24px holds up across the 280ms rise on mobile Safari; the
-              // scrim below already softens the list.
-              "bg-popover/70 backdrop-blur-xl backdrop-saturate-150",
-              "group-data-[state=open]/sheet:animate-[gtd-sheet-fade-in_180ms_ease-out_both]",
-              "group-data-[state=closed]/sheet:animate-[gtd-sheet-fade-out_150ms_ease-in_both]",
-            )}
-          >
-            <ThreadMenuActions
-              thread={thread}
-              plan={plan}
-              rename={rename}
-              compact
-              haptics={!scrollable}
-              closeMenu={() => onOpenChange(false)}
+          {/* Names the thread for a screen reader, which cannot see the lifted row. */}
+          <Dialog.Title className="sr-only">{target.thread.displayTitle}</Dialog.Title>
+          <div className="gtd-sheet-spacer" />
+          <div ref={mountGroup} className="gtd-sheet-group">
+            <div
+              aria-hidden
+              inert
+              className="gtd-sheet-lift"
+              style={
+                {
+                  "--gtd-group-indent": origin.groupIndent || undefined,
+                  "--gtd-leaf-group-indent": origin.leafGroupIndent || undefined,
+                } as CSSProperties
+              }
             />
+            <div
+              ref={watchOverflow}
+              // Theme tokens only: a `dark:` variant would follow the OS, not bb's theme.
+              className="gtd-sheet border border-border-hairline bg-popover/80 text-popover-foreground shadow-[var(--shadow-xl)]"
+            >
+              <ThreadSheetMenu
+                thread={target.thread}
+                plan={target.plan}
+                haptics={!scrollable}
+                requestRename={() => rename.startEditingFromMenu(close)}
+                onClose={close}
+              />
+            </div>
           </div>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
-  );
-}
-
-const NO_INSETS = { top: 0, bottom: 0, left: 0, right: 0 };
-
-/** The pressed row's resolved padding, and the group indent its chevron sits by. */
-interface AnchorPadding {
-  paddingLeft: string;
-  paddingRight: string;
-  groupIndent: string;
-}
-
-/**
- * The viewport's safe-area insets in px. Only CSS can read `env()`, so a
- * hidden probe pads itself by each inset and reports what it resolved to.
- */
-function readSafeAreaInsets(): typeof NO_INSETS {
-  const probe = document.createElement("div");
-  probe.style.cssText =
-    "position:fixed;visibility:hidden;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-right)";
-  document.body.append(probe);
-  const style = getComputedStyle(probe);
-  const px = (value: string) => Number.parseFloat(value) || 0;
-  const insets = {
-    top: px(style.paddingTop),
-    bottom: px(style.paddingBottom),
-    left: px(style.paddingLeft),
-    right: px(style.paddingRight),
-  };
-  probe.remove();
-  return insets;
-}
-
-/**
- * The scrim behind an iOS context menu. Radix has no overlay for a dropdown
- * and its portal accepts a single child, so this rides its own portal and
- * outlives `open` by one fade so it can leave with the sheet. It never takes
- * pointer events: the menu already closes on any press outside itself.
- */
-function DimOverlay({ open }: { open: boolean }) {
-  const scope = usePortalScopeProps();
-  const [mounted, setMounted] = useState(open);
-  if (open && !mounted) setMounted(true);
-  if (!mounted) return null;
-
-  return createPortal(
-    <div
-      {...scope}
-      aria-hidden
-      data-state={open ? "open" : "closed"}
-      onAnimationEnd={() => {
-        if (!open) setMounted(false);
-      }}
-      className={cn(
-        "pointer-events-none fixed inset-0 z-[49] bg-black/30 backdrop-blur-[8px]",
-        "data-[state=open]:animate-[gtd-dim-in_200ms_ease-out_both]",
-        "data-[state=closed]:animate-[gtd-dim-out_150ms_ease-in_both]",
-      )}
-    />,
-    document.body,
-  );
-}
-
-/**
- * Portaled highlight for the target thread row when the menu is active.
- * Lifts the selected thread above the scrim at z-[50], anchoring the menu
- * visually to the specific thread that was pressed.
- */
-function HighlightedThreadAnchor({
-  open,
-  rect,
-  padding,
-  isActive,
-  children,
-}: {
-  open: boolean;
-  rect?: DOMRect | null;
-  padding: AnchorPadding | null;
-  isActive: boolean;
-  children?: ReactNode;
-}) {
-  const scope = usePortalScopeProps();
-  const [mounted, setMounted] = useState(open);
-
-  if (open && !mounted) setMounted(true);
-  if (!mounted || !rect || !children) return null;
-  // The row's own fill, pressed or selected for the open thread, over the
-  // sidebar it sits on: the copy floats above the scrim, and a translucent
-  // fill alone would take the scrim's shade.
-  const fill = isActive ? "var(--state-active)" : "var(--sidebar-accent)";
-
-  return createPortal(
-    <div
-      {...scope}
-      aria-hidden="true"
-      data-state={open ? "open" : "closed"}
-      onAnimationEnd={() => {
-        if (!open) setMounted(false);
-      }}
-      style={{
-        position: "fixed",
-        top: rect.top,
-        left: rect.left,
-        width: rect.width,
-        height: rect.height,
-        background: `linear-gradient(${fill}, ${fill}), var(--sidebar)`,
-      }}
-      className={cn(
-        "pointer-events-none fixed z-50 overflow-hidden",
-        SHARED_LAYER_CLASS,
-        "data-[state=open]:animate-[gtd-highlight-in_200ms_ease-out_both]",
-        "data-[state=closed]:animate-[gtd-highlight-out_150ms_ease-in_both]",
-      )}
-    >
-      {/* Out over the 1px border, so the content box is the row's own box
-         and nothing inside shifts as the row lifts. */}
-      <div
-        className="absolute -inset-px"
-        style={
-          {
-            paddingLeft: padding?.paddingLeft,
-            paddingRight: padding?.paddingRight,
-            "--gtd-group-indent": padding?.groupIndent,
-          } as CSSProperties
-        }
-      >
-        {children}
-      </div>
-    </div>,
-    document.body,
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
