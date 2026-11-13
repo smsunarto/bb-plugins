@@ -90,6 +90,7 @@ function setup(answers: Record<string, unknown>, initialInstructions = "") {
     watcher,
     now: () => 2_000,
     standingDown: () => false,
+    lastReply: async () => null,
     read: async () => ({ ok: false, reason: "away", message: "away" }),
   });
   let text = initialInstructions;

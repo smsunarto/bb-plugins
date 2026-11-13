@@ -29,7 +29,7 @@ import {
   sameRef,
   type CommitRef,
   type Landed,
-  type LandedTarget,
+  type LandedListed,
   type PrRef,
 } from "../core/watch.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
@@ -57,10 +57,11 @@ type Read =
   | { state: "failed"; message: string };
 
 /** GitHub's read of the card's list, again each minute while something can still land. */
-function useLanded(target: LandedTarget) {
+function useLanded(target: LandedListed, threadId: string) {
   const rpc = useRpc<typeof sourceControlContract>();
   const [read, setRead] = useState<Read>({ state: "loading" });
-  const input = JSON.stringify(target);
+  // A hand-written card names no account: the server reads it as the thread's own host can.
+  const input = JSON.stringify(target.account === null ? { ...target, threadId } : target);
   const [attempt, setAttempt] = useState(0);
   // A retry is a new request for the same target, so the effect reruns on it.
   const request = useMemo(() => ({ input, attempt }), [input, attempt]);
@@ -69,7 +70,10 @@ function useLanded(target: LandedTarget) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       try {
-        const answer = await rpc.call("landedCard", JSON.parse(request.input) as LandedTarget);
+        const answer = await rpc.call(
+          "landedCard",
+          JSON.parse(request.input) as LandedListed & { threadId?: string },
+        );
         if (!live) return;
         if (answer.ok) {
           setRead({ state: "ready", landed: answer.landed });
@@ -98,8 +102,8 @@ function useLanded(target: LandedTarget) {
   return { read, retry };
 }
 
-function LandedCard({ target, threadId }: { target: LandedTarget; threadId: string }) {
-  const { read, retry } = useLanded(target);
+function LandedCard({ target, threadId }: { target: LandedListed; threadId: string }) {
+  const { read, retry } = useLanded(target, threadId);
   const data = read.state === "ready" ? read.landed : undefined;
   const total = target.prs.length + target.commits.length;
   const done = data ? total - notLanded(data).length : 0;

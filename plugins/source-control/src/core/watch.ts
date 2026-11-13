@@ -225,17 +225,52 @@ const list = <T>(parse: (text: string) => T | null, exact: RegExp) =>
 
 const landedAttributesSchema = z
   .object({
-    account: loginSchema,
+    account: loginSchema.optional(),
     prs: list(parsePrReference, PR_KEY),
     commits: list(parseCommitReference, COMMIT_KEY),
   })
   .strict()
   .refine(({ prs, commits }) => prs.length + commits.length > 0);
 
+/** A landed card's list. An agent that writes the directive by hand names no account. */
+export type LandedListed = Pick<LandedTarget, "prs" | "commits"> & { account: string | null };
+
 /** The landed card's target from its directive's untrusted attributes, or null. */
 export function parseLandedAttributes(
   attributes: Readonly<Record<string, string>>,
-): LandedTarget | null {
+): LandedListed | null {
   const parsed = landedAttributesSchema.safeParse(attributes);
-  return parsed.success ? parsed.data : null;
+  return parsed.success ? { ...parsed.data, account: parsed.data.account ?? null } : null;
+}
+
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+const LANDED_LINE = new RegExp(`^::${LANDED_DIRECTIVE}\\{([^{}\\n]*)\\}$`);
+const ATTRIBUTE = /([A-Za-z][\w-]*)="([^"]*)"/g;
+
+/**
+ * The landed directive an agent wrote by hand in `reply`: on a line of its
+ * own, outside code fences, with no `account` (the tool's own always has
+ * one). The last such line, or null. A reply that quotes the syntax in a
+ * fence or inside a sentence lists nothing.
+ */
+export function handWrittenLanded(reply: string): LandedListed | null {
+  let fence: string | null = null;
+  let found: LandedListed | null = null;
+  for (const line of reply.split(/\r?\n/)) {
+    const mark = FENCE.exec(line)?.[1];
+    if (mark) {
+      if (fence === null) fence = mark[0]!;
+      else if (mark[0] === fence) fence = null;
+      continue;
+    }
+    // Four spaces of indent is a code block too.
+    if (fence !== null || /^( {4}|\t)/.test(line)) continue;
+    const body = LANDED_LINE.exec(line.trim())?.[1];
+    if (body === undefined) continue;
+    const listed = parseLandedAttributes(
+      Object.fromEntries([...body.matchAll(ATTRIBUTE)].map((match) => [match[1]!, match[2]!])),
+    );
+    if (listed && listed.account === null) found = listed;
+  }
+  return found;
 }

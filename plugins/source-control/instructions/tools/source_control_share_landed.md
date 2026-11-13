@@ -1,5 +1,10 @@
 Show the human a Landed card once this thread's work has merged or reached the default branch. The card lists what landed and has a **Settle thread** button that archives the thread. The tool also puts 🚀 in front of the thread title while everything the thread delivered has landed. For work that still needs review, write `::source-control` in your reply or use `source_control_share_change` instead.
 
+CHOOSING BETWEEN A HAND-WRITTEN DIRECTIVE AND THIS TOOL
+
+- By default, write `::source-control-landed{prs="owner/repo#12" commits="owner/repo@<sha>"}` on its own line in your final reply and call nothing. bb checks that list with GitHub when the turn ends, applies the same rules as this tool, and adds the 🚀 itself. A list it refuses changes nothing and reports nothing back to you.
+- Call this tool when you need the answer in this turn, or must name `account`.
+
 USE WHEN
 
 - You merged one of this thread's pull requests, or a pull request watch reported that it merged.

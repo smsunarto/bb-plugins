@@ -16,6 +16,7 @@ import { instructionFiles } from "@bb-plugins/instructions";
 import { z } from "zod";
 import {
   canStillLand,
+  handWrittenLanded,
   landedDirective,
   landedTargetSchema,
   launchTitle,
@@ -57,11 +58,15 @@ export function createLanded(deps: {
   store: Store;
   watcher: PrWatcher;
   read: Read;
+  /** The closing reply of the thread's last turn, or null. */
+  lastReply: (threadId: string) => Promise<string | null>;
   now: () => number;
   standingDown: () => boolean;
 }) {
   const { bb, store, watcher } = deps;
   const withLock = createLocks();
+  /** The hand-written list each thread last had registered, so a later idle reads nothing again. */
+  const written = new Map<string, string>();
 
   const record = (threadId: string): TrackRecord | null => {
     const json = store.landedRow(threadId);
@@ -130,6 +135,47 @@ export function createLanded(deps: {
     });
   }
 
+  /**
+   * Checks the thread's list with GitHub, then writes its title and record to
+   * match. Throws, having written nothing, when nothing listed has landed or
+   * the thread watches a pull request the list lacks.
+   */
+  async function register(
+    threadId: string,
+    named: Pick<LandedTarget, "prs" | "commits">,
+    account: string | null,
+  ) {
+    if (named.prs.length + named.commits.length === 0)
+      throw new Error("List the pull requests and default-branch commits this thread delivered.");
+    const listed = {
+      prs: named.prs.filter((ref, i) => named.prs.findIndex((other) => sameRef(other, ref)) === i),
+      commits: named.commits.filter(
+        (ref, i) => named.commits.findIndex((other) => sameCommit(other, ref)) === i,
+      ),
+    };
+    // Read before anything is written: work that has not landed at all leaves the title alone.
+    const outcome = await deps.read(account, listed, threadId);
+    if (!outcome.ok) throw new Error(outcome.message);
+    const target: LandedTarget = { account: outcome.login, ...listed };
+    const unlanded = notLanded(outcome.value);
+    if (unlanded.length === listed.prs.length + listed.commits.length)
+      throw new Error(
+        `Nothing listed has landed yet: ${unlanded.join(", ")}. Call again once a pull request merges or the commits reach the default branch.`,
+      );
+    const result = await withLock(threadId, async () => {
+      // Checked under the lock, so a watch started while GitHub answered still counts.
+      const unlisted = watcher
+        .list(threadId)
+        .filter((watch) => !watch.ended && !listed.prs.some((ref) => sameRef(ref, watch.ref)));
+      if (unlisted.length > 0)
+        throw new Error(
+          `This thread watches ${unlisted.map((watch) => prKey(watch.ref)).join(", ")}. List it too, or stop its watch if it is not this thread's work.`,
+        );
+      return reconcile(threadId, { target, since: deps.now() }, outcome.value);
+    });
+    return { target, ...result };
+  }
+
   async function pass(): Promise<void> {
     if (deps.standingDown()) return;
     for (const threadId of store.landedThreads())
@@ -160,6 +206,27 @@ export function createLanded(deps: {
 
     forget(threadId: string): void {
       store.dropLanded(threadId);
+      written.delete(threadId);
+    },
+
+    /**
+     * The thread's turn ended. A landed directive its agent wrote by hand in
+     * the closing reply is registered as the tool would: GitHub decides what
+     * landed, never the reply. A list already registered is not read again.
+     */
+    async replied(threadId: string): Promise<void> {
+      if (deps.standingDown()) return;
+      try {
+        const reply = await deps.lastReply(threadId);
+        const listed = reply ? handWrittenLanded(reply) : null;
+        if (!listed) return;
+        const signature = JSON.stringify(listed);
+        if (written.get(threadId) === signature) return;
+        await register(threadId, listed, null);
+        written.set(threadId, signature);
+      } catch (error) {
+        bb.log.info(`Thread ${threadId}'s landed card was not registered: ${String(error)}`);
+      }
     },
 
     /** Takes a record the cutover read from code-review; false when the thread already has one. */
@@ -215,36 +282,11 @@ export function createLanded(deps: {
           if (!ref) throw new Error(`${reference}: use owner/repo@<sha> or a GitHub commit URL.`);
           return ref;
         });
-        if (prs.length + commitRefs.length === 0)
-          throw new Error(
-            "List the pull requests and default-branch commits this thread delivered.",
-          );
-        const listed = {
-          prs: prs.filter((ref, i) => prs.findIndex((other) => sameRef(other, ref)) === i),
-          commits: commitRefs.filter(
-            (ref, i) => commitRefs.findIndex((other) => sameCommit(other, ref)) === i,
-          ),
-        };
-        // Read before anything is written: work that has not landed at all leaves the title alone.
-        const outcome = await deps.read(account ?? null, listed, threadId);
-        if (!outcome.ok) throw new Error(outcome.message);
-        const target: LandedTarget = { account: outcome.login, ...listed };
-        const unlanded = notLanded(outcome.value);
-        if (unlanded.length === listed.prs.length + listed.commits.length)
-          throw new Error(
-            `Nothing listed has landed yet: ${unlanded.join(", ")}. Call again once a pull request merges or the commits reach the default branch.`,
-          );
-        const { landed, pending, title } = await withLock(threadId, async () => {
-          // Checked under the lock, so a watch started while GitHub answered still counts.
-          const unlisted = watcher
-            .list(threadId)
-            .filter((watch) => !watch.ended && !listed.prs.some((ref) => sameRef(ref, watch.ref)));
-          if (unlisted.length > 0)
-            throw new Error(
-              `This thread watches ${unlisted.map((watch) => prKey(watch.ref)).join(", ")}. List it too, or stop its watch if it is not this thread's work.`,
-            );
-          return reconcile(threadId, { target, since: deps.now() }, outcome.value);
-        });
+        const { target, landed, pending, title } = await register(
+          threadId,
+          { prs, commits: commitRefs },
+          account ?? null,
+        );
         const directive = landedDirective({
           account: target.account,
           prs: landed.prs.map((pr) => pr.ref),

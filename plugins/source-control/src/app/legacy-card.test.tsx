@@ -116,3 +116,42 @@ test("the landed card lists what landed as GitHub reports it", async () => {
   expect(slot.getByText("Route gh")).toBeTruthy();
   expect(slot.getByText("Fix the build")).toBeTruthy();
 });
+
+test("a landed card written by hand, with no account, is read as its thread's host can", async () => {
+  const asked: unknown[] = [];
+  const slot = renderSlot(
+    { component: LandedDirective },
+    { attributes: { prs: "acme/api#42" }, source: "", message, openWorkspaceFile: null },
+    {
+      experimental_rpcContract: sourceControlContract,
+      pluginId: "source-control",
+      sdk: { threads: { get: async () => ({ id: "thread-a", archivedAt: null }) } } as never,
+      rpc: {
+        landedCard: (input: unknown) => {
+          asked.push(input);
+          return {
+            ok: true,
+            landed: {
+              prs: [
+                {
+                  ref: { owner: "acme", repo: "api", number: 42 },
+                  title: "Route gh",
+                  url: "https://github.com/acme/api/pull/42",
+                  state: "merged",
+                },
+              ],
+              commits: [],
+            },
+          };
+        },
+      } as never,
+    },
+  );
+  expect(await slot.findByText("Landed")).toBeTruthy();
+  expect(asked[0]).toEqual({
+    account: null,
+    prs: [{ owner: "acme", repo: "api", number: 42 }],
+    commits: [],
+    threadId: "thread-a",
+  });
+});

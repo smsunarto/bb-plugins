@@ -105,6 +105,21 @@ function watchesOf(watcher: ReturnType<typeof createPrWatcher>, threadId: string
   };
 }
 
+/** The closing agent message of the thread's last turn, from its newest events. */
+async function lastReply(bb: BbPluginApi, threadId: string): Promise<string | null> {
+  const events = (await bb.sdk.threads.events.list({
+    threadId,
+    order: "desc",
+    limit: "10",
+    types: ["item/completed"],
+  })) as { data: unknown }[];
+  for (const event of events) {
+    const item = (event.data as { item?: Record<string, unknown> } | null)?.item;
+    if (item?.["type"] === "agentMessage" && typeof item["text"] === "string") return item["text"];
+  }
+  return null;
+}
+
 export function createMoved(deps: {
   bb: BbPluginApi;
   store: Store;
@@ -163,6 +178,7 @@ export function createMoved(deps: {
     watcher,
     now: deps.now,
     standingDown: legacy.running,
+    lastReply: lastReply.bind(null, bb),
     read: async (login, listed, threadId): Promise<SiteOutcome<Landed>> => {
       const first: { owner: string; repo: string } | undefined = listed.prs[0] ?? listed.commits[0];
       if (!first) return { ok: false, reason: "failed", message: "Nothing listed." };
@@ -280,7 +296,8 @@ export function createMoved(deps: {
         target.account,
         repoOf(first),
         { kind: "landed", prs: target.prs, commits: target.commits },
-        null,
+        // With no account named, the thread's own host answers first, as it did for the title.
+        target.account === null ? (target.threadId ?? null) : null,
       );
       if (outcome.ok && outcome.value.kind === "landed")
         return { ok: true as const, landed: outcome.value.landed };
@@ -366,6 +383,7 @@ export function createMoved(deps: {
     },
     threadSettled(threadId: string) {
       void watcher.flush(threadId).catch(() => {});
+      void landed.replied(threadId);
     },
     threadGone(threadId: string) {
       void watcher.forget(threadId);

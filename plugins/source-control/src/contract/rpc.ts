@@ -405,7 +405,13 @@ export const sourceControlContract = defineRpcContract({
   },
   /** What a landed card lists, as GitHub reports it now. */
   landedCard: {
-    input: landedTargetSchema,
+    /** A card an agent wrote by hand names no account: it is read as `threadId`'s host can. */
+    input: landedTargetSchema
+      .extend({
+        account: landedTargetSchema.shape.account.nullable(),
+        threadId: threadIdSchema.optional(),
+      })
+      .strict(),
     output: z.discriminatedUnion("ok", [
       z.object({ ok: z.literal(true), landed: landedSchema }).strict(),
       z.object({ ok: z.literal(false), message: z.string(), away: z.boolean() }).strict(),
