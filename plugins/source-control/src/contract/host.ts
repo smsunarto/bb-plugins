@@ -20,6 +20,7 @@ import { LOG_CHARS, MAX_LOGS, MISSING_CHARS } from "../core/fix-checks.ts";
 import { repoSchema } from "../core/ids.ts";
 import { mergeMethodSchema, mergePolicySchema } from "../core/merge.ts";
 import { oplogSchema } from "../core/oplog.ts";
+import { MAX_PR_REFS, prStatusSchema } from "../core/pr-reads.ts";
 import {
   BASE_HISTORY_MAX,
   baseHistorySchema,
@@ -165,6 +166,14 @@ export const reviewReadSchema = z.discriminatedUnion("kind", [
       jobIds: z.array(z.number().int().positive()).min(1).max(MAX_LOGS),
     })
     .strict(),
+  /** Several pull requests of one repository by number: GenUI's PullRequest(refs). */
+  z
+    .object({
+      kind: z.literal("prStatuses"),
+      repo: repoSchema,
+      numbers: z.array(z.number().int().positive()).min(1).max(MAX_PR_REFS),
+    })
+    .strict(),
 ]);
 
 export const reviewAnswerSchema = z.discriminatedUnion("kind", [
@@ -190,6 +199,18 @@ export const reviewAnswerSchema = z.discriminatedUnion("kind", [
             .strict(),
         )
         .max(MAX_LOGS),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("prStatuses"),
+      statuses: z
+        .array(
+          z
+            .object({ number: z.number().int().positive(), status: prStatusSchema.nullable() })
+            .strict(),
+        )
+        .max(MAX_PR_REFS),
     })
     .strict(),
 ]);

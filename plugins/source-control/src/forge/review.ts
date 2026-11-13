@@ -13,7 +13,9 @@ import { readJobLogs, type JobLog } from "./job-logs.ts";
 import { readMergePolicy } from "./merge.ts";
 import { readTimeline } from "./timeline.ts";
 import { readLanded, readPrHead, readWatch } from "./watch.ts";
+import { readPrStatuses } from "./pr-reads.ts";
 import type { CommitRef, Landed, PrHead, PrRef, WatchRead } from "../core/watch.ts";
+import type { PrStatus } from "../core/pr-reads.ts";
 
 export type { InboxEntry };
 
@@ -414,7 +416,8 @@ export type ReviewRead =
   | { kind: "prHead"; ref: PrRef }
   | { kind: "landed"; prs: PrRef[]; commits: CommitRef[] }
   | { kind: "mergePolicy"; repo: Repo; number: number }
-  | { kind: "jobLogs"; repo: Repo; jobIds: number[] };
+  | { kind: "jobLogs"; repo: Repo; jobIds: number[] }
+  | { kind: "prStatuses"; repo: Repo; numbers: number[] };
 export type ReviewAnswer =
   | { kind: "inbox"; entries: InboxEntry[] }
   | { kind: "files"; files: ForgeFile[] }
@@ -424,7 +427,8 @@ export type ReviewAnswer =
   | { kind: "landed"; landed: Landed }
   | { kind: "prHead"; head: PrHead }
   | { kind: "mergePolicy"; policy: MergePolicy }
-  | { kind: "jobLogs"; logs: JobLog[] };
+  | { kind: "jobLogs"; logs: JobLog[] }
+  | { kind: "prStatuses"; statuses: { number: number; status: PrStatus | null }[] };
 
 export async function runReviewRead(
   exec: Exec,
@@ -461,5 +465,12 @@ export async function runReviewRead(
       return { kind: "mergePolicy", policy: await readMergePolicy(exec, read, signal) };
     case "jobLogs":
       return { kind: "jobLogs", logs: await readJobLogs(exec, read.repo, read.jobIds, signal) };
+    case "prStatuses": {
+      const statuses = await readPrStatuses(exec, read.repo, read.numbers, signal);
+      return {
+        kind: "prStatuses",
+        statuses: read.numbers.map((number) => ({ number, status: statuses[number] ?? null })),
+      };
+    }
   }
 }

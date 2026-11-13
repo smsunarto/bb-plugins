@@ -37,6 +37,7 @@ import {
   checkoutTargetSchema,
 } from "../core/checkout-reads.ts";
 import { importReportSchema } from "../core/cutover.ts";
+import { prStatusReadSchema, prStatusesInputSchema } from "../core/pr-reads.ts";
 import { landedSchema, landedTargetSchema, prRefSchema, prWatchViewSchema } from "../core/watch.ts";
 import { guideViewSchema } from "../core/guide.ts";
 import {
@@ -145,6 +146,12 @@ export const sourceControlContract = defineRpcContract({
       })
       .strict(),
     output: readOf(checkoutPatchesSchema),
+  },
+  pullRequestsByRef: {
+    experimental_description:
+      "Up to 20 GitHub pull requests by reference, each repository read as the first account that can see it: the bb server's, then `environmentId`'s host's. Keyed by `owner/repo#N`: GitHub's facts (state, draft, refs, checks by outcome, review decision, mergeable and merge state), or why that one can't be read. For other plugins.",
+    input: prStatusesInputSchema,
+    output: z.record(z.string(), prStatusReadSchema),
   },
   /** GitButler's recent operations on the thread's checkout, newest first. Read only. */
   oplog: {
