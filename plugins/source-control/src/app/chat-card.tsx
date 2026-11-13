@@ -289,7 +289,7 @@ function ReadyCard({
       ) : null}
       <div className="flex min-w-0 flex-wrap gap-2 px-3 pt-1 pb-3">
         <Button
-          variant="outline"
+          variant="default"
           onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key }) })}
           className={cx(CARD_ACTION_CLASS, "gap-2 px-3")}
         >
