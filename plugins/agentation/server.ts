@@ -491,12 +491,42 @@ export default async function plugin(bb: BbPluginApi) {
   bb.events.on("thread.active", ({ thread }) => {
     advanceTurnAssignments(db, thread.id);
   });
-  bb.events.on("thread.idle", ({ thread }) => {
-    publishRestagedAfterTurn(thread.id);
-  });
-  bb.events.on("thread.failed", ({ thread }) => {
-    publishRestagedAfterTurn(thread.id, true);
-  });
+  // A bb restart interrupts every running turn and, with
+  // resumeThreadsAfterRestart on, starts it again moments later. The resumed
+  // turn is still working on its annotations, so they stay assigned until it
+  // ends. Unreadable state falls back to re-staging, which never loses one.
+  async function resumesAfterRestart(threadId: string): Promise<boolean> {
+    try {
+      const [[latest], config] = await Promise.all([
+        bb.sdk.threads.events.list({
+          threadId,
+          order: "desc",
+          limit: "1",
+          types: ["turn/started", "turn/completed", "system/thread/interrupted"],
+        }),
+        bb.sdk.system.config(),
+      ]);
+      return (
+        config.experiments.resumeThreadsAfterRestart === true &&
+        latest?.type === "system/thread/interrupted" &&
+        latest.data.reason === "host-daemon-restarted"
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  async function restageAfterTurn(threadId: string, includeAwaitingStart: boolean): Promise<void> {
+    if (await resumesAfterRestart(threadId)) {
+      bb.log.info(`kept annotations assigned to ${threadId} while bb resumes its interrupted turn`);
+      return;
+    }
+    if (disposed) return;
+    publishRestagedAfterTurn(threadId, includeAwaitingStart);
+  }
+
+  bb.events.on("thread.idle", ({ thread }) => restageAfterTurn(thread.id, false));
+  bb.events.on("thread.failed", ({ thread }) => restageAfterTurn(thread.id, true));
   bb.events.on("thread.deleted", ({ thread }) => {
     publishRestagedAfterTurn(thread.id, true);
   });

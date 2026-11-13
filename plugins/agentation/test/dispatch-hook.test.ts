@@ -139,3 +139,49 @@ test("a pill queued behind a running turn waits for its own turn", async () => {
     assert.deepEqual(await staged(), ["ann_1"]);
   });
 });
+
+test("a turn bb interrupts to restart keeps its pill until the resumed turn ends", async () => {
+  await withStagedAnnotation(async ({ harness, hook, staged }) => {
+    let latest: { type: string; data: Record<string, unknown> } = {
+      type: "system/thread/interrupted",
+      data: { reason: "host-daemon-restarted" },
+    };
+    harness.sdk.stub("threads.events.list", () => [latest]);
+    harness.sdk.stub("system.config", () => ({
+      generalSettings: { steerActiveThreadOnEnter: true },
+      experiments: { resumeThreadsAfterRestart: true },
+    }));
+    const thread = makeThreadResponse({ id: "thr_restart", status: "pending" });
+    await hook(dispatch(thread, "start-turn"));
+    const idle = { thread: { ...thread, status: "idle" as const }, lastAssistantText: null };
+
+    await harness.emitThreadEvent("thread.idle", idle);
+    await harness.emitThreadEvent("thread.failed", { thread: idle.thread, error: null });
+    assert.deepEqual(await staged(), []);
+
+    latest = { type: "turn/completed", data: { status: "completed" } };
+    await harness.emitThreadEvent("thread.active", { thread });
+    await harness.emitThreadEvent("thread.idle", idle);
+    assert.deepEqual(await staged(), ["ann_1"]);
+  });
+});
+
+test("an interrupted turn re-stages its pill when bb will not resume it", async () => {
+  await withStagedAnnotation(async ({ harness, hook, staged }) => {
+    harness.sdk.stub("threads.events.list", () => [
+      { type: "system/thread/interrupted", data: { reason: "host-daemon-restarted" } },
+    ]);
+    harness.sdk.stub("system.config", () => ({
+      generalSettings: { steerActiveThreadOnEnter: true },
+      experiments: { resumeThreadsAfterRestart: false },
+    }));
+    const thread = makeThreadResponse({ id: "thr_no_resume", status: "pending" });
+    await hook(dispatch(thread, "start-turn"));
+
+    await harness.emitThreadEvent("thread.idle", {
+      thread: { ...thread, status: "idle" },
+      lastAssistantText: null,
+    });
+    assert.deepEqual(await staged(), ["ann_1"]);
+  });
+});
