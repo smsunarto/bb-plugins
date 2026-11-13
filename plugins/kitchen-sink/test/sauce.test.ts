@@ -472,3 +472,43 @@ test("a call cancelled while queued never runs, and a cancelled start hands the 
   expect(state.ended).toBe(1);
   expect(store.read()).toBeNull();
 });
+
+test("a lease whose session is gone frees the device for other threads", async () => {
+  const { tools, state, store } = harness();
+  await tools.start({ threadId: "thr_a" }, { device: "Samsung Galaxy S23" });
+  // Sauce ends thr_a's idle session; thr_a never calls another device tool.
+  state.page = { ...state.page, kind: "session_ended" };
+  const status = (await tools.status({ threadId: "thr_b" }, {})) as { state: string };
+  expect(status.state).not.toBe("held_by_other_thread");
+  expect(store.read()).toBeNull();
+  await tools.start({ threadId: "thr_b" }, { device: "Google Pixel 8" });
+  expect(store.read()?.threadId).toBe("thr_b");
+});
+
+test("the holder's own status and end clear a lease whose session ended", async () => {
+  const { tools, state, store } = harness();
+  const a = { threadId: "thr_a" };
+  await tools.start(a, { device: "Samsung Galaxy S23" });
+  state.page = { ...state.page, kind: "session_ended" };
+  expect(await tools.end(a)).toEqual({ ended: false, released: true });
+
+  await tools.start(a, { device: "Samsung Galaxy S23" });
+  state.page = { ...state.page, kind: "session_ended" };
+  expect(await tools.status(a, {})).toMatchObject({ lease: null });
+  expect(store.read()).toBeNull();
+});
+
+test("a start still coming up keeps its lease even before the session page shows", async () => {
+  const { tools, state, store, advance } = harness();
+  expect(await code(tools.start({ threadId: "thr_a" }, { device: "Slow Phone" }))).toBe(
+    "start_pending",
+  );
+  state.page = { ...state.page, kind: "live" };
+  expect(await code(tools.start({ threadId: "thr_b" }, { device: "Pixel 8" }))).toBe(
+    "held_by_other_thread",
+  );
+  // After the grace period a start that never produced a session is stale.
+  advance(3 * 60 * 1000);
+  await tools.start({ threadId: "thr_b" }, { device: "Google Pixel 8" });
+  expect(store.read()?.threadId).toBe("thr_b");
+});

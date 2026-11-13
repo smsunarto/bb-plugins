@@ -757,25 +757,78 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     return output;
   }
 
+  /**
+   * The log toolbar's buttons are bare icons; only their hover tooltips (react-aria,
+   * via aria-describedby) name them, and Clear Log sits beside Download Log. So each
+   * candidate is hovered and clicked only when its own tooltip reads "Download Log".
+   */
+  async function findDownloadLogButton(): Promise<boolean> {
+    const markIcons = () =>
+      evaluate<number>(`(() => {
+      document.querySelectorAll("[data-ks-sauce-probe],[data-ks-sauce-target]").forEach((e) => {
+        e.removeAttribute("data-ks-sauce-probe");
+        e.removeAttribute("data-ks-sauce-target");
+      });
+      const level = [...document.querySelectorAll("select")].find((s) => [...s.options].some((o) => o.text === "VERBOSE"));
+      let bar = level;
+      while (bar && bar.querySelectorAll("button").length < 5) bar = bar.parentElement;
+      if (!bar) return 0;
+      const icons = [...bar.querySelectorAll("button")].filter((b) => !b.innerText.trim() && b.querySelector("svg"));
+      icons.forEach((b, i) => b.setAttribute("data-ks-sauce-probe", String(i)));
+      return icons.length;
+    })()`);
+    // The toolbar renders a moment after the Device Log tab opens.
+    const count =
+      (await poll(10_000, async () => ((await markIcons()) >= 5 ? markIcons() : null), 500)) ?? 0;
+    const tooltipOf = async (probe: string) => {
+      await browser.run(["hover", probe]);
+      return poll(
+        1500,
+        () =>
+          evaluate<string | null>(`(() => {
+            const id = document.querySelector(${JSON.stringify(probe)})?.getAttribute("aria-describedby");
+            const tip = id && document.getElementById(id);
+            return tip ? tip.innerText.trim() : null;
+          })()`),
+        250,
+      );
+    };
+    // Download Log has been the last icon; try it first, then the rest. On a freshly
+    // opened page the first hover shows no tooltip; once another tooltip has opened
+    // they all open at once, so buttons that showed none get a second hover.
+    const order = Array.from({ length: count }, (_, i) => count - 1 - i);
+    const silent: number[] = [];
+    for (const index of order) {
+      const probe = `[data-ks-sauce-probe="${index}"]`;
+      const tooltip = await tooltipOf(probe);
+      if (tooltip === null) silent.push(index);
+      if (tooltip && /^download log$/i.test(tooltip)) return markTarget(probe);
+    }
+    for (const index of silent) {
+      const probe = `[data-ks-sauce-probe="${index}"]`;
+      const tooltip = await tooltipOf(probe);
+      if (tooltip && /^download log$/i.test(tooltip)) return markTarget(probe);
+    }
+    return false;
+  }
+
+  async function markTarget(probe: string) {
+    await evaluate(
+      `document.querySelector(${JSON.stringify(probe)}).setAttribute("data-ks-sauce-target", "")`,
+    );
+    return true;
+  }
+
   async function downloadLog(path: string) {
     await requireSession();
     await openDeveloperTab("Device Log");
-    await downloadMarked(
-      `(() => {
-        document.querySelectorAll("[data-ks-sauce-target]").forEach((e) => e.removeAttribute("data-ks-sauce-target"));
-        const level = [...document.querySelectorAll("select")].find((s) => [...s.options].some((o) => o.text === "VERBOSE"));
-        let bar = level;
-        while (bar && bar.querySelectorAll("button").length < 5) bar = bar.parentElement;
-        if (!bar) return false;
-        // Toolbar order after the filters: Search, Pause, Wrap Text, Clear Log, Download Log.
-        const icons = [...bar.querySelectorAll("button")].filter((b) => !b.innerText.trim() && b.querySelector("svg"));
-        const download = icons[4];
-        if (download) download.setAttribute("data-ks-sauce-target", "");
-        return !!download;
-      })()`,
-      path,
-      "Download Log",
-    );
+    if (!(await findDownloadLogButton())) {
+      throw new SauceError(
+        "page_changed",
+        "No button in the Device Log toolbar has a Download Log tooltip, so nothing was clicked.",
+      );
+    }
+    await browser.run(["download", "[data-ks-sauce-target]", path], 90_000);
   }
 
   async function endSession(): Promise<boolean> {

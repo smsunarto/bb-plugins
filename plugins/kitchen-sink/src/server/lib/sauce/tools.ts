@@ -13,6 +13,7 @@ import {
   parseLease,
   releaseLease,
   touchLease,
+  type LeaseCheck,
   type LeaseStore,
   type SauceLease,
 } from "./lease.ts";
@@ -51,6 +52,9 @@ type ToolContext = { threadId: string; signal?: AbortSignal };
 
 /** A file captured inside the browser queue, saved to thread storage after the queue moves on. */
 type PendingFile = { dir: string; local: string; name: string };
+
+/** A lease without a device yet may be a start still coming up; it is not stale before this. */
+const START_GRACE_MS = 3 * 60 * 1000;
 
 /** Longest grep match returned inline; logcat lines can carry whole payloads. */
 const MATCH_LINE_MAX = 400;
@@ -158,8 +162,26 @@ export function createSauceTools(deps: SauceToolDeps) {
   }
 
   /** Device tools need the caller to hold the lease; an abandoned or foreign lease is refused. */
-  async function requireMine(threadId: string): Promise<SauceLease> {
+  /**
+   * The lease, released first when its session is gone (Sauce ended it, or the holder
+   * stopped without sauce_end); otherwise the device would read as held for up to
+   * LEASE_IDLE_MS while it sits free.
+   */
+  async function currentLease(threadId: string): Promise<LeaseCheck> {
     const check = checkLease(deps.store, threadId, deps.now());
+    if (check.kind === "free") return check;
+    const { lease } = check;
+    if (lease.device === null && deps.now() - lease.acquiredAt < START_GRACE_MS) return check;
+    if ((await deps.page.state()).kind === "session") return check;
+    releaseLease(deps.store, lease.threadId);
+    return { kind: "free" };
+  }
+
+  async function requireMine(threadId: string): Promise<SauceLease> {
+    const own = checkLease(deps.store, threadId, deps.now());
+    // The holder learns a gone session from the page itself, with a clearer message.
+    if (own.kind === "mine") return own.lease;
+    const check = await currentLease(threadId);
     if (check.kind === "mine") return check.lease;
     if (check.kind === "free") {
       throw new SauceError(
@@ -179,8 +201,8 @@ export function createSauceTools(deps: SauceToolDeps) {
   }
 
   /** Browsing pages navigates the shared tab, so only a free device or the holder may browse. */
-  async function requireBrowsable(threadId: string) {
-    const check = checkLease(deps.store, threadId, deps.now());
+  async function requireBrowsable(threadId: string): Promise<LeaseCheck> {
+    const check = await currentLease(threadId);
     if (check.kind === "held") {
       const holder = await holderDescription(check.lease, check.idleMs);
       throw new SauceError(
@@ -189,6 +211,7 @@ export function createSauceTools(deps: SauceToolDeps) {
         "Wait for it (bb thread wait <thread>) or ask it to call sauce_end.",
       );
     }
+    return check;
   }
 
   /** A session Sauce ended on its own frees the device. */
@@ -257,7 +280,7 @@ export function createSauceTools(deps: SauceToolDeps) {
   return {
     async status(ctx: ToolContext, input: { sign_in?: boolean }) {
       return queued(ctx, async () => {
-        const check = checkLease(deps.store, ctx.threadId, deps.now());
+        const check = await currentLease(ctx.threadId);
         if (check.kind === "held") {
           const page = await deps.page.state();
           return {
@@ -338,10 +361,7 @@ export function createSauceTools(deps: SauceToolDeps) {
 
     async start(ctx: ToolContext, input: { device: string; os?: string; app?: string }) {
       return queued(ctx, async () => {
-        const check = checkLease(deps.store, ctx.threadId, deps.now());
-        if (check.kind === "held") {
-          await requireBrowsable(ctx.threadId);
-        }
+        const check = await requireBrowsable(ctx.threadId);
         const page = await deps.page.state();
         if (page.kind === "session") {
           if (check.kind === "mine") {
@@ -541,8 +561,9 @@ export function createSauceTools(deps: SauceToolDeps) {
 
     async end(ctx: ToolContext) {
       return queued(ctx, async () => {
-        const check = checkLease(deps.store, ctx.threadId, deps.now());
-        if (check.kind === "held") await requireBrowsable(ctx.threadId);
+        // The holder ends its own lease even when Sauce already ended the session.
+        const own = checkLease(deps.store, ctx.threadId, deps.now());
+        const check = own.kind === "mine" ? own : await requireBrowsable(ctx.threadId);
         if (check.kind === "free") {
           return { ended: false, released: false, note: "This thread held no Sauce device." };
         }
