@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { act, fireEvent, renderHook, waitFor } from "@testing-library/react";
+import { fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
@@ -13,7 +13,13 @@ import type {
   PluginComposerScope,
 } from "@get-bb/plugin-sdk/app";
 import { SaveDraftAction } from "./SaveDraftAction";
-import { useFavoriteModels } from "./model-picker/favorites";
+import {
+  changeStarredModels,
+  starKey,
+  type StarredModel,
+  type StarredModelsChange,
+} from "./starred-models/contract";
+import { resetStarredModelsForTest } from "./starred-models/useStarredModels";
 
 // The SDK harness draws other plugins' actions as nothing; mark where BB's group mounts.
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
@@ -29,10 +35,37 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
 
 type SlotOptions = NonNullable<Parameters<typeof renderSlot>[2]>;
 
+const STAR_CACHE_KEY = "bb-plugin:t3-composer:model-favorites";
+
+/** BB's server side of the starred models, as the plugin's RPC serves it. */
+function starServer(initial: readonly StarredModel[] = []) {
+  const state = { models: initial, failWrites: false, changes: [] as StarredModelsChange[] };
+  return {
+    state,
+    rpc: {
+      starredModels: () => ({ models: [...state.models] }),
+      changeStarredModels: (input: unknown) => {
+        // The harness has already checked the input against the contract.
+        const change = input as StarredModelsChange;
+        if (state.failWrites) throw new Error("bb is offline");
+        state.changes.push(change);
+        state.models = changeStarredModels(state.models, change);
+        return { models: [...state.models] };
+      },
+    },
+  };
+}
+
+/** Starts a test from a device that has never starred a model. */
+function freshDevice() {
+  localStorage.clear();
+  resetStarredModelsForTest();
+}
+
 async function mountComposer(
   inputOverrides: Partial<ExperimentalComposerInput> = {},
   scope: PluginComposerScope = { kind: "new-thread", projectId: "p1" },
-  options: Pick<SlotOptions, "providers" | "sdk"> & {
+  options: Pick<SlotOptions, "providers" | "sdk" | "rpc"> & {
     selection?: ComposerSelection;
     text?: string;
   } = {},
@@ -86,6 +119,7 @@ async function mountComposer(
       composerRenderer: renderer,
       ...(options.providers ? { providers: options.providers } : {}),
       ...(options.sdk ? { sdk: options.sdk } : {}),
+      rpc: options.rpc ?? starServer().rpc,
     },
   );
   return { slot, run, app, renderer, scope };
@@ -459,8 +493,12 @@ describe("T3 Code model picker", () => {
   });
 
   it("favorites the highlighted model from the keyboard and keeps favorites in their own tab", async () => {
-    localStorage.clear();
-    const { slot } = await mountComposer({}, undefined, pickerOptions(OPUS_HIGH));
+    freshDevice();
+    const server = starServer();
+    const { slot } = await mountComposer({}, undefined, {
+      ...pickerOptions(OPUS_HIGH),
+      rpc: server.rpc,
+    });
     try {
       const search = await openModelPicker(slot);
       await slot.findByRole("option", { name: /Sonnet 5\.5/ });
@@ -475,9 +513,86 @@ describe("T3 Code model picker", () => {
       fireEvent.click(slot.getByRole("button", { name: "Favorites" }));
       await waitFor(() => expect(slot.getAllByRole("option")).toHaveLength(1));
       expect(slot.getByRole("option").textContent).toContain("Sonnet 5.5");
+      // The star is the server's, so another device sees it.
+      await waitFor(() =>
+        expect(server.state.models).toEqual([
+          { providerId: "claude-code", model: "claude-sonnet-5-5" },
+        ]),
+      );
     } finally {
       slot.lifecycle.unmount();
-      localStorage.clear();
+      freshDevice();
+    }
+  });
+
+  it("shows the server's stars on a device that has starred nothing", async () => {
+    freshDevice();
+    const server = starServer([{ providerId: "claude-code", model: "claude-sonnet-5-5" }]);
+    const { slot } = await mountComposer({}, undefined, {
+      ...pickerOptions(OPUS_HIGH),
+      rpc: server.rpc,
+    });
+    try {
+      await openModelPicker(slot);
+      expect(await slot.findByRole("option", { name: /Sonnet 5\.5.*favorite/ })).toBeTruthy();
+      expect(server.state.changes).toEqual([]);
+    } finally {
+      slot.lifecycle.unmount();
+      freshDevice();
+    }
+  });
+
+  it("adds a device's own stars to the server's once, and keeps both", async () => {
+    freshDevice();
+    localStorage.setItem(
+      STAR_CACHE_KEY,
+      JSON.stringify([starKey("claude-code", "claude-sonnet-5-5")]),
+    );
+    const server = starServer([{ providerId: "codex", model: "gpt-6.1-sol" }]);
+    const { slot } = await mountComposer({}, undefined, {
+      ...pickerOptions(OPUS_HIGH),
+      rpc: server.rpc,
+    });
+    try {
+      await openModelPicker(slot);
+      expect(await slot.findByRole("option", { name: /Sonnet 5\.5.*favorite/ })).toBeTruthy();
+      await waitFor(() =>
+        expect(server.state.models).toEqual([
+          { providerId: "codex", model: "gpt-6.1-sol" },
+          { providerId: "claude-code", model: "claude-sonnet-5-5" },
+        ]),
+      );
+      await waitFor(() =>
+        expect(JSON.parse(localStorage.getItem(STAR_CACHE_KEY) ?? "[]")).toEqual([
+          starKey("codex", "gpt-6.1-sol"),
+          starKey("claude-code", "claude-sonnet-5-5"),
+        ]),
+      );
+      expect(server.state.changes).toHaveLength(1);
+    } finally {
+      slot.lifecycle.unmount();
+      freshDevice();
+    }
+  });
+
+  it("takes a star back and says so when the server does not save it", async () => {
+    freshDevice();
+    const server = starServer();
+    server.state.failWrites = true;
+    const { slot } = await mountComposer({}, undefined, {
+      ...pickerOptions(OPUS_HIGH),
+      rpc: server.rpc,
+    });
+    try {
+      const search = await openModelPicker(slot);
+      await slot.findByRole("option", { name: /Sonnet 5\.5/ });
+      fireEvent.keyDown(search, { key: "ArrowDown" });
+      fireEvent.keyDown(search, { key: "d", ctrlKey: true, metaKey: true });
+      expect((await slot.findByRole("status")).textContent).toContain("Could not save that star");
+      await waitFor(() => expect(slot.queryByRole("option", { name: /favorite/ })).toBeNull());
+    } finally {
+      slot.lifecycle.unmount();
+      freshDevice();
     }
   });
 
@@ -813,11 +928,13 @@ describe("T3 Code model picker", () => {
 
 describe("setting keywords", () => {
   it("sets a starred model once its keyword is followed by a space, and removes the keyword", async () => {
-    const stars = renderHook(() => useFavoriteModels());
-    act(() => stars.result.current.toggle("codex", "gpt-6.1-sol"));
+    // A device with no stars of its own: the keyword applies once the server's list arrives.
+    freshDevice();
+    const server = starServer([{ providerId: "codex", model: "gpt-6.1-sol" }]);
     const { slot } = await mountComposer({}, undefined, {
       ...pickerOptions(OPUS_HIGH),
       text: "Fix #sol the bug",
+      rpc: server.rpc,
     });
     try {
       await waitFor(() =>
@@ -829,8 +946,7 @@ describe("setting keywords", () => {
       expect(slot.composer.draft.text).toBe("Fix the bug");
     } finally {
       slot.lifecycle.unmount();
-      act(() => stars.result.current.toggle("codex", "gpt-6.1-sol"));
-      stars.unmount();
+      freshDevice();
     }
   });
 

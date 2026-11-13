@@ -6,7 +6,8 @@ import {
   type PluginComposerApi,
 } from "@get-bb/plugin-sdk/app";
 import { listedModelName } from "../model-picker/catalog";
-import { parseFavoriteKey, useFavoriteModels } from "../model-picker/favorites";
+import type { StarredModel } from "../starred-models/contract";
+import { useStarredModels } from "../starred-models/useStarredModels";
 import { applySelection } from "./apply-selection";
 import {
   findKeywords,
@@ -25,15 +26,16 @@ export function useSettingKeywords() {
   const composer = useComposer();
   const { showError } = useComposerRenderer();
   const { providers } = useProviders();
-  const { favorites } = useFavoriteModels();
   // Settings apply in the order they were typed, each after the one before has settled.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
   const text = composer.draft.text;
+  // The server's stars are read once a `#` is typed; this device's last list serves until then.
+  const { models: starred } = useStarredModels({ enabled: text.includes("#") });
 
   useEffect(() => {
     // Most keystrokes add no `#` word, so they skip the scan.
     if (!text.includes("#")) return;
-    const sources = keywordSources(providers, favorites);
+    const sources = keywordSources(providers, starred);
     const keywords = findKeywords(composer.draft, sources);
     if (keywords.length === 0) return;
     composer.replace((current) => {
@@ -44,8 +46,8 @@ export function useSettingKeywords() {
       const request = keywordSelection(word, sources);
       queue.current = queue.current.then(() => applyKeyword(composer, showError, request));
     }
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies, react-hooks/exhaustive-deps -- runs once per text change, with the other inputs as they are then.
-  }, [text]);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies, react-hooks/exhaustive-deps -- runs per text change, and again when the stars arrive, with the other inputs as they are then.
+  }, [text, starred]);
 }
 
 async function applyKeyword(
@@ -62,17 +64,19 @@ async function applyKeyword(
   if (error) showError(error);
 }
 
-function keywordSources(providers: Providers, favorites: ReadonlySet<string>): KeywordSources {
+function keywordSources(providers: Providers, starred: readonly StarredModel[]): KeywordSources {
   const available = providers.filter((provider) => provider.available);
   const providerIds = new Set(available.map((provider) => provider.id));
   return {
     reasoningLevels: new Set(
       available.flatMap((provider) => (provider.reasoningLevels ?? []).map((level) => level.id)),
     ),
-    starredModels: [...favorites].flatMap((key) => {
-      const entry = parseFavoriteKey(key);
-      if (!entry || !providerIds.has(entry.providerId)) return [];
-      return [{ ...entry, label: listedModelName(entry.providerId, entry.model) }];
-    }),
+    starredModels: starred
+      .filter((entry) => providerIds.has(entry.providerId))
+      .map((entry) => ({
+        providerId: entry.providerId,
+        model: entry.model,
+        label: listedModelName(entry.providerId, entry.model),
+      })),
   };
 }

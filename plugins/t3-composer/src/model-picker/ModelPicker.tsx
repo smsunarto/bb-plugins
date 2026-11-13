@@ -25,7 +25,8 @@ import {
   type CatalogProvider,
   type ModelCatalog,
 } from "./catalog";
-import { favoriteKey, useFavoriteModels } from "./favorites";
+import { starKey } from "../starred-models/contract";
+import { useStarredModels } from "../starred-models/useStarredModels";
 import { rankModelSearch } from "./model-search";
 
 type Tab = "favorites" | string;
@@ -181,7 +182,7 @@ function ModelPickerContent(props: {
   onSelect(providerId: string, model: string): void;
 }) {
   const { catalog, sheet } = props;
-  const { favorites, toggle } = useFavoriteModels();
+  const { keys: favorites, toggle, notice: starNotice } = useStarredModels();
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>(() =>
     favorites.size > 0
@@ -197,8 +198,7 @@ function ModelPickerContent(props: {
   const optionId = (index: number) => `${idPrefix}-model-${index}`;
   const searchRef = useRef<HTMLInputElement>(null);
   const isSearching = query.trim().length > 0;
-  const activeKey =
-    props.providerId && props.model ? favoriteKey(props.providerId, props.model) : null;
+  const activeKey = props.providerId && props.model ? starKey(props.providerId, props.model) : null;
 
   // A provider that is not ready cannot take a pick, so its models stay out of search and Favorites.
   const selectableProviders = catalog.providers.filter(
@@ -206,7 +206,7 @@ function ModelPickerContent(props: {
   );
   const allItems: PickerItem[] = selectableProviders.flatMap((provider) =>
     catalog.catalogFor(provider.id).models.map((model) => {
-      const key = favoriteKey(provider.id, model.model);
+      const key = starKey(provider.id, model.model);
       return { key, provider, model, isFavorite: favorites.has(key) };
     }),
   );
@@ -433,6 +433,11 @@ function ModelPickerContent(props: {
               ))}
             </div>
           </div>
+          {starNotice ? (
+            <output className="block shrink-0 border-t border-border px-3 py-2 text-xs leading-snug text-muted-foreground">
+              {starNotice}
+            </output>
+          ) : null}
           <ListNotice
             visibleCount={visibleItems.length}
             tabCatalog={tabCatalog}
