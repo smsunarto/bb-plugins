@@ -12,6 +12,10 @@
 // BB's popover is modal, so while it is open the page ignores pointers outside it; app.css
 // lets them through to the effort panel, and a click there closes BB's popover, which ends
 // the drive. Drives are short and rare: one read per composer and model, and one per press.
+//
+// `/handoff` drives the same picker to press its "Handoff to new thread" row, a `<button>`
+// whose text is that label and which BB shows only while no handoff is active. The row calls
+// BB's handoff start; only the picker's Back button exits it, so closing the popover keeps it.
 
 /** Set on <html> while a drive runs; app.css hides BB's popover under it. */
 export const DRIVING_ATTRIBUTE = "data-t3-driving-bb-picker";
@@ -44,6 +48,37 @@ export function toggleBbSwitch(host: HTMLElement, label: string, signal: AbortSi
   });
 }
 
+const HANDOFF_LABEL = "Handoff to new thread";
+
+/** Presses BB's "Handoff to new thread" row, resolving once BB has left it for the handoff view. */
+export function startBbHandoff(host: HTMLElement, signal: AbortSignal) {
+  return drive(host, signal, async (popover, ended) => {
+    const row = await until(
+      () => handoffRow(popover),
+      ended,
+      "BB's picker offers no handoff here",
+      LOAD_DEADLINE_MS,
+    );
+    row.click();
+    // The handoff has started even if BB closes its popover before the row goes.
+    await until(
+      () => (handoffRow(popover) ? null : true),
+      ended,
+      "BB did not start the handoff",
+    ).catch((error: unknown) => {
+      if (signal.aborted || !ended.aborted) throw error;
+    });
+  });
+}
+
+function handoffRow(popover: HTMLElement) {
+  return (
+    [...popover.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.trim() === HANDOFF_LABEL,
+    ) ?? null
+  );
+}
+
 /** Drives run one at a time, so two never fight over the one popover. */
 function drive<T>(
   host: HTMLElement,
@@ -68,6 +103,8 @@ async function driveOnce<T>(
   root.setAttribute(DRIVING_ATTRIBUTE, "");
   // The host is inert between drives so nothing reaches the hidden picker; BB closes its
   // popover when the anchor turns inert, so it stays interactive until the popover closes.
+  // A picker BB shows in place of this composer's own is not inert, and stays that way.
+  const wasInert = host.inert;
   host.inert = false;
   // A drive ends when BB's popover closes, as a click on the panel or Escape makes it.
   const close = closeWatch(trigger);
@@ -82,7 +119,7 @@ async function driveOnce<T>(
   } finally {
     close.stop();
     if (trigger.getAttribute("aria-expanded") === "true") trigger.click();
-    host.inert = true;
+    host.inert = wasInert;
     await nextFrame();
     // BB returns focus to its hidden trigger when it closes; give focus back to the panel
     // only then, so focus the user has since moved stays where they put it.

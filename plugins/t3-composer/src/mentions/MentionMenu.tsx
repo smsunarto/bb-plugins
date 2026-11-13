@@ -14,6 +14,7 @@ import { Pill } from "@/components/ui/pill";
 import { TruncateStart } from "@/components/ui/truncate-start";
 import { cn } from "@/lib/utils";
 import { commandMentionTarget } from "../editor/composer-mentions";
+import { isHandoffCommand } from "../handoff-command";
 import {
   typeaheadSuggestionKey,
   type MenuMentionGroup,
@@ -133,6 +134,9 @@ function getCommandIcon(
   item: ExperimentalComposerCommandSuggestion,
   trigger: ExperimentalComposerCommandTrigger,
 ): ReactNode {
+  if (isHandoffCommand(item)) {
+    return <Icon name="MessageSquarePlus" className={ROW_ICON_CLASS} aria-hidden />;
+  }
   if (item.pluginId !== undefined) {
     return <PluginIcon pluginId={item.pluginId} icon={null} className={ROW_ICON_CLASS} />;
   }

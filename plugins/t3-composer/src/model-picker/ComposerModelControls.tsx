@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import {
   useComposer,
   type ComposerSelection,
@@ -10,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { findCatalogModel, useModelCatalog, type CatalogModel } from "./catalog";
 import { ModelPicker } from "./ModelPicker";
 import { TraitsPicker } from "./TraitsPicker";
+import { BbSwitchMissing, startBbHandoff } from "./bb-picker-driver";
 import {
   currentPlatform,
   cycleValue,
@@ -49,8 +50,15 @@ function needsBbPicker(model: CatalogModel) {
  * this composer's pickers are read-only, until the selected model's catalog
  * entry is known, and for models with an agent option to choose from, which
  * `setSelection` cannot set.
+ *
+ * `handoffRef` receives a function that starts BB's handoff to a new thread through BB's
+ * picker, for `/handoff`. It resolves true once the handoff has started, and otherwise shows
+ * why beside the pickers.
  */
-export function ComposerModelControls(props: { fallback: ReactNode }) {
+export function ComposerModelControls(props: {
+  fallback: ReactNode;
+  handoffRef?: { current: (() => Promise<boolean>) | null };
+}) {
   const composer = useComposer();
   const editable = hasEditablePickers(composer);
   const catalog = useModelCatalog(composer, editable && props.fallback != null);
@@ -65,6 +73,19 @@ export function ComposerModelControls(props: { fallback: ReactNode }) {
   const model = findCatalogModel(models, selection?.model);
   const ownPickers = providerId !== undefined && model !== undefined && !needsBbPicker(model);
   const keybindings = useKeybindings(ownPickers);
+  const {
+    driving: handoffDriving,
+    attachHost: attachHandoffHost,
+    start: startHandoff,
+  } = useHandoffDriver(controlsRef, setError);
+  useEffect(() => {
+    const ref = props.handoffRef;
+    if (!ref) return;
+    ref.current = startHandoff;
+    return () => {
+      if (ref.current === startHandoff) ref.current = null;
+    };
+  }, [props.handoffRef, startHandoff]);
 
   /** Settles once BB has applied or refused the pick, so the effort slider can let go of it. */
   const apply = (requested: ComposerSelection): Promise<unknown> => {
@@ -145,7 +166,23 @@ export function ComposerModelControls(props: { fallback: ReactNode }) {
     return () => root.removeEventListener("keydown", listener, true);
   }, [ownPickers]);
 
-  if (!providerId || !selection || !model || !ownPickers) return props.fallback;
+  const errorNote = error ? (
+    <span role="alert" className="ml-1 max-w-48 truncate text-xs text-destructive" title={error}>
+      {error}
+    </span>
+  ) : null;
+
+  if (!providerId || !selection || !model || !ownPickers) {
+    // BB's picker in place of these: the handoff drives it where it stands.
+    return (
+      <>
+        <span ref={attachHandoffHost} className="contents">
+          {props.fallback}
+        </span>
+        {errorNote}
+      </>
+    );
+  }
   const traits = buildTraits(provider, model, selection);
 
   return (
@@ -172,16 +209,72 @@ export function ComposerModelControls(props: { fallback: ReactNode }) {
           onSpeedChange={(serviceTier) => void apply({ serviceTier })}
           onError={setError}
         />
-        {error ? (
-          <span
-            role="alert"
-            className="ml-1 max-w-48 truncate text-xs text-destructive"
-            title={error}
-          >
-            {error}
+        {/* Out of sight and inert, only while a handoff drives it; see bb-picker-driver.ts. */}
+        {handoffDriving ? (
+          <span ref={attachHandoffHost} data-t3-bb-picker-host="" aria-hidden inert>
+            {props.fallback}
           </span>
         ) : null}
+        {errorNote}
       </div>
     </TooltipProvider>
   );
+}
+
+/** How long a handoff may take, mounting BB's picker included, before it counts as failed. */
+const HANDOFF_DEADLINE_MS = 15_000;
+
+/**
+ * Starts BB's handoff through BB's picker: the one shown in place of these pickers, or, beside
+ * them, one mounted out of sight for the drive.
+ */
+function useHandoffDriver(
+  anchor: { readonly current: HTMLElement | null },
+  report: (message: string | null) => void,
+) {
+  const [driving, setDriving] = useState(false);
+  const host = useRef<HTMLElement | null>(null);
+  const hostWaiter = useRef<((node: HTMLElement) => void) | null>(null);
+  const busy = useRef(false);
+  const attachHost = useCallback((node: HTMLElement | null) => {
+    host.current = node;
+    if (node) hostWaiter.current?.(node);
+  }, []);
+
+  const start = useCallback(async () => {
+    if (busy.current) return false;
+    const at = anchor.current ?? host.current;
+    // BB hides the composer to show the agent's question or approval; see `apply` above.
+    if (at && !isAnchorInteractive(at)) {
+      report("Answer the agent's question first.");
+      return false;
+    }
+    busy.current = true;
+    report(null);
+    setDriving(true);
+    const signal = AbortSignal.timeout(HANDOFF_DEADLINE_MS);
+    try {
+      const picker =
+        host.current ??
+        (await new Promise<HTMLElement>((resolve, reject) => {
+          hostWaiter.current = resolve;
+          signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+        }));
+      await startBbHandoff(picker, signal);
+      return true;
+    } catch (reason) {
+      report(
+        reason instanceof BbSwitchMissing || !(reason instanceof Error)
+          ? "Handoff isn't available here."
+          : reason.message,
+      );
+      return false;
+    } finally {
+      hostWaiter.current = null;
+      busy.current = false;
+      setDriving(false);
+    }
+  }, [anchor, report]);
+
+  return { driving, attachHost, start };
 }
