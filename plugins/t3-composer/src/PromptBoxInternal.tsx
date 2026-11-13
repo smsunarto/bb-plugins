@@ -984,11 +984,31 @@ export function PromptBoxInternal({
   const composerDraft = composer.draft;
   const value = composerDraft.text;
   const mentionRanges = composerDraft.mentions;
+  // Deleting BB's "Continue from @thread" pill by hand cancels the handoff, as its banner's X
+  // does. Only the user's own edits reach here: BB's send, restore and history recall set the
+  // draft directly, so clearing it to send never cancels.
+  const handoffSourceId =
+    handoff != null && composer.scope.kind === "thread" ? composer.scope.threadId : null;
+  const handoffBannerRef = useRef<HTMLDivElement>(null);
   const onChange = useCallback(
     (text: string, mentions: readonly ComposerMention[]) => {
-      composer.replace({ text, mentions });
+      const cancelsHandoff =
+        handoffSourceId !== null &&
+        hasHandoffBlock(composer.draft.mentions, handoffSourceId) &&
+        !hasHandoffBlock(mentions, handoffSourceId);
+      if (!cancelsHandoff) {
+        composer.replace({ text, mentions });
+        return;
+      }
+      composer.replace(withoutHandoffRemnant({ text, mentions }) ?? { text, mentions });
+      // BB's banner offers no SDK exit; its X button is the one way out.
+      queueMicrotask(() =>
+        handoffBannerRef.current
+          ?.querySelector<HTMLButtonElement>('button[aria-label="Exit handoff"]')
+          ?.click(),
+      );
     },
-    [composer],
+    [composer, handoffSourceId],
   );
   const focusComposerShortcut = renderer.focusComposerShortcut;
   const {
@@ -1154,30 +1174,6 @@ export function PromptBoxInternal({
       return started;
     });
   }, [composer]);
-  // Deleting BB's "Continue from @thread" pill cancels the handoff, as its banner's X does. The
-  // pill must have been seen first: BB may show the banner a render before the block lands.
-  const handoffSourceId =
-    handoff != null && composer.scope.kind === "thread" ? composer.scope.threadId : null;
-  const handoffBannerRef = useRef<HTMLDivElement>(null);
-  const handoffBlockSeen = useRef(false);
-  useEffect(() => {
-    if (handoffSourceId === null) {
-      handoffBlockSeen.current = false;
-      return;
-    }
-    if (hasHandoffBlock(composerDraft.mentions, handoffSourceId)) {
-      handoffBlockSeen.current = true;
-      return;
-    }
-    if (!handoffBlockSeen.current) return;
-    handoffBlockSeen.current = false;
-    const rest = withoutHandoffRemnant(composerDraft);
-    if (rest) composer.replace(rest);
-    // BB's banner offers no SDK exit; its X button is the one way out.
-    handoffBannerRef.current
-      ?.querySelector<HTMLButtonElement>('button[aria-label="Exit handoff"]')
-      ?.click();
-  }, [composer, composerDraft, handoffSourceId]);
   const commandLoading = commandSearch.status === "loading";
   const commandRefreshing = commandSearch.refreshing;
   const commandError = commandSearch.status === "error";
