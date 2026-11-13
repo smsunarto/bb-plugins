@@ -77,6 +77,7 @@ const SOURCES: Partial<Record<ComponentName, string>> = {
 const NOTES: Partial<Record<ComponentName, string>> = {
   Scene: instructionText.read("components/scene"),
   Shader: instructionText.read("components/shader"),
+  PullRequest: instructionText.read("components/pull-request"),
 };
 
 export function isComponentName(name: string): name is ComponentName {

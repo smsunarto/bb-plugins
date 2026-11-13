@@ -388,7 +388,10 @@ the instructions list it.
   reply keeps showing what it showed, with a Refresh. Threads also shows each
   thread's latest message, the question or approval it waits on, its model
   and reasoning level, and "Waiting on N running workers" for an idle
-  parent. Tests renders a list, a vitest/jest JSON report or a JUnit XML
+  parent. PullRequest(refs) reads the pull requests named instead, through
+  Source Control's `pullRequestsByRef` (one read per repository, as the bb
+  server's GitHub account and then the thread's host's), each row answering
+  for itself. Tests renders a list, a vitest/jest JSON report or a JUnit XML
   report (`Load` reads `.xml` as JUnit), Json any value as a collapsible tree.
 - Dev: the agent saves what a tool printed to `$BB_THREAD_STORAGE` and
   Loads it; each component knows that tool's exact format.

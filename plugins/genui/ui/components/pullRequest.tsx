@@ -1,8 +1,12 @@
 // PullRequest: the branch's pull request as BB knows it (project_pull_request):
 // number and title linking to it, state, base ← head, checks, review,
-// mergeability and BB's attention reason. Read-only. Live: it polls, with
-// backoff, only while visible and while checks run or mergeability is
-// being computed.
+// mergeability and BB's attention reason. PullRequest(refs) shows the pull
+// requests named instead (project_pull_requests, read through Source
+// Control): one as the same card, several as rows, each repository read on
+// its own so a slow or unreadable one holds up only its rows. Read-only.
+// Live: it polls, with backoff, only while visible and while checks run or
+// mergeability is being computed.
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { UrlLink, useRpc } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
@@ -10,7 +14,11 @@ import {
   ATTENTION_LABEL,
   checkCounts,
   MERGEABILITY_LABEL,
+  parsePullRequestRefs,
   PR_STATE_LABEL,
+  pullRequestRefKey,
+  pullRequestRepoKey,
+  PULL_REQUESTS_SHOWN,
   pullRequestSettling,
   REVIEW_LABEL,
   relativeTime,
@@ -18,17 +26,55 @@ import {
   type MergeabilityState,
   type PullRequestAttention,
   type PullRequestInfo,
+  type PullRequestRead,
+  type PullRequestRef,
   type PullRequestResult,
+  type PullRequestsResult,
   type PullRequestState,
   type ReviewState,
 } from "../../core/project";
 import type { rpcContract } from "../../server";
 import { useUiRuntime } from "../runtime";
-import { TONE_DOT, TONE_PILL, TONE_TEXT, type Props, type Tone } from "../values";
+import { TONE_DOT, TONE_PILL, type Props, type Tone } from "../values";
+import { ErrorLine } from "./display";
 import { FOCUS_RING } from "./inputs";
-import { EXACT_TIME, FailureLine, Freshness, NeedsThread, Panel, QuietLine, useNow, useProjectQuery, useVisible } from "./projectKit";
+import {
+  EXACT_TIME,
+  FailureLine,
+  Freshness,
+  ICON_BUTTON,
+  LoadingRows,
+  NeedsThread,
+  Panel,
+  QuietLine,
+  useNow,
+  useProjectQuery,
+  useVisible,
+  type Query,
+} from "./projectKit";
 
 export const STATE_TONE: Record<PullRequestState, Tone> = { open: "good", draft: "neutral", merged: "info", closed: "bad" };
+// A pull request's state wears Source Control's colours (its PR_LOOK and state icons), so a
+// pull request looks the same in both plugins. Merged is the theme's --pr-merged purple.
+// Class strings stay literal so Tailwind finds them.
+export const STATE_TEXT: Record<PullRequestState, string> = {
+  open: "text-success",
+  draft: "text-[var(--tertiary-foreground)]",
+  merged: "text-[var(--pr-merged,var(--color-timeline-accent,var(--primary)))]",
+  closed: "text-destructive",
+};
+const STATE_DOT: Record<PullRequestState, string> = {
+  open: "bg-success",
+  draft: "bg-[var(--tertiary-foreground)]",
+  merged: "bg-[var(--pr-merged,var(--color-timeline-accent,var(--primary)))]",
+  closed: "bg-destructive",
+};
+const STATE_PILL: Record<PullRequestState, string> = {
+  open: "bg-[color-mix(in_oklab,var(--success)_14%,transparent)] text-success",
+  draft: "bg-surface-raised text-muted-foreground",
+  merged: "bg-[color-mix(in_oklab,var(--pr-merged,var(--color-timeline-accent,var(--primary)))_14%,transparent)] text-[var(--pr-merged,var(--color-timeline-accent,var(--primary)))]",
+  closed: "bg-[color-mix(in_oklab,var(--destructive)_14%,transparent)] text-destructive",
+};
 export const STATE_ICON: Record<PullRequestState, string> = {
   open: "GitPullRequest",
   draft: "GitPullRequestDraft",
@@ -61,17 +107,23 @@ const ATTENTION_TONE: Record<PullRequestAttention, Tone> = {
   review_requested: "warn",
 };
 
-export function PullRequest(_: { props: Props }) {
+export function PullRequest({ props }: { props: Props }) {
   const { threadId } = useUiRuntime();
+  // While the reply streams, the list is empty until its first ref is complete.
+  if (Array.isArray(props.refs) && props.refs.length === 0) return <PendingList />;
+  const refs = parsePullRequestRefs(props.refs);
+  if (!refs.ok) return <ErrorLine message={refs.error} />;
   if (threadId === null) {
     return (
       <NeedsThread icon="GitPullRequest">
-        <span className="font-medium text-foreground">PullRequest</span> needs a thread: in a reply it shows the pull request of that
-        thread's branch.
+        <span className="font-medium text-foreground">PullRequest</span> needs a thread: in a reply it shows
+        {refs.value === null ? " the pull request of that thread's branch." : " live state of the pull requests named."}
       </NeedsThread>
     );
   }
-  return <PullRequestPanel threadId={threadId} />;
+  if (refs.value === null) return <PullRequestPanel threadId={threadId} />;
+  if (refs.value.length === 1) return <NamedPullRequestPanel threadId={threadId} prRef={refs.value[0]!} />;
+  return <PullRequestList threadId={threadId} refs={refs.value} />;
 }
 
 function PullRequestPanel({ threadId }: { threadId: string }) {
@@ -90,20 +142,11 @@ function PullRequestPanel({ threadId }: { threadId: string }) {
       <Panel
         label="Pull request"
         header={
-          <>
-            <span className="flex min-w-0 items-center gap-1.5">
-              <Icon name={pr === null ? "GitPullRequest" : STATE_ICON[pr.state]} aria-hidden className={cn("size-3.5 shrink-0", pr !== null && TONE_TEXT[STATE_TONE[pr.state]])} />
-              <span className="font-medium text-foreground">Pull request</span>
-            </span>
-            {pr === null ? null : (
-              <span className={cn("rounded-full px-2 py-px text-[11px] font-medium leading-4", TONE_PILL[STATE_TONE[pr.state]])}>
-                {PR_STATE_LABEL[pr.state]}
-              </span>
-            )}
+          <PullRequestHeader pr={pr}>
             {answer?.ok ? (
               <Freshness at={answer.fetchedAt} stored={false} refreshing={query.status === "ready" && query.refreshing} onRefresh={refresh} now={now} />
             ) : null}
-          </>
+          </PullRequestHeader>
         }
       >
         {answer === null ? (
@@ -123,6 +166,313 @@ function PullRequestPanel({ threadId }: { threadId: string }) {
         )}
       </Panel>
     </div>
+  );
+}
+
+/** The card's header: the state's icon, "Pull request" and its state, then `children` (freshness). */
+function PullRequestHeader({ pr, children }: { pr: PullRequestInfo | null; children: ReactNode }) {
+  return (
+    <>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <Icon name={pr === null ? "GitPullRequest" : STATE_ICON[pr.state]} aria-hidden className={cn("size-3.5 shrink-0", pr !== null && STATE_TEXT[pr.state])} />
+        <span className="font-medium text-foreground">Pull request</span>
+      </span>
+      {pr === null ? null : (
+        <span className={cn("rounded-full px-2 py-px text-[11px] font-medium leading-4", STATE_PILL[pr.state])}>
+          {PR_STATE_LABEL[pr.state]}
+        </span>
+      )}
+      {children}
+    </>
+  );
+}
+
+/** Pull requests by reference, read for one repository: `refs` all name it. */
+function usePullRequestsQuery(threadId: string, refs: readonly PullRequestRef[], visible: boolean) {
+  const rpc = useRpc<typeof rpcContract>();
+  return useProjectQuery<PullRequestsResult>(
+    `pull-requests\0${threadId}\0${refs.map(pullRequestRefKey).join(" ")}`,
+    (refresh) => rpc.call("project_pull_requests", { threadId, refs: refs.map(({ owner, repo, number }) => ({ owner, repo, number })), refresh }),
+    { visible, live: (answer) => answer.ok && answer.rows.some(({ read }) => read.ok && read.settling) },
+  );
+}
+
+/** PullRequest(["owner/repo#N"]): that pull request as the branch's card shows it. */
+function NamedPullRequestPanel({ threadId, prRef }: { threadId: string; prRef: PullRequestRef }) {
+  const refs = useMemo(() => [prRef], [prRef]);
+  const [ref, visible] = useVisible<HTMLDivElement>();
+  const { query, refresh } = usePullRequestsQuery(threadId, refs, visible);
+  const now = useNow();
+  const answer = query.status === "ready" ? query.answer : null;
+  const read = answer?.ok ? (answer.rows[0]?.read ?? null) : null;
+  const pr = read?.ok ? read.pullRequest : null;
+  return (
+    <div ref={ref} className="min-w-0">
+      <Panel
+        label="Pull request"
+        header={
+          <PullRequestHeader pr={pr}>
+            {answer?.ok ? (
+              <Freshness at={answer.fetchedAt} stored={false} refreshing={query.status === "ready" && query.refreshing} onRefresh={refresh} now={now} />
+            ) : null}
+          </PullRequestHeader>
+        }
+      >
+        {answer === null ? (
+          <PullRequestSkeleton />
+        ) : !answer.ok ? (
+          <FailureLine failure={answer} />
+        ) : pr === null ? (
+          <QuietLine icon="AlertCircle" className="px-3 py-2.5">
+            <span className="font-mono text-foreground">{pullRequestRefKey(prRef)}</span>: {read === null || read.ok ? "no answer" : read.message}
+          </QuietLine>
+        ) : (
+          <PullRequestBody pr={pr} now={now} />
+        )}
+      </Panel>
+    </div>
+  );
+}
+
+/** Each repository's refs, in the order the repositories first appear. */
+function byRepository(refs: readonly PullRequestRef[]): readonly (readonly PullRequestRef[])[] {
+  const groups = new Map<string, PullRequestRef[]>();
+  for (const ref of refs) {
+    const key = pullRequestRepoKey(ref);
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [ref]);
+    else group.push(ref);
+  }
+  return [...groups.values()];
+}
+
+/** PullRequest(refs) with several refs: one row each, in the order named, the first PULL_REQUESTS_SHOWN read. */
+function PullRequestList({ threadId, refs }: { threadId: string; refs: readonly PullRequestRef[] }) {
+  const signature = refs.map(pullRequestRefKey).join(" ");
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `signature` is what the refs say.
+  const shown = useMemo(() => refs.slice(0, PULL_REQUESTS_SHOWN), [signature]);
+  const groups = useMemo(() => byRepository(shown), [shown]);
+  const [ref, visible] = useVisible<HTMLDivElement>();
+  const [reads, setReads] = useState<ReadonlyMap<string, PullRequestRead>>(() => new Map());
+  const [refreshes, setRefreshes] = useState(0);
+  const [refreshing, setRefreshing] = useState(0);
+  const onAnswer = useCallback((rows: ReadonlyMap<string, PullRequestRead>) => {
+    setReads((current) => {
+      let changed = false;
+      const next = new Map(current);
+      for (const [key, read] of rows) {
+        if (next.get(key) !== read) {
+          next.set(key, read);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, []);
+  const onRefreshing = useCallback((delta: number) => setRefreshing((count) => count + delta), []);
+  const more = refs.length - shown.length;
+  return (
+    <div ref={ref} className="min-w-0">
+      {groups.map((group) => (
+        <RepositoryRead
+          key={group.map(pullRequestRefKey).join(" ")}
+          threadId={threadId}
+          refs={group}
+          visible={visible}
+          refreshes={refreshes}
+          onAnswer={onAnswer}
+          onRefreshing={onRefreshing}
+        />
+      ))}
+      <Panel
+        label="Pull requests"
+        header={
+          <>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <Icon name="GitPullRequest" aria-hidden className="size-3.5 shrink-0" />
+              <span className="font-medium text-foreground">Pull requests</span>
+              <span className="tabular-nums">{refs.length}</span>
+            </span>
+            <button
+              type="button"
+              aria-label="Refresh"
+              title="Refresh"
+              disabled={refreshing > 0}
+              onClick={() => setRefreshes((count) => count + 1)}
+              className={cn(ICON_BUTTON, "ml-auto")}
+            >
+              <Icon name="RotateCcw" aria-hidden className={cn("size-3.5", refreshing > 0 && "animate-spin motion-reduce:animate-none")} />
+            </button>
+          </>
+        }
+      >
+        <ul className="m-0 flex min-w-0 list-none flex-col p-0">
+          {shown.map((each) => (
+            <PullRequestRowItem key={pullRequestRefKey(each)} prRef={each} read={reads.get(pullRequestRefKey(each)) ?? null} />
+          ))}
+        </ul>
+        {more > 0 ? (
+          <QuietLine className="border-t border-border/60 px-3 py-2">
+            +{more} more not shown
+          </QuietLine>
+        ) : null}
+      </Panel>
+    </div>
+  );
+}
+
+/** A list whose refs are still streaming in. */
+function PendingList() {
+  return (
+    <Panel
+      label="Pull requests"
+      header={
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Icon name="GitPullRequest" aria-hidden className="size-3.5 shrink-0" />
+          <span className="font-medium text-foreground">Pull requests</span>
+        </span>
+      }
+    >
+      <LoadingRows label="Loading pull requests" rows={2} />
+    </Panel>
+  );
+}
+
+/**
+ * One repository's read: renders nothing, hands its rows to the list as they
+ * arrive. Polls while the list is visible and one of its pull requests is
+ * settling, as the card does.
+ */
+function RepositoryRead({
+  threadId,
+  refs,
+  visible,
+  refreshes,
+  onAnswer,
+  onRefreshing,
+}: {
+  threadId: string;
+  refs: readonly PullRequestRef[];
+  visible: boolean;
+  refreshes: number;
+  onAnswer: (rows: ReadonlyMap<string, PullRequestRead>) => void;
+  onRefreshing: (delta: number) => void;
+}) {
+  const { query, refresh } = usePullRequestsQuery(threadId, refs, visible);
+  useEffect(() => {
+    const rows = answerRows(query, refs);
+    if (rows !== null) onAnswer(rows);
+  }, [query, refs, onAnswer]);
+  useEffect(() => {
+    if (refreshes === 0) return;
+    onRefreshing(1);
+    void refresh().finally(() => onRefreshing(-1));
+  }, [refreshes, refresh, onRefreshing]);
+  return null;
+}
+
+/** Each ref's read once the repository answered; a failure of the whole read is each ref's. */
+function answerRows(query: Query<PullRequestsResult>, refs: readonly PullRequestRef[]): ReadonlyMap<string, PullRequestRead> | null {
+  if (query.status !== "ready") return null;
+  const answer = query.answer;
+  if (!answer.ok) {
+    const read: PullRequestRead = { ok: false, reason: "unavailable", message: answer.message };
+    return new Map(refs.map((each) => [pullRequestRefKey(each), read]));
+  }
+  return new Map(answer.rows.map((row) => [pullRequestRefKey(row.ref), row.read]));
+}
+
+/** One row: state, `owner/repo #N` and title linking to it, then checks, review and what it waits for. */
+function PullRequestRowItem({ prRef, read }: { prRef: PullRequestRef; read: PullRequestRead | null }) {
+  const name = (
+    <span className="font-normal text-muted-foreground">
+      {prRef.owner}/{prRef.repo} #{prRef.number}
+    </span>
+  );
+  if (read === null) {
+    return (
+      <li className="flex min-w-0 flex-col gap-1 border-t border-border/60 px-3 py-2 first:border-t-0" aria-busy="true">
+        <span className="flex h-5 min-w-0 items-center gap-2">
+          <span className={cn("size-3.5 shrink-0", BAR)} />
+          <span className="min-w-0 truncate text-[13px]">{name}</span>
+          <span className={cn("h-3 w-2/5", BAR)} />
+        </span>
+        <span className="flex h-5 items-center pl-[22px]">
+          <span className={cn("h-3 w-1/2", BAR)} />
+        </span>
+      </li>
+    );
+  }
+  if (!read.ok) {
+    return (
+      <li className="flex min-w-0 flex-col gap-1 border-t border-border/60 px-3 py-2 first:border-t-0">
+        <span className="flex h-5 min-w-0 items-center gap-2 text-[13px]">
+          <Icon name="AlertCircle" aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 truncate">{name}</span>
+        </span>
+        <span className="min-w-0 pl-[22px] text-[11.5px] leading-5 text-muted-foreground [overflow-wrap:anywhere]">{read.message}</span>
+      </li>
+    );
+  }
+  const pr = read.pullRequest;
+  const attention = ATTENTION_LABEL[pr.attention];
+  const final = pr.state === "merged" || pr.state === "closed";
+  return (
+    <li className="flex min-w-0 flex-col gap-1 border-t border-border/60 px-3 py-2 first:border-t-0">
+      <span className="flex min-h-5 min-w-0 items-center gap-2">
+        <Icon name={STATE_ICON[pr.state]} aria-hidden className={cn("size-3.5 shrink-0", STATE_TEXT[pr.state])} />
+        <UrlLink
+          href={pr.url}
+          title={`${pullRequestRefKey(prRef)}: ${pr.title}`}
+          className={cn("min-w-0 truncate rounded-sm text-[13px] font-medium leading-5 text-foreground no-underline hover:underline hover:underline-offset-2", FOCUS_RING)}
+        >
+          {name} {pr.title}
+        </UrlLink>
+      </span>
+      <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 pl-[22px] text-[11.5px] leading-5 text-muted-foreground">
+        <span className={cn(CHIP, STATE_PILL[pr.state])}>{PR_STATE_LABEL[pr.state]}</span>
+        {final ? null : <ChecksChip checks={pr.checks} />}
+        <RowFact tone={REVIEW_TONE[pr.review.state]} label={REVIEW_LABEL[pr.review.state]} detail="" />
+        {final ? null : attention !== null ? (
+          <span className={cn("rounded-sm px-1.5 text-[11px] font-medium leading-4", TONE_PILL[ATTENTION_TONE[pr.attention]])}>{attention}</span>
+        ) : (
+          <RowFact tone={MERGE_TONE[pr.mergeability]} label={MERGEABILITY_LABEL[pr.mergeability]} detail={pr.inMergeQueue ? "in merge queue" : ""} />
+        )}
+      </span>
+    </li>
+  );
+}
+
+// Source Control's chip (workspace-lane.tsx CHIP and ChecksChip), so a pull request's
+// checks read the same in both plugins: failing, running, or passed, on open ones only.
+const CHIP = "inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-1.5 text-[11px] leading-none font-medium whitespace-nowrap";
+
+function ChecksChip({ checks }: { checks: PullRequestInfo["checks"] }) {
+  if (checks.failed > 0) return <span className={cn(CHIP, "bg-[color-mix(in_oklab,var(--destructive)_14%,transparent)] text-destructive")}>{checks.failed} Failing</span>;
+  if (checks.pending > 0)
+    return (
+      <span className={cn(CHIP, "bg-[color-mix(in_oklab,var(--warning)_14%,transparent)] text-warning")}>
+        <span aria-hidden className="size-1.5 rounded-full bg-current" />
+        {checks.pending} Running
+      </span>
+    );
+  if (checks.passed > 0)
+    return (
+      <span className={cn(CHIP, STATE_PILL.open)}>
+        <Icon name="Check" aria-hidden className="size-3" />
+        Passed
+      </span>
+    );
+  return null;
+}
+
+function RowFact({ tone, label, detail, pulse = false }: { tone: Tone; label: string; detail: string; pulse?: boolean }) {
+  return (
+    <span className="flex min-w-0 items-center gap-1.5">
+      <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[tone], pulse && "animate-pulse motion-reduce:animate-none")} />
+      <span className="text-foreground">{label}</span>
+      {detail === "" ? null : <span className="truncate">{detail}</span>}
+    </span>
   );
 }
 
@@ -177,7 +527,7 @@ function PullRequestBody({ pr, now }: { pr: PullRequestInfo; now: number }) {
         />
         {pr.state === "merged" || pr.state === "closed" ? (
           // Mergeability means nothing once the pull request is merged or closed.
-          <Fact label="Merge" tone={STATE_TONE[pr.state]} value={PR_STATE_LABEL[pr.state]} detail="" />
+          <Fact label="Merge" tone={STATE_TONE[pr.state]} dot={STATE_DOT[pr.state]} value={PR_STATE_LABEL[pr.state]} detail="" />
         ) : (
           <Fact label="Merge" tone={MERGE_TONE[pr.mergeability]} value={MERGEABILITY_LABEL[pr.mergeability]} detail={pr.inMergeQueue ? "in merge queue" : ""} />
         )}
@@ -229,12 +579,12 @@ function hostOf(url: string): string {
   }
 }
 
-function Fact({ label, tone, value, detail, pulse = false }: { label: string; tone: Tone; value: string; detail: string; pulse?: boolean }) {
+function Fact({ label, tone, dot, value, detail, pulse = false }: { label: string; tone: Tone; dot?: string; value: string; detail: string; pulse?: boolean }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
       <dt className="text-[11px] leading-4 text-muted-foreground">{label}</dt>
       <dd className="m-0 flex min-w-0 items-center gap-1.5 leading-5 text-foreground">
-        <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[tone], pulse && "animate-pulse motion-reduce:animate-none")} />
+        <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", dot ?? TONE_DOT[tone], pulse && "animate-pulse motion-reduce:animate-none")} />
         <span className="min-w-0 truncate font-medium">{value}</span>
         {detail === "" ? null : <span className="min-w-0 truncate text-muted-foreground">{detail}</span>}
       </dd>

@@ -22,8 +22,14 @@ import {
   type ProjectFailure,
   type ProjectRequest,
   type ProjectResult,
+  pullRequestAttention,
+  pullRequestRefKey,
+  PULL_REQUESTS_SHOWN,
   type PullRequestInfo,
+  type PullRequestRead,
+  type PullRequestRef,
   type PullRequestResult,
+  type PullRequestsResult,
   type ThreadDisplayStatus,
   type ThreadInfo,
   type ThreadsResult,
@@ -36,6 +42,8 @@ import {
   checkoutStatus,
   PATCH_BATCH,
   pullRequest as readPullRequest,
+  pullRequestsByRef,
+  type PrStatus,
   type CheckoutFile,
   type CheckoutHead,
   type CheckoutProblem,
@@ -55,6 +63,8 @@ export interface ProjectSource {
   patches(threadId: string, target: ChangesTarget, paths: readonly string[]): Promise<PatchesResult>;
   commits(threadId: string, keep: Keep | null): Promise<CommitsResult>;
   pullRequest(threadId: string): Promise<PullRequestResult>;
+  /** Pull requests by reference (at most PULL_REQUESTS_SHOWN), each answering for itself. */
+  pullRequests(threadId: string, refs: readonly PullRequestRef[], refresh: boolean): Promise<PullRequestsResult>;
   threads(threadId: string, ids: readonly string[] | null): Promise<ThreadsResult>;
 }
 
@@ -72,6 +82,8 @@ export function projectReader(
         return source.commits(threadId, null);
       case "pullRequest":
         return source.pullRequest(threadId);
+      case "pullRequests":
+        return source.pullRequests(threadId, request.refs, false);
       case "threads":
         return source.threads(threadId, request.ids);
       case "environments":
@@ -79,6 +91,15 @@ export function projectReader(
     }
   };
 }
+
+/** How long a pull request read by reference is reused: merged and closed ones don't change. */
+function cacheAge(read: PullRequestRead): number {
+  if (read.ok && (read.pullRequest.state === "merged" || read.pullRequest.state === "closed")) return 10 * 60_000;
+  return 10_000;
+}
+
+/** Most pull requests kept from by-reference reads. */
+const PULL_REQUEST_CACHE = 500;
 
 /** Most subthreads a Threads list reads. */
 export const MAX_SUBTHREADS = 200;
@@ -190,6 +211,76 @@ export function pullRequestInfo(pr: PullRequestEntry): PullRequestInfo {
   };
 }
 
+/**
+ * A pull request Source Control read by reference, labelled as bb's GitHub
+ * PR status plugin labels the branch's, so one pull request reads the same
+ * through either source. Only GitHub merge states that name one label are
+ * used (BEHIND and HAS_HOOKS say nothing on their own): anything else is
+ * "unknown", which claims no "Blocked" or "Ready to merge".
+ */
+export function prStatusInfo(pr: PrStatus): PullRequestInfo {
+  const state: PullRequestInfo["state"] = pr.state === "open" && pr.isDraft ? "draft" : pr.state;
+  const total = pr.checks.passed + pr.checks.failed + pr.checks.pending;
+  const checks: PullRequestInfo["checks"] = {
+    state: total === 0 ? "no_checks" : pr.checks.failed > 0 ? "failing" : pr.checks.pending > 0 ? "pending" : "passing",
+    passed: pr.checks.passed,
+    failed: pr.checks.failed,
+    pending: pr.checks.pending,
+    total,
+  };
+  const requested = pr.reviewRequests > 0;
+  const review: PullRequestInfo["review"] = {
+    state:
+      pr.reviewDecision === "APPROVED"
+        ? "approved"
+        : pr.reviewDecision === "CHANGES_REQUESTED"
+          ? "changes_requested"
+          : pr.reviewDecision === "REVIEW_REQUIRED"
+            ? requested
+              ? "review_requested"
+              : "review_required"
+            : requested
+              ? "review_requested"
+              : "none",
+    requests: pr.reviewRequests,
+  };
+  const merge = pr.mergeStateStatus;
+  const mergeability: PullRequestInfo["mergeability"] =
+    pr.mergeable === "CONFLICTING" || merge === "DIRTY"
+      ? "conflicts"
+      : (pr.state === "open" && pr.isDraft) || merge === "DRAFT"
+        ? "draft"
+        : merge === "BLOCKED"
+          ? "blocked"
+          : merge === "CLEAN" || merge === "UNSTABLE"
+            ? "mergeable"
+            : "unknown";
+  const updatedAt = pr.updatedAt === null ? Number.NaN : Date.parse(pr.updatedAt);
+  const info = { state, checks, review, mergeability, inMergeQueue: pr.inMergeQueue };
+  return {
+    number: pr.number,
+    title: pr.title,
+    url: pr.url,
+    baseRef: pr.baseRef,
+    headRef: pr.headRef,
+    ...info,
+    attention: pullRequestAttention(info),
+    autoMerge: pr.autoMerge,
+    updatedAt: Number.isFinite(updatedAt) ? updatedAt : null,
+  };
+}
+
+/**
+ * Whether GitHub will change the pull request without anyone acting: checks
+ * running, mergeability being computed (GitHub's UNKNOWN), or the merge
+ * queue. A merge state that names no label (BEHIND, HAS_HOOKS) is settled:
+ * it shows as "unknown" but reading again won't change it.
+ */
+export function prStatusSettling(pr: PrStatus): boolean {
+  if (pr.state !== "open") return false;
+  return pr.checks.pending > 0 || pr.mergeable === "UNKNOWN" || pr.mergeStateStatus === "UNKNOWN" || pr.inMergeQueue;
+}
+
 /** The thread and its environment, or why there is none. */
 async function threadEnvironment(
   sdk: Sdk,
@@ -252,6 +343,38 @@ export function diffQuery(
 export function createProjectSource(bb: BbPluginApi, storage: SnapshotStorage = bb.storage.kv): ProjectSource {
   const sdk = bb.sdk;
   const snapshots = createSnapshots(storage);
+
+  /** Pull requests read by reference, by environment and ref, with when they were read. */
+  const pullRequestCache = new Map<string, { readonly at: number; readonly read: PullRequestRead }>();
+  /** By-reference reads in flight, by environment and refs asked: blocks naming the same pull requests share one. */
+  const pullRequestReads = new Map<string, Promise<ReadonlyMap<string, PullRequestRead>>>();
+
+  /** Asks Source Control for `refs`; a Source Control that can't be asked leaves each one unavailable. */
+  async function readPullRequestsByRef(
+    environmentId: string | null,
+    refs: readonly PullRequestRef[],
+  ): Promise<ReadonlyMap<string, PullRequestRead>> {
+    const reads = new Map<string, PullRequestRead>();
+    try {
+      const answer = await pullRequestsByRef(sdk, environmentId, refs);
+      for (const ref of refs) {
+        const key = pullRequestRefKey(ref);
+        const read = answer[key];
+        reads.set(
+          key,
+          read === undefined
+            ? { ok: false, reason: "unavailable", message: `Source Control didn't answer for ${key}` }
+            : read.ok
+              ? { ok: true, pullRequest: prStatusInfo(read.value), settling: prStatusSettling(read.value) }
+              : { ok: false, reason: read.reason, message: read.message },
+        );
+      }
+    } catch (cause) {
+      const message = `Source Control couldn't read pull requests: ${errorMessage(cause)}`;
+      for (const ref of refs) reads.set(pullRequestRefKey(ref), { ok: false, reason: "unavailable", message });
+    }
+    return reads;
+  }
 
   /** The diff query for a thread's target, with the environment it runs in. */
   async function resolveDiff(threadId: string, target: ChangesTarget) {
@@ -541,6 +664,54 @@ export function createProjectSource(bb: BbPluginApi, storage: SnapshotStorage = 
         };
       } catch (cause) {
         return failure("unavailable", `BB couldn't read the pull request: ${errorMessage(cause)}`);
+      }
+    },
+
+    async pullRequests(threadId, refs, refresh) {
+      if (refs.length === 0 || refs.length > PULL_REQUESTS_SHOWN) {
+        return failure("invalid", `PullRequest reads 1 to ${PULL_REQUESTS_SHOWN} pull requests at a time`);
+      }
+      try {
+        // A thread with no environment still reads, with the bb server's GitHub accounts only.
+        const environment = await threadEnvironment(sdk, threadId);
+        if (!environment.ok && environment.reason !== "no-environment") return environment;
+        const environmentId = environment.ok ? environment.environmentId : null;
+        const cacheKey = (ref: PullRequestRef) => `${environmentId ?? ""}\0${pullRequestRefKey(ref).toLowerCase()}`;
+        const now = Date.now();
+        const missing = refs.filter((ref) => {
+          const kept = pullRequestCache.get(cacheKey(ref));
+          return refresh || kept === undefined || now - kept.at >= cacheAge(kept.read);
+        });
+        if (missing.length > 0) {
+          const flightKey = `${environmentId ?? ""}\0${missing.map((ref) => pullRequestRefKey(ref).toLowerCase()).join(" ")}`;
+          let flight = pullRequestReads.get(flightKey);
+          if (flight === undefined) {
+            flight = readPullRequestsByRef(environmentId, missing).finally(() => pullRequestReads.delete(flightKey));
+            pullRequestReads.set(flightKey, flight);
+          }
+          const reads = await flight;
+          const at = Date.now();
+          for (const ref of missing) {
+            const read = reads.get(pullRequestRefKey(ref));
+            if (read === undefined) continue;
+            const key = cacheKey(ref);
+            pullRequestCache.delete(key);
+            pullRequestCache.set(key, { at, read });
+          }
+          while (pullRequestCache.size > PULL_REQUEST_CACHE) pullRequestCache.delete(pullRequestCache.keys().next().value!);
+        }
+        let fetchedAt = now;
+        const rows = refs.map((ref) => {
+          const kept = pullRequestCache.get(cacheKey(ref));
+          if (kept !== undefined) fetchedAt = Math.min(fetchedAt, kept.at);
+          return {
+            ref,
+            read: kept?.read ?? { ok: false as const, reason: "unavailable" as const, message: "BB couldn't read this pull request" },
+          };
+        });
+        return { ok: true, rows, fetchedAt };
+      } catch (cause) {
+        return failure("unavailable", `BB couldn't read the pull requests: ${errorMessage(cause)}`);
       }
     },
 

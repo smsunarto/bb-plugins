@@ -74,8 +74,11 @@ import {
   parseChangesTarget,
   parseCommitLimit,
   parsePathFilter,
+  parsePullRequestRefs,
   parseThreadIds,
   PR_STATE_LABEL,
+  pullRequestRefKey,
+  PULL_REQUESTS_SHOWN,
   projectRequestKey,
   relativeTime,
   REVIEW_LABEL,
@@ -86,6 +89,8 @@ import {
   type Parsed,
   type ProjectRequest,
   type ProjectResult,
+  type PullRequestInfo,
+  type PullRequestsView,
   type PullRequestView,
   type ThreadsView,
 } from "./project";
@@ -1303,8 +1308,13 @@ function projectRequest(node: UiNode): Parsed<ProjectRequest> | null {
     }
     case "Commits":
       return { ok: true, value: { kind: "commits" } };
-    case "PullRequest":
-      return { ok: true, value: { kind: "pullRequest" } };
+    case "PullRequest": {
+      const refs = parsePullRequestRefs(props.refs);
+      if (!refs.ok) return refs;
+      return refs.value === null
+        ? { ok: true, value: { kind: "pullRequest" } }
+        : { ok: true, value: { kind: "pullRequests", refs: refs.value.slice(0, PULL_REQUESTS_SHOWN) } };
+    }
     case "Threads": {
       const ids = parseThreadIds(props.ids);
       return ids.ok ? { ok: true, value: { kind: "threads", ids: ids.value } } : ids;
@@ -1314,6 +1324,25 @@ function projectRequest(node: UiNode): Parsed<ProjectRequest> | null {
     default:
       return null;
   }
+}
+
+/** Why a Project node's props can't be read, one line per node, for check_ui. */
+export function projectProblems(roots: readonly UiNode[]): string[] {
+  const problems: string[] = [];
+  const visit = (value: Value | undefined): void => {
+    if (value === undefined || value === null || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach(visit);
+    } else if (hasKind(value, "node")) {
+      const request = projectRequest(value);
+      if (request !== null && !request.ok && !problems.includes(request.error)) problems.push(request.error);
+      Object.values(value.props).forEach(visit);
+    } else if (isPlainObject(value)) {
+      Object.values(value).forEach(visit);
+    }
+  };
+  roots.forEach(visit);
+  return problems;
 }
 
 /** The BB reads the evaluated nodes need (Changes, Commits, PullRequest, Threads), in order, without repeats. */
@@ -1355,6 +1384,7 @@ const PROJECT_TEXT: Record<string, { readonly title: string; readonly unanswered
   Changes: { title: "Changes", unanswered: "_The changes in this thread's checkout: open the reply in BB to see them._" },
   Commits: { title: "Commits", unanswered: "_This branch's commits: open the reply in BB to see them._" },
   PullRequest: { title: "Pull request", unanswered: "_This branch's pull request: open the reply in BB to see it._" },
+  PullRequests: { title: "Pull requests", unanswered: "_Pull request status: open the reply in BB to see it._" },
   Threads: { title: "Threads", unanswered: "_Thread status: open the reply in BB to see it._" },
 };
 
@@ -1369,11 +1399,11 @@ function moreLine(shown: number, total: number, noun: string): string {
 
 function projectMarkdown(node: UiNode): string {
   const props: Readonly<Record<string, Value>> = node.props;
-  const text = PROJECT_TEXT[node.type];
-  if (text === undefined) return "";
   const request = projectRequest(node);
   if (request === null) return "";
   if (!request.ok) return `_(error: ${request.error})_`;
+  const text = PROJECT_TEXT[request.value.kind === "pullRequests" ? "PullRequests" : node.type];
+  if (text === undefined) return "";
   const answer = projectAnswers.get(projectRequestKey(request.value));
   if (answer === undefined) return text.unanswered;
   if (!answer.ok) return `**${text.title}** · _${answer.message}_`;
@@ -1383,6 +1413,10 @@ function projectMarkdown(node: UiNode): string {
     return commitsMarkdown(answer, limit.ok ? limit.value : null);
   }
   if ("pullRequest" in answer) return pullRequestMarkdown(answer);
+  if ("rows" in answer) {
+    const refs = parsePullRequestRefs(props.refs);
+    return pullRequestsMarkdown(answer, refs.ok && refs.value !== null ? refs.value.length : answer.rows.length);
+  }
   // Environments renders through its own case in block().
   if ("environments" in answer) return "";
   return threadsMarkdown(answer);
@@ -1427,21 +1461,40 @@ function commitsMarkdown(view: CommitsView, limit: number | null): string {
 function pullRequestMarkdown(view: PullRequestView): string {
   const pr = view.pullRequest;
   if (pr === null) return `**Pull request** · ${view.branch === null ? "none" : `none for ${view.branch}`}`;
+  return `**Pull request** ${pullRequestFacts(pr, `#${pr.number} ${pr.title}`, true)}`;
+}
+
+/**
+ * The pull request's link, then its state, refs, checks, review, mergeability
+ * and what it waits for. A list leaves out mergeability once a pull request
+ * is merged or closed (`alwaysMergeability` keeps this branch's line as it was).
+ */
+function pullRequestFacts(pr: PullRequestInfo, label: string, alwaysMergeability = false): string {
   const url = webUrl(pr.url, ["https:"]);
-  const label = `#${pr.number} ${pr.title}`;
   const counts = checkCounts(pr.checks);
   const attention = ATTENTION_LABEL[pr.attention];
+  const open = pr.state === "open" || pr.state === "draft";
   return [
-    `**Pull request** ${url === null ? `**${label}**` : link(label, url)}`,
+    url === null ? `**${label}**` : link(label, url),
     PR_STATE_LABEL[pr.state],
     `${pr.baseRef} ← ${pr.headRef}`,
     `${CHECKS_LABEL[pr.checks.state]}${counts === "" ? "" : ` (${counts})`}`,
     REVIEW_LABEL[pr.review.state],
-    MERGEABILITY_LABEL[pr.mergeability],
+    open || alwaysMergeability ? MERGEABILITY_LABEL[pr.mergeability] : "",
     attention === null ? "" : `needs: ${attention}`,
   ]
     .filter((part) => part !== "")
     .join(" · ");
+}
+
+/** One line per pull request named, in order; `named` counts the ones left out past PULL_REQUESTS_SHOWN. */
+function pullRequestsMarkdown(view: PullRequestsView, named: number): string {
+  const lines = view.rows.map(({ ref, read }) => {
+    const key = pullRequestRefKey(ref);
+    if (!read.ok) return `- ${key} — _${read.message}_`;
+    return `- ${pullRequestFacts(read.pullRequest, `${key} ${read.pullRequest.title}`)}`;
+  });
+  return paragraphs([`**Pull requests** (${named})`, lines.join("\n"), moreLine(view.rows.length, named, "pull request")]);
 }
 
 function threadsMarkdown(view: ThreadsView): string {

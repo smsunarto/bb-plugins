@@ -21,7 +21,7 @@ import {
   wikiPhotos,
 } from "./core";
 import { checkShader } from "./core/glsl-check";
-import { localVideos, localImages, projectRequests, toMarkdownWithProject } from "./core/markdown";
+import { localVideos, localImages, projectProblems, projectRequests, toMarkdownWithProject } from "./core/markdown";
 import { projectRequestKey, type ProjectRequest, type ProjectResult } from "./core/project";
 import { readScene, sceneAssets } from "./core/scene";
 import { shaderInputNames, shaderPasses } from "./core/shader-args";
@@ -38,7 +38,7 @@ interface ImageFinder {
   photo(title: string): Promise<SearchedImage | null>;
 }
 
-/** Reads the reply's thread's state from BB for Changes, Commits, PullRequest, Threads and Environments. */
+/** Reads BB state for Changes, Commits, PullRequest (the branch's, or named ones), Threads and Environments. */
 export type ProjectReader = (request: ProjectRequest) => Promise<ProjectResult>;
 
 async function findAll(keys: readonly string[], find: (key: string) => Promise<SearchedImage | null>): Promise<Map<string, SearchedImage | null>> {
@@ -219,6 +219,7 @@ export async function checkSpec(
     ...imageProblems,
     ...loaded.flatMap(([request, result]) => (result.ok ? [] : [`${request.path}: ${result.error}`])),
     ...(diagnostics.length > 0 ? [formatDiagnostics(diagnostics)] : []),
+    ...projectProblems(roots),
     ...(await gpuProblems(roots, load)),
     ...probed.failures.map(({ probe, diagnostics }) => `After ${probe.describe}:\n${formatDiagnostics(diagnostics)}`),
   ];

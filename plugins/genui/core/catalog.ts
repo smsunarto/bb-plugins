@@ -509,8 +509,8 @@ export const COMPONENTS = {
   },
   PullRequest: {
     group: "Project",
-    params: [],
-    summary: "this branch's pull request: state, checks, review",
+    params: [{ name: "refs", kind: "list", optional: true }],
+    summary: 'PR state, checks, review; refs: ["o/r#1", url]',
   },
   Threads: {
     group: "Project",

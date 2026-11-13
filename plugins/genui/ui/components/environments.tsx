@@ -47,7 +47,7 @@ import {
   useProjectQuery,
   useVisible,
 } from "./projectKit";
-import { CHECKS_TONE, STATE_ICON, STATE_TONE } from "./pullRequest";
+import { CHECKS_TONE, STATE_ICON, STATE_TEXT } from "./pullRequest";
 import { LiveDot, statusTone } from "./threads";
 
 /** Thread lines a row lists; the rest are counted. */
@@ -531,7 +531,7 @@ function PullFact({ pull }: { pull: EnvironmentPull }) {
       title={`#${pr.number} ${pr.title}\n${PR_STATE_LABEL[pr.state]} · ${CHECKS_LABEL[pr.checks.state]}${counts === "" ? "" : ` (${counts})`}`}
       className={cn("flex min-w-0 items-center gap-1 rounded-sm text-muted-foreground no-underline hover:text-foreground hover:underline", FOCUS_RING)}
     >
-      <Icon name={STATE_ICON[pr.state]} aria-hidden className={cn("size-3.5 shrink-0", TONE_TEXT[STATE_TONE[pr.state]])} />
+      <Icon name={STATE_ICON[pr.state]} aria-hidden className={cn("size-3.5 shrink-0", STATE_TEXT[pr.state])} />
       <span className="tabular-nums text-foreground">#{pr.number}</span>
       <span>{PR_STATE_LABEL[pr.state]}</span>
       {checksShown && pr.checks.state !== "no_checks" ? (

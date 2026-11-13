@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ChangesView } from "../core/project";
 import { fitChanges, snapshotKey } from "./snapshots";
-import { createProjectSource, diffQuery, problemFailure } from "./source";
+import { createProjectSource, diffQuery, problemFailure, prStatusInfo, prStatusSettling, pullRequestInfo } from "./source";
+import type { PrStatus } from "./checkout";
 
 type Fake = Record<string, Record<string, (args: never) => unknown>>;
 
@@ -341,5 +342,162 @@ describe("snapshot size", () => {
     expect(snapshotKey("thr_a0000", "block", changes)).not.toBe(snapshotKey("thr_a0000", "block", { ...changes, target: { kind: "uncommitted" } }));
     expect(snapshotKey("thr_a0000", "block", changes)).not.toBe(snapshotKey("thr_a0000", "block2", changes));
     expect(snapshotKey("thr_a0000", "block", changes).startsWith("snapshot:thr_a0000:")).toBe(true);
+  });
+});
+
+/** A pull request as Source Control reads it by reference; open, clean, approved and passing unless overridden. */
+function prStatus(number: number, overrides: Partial<PrStatus> = {}): PrStatus {
+  return {
+    number,
+    url: `https://github.com/Argus-Labs/rampage-client/pull/${number}`,
+    title: `Rampage change ${number}`,
+    state: "open",
+    isDraft: false,
+    baseRef: "main",
+    headRef: `feat/${number}`,
+    updatedAt: "2026-11-10T12:00:00Z",
+    mergeable: "MERGEABLE",
+    mergeStateStatus: "CLEAN",
+    reviewDecision: "APPROVED",
+    reviewRequests: 0,
+    checks: { passed: 5, failed: 0, pending: 0 },
+    autoMerge: false,
+    inMergeQueue: false,
+    ...overrides,
+  };
+}
+
+describe("PullRequest refs", () => {
+  const RAMPAGE = "Argus-Labs/rampage-client";
+  const ref = (number: number) => ({ owner: "Argus-Labs", repo: "rampage-client", number });
+
+  function byRef(answer: (input: { environmentId: string | null; refs: { owner: string; repo: string; number: number }[] }) => unknown) {
+    const asked: { environmentId: string | null; refs: string[] }[] = [];
+    const bb = fakeBb({
+      plugins: pluginReads({
+        "source-control.pullRequestsByRef": (input: { environmentId: string | null; refs: { owner: string; repo: string; number: number }[] }) => {
+          asked.push({ environmentId: input.environmentId, refs: input.refs.map((each) => `${each.owner}/${each.repo}#${each.number}`) });
+          return answer(input);
+        },
+      }),
+    } as never);
+    return { ...bb, asked };
+  }
+
+  it("reads the named pull requests through the thread's environment, each row on its own", async () => {
+    const { source, asked } = byRef(() => ({
+      [`${RAMPAGE}#2419`]: { ok: true, value: prStatus(2419, { state: "merged" }) },
+      [`${RAMPAGE}#2423`]: { ok: true, value: prStatus(2423, { isDraft: true, mergeStateStatus: "DRAFT", reviewDecision: null }) },
+      [`${RAMPAGE}#9999`]: { ok: false, reason: "not-found", message: `${RAMPAGE}#9999 is not a pull request GitHub knows.` },
+    }));
+    const view = await source.pullRequests("thr_mine00", [ref(2419), ref(2423), ref(9999)], false);
+    expect(asked).toEqual([{ environmentId: "env_a", refs: [`${RAMPAGE}#2419`, `${RAMPAGE}#2423`, `${RAMPAGE}#9999`] }]);
+    expect(view.ok && view.rows.map(({ ref, read }) => [ref.number, read.ok ? read.pullRequest.state : read.reason])).toEqual([
+      [2419, "merged"],
+      [2423, "draft"],
+      [9999, "not-found"],
+    ]);
+  });
+
+  it("leaves each row unavailable, not the reply, when Source Control can't be asked", async () => {
+    const { source } = fakeBb();
+    const view = await source.pullRequests("thr_mine00", [ref(2419), ref(2420)], false);
+    expect(view.ok).toBe(true);
+    if (!view.ok) return;
+    expect(view.rows.map(({ read }) => !read.ok && read.reason)).toEqual(["unavailable", "unavailable"]);
+    expect(!view.rows[0]!.read.ok && view.rows[0]!.read.message).toMatch(/^Source Control couldn't read pull requests/);
+  });
+
+  it("shares one read between blocks naming the same pull requests, and reads again on Refresh", async () => {
+    const { source, asked } = byRef(({ refs }) =>
+      Object.fromEntries(refs.map((each) => [`${each.owner}/${each.repo}#${each.number}`, { ok: true, value: prStatus(each.number) }])),
+    );
+    await Promise.all([source.pullRequests("thr_mine00", [ref(2420)], false), source.pullRequests("thr_mine00", [ref(2420)], false)]);
+    await source.pullRequests("thr_mine00", [ref(2420)], false);
+    expect(asked).toHaveLength(1);
+    await source.pullRequests("thr_mine00", [ref(2420)], true);
+    expect(asked).toHaveLength(2);
+  });
+
+  it("refuses a thread BB doesn't have", async () => {
+    const { source, asked } = byRef(() => ({}));
+    expect(await source.pullRequests("thr_nobody", [ref(1)], false)).toMatchObject({ ok: false, reason: "not-found" });
+    expect(asked).toHaveLength(0);
+  });
+
+  // The same pull request reaches a card through bb's PR status plugin (this branch's) and through
+  // Source Control (by reference). Rows give the facts once; `branch` is what bb's plugin reports
+  // for them (its assemble rules). The by-reference reading may say less ("unknown", no attention)
+  // but never something else.
+  const SAME_FACTS: { name: string; facts: Partial<PrStatus>; branch: { state: string; checks: string; review: string; mergeability: string; attention: string } }[] = [
+    { name: "clean and approved", facts: {}, branch: { state: "open", checks: "passing", review: "approved", mergeability: "mergeable", attention: "ready_to_merge" } },
+    { name: "conflicting", facts: { mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" }, branch: { state: "open", checks: "passing", review: "approved", mergeability: "conflicts", attention: "conflicts" } },
+    { name: "blocked by rules", facts: { mergeStateStatus: "BLOCKED", reviewDecision: "REVIEW_REQUIRED" }, branch: { state: "open", checks: "passing", review: "review_required", mergeability: "blocked", attention: "review_requested" } },
+    { name: "blocked, approved", facts: { mergeStateStatus: "BLOCKED" }, branch: { state: "open", checks: "passing", review: "approved", mergeability: "blocked", attention: "blocked" } },
+    { name: "behind its base", facts: { mergeStateStatus: "BEHIND" }, branch: { state: "open", checks: "passing", review: "approved", mergeability: "blocked", attention: "blocked" } },
+    { name: "pre-receive hooks", facts: { mergeStateStatus: "HAS_HOOKS" }, branch: { state: "open", checks: "passing", review: "approved", mergeability: "blocked", attention: "blocked" } },
+    { name: "failing checks", facts: { mergeStateStatus: "UNSTABLE", checks: { passed: 3, failed: 2, pending: 0 } }, branch: { state: "open", checks: "failing", review: "approved", mergeability: "mergeable", attention: "checks_failed" } },
+    { name: "still computing", facts: { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN", checks: { passed: 1, failed: 0, pending: 2 } }, branch: { state: "open", checks: "pending", review: "approved", mergeability: "unknown", attention: "checks_pending" } },
+    { name: "draft", facts: { isDraft: true, mergeStateStatus: "DRAFT", reviewDecision: null, reviewRequests: 1 }, branch: { state: "draft", checks: "passing", review: "review_requested", mergeability: "draft", attention: "draft" } },
+    { name: "queued", facts: { inMergeQueue: true }, branch: { state: "open", checks: "passing", review: "approved", mergeability: "mergeable", attention: "queued" } },
+    { name: "merged", facts: { state: "merged" }, branch: { state: "merged", checks: "passing", review: "approved", mergeability: "mergeable", attention: "merged" } },
+    { name: "no checks", facts: { checks: { passed: 0, failed: 0, pending: 0 }, reviewDecision: null }, branch: { state: "open", checks: "no_checks", review: "none", mergeability: "mergeable", attention: "none" } },
+  ];
+
+  it.each(SAME_FACTS)("reads $name the same through either source", ({ facts, branch }) => {
+    const status = prStatus(2420, facts);
+    const fromBranch = pullRequestInfo({
+      number: status.number,
+      title: status.title,
+      url: status.url,
+      state: branch.state as never,
+      baseRefName: status.baseRef,
+      headRefName: status.headRef,
+      checks: { state: branch.checks as never, passedCount: status.checks.passed, failedCount: status.checks.failed, pendingCount: status.checks.pending, totalCount: 5 },
+      review: { state: branch.review as never, reviewRequestCount: status.reviewRequests },
+      mergeability: { state: branch.mergeability as never },
+      attention: branch.attention as never,
+      autoMerge: status.autoMerge,
+      inMergeQueue: status.inMergeQueue,
+      updatedAt: status.updatedAt!,
+    });
+    const fromRef = prStatusInfo(status);
+    expect([fromRef.state, fromRef.checks.state, fromRef.review.state]).toEqual([fromBranch.state, fromBranch.checks.state, fromBranch.review.state]);
+    expect([fromBranch.mergeability, "unknown"]).toContain(fromRef.mergeability);
+    expect([fromBranch.attention, "none"]).toContain(fromRef.attention);
+  });
+
+  it("claims no Blocked or Ready to merge from a merge state that names neither", () => {
+    for (const mergeStateStatus of ["BEHIND", "HAS_HOOKS", "UNKNOWN", null]) {
+      const info = prStatusInfo(prStatus(1, { mergeStateStatus }));
+      expect(info.mergeability).toBe("unknown");
+      expect(info.attention).toBe("none");
+    }
+    expect(prStatusInfo(prStatus(1)).attention).toBe("ready_to_merge");
+  });
+});
+
+describe("PullRequest refs: when to read again", () => {
+  it("keeps reading while GitHub computes, and stops for a merge state that won't change on its own", () => {
+    expect(prStatusSettling(prStatus(1, { mergeStateStatus: "BEHIND" }))).toBe(false);
+    expect(prStatusSettling(prStatus(1, { mergeStateStatus: "HAS_HOOKS" }))).toBe(false);
+    expect(prStatusSettling(prStatus(1))).toBe(false);
+    expect(prStatusSettling(prStatus(1, { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" }))).toBe(true);
+    expect(prStatusSettling(prStatus(1, { checks: { passed: 2, failed: 0, pending: 1 } }))).toBe(true);
+    expect(prStatusSettling(prStatus(1, { inMergeQueue: true }))).toBe(true);
+    expect(prStatusSettling(prStatus(1, { state: "merged", mergeStateStatus: "UNKNOWN" }))).toBe(false);
+  });
+
+  it("marks each row read through Source Control with whether it is settling", async () => {
+    const bb = fakeBb({
+      plugins: pluginReads({
+        "source-control.pullRequestsByRef": () => ({
+          "o/r#1": { ok: true, value: prStatus(1, { mergeStateStatus: "BEHIND" }) },
+          "o/r#2": { ok: true, value: prStatus(2, { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" }) },
+        }),
+      }),
+    } as never);
+    const view = await bb.source.pullRequests("thr_mine00", [{ owner: "o", repo: "r", number: 1 }, { owner: "o", repo: "r", number: 2 }], false);
+    expect(view.ok && view.rows.map(({ read }) => read.ok && read.settling)).toEqual([false, true]);
   });
 });
