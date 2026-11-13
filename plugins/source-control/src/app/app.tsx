@@ -12,9 +12,11 @@ import { PrWatchBanner } from "./pr-watch-banner.tsx";
 import { LEGACY_REVIEW_DIRECTIVE, LegacyReviewDirective } from "./legacy-card.tsx";
 import { StripAction, StripSummary, useStripVisible } from "./composer-strip.tsx";
 import { ReviewPanel, ReviewSidebar, useReviewBadge, useReviewTitle } from "./review-entry.tsx";
+import { mountHeaderIcon } from "./header-icon.ts";
 import {
   BranchesInfoSection,
   headerActionItem,
+  isHeaderLabel,
   PullRequestInfoRow,
   useHeaderActionData,
 } from "./thread-info.tsx";
@@ -42,6 +44,11 @@ export default definePluginApp((app) => {
     placement: "header",
     useData: useHeaderActionData,
     item: headerActionItem,
+  });
+  // bb draws that button as its label alone; this puts the version-control icon on it.
+  app.contentScripts.register({
+    id: "header-icon",
+    mount: ({ signal }) => mountHeaderIcon(document, signal, isHeaderLabel),
   });
   // The Info tab's GitButler branches, before bb's Commits (10): they name what those are on.
   app.slots.experimental_threadInfoSection({

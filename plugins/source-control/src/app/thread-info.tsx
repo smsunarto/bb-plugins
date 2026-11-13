@@ -53,6 +53,10 @@ type HeaderAnswers = Readonly<Record<string, HeaderAnswer>>;
  */
 const lastKnown = new Map<string, HeaderAnswer>();
 
+/** Every label a header button has had, so the icon's content script knows the button by its text. */
+const shownLabels = new Set<string>([HEADER_LABEL]);
+export const isHeaderLabel = (label: string): boolean => shownLabels.has(label);
+
 /** Each header's thread: its checkout's status, if it has one. Loads only ids not loaded yet. */
 export function useHeaderActionData({ threadIds }: PluginThreadActionDataInput): HeaderAnswers {
   const query = useRpcKeyedQuery({
@@ -73,6 +77,7 @@ export function useHeaderActionData({ threadIds }: PluginThreadActionDataInput):
         row.state === "checkout" ? { status: summary ? headerLabel(summary) : null } : null;
       answers[threadId] = answer;
       lastKnown.set(threadId, answer);
+      if (answer?.status) shownLabels.add(answer.status);
     }
     return answers;
   }, [threadIds, data]);
