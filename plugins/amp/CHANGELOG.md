@@ -1,5 +1,28 @@
 # @smsunarto/bb-plugin-amp
 
+## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/amp/v0.5.0...amp/v0.6.0) (2026-11-13)
+
+
+### Features
+
+* **amp,devin:** move Orb and Cloud toggles to composer banners ([f089b9e](https://github.com/smsunarto/bb-plugins/commit/f089b9ecdfa046f47baf8244ac0701c1cf6c5b29))
+* **branding:** give every plugin a distinct BB-style icon ([e6a07fe](https://github.com/smsunarto/bb-plugins/commit/e6a07fe24cfd954203fc3007c3e9817de4b9376e))
+* **plugins:** adopt BB 0.48 SDK APIs ([7fcbe74](https://github.com/smsunarto/bb-plugins/commit/7fcbe74366553e460c2992080af34533c7642649))
+* **plugins:** replace plugin icons with Lucide via better-icons ([765f389](https://github.com/smsunarto/bb-plugins/commit/765f38988bcf8107889ec51890377f85c00dcdf3))
+* **storybook:** catalog custom components across browser plugins ([1345a92](https://github.com/smsunarto/bb-plugins/commit/1345a926b6b281ae7ab0c6d7fcc6f1807130d77b))
+* **storybook:** populate realistic review and workflow scenarios ([b58f4e7](https://github.com/smsunarto/bb-plugins/commit/b58f4e7b9865f3997da18c886de76aac7652db20))
+
+
+### Bug Fixes
+
+* **ci:** repair main after the bots merge ([c0ce047](https://github.com/smsunarto/bb-plugins/commit/c0ce047aaa6df949b1e2043518d4ea3cb0a72ecb))
+* **packaging:** bundle private runtime dependencies in release tarballs ([d344351](https://github.com/smsunarto/bb-plugins/commit/d3443517c9dda8c779a049f438f4fefa86253d99))
+
+
+### Performance Improvements
+
+* **plugins:** narrow audited remaining utility scopes ([aeb6f69](https://github.com/smsunarto/bb-plugins/commit/aeb6f6993dd798316aab5eb83ae8bc106386bf63))
+
 ## [0.5.0](https://github.com/smsunarto/bb-plugins/compare/amp/v0.4.1...amp/v0.5.0) (2026-09-15)
 
 
