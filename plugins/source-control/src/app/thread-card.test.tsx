@@ -153,13 +153,12 @@ function renderThread(thread: ThreadChange, attributes: Record<string, string> =
   return { slot, shipped };
 }
 
-test("a hand-written directive shows the thread's own Change, its uncommitted files, and ships it", async () => {
+test("a hand-written directive shows the thread's own Change and ships its unpushed branch", async () => {
   const { slot, shipped } = renderThread(row(workspace({ uncommitted: files(3) })));
   const card = await slot.findByTestId("sc-card");
   expect(card.getAttribute("data-key")).toBe(KEY);
-  expect(slot.getByTestId("sc-card-uncommitted-count").textContent).toBe(
-    "3 uncommitted files in this checkout",
-  );
+  // The checkout's uncommitted files may be another thread's: a thread with commits is not shown them.
+  expect(card.textContent).not.toContain("uncommitted");
   slot.getByTestId("sc-card-ship").click();
   await waitFor(() => expect(shipped).toEqual([{ threadId: "thread-a" }]));
   expect(await slot.findByText("Asked the agent to ship it.")).toBeTruthy();
@@ -191,7 +190,7 @@ test("a checked-out branch with no commits of its own, such as main, shows only 
   expect(slot.queryByTestId("sc-card")).toBeNull();
 });
 
-test("work already pushed with an open pull request offers no Ship it", async () => {
+test("work already pushed with an open pull request offers no Ship it, whatever else is uncommitted", async () => {
   const pushed = branch({
     remote: { ref: `origin/${BRANCH}`, name: BRANCH },
     status: "pushed",
@@ -215,16 +214,20 @@ test("work already pushed with an open pull request offers no Ship it", async ()
     commits: 1,
     checks: { passed: 1, failed: 0, pending: 0 },
   };
+  // Uncommitted files in the checkout, as other threads leave in a shared one, change nothing.
   const thread = row(
-    workspace({ stacks: [{ key: BRANCH, branches: [pushed], assigned: [] }] }),
+    workspace({
+      uncommitted: files(5),
+      stacks: [{ key: BRANCH, branches: [pushed], assigned: [] }],
+    }),
     true,
     open,
   );
   expect(canShip(summarize(thread)!)).toBe(false);
   const { slot } = renderThread(thread);
-  await slot.findByTestId("sc-card");
+  const card = await slot.findByTestId("sc-card");
   expect(slot.queryByTestId("sc-card-ship")).toBeNull();
-  expect(slot.queryByTestId("sc-card-uncommitted-count")).toBeNull();
+  expect(card.textContent).not.toContain("uncommitted");
 });
 
 test("a directive written where nothing changed is one quiet line, not a card", async () => {
@@ -274,7 +277,6 @@ test("the share tool's keyed card ships the thread's own Change, and not another
   const thread = row(workspace({ uncommitted: files(2) }));
   const own = renderThread(thread, { key: encodeURIComponent(KEY), revision: "c0ffee1" });
   expect((await own.slot.findByTestId("sc-card")).getAttribute("data-key")).toBe(KEY);
-  expect(await own.slot.findByTestId("sc-card-uncommitted-count")).toBeTruthy();
   (await own.slot.findByTestId("sc-card-ship")).click();
   await waitFor(() => expect(own.shipped).toEqual([{ threadId: "thread-a" }]));
   cleanup();

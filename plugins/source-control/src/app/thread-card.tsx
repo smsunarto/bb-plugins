@@ -2,9 +2,10 @@
  * The card for `::source-control` with no key: this thread's work as it is
  * now. An agent writes it by hand, with no tool call, so it has no Change or
  * head of its own; the card takes both from the thread's row. A thread whose
- * branch has commits or a pull request shows that Change's card. One with
- * only uncommitted files shows those. Either offers Ship it while there is
- * something left to ship.
+ * branch has commits or a pull request shows that Change's card, with Ship
+ * it while the branch has work to ship. One with no commits of its own shows
+ * the checkout's uncommitted files instead. In a checkout several threads
+ * share those may be another thread's, so they are counted only there.
  */
 import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
@@ -38,17 +39,15 @@ function useShipThread(threadId: string) {
   return { send, pending: ship.isPending, sent };
 }
 
-/** What a thread's card adds to its Change's: the checkout's uncommitted files, and Ship it. */
+/** What a thread's card adds to its Change's: Ship it, while its branch has work to ship. */
 export type ThreadShip = {
-  uncommitted: number;
   /** Null when nothing is left to ship. */
   button: ReactNode;
   /** What the last Ship it came to. */
   sent: string | null;
 };
 
-export const uncommittedLine = (count: number) =>
-  `${plural(count, "uncommitted file")} in this checkout`;
+const uncommittedLine = (count: number) => `${plural(count, "uncommitted file")} in this checkout`;
 
 function ShipButton({ ship }: { ship: ReturnType<typeof useShipThread> }) {
   return (
@@ -108,13 +107,12 @@ function UncommittedCard({
   );
 }
 
-/** The ship slot for the thread's own Change: its uncommitted files, and Ship it while there is work left. */
+/** The ship slot for the thread's own Change: Ship it while its branch has work left. */
 function threadShip(
   summary: NonNullable<ReturnType<typeof summarize>>,
   ship: ReturnType<typeof useShipThread>,
 ): ThreadShip {
   return {
-    uncommitted: summary.uncommitted,
     button: canShip(summary) ? <ShipButton ship={ship} /> : null,
     sent: ship.sent,
   };

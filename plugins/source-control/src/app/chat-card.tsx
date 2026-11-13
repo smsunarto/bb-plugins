@@ -34,7 +34,7 @@ import { latestBatch } from "./review-model.ts";
 import { BatchLine, useFixSelected } from "./send.tsx";
 import { ChangeGroup } from "./group-card.tsx";
 import { LegacyCards, pullRequestTarget } from "./legacy-card.tsx";
-import { OwnChangeCard, ThreadCard, uncommittedLine, type ThreadShip } from "./thread-card.tsx";
+import { OwnChangeCard, ThreadCard, type ThreadShip } from "./thread-card.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 
@@ -143,14 +143,11 @@ function CardHeader({
   revision,
   visible,
   offline,
-  uncommitted,
 }: {
   detail: Ready;
   revision: string | null;
   visible: boolean;
   offline: boolean;
-  /** The checkout's uncommitted files, on a thread's own card. */
-  uncommitted: number;
 }) {
   const { row } = detail;
   const now = useNow();
@@ -215,14 +212,6 @@ function CardHeader({
             {shortId(head)}.
           </span>
         ) : null}
-        {uncommitted > 0 ? (
-          <span
-            className="text-[12px] leading-4 text-muted-foreground"
-            data-testid="sc-card-uncommitted-count"
-          >
-            {uncommittedLine(uncommitted)}
-          </span>
-        ) : null}
         {stale ? (
           <span className="text-[12px] leading-4 text-muted-foreground" data-testid="sc-card-stale">
             {stale} {readAgo(detail.at, now)}.
@@ -266,7 +255,7 @@ function ReadyCard({
   offline: boolean;
   /** On a grouped card, whose Merge all merges it. */
   grouped: boolean;
-  /** On a thread's own card: its uncommitted files and Ship it. */
+  /** On a thread's own card: Ship it. */
   thread: ThreadShip | null;
 }) {
   const key = detail.row.key;
@@ -278,13 +267,7 @@ function ReadyCard({
   const hasItems = stable.items.length > 0;
   return (
     <div className={CARD} data-testid="sc-card" data-key={key}>
-      <CardHeader
-        detail={detail}
-        revision={revision}
-        visible={visible}
-        offline={offline}
-        uncommitted={thread?.uncommitted ?? 0}
-      />
+      <CardHeader detail={detail} revision={revision} visible={visible} offline={offline} />
       {hasItems ? (
         <FindingList
           changeKey={key}

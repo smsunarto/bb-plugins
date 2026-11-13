@@ -331,19 +331,21 @@ export function hasWork(summary: ChangeSummary): boolean {
 }
 
 /**
- * Work the thread's agent can still ship: uncommitted files, commits the
- * remote lacks, or a pushed branch GitHub has no pull request for. The
- * thread card offers Ship while this holds.
+ * The branch has work its thread's agent can still ship: commits the remote
+ * lacks, or a pushed branch GitHub has no pull request for. Uncommitted files
+ * do not count here: in a checkout several threads share they may be
+ * anyone's, so only a thread with no commits of its own is offered them.
  */
 export function canShip(summary: ChangeSummary): boolean {
-  if (summary.uncommitted > 0) return true;
   const { branch, pullRequest: pr } = summary;
   if (pr?.state === "merged" || pr?.state === "closed") return false;
   if (!branch || commitCount(branch) === 0) return false;
   if (unpushed(branch)) return true;
   // No remote branch yet: shippable where there is a GitHub repository to push to.
   if (!branch.remote) return summary.onGitHub;
-  return canOpenPullRequest(summary);
+  // Pushed, and GitHub answered that it has no pull request: the agent opens one.
+  const pushed = branch.status === "pushed" || branch.status === "behind";
+  return pr === null && summary.onGitHub && pushed && branch.head !== null;
 }
 
 // ── Sort key ───────────────────────────────────────────────────────────
