@@ -8,6 +8,7 @@ import {
   scanRepository,
   scanned,
   scanRegistry,
+  scanSelectors,
   unrecorded,
 } from "./style-contract";
 
@@ -79,4 +80,13 @@ test("a vendored kit file must match its canonical registry copy", () => {
     },
   ]);
   expect(scanRegistry("plugins/x/components/ui/not-in-registry.tsx", "x")).toEqual([]);
+});
+
+test("flags hand-written selectors that anchor on Tailwind utilities", () => {
+  const css = `[data-promptbox-shell] section.rounded-lg.border-border,\n.dark .x {\n  color: var(--foreground);\n}\n.bg-background\\/70:hover { opacity: 1; }\n.pe-panel { border: 0; }\n`;
+  expect(scanSelectors("a.css", css).map((v) => [v.line, v.source])).toEqual([
+    [1, "[data-promptbox-shell] section.rounded-lg.border-border,"],
+    [1, "[data-promptbox-shell] section.rounded-lg.border-border,"],
+    [5, ".bg-background\\/70:hover { opacity: 1; }"],
+  ]);
 });

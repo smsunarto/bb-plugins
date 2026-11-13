@@ -1970,6 +1970,11 @@
     "source": "box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);"
   },
   {
+    "file": "plugins/gtd-sidebar/app.css",
+    "rule": "utility-anchor",
+    "source": ".gtd-thread-row.bg-state-active[data-drop-target=\"true\"] {"
+  },
+  {
     "file": "plugins/gtd-sidebar/bot-shelf.css",
     "rule": "raw-color",
     "source": "background: color-mix(in srgb, var(--sidebar-foreground) 4%, transparent);"
@@ -2978,6 +2983,26 @@
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
     "source": "color: color-mix(in srgb, var(--foreground) 80%, transparent);"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "utility-anchor",
+    "source": "[data-t3-model-picker-popover] .border-b,"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "utility-anchor",
+    "source": "[data-t3-model-picker-popover] .border-t {"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "utility-anchor",
+    "source": "[data-t3-model-picker-popover] [data-t3-model-picker-rail] .bg-primary {"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "utility-anchor",
+    "source": "[data-t3-model-picker-popover] [role=\"option\"] :is(.text-sm) {"
   },
   {
     "file": "plugins/t3-composer/components/ui/button.tsx",

@@ -67,6 +67,45 @@ export const rules: readonly Rule[] = [
   },
 ];
 
+/** Selector rule: hand-written CSS must not select an element by a Tailwind
+ * utility. bb restyling its own markup renames those classes without notice,
+ * and the rule then silently stops matching (CLAUDE.md, DOM hacks). */
+export const UTILITY_ANCHOR = "utility-anchor";
+const utilityAnchorFix =
+  "Select bb's element by a data-* attribute, id, or role, or tag it from a content script; Tailwind class names change without notice.";
+const utility = new RegExp(
+  "^-?(?:" +
+    [
+      "[mp][trblxyse]?-(?:\\d|\\[|px$|auto$)",
+      "(?:gap|space|divide)-",
+      "(?:rounded|border|ring|shadow|outline|flex|grid|inline|transition|shrink|grow)(?:$|-)",
+      "(?:bg|text|font|leading|tracking|items|justify|self|place|overflow|opacity|whitespace|cursor|select|pointer-events|col|row|order|basis|backdrop|fill|stroke|line-clamp|aspect|duration|ease|translate|scale)-",
+      "(?:min-|max-)?(?:[wh]|size)-(?:\\d|\\[|full$|screen$|auto$|fit$|min$|max$|px$)",
+      "(?:inset(?:-[xy])?|top|left|right|bottom|z)-(?:\\d|\\[|auto$|full$|px$)",
+      "(?:block|hidden|absolute|relative|fixed|sticky|truncate|contents)$",
+    ].join("|") +
+    ")",
+);
+
+export function scanSelectors(file: string, source: string): Violation[] {
+  if (!file.endsWith(".css")) return [];
+  const stripped = stripComments(source, file);
+  const original = source.split("\n");
+  const found: Violation[] = [];
+  for (const block of stripped.matchAll(/([^{};]+)\{/g)) {
+    const selector = block[1]!;
+    if (selector.trim().startsWith("@")) continue;
+    for (const token of selector.matchAll(/\.((?:\\.|[\w-])+)/g)) {
+      const name = token[1]!.replace(/\\(.)/g, "$1");
+      if (!utility.test(name)) continue;
+      const offset = block.index! + token.index!;
+      const line = stripped.slice(0, offset).split("\n").length;
+      found.push({ file, rule: UTILITY_ANCHOR, line, source: original[line - 1]!.trim() });
+    }
+  }
+  return found;
+}
+
 /** File-level rule: a shared primitive must be a re-export, not a local copy. */
 export const LOCAL_PRIMITIVE = "local-primitive";
 const localPrimitiveFix =
@@ -176,6 +215,7 @@ export function scanRepository(root = "."): Violation[] {
     }
     found.push(
       ...scanFile(file, source),
+      ...scanSelectors(file, source),
       ...scanPrimitive(file, source, shared),
       ...scanRegistry(file, source, root),
     );
@@ -201,6 +241,7 @@ export function unrecorded<T extends Entry>(actual: readonly T[], baseline: read
 export function fixFor(rule: string): string {
   if (rule === LOCAL_PRIMITIVE) return localPrimitiveFix;
   if (rule === REGISTRY_DRIFT) return registryDriftFix;
+  if (rule === UTILITY_ANCHOR) return utilityAnchorFix;
   return rules.find((candidate) => candidate.id === rule)?.fix ?? "";
 }
 
