@@ -4,6 +4,11 @@ What changed in each version of the Generative UI plugin for BB. Update an insta
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-11-07
+
+### Fixed
+- `check_ui` no longer approves local images the chat renderer cannot read. Image, Gallery, Compare, Hotspots and Entity now use the renderer's sandboxed image loader during preflight. Agent instructions explicitly require staging external screenshots in the workspace, thread storage or `/tmp`; file-access restrictions remain unchanged.
+
 ## [0.3.1] - 2026-10-22
 
 ### Fixed
@@ -121,6 +126,7 @@ Not released separately on GitHub; included in 0.2.2.
 
 First release: agents answer with ```ui blocks (86 components in 10 groups, from cards, tables and charts to maps, boards, roadmaps and quizzes), interactive without extra model calls, reading files instead of retyped numbers, and sandboxed ```app blocks for anything else.
 
+[0.3.2]: https://github.com/ComicBit/bb-plugin-genui/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/ComicBit/bb-plugin-genui/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ComicBit/bb-plugin-genui/compare/v0.2.6...v0.3.0
 [0.2.6]: https://github.com/ComicBit/bb-plugin-genui/compare/v0.2.5...v0.2.6

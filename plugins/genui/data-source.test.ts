@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { readFileSync } from "node:fs";
 import { loadGalleryAsset, loadGalleryVideo,   loadThreadAudio, loadThreadFile, loadThreadImage, MAX_AUDIO_BYTES, MAX_DATA_BYTES, MAX_IMAGE_BYTES } from "./data-source";
+import { checkSpec } from "./fallback";
 
 const WORKSPACE = "/work/repo";
 const STORAGE = "/home/u/.bb/thread-storage/thr_1";
@@ -103,6 +104,53 @@ describe("loadThreadFile raw", () => {
       ok: false,
       error: expect.stringContaining("limit"),
     });
+  });
+});
+
+describe("check_ui image access", () => {
+  const outside = "/Users/u/Library/Application Support/Aurora Operator/evidence/shot.png";
+  const specs = [
+    `Image("${outside}")`,
+    `Gallery([{src: "${outside}", caption: "Phone"}])`,
+    `Compare(["${outside}", "shots/after.png"])`,
+    `Hotspots("${outside}", [])`,
+  ];
+
+  it.each(specs)("rejects an image the renderer cannot load: %s", async (spec) => {
+    const reads: string[] = [];
+    const bb = fakeBb({}, reads);
+    const checked = await checkSpec(
+      spec,
+      (request) => loadThreadFile(bb, "thr_1", request.path, request),
+      undefined,
+      undefined,
+      (src) => loadThreadImage(bb, "thr_1", src),
+    );
+    expect(checked.ok).toBe(false);
+    expect(checked.report).toContain(outside);
+    expect(checked.report).toContain("only files in this thread's workspace");
+    expect(reads.some((read) => read.includes(outside))).toBe(false);
+  });
+
+  it("accepts staged binary images but reports missing and oversized gallery images", async () => {
+    const bb = fakeBb({
+      [`${WORKSPACE}/shots/ok.png`]: { content: "iVBORw0KGgo=", encoding: "base64" },
+      [`${WORKSPACE}/shots/large.png`]: { content: "iVBORw0KGgo=", encoding: "base64", sizeBytes: MAX_IMAGE_BYTES + 1 },
+    });
+    const check = (spec: string) => checkSpec(
+      spec,
+      (request) => loadThreadFile(bb, "thr_1", request.path, request),
+      undefined,
+      undefined,
+      (src) => loadThreadImage(bb, "thr_1", src),
+    );
+    expect((await check('Gallery(["shots/ok.png"])')).ok).toBe(true);
+    const missing = await check('Gallery(["shots/missing.png"])');
+    expect(missing.ok).toBe(false);
+    expect(missing.report).toContain("file not found");
+    const large = await check('Gallery(["shots/large.png"])');
+    expect(large.ok).toBe(false);
+    expect(large.report).toContain(`${MAX_IMAGE_BYTES}-byte limit`);
   });
 });
 

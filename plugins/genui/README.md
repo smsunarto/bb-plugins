@@ -2,7 +2,7 @@
 
 This package is maintained in `smsunarto/bb-plugins`. It imports
 [ComicBit/bb-plugin-genui](https://github.com/ComicBit/bb-plugin-genui) version
-0.3.1 at commit `c9700a34a9cc24961d17771590274e0703dc481c`.
+0.3.2 at commit `d8cac8d1781bac336214cc38981aba4a58d9c1c0`.
 The upstream Apache-2.0 license and bundled font license are preserved.
 
 Local changes: workspace package metadata and dependency management, local
@@ -134,7 +134,7 @@ bb genui ask "Plan a two-day trip to Lisbon"
 
 - **Tokens.** Sessions whose replies you read get about 15 KB of instructions (6,432 tokens, measured) that teach the components. Worker threads that another agent spawns get none. A UI costs no extra model call: it is part of the reply. BB sends the instructions again each time it restarts the agent process for a thread, and those copies stay in the context until it is compacted.
 - **Web lookups**, on by default and controlled by the plugin's _Web lookups_ setting. They run on the BB server, never in the page: photo search on Wikimedia Commons (ImageSearch), the lead photo of a Wikipedia article a Map place names (en.wikipedia.org and Commons), place names to coordinates with Photon (Map), map tiles from OpenStreetMap, and https images a UI shows, fetched through a proxy that refuses private addresses. Each service sees your IP address and what is looked up (the search words, the article titles, the place names, the map area), never the rest of the thread. With the setting off, nothing is fetched and the components say so.
-- **Files.** Components read only the thread's workspace, its thread storage and `/tmp`.
+- **Files.** Components read only the thread's workspace, its thread storage and `/tmp`. Screenshots returned from external tool/cache directories must first be copied into one of those locations. `check_ui` verifies local images in Image, Gallery, Compare, Hotspots and Entity with the same sandboxed image loader as the renderer, including missing-file and size failures.
 - **Size and GPU.** The 3D components bundle three.js, so the plugin's page code is about 1.6 MB (0.9 MB without them). A Scene or Shader holds a WebGL context only while it is near the screen, at most six at once; the others show their last frame as an image.
 - **Elsewhere.** `bb genui render` prints a thread's last reply with every UI turned into plain markdown, for the terminal or for tools that read BB's SDK.
 
