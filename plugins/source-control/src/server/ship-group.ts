@@ -9,6 +9,12 @@
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ThreadChange } from "../core/change.ts";
+import {
+  checkoutDirective,
+  parseCheckoutWorkKey,
+  type CheckoutTarget,
+  type CheckoutWork,
+} from "../core/checkout-work.ts";
 import { summarize } from "../core/status.ts";
 import { instructionFiles } from "@bb-plugins/instructions";
 import type { GroupEntry } from "../core/directive.ts";
@@ -71,8 +77,12 @@ export function createShipGroup(deps: {
   };
 }
 
-/** The thread's work as its agent needs it to ship: where, which branch, and what is uncommitted. */
-export function shipThreadPrompt(row: Extract<ThreadChange, { state: "checkout" }>): string {
+/** The work as the thread's agent needs it to ship: where, which branch, and what is uncommitted. */
+export function shipThreadPrompt(
+  row: Extract<ThreadChange, { state: "checkout" }>,
+  /** The card's target, when it names a checkout or branch other than the thread's own. */
+  at: CheckoutTarget | null = null,
+): string {
   const summary = summarize(row);
   const pr = summary?.pullRequest ?? null;
   const state = {
@@ -82,24 +92,36 @@ export function shipThreadPrompt(row: Extract<ThreadChange, { state: "checkout" 
     ...(pr ? { pullRequest: pr.url } : {}),
     uncommittedFiles: summary?.uncommitted ?? null,
   };
-  return files.read("ship-thread", { state: JSON.stringify(state, null, 2) });
+  return files.read("ship-thread", {
+    state: JSON.stringify(state, null, 2),
+    card: at ? checkoutDirective(at) : "::source-control",
+  });
 }
 
 export function createShipThread(deps: {
   bb: BbPluginApi;
   read: (threadIds: readonly string[]) => Readonly<Record<string, ThreadChange>>;
+  readAt: (keys: readonly string[]) => Readonly<Record<string, CheckoutWork>>;
 }) {
   return async function shipThread(
     threadId: string,
+    at?: string,
   ): Promise<{ ok: true } | { ok: false; message: string }> {
-    const row = deps.read([threadId])[threadId];
+    const target = at === undefined ? null : parseCheckoutWorkKey(at);
+    // A card ships only through the thread it is in.
+    if (at !== undefined && target?.threadId !== threadId)
+      return { ok: false, message: "This card names no checkout of this thread's." };
+    const row = at === undefined ? deps.read([threadId])[threadId] : deps.readAt([at])[at]?.row;
     if (row?.state !== "checkout")
-      return { ok: false, message: "This thread has no checkout to ship from." };
+      return {
+        ok: false,
+        message: row?.state === "none" ? row.reason : "This thread has no checkout to ship from.",
+      };
     try {
       await deps.bb.sdk.threads.send({
         threadId,
         mode: "queue-if-active",
-        input: [{ type: "text", text: shipThreadPrompt(row), mentions: [] }],
+        input: [{ type: "text", text: shipThreadPrompt(row, target), mentions: [] }],
       });
       return { ok: true };
     } catch (error) {

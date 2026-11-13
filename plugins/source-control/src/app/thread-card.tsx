@@ -23,14 +23,18 @@ import { STATE_CHIP } from "./page/rail.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Pending } from "./ui.tsx";
 
-/** Ship it: one message asking the thread's agent to commit and publish its work. */
-function useShipThread(threadId: string) {
+/**
+ * Ship it: one message asking the thread's agent to commit and publish its
+ * work. `at` is the card's `workAtCheckout` key when it names a checkout or
+ * branch other than the thread's own.
+ */
+export function useShipThread(threadId: string, at?: string) {
   const ship = useRpcMutation({ contract: sourceControlContract, method: "shipThread" });
   const [sent, setSent] = useState<string | null>(null);
   const send = async () => {
     setSent(null);
     try {
-      const result = await ship.mutate({ threadId });
+      const result = await ship.mutate(at === undefined ? { threadId } : { threadId, at });
       setSent(result.ok ? "Asked the agent to ship it." : result.message);
     } catch (error) {
       setSent(error instanceof Error ? error.message : "The request failed.");
@@ -47,9 +51,10 @@ export type ThreadShip = {
   sent: string | null;
 };
 
-const uncommittedLine = (count: number) => `${plural(count, "uncommitted file")} in this checkout`;
+const uncommittedLine = (count: number, where: string) =>
+  `${plural(count, "uncommitted file")} in ${where}`;
 
-function ShipButton({ ship }: { ship: ReturnType<typeof useShipThread> }) {
+export function ShipButton({ ship }: { ship: ReturnType<typeof useShipThread> }) {
   return (
     <Button
       variant="default"
@@ -64,7 +69,7 @@ function ShipButton({ ship }: { ship: ReturnType<typeof useShipThread> }) {
   );
 }
 
-function Quiet({ children, testId }: { children: ReactNode; testId: string }) {
+export function Quiet({ children, testId }: { children: ReactNode; testId: string }) {
   return (
     <span data-testid={testId} className="text-[12px] leading-4 text-muted-foreground">
       {children}
@@ -73,12 +78,15 @@ function Quiet({ children, testId }: { children: ReactNode; testId: string }) {
 }
 
 /** Uncommitted files and no branch of the thread's own yet: nothing to review, only to ship. */
-function UncommittedCard({
+export function UncommittedCard({
   count,
   ship,
+  where = "this checkout",
 }: {
   count: number;
   ship: ReturnType<typeof useShipThread>;
+  /** The checkout as the line names it. */
+  where?: string;
 }) {
   return (
     <div className={CARD} data-testid="sc-card-uncommitted">
@@ -92,7 +100,7 @@ function UncommittedCard({
           Uncommitted
         </span>
         <span className="min-w-0 text-[13px] leading-5 font-semibold break-words text-foreground">
-          {uncommittedLine(count)}
+          {uncommittedLine(count, where)}
         </span>
       </div>
       <div className="flex min-w-0 flex-wrap gap-2 px-3 pb-3">
@@ -108,7 +116,7 @@ function UncommittedCard({
 }
 
 /** The ship slot for the thread's own Change: Ship it while its branch has work left. */
-function threadShip(
+export function threadShip(
   summary: NonNullable<ReturnType<typeof summarize>>,
   ship: ReturnType<typeof useShipThread>,
 ): ThreadShip {

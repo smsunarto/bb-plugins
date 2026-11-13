@@ -164,7 +164,7 @@ function publishHandlers(
 ) {
   return {
     shipGroup: ({ threadId, changes }) => shipGroup(threadId, changes),
-    shipThread: ({ threadId }) => shipThread(threadId),
+    shipThread: ({ threadId, at }) => shipThread(threadId, at),
     createPullRequest: ({ threadId, branch, head }) => publish.create(threadId, branch, head),
     publishRequests: async ({ threadId }) => ({ requests: await publish.requests(threadId) }),
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
@@ -283,6 +283,7 @@ function registerRpc(
         runtime.run(changes.review.patches(key, revision, paths), context.experimental_signal),
       changeCommits: ({ key, revision }, context) =>
         runtime.run(changes.review.commits(key, revision), context.experimental_signal),
+      ...changes.checkoutWork.handlers,
       ...forgeHandlers(runtime, changes),
       ...reviewHandlers(runtime, changes.review, start),
       ...guideHandlers(guides),
@@ -290,7 +291,7 @@ function registerRpc(
       ...publishHandlers(
         publish,
         createShipGroup({ bb, detail: changes.review.detail }),
-        createShipThread({ bb, read: changes.read }),
+        createShipThread({ bb, read: changes.read, readAt: changes.checkoutWork.read }),
       ),
       ...moved.handlers,
     },
@@ -317,6 +318,7 @@ function registerRpc(
   bb.rpc.experimental_whileWatched("inbox", watchWith(changes.review.watchInbox));
   bb.rpc.experimental_whileWatched("hostChanges", watchWith(changes.review.watchHost));
   bb.rpc.experimental_whileWatched("changeDetail", watchWith(changes.review.watchChange));
+  bb.rpc.experimental_whileWatched("workAtCheckout", watchWith(changes.checkoutWork.watch));
   // Items read from the store only; a watcher brings any behind the Change's head up to it.
   bb.rpc.experimental_whileWatched(
     "reviewForChange",
@@ -353,6 +355,7 @@ function listen(
   for (const event of ["thread.idle", "thread.failed"] as const)
     bb.events.on(event, ({ thread }) => {
       runtime.fork(changes.turnEnded(thread.id));
+      runtime.fork(changes.checkoutWork.turnEnded(thread.id));
       // A review that stops without reporting ends with no findings, or failed.
       changes.review.items.runEnded(thread.id, event === "thread.failed");
       changes.review.batches.threadStatus(thread.id, event === "thread.idle" ? "idle" : "failed");

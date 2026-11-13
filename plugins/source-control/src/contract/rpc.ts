@@ -5,6 +5,11 @@
  */
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import {
+  checkoutWorkKeySchema,
+  checkoutWorkSchema,
+  checkoutWorkTag,
+} from "../core/checkout-work.ts";
 import { MAX_FIX_CHECKS, newThreadRequestSchema } from "../core/fix-checks.ts";
 import { mergePolicySchema } from "../core/merge.ts";
 import { oplogSchema } from "../core/oplog.ts";
@@ -466,11 +471,26 @@ export const sourceControlContract = defineRpcContract({
   shipThread: {
     experimental_description:
       "Ship it on a thread's Source Control card: sends the thread one message naming its checkout, its branch and pull request if it has them, and how many files are uncommitted, for its agent to commit and ship with the repository's workflow. Merges nothing and changes no review state.",
-    input: z.object({ threadId: threadIdSchema }).strict(),
+    input: z
+      .object({
+        threadId: threadIdSchema,
+        /** The `workAtCheckout` key of the card, when it names another checkout or branch. */
+        at: checkoutWorkKeySchema.optional(),
+      })
+      .strict(),
     output: z.discriminatedUnion("ok", [
       z.object({ ok: z.literal(true) }).strict(),
       z.object({ ok: z.literal(false), message: z.string() }).strict(),
     ]),
+  },
+  /**
+   * Work an agent's card names by path or branch, keyed by `checkoutWorkKey`:
+   * that branch as a thread's row is shaped, read on the thread's own host.
+   */
+  workAtCheckout: {
+    input: z.object({ keys: z.array(checkoutWorkKeySchema).min(1).max(20) }).strict(),
+    output: z.record(z.string(), checkoutWorkSchema),
+    keyTags: (key: string) => [checkoutWorkTag(key)],
   },
   /** The Create PR children still around for the thread's checkout, and whether each still runs. */
   publishRequests: {

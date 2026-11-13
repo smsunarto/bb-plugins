@@ -19,6 +19,7 @@ import { runReviewRead } from "../forge/review.ts";
 import { createSourceControl } from "./server.ts";
 import { groupDirective } from "../core/directive.ts";
 import { changeKeySchema } from "../core/ids.ts";
+import { checkoutWorkKey, checkoutWorkTag } from "../core/checkout-work.ts";
 
 const PLUGIN = "source-control";
 
@@ -126,6 +127,8 @@ type Host = {
   /** Runs GitHub reads itself, against the world's fake GitHub, as its `ghAccounts`. */
   forgeLive?: boolean;
   workspace: WorkspaceValue;
+  /** Other paths on the host a card may name: a checkout's workspace, or null for no repository. */
+  checkouts?: Record<string, WorkspaceValue | null>;
   ghAccounts: string[];
   action?: VcsResult;
 };
@@ -252,7 +255,7 @@ function fakeInbox(world: World, login: string): Run {
 }
 
 /** A host's workspace read, after its delay, counting the reads in flight. */
-async function fakeWorkspace(world: World, host: Host) {
+async function fakeWorkspace(world: World, host: Host, path?: string) {
   if (host.delayMs) {
     world.inFlight = (world.inFlight ?? 0) + 1;
     world.maxInFlight = Math.max(world.maxInFlight ?? 0, world.inFlight);
@@ -260,7 +263,9 @@ async function fakeWorkspace(world: World, host: Host) {
     world.inFlight -= 1;
   }
   if (host.failure) return { ok: false, error: host.failure };
-  return { ok: true, value: { state: "workspace", value: host.workspace } };
+  const other = path === undefined ? undefined : host.checkouts?.[path];
+  if (other === null) return { ok: true, value: { state: "not-git", path } };
+  return { ok: true, value: { state: "workspace", value: other ?? host.workspace } };
 }
 
 /** A host running GitHub reads itself, against the world's fake GitHub. */
@@ -567,7 +572,8 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
       const host = world.hosts[hostId]!;
       if (!host.online) throw new Error("Host is not connected");
       if (host.hung) return new Promise(() => undefined);
-      if (method === "workspace") return fakeWorkspace(world, host);
+      if (method === "workspace")
+        return fakeWorkspace(world, host, (input as { path?: string }).path);
       if (method === "range")
         return host.rangeHung
           ? new Promise(() => undefined)
@@ -2249,6 +2255,153 @@ describe("grouped share", () => {
       message: "This thread has no checkout to ship from.",
     });
     expect(world.messages!["thread-none"]).toBeUndefined();
+  });
+});
+
+describe("work a card names by checkout", () => {
+  const DOTFILES = "/Users/scott/git/dotfiles";
+  const KEY = "gh:smsunarto/dotfiles:smsunarto:scott/zsh";
+  const at = (path: string | null, branch: string | null = null, threadId = "thread-a") =>
+    checkoutWorkKey({ threadId, path, branch });
+
+  /** `thread-a` committed on a branch of another repository on its host; bb places no thread there. */
+  function elsewhere(): World {
+    const world = twoHosts();
+    const zsh = branch({
+      name: "scott/zsh",
+      head: "abc123",
+      remote: null,
+      status: "unpushed",
+      push: "push",
+      ahead: 1,
+    });
+    world.hosts["host-a"]!.checkouts = {
+      [DOTFILES]: workspace(DOTFILES, {
+        checkedOut: zsh.name,
+        github: { repo: { owner: "smsunarto", name: "dotfiles" }, headOwner: "smsunarto" },
+        uncommitted: [],
+        stacks: [{ key: zsh.name, branches: [zsh], assigned: [] }],
+      }),
+      "/Users/scott/notes": null,
+    };
+    return world;
+  }
+
+  async function shown(world: World, key: string) {
+    vi.useFakeTimers();
+    const started = await start(world);
+    const stop = started.harness.behavior.experimental_watchRpc("workAtCheckout", { key });
+    await vi.advanceTimersByTimeAsync(1_000);
+    const read = async () =>
+      (
+        (await started.harness.behavior.callRpc("workAtCheckout", { keys: [key] })) as Record<
+          string,
+          any
+        >
+      )[key];
+    return { ...started, stop, read };
+  }
+
+  test("a path is read on the thread's own host and shown as a branch to ship", async () => {
+    const world = elsewhere();
+    const key = at(DOTFILES);
+    const { harness, read, stop, hostCalls, invalidations } = await shown(world, key);
+    expect(await read()).toMatchObject({
+      reviewable: false,
+      row: {
+        state: "checkout",
+        branch: "scott/zsh",
+        key: KEY,
+        placement: { hostId: "host-a", hostName: "studio-mac", path: DOTFILES },
+      },
+    });
+    expect(invalidations()).toContain(checkoutWorkTag(key));
+    // Only the thread's host was asked, and only for the named path.
+    expect(hostCalls("workspace").map((call) => [call.hostId, (call.input as any).path])).toEqual([
+      ["host-a", DOTFILES],
+    ]);
+    // The path joins no list: bb still lists only the checkouts threads are placed on.
+    const hosts = (await harness.behavior.callRpc("checkoutHosts", {})) as any;
+    expect(JSON.stringify(hosts)).not.toContain(DOTFILES);
+    // An unchanged read a minute later announces nothing more.
+    const announced = invalidations().length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(hostCalls("workspace")).toHaveLength(2);
+    expect(invalidations()).toHaveLength(announced);
+    stop();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(hostCalls("workspace")).toHaveLength(2);
+  });
+
+  test("once its pull request exists the branch opens as that Change, and a turn's end reads it at once", async () => {
+    const world = elsewhere();
+    const key = at(DOTFILES, "scott/zsh");
+    const { harness, read, stop, hostCalls } = await shown(world, key);
+    expect((await read()).reviewable).toBe(false);
+    world.pullRequests["scott/zsh"] = [{ ...PR, headRefName: "scott/zsh", headRefOid: "abc123" }];
+    await harness.behavior.emitThreadEvent("thread.idle", {
+      thread: makeThreadResponse({ id: "thread-a" }),
+    } as never);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(
+      hostCalls("workspace").filter((call) => (call.input as any).path === DOTFILES),
+    ).toHaveLength(2);
+    expect(await read()).toMatchObject({ reviewable: true, row: { key: KEY } });
+    stop();
+  });
+
+  test("Ship it from the card names that checkout and hands its card line back", async () => {
+    const world = elsewhere();
+    const key = at(DOTFILES);
+    const { harness, stop } = await shown(world, key);
+    const sent = harness.behavior.callRpc("shipThread", { threadId: "thread-a", at: key });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(await sent).toEqual({ ok: true });
+    const [text] = world.messages!["thread-a"]!;
+    expect(text).toContain(`"checkout": "${DOTFILES}"`);
+    expect(text).toContain('"branch": "scott/zsh"');
+    expect(text).toContain(`\`::source-control{path="${DOTFILES}"}\` on its own line`);
+    // A card ships only through the thread it names.
+    expect(await harness.behavior.callRpc("shipThread", { threadId: "thread-b", at: key })).toEqual(
+      { ok: false, message: "This card names no checkout of this thread's." },
+    );
+    stop();
+  });
+
+  test("a path with no repository, or a branch the checkout lacks, says so instead of loading forever", async () => {
+    const none = await shown(elsewhere(), at("/Users/scott/notes"));
+    expect(await none.read()).toEqual({
+      reviewable: false,
+      row: {
+        state: "none",
+        reason: "No git repository bb can read at /Users/scott/notes on studio-mac.",
+      },
+    });
+    none.stop();
+    const missing = await shown(elsewhere(), at(DOTFILES, "scott/gone"));
+    expect((await missing.read()).row).toEqual({
+      state: "none",
+      reason: `scott/gone is not a branch in ${DOTFILES}.`,
+    });
+    missing.stop();
+    // A checkout read once and then removed, as a worktree is, stops showing its last read.
+    const removed = elsewhere();
+    const worktree = await shown(removed, at(DOTFILES));
+    expect((await worktree.read()).row.state).toBe("checkout");
+    removed.hosts["host-a"]!.checkouts![DOTFILES] = null;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect((await worktree.read()).row).toEqual({
+      state: "none",
+      reason: `No git repository bb can read at ${DOTFILES} on studio-mac.`,
+    });
+    worktree.stop();
+    // A branch of the thread's own checkout needs no path.
+    const own = await shown(elsewhere(), at(null, "scott/route-gh"));
+    expect(await own.read()).toMatchObject({
+      reviewable: true,
+      row: { branch: "scott/route-gh", placement: { path: "/Users/scott/bb-plugins" } },
+    });
+    own.stop();
   });
 });
 

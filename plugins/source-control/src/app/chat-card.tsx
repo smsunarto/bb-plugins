@@ -35,6 +35,8 @@ import { BatchLine, useFixSelected } from "./send.tsx";
 import { ChangeGroup } from "./group-card.tsx";
 import { LegacyCards, pullRequestTarget } from "./legacy-card.tsx";
 import { OwnChangeCard, ThreadCard, type ThreadShip } from "./thread-card.tsx";
+import { CheckoutCard } from "./checkout-card.tsx";
+import { checkoutAttributes } from "../core/checkout-work.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 
@@ -42,7 +44,7 @@ type Ready = Extract<ChangeDetail, { state: "change" }>;
 
 /** True once the element has been on screen; IntersectionObserver reports it without forcing layout. */
 /** The chip for `changeState`, the words the composer strip leads with. */
-function statusChip(status: ChangeState): { label: string; className: string } {
+export function statusChip(status: ChangeState): { label: string; className: string } {
   const tone = status.tone === "pushed" ? "local" : status.tone;
   return { label: status.label, className: STATE_CHIP[tone].className };
 }
@@ -68,7 +70,7 @@ export function useSeen(ref: RefObject<HTMLElement | null>): boolean {
 export const CARD =
   "flex w-full max-w-[576px] min-w-0 flex-col overflow-clip rounded-[8px] border border-solid border-border bg-background text-start font-sans text-foreground";
 
-function BranchGlyph() {
+export function BranchGlyph() {
   return (
     <span aria-hidden className="flex h-5 w-4 shrink-0 items-center justify-center">
       <svg width="15" height="15" viewBox="0 0 10 10" className="shrink-0">
@@ -399,27 +401,46 @@ export function ChangeDirective({ attributes, message }: PluginMessageDirectiveP
   }, [attributes]);
   if (group) return <ChangeGroup items={group} threadId={message.threadId} />;
   if (attributes.key === undefined && attributes.changes === undefined)
-    return <HandWritten pr={attributes.pr} threadId={message.threadId} />;
+    return <HandWritten attributes={attributes} threadId={message.threadId} />;
   return <OneChange attributes={attributes} threadId={message.threadId} />;
 }
 
-/** Written by the agent, not returned by the tool: a pull request it names, else this thread's own work. */
-function HandWritten({ pr, threadId }: { pr: string | undefined; threadId: string }) {
+/**
+ * Written by the agent, not returned by the tool: a pull request it names, a
+ * checkout or branch it names, else this thread's own work.
+ */
+function HandWritten({
+  attributes,
+  threadId,
+}: {
+  attributes: PluginMessageDirectiveProps["attributes"];
+  threadId: string;
+}) {
+  const { pr } = attributes;
   const targets = useMemo(() => {
     const target = pr === undefined ? null : pullRequestTarget(pr);
     return target ? [target] : null;
   }, [pr]);
+  const checkout = useMemo(() => checkoutAttributes(attributes), [attributes]);
   if (targets) return <LegacyCards targets={targets} threadId={threadId} />;
-  if (pr !== undefined)
+  const problem =
+    pr !== undefined
+      ? "This is not a pull request bb can read. Name it as owner/repo#123 or by its GitHub URL."
+      : checkout && "problem" in checkout
+        ? checkout.problem
+        : null;
+  if (problem)
     return (
       <span
         data-bb-plugin="source-control"
         data-testid="sc-card-invalid"
         className="text-[12px] leading-4 text-muted-foreground"
       >
-        This is not a pull request bb can read. Name it as owner/repo#123 or by its GitHub URL.
+        {problem}
       </span>
     );
+  if (checkout && !("problem" in checkout))
+    return <CheckoutCard threadId={threadId} path={checkout.path} branch={checkout.branch} />;
   return <ThreadCard threadId={threadId} />;
 }
 

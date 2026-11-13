@@ -2,7 +2,8 @@ Show the human a Source Control card for branches or pull requests you name: whe
 
 CHOOSING BETWEEN A HAND-WRITTEN DIRECTIVE AND THIS TOOL
 
-- This thread's own work, committed or not: write `::source-control` on its own line in your reply and call nothing. That card follows the thread's branch, pull request and uncommitted files as they change.
+- This thread's own work, committed or not: write `::source-control` on its own line in your reply and call nothing. That card follows the thread's branch and pull request as they change, or its uncommitted files while it has no commits.
+- Work in another checkout on this machine, such as another repository or a worktree, or on another branch of this thread's checkout: write `::source-control{path="/absolute/checkout" branch="name"}` and call nothing. Omit `path` for this thread's checkout; omit `branch` for the branch that checkout has checked out.
 - One pull request, in any repository or checkout: write `::source-control{pr="owner/repo#123"}` on its own line and call nothing.
 - Call this tool to show several Changes as one card, as when this session committed to more than one branch, or to pin a card to the head you are handing off.
 - Once the work has merged, use `source_control_share_landed`.
@@ -13,7 +14,7 @@ INPUTS
 - Pass `targets` (1–25) to name the Changes yourself. Each is `{ "branch": "<name>" }` for a branch in this thread's checkout, or `{ "pullRequest": "<URL or owner/repo#123>" }` for a GitHub pull request in any repository. One target returns a single card; two or more return one grouped card. If a branch already has a pull request, either names the same Change; name each once. Order them as they should merge, the bottom of a stack first.
 
 BEFORE CALLING
-Commit the work first: this tool shows branches and pull requests. A branch in another checkout is reachable only through its pull request. A thread with no checkout, or no branch of its own yet, has no Change for the no-input form; write `::source-control` for its uncommitted work. With `targets`, every target must resolve: if one does not, nothing is shared and the error lists each failure; fix those and call again with the whole list.
+Commit the work first: this tool shows branches and pull requests. This tool reaches a branch in another checkout only through its pull request; before one exists, write the `path` directive above. A thread with no checkout, or no branch of its own yet, has no Change for the no-input form; write `::source-control` for its uncommitted work. With `targets`, every target must resolve: if one does not, nothing is shared and the error lists each failure; fix those and call again with the whole list.
 
 RETURNS AND NEXT STEP
 Returns a `::source-control` directive naming each Change and the head it is at now. Put it verbatim on its own line in your response, outside code fences. The card stays live: later commits, checks and review items show on it without calling again. Sharing publishes nothing, sends nothing and changes no review state.

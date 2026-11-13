@@ -21,6 +21,7 @@ import {
 import { threadTag, type ChangeKey } from "../core/ids.ts";
 import { threadStatus, type ThreadStatus } from "../core/status.ts";
 import { createActions } from "./actions.ts";
+import { createCheckoutWork } from "./checkout-work.ts";
 import { createForgeReads } from "./forge-read.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import { HOST_DEADLINE_MS, type HostCalls } from "./host-calls.ts";
@@ -227,9 +228,19 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     hostDeadlineMs,
   });
 
+  const checkoutWork = createCheckoutWork({
+    store,
+    placements,
+    local,
+    readForge: review.refresh,
+    invalidate,
+  });
+
   return {
     /** Threads on the Change's branch, from the store and recent reads. */
     owners,
+    /** Work a card names by path or branch, on the thread's own host. */
+    checkoutWork,
     /** Stored rows only: serving a read never calls a host. */
     read(keys: readonly string[]): Record<string, ThreadChange> {
       return Object.fromEntries(keys.map((threadId) => [threadId, row(threadId)]));
@@ -278,7 +289,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     branchChange: branchChange.bind(null, store),
     review,
     /** Probe forge sites again before the next read. */
-    reprobe: () => deps.sites.reprobe(),
+    reprobe: deps.sites.reprobe,
     /** Explicit retry: probe forge sites again, then read. */
     retry: (threadId: string) =>
       Effect.sync(() => deps.sites.reprobe()).pipe(Effect.andThen(refresh(threadId))),
