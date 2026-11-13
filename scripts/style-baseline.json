@@ -95,6 +95,21 @@
     "source": "card"
   },
   {
+    "file": "plugins/agentation/components/ui/coarse-pointer-sizing.ts",
+    "rule": "registry-drift",
+    "source": "coarse-pointer-sizing.ts"
+  },
+  {
+    "file": "plugins/agentation/components/ui/hooks/use-media-query.ts",
+    "rule": "registry-drift",
+    "source": "hooks/use-media-query.ts"
+  },
+  {
+    "file": "plugins/agentation/components/ui/overlay-trigger.ts",
+    "rule": "registry-drift",
+    "source": "overlay-trigger.ts"
+  },
+  {
     "file": "plugins/amp/app.css",
     "rule": "raw-color",
     "source": "--amp-brand-red: #f34e3f;"
@@ -270,6 +285,11 @@
     "source": "motion"
   },
   {
+    "file": "plugins/bots/components/ui/tooltip.tsx",
+    "rule": "registry-drift",
+    "source": "tooltip.tsx"
+  },
+  {
     "file": "plugins/code-review/src/app/changes.tsx",
     "rule": "arbitrary-edge",
     "source": "\"h-5 cursor-pointer rounded-[4px] px-2 text-[11px] text-muted-foreground hover:text-foreground\","
@@ -325,6 +345,21 @@
     "source": "card"
   },
   {
+    "file": "plugins/dotfiles/src/app/components/ui/coarse-pointer-sizing.ts",
+    "rule": "registry-drift",
+    "source": "coarse-pointer-sizing.ts"
+  },
+  {
+    "file": "plugins/dotfiles/src/app/components/ui/hooks/use-media-query.ts",
+    "rule": "registry-drift",
+    "source": "hooks/use-media-query.ts"
+  },
+  {
+    "file": "plugins/dotfiles/src/app/components/ui/overlay-trigger.ts",
+    "rule": "registry-drift",
+    "source": "overlay-trigger.ts"
+  },
+  {
     "file": "plugins/genui/components/ui/button.tsx",
     "rule": "local-primitive",
     "source": "button"
@@ -335,9 +370,29 @@
     "source": "className={cn(\"flex flex-col space-y-1.5 text-left\", className)}"
   },
   {
+    "file": "plugins/genui/components/ui/hooks/use-compact-viewport.tsx",
+    "rule": "registry-drift",
+    "source": "hooks/use-compact-viewport.tsx"
+  },
+  {
+    "file": "plugins/genui/components/ui/hooks/use-media-query.ts",
+    "rule": "registry-drift",
+    "source": "hooks/use-media-query.ts"
+  },
+  {
     "file": "plugins/genui/components/ui/motion.ts",
     "rule": "local-primitive",
     "source": "motion"
+  },
+  {
+    "file": "plugins/genui/components/ui/overlay-trigger.ts",
+    "rule": "registry-drift",
+    "source": "overlay-trigger.ts"
+  },
+  {
+    "file": "plugins/genui/components/ui/tooltip.tsx",
+    "rule": "registry-drift",
+    "source": "tooltip.tsx"
   },
   {
     "file": "plugins/genui/ui/components/Acceptance.tsx",
@@ -1835,6 +1890,11 @@
     "source": "<div ref={ref} className={cn(\"flex flex-col space-y-1.5 p-6\", className)} {...props} />"
   },
   {
+    "file": "plugins/gh-stack/components/ui/coarse-pointer-sizing.ts",
+    "rule": "registry-drift",
+    "source": "coarse-pointer-sizing.ts"
+  },
+  {
     "file": "plugins/gh-stack/components/ui/dialog.tsx",
     "rule": "universal-bucket",
     "source": "<div className={cn(\"flex flex-col space-y-1.5 text-left\", className)} {...props} />"
@@ -1843,6 +1903,16 @@
     "file": "plugins/gh-stack/components/ui/dialog.tsx",
     "rule": "universal-bucket",
     "source": "className={cn(\"flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2\", className)}"
+  },
+  {
+    "file": "plugins/gh-stack/components/ui/hooks/use-media-query.ts",
+    "rule": "registry-drift",
+    "source": "hooks/use-media-query.ts"
+  },
+  {
+    "file": "plugins/gh-stack/components/ui/overlay-trigger.ts",
+    "rule": "registry-drift",
+    "source": "overlay-trigger.ts"
   },
   {
     "file": "plugins/gitbutler/src/app/components/ui/badge.tsx",
@@ -1995,6 +2065,11 @@
     "source": "button"
   },
   {
+    "file": "plugins/magic-compose/components/ui/coarse-pointer-sizing.ts",
+    "rule": "registry-drift",
+    "source": "coarse-pointer-sizing.ts"
+  },
+  {
     "file": "plugins/magic-compose/components/ui/input.tsx",
     "rule": "local-primitive",
     "source": "input"
@@ -2100,6 +2175,11 @@
     "source": "<div className=\"space-y-4\">"
   },
   {
+    "file": "plugins/scott-docs/components/ui/coarse-pointer-sizing.ts",
+    "rule": "registry-drift",
+    "source": "coarse-pointer-sizing.ts"
+  },
+  {
     "file": "plugins/scott-docs/components/ui/dialog.tsx",
     "rule": "universal-bucket",
     "source": "\"flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2\","
@@ -2108,6 +2188,26 @@
     "file": "plugins/scott-docs/components/ui/dialog.tsx",
     "rule": "universal-bucket",
     "source": "className={cn(\"flex flex-col space-y-1.5 text-left\", className)}"
+  },
+  {
+    "file": "plugins/scott-docs/components/ui/hooks/use-compact-viewport.tsx",
+    "rule": "registry-drift",
+    "source": "hooks/use-compact-viewport.tsx"
+  },
+  {
+    "file": "plugins/scott-docs/components/ui/hooks/use-media-query.ts",
+    "rule": "registry-drift",
+    "source": "hooks/use-media-query.ts"
+  },
+  {
+    "file": "plugins/scott-docs/components/ui/overlay-trigger.ts",
+    "rule": "registry-drift",
+    "source": "overlay-trigger.ts"
+  },
+  {
+    "file": "plugins/scott-docs/components/ui/tooltip.tsx",
+    "rule": "registry-drift",
+    "source": "tooltip.tsx"
   },
   {
     "file": "plugins/scott-docs/editor.css",
@@ -2175,6 +2275,11 @@
     "source": "<div ref={ref} className={cn(\"flex flex-col space-y-1.5 p-6\", className)} {...props} />"
   },
   {
+    "file": "plugins/slopcop/components/ui/coarse-pointer-sizing.ts",
+    "rule": "registry-drift",
+    "source": "coarse-pointer-sizing.ts"
+  },
+  {
     "file": "plugins/slopcop/components/ui/dialog.tsx",
     "rule": "universal-bucket",
     "source": "<div className={cn(\"flex flex-col space-y-1.5 text-left\", className)} {...props} />"
@@ -2185,6 +2290,11 @@
     "source": "className={cn(\"flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2\", className)}"
   },
   {
+    "file": "plugins/slopcop/components/ui/hooks/use-media-query.ts",
+    "rule": "registry-drift",
+    "source": "hooks/use-media-query.ts"
+  },
+  {
     "file": "plugins/slopcop/components/ui/input.tsx",
     "rule": "local-primitive",
     "source": "input"
@@ -2193,6 +2303,11 @@
     "file": "plugins/slopcop/components/ui/motion.ts",
     "rule": "local-primitive",
     "source": "motion"
+  },
+  {
+    "file": "plugins/slopcop/components/ui/overlay-trigger.ts",
+    "rule": "registry-drift",
+    "source": "overlay-trigger.ts"
   },
   {
     "file": "plugins/slopcop/execution-settings.tsx",
@@ -3218,6 +3333,11 @@
     "file": "plugins/whiteboard/src/app/bridge/diff-view.tsx",
     "rule": "arbitrary-edge",
     "source": "className=\"review-files-editor-item flex min-h-0 flex-col border-b border-[var(--rule)]\""
+  },
+  {
+    "file": "plugins/whiteboard/src/app/components/ui/tooltip.tsx",
+    "rule": "registry-drift",
+    "source": "tooltip.tsx"
   },
   {
     "file": "plugins/whiteboard/src/app/review/software-map/styles.css",

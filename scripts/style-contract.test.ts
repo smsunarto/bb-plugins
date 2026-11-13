@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import {
   fixFor,
   isReExport,
@@ -6,6 +7,7 @@ import {
   scanFile,
   scanRepository,
   scanned,
+  scanRegistry,
   unrecorded,
 } from "./style-contract";
 
@@ -62,4 +64,19 @@ test("exempts the palette owner, the shared package, tests, and build output", (
   expect(scanned("packages/ui/src/controls.css")).toBe(false);
   expect(scanned("plugins/genui/dist/app.css")).toBe(false);
   expect(scanned("plugins/genui/ui/Table.test.tsx")).toBe(false);
+});
+
+test("a vendored kit file must match its canonical registry copy", () => {
+  const canonical = "packages/ui/registry/drawer.tsx";
+  const source = readFileSync(canonical, "utf8");
+  expect(scanRegistry("plugins/x/components/ui/drawer.tsx", source)).toEqual([]);
+  expect(scanRegistry("plugins/x/src/app/components/ui/drawer.tsx", source + "\n")).toEqual([
+    {
+      file: "plugins/x/src/app/components/ui/drawer.tsx",
+      rule: "registry-drift",
+      line: 1,
+      source: "drawer.tsx",
+    },
+  ]);
+  expect(scanRegistry("plugins/x/components/ui/not-in-registry.tsx", "x")).toEqual([]);
 });

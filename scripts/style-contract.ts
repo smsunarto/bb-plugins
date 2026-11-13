@@ -3,6 +3,11 @@
  * Existing drift is frozen in style-baseline.json and may only shrink. A new
  * plugin starts with no entries, so it must follow the contract from its first
  * commit. Run `bun scripts/style-contract.ts --update` after fixing drift.
+ *
+ * packages/ui/registry holds the canonical copy of each shadcn kit file that
+ * plugins vendor under components/ui (Tailwind scans only the plugin's own
+ * tree, so these cannot be imported from the package). A plugin copy must
+ * match it byte for byte; `--sync <plugin>` copies it in.
  */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
@@ -129,6 +134,30 @@ export function scanPrimitive(file: string, source: string, shared: Set<string>)
   return [{ file, rule: LOCAL_PRIMITIVE, line: 1, source: name }];
 }
 
+/** File-level rule: a plugin's copy of a registry kit file matches the canonical copy. */
+export const REGISTRY_DRIFT = "registry-drift";
+const registryDriftFix =
+  "Edit packages/ui/registry instead, then copy it into each plugin with bun scripts/style-contract.ts --sync <plugin>.";
+export const registryRoot = "packages/ui/registry";
+
+/** The kit path of a plugin's components/ui file, such as hooks/use-media-query.ts. */
+export function kitPath(file: string): string | undefined {
+  if (!file.startsWith("plugins/")) return undefined;
+  return /\/components\/ui\/(.+)$/.exec(file)?.[1];
+}
+
+export function scanRegistry(file: string, source: string, root = "."): Violation[] {
+  const rel = kitPath(file);
+  if (!rel) return [];
+  let canonical: string;
+  try {
+    canonical = readFileSync(`${root}/${registryRoot}/${rel}`, "utf8");
+  } catch {
+    return [];
+  }
+  return canonical === source ? [] : [{ file, rule: REGISTRY_DRIFT, line: 1, source: rel }];
+}
+
 export function scanRepository(root = "."): Violation[] {
   const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard"], {
     cwd: root,
@@ -145,7 +174,11 @@ export function scanRepository(root = "."): Violation[] {
     } catch {
       continue; // deleted in the working tree
     }
-    found.push(...scanFile(file, source), ...scanPrimitive(file, source, shared));
+    found.push(
+      ...scanFile(file, source),
+      ...scanPrimitive(file, source, shared),
+      ...scanRegistry(file, source, root),
+    );
   }
   return found;
 }
@@ -166,9 +199,9 @@ export function unrecorded<T extends Entry>(actual: readonly T[], baseline: read
 }
 
 export function fixFor(rule: string): string {
-  return rule === LOCAL_PRIMITIVE
-    ? localPrimitiveFix
-    : (rules.find((candidate) => candidate.id === rule)?.fix ?? "");
+  if (rule === LOCAL_PRIMITIVE) return localPrimitiveFix;
+  if (rule === REGISTRY_DRIFT) return registryDriftFix;
+  return rules.find((candidate) => candidate.id === rule)?.fix ?? "";
 }
 
 export const baselinePath = new URL("./style-baseline.json", import.meta.url);
@@ -180,7 +213,39 @@ function toBaseline(found: readonly Violation[]): Entry[] {
     .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
 }
 
+/** Overwrite a plugin's existing kit files with the canonical copies. */
+export function syncPlugin(plugin: string, root = "."): string[] {
+  const written: string[] = [];
+  const files = execFileSync("git", ["ls-files", `plugins/${plugin}`], {
+    cwd: root,
+    encoding: "utf8",
+  })
+    .split("\n")
+    .filter(Boolean);
+  for (const file of files) {
+    const rel = kitPath(file);
+    if (!rel) continue;
+    let canonical: string;
+    try {
+      canonical = readFileSync(`${root}/${registryRoot}/${rel}`, "utf8");
+    } catch {
+      continue;
+    }
+    if (readFileSync(`${root}/${file}`, "utf8") === canonical) continue;
+    writeFileSync(`${root}/${file}`, canonical);
+    written.push(file);
+  }
+  return written;
+}
+
 if (import.meta.main) {
+  const syncIndex = process.argv.indexOf("--sync");
+  if (syncIndex !== -1) {
+    const plugin = process.argv[syncIndex + 1];
+    if (!plugin) throw new Error("Expected --sync <plugin>");
+    for (const file of syncPlugin(plugin)) console.log(`synced ${file}`);
+    process.exit(0);
+  }
   const found = scanRepository();
   if (process.argv.includes("--update")) {
     writeFileSync(baselinePath, JSON.stringify(toBaseline(found), null, 2) + "\n");
