@@ -9,7 +9,7 @@
 ## Dev Preferences
 
 - Author plugins directly against `@get-bb/plugin-sdk`: `defineRpcContract` + `bb.rpc.register`, `cliCommand`/`defineCli` + `bb.cli.register`, `bb.agents.registerTool`, and `useRpc` with TanStack Query in the app. Read `plugins/html` for the reference layout. Workspace packages under `packages/` export source, never `dist/`.
-- If something can be done through bb-plugin, do it through bb-plugin. If it's possible through bb-plugin, but it is hacky (no easy way to do it via the bb SDK, flag it to the user for approval first).
+- If something can be done through bb-plugin, do it through bb-plugin. When the SDK has no slot or prop for it, a DOM hack that follows [DOM hacks](#dom-hacks) is allowed without asking; flag any other hacky approach to the user for approval first.
 - If an implementation is ONLY possible through modification of bb's core app, flag to the user for approval first. DO NOT start work on bb core app without explicit approval.
 - UI components: take Button, Input, Textarea, Card, Separator, Badge, and the `surface` edge classes from `@bb-plugins/ui`, re-exported from the plugin's `components/ui`. Add other shadcn components (https://ui.shadcn.com) from the `@bb` registry in the plugin's `components.json`; when `packages/ui/registry` holds the file, edit that copy and run `bun scripts/style-contract.ts --sync <plugin>`.
 - `scripts/style-contract.test.ts` fails on new style drift (hand-picked edges, raw colors, local primitive copies, CSS selecting bb's DOM by Tailwind class) and names the fix. After removing drift, run `bun scripts/style-contract.ts --update plugins/<id>`.
@@ -58,6 +58,22 @@ These patterns slowed BB or were implicated in this repository's performance inv
 - **Remount churn:** Hidden UI torn down and recreated on each navigation repeats its mount cost. Mount on first activation and keep the instance, preserving shortcuts and focus return.
 - **Fleet fan-out on a default path:** A tool or RPC that queries every host and waits for all of them runs at the slowest host's speed. Default to the calling thread's environment and host, matching canonical paths; make wider discovery an explicit argument. When fixing one caller, audit the other callers of the shared discovery helper.
 - **Heavy payloads:** Inline media or large blobs in thread events, startup context, or turn input bloat BB's database and every reader that parses them. Pass files or attachment references, and parse large JSON once rather than on every poll.
+
+## DOM hacks
+
+A DOM hack changes or restyles DOM that bb rendered, such as adding an icon to a button whose slot takes only a label, or hiding a bb control with CSS. Use one only after checking that no SDK slot, prop, or component covers the need. State the hack and the bb DOM it depends on in the handoff.
+
+- **Content script:** install it with `app.contentScripts.register`, never from a slot component, a `useData` hook, or module scope. bb mounts it once per window and keeps the plugin's stylesheet attached only while it runs. Read `plugins/source-control/src/app/header-icon.ts` for the reference layout.
+- **Cleanup:** stop on the context's `signal` and return a disposer that disconnects observers and removes every node, attribute, and listener the script added.
+- **Selectors:** anchor on bb's `data-*` attributes or roles, not on generated class names. Mark injected nodes with a plugin-prefixed `data-*` attribute so a pass can find and remove them.
+- **Observer cost:** make at most one whole-document query, at mount. After that, inspect only each mutation record's target and added nodes, and observe the narrowest record types the hack needs. A timeline that streams text must not trigger document-wide work.
+- **No forced layout:** read no geometry in a mutation callback. Batch any writes that need it into one animation frame.
+- **Idempotent:** React may replace the decorated node's children at any render. A pass must leave one copy of the decoration however often it runs, and must not fight React by rewriting nodes React owns.
+- **CSS first:** when a rule alone can do it, restyle with CSS and add no observer. Script is for what CSS cannot reach, such as picking an element by its text or adding a node.
+- **CSS placement:** append one `<style>` from the content script, marked with a plugin-prefixed `data-*` attribute, and remove it in the disposer. Keep these rules out of the plugin's `app.css`, which is scoped to the plugin's own roots. Theme-wide restyling belongs in `/plugins/monokai`.
+- **CSS selectors:** end every selector in a class, tag, or attribute, per Universal-bucket selectors above. Keep the rule count small, anchor `:has()` on a nearby element rather than a page-level ancestor, and use `!important` only where bb's own rule would otherwise win.
+- **Accessibility:** hide decorative nodes with `aria-hidden` and leave the element's accessible name unchanged.
+- **Verification:** test mount, a late-mounted target, a re-rendered target, and disposal. In the browser, confirm the decoration survives a thread switch and a plugin reload, and that disabling the plugin removes it.
 
 ## Resizable thread side-panel tabs
 
