@@ -152,7 +152,14 @@ When communicating the handoff:
 
 - Explicitly state whether your work has been committed or remains uncommitted.
 - Report the test-instance identity, configuration differences, and verification separately from the final live install/reload.
-- If a plugin was installed, reloaded, or removed: insert a heading `Plugin Reloaded` with a bullet list of target plugins and what happened to each.
+- **If a plugin was installed, reloaded, or removed, or its reload was skipped:** show one GenUI `Plugins` block titled `Plugin Reloaded`, with one item per plugin. Pass only the id and the `action` you took; the block reads each plugin's name, source, and status from bb and marks a claim bb contradicts.
+
+  ```ui
+  Card("Plugin Reloaded", [Plugins([{id: "source-control", action: "reloaded"}, {id: "genui", action: "not-reloaded", note: "Type-check fails with another thread's edits; reload once that thread is idle."}])])
+  ```
+
+  - `action` is `installed`, `reloaded`, `removed`, or `not-reloaded`. Give every `not-reloaded` item a `note` with the blocking reason.
+  - Outside BB, write a `Plugin Reloaded` heading with one bullet per plugin instead.
 
 ## Traps
 
