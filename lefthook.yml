@@ -10,7 +10,7 @@ pre-commit:
 
     - name: check staged formatting
       glob: "*.{css,html,js,json,jsonc,jsx,md,mdx,toml,ts,tsx,yaml,yml}"
-      run: bun run oxfmt --check {staged_files}
+      run: bun run oxfmt --check --no-error-on-unmatched-pattern {staged_files}
 
 pre-push:
   jobs:
