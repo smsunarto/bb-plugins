@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import type { BrowserRunner } from "./browser.ts";
+import { BrowserUnavailableError, type BrowserRunner } from "./browser.ts";
 import { pngGrayThumbnail, pngSize } from "./png.ts";
 
 /**
@@ -342,11 +342,29 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     return current;
   }
 
+  /**
+   * Runs one browser action and reports whether it landed. Sauce re-renders its
+   * pickers and filter bars as they load and as views switch, so an action can hit
+   * an element that is being replaced; callers retry until the page settles. A
+   * missing browser is not a page race and still fails at once.
+   */
+  function tryAction(args: string[]): Promise<boolean> {
+    return browser.run(args).then(
+      () => true,
+      (error: unknown) => {
+        if (error instanceof BrowserUnavailableError) throw error;
+        return false;
+      },
+    );
+  }
+
   async function openAppPicker() {
-    await browser.run(["click", "[data-qa=search-dialog-input-trigger]"]);
     const ready = await poll(
       15_000,
-      () => evaluate<boolean>(`!!document.querySelector("[data-qa=search-dialog]")`),
+      async () =>
+        (await evaluate<boolean>(`!!document.querySelector("[data-qa=search-dialog]")`)) ||
+        ((await tryAction(["click", "[data-qa=search-dialog-input-trigger]"])) &&
+          evaluate<boolean>(`!!document.querySelector("[data-qa=search-dialog]")`)),
       700,
     );
     if (!ready) throw new SauceError("page_changed", "The Sauce app picker did not open.");
@@ -361,7 +379,12 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
   /** Builds in the open app picker, newest first, with their Sauce storage file ids. */
   async function appEntries(query: string | undefined): Promise<AppBuild[]> {
     if (query) {
-      await browser.run(["fill", "[data-qa=search-dialog-input]", query]);
+      const filled = await poll(
+        10_000,
+        () => tryAction(["fill", "[data-qa=search-dialog-input]", query]),
+        500,
+      );
+      if (!filled) throw new SauceError("page_changed", "The Sauce app picker has no search box.");
       await deps.sleep(1500);
     }
     const read = () =>
@@ -445,14 +468,8 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     const searched = await poll(
       12_000,
       async () => {
-        // The search box is replaced while the view switches; a fill that lands then just retries.
-        const filled = await browser
-          .run(["fill", "[data-qa=device-filter-bar-search]", query])
-          .then(
-            () => true,
-            () => false,
-          );
-        if (!filled) return false;
+        // The search box is replaced while the view switches; a fill that lands then retries.
+        if (!(await tryAction(["fill", "[data-qa=device-filter-bar-search]", query]))) return false;
         await deps.sleep(1500);
         return evaluate<boolean>(
           `document.querySelector("[data-qa=device-filter-bar-search]")?.value === ${JSON.stringify(query)}`,

@@ -12,6 +12,7 @@ import plugin, { SKILLS } from "../src/server/server.ts";
 import { LEASE_IDLE_MS, type LeaseStore, type SauceLease } from "../src/server/lib/sauce/lease.ts";
 import {
   SauceError,
+  createSaucePage,
   scoreRotation,
   toViewport,
   type PageState,
@@ -511,4 +512,61 @@ test("a start still coming up keeps its lease even before the session page shows
   advance(3 * 60 * 1000);
   await tools.start({ threadId: "thr_b" }, { device: "Google Pixel 8" });
   expect(store.read()?.threadId).toBe("thr_b");
+});
+
+test("picker and search actions that hit a re-rendering element retry instead of failing", async () => {
+  const calls: string[] = [];
+  let pickerOpen = false;
+  const misses = { click: 1, fill: 1 };
+  const miss = () => Promise.reject(new Error("Element not found: the element is being replaced"));
+  let now = 0;
+  const page = createSaucePage(
+    {
+      async run(args) {
+        const [command, target] = args;
+        calls.push(`${command} ${target ?? ""}`.trim());
+        if (command === "click" && target === "[data-qa=search-dialog-input-trigger]") {
+          if (misses.click-- > 0) return miss();
+          pickerOpen = true;
+          return {};
+        }
+        if (command === "fill" && target === "[data-qa=device-filter-bar-search]") {
+          return misses.fill-- > 0 ? miss() : {};
+        }
+        if (command === "find" && args.includes("Dismiss")) pickerOpen = false;
+        if (command !== "eval") return {};
+        const script = target ?? "";
+        const result = script.includes("location.host")
+          ? {
+              url: "https://app.saucelabs.com/live/app-testing",
+              host: "app.saucelabs.com",
+              path: "/live/app-testing",
+              ended: false,
+              device: null,
+              capacity: false,
+            }
+          : script.includes("[data-qa=search-dialog]")
+            ? pickerOpen
+            : script.includes("app-search-and-select-file-id-")
+              ? [{ id: "f1", label: "Rampage/Rampage-se-dev.apk" }]
+              : script.includes("[data-qa=device-table]")
+                ? [
+                    {
+                      name: "Samsung Galaxy S23",
+                      status: "Available",
+                      os: "Android 16",
+                      screen: "6.1",
+                    },
+                  ]
+                : true;
+        return { result };
+      },
+    },
+    { sleep: async (ms) => void (now += ms), now: () => now, grayThumbnail: async () => null },
+  );
+
+  const listed = await page.listDevices("Galaxy S23", "rampage-");
+  expect(listed.devices.map((d) => d.name)).toEqual(["Samsung Galaxy S23"]);
+  expect(calls.filter((c) => c === "click [data-qa=search-dialog-input-trigger]")).toHaveLength(2);
+  expect(calls.filter((c) => c === "fill [data-qa=device-filter-bar-search]")).toHaveLength(2);
 });
