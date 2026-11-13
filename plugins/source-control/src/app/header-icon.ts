@@ -50,7 +50,7 @@ export function mountHeaderIcon(
   isOurs: (label: string) => boolean,
 ): () => void {
   const view = document.defaultView;
-  if (!view) return () => {};
+  if (!view || signal.aborted) return () => {};
 
   function decorate(actions: Element): void {
     for (const button of actions.querySelectorAll("button")) {
