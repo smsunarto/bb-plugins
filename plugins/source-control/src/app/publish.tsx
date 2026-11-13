@@ -18,19 +18,11 @@ import { Pending } from "./ui.tsx";
 /** While a child works, the tab looks this often to see it finish. */
 const PUBLISH_POLL_MS = 5_000;
 
-export function CreatePullRequest({
-  threadId,
-  branch,
-  head,
-  busy,
-}: {
-  threadId: string;
-  branch: string;
-  /** The head the reader sees: the child starts only while the branch is still there. */
-  head: string;
-  busy: boolean;
-}) {
-  const navigate = useBbNavigate();
+/**
+ * Create PR's state for one branch: the child already working on it, if any,
+ * and `start`, which asks the server for one at the head the reader sees.
+ */
+export function useCreatePullRequest(threadId: string, branch: string, head: string) {
   const requests = useRpcQuery({
     contract: sourceControlContract,
     method: "publishRequests",
@@ -57,6 +49,27 @@ export function CreatePullRequest({
       setError(reason instanceof Error ? reason.message : "Couldn't start the PR thread.");
     }
   };
+  return { current, running, pending: mutation.isPending, error, gate, start };
+}
+
+export function CreatePullRequest({
+  threadId,
+  branch,
+  head,
+  busy,
+}: {
+  threadId: string;
+  branch: string;
+  /** The head the reader sees: the child starts only while the branch is still there. */
+  head: string;
+  busy: boolean;
+}) {
+  const navigate = useBbNavigate();
+  const { current, running, pending, error, gate, start } = useCreatePullRequest(
+    threadId,
+    branch,
+    head,
+  );
   return (
     <>
       {running ? null : (
@@ -64,13 +77,13 @@ export function CreatePullRequest({
         <span className="flex shrink-0" title={gate ?? undefined}>
           <Button
             variant="outline"
-            disabled={busy || gate !== null || mutation.isPending}
+            disabled={busy || gate !== null || pending}
             data-host-bound="createPullRequest"
             aria-label={`Create PR for ${branch}`}
             data-testid="sc-create-pr"
             onClick={() => void start()}
           >
-            <Pending pending={mutation.isPending} icon="GitPullRequest" />
+            <Pending pending={pending} icon="GitPullRequest" />
             Create PR
           </Button>
         </span>

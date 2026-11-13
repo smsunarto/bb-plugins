@@ -890,6 +890,7 @@ function boardB(): ThreadChange {
 
 function renderStrip(row: ThreadChange, segments: { key: string; pluginId: string }[] = []) {
   const forgeCalls: unknown[] = [];
+  const shipCalls: unknown[] = [];
   const props = {
     threadId: "thread-a",
     projectId: "proj",
@@ -906,12 +907,17 @@ function renderStrip(row: ThreadChange, segments: { key: string; pluginId: strin
         forgeCalls.push(input);
         return { status: "done" as const };
       },
+      shipThread: (input: unknown) => {
+        shipCalls.push(input);
+        return { ok: true as const };
+      },
     } as Rpc,
   };
   return {
     summary: renderSlot({ component: segment.summary }, props, options),
     action: renderSlot({ component: segment.action! }, props, options),
     forgeCalls,
+    shipCalls,
   };
 }
 
@@ -1017,6 +1023,38 @@ test("Mark ready names the pull request and head the reader saw", async () => {
     action: { kind: "setDraft", draft: false },
     expected: { number: 482, head: "c0ffee" },
   });
+});
+
+test("Ship it on a pushed branch with no pull request asks the thread's agent to ship", async () => {
+  const row = boardB();
+  if (row.state !== "checkout") throw new Error("fixture");
+  row.forge = { read: { value: null, at: Date.now() }, problem: null };
+  const strip = renderStrip(row);
+  // With no pull request number to name it, the strip names the branch.
+  expect((await strip.summary.findByTestId("sc-strip")).textContent).toBe(
+    "Pushed, no pull requestscott/forge-host3 uncommitted",
+  );
+  const button = await strip.action.findByTestId("sc-strip-ship");
+  // The action sits at the row's end, after every segment's summary.
+  expect(button.closest("[data-bb-plugin]")?.className).toContain("ml-auto");
+  expect(strip.action.queryByTestId("sc-strip-mark-ready")).toBeNull();
+  act(() => (button as HTMLButtonElement).click());
+  await waitFor(() => expect(strip.shipCalls).toEqual([{ threadId: "thread-a" }]));
+  expect((await strip.action.findByText("Asked the agent to ship it.")).className).toContain(
+    "text-muted-foreground",
+  );
+});
+
+test("the strip offers no Ship it before GitHub answers or once a pull request exists", async () => {
+  const row = boardB();
+  if (row.state !== "checkout") throw new Error("fixture");
+  row.forge = { read: null, problem: null };
+  const unread = renderStrip(row);
+  await unread.summary.findByTestId("sc-strip");
+  expect(unread.action.queryByTestId("sc-strip-ship")).toBeNull();
+  const drafted = renderStrip(boardB());
+  await drafted.action.findByTestId("sc-strip-mark-ready");
+  expect(drafted.action.queryByTestId("sc-strip-ship")).toBeNull();
 });
 
 test("the strip hides for a thread with no Change of its own", async () => {

@@ -321,6 +321,19 @@ describe("primary action", () => {
     ["approved but conflicting is not mergeable", CONFLICTS_APPROVED, null],
     ["approved, mergeable not computed yet", MERGEABLE_UNKNOWN, null],
     ["no GitHub remote", summary({ ...LOCAL, onGitHub: false }), null],
+    ["pushed, no pull request", PUSHED_NO_PR, "ship"],
+    [
+      "pushed and behind, no pull request",
+      summary({ pullRequest: null, branch: branch({ status: "behind" }) }),
+      "ship",
+    ],
+    ["pushed, GitHub not read yet", summary({ pullRequest: undefined }), null],
+    [
+      "integrated, no pull request",
+      summary({ pullRequest: null, branch: branch({ status: "integrated" }) }),
+      null,
+    ],
+    ["pushed, no GitHub remote", summary({ pullRequest: null, onGitHub: false }), null],
   ])("%s", (_name, input, expected) => {
     expect(primaryAction(input)?.kind ?? null).toBe(expected);
   });

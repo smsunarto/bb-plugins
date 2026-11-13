@@ -299,9 +299,19 @@ export function statusLine(summary: ChangeSummary): string {
 
 export type PrimaryAction =
   | { kind: "push"; label: "Push" }
+  | { kind: "ship"; label: "Ship it" }
   | { kind: "markReady"; label: "Mark ready" }
   | { kind: "merge"; label: "Merge" }
   | null;
+
+/**
+ * Pushed commits not yet in the target, and GitHub answered that the branch
+ * has no pull request: the next step is the thread's agent shipping it.
+ */
+function canOpenPullRequest({ branch, onGitHub, pullRequest }: ChangeSummary): boolean {
+  if (pullRequest !== null || !onGitHub || !branch?.remote || branch.head === null) return false;
+  return commitCount(branch) > 0 && (branch.status === "pushed" || branch.status === "behind");
+}
 
 /** The one next step the Change's owner takes, or null when it waits on someone else. */
 export function primaryAction(summary: ChangeSummary): PrimaryAction {
@@ -309,6 +319,7 @@ export function primaryAction(summary: ChangeSummary): PrimaryAction {
   if (pr?.state === "merged" || pr?.state === "closed" || summary.conflicted) return null;
   if (conflictsWithBase(pr)) return null;
   if (unpushed(summary.branch) && summary.onGitHub) return { kind: "push", label: "Push" };
+  if (canOpenPullRequest(summary)) return { kind: "ship", label: "Ship it" };
   if (pr?.isDraft) return { kind: "markReady", label: "Mark ready" };
   if (readyToMerge(pr)) return { kind: "merge", label: "Merge" };
   return null;
