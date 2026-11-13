@@ -1,7 +1,7 @@
 /* Shared primitives ship their own styles: BB does not scan hoisted workspace
  * packages for Tailwind candidates. Components stay below caller utilities. */
 @layer components {
-  .bbui-ccb1744500e8-button {
+  .bbui-b3e73f3c017c-button {
     display: inline-flex;
     cursor: pointer;
     align-items: center;
@@ -13,21 +13,21 @@
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
     font-weight: 500;
   }
-  .bbui-ccb1744500e8-motion {
+  .bbui-b3e73f3c017c-motion {
     transition-property: color, background-color, border-color, outline-color, fill, stroke;
     transition-duration: 150ms;
   }
-  .bbui-ccb1744500e8-motion:hover {
+  .bbui-b3e73f3c017c-motion:hover {
     transition-duration: 0ms;
   }
-  .bbui-ccb1744500e8-row-motion {
+  .bbui-b3e73f3c017c-row-motion {
     transition: none;
   }
-  .bbui-ccb1744500e8-button:disabled {
+  .bbui-b3e73f3c017c-button:disabled {
     pointer-events: none;
     opacity: 0.5;
   }
-  .bbui-ccb1744500e8-button:where(:not(.bbui-ccb1744500e8-native)):focus-visible {
+  .bbui-b3e73f3c017c-button:where(:not(.bbui-b3e73f3c017c-native)):focus-visible {
     outline: none;
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width, 0px))
       var(--tw-ring-color, var(--ring));
@@ -35,109 +35,109 @@
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
   }
-  .bbui-ccb1744500e8-button :where(svg, [data-icon-root]) {
+  .bbui-b3e73f3c017c-button :where(svg, [data-icon-root]) {
     pointer-events: none;
     flex-shrink: 0;
   }
-  .bbui-ccb1744500e8-default {
+  .bbui-b3e73f3c017c-default {
     background: var(--foreground);
     color: var(--background);
   }
-  .bbui-ccb1744500e8-default:hover {
+  .bbui-b3e73f3c017c-default:hover {
     background: color-mix(in oklab, var(--foreground) 90%, transparent);
   }
-  .bbui-ccb1744500e8-destructive {
+  .bbui-b3e73f3c017c-destructive {
     background: var(--destructive);
     color: var(--destructive-foreground);
   }
-  .bbui-ccb1744500e8-destructive:hover {
+  .bbui-b3e73f3c017c-destructive:hover {
     background: color-mix(in oklab, var(--destructive) 90%, transparent);
   }
-  .bbui-ccb1744500e8-outline {
+  .bbui-b3e73f3c017c-outline {
     border: 1px solid var(--input);
     background: transparent;
   }
-  .bbui-ccb1744500e8-outline.bbui-ccb1744500e8-bordered {
+  .bbui-b3e73f3c017c-outline.bbui-b3e73f3c017c-bordered {
     border-color: var(--border);
   }
-  .bbui-ccb1744500e8-outline:hover,
-  .bbui-ccb1744500e8-ghost:hover {
+  .bbui-b3e73f3c017c-outline:hover,
+  .bbui-b3e73f3c017c-ghost:hover {
     background: var(--state-hover);
     color: var(--foreground);
   }
-  .bbui-ccb1744500e8-secondary {
+  .bbui-b3e73f3c017c-secondary {
     background: var(--secondary);
     color: var(--secondary-foreground);
   }
-  .bbui-ccb1744500e8-secondary:hover {
+  .bbui-b3e73f3c017c-secondary:hover {
     background: color-mix(in oklab, var(--secondary) 80%, transparent);
   }
-  .bbui-ccb1744500e8-ghost:where([aria-pressed="true"], [data-state="open"]),
-  .bbui-ccb1744500e8-ghost:where([aria-pressed="true"], [data-state="open"]):hover {
+  .bbui-b3e73f3c017c-ghost:where([aria-pressed="true"], [data-state="open"]),
+  .bbui-b3e73f3c017c-ghost:where([aria-pressed="true"], [data-state="open"]):hover {
     background: var(--state-active);
     color: var(--foreground);
   }
-  .bbui-ccb1744500e8-link {
+  .bbui-b3e73f3c017c-link {
     color: var(--primary);
     text-underline-offset: 4px;
   }
-  .bbui-ccb1744500e8-link:hover {
+  .bbui-b3e73f3c017c-link:hover {
     text-decoration-line: underline;
   }
-  .bbui-ccb1744500e8-size-default {
+  .bbui-b3e73f3c017c-size-default {
     height: 2.25rem;
     padding: 0.5rem 1rem;
   }
-  .bbui-ccb1744500e8-size-sm {
+  .bbui-b3e73f3c017c-size-sm {
     height: 2rem;
     padding: 0 0.75rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-ccb1744500e8-size-lg {
+  .bbui-b3e73f3c017c-size-lg {
     height: 2.5rem;
     padding: 0 2rem;
   }
-  .bbui-ccb1744500e8-size-icon {
+  .bbui-b3e73f3c017c-size-icon {
     height: 2.25rem;
     width: 2.25rem;
   }
-  .bbui-ccb1744500e8-compact {
+  .bbui-b3e73f3c017c-compact {
     gap: 0.375rem;
   }
-  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-default {
+  .bbui-b3e73f3c017c-compact.bbui-b3e73f3c017c-default {
     background: var(--primary);
     color: var(--primary-foreground);
   }
-  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-default:hover {
+  .bbui-b3e73f3c017c-compact.bbui-b3e73f3c017c-default:hover {
     background: color-mix(in oklab, var(--primary) 90%, transparent);
   }
-  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-outline {
+  .bbui-b3e73f3c017c-compact.bbui-b3e73f3c017c-outline {
     border-color: var(--border);
   }
-  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-outline:hover {
+  .bbui-b3e73f3c017c-compact.bbui-b3e73f3c017c-outline:hover {
     background: color-mix(in oklab, var(--accent) 60%, transparent);
   }
-  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-ghost:hover {
+  .bbui-b3e73f3c017c-compact.bbui-b3e73f3c017c-ghost:hover {
     background: var(--accent);
   }
-  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-size-default {
+  .bbui-b3e73f3c017c-compact.bbui-b3e73f3c017c-size-default {
     height: 2rem;
     padding: 0 0.75rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-size-sm {
+  .bbui-b3e73f3c017c-compact.bbui-b3e73f3c017c-size-sm {
     height: 1.75rem;
     padding: 0 0.625rem;
   }
-  .bbui-ccb1744500e8-compact.bbui-ccb1744500e8-size-xs {
+  .bbui-b3e73f3c017c-compact.bbui-b3e73f3c017c-size-xs {
     height: 1.5rem;
     padding: 0 0.5rem;
     font-size: var(--text-2xs, 0.625rem);
   }
-  .bbui-ccb1744500e8-input,
-  .bbui-ccb1744500e8-textarea {
+  .bbui-b3e73f3c017c-input,
+  .bbui-b3e73f3c017c-textarea {
     display: flex;
     width: 100%;
     border: 1px solid var(--input);
@@ -147,10 +147,10 @@
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
   }
-  .bbui-ccb1744500e8-input {
+  .bbui-b3e73f3c017c-input {
     height: 2.25rem;
   }
-  .bbui-ccb1744500e8-input::file-selector-button {
+  .bbui-b3e73f3c017c-input::file-selector-button {
     border: 0;
     background: transparent;
     font-size: var(--text-sm, 0.8125rem);
@@ -158,20 +158,20 @@
     font-weight: 500;
     color: var(--foreground);
   }
-  .bbui-ccb1744500e8-input.bbui-ccb1744500e8-bordered {
+  .bbui-b3e73f3c017c-input.bbui-b3e73f3c017c-bordered {
     border-color: var(--border);
     background: var(--background);
   }
-  .bbui-ccb1744500e8-textarea {
+  .bbui-b3e73f3c017c-textarea {
     min-height: 60px;
     padding-block: 0.5rem;
   }
-  .bbui-ccb1744500e8-input::placeholder,
-  .bbui-ccb1744500e8-textarea::placeholder {
+  .bbui-b3e73f3c017c-input::placeholder,
+  .bbui-b3e73f3c017c-textarea::placeholder {
     color: var(--muted-foreground);
   }
-  .bbui-ccb1744500e8-input:focus-visible,
-  .bbui-ccb1744500e8-textarea:focus-visible {
+  .bbui-b3e73f3c017c-input:focus-visible,
+  .bbui-b3e73f3c017c-textarea:focus-visible {
     outline: none;
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width, 0px))
       var(--tw-ring-color, var(--ring));
@@ -179,27 +179,121 @@
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
   }
-  .bbui-ccb1744500e8-input:disabled,
-  .bbui-ccb1744500e8-textarea:disabled {
+  .bbui-b3e73f3c017c-input:disabled,
+  .bbui-b3e73f3c017c-textarea:disabled {
     cursor: not-allowed;
     opacity: 0.5;
+  }
+  /* Surfaces: one card, edge, divider, and hairline for every plugin. */
+  .bbui-b3e73f3c017c-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg, 0.5rem);
+    background: var(--card);
+    color: var(--card-foreground);
+  }
+  .bbui-b3e73f3c017c-card-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 1.5rem;
+  }
+  .bbui-b3e73f3c017c-card-title {
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: -0.025em;
+  }
+  .bbui-b3e73f3c017c-card-description {
+    font-size: var(--text-sm, 0.8125rem);
+    line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
+    color: var(--muted-foreground);
+  }
+  .bbui-b3e73f3c017c-card-content {
+    padding: 0 1.5rem 1.5rem;
+  }
+  .bbui-b3e73f3c017c-card-footer {
+    display: flex;
+    align-items: center;
+    padding: 0 1.5rem 1.5rem;
+  }
+  .bbui-b3e73f3c017c-edge {
+    border: 1px solid var(--border);
+  }
+  .bbui-b3e73f3c017c-divider {
+    border-top: 1px solid var(--border);
+  }
+  /* The composer's edge: 0.5px and opaque, so stacked surfaces meet without a
+   * bright stub where two translucent edges overlap at a rounded corner. */
+  .bbui-b3e73f3c017c-hairline {
+    box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));
+  }
+  .dark .bbui-b3e73f3c017c-hairline {
+    box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
+  }
+  .bbui-b3e73f3c017c-separator {
+    flex-shrink: 0;
+    background: var(--border);
+  }
+  .bbui-b3e73f3c017c-separator[data-orientation="horizontal"] {
+    height: 1px;
+    width: 100%;
+  }
+  .bbui-b3e73f3c017c-separator[data-orientation="vertical"] {
+    width: 1px;
+    align-self: stretch;
+  }
+  .bbui-b3e73f3c017c-badge {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md, 0.375rem);
+    padding: 0.125rem 0.5rem;
+    font-size: 11px;
+    line-height: 1rem;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .bbui-b3e73f3c017c-badge-default {
+    background: var(--foreground);
+    color: var(--background);
+  }
+  .bbui-b3e73f3c017c-badge-secondary {
+    background: var(--surface-raised, var(--secondary));
+    color: var(--muted-foreground);
+  }
+  .bbui-b3e73f3c017c-badge-destructive {
+    background: var(--destructive);
+    color: var(--destructive-foreground, var(--background));
+  }
+  .bbui-b3e73f3c017c-badge-outline {
+    border-color: var(--border);
+    color: var(--foreground);
+  }
+  .bbui-b3e73f3c017c-badge-count {
+    height: 1rem;
+    border-radius: 9999px;
+    background: var(--surface-raised, var(--secondary));
+    padding: 0 0.375rem;
+    line-height: 1;
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
   }
 }
 /* Desktop utility overrides must not shrink touch targets. Explicit coarse-
  * pointer utilities remain the caller's escape hatch, as with the old defaults. */
 @layer utilities {
-  :where(.bbui-ccb1744500e8-button:not(.bbui-ccb1744500e8-native)) :is(svg, [data-icon-root]),
-  .bbui-ccb1744500e8-native svg:not([class*="size-"]) {
+  :where(.bbui-b3e73f3c017c-button:not(.bbui-b3e73f3c017c-native)) :is(svg, [data-icon-root]),
+  .bbui-b3e73f3c017c-native svg:not([class*="size-"]) {
     width: 1rem;
     height: 1rem;
   }
 
   @media (width < 48rem) and (pointer: coarse) {
-    .bbui-ccb1744500e8-input.bbui-ccb1744500e8-input:not([class*="pointer-coarse:h-"]) {
+    .bbui-b3e73f3c017c-input.bbui-b3e73f3c017c-input:not([class*="pointer-coarse:h-"]) {
       height: 2.5rem;
     }
-    .bbui-ccb1744500e8-input.bbui-ccb1744500e8-input:not([class*="pointer-coarse:text-"]),
-    .bbui-ccb1744500e8-textarea.bbui-ccb1744500e8-textarea:not([class*="pointer-coarse:text-"]) {
+    .bbui-b3e73f3c017c-input.bbui-b3e73f3c017c-input:not([class*="pointer-coarse:text-"]),
+    .bbui-b3e73f3c017c-textarea.bbui-b3e73f3c017c-textarea:not([class*="pointer-coarse:text-"]) {
       font-size: var(--text-base, 1rem);
     }
   }

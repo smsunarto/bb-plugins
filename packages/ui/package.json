@@ -8,7 +8,11 @@
     "./input": "./src/input.tsx",
     "./textarea": "./src/textarea.tsx",
     "./utils": "./src/utils.ts",
-    "./motion": "./src/motion.ts"
+    "./motion": "./src/motion.ts",
+    "./card": "./src/card.tsx",
+    "./separator": "./src/separator.tsx",
+    "./badge": "./src/badge.tsx",
+    "./surface": "./src/surface.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.3.0",

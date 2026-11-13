@@ -4,6 +4,10 @@ import { Button, BorderedButton, NativeButton, CompactButton } from "../src/butt
 import { Input, BorderedInput } from "../src/input";
 import { styles } from "../src/styles";
 import { cn } from "../src/utils";
+import { Card, CardHeader, CardTitle } from "../src/card";
+import { Separator } from "../src/separator";
+import { Badge } from "../src/badge";
+import { surface } from "../src/surface";
 
 describe("shared control compatibility", () => {
   test("Whiteboard button marker and caller overrides survive", () => {
@@ -41,5 +45,30 @@ describe("shared control compatibility", () => {
   });
   test("cn resolves conflicting utilities", () => {
     expect(cn("h-8", false, "h-10")).toBe("h-10");
+  });
+});
+
+describe("shared surfaces", () => {
+  test("Card parts carry one shared edge and accept caller classes", () => {
+    const html = renderToStaticMarkup(
+      <Card className="mt-2">
+        <CardHeader>
+          <CardTitle>Title</CardTitle>
+        </CardHeader>
+      </Card>,
+    );
+    expect(html).toContain(styles.card);
+    expect(html).toContain("mt-2");
+    expect(html).toContain('data-slot="card-title"');
+  });
+  test("a decorative Separator is hidden from assistive technology", () => {
+    expect(renderToStaticMarkup(<Separator />)).toContain('role="none"');
+    const labelled = renderToStaticMarkup(<Separator orientation="vertical" decorative={false} />);
+    expect(labelled).toContain('role="separator"');
+    expect(labelled).toContain('aria-orientation="vertical"');
+  });
+  test("Badge variants map to shared classes", () => {
+    expect(renderToStaticMarkup(<Badge variant="count">3</Badge>)).toContain(styles["badge-count"]);
+    expect(surface.hairline).toBe(styles.hairline);
   });
 });

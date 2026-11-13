@@ -90,6 +90,11 @@
     "source": "\"h-8 shrink-0 gap-1.5 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2.5 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]\";"
   },
   {
+    "file": "plugins/agentation/components/ui/card.tsx",
+    "rule": "local-primitive",
+    "source": "card"
+  },
+  {
     "file": "plugins/amp/app.css",
     "rule": "raw-color",
     "source": "--amp-brand-red: #f34e3f;"
@@ -313,6 +318,11 @@
     "file": "plugins/devin/src/app/devin.css",
     "rule": "raw-color",
     "source": "border: 1px solid color-mix(in oklch, var(--primary) 35%, transparent);"
+  },
+  {
+    "file": "plugins/dotfiles/src/app/components/ui/card.tsx",
+    "rule": "local-primitive",
+    "source": "card"
   },
   {
     "file": "plugins/genui/components/ui/button.tsx",
@@ -1816,6 +1826,11 @@
   },
   {
     "file": "plugins/gh-stack/components/ui/card.tsx",
+    "rule": "local-primitive",
+    "source": "card"
+  },
+  {
+    "file": "plugins/gh-stack/components/ui/card.tsx",
     "rule": "universal-bucket",
     "source": "<div ref={ref} className={cn(\"flex flex-col space-y-1.5 p-6\", className)} {...props} />"
   },
@@ -1828,6 +1843,11 @@
     "file": "plugins/gh-stack/components/ui/dialog.tsx",
     "rule": "universal-bucket",
     "source": "className={cn(\"flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2\", className)}"
+  },
+  {
+    "file": "plugins/gitbutler/src/app/components/ui/badge.tsx",
+    "rule": "local-primitive",
+    "source": "badge"
   },
   {
     "file": "plugins/gitbutler/src/app/file-list.tsx",
@@ -2146,6 +2166,11 @@
   },
   {
     "file": "plugins/slopcop/components/ui/card.tsx",
+    "rule": "local-primitive",
+    "source": "card"
+  },
+  {
+    "file": "plugins/slopcop/components/ui/card.tsx",
     "rule": "universal-bucket",
     "source": "<div ref={ref} className={cn(\"flex flex-col space-y-1.5 p-6\", className)} {...props} />"
   },
@@ -2248,6 +2273,11 @@
     "file": "plugins/source-control/src/app/chat-card.tsx",
     "rule": "arbitrary-edge",
     "source": "\"flex w-full max-w-[576px] min-w-0 flex-col overflow-clip rounded-[8px] border border-solid border-border bg-background text-start font-sans text-foreground\";"
+  },
+  {
+    "file": "plugins/source-control/src/app/components/ui/badge.tsx",
+    "rule": "local-primitive",
+    "source": "badge"
   },
   {
     "file": "plugins/source-control/src/app/components/ui/button.tsx",
