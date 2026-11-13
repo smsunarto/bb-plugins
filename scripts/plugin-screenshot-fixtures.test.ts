@@ -31,7 +31,7 @@ for (const failure of [null, "theme", "source", "disabled", "not-running"] as co
         return Response.json(
           path === "/api/v1/plugins"
             ? {
-                plugins: ["amp", "monokai", "gtd-sidebar"].map((id) => ({
+                plugins: ["agentation", "monokai", "gtd-sidebar"].map((id) => ({
                   id,
                   rootDir:
                     failure === "source" ? "/other/checkout" : join(SCREENSHOT_ROOT, "plugins", id),
@@ -48,7 +48,7 @@ for (const failure of [null, "theme", "source", "disabled", "not-running"] as co
       },
     });
     try {
-      const check = assertFixturePrerequisites(server.url.href, ["amp"]);
+      const check = assertFixturePrerequisites(server.url.href, ["agentation"]);
       if (failure)
         await expect(check).rejects.toThrow(failure === "theme" ? "Monokai" : "must be running");
       else await check;
@@ -63,13 +63,11 @@ describe("plugin screenshot foreground fixtures", () => {
   test("cover every captured README image at DPR 3", () => {
     expect([...new Set(PLUGIN_SCREENSHOT_FIXTURES.map((fixture) => fixture.plugin))]).toEqual([
       "agentation",
-      "amp",
-      "gh-stack",
       "gtd-sidebar",
       "monokai",
     ]);
-    expect(PLUGIN_SCREENSHOT_FIXTURES).toHaveLength(11);
-    expect(new Set(PLUGIN_SCREENSHOT_FIXTURES.map((fixture) => fixture.id)).size).toBe(11);
+    expect(PLUGIN_SCREENSHOT_FIXTURES).toHaveLength(5);
+    expect(new Set(PLUGIN_SCREENSHOT_FIXTURES.map((fixture) => fixture.id)).size).toBe(5);
     expect(PLUGIN_SCREENSHOT_FIXTURES.filter((fixture) => fixture.plugin === "monokai")).toEqual([
       { id: "monokai/app", plugin: "monokai", filename: "app.png", width: 1512, height: 1000 },
     ]);

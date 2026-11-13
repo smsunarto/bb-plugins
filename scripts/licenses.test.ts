@@ -36,7 +36,7 @@ describe("licensing", () => {
       const expected =
         plugin.id === "t3-composer"
           ? root.replace(/Copyright \(c\) [^\n]+/, "Copyright (c) 2026 Michael Yong")
-          : ["magic-compose", "slopcop"].includes(plugin.id)
+          : plugin.id === "slopcop"
             ? root.replace(/Copyright \(c\) [^\n]+/, "Copyright (c) 2026 Sawyer Hood")
             : root;
       expect(readFileSync(join(plugin.dir, "LICENSE"), "utf8")).toBe(expected);

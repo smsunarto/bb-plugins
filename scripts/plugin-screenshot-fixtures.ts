@@ -10,7 +10,7 @@
  * production components still own the markup, CSS, fonts, and layout.
  *
  *   bun run screenshots:fixtures
- *   bun run screenshots:fixtures --plugin amp
+ *   bun run screenshots:fixtures --plugin agentation
  *   bun run screenshots:fixtures --output-dir /tmp/bb-plugin-fixtures
  */
 import { isAbsolute, join, relative, resolve } from "node:path";
@@ -63,7 +63,6 @@ const SIDEBAR_PLUGIN_ORDER = [
 ] as const;
 const DEFAULT_PROJECT_ID = "proj_b25re9h8d7";
 const IDLE_THREAD_ID = "thr_fytu99znvt";
-const ORACLE_THREAD_ID = "thr_4c8sv4qav3";
 const STACK_PROJECT_ID = "proj_dhxdkz286e";
 const STACK_THREAD_ID = "thr_cpc9jzpn5j";
 const EXECUTION_OPTIONS = {
@@ -213,24 +212,6 @@ export const PLUGIN_SCREENSHOT_FIXTURES: readonly FixtureSpec[] = [
     filename: "staging.png",
     width: 749,
     height: 284,
-  },
-  { id: "amp/orb-prompt", plugin: "amp", filename: "orb-prompt.png", width: 774, height: 211 },
-  { id: "amp/orb-bar", plugin: "amp", filename: "orb-bar.png", width: 755, height: 263 },
-  { id: "amp/oracle-card", plugin: "amp", filename: "oracle-card.png", width: 751, height: 270 },
-  { id: "gh-stack/new-tab", plugin: "gh-stack", filename: "new-tab.png", width: 576, height: 418 },
-  {
-    id: "gh-stack/magic-stack-report",
-    plugin: "gh-stack",
-    filename: "magic-stack-report.png",
-    width: 798,
-    height: 598,
-  },
-  {
-    id: "gh-stack/magic-stack-result",
-    plugin: "gh-stack",
-    filename: "magic-stack-result.png",
-    width: 596,
-    height: 1000,
   },
   {
     id: "gtd-sidebar/sidebar",
@@ -432,165 +413,6 @@ async function mockAgentation(
   );
 }
 
-function changeSet(additions: number, deletions: number, path: string) {
-  return {
-    additions,
-    deletions,
-    files: [
-      {
-        path,
-        previousPath: null,
-        status: "modified",
-        additions,
-        deletions,
-      },
-    ],
-    truncated: false,
-  };
-}
-
-function stackFixture() {
-  const layers = [
-    [23, "docs(agents): add commit guidance", 28, 2, ".dotfiles/.agents/instructions/shared.md"],
-    [24, "chore(claude): disable generated attribution", 1, 13, ".dotfiles/.claude/settings.json"],
-    [
-      25,
-      "chore(editor): update workspace preferences",
-      3,
-      4,
-      ".dotfiles/.config/vscode/settings.json",
-    ],
-    [
-      26,
-      "feat(skills): add GitHub Actions authoring guidance",
-      152,
-      0,
-      ".dotfiles/.agents/skills/gh-actions-create/SKILL.md",
-    ],
-    [
-      27,
-      "docs(skills): keep GitHub issues at the interface",
-      46,
-      9,
-      ".dotfiles/.agents/skills/gh-write-issue/SKILL.md",
-    ],
-    [
-      28,
-      "docs(skills): narrow BB app testing scope",
-      24,
-      23,
-      ".dotfiles/.agents/skills/bb-app-testing/SKILL.md",
-    ],
-    [
-      29,
-      "chore(skills): retire Screen Studio editing guidance",
-      0,
-      297,
-      ".dotfiles/.agents/skills/editing-screenstudio/SKILL.md",
-    ],
-  ] as const;
-  return {
-    stack: {
-      trunk: "main",
-      currentBranch: "scott/chore-retire-screen-studio-guidance",
-      branches: layers.map(([number, title, additions, deletions, path]) => ({
-        name: `scott/${title
-          .split(": ")[1]!
-          .replaceAll(/[^a-z0-9]+/g, "-")
-          .replaceAll(/^-|-$/g, "")}`,
-        isCurrent: number === 29,
-        isMerged: false,
-        isQueued: false,
-        needsRebase: false,
-        hasStash: false,
-        stashCount: 0,
-        pr: {
-          number,
-          url: `https://github.com/example/dotfiles/pull/${number}`,
-          state: "OPEN",
-          title,
-          isDraft: true,
-          metadataStale: false,
-        },
-        diff:
-          number === 29
-            ? {
-                additions: 0,
-                deletions: 297,
-                files: [
-                  {
-                    path: ".dotfiles/.agents/skills/editing-screenstudio/references/demo.md",
-                    previousPath: null,
-                    status: "deleted",
-                    additions: 0,
-                    deletions: 121,
-                  },
-                  {
-                    path,
-                    previousPath: null,
-                    status: "deleted",
-                    additions: 0,
-                    deletions: 176,
-                  },
-                ],
-                truncated: false,
-              }
-            : changeSet(additions, deletions, path),
-        aheadOfRemote: 0,
-        behindRemote: 0,
-      })),
-      trunkBehind: 0,
-      prunableBranchCount: 0,
-    },
-    workspacePath: "/Users/example/git/dotfiles",
-    error: null,
-    checkoutWarning: null,
-    pending: null,
-    defaultBranch: "main",
-    branchPrefix: "scott/",
-    detectedBranchPrefix: "scott/",
-    settings: { branchPrefix: "scott/", conventionalCommits: true },
-    fetchedAt: FIXED_TIME.valueOf(),
-  };
-}
-
-async function mockStack(context: BrowserContext): Promise<void> {
-  await context.route("**/api/v1/plugins/gh-stack/rpc/getStack", (route) =>
-    fulfillRpc(route, stackFixture()),
-  );
-}
-
-async function mockAmp(
-  context: BrowserContext,
-  options: { orb?: boolean; oracle?: boolean },
-): Promise<void> {
-  if (options.orb) {
-    await context.route("**/api/v1/plugins/amp/rpc/getOrbUsage", (route) =>
-      fulfillRpc(route, {
-        state: "active",
-        ampThreadId: "T-019fefe1-f9b0-75c3-ad24-289bd4647cb4",
-        syncCommand: "amp sync T-019fefe1-f9b0-75c3-ad24-289bd4647cb4",
-      }),
-    );
-  }
-  if (options.oracle) {
-    await context.route("**/api/v1/plugins/amp/rpc/getOracleReport", (route) =>
-      fulfillRpc(route, {
-        report: {
-          id: "11111111-1111-4111-8111-111111111111",
-          request:
-            "Answer this narrowly and directly: what is 2 + 2? Briefly state the result and verify it using elementary arithmetic.",
-          response: "2 + 2 = 4. Starting at 2 and adding two units gives 3, then 4.",
-          status: "completed",
-          trace: [],
-          createdAt: FIXED_TIME.toISOString(),
-        },
-        error: null,
-      }),
-    );
-  }
-}
-
 const STACK_REPORT = `# Stack submitted
 
 Created a seven-layer stack, bottom to top:
@@ -629,19 +451,6 @@ const THREAD_CAPTURE_FIXTURES: Record<string, ThreadCaptureFixture> = {
     titleFallback: "Screenshot fixture",
     messages: [],
   },
-  oracle: {
-    id: ORACLE_THREAD_ID,
-    projectId: DEFAULT_PROJECT_ID,
-    title: "Consult Oracle for simple sum",
-    titleFallback: "/orb consult the oracle on what is 2 + 2",
-    messages: [
-      { role: "user", text: "/orb consult the oracle on what is 2 + 2" },
-      {
-        role: "assistant",
-        text: '::amp-oracle{reportId="11111111-1111-4111-8111-111111111111"}\n\nThe Oracle says: **2 + 2 = 4**.',
-      },
-    ],
-  },
   stack: {
     id: STACK_THREAD_ID,
     projectId: STACK_PROJECT_ID,
@@ -653,14 +462,6 @@ const THREAD_CAPTURE_FIXTURES: Record<string, ThreadCaptureFixture> = {
     ],
     tabs: [
       { id: "thread-info:thread-info:none", kind: "thread-info" },
-      {
-        actionId: "stack",
-        id: "plugin-panel:gh-stack%3Astack%3A:none",
-        kind: "plugin-panel",
-        paramsJson: null,
-        pluginId: "gh-stack",
-        title: "GitHub Stack",
-      },
       { id: "new-tab:new-tab:none", kind: "new-tab" },
     ],
   },
@@ -870,49 +671,6 @@ async function mockThread(context: BrowserContext, fixture: ThreadCaptureFixture
     }
     await fulfillJson(route, response);
   });
-}
-
-async function mockNewThreadShell(context: BrowserContext): Promise<void> {
-  const defaultExecutionOptions = {
-    providerId: "acp-amp",
-    model: "high",
-    reasoningLevel: "xhigh",
-    permissionMode: "full",
-    serviceTier: "fast",
-  };
-  await context.route("**/api/v1/sidebar-bootstrap", (route) =>
-    fulfillJson(route, {
-      sections: [],
-      projects: [
-        {
-          id: DEFAULT_PROJECT_ID,
-          kind: "standard",
-          name: "bb-plugins",
-          gitRemoteUrl: "https://github.com/example/bb-plugins.git",
-          createdAt: FIXED_TIME.valueOf() - 86_400_000,
-          updatedAt: FIXED_TIME.valueOf(),
-          sources: [],
-          threads: [],
-          defaultExecutionOptions,
-        },
-      ],
-      personalProject: {
-        id: "proj_personal",
-        kind: "personal",
-        name: "Personal",
-        gitRemoteUrl: null,
-        createdAt: FIXED_TIME.valueOf() - 86_400_000,
-        updatedAt: FIXED_TIME.valueOf(),
-        sources: [],
-        threads: [],
-        defaultExecutionOptions,
-      },
-    }),
-  );
-  await context.route(new RegExp("/api/v1/threads(?:[?]|$)"), (route) => fulfillJson(route, []));
-  await context.route("**/api/v1/projects/proj_personal/prompt-history", (route) =>
-    fulfillJson(route, []),
-  );
 }
 
 function sidebarThread(
@@ -1273,172 +1031,16 @@ async function captureAgentation(browser: Browser, writeCapture: WriteCapture): 
   }
 }
 
-async function captureAmp(browser: Browser, writeCapture: WriteCapture): Promise<void> {
-  const promptContext = await createContext(browser);
-  try {
-    await mockAgentation(promptContext, {});
-    await mockNewThreadShell(promptContext);
-    const page = await createScreenshotPage(promptContext, { fixedTime: FIXED_TIME });
-    await navigate(page, "/", page.locator("[data-promptbox]"));
-    const editor = page.locator('[data-promptbox] [contenteditable="true"]');
-    await editor.fill("/orb consult the oracle on what is 2 + 2");
-    await page.locator(".amp-orb-directive-highlight").waitFor({ state: "visible" });
-    await page.getByText("Loading models…", { exact: true }).waitFor({ state: "hidden" });
-    await settle(page);
-    const shell = await page.locator("[data-promptbox-shell]").boundingBox();
-    if (!shell) throw new Error("Amp prompt composer has no bounding box");
-    const spec = specById.get("amp/orb-prompt")!;
-    await writeCapture(page, spec, {
-      x: Math.round(shell.x + shell.width / 2 - spec.width / 2),
-      y: Math.max(0, Math.round(shell.y - 24)),
-      width: spec.width,
-      height: spec.height,
-    });
-  } finally {
-    await promptContext.close();
-  }
-
-  const orbContext = await createContext(browser);
-  try {
-    await mockAgentation(orbContext, {});
-    await mockAmp(orbContext, { orb: true });
-    await mockThread(orbContext, THREAD_CAPTURE_FIXTURES.idle!);
-    const page = await createScreenshotPage(orbContext, { fixedTime: FIXED_TIME });
-    await navigate(
-      page,
-      `/projects/${DEFAULT_PROJECT_ID}/threads/${IDLE_THREAD_ID}`,
-      page.locator(".amp-orb-status-pill"),
-    );
-    await page.getByText("Loading models…", { exact: true }).waitFor({ state: "hidden" });
-    await hideWorkingTreeStatus(page);
-    await settle(page);
-    const shell = await page.locator(".chat-prompt-box").boundingBox();
-    if (!shell) throw new Error("Amp Orb composer has no bounding box");
-    const spec = specById.get("amp/orb-bar")!;
-    await writeCapture(page, spec, centeredClip(shell, spec, APP_VIEWPORT.height - spec.height));
-  } finally {
-    await orbContext.close();
-  }
-
-  const oracleContext = await createContext(browser);
-  try {
-    await mockAgentation(oracleContext, {});
-    await mockAmp(oracleContext, { oracle: true });
-    await mockThread(oracleContext, THREAD_CAPTURE_FIXTURES.oracle!);
-    const page = await createScreenshotPage(oracleContext, { fixedTime: FIXED_TIME });
-    const card = page.locator("details").filter({
-      hasText: "2 + 2 = 4. Starting at 2 and adding two units gives 3, then 4.",
-    });
-    await navigate(page, `/projects/${DEFAULT_PROJECT_ID}/threads/${ORACLE_THREAD_ID}`, card);
-    await card.evaluate((element) => element.scrollIntoView({ block: "center" }));
-    await settle(page);
-    const box = await card.boundingBox();
-    if (!box) throw new Error("Oracle result has no bounding box");
-    const spec = specById.get("amp/oracle-card")!;
-    await writeCapture(page, spec, {
-      x: Math.round(box.x + box.width / 2 - spec.width / 2),
-      y: Math.max(0, Math.round(box.y - 112)),
-      width: spec.width,
-      height: spec.height,
-    });
-  } finally {
-    await oracleContext.close();
-  }
-}
-
 async function showRightPanel(page: Page): Promise<void> {
   const show = page.getByRole("button", { name: /Show right panel/ });
   if (await show.count()) await show.click();
   await page.locator("#thread-detail-secondary-panel").waitFor({ state: "visible" });
 }
 
-async function captureGhStack(browser: Browser, writeCapture: WriteCapture): Promise<void> {
-  const newTabContext = await createContext(browser);
-  try {
-    await mockAgentation(newTabContext, {});
-    await mockThread(newTabContext, THREAD_CAPTURE_FIXTURES.stack!);
-    const page = await createScreenshotPage(newTabContext, { fixedTime: FIXED_TIME });
-    await navigate(
-      page,
-      `/projects/${STACK_PROJECT_ID}/threads/${STACK_THREAD_ID}`,
-      page.getByText("Stack submitted", { exact: true }),
-    );
-    await showRightPanel(page);
-    await page.getByRole("button", { name: /Open new tab/ }).click();
-    await page.getByPlaceholder("Search files").waitFor({ state: "visible" });
-    await settle(page);
-    const panel = await page.locator("#thread-detail-secondary-panel").boundingBox();
-    if (!panel) throw new Error("New tab panel has no bounding box");
-    const spec = specById.get("gh-stack/new-tab")!;
-    await writeCapture(page, spec, {
-      x: Math.round(panel.x + (panel.width - spec.width) / 2),
-      y: 0,
-      width: spec.width,
-      height: spec.height,
-    });
-  } finally {
-    await newTabContext.close();
-  }
-
-  const reportContext = await createContext(browser);
-  try {
-    await mockAgentation(reportContext, {});
-    await mockThread(reportContext, THREAD_CAPTURE_FIXTURES.stack!);
-    const page = await createScreenshotPage(reportContext, { fixedTime: FIXED_TIME });
-    const heading = page.getByText("Stack submitted", { exact: true });
-    await navigate(page, `/projects/${STACK_PROJECT_ID}/threads/${STACK_THREAD_ID}`, heading);
-    await heading.evaluate((element) => element.scrollIntoView({ block: "center" }));
-    await settle(page);
-    const box = await heading.boundingBox();
-    if (!box) throw new Error("Magic Stack report has no bounding box");
-    const spec = specById.get("gh-stack/magic-stack-report")!;
-    await writeCapture(page, spec, {
-      x: Math.round(box.x + box.width / 2 - spec.width / 2),
-      y: Math.min(APP_VIEWPORT.height - spec.height, Math.max(0, Math.round(box.y - 106))),
-      width: spec.width,
-      height: spec.height,
-    });
-  } finally {
-    await reportContext.close();
-  }
-
-  const resultContext = await createContext(browser);
-  try {
-    await mockAgentation(resultContext, {});
-    await mockStack(resultContext);
-    await mockThread(resultContext, THREAD_CAPTURE_FIXTURES.stack!);
-    const page = await createScreenshotPage(resultContext, { fixedTime: FIXED_TIME });
-    await navigate(
-      page,
-      `/projects/${STACK_PROJECT_ID}/threads/${STACK_THREAD_ID}`,
-      page.getByText("Stack submitted", { exact: true }),
-    );
-    await showRightPanel(page);
-    await page.getByText("GitHub Stack", { exact: true }).click();
-    await page.getByText("#29", { exact: true }).waitFor({ state: "visible" });
-    await settle(page);
-    const panel = await page.locator("#thread-detail-secondary-panel").boundingBox();
-    if (!panel) throw new Error("GitHub Stack result panel has no bounding box");
-    const spec = specById.get("gh-stack/magic-stack-result")!;
-    if (Math.round(panel.width) !== spec.width) {
-      throw new Error(`GitHub Stack panel is ${panel.width}px wide; expected ${spec.width}px`);
-    }
-    await writeCapture(page, spec, {
-      x: Math.round(panel.x),
-      y: 0,
-      width: spec.width,
-      height: spec.height,
-    });
-  } finally {
-    await resultContext.close();
-  }
-}
-
 async function captureMonokai(browser: Browser, writeCapture: WriteCapture): Promise<void> {
   const appContext = await createContext(browser);
   try {
     await mockAgentation(appContext, {});
-    await mockStack(appContext);
     await mockGtdSidebar(appContext);
     await mockThread(appContext, THREAD_CAPTURE_FIXTURES.stack!);
     const page = await createScreenshotPage(appContext, { fixedTime: FIXED_TIME });
@@ -1448,8 +1050,6 @@ async function captureMonokai(browser: Browser, writeCapture: WriteCapture): Pro
       page.getByText("Stack submitted", { exact: true }),
     );
     await showRightPanel(page);
-    await page.getByText("GitHub Stack", { exact: true }).click();
-    await page.getByText("#29", { exact: true }).waitFor({ state: "visible" });
     await assertSidebarNavigation(page);
     await settle(page);
     await writeCapture(page, specById.get("monokai/app")!);
@@ -1503,8 +1103,6 @@ async function captureGtdSidebar(browser: Browser, writeCapture: WriteCapture): 
 
 const captures: Record<string, (browser: Browser, writeCapture: WriteCapture) => Promise<void>> = {
   agentation: captureAgentation,
-  amp: captureAmp,
-  "gh-stack": captureGhStack,
   "gtd-sidebar": captureGtdSidebar,
   monokai: captureMonokai,
 };

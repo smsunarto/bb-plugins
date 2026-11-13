@@ -50,7 +50,6 @@
   },
   "dependencies": {
     "@bb-plugins/video-player": "workspace:*",
-    "@radix-ui/react-checkbox": "^1.3.7",
     "@radix-ui/react-slot": "^1.3.0",
     "@shaderfrog/glsl-parser": "^7.0.1",
     "three": "^0.186.1",

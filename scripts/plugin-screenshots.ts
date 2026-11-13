@@ -9,7 +9,7 @@
  * shared 1400×720 scene and captured at DPR 2 with Playwright.
  *
  *   bun run screenshots
- *   bun run screenshots --plugin gh-stack
+ *   bun run screenshots --plugin agentation
  *   bun run screenshots --output-dir /tmp/bb-plugin-heroes
  */
 import { existsSync } from "node:fs";
@@ -117,42 +117,6 @@ function agentation(): string {
     </div>`;
 }
 
-function amp(): string {
-  return `
-    <div class="composition amp-composition">
-      <figure class="capture amp-prompt">
-        ${media("amp", "orb-prompt.png", "capture-image", "A bb composer prompt starting with slash orb")}
-      </figure>
-      <figure class="capture amp-orb">
-        ${media("amp", "orb-bar.png", "capture-image", "An active Amp Orb session with its sync command")}
-      </figure>
-      <figure class="capture amp-oracle">
-        ${media("amp", "oracle-card.png", "capture-image", "An Oracle result card in a bb thread")}
-      </figure>
-      ${callout("amp-prompt-callout", "01", "Ask for an Orb")}
-      ${callout("amp-orb-callout", "02", "Track and sync the sandbox")}
-      ${callout("amp-oracle-callout", "03", "Bring in the Oracle")}
-    </div>`;
-}
-
-function ghStack(): string {
-  return `
-    <div class="composition stack-composition">
-      <figure class="capture stack-open">
-        ${media("gh-stack", "new-tab.png", "capture-image", "bb's New tab menu with GitHub Stack selected")}
-      </figure>
-      <figure class="capture stack-report">
-        ${media("gh-stack", "magic-stack-report.png", "capture-image", "An agent report describing a submitted pull request stack")}
-      </figure>
-      <figure class="capture stack-result">
-        ${media("gh-stack", "magic-stack-result.png", "capture-image", "Seven draft pull requests arranged as a stack")}
-      </figure>
-      ${callout("stack-open-callout", "01", "Open the thread panel")}
-      ${callout("stack-report-callout", "02", "Let Magic Stack split the change")}
-      ${callout("stack-result-callout", "03", "Review the complete stack")}
-    </div>`;
-}
-
 function monokai(): string {
   return `
     <div class="composition monokai-composition">
@@ -206,24 +170,6 @@ export const PLUGIN_SCREENSHOTS: readonly ScreenshotRecipe[] = [
     glow: "18% 20%",
     assets: ["capture.png", "staging.png"],
     content: agentation,
-  },
-  {
-    id: "amp",
-    name: "Amp",
-    descriptor: "LOCAL WHEN CLOSE · ORB WHEN FAR",
-    accent: "#F25B45",
-    glow: "12% 18%",
-    assets: ["orb-prompt.png", "orb-bar.png", "oracle-card.png"],
-    content: amp,
-  },
-  {
-    id: "gh-stack",
-    name: "GitHub Stack",
-    descriptor: "ONE CHANGE · REVIEWABLE LAYERS",
-    accent: "#A78BFA",
-    glow: "50% 14%",
-    assets: ["new-tab.png", "magic-stack-report.png", "magic-stack-result.png"],
-    content: ghStack,
   },
   {
     id: "gtd-sidebar",
@@ -296,19 +242,6 @@ const STYLES = String.raw`
   .annotation-staging { right: 94px; bottom: 61px; z-index: 4; width: 710px; height: 270px; }
   .annotation-capture-callout { left: 126px; top: 480px; }
   .annotation-staging-callout { right: 112px; bottom: 22px; }
-  .amp-prompt { left: 60px; top: 92px; width: 699px; height: 192px; }
-  .amp-orb { left: 793px; top: 92px; width: 547px; height: 192px; }
-  .amp-oracle { left: 265px; top: 350px; width: 870px; height: 314px; }
-  .amp-prompt .capture-image, .amp-orb .capture-image, .amp-oracle .capture-image { object-fit: contain; object-position: center; }
-  .amp-prompt-callout { left: 60px; top: 298px; }
-  .amp-orb-callout { left: 793px; top: 298px; }
-  .amp-oracle-callout { left: 265px; top: 677px; }
-
-  .stack-open { left: 38px; top: 200px; width: 496px; height: 300px; }.stack-report { left: 558px; top: 190px; width: 480px; height: 320px; }.stack-result { left: 1062px; top: 100px; width: 298px; height: 500px; }
-  .stack-open .capture-image, .stack-report .capture-image { object-position: top; }.stack-result .capture-image { object-fit: contain; object-position: top; }
-  .stack-open-callout, .stack-report-callout, .stack-result-callout { top: 626px; white-space: nowrap; transform: translateX(-50%); }
-  .stack-open-callout { left: 286px; }.stack-report-callout { left: 798px; }.stack-result-callout { left: 1211px; }
-
   .monokai-app { left: 188px; top: 80px; width: 907px; height: 600px; }.monokai-app .capture-image { object-fit: contain; }
   .palette-rail { position: absolute; z-index: 6; right: 52px; top: 188px; display: grid; gap: 7px; }.palette-rail span { display: grid; grid-template-columns: 8px 74px 62px; align-items: center; gap: 7px; padding: 7px 9px; border: 1px solid rgba(255,255,255,.08); border-radius: 7px; background: rgba(10,10,11,.82); color: rgba(227,227,221,.55); font: 600 7px/1 "Screenshot IBM Plex Mono", monospace; backdrop-filter: blur(12px); }.palette-rail span::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--swatch); box-shadow: 0 0 14px color-mix(in srgb, var(--swatch) 45%, transparent); }.palette-rail b { color: rgba(227,227,221,.86); font-size: 7px; letter-spacing: .08em; }
 

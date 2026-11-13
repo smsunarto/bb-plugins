@@ -26,26 +26,6 @@
       }
     },
     {
-      "id": "amp",
-      "displayName": "Amp",
-      "description": "Runs Amp locally or in an Orb as one bb provider through the plugin's own provider bridge, which spawns the Amp CLI directly.",
-      "icon": {
-        "url": "plugins/amp/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/amp",
-          "range": "*",
-          "tagPrefix": "amp/"
-        }
-      }
-    },
-    {
       "id": "devin",
       "displayName": "Devin",
       "description": "Runs Devin as a bb provider, on your machine or on a Devin Cloud VM, through the SDK's ACP bridge.",
@@ -62,26 +42,6 @@
           "subdir": "plugins/devin",
           "range": "*",
           "tagPrefix": "devin/"
-        }
-      }
-    },
-    {
-      "id": "gh-stack",
-      "displayName": "GitHub Stack",
-      "description": "Visualize and drive stacked pull requests (gh stack) from BB threads.",
-      "icon": {
-        "url": "plugins/gh-stack/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/gh-stack",
-          "range": "*",
-          "tagPrefix": "gh-stack/"
         }
       }
     },
@@ -182,26 +142,6 @@
           "subdir": "plugins/vimium",
           "range": "*",
           "tagPrefix": "vimium/"
-        }
-      }
-    },
-    {
-      "id": "whiteboard",
-      "displayName": "Whiteboard",
-      "description": "Agents author code walkthroughs, diagrams, and Diff lenses that render beside the thread.",
-      "icon": {
-        "url": "plugins/whiteboard/assets/icon.svg"
-      },
-      "author": {
-        "name": "Scott Sunarto",
-        "github": "smsunarto"
-      },
-      "source": {
-        "git": {
-          "url": "https://github.com/smsunarto/bb-plugins",
-          "subdir": "plugins/whiteboard",
-          "range": "*",
-          "tagPrefix": "whiteboard/"
         }
       }
     }

@@ -3,8 +3,8 @@
  * packages npm publishes. Tag-only plugins (private, listed in
  * marketplace.json) are released as tags and GitHub Releases only.
  *
- *   bun scripts/release-npm-paths.ts '["plugins/amp","plugins/source-control"]'
- *   → ["plugins/amp"]
+ *   bun scripts/release-npm-paths.ts '["plugins/agentation","plugins/source-control"]'
+ *   → ["plugins/agentation"]
  */
 import { fileURLToPath } from "node:url";
 import { npmPublishPaths } from "./plugin-package";

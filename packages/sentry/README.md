@@ -29,7 +29,7 @@ export default async function plugin(bb: BbPluginApi) {
 ```
 
 Call `reporter.capture({ boundary, operation, error })` from the handlers you want reported. See
-`plugins/amp/server.ts` for a complete example.
+`plugins/dotfiles/src/server/server.ts` for a complete example.
 
 The adapter sends a fixed exception message, sanitized stack frames, and controlled `bb.*` tags.
 It does not send callback input, raw error messages, user data, breadcrumbs, or request data.

@@ -17,7 +17,6 @@ const NOT_RELEASED = new Set([
   "plugins/traces",
   // Listed in the marketplace without a release tag today.
   "plugins/vimium",
-  "plugins/whiteboard",
 ]);
 
 interface PackageConfig {

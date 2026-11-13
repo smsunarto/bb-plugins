@@ -8,7 +8,7 @@
 
 ## Dev Preferences
 
-- Author plugins directly against `@get-bb/plugin-sdk`: `defineRpcContract` + `bb.rpc.register`, `cliCommand`/`defineCli` + `bb.cli.register`, `bb.agents.registerTool`, and `useRpc` with TanStack Query in the app. Read `plugins/html` for the reference layout. Workspace packages under `packages/` export source, never `dist/`.
+- Author plugins directly against `@get-bb/plugin-sdk`: `defineRpcContract` + `bb.rpc.register`, `cliCommand`/`defineCli` + `bb.cli.register`, `bb.agents.registerTool`, and `useRpc` with TanStack Query in the app. Read `plugins/source-control` for the reference layout. Workspace packages under `packages/` export source, never `dist/`.
 - If something can be done through bb-plugin, do it through bb-plugin. When the SDK has no slot or prop for it, a DOM hack that follows [DOM hacks](#dom-hacks) is allowed without asking; flag any other hacky approach to the user for approval first.
 - If an implementation is ONLY possible through modification of bb's core app, flag to the user for approval first. DO NOT start work on bb core app without explicit approval.
 - UI components: take Button, Input, Textarea, Card, Separator, Badge, and the `surface` edge classes from `@bb-plugins/ui`, re-exported from the plugin's `components/ui`. Add other shadcn components (https://ui.shadcn.com) from the `@bb` registry in the plugin's `components.json`; when `packages/ui/registry` holds the file, edit that copy and run `bun scripts/style-contract.ts --sync <plugin>`.

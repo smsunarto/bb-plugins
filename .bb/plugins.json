@@ -16,32 +16,12 @@
       "source": "./plugins/agent-instructions"
     },
     {
-      "name": "amp",
-      "source": "./plugins/amp"
-    },
-    {
-      "name": "boat-sandbox",
-      "source": "./plugins/boat-sandbox"
-    },
-    {
-      "name": "bots",
-      "source": "./plugins/bots"
-    },
-    {
       "name": "devin",
       "source": "./plugins/devin"
     },
     {
       "name": "dotfiles",
       "source": "./plugins/dotfiles"
-    },
-    {
-      "name": "gcp-machine",
-      "source": "./plugins/gcp-machine"
-    },
-    {
-      "name": "gh-stack",
-      "source": "./plugins/gh-stack"
     },
     {
       "name": "gtd-sidebar",
@@ -56,10 +36,6 @@
       "source": "./plugins/monokai"
     },
     {
-      "name": "neatlogs",
-      "source": "./plugins/neatlogs"
-    },
-    {
       "name": "usage-bar",
       "source": "./plugins/usage-bar"
     },
@@ -70,14 +46,6 @@
     {
       "name": "vimium",
       "source": "./plugins/vimium"
-    },
-    {
-      "name": "whiteboard",
-      "source": "./plugins/whiteboard"
-    },
-    {
-      "name": "magic-compose",
-      "source": "./plugins/magic-compose"
     },
     {
       "name": "slopcop",

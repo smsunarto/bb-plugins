@@ -12,16 +12,6 @@
 
 <picture><img src="docs/media/hero.png" alt="A staged overview of bb with the Monokai palette, GTD Sidebar, Agent Proxy, Agentation, and GitHub Stack" width="100%" /></picture>
 
-### Agent Providers
-
-<table>
-<tr>
-<td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/amp/assets/logo-dark.svg" /><img src="plugins/amp/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
-<td align="center"><a href="plugins/amp/"><b>Amp</b></a></td>
-<td>Runs <a href="https://ampcode.com">Amp</a> as a native bb provider, locally or in an Orb.</td>
-</tr>
-</table>
-
 ### Dev Productivity
 
 <table>
@@ -29,11 +19,6 @@
 <td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/agentation/assets/logo-dark.svg" /><img src="plugins/agentation/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
 <td align="center"><a href="plugins/agentation/"><b>Agentation</b></a></td>
 <td>Turns a click on any part of bb into a structured annotation an agent can act on.</td>
-</tr>
-<tr>
-<td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/gh-stack/assets/logo-dark.svg" /><img src="plugins/gh-stack/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
-<td align="center"><a href="plugins/gh-stack/"><b>GitHub Stack</b></a></td>
-<td>Drives a <code>gh stack</code> from the thread panel — build, sync, submit, merge — and can hand the split to your agent.</td>
 </tr>
 <tr>
 <td align="center" width="60"><picture><source media="(prefers-color-scheme: dark)" srcset="plugins/traces/assets/logo-dark.svg" /><img src="plugins/traces/assets/logo.svg" width="40" height="40" alt="" /></picture></td>
@@ -73,7 +58,7 @@ bb plugin install gtd-sidebar
 
 Adding a marketplace installs nothing — it caches the catalog, so these plugins
 become findable by name in `bb plugin search` and in bb's plugin browser. `<id>`
-is `agentation`, `amp`, `gh-stack`, `gtd-sidebar`, or `monokai`; if another
+is `agentation`, `gtd-sidebar`, or `monokai`; if another
 marketplace you have added publishes the same name, spell it
 `gtd-sidebar@smsunarto`.
 
@@ -120,8 +105,7 @@ CI checks the fingerprint, re-exports, and each consumer's built CSS.
 
 Release Please tracks plugin paths. A shared UI change must include a change under
 every consuming plugin path and release those consumers together: agent-instructions,
-agentation, code-review, dotfiles, gh-stack, gitbutler, gtd-sidebar, html, scott-docs,
-scott-tasks, and whiteboard. Private plugins use the same rebuild
+agentation, dotfiles, gtd-sidebar, scott-docs, and scott-tasks. Private plugins use the same rebuild
 step when installed from source.
 
 ## Test another BB build

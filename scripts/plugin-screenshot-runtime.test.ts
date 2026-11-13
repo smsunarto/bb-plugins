@@ -34,15 +34,15 @@ describe("plugin screenshot arguments", () => {
     expect(
       parseScreenshotArguments([
         "--plugin",
-        "amp",
-        "--plugin=amp",
+        "agentation",
+        "--plugin=agentation",
         "--plugin",
-        "gh-stack",
+        "monokai",
         "--output-dir",
         "/tmp/heroes",
       ]),
     ).toEqual({
-      plugins: ["amp", "gh-stack"],
+      plugins: ["agentation", "monokai"],
       outputDir: "/tmp/heroes",
       help: false,
       list: false,

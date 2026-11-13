@@ -24,36 +24,8 @@ const customIcons = new Map<string, { name: string; body: string; solid?: boolea
     },
   ],
   [
-    "amp",
-    {
-      name: "Amp",
-      body: '<path d="M15.914 4a1.5 1.5 0 0 0-2.474-1.561l-9 9A1.5 1.5 0 0 0 5.5 14h4.002a.5.5 0 0 1 .471.666L8.086 20a1.5 1.5 0 0 0 2.475 1.56l9-9A1.5 1.5 0 0 0 18.5 10h-3.997a.5.5 0 0 1-.472-.667z"/>',
-    },
-  ],
-  [
     "at-plugin",
     { name: "Installed Plugin Mentions", body: '<path d="M4 9h16M4 15h16M10 3L8 21m8-18l-2 18"/>' },
-  ],
-  [
-    "boat-sandbox",
-    {
-      name: "Boat Sandbox [Experimental]",
-      body: '<path d="M10 2v15m-3 5a4 4 0 0 1-4-4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1a4 4 0 0 1-4 4zM9.159 2.46a1 1 0 0 1 1.521-.193l9.977 8.98A1 1 0 0 1 20 13H4a1 1 0 0 1-.824-1.567z"/>',
-    },
-  ],
-  [
-    "bots",
-    {
-      name: "Bots",
-      body: '<path d="M12 4V2M9 13v1m6-1v1"/><path d="M4 12a8 8 0 0 1 8-8a8 8 0 0 1 8 8v4a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z"/><path d="M2 13v2m20-2v2"/>',
-    },
-  ],
-  [
-    "code-review",
-    {
-      name: "Review",
-      body: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/>',
-    },
   ],
   [
     "devin",
@@ -71,31 +43,10 @@ const customIcons = new Map<string, { name: string; body: string; solid?: boolea
     },
   ],
   [
-    "gcp-machine",
-    {
-      name: "GCP Machine",
-      body: '<rect width="20" height="8" x="2" y="2" rx="2" ry="2"/><rect width="20" height="8" x="2" y="14" rx="2" ry="2"/><path d="M6 6h.01M6 18h.01"/>',
-    },
-  ],
-  [
     "genui",
     {
       name: "Generative UI",
       body: '<rect width="20" height="16" x="2" y="4" rx="2"/><path d="M10 4v4M2 8h20M6 4v4"/>',
-    },
-  ],
-  [
-    "gh-stack",
-    {
-      name: "GitHub Stack",
-      body: '<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/>',
-    },
-  ],
-  [
-    "gitbutler",
-    {
-      name: "GitButler",
-      body: '<path d="M15 6a9 9 0 0 0-9 9V3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/>',
     },
   ],
   [
@@ -106,24 +57,10 @@ const customIcons = new Map<string, { name: string; body: string; solid?: boolea
     },
   ],
   [
-    "html",
-    {
-      name: "HTML visualizations",
-      body: '<path d="m18 16l4-4l-4-4M6 8l-4 4l4 4m8.5-12l-5 16"/>',
-    },
-  ],
-  [
     "kitchen-sink",
     {
       name: "Kitchen Sink",
       body: '<path d="M2 12h20m-2 0v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8m0-4l16-4M8.86 6.78l-.45-1.81a2 2 0 0 1 1.45-2.43l1.94-.48a2 2 0 0 1 2.43 1.46l.45 1.8"/>',
-    },
-  ],
-  [
-    "magic-compose",
-    {
-      name: "Magic Compose",
-      body: '<path d="m21.64 3.64l-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72M14 7l3 3M5 6v4m14 4v4M10 2v2M7 8H3m18 8h-4M11 3H9"/>',
     },
   ],
   [
@@ -152,13 +89,6 @@ const customIcons = new Map<string, { name: string; body: string; solid?: boolea
     {
       name: "SlopCop",
       body: '<path d="M7 18v-6a5 5 0 1 1 10 0v6M5 21a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-1a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2zm16-9h1m-3.5-7.5L18 5M2 12h1m9-10v1M4.929 4.929l.707.707M12 12v6"/>',
-    },
-  ],
-  [
-    "neatlogs",
-    {
-      name: "Neatlogs",
-      body: '<path d="M4 4v16h16"/><path d="M8 7h6M10 11h8M12 15h5"/>',
     },
   ],
   [
@@ -194,13 +124,6 @@ const customIcons = new Map<string, { name: string; body: string; solid?: boolea
     {
       name: "Vimium",
       body: '<path d="M10 8h.01M12 12h.01M14 8h.01M16 12h.01M18 8h.01M6 8h.01M7 16h10m-9-4h.01"/><rect width="20" height="16" x="2" y="4" rx="2"/>',
-    },
-  ],
-  [
-    "whiteboard",
-    {
-      name: "Whiteboard",
-      body: '<path d="M2 3h20m-1 0v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3m4 18l5-5l5 5"/>',
     },
   ],
 ]);
