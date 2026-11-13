@@ -59,13 +59,15 @@ function thread(id: string, environmentId: string | null, overrides: Partial<Thr
   };
 }
 
-/** environments.status for a clean branch 2 ahead and 1 behind its base, with uncommitted work. */
+/** Source Control's checkoutStatus for a branch 2 ahead and 1 behind its base, with uncommitted work. */
 function workspace(branch: string, overrides: Partial<WorkspaceEntry> = {}): WorkspaceEntry {
   return {
-    branch: { defaultBranch: "main" },
-    checkout: { kind: "branch", branchName: branch, headSha: "82af8f087df1cb963097461359446d9a69b36dc9" },
-    mergeBase: { aheadCount: 2, behindCount: 1, commits: [] },
-    workingTree: { files: [{}, {}], insertions: 12, deletions: 3, lineStatsComplete: true },
+    state: "read",
+    head: { kind: "branch", name: branch, sha: "82af8f087df1cb963097461359446d9a69b36dc9" },
+    defaultBranch: "main",
+    base: "main",
+    mergeBase: { ahead: 2, behind: 1, commits: [] },
+    uncommitted: { files: 2, additions: 12, deletions: 3 },
     ...overrides,
   };
 }
@@ -87,7 +89,7 @@ const PULL_REQUEST = {
 };
 
 /**
- * `bb.sdk.plugins.callRpc` for the Git and PR status plugins, answering from
+ * `bb.sdk.plugins.callRpc` for Source Control and the PR status plugin, answering from
  * `reads` and parsing each answer with the caller's schema as bb does.
  */
 function pluginReads(reads: Record<string, (input: never) => unknown>) {
@@ -101,7 +103,7 @@ function pluginReads(reads: Record<string, (input: never) => unknown>) {
 }
 
 /** A BB with two projects: proj_a (the reply's) and proj_b (someone else's). */
-function fakeBb(options: { status?: (environmentId: string, base: string | undefined) => unknown } = {}) {
+function fakeBb(options: { status?: (environmentId: string, base: string | null) => unknown } = {}) {
   const calls: { method: string; args: unknown }[] = [];
   const environments: Record<string, EnvironmentEntry> = {
     env_main: environment("env_main", { isWorktree: false, branchName: "main", path: "/work/app" }),
@@ -150,12 +152,12 @@ function fakeBb(options: { status?: (environmentId: string, base: string | undef
       },
     },
     plugins: pluginReads({
-      "bb--git.workspaceStatus": (args: { environmentId: string; mergeBaseBranch?: string }) => {
-        calls.push({ method: "git.workspaceStatus", args });
-        const custom = options.status?.(args.environmentId, args.mergeBaseBranch);
+      "source-control.checkoutStatus": (args: { environmentId: string; base: string | null }) => {
+        calls.push({ method: "checkoutStatus", args });
+        const custom = options.status?.(args.environmentId, args.base);
         if (custom !== undefined) return custom;
         const branch = environments[args.environmentId]?.branchName ?? "main";
-        return { outcome: "available", workspace: workspace(branch) };
+        return { ok: true, value: workspace(branch) };
       },
       "bb--github-pr-status.pullRequests": ({ keys }: { keys: string[] }) => {
         calls.push({ method: "pullRequests", args: { environmentId: keys[0] } });
@@ -244,7 +246,7 @@ describe("environments: one environment's detail", () => {
     expect(await source.environment("thr_mine00", "env_nope")).toMatchObject({ ok: false, reason: "not-found" });
     expect(await source.environment("thr_mine00", "x")).toMatchObject({ ok: false, reason: "invalid" });
     expect(await source.environment("thr_nobody", "env_wt01")).toMatchObject({ ok: false, reason: "not-found" });
-    expect(calls.some((call) => call.method === "git.workspaceStatus")).toBe(false);
+    expect(calls.some((call) => call.method === "checkoutStatus")).toBe(false);
   });
 
   it("reads a worktree's status against its base and its pull request", async () => {
@@ -263,7 +265,7 @@ describe("environments: one environment's detail", () => {
       uncommitted: { files: 2, additions: 12, deletions: 3, complete: true },
     });
     expect(detail.pull).toMatchObject({ ok: true, pullRequest: { number: 424, state: "draft", checks: { state: "failing", failed: 1, passed: 3 } } });
-    expect(calls.find((call) => call.method === "git.workspaceStatus")?.args).toEqual({ environmentId: "env_wt01", mergeBaseBranch: "main" });
+    expect(calls.find((call) => call.method === "checkoutStatus")?.args).toEqual({ environmentId: "env_wt01", base: "main" });
   });
 
   it("doesn't look for a pull request on the default branch", async () => {
@@ -276,10 +278,7 @@ describe("environments: one environment's detail", () => {
 
   it("says a missing workspace folder honestly", async () => {
     const { source } = fakeBb({
-      status: () => ({
-        outcome: "unavailable",
-        failure: { code: "path_not_found", workspacePath: "/work/env_wt01", message: "Unmanaged workspace path does not exist: /work/env_wt01" },
-      }),
+      status: () => ({ ok: true, value: { state: "missing" } }),
     });
     const detail = (await source.environment("thr_mine00", "env_wt01")) as EnvironmentDetail;
     expect(detail.checkout).toEqual({ ok: false, reason: "missing", message: "Workspace folder is gone", path: "/work/env_wt01" });
@@ -290,14 +289,14 @@ describe("environments: one environment's detail", () => {
     const { source, calls } = fakeBb();
     const detail = (await source.environment("thr_mine00", "env_gone")) as EnvironmentDetail;
     expect(detail.checkout).toMatchObject({ ok: false, reason: "gone" });
-    expect(calls.some((call) => call.method === "git.workspaceStatus")).toBe(false);
+    expect(calls.some((call) => call.method === "checkoutStatus")).toBe(false);
   });
 
-  it("asks again with the default branch when BB has none recorded", async () => {
+  it("lets Source Control pick the default branch when BB has none recorded", async () => {
     const { source, calls } = fakeBbWithoutBase();
     const detail = (await source.environment("thr_mine00", "env_wt01")) as EnvironmentDetail;
     expect(detail.checkout).toMatchObject({ ok: true, base: "main" });
-    expect(calls.map((call) => call.args)).toEqual([{ environmentId: "env_wt01" }, { environmentId: "env_wt01", mergeBaseBranch: "main" }]);
+    expect(calls.map((call) => call.args)).toEqual([{ environmentId: "env_wt01", base: null }]);
     expect(detail.pull).toEqual({ ok: true, pullRequest: null });
   });
 });
@@ -311,9 +310,9 @@ function fakeBbWithoutBase() {
       get: async () => environment("env_wt01", { defaultBranch: null }),
     },
     plugins: pluginReads({
-      "bb--git.workspaceStatus": (args: unknown) => {
-        calls.push({ method: "git.workspaceStatus", args });
-        return { outcome: "available", workspace: workspace("wt/env_wt01") };
+      "source-control.checkoutStatus": (args: unknown) => {
+        calls.push({ method: "checkoutStatus", args });
+        return { ok: true, value: workspace("wt/env_wt01") };
       },
       "bb--github-pr-status.pullRequests": ({ keys }: { keys: string[] }) => ({ [keys[0]!]: { outcome: "absent" } }),
     }),
@@ -347,23 +346,20 @@ describe("environments: mapping BB's records", () => {
   });
 
   it("maps every way status can fail", () => {
-    expect(checkoutFailure({ outcome: "not_applicable", message: "x" })).toMatchObject({ reason: "not-git" });
-    const failed = (code: string) => checkoutFailure({ outcome: "unavailable", failure: { code, message: `${code} message`, workspacePath: "/w" } });
-    expect(failed("path_not_found")).toEqual({ ok: false, reason: "missing", message: "Workspace folder is gone", path: "/w" });
-    expect(failed("not_git_repo")).toMatchObject({ reason: "not-git" });
-    expect(failed("workspace_type_mismatch")).toMatchObject({ reason: "not-git" });
-    expect(failed("unknown_environment")).toMatchObject({ reason: "gone" });
-    expect(failed("permission_denied")).toEqual({ ok: false, reason: "unavailable", message: "permission_denied message", path: "/w" });
+    expect(checkoutFailure({ kind: "host-offline", host: "laptop" }, "/w")).toEqual({ ok: false, reason: "unavailable", message: "laptop is offline", path: "/w" });
+    expect(checkoutFailure({ kind: "moved", detail: "gone" }, "/w")).toMatchObject({ reason: "gone" });
+    expect(checkoutFailure({ kind: "tool-missing", host: "laptop" }, "/w")).toMatchObject({ reason: "unavailable", message: "git isn't installed on laptop" });
+    expect(checkoutFailure({ kind: "failed", detail: "permission denied" }, "/w")).toEqual({ ok: false, reason: "unavailable", message: "permission denied", path: "/w" });
   });
 
   it("reads detached and unborn checkouts", () => {
-    expect(checkoutStatus(workspace("x", { checkout: { kind: "detached", headSha: "abcdef0123" } }), "main")).toMatchObject({
+    expect(checkoutStatus(workspace("x", { head: { kind: "detached", sha: "abcdef0123" } }), "main")).toMatchObject({
       branch: null,
       checkout: "detached",
       head: "abcdef0",
       onBase: false,
     });
-    expect(checkoutStatus(workspace("x", { checkout: { kind: "unborn", branchName: "main" }, mergeBase: null }), "main")).toMatchObject({
+    expect(checkoutStatus(workspace("x", { head: { kind: "unborn", name: "main" }, mergeBase: null }), "main")).toMatchObject({
       branch: "main",
       checkout: "unborn",
       head: null,

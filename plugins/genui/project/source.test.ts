@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ChangesView } from "../core/project";
 import { fitChanges, snapshotKey } from "./snapshots";
-import { createProjectSource, diffQuery, outcomeFailure } from "./source";
+import { createProjectSource, diffQuery, problemFailure } from "./source";
 
 type Fake = Record<string, Record<string, (args: never) => unknown>>;
 
 /**
- * `bb.sdk.plugins.callRpc` for the Git and PR status plugins, answering from
+ * `bb.sdk.plugins.callRpc` for Source Control and the PR status plugin, answering from
  * `reads` and parsing each answer with the caller's schema as bb does.
  */
 function pluginReads(reads: Record<string, (input: never) => unknown>) {
@@ -58,9 +58,9 @@ function fakeBb(overrides: Fake = {}) {
   };
   let now = 1;
   const files = [
-    { path: "src/a.ts", previousPath: null, changeKind: "modified", additions: 3, deletions: 1, binary: false, loadMode: "auto", origin: "tracked", revision: "r-a" },
-    { path: "src/b.ts", previousPath: "old/b.ts", changeKind: "renamed", additions: 0, deletions: 0, binary: false, loadMode: "on_demand", origin: "tracked", revision: "r-b" },
-    { path: "logo.png", previousPath: null, changeKind: "added", additions: 0, deletions: 0, binary: true, loadMode: "auto", origin: "untracked", revision: "r-logo" },
+    { path: "src/a.ts", previousPath: null, kind: "modified", additions: 3, deletions: 1, binary: false, untracked: false },
+    { path: "src/b.ts", previousPath: "old/b.ts", kind: "renamed", additions: 0, deletions: 0, binary: false, untracked: false },
+    { path: "logo.png", previousPath: null, kind: "added", additions: 0, deletions: 0, binary: true, untracked: true },
   ];
   const sdk = {
     threads: {
@@ -98,39 +98,36 @@ function fakeBb(overrides: Fake = {}) {
       get: async () => ({ isGitRepo: true, mergeBaseBranch: null, defaultBranch: "main", branchName: "feat" }),
     },
     plugins: pluginReads({
-      "bb--git.workspaceStatus": (args: unknown) => {
-        calls.push({ method: "workspaceStatus", args });
+      "source-control.checkoutStatus": (args: unknown) => {
+        calls.push({ method: "checkoutStatus", args });
         return {
-          outcome: "available",
-          workspace: {
-            branch: { currentBranch: "feat", defaultBranch: "main" },
-            checkout: { kind: "branch", branchName: "feat", headSha: "f".repeat(40) },
-            workingTree: { files: [], insertions: 0, deletions: 0, lineStatsComplete: true },
-            mergeBase: { aheadCount: 1, behindCount: 2, commits: [{ sha: "abc1234def", shortSha: "abc1234", subject: "Fix", authorName: "Ana", authoredAt: 5 }] },
+          ok: true,
+          value: {
+            state: "read",
+            head: { kind: "branch", name: "feat", sha: "f".repeat(40) },
+            defaultBranch: "main",
+            base: "main",
+            uncommitted: { files: 0, additions: 0, deletions: 0 },
+            mergeBase: { ahead: 1, behind: 2, commits: [{ sha: "abc1234def", subject: "Fix", author: "Ana", authoredAt: 5 }] },
           },
         };
       },
-      "bb--git.files": (args: unknown) => {
+      "source-control.checkoutFiles": (args: unknown) => {
         calls.push({ method: "files", args });
         // Each read sees a newer state, so a kept snapshot is told apart from a fresh read.
         now += 1;
         return {
-          outcome: "available",
-          files: files.map((file) => ({ ...file, additions: file.additions * now })),
-          initialPatches: [{ path: "src/a.ts", patch: "@@ -1 +1 @@\n-a\n+b", truncated: false }],
-          truncated: false,
-          mergeBaseRef: "m",
-          shortstat: "",
+          ok: true,
+          value: {
+            files: files.map((file) => ({ ...file, additions: file.additions * now })),
+            patches: [{ path: "src/a.ts", kind: "modified", previousPath: null, patch: "@@ -1 +1 @@\n-a\n+b", truncated: false }],
+            truncated: false,
+          },
         };
       },
-      "bb--git.patches": (args: { keys: string[] }) => {
+      "source-control.checkoutPatches": (args: { files: { path: string }[] }) => {
         calls.push({ method: "patches", args });
-        return Object.fromEntries(
-          args.keys.map((key) => {
-            const path = (JSON.parse(key) as unknown[])[3] as string;
-            return [key, { outcome: "available", patch: { path, patch: `@@ ${path}`, truncated: false } }];
-          }),
-        );
+        return { ok: true, value: { patches: args.files.map(({ path }) => ({ path, patch: `@@ ${path}`, truncated: false })) } };
       },
       "bb--github-pr-status.pullRequests": ({ keys }: { keys: string[] }) => ({ [keys[0]!]: { outcome: "absent" } }),
     }),
@@ -163,7 +160,7 @@ describe("Changes", () => {
   it("compares the branch with the default branch, all changes included", async () => {
     const { source, calls } = fakeBb();
     const view = await source.changes("thr_mine00", { kind: "branch" }, null, null);
-    expect(calls.find((call) => call.method === "files")?.args).toMatchObject({ target: { type: "all", mergeBaseBranch: "main" } });
+    expect(calls.find((call) => call.method === "files")?.args).toMatchObject({ target: { kind: "branch", base: "main" } });
     expect(view).toMatchObject({ ok: true, scope: { kind: "branch", branch: "feat", base: "main", onBase: false }, stored: false });
     if (!view.ok) return;
     expect(view.files.map((file) => [file.path, file.diff])).toEqual([
@@ -204,10 +201,9 @@ describe("Changes", () => {
   it("says why there is nothing to show", async () => {
     expect(await fakeBb().source.changes("thr_nobody", { kind: "branch" }, null, null)).toMatchObject({ ok: false, reason: "not-found" });
     expect(await fakeBb().source.changes("../etc", { kind: "branch" }, null, null)).toMatchObject({ ok: false, reason: "invalid" });
-    expect(outcomeFailure({ outcome: "not_applicable", message: "x" })).toMatchObject({ reason: "not-git" });
-    expect(
-      outcomeFailure({ outcome: "unavailable", failure: { code: "path_not_found", message: "Workspace path does not exist" } }),
-    ).toEqual({ ok: false, reason: "unavailable", message: "Workspace path does not exist" });
+    expect(problemFailure({ kind: "host-offline", host: "laptop" })).toEqual({ ok: false, reason: "unavailable", message: "laptop is offline" });
+    expect(problemFailure({ kind: "moved", detail: "This thread's environment is creating." })).toMatchObject({ reason: "no-environment" });
+    expect(problemFailure({ kind: "failed", detail: "git failed." })).toEqual({ ok: false, reason: "unavailable", message: "git failed." });
   });
 
   it("refuses patch paths that leave the repository", async () => {
@@ -221,15 +217,18 @@ describe("Changes", () => {
 
 describe("diff queries", () => {
   it("asks only for uncommitted work on the default branch itself and on an unborn branch", () => {
-    expect(diffQuery({ kind: "branch" }, { kind: "branch", branchName: "main", headSha: null }, "main", [])).toMatchObject({
-      query: { target: "uncommitted" },
+    expect(diffQuery({ kind: "branch" }, { kind: "branch", name: "main", sha: "f".repeat(40) }, "main", [])).toMatchObject({
+      query: { kind: "uncommitted" },
       scope: { onBase: true },
     });
-    expect(diffQuery({ kind: "branch" }, { kind: "unborn", branchName: "main" }, "main", [])).toMatchObject({
-      query: { target: "uncommitted" },
+    expect(diffQuery({ kind: "branch" }, { kind: "unborn", name: "main" }, "main", [])).toMatchObject({
+      query: { kind: "uncommitted" },
       scope: { kind: "uncommitted", unborn: true },
     });
-    expect(diffQuery({ kind: "branch" }, { kind: "unknown", reason: "rebase in progress" }, "main", [])).toMatchObject({ ok: false });
+    expect(diffQuery({ kind: "branch" }, { kind: "detached", sha: "abcdef1234" }, "main", [])).toMatchObject({
+      query: { kind: "branch", base: "main" },
+      scope: { kind: "branch", branch: null, head: "abcdef1" },
+    });
   });
 });
 

@@ -20,8 +20,8 @@ import {
   type EnvironmentThread,
 } from "../core/environments";
 import { RUNNING, THREAD_ID, type EnvironmentsResult, type ProjectFailure, type ThreadDisplayStatus } from "../core/project";
-import { pullRequest, workspaceStatus, type GitWorkspace } from "./bb-git";
-import { pullRequestInfo } from "./source";
+import { checkoutStatus as readCheckoutStatus, pullRequest, type CheckoutProblem, type CheckoutRead } from "./checkout";
+import { branchOf, pullRequestInfo } from "./source";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -66,13 +66,8 @@ export interface ThreadEntry {
   readonly updatedAt: number;
 }
 
-/** The workspace Environments reads, as the Git plugin reports it. */
-export type WorkspaceEntry = GitWorkspace;
-
-/** workspaceStatus when it couldn't read the checkout. */
-export type UnreadStatus =
-  | { readonly outcome: "not_applicable"; readonly message: string }
-  | { readonly outcome: "unavailable"; readonly failure: { readonly code: string; readonly message: string; readonly workspacePath: string } };
+/** The checkout Environments reads, as Source Control reports it. */
+export type WorkspaceEntry = CheckoutRead;
 
 /** Most threads of the project read for the list. */
 export const MAX_PROJECT_THREADS = 1000;
@@ -216,41 +211,39 @@ function unread(reason: CheckoutFailure["reason"], message: string, path: string
   return { ok: false, reason, message, path };
 }
 
-/** BB's answer for a checkout it couldn't read, as Environments says it. */
-export function checkoutFailure(answer: UnreadStatus): CheckoutFailure {
-  if (answer.outcome === "not_applicable") return unread("not-git", "Not a git checkout");
-  switch (answer.failure.code) {
-    case "path_not_found":
-      return unread("missing", "Workspace folder is gone", answer.failure.workspacePath);
-    case "not_git_repo":
-    case "workspace_type_mismatch":
-      return unread("not-git", "Not a git checkout");
-    case "unknown_environment":
-      return unread("gone", "BB no longer knows this environment");
+/** Why Source Control couldn't read the checkout, as Environments says it. */
+export function checkoutFailure(problem: CheckoutProblem, path: string | null): CheckoutFailure {
+  switch (problem.kind) {
+    case "host-offline":
+      return unread("unavailable", `${problem.host ?? "Its machine"} is offline`, path);
+    case "moved":
+      return unread("gone", problem.detail ?? "BB no longer knows this environment");
+    case "tool-missing":
+      return unread("unavailable", `git isn't installed on ${problem.host ?? "its machine"}`, path);
     default:
-      return unread("unavailable", answer.failure.message, answer.failure.workspacePath);
+      return unread("unavailable", problem.detail ?? "Source Control couldn't read the checkout", path);
   }
 }
 
 /** workspaceStatus as Environments shows it, measured against `base`. */
 export function checkoutStatus(workspace: WorkspaceEntry, base: string): CheckoutStatus {
-  const checkout = workspace.checkout;
-  const branch = checkout.kind === "branch" ? checkout.branchName : checkout.kind === "unborn" ? checkout.branchName : null;
-  const head = checkout.kind === "branch" || checkout.kind === "detached" ? (checkout.headSha?.slice(0, 7) ?? null) : null;
+  const checkout = workspace.head;
+  const branch = branchOf(checkout);
+  const head = checkout.kind === "unborn" ? null : checkout.sha.slice(0, 7);
   const onBase = branch === base;
   const mergeBase = onBase ? null : workspace.mergeBase;
-  const tree = workspace.workingTree;
+  const tree = workspace.uncommitted;
   return {
     ok: true,
     branch,
     checkout: checkout.kind,
     head,
-    defaultBranch: workspace.branch.defaultBranch,
+    defaultBranch: workspace.defaultBranch ?? base,
     base,
     onBase,
-    ahead: mergeBase?.aheadCount ?? null,
-    behind: mergeBase?.behindCount ?? null,
-    uncommitted: { files: tree.files.length, additions: tree.insertions, deletions: tree.deletions, complete: tree.lineStatsComplete },
+    ahead: mergeBase?.ahead ?? null,
+    behind: mergeBase?.behind ?? null,
+    uncommitted: { files: tree.files, additions: tree.additions, deletions: tree.deletions, complete: true },
   };
 }
 
@@ -294,15 +287,13 @@ export function createEnvironmentsSource(sdk: Sdk): EnvironmentsSource {
     if (life === "host-gone") return { checkout: unread("unavailable", "The machine it was on was removed"), pull: null };
     if (!environment.isGitRepo) return { checkout: unread("not-git", "Not a git checkout"), pull: null };
     const environmentId = environment.id;
-    let base = environment.mergeBaseBranch ?? environment.defaultBranch;
-    let status = await workspaceStatus(sdk, environmentId, base);
-    if (status.outcome !== "available") return { checkout: checkoutFailure(status), pull: null };
-    if (base === null) {
-      base = status.workspace.branch.defaultBranch;
-      status = await workspaceStatus(sdk, environmentId, base);
-      if (status.outcome !== "available") return { checkout: checkoutFailure(status), pull: null };
-    }
-    const checkout = checkoutStatus(status.workspace, base);
+    const answer = await readCheckoutStatus(sdk, environmentId, environment.mergeBaseBranch ?? environment.defaultBranch);
+    if (!answer.ok) return { checkout: checkoutFailure(answer.problem, environment.path), pull: null };
+    const status = answer.value;
+    if (status.state === "missing") return { checkout: unread("missing", "Workspace folder is gone", environment.path), pull: null };
+    if (status.state === "not-git") return { checkout: unread("not-git", "Not a git checkout"), pull: null };
+    if (status.base === null) return { checkout: unread("unavailable", "No default branch to compare with", environment.path), pull: null };
+    const checkout = checkoutStatus(status, status.base);
     // Only a branch of its own has a pull request: not the default branch, its base, or a detached HEAD.
     if (checkout.checkout !== "branch" || checkout.onBase || checkout.branch === checkout.defaultBranch) return { checkout, pull: null };
     return { checkout, pull: await readPull(environmentId) };
