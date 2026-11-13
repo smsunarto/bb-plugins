@@ -420,6 +420,46 @@
   display: none;
 }
 
+/* BB stacks banner cards on the composer: plugin prompt banners and its own
+   Parent thread, Child threads, and status banners. Each draws a 1px
+   border-border edge and a 1px divider over its expanded body, and an active
+   banner's toggle adds a 1px ring inside the card's edge. Give the cards and
+   dividers the card's and tray's 0.5px hairline, and let the card own its
+   edge. */
+[data-promptbox-shell] {
+  --t3-composer-hairline: color-mix(in srgb, var(--foreground) 8%, var(--background));
+}
+
+.dark [data-promptbox-shell] {
+  --t3-composer-hairline: color-mix(in srgb, var(--foreground) 18%, var(--background));
+}
+
+[data-promptbox-shell] section.rounded-lg.border-border {
+  border-width: 0;
+  box-shadow: 0 0 0 0.5px var(--t3-composer-hairline);
+}
+
+/* The queue card tucked under the composer keeps its shadow-lift: Tailwind
+   composes the ring into the same box-shadow. */
+[data-promptbox-shell] section.rounded-b-none.border-border {
+  border-width: 0;
+  --tw-ring-shadow: 0 0 0 0.5px var(--t3-composer-hairline);
+}
+
+[data-promptbox-shell] button[id^="thread-prompt-banner-"].ring-1 {
+  box-shadow: none;
+}
+
+/* Chrome rounds a 0.5px border up to 1px, and the body's opaque fill covers an
+   inset shadow on the body itself, so the expanded toggle draws the divider. */
+[data-promptbox-shell] section[id^="thread-prompt-banner-"].border-border {
+  border-top-width: 0;
+}
+
+[data-promptbox-shell] button[id^="thread-prompt-banner-"][aria-expanded="true"] {
+  box-shadow: inset 0 -0.5px 0 var(--t3-composer-hairline);
+}
+
 /* Hide BB's copy only once the card's picker has rendered. While BB disables its
    copy (plan mode, a permission snapshot, a pending question), BB's copy shows
    the effective mode, so it stays and the card's picker is hidden instead. */
