@@ -2,7 +2,8 @@
  *
  * Existing drift is frozen in style-baseline.json and may only shrink. A new
  * plugin starts with no entries, so it must follow the contract from its first
- * commit. Run `bun scripts/style-contract.ts --update` after fixing drift.
+ * commit. After fixing drift, run `bun scripts/style-contract.ts --update
+ * plugins/<id>`; a bare `--update` rewrites every entry from this checkout.
  *
  * packages/ui/registry holds the canonical copy of each shadcn kit file that
  * plugins vendor under components/ui (Tailwind scans only the plugin's own
@@ -248,7 +249,7 @@ export function fixFor(rule: string): string {
 export const baselinePath = new URL("./style-baseline.json", import.meta.url);
 export const readBaseline = (): Entry[] => JSON.parse(readFileSync(baselinePath, "utf8"));
 
-function toBaseline(found: readonly Violation[]): Entry[] {
+function toBaseline(found: readonly Entry[]): Entry[] {
   return found
     .map(({ file, rule, source }) => ({ file, rule, source }))
     .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
@@ -288,9 +289,16 @@ if (import.meta.main) {
     process.exit(0);
   }
   const found = scanRepository();
-  if (process.argv.includes("--update")) {
-    writeFileSync(baselinePath, JSON.stringify(toBaseline(found), null, 2) + "\n");
-    console.log(`Recorded ${found.length} existing style-contract entries.`);
+  const updateIndex = process.argv.indexOf("--update");
+  if (updateIndex !== -1) {
+    // `--update plugins/<id>` refreshes one plugin's entries and keeps the rest,
+    // including entries from branches this checkout does not have.
+    const prefix = process.argv[updateIndex + 1]?.replace(/\/?$/, "/");
+    const kept = prefix ? readBaseline().filter((entry) => !entry.file.startsWith(prefix)) : [];
+    const fresh = prefix ? found.filter((v) => v.file.startsWith(prefix)) : found;
+    const entries = toBaseline([...kept, ...fresh]);
+    writeFileSync(baselinePath, JSON.stringify(entries, null, 2) + "\n");
+    console.log(`Recorded ${entries.length} style-contract entries.`);
   } else {
     const added = unrecorded(found, readBaseline());
     const resolved = unrecorded(readBaseline(), found).length;
@@ -306,7 +314,9 @@ if (import.meta.main) {
         console.log(`${String(count).padStart(5)} ${plugin}`);
     console.log(`${found.length - added.length} known; ${added.length} new; ${resolved} resolved.`);
     if (resolved)
-      console.log("Prune resolved entries with bun scripts/style-contract.ts --update.");
+      console.log(
+        "Prune a plugin's resolved entries with bun scripts/style-contract.ts --update plugins/<id>.",
+      );
     process.exit(added.length ? 1 : 0);
   }
 }
