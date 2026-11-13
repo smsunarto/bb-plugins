@@ -32,68 +32,8 @@
   {
     "filename": "plugins/agentation/components/staged-annotations-action.tsx",
     "code": "unicorn(prefer-array-flat-map)",
-    "message": "Prefer a single `.flatMap(…)` over `.filter(…).flatMap(…)`.",
+    "message": "Prefer a single `.flatMap(\u2026)` over `.filter(\u2026).flatMap(\u2026)`.",
     "source": ".flatMap((item) => [{ provider: ANNOTATION_MENTION_PROVIDER, ...item }, \" \"]);"
-  },
-  {
-    "filename": "plugins/amp/src/oracle-report-cache.ts",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "latest.current = state;"
-  },
-  {
-    "filename": "plugins/amp/src/thread-changes.ts",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "latest.current = { matches, onChange };"
-  },
-  {
-    "filename": "plugins/code-review/src/app/changes.tsx",
-    "code": "react(preserve-manual-memoization)",
-    "message": "Existing memoization could not be preserved",
-    "source": "[scroller, list],"
-  },
-  {
-    "filename": "plugins/code-review/src/app/changes.tsx",
-    "code": "react(preserve-manual-memoization)",
-    "message": "Existing memoization could not be preserved",
-    "source": "[scroller, list],"
-  },
-  {
-    "filename": "plugins/code-review/src/app/changes.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "if (Date.now() - pending.at <= REVEAL_TTL_MS) setClaimed(pending);"
-  },
-  {
-    "filename": "plugins/code-review/src/app/diff-file.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "if (focus && file.patch) setChosen(\"diff\");"
-  },
-  {
-    "filename": "plugins/code-review/src/app/diff-file.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "setNear(true);"
-  },
-  {
-    "filename": "plugins/code-review/src/app/diff-file.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "setSelected({ start: focus.line, end: focus.line, side, endSide: side });"
-  },
-  {
-    "filename": "plugins/code-review/src/app/previews/model-diff.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "layoutRef.current = layout;"
-  },
-  {
-    "filename": "plugins/code-review/test/diff-file.test.tsx",
-    "code": "react(globals)",
-    "message": "Cannot reassign variables declared outside of the component/hook",
-    "source": "show = setShown;"
   },
   {
     "filename": "plugins/devin/src/app/app.tsx",
@@ -112,72 +52,6 @@
     "code": "react(refs)",
     "message": "Cannot access refs during render",
     "source": "dirty: draftRef.current !== savedRef.current,"
-  },
-  {
-    "filename": "plugins/gh-stack/app.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "latestSettings.current = settings;"
-  },
-  {
-    "filename": "plugins/gh-stack/app.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "if (open) setMethod(\"squash\");"
-  },
-  {
-    "filename": "plugins/gh-stack/app.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "setDraftIntents((current) => {"
-  },
-  {
-    "filename": "plugins/gh-stack/app.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "setDraftIntents((current) => {"
-  },
-  {
-    "filename": "plugins/gh-stack/app.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "void refresh();"
-  },
-  {
-    "filename": "plugins/gitbutler/src/app/app.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "chooseRepository(undefined);"
-  },
-  {
-    "filename": "plugins/gitbutler/src/app/board-context.tsx",
-    "code": "react(preserve-manual-memoization)",
-    "message": "Existing memoization could not be preserved",
-    "source": "[root, settle],"
-  },
-  {
-    "filename": "plugins/gitbutler/src/app/board-context.tsx",
-    "code": "react(preserve-manual-memoization)",
-    "message": "Existing memoization could not be preserved",
-    "source": "}, [root]);"
-  },
-  {
-    "filename": "plugins/gitbutler/src/app/branch-actions.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "if (refocus !== \"idle\") setRefocus(\"idle\");"
-  },
-  {
-    "filename": "plugins/gitbutler/src/host/host.ts",
-    "code": "eslint(no-unused-vars)",
-    "message": "Variable 'expectedUrl' is declared but never used. Unused variables should start with a '_'.",
-    "source": "const { branch, action, expectedUrl, expectedHeadOid } = input;"
-  },
-  {
-    "filename": "plugins/gitbutler/test/app.test.tsx",
-    "code": "eslint(no-setter-return)",
-    "message": "Setter cannot return a value",
-    "source": "set: (value: number) => void scrolls.push(value),"
   },
   {
     "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
@@ -226,84 +100,6 @@
     "code": "react(purity)",
     "message": "Cannot call impure function during render",
     "source": "{ onClick: () => lifecycle.snooze(\"t\", Date.now() + 60_000) },"
-  },
-  {
-    "filename": "plugins/html/src/app/app.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "setState({ status: \"loading\" });"
-  },
-  {
-    "filename": "plugins/magic-compose/components/ui/icon.tsx",
-    "code": "react(jsx-no-constructed-context-values)",
-    "message": "The Context `value` prop should not be constructed.",
-    "source": "<IconAncestors.Provider value={[...ancestors, resolved]}>"
-  },
-  {
-    "filename": "plugins/magic-compose/lib/live-fill.ts",
-    "code": "unicorn(no-useless-spread)",
-    "message": "Using a spread operator here creates a new array unnecessarily.",
-    "source": "for (const listener of [...listeners]) listener();"
-  },
-  {
-    "filename": "plugins/magic-compose/lib/router.test.ts",
-    "code": "eslint(no-unused-vars)",
-    "message": "Parameter 'options' is declared but never used. Unused parameters should start with a '_'.",
-    "source": "const fake = jev((key, options) => {"
-  },
-  {
-    "filename": "plugins/magic-compose/lib/session.ts",
-    "code": "unicorn(no-useless-spread)",
-    "message": "Using a spread operator here creates a new array unnecessarily.",
-    "source": "for (const listener of [...castListeners]) listener();"
-  },
-  {
-    "filename": "plugins/magic-compose/server.ts",
-    "code": "unicorn(prefer-array-find)",
-    "message": "Prefer `find` over filtering and accessing the first result.",
-    "source": "PERMISSION_MODES.filter("
-  },
-  {
-    "filename": "plugins/magic-compose/settings.tsx",
-    "code": "jsx-a11y(label-has-associated-control)",
-    "message": "A form label must be associated with a control.",
-    "source": "<label className=\"flex cursor-pointer items-center gap-2 text-sm\">"
-  },
-  {
-    "filename": "plugins/magic-compose/settings.tsx",
-    "code": "jsx-a11y(no-autofocus)",
-    "message": "The `autoFocus` attribute is found here, which can cause usability issues for sighted and non-sighted users.",
-    "source": "autoFocus"
-  },
-  {
-    "filename": "plugins/magic-compose/settings.tsx",
-    "code": "jsx-a11y(prefer-tag-over-role)",
-    "message": "Prefer `output` over `role` attribute `status`.",
-    "source": "<div className=\"flex items-start gap-2 text-xs text-muted-foreground\" role=\"status\">"
-  },
-  {
-    "filename": "plugins/magic-compose/settings.tsx",
-    "code": "jsx-a11y(role-supports-aria-props)",
-    "message": "The attribute `aria-description` is not supported by the role `button`. This role is implicit on the element `button`.",
-    "source": "aria-description={title}"
-  },
-  {
-    "filename": "plugins/magic-compose/settings.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "useEffect(() => setDraft(value), [value]);"
-  },
-  {
-    "filename": "plugins/magic-compose/settings.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "useEffect(() => setDraft(value), [value]);"
-  },
-  {
-    "filename": "plugins/magic-compose/settings.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "useEffect(() => setNote(entry.note), [entry.note]);"
   },
   {
     "filename": "plugins/scott-docs/app.tsx",

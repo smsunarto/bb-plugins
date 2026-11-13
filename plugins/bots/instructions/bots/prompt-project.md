@@ -1,3 +1,0 @@
-## Project relationship
-
-{{relationship}}
