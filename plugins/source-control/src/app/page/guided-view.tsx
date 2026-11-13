@@ -753,6 +753,7 @@ function useGroupPick(
   resolved: ResolvedGuide,
   reading: Reading,
   scroller: RefObject<HTMLElement | null>,
+  column: Column,
 ) {
   const intros = useRef(new Map<string, HTMLElement>());
   const register = useCallback((id: string, element: HTMLElement | null) => {
@@ -766,9 +767,11 @@ function useGroupPick(
       // On the reader's action: scroll the column, never bb's page around it.
       const intro = intros.current.get(id);
       const box = scroller.current;
-      if (intro && box) box.scrollTo({ top: box.scrollTop + offsetIn(intro, box) });
+      if (!intro || !box) return;
+      column.unpin();
+      box.scrollTo({ top: box.scrollTop + offsetIn(intro, box) });
     },
-    [resolved, reading, scroller],
+    [resolved, reading, scroller, column],
   );
   return { register, onPickGroup };
 }
@@ -862,7 +865,7 @@ export function GuidedView({
 
   const { stable } = useChangeReview(changeKey);
   const findings = useMemo(() => findingsByGroup(stable.items, groupOf), [stable.items, groupOf]);
-  const { register, onPickGroup } = useGroupPick(resolved, reading, scroller);
+  const { register, onPickGroup } = useGroupPick(resolved, reading, scroller, column);
   const firstUnread = useMemo(
     () =>
       resolved.groups.find((group) => group.files.some((file) => !viewed.set.has(file.path)))?.id ??

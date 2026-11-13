@@ -74,7 +74,25 @@ export type Column = {
   cards: Map<string, Element>;
   /** Each card's last drawn height, so a far card keeps its place as one empty box. */
   heights: Map<string, number>;
+  /**
+   * Holds a picked card at the top of `box` while the cards around it
+   * draw, until the reader scrolls themselves or the next pick. After a jump the
+   * cards near the view draw and change height; the browser's scroll anchoring
+   * then follows some node below the pick (it ignores a card whose own height
+   * changes), carrying the column thousands of pixels past the picked file.
+   */
+  pin: (path: string, box: HTMLElement) => void;
+  /** After scrolling a pinned column on the reader's behalf: hold the card where it now sits. */
+  repin: () => void;
+  /** Lets the column go, before scrolling it somewhere other than the pinned card. */
+  unpin: () => void;
 };
+
+/** What the reader does to scroll the column themselves, which ends a pin. */
+const OWN_SCROLL = ["wheel", "touchstart", "keydown", "pointerdown"] as const;
+
+/** How long after a pin a scroll it did not write is taken for the jump settling. */
+const SETTLE_MS = 600;
 
 export const ColumnContext = createContext<Column | null>(null);
 
@@ -96,7 +114,51 @@ export function useColumn(
     const cards = new Map<string, Element>();
     const near = new Map<Element, (near: boolean) => void>();
     const heights = new Map<string, number>();
+    let pinned: {
+      card: Element;
+      box: HTMLElement;
+      at: number;
+      /** Until when a scroll the pin did not write is the jump settling, not the reader. */
+      settling: number;
+      /** The scroll the pin last left the column at. */
+      wrote: number;
+    } | null = null;
+    const offsetOf = (card: Element, box: HTMLElement) =>
+      card.getBoundingClientRect().top - box.getBoundingClientRect().top;
+    const hold = () => {
+      if (!pinned) return;
+      const drift = offsetOf(pinned.card, pinned.box) - pinned.at;
+      if (Math.abs(drift) >= 1) pinned.box.scrollTop += drift;
+      pinned.wrote = pinned.box.scrollTop;
+    };
+    // Just after a jump, a re-render can briefly shorten the column and clamp its scroll with
+    // no size changing for good, so no resize reports it: the scroll does. Later, a scroll the
+    // pin did not write is the reader's (a scrollbar drag, Tab into the column, find in page).
+    const onScroll = () => {
+      if (!pinned) return;
+      if (performance.now() < pinned.settling) hold();
+      else if (Math.abs(pinned.box.scrollTop - pinned.wrote) >= 1) unpin();
+    };
+    const unpin = () => {
+      if (!pinned) return;
+      pinned.box.style.removeProperty("overflow-anchor");
+      for (const type of OWN_SCROLL) pinned.box.removeEventListener(type, unpin);
+      pinned.box.removeEventListener("scroll", onScroll);
+      pinned = null;
+    };
+    const pin = (path: string, box: HTMLElement) => {
+      unpin();
+      const card = cards.get(path);
+      if (!card) return;
+      // At the column's top, even when the column ends too soon to put it there yet.
+      pinned = { card, box, at: 0, settling: performance.now() + SETTLE_MS, wrote: box.scrollTop };
+      // The pin does the anchoring; the browser's would fight it.
+      box.style.setProperty("overflow-anchor", "none");
+      for (const type of OWN_SCROLL) box.addEventListener(type, unpin, { passive: true });
+      box.addEventListener("scroll", onScroll, { passive: true });
+    };
     // Heights come from ResizeObserver entries, after layout: nothing is measured on demand.
+    // A pin reads its card's place here too, after layout and before paint, so it never flickers.
     const sized =
       typeof ResizeObserver === "undefined"
         ? null
@@ -106,6 +168,7 @@ export function useColumn(
               const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height;
               if (path && height > 0) heights.set(path, height);
             }
+            hold();
           });
     const paths = new Map<Element, string>();
     let ahead: IntersectionObserver | null = null;
@@ -127,6 +190,8 @@ export function useColumn(
           for (const entry of entries)
             if (entry.isIntersecting) inBand.add(entry.target);
             else inBand.delete(entry.target);
+          // A pick near the end cannot reach the top band; it stays the current file while held.
+          if (pinned) return;
           let first: Element | null = null;
           for (const element of inBand)
             if (!first || element.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING)
@@ -160,12 +225,22 @@ export function useColumn(
     return {
       column: { watch, cards, heights },
       setup,
+      pin,
+      unpin,
+      repin() {
+        if (!pinned) return;
+        pinned.at = offsetOf(pinned.card, pinned.box);
+        pinned.settling = performance.now() + SETTLE_MS;
+        pinned.wrote = pinned.box.scrollTop;
+      },
       teardown() {
+        unpin();
         ahead?.disconnect();
         top?.disconnect();
         ahead = top = null;
       },
       forget(element: Element) {
+        if (pinned?.card === element) unpin();
         near.delete(element);
         paths.delete(element);
         sized?.unobserve(element);
@@ -184,6 +259,9 @@ export function useColumn(
     () => ({
       cards: column.column.cards,
       heights: column.column.heights,
+      pin: column.pin,
+      repin: column.repin,
+      unpin: column.unpin,
       watch: (path, element, onNear) => {
         if (element) column.column.watch(path, element, onNear);
         else {
@@ -625,6 +703,7 @@ function chaseAnnotation(
       if (target && target.getClientRects().length > 0) {
         const offset = target.getBoundingClientRect().top - box.getBoundingClientRect().top;
         box.scrollTo({ top: box.scrollTop + offset - Math.round(box.clientHeight / 4) });
+        column.repin();
         return;
       }
       const patch = store.get(file);
@@ -636,6 +715,7 @@ function chaseAnnotation(
         if (row !== undefined) {
           const top = card.getBoundingClientRect().top - box.getBoundingClientRect().top;
           box.scrollTo({ top: box.scrollTop + top + 36 + row * 20 - box.clientHeight / 3 });
+          column.repin();
         }
       }
     }
@@ -742,6 +822,7 @@ export function useRevealFile({
         if (!card || !box) return;
         const offset = card.getBoundingClientRect().top - box.getBoundingClientRect().top;
         box.scrollTo({ top: box.scrollTop + offset });
+        column.pin(file, box);
       });
     },
     [column, scroller, setOpen, onCurrent],
