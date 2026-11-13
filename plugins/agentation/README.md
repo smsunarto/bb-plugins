@@ -98,7 +98,7 @@ an active turn. **Steer** adds the feedback to the active turn. All three start
 an idle thread.
 
 Use the row action to discard one staged annotation, or **Discard all** to
-discard the batch shown, after confirmation. Discarded feedback moves to the
+discard the batch shown. Neither asks first: discarded feedback moves to the
 panel's Dismissed view, where you can reopen it.
 
 ### What an annotation records

@@ -4,6 +4,7 @@
 
 ### Patch Changes
 
+- **Discard all** in the composer's staged-annotation list discards the batch at once instead of asking for confirmation. Discarded feedback stays recoverable from the panel's Dismissed view.
 - Update the vendored Agentation toolbar from 3.0.2 to 3.1.2: selection inside same-origin iframes and open shadow roots, keyboard and focus fixes, and Copy/Send keep feedback that changed or failed mid-operation. The toolbar now renders in a shadow root, so its styles no longer leak into bb and the `fill-current` icon workaround is gone. Upstream now ships the `inert` fixes this plugin patched in; the patch keeps only React 19 component detection.
 - Expose the staged-annotation composer banner as a stable theme surface.
 - Declare the CLI with the SDK's `defineCli`; `--help` works on every command and user errors carry a hint. Requires plugin SDK 0.4.104.

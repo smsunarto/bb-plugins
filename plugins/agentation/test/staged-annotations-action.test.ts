@@ -8,7 +8,7 @@ installDom();
 // jsdom nodes, which accept only jsdom's own.
 const jsdomWindow = window as unknown as { Event: typeof Event; CustomEvent: typeof CustomEvent };
 Object.assign(globalThis, { Event: jsdomWindow.Event, CustomEvent: jsdomWindow.CustomEvent });
-// jsdom has no matchMedia; the vendored Dialog reads it to pick its layout.
+// jsdom has no matchMedia; the vendored Popover reads it to pick its layout.
 window.matchMedia ??= (query: string) =>
   ({
     matches: false,
@@ -411,6 +411,68 @@ test("send all sends the complete staged batch to an existing thread", async () 
   });
   expect(slot.inspection.composer.draft.text).toBe("Keep this draft");
   await waitFor(() => expect(slot.queryByRole("button", { name: "2 annotations" })).toBeNull());
+});
+
+test("discard all discards the displayed batch at once, without asking first", async () => {
+  let annotations = [staged("ann_1", "Save is misaligned"), staged("ann_2", "Wrong color")];
+  const first = annotationPill("ann_1", 0);
+  const slot = renderAction({
+    text: `${first.label} keep this`,
+    mentions: [first],
+    rpc: {
+      listStagedAnnotations: () => ({ annotations, threadTitles: {} }),
+      discardStagedAnnotations: () => {
+        annotations = [];
+        return {
+          outcome: "discarded",
+          discardedIds: ["ann_1", "ann_2"],
+          remainingCount: 0,
+          message: "Discarded 2 annotations.",
+        };
+      },
+    },
+  });
+  const list = await openList(slot, 2);
+  await act(async () => {
+    fireEvent.click(await list.findByRole("button", { name: "Discard all staged annotations" }));
+  });
+
+  expect(slot.inspection.rpcCalls).toContainEqual({
+    method: "discardStagedAnnotations",
+    input: { annotationIds: ["ann_1", "ann_2"] },
+  });
+  expect(screen.queryByRole("dialog", { name: /discard all/iu })).toBeNull();
+  expect(slot.inspection.composer.draft.mentions).toEqual([]);
+  await waitFor(() => expect(slot.queryByRole("button", { name: "2 annotations" })).toBeNull());
+});
+
+test("a row's discard action discards only that annotation", async () => {
+  let annotations = [staged("ann_1", "Save is misaligned"), staged("ann_2", "Wrong color")];
+  const slot = renderAction({
+    rpc: {
+      listStagedAnnotations: () => ({ annotations, threadTitles: {} }),
+      discardStagedAnnotations: () => {
+        annotations = annotations.slice(1);
+        return {
+          outcome: "discarded",
+          discardedIds: ["ann_1"],
+          remainingCount: 1,
+          message: "Discarded 1 annotation.",
+        };
+      },
+    },
+  });
+  const list = await openList(slot, 2);
+  const [first] = await list.findAllByRole("button", { name: "Discard annotation" });
+  await act(async () => {
+    fireEvent.click(first!);
+  });
+
+  expect(slot.inspection.rpcCalls).toContainEqual({
+    method: "discardStagedAnnotations",
+    input: { annotationIds: ["ann_1"] },
+  });
+  expect(await slot.findByRole("button", { name: "1 annotation" })).toBeTruthy();
 });
 
 test("a blocked new-thread send retains the draft with every annotation pill for retry", async () => {

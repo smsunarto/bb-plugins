@@ -25,14 +25,6 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { cn } from "@/lib/utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Icon } from "@bb-plugins/icons";
 import type { StoredAnnotation } from "@/lib/afs.ts";
 import {
@@ -50,13 +42,8 @@ type Batch =
   | { kind: "loading" }
   | { kind: "ready"; annotations: StoredAnnotation[]; threadTitles: Record<string, string> };
 
-/** The one thing the list is doing; a `send` with no id sends the whole batch. */
-type Action =
-  | null
-  | { kind: "send"; id: string | null }
-  | { kind: "discard"; id: string }
-  | { kind: "confirm-discard"; ids: string[] }
-  | { kind: "discarding"; ids: string[] };
+/** The one thing the list is doing; no id means the whole batch. */
+type Action = null | { kind: "send" | "discard"; id: string | null };
 
 /**
  * `threadId` is null in the new-thread composer: no thread exists to send to
@@ -239,183 +226,121 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
       null,
     );
 
-  const discardOne = async (annotationId: string) => {
+  // Discarding is recoverable from the panel's Dismissed view, so neither a
+  // row nor the whole batch asks first.
+  const discardAnnotations = async (
+    annotationIds: string[],
+    discardingAnnotationId: string | null,
+  ) => {
     if (actionRef.current) return;
-    setAction({ kind: "discard", id: annotationId });
+    setAction({ kind: "discard", id: discardingAnnotationId });
     refreshSequence.current += 1;
     try {
-      const result = await rpc.call("discardStagedAnnotations", {
-        annotationIds: [annotationId],
-      });
+      const result = await rpc.call("discardStagedAnnotations", { annotationIds });
       if (result.outcome === "discarded") toast.success(result.message);
       else toast.warning(result.message);
       forgetMentions(result.discardedIds);
       await refresh();
     } catch (cause) {
-      toast.error("Could not discard the staged annotation", {
-        description: cause instanceof Error ? cause.message : String(cause),
-      });
+      toast.error(
+        annotationIds.length === 1
+          ? "Could not discard the staged annotation"
+          : "Could not discard the staged annotations",
+        {
+          description: cause instanceof Error ? cause.message : String(cause),
+        },
+      );
       await refresh();
     } finally {
       setAction(null);
     }
   };
 
-  const openDiscardAll = () => {
-    if (actionRef.current) return;
-    setAction({ kind: "confirm-discard", ids: rows.map((row) => row.id) });
-  };
-
-  const closeDiscardAll = () => {
-    if (actionRef.current?.kind === "confirm-discard") setAction(null);
-  };
-
-  const discardAll = async () => {
-    const confirmed = actionRef.current;
-    if (confirmed?.kind !== "confirm-discard") return;
-    setAction({ kind: "discarding", ids: confirmed.ids });
-    refreshSequence.current += 1;
-    try {
-      const result = await rpc.call("discardStagedAnnotations", {
-        annotationIds: confirmed.ids,
-      });
-      if (result.outcome === "discarded") toast.success(result.message);
-      else toast.warning(result.message);
-      forgetMentions(result.discardedIds);
-      await refresh();
-    } catch (cause) {
-      toast.error("Could not discard the staged annotations", {
-        description: cause instanceof Error ? cause.message : String(cause),
-      });
-      await refresh();
-    } finally {
-      setAction(null);
-    }
-  };
+  const discardAll = () =>
+    void discardAnnotations(
+      rows.map((row) => row.id),
+      null,
+    );
 
   const isMutating = action !== null;
-  const discard =
-    action?.kind === "confirm-discard" || action?.kind === "discarding" ? action : null;
-  const isDiscarding = discard?.kind === "discarding";
 
   return place(
-    <>
-      <AnnotationsAction
-        asChip={asChip}
-        count={rows.length}
-        renderHeader={(dismiss) => (
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-2.5 py-1.5">
-            <p className="truncate text-xs font-medium text-muted-foreground">
-              {annotationCountLabel(rows.length)}
-            </p>
-            <div className="flex min-w-0 flex-wrap items-center gap-1">
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className="h-7 px-2"
-                disabled={isMutating}
-                onClick={() => {
-                  mentionAnnotations(rows);
-                  dismiss(() => composer.focus());
-                }}
-              >
-                <Icon name="AtSign" aria-hidden="true" />
-                Mention all
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                className="h-7 px-2"
-                disabled={isMutating}
-                onClick={sendAll}
-              >
-                <Icon name="ArrowUp" aria-hidden="true" />
-                {action?.kind === "send" && action.id === null ? "Sending…" : "Send all"}
-              </Button>
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                className="size-7 text-muted-foreground hover:text-destructive"
-                disabled={isMutating}
-                aria-label="Discard all staged annotations"
-                onClick={() => dismiss(openDiscardAll)}
-              >
-                <Icon name="Trash2" aria-hidden="true" />
-              </Button>
-            </div>
+    <AnnotationsAction
+      asChip={asChip}
+      count={rows.length}
+      renderHeader={(dismiss) => (
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-2.5 py-1.5">
+          <p className="truncate text-xs font-medium text-muted-foreground">
+            {annotationCountLabel(rows.length)}
+          </p>
+          <div className="flex min-w-0 flex-wrap items-center gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-7 px-2"
+              disabled={isMutating}
+              onClick={() => {
+                mentionAnnotations(rows);
+                dismiss(() => composer.focus());
+              }}
+            >
+              <Icon name="AtSign" aria-hidden="true" />
+              Mention all
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 px-2"
+              disabled={isMutating}
+              onClick={sendAll}
+            >
+              <Icon name="ArrowUp" aria-hidden="true" />
+              {action?.kind === "send" && action.id === null ? "Sending…" : "Send all"}
+            </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-7 text-muted-foreground hover:text-destructive"
+              disabled={isMutating}
+              aria-label="Discard all staged annotations"
+              onClick={() => {
+                discardAll();
+                dismiss(() => composer.focus());
+              }}
+            >
+              <Icon name="Trash2" aria-hidden="true" />
+            </Button>
           </div>
-        )}
-        renderList={(dismiss) => (
-          <ol
-            className="flex flex-col border-t border-border [&>li+li]:border-t [&>li+li]:border-border"
-            aria-busy={action !== null && action.kind !== "confirm-discard"}
-          >
-            {rows.map(({ id, label, parts }, index) => (
-              <AnnotationRow
-                key={id}
-                number={index + 1}
-                label={label}
-                parts={parts}
-                descriptionId={`${annotationDescriptionPrefix}-${id}`}
-                disabled={isMutating}
-                isSending={action?.kind === "send" && action.id === id}
-                isDiscarding={action?.kind === "discard" && action.id === id}
-                onMention={() => {
-                  mentionAnnotations([{ id, label }]);
-                  dismiss(() => composer.focus());
-                }}
-                onSend={threadId === null ? null : () => void sendAnnotations([id], id)}
-                onDiscard={() => void discardOne(id)}
-              />
-            ))}
-          </ol>
-        )}
-      />
-
-      <Dialog
-        open={discard !== null}
-        onOpenChange={(open) => {
-          if (!open) closeDiscardAll();
-        }}
-      >
-        <DialogContent>
-          {discard ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>
-                  Discard all {discard.ids.length} staged annotation
-                  {discard.ids.length === 1 ? "" : "s"}?
-                </DialogTitle>
-                <DialogDescription>
-                  This removes their markers from all bb pages and moves the feedback to the
-                  Dismissed review view, where you can recover it.
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isDiscarding}
-                  onClick={closeDiscardAll}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={isDiscarding}
-                  onClick={() => void discardAll()}
-                >
-                  {isDiscarding ? "Discarding…" : `Discard all ${discard.ids.length}`}
-                </Button>
-              </DialogFooter>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
-    </>,
+        </div>
+      )}
+      renderList={(dismiss) => (
+        <ol
+          className="flex flex-col border-t border-border [&>li+li]:border-t [&>li+li]:border-border"
+          aria-busy={isMutating}
+        >
+          {rows.map(({ id, label, parts }, index) => (
+            <AnnotationRow
+              key={id}
+              number={index + 1}
+              label={label}
+              parts={parts}
+              descriptionId={`${annotationDescriptionPrefix}-${id}`}
+              disabled={isMutating}
+              isSending={action?.kind === "send" && action.id === id}
+              isDiscarding={action?.kind === "discard" && action.id === id}
+              onMention={() => {
+                mentionAnnotations([{ id, label }]);
+                dismiss(() => composer.focus());
+              }}
+              onSend={threadId === null ? null : () => void sendAnnotations([id], id)}
+              onDiscard={() => void discardAnnotations([id], id)}
+            />
+          ))}
+        </ol>
+      )}
+    />,
   );
 }
 
