@@ -269,3 +269,20 @@ test("a hand-written pull request, by reference or URL, shows that Change wherev
   const invalid = renderThread(thread, { pr: "the docs PR" });
   expect(invalid.slot.getByTestId("sc-card-invalid").textContent).toContain("owner/repo#123");
 });
+
+test("the share tool's keyed card ships the thread's own Change, and not another thread's", async () => {
+  const thread = row(workspace({ uncommitted: files(2) }));
+  const own = renderThread(thread, { key: encodeURIComponent(KEY), revision: "c0ffee1" });
+  expect((await own.slot.findByTestId("sc-card")).getAttribute("data-key")).toBe(KEY);
+  expect(await own.slot.findByTestId("sc-card-uncommitted-count")).toBeTruthy();
+  (await own.slot.findByTestId("sc-card-ship")).click();
+  await waitFor(() => expect(own.shipped).toEqual([{ threadId: "thread-a" }]));
+  cleanup();
+  // A Change this thread shares but whose branch is not its own: nothing of this checkout's to ship.
+  const other = renderThread(row(workspace({ uncommitted: files(2) }), false), {
+    key: encodeURIComponent(KEY),
+    revision: "c0ffee1",
+  });
+  await other.slot.findByTestId("sc-card");
+  expect(other.slot.queryByTestId("sc-card-ship")).toBeNull();
+});

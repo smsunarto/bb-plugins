@@ -34,7 +34,7 @@ import { latestBatch } from "./review-model.ts";
 import { BatchLine, useFixSelected } from "./send.tsx";
 import { ChangeGroup } from "./group-card.tsx";
 import { LegacyCards, pullRequestTarget } from "./legacy-card.tsx";
-import { ThreadCard, uncommittedLine, type ThreadShip } from "./thread-card.tsx";
+import { OwnChangeCard, ThreadCard, uncommittedLine, type ThreadShip } from "./thread-card.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 
@@ -459,7 +459,7 @@ function OneChange({
       </span>
     );
   return (
-    <ChangeCard
+    <OwnChangeCard
       key={parsed.key}
       changeKey={parsed.key}
       revision={parsed.revision}

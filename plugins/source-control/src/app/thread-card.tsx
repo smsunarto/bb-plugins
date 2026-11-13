@@ -14,6 +14,7 @@ import {
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { describeProblem } from "../core/change.ts";
 import { canShip, hasWork, summarize } from "../core/status.ts";
+import type { ChangeKey } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { CARD, CardNote, CardSkeleton, ChangeCard, useSeen } from "./chat-card.tsx";
 import { cx, plural } from "./format.ts";
@@ -107,6 +108,56 @@ function UncommittedCard({
   );
 }
 
+/** The ship slot for the thread's own Change: its uncommitted files, and Ship it while there is work left. */
+function threadShip(
+  summary: NonNullable<ReturnType<typeof summarize>>,
+  ship: ReturnType<typeof useShipThread>,
+): ThreadShip {
+  return {
+    uncommitted: summary.uncommitted,
+    button: canShip(summary) ? <ShipButton ship={ship} /> : null,
+    sent: ship.sent,
+  };
+}
+
+/**
+ * A keyed card (`::source-control{key}`, from the share tool) gets the same
+ * Ship it as the hand-written one when its Change is still this thread's own
+ * branch. The thread read is the composer strip's, so it costs no new read.
+ */
+export function OwnChangeCard({
+  changeKey,
+  revision,
+  threadId,
+}: {
+  changeKey: ChangeKey;
+  revision: string | null;
+  threadId: string;
+}) {
+  const root = useRef<HTMLDivElement>(null);
+  const visible = useSeen(root);
+  const keys = useMemo(() => [threadId], [threadId]);
+  const query = useRpcKeyedQuery({
+    contract: sourceControlContract,
+    method: "changeForThread",
+    keys,
+    enabled: visible,
+  });
+  const ship = useShipThread(threadId);
+  const summary = summarize(query.data?.[threadId]);
+  const own = summary !== null && summary.key === changeKey;
+  return (
+    <div ref={root} data-bb-plugin="source-control" className="flex w-full min-w-0">
+      <ChangeCard
+        changeKey={changeKey}
+        revision={revision}
+        threadId={threadId}
+        thread={own ? threadShip(summary, ship) : null}
+      />
+    </div>
+  );
+}
+
 export function ThreadCard({ threadId }: { threadId: string }) {
   const root = useRef<HTMLDivElement>(null);
   const visible = useSeen(root);
@@ -134,11 +185,7 @@ export function ThreadCard({ threadId }: { threadId: string }) {
           changeKey={summary.key}
           revision={null}
           threadId={threadId}
-          thread={{
-            uncommitted: summary.uncommitted,
-            button: canShip(summary) ? <ShipButton ship={ship} /> : null,
-            sent: ship.sent,
-          }}
+          thread={threadShip(summary, ship)}
         />
       </div>
     );
