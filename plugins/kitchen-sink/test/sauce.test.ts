@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { mkdtemp, writeFile } from "node:fs/promises";
+import { deflateSync } from "node:zlib";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -11,11 +12,14 @@ import plugin, { SKILLS } from "../src/server/server.ts";
 import { LEASE_IDLE_MS, type LeaseStore, type SauceLease } from "../src/server/lib/sauce/lease.ts";
 import {
   SauceError,
+  scoreRotation,
   toViewport,
   type PageState,
+  type RotationReading,
   type SaucePage,
 } from "../src/server/lib/sauce/live.ts";
-import { SAUCE_TOOLS, createSauceTools, pngSize } from "../src/server/lib/sauce/tools.ts";
+import { pngGrayThumbnail, pngSize } from "../src/server/lib/sauce/png.ts";
+import { SAUCE_TOOLS, createSauceTools } from "../src/server/lib/sauce/tools.ts";
 
 // A 2340x1080 PNG header is all pngSize reads.
 const PNG = (() => {
@@ -32,7 +36,14 @@ function memoryStore(): LeaseStore {
   return { read: () => lease, write: (next) => void (lease = next) };
 }
 
-type FakeState = { page: PageState; taps: unknown[]; ended: number; deviceQueries: unknown[] };
+type FakeState = {
+  page: PageState;
+  taps: unknown[];
+  ended: number;
+  deviceQueries: unknown[];
+  reading: RotationReading;
+  onStart?: () => void;
+};
 
 function fakePage(state: FakeState): SaucePage {
   const session = (device: string): PageState => ({
@@ -55,6 +66,7 @@ function fakePage(state: FakeState): SaucePage {
       return { app: app ?? "Rampage/build.apk", devices: [] };
     },
     startSession: async (input) => {
+      state.onStart?.();
       if (input.device === "Slow Phone") {
         throw new SauceError("start_pending", "Start Test was clicked; no session page yet.");
       }
@@ -70,11 +82,11 @@ function fakePage(state: FakeState): SaucePage {
       state.taps.push({ from, to, rotation, durationMs, holdMs });
     },
     clickMenu: async () => requireSession(),
-    nativeScreenshot: async (path) => {
+    captureScreen: async (path) => {
       requireSession();
       await writeFile(path, PNG);
+      return { width: 2340, height: 1080, reading: state.reading };
     },
-    measureRotation: async () => 90,
     shell: async () => "ok",
     downloadLog: async (path) =>
       writeFile(path, `a\nUnity boom\nb\nUnity payload ${"x".repeat(1000)}`),
@@ -98,6 +110,7 @@ function harness() {
     taps: [],
     ended: 0,
     deviceQueries: [],
+    reading: { candidates: [90, 270], best: 90, clear: true },
   };
   let saveGate: Promise<void> = Promise.resolve();
   let now = 1_000_000;
@@ -311,4 +324,151 @@ test("sauce tools reach only rampage projects, and every skill stays selected", 
   );
   expect(other.tools).toEqual([]);
   expect(other.skills).toEqual(SKILLS);
+});
+
+test("an unclear rotation never guesses between mirror images", async () => {
+  const { tools, state } = harness();
+  const a = { threadId: "thr_a" };
+  await tools.start(a, { device: "Samsung Galaxy S23" });
+
+  // The screen changed during the first landscape capture: no frame, touches refuse.
+  state.reading = { candidates: [90, 270], best: 270, clear: false };
+  expect(await tools.screenshot(a, {})).toMatchObject({ rotation: null, rotation_measured: false });
+  expect(await code(tools.touch(a, { x: 0.5, y: 0.5 }))).toBe("no_frame");
+
+  state.reading = { candidates: [90, 270], best: 90, clear: true };
+  expect(await tools.screenshot(a, {})).toMatchObject({ rotation: 90, rotation_measured: true });
+
+  // A later unclear capture keeps the measured rotation instead of flipping it.
+  state.reading = { candidates: [90, 270], best: 270, clear: false };
+  expect(await tools.screenshot(a, {})).toMatchObject({ rotation: 90, rotation_measured: false });
+  expect(await code(tools.touch(a, { x: 0.5, y: 0.5 }))).toBe("ok");
+
+  // A portrait screen in a portrait canvas is upright even when unclear.
+  state.reading = { candidates: [0, 180], best: null, clear: false };
+  expect(await tools.screenshot(a, {})).toMatchObject({ rotation: 0, rotation_measured: false });
+});
+
+function noise(length: number, seed: number) {
+  let x = seed;
+  return Array.from({ length }, () => ((x = (x * 1103515245 + 12345) % 2 ** 31), x % 256));
+}
+
+test("rotation scoring finds the turn and flags a frame that does not match", () => {
+  // A portrait canvas (cw 6 x ch 12) showing a landscape screen turned 90 degrees.
+  const canvas = { width: 6, height: 12 };
+  const frame = noise(72, 7);
+  const upright = { width: 12, height: 6 };
+  // Turning the canvas 90 degrees clockwise: upright[y][x] = canvas[ch - 1 - x][y].
+  const pixels = Array.from({ length: 72 }, (_, i) => {
+    const [x, y] = [i % 12, Math.floor(i / 12)];
+    return frame[(canvas.height - 1 - x) * canvas.width + y] ?? 0;
+  });
+  expect(scoreRotation([frame], canvas, { ...upright, pixels }, [90, 270])).toMatchObject({
+    candidates: [90, 270],
+    best: 90,
+    clear: true,
+    score: 1,
+  });
+  // The best of several samples counts: a stale frame next to the right one still reads clear.
+  expect(
+    scoreRotation([noise(72, 99), frame], canvas, { ...upright, pixels }, [90, 270]).best,
+  ).toBe(90);
+  // A screen that changed during the capture matches neither turn.
+  expect(scoreRotation([noise(72, 3)], canvas, { ...upright, pixels }, [90, 270]).clear).toBe(
+    false,
+  );
+  expect(scoreRotation([null], canvas, { ...upright, pixels }, [90, 270])).toMatchObject({
+    best: null,
+    clear: false,
+  });
+});
+
+/** An RGB PNG whose rows use filters None, Sub, Up, and Paeth in turn. */
+function encodePng(width: number, height: number, rgb: number[]) {
+  const stride = width * 3;
+  const paeth = (a: number, b: number, c: number) => {
+    const p = a + b - c;
+    const [pa, pb, pc] = [Math.abs(p - a), Math.abs(p - b), Math.abs(p - c)];
+    return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+  };
+  const raw: number[] = [];
+  for (let y = 0; y < height; y += 1) {
+    const filter = [0, 1, 2, 4][y % 4] ?? 0;
+    raw.push(filter);
+    for (let i = 0; i < stride; i += 1) {
+      const x = rgb[y * stride + i] ?? 0;
+      const a = i >= 3 ? (rgb[y * stride + i - 3] ?? 0) : 0;
+      const b = y > 0 ? (rgb[(y - 1) * stride + i] ?? 0) : 0;
+      const c = y > 0 && i >= 3 ? (rgb[(y - 1) * stride + i - 3] ?? 0) : 0;
+      const predicted = filter === 1 ? a : filter === 2 ? b : filter === 4 ? paeth(a, b, c) : 0;
+      raw.push((x - predicted + 256) % 256);
+    }
+  }
+  const chunk = (type: string, data: Uint8Array) => {
+    const out = new Uint8Array(12 + data.length);
+    const view = new DataView(out.buffer);
+    view.setUint32(0, data.length);
+    out.set(
+      [...type].map((ch) => ch.charCodeAt(0)),
+      4,
+    );
+    out.set(data, 8);
+    return out; // pngGrayThumbnail does not check CRCs
+  };
+  const header = new Uint8Array(13);
+  new DataView(header.buffer).setUint32(0, width);
+  new DataView(header.buffer).setUint32(4, height);
+  header.set([8, 2, 0, 0, 0], 8);
+  return new Uint8Array([
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
+    ...chunk("IHDR", header),
+    ...chunk("IDAT", new Uint8Array(deflateSync(new Uint8Array(raw)))),
+    ...chunk("IEND", new Uint8Array()),
+  ]);
+}
+
+test("the PNG decoder reverses every row filter and box-averages to gray", async () => {
+  const [width, height] = [4, 4];
+  const rgb = noise(width * height * 3, 5);
+  const gray = await pngGrayThumbnail(encodePng(width, height, rgb), 2, 2);
+  const at = (x: number, y: number) => {
+    const p = (y * width + x) * 3;
+    return 0.299 * (rgb[p] ?? 0) + 0.587 * (rgb[p + 1] ?? 0) + 0.114 * (rgb[p + 2] ?? 0);
+  };
+  const cell = (cx: number, cy: number) =>
+    Math.round(
+      (at(cx * 2, cy * 2) +
+        at(cx * 2 + 1, cy * 2) +
+        at(cx * 2, cy * 2 + 1) +
+        at(cx * 2 + 1, cy * 2 + 1)) /
+        4,
+    );
+  expect([...(gray ?? [])]).toEqual([cell(0, 0), cell(1, 0), cell(0, 1), cell(1, 1)]);
+});
+
+test("a call cancelled while queued never runs, and a cancelled start hands the device back", async () => {
+  const { tools, state, store } = harness();
+  const stopped = new AbortController();
+  stopped.abort();
+  expect(
+    await code(tools.start({ threadId: "thr_a", signal: stopped.signal }, { device: "Pixel 8" })),
+  ).toBe("cancelled");
+  expect(store.read()).toBeNull();
+
+  // The thread is stopped while its device comes up.
+  const midway = new AbortController();
+  state.onStart = () => midway.abort();
+  expect(
+    await code(tools.start({ threadId: "thr_a", signal: midway.signal }, { device: "Pixel 8" })),
+  ).toBe("cancelled");
+  expect(state.ended).toBe(1);
+  expect(store.read()).toBeNull();
 });

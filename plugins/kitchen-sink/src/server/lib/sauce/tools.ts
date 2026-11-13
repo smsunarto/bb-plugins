@@ -16,7 +16,7 @@ import {
   type LeaseStore,
   type SauceLease,
 } from "./lease.ts";
-import { SauceError, createSaucePage, type SaucePage } from "./live.ts";
+import { SauceError, createSaucePage, type RotationReading, type SaucePage } from "./live.ts";
 
 export const SAUCE_TOOLS = [
   "sauce_status",
@@ -46,7 +46,8 @@ export type SauceToolDeps = {
   tempDir(): Promise<string>;
 };
 
-type ToolContext = { threadId: string };
+/** `signal` aborts when the call is cancelled, the thread stops, or the plugin is disposed. */
+type ToolContext = { threadId: string; signal?: AbortSignal };
 
 /** A file captured inside the browser queue, saved to thread storage after the queue moves on. */
 type PendingFile = { dir: string; local: string; name: string };
@@ -97,11 +98,22 @@ function fail(error: unknown): PluginAgentToolResult {
   };
 }
 
-/** PNG width and height from the IHDR chunk. */
-export function pngSize(bytes: Uint8Array): { width: number; height: number } | null {
-  if (bytes.length < 24 || bytes[0] !== 0x89 || bytes[1] !== 0x50) return null;
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  return { width: view.getUint32(16), height: view.getUint32(20) };
+/**
+ * The rotation touches are mapped through. A clear reading wins. An unclear one (the
+ * screen changed during the capture) keeps the previous rotation when the screen's
+ * shape still allows it, assumes upright for a screen shaped like the canvas (apps
+ * do not run upside down), and otherwise leaves the frame unset so touches refuse
+ * rather than land mirrored.
+ */
+export function chooseRotation(
+  reading: RotationReading,
+  previous: number | null,
+): { rotation: number | null; measured: boolean } {
+  if (reading.clear && reading.best !== null) return { rotation: reading.best, measured: true };
+  if (previous !== null && reading.candidates.includes(previous))
+    return { rotation: previous, measured: false };
+  if (reading.candidates[0] === 0) return { rotation: 0, measured: false };
+  return { rotation: null, measured: false };
 }
 
 function stamp(now: number) {
@@ -118,6 +130,22 @@ function slug(value: string) {
 
 export function createSauceTools(deps: SauceToolDeps) {
   const enqueue = createQueue();
+
+  function throwIfCancelled(ctx: ToolContext) {
+    if (ctx.signal?.aborted)
+      throw new SauceError(
+        "cancelled",
+        "The tool call was cancelled; any device it started was ended.",
+      );
+  }
+
+  /** Every call drives the one shared tab in turn; a call cancelled while it waited never runs. */
+  function queued<T>(ctx: ToolContext, work: () => Promise<T>): Promise<T> {
+    return enqueue(async () => {
+      throwIfCancelled(ctx);
+      return work();
+    });
+  }
 
   async function holderDescription(lease: SauceLease, idleMs: number) {
     const title = await deps.threadTitle(lease.threadId).catch(() => null);
@@ -175,21 +203,30 @@ export function createSauceTools(deps: SauceToolDeps) {
   }
 
   /** Runs inside the queue; the caller saves `file` with `persist` once the queue is free. */
-  async function captureScreen(label: string | undefined) {
+  async function captureScreen(label: string | undefined, previous: number | null) {
     const dir = await deps.tempDir();
     try {
       const local = join(dir, "screen.png");
-      await deps.page.nativeScreenshot(local);
-      const bytes = new Uint8Array(await readFile(local));
-      const size = pngSize(bytes);
-      if (!size)
-        throw new SauceError("page_changed", "Sauce's Take Screenshot did not produce a PNG.");
-      const rotation = await deps.page.measureRotation(local, size);
+      const shot = await deps.page.captureScreen(local);
+      const { rotation, measured } = chooseRotation(shot.reading, previous);
       const lease = touchLease(deps.store, { rotation }, deps.now());
       const name = `${stamp(deps.now())}${label ? `-${slug(label)}` : ""}.png`;
+      const note =
+        rotation === null
+          ? "The screen changed during the capture, so its rotation is unknown and sauce_touch will refuse. Take another screenshot once the screen is still."
+          : measured
+            ? undefined
+            : "The screen changed during the capture; kept the rotation from before. If a touch lands mirrored, take another screenshot once the screen is still.";
       return {
         file: { dir, local, name } satisfies PendingFile,
-        info: { width: size.width, height: size.height, rotation, device: lease?.device ?? null },
+        info: {
+          width: shot.width,
+          height: shot.height,
+          rotation,
+          rotation_measured: measured,
+          device: lease?.device ?? null,
+          ...(note ? { note } : {}),
+        },
       };
     } catch (error) {
       await rm(dir, { recursive: true, force: true });
@@ -209,17 +246,17 @@ export function createSauceTools(deps: SauceToolDeps) {
     }
   }
 
-  async function screenshot(threadId: string, label: string | undefined) {
-    const shot = await enqueue(async () => {
-      await requireMine(threadId);
-      return onSessionGone(threadId, () => captureScreen(label));
+  async function screenshot(ctx: ToolContext, label: string | undefined) {
+    const shot = await queued(ctx, async () => {
+      const lease = await requireMine(ctx.threadId);
+      return onSessionGone(ctx.threadId, () => captureScreen(label, lease.rotation));
     });
-    return { path: await persist(threadId, shot.file), ...shot.info };
+    return { path: await persist(ctx.threadId, shot.file), ...shot.info };
   }
 
   return {
     async status(ctx: ToolContext, input: { sign_in?: boolean }) {
-      return enqueue(async () => {
+      return queued(ctx, async () => {
         const check = checkLease(deps.store, ctx.threadId, deps.now());
         if (check.kind === "held") {
           const page = await deps.page.state();
@@ -276,7 +313,7 @@ export function createSauceTools(deps: SauceToolDeps) {
       ctx: ToolContext,
       input: { kind: "apps" | "devices"; query?: string; app?: string },
     ) {
-      return enqueue(async () => {
+      return queued(ctx, async () => {
         await requireBrowsable(ctx.threadId);
         if (input.kind === "apps") {
           const apps = await deps.page.listApps(input.query);
@@ -300,7 +337,7 @@ export function createSauceTools(deps: SauceToolDeps) {
     },
 
     async start(ctx: ToolContext, input: { device: string; os?: string; app?: string }) {
-      return enqueue(async () => {
+      return queued(ctx, async () => {
         const check = checkLease(deps.store, ctx.threadId, deps.now());
         if (check.kind === "held") {
           await requireBrowsable(ctx.threadId);
@@ -324,9 +361,12 @@ export function createSauceTools(deps: SauceToolDeps) {
           // An abandoned holder's session would otherwise keep the account's one slot busy.
           await deps.page.endSession();
         }
+        throwIfCancelled(ctx);
         acquireLease(deps.store, ctx.threadId, deps.now());
         try {
-          const started = await deps.page.startSession(input);
+          const started = await deps.page.startSession(input, ctx.signal);
+          // Stopped while the device came up: nobody will drive it, so hand it back.
+          throwIfCancelled(ctx);
           touchLease(deps.store, { device: started.device, rotation: null }, deps.now());
           return {
             device: started.device,
@@ -342,6 +382,11 @@ export function createSauceTools(deps: SauceToolDeps) {
             touchLease(deps.store, {}, deps.now());
             throw error;
           }
+          if (error instanceof SauceError && error.code === "cancelled") {
+            await deps.page.endSession().catch(() => false);
+            releaseLease(deps.store, ctx.threadId);
+            throw error;
+          }
           const after = await deps.page.state().catch(() => null);
           if (after?.kind !== "session") releaseLease(deps.store, ctx.threadId);
           throw error;
@@ -350,7 +395,7 @@ export function createSauceTools(deps: SauceToolDeps) {
     },
 
     async screenshot(ctx: ToolContext, input: { label?: string }) {
-      return screenshot(ctx.threadId, input.label);
+      return screenshot(ctx, input.label);
     },
 
     async touch(
@@ -365,7 +410,7 @@ export function createSauceTools(deps: SauceToolDeps) {
         screenshot_after_ms?: number;
       },
     ) {
-      const touched = await enqueue(async () => {
+      const touched = await queued(ctx, async () => {
         const lease = await requireMine(ctx.threadId);
         return onSessionGone(ctx.threadId, async () => {
           if (lease.rotation === null) {
@@ -396,7 +441,7 @@ export function createSauceTools(deps: SauceToolDeps) {
           const result = { gesture, from, to: hasTarget ? to : undefined };
           if (input.screenshot_after_ms === undefined) return { result, shot: null };
           await deps.sleep(input.screenshot_after_ms);
-          return { result, shot: await captureScreen("after-touch") };
+          return { result, shot: await captureScreen("after-touch", lease.rotation) };
         });
       });
       if (!touched.shot) return touched.result;
@@ -412,7 +457,7 @@ export function createSauceTools(deps: SauceToolDeps) {
         grep?: string;
       },
     ) {
-      const done = await enqueue(async () => {
+      const done = await queued(ctx, async () => {
         await requireMine(ctx.threadId);
         return onSessionGone(ctx.threadId, async (): Promise<DeviceResult> => {
           switch (input.action) {
@@ -495,7 +540,7 @@ export function createSauceTools(deps: SauceToolDeps) {
     },
 
     async end(ctx: ToolContext) {
-      return enqueue(async () => {
+      return queued(ctx, async () => {
         const check = checkLease(deps.store, ctx.threadId, deps.now());
         if (check.kind === "held") await requireBrowsable(ctx.threadId);
         if (check.kind === "free") {

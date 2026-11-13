@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import type { BrowserRunner } from "./browser.ts";
+import { pngGrayThumbnail, pngSize } from "./png.ts";
 
 /**
  * Sauce Labs Live, driven through its web app. The account is on a Live Testing
@@ -22,6 +24,7 @@ export type SauceErrorCode =
   | "unsupported"
   | "timeout"
   | "start_pending"
+  | "cancelled"
   | "page_changed";
 
 export class SauceError extends Error {
@@ -52,23 +55,132 @@ export type Point = { x: number; y: number };
 export type SaucePageDeps = {
   sleep(ms: number): Promise<void>;
   now(): number;
-  /** Raw 8-bit grayscale pixels of an image file resized to width x height, or null without ImageMagick. */
+  /**
+   * Raw 8-bit grayscale pixels of an image resized to width x height, for PNGs the
+   * in-process decoder does not handle; null when ImageMagick is not installed.
+   */
   grayThumbnail(path: string, width: number, height: number): Promise<Uint8Array | null>;
 };
+
+function imageMagickThumbnail(binary: string, path: string, width: number, height: number) {
+  return new Promise<Uint8Array | null>((resolve) => {
+    execFile(
+      binary,
+      [path, "-resize", `${width}x${height}!`, "-colorspace", "gray", "-depth", "8", "gray:-"],
+      { encoding: "buffer", timeout: 20_000, maxBuffer: 4 * 1024 * 1024 },
+      (error, stdout) => resolve(error ? null : new Uint8Array(stdout)),
+    );
+  });
+}
 
 export const defaultPageDeps: SaucePageDeps = {
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => Date.now(),
-  grayThumbnail: (path, width, height) =>
-    new Promise((resolve) => {
-      execFile(
-        "magick",
-        [path, "-resize", `${width}x${height}!`, "-colorspace", "gray", "-depth", "8", "gray:-"],
-        { encoding: "buffer", timeout: 20_000, maxBuffer: 4 * 1024 * 1024 },
-        (error, stdout) => resolve(error ? null : new Uint8Array(stdout)),
-      );
-    }),
+  // ImageMagick 7 installs `magick`; Ubuntu's ImageMagick 6 installs only `convert`.
+  grayThumbnail: async (path, width, height) =>
+    (await imageMagickThumbnail("magick", path, width, height)) ??
+    imageMagickThumbnail("convert", path, width, height),
 };
+
+/**
+ * How a screenshot's rotation was read. Sauce draws a landscape app sideways in a
+ * portrait canvas, so the screen's shape allows two rotations, and comparing the
+ * canvas with the upright screenshot picks one. `clear` is false when neither
+ * canvas frame matched the screenshot well: the screen changed during the capture,
+ * or it is too uniform (a black or single-colour frame) to tell.
+ */
+export type RotationReading = {
+  candidates: readonly [number, number];
+  best: number | null;
+  clear: boolean;
+  /** The best sample's correlation with the screenshot, and its lead over the other rotation. */
+  score?: number;
+  margin?: number;
+};
+
+/** A canvas frame must correlate at least this well with the screenshot... */
+const MIN_MATCH = 0.5;
+/** ...and beat the other rotation by this much, or the reading is not clear. */
+const MIN_MARGIN = 0.2;
+
+/**
+ * Scores each candidate rotation of each canvas sample (gray, cw x ch) against the
+ * upright screenshot thumbnail (gray, sized for the candidates' upright shape) by
+ * normalized correlation, and keeps the best-matching sample.
+ */
+export function scoreRotation(
+  samples: readonly (ArrayLike<number> | null)[],
+  canvas: { width: number; height: number },
+  upright: { pixels: ArrayLike<number>; width: number; height: number },
+  candidates: readonly [number, number],
+): RotationReading {
+  let best: { rotation: number; score: number; margin: number } | null = null;
+  for (const sample of samples) {
+    if (!sample) continue;
+    const [first, second] = candidates.map((rotation) =>
+      correlation(turnThumbnail(sample, canvas, upright, rotation), upright.pixels),
+    ) as [number, number];
+    const top =
+      first >= second
+        ? { rotation: candidates[0], score: first }
+        : { rotation: candidates[1], score: second };
+    if (!best || top.score > best.score) best = { ...top, margin: Math.abs(first - second) };
+  }
+  if (!best) return { candidates, best: null, clear: false };
+  return {
+    candidates,
+    best: best.rotation,
+    clear: best.score >= MIN_MATCH && best.margin >= MIN_MARGIN,
+    score: Math.round(best.score * 100) / 100,
+    margin: Math.round(best.margin * 100) / 100,
+  };
+}
+
+/** The canvas thumbnail turned upright by `rotation`, using the same mapping as touches. */
+function turnThumbnail(
+  canvas: ArrayLike<number>,
+  size: { width: number; height: number },
+  upright: { width: number; height: number },
+  rotation: number,
+): Float64Array {
+  const out = new Float64Array(upright.width * upright.height);
+  for (let y = 0; y < upright.height; y += 1) {
+    for (let x = 0; x < upright.width; x += 1) {
+      const [cx, cy] = canvasFraction(
+        { x: (x + 0.5) / upright.width, y: (y + 0.5) / upright.height },
+        rotation,
+      );
+      const col = Math.min(size.width - 1, Math.floor(cx * size.width));
+      const row = Math.min(size.height - 1, Math.floor(cy * size.height));
+      out[y * upright.width + x] = canvas[row * size.width + col] ?? 0;
+    }
+  }
+  return out;
+}
+
+function correlation(a: ArrayLike<number>, b: ArrayLike<number>): number {
+  const n = Math.min(a.length, b.length);
+  if (n === 0) return 0;
+  let meanA = 0;
+  let meanB = 0;
+  for (let i = 0; i < n; i += 1) {
+    meanA += a[i] ?? 0;
+    meanB += b[i] ?? 0;
+  }
+  meanA /= n;
+  meanB /= n;
+  let cross = 0;
+  let varA = 0;
+  let varB = 0;
+  for (let i = 0; i < n; i += 1) {
+    const da = (a[i] ?? 0) - meanA;
+    const db = (b[i] ?? 0) - meanB;
+    cross += da * db;
+    varA += da * da;
+    varB += db * db;
+  }
+  return varA === 0 || varB === 0 ? 0 : cross / Math.sqrt(varA * varB);
+}
 
 const STATE_SCRIPT = `(() => {
   const text = document.body ? document.body.innerText : "";
@@ -378,11 +490,11 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
   }
 
   /** Starts a live session; resolves with the Sauce device header once the session page shows. */
-  async function startSession(input: {
-    app?: string;
-    device: string;
-    os?: string;
-  }): Promise<{ app: string; device: string; url: string }> {
+  async function startSession(
+    input: { app?: string; device: string; os?: string },
+    signal?: AbortSignal,
+  ): Promise<{ app: string; device: string; url: string }> {
+    const cancelled = () => new SauceError("cancelled", "The tool call was cancelled.");
     await requireLive();
     const app = await selectApp(input.app);
     await showDeviceTable(input.device);
@@ -415,16 +527,20 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
         "The device row disappeared before it could be selected.",
       );
     await deps.sleep(1200);
+    // Last point where stopping costs nothing: after this click a device is coming up.
+    if (signal?.aborted) throw cancelled();
     await browser.run(["find", "role", "button", "click", "--name", "Start Test", "--exact"]);
     const started = await poll(
       150_000,
       async () => {
+        if (signal?.aborted) return "cancelled" as const;
         const next = await state();
         if (next.capacityReached) return next;
         return next.kind === "session" && next.device ? next : null;
       },
       2500,
     );
+    if (started === "cancelled") throw cancelled();
     if (!started) {
       throw new SauceError(
         "start_pending",
@@ -528,8 +644,35 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     await browser.run(["download", "[data-ks-sauce-target]", path], 90_000);
   }
 
-  async function nativeScreenshot(path: string) {
+  /**
+   * Grayscale thumbnail of the device area as the page shows it, before any rotation.
+   * The session canvas is a transparent input layer over Sauce's video, so its pixels
+   * are empty; a page screenshot of its box captures what is actually drawn there.
+   */
+  async function canvasThumbnail(path: string, width: number, height: number) {
+    try {
+      await browser.run(["screenshot", CANVAS, path]);
+      return await pngGrayThumbnail(new Uint8Array(await readFile(path)), width, height);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Saves Sauce's native, upright screenshot to `path` and reads its rotation. The
+   * device area is sampled just before and just after the capture (beside `path`):
+   * the capture takes a few seconds, and whichever frame matches it is compared.
+   */
+  async function captureScreen(
+    path: string,
+  ): Promise<{ width: number; height: number; reading: RotationReading }> {
     await requireSession();
+    const rect = await canvasRect();
+    const canvas =
+      rect.width >= rect.height
+        ? { width: 48, height: Math.max(8, Math.round((48 * rect.height) / rect.width)) }
+        : { width: Math.max(8, Math.round((48 * rect.width) / rect.height)), height: 48 };
+    const before = await canvasThumbnail(`${path}.before.png`, canvas.width, canvas.height);
     await downloadMarked(
       `(() => {
         document.querySelectorAll("[data-ks-sauce-target]").forEach((e) => e.removeAttribute("data-ks-sauce-target"));
@@ -540,58 +683,21 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
       path,
       "Take Screenshot",
     );
-  }
-
-  /** Grayscale thumbnails of the live canvas turned by each candidate rotation, sized width x height. */
-  async function canvasThumbnails(width: number, height: number, rotations: number[]) {
-    return evaluate<Record<string, number[]> | null>(`(() => {
-      const c = document.querySelector(${JSON.stringify(CANVAS)});
-      if (!c) return null;
-      const out = {};
-      for (const r of ${JSON.stringify(rotations)}) {
-        const o = document.createElement("canvas");
-        o.width = ${width}; o.height = ${height};
-        const g = o.getContext("2d");
-        g.translate(${width} / 2, ${height} / 2);
-        g.rotate((r * Math.PI) / 180);
-        const [w, h] = r % 180 === 0 ? [${width}, ${height}] : [${height}, ${width}];
-        g.drawImage(c, -w / 2, -h / 2, w, h);
-        const d = g.getImageData(0, 0, ${width}, ${height}).data;
-        const gray = [];
-        for (let i = 0; i < d.length; i += 4) gray.push(Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]));
-        out[r] = gray;
-      }
-      return out;
-    })()`);
-  }
-
-  /**
-   * Finds the clockwise rotation that turns the session canvas into the upright
-   * device screenshot. Sauce shows a landscape game sideways in a portrait canvas.
-   */
-  async function measureRotation(screenshotPath: string, size: { width: number; height: number }) {
-    const rect = await canvasRect();
+    const after = await canvasThumbnail(`${path}.after.png`, canvas.width, canvas.height);
+    const bytes = new Uint8Array(await readFile(path));
+    const size = pngSize(bytes);
+    if (!size)
+      throw new SauceError("page_changed", "Sauce's Take Screenshot did not produce a PNG.");
     const sameShape = rect.width >= rect.height === size.width >= size.height;
-    const candidates = sameShape ? [0, 180] : [90, 270];
-    const width = 48;
-    const height = Math.max(8, Math.round((48 * size.height) / size.width));
-    const native = await deps.grayThumbnail(screenshotPath, width, height);
-    const thumbs = native ? await canvasThumbnails(width, height, candidates) : null;
-    if (!native || !thumbs) return candidates[0] as number;
-    let best = candidates[0] as number;
-    let bestError = Number.POSITIVE_INFINITY;
-    for (const rotation of candidates) {
-      const pixels = thumbs[rotation];
-      if (!pixels) continue;
-      let error = 0;
-      for (let i = 0; i < native.length; i += 1)
-        error += ((pixels[i] ?? 0) - (native[i] ?? 0)) ** 2;
-      if (error < bestError) {
-        best = rotation;
-        bestError = error;
-      }
-    }
-    return best;
+    const candidates: readonly [number, number] = sameShape ? [0, 180] : [90, 270];
+    const upright = sameShape ? canvas : { width: canvas.height, height: canvas.width };
+    const pixels =
+      (await pngGrayThumbnail(bytes, upright.width, upright.height)) ??
+      (await deps.grayThumbnail(path, upright.width, upright.height));
+    const reading = pixels
+      ? scoreRotation([before, after], canvas, { ...upright, pixels }, candidates)
+      : { candidates, best: null, clear: false };
+    return { ...size, reading };
   }
 
   async function openDeveloperTab(tab: "ADB Shell" | "Device Log") {
@@ -684,7 +790,18 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
       return b.length;
     })()`);
     const ended = await poll(20_000, async () => (await state()).kind !== "session", 1000);
-    if (!ended) throw new SauceError("timeout", "The live session did not end within 20 s.");
+    if (ended) return true;
+    // The End Session click missed or the page hung. Leaving the session page closes
+    // its device connection, which Sauce treats as the end of the session.
+    await open(LIVE_HOME);
+    const left = await poll(20_000, async () => (await state()).kind !== "session", 1000);
+    if (!left) {
+      throw new SauceError(
+        "timeout",
+        "The live session did not end, and the browser could not leave its page.",
+        "Call sauce_end again; if it keeps failing, ask the user to check the sauce-live browser on the bb server machine.",
+      );
+    }
     return true;
   }
 
@@ -698,8 +815,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     tap,
     drag,
     clickMenu,
-    nativeScreenshot,
-    measureRotation,
+    captureScreen,
     shell,
     downloadLog,
     endSession,
@@ -717,19 +833,24 @@ function countOf(text: string | null, needle: string): number {
 }
 
 /**
- * Maps a point given as fractions of the upright screenshot to viewport pixels
- * on the session canvas. `rotation` is the clockwise turn from canvas to upright.
+ * Where a point given as fractions of the upright screenshot falls on the session
+ * canvas, as fractions of the canvas. `rotation` is the clockwise turn from canvas
+ * to upright.
  */
-export function toViewport(point: Point, rotation: number, rect: Rect): { x: number; y: number } {
+export function canvasFraction(point: Point, rotation: number): [number, number] {
   const { x: u, y: v } = point;
-  const [cx, cy] =
-    rotation === 90
-      ? [v, 1 - u]
-      : rotation === 180
-        ? [1 - u, 1 - v]
-        : rotation === 270
-          ? [1 - v, u]
-          : [u, v];
+  return rotation === 90
+    ? [v, 1 - u]
+    : rotation === 180
+      ? [1 - u, 1 - v]
+      : rotation === 270
+        ? [1 - v, u]
+        : [u, v];
+}
+
+/** Maps a point given as fractions of the upright screenshot to viewport pixels on the canvas. */
+export function toViewport(point: Point, rotation: number, rect: Rect): { x: number; y: number } {
+  const [cx, cy] = canvasFraction(point, rotation);
   return {
     x: Math.round(rect.left + cx * rect.width),
     y: Math.round(rect.top + cy * rect.height),
