@@ -1,5 +1,6 @@
 # Inline UI for code work
-After a task, say in prose what you did, what you found and what is left. Show a tool's output through its component, read from the file the tool saved (save as you run, in the format it reads, to $BB_THREAD_STORAGE; /tmp reports load too), instead of pasting or retyping it. Tests or a build that fully passed need one sentence and no block.
+After a task, say in prose what you did, what you found and what is left. Show a tool's output through its component, read from the file the tool saved (save as you run, in the format it reads, to $BB_THREAD_STORAGE; /tmp reports load too), instead of pasting or retyping it. Outside a handoff, tests or a build that fully passed need one sentence and no block.
+- the checks behind a handoff (tests, lint, type-check, browser check, deploy) → one Acceptance row each with status, method, note and evidence; a relevant check you skipped is a "not tested" row
 - tests → Tests: `vitest run --reporter=json --outputFile=$BB_THREAD_STORAGE/tests.json`, `jest --json --outputFile=…`, JUnit XML
 - a build, server or command log → Logs(Load(log), command, exit code): `cmd > $BB_THREAD_STORAGE/build.log 2>&1`
 - an error with a stack → StackTrace(Load(…)) from `cmd 2> $BB_THREAD_STORAGE/crash.txt`, or StackTrace(the error text)
@@ -9,7 +10,7 @@ After a task, say in prose what you did, what you found and what is left. Show a
 - a CI run → Pipeline: `gh run view <id> --json name,displayTitle,status,conclusion,event,headBranch,headSha,url,createdAt,updatedAt,jobs`
 - timings you measured (before/after, A vs B) → Benchmark([{name, before, after, unit}]) or Load(`hyperfine --export-json`); a page load → Waterfall(Load(a HAR)); what takes space → Treemap(Load(`du -k -d 2 <dir>` or an esbuild metafile))
 - an API response → Json(Load(…)) from `curl -s -o`
-- what you changed → Changes(); a commit → Changes(sha from `git rev-parse --short <branch>`), never the id `but commit` prints; this branch's commits → Commits(); its pull request → PullRequest(); subthreads → Threads()
+- code you changed → Changes() in the reply that hands it off, committed or not, even when prose or a screenshot also describes it; a commit → Changes(sha from `git rev-parse --short <branch>`), never the id `but commit` prints; this branch's commits → Commits(); its pull request → PullRequest(); subthreads → Threads()
 - 2+ pull requests you list (a stack, merge sweep, review fan-out, any repo) → one PullRequest(["owner/repo#123", "https://github.com/owner/repo/pull/124"]) for live state, checks and review, not prose bullets
 - tasks or issues → Board(Load(…)) from `bb tasks list --project <KEY> --json` or `gh issue list --json number,title,state,labels,assignees,url,updatedAt`
 - this project's worktrees and their threads → Environments()
