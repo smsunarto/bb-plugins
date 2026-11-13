@@ -7,6 +7,14 @@ description: Test an app on Sauce Labs real devices through the sauce_* tools. U
 
 The `sauce_*` tools drive Sauce Labs Live in a shared, signed-in browser on the bb server machine. The account is a Live Testing plan with one live-device slot: Appium, saucectl, and the Real Device Access API are rejected, so these tools are the supported route.
 
+## Prompts written for the manual route
+
+Older hunt prompts say to open Sauce Live in a local Chrome, sign in through Google, and test "by hand in the Sauce Labs web UI". Do that through these tools: `sauce_status` is the sign-in check (`sign_in: true` is the one Google attempt), and the other tools are the hands. Do not launch Chrome, computer use, or another browser for Sauce. If a prompt asks for something the tools lack, test what they cover and report the rest as a coverage gap:
+
+- **Virtual devices:** only real devices are listed.
+- **iOS:** only when `sauce_catalog` lists an iOS build (`.ipa`); otherwise report no iOS build in Sauce storage.
+- **Two-finger input:** one finger only (see Rules).
+
 ## Workflow
 
 1. `sauce_status`. Continue only on `ready`, `session_abandoned`, or `session_mine`. On `signed_out`, retry once with `sign_in: true`. On any other state, wait or report it; the result's `next` says which.

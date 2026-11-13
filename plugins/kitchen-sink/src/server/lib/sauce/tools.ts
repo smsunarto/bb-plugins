@@ -1,5 +1,5 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BbPluginApi, PluginAgentToolResult } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
@@ -321,6 +321,12 @@ export function createSauceTools(deps: SauceToolDeps) {
         }[state];
         return {
           state,
+          // Hunt prompts written for the manual route ask to check Sauce in a local
+          // Chrome; say plainly that this is that browser so no second one is opened.
+          browser:
+            state === "signed_out"
+              ? undefined
+              : `Signed-in Sauce Live in Chrome on ${hostname()}, the bb server. This is the Sauce web UI route; do not open another browser or use computer use for Sauce.`,
           device: page.device,
           lease: lease ? { device: lease.device, rotation: lease.rotation } : null,
           abandoned_lease:

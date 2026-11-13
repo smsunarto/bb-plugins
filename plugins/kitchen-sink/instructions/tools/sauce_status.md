@@ -1,4 +1,4 @@
-Check whether this thread can use a Sauce Labs real device: the shared Sauce Live browser on the bb server machine, its sign-in, the account's one live-device slot, and which bb thread holds that device. Call it first in any Sauce device task.
+Check whether this thread can use a Sauce Labs real device: the shared Sauce Live browser on the bb server machine, its sign-in, the account's one live-device slot, and which bb thread holds that device. Call it first in any Sauce device task. It is the sign-in check a task asks for when it says to open Sauce Live in a local Chrome: `ready` means the browser is signed in, and `browser` names where it runs.
 
 Returns `state` with a `next` step:
 

@@ -445,7 +445,14 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     const searched = await poll(
       12_000,
       async () => {
-        await browser.run(["fill", "[data-qa=device-filter-bar-search]", query]);
+        // The search box is replaced while the view switches; a fill that lands then just retries.
+        const filled = await browser
+          .run(["fill", "[data-qa=device-filter-bar-search]", query])
+          .then(
+            () => true,
+            () => false,
+          );
+        if (!filled) return false;
         await deps.sleep(1500);
         return evaluate<boolean>(
           `document.querySelector("[data-qa=device-filter-bar-search]")?.value === ${JSON.stringify(query)}`,
