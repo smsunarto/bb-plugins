@@ -286,6 +286,7 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain(
       '> aside[aria-hidden="true"] > div {\n    opacity: 0;\n    translate: 4px 0;\n    transition: none;',
     );
+    // workaround:monokai/context-card-late-layout begin
     // The floating context card hides on the frame its overlay drops below bb's
     // 1072px float width (1048px of content), not a ResizeObserver frame later.
     const card = styleRules(theme).filter(({ selector }) =>
@@ -303,6 +304,7 @@ describe("bb Monokai contract audit", () => {
       "@container thread-pane (1072px <= width < 1384px)",
       "@container thread-pane (1072px <= width < 1384px)",
     ]);
+    // workaround:monokai/context-card-late-layout end
   });
 
   test("rejects an unknown template role", () => {

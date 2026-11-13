@@ -603,6 +603,7 @@
     transition: none;
   }
 
+  /* workaround:monokai/context-card-late-layout begin */
   /* bb floats the thread context card only while its scroll overlay is at
    * least 1072px wide (12px padding each side, so 1048px of content), and
    * reads that width through a ResizeObserver, a frame late. When the right
@@ -633,6 +634,7 @@
       padding-inline-end: 0 !important;
     }
   }
+  /* workaround:monokai/context-card-late-layout end */
 }
 
 /* Reduced motion keeps only the left sidebar's content fade, at 110ms, as

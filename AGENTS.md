@@ -75,6 +75,14 @@ A DOM hack changes or restyles DOM that bb rendered, such as adding an icon to a
 - **Accessibility:** hide decorative nodes with `aria-hidden` and leave the element's accessible name unchanged.
 - **Verification:** test mount, a late-mounted target, a re-rendered target, and disposal. In the browser, confirm the decoration survives a thread switch and a plugin reload, and that disabling the plugin removes it.
 
+## bb workarounds
+
+Plugin code that compensates for a bb defect is registered in `workarounds.json`, so a bb upgrade can retire it. `scripts/workarounds.ts` documents the format; `scripts/workarounds.test.ts` fails on an unregistered or unbalanced marker.
+
+- **When adding one:** add an entry with the defect, `verifiedOn` (the bb version), owned `files`, a `probe`, `afterRemoval` commands, and a `verify` step. Fence code in shared files with `workaround:<id> begin` / `workaround:<id> end` comment lines. A design choice, such as matching another app's motion, is not a workaround.
+- **Probes:** `fixed` is a regex for a positive sign of bb's fix; `needed` is one for the defect. Leave either `null` rather than guess.
+- **After a bb upgrade:** run `bun run workarounds check`. For each `fixed` entry, run `bun run workarounds remove <id>` and then its `verify` step. For `unknown` entries, run the `verify` step against bb without the workaround before removing it. Update `verifiedOn` for entries that are still needed.
+
 ## Resizable thread side-panel tabs
 
 - Every UI in a Thread side-panel tab (`thread-panel`) must adapt continuously to its container's available width and height as the user resizes it. Use container-aware layouts; browser viewport breakpoints alone do not describe the panel's size.

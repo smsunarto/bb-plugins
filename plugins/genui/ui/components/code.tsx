@@ -125,6 +125,7 @@ function useTimesHidden(element: RefObject<HTMLElement | null>): number {
  * draws its lines at once (the first 200 or so; further down, a frame after
  * it is shown), so the box comes back drawn and at its height.
  * @pierre/diffs 1.3.0 fixed it; this can go once BB ships that.
+ * workaround:genui/source-view-remount (manual removal; see workarounds.json)
  */
 export function SourceView({ content, path }: { content: string; path: string }) {
   const box = useRef<HTMLDivElement>(null);

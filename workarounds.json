@@ -1,0 +1,48 @@
+{
+  "$comment": "Plugin code that compensates for a bb defect. `bun scripts/workarounds.ts check` probes the installed bb; `remove <id>` deletes an entry's files and marked blocks. See AGENTS.md, bb workarounds.",
+  "workarounds": [
+    {
+      "id": "monokai/context-card-late-layout",
+      "defect": "bb lays out the floating thread context card (float, 312px chat shift, or banner) from the chat width in a ResizeObserver, one React render after a width change. A width snap shows one frame with the stale card and shift.",
+      "verifiedOn": "0.49.0",
+      "upstream": "https://github.com/get-bb/bb/pull/7497",
+      "files": [
+        "plugins/monokai/app/context-card-state.ts",
+        "plugins/monokai/test/context-card-state.test.ts"
+      ],
+      "probe": {
+        "needed": "/2>=312\\?`gutter`",
+        "fixed": null
+      },
+      "afterRemoval": [
+        "cd plugins/monokai && bun run generate:theme && bun run check && bun run test"
+      ],
+      "verify": "With the right panel's context card pinned, open and close the panel at 1440, 1512, 1920, 2560, and 3440px wide: nothing in the chat may move after the first frame."
+    },
+    {
+      "id": "monokai/secondary-swipe-width-property",
+      "defect": "bb sets the unregistered, inheriting --secondary-swipe-width on the right panel's <aside> when the panel opens or closes and around a divider drag (0.48.1 stopped the per-frame drag writes, get-bb/bb#6511). Each write restyles every element in the panel: with 2,353 elements, open and close frames reach 67–150 ms without the registration and 33–67 ms with it.",
+      "verifiedOn": "0.49.0",
+      "upstream": "https://github.com/get-bb/bb/pull/7499",
+      "files": ["plugins/monokai/app/secondary-panel-resize.css"],
+      "probe": {
+        "needed": "--secondary-swipe-width",
+        "fixed": "@property\\s+--secondary-swipe-width"
+      },
+      "afterRemoval": ["cd plugins/monokai && bun run check && bun run test"],
+      "verify": "Remove the @property rule and fill the right panel to about 2,300 elements (a busy GitButler tab). Open and close the panel and drag its divider: worst frames stay at or under the with-rule figures in `defect`."
+    },
+    {
+      "id": "genui/source-view-remount",
+      "defect": "bb's source viewer (@pierre/diffs VirtualizedFile before 1.3.0) keeps a blank placeholder after being hidden with display:none and shown again.",
+      "verifiedOn": "0.49.0",
+      "manual": "Replace each SourceView with bb's HostSourceCode in plugins/genui/ui/components/code.tsx and FrameFooter.tsx, then delete SourceView, useTimesHidden, and their tests.",
+      "probe": {
+        "needed": null,
+        "fixed": null
+      },
+      "afterRemoval": ["cd plugins/genui && bun run typecheck && bun run test"],
+      "verify": "Collapse and reopen a Code or Snippet block in a GenUI card: the source lines are drawn when it reopens."
+    }
+  ]
+}
