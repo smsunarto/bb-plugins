@@ -584,28 +584,22 @@ test("Rename asks for a valid new name, then renames pinned to the head the read
   expect(of("vcsAction")).toHaveLength(1);
 });
 
-test("Merge reads the policy fresh, then merges pinned to the head and base the reader saw", async () => {
+test("Merge squashes on confirm without reading first, pinned to the head and base the reader saw", async () => {
   const { slot, of } = renderRow(readyToMerge());
   await act(async () => (await slot.findByRole("button", { name: "Merge #482" })).click());
-  const confirm = await slot.findByTestId("sc-merge-confirm");
-  await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(false));
-  expect(of("mergePolicy")[0]!.input).toEqual({
-    key: "gh:smsunarto/bb-plugins:smsunarto:scott/forge-host",
-    number: 482,
-  });
-  // Squash is allowed, so the dialog starts there.
+  const confirm = (await slot.findByTestId("sc-merge-confirm")) as HTMLButtonElement;
+  expect(confirm.disabled).toBe(false);
   expect(confirm.textContent).toBe("Squash and merge");
-  const select = slot.getByTestId("sc-merge-method");
-  await choose(select, "Create a merge commit");
-  expect(confirm.textContent).toBe("Create a merge commit");
-  await act(async () => (confirm as HTMLButtonElement).click());
+  expect(slot.queryByTestId("sc-merge-method")).toBeNull();
+  await act(async () => confirm.click());
   await waitFor(() => expect(of("forgeAction")).toHaveLength(1));
   expect(of("forgeAction")[0]!.input).toEqual({
     threadId: "thread-a",
-    action: { kind: "merge", method: "merge", base: "main" },
+    action: { kind: "merge", method: "squash", base: "main" },
     expected: { number: 482, head: "c0ffee" },
   });
   await waitFor(() => expect(slot.queryByTestId("sc-merge-dialog")).toBeNull());
+  expect(of("mergePolicy")).toHaveLength(0);
 });
 
 test("Escape closes the merge dialog and returns focus to Merge, never leaving the page", async () => {
@@ -625,17 +619,7 @@ test("Escape closes the merge dialog and returns focus to Merge, never leaving t
   document.removeEventListener("keydown", leave);
 });
 
-test("Merge stays off with GitHub's reason, and a failed merge is reported, not retried", async () => {
-  const blocked = renderRow(readyToMerge(), {
-    mergePolicy: () => ({ ok: true as const, policy: { ...POLICY, mergeStateStatus: "BLOCKED" } }),
-  });
-  await act(async () => (await blocked.slot.findByRole("button", { name: "Merge #482" })).click());
-  expect((await blocked.slot.findByTestId("sc-merge-issue")).textContent).toContain(
-    "GitHub blocks merging: BLOCKED",
-  );
-  expect((blocked.slot.getByTestId("sc-merge-confirm") as HTMLButtonElement).disabled).toBe(true);
-  cleanup();
-
+test("a refused merge reports GitHub's reason and is not retried", async () => {
   const { slot, of } = renderRow(readyToMerge(), {
     forgeAction: () => ({
       status: "failed" as const,
@@ -644,13 +628,11 @@ test("Merge stays off with GitHub's reason, and a failed merge is reported, not 
   });
   await act(async () => (await slot.findByRole("button", { name: "Merge #482" })).click());
   const confirm = (await slot.findByTestId("sc-merge-confirm")) as HTMLButtonElement;
-  await waitFor(() => expect(confirm.disabled).toBe(false));
   await act(async () => confirm.click());
   expect(await slot.findByText(/Head branch was modified\. Refreshing/)).toBeTruthy();
   await new Promise((settle) => setTimeout(settle, 30));
   expect(of("forgeAction")).toHaveLength(1);
-  // The requirements are read again before another try.
-  expect(of("mergePolicy").length).toBeGreaterThanOrEqual(2);
+  expect(confirm.disabled).toBe(false);
 });
 
 test("Create PR on the thread's branch with no pull request names the head seen, then shows its child", async () => {

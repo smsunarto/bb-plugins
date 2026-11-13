@@ -61,6 +61,25 @@ export async function readMergePolicy(
   };
 }
 
+/** While GitHub is still computing the merge state, the policy is read again, a few times. */
+const UNKNOWN_READS = 5;
+const UNKNOWN_WAIT_MS = 2_000;
+
+function pause(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((settle, fail) => {
+    if (signal?.aborted) return fail(signal.reason);
+    const timer = setTimeout(settle, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        fail(signal.reason);
+      },
+      { once: true },
+    );
+  });
+}
+
 export type MergeWrite = {
   repo: Repo;
   number: number;
@@ -71,7 +90,7 @@ export type MergeWrite = {
 
 /**
  * Merges the pull request only while it is still at `expectedHead` into
- * `expectedBase`. Already merged is `upToDate`; a moved head or base is
+ * `expectedBase`, waiting briefly while GitHub computes its merge state. Already merged is `upToDate`; a moved head or base is
  * `conflict`; any other unmet requirement throws a `GhError` naming it.
  */
 export async function mergeAt(
@@ -79,7 +98,11 @@ export async function mergeAt(
   write: MergeWrite,
   signal?: AbortSignal,
 ): Promise<ForgeResult> {
-  const policy = await readMergePolicy(exec, write, signal);
+  let policy = await readMergePolicy(exec, write, signal);
+  for (let read = 1; read < UNKNOWN_READS && policy.mergeStateStatus === "UNKNOWN"; read++) {
+    await pause(UNKNOWN_WAIT_MS, signal);
+    policy = await readMergePolicy(exec, write, signal);
+  }
   if (policy.state === "MERGED") return { status: "upToDate" };
   if (policy.headRefOid !== write.expectedHead)
     return {

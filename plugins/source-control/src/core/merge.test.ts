@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { initialMethod, mergeIssue, type MergePolicy } from "./merge.ts";
+import { mergeIssue, type MergePolicy } from "./merge.ts";
 
 const POLICY: MergePolicy = {
   state: "OPEN",
@@ -37,10 +37,4 @@ describe("mergeIssue", () => {
     expect(issue({ mergeStateStatus: "UNKNOWN" })).toContain("GitHub blocks merging: UNKNOWN");
     expect(issue({ methods: ["merge"] })).toBe("This repository does not allow that merge method.");
   });
-});
-
-test("the dialog starts on the reader's choice when allowed, else the first allowed", () => {
-  expect(initialMethod(["merge", "squash"], "squash")).toBe("squash");
-  expect(initialMethod(["rebase"], "squash")).toBe("rebase");
-  expect(initialMethod([], "squash")).toBe("squash");
 });

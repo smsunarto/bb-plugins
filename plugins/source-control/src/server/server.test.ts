@@ -200,6 +200,8 @@ type World = {
     methods?: ("merge" | "squash" | "rebase")[];
     permission?: string;
     mergeState?: string;
+    /** States the next policy reads answer, one each, before `mergeState`. */
+    mergeStates?: string[];
     /** "lost": GitHub merged, but the answer never came back. */
     answer?: "ok" | "refused" | "lost";
   };
@@ -336,7 +338,7 @@ function fakeMerge(
         isDraft: pr.isDraft,
         headRefOid: pr.headRefOid,
         baseRefName: pr.baseRefName,
-        mergeStateStatus: world.merge?.mergeState ?? "CLEAN",
+        mergeStateStatus: world.merge?.mergeStates?.shift() ?? world.merge?.mergeState ?? "CLEAN",
       },
     };
     return { code: 0, stdout: JSON.stringify({ data: { repository } }), stderr: "" };
@@ -1098,6 +1100,18 @@ describe("merge", () => {
     });
     expect(world.merged ?? []).toEqual([]);
   });
+
+  test("while GitHub is still computing the merge state, the merge waits and reads again", async () => {
+    const world = ready();
+    world.merge = { mergeStates: ["UNKNOWN"] };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("forgeAction", merge("c0ffee"))).toEqual({
+      status: "done",
+    });
+    expect(world.merge.mergeStates).toEqual([]);
+    expect(world.merged).toHaveLength(1);
+  }, 10_000);
 
   test("a lost answer is never retried; asking again finds the pull request merged", async () => {
     const world = ready();

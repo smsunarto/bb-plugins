@@ -10,7 +10,6 @@
 import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcMutation as useRpcMutation,
-  useRpc,
 } from "@get-bb/plugin-sdk/app";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { GroupEntry } from "../core/directive.ts";
@@ -28,8 +27,6 @@ export type GroupItem = { id: string; entry: GroupEntry } | { id: string; note: 
 
 const FOOTER =
   "flex w-full max-w-[576px] min-w-0 flex-col gap-2 rounded-[8px] border border-solid border-border bg-background px-3 py-2 text-[12px] leading-4 text-foreground";
-
-const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /** Every pull request on the card, as it reads now, when all of them are ready to merge. */
 function useMergeTargets(keys: readonly ChangeKey[], enabled: boolean): MergeTarget[] | null {
@@ -71,7 +68,6 @@ function useShipAll(threadId: string, entries: readonly GroupEntry[]) {
 
 /** Merge all: an inline confirm, then each pull request in turn. */
 function useMergeAll() {
-  const rpc = useRpc<typeof sourceControlContract>();
   const merge = useChangeMerge();
   const [confirming, setConfirming] = useState<MergeTarget[] | null>(null);
   const [running, setRunning] = useState<{ index: number; total: number } | null>(null);
@@ -81,9 +77,7 @@ function useMergeAll() {
     setOutcome(null);
     setRunning({ index: 0, total: targets.length });
     const result = await mergeAll(targets, {
-      policy: (target) => rpc.call("mergePolicy", { key: target.changeKey, number: target.number }),
       merge,
-      wait,
       onStart: (index) => setRunning({ index, total: targets.length }),
     });
     setRunning(null);

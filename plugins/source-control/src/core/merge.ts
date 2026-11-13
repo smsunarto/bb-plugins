@@ -2,18 +2,12 @@
  * Merging a pull request: the methods a repository allows, what GitHub says
  * about this pull request and this account right now, and the requirements a
  * merge must meet. Ported from `plugins/code-review/src/shared/pr-actions.ts`;
- * the dialog and the forge write apply the same requirements to fresh state.
+ * the forge write applies them to fresh state as it merges.
  */
 import { z } from "zod";
 
 export const mergeMethodSchema = z.enum(["merge", "squash", "rebase"]);
 export type MergeMethod = z.infer<typeof mergeMethodSchema>;
-
-export const MERGE_METHOD_LABEL: Record<MergeMethod, string> = {
-  squash: "Squash and merge",
-  merge: "Create a merge commit",
-  rebase: "Rebase and merge",
-};
 
 /** Fresh repository policy and authorization for one pull request and the acting account. */
 export const mergePolicySchema = z
@@ -60,9 +54,4 @@ export function mergeIssue({
     return `GitHub blocks merging: ${policy.mergeStateStatus}. Resolve the requirements or use GitHub for merge queues.`;
   if (!policy.methods.includes(method)) return "This repository does not allow that merge method.";
   return null;
-}
-
-/** The method the dialog starts on: the reader's last choice when the repository allows it. */
-export function initialMethod(methods: readonly MergeMethod[], chosen: MergeMethod): MergeMethod {
-  return methods.includes(chosen) ? chosen : (methods[0] ?? chosen);
 }

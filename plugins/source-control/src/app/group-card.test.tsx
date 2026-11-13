@@ -94,18 +94,6 @@ function renderGroup(
           Object.fromEntries(keys.map((key) => [key, { read: null, problem: null }])),
         reviewForChange: () => ({}),
         shipGroup: record("shipGroup", () => ({ ok: true })),
-        mergePolicy: record("mergePolicy", ({ key }: { key: string }) => ({
-          ok: true,
-          policy: {
-            state: "OPEN",
-            isDraft: false,
-            headRefOid: HEADS[key],
-            baseRefName: "main",
-            mergeStateStatus: "CLEAN",
-            canMerge: true,
-            methods: ["squash"],
-          },
-        })),
         changeForgeAction: record(
           "changeForgeAction",
           options.merge ?? (() => ({ status: "done" })),

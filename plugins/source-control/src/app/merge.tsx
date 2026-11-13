@@ -1,31 +1,15 @@
 /**
- * Merge a pull request: today's merge dialog from code-review
- * (`plugins/code-review/src/app/pr-actions.tsx`), as a modal shadcn Dialog.
- * It reads the merge policy fresh when it opens, and again every two seconds
- * while GitHub is still computing the merge state. The merge is pinned to the
- * head and base the reader saw when they opened it, and never retried.
+ * Merge a pull request: a modal shadcn Dialog that squashes on confirm. It
+ * reads nothing first; the server checks GitHub's requirements as it merges
+ * and the dialog reports any it refuses. The merge is pinned to the head and
+ * base the reader saw when they opened it, and never retried.
  */
-import { experimental_useRpcMutation as useRpcMutation, useRpc } from "@get-bb/plugin-sdk/app";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { experimental_useRpcMutation as useRpcMutation } from "@get-bb/plugin-sdk/app";
+import { useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { describeProblem, type ForgeResult, type Problem } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { parseChangeKey, type ChangeDetail } from "../core/review.ts";
-import {
-  initialMethod,
-  MERGE_METHOD_LABEL,
-  mergeIssue,
-  mergeMethodSchema,
-  type MergeMethod,
-  type MergePolicy,
-} from "../core/merge.ts";
+import type { MergeMethod } from "../core/merge.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
 import { Button, type ButtonProps } from "./components/ui/button.tsx";
@@ -37,13 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./components/ui/dialog.tsx";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "./components/ui/select.tsx";
 import { Pending } from "./ui.tsx";
 
 /** The pull request as the reader saw it when they chose to merge. */
@@ -95,8 +72,6 @@ export function useChangeMerge(): SubmitMerge {
   );
 }
 
-const UNKNOWN_POLL_MS = 2_000;
-
 /**
  * What Merge acts on for a Change's detail: its open pull request at the
  * head and base the reader sees; null for anything else.
@@ -137,51 +112,8 @@ export function repoOfKey(key: ChangeKey): string {
   return parsed?.kind === "gh" ? `${parsed.repo.owner}/${parsed.repo.name}` : "";
 }
 
-type PolicyRead =
-  | { state: "loading" }
-  | { state: "ready"; policy: MergePolicy }
-  | { state: "failed"; message: string };
-
 function problemText(problem: Problem): string {
   return "detail" in problem ? problem.detail : describeProblem(problem);
-}
-
-/** The merge policy, read when the dialog opens and while GitHub's merge state is UNKNOWN. */
-function useMergePolicy(changeKey: ChangeKey, number: number, attempt: number): PolicyRead {
-  const rpc = useRpc<typeof sourceControlContract>();
-  // Each attempt is a new request; its answer is kept with it, so an older one reads as loading.
-  const request = useMemo(() => ({ changeKey, number, attempt }), [changeKey, number, attempt]);
-  const [answer, setAnswer] = useState<{ request: typeof request; read: PolicyRead } | null>(null);
-  useEffect(() => {
-    let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const settle = (read: PolicyRead) => {
-      if (live) setAnswer({ request, read });
-    };
-    const load = async () => {
-      try {
-        const result = await rpc.call("mergePolicy", {
-          key: request.changeKey,
-          number: request.number,
-        });
-        if (!result.ok) return settle({ state: "failed", message: problemText(result.problem) });
-        settle({ state: "ready", policy: result.policy });
-        if (live && result.policy.mergeStateStatus === "UNKNOWN")
-          timer = setTimeout(load, UNKNOWN_POLL_MS);
-      } catch (error) {
-        settle({
-          state: "failed",
-          message: error instanceof Error ? error.message : String(error),
-        });
-      }
-    };
-    void load();
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [rpc, request]);
-  return answer && answer.request === request ? answer.read : { state: "loading" };
 }
 
 /** What the reader is told after a merge that did not simply happen. */
@@ -239,17 +171,16 @@ export function MergeButton({
   );
 }
 
-/** The confirm step: merges once, closes when done or already merged, else says why and reads again. */
+/** The confirm step: squashes once, closes when done or already merged, else says why. */
 function useConfirmMerge(target: MergeTarget, submit: SubmitMerge, onClose: () => void) {
   const [pending, setPending] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const confirm = async (method: MergeMethod) => {
+  const confirm = async () => {
     setPending(true);
     setOutcome(null);
     let text: string | null;
     try {
-      const result = await submit(target, method);
+      const result = await submit(target, "squash");
       text = resultText(result);
       if (result.status === "done" || result.status === "upToDate") {
         onClose();
@@ -260,86 +191,8 @@ function useConfirmMerge(target: MergeTarget, submit: SubmitMerge, onClose: () =
     }
     setPending(false);
     setOutcome(text);
-    // Whatever happened, the requirements are read again before another try.
-    setAttempt((n) => n + 1);
   };
-  const retry = useCallback(() => setAttempt((n) => n + 1), []);
-  return { pending, outcome, attempt, confirm, retry };
-}
-
-function MethodSelect({
-  methods,
-  method,
-  disabled,
-  onChange,
-}: {
-  methods: readonly MergeMethod[];
-  method: MergeMethod;
-  disabled: boolean;
-  onChange: (method: MergeMethod) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2 text-[12px] leading-4">
-      <span>Merge method</span>
-      <Select
-        value={method}
-        disabled={disabled}
-        onValueChange={(next) => {
-          const value = mergeMethodSchema.safeParse(next);
-          if (value.success) onChange(value.data);
-        }}
-      >
-        <SelectTrigger
-          aria-label="Merge method"
-          data-testid="sc-merge-method"
-          className="h-8 w-full border-border bg-background"
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {methods.map((value) => (
-            <SelectItem key={value} value={value}>
-              {MERGE_METHOD_LABEL[value]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <span className="text-muted-foreground">
-        Merges directly. Use GitHub for repositories requiring a merge queue.
-      </span>
-    </div>
-  );
-}
-
-/** Why Merge is off: the policy cannot be read, or a requirement is unmet. */
-function PolicyNote({
-  read,
-  issue,
-  onRetry,
-}: {
-  read: PolicyRead;
-  issue: string | null;
-  onRetry: () => void;
-}) {
-  if (read.state === "failed")
-    return (
-      <p role="alert" className="m-0 text-[12px] leading-4 text-destructive-text">
-        {read.message}{" "}
-        <button
-          type="button"
-          className="cursor-pointer border-0 bg-transparent p-0 text-[12px] text-foreground underline"
-          onClick={onRetry}
-        >
-          Try again
-        </button>
-      </p>
-    );
-  if (!issue) return null;
-  return (
-    <output data-testid="sc-merge-issue" className="text-[12px] leading-4 text-muted-foreground">
-      {issue}
-    </output>
-  );
+  return { pending, outcome, confirm };
 }
 
 export function MergeDialog({
@@ -354,15 +207,7 @@ export function MergeDialog({
   /** Where focus goes once the dialog is gone; Radix's trap would undo it any earlier. */
   returnFocus?: () => void;
 }) {
-  const [chosen, setChosen] = useState<MergeMethod>("squash");
   const merge = useConfirmMerge(target, submit, onClose);
-  const read = useMergePolicy(target.changeKey, target.number, merge.attempt);
-  const policy = read.state === "ready" ? read.policy : null;
-  const method = policy ? initialMethod(policy.methods, chosen) : chosen;
-  let issue: string | null = null;
-  if (policy) issue = mergeIssue({ policy, head: target.head, base: target.base, method });
-  else if (read.state === "loading") issue = "Checking permissions and merge requirements…";
-  const canConfirm = !merge.pending && policy !== null && !issue;
   const close = () => {
     if (!merge.pending) onClose();
   };
@@ -389,13 +234,6 @@ export function MergeDialog({
             {target.repo}#{target.number}: {target.title}. Destination: {target.base}.
           </DialogDescription>
         </DialogHeader>
-        <MethodSelect
-          methods={policy?.methods ?? [method]}
-          method={method}
-          disabled={merge.pending || !policy}
-          onChange={setChosen}
-        />
-        <PolicyNote read={read} issue={issue} onRetry={merge.retry} />
         {merge.outcome ? (
           <p role="alert" className="m-0 text-[12px] leading-4 text-destructive-text">
             {merge.outcome}
@@ -408,12 +246,12 @@ export function MergeDialog({
           <Button
             variant="default"
             data-testid="sc-merge-confirm"
-            disabled={!canConfirm}
-            onClick={() => void merge.confirm(method)}
+            disabled={merge.pending}
+            onClick={() => void merge.confirm()}
             className={cx(merge.pending && "cursor-progress")}
           >
             <Pending pending={merge.pending} />
-            {merge.pending ? "Merging…" : MERGE_METHOD_LABEL[method]}
+            {merge.pending ? "Merging…" : "Squash and merge"}
           </Button>
         </DialogFooter>
       </DialogContent>
