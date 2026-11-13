@@ -95,6 +95,7 @@ import {
   type ThreadsView,
 } from "./project";
 import { previewText, threadActivityLabel } from "./thread-activity";
+import { parsePluginClaims, PLUGIN_ACTION_LABEL, pluginRows, type PluginClaim } from "./plugins";
 import { commonDirectory, displayPath, formatDuration, readTestRun, stripAnsi } from "./test-results";
 import { firstError, foldRepeats, readLogs, LOG_LEVELS } from "./logs";
 import { frameRows, memberPlaces, readTrace, relationLabel, type TraceFrame } from "./stack-trace";
@@ -928,6 +929,8 @@ function blockBody(node: UiNode): string {
       return estimateMarkdown(props.tasks, props.unit);
     case "Environments":
       return environmentsMarkdown();
+    case "Plugins":
+      return pluginsMarkdown(node);
     case "Findings":
       return findingsMarkdown(props.items, inline(props.title));
     case "Coverage":
@@ -1321,6 +1324,10 @@ function projectRequest(node: UiNode): Parsed<ProjectRequest> | null {
     }
     case "Environments":
       return { ok: true, value: { kind: "environments" } };
+    case "Plugins": {
+      const claims = parsePluginClaims(props.items);
+      return claims.ok ? { ok: true, value: { kind: "plugins", ids: claims.value.map((claim) => claim.id) } } : claims;
+    }
     default:
       return null;
   }
@@ -1417,8 +1424,8 @@ function projectMarkdown(node: UiNode): string {
     const refs = parsePullRequestRefs(props.refs);
     return pullRequestsMarkdown(answer, refs.ok && refs.value !== null ? refs.value.length : answer.rows.length);
   }
-  // Environments renders through its own case in block().
-  if ("environments" in answer) return "";
+  // Environments and Plugins render through their own cases in block().
+  if ("environments" in answer || "plugins" in answer) return "";
   return threadsMarkdown(answer);
 }
 
@@ -1670,6 +1677,37 @@ function estimateMarkdown(value: Value | undefined, unitValue: Value | undefined
     ),
     moreLine(shown.length, estimates.length, "task"),
   ]);
+}
+
+// ── Plugins ─────────────────────────────────────────────────────────────────
+
+/** What the reply says it did to a plugin, when BB wasn't asked or couldn't say. */
+function claimLine(claim: PluginClaim): string {
+  return `- \`${claim.id}\` — ${PLUGIN_ACTION_LABEL[claim.action]}${claim.note === null ? "" : `: ${plainMarkdown(claim.note)}`}`;
+}
+
+/** The plugins a reply says it installed, reloaded or removed, each with what BB runs now. */
+function pluginsMarkdown(node: UiNode): string {
+  const props: Readonly<Record<string, Value>> = node.props;
+  const claims = parsePluginClaims(props.items);
+  if (!claims.ok) return `_(error: ${claims.error})_`;
+  const answer = projectAnswers.get(projectRequestKey({ kind: "plugins", ids: claims.value.map((claim) => claim.id) }));
+  if (answer === undefined || !answer.ok || !("plugins" in answer)) {
+    const why = answer === undefined ? "as the reply reports; open it in BB for each plugin's status" : answer.ok ? "" : answer.message;
+    return paragraphs([`**Plugins**${why === "" ? "" : ` · _${why}_`}`, claims.value.map(claimLine).join("\n")]);
+  }
+  const lines = pluginRows(claims.value, answer.plugins).map((row) => {
+    const { claim, state } = row;
+    const name = state.found
+      ? `**${plainMarkdown(state.name)}**${state.name === state.id ? "" : ` (\`${state.id}\`)`}${state.version === null ? "" : ` v${state.version}`}`
+      : `\`${claim.id}\``;
+    const facts = [PLUGIN_ACTION_LABEL[claim.action], `${lookup(TONE_DOTS, row.tone)} ${row.stateLabel}`, state.found ? plainMarkdown(state.source) : ""];
+    const line = [`- ${name} — ${facts.filter((part) => part !== "").join(" · ")}`];
+    if (row.problem !== null) line.push(`  - ${plainMarkdown(row.problem)}`);
+    if (claim.note !== null) line.push(`  - ${plainMarkdown(claim.note)}`);
+    return line.join("\n");
+  });
+  return paragraphs(["**Plugins**", lines.join("\n")]);
 }
 
 // ── Environments ────────────────────────────────────────────────────────────

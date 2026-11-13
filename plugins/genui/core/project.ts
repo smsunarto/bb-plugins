@@ -2,8 +2,9 @@
 // Threads, Environments) show: the shapes the backend (project/) answers
 // with, which the renderer and the markdown fallback both read, and the pure
 // helpers they share. Nothing here talks to BB; project/source.ts does.
-// Environments' own shapes are in environments.ts.
+// Environments' own shapes are in environments.ts, Plugins' in plugins.ts.
 import type { EnvironmentsView } from "./environments";
+import type { PluginsView } from "./plugins";
 import type { LastMessage, PendingAsk } from "./thread-activity";
 
 /** BB thread ids: `thr_` and lowercase letters and digits. */
@@ -158,7 +159,9 @@ export type ProjectRequest =
   /** Pull requests by reference, at most PULL_REQUESTS_SHOWN. */
   | { readonly kind: "pullRequests"; readonly refs: readonly PullRequestRef[] }
   | { readonly kind: "threads"; readonly ids: readonly string[] | null }
-  | { readonly kind: "environments" };
+  | { readonly kind: "environments" }
+  /** BB's state of the plugins named, by id. */
+  | { readonly kind: "plugins"; readonly ids: readonly string[] };
 
 export function projectRequestKey(request: ProjectRequest): string {
   return JSON.stringify(request);
@@ -388,13 +391,15 @@ export type PullRequestResult = PullRequestView | ProjectFailure;
 export type PullRequestsResult = PullRequestsView | ProjectFailure;
 export type ThreadsResult = ThreadsView | ProjectFailure;
 export type EnvironmentsResult = EnvironmentsView | ProjectFailure;
+export type PluginsResult = PluginsView | ProjectFailure;
 export type ProjectResult =
   | ChangesResult
   | CommitsResult
   | PullRequestResult
   | PullRequestsResult
   | ThreadsResult
-  | EnvironmentsResult;
+  | EnvironmentsResult
+  | PluginsResult;
 
 // ── Shared wording ──────────────────────────────────────────────────────────
 

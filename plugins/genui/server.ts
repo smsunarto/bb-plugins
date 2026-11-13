@@ -60,6 +60,7 @@ import {
   type PullRequestsResult,
   type ThreadsResult,
   type EnvironmentsResult,
+  type PluginsResult,
 } from "./core/project";
 import { examplesReport } from "./examples";
 import {
@@ -74,6 +75,8 @@ import { locatedSchema } from "./web/geocode";
 import { createWebLookups, MAX_TILE_ZOOM } from "./web/lookups";
 import { createProjectSource, projectReader } from "./project/source";
 import { createEnvironmentsSource } from "./project/environments";
+import { createPluginsSource } from "./project/plugins";
+import { MAX_PLUGIN_CLAIMS } from "./core/plugins";
 import type { EnvironmentDetailResult } from "./core/environments";
 
 const instructionText = instructionFiles(import.meta.url);
@@ -292,6 +295,11 @@ export const rpcContract = defineRpcContract({
     input: z.object({ threadId: projectThread, environmentId: z.string().min(1).max(64) }),
     output: z.custom<EnvironmentDetailResult>(),
   },
+  // Plugins: BB's state of the plugins a reply names. Not tied to a thread.
+  project_plugins: {
+    input: z.object({ ids: z.array(z.string().min(1).max(80)).min(1).max(MAX_PLUGIN_CLAIMS) }),
+    output: z.custom<PluginsResult>(),
+  },
 });
 
 export default async function plugin(bb: BbPluginApi) {
@@ -310,6 +318,7 @@ export default async function plugin(bb: BbPluginApi) {
   };
   const project = createProjectSource(bb);
   const environments = createEnvironmentsSource(bb.sdk);
+  const plugins = createPluginsSource(bb.sdk);
 
   bb.agents.registerTool({
     name: "check_ui",
@@ -338,7 +347,7 @@ export default async function plugin(bb: BbPluginApi) {
               spec,
               (request) => loadThreadFile(bb, ctx.threadId, request.path, request),
               findImage,
-              projectReader(project, environments, ctx.threadId),
+              projectReader(project, environments, plugins, ctx.threadId),
               (path) => loadThreadImage(bb, ctx.threadId, path),
               (path) => checkThreadVideo(bb, ctx.threadId, path),
             );
@@ -418,7 +427,7 @@ export default async function plugin(bb: BbPluginApi) {
         text,
         (request) => loadThreadFile(bb, threadId, request.path, request),
         findImage,
-        projectReader(project, environments, threadId),
+        projectReader(project, environments, plugins, threadId),
       );
       return { markdown };
     },
@@ -461,6 +470,7 @@ export default async function plugin(bb: BbPluginApi) {
     project_environments: ({ threadId }) => environments.environments(threadId, false),
     project_environment: ({ threadId, environmentId }) =>
       environments.environment(threadId, environmentId),
+    project_plugins: ({ ids }) => plugins.plugins(ids),
   });
 
   bb.cli.register(
@@ -534,7 +544,7 @@ export default async function plugin(bb: BbPluginApi) {
               output,
               (request) => loadThreadFile(bb, threadId, request.path, request),
               findImage,
-              projectReader(project, environments, threadId),
+              projectReader(project, environments, plugins, threadId),
             );
             return { exitCode: 0, stdout: `${markdown}\n` };
           },

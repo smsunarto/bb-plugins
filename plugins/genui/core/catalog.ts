@@ -643,6 +643,12 @@ export const COMPONENTS = {
     summary:
       "which build/revision is really installed or deployed where: [{name, status, facts?: {branch, sha, build, device}}], source to live; expected flags mismatches",
   },
+  Plugins: {
+    group: "Evidence",
+    params: [{ name: "items", kind: "list" }],
+    summary:
+      "BB plugins you installed, reloaded or removed, each with what BB runs now: [{id, action: installed|reloaded|removed|not-reloaded, note?}]; note: why not reloaded",
+  },
   // 3D: Zeron's ui.scene and ui.shader. The full object and uniform reference
   // is in the gallery examples' notes (ui_examples), not the instructions.
   Scene: {

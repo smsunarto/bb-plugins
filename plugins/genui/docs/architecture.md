@@ -436,6 +436,13 @@ the instructions list it.
     each stage with its facts and receipt; facts that differ from what was
     asked for, or between stages, are flagged, and the chain says where its
     receipts stop.
+  - Plugins: the BB plugins a handoff says it installed, reloaded or
+    removed (`project_plugins`, the SDK's plugin list), each beside its name,
+    version, source and status as BB has them now. The reply supplies only
+    the claim; one BB contradicts (reloaded but not running, removed but
+    still installed) is marked. BB reports no load time, so a matching row
+    says the plugin runs, not that the reload happened. It needs no thread
+    and polls only while a plugin is starting.
 - 3D, matching Zeron's `ui.scene` and `ui.shader`: Scene draws objects
   (`{shape, ...}` records: solids with materials, surfaces, meshes, lines,
   points, labels, glTF models, an HDR environment, sprites) and Shader runs

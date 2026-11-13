@@ -36,6 +36,7 @@ import {
 } from "../core/project";
 import { lastMessage, pendingAsk, workersByParent, type LastMessage } from "../core/thread-activity";
 import type { EnvironmentsSource } from "./environments";
+import type { PluginsSource } from "./plugins";
 import {
   checkoutFiles,
   checkoutPatches,
@@ -72,6 +73,7 @@ export interface ProjectSource {
 export function projectReader(
   source: ProjectSource,
   environments: EnvironmentsSource,
+  plugins: PluginsSource,
   threadId: string,
 ): (request: ProjectRequest) => Promise<ProjectResult> {
   return (request) => {
@@ -88,6 +90,8 @@ export function projectReader(
         return source.threads(threadId, request.ids);
       case "environments":
         return environments.environments(threadId, true);
+      case "plugins":
+        return plugins.plugins(request.ids);
     }
   };
 }

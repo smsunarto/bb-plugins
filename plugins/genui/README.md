@@ -64,7 +64,7 @@ BB shows a card with a plan switch, a seat slider and a live total. Moving the s
 - **Interactive without extra model calls.** Sliders, toggles, editable tables and filters re-evaluate the UI in the page. Buttons, forms and plan approvals put your answers in your message, however many questions a reply asks; nothing is sent until you send it.
 - **Files instead of retyped numbers.** The agent saves what a tool printed and the component reads it: test reports (vitest, jest, JUnit), logs, ESLint / `tsc` / SARIF findings, coverage (lcov, istanbul, coverage.py, Go), `npm outdated` and `npm audit`, CI runs, HAR files, hyperfine benchmarks. Code is shown from the file, at the lines asked for. Tables, charts and metrics say where their numbers came from: the file they loaded, or the `source:` the agent gave.
 - **Your BB project, read live.** `Changes()`, `Commits()`, `PullRequest()`, `Threads()` and `Environments()` show the thread's diff, its branch, its pull request, its workers and your worktrees, straight from BB. `PullRequest(["owner/repo#123", …])` shows any pull requests an answer names, across repositories.
-- **Evidence you can check.** Acceptance grids that say what was really verified and by whom, image comparisons with a pixel difference, transcripts aligned word by word with their word error rate, and the chain from a commit to what is actually installed or deployed.
+- **Evidence you can check.** Acceptance grids that say what was really verified and by whom, image comparisons with a pixel difference, transcripts aligned word by word with their word error rate, the chain from a commit to what is actually installed or deployed, and the plugins a handoff reloaded beside what BB runs now.
 - **At home in BB.** Components use BB's own colours and type, follow light and dark mode, render while the reply streams, and keep their state as you scroll back. They follow your system's reduced-motion setting, and the plugin's _Animations_ setting turns motion off altogether.
 
 <table>
@@ -106,7 +106,7 @@ BB shows a card with a plan switch, a seat slider and a live total. Moving the s
   </tr>
   <tr>
     <td><b>Evidence</b></td>
-    <td>Acceptance · Compare · Transcript · Provenance</td>
+    <td>Acceptance · Compare · Transcript · Provenance · Plugins</td>
   </tr>
   <tr>
     <td><b>3D</b></td>

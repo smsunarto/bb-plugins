@@ -34,6 +34,7 @@ import { Gauge, SegmentedBar } from "./components/meters";
 import { Video } from "./components/Video";
 import { Image } from "./components/media";
 import { Pipeline } from "./components/Pipeline";
+import { Plugins } from "./components/plugins";
 import { Provenance } from "./components/Provenance";
 import { PullRequest } from "./components/pullRequest";
 import { Entity, Hotspots, Sources } from "./components/references";
@@ -152,6 +153,7 @@ const RENDERERS: { readonly [N in ComponentName]: ComponentType<{ props: PropsOf
   StackTrace,
   Compare,
   Provenance,
+  Plugins,
   Acceptance,
   Transcript,
   Scene,

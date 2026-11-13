@@ -1,0 +1,1 @@
+Plugins([{id: "genui", action: "reloaded"}, {id: "source-control", action: "not-reloaded", note: "Another thread's edits fail its type-check; reload once that thread is idle."}, {id: "retired-plugin", action: "removed"}])

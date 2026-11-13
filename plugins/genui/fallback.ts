@@ -38,7 +38,7 @@ interface ImageFinder {
   photo(title: string): Promise<SearchedImage | null>;
 }
 
-/** Reads BB state for Changes, Commits, PullRequest (the branch's, or named ones), Threads and Environments. */
+/** Reads BB state for Changes, Commits, PullRequest (the branch's, or named ones), Threads, Environments and Plugins. */
 export type ProjectReader = (request: ProjectRequest) => Promise<ProjectResult>;
 
 async function findAll(keys: readonly string[], find: (key: string) => Promise<SearchedImage | null>): Promise<Map<string, SearchedImage | null>> {
