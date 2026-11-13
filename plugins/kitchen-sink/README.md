@@ -21,10 +21,9 @@ Its composer skills are `/project-scripts`, `/subthread`, and `/test-remotely`.
 
 ## Thread motion
 
-Kitchen Sink fades thread switches and smooths automatic timeline scrolling. A
-"Jump to latest event" palette command (Mod+Shift+J) scrolls the current thread
-to its live tail. See
-[thread switching and scrolling](src/app/timeline-motion/README.md) for behavior and limitations.
+Kitchen Sink fades thread switches. A "Jump to latest event" palette command
+(Mod+Shift+J) scrolls the current thread to its live tail. See
+[thread switching](src/app/timeline-motion/README.md) for behavior and limitations.
 
 ## RPIV task list
 

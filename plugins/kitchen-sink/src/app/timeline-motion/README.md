@@ -1,75 +1,27 @@
-# Thread switching and scrolling
+# Thread switching
 
 Fades newly mounted conversations in over 180ms with ease-out timing on desktop
 and mobile. Updates to an already mounted conversation do not restart the fade.
+Reduced motion disables it. Scrolling is bb's own; this plugin does not touch it.
 
-Experimental Lenis scrolling animates bb's automatic bottom following and saved
-position restoration when switching threads. A newly mounted timeline's first
-bottom placement and its layout corrections during the next 250ms are immediate.
-Empty layout writes do not consume that initial placement. Later bottom requests
-and content growth animate. An offset request or manual scrolling ends settling.
-The plugin intercepts timeline `scrollTop` writes before layout effects finish.
-It follows a growing bottom without restarting for repeated requests. bb owns
-saved thread positions. The plugin keeps no separate thread-position cache.
-
-Switching to a thread that is working opens it at the live tail rather than the
-position it was left at. That saved offset sits behind rows the reader has not
-seen yet, and the thread keeps appending more. A settled thread still returns to
-its saved position, and only the first restore is redirected — once the reader
-is in the thread, their own scrolling stands.
-
-Wheel, touch, scrollbar dragging, and navigation keys interrupt automatic motion.
-The timeline's “Scroll to latest event” button immediately resumes smooth bottom
-scrolling, including during the manual-input grace period or a held gesture.
-Native wheel and touch input remain unchanged. Editable controls retain their
-navigation keys. Reduced motion disables the fade and settles scrolling
-immediately, including when the preference changes during an animation.
-
-## Experimental limitations
-
-The scroll integration depends on bb's current timeline DOM structure, its
-“Scroll to latest event” button label, and direct `scrollTop` assignments.
-It changes synchronous write-then-read behavior because
-the viewport takes time to reach the requested position. Reads always return the
-physical position. Host code that immediately checks a write can temporarily
-observe an intermediate position, including during clamped row reveals.
-
-During the first offset restoration, the plugin ignores follow-up destinations
-within 32px of the starting viewport for up to 250ms. This prevents bb's replayed
-layout effects from replacing the saved destination with a transient top-row
-anchor. Other layout destinations and bottom requests still apply. A programmatic
-request near that starting position during this brief window can also be ignored.
-Manual input, reduced motion, and content shrink corrections end this protection.
-
-bb states no runtime status in the timeline's DOM, so the plugin registers a
-thread-header action that renders one hidden marker per visible pane carrying
-that pane's thread id and whether it is working, read from the same sidebar
-thread view bb's own sidebar uses. Its host wrapper is hidden with CSS and draws
-no control. A timeline with no marker above it, or with several (a container of
-panes rather than one pane), keeps bb's saved position.
-
-Native `scrollTo`, `scrollBy`, and `scrollIntoView` calls are not intercepted.
-Scroll requests outside the recognized thread timeline stay native. Enabling Kitchen Sink after a thread has restored its position cannot animate that past restore.
-Content growth that resembles prepended rows is compensated immediately when the
-viewport is away from the bottom. Content shrink corrections are also immediate.
-
-Disabling Kitchen Sink removes its scroll listeners, observers, animation loop,
-and anchoring styles. It restores the native `scrollTop` descriptor unless another
-plugin has replaced that descriptor afterward. In that case, the later patch
-stays installed and this plugin's router becomes a native passthrough.
-
-The plugin's "Smooth thread scrolling" setting (Tools → Kitchen Sink, on by
-default) turns the animation off without unloading the plugin. Off settles any
-animation in flight at its destination, releases every timeline, and passes
-scroll writes straight through until turned on again. The thread-header marker
-carries the value from `useSettings()` to the router, so a pane learns the
-setting when its header renders. Thread switch fades are not affected.
+## Jump to latest event
 
 Thread motion has no CLI commands. It registers one command-palette entry,
 "Jump to latest event" (default shortcut Mod+Shift+J, rebindable under Keyboard
 Settings as `plugin:kitchen-sink/jump-to-latest-event`). It scrolls the pane
 showing the current thread to its live tail: it clicks bb's own "Scroll to
-latest event" button when that is showing, and otherwise sends the timeline to
-its bottom through the animated router. The pane is found through the same
-hidden thread-header marker the scroll router reads, so a split layout scrolls
-the right pane. The entry is hidden on surfaces without a thread.
+latest event" button when that is showing, and otherwise sets the timeline's
+`scrollTop` to its bottom. The entry is hidden on surfaces without a thread.
+
+bb's timeline DOM does not name its thread, so the plugin registers a
+thread-header action that renders one hidden marker per visible pane carrying
+that pane's thread id. Its host wrapper is hidden with CSS and draws no
+control. The command finds the pane through that marker, so a split layout
+scrolls the right pane. A marker with several timelines beside it (a container
+of panes rather than one pane) scrolls nothing.
+
+## Limitations
+
+The command depends on bb's current timeline DOM structure
+(`[data-thread-window] .thread-scrollbar`) and its "Scroll to latest event"
+button label.

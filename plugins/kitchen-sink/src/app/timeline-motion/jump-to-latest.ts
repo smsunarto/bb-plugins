@@ -6,7 +6,7 @@
  * so a split layout scrolls the pane showing `threadId` rather than whichever
  * is focused. bb's own "Scroll to latest event" button is preferred when it is
  * showing, because its click also resumes bottom following; otherwise the
- * timeline is sent to its bottom, which the scroll router animates.
+ * timeline jumps straight to its bottom.
  */
 
 import { PROBE_ATTRIBUTE, PROBE_SELECTOR } from "./thread-activity.ts";

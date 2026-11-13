@@ -5,7 +5,6 @@ import type { KitchenSinkContext } from "./lib/context.ts";
 import { migrateStorage } from "./lib/storage-migrations.ts";
 import { registerCompletionSound } from "./lib/completion-sound.ts";
 import { registerWorkspaceSignals } from "./lib/workspace-signals.ts";
-import { registerTimelineMotionSettings } from "./lib/timeline-motion.ts";
 import { registerRpivTodos } from "./lib/rpiv-todos.ts";
 import { mentionProviders } from "./mentions.ts";
 import { projectScripts, projectScriptsContract } from "./rpc/project-scripts.ts";
@@ -32,7 +31,6 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
   );
 
   registerLegacyUnityClaims(bb);
-  registerTimelineMotionSettings(bb);
   registerRpivTodos(bb);
   for (const provider of mentionProviders) {
     bb.ui.registerMentionProvider(provider);

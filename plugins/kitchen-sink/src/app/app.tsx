@@ -5,7 +5,6 @@ import { TodoBanner } from "./rpiv-todo/banner.tsx";
 import { ScriptEditorOverlay, WorkspaceRows } from "./thread-details/thread-details.tsx";
 import "./rpiv-todo/style.css";
 import "./timeline-motion/timeline-motion.css";
-import { mountTimelineMotion } from "./timeline-motion/timeline-motion.ts";
 import {
   PROBE_GROUP_TITLE,
   type LegacyThreadHeaderActionSlots,
@@ -28,10 +27,6 @@ export default definePluginApp((app) => {
   });
   // The script editor outlives the card rows, which bb unmounts when its popover closes.
   app.slots.experimental_appOverlay({ id: "script-editor", component: ScriptEditorOverlay });
-  app.contentScripts.register({
-    id: "timeline-motion",
-    mount: ({ signal }) => mountTimelineMotion(document, signal),
-  });
   app.commands.register({
     ...JUMP_TO_LATEST_COMMAND,
     isAvailable: ({ threadId }) => threadId !== null,
