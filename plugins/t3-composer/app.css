@@ -12,16 +12,18 @@
   background: var(--agent-surface-background, var(--card));
   box-shadow:
     0 1px 2px color-mix(in srgb, var(--foreground) 4%, transparent),
-    0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);
+    0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));
   color: var(--foreground);
   font-family: var(--font-sans);
 }
 
 /* In dark themes ChatGPT lifts the surface well above the page and draws no
-   drop shadow; a foreground-colored shadow would read as a glow. */
+   drop shadow; a foreground-colored shadow would read as a glow. The card's
+   hairline matches the tray's and is opaque: where the card's rounded corner
+   meets the tray's side, two translucent hairlines stacked into a bright stub. */
 .dark [data-t3-composer][data-promptbox] {
   background: color-mix(in srgb, var(--foreground) 14%, var(--background));
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, transparent);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-editor-scroll] {
@@ -361,7 +363,7 @@
   padding: 4px 6px calc(4px + var(--t3-tray-overlap));
   border-radius: 12px 12px 0 0;
   background: color-mix(in srgb, var(--foreground) 5%, var(--background));
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));
   color: color-mix(in srgb, var(--foreground) 80%, transparent);
   font-size: 13px;
 }
@@ -373,7 +375,16 @@
   :is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > [data-new-thread-footer] {
   background: color-mix(in srgb, var(--foreground) 8%, var(--background));
-  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 12%, transparent);
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
+}
+
+/* BB's left cluster clips to truncate the branch name, which also cut off the
+   pills' focus rings. Grow its clip box by 4px without moving its content. */
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+  > div:first-child {
+  margin: -4px;
+  padding: 4px;
 }
 
 :is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
