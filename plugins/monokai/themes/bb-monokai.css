@@ -620,7 +620,9 @@
   /* The same late layout leaves the chat column's 312px shift wrong for a
    * frame: bb shifts the column only while the card is open and its pane is
    * 1072px to 1383px wide. Outside that band, cancel a stale inline shift;
-   * inside it, app/context-card-state.ts marks whether the card is open. */
+   * inside it, app/context-card-state.ts marks whether the card is open, or
+   * was open before a narrow chat collapsed it, for the frame a widening
+   * chat spends in the band before bb remounts the card. */
   @container thread-pane (width < 1072px) or (width >= 1384px) {
     .dark [data-thread-window] .thread-scrollbar > div[style*="padding-inline-end"] {
       padding-inline-end: 0 !important;
@@ -628,7 +630,8 @@
   }
 
   @container thread-pane (1072px <= width < 1384px) {
-    .dark [data-thread-window][data-monokai-context-card="shown"] .thread-scrollbar > div {
+    .dark [data-thread-window][data-monokai-context-card="shown"] .thread-scrollbar > div,
+    .dark [data-thread-window][data-monokai-context-card="was-shown"] .thread-scrollbar > div {
       padding-inline-end: 312px !important;
     }
 

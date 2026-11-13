@@ -11,12 +11,21 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
-/** bb's thread pane: the window holds a scroll overlay with the floating card. */
-function threadWindow({ card = true, hidden = false } = {}) {
+/**
+ * bb's thread pane: the window holds a scroll overlay. ThreadContextCard puts
+ * a hidden probe span in the overlay in every layout, and the card beside it
+ * unless the chat is too narrow (banner layout).
+ */
+function threadWindow({ card = true, hidden = false, probe = true } = {}) {
   const window = document.createElement("div");
   window.setAttribute("data-thread-window", "");
   const overlay = document.createElement("div");
   overlay.setAttribute("data-scroll-overlay", "");
+  if (probe) {
+    const span = document.createElement("span");
+    span.setAttribute("aria-hidden", "true");
+    overlay.append(span);
+  }
   window.append(overlay);
   document.body.append(window);
   if (card) overlay.append(contextCard(hidden));
@@ -29,6 +38,9 @@ function contextCard(hidden = false) {
   card.hidden = hidden;
   return card;
 }
+
+const cardOf = (overlay: Element) =>
+  overlay.querySelector<HTMLElement>(":scope > [data-thread-context-card]")!;
 
 function mount() {
   const controller = new AbortController();
@@ -55,22 +67,48 @@ test("follows a card that mounts late, toggles, and is replaced on re-render", a
   await flush();
   expect(window.getAttribute(ATTRIBUTE)).toBe("shown");
 
-  overlay.querySelector<HTMLElement>("[data-thread-context-card]")!.hidden = true;
+  cardOf(overlay).hidden = true;
   await flush();
   expect(window.getAttribute(ATTRIBUTE)).toBe("hidden");
 
-  overlay.replaceChildren(contextCard());
+  cardOf(overlay).replaceWith(contextCard());
   await flush();
   expect(window.getAttribute(ATTRIBUTE)).toBe("shown");
   dispose();
 });
 
-test("clears the mark when the card unmounts, so no stale shift remains", async () => {
+test("remembers an open card through the banner layout, and only then", async () => {
+  const { window, overlay } = threadWindow();
+  const { dispose } = mount();
+
+  cardOf(overlay).remove();
+  await flush();
+  expect(window.getAttribute(ATTRIBUTE)).toBe("was-shown");
+
+  overlay.append(contextCard(true));
+  await flush();
+  expect(window.getAttribute(ATTRIBUTE)).toBe("hidden");
+
+  cardOf(overlay).remove();
+  await flush();
+  expect(window.hasAttribute(ATTRIBUTE)).toBe(false);
+  dispose();
+});
+
+test("clears the mark when the pane has no context card at all", async () => {
   const { window, overlay } = threadWindow();
   const { dispose } = mount();
   overlay.replaceChildren();
   await flush();
   expect(window.hasAttribute(ATTRIBUTE)).toBe(false);
+  dispose();
+});
+
+test("marks a pane that mounts after the script", async () => {
+  const { dispose } = mount();
+  const { window } = threadWindow();
+  await flush();
+  expect(window.getAttribute(ATTRIBUTE)).toBe("shown");
   dispose();
 });
 
@@ -91,7 +129,7 @@ test("disposal removes every mark and stops observing", async () => {
   const { controller } = mount();
   controller.abort();
   expect(window.hasAttribute(ATTRIBUTE)).toBe(false);
-  overlay.replaceChildren(contextCard());
+  cardOf(overlay).replaceWith(contextCard());
   await flush();
   expect(window.hasAttribute(ATTRIBUTE)).toBe(false);
 });

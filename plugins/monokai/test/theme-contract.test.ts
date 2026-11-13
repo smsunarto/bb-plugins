@@ -304,6 +304,8 @@ describe("bb Monokai contract audit", () => {
       "@container thread-pane (1072px <= width < 1384px)",
       "@container thread-pane (1072px <= width < 1384px)",
     ]);
+    // A card collapsed by a narrow chat keeps its shift for the frame bb takes to remount it.
+    expect(theme).toContain('[data-monokai-context-card="was-shown"] .thread-scrollbar > div {');
     // workaround:monokai/context-card-late-layout end
   });
 

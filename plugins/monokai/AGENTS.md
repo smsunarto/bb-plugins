@@ -38,9 +38,9 @@
 
 ## Context card adapter
 
-- `app/context-card-state.ts` marks each `[data-thread-window]` with `data-monokai-context-card="shown" | "hidden"` while its floating context card is mounted, and removes the mark when the card unmounts. The theme's `thread-pane` container queries read it to apply bb's 312px chat shift on the same frame as a width change.
-- Private contracts: the `[data-thread-window]` pane (the `thread-pane` container), `[data-scroll-overlay]` (the `scroll-overlay` container), the card's `hidden` attribute, the single `.thread-scrollbar > div` that bb pads with an inline `padding-inline-end`, and bb's layout bands (card floats from 1072px, shift below 1384px). Recheck them after bb upgrades.
-- `test/context-card-state.test.ts` covers mount, late mount, re-render, unmount, and disposal. Verify a change with the open/close width sweep in a browser: nothing may move after the first frame at 1440–3440px.
+- `app/context-card-state.ts` marks each `[data-thread-window]` with `data-monokai-context-card`: `shown` or `hidden` while the floating context card is mounted, `was-shown` while bb's banner layout has unmounted a card last seen shown, and no mark otherwise. The theme's `thread-pane` container queries read it to apply bb's 312px chat shift on the same frame as a width change, in both directions.
+- Private contracts: the `[data-thread-window]` pane (the `thread-pane` container), `[data-scroll-overlay]` (the `scroll-overlay` container), the card's `hidden` attribute, the hidden probe `span` ThreadContextCard keeps in the overlay in every layout, the single `.thread-scrollbar > div` that bb pads with an inline `padding-inline-end`, and bb's layout bands (card floats from 1072px, shift below 1384px). Recheck them after bb upgrades.
+- `test/context-card-state.test.ts` covers mount, late mount, re-render, the banner layout, unmount, and disposal. Verify a change with the open/close width sweep in a browser: nothing may move after the first frame at 1440–3440px.
 
 <!-- workaround:monokai/context-card-late-layout end -->
 
