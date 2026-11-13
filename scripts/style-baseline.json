@@ -1630,14 +1630,74 @@
     "source": "return `repeating-linear-gradient(to right, color-mix(in oklch, var(--border) 70%, transparent) 0 1px, transparent 1px ${percent}%)`;"
   },
   {
+    "file": "plugins/genui/ui/components/plugins.tsx",
+    "rule": "edge-opacity",
+    "source": "className=\"flex min-w-0 items-start gap-2.5 border-b border-border/60 px-3 py-2 last:border-b-0\""
+  },
+  {
     "file": "plugins/genui/ui/components/projectKit.tsx",
     "rule": "edge-opacity",
     "source": "\"flex w-full cursor-pointer items-center justify-center gap-1 border-t border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground\","
   },
   {
     "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "edge-opacity",
+    "source": "<QuietLine className=\"border-t border-border/60 px-3 py-2\">"
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "edge-opacity",
+    "source": "<li className=\"flex min-w-0 flex-col gap-1 border-t border-border/60 px-3 py-2 first:border-t-0\" aria-busy=\"true\">"
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "edge-opacity",
+    "source": "<li className=\"flex min-w-0 flex-col gap-1 border-t border-border/60 px-3 py-2 first:border-t-0\">"
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "edge-opacity",
+    "source": "<li className=\"flex min-w-0 flex-col gap-1 border-t border-border/60 px-3 py-2 first:border-t-0\">"
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
     "rule": "hairline-literal",
     "source": "<span className=\"flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11.5px] leading-5 text-muted-foreground\">"
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "hairline-literal",
+    "source": "<span className=\"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 pl-[22px] text-[11.5px] leading-5 text-muted-foreground\">"
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "hairline-literal",
+    "source": "<span className=\"min-w-0 pl-[22px] text-[11.5px] leading-5 text-muted-foreground [overflow-wrap:anywhere]\">{read.message}</span>"
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "raw-color",
+    "source": "<span className={cn(CHIP, \"bg-[color-mix(in_oklab,var(--warning)_14%,transparent)] text-warning\")}>"
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "raw-color",
+    "source": "closed: \"bg-[color-mix(in_oklab,var(--destructive)_14%,transparent)] text-destructive\","
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "raw-color",
+    "source": "if (checks.failed > 0) return <span className={cn(CHIP, \"bg-[color-mix(in_oklab,var(--destructive)_14%,transparent)] text-destructive\")}>{checks.failed} Failing</span>;"
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "raw-color",
+    "source": "merged: \"bg-[color-mix(in_oklab,var(--pr-merged,var(--color-timeline-accent,var(--primary)))_14%,transparent)] text-[var(--pr-merged,var(--color-timeline-accent,var(--primary)))]\","
+  },
+  {
+    "file": "plugins/genui/ui/components/pullRequest.tsx",
+    "rule": "raw-color",
+    "source": "open: \"bg-[color-mix(in_oklab,var(--success)_14%,transparent)] text-success\","
   },
   {
     "file": "plugins/genui/ui/components/references.tsx",
@@ -1947,6 +2007,11 @@
   {
     "file": "plugins/gtd-sidebar/app.css",
     "rule": "raw-color",
+    "source": "background: rgb(0 0 0 / 0.3);"
+  },
+  {
+    "file": "plugins/gtd-sidebar/app.css",
+    "rule": "raw-color",
     "source": "box-shadow: 0 4px 12px rgb(0 0 0 / 0.2);"
   },
   {
@@ -1985,6 +2050,11 @@
     "source": "\"shadow-[inset_0_0_0_1px_var(--border),var(--shadow-md)]\","
   },
   {
+    "file": "plugins/gtd-sidebar/components/inbox/menu-surface.tsx",
+    "rule": "hairline-literal",
+    "source": "borderTop: \"0.5px solid var(--border)\","
+  },
+  {
     "file": "plugins/gtd-sidebar/components/inbox/sliding-disclosure.tsx",
     "rule": "raw-color",
     "source": "panel.style.maskImage = `linear-gradient(to bottom, #000 calc(100% - ${FADE}px), transparent)`;"
@@ -1998,6 +2068,31 @@
     "file": "plugins/gtd-sidebar/components/inbox/thread-action-menu.tsx",
     "rule": "arbitrary-edge",
     "source": "\"shadow-[var(--shadow-xl)]\","
+  },
+  {
+    "file": "plugins/gtd-sidebar/components/inbox/thread-action-menu.tsx",
+    "rule": "arbitrary-edge",
+    "source": "className=\"gtd-sheet border border-border-hairline bg-popover/80 text-popover-foreground shadow-[var(--shadow-xl)]\""
+  },
+  {
+    "file": "plugins/gtd-sidebar/components/inbox/thread-menu-actions.tsx",
+    "rule": "arbitrary-edge",
+    "source": "const SHEET_SEPARATOR_CLASS = \"my-1.5 h-0 border-0 border-t-[0.5px] border-solid border-border\";"
+  },
+  {
+    "file": "plugins/gtd-sidebar/components/inbox/thread-menu-actions.tsx",
+    "rule": "hairline-literal",
+    "source": "const SHEET_SEPARATOR_CLASS = \"my-1.5 h-0 border-0 border-t-[0.5px] border-solid border-border\";"
+  },
+  {
+    "file": "plugins/gtd-sidebar/components/nav/capy-navigation.tsx",
+    "rule": "arbitrary-edge",
+    "source": "\"flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-[6px] px-2\","
+  },
+  {
+    "file": "plugins/gtd-sidebar/components/nav/capy-navigation.tsx",
+    "rule": "arbitrary-edge",
+    "source": "\"flex shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-sidebar-foreground\","
   },
   {
     "file": "plugins/html/src/app/app.css",
@@ -2737,7 +2832,17 @@
   {
     "file": "plugins/t3-composer/app.css",
     "rule": "hairline-literal",
+    "source": "--tw-ring-shadow: 0 0 0 0.5px var(--t3-composer-hairline);"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "hairline-literal",
     "source": "0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "hairline-literal",
+    "source": "0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
   },
   {
     "file": "plugins/t3-composer/app.css",
@@ -2767,12 +2872,62 @@
   {
     "file": "plugins/t3-composer/app.css",
     "rule": "hairline-literal",
+    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "hairline-literal",
+    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "hairline-literal",
+    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "hairline-literal",
     "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "hairline-literal",
+    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "hairline-literal",
+    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "hairline-literal",
+    "source": "box-shadow: 0 0 0 0.5px var(--t3-composer-hairline);"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "hairline-literal",
+    "source": "box-shadow: inset 0 -0.5px 0 var(--t3-composer-hairline);"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "raw-color",
+    "source": "--t3-composer-hairline: color-mix(in srgb, var(--foreground) 18%, var(--background));"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "raw-color",
+    "source": "--t3-composer-hairline: color-mix(in srgb, var(--foreground) 8%, var(--background));"
   },
   {
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
     "source": "0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "raw-color",
+    "source": "0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
   },
   {
     "file": "plugins/t3-composer/app.css",
@@ -2892,7 +3047,32 @@
   {
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
+    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "raw-color",
+    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "raw-color",
+    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "raw-color",
     "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "raw-color",
+    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "raw-color",
+    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));"
   },
   {
     "file": "plugins/t3-composer/app.css",
@@ -2923,6 +3103,36 @@
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
     "source": "color: color-mix(in srgb, var(--foreground) 80%, transparent);"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "utility-anchor",
+    "source": "[data-promptbox-shell] button[id^=\"thread-prompt-banner-\"].ring-1 {"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "utility-anchor",
+    "source": "[data-promptbox-shell] section.rounded-b-none.border-border {"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "utility-anchor",
+    "source": "[data-promptbox-shell] section.rounded-b-none.border-border {"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "utility-anchor",
+    "source": "[data-promptbox-shell] section.rounded-lg.border-border {"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "utility-anchor",
+    "source": "[data-promptbox-shell] section.rounded-lg.border-border {"
+  },
+  {
+    "file": "plugins/t3-composer/app.css",
+    "rule": "utility-anchor",
+    "source": "[data-promptbox-shell] section[id^=\"thread-prompt-banner-\"].border-border {"
   },
   {
     "file": "plugins/t3-composer/app.css",
