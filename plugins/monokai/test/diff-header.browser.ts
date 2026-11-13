@@ -16,7 +16,8 @@ import { mountTerminalAppearance } from "../app/terminal-appearance.ts";
   let scans = 0;
   const query = document.querySelectorAll.bind(document);
   document.querySelectorAll = ((selector: string) => {
-    if (selector.includes("aria-expanded")) scans++;
+    // A reconcile finds the panels on the document, then the headers inside each.
+    if (selector.includes("aria-expanded") || selector.includes("secondary-panel")) scans++;
     return query(selector);
   }) as any;
   const nativeWidth = Object.getOwnPropertyDescriptor(Element.prototype, "scrollWidth")!.get!;

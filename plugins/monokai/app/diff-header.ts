@@ -5,7 +5,8 @@ import { SVGSpriteSheet } from "@pierre/diffs";
 // compact shelf. The panel's resize handle shares the id prefix.
 const PANEL =
   ':is([id^="thread-detail-secondary-panel"]:not(#thread-detail-secondary-panel-handle), [data-testid="secondary-panel-shelf"])';
-const HEADER = `${PANEL} .bg-background > .flex:has(> span > button[aria-expanded])`;
+const HEADER_IN_PANEL = ".bg-background > .flex:has(> span > button[aria-expanded])";
+const HEADER = `${PANEL} ${HEADER_IN_PANEL}`;
 // bb's diff toolbar, or a plugin list that opts in (gitbutler's file cards).
 const DIFF_VIEW = '[data-testid="git-diff-toolbar-layout"], [data-monokai-diff-surface]';
 const WATCHED = `${HEADER}, ${DIFF_VIEW}`;
@@ -101,7 +102,13 @@ export function mountDiffHeader({ signal }: PluginContentScriptContext) {
         filenames.delete(element);
       }
     });
-    const headers = active ? [...document.querySelectorAll(HEADER)] : [];
+    // Find the panels by attribute, then the headers inside them, so no `.flex` outside a panel
+    // gets a `:has()` test. A split workspace nests no panels, but a Set costs nothing.
+    const found = new Set<Element>();
+    if (active)
+      for (const panel of document.querySelectorAll(PANEL))
+        for (const header of panel.querySelectorAll(HEADER_IN_PANEL)) found.add(header);
+    const headers = [...found];
     const next = diffTags(headers);
     tags.forEach((name, element) => {
       if (next.get(element) !== name) element.removeAttribute(name);
@@ -145,6 +152,8 @@ export function mountDiffHeader({ signal }: PluginContentScriptContext) {
     node instanceof Element && (node.matches(WATCHED) || node.querySelector(WATCHED) !== null);
   const observer = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
+      // Streamed timeline text arrives here; without a filename to watch there is nothing to do.
+      if (filenames.size === 0) break;
       if (mutation.type !== "characterData" && mutation.type !== "childList") continue;
       const target =
         mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
@@ -169,7 +178,8 @@ export function mountDiffHeader({ signal }: PluginContentScriptContext) {
         return (
           target === document.documentElement ||
           document.head.contains(target) ||
-          Boolean(target?.closest(HEADER)) ||
+          // The cheap panel test first: a timeline record is in no panel.
+          Boolean(target?.closest(PANEL) && target.closest(HEADER)) ||
           changed.some(containsWatched)
         );
       })
@@ -188,14 +198,19 @@ export function mountDiffHeader({ signal }: PluginContentScriptContext) {
     attributeFilter: ["class", "style"],
   });
   observer.observe(document.head, { childList: true, subtree: true, characterData: true });
-  document.addEventListener("load", schedule, true);
+  // A stylesheet that finishes loading can switch the theme on; an image or frame cannot.
+  const onLoad = (event: Event) => {
+    if (event.target instanceof HTMLLinkElement || event.target instanceof HTMLStyleElement)
+      schedule();
+  };
+  document.addEventListener("load", onLoad, true);
   const dispose = () => {
     disposed = true;
     observer.disconnect();
     resizeObserver.disconnect();
     for (const element of filenames) element.removeAttribute("data-monokai-filename-overflow");
     filenames.clear();
-    document.removeEventListener("load", schedule, true);
+    document.removeEventListener("load", onLoad, true);
     signal.removeEventListener("abort", dispose);
     if (frame !== null) cancelAnimationFrame(frame);
     for (const icon of owned.values()) icon.remove();
