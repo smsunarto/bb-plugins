@@ -378,6 +378,20 @@
   box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
 }
 
+/* BB's thread context surfaces draw a 1px border-border edge: the git inlay above
+   the composer and the floating Thread context card. Give them the card's and
+   tray's 0.5px hairline so every edge around the composer reads the same. */
+[aria-label="Thread context before sending"],
+[data-thread-context-card] {
+  border-width: 0;
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));
+}
+
+.dark [aria-label="Thread context before sending"],
+.dark [data-thread-context-card] {
+  box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
+}
+
 /* BB's left cluster clips to truncate the branch name, which also cut off the
    pills' focus rings. Grow its clip box by 4px without moving its content. */
 :is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
