@@ -19,7 +19,14 @@ const NUMBERS: Record<string, number> = { [one]: 11, [two]: 12 };
 
 const done = (id: string) => ({ id, label: id, state: "done", detail: [] });
 
-function detail(key: ChangeKey, ready: boolean): ChangeDetail {
+/** How a Change reads on the card: an open pull request (ready or still checking), merged, or not read yet. */
+type Shape = "ready" | "running" | "merged" | "pending" | "missing";
+
+function detail(key: ChangeKey, ready: boolean | Shape): ChangeDetail {
+  const shape: Shape = typeof ready === "boolean" ? (ready ? "ready" : "running") : ready;
+  if (shape === "pending") return { state: "pending" };
+  if (shape === "missing") return { state: "missing", problem: null };
+  const merged = shape === "merged";
   return {
     state: "change",
     row: {
@@ -33,7 +40,7 @@ function detail(key: ChangeKey, ready: boolean): ChangeDetail {
       author: null,
       mine: true,
       asked: false,
-      state: "open",
+      state: merged ? "merged" : "open",
       stack: null,
       hostId: null,
       line: "",
@@ -48,10 +55,17 @@ function detail(key: ChangeKey, ready: boolean): ChangeDetail {
     revision: null,
     stack: null,
     canMarkReady: false,
-    ship: ["committed", "pushed", "pullRequest", "approval", "merged"]
-      .map(done)
-      .concat([{ id: "checks", label: "checks", state: ready ? "done" : "running", detail: [] }]),
-    status: { label: "Open", tone: "open", number: NUMBERS[key]!, noPullRequest: false },
+    ship: ["committed", "pushed", "pullRequest", "approval", "merged"].map(done).concat([
+      {
+        id: "checks",
+        label: "checks",
+        state: shape === "running" ? "running" : "done",
+        detail: [],
+      },
+    ]),
+    status: merged
+      ? { label: "Merged", tone: "merged", number: NUMBERS[key]!, noPullRequest: false }
+      : { label: "Open", tone: "open", number: NUMBERS[key]!, noPullRequest: false },
     problem: null,
     at: Date.now(),
   } as ChangeDetail;
@@ -62,7 +76,12 @@ function attributesOf(directive: string) {
 }
 
 function renderGroup(
-  options: { ready?: boolean; merge?: (input: { key: string }) => unknown } = {},
+  options: {
+    ready?: boolean;
+    shapes?: Partial<Record<ChangeKey, Shape>>;
+    failRead?: boolean;
+    merge?: (input: { key: string }) => unknown;
+  } = {},
 ) {
   const calls: { method: string; input: unknown }[] = [];
   const record =
@@ -88,8 +107,12 @@ function renderGroup(
       experimental_rpcContract: sourceControlContract,
       pluginId: "source-control",
       rpc: {
-        changeDetail: ({ keys }: { keys: ChangeKey[] }) =>
-          Object.fromEntries(keys.map((key) => [key, detail(key, options.ready ?? true)])),
+        changeDetail: ({ keys }: { keys: ChangeKey[] }) => {
+          if (options.failRead) throw new Error("The server is unreachable.");
+          return Object.fromEntries(
+            keys.map((key) => [key, detail(key, options.shapes?.[key] ?? options.ready ?? true)]),
+          );
+        },
         checksForChange: ({ keys }: { keys: string[] }) =>
           Object.fromEntries(keys.map((key) => [key, { read: null, problem: null }])),
         reviewForChange: () => ({}),
@@ -151,6 +174,73 @@ test("Merge all confirms, merges each pinned to the head shown, and stops at the
       expected: { number: 12, head: HEADS[two] },
     },
   ]);
+});
+
+test("a card whose pull requests have all merged says so and offers neither Ship all nor Merge all", async () => {
+  const { slot } = renderGroup({ shapes: { [one]: "merged", [two]: "merged" } });
+  const landed = await slot.findByTestId("sc-group-landed");
+  expect(landed.textContent).toBe("All 2 merged.");
+  expect(slot.getAllByTestId("sc-card")).toHaveLength(2);
+  expect(slot.queryByTestId("sc-group-ship")).toBeNull();
+  expect(slot.queryByTestId("sc-group-merge")).toBeNull();
+});
+
+test("a card already on screen drops Ship all once its pull requests merge", async () => {
+  const shapes: Partial<Record<ChangeKey, Shape>> = {};
+  const { slot } = renderGroup({ shapes });
+  expect((await slot.findByTestId("sc-group-ship")).textContent).toBe("Ship all 2");
+  shapes[one] = "merged";
+  shapes[two] = "merged";
+  await act(async () => slot.experimental_invalidateRpc(null));
+  expect((await slot.findByTestId("sc-group-landed")).textContent).toBe("All 2 merged.");
+  expect(slot.queryByTestId("sc-group-ship")).toBeNull();
+});
+
+test("on a partly merged card, Ship and Merge cover only the pull requests still open", async () => {
+  const { slot, of } = renderGroup({ shapes: { [one]: "merged", [two]: "ready" } });
+  const ship = await slot.findByTestId("sc-group-ship");
+  expect(ship.textContent).toBe("Ship remaining 1");
+  expect(slot.getByTestId("sc-group-merge").textContent).toBe("Merge remaining 1");
+  expect(slot.getByTestId("sc-group-summary").textContent).toBe("1 of 2 merged.");
+  await act(async () => ship.click());
+  await waitFor(() => expect(of("shipGroup")).toHaveLength(1));
+  expect(of("shipGroup")[0]!.input).toEqual({
+    threadId: "thread-a",
+    changes: [{ key: two, revision: HEADS[two] }],
+  });
+  await act(async () => slot.getByTestId("sc-group-merge").click());
+  await act(async () => slot.getByTestId("sc-group-merge-confirm").click());
+  await slot.findByTestId("sc-group-merge-outcome");
+  expect(of("changeForgeAction").map((call) => (call.input as { key: string }).key)).toEqual([two]);
+});
+
+test("a card still reading its changes offers no Ship all", async () => {
+  const { slot } = renderGroup({ shapes: { [one]: "merged", [two]: "pending" } });
+  await slot.findByTestId("sc-group-reading");
+  expect(slot.queryByTestId("sc-group-ship")).toBeNull();
+  expect(slot.queryByTestId("sc-group-merge")).toBeNull();
+});
+
+test("a card that cannot read its changes offers no Ship all", async () => {
+  const { slot } = renderGroup({ failRead: true });
+  await waitFor(() => expect(slot.getAllByTestId("sc-card-failed")).toHaveLength(2));
+  expect(slot.getByTestId("sc-group-summary").textContent).toBe("2 could not be read.");
+  expect(slot.queryByTestId("sc-group-ship")).toBeNull();
+  expect(slot.queryByTestId("sc-group-merge")).toBeNull();
+});
+
+test("a change bb cannot find is left out of Ship all, and blocks Merge all", async () => {
+  const { slot, of } = renderGroup({ shapes: { [one]: "missing", [two]: "ready" } });
+  const ship = await slot.findByTestId("sc-group-ship");
+  expect(ship.textContent).toBe("Ship remaining 1");
+  expect(slot.queryByTestId("sc-group-merge")).toBeNull();
+  expect(slot.getByTestId("sc-group-summary").textContent).toBe("1 could not be read.");
+  await act(async () => ship.click());
+  await waitFor(() => expect(of("shipGroup")).toHaveLength(1));
+  expect(of("shipGroup")[0]!.input).toEqual({
+    threadId: "thread-a",
+    changes: [{ key: two, revision: HEADS[two] }],
+  });
 });
 
 test("an old multi-target Review card renders as one grouped card", async () => {
