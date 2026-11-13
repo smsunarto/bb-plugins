@@ -876,40 +876,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     }
   });
 
-  it("opens panels in place when the commit that mounts them switches the view", async () => {
-    const { DisclosureViewContext, SlidingDisclosure } =
-      await import("../components/inbox/sliding-disclosure");
-    const previousAnimate = Object.getOwnPropertyDescriptor(
-      dom.window.Element.prototype,
-      "animate",
-    );
-    const animate = mock(() => ({ finished: new Promise<void>(() => {}), cancel() {} }));
-    Object.defineProperty(dom.window.Element.prototype, "animate", {
-      configurable: true,
-      value: animate,
-    });
-    const shown = { current: "code" as unknown };
-    function Content({ view }: { view: string }) {
-      return createElement(
-        DisclosureViewContext.Provider,
-        { value: { current: view, shown } },
-        createElement(SlidingDisclosure, { key: view, open: true }, view),
-      );
-    }
-    const slot = renderSlot({ component: Content }, { view: "code" });
-    try {
-      assert.ok(animate.mock.calls.length > 0, "a group that mounts in place slides in");
-      animate.mockClear();
-      slot.lifecycle.rerender(createElement(Content, { view: "bots" }));
-      assert.equal(animate.mock.calls.length, 0, "a view switch shows its groups at once");
-      assert.equal(slot.container.textContent, "bots");
-    } finally {
-      slot.lifecycle.unmount();
-      if (previousAnimate)
-        Object.defineProperty(dom.window.Element.prototype, "animate", previousAnimate);
-    }
-  });
-
   describe("a tall group's slide", () => {
     type Frame = { height?: string };
     async function slideHarness() {

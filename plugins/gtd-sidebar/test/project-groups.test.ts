@@ -157,7 +157,6 @@ describe("project groups", () => {
     assert.equal(
       shouldGroupByProject({
         pinned: empty,
-        bots: empty,
         nextAction: one,
         waiting: empty,
         slopcop: empty,
@@ -169,7 +168,6 @@ describe("project groups", () => {
     assert.equal(
       shouldGroupByProject({
         pinned: empty,
-        bots: empty,
         nextAction: one,
         waiting: empty,
         slopcop: empty,
@@ -182,7 +180,6 @@ describe("project groups", () => {
     assert.equal(
       shouldGroupByProject({
         pinned: empty,
-        bots: empty,
         nextAction: rows([
           thread("root"),
           thread("child", { parentThreadId: "root", projectId: "two" }),

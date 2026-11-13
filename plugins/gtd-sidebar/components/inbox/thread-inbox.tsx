@@ -1,17 +1,5 @@
-import {
-  DisclosureViewContext,
-  SlidingDisclosure,
-  type DisclosureView,
-} from "./sliding-disclosure";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from "react";
+import { SlidingDisclosure } from "./sliding-disclosure";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -73,29 +61,6 @@ import {
   type ProjectGroup as ProjectGroupRows,
 } from "../../lib/project-groups";
 import { ProjectGroup, SortableProjectGroup } from "./project-group";
-import {
-  BotWorkflowRuns,
-  WorkflowRunsContext,
-  conversationRoots,
-  isWorking,
-  type BotMetadata,
-  useBotsController,
-  useBotsModel,
-  useBotsPluginEnabled,
-  useWorkflowRunsData,
-} from "@smsunarto/bb-plugin-bots/shelf";
-import { groupRowsByBot } from "../../lib/bot-groups";
-import {
-  BotRow,
-  BotsError,
-  BotsLoading,
-  BotsOffline,
-  PinnedBotGrid,
-  botShelves,
-  type BotSummary,
-} from "./bot-cards";
-import { useSidebarTab, type SidebarTab } from "../../hooks/use-sidebar-tab";
-import { Icon } from "../ui/icon";
 import { isShelvedThread } from "../../lib/settled-threads";
 import { retainUnchangedThreads } from "../../lib/stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
@@ -204,29 +169,12 @@ function InboxList({
     () => projects.filter((project) => !project.isPersonal).map((project) => project.id),
     [projects],
   );
-  // Bots and their bindings, joined to every listed thread (archived ones
-  // too, so a settled child still knows its bot). They come from the Bots
-  // plugin; with it off there is no Bots shelf and no read.
-  const botsEnabled = useBotsPluginEnabled() === true;
-  const bots = useBotsModel(sidebarThreads, botsEnabled);
-  const { actions: botsActions, dialogs: botDialogs } = useBotsController(bots, onNavigate);
-  const workflowRuns = useWorkflowRunsData(bots.bots.length > 0);
-  // Only a shown bot claims its threads for the Bots shelf: a hidden bot's
-  // conversations stay on their usual shelves until it wakes.
-  const shelfBotOf = useMemo(() => {
-    const shown = new Set(bots.shownBotIds);
-    return (threadId: string) => {
-      const botId = bots.ownerOf(threadId);
-      return botId !== null && shown.has(botId) ? botId : null;
-    };
-  }, [bots]);
   const { tree, shelves, toggleThread, revealFamily } = useInboxTree(
     threads,
     lifecycle,
     scope,
     visibility.hiddenMachineIds,
     searchQuery,
-    shelfBotOf,
   );
   const shelvedTotal = Object.values(shelves).reduce((total, rows) => total + rows.length, 0);
   const searching = searchQuery.trim().length > 0;
@@ -241,68 +189,7 @@ function InboxList({
   const [projectOrderOverride, setProjectOrderOverride] = useState<readonly string[] | null>(null);
   useEffect(() => setProjectOrderOverride(null), [projectOrder]);
   const orderedProjectIds = projectOrderOverride ?? projectOrder;
-  // Only the Bots grouping reads the open thread, so navigation regroups it alone.
-  const botShelfGroups = useMemo(
-    () =>
-      groupRowsByBot(shelves.bots, {
-        botIds: bots.shownBotIds,
-        ownerOf: shelfBotOf,
-        isCompleted: bots.isCompleted,
-        showCompleted: NO_BOT_IDS,
-        activeThreadId,
-      }),
-    [shelves.bots, bots, shelfBotOf, activeThreadId],
-  );
-  // The Bots tab shows once Bots has loaded; until then, and with Bots off,
-  // the list is the Code tab alone.
-  const [chosenTab, setTab] = useSidebarTab();
-  // The tabs show as soon as Bots is on; the Bots tab draws its own loading,
-  // failed, and offline states. With Bots off the list is the Code tab alone.
-  const tab: SidebarTab = botsEnabled ? chosenTab : "code";
-  const disclosureView = useDisclosureView(tab);
-  const activeBotId = activeThreadId === null ? null : shelfBotOf(activeThreadId);
-  // Opening a bot's conversation from anywhere (a link, the composer, bb's
-  // keys) brings the Bots tab forward, so its bot shows as the open one.
-  // Adjusted during render, once per open thread and its bot (which may load
-  // after the thread), so the list never paints the wrong tab first and a
-  // later switch back to Code sticks.
-  const followKey = activeBotId === null ? null : `${activeThreadId}:${activeBotId}`;
-  const [followedKey, setFollowedKey] = useState<string | null>(null);
-  if (followKey !== followedKey) {
-    setFollowedKey(followKey);
-    if (activeBotId !== null) setTab("bots");
-  }
-  // Attention comes from the shelf's rows; a row's second line is the bot's
-  // latest main-chat reply, searched or not.
-  const botSummaries = useMemo(() => {
-    const attention = new Map(botShelfGroups.map((group) => [group.projectId, group.attention]));
-    const excerpts = new Map(
-      (bots.list?.lastMessages ?? []).map((message) => [message.botId, message.text]),
-    );
-    const summaries = new Map<string, BotSummary>();
-    for (const botId of bots.shownBotIds) {
-      const threads = bots.threadsByBot.get(botId) ?? [];
-      let newest: PluginSidebarThread | null = null;
-      // A root is any conversation whose parent is not among the bot's own,
-      // so a child moved to this bot, or one that outlived its parent, counts.
-      for (const thread of conversationRoots(threads))
-        if (newest === null || thread.updatedAt > newest.updatedAt) newest = thread;
-      summaries.set(botId, {
-        attention: attention.get(botId) ?? 0,
-        working: threads.some(isWorking),
-        excerpt: excerpts.get(botId) ?? null,
-        finished: newest !== null && bots.isCompleted(newest.id),
-      });
-    }
-    return summaries;
-  }, [botShelfGroups, bots]);
-  // The Bots tab lists bots, not conversations; a search lists every bot's
-  // matching conversations instead.
-  const botTabGroups = useMemo(
-    () => (searching ? botShelfGroups.filter((group) => group.rows.length > 0) : NO_GROUPS),
-    [botShelfGroups, searching],
-  );
-  const projectShelfGroups = useMemo(() => {
+  const groupedShelves = useMemo(() => {
     const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] =>
       groupRowsByProject(shelves[shelf], orderedProjectIds, (projectId) =>
         personalProjectIds.has(projectId),
@@ -316,45 +203,33 @@ function InboxList({
       settled: groupsFor("settled"),
     };
   }, [shelves, orderedProjectIds, personalProjectIds]);
-  const groupedShelves = useMemo(
-    () => ({ ...projectShelfGroups, bots: botShelfGroups }),
-    [projectShelfGroups, botShelfGroups],
-  );
   const { pinned, nextAction, waiting, slopcop } = groupedShelves;
   const { shelfViews, windowLayout, waitingOpen, slopcopOpen } = useShelfWindow(
     groupedShelves,
     grouped,
     searching,
     isGroupCollapsed,
-    tab,
-    botTabGroups,
   );
   // The rows the user can see, in the order they see them and tagged with the
   // shelf they sit under, so settling walks to the visible neighbour in its
   // own section and never into a folded group or another shelf.
   const visibleActiveRows = useMemo(
     () =>
-      tab === "bots"
-        ? botTabGroups.flatMap((group) =>
-            group.rows.map((row) => ({ shelf: "bots" as const, row })),
-          )
-        : (
-            [
-              ["pinned", pinned],
-              ["nextAction", nextAction],
-              ["waiting", waitingOpen ? waiting : []],
-              ["slopcop", slopcopOpen ? slopcop : []],
-            ] as const
-          ).flatMap(([shelf, groups]) =>
-            groups.flatMap((group) =>
-              grouped && !searching && isGroupCollapsed(groupCollapseKey(shelf, group.projectId))
-                ? []
-                : group.rows.map((row) => ({ shelf, row })),
-            ),
-          ),
+      (
+        [
+          ["pinned", pinned],
+          ["nextAction", nextAction],
+          ["waiting", waitingOpen ? waiting : []],
+          ["slopcop", slopcopOpen ? slopcop : []],
+        ] as const
+      ).flatMap(([shelf, groups]) =>
+        groups.flatMap((group) =>
+          grouped && !searching && isGroupCollapsed(groupCollapseKey(shelf, group.projectId))
+            ? []
+            : group.rows.map((row) => ({ shelf, row })),
+        ),
+      ),
     [
-      tab,
-      botTabGroups,
       pinned,
       nextAction,
       waiting,
@@ -369,29 +244,6 @@ function InboxList({
   // A machine scope carries into the composer, which preselects that machine
   // for the new environment when it can host one.
   const navigate = useBbNavigate();
-  const selectableBots = useMemo(() => {
-    const shown = new Set(bots.shownBotIds);
-    return bots.bots.filter((bot) => shown.has(bot.id));
-  }, [bots.bots, bots.shownBotIds]);
-  const pinnedBots = useMemo(
-    () => selectableBots.filter((bot) => bot.pinned === true),
-    [selectableBots],
-  );
-  const botShelfList = useMemo(
-    () => botShelves(selectableBots, bots.list?.sections ?? NO_SECTIONS),
-    [selectableBots, bots.list?.sections],
-  );
-  // Opening a bot goes to its main chat, the one conversation the user talks
-  // in, starting it when it is gone.
-  const openBot = useCommittedEvent((bot: BotMetadata) => {
-    const live = bots.threadsByBot.get(bot.id) ?? [];
-    if (bot.mainThreadId === null || !live.some((thread) => thread.id === bot.mainThreadId)) {
-      botsActions.openMainChat(bot);
-      return;
-    }
-    navigate.toThread(bot.mainThreadId);
-    onNavigate();
-  });
   const onNewThread = useCommittedEvent((projectId: string) => {
     const hostId = visibility.composerHostId;
     navigate.toCompose({
@@ -494,7 +346,7 @@ function InboxList({
         />
       );
     }
-    const card = (
+    return (
       <ThreadCard
         isUnread={row.isUnread}
         isNaming={namingThreads.has(thread.id)}
@@ -519,19 +371,6 @@ function InboxList({
         drag={drag}
         dropAllowed={threadDropAllowed(drag, tree, thread.id)}
       />
-    );
-    return shelf === "bots" ? (
-      <>
-        {card}
-        <BotWorkflowRuns
-          threadId={thread.id}
-          depth={row.depth}
-          activeThreadId={activeThreadId}
-          onNavigate={onNavigate}
-        />
-      </>
-    ) : (
-      card
     );
   };
   const renderRows = (
@@ -655,199 +494,107 @@ function InboxList({
       knownMachines={sidebar.experimental_hosts}
     >
       {pendingArchives.runners}
-      {botDialogs}
-      <WorkflowRunsContext.Provider value={workflowRuns}>
-        <DndContext {...sidebarDrag.contextProps}>
-          <div
-            data-gtd-sidebar-thread-list=""
-            className="flex min-h-0 flex-1 flex-col"
-            onClickCapture={(event) => {
-              // A drag's trailing click must not act on what it lands on.
-              if (performance.now() - lastDragEndAt.current < 200) {
-                event.preventDefault();
-                event.stopPropagation();
-              }
-            }}
-          >
-            {botsEnabled ? (
-              <SidebarTabs
-                tab={tab}
-                onChange={setTab}
-                codeCount={shelves.nextAction.length}
-                isCompactViewport={isCompactViewport}
-              />
-            ) : null}
-            {/* Project and machine filters sort code threads; bots have neither. */}
-            {tab === "code" ? (
-              <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
-                <Select value={scope} onValueChange={setScope}>
-                  {/* It sizes to its label, so the chevron sits beside it. The
+      <DndContext {...sidebarDrag.contextProps}>
+        <div
+          data-gtd-sidebar-thread-list=""
+          className="flex min-h-0 flex-1 flex-col"
+          onClickCapture={(event) => {
+            // A drag's trailing click must not act on what it lands on.
+            if (performance.now() - lastDragEndAt.current < 200) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          }}
+        >
+          <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
+            <Select value={scope} onValueChange={setScope}>
+              {/* It sizes to its label, so the chevron sits beside it. The
                 machine picker takes the slack. */}
-                  <ScopeTrigger
-                    isCompactViewport={isCompactViewport}
-                    className="min-w-0 flex-initial justify-start font-medium"
-                    aria-label={`Project scope: ${scopeLabel}`}
+              <ScopeTrigger
+                isCompactViewport={isCompactViewport}
+                className="min-w-0 flex-initial justify-start font-medium"
+                aria-label={`Project scope: ${scopeLabel}`}
+              >
+                <SelectValue />
+              </ScopeTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_PROJECTS} className={scopeItemClassName(isCompactViewport)}>
+                  All projects
+                </SelectItem>
+                {projects.map((project) => (
+                  <SelectItem
+                    key={project.id}
+                    value={project.id}
+                    className={scopeItemClassName(isCompactViewport)}
                   >
-                    <SelectValue />
-                  </ScopeTrigger>
-                  <SelectContent>
-                    <SelectItem
-                      value={ALL_PROJECTS}
-                      className={scopeItemClassName(isCompactViewport)}
-                    >
-                      All projects
-                    </SelectItem>
-                    {projects.map((project) => (
-                      <SelectItem
-                        key={project.id}
-                        value={project.id}
-                        className={scopeItemClassName(isCompactViewport)}
-                      >
-                        {project.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <MachineVisibilityPicker
-                  machines={machines}
-                  visibility={visibility}
-                  onChange={visibility.change}
-                  isCompactViewport={isCompactViewport}
-                />
-              </div>
-            ) : null}
-
-            <RowMenuArea
-              resolveTarget={resolveMenuTarget}
+                    {project.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <MachineVisibilityPicker
+              machines={machines}
+              visibility={visibility}
+              onChange={visibility.change}
               isCompactViewport={isCompactViewport}
-              ref={scrollRef}
-              className={cn(
-                "min-h-0 flex-1 overflow-y-auto px-1.5",
-                isCompactViewport ? "pb-8" : "pb-2",
-              )}
-              // bb's compact footer overlays the list edge. Fade content into that
-              // surface, while the matching padding lets the final row scroll clear.
-              style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
-              onFocus={focusedRow.onFocus}
-              onBlur={focusedRow.onBlur}
-            >
-              <DisclosureViewContext.Provider value={disclosureView}>
-                <InboxContent
-                  status={status}
-                  // Until the saved machine choice loads, every machine counts as
-                  // visible, so painting early would flash hidden machines' rows.
-                  ready={
-                    lifecycle.shelvesReady &&
-                    visibility.ready &&
-                    sidebar.experimental_archived?.status !== "loading"
-                  }
-                  count={shelvedTotal}
-                  // The Bots tab lists bots, so an empty thread list leaves it whole.
-                  keepShelves={tab === "bots"}
-                  searchQuery={searchQuery}
-                >
-                  {tab === "bots" ? (
-                    <section aria-label="Bots">
-                      <div
-                        // oxlint-disable-next-line react/refs -- passes the virtualizer's callback ref; nothing reads .current
-                        ref={inboxWindow.measureRef}
-                        data-index={windowLayout.headerIndex.get(shelfKey("bots"))}
-                      >
-                        {bots.list === undefined ? (
-                          bots.failed ? (
-                            <BotsError onRetry={bots.retry} />
-                          ) : (
-                            <BotsLoading />
-                          )
-                        ) : searching ? (
-                          <BotConversationsHeading
-                            empty={botTabGroups.every((group) => group.rows.length === 0)}
-                          />
-                        ) : (
-                          <>
-                            {bots.failed ? <BotsOffline onRetry={bots.retry} /> : null}
-                            <PinnedBotGrid
-                              bots={pinnedBots}
-                              threadsByBot={bots.threadsByBot}
-                              activeBotId={activeBotId}
-                              onOpen={openBot}
-                              actions={botsActions}
-                              canMove={!isCompactViewport}
-                            />
-                            {botShelfList.map((botShelf) => (
-                              <Shelf
-                                key={botShelf.key}
-                                label={botShelf.label}
-                                count={botShelf.bots.length}
-                                isCompactViewport={isCompactViewport}
-                                measureRef={IGNORE_MEASURE}
-                                measureIndex={undefined}
-                              >
-                                <ul className="flex flex-col">
-                                  {botShelf.bots.map((bot, index) => (
-                                    <li key={bot.id}>
-                                      <BotRow
-                                        bot={bot}
-                                        summary={botSummaries.get(bot.id)}
-                                        threads={bots.threadsByBot.get(bot.id) ?? NO_BOT_THREADS}
-                                        active={bot.id === activeBotId}
-                                        onOpen={openBot}
-                                        actions={botsActions}
-                                        group={botShelf.bots}
-                                        canMoveUp={!isCompactViewport && index > 0}
-                                        canMoveDown={
-                                          !isCompactViewport && index < botShelf.bots.length - 1
-                                        }
-                                      />
-                                    </li>
-                                  ))}
-                                </ul>
-                              </Shelf>
-                            ))}
-                          </>
-                        )}
-                      </div>
-                      <ul className="flex flex-col">
-                        {renderRows(
-                          "bots",
-                          shelfKey("bots"),
-                          botTabGroups.flatMap((group) => group.rows),
-                          false,
-                        )}
-                      </ul>
-                    </section>
-                  ) : null}
-                  {shelfViews.map(({ shelf, label, fold, showEmpty }) =>
-                    groupedShelves[shelf].length > 0 || showEmpty === true ? (
-                      <Shelf
-                        key={label}
-                        label={label}
-                        count={shelves[shelf].length}
-                        isCompactViewport={isCompactViewport}
-                        fold={fold}
-                        measureRef={inboxWindow.measureRef}
-                        measureIndex={windowLayout.headerIndex.get(shelfKey(shelf))}
-                      >
-                        {renderGroups(shelf, groupedShelves[shelf])}
-                      </Shelf>
-                    ) : null,
-                  )}
-                </InboxContent>
-              </DisclosureViewContext.Provider>
-            </RowMenuArea>
+            />
           </div>
-          {/* The ghost rides the pointer from document.body, clear of the list's
+
+          <RowMenuArea
+            resolveTarget={resolveMenuTarget}
+            isCompactViewport={isCompactViewport}
+            ref={scrollRef}
+            className={cn(
+              "min-h-0 flex-1 overflow-y-auto px-1.5",
+              isCompactViewport ? "pb-8" : "pb-2",
+            )}
+            // bb's compact footer overlays the list edge. Fade content into that
+            // surface, while the matching padding lets the final row scroll clear.
+            style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
+            onFocus={focusedRow.onFocus}
+            onBlur={focusedRow.onBlur}
+          >
+            <InboxContent
+              status={status}
+              // Until the saved machine choice loads, every machine counts as
+              // visible, so painting early would flash hidden machines' rows.
+              ready={
+                lifecycle.shelvesReady &&
+                visibility.ready &&
+                sidebar.experimental_archived?.status !== "loading"
+              }
+              count={shelvedTotal}
+              searchQuery={searchQuery}
+            >
+              {shelfViews.map(({ shelf, label, fold }) =>
+                groupedShelves[shelf].length > 0 ? (
+                  <Shelf
+                    key={label}
+                    label={label}
+                    count={shelves[shelf].length}
+                    isCompactViewport={isCompactViewport}
+                    fold={fold}
+                    measureRef={inboxWindow.measureRef}
+                    measureIndex={windowLayout.headerIndex.get(shelfKey(shelf))}
+                  >
+                    {renderGroups(shelf, groupedShelves[shelf])}
+                  </Shelf>
+                ) : null,
+              )}
+            </InboxContent>
+          </RowMenuArea>
+        </div>
+        {/* The ghost rides the pointer from document.body, clear of the list's
           scroll clip, so the rows themselves never shift under the drag. */}
-          {createPortal(
-            <div {...portalScope}>
-              <DragOverlay dropAnimation={null}>
-                {dragGhostTitle === null ? null : <NestDragGhost title={dragGhostTitle} />}
-              </DragOverlay>
-            </div>,
-            document.body,
-          )}
-        </DndContext>
-      </WorkflowRunsContext.Provider>
+        {createPortal(
+          <div {...portalScope}>
+            <DragOverlay dropAnimation={null}>
+              {dragGhostTitle === null ? null : <NestDragGhost title={dragGhostTitle} />}
+            </DragOverlay>
+          </div>,
+          document.body,
+        )}
+      </DndContext>
     </MachineAppearanceProvider>
   );
 }
@@ -858,21 +605,11 @@ interface ShelfFold {
   onToggle: () => void;
 }
 
-const NO_BOT_IDS: ReadonlySet<string> = new Set();
-const NO_GROUPS: readonly ProjectGroupRows[] = [];
-const NO_SECTIONS: readonly { id: string; name: string; order: number }[] = [];
-const NO_BOT_THREADS: readonly PluginSidebarThread[] = [];
-/** Bot shelves sit inside the Bots tab's one measured header, so they measure nothing. */
-const IGNORE_MEASURE = () => {};
-const NO_SHELF_VIEWS: readonly ShelfView[] = [];
-
 interface ShelfView {
   shelf: InboxShelf;
   label: string;
   /** Present on the shelves that fold; absent, the shelf always shows. */
   fold?: ShelfFold;
-  /** Draw the header even with nothing on the shelf. */
-  showEmpty?: boolean;
 }
 
 /**
@@ -884,9 +621,6 @@ function useShelfWindow(
   grouped: boolean,
   searching: boolean,
   isGroupCollapsed: (key: string) => boolean,
-  tab: SidebarTab,
-  /** The Bots tab's conversations: the selected bot's, or every match while searching. */
-  botTabGroups: readonly ProjectGroupRows[],
 ) {
   const [showSnoozed, setShowSnoozed] = useState(false);
   const [showSettled, setShowSettled] = useState(false);
@@ -901,8 +635,8 @@ function useShelfWindow(
   const slopcopOpen = showSlopcop || searching;
   const snoozedOpen = showSnoozed || searching;
   const settledOpen = showSettled || searching;
-  // Every Code shelf in the order it draws. The Bots tab draws its own.
-  const codeShelfViews: readonly ShelfView[] = [
+  // Every shelf in the order it draws.
+  const shelfViews: readonly ShelfView[] = [
     { shelf: "pinned", label: "Pinned" },
     { shelf: "nextAction", label: "Next Action" },
     {
@@ -926,36 +660,22 @@ function useShelfWindow(
       fold: { expanded: settledOpen, onToggle: () => setShowSettled((open) => !open) },
     },
   ];
-  const shelfViews = tab === "bots" ? NO_SHELF_VIEWS : codeShelfViews;
   const windowLayout = useMemo(
     () =>
       buildInboxWindow(
-        tab === "bots"
-          ? // One header (the cards and the list's heading), then the rows.
-            [
-              {
-                shelf: "bots",
-                expanded: true,
-                groups: botTabGroups,
-                grouped: false,
-                showEmpty: true,
-              },
-            ]
-          : [
-              { shelf: "pinned", expanded: true, groups: groupedShelves.pinned },
-              { shelf: "nextAction", expanded: true, groups: groupedShelves.nextAction },
-              { shelf: "waiting", expanded: waitingOpen, groups: groupedShelves.waiting },
-              { shelf: "slopcop", expanded: slopcopOpen, groups: groupedShelves.slopcop },
-              { shelf: "snoozed", expanded: snoozedOpen, groups: groupedShelves.snoozed },
-              { shelf: "settled", expanded: settledOpen, groups: groupedShelves.settled },
-            ],
+        [
+          { shelf: "pinned", expanded: true, groups: groupedShelves.pinned },
+          { shelf: "nextAction", expanded: true, groups: groupedShelves.nextAction },
+          { shelf: "waiting", expanded: waitingOpen, groups: groupedShelves.waiting },
+          { shelf: "slopcop", expanded: slopcopOpen, groups: groupedShelves.slopcop },
+          { shelf: "snoozed", expanded: snoozedOpen, groups: groupedShelves.snoozed },
+          { shelf: "settled", expanded: settledOpen, groups: groupedShelves.settled },
+        ],
         grouped,
         (key) => searching || !isGroupCollapsed(key),
       ),
     [
       groupedShelves,
-      tab,
-      botTabGroups,
       waitingOpen,
       slopcopOpen,
       snoozedOpen,
@@ -1231,7 +951,6 @@ function useInboxTree(
   scope: string,
   hiddenMachineIds: ReadonlySet<string>,
   searchQuery: string,
-  botOf: (threadId: string) => string | null,
 ) {
   // Folded families are the backend's `expandedThreads` preference, kept
   // across reloads and windows. Folded project groups stay session state below.
@@ -1261,10 +980,9 @@ function useInboxTree(
         {
           arrivals,
           snoozedAtFor: lifecycle.snoozedAtFor,
-          botOf,
         },
       ),
-    [lifecycle, scope, hiddenMachineIds, searchQuery, threads, arrivals, botOf],
+    [lifecycle, scope, hiddenMachineIds, searchQuery, threads, arrivals],
   );
   const shelves = useMemo(() => {
     const rows = (shelf: (typeof tree)[number]["shelf"]) =>
@@ -1275,7 +993,6 @@ function useInboxTree(
       );
     return {
       pinned: rows("pinned"),
-      bots: rows("bots"),
       nextAction: rows("nextAction"),
       waiting: rows("waiting"),
       slopcop: rows("slopcop"),
@@ -1383,15 +1100,12 @@ function InboxContent({
   status,
   ready,
   count,
-  keepShelves,
   searchQuery,
   children,
 }: {
   status: ReturnType<typeof useSidebarThreads>["status"];
   ready: boolean;
   count: number;
-  /** Draw the children in place of the empty message, for a list that is not threads. */
-  keepShelves: boolean;
   searchQuery: string;
   children: React.ReactNode;
 }) {
@@ -1401,10 +1115,7 @@ function InboxContent({
   }
   if (!ready) return null;
   if (count === 0) {
-    const empty = (
-      <InboxStatus>{searchQuery.trim() ? "No threads found" : "No threads yet"}</InboxStatus>
-    );
-    return keepShelves ? children : empty;
+    return <InboxStatus>{searchQuery.trim() ? "No threads found" : "No threads yet"}</InboxStatus>;
   }
   return children;
 }
@@ -1427,7 +1138,6 @@ function Shelf({
   label,
   count,
   fold,
-  action,
   children,
   isCompactViewport,
   measureRef,
@@ -1436,8 +1146,6 @@ function Shelf({
   label: string;
   count: number;
   fold?: ShelfFold;
-  /** A button at the header's end, such as Bots' New bot. */
-  action?: React.ReactNode;
   children: React.ReactNode;
   isCompactViewport: boolean;
 } & HeaderMeasureProps) {
@@ -1447,7 +1155,6 @@ function Shelf({
         label={label}
         count={count}
         fold={fold}
-        action={action}
         isCompactViewport={isCompactViewport}
         measureRef={measureRef}
         measureIndex={measureIndex}
@@ -1470,7 +1177,6 @@ function ShelfHeader({
   label,
   count,
   fold,
-  action,
   isCompactViewport,
   measureRef,
   measureIndex,
@@ -1478,7 +1184,6 @@ function ShelfHeader({
   label: string;
   count: number;
   fold?: ShelfFold;
-  action?: React.ReactNode;
   isCompactViewport: boolean;
 } & HeaderMeasureProps) {
   const mutedClass = isCompactViewport ? "text-muted-foreground" : "text-muted-foreground/70";
@@ -1525,68 +1230,6 @@ function ShelfHeader({
         {title}
         {rule}
       </button>
-      {action}
     </h2>
-  );
-}
-
-/** Code (the shelves) and Bots, as one segmented control above the list. */
-function SidebarTabs({
-  tab,
-  onChange,
-  codeCount,
-  isCompactViewport,
-}: {
-  tab: SidebarTab;
-  onChange: (tab: SidebarTab) => void;
-  codeCount: number;
-  isCompactViewport: boolean;
-}) {
-  const option = (value: SidebarTab, label: string, icon: "Code" | "Bot", trailing: ReactNode) => (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={tab === value}
-      onClick={() => onChange(value)}
-      className="gtd-sidebar-tab"
-    >
-      <Icon name={icon} className="size-3.5 shrink-0" />
-      {label}
-      {trailing}
-    </button>
-  );
-  return (
-    <div
-      role="tablist"
-      aria-label="Sidebar view"
-      className={cn("gtd-sidebar-tabs", isCompactViewport && "gtd-sidebar-tabs-touch")}
-    >
-      {option(
-        "code",
-        "Code",
-        "Code",
-        codeCount > 0 ? <span className="gtd-sidebar-tab-count">{codeCount}</span> : null,
-      )}
-      {option("bots", "Bots", "Bot", null)}
-    </div>
-  );
-}
-
-/** Lets the panels a tab switch mounts appear in place. */
-function useDisclosureView(tab: SidebarTab): DisclosureView {
-  const shown = useRef<unknown>(tab);
-  useEffect(() => {
-    shown.current = tab;
-  }, [tab]);
-  return useMemo(() => ({ current: tab, shown }), [tab]);
-}
-
-/** The label over the Bots tab's search results. */
-function BotConversationsHeading({ empty }: { empty: boolean }) {
-  return (
-    <>
-      <h2 className="gtd-bot-conversations-heading">Results</h2>
-      {empty ? <p className="gtd-bot-conversations-empty">No conversations found</p> : null}
-    </>
   );
 }

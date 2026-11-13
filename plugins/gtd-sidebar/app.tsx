@@ -1,15 +1,11 @@
 // @smsunarto/bb-plugin-gtd-sidebar — an action-oriented replacement for bb's
 // sidebar thread list, and a reference for `app.slots.experimental_threadList`.
-// While the Bots plugin is enabled, its bots get a shelf above Next Action.
 //
 // Active threads are grouped by who acts next. Every section orders by when
 // each thread arrived on it, most recent first.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import "./naming.css";
-import "./bot-shelf.css";
-import "@smsunarto/bb-plugin-bots/bots.css";
-import { registerBotShelfActions } from "@smsunarto/bb-plugin-bots/shelf";
 import { ThreadInbox } from "./components/inbox/thread-inbox";
 import { CapyNavigation, CapyNavigationHeader } from "./components/nav/capy-navigation";
 import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";
@@ -28,7 +24,7 @@ export default definePluginApp((app) => {
   app.slots.experimental_threadList({
     id: "inbox",
     title: "GTD Sidebar (inbox)",
-    description: "Next Action and Waiting, with the newest arrivals first, and Bots when enabled.",
+    description: "Next Action and Waiting, with the newest arrivals first.",
     component: ThreadInbox,
   });
 
@@ -40,8 +36,6 @@ export default definePluginApp((app) => {
     component: CapyNavigation,
     headerComponent: CapyNavigationHeader,
   });
-
-  registerBotShelfActions(app);
 
   app.slots.commandPaletteAction({
     id: "settle-thread",

@@ -1,4 +1,4 @@
-import { Component, createContext, createRef, type ContextType, type ReactNode } from "react";
+import { Component, createRef, type ReactNode } from "react";
 import { blur } from "@animate-ui/react/utils/motion";
 import {
   DISCLOSURE_START_EVENT,
@@ -49,19 +49,6 @@ function viewPanel(panel: HTMLElement): PanelView {
   };
 }
 
-/**
- * The view a list shows and the view its last commit showed. A switch mounts
- * every open panel at once, so panels mounted by the commit that switches
- * appear in place instead of sliding in. The list updates `shown` in a passive
- * effect, after its panels mount.
- */
-export interface DisclosureView {
-  current: unknown;
-  shown: { readonly current: unknown };
-}
-
-export const DisclosureViewContext = createContext<DisclosureView | null>(null);
-
 interface SlidingDisclosureProps {
   open: boolean;
   children?: ReactNode;
@@ -85,8 +72,6 @@ export class SlidingDisclosure extends Component<
   unknown,
   DisclosureSnapshot | null
 > {
-  static override contextType = DisclosureViewContext;
-  declare context: ContextType<typeof DisclosureViewContext>;
   private panel = createRef<HTMLDivElement>();
   /** The fade, then the slide when motion is allowed. */
   private animations: Animation[] = [];
@@ -100,8 +85,7 @@ export class SlidingDisclosure extends Component<
     // inner height animations here would make its measured destination too short.
     const insideDisclosure = this.panel.current?.parentElement?.closest("[data-gtd-disclosure]");
     const panel = this.panel.current;
-    const switching = this.context !== null && this.context.shown.current !== this.context.current;
-    if (panel && this.props.open && !insideDisclosure && !switching) {
+    if (panel && this.props.open && !insideDisclosure) {
       this.play({ height: 0, opacity: "0", content: null, view: viewPanel(panel) });
     }
   }
