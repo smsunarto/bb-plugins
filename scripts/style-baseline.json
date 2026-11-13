@@ -340,26 +340,6 @@
     "source": "border: 1px solid color-mix(in oklch, var(--primary) 35%, transparent);"
   },
   {
-    "file": "plugins/dotfiles/src/app/components/ui/card.tsx",
-    "rule": "local-primitive",
-    "source": "card"
-  },
-  {
-    "file": "plugins/dotfiles/src/app/components/ui/coarse-pointer-sizing.ts",
-    "rule": "registry-drift",
-    "source": "coarse-pointer-sizing.ts"
-  },
-  {
-    "file": "plugins/dotfiles/src/app/components/ui/hooks/use-media-query.ts",
-    "rule": "registry-drift",
-    "source": "hooks/use-media-query.ts"
-  },
-  {
-    "file": "plugins/dotfiles/src/app/components/ui/overlay-trigger.ts",
-    "rule": "registry-drift",
-    "source": "overlay-trigger.ts"
-  },
-  {
     "file": "plugins/genui/components/ui/button.tsx",
     "rule": "local-primitive",
     "source": "button"
