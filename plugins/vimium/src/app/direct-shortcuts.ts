@@ -7,11 +7,13 @@
 // target, so typing in the composer never trips one.
 
 import { reservedControl, type ReservedControlId } from "./hint-labels.ts";
+import type { ProviderShortcut } from "./provider-shortcuts.ts";
 
 export type ScrollMotion = "down" | "up" | "bottom";
 
 export type DirectShortcut =
   | { readonly kind: "hints" }
+  | { readonly kind: "model-selection"; readonly action: ProviderShortcut }
   | { readonly kind: "control"; readonly selector: string }
   | { readonly kind: "focus-composer" }
   | { readonly kind: "thread-search" }
@@ -30,7 +32,7 @@ export interface VimiumCommand {
   readonly id: string;
   /** The palette row, Settings → Keyboard row, and cheatsheet row. */
   readonly title: string;
-  readonly section: "Link hints" | "Navigation" | "Composer";
+  readonly section: "Link hints" | "Navigation" | "Composer" | "Model";
   readonly action: DirectShortcut;
 }
 
@@ -117,6 +119,30 @@ export const VIMIUM_COMMANDS: readonly VimiumCommand[] = [
     section: "Composer",
     action: pinnedControl("permission"),
   },
+  {
+    id: "effort-up",
+    title: "Increase reasoning effort",
+    section: "Model",
+    action: { kind: "model-selection", action: "reasoning-up" },
+  },
+  {
+    id: "effort-down",
+    title: "Decrease reasoning effort",
+    section: "Model",
+    action: { kind: "model-selection", action: "reasoning-down" },
+  },
+  {
+    id: "next-favorite-model",
+    title: "Next favorite model on this provider",
+    section: "Model",
+    action: { kind: "model-selection", action: "model" },
+  },
+  {
+    id: "next-favorite-provider",
+    title: "Next favorite provider, same model size",
+    section: "Model",
+    action: { kind: "model-selection", action: "provider" },
+  },
 ];
 
 /** The scroll keys vimium handles itself, since a held key must repeat. */
@@ -148,6 +174,7 @@ export function directShortcutFor(key: DirectKey): DirectShortcut | null {
 
 /** The keydown facts that decide whether a bb command keypress is typing. */
 export interface CommandKey {
+  readonly key: string;
   readonly ctrlKey: boolean;
   readonly metaKey: boolean;
   readonly altKey: boolean;
@@ -157,11 +184,13 @@ export interface CommandKey {
 /**
  * True when a keydown bb is about to dispatch as a vimium command belongs to
  * a text field instead. bb gives plugin commands no editable-focus guard, so
- * a bare `n` would otherwise open a new thread while typing. A chord the user
- * rebinds with Ctrl, Cmd, or Alt still runs from the composer.
+ * a bare `n` would otherwise open a new thread while typing. A chord with Ctrl,
+ * Cmd, or Alt, or a key that types no character such as F8, still runs from
+ * the composer.
  */
 export function isTypingKey(key: CommandKey): boolean {
-  return key.editableTarget && !key.ctrlKey && !key.metaKey && !key.altKey;
+  const character = key.key.length === 1;
+  return key.editableTarget && character && !key.ctrlKey && !key.metaKey && !key.altKey;
 }
 
 export const SCROLL_STEP_PX = 60;

@@ -273,6 +273,7 @@ export function vimiumCommandAvailable(): boolean {
   const event = window.event;
   if (!(event instanceof KeyboardEvent) || event.type !== "keydown") return true;
   const typing = isTypingKey({
+    key: event.key,
     ctrlKey: event.ctrlKey,
     metaKey: event.metaKey,
     altKey: event.altKey,
@@ -770,6 +771,8 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
     switch (shortcut.kind) {
       case "hints":
         return mode.kind === "idle" && enterTopLevel();
+      case "model-selection":
+        return runProviderShortcut(shortcut.action);
       case "undo-archive":
         return archiveUndo.undoLatest();
       case "focus-composer": {

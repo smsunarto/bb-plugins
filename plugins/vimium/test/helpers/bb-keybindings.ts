@@ -25,6 +25,10 @@ export const README_BINDINGS: Readonly<Record<string, PluginCommandShortcut>> = 
   machine: { key: "l" },
   branch: { key: "b" },
   "permission-mode": { key: "a" },
+  "effort-down": { key: "F7" },
+  "effort-up": { key: "F9" },
+  "next-favorite-model": { key: "F8" },
+  "next-favorite-provider": { key: "F8", shift: true },
 };
 
 // bb's normalization: a shifted symbol matches its unshifted key plus Shift.

@@ -36,6 +36,10 @@ bb settings keyboard set plugin:vimium/project p
 bb settings keyboard set plugin:vimium/machine l
 bb settings keyboard set plugin:vimium/branch b
 bb settings keyboard set plugin:vimium/permission-mode a
+bb settings keyboard set plugin:vimium/effort-down F7 --platform mac
+bb settings keyboard set plugin:vimium/effort-up F9 --platform mac
+bb settings keyboard set plugin:vimium/next-favorite-model F8 --platform mac
+bb settings keyboard set plugin:vimium/next-favorite-provider Shift+F8 --platform mac
 ```
 
 - `n` new thread, `h` Home, `s` thread search, `,` Settings.
@@ -45,6 +49,7 @@ bb settings keyboard set plugin:vimium/permission-mode a
 - `e` settles the focused thread, including a child in a split pane. This needs a sidebar with a settle button on each row, such as gtd-sidebar. If the focused split thread's row is collapsed, expand it before settling.
 - `E` (Shift+e) undoes the newest archive notification while it is visible and opens the restored thread. Clicking that notification's Undo button also opens the thread.
 - `i` focuses the composer.
+- On a Mac, the media keys drive the model: `F7` (previous track) lowers reasoning effort and `F9` (next track) raises it, stopping at the ends. `F8` (play/pause) steps to the next favorite model on the current provider, and `Shift+F8` to the next provider with a favorite, landing on the same size of model (Astra ↔ Fable, Sol ↔ Opus) and preferring a favorite. Favorites are the models starred in t3-composer's model picker, kept per device. macOS never delivers the media-key versions to a web page, so these three keys must send F-keys in bb. Hold fn, or remap only them with Karabiner-Elements: a complex modification, conditioned on bb being frontmost, that sends `fn`+`F7`/`F8`/`F9` for the plain key and the plain key for `fn`+key, which keeps the media action on fn. That leaves the other function keys and other apps alone, unlike "Use F1, F2, etc. keys as standard function keys". They work from the composer too.
 - `?` opens the Vimium Cheatsheet page, which lists every key with the binding bb actually uses.
 
 bb gives plugin commands no text-field guard of their own, so Vimium turns down a command whose key arrives from a text field without Ctrl, Cmd, or Alt; inside one, every bare key is just typing. A binding with Ctrl, Cmd, or Alt runs from the composer too. An open project, machine, or model picker keeps every key for its search. bb skips held-key repeats for commands.
@@ -52,7 +57,7 @@ bb gives plugin commands no text-field guard of their own, so Vimium turns down 
 These stay Vimium's own keys rather than bb commands:
 
 - `j` scrolls the conversation down one step, `k` scrolls it up, and `J` (Shift+j) jumps to the bottom. They stay out of bb's keybindings because bb drops repeated keydowns, and a held key must keep scrolling. A step is 60px. The scroll animates the way Vimium's does. A tap moves one step in about 100ms, a held key keeps scrolling until you release it, and quick taps add up. `j` and `k` send bb a wheel nudge first, so a streaming reply stops snapping the view back to the bottom until `J` or a scroll to the end re-attaches it. On a page without a conversation they fall through to bb.
-- `Escape` then `m` toggles Claude/Codex, pairing Astra ↔ Fable and Sol ↔ Opus. Other models use the destination provider's default. Reasoning and speed are preserved when supported; BB reconciles unsupported values. In an existing thread, this prepares BB's normal provider handoff for the next send.
+- `Escape` then `m` switches provider the same way as `Shift+F8`. Reasoning and speed are preserved when supported; BB reconciles unsupported values. In an existing thread, this prepares BB's normal provider handoff for the next send.
 - `Escape` then `r` cycles the current model's reasoning levels forward and wraps.
 - `Escape` then `;` cycles Normal → Fast → Ultrafast → Normal, skipping speeds the model does not offer.
 - `Escape` then `a` opens Agentation feedback mode when its sidebar footer button is available. `Escape` alone exits feedback mode.

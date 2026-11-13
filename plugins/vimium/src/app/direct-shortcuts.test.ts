@@ -96,7 +96,7 @@ describe("directShortcutFor", () => {
 });
 
 describe("isTypingKey", () => {
-  const plain = { ctrlKey: false, metaKey: false, altKey: false, editableTarget: true };
+  const plain = { key: "n", ctrlKey: false, metaKey: false, altKey: false, editableTarget: true };
 
   test("a bare or shifted key in a text field is typing", () => {
     expect(isTypingKey(plain)).toBe(true);
@@ -104,6 +104,10 @@ describe("isTypingKey", () => {
 
   test("a key outside a text field is not", () => {
     expect(isTypingKey({ ...plain, editableTarget: false })).toBe(false);
+  });
+
+  test("a key that types no character runs even from a text field", () => {
+    expect(isTypingKey({ ...plain, key: "F8" })).toBe(false);
   });
 
   test("a Ctrl, Cmd, or Alt chord runs even from a text field", () => {

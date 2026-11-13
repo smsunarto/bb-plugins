@@ -19,6 +19,7 @@ import {
 } from "./link-hints.ts";
 
 import {
+  readFavorites,
   setProviderShortcuts,
   shortcutSelection,
   targetProvider,
@@ -61,7 +62,9 @@ function NavigationBridge() {
       if (!selection?.providerId || (scope.kind !== "thread" && scope.kind !== "new-thread"))
         return false;
       if (pending) return true;
-      const providerId = action === "provider" ? targetProvider(selection) : selection.providerId;
+      const favorites = readFavorites(window.localStorage);
+      const providerId =
+        action === "provider" ? targetProvider(selection, favorites) : selection.providerId;
       if (!providerId) return false;
       pending = true;
       const controller = new AbortController();
@@ -111,7 +114,7 @@ function NavigationBridge() {
           action === "provider"
             ? catalog.models
             : [...catalog.models, ...catalog.selectedOnlyModels];
-        const next = shortcutSelection(action, selection, models);
+        const next = shortcutSelection(action, selection, models, favorites);
         if (next) await composer.setSelection(next);
       };
       void Promise.race([apply(), deadline])

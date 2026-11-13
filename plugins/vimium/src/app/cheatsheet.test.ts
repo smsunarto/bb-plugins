@@ -19,7 +19,7 @@ const NONE = { mod: false, meta: false, control: false, alt: false, shift: false
 
 describe("cheatsheet", () => {
   test("lists every command exactly once", () => {
-    const listed = entriesIn(["Link hints", "Navigation", "Composer"]).flatMap((entry) =>
+    const listed = entriesIn(["Link hints", "Navigation", "Composer", "Model"]).flatMap((entry) =>
       "command" in entry ? [entry.command.id] : [],
     );
     expect([...listed].sort()).toEqual(VIMIUM_COMMANDS.map((command) => command.id).sort());
