@@ -78,7 +78,7 @@ function Menu({ trigger, children }: { trigger: ReactNode; children: ReactNode }
           align="end"
           sideOffset={4}
           collisionPadding={8}
-          className="z-50 max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] min-w-[12rem] max-w-[min(20rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-border/70 bg-popover p-1 text-popover-foreground shadow-lg"
+          className="z-50 max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] min-w-[12rem] max-w-[min(20rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-lg"
         >
           {children}
         </DropdownMenu.Content>

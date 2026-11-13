@@ -48,7 +48,7 @@ export function ScriptDialog({
             event.preventDefault();
             returnFocus.current?.focus();
           }}
-          className="fixed top-1/2 left-1/2 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border/70 bg-popover p-4 text-popover-foreground shadow-xl outline-none"
+          className="fixed top-1/2 left-1/2 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border bg-popover p-4 text-popover-foreground shadow-xl outline-none"
         >
           <Dialog.Title className="text-sm font-semibold">
             {script ? "Edit project script" : "Add project script"}

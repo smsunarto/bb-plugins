@@ -2125,16 +2125,6 @@
     "source": "box-shadow: 0 1rem 3rem color-mix(in oklch, var(--foreground) 15%, transparent);"
   },
   {
-    "file": "plugins/kitchen-sink/src/app/thread-details/rows.tsx",
-    "rule": "edge-opacity",
-    "source": "className=\"z-50 max-h-[min(24rem,var(--radix-dropdown-menu-content-available-height))] min-w-[12rem] max-w-[min(20rem,calc(100vw-1rem))] overflow-y-auto rounded-xl border border-border/70 bg-popover p-1 text-popover-foreground shadow-lg\""
-  },
-  {
-    "file": "plugins/kitchen-sink/src/app/thread-details/script-dialog.tsx",
-    "rule": "edge-opacity",
-    "source": "className=\"fixed top-1/2 left-1/2 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border/70 bg-popover p-4 text-popover-foreground shadow-xl outline-none\""
-  },
-  {
     "file": "plugins/magic-compose/app.tsx",
     "rule": "raw-color",
     "source": "<stop key={hue} offset={hue / 360} stopColor={`oklch(0.74 0.17 ${hue})`} />"
