@@ -657,6 +657,14 @@
   outline-offset: 2px;
 }
 
+/* BB's main region clips for its collapse animation, and the action row has no
+   padding, so the focus outline above (4px outside the button) was cut off at
+   the row's edges. Grow the clip box by 4px without moving its content. */
+[data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-main] {
+  margin: -4px;
+  padding: 4px;
+}
+
 [data-t3-composer][data-promptbox] [data-t3-composer-actions-menu][data-state="open"] {
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
