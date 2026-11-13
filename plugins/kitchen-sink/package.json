@@ -54,9 +54,11 @@
     "src/server/",
     "src/app/",
     "src/shared/",
-    "skills/"
+    "skills/",
+    "instructions/"
   ],
   "dependencies": {
+    "@bb-plugins/instructions": "workspace:*",
     "@tanstack/react-query": "^5.101.4",
     "zod": "^4.4.3"
   },

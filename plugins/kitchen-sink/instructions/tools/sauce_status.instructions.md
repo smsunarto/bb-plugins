@@ -1,0 +1,1 @@
+For Sauce Labs real-device testing (Sauce Live, mobile device checks, mobile bug hunts), use the `sauce_*` tools, starting with `sauce_status`; they replace driving the Sauce web UI by hand and the old `Logs/sauce-tune` scripts. Read the `sauce-live` skill before the first `sauce_start`.

@@ -14,6 +14,7 @@ export const storageMigrations = [
     PRIMARY KEY (thread_id, message_id, kind, path, start_line, end_line)
   )`,
   `CREATE TABLE smart_diff_snapshots_v2 (key TEXT PRIMARY KEY, payload TEXT NOT NULL)`,
+  `CREATE TABLE sauce_lease (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)`,
 ];
 
 export function migrateStorage(bb: BbPluginApi): void {
