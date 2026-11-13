@@ -7,10 +7,10 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { listedModelName } from "../model-picker/catalog";
 import { parseFavoriteKey, useFavoriteModels } from "../model-picker/favorites";
+import { applySelection } from "./apply-selection";
 import {
   findKeywords,
   keywordSelection,
-  refusedSettingMessage,
   withoutRanges,
   type KeywordSources,
 } from "./setting-keywords";
@@ -58,13 +58,8 @@ async function applyKeyword(
     showError(request.error);
     return;
   }
-  try {
-    const applied = await composer.setSelection(request.selection);
-    const refused = refusedSettingMessage(request.selection, applied);
-    if (refused) showError(refused);
-  } catch (reason) {
-    showError(reason instanceof Error ? reason.message : String(reason));
-  }
+  const { error } = await applySelection(composer, request.selection);
+  if (error) showError(error);
 }
 
 function keywordSources(providers: Providers, favorites: ReadonlySet<string>): KeywordSources {

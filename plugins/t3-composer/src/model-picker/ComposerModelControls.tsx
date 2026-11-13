@@ -5,7 +5,7 @@ import {
   type PluginComposerApi,
 } from "@get-bb/plugin-sdk/app";
 import { isAnchorInteractive } from "@/components/ui/overlay-anchor";
-import { refusedSettingMessage } from "../composer-settings/setting-keywords";
+import { applySelection } from "../composer-settings/apply-selection";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { findCatalogModel, useModelCatalog, type CatalogModel } from "./catalog";
 import { ModelPicker } from "./ModelPicker";
@@ -98,20 +98,13 @@ export function ComposerModelControls(props: {
     }
     setPending(true);
     setError(null);
-    return composer
-      .setSelection(requested)
-      .then((applied) => {
-        if (pick === latestPick.current) setError(refusedSettingMessage(requested, applied));
-        return applied;
-      })
-      .catch((reason: unknown) => {
-        if (pick === latestPick.current) {
-          setError(reason instanceof Error ? reason.message : String(reason));
-        }
-      })
-      .finally(() => {
-        if (pick === latestPick.current) setPending(false);
-      });
+    return applySelection(composer, requested).then(({ applied, error }) => {
+      if (pick === latestPick.current) {
+        setError(error);
+        setPending(false);
+      }
+      return applied;
+    });
   };
 
   // BB's own picker handles its cycle shortcuts; where these pickers replace it, they do.

@@ -116,26 +116,3 @@ export function withoutRanges(
   });
   return { text, mentions };
 }
-
-/** Why BB applied something other than the pick, or null when it applied it. */
-export function refusedSettingMessage(
-  requested: ComposerSelection,
-  applied: ComposerSelection,
-): string | null {
-  if (requested.providerId && applied.providerId !== requested.providerId) {
-    return "BB kept the current provider for this composer.";
-  }
-  if (requested.model && applied.model !== requested.model) {
-    return "BB kept the current model for this composer.";
-  }
-  if (requested.reasoningLevel && applied.reasoningLevel !== requested.reasoningLevel) {
-    return "This model does not support that effort.";
-  }
-  if (requested.serviceTier && applied.serviceTier !== requested.serviceTier) {
-    return "This model does not offer that speed.";
-  }
-  if (requested.permissionMode && applied.permissionMode !== requested.permissionMode) {
-    return "BB kept the current permission mode.";
-  }
-  return null;
-}

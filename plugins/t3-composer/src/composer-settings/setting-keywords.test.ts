@@ -3,7 +3,6 @@ import type { ComposerDraftSnapshot, ComposerMention } from "@get-bb/plugin-sdk/
 import {
   findKeywords,
   keywordSelection,
-  refusedSettingMessage,
   withoutRanges,
   type KeywordSources,
 } from "./setting-keywords";
@@ -77,16 +76,5 @@ describe("withoutRanges", () => {
     expect(
       withoutRanges(draft("Fix #high the @t1abc bug", [thread]), [{ from: 4, to: 9 }]),
     ).toEqual({ text: "Fix the @t1abc bug", mentions: [{ ...thread, from: 8, to: 14 }] });
-  });
-});
-
-describe("refusedSettingMessage", () => {
-  it("reports a value BB reconciled away", () => {
-    expect(refusedSettingMessage({ permissionMode: "full" }, { permissionMode: "auto" })).toBe(
-      "BB kept the current permission mode.",
-    );
-    expect(
-      refusedSettingMessage({ reasoningLevel: "high" }, { reasoningLevel: "high" }),
-    ).toBeNull();
   });
 });

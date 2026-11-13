@@ -5,6 +5,7 @@ import {
   type ComposerSelection,
 } from "@get-bb/plugin-sdk/app";
 import { isAnchorInteractive } from "@/components/ui/overlay-anchor";
+import { applySelection } from "./composer-settings/apply-selection";
 import { useCatalogRouting, type CatalogRouting } from "./model-picker/catalog";
 import { markComposerHost } from "./composer-host";
 import { hasEditablePickers } from "./model-picker/ComposerModelControls";
@@ -50,20 +51,11 @@ export function ComposerPermissionControl() {
       return;
     }
     setError(null);
-    composerRef.current
-      .setSelection({ permissionMode })
-      .then((applied) => {
-        if (applied.permissionMode !== permissionMode) {
-          refused.current = permissionMode;
-          if (pick === latestPick.current) setError("BB kept the current permission mode.");
-        }
-        return applied;
-      })
-      .catch((reason: unknown) => {
-        if (pick === latestPick.current) {
-          setError(reason instanceof Error ? reason.message : String(reason));
-        }
-      });
+    void applySelection(composerRef.current, { permissionMode }).then(({ applied, error }) => {
+      if (applied && applied.permissionMode !== permissionMode) refused.current = permissionMode;
+      if (pick === latestPick.current) setError(error);
+      return applied;
+    });
   }, []);
   const selection = composer.selection;
   const shown = Boolean(editable && routing && selection?.providerId && selection.permissionMode);
