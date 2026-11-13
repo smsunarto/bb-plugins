@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import {
   useComposer,
   type ComposerSelection,
@@ -10,6 +10,13 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { findCatalogModel, useModelCatalog, type CatalogModel } from "./catalog";
 import { ModelPicker } from "./ModelPicker";
 import { TraitsPicker } from "./TraitsPicker";
+import {
+  currentPlatform,
+  cycleValue,
+  matchModelShortcut,
+  modelShortcutBindings,
+  useKeybindings,
+} from "./model-shortcuts";
 import { buildTraits } from "./traits";
 import "./model-picker.css";
 
@@ -52,12 +59,12 @@ export function ComposerModelControls(props: { fallback: ReactNode }) {
   const latestPick = useRef(0);
   const controlsRef = useRef<HTMLDivElement>(null);
   const selection = composer.selection;
-  if (!props.fallback || !editable || !selection?.providerId) return props.fallback;
-
-  const provider = catalog.providers.find((candidate) => candidate.id === selection.providerId);
-  const model = findCatalogModel(catalog.catalogFor(selection.providerId).models, selection.model);
-  if (!model || needsBbPicker(model)) return props.fallback;
-  const traits = buildTraits(provider, model, selection);
+  const providerId = props.fallback && editable ? selection?.providerId : undefined;
+  const provider = catalog.providers.find((candidate) => candidate.id === providerId);
+  const models = providerId ? catalog.catalogFor(providerId).models : [];
+  const model = findCatalogModel(models, selection?.model);
+  const ownPickers = providerId !== undefined && model !== undefined && !needsBbPicker(model);
+  const keybindings = useKeybindings(ownPickers);
 
   /** Settles once BB has applied or refused the pick, so the effort slider can let go of it. */
   const apply = (requested: ComposerSelection): Promise<unknown> => {
@@ -85,6 +92,61 @@ export function ComposerModelControls(props: { fallback: ReactNode }) {
         if (pick === latestPick.current) setPending(false);
       });
   };
+
+  // BB's own picker handles its cycle shortcuts; where these pickers replace it, they do.
+  const onKeyDown = useEffectEvent((event: KeyboardEvent) => {
+    if (!ownPickers || !selection || event.isComposing || event.defaultPrevented) return;
+    const platform = currentPlatform();
+    const command = matchModelShortcut(
+      event,
+      modelShortcutBindings(keybindings, platform),
+      platform,
+    );
+    if (!command) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const backward = command.endsWith("Backward");
+    if (command.startsWith("modelPicker.cycleModel")) {
+      const next = cycleValue(
+        models.map((candidate) => candidate.model),
+        model.model,
+        backward,
+      );
+      if (next) void apply({ providerId, model: next });
+    } else if (command.startsWith("modelPicker.cycleProvider")) {
+      const next = cycleValue(
+        catalog.providers
+          .filter((candidate) => candidate.available)
+          .map((candidate) => candidate.id),
+        providerId,
+        backward,
+      );
+      if (!next) return;
+      // Without the provider's models yet, BB picks its default model.
+      const nextModel = catalog.catalogFor(next).models.find((candidate) => candidate.isDefault);
+      void apply(nextModel ? { providerId: next, model: nextModel.model } : { providerId: next });
+    } else {
+      const effort = buildTraits(provider, model, selection).effort;
+      if (!effort) return;
+      const next = cycleValue(
+        effort.options.map((option) => option.id),
+        effort.current ?? model.defaultReasoningEffort,
+        backward,
+      );
+      if (next) void apply({ reasoningLevel: next });
+    }
+  });
+  useEffect(() => {
+    // Keys pressed anywhere in this composer, before its editor sees them.
+    const root = controlsRef.current?.closest<HTMLElement>("[data-t3-composer]");
+    if (!ownPickers || !root) return;
+    const listener = (event: KeyboardEvent) => onKeyDown(event);
+    root.addEventListener("keydown", listener, true);
+    return () => root.removeEventListener("keydown", listener, true);
+  }, [ownPickers]);
+
+  if (!providerId || !selection || !model || !ownPickers) return props.fallback;
+  const traits = buildTraits(provider, model, selection);
 
   return (
     <TooltipProvider>

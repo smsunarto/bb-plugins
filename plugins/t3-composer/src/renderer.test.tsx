@@ -326,11 +326,27 @@ const MODELS: Record<string, object[]> = {
   ],
 };
 
+const anyWhen = { all: ["mainSurface", "promptAvailable"], none: [] };
+const keybinding = (command: string, key: string, mods: object) => ({
+  command,
+  desktopOnly: false,
+  shortcut: { key, mod: false, meta: false, control: false, alt: false, shift: false, ...mods },
+  when: anyWhen,
+});
+// BB's effective bindings, as `system.config()` lists them.
+const KEYBINDINGS = [
+  keybinding("modelPicker.cycleModel", "m", { alt: true }),
+  keybinding("modelPicker.cycleProvider", "ArrowRight", { mod: true, alt: true }),
+  keybinding("modelPicker.cycleReasoning", "ArrowUp", { mod: true, alt: true }),
+  keybinding("modelPicker.cycleReasoningBackward", "ArrowDown", { mod: true, alt: true }),
+];
+
 function pickerOptions(selection: ComposerSelection, sdk: Record<string, unknown> = {}) {
   return {
     selection,
     providers: { status: "ready" as const, providers: PROVIDERS as never },
     sdk: {
+      system: { config: async () => ({ keybindings: KEYBINDINGS }) },
       ...sdk,
       providers: {
         models: async (args?: { providerId?: string }) => ({
@@ -366,6 +382,39 @@ describe("T3 Code model picker", () => {
         expect(slot.composer.selections.at(-1)).toMatchObject({ model: "claude-sonnet-5-5" }),
       );
       expect(slot.queryByPlaceholderText("Search models...")).toBeNull();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("cycles the model, provider and effort with BB's shortcuts from the new-thread editor", async () => {
+    const { slot } = await mountComposer({}, undefined, pickerOptions(OPUS_HIGH));
+    try {
+      await slot.findByRole("button", { name: "Effort: High" });
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
+      );
+      const editor = document.activeElement as HTMLElement;
+      // jsdom reports no platform, so Mod is Control, as on Linux.
+      await waitFor(() => {
+        fireEvent.keyDown(editor, { key: "ArrowUp", ctrlKey: true, altKey: true });
+        expect(slot.composer.selections.at(-1)).toMatchObject({ reasoningLevel: "max" });
+      });
+      fireEvent.keyDown(editor, { key: "ArrowDown", ctrlKey: true, altKey: true });
+      await waitFor(() =>
+        expect(slot.composer.selections.at(-1)).toMatchObject({ reasoningLevel: "high" }),
+      );
+      fireEvent.keyDown(editor, { key: "µ", code: "KeyM", altKey: true });
+      await waitFor(() =>
+        expect(slot.composer.selections.at(-1)).toMatchObject({
+          providerId: "claude-code",
+          model: "claude-sonnet-5-5",
+        }),
+      );
+      fireEvent.keyDown(editor, { key: "ArrowRight", ctrlKey: true, altKey: true });
+      await waitFor(() =>
+        expect(slot.composer.selections.at(-1)).toMatchObject({ providerId: "codex" }),
+      );
     } finally {
       slot.lifecycle.unmount();
     }
