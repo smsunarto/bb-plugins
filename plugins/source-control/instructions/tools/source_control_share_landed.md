@@ -1,4 +1,4 @@
-Show the human a Landed card once this thread's work has merged or reached the default branch. The card lists what landed and has a **Settle thread** button that archives the thread. The tool also puts 🚀 in front of the thread title while everything the thread delivered has landed. Use `source_control_share_change` instead to hand off work that still needs review.
+Show the human a Landed card once this thread's work has merged or reached the default branch. The card lists what landed and has a **Settle thread** button that archives the thread. The tool also puts 🚀 in front of the thread title while everything the thread delivered has landed. For work that still needs review, write `::source-control` in your reply or use `source_control_share_change` instead.
 
 USE WHEN
 

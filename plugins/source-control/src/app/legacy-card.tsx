@@ -25,17 +25,21 @@ const HEAD = /^[0-9a-f]{4,64}$/i;
 
 type Target = { lookup: string; label: string; head: string | null; url: string | null };
 
+/** A pull request named as `owner/repo#12` or by its GitHub URL, as a target the server resolves. */
+export function pullRequestTarget(reference: string): Target | null {
+  const ref = parsePrReference(reference);
+  if (!ref) return null;
+  return {
+    lookup: `pr:${prKey(ref).toLowerCase()}`,
+    label: prKey(ref),
+    head: null,
+    url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
+  };
+}
+
 function target(raw: Record<string, unknown>): Target | null {
-  if (typeof raw.pr === "string") {
-    const ref = /^[^/]+\/[^#]+#\d+$/.test(raw.pr) ? parsePrReference(raw.pr) : null;
-    if (!ref) return null;
-    return {
-      lookup: `pr:${prKey(ref).toLowerCase()}`,
-      label: prKey(ref),
-      head: null,
-      url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
-    };
-  }
+  if (typeof raw.pr === "string")
+    return /^[^/]+\/[^#]+#\d+$/.test(raw.pr) ? pullRequestTarget(raw.pr) : null;
   if (typeof raw.branch === "string" && BRANCH_ID.test(raw.branch)) {
     const head = typeof raw.head === "string" && HEAD.test(raw.head) ? raw.head : null;
     return { lookup: `branch:${raw.branch}`, label: "a local branch", head, url: null };
@@ -104,7 +108,7 @@ function LegacyNote({ target, found, failed }: { target: Target; found: Found; f
 type Found = { key: ChangeKey | null; problem: string | null } | undefined;
 
 /** One target as its Change card; several as one grouped card with Ship all and Merge all. */
-function LegacyCards({ targets, threadId }: { targets: Target[]; threadId: string }) {
+export function LegacyCards({ targets, threadId }: { targets: Target[]; threadId: string }) {
   const keys = useMemo(() => targets.map((each) => each.lookup), [targets]);
   const query = useRpcKeyedQuery({ contract: sourceControlContract, method: "legacyChange", keys });
   const data = query.data;

@@ -5,6 +5,11 @@
  * read. The card reads the Change and its review by key, only while it is
  * on screen, and says when it shows an old read, could not read, or the
  * Change has moved past the revision the agent wrote about.
+ *
+ * An agent can also write the directive by hand, with no tool call:
+ * `::source-control` alone is this thread's work as it is now, which
+ * `thread-card.tsx` draws, and `::source-control{pr="owner/repo#12"}` is a
+ * pull request anywhere, resolved on the server as the cutover's cards are.
  */
 import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
@@ -28,6 +33,8 @@ import { MergeButton, mergeTarget, readyToMerge, useChangeMerge } from "./merge.
 import { latestBatch } from "./review-model.ts";
 import { BatchLine, useFixSelected } from "./send.tsx";
 import { ChangeGroup } from "./group-card.tsx";
+import { LegacyCards, pullRequestTarget } from "./legacy-card.tsx";
+import { ThreadCard, uncommittedLine, type ThreadShip } from "./thread-card.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 
@@ -58,7 +65,7 @@ export function useSeen(ref: RefObject<HTMLElement | null>): boolean {
   return seen && onScreen;
 }
 
-const CARD =
+export const CARD =
   "flex w-full max-w-[576px] min-w-0 flex-col overflow-clip rounded-[8px] border border-solid border-border bg-background text-start font-sans text-foreground";
 
 function BranchGlyph() {
@@ -97,7 +104,7 @@ function ChecksChip({ rows }: { rows: readonly CheckRow[] }) {
   );
 }
 
-function CardSkeleton() {
+export function CardSkeleton() {
   return (
     <div
       className={CARD}
@@ -122,7 +129,7 @@ function CardSkeleton() {
   );
 }
 
-function CardNote({ children, testId }: { children: ReactNode; testId: string }) {
+export function CardNote({ children, testId }: { children: ReactNode; testId: string }) {
   return (
     <div className={cx(CARD, "gap-2 p-3")} data-testid={testId}>
       {children}
@@ -136,11 +143,14 @@ function CardHeader({
   revision,
   visible,
   offline,
+  uncommitted,
 }: {
   detail: Ready;
   revision: string | null;
   visible: boolean;
   offline: boolean;
+  /** The checkout's uncommitted files, on a thread's own card. */
+  uncommitted: number;
 }) {
   const { row } = detail;
   const now = useNow();
@@ -205,6 +215,14 @@ function CardHeader({
             {shortId(head)}.
           </span>
         ) : null}
+        {uncommitted > 0 ? (
+          <span
+            className="text-[12px] leading-4 text-muted-foreground"
+            data-testid="sc-card-uncommitted-count"
+          >
+            {uncommittedLine(uncommitted)}
+          </span>
+        ) : null}
         {stale ? (
           <span className="text-[12px] leading-4 text-muted-foreground" data-testid="sc-card-stale">
             {stale} {readAgo(detail.at, now)}.
@@ -239,6 +257,7 @@ function ReadyCard({
   visible,
   offline,
   grouped,
+  thread,
 }: {
   detail: Ready;
   revision: string | null;
@@ -247,6 +266,8 @@ function ReadyCard({
   offline: boolean;
   /** On a grouped card, whose Merge all merges it. */
   grouped: boolean;
+  /** On a thread's own card: its uncommitted files and Ship it. */
+  thread: ThreadShip | null;
 }) {
   const key = detail.row.key;
   const navigate = useBbNavigate();
@@ -257,7 +278,13 @@ function ReadyCard({
   const hasItems = stable.items.length > 0;
   return (
     <div className={CARD} data-testid="sc-card" data-key={key}>
-      <CardHeader detail={detail} revision={revision} visible={visible} offline={offline} />
+      <CardHeader
+        detail={detail}
+        revision={revision}
+        visible={visible}
+        offline={offline}
+        uncommitted={thread?.uncommitted ?? 0}
+      />
       {hasItems ? (
         <FindingList
           changeKey={key}
@@ -284,6 +311,7 @@ function ReadyCard({
           Open review
           <OpenReviewArrow />
         </Button>
+        {thread?.button}
         {!grouped && readyToMerge(detail) ? <CardMerge detail={detail} /> : null}
         {hasItems ? (
           <Button
@@ -297,6 +325,11 @@ function ReadyCard({
           </Button>
         ) : null}
       </div>
+      {thread?.sent ? (
+        <output className="px-3 pb-3 text-[12px] leading-4 text-muted-foreground">
+          {thread.sent}
+        </output>
+      ) : null}
       {fix.error ? (
         <span role="alert" className="px-3 pb-3 text-[12px] leading-4 text-warning">
           {fix.error}
@@ -311,11 +344,13 @@ export function ChangeCard({
   revision,
   threadId,
   grouped = false,
+  thread = null,
 }: {
   changeKey: ChangeKey;
   revision: string | null;
   threadId: string;
   grouped?: boolean;
+  thread?: ThreadShip | null;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const visible = useSeen(root);
@@ -363,6 +398,7 @@ export function ChangeCard({
         visible={visible}
         offline={connection !== "connected"}
         grouped={grouped}
+        thread={thread}
       />
     );
   return (
@@ -372,14 +408,36 @@ export function ChangeCard({
   );
 }
 
-/** `::source-control{key revision}`, or `{changes}` for several, in an agent's reply. */
+/** `::source-control{key revision}`, `{changes}` for several, `{pr}` for a pull request, or alone for the thread's own work. */
 export function ChangeDirective({ attributes, message }: PluginMessageDirectiveProps) {
   const group = useMemo(() => {
     const entries = parseGroup(attributes);
     return entries?.map((entry) => ({ id: entry.key, entry }));
   }, [attributes]);
   if (group) return <ChangeGroup items={group} threadId={message.threadId} />;
+  if (attributes.key === undefined && attributes.changes === undefined)
+    return <HandWritten pr={attributes.pr} threadId={message.threadId} />;
   return <OneChange attributes={attributes} threadId={message.threadId} />;
+}
+
+/** Written by the agent, not returned by the tool: a pull request it names, else this thread's own work. */
+function HandWritten({ pr, threadId }: { pr: string | undefined; threadId: string }) {
+  const targets = useMemo(() => {
+    const target = pr === undefined ? null : pullRequestTarget(pr);
+    return target ? [target] : null;
+  }, [pr]);
+  if (targets) return <LegacyCards targets={targets} threadId={threadId} />;
+  if (pr !== undefined)
+    return (
+      <span
+        data-bb-plugin="source-control"
+        data-testid="sc-card-invalid"
+        className="text-[12px] leading-4 text-muted-foreground"
+      >
+        This is not a pull request bb can read. Name it as owner/repo#123 or by its GitHub URL.
+      </span>
+    );
+  return <ThreadCard threadId={threadId} />;
 }
 
 function OneChange({

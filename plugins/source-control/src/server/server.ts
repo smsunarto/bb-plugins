@@ -14,7 +14,7 @@ import {
 } from "../contract/host.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import type { ChangeKey } from "../core/ids.ts";
-import { createShipGroup } from "./ship-group.ts";
+import { createShipGroup, createShipThread } from "./ship-group.ts";
 import { parsePrReference, prKey } from "../core/watch.ts";
 import { groupDirective, MAX_GROUP, shareDirective, type GroupEntry } from "../core/directive.ts";
 import { execGh } from "../forge/exec-gh.ts";
@@ -157,9 +157,14 @@ function guideHandlers(guides: Guides) {
 }
 
 /** Create PR: a child thread per branch that writes and opens the pull request; Ship all: one message. */
-function publishHandlers(publish: Publish, shipGroup: ReturnType<typeof createShipGroup>) {
+function publishHandlers(
+  publish: Publish,
+  shipGroup: ReturnType<typeof createShipGroup>,
+  shipThread: ReturnType<typeof createShipThread>,
+) {
   return {
     shipGroup: ({ threadId, changes }) => shipGroup(threadId, changes),
+    shipThread: ({ threadId }) => shipThread(threadId),
     createPullRequest: ({ threadId, branch, head }) => publish.create(threadId, branch, head),
     publishRequests: async ({ threadId }) => ({ requests: await publish.requests(threadId) }),
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
@@ -282,7 +287,11 @@ function registerRpc(
       ...reviewHandlers(runtime, changes.review, start),
       ...guideHandlers(guides),
       ...askHandlers(ask),
-      ...publishHandlers(publish, createShipGroup({ bb, detail: changes.review.detail })),
+      ...publishHandlers(
+        publish,
+        createShipGroup({ bb, detail: changes.review.detail }),
+        createShipThread({ bb, read: changes.read }),
+      ),
       ...moved.handlers,
     },
     { experimental_discoverable: true },
@@ -369,7 +378,7 @@ const shareTargetSchema = z.union([
   z.object({ pullRequest: z.string().min(1) }).strict(),
 ]);
 const shareChangeInput = z
-  .object({ targets: z.array(shareTargetSchema).min(2).max(MAX_GROUP).optional() })
+  .object({ targets: z.array(shareTargetSchema).min(1).max(MAX_GROUP).optional() })
   .strict();
 
 /** One share target as a Change at the head shared, or why it is not one. */
@@ -405,8 +414,9 @@ function shareChangeTool(runtime: Runtime, changes: Changes, moved: Moved) {
     },
     parameters: shareChangeInput,
     async execute(input: z.infer<typeof shareChangeInput>, { threadId }: PluginAgentToolContext) {
-      // A thread whose Change was never read is read once, now.
-      if (!changes.keyOf(threadId)) await runtime.run(changes.retry(threadId));
+      // Called mid-turn, so the store may predate the thread's latest commit: read it now.
+      if (!changes.keyOf(threadId)) changes.reprobe();
+      await runtime.run(changes.settleNow(threadId));
       if (input.targets) {
         const found = await Promise.all(
           input.targets.map((target) => shareTarget(threadId, target, changes, moved)),
@@ -419,12 +429,16 @@ function shareChangeTool(runtime: Runtime, changes: Changes, moved: Moved) {
           throw new Error(
             "Two targets are the same Change. Name each branch or pull request once.",
           );
-        return groupDirective(entries);
+        // One target is the single card: a grouped card holds at least two.
+        const [only] = entries;
+        return entries.length === 1 && only
+          ? shareDirective(only.key, only.revision)
+          : groupDirective(entries);
       }
       const key = changes.keyOf(threadId);
       if (!key)
         throw new Error(
-          "This thread has no Change to share: it needs a checkout with a branch checked out.",
+          "This thread has no branch of its own in its checkout yet. For work committed elsewhere, pass `targets` with its pull request; for uncommitted work here, write `::source-control` on its own line instead.",
         );
       const detail = changes.review.detail([key])[key];
       const head = detail?.state === "change" ? detail.head : null;

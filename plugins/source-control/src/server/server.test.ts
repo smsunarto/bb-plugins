@@ -176,6 +176,8 @@ type World = {
   idle?: string[];
   /** Messages each thread received, in order. */
   messages?: Record<string, string[]>;
+  /** Each thread's completed items, oldest first, as bb's event log serves them. */
+  events?: Record<string, { seq: number; createdAt: number; data: unknown }[]>;
   /**
    * How the next sends go: "lost" records the message then throws, as a
    * server that died before bb answered; "hang" records it and never answers;
@@ -507,6 +509,23 @@ function fakeSdk(world: World) {
         (world.updated ??= []).push(args);
         return makeThreadResponse({ id: args.threadId } as never);
       }) as never,
+      events: {
+        list: (async (input: {
+          threadId: string;
+          order: string;
+          afterSeq?: string;
+          beforeSeq?: string;
+        }) => {
+          const rows = (world.events?.[input.threadId] ?? []).filter(
+            (event) =>
+              (input.afterSeq === undefined || event.seq > Number(input.afterSeq)) &&
+              (input.beforeSeq === undefined || event.seq < Number(input.beforeSeq)),
+          );
+          return input.order === "desc" ? rows.toReversed() : rows;
+        }) as never,
+      },
+      experimental_listDescendants: (async () => ({ threads: [] })) as never,
+      experimental_listAncestors: (async () => ({ threads: [] })) as never,
       promptHistory: (async ({ threadId }: { threadId: string }) => ({
         prompts: (world.messages?.[threadId] ?? []).map((text) => ({ text })),
       })) as never,
@@ -2134,6 +2153,49 @@ describe("grouped share", () => {
     );
   });
 
+  test("share_change with one target returns the single card for it", async () => {
+    const { harness } = await twoBranches();
+    expect(
+      await harness.behavior.callAgentTool(
+        "source_control_share_change",
+        { targets: [{ branch: "scott/second" }] },
+        { threadId: "thread-a" },
+      ),
+    ).toBe(`::source-control{key="${encodeURIComponent(SECOND)}" revision="beef01"}`);
+  });
+
+  test("share_change mid-turn names the branch the thread just committed to, not the answer from before", async () => {
+    const { world, harness, checkout } = await twoBranches();
+    const host = world.hosts["host-a"]!;
+    host.workspace = { ...host.workspace, provider: "gitbutler", checkedOut: null };
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    // Two applied branches and no `but` command of its own yet: the thread has no branch.
+    expect((await checkout("thread-a")).key).toBeNull();
+    world.events = {
+      "thread-a": [
+        {
+          seq: 7,
+          createdAt: Date.now(),
+          data: {
+            item: {
+              type: "commandExecution",
+              exitCode: 0,
+              command: "but commit -b scott/second -m 'feat: second'",
+              cwd: "/Users/scott/bb-plugins",
+            },
+          },
+        },
+      ],
+    };
+    expect(
+      await harness.behavior.callAgentTool(
+        "source_control_share_change",
+        {},
+        { threadId: "thread-a" },
+      ),
+    ).toBe(`::source-control{key="${encodeURIComponent(SECOND)}" revision="beef01"}`);
+  });
+
   test("a target that is not a Change, or the same Change twice, shares nothing and says which", async () => {
     const { harness } = await twoBranches();
     const share = (targets: unknown[]) =>
@@ -2168,6 +2230,25 @@ describe("grouped share", () => {
     expect(text).toContain('"branch": "scott/second"');
     expect(text).toContain('"head": "beef01"');
     expect(text).toContain("source_control_share_change");
+  });
+
+  test("Ship it sends the thread its checkout, branch and uncommitted count, and asks for the card back", async () => {
+    const { world, harness } = await twoBranches();
+    expect(await harness.behavior.callRpc("shipThread", { threadId: "thread-a" })).toEqual({
+      ok: true,
+    });
+    const [text] = world.messages!["thread-a"]!;
+    expect(text).toContain("Ship this thread's work");
+    expect(text).toContain('"checkout": "/Users/scott/bb-plugins"');
+    expect(text).toContain('"branch": "scott/route-gh"');
+    expect(text).toContain('"uncommittedFiles": 1');
+    expect(text).toContain("`::source-control` on its own line");
+    // A thread bb has no checkout for is told so, and nothing is sent.
+    expect(await harness.behavior.callRpc("shipThread", { threadId: "thread-none" })).toEqual({
+      ok: false,
+      message: "This thread has no checkout to ship from.",
+    });
+    expect(world.messages!["thread-none"]).toBeUndefined();
   });
 });
 

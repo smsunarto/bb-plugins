@@ -277,6 +277,8 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     keyOf,
     branchChange: branchChange.bind(null, store),
     review,
+    /** Probe forge sites again before the next read. */
+    reprobe: () => deps.sites.reprobe(),
     /** Explicit retry: probe forge sites again, then read. */
     retry: (threadId: string) =>
       Effect.sync(() => deps.sites.reprobe()).pipe(Effect.andThen(refresh(threadId))),

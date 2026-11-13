@@ -325,6 +325,27 @@ export function primaryAction(summary: ChangeSummary): PrimaryAction {
   return null;
 }
 
+/** The branch holds commits of its own, or already has a pull request: there is a Change to review. */
+export function hasWork(summary: ChangeSummary): boolean {
+  return !!summary.pullRequest || commitCount(summary.branch) > 0;
+}
+
+/**
+ * Work the thread's agent can still ship: uncommitted files, commits the
+ * remote lacks, or a pushed branch GitHub has no pull request for. The
+ * thread card offers Ship while this holds.
+ */
+export function canShip(summary: ChangeSummary): boolean {
+  if (summary.uncommitted > 0) return true;
+  const { branch, pullRequest: pr } = summary;
+  if (pr?.state === "merged" || pr?.state === "closed") return false;
+  if (!branch || commitCount(branch) === 0) return false;
+  if (unpushed(branch)) return true;
+  // No remote branch yet: shippable where there is a GitHub repository to push to.
+  if (!branch.remote) return summary.onGitHub;
+  return canOpenPullRequest(summary);
+}
+
 // ── Sort key ───────────────────────────────────────────────────────────
 
 /**

@@ -3,8 +3,13 @@
  * on it, for its agent to ship. Ported from code-review
  * (`src/server/rpc/ship-group-prompt.ts`, `instructions/ship-group.md`).
  * Merge all is not this: the card merges each pull request itself.
+ *
+ * Ship it on a thread's own card is the same message for one thread's work,
+ * committed or not, read from its row rather than named by the card.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { ThreadChange } from "../core/change.ts";
+import { summarize } from "../core/status.ts";
 import { instructionFiles } from "@bb-plugins/instructions";
 import type { GroupEntry } from "../core/directive.ts";
 import { parseChangeKey, type ChangeDetail } from "../core/review.ts";
@@ -58,6 +63,43 @@ export function createShipGroup(deps: {
         threadId,
         mode: "queue-if-active",
         input: [{ type: "text", text, mentions: [] }],
+      });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: message(error) };
+    }
+  };
+}
+
+/** The thread's work as its agent needs it to ship: where, which branch, and what is uncommitted. */
+export function shipThreadPrompt(row: Extract<ThreadChange, { state: "checkout" }>): string {
+  const summary = summarize(row);
+  const pr = summary?.pullRequest ?? null;
+  const state = {
+    checkout: row.placement.path,
+    branch: summary?.branch?.name ?? null,
+    head: summary?.branch?.head ?? null,
+    ...(pr ? { pullRequest: pr.url } : {}),
+    uncommittedFiles: summary?.uncommitted ?? null,
+  };
+  return files.read("ship-thread", { state: JSON.stringify(state, null, 2) });
+}
+
+export function createShipThread(deps: {
+  bb: BbPluginApi;
+  read: (threadIds: readonly string[]) => Readonly<Record<string, ThreadChange>>;
+}) {
+  return async function shipThread(
+    threadId: string,
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    const row = deps.read([threadId])[threadId];
+    if (row?.state !== "checkout")
+      return { ok: false, message: "This thread has no checkout to ship from." };
+    try {
+      await deps.bb.sdk.threads.send({
+        threadId,
+        mode: "queue-if-active",
+        input: [{ type: "text", text: shipThreadPrompt(row), mentions: [] }],
       });
       return { ok: true };
     } catch (error) {

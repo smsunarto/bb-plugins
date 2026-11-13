@@ -123,6 +123,22 @@ export function createWatch(deps: {
       const threads = yield* local.turnEnded(threadId, placement);
       yield* settleWatched(threads.filter(watched), placement);
     }),
+    /**
+     * The thread's Change as of now, for a caller that cannot wait for the
+     * turn to end: its checkout is read, then the `but` commands it ran since
+     * its branch was last worked out. A branch answer kept from before the
+     * thread's latest commit would otherwise name no branch, or an old one.
+     */
+    settleNow: Effect.fnUntraced(function* (threadId: string) {
+      yield* deps.refresh(threadId);
+      const where = store.placement(threadId);
+      if (where?.state !== "checkout") return;
+      const { placement } = where;
+      if (store.local(placement.hostId, placement.path).read?.value.provider !== "gitbutler")
+        return;
+      yield* local.turnEnded(threadId, placement).pipe(Effect.ignore);
+      yield* settleWatched([threadId], placement);
+    }),
     /** A background recheck moved a thread's branch. */
     branchMayHaveChanged: Effect.fnUntraced(function* (threadId: string) {
       const where = store.placement(threadId);
