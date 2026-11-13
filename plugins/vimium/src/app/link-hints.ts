@@ -879,12 +879,13 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       !dismissingLayer &&
       acceptsSequence &&
       mode.kind === "idle" &&
-      nativePickerPopups().length === 0 &&
       event.key === "Escape" &&
       !event.ctrlKey &&
       !event.metaKey &&
       !event.altKey &&
-      !event.repeat
+      !event.repeat &&
+      // Last: this scans the document, and every other key fails a test above.
+      nativePickerPopups().length === 0
     ) {
       escapePrefixUntil = Date.now() + 1500;
     } else if (!["Shift", "Control", "Meta", "Alt"].includes(event.key)) {
@@ -918,9 +919,24 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       }
     }
     scroller.noteKeydown({ code: event.code, repeat: event.repeat });
-    if (mode.kind === "idle" && !isForceChord(event) && nativePickerPopups().length > 0) {
-      followModelEnter(event);
-      return;
+    if (mode.kind === "idle" && !isForceChord(event)) {
+      const idleKey = {
+        key: event.key,
+        code: event.code,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        editableTarget: isEditableEvent(event),
+      };
+      // An open native picker keeps every key. Finding one scans the document, so look only for
+      // a key Vimium would otherwise act on: typing in the composer never is one.
+      const wanted = directShortcutFor(idleKey) !== null || isIdleTrigger(idleKey);
+      if (!wanted || nativePickerPopups().length > 0) {
+        // Acts only on Enter in an armed model search, which sits inside an open picker.
+        followModelEnter(event);
+        return;
+      }
     }
     if (mode.kind === "idle") {
       const shortcut = directShortcutFor({
