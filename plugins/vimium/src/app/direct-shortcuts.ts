@@ -6,7 +6,7 @@
 // and a held `j` must keep scrolling. Both read only outside an editable
 // target, so typing in the composer never trips one.
 
-import { RESERVED_CONTROLS } from "./hint-labels.ts";
+import { reservedControl, type ReservedControlId } from "./hint-labels.ts";
 
 export type ScrollMotion = "down" | "up" | "bottom";
 
@@ -21,10 +21,8 @@ export type DirectShortcut =
   | { readonly kind: "cheatsheet" }
   | { readonly kind: "scroll"; readonly motion: ScrollMotion };
 
-function pinnedControl(char: string): DirectShortcut {
-  const control = RESERVED_CONTROLS.find((entry) => entry.char === char);
-  if (control === undefined) throw new Error(`no reserved control pinned to ${char}`);
-  return { kind: "control", selector: control.selector };
+function pinnedControl(id: ReservedControlId): DirectShortcut {
+  return { kind: "control", selector: reservedControl(id).selector };
 }
 
 export interface VimiumCommand {
@@ -39,15 +37,20 @@ export interface VimiumCommand {
 /** The commands, in cheatsheet order. */
 export const VIMIUM_COMMANDS: readonly VimiumCommand[] = [
   { id: "show-hints", title: "Show hints", section: "Link hints", action: { kind: "hints" } },
-  { id: "new-thread", title: "New thread", section: "Navigation", action: pinnedControl("n") },
-  { id: "home", title: "Home", section: "Navigation", action: pinnedControl("h") },
+  {
+    id: "new-thread",
+    title: "New thread",
+    section: "Navigation",
+    action: pinnedControl("new-thread"),
+  },
+  { id: "home", title: "Home", section: "Navigation", action: pinnedControl("home") },
   {
     id: "search-threads",
     title: "Search threads",
     section: "Navigation",
     action: { kind: "thread-search" },
   },
-  { id: "settings", title: "Settings", section: "Navigation", action: pinnedControl(",") },
+  { id: "settings", title: "Settings", section: "Navigation", action: pinnedControl("settings") },
   {
     id: "next-thread",
     title: "Next thread",
@@ -84,30 +87,35 @@ export const VIMIUM_COMMANDS: readonly VimiumCommand[] = [
     section: "Composer",
     action: { kind: "focus-composer" },
   },
-  { id: "model", title: "Open the model picker", section: "Composer", action: pinnedControl("m") },
+  {
+    id: "model",
+    title: "Open the model picker",
+    section: "Composer",
+    action: pinnedControl("model"),
+  },
   {
     id: "project",
     title: "Open the project picker",
     section: "Composer",
-    action: pinnedControl("p"),
+    action: pinnedControl("project"),
   },
   {
     id: "machine",
     title: "Open the machine picker",
     section: "Composer",
-    action: pinnedControl("l"),
+    action: pinnedControl("machine"),
   },
   {
     id: "branch",
     title: "Open the branch picker",
     section: "Composer",
-    action: pinnedControl("b"),
+    action: pinnedControl("branch"),
   },
   {
     id: "permission-mode",
     title: "Open permission mode",
     section: "Composer",
-    action: pinnedControl("k"),
+    action: pinnedControl("permission"),
   },
 ];
 

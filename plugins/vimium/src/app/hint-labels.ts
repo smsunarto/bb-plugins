@@ -21,59 +21,80 @@ export const RESERVED_CONTROLS = [
     // bb's composer names the trigger; t3-composer labels it with the model.
     selector:
       '[data-app-composer] button[aria-label^="Provider, model"], [data-app-composer] button[data-t3-model-picker-trigger]',
+    id: "model",
     char: "m",
     nativePicker: "model",
   },
   {
     selector: "[data-app-composer] [data-promptbox-project-control]",
+    id: "project",
     char: "p",
     nativePicker: "project",
   },
-  { selector: '[data-app-composer] [role="textbox"]', char: "i" },
-  { selector: '[data-app-composer] button[aria-label="Prompt actions"]', char: "a" },
-  { selector: '[data-app-composer] button[aria-label="Start voice input"]', char: "v" },
-  { selector: "[data-app-composer] [data-promptbox-submit-action]", char: "j" },
-  { selector: '[data-app-composer] button[aria-label="Permission mode"]', char: "k" },
+  { selector: '[data-app-composer] [role="textbox"]', id: "input", char: "i" },
+  {
+    selector: '[data-app-composer] button[aria-label="Prompt actions"]',
+    id: "prompt-actions",
+    char: "a",
+  },
+  {
+    selector: '[data-app-composer] button[aria-label="Start voice input"]',
+    id: "voice",
+    char: "v",
+  },
+  { selector: "[data-app-composer] [data-promptbox-submit-action]", id: "send", char: "j" },
+  {
+    selector: '[data-app-composer] button[aria-label="Permission mode"]',
+    id: "permission",
+    char: "k",
+  },
   {
     selector:
       '[data-app-composer] button[aria-label="Machine"], [data-app-composer] button[aria-label="Environment"]',
+    id: "machine",
     char: "l",
     nativePicker: "machine",
   },
-  { selector: '[data-app-composer] button[aria-label="Branch"]', char: "b" },
+  { selector: '[data-app-composer] button[aria-label="Branch"]', id: "branch", char: "b" },
   // List rows have stable ids, on a wrapper in bb's list and on the row itself
   // in gtd-sidebar's; the rail header loses its label when unbound.
   {
     selector:
       '[data-sidebar-navigation-item="__bb__/new-thread"] > button, button[data-sidebar-navigation-item="__bb__/new-thread"], button[aria-label="New thread"], button[aria-label^="New thread ("]',
+    id: "new-thread",
     char: "n",
     fallback: { selector: "[data-sidebar-header-slot] button", text: "New thread" },
   },
   {
     selector:
       '[data-sidebar-navigation-item="__bb__/search-threads"] > button, button[aria-label="Search threads"], button[aria-label^="Search threads ("]',
+    id: "search",
     char: "s",
   },
   {
     selector:
       ':is(nav[aria-label="Primary navigation"], [data-testid="app-nav-rail"]) button[aria-label="Home"]',
+    id: "home",
     char: "h",
   },
-  { selector: 'button[aria-label="Go back"]', char: "[" },
-  { selector: 'button[aria-label="Go forward"]', char: "]" },
+  { selector: 'button[aria-label="Go back"]', id: "back", char: "[" },
+  { selector: 'button[aria-label="Go forward"]', id: "forward", char: "]" },
   {
     selector:
       ':is(nav[aria-label="Primary navigation"], [data-testid="app-nav-rail"]) button:is([aria-label="More"], [aria-label^="More, "]), [data-sidebar-navigation-item="__bb__/extensions"] > button, [data-testid="sidebar-navigation-list"] > button[aria-haspopup="menu"], button[data-sidebar-navigation-more]',
+    id: "more",
     char: "e",
   },
   {
     selector:
       'button[aria-label="Settings"], button[aria-label^="Settings ("], a[aria-label="Settings"], a[aria-label^="Settings ("], a[href="/settings"]',
+    id: "settings",
     char: ",",
   },
-  { selector: 'button[aria-label^="Toggle sidebar"]', char: "q" },
+  { selector: 'button[aria-label^="Toggle sidebar"]', id: "left-sidebar", char: "q" },
   {
     selector: 'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]',
+    id: "right-panel",
     char: "\\",
   },
 ] as const;
@@ -92,6 +113,15 @@ export function matchesReservedControl(
 }
 
 /** Thread rows count across the number row in list order, then fall back to letters. */
+export type ReservedControlId = (typeof RESERVED_CONTROLS)[number]["id"];
+
+/** The pinned control with this id. Commands find controls by id, so a label can move freely. */
+export function reservedControl(id: ReservedControlId): (typeof RESERVED_CONTROLS)[number] {
+  const control = RESERVED_CONTROLS.find((entry) => entry.id === id);
+  if (control === undefined) throw new Error(`no reserved control ${id}`);
+  return control;
+}
+
 export const THREAD_DIGITS = "1234567890";
 
 const RESERVED_CHARS = new Set<string>(RESERVED_CONTROLS.map((control) => control.char));

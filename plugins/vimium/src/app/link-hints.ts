@@ -45,6 +45,7 @@ import { createScroller } from "./scroller.ts";
 import { mountArchiveUndo } from "./archive-undo.ts";
 import {
   RESERVED_CONTROLS,
+  reservedControl,
   matchesReservedControl,
   assignScopedLabels,
   assignTopLevelLabels,
@@ -715,8 +716,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   // dropdown into a scoped prompt so the pick is one more key away. True when
   // the key did something, so the caller knows whether to swallow it.
   function openThreadSearch(): boolean {
-    const selector = RESERVED_CONTROLS.find((control) => control.char === "s")?.selector;
-    const control = selector ? findControl(selector) : null;
+    const control = findControl(reservedControl("search").selector);
     if (control) {
       activate(control);
       return true;

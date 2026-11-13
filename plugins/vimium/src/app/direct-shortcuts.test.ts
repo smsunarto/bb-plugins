@@ -10,7 +10,7 @@ import {
   threadIdFromPath,
   type DirectKey,
 } from "./direct-shortcuts.ts";
-import { RESERVED_CONTROLS } from "./hint-labels.ts";
+import { reservedControl, type ReservedControlId } from "./hint-labels.ts";
 
 function key(overrides: Partial<DirectKey> = {}): DirectKey {
   return {
@@ -28,8 +28,8 @@ function actionOf(id: string) {
   return VIMIUM_COMMANDS.find((command) => command.id === id)?.action;
 }
 
-function reservedSelector(char: string): string {
-  return RESERVED_CONTROLS.find((control) => control.char === char)?.selector ?? "";
+function reservedSelector(id: ReservedControlId): string {
+  return reservedControl(id).selector;
 }
 
 describe("VIMIUM_COMMANDS", () => {
@@ -40,17 +40,17 @@ describe("VIMIUM_COMMANDS", () => {
   });
 
   test("control commands press the same control as their hint label", () => {
-    for (const [id, char] of [
-      ["new-thread", "n"],
-      ["home", "h"],
-      ["settings", ","],
-      ["model", "m"],
-      ["project", "p"],
-      ["machine", "l"],
-      ["branch", "b"],
-      ["permission-mode", "k"],
+    for (const [id, control] of [
+      ["new-thread", "new-thread"],
+      ["home", "home"],
+      ["settings", "settings"],
+      ["model", "model"],
+      ["project", "project"],
+      ["machine", "machine"],
+      ["branch", "branch"],
+      ["permission-mode", "permission"],
     ] as const) {
-      expect(actionOf(id)).toEqual({ kind: "control", selector: reservedSelector(char) });
+      expect(actionOf(id)).toEqual({ kind: "control", selector: reservedSelector(control) });
     }
   });
 

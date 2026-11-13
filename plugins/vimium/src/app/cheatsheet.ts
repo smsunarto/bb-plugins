@@ -6,7 +6,7 @@
 
 import type { PluginCommandShortcut } from "@get-bb/plugin-sdk/app";
 import { VIMIUM_COMMANDS, type VimiumCommand } from "./direct-shortcuts.ts";
-import { RESERVED_CONTROLS } from "./hint-labels.ts";
+import { reservedControl, type ReservedControlId } from "./hint-labels.ts";
 
 export type CheatsheetEntry =
   | {
@@ -28,28 +28,26 @@ export interface CheatsheetSection {
   readonly entries: readonly CheatsheetEntry[];
 }
 
-type ReservedChar = (typeof RESERVED_CONTROLS)[number]["char"];
-
 /** What each pinned label clicks after `f`, in the order the page lists them. */
-const HINT_LABEL_ACTIONS: Readonly<Record<ReservedChar, string>> = {
-  i: "Composer input",
-  j: "Send",
-  m: "Model",
-  p: "Project",
-  l: "Machine",
-  b: "Branch",
-  k: "Permission mode",
-  a: "Prompt actions",
-  v: "Voice input",
-  n: "New thread",
-  s: "Search threads",
-  h: "Home",
-  e: "More menu, including Plugins",
-  ",": "Settings",
-  "[": "Back",
-  "]": "Forward",
-  q: "Left sidebar",
-  "\\": "Right panel",
+const HINT_LABEL_ACTIONS: Readonly<Record<ReservedControlId, string>> = {
+  input: "Composer input",
+  send: "Send",
+  model: "Model",
+  project: "Project",
+  machine: "Machine",
+  branch: "Branch",
+  permission: "Permission mode",
+  "prompt-actions": "Prompt actions",
+  voice: "Voice input",
+  "new-thread": "New thread",
+  search: "Search threads",
+  home: "Home",
+  more: "More menu, including Plugins",
+  settings: "Settings",
+  back: "Back",
+  forward: "Forward",
+  "left-sidebar": "Left sidebar",
+  "right-panel": "Right panel",
 };
 
 function commandEntries(section: VimiumCommand["section"]): CheatsheetEntry[] {
@@ -103,7 +101,9 @@ export const CHEATSHEET: readonly CheatsheetSection[] = [
     title: "Pinned hint labels",
     note: "Press f, then a label. These labels never move; everything else gets two letters.",
     entries: [
-      ...Object.entries(HINT_LABEL_ACTIONS).map(([char, action]) => ({ keys: [char], action })),
+      ...(Object.entries(HINT_LABEL_ACTIONS) as [ReservedControlId, string][]).map(
+        ([id, action]) => ({ keys: [reservedControl(id).char], action }),
+      ),
       { keys: ["1–0"], action: "Sidebar threads, top to bottom" },
     ],
   },
