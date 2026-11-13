@@ -48,6 +48,14 @@ export type SauceToolDeps = {
 
 type ToolContext = { threadId: string };
 
+/** A file captured inside the browser queue, saved to thread storage after the queue moves on. */
+type PendingFile = { dir: string; local: string; name: string };
+
+/** Longest grep match returned inline; logcat lines can carry whole payloads. */
+const MATCH_LINE_MAX = 400;
+
+type DeviceResult = { result: Record<string, unknown>; file?: PendingFile };
+
 function ok(lines: Record<string, unknown>): PluginAgentToolResult {
   return { content: [{ type: "text", text: JSON.stringify(lines, null, 1) }] };
 }
@@ -166,7 +174,8 @@ export function createSauceTools(deps: SauceToolDeps) {
     }
   }
 
-  async function screenshot(threadId: string, label: string | undefined) {
+  /** Runs inside the queue; the caller saves `file` with `persist` once the queue is free. */
+  async function captureScreen(label: string | undefined) {
     const dir = await deps.tempDir();
     try {
       const local = join(dir, "screen.png");
@@ -178,17 +187,34 @@ export function createSauceTools(deps: SauceToolDeps) {
       const rotation = await deps.page.measureRotation(local, size);
       const lease = touchLease(deps.store, { rotation }, deps.now());
       const name = `${stamp(deps.now())}${label ? `-${slug(label)}` : ""}.png`;
-      const path = await deps.save(threadId, name, local);
       return {
-        path,
-        width: size.width,
-        height: size.height,
-        rotation,
-        device: lease?.device ?? null,
+        file: { dir, local, name } satisfies PendingFile,
+        info: { width: size.width, height: size.height, rotation, device: lease?.device ?? null },
       };
-    } finally {
+    } catch (error) {
       await rm(dir, { recursive: true, force: true });
+      throw error;
     }
+  }
+
+  /**
+   * Writes a captured file to the thread's storage outside the browser queue: the
+   * thread's host may be slow or asleep, and that must not stall other threads' calls.
+   */
+  async function persist(threadId: string, file: PendingFile): Promise<string> {
+    try {
+      return await deps.save(threadId, file.name, file.local);
+    } finally {
+      await rm(file.dir, { recursive: true, force: true });
+    }
+  }
+
+  async function screenshot(threadId: string, label: string | undefined) {
+    const shot = await enqueue(async () => {
+      await requireMine(threadId);
+      return onSessionGone(threadId, () => captureScreen(label));
+    });
+    return { path: await persist(threadId, shot.file), ...shot.info };
   }
 
   return {
@@ -246,7 +272,10 @@ export function createSauceTools(deps: SauceToolDeps) {
       });
     },
 
-    async catalog(ctx: ToolContext, input: { kind: "apps" | "devices"; query?: string }) {
+    async catalog(
+      ctx: ToolContext,
+      input: { kind: "apps" | "devices"; query?: string; app?: string },
+    ) {
       return enqueue(async () => {
         await requireBrowsable(ctx.threadId);
         if (input.kind === "apps") {
@@ -260,8 +289,9 @@ export function createSauceTools(deps: SauceToolDeps) {
             'Search by model, for example "Galaxy S23" or "iPhone 15".',
           );
         }
-        const devices = await deps.page.listDevices(input.query);
+        const { app, devices } = await deps.page.listDevices(input.query, input.app);
         return {
+          app,
           devices: devices.slice(0, 60),
           shown: Math.min(devices.length, 60),
           total: devices.length,
@@ -306,6 +336,12 @@ export function createSauceTools(deps: SauceToolDeps) {
             next: "The app installs and launches over 20-60 s. Call sauce_screenshot before sauce_touch: it sets the coordinate frame.",
           };
         } catch (error) {
+          // Start Test was clicked: the session may still come up, so the lease stays
+          // with this thread rather than leaving a session no thread may end.
+          if (error instanceof SauceError && error.code === "start_pending") {
+            touchLease(deps.store, {}, deps.now());
+            throw error;
+          }
           const after = await deps.page.state().catch(() => null);
           if (after?.kind !== "session") releaseLease(deps.store, ctx.threadId);
           throw error;
@@ -314,10 +350,7 @@ export function createSauceTools(deps: SauceToolDeps) {
     },
 
     async screenshot(ctx: ToolContext, input: { label?: string }) {
-      return enqueue(async () => {
-        await requireMine(ctx.threadId);
-        return onSessionGone(ctx.threadId, () => screenshot(ctx.threadId, input.label));
-      });
+      return screenshot(ctx.threadId, input.label);
     },
 
     async touch(
@@ -332,7 +365,7 @@ export function createSauceTools(deps: SauceToolDeps) {
         screenshot_after_ms?: number;
       },
     ) {
-      return enqueue(async () => {
+      const touched = await enqueue(async () => {
         const lease = await requireMine(ctx.threadId);
         return onSessionGone(ctx.threadId, async () => {
           if (lease.rotation === null) {
@@ -360,14 +393,15 @@ export function createSauceTools(deps: SauceToolDeps) {
             gesture = hasTarget ? "drag" : "press";
           }
           touchLease(deps.store, {}, deps.now());
-          const result: Record<string, unknown> = { gesture, from, to: hasTarget ? to : undefined };
-          if (input.screenshot_after_ms !== undefined) {
-            await deps.sleep(input.screenshot_after_ms);
-            result.screenshot = await screenshot(ctx.threadId, "after-touch");
-          }
-          return result;
+          const result = { gesture, from, to: hasTarget ? to : undefined };
+          if (input.screenshot_after_ms === undefined) return { result, shot: null };
+          await deps.sleep(input.screenshot_after_ms);
+          return { result, shot: await captureScreen("after-touch") };
         });
       });
+      if (!touched.shot) return touched.result;
+      const path = await persist(ctx.threadId, touched.shot.file);
+      return { ...touched.result, screenshot: { path, ...touched.shot.info } };
     },
 
     async device(
@@ -378,27 +412,31 @@ export function createSauceTools(deps: SauceToolDeps) {
         grep?: string;
       },
     ) {
-      return enqueue(async () => {
+      const done = await enqueue(async () => {
         await requireMine(ctx.threadId);
-        return onSessionGone(ctx.threadId, async () => {
+        return onSessionGone(ctx.threadId, async (): Promise<DeviceResult> => {
           switch (input.action) {
             case "home":
               await deps.page.clickMenu("Home");
               touchLease(deps.store, {}, deps.now());
-              return { done: "home" };
+              return { result: { done: "home" } };
             case "restart_app":
               await deps.page.clickMenu("Restart App");
               touchLease(deps.store, {}, deps.now());
               return {
-                done: "restart_app",
-                next: "Wait for the app to relaunch, then sauce_screenshot.",
+                result: {
+                  done: "restart_app",
+                  next: "Wait for the app to relaunch, then sauce_screenshot.",
+                },
               };
             case "rotate":
               await deps.page.clickMenu("Rotate Device");
               touchLease(deps.store, { rotation: null }, deps.now());
               return {
-                done: "rotate",
-                next: "Call sauce_screenshot to set the new coordinate frame before touching.",
+                result: {
+                  done: "rotate",
+                  next: "Call sauce_screenshot to set the new coordinate frame before touching.",
+                },
               };
             case "shell": {
               if (!input.command)
@@ -407,45 +445,53 @@ export function createSauceTools(deps: SauceToolDeps) {
               touchLease(deps.store, {}, deps.now());
               const truncated = output.length > 8000;
               return {
-                command: input.command,
-                output: truncated ? `${output.slice(0, 8000)}\n…` : output,
-                truncated,
+                result: {
+                  command: input.command,
+                  output: truncated ? `${output.slice(0, 8000)}\n…` : output,
+                  truncated,
+                },
               };
             }
             case "log": {
+              let pattern: RegExp | undefined;
+              if (input.grep) {
+                try {
+                  pattern = new RegExp(input.grep, "i");
+                } catch {
+                  throw new SauceError(
+                    "not_found",
+                    `grep is not a valid regular expression: ${input.grep}`,
+                  );
+                }
+              }
               const dir = await deps.tempDir();
               try {
                 const local = join(dir, "device.log");
                 await deps.page.downloadLog(local);
-                const content = await readFile(local, "utf8");
-                const lines = content.split("\n");
-                const path = await deps.save(
-                  ctx.threadId,
-                  `${stamp(deps.now())}-device.log`,
-                  local,
-                );
+                const lines = (await readFile(local, "utf8")).split("\n");
                 touchLease(deps.store, {}, deps.now());
-                let matches: string[] | undefined;
-                if (input.grep) {
-                  let pattern: RegExp;
-                  try {
-                    pattern = new RegExp(input.grep, "i");
-                  } catch {
-                    throw new SauceError(
-                      "not_found",
-                      `grep is not a valid regular expression: ${input.grep}`,
-                    );
-                  }
-                  matches = lines.filter((line) => pattern.test(line)).slice(-100);
-                }
-                return { path, lines: lines.length, matches };
-              } finally {
+                const matches = pattern
+                  ? lines
+                      .filter((line) => pattern.test(line))
+                      .slice(-100)
+                      .map((line) =>
+                        line.length > MATCH_LINE_MAX ? `${line.slice(0, MATCH_LINE_MAX)}…` : line,
+                      )
+                  : undefined;
+                return {
+                  result: { lines: lines.length, matches },
+                  file: { dir, local, name: `${stamp(deps.now())}-device.log` },
+                };
+              } catch (error) {
                 await rm(dir, { recursive: true, force: true });
+                throw error;
               }
             }
           }
         });
       });
+      if (!done.file) return done.result;
+      return { path: await persist(ctx.threadId, done.file), ...done.result };
     },
 
     async end(ctx: ToolContext) {
@@ -558,8 +604,17 @@ export function registerSauceTools(bb: BbPluginApi, overrides: Partial<SauceTool
         .max(80)
         .optional()
         .describe('Filter text. Required for devices, e.g. "Galaxy S23", "iPhone 15", "iPad"'),
+      app: z
+        .string()
+        .min(1)
+        .max(120)
+        .optional()
+        .describe(
+          "For devices: the build you will pass to sauce_start, as text from its label; omitted, the newest build",
+        ),
     }),
-    (input: { kind: "apps" | "devices"; query?: string }, ctx) => tools.catalog(ctx, input),
+    (input: { kind: "apps" | "devices"; query?: string; app?: string }, ctx) =>
+      tools.catalog(ctx, input),
   );
   register(
     "sauce_start",

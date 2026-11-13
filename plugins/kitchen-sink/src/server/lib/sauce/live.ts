@@ -21,6 +21,7 @@ export type SauceErrorCode =
   | "not_found"
   | "unsupported"
   | "timeout"
+  | "start_pending"
   | "page_changed";
 
 export class SauceError extends Error {
@@ -148,6 +149,20 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
           return next.kind === "other" ? null : next;
         })) ?? (await state());
     }
+    if (current.kind === "live") {
+      // A Live URL shows before Sauce's app checks the sign-in and redirects to
+      // accounts.saucelabs.com, so wait for the app to render before trusting it.
+      current =
+        (await poll(
+          20_000,
+          async () => {
+            const next = await state();
+            if (next.kind !== "live") return next;
+            return (await evaluate<boolean>(`!!document.querySelector("[data-qa]")`)) ? next : null;
+          },
+          700,
+        )) ?? (await state());
+    }
     return current;
   }
 
@@ -195,12 +210,13 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
       throw new SauceError(
         "session_active",
         `A live session on ${current.device ?? "a device"} is open in the Sauce browser.`,
-        "End it with sauce_end before browsing apps or devices.",
+        "Run sauce_status. If the session is this thread's, call sauce_end first; otherwise do not end it.",
       );
     }
     // Narrow windows collapse the device search box; a fresh browser starts narrow.
     await browser.run(["set", "viewport", "1600", "1000"]);
-    if (!current.url.includes("/live/app-testing")) await open(LIVE_HOME);
+    // A build's device page (/file/<id>/device) lacks the picker anchors below, so start from home.
+    if (!/\/live\/app-testing\/?(\?|#|$)/.test(current.url)) await open(LIVE_HOME);
     // The device picker renders a few seconds after the URL settles.
     const ready = await poll(
       30_000,
@@ -340,10 +356,18 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     })()`);
   }
 
-  async function listDevices(query: string): Promise<DeviceRow[]> {
+  /**
+   * Devices that can run a build: Sauce filters the table by the build's platform,
+   * so this selects the same build sauce_start would (newest when `app` is omitted).
+   */
+  async function listDevices(
+    query: string,
+    app?: string,
+  ): Promise<{ app: string; devices: DeviceRow[] }> {
     await requireLive();
+    const label = await selectApp(app);
     await showDeviceTable(query);
-    return deviceRows();
+    return { app: label, devices: await deviceRows() };
   }
 
   function rowMatches(row: DeviceRow, device: string, os: string | undefined) {
@@ -372,7 +396,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
         `No available real device named "${input.device}"${input.os ? ` on ${input.os}` : ""}. Seen: ${
           seen.map((row) => `${row.name} (${row.os}, ${row.status})`).join("; ") || "none"
         }.`,
-        "Pick a name and os exactly as sauce_catalog kind: devices lists them.",
+        `Pick a name and os exactly as sauce_catalog kind: devices lists them for this build (app: ${JSON.stringify(app)}).`,
       );
     }
     const clicked = await evaluate<boolean>(`(() => {
@@ -401,7 +425,13 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
       },
       2500,
     );
-    if (!started) throw new SauceError("timeout", "The live session did not start within 150 s.");
+    if (!started) {
+      throw new SauceError(
+        "start_pending",
+        "Start Test was clicked, but the session page did not appear within 150 s.",
+        "The device may still be starting, and this thread keeps it. Call sauce_status in a minute: on session_mine, continue; otherwise call sauce_end to free the device.",
+      );
+    }
     if (started.capacityReached && started.kind !== "session") {
       throw new SauceError(
         "capacity_reached",
@@ -442,12 +472,24 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     await browser.run(["mouse", ...args]);
   }
 
+  /**
+   * Puts the finger down at `at`, runs `work`, and always lifts it: a failed or timed-out
+   * step must not leave the button held for the next call. A timed-out "down" may still
+   * have landed, so it lifts too, and a failed lift is retried once.
+   */
+  async function withFingerDown(at: { x: number; y: number }, work: () => Promise<void>) {
+    await mouse("move", `${at.x}`, `${at.y}`);
+    try {
+      await mouse("down");
+      await work();
+    } finally {
+      await mouse("up").catch(() => mouse("up"));
+    }
+  }
+
   async function tap(point: Point, rotation: number) {
     await requireSession();
-    const at = toViewport(point, rotation, await canvasRect());
-    await mouse("move", `${at.x}`, `${at.y}`);
-    await mouse("down");
-    await mouse("up");
+    await withFingerDown(toViewport(point, rotation, await canvasRect()), async () => {});
   }
 
   async function drag(
@@ -462,9 +504,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     const start = toViewport(from, rotation, rect);
     const end = toViewport(to, rotation, rect);
     const steps = Math.max(2, Math.min(20, Math.round(durationMs / 50)));
-    await mouse("move", `${start.x}`, `${start.y}`);
-    await mouse("down");
-    try {
+    await withFingerDown(start, async () => {
       for (let step = 1; step <= steps; step += 1) {
         const x = Math.round(start.x + ((end.x - start.x) * step) / steps);
         const y = Math.round(start.y + ((end.y - start.y) * step) / steps);
@@ -472,9 +512,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
         if (durationMs > 0) await deps.sleep(durationMs / steps);
       }
       if (holdMs > 0) await deps.sleep(holdMs);
-    } finally {
-      await mouse("up");
-    }
+    });
   }
 
   async function clickMenu(name: "Home" | "Rotate Device" | "Restart App" | "Developer Options") {
@@ -574,13 +612,9 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
       throw new SauceError("unsupported", "The ADB shell exists only on Android devices.");
     }
     await openDeveloperTab("ADB Shell");
-    await browser.run(["fill", "textarea", command]);
-    await browser.run(["press", "Enter"]);
     const echo = `adb shell ${command}`;
-    const output = await poll(
-      timeoutMs,
-      async () => {
-        const text = await evaluate<string | null>(`(() => {
+    const panelText = () =>
+      evaluate<string | null>(`(() => {
         let n = document.querySelector("textarea");
         for (let i = 0; i < 10 && n; i += 1) {
           n = n.parentElement;
@@ -588,7 +622,20 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
         }
         return null;
       })()`);
-        if (!text) return null;
+    // A repeated command already has an echo and prompt on screen; wait for a new echo.
+    const echoesBefore = countOf(await panelText(), echo);
+    // After the first command Sauce ignores a programmatic fill, and Enter submits an
+    // empty line; real keystrokes always register.
+    await browser.run(["click", "textarea"]);
+    await browser.run(["press", "Control+a"]);
+    await browser.run(["press", "Backspace"]);
+    await browser.run(["keyboard", "type", command]);
+    await browser.run(["press", "Enter"]);
+    const output = await poll(
+      timeoutMs,
+      async () => {
+        const text = await panelText();
+        if (!text || countOf(text, echo) <= echoesBefore) return null;
         const after = text.slice(text.lastIndexOf(echo) + echo.length);
         // The panel prints a fresh "<device> : /$ adb shell" prompt once the command finishes.
         const prompt = after.search(/\n[^\n]*: \/\$ adb shell\s*$/);
@@ -660,6 +707,14 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
 }
 
 export type SaucePage = ReturnType<typeof createSaucePage>;
+
+function countOf(text: string | null, needle: string): number {
+  if (!text) return 0;
+  let count = 0;
+  for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + needle.length))
+    count += 1;
+  return count;
+}
 
 /**
  * Maps a point given as fractions of the upright screenshot to viewport pixels

@@ -32,7 +32,7 @@ function memoryStore(): LeaseStore {
   return { read: () => lease, write: (next) => void (lease = next) };
 }
 
-type FakeState = { page: PageState; taps: unknown[]; ended: number };
+type FakeState = { page: PageState; taps: unknown[]; ended: number; deviceQueries: unknown[] };
 
 function fakePage(state: FakeState): SaucePage {
   const session = (device: string): PageState => ({
@@ -50,8 +50,14 @@ function fakePage(state: FakeState): SaucePage {
     home: async () => state.page,
     signIn: async () => state.page,
     listApps: async () => [{ id: "f1", label: "Rampage/build.apk" }],
-    listDevices: async () => [],
+    listDevices: async (query, app) => {
+      state.deviceQueries.push({ query, app });
+      return { app: app ?? "Rampage/build.apk", devices: [] };
+    },
     startSession: async (input) => {
+      if (input.device === "Slow Phone") {
+        throw new SauceError("start_pending", "Start Test was clicked; no session page yet.");
+      }
       state.page = session(`${input.device} - Android 16`);
       return { app: "Rampage/build.apk", device: state.page.device!, url: state.page.url };
     },
@@ -70,7 +76,8 @@ function fakePage(state: FakeState): SaucePage {
     },
     measureRotation: async () => 90,
     shell: async () => "ok",
-    downloadLog: async (path) => writeFile(path, "a\nUnity boom\nb"),
+    downloadLog: async (path) =>
+      writeFile(path, `a\nUnity boom\nb\nUnity payload ${"x".repeat(1000)}`),
     endSession: async () => {
       if (state.page.kind !== "session") return false;
       state.page = { ...state.page, kind: "session_ended" };
@@ -90,7 +97,9 @@ function harness() {
     },
     taps: [],
     ended: 0,
+    deviceQueries: [],
   };
+  let saveGate: Promise<void> = Promise.resolve();
   let now = 1_000_000;
   const saved: string[] = [];
   const store = memoryStore();
@@ -101,12 +110,20 @@ function harness() {
     sleep: async () => {},
     tempDir: () => mkdtemp(join(tmpdir(), "ks-sauce-test-")),
     save: async (threadId, name) => {
+      await saveGate;
       saved.push(name);
       return `/storage/${threadId}/sauce/${name}`;
     },
     threadTitle: async (threadId) => `title of ${threadId}`,
   });
-  return { tools, state, store, saved, advance: (ms: number) => void (now += ms) };
+  return {
+    tools,
+    state,
+    store,
+    saved,
+    advance: (ms: number) => void (now += ms),
+    holdSaves: (gate: Promise<void>) => void (saveGate = gate),
+  };
 }
 
 async function code(promise: Promise<unknown>) {
@@ -226,9 +243,53 @@ test("the device log is saved and grep returns matching lines", async () => {
   const { tools, saved } = harness();
   const a = { threadId: "thr_a" };
   await tools.start(a, { device: "Samsung Galaxy S23" });
-  const log = (await tools.device(a, { action: "log", grep: "unity" })) as Record<string, unknown>;
-  expect(log).toMatchObject({ lines: 3, matches: ["Unity boom"] });
+  const log = (await tools.device(a, { action: "log", grep: "unity" })) as {
+    lines: number;
+    matches: string[];
+    path: string;
+  };
+  expect(log.lines).toBe(4);
+  expect(log.matches[0]).toBe("Unity boom");
+  // Long logcat lines are cut so one payload cannot flood the tool result.
+  expect(log.matches[1]).toHaveLength(401);
+  expect(log.path).toEndWith("-device.log");
   expect(saved.at(-1)).toEndWith("-device.log");
+});
+
+test("a slow save to one thread's host does not hold up other threads", async () => {
+  const { tools, holdSaves } = harness();
+  const a = { threadId: "thr_a" };
+  await tools.start(a, { device: "Samsung Galaxy S23" });
+  let releaseSave = () => {};
+  holdSaves(new Promise<void>((resolve) => (releaseSave = resolve)));
+  const shot = tools.screenshot(a, {});
+  // Thread B is answered while thread A's screenshot is still being written.
+  const status = (await tools.status({ threadId: "thr_b" }, {})) as { state: string };
+  expect(status.state).toBe("held_by_other_thread");
+  releaseSave();
+  expect(await shot).toMatchObject({ rotation: 90 });
+});
+
+test("a start that outlasts the wait keeps the lease for the starter", async () => {
+  const { tools, store } = harness();
+  const a = { threadId: "thr_a" };
+  expect(await code(tools.start(a, { device: "Slow Phone" }))).toBe("start_pending");
+  expect(store.read()?.threadId).toBe("thr_a");
+  expect(await code(tools.start({ threadId: "thr_b" }, { device: "Pixel 8" }))).toBe(
+    "held_by_other_thread",
+  );
+  expect(await tools.end(a)).toEqual({ ended: false, released: true });
+  expect(store.read()).toBeNull();
+});
+
+test("the device catalog lists devices for the build sauce_start will use", async () => {
+  const { tools, state } = harness();
+  const listed = (await tools.catalog(
+    { threadId: "thr_a" },
+    { kind: "devices", query: "Galaxy", app: "rampage-" },
+  )) as { app: string };
+  expect(listed.app).toBe("rampage-");
+  expect(state.deviceQueries).toEqual([{ query: "Galaxy", app: "rampage-" }]);
 });
 
 test("sauce tools reach only rampage projects, and every skill stays selected", async () => {

@@ -10,7 +10,7 @@ The `sauce_*` tools drive Sauce Labs Live in a shared, signed-in browser on the 
 ## Workflow
 
 1. `sauce_status`. Continue only on `ready`, `session_abandoned`, or `session_mine`. On `signed_out`, retry once with `sign_in: true`. On any other state, wait or report it; the result's `next` says which.
-2. `sauce_catalog` with `kind: "apps"`, then `kind: "devices"` with a model query. Done when you have an exact device name and OS.
+2. `sauce_catalog` with `kind: "apps"`, then `kind: "devices"` with a model query and the chosen `app`. Done when you have a build, an exact device name, and an OS.
 3. `sauce_start`. Done when it returns the session URL.
 4. `sauce_screenshot` until the app shows its first screen (installs take 20-60 s). Open each PNG before deciding where to touch.
 5. Drive the app with `sauce_touch` and `sauce_device`. Screenshot after each meaningful step; keep the PNG paths as evidence.
