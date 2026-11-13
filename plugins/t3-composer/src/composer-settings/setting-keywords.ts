@@ -50,9 +50,31 @@ function starredModelsNamed(word: string, sources: KeywordSources) {
   );
 }
 
+/** Whether `inner` appears in `outer` as one unbroken run of words. */
+function hasRun(outer: readonly string[], inner: readonly string[]) {
+  for (let start = 0; start + inner.length <= outer.length; start += 1) {
+    if (inner.every((word, offset) => outer[start + offset] === word)) return true;
+  }
+  return false;
+}
+
+/**
+ * The one model every other match is built on: its id's words run inside each of their ids,
+ * as `claude-opus-5-5` does inside `fusion-claude-opus-5-5-medium`. Ids decide, not display
+ * names, so the answer is the same before and after BB lists the models.
+ */
+function baseModel<Model extends { model: string }>(models: readonly Model[]) {
+  const ids = models.map((entry) => words(entry.model));
+  const bases = models.filter((_entry, index) =>
+    ids.every((other, otherIndex) => otherIndex === index || hasRun(other, ids[index])),
+  );
+  return bases.length === 1 ? bases[0] : undefined;
+}
+
 /**
  * What a keyword sets, or null when it names no setting: a permission mode, then a reasoning
- * level, then exactly one starred model.
+ * level, then a starred model. Several starred models may match when the others are all built
+ * on one of them; that one is set.
  */
 export function keywordSelection(
   word: string,
@@ -64,8 +86,9 @@ export function keywordSelection(
   if (sources.reasoningLevels.has(keyword)) return { selection: { reasoningLevel: keyword } };
   const models = starredModelsNamed(keyword, sources);
   if (models.length === 0) return null;
-  if (models.length > 1) return { error: `#${word} matches more than one starred model.` };
-  return { selection: { providerId: models[0].providerId, model: models[0].model } };
+  const model = models.length === 1 ? models[0] : baseModel(models);
+  if (!model) return { error: `#${word} matches more than one starred model.` };
+  return { selection: { providerId: model.providerId, model: model.model } };
 }
 
 /**
