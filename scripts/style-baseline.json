@@ -2245,49 +2245,9 @@
     "source": "<div className=\"space-y-2\">"
   },
   {
-    "file": "plugins/slopcop/components/ui/button.tsx",
-    "rule": "local-primitive",
-    "source": "button"
-  },
-  {
-    "file": "plugins/slopcop/components/ui/card.tsx",
-    "rule": "local-primitive",
-    "source": "card"
-  },
-  {
-    "file": "plugins/slopcop/components/ui/card.tsx",
-    "rule": "universal-bucket",
-    "source": "<div ref={ref} className={cn(\"flex flex-col space-y-1.5 p-6\", className)} {...props} />"
-  },
-  {
-    "file": "plugins/slopcop/components/ui/coarse-pointer-sizing.ts",
-    "rule": "registry-drift",
-    "source": "coarse-pointer-sizing.ts"
-  },
-  {
-    "file": "plugins/slopcop/components/ui/dialog.tsx",
-    "rule": "universal-bucket",
-    "source": "<div className={cn(\"flex flex-col space-y-1.5 text-left\", className)} {...props} />"
-  },
-  {
-    "file": "plugins/slopcop/components/ui/dialog.tsx",
-    "rule": "universal-bucket",
-    "source": "className={cn(\"flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2\", className)}"
-  },
-  {
     "file": "plugins/slopcop/components/ui/hooks/use-media-query.ts",
     "rule": "registry-drift",
     "source": "hooks/use-media-query.ts"
-  },
-  {
-    "file": "plugins/slopcop/components/ui/input.tsx",
-    "rule": "local-primitive",
-    "source": "input"
-  },
-  {
-    "file": "plugins/slopcop/components/ui/motion.ts",
-    "rule": "local-primitive",
-    "source": "motion"
   },
   {
     "file": "plugins/slopcop/components/ui/overlay-trigger.ts",
