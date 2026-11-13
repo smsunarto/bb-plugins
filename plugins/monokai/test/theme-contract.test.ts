@@ -166,13 +166,22 @@ describe("bb Monokai contract audit", () => {
     const rules = theme.replace(/\/\*[\s\S]*?\*\//g, "");
     expect(rules.match(/button\.border-input(?!:not\(\[role="checkbox"\]\))/g)).toBeNull();
     expect(theme).toContain(
-      '.dark button.border-input:not([role="checkbox"]),\n.dark button.border.bg-card {\n  background-color: var(--control-background);',
+      '.dark button.border-input:not([role="checkbox"]),\n.dark button.border.bg-card,\n.dark [data-bb-control="field"],\n.dark button[data-bb-control="outline"] {\n  background-color: var(--control-background);',
+    );
+  });
+
+  test("gives shared @bb-plugins/ui controls the fills of bb's controls of the same role", () => {
+    for (const role of ["field", "outline", "primary", "secondary"])
+      expect(theme).toContain(`[data-bb-control="${role}"]`);
+    expect(theme).toContain('.dark button[data-bb-control="outline"][data-state="open"] {');
+    expect(theme).toContain(
+      '.dark button.bg-secondary,\n.dark button[data-bb-control="secondary"] {',
     );
   });
 
   test("gives desktop and compact Send the same 14% filled-action layer", () => {
     expect(theme).toContain(
-      ".dark button.bg-primary,\n.dark button.bg-foreground {\n  background-color: var(--control-primary);",
+      '.dark button.bg-primary,\n.dark button.bg-foreground,\n.dark button[data-bb-control="primary"] {\n  background-color: var(--control-primary);',
     );
     expect(theme).toContain(
       `.dark [data-promptbox-send-menu].bg-foreground {\n  --background: ${roleValues["layer.sendSegmentLift"]};\n  background-color: var(--control-primary);\n  color: var(--foreground);`,
@@ -216,7 +225,7 @@ describe("bb Monokai contract audit", () => {
       [],
     );
     expect(theme).toContain(
-      "@media (hover: hover) {\n  .dark button.bg-primary:hover,\n  .dark button.bg-foreground:hover {",
+      '@media (hover: hover) {\n  .dark button.bg-primary:hover,\n  .dark button.bg-foreground:hover,\n  .dark button[data-bb-control="primary"]:hover {',
     );
     expect(theme).toContain(
       '@media (hover: hover) {\n  .dark [data-testid="notification-row"]:hover {',

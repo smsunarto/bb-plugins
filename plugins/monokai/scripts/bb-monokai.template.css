@@ -553,13 +553,16 @@
  * Clip the translucent fill inside its edge to avoid double compositing.
  * Radix checkboxes are also `button.border-input`, but bb draws their checked
  * state with layered utilities this unlayered fill would hide, so they keep
- * bb's own look. */
+ * bb's own look. Shared @bb-plugins/ui controls name their role with
+ * data-bb-control and get the same fills as bb's controls of that role. */
 .dark input.border-input,
 .dark textarea.border-input,
 .dark select.border-input,
 .dark [role="combobox"].border-input,
 .dark button.border-input:not([role="checkbox"]),
-.dark button.border.bg-card {
+.dark button.border.bg-card,
+.dark [data-bb-control="field"],
+.dark button[data-bb-control="outline"] {
   background-color: var(--control-background);
   background-clip: padding-box;
   border-color: var(--input);
@@ -578,7 +581,9 @@
   .dark select.border-input:hover:not(:disabled),
   .dark [role="combobox"].border-input:hover:not(:disabled),
   .dark button.border-input:not([role="checkbox"]):hover:not(:disabled),
-  .dark button.border.bg-card:hover:not(:disabled) {
+  .dark button.border.bg-card:hover:not(:disabled),
+  .dark [data-bb-control="field"]:hover:not(:disabled),
+  .dark button[data-bb-control="outline"]:hover:not(:disabled) {
     background-color: var(--state-hover);
   }
 
@@ -596,7 +601,9 @@
 .dark button.border-input:not([role="checkbox"]):active:not(:disabled),
 .dark button.border.bg-card:active:not(:disabled),
 .dark button.border-input:not([role="checkbox"])[data-state="open"],
-.dark button.border.bg-card[data-state="open"] {
+.dark button.border.bg-card[data-state="open"],
+.dark button[data-bb-control="outline"]:active:not(:disabled),
+.dark button[data-bb-control="outline"][data-state="open"] {
   background-color: var(--surface-selected);
 }
 
@@ -824,7 +831,8 @@
 /* Filled actions use shared ink layers without changing --primary,
  * which continues to own links and mention accents. */
 .dark button.bg-primary,
-.dark button.bg-foreground {
+.dark button.bg-foreground,
+.dark button[data-bb-control="primary"] {
   background-color: var(--control-primary);
   color: var(--foreground);
 }
@@ -841,7 +849,8 @@
   color: var(--foreground);
 }
 
-.dark button.bg-secondary {
+.dark button.bg-secondary,
+.dark button[data-bb-control="secondary"] {
   background-color: var(--secondary);
   background-clip: padding-box;
   border: 1px solid var(--input);
@@ -854,11 +863,13 @@
  * theme hover rule lives under this query for the same reason. */
 @media (hover: hover) {
   .dark button.bg-primary:hover,
-  .dark button.bg-foreground:hover {
+  .dark button.bg-foreground:hover,
+  .dark button[data-bb-control="primary"]:hover {
     background-color: var(--control-primary-hover);
   }
 
-  .dark button.bg-secondary:hover {
+  .dark button.bg-secondary:hover,
+  .dark button[data-bb-control="secondary"]:hover {
     background-color: var(--state-hover);
   }
 }

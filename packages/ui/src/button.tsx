@@ -4,6 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "./utils";
 import "./controls.css";
 import { styles } from "./styles";
+import { controlRole, type ControlRole } from "./role";
 
 const buttonVariants = cva(styles["button"] + " " + styles["motion"], {
   variants: {
@@ -24,19 +25,29 @@ const buttonVariants = cva(styles["button"] + " " + styles["motion"], {
   },
   defaultVariants: { variant: "default", size: "default" },
 });
+const buttonRole: Partial<Record<string, ControlRole>> = {
+  default: "primary",
+  outline: "outline",
+  secondary: "secondary",
+};
+const compactRole: Partial<Record<string, ControlRole>> = { default: "primary" };
+
 export interface ButtonProps
   extends
     Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "title">,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
-function createButton(profile: string) {
+function createButton(profile: string, roles: boolean) {
   const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ({ className, variant, size, asChild = false, ...props }, ref) => {
       const Comp = asChild ? Slot : "button";
       return (
         <Comp
           data-slot="button"
+          data-bb-control={
+            roles ? controlRole(buttonRole[variant ?? "default"], className) : undefined
+          }
           className={cn(buttonVariants({ variant, size }), profile, className)}
           ref={ref}
           {...props}
@@ -47,9 +58,10 @@ function createButton(profile: string) {
   Button.displayName = "Button";
   return Button;
 }
-const Button = createButton("");
-const BorderedButton = createButton(styles["bordered"]);
-const NativeButton = createButton(styles["native"]);
+const Button = createButton("", true);
+// The bordered profile keeps its border-colored edge, which the outline role would replace.
+const BorderedButton = createButton(styles["bordered"], false);
+const NativeButton = createButton(styles["native"], true);
 const borderedButtonVariants: typeof buttonVariants = (props) =>
   cn(buttonVariants(props), styles["bordered"]);
 const nativeButtonVariants: typeof buttonVariants = (props) =>
@@ -82,6 +94,7 @@ export const CompactButton = React.forwardRef<HTMLButtonElement, CompactButtonPr
     <button
       ref={ref}
       type={type}
+      data-bb-control={controlRole(compactRole[variant ?? "default"], className)}
       className={cn(compactVariants({ variant, size }), className)}
       {...props}
     />

@@ -72,3 +72,31 @@ describe("shared surfaces", () => {
     expect(surface.hairline).toBe(styles.hairline);
   });
 });
+
+describe("theme control roles", () => {
+  test("controls name their role so themes adapt them like bb's own", () => {
+    expect(renderToStaticMarkup(<Button>Save</Button>)).toContain('data-bb-control="primary"');
+    expect(renderToStaticMarkup(<Button variant="outline">Cancel</Button>)).toContain(
+      'data-bb-control="outline"',
+    );
+    expect(renderToStaticMarkup(<Button variant="secondary">More</Button>)).toContain(
+      'data-bb-control="secondary"',
+    );
+    expect(renderToStaticMarkup(<Button variant="ghost">Menu</Button>)).not.toContain(
+      "data-bb-control",
+    );
+    expect(renderToStaticMarkup(<CompactButton>Send</CompactButton>)).toContain(
+      'data-bb-control="primary"',
+    );
+    expect(renderToStaticMarkup(<Input />)).toContain('data-bb-control="field"');
+  });
+  test("a caller's own fill opts out, and bordered profiles keep their edge", () => {
+    expect(renderToStaticMarkup(<Button className="bg-transparent">Save</Button>)).not.toContain(
+      "data-bb-control",
+    );
+    expect(
+      renderToStaticMarkup(<BorderedButton variant="outline">Save</BorderedButton>),
+    ).not.toContain("data-bb-control");
+    expect(renderToStaticMarkup(<BorderedInput />)).not.toContain("data-bb-control");
+  });
+});
