@@ -1,5 +1,23 @@
 # @smsunarto/bb-plugin-gh-stack
 
+## [0.4.0](https://github.com/smsunarto/bb-plugins/compare/gh-stack/v0.3.0...gh-stack/v0.4.0) (2026-11-13)
+
+
+### Features
+
+* **branding:** give every plugin a distinct BB-style icon ([e6a07fe](https://github.com/smsunarto/bb-plugins/commit/e6a07fe24cfd954203fc3007c3e9817de4b9376e))
+* **plugins:** adopt BB 0.48 SDK APIs ([7fcbe74](https://github.com/smsunarto/bb-plugins/commit/7fcbe74366553e460c2992080af34533c7642649))
+* **plugins:** replace plugin icons with Lucide via better-icons ([765f389](https://github.com/smsunarto/bb-plugins/commit/765f38988bcf8107889ec51890377f85c00dcdf3))
+* **storybook:** catalog custom components across browser plugins ([1345a92](https://github.com/smsunarto/bb-plugins/commit/1345a926b6b281ae7ab0c6d7fcc6f1807130d77b))
+* **storybook:** populate realistic review and workflow scenarios ([b58f4e7](https://github.com/smsunarto/bb-plugins/commit/b58f4e7b9865f3997da18c886de76aac7652db20))
+
+
+### Bug Fixes
+
+* **gh-stack:** verify stack writes against the server's post-write stamp ([94f607a](https://github.com/smsunarto/bb-plugins/commit/94f607a328fd822d906c7e47afc2ece861323377))
+* **packaging:** bundle private runtime dependencies in release tarballs ([d344351](https://github.com/smsunarto/bb-plugins/commit/d3443517c9dda8c779a049f438f4fefa86253d99))
+* **storybook:** size component previews to content ([471d888](https://github.com/smsunarto/bb-plugins/commit/471d888914696829ee59ff1a84701fe2354fef90))
+
 ## [0.3.0](https://github.com/smsunarto/bb-plugins/compare/gh-stack/v0.2.3...gh-stack/v0.3.0) (2026-09-15)
 
 
