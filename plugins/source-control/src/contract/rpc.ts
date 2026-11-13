@@ -28,6 +28,14 @@ import {
   vcsResultSchema,
 } from "../core/change.ts";
 import { threadStatusSchema } from "../core/status.ts";
+import {
+  baseBranchSchema,
+  checkoutFilesSchema,
+  checkoutPatchesSchema,
+  checkoutPatchFilesSchema,
+  checkoutStatusSchema,
+  checkoutTargetSchema,
+} from "../core/checkout-reads.ts";
 import { importReportSchema } from "../core/cutover.ts";
 import { landedSchema, landedTargetSchema, prRefSchema, prWatchViewSchema } from "../core/watch.ts";
 import { guideViewSchema } from "../core/guide.ts";
@@ -67,6 +75,14 @@ import {
 export const MAX_THREAD_KEYS = 200;
 
 const threadIdSchema = z.string().min(1).max(128);
+const environmentIdSchema = z.string().min(1).max(128);
+
+/** A read's value, or the problem that stopped it. */
+const readOf = <T extends z.ZodType>(value: T) =>
+  z.discriminatedUnion("ok", [
+    z.object({ ok: z.literal(true), value }).strict(),
+    z.object({ ok: z.literal(false), problem: problemSchema }).strict(),
+  ]);
 
 const askResultSchema = z.discriminatedUnion("ok", [
   z.object({ ok: z.literal(true), threadId: z.string() }).strict(),
@@ -103,6 +119,32 @@ export const sourceControlContract = defineRpcContract({
     ]),
     tags: (input: { threadId: string; source: { kind: string } }) =>
       input.source.kind === "uncommitted" ? [threadTag(input.threadId)] : [],
+  },
+  checkoutStatus: {
+    experimental_description:
+      "An environment's checkout as plain git sees it now: what is checked out, the default branch, its uncommitted files and line counts, and its commits and ahead/behind against `base` (null: the default branch). For other plugins; read on each call, never stored.",
+    input: z
+      .object({ environmentId: environmentIdSchema, base: baseBranchSchema.nullable() })
+      .strict(),
+    output: readOf(checkoutStatusSchema),
+  },
+  checkoutFiles: {
+    experimental_description:
+      "An environment's changed files for `target` (uncommitted work, the branch since `base` including uncommitted work, or one commit), with line counts and the first files' patches. For other plugins.",
+    input: z.object({ environmentId: environmentIdSchema, target: checkoutTargetSchema }).strict(),
+    output: readOf(checkoutFilesSchema),
+  },
+  checkoutPatches: {
+    experimental_description:
+      "Patches of up to 25 of `target`'s changed files in an environment's checkout, each named with its old path when renamed. For other plugins.",
+    input: z
+      .object({
+        environmentId: environmentIdSchema,
+        target: checkoutTargetSchema,
+        files: checkoutPatchFilesSchema,
+      })
+      .strict(),
+    output: readOf(checkoutPatchesSchema),
   },
   /** GitButler's recent operations on the thread's checkout, newest first. Read only. */
   oplog: {

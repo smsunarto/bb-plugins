@@ -30,14 +30,13 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
   const connected = (hostId: string) =>
     host(hostId).pipe(Effect.map((record) => record?.status !== "disconnected"));
 
-  /** Where the thread's checkout is now. */
-  const resolve = Effect.fn("resolvePlacement")(function* (threadId: string) {
-    const thread = yield* Effect.tryPromise(() =>
-      bb.sdk.threads.get({ threadId, include: "environment" }),
-    );
-    const environment = "environment" in thread ? thread.environment : undefined;
-    if (!environment)
-      return { state: "none", reason: "This thread has no project environment." } as const;
+  /** Where an environment's checkout is, or why it has none. */
+  const placementOf = Effect.fnUntraced(function* (environment: {
+    id: string;
+    hostId: string;
+    path: string | null;
+    status: string;
+  }) {
     if (!environment.path)
       return {
         state: "none",
@@ -57,9 +56,27 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
     return { state: "checkout", placement } as const;
   });
 
+  /** Where the thread's checkout is now. */
+  const resolve = Effect.fn("resolvePlacement")(function* (threadId: string) {
+    const thread = yield* Effect.tryPromise(() =>
+      bb.sdk.threads.get({ threadId, include: "environment" }),
+    );
+    const environment = "environment" in thread ? thread.environment : undefined;
+    if (!environment)
+      return { state: "none", reason: "This thread has no project environment." } as const;
+    return yield* placementOf(environment);
+  });
+
+  /** Where an environment's checkout is now, by its id. */
+  const forEnvironment = Effect.fn("environmentPlacement")(function* (environmentId: string) {
+    const environment = yield* Effect.tryPromise(() => bb.sdk.environments.get({ environmentId }));
+    return yield* placementOf(environment);
+  });
+
   return {
     connected,
     resolve,
+    forEnvironment,
     /** Resolve and store the thread's placement; `changed` when the stored one moved. */
     settle: Effect.fnUntraced(function* (threadId: string) {
       const where: ThreadPlacement = yield* resolve(threadId);

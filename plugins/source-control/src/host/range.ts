@@ -14,7 +14,7 @@ import { patchesFromGit, type PatchSet } from "./parse.ts";
 export const BRANCH_BASE = "branch:";
 
 /** The remote a checkout compares with: `origin`, or its only remote. */
-async function compareRemote(cwd: string, signal: AbortSignal): Promise<string | null> {
+export async function compareRemote(cwd: string, signal: AbortSignal): Promise<string | null> {
   const remotes = ((await optionalGit(cwd, ["remote"], signal)) ?? "").split("\n").filter(Boolean);
   return remotes.includes("origin") ? "origin" : remotes.length === 1 ? remotes[0]! : null;
 }

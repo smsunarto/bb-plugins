@@ -15,6 +15,13 @@ import type {
 import type { Oplog } from "../core/oplog.ts";
 import type { BaseHistory } from "../core/history.ts";
 import type {
+  CheckoutFiles,
+  CheckoutPatches,
+  CheckoutPatchFile,
+  CheckoutStatus,
+  CheckoutTarget,
+} from "../core/checkout-reads.ts";
+import type {
   HostFailure,
   HostWorkspace,
   RangeAnswer,
@@ -56,6 +63,21 @@ export type HostCalls = {
     input: { path: string; from: string; limit: number },
     options: CallOptions,
   ): Promise<Outcome<BaseHistory>>;
+  checkoutStatus(
+    hostId: string,
+    input: { path: string; base: string | null },
+    options: CallOptions,
+  ): Promise<Outcome<CheckoutStatus>>;
+  checkoutFiles(
+    hostId: string,
+    input: { path: string; target: CheckoutTarget },
+    options: CallOptions,
+  ): Promise<Outcome<CheckoutFiles>>;
+  checkoutPatches(
+    hostId: string,
+    input: { path: string; target: CheckoutTarget; files: CheckoutPatchFile[] },
+    options: CallOptions,
+  ): Promise<Outcome<CheckoutPatches>>;
 };
 
 /** The host did not answer before the server's deadline. */

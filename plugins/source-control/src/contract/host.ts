@@ -28,6 +28,14 @@ import {
 import { timelineItemSchema } from "../core/items.ts";
 import { changeFileSchema, forgeFileSchema, inboxEntrySchema } from "../core/review.ts";
 import {
+  baseBranchSchema,
+  checkoutFilesSchema,
+  checkoutPatchesSchema,
+  checkoutPatchFilesSchema,
+  checkoutStatusSchema,
+  checkoutTargetSchema,
+} from "../core/checkout-reads.ts";
+import {
   commitRefSchema,
   landedSchema,
   MAX_LANDED,
@@ -238,6 +246,26 @@ export const sourceControlHostContract = defineRpcContract({
         z.object({ kind: z.literal("commits"), commits: z.array(commitSchema) }).strict(),
       ]),
     ),
+  },
+  /** The checkout as plain git sees it, measured against `base` (null: its default branch). For other plugins. */
+  checkoutStatus: {
+    experimental_retryable: true,
+    input: z.object({ path: pathSchema, base: baseBranchSchema.nullable() }).strict(),
+    output: outcome(checkoutStatusSchema),
+  },
+  /** A target's changed files, with the first ones' patches. For other plugins. */
+  checkoutFiles: {
+    experimental_retryable: true,
+    input: z.object({ path: pathSchema, target: checkoutTargetSchema }).strict(),
+    output: outcome(checkoutFilesSchema),
+  },
+  /** Patches of some of a target's files. For other plugins. */
+  checkoutPatches: {
+    experimental_retryable: true,
+    input: z
+      .object({ path: pathSchema, target: checkoutTargetSchema, files: checkoutPatchFilesSchema })
+      .strict(),
+    output: outcome(checkoutPatchesSchema),
   },
   /** GitButler's recent operations on the checkout, newest first; none for a plain git one. */
   oplog: {

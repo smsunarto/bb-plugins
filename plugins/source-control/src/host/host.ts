@@ -28,6 +28,7 @@ import { parseOplog } from "./parse.ts";
 import { forget, share } from "./memo.ts";
 import { act, hostFailure, problemOf, providers, resolveCheckout } from "./providers.ts";
 import { rangeCommits, rangeFiles, rangePatches, resolveBase } from "./range.ts";
+import { readCheckoutFiles, readCheckoutPatches, readCheckoutStatus } from "./checkout-reads.ts";
 import { mergeAt } from "../forge/merge.ts";
 import { runReviewRead } from "../forge/review.ts";
 import { changed, keepWatching, renew, stopAll } from "./repository-state.ts";
@@ -181,6 +182,34 @@ export default experimental_defineHostEntry({
           };
         const { files } = await rangePatches(cwd, from, head, read.paths, signal);
         return { ok: true as const, value: { kind: "patches" as const, files } };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ok: false as const, error: hostFailure(error) };
+      }
+    },
+
+    async checkoutStatus({ path, base }, { signal }) {
+      try {
+        return { ok: true as const, value: await readCheckoutStatus(path, base, signal) };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ok: false as const, error: hostFailure(error) };
+      }
+    },
+
+    async checkoutFiles({ path, target }, { signal }) {
+      try {
+        return { ok: true as const, value: await readCheckoutFiles(path, target, signal) };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { ok: false as const, error: hostFailure(error) };
+      }
+    },
+
+    async checkoutPatches({ path, target, files }, { signal }) {
+      try {
+        const patches = await readCheckoutPatches(path, target, files, signal);
+        return { ok: true as const, value: { patches } };
       } catch (error) {
         if (signal.aborted) throw error;
         return { ok: false as const, error: hostFailure(error) };

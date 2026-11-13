@@ -36,7 +36,7 @@ import {
   writeGuideEnabled,
   writeGuideTool,
 } from "./guides.ts";
-import type { HostCalls } from "./host-calls.ts";
+import { HOST_DEADLINE_MS, type HostCalls } from "./host-calls.ts";
 import { SharedWork } from "./shared.ts";
 import {
   createReviewStart,
@@ -48,6 +48,8 @@ import { openStore, type Store } from "./store.ts";
 import { createThreadBranches } from "./thread-branches.ts";
 import { createThreadChanges } from "./thread-changes.ts";
 import { createMoved, type Moved } from "./moved.ts";
+import { createCheckoutReads, type CheckoutReads } from "./checkout-reads.ts";
+import { createPlacements } from "./placement.ts";
 
 export type SourceControlDeps = {
   serverExec: Exec;
@@ -84,6 +86,12 @@ function checkoutCalls(host: HostClient): HostCalls {
     oplog: (hostId, input, options) => host.call("oplog", input, { hostId, ...options }),
     baseHistory: (hostId, input, options) =>
       host.call("baseHistory", input, { hostId, ...options }),
+    checkoutStatus: (hostId, input, options) =>
+      host.call("checkoutStatus", input, { hostId, ...options }),
+    checkoutFiles: (hostId, input, options) =>
+      host.call("checkoutFiles", input, { hostId, ...options }),
+    checkoutPatches: (hostId, input, options) =>
+      host.call("checkoutPatches", input, { hostId, ...options }),
   };
 }
 
@@ -246,6 +254,7 @@ function registerRpc(
   publish: Publish,
   fix: FixChecks,
   checkoutChat: CheckoutChat,
+  reads: CheckoutReads,
 ) {
   const afterRegistration = activation(bb);
   const items = changes.review.items;
@@ -260,6 +269,12 @@ function registerRpc(
       },
       patches: ({ threadId, source }, context) =>
         runtime.run(changes.patches(threadId, source), context.experimental_signal),
+      checkoutStatus: ({ environmentId, base }, context) =>
+        runtime.run(reads.status(environmentId, base), context.experimental_signal),
+      checkoutFiles: ({ environmentId, target }, context) =>
+        runtime.run(reads.files(environmentId, target), context.experimental_signal),
+      checkoutPatches: ({ environmentId, target, files }, context) =>
+        runtime.run(reads.patches(environmentId, target, files), context.experimental_signal),
       ...historyHandlers(runtime, changes),
       ...fixHandlers(runtime, fix),
       checkoutChat: (input) => checkoutChat(input),
@@ -599,6 +614,11 @@ export function createSourceControl(deps: SourceControlDeps) {
       createPublish({ bb, store }),
       createFixChecks({ bb, store, sites }),
       createCheckoutChat({ bb, store }),
+      createCheckoutReads({
+        host: checkoutCalls(host),
+        placements: createPlacements({ bb, store, now: deps.now }),
+        hostDeadlineMs: deps.hostDeadlineMs ?? HOST_DEADLINE_MS,
+      }),
     );
     registerAgents(bb, runtime, changes, guides, moved);
     listen(bb, runtime, host, changes, guides, moved);
