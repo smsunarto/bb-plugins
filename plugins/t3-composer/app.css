@@ -392,13 +392,22 @@
   box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
 }
 
-/* BB's left cluster clips to truncate the branch name, which also cut off the
-   pills' focus rings. Grow its clip box by 4px without moving its content. */
+/* These hairlines draw 0.5px outside their surfaces. BB's overflow fade
+   ([data-overflow-fade]) is an absolutely positioned gradient whose opaque
+   bottom row meets the composer's top edge, and positioned boxes paint over
+   static ones, so it hid the topmost card's top hairline. A positioned shell
+   paints after the earlier fade. */
+[data-promptbox-shell] {
+  position: relative;
+}
+
+/* BB's left cluster clips to truncate the branch name, so the pills' rings
+   draw inside them, where no ancestor can clip them. */
 :is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
-  > div:first-child {
-  margin: -4px;
-  padding: 4px;
+  button:focus-visible {
+  --tw-ring-inset: inset;
+  --tw-ring-offset-width: 0px;
 }
 
 :is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
@@ -677,17 +686,11 @@
   flex-shrink: 0;
 }
 
+/* Inside the button: BB's main region clips for its collapse animation, and
+   an outline outside the button was cut off at the row's edges. */
 [data-t3-composer][data-promptbox] button:focus-visible {
   outline: 2px solid var(--foreground);
-  outline-offset: 2px;
-}
-
-/* BB's main region clips for its collapse animation, and the action row has no
-   padding, so the focus outline above (4px outside the button) was cut off at
-   the row's edges. Grow the clip box by 4px without moving its content. */
-[data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-main] {
-  margin: -4px;
-  padding: 4px;
+  outline-offset: -2px;
 }
 
 [data-t3-composer][data-promptbox] [data-t3-composer-actions-menu][data-state="open"] {
