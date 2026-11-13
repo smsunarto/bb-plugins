@@ -1,4 +1,5 @@
 import "./helpers/dom.ts";
+import "./helpers/bb-keybindings.ts";
 import { afterEach, describe, expect, mock, test } from "bun:test";
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 import { mountLinkHints, setBbNavigation } from "../src/app/link-hints.ts";
@@ -408,14 +409,15 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
-  test("plain i is not swallowed when no composer textbox exists", () => {
+  test("i with no composer textbox focuses nothing", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
 
     document.body.innerHTML = '<button id="only">Only</button>';
     giveRect(document.getElementById("only") as HTMLElement, 10, 10);
 
-    expect(pressKey("i")).toBe(true);
+    pressKey("i");
+    expect(document.activeElement).toBe(document.body);
 
     void dispose();
     controller.abort();
@@ -1071,7 +1073,7 @@ describe("mountLinkHints", () => {
       element.addEventListener("click", () => clicked.push(id));
     }
 
-    expect(pressKey("s")).toBe(true);
+    pressKey("s");
     expect(clicked).toEqual([]);
     pressKey("f");
     expect(markers()).toEqual(["dd"]);
@@ -1343,16 +1345,19 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
-  test("a direct key with no control on screen is left to bb", () => {
+  test("a command with no control on screen does nothing, and k with no conversation is left to bb", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
 
     document.body.innerHTML = '<button id="only">Only</button>';
-    giveRect(document.getElementById("only") as HTMLElement, 10, 10);
+    const only = document.getElementById("only") as HTMLElement;
+    giveRect(only, 10, 10);
+    let clicks = 0;
+    only.addEventListener("click", () => clicks++);
 
-    for (const key of ["n", "m", "p", "l", "b", "k", "s", ",", "[", "]", "e"]) {
-      expect(pressKey(key)).toBe(true);
-    }
+    for (const key of ["n", "m", "p", "l", "b", "s", ",", "[", "]", "e"]) pressKey(key);
+    expect(pressKey("k")).toBe(true);
+    expect(clicks).toBe(0);
     expect(document.querySelector(".vimium-hint-layer")).toBeNull();
 
     void dispose();
@@ -1415,11 +1420,10 @@ describe("mountLinkHints", () => {
     expect(pressKey("[")).toBe(false);
     expect(opened).toEqual(["thr_2", "thr_2"]);
 
-    // Without the SDK bridge, the key falls through instead of claiming a
-    // navigation that cannot happen.
+    // Without the SDK bridge, the key cannot open a windowed-out row.
     setBbNavigation(null);
     window.history.pushState({}, "", "/threads/thr_1");
-    expect(pressKey("]")).toBe(true);
+    pressKey("]");
     expect(opened).toEqual(["thr_2", "thr_2"]);
 
     window.history.pushState({}, "", "/");
@@ -1473,7 +1477,7 @@ describe("mountLinkHints", () => {
     expect(settled).toEqual(["settle-2"]);
 
     window.history.pushState({}, "", "/settings");
-    expect(pressKey("e")).toBe(true);
+    pressKey("e");
     expect(settled).toEqual(["settle-2"]);
 
     window.history.pushState({}, "", "/");

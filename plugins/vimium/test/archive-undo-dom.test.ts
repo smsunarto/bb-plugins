@@ -1,4 +1,5 @@
 import "./helpers/dom.ts";
+import "./helpers/bb-keybindings.ts";
 import { afterEach, expect, mock, test } from "bun:test";
 import { mountLinkHints } from "../src/app/link-hints.ts";
 
@@ -74,7 +75,8 @@ test("Shift+E chooses the newest archive and skips consumed and removed toasts",
   expect(older.navigate).toHaveBeenCalledTimes(1);
   expect(removed.restore).not.toHaveBeenCalled();
   expect(unrelated.restore).not.toHaveBeenCalled();
-  expect(press()).toBe(true);
+  press();
+  expect(removed.restore).not.toHaveBeenCalled();
 });
 
 test("Shift+E leaves editable fields and modified keys alone", () => {
@@ -89,7 +91,7 @@ test("Shift+E leaves editable fields and modified keys alone", () => {
   expect(archived.restore).not.toHaveBeenCalled();
 });
 
-test("other Undo notifications and missing or disabled archive controls fall through", () => {
+test("Shift+E ignores other Undo notifications and missing or disabled archive controls", () => {
   const unrelated = toast("File deleted");
   const missing = toast();
   missing.open.remove();
@@ -98,8 +100,9 @@ test("other Undo notifications and missing or disabled archive controls fall thr
   mount();
   unrelated.undo.click();
   expect(unrelated.navigate).not.toHaveBeenCalled();
-  expect(press()).toBe(true);
+  press();
   expect(missing.restore).not.toHaveBeenCalled();
+  expect(disabled.restore).not.toHaveBeenCalled();
 });
 
 test("aborting the content script removes both mouse and keyboard behavior", () => {

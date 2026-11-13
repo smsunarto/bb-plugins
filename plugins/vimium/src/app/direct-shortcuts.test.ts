@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
-  DIRECT_SHORTCUTS,
+  SCROLL_SHORTCUTS,
   SCROLL_STEP_PX,
+  VIMIUM_COMMANDS,
   adjacentThreadIndex,
   directShortcutFor,
+  isTypingKey,
   scrollAmountFor,
   threadIdFromPath,
   type DirectKey,
@@ -12,7 +14,7 @@ import { RESERVED_CONTROLS } from "./hint-labels.ts";
 
 function key(overrides: Partial<DirectKey> = {}): DirectKey {
   return {
-    key: "m",
+    key: "j",
     ctrlKey: false,
     metaKey: false,
     altKey: false,
@@ -22,36 +24,48 @@ function key(overrides: Partial<DirectKey> = {}): DirectKey {
   };
 }
 
-describe("directShortcutFor", () => {
-  test("control keys reuse the reserved hint selectors", () => {
-    for (const char of ["n", "h", "m", "p", "l", "b", ","]) {
-      const reserved = RESERVED_CONTROLS.find((control) => control.char === char);
-      expect(directShortcutFor(key({ key: char }))).toEqual({
-        kind: "control",
-        selector: reserved?.selector ?? "",
-      });
+function actionOf(id: string) {
+  return VIMIUM_COMMANDS.find((command) => command.id === id)?.action;
+}
+
+function reservedSelector(char: string): string {
+  return RESERVED_CONTROLS.find((control) => control.char === char)?.selector ?? "";
+}
+
+describe("VIMIUM_COMMANDS", () => {
+  test("ids are unique and valid bb plugin command ids", () => {
+    const ids = VIMIUM_COMMANDS.map((command) => command.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) expect(id).toMatch(/^[a-zA-Z0-9_-]+$/u);
+  });
+
+  test("control commands press the same control as their hint label", () => {
+    for (const [id, char] of [
+      ["new-thread", "n"],
+      ["home", "h"],
+      ["settings", ","],
+      ["model", "m"],
+      ["project", "p"],
+      ["machine", "l"],
+      ["branch", "b"],
+      ["permission-mode", "k"],
+    ] as const) {
+      expect(actionOf(id)).toEqual({ kind: "control", selector: reservedSelector(char) });
     }
   });
 
-  test("s opens thread search", () => {
-    expect(directShortcutFor(key({ key: "s" }))).toEqual({ kind: "thread-search" });
+  test("thread commands step, settle, undo, and search", () => {
+    expect(actionOf("next-thread")).toEqual({ kind: "thread-step", step: 1 });
+    expect(actionOf("previous-thread")).toEqual({ kind: "thread-step", step: -1 });
+    expect(actionOf("settle-thread")).toEqual({ kind: "settle-thread" });
+    expect(actionOf("undo-archive")).toEqual({ kind: "undo-archive" });
+    expect(actionOf("search-threads")).toEqual({ kind: "thread-search" });
+    expect(actionOf("focus-composer")).toEqual({ kind: "focus-composer" });
+    expect(actionOf("cheatsheet")).toEqual({ kind: "cheatsheet" });
   });
+});
 
-  test("a opens permission mode, whose hint label k is the scroll-up key", () => {
-    const permission = RESERVED_CONTROLS.find((control) => control.char === "k");
-    expect(directShortcutFor(key({ key: "a" }))).toEqual({
-      kind: "control",
-      selector: permission?.selector ?? "",
-    });
-  });
-
-  test("brackets step threads and e settles", () => {
-    expect(directShortcutFor(key({ key: "[" }))).toEqual({ kind: "thread-step", step: -1 });
-    expect(directShortcutFor(key({ key: "]" }))).toEqual({ kind: "thread-step", step: 1 });
-    expect(directShortcutFor(key({ key: "e" }))).toEqual({ kind: "settle-thread" });
-    expect(directShortcutFor(key({ key: "i" }))).toEqual({ kind: "focus-composer" });
-  });
-
+describe("directShortcutFor", () => {
   test("j and k scroll the conversation a step and shift+j goes to the bottom", () => {
     expect(directShortcutFor(key({ key: "j" }))).toEqual({ kind: "scroll", motion: "down" });
     expect(directShortcutFor(key({ key: "k" }))).toEqual({ kind: "scroll", motion: "up" });
@@ -61,18 +75,41 @@ describe("directShortcutFor", () => {
     });
   });
 
+  test("command keys are bb's to dispatch, not vimium's", () => {
+    for (const bound of ["n", "h", "s", ",", "[", "]", "e", "E", "?", "i", "m", "a"]) {
+      expect(directShortcutFor(key({ key: bound }))).toBeNull();
+    }
+  });
+
   test("modifiers, editable targets, and unbound keys map to nothing", () => {
     expect(directShortcutFor(key({ ctrlKey: true }))).toBeNull();
     expect(directShortcutFor(key({ metaKey: true }))).toBeNull();
     expect(directShortcutFor(key({ altKey: true }))).toBeNull();
-    expect(directShortcutFor(key({ key: "M", shiftKey: true }))).toBeNull();
+    expect(directShortcutFor(key({ key: "K", shiftKey: true }))).toBeNull();
     expect(directShortcutFor(key({ editableTarget: true }))).toBeNull();
     expect(directShortcutFor(key({ key: "f" }))).toBeNull();
-    expect(directShortcutFor(key({ key: "q" }))).toBeNull();
   });
 
-  test("every direct key is a single character", () => {
-    for (const bound of DIRECT_SHORTCUTS.keys()) expect(bound).toHaveLength(1);
+  test("every scroll key is a single character", () => {
+    for (const bound of SCROLL_SHORTCUTS.keys()) expect(bound).toHaveLength(1);
+  });
+});
+
+describe("isTypingKey", () => {
+  const plain = { ctrlKey: false, metaKey: false, altKey: false, editableTarget: true };
+
+  test("a bare or shifted key in a text field is typing", () => {
+    expect(isTypingKey(plain)).toBe(true);
+  });
+
+  test("a key outside a text field is not", () => {
+    expect(isTypingKey({ ...plain, editableTarget: false })).toBe(false);
+  });
+
+  test("a Ctrl, Cmd, or Alt chord runs even from a text field", () => {
+    expect(isTypingKey({ ...plain, ctrlKey: true })).toBe(false);
+    expect(isTypingKey({ ...plain, metaKey: true })).toBe(false);
+    expect(isTypingKey({ ...plain, altKey: true })).toBe(false);
   });
 });
 

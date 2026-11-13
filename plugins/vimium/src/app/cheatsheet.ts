@@ -1,17 +1,26 @@
-// The cheatsheet page's content. Each pinned hint label and direct key has
-// one description here; the type keys the hint labels to RESERVED_CONTROLS,
-// and a test checks every direct key is listed, so a new binding cannot ship
-// without its cheatsheet row.
+// The cheatsheet page's content. Each pinned hint label, bb command, and
+// scroll key has one row here; the type keys the hint labels to
+// RESERVED_CONTROLS, and a test checks every command and scroll key is
+// listed, so a new binding cannot ship without its cheatsheet row. Command
+// rows show the shortcut bound in the user's bb keyboard settings.
 
+import type { PluginCommandShortcut } from "@get-bb/plugin-sdk/app";
+import { VIMIUM_COMMANDS, type VimiumCommand } from "./direct-shortcuts.ts";
 import { RESERVED_CONTROLS } from "./hint-labels.ts";
 
-export interface CheatsheetEntry {
-  /** Keys pressed in order, each a single key or chord. */
-  readonly keys: readonly string[];
-  /** The keys are alternatives, one per choice, rather than a sequence. */
-  readonly oneOf?: true;
-  readonly action: string;
-}
+export type CheatsheetEntry =
+  | {
+      /** Keys pressed in order, each a single key or chord. */
+      readonly keys: readonly string[];
+      /** The keys are alternatives, one per choice, rather than a sequence. */
+      readonly oneOf?: true;
+      readonly action: string;
+    }
+  | {
+      /** A vimium bb command, whose keys come from Settings → Keyboard. */
+      readonly command: VimiumCommand;
+      readonly action: string;
+    };
 
 export interface CheatsheetSection {
   readonly title: string;
@@ -43,6 +52,13 @@ const HINT_LABEL_ACTIONS: Readonly<Record<ReservedChar, string>> = {
   "\\": "Right panel",
 };
 
+function commandEntries(section: VimiumCommand["section"]): CheatsheetEntry[] {
+  return VIMIUM_COMMANDS.filter((command) => command.section === section).map((command) => ({
+    command,
+    action: command.title,
+  }));
+}
+
 export const CHEATSHEET: readonly CheatsheetSection[] = [
   {
     title: "Link hints",
@@ -56,28 +72,13 @@ export const CHEATSHEET: readonly CheatsheetSection[] = [
   },
   {
     title: "Navigation",
-    entries: [
-      { keys: ["n"], action: "New thread" },
-      { keys: ["h"], action: "Home" },
-      { keys: ["s"], action: "Search threads" },
-      { keys: [","], action: "Settings" },
-      { keys: ["]"], action: "Next thread" },
-      { keys: ["["], action: "Previous thread" },
-      { keys: ["e"], action: "Settle the focused thread" },
-      { keys: ["E"], action: "Undo the latest archive" },
-      { keys: ["?"], action: "Open this cheatsheet" },
-    ],
+    note: "bb commands. Bind or change their keys in Settings → Keyboard.",
+    entries: commandEntries("Navigation"),
   },
   {
     title: "Composer",
-    entries: [
-      { keys: ["i"], action: "Focus the composer" },
-      { keys: ["m"], action: "Model" },
-      { keys: ["p"], action: "Project" },
-      { keys: ["l"], action: "Machine" },
-      { keys: ["b"], action: "Branch" },
-      { keys: ["a"], action: "Permission mode" },
-    ],
+    note: "bb commands. Bind or change their keys in Settings → Keyboard.",
+    entries: commandEntries("Composer"),
   },
   {
     title: "Escape shortcuts",
@@ -116,3 +117,87 @@ export const CHEATSHEET: readonly CheatsheetSection[] = [
     ],
   },
 ];
+
+export type KeybindingPlatform = "mac" | "windows" | "linux";
+
+/** One saved Settings → Keyboard override, as `sdk.system.config()` returns it. */
+export interface KeybindingOverride {
+  readonly command: string;
+  readonly platform?: KeybindingPlatform;
+  readonly shortcut: Required<PluginCommandShortcut> | null;
+}
+
+/** bb's platform detection for keybindings, from `navigator.platform`. */
+export function keybindingPlatform(platform: string): KeybindingPlatform {
+  if (/Mac|iPhone|iPad|iPod|darwin/u.test(platform)) return "mac";
+  if (/Win/u.test(platform)) return "windows";
+  return "linux";
+}
+
+/**
+ * The shortcut bb dispatches for a vimium command: a platform-scoped binding,
+ * then an unscoped one. Null when unbound, since the commands have no default.
+ */
+export function boundShortcut(
+  commandId: string,
+  overrides: readonly KeybindingOverride[],
+  platform: KeybindingPlatform,
+): PluginCommandShortcut | null {
+  const override =
+    overrides.find((entry) => entry.command === commandId && entry.platform === platform) ??
+    overrides.find((entry) => entry.command === commandId && entry.platform === undefined);
+  return override?.shortcut ?? null;
+}
+
+// bb stores a shifted symbol as its unshifted key plus Shift.
+const SHIFTED_SYMBOLS: Readonly<Record<string, string>> = {
+  "`": "~",
+  "1": "!",
+  "2": "@",
+  "3": "#",
+  "4": "$",
+  "5": "%",
+  "6": "^",
+  "7": "&",
+  "8": "*",
+  "9": "(",
+  "0": ")",
+  "-": "_",
+  "[": "{",
+  "]": "}",
+  "\\": "|",
+  ";": ":",
+  "'": '"',
+  ",": "<",
+  ".": ">",
+  "/": "?",
+};
+
+/**
+ * A shortcut as the cheatsheet's `+`-joined key label. A lone Shift folds into
+ * the key it produces, so Shift+e reads `E` and Shift+/ reads `?`.
+ */
+export function shortcutLabel(shortcut: PluginCommandShortcut, mac: boolean): string {
+  const parts = modifierNames(shortcut, mac);
+  if (parts.length === 1 && shortcut.shift) {
+    const typed = shiftedCharacter(shortcut.key);
+    if (typed !== undefined) return typed;
+  }
+  // A bare letter reads as typed; in a chord it reads like a key cap.
+  parts.push(parts.length === 0 ? shortcut.key : shortcut.key.toUpperCase());
+  return parts.join("+");
+}
+
+function modifierNames(shortcut: PluginCommandShortcut, mac: boolean): string[] {
+  const names: string[] = [];
+  if (shortcut.control || (shortcut.mod && !mac)) names.push("Ctrl");
+  if (shortcut.meta || (shortcut.mod && mac)) names.push(mac ? "Cmd" : "Meta");
+  if (shortcut.alt) names.push(mac ? "Option" : "Alt");
+  if (shortcut.shift) names.push("Shift");
+  return names;
+}
+
+/** The character Shift plus `key` types, or undefined for a non-character key. */
+function shiftedCharacter(key: string): string | undefined {
+  return /^[a-z]$/iu.test(key) ? key.toUpperCase() : SHIFTED_SYMBOLS[key];
+}

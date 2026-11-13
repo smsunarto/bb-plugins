@@ -1,4 +1,5 @@
 import "./helpers/dom.ts";
+import "./helpers/bb-keybindings.ts";
 import { afterEach, describe, expect, test } from "bun:test";
 import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
@@ -6,8 +7,10 @@ import { CHEATSHEET } from "../src/app/cheatsheet.ts";
 import { mountLinkHints, setBbNavigation } from "../src/app/link-hints.ts";
 
 function pressKey(key: string, repeat = false): boolean {
+  // A browser reports `?` with Shift held, and bb matches it as Shift+/.
+  const shiftKey = key === "?";
   return window.dispatchEvent(
-    new KeyboardEvent("keydown", { key, repeat, bubbles: true, cancelable: true }),
+    new KeyboardEvent("keydown", { key, shiftKey, repeat, bubbles: true, cancelable: true }),
   );
 }
 
@@ -40,10 +43,9 @@ describe("thread navigation overlay", () => {
     expect(pressKey("]")).toBe(false);
     expect(slot.inspection.navigateCalls).toEqual([{ method: "toThread", threadId: "thr_2" }]);
 
-    // Unmounted, the overlay takes its opener with it, and the key falls
-    // through instead of claiming a navigation that cannot happen.
+    // Unmounted, the overlay takes its opener with it.
     slot.lifecycle.unmount();
-    expect(pressKey("]")).toBe(true);
+    pressKey("]");
     expect(slot.inspection.navigateCalls).toHaveLength(1);
 
     void dispose();
@@ -73,11 +75,29 @@ describe("thread navigation overlay", () => {
     ]);
 
     const panel = app.navPanels.find(({ path }) => path === "cheatsheet")!;
-    const page = renderSlot(panel, { subPath: "" });
+    const shortcut = { key: "/", shift: true, mod: false, meta: false, control: false, alt: false };
+    const page = renderSlot(
+      panel,
+      { subPath: "" },
+      {
+        pluginId: "vimium",
+        sdk: {
+          system: {
+            config: async () => ({
+              keybindingOverrides: [{ command: "plugin:vimium/cheatsheet", shortcut }],
+            }),
+          },
+        } as never,
+      },
+    );
     for (const section of CHEATSHEET) {
       expect(page.getByRole("heading", { name: section.title })).toBeDefined();
     }
-    expect(page.getByText("Open this cheatsheet")).toBeDefined();
+    // Bound commands show the user's keys; the rest say so.
+    const row = await page.findByText("Open the Vimium cheatsheet");
+    expect(row.previousElementSibling?.textContent).toBe("?");
+    const branch = page.getByText("Open the branch picker");
+    expect(branch.previousElementSibling?.textContent).toBe("Unbound");
 
     page.lifecycle.unmount();
     slot.lifecycle.unmount();

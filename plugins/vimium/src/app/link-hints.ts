@@ -19,12 +19,10 @@
 // `Cmd+Shift+F` always
 // means the whole screen: it replaces a scoped prompt, and first closes any
 // open popup layer,
-// which would otherwise aria-hide the rest of the page. In idle mode a few
-// plain keys skip the prompt: the pinned control keys (`n`, `h`, `m`, `p`, `l`,
-// `b`, `s`, `,`) drive their control directly, `a` opens permission mode,
-// `[` and `]` step the sidebar's thread list, `e` settles the current thread,
-// and `j`, `k`, and `J` scroll the conversation a step down, a step up, and
-// to the bottom. The
+// which would otherwise aria-hide the rest of the page. In idle mode `j`, `k`,
+// and `J` scroll the conversation a step down, a step up, and to the bottom.
+// The other single keys are bb commands (see VIMIUM_COMMANDS): bb dispatches
+// them and calls back into runVimiumCommand. The
 // transitions and predicates are pure functions so they test without a DOM;
 // only mounting, marker drawing, and activation touch one.
 
@@ -36,6 +34,7 @@ import {
   SCROLL_STEP_PX,
   adjacentThreadIndex,
   directShortcutFor,
+  isTypingKey,
   scrollAmountFor,
   threadIdFromPath,
   type DirectShortcut,
@@ -276,6 +275,35 @@ export interface BbNavigation {
 }
 
 let bbNavigation: BbNavigation | null = null;
+
+// The mounted content script's action runner, for the bb commands app.tsx
+// registers. Null until the script mounts and after it is disposed.
+let commandRunner: ((action: DirectShortcut) => boolean) | null = null;
+
+/**
+ * True when a vimium bb command may run. bb calls this before listing the
+ * palette and before dispatching a keydown; during a keydown, `window.event`
+ * is that keydown. bb gives plugin commands no editable-focus guard, so turn
+ * down a bare key typed into a text field, leaving it to the field. An open
+ * project, machine, or model picker keeps every key for its own search.
+ */
+export function vimiumCommandAvailable(): boolean {
+  if (commandRunner === null) return false;
+  const event = window.event;
+  if (!(event instanceof KeyboardEvent) || event.type !== "keydown") return true;
+  const typing = isTypingKey({
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+    altKey: event.altKey,
+    editableTarget: isEditableEvent(event),
+  });
+  return !typing && nativePickerPopups().length === 0;
+}
+
+/** Runs a vimium bb command's action through the mounted content script. */
+export function runVimiumCommand(action: DirectShortcut): void {
+  commandRunner?.(action);
+}
 
 /** The app overlay supplies BB's navigation while it is mounted. */
 export function setBbNavigation(navigation: BbNavigation | null): void {
@@ -948,9 +976,6 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         editableTarget: isEditableEvent(event),
       });
       if (shortcut !== null) {
-        // A held key repeats; neither one-shot action should run again.
-        if ((shortcut.kind === "undo-archive" || shortcut.kind === "cheatsheet") && event.repeat)
-          return;
         // A shortcut with nothing to act on leaves the key to bb.
         if (!runDirectShortcut(shortcut)) return;
         event.preventDefault();
@@ -1212,9 +1237,11 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   }
 
   const archiveUndo = mountArchiveUndo();
+  commandRunner = runDirectShortcut;
   context.signal.addEventListener(
     "abort",
     () => {
+      if (commandRunner === runDirectShortcut) commandRunner = null;
       archiveUndo.dispose();
       modelSelectionObserver?.disconnect();
     },
@@ -1228,6 +1255,7 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   window.addEventListener("blur", onBlur, { signal: context.signal });
 
   return () => {
+    if (commandRunner === runDirectShortcut) commandRunner = null;
     archiveUndo.dispose();
     modelSelectionObserver?.disconnect();
     exit();

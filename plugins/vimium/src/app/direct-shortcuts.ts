@@ -1,8 +1,10 @@
-// Single keys that act without a hint prompt. Each one either drives a
-// pinned control straight away — the same control its hint label would pick
-// after `f` — steps the sidebar's thread list, or scrolls the conversation.
-// All of them read only in idle mode, with no ctrl, meta, or alt held,
-// outside an editable target, so typing in the composer never trips one.
+// Single keys that act without a hint prompt. Every one except scrolling is a
+// bb command, listed in the palette and bound in Settings → Keyboard, and bb
+// dispatches it. bb refuses a plugin default without Cmd, Ctrl, or Alt, so the
+// single-key bindings live in the user's keyboard settings (README lists
+// them). The scroll keys stay vimium's own, because bb drops repeated keydowns
+// and a held `j` must keep scrolling. Both read only outside an editable
+// target, so typing in the composer never trips one.
 
 import { RESERVED_CONTROLS } from "./hint-labels.ts";
 
@@ -24,37 +26,97 @@ function pinnedControl(char: string): DirectShortcut {
   return { kind: "control", selector: control.selector };
 }
 
-/**
- * The direct keys. The control keys reuse their hint-mode characters so one
- * mnemonic serves both paths. `[`, `]`, `e`, `j`, `k`, and `a` differ from
- * their hint labels on purpose: the hint keeps bb's back, forward,
- * More menu, send, permission-mode, and prompt-actions controls, while the
- * direct key steps threads, settles the current one, scrolls the
- * conversation, and opens permission mode (`a` as in allow, since `k` is
- * scroll up).
- */
-export const DIRECT_SHORTCUTS: ReadonlyMap<string, DirectShortcut> = new Map([
-  ["n", pinnedControl("n")],
-  ["h", pinnedControl("h")],
-  ["m", pinnedControl("m")],
-  ["p", pinnedControl("p")],
-  ["l", pinnedControl("l")],
-  ["b", pinnedControl("b")],
-  ["s", { kind: "thread-search" }],
-  ["a", pinnedControl("k")],
-  [",", pinnedControl(",")],
-  ["i", { kind: "focus-composer" }],
-  ["[", { kind: "thread-step", step: -1 }],
-  ["]", { kind: "thread-step", step: 1 }],
-  ["e", { kind: "settle-thread" }],
-  ["E", { kind: "undo-archive" }],
+export interface VimiumCommand {
+  /** The bb command id, registered as `plugin:<plugin id>/<id>`. */
+  readonly id: string;
+  /** The palette row, Settings → Keyboard row, and cheatsheet row. */
+  readonly title: string;
+  readonly section: "Navigation" | "Composer";
+  readonly action: DirectShortcut;
+}
+
+/** The commands, in cheatsheet order. */
+export const VIMIUM_COMMANDS: readonly VimiumCommand[] = [
+  { id: "new-thread", title: "New thread", section: "Navigation", action: pinnedControl("n") },
+  { id: "home", title: "Home", section: "Navigation", action: pinnedControl("h") },
+  {
+    id: "search-threads",
+    title: "Search threads",
+    section: "Navigation",
+    action: { kind: "thread-search" },
+  },
+  { id: "settings", title: "Settings", section: "Navigation", action: pinnedControl(",") },
+  {
+    id: "next-thread",
+    title: "Next thread",
+    section: "Navigation",
+    action: { kind: "thread-step", step: 1 },
+  },
+  {
+    id: "previous-thread",
+    title: "Previous thread",
+    section: "Navigation",
+    action: { kind: "thread-step", step: -1 },
+  },
+  {
+    id: "settle-thread",
+    title: "Settle the focused thread",
+    section: "Navigation",
+    action: { kind: "settle-thread" },
+  },
+  {
+    id: "undo-archive",
+    title: "Undo the latest archive",
+    section: "Navigation",
+    action: { kind: "undo-archive" },
+  },
+  {
+    id: "cheatsheet",
+    title: "Open the Vimium cheatsheet",
+    section: "Navigation",
+    action: { kind: "cheatsheet" },
+  },
+  {
+    id: "focus-composer",
+    title: "Focus the composer",
+    section: "Composer",
+    action: { kind: "focus-composer" },
+  },
+  { id: "model", title: "Open the model picker", section: "Composer", action: pinnedControl("m") },
+  {
+    id: "project",
+    title: "Open the project picker",
+    section: "Composer",
+    action: pinnedControl("p"),
+  },
+  {
+    id: "machine",
+    title: "Open the machine picker",
+    section: "Composer",
+    action: pinnedControl("l"),
+  },
+  {
+    id: "branch",
+    title: "Open the branch picker",
+    section: "Composer",
+    action: pinnedControl("b"),
+  },
+  {
+    id: "permission-mode",
+    title: "Open permission mode",
+    section: "Composer",
+    action: pinnedControl("k"),
+  },
+];
+
+/** The scroll keys vimium handles itself, since a held key must repeat. */
+export const SCROLL_SHORTCUTS: ReadonlyMap<string, DirectShortcut> = new Map([
   ["j", { kind: "scroll", motion: "down" }],
   ["k", { kind: "scroll", motion: "up" }],
   ["J", { kind: "scroll", motion: "bottom" }],
-  ["?", { kind: "cheatsheet" }],
 ]);
 
-/** The keydown facts the direct-shortcut decision reads. */
+/** The keydown facts the scroll-key decision reads. */
 export interface DirectKey {
   readonly key: string;
   readonly ctrlKey: boolean;
@@ -65,14 +127,31 @@ export interface DirectKey {
 }
 
 /**
- * The shortcut a plain keydown maps to in idle mode, or null. Shift is not a
- * gate: the exact-key lookup already leaves `M` and `{` unbound, and `J`
- * needs it.
+ * The scroll a plain keydown maps to in idle mode, or null. Shift is not a
+ * gate: the exact-key lookup already leaves `K` unbound, and `J` needs it.
  */
 export function directShortcutFor(key: DirectKey): DirectShortcut | null {
   if (key.ctrlKey || key.metaKey || key.altKey) return null;
   if (key.editableTarget) return null;
-  return DIRECT_SHORTCUTS.get(key.key) ?? null;
+  return SCROLL_SHORTCUTS.get(key.key) ?? null;
+}
+
+/** The keydown facts that decide whether a bb command keypress is typing. */
+export interface CommandKey {
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  readonly altKey: boolean;
+  readonly editableTarget: boolean;
+}
+
+/**
+ * True when a keydown bb is about to dispatch as a vimium command belongs to
+ * a text field instead. bb gives plugin commands no editable-focus guard, so
+ * a bare `n` would otherwise open a new thread while typing. A chord the user
+ * rebinds with Ctrl, Cmd, or Alt still runs from the composer.
+ */
+export function isTypingKey(key: CommandKey): boolean {
+  return key.editableTarget && !key.ctrlKey && !key.metaKey && !key.altKey;
 }
 
 export const SCROLL_STEP_PX = 60;

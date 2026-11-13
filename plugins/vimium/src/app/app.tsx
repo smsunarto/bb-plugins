@@ -10,7 +10,13 @@ import {
   useSidebarSplitLayout,
 } from "@get-bb/plugin-sdk/app";
 import { CheatsheetPage } from "./cheatsheet-page.tsx";
-import { mountLinkHints, setBbNavigation } from "./link-hints.ts";
+import { VIMIUM_COMMANDS } from "./direct-shortcuts.ts";
+import {
+  mountLinkHints,
+  runVimiumCommand,
+  setBbNavigation,
+  vimiumCommandAvailable,
+} from "./link-hints.ts";
 
 import {
   setProviderShortcuts,
@@ -155,4 +161,12 @@ export default definePluginApp((app) => {
     id: "link-hints",
     mount: mountLinkHints,
   });
+  for (const command of VIMIUM_COMMANDS) {
+    app.commands.register({
+      id: command.id,
+      title: command.title,
+      isAvailable: vimiumCommandAvailable,
+      run: () => runVimiumCommand(command.action),
+    });
+  }
 });
