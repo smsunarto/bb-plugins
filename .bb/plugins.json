@@ -90,6 +90,10 @@
     {
       "name": "source-control",
       "source": "./plugins/source-control"
+    },
+    {
+      "name": "scott-secrets",
+      "source": "./plugins/scott-secrets"
     }
   ]
 }

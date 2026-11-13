@@ -504,7 +504,7 @@
     },
     "plugins/genui": {
       "name": "@smsunarto/bb-plugin-genui",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "dependencies": {
         "@bb-plugins/instructions": "workspace:*",
         "@bb-plugins/video-player": "workspace:*",
@@ -854,6 +854,23 @@
         "tailwind-merge": "^3.4.0",
         "typescript": "^7.0.0",
         "vitest": "^4.1.1",
+      },
+    },
+    "plugins/scott-secrets": {
+      "name": "@smsunarto/bb-plugin-scott-secrets",
+      "version": "0.1.0",
+      "dependencies": {
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@bb-plugins/ui": "workspace:*",
+        "@get-bb/plugin-sdk": "0.6.132",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "bun-types": "^1.4.0",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "typescript": "^6.0.0",
       },
     },
     "plugins/scott-tasks": {
@@ -1999,6 +2016,8 @@
     "@smsunarto/bb-plugin-neatlogs": ["@smsunarto/bb-plugin-neatlogs@workspace:plugins/neatlogs"],
 
     "@smsunarto/bb-plugin-scott-docs": ["@smsunarto/bb-plugin-scott-docs@workspace:plugins/scott-docs"],
+
+    "@smsunarto/bb-plugin-scott-secrets": ["@smsunarto/bb-plugin-scott-secrets@workspace:plugins/scott-secrets"],
 
     "@smsunarto/bb-plugin-scott-tasks": ["@smsunarto/bb-plugin-scott-tasks@workspace:plugins/scott-tasks"],
 

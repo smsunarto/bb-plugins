@@ -1,0 +1,62 @@
+{
+  "name": "@smsunarto/bb-plugin-scott-secrets",
+  "version": "0.1.0",
+  "description": "Fork of bb's Secrets plugin: secure dotenv requests plus approval-gated sudo with an in-memory password cache.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/scott-secrets",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/scott-secrets"
+  },
+  "type": "module",
+  "private": true,
+  "engines": {
+    "bb": ">=0.49.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.132"
+  },
+  "bb": {
+    "name": "Secrets",
+    "description": "Request credentials into dotenv files, and run approved sudo commands without retyping the password.",
+    "branding": {
+      "icon": "Lock"
+    },
+    "server": "./src/server/server.ts",
+    "app": "./src/app/app.tsx",
+    "host": "./src/host/host.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "files": [
+    "dist/*.js",
+    "dist/*.css",
+    "dist/*.json",
+    "src/",
+    "!src/**/*.test.ts",
+    "skills/",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@bb-plugins/ui": "workspace:*",
+    "@get-bb/plugin-sdk": "0.6.132",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "bun-types": "^1.4.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "dev": "bb plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test test",
+    "clean": "rm -rf dist"
+  }
+}
