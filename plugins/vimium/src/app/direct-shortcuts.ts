@@ -11,6 +11,7 @@ import { RESERVED_CONTROLS } from "./hint-labels.ts";
 export type ScrollMotion = "down" | "up" | "bottom";
 
 export type DirectShortcut =
+  | { readonly kind: "hints" }
   | { readonly kind: "control"; readonly selector: string }
   | { readonly kind: "focus-composer" }
   | { readonly kind: "thread-search" }
@@ -31,12 +32,13 @@ export interface VimiumCommand {
   readonly id: string;
   /** The palette row, Settings → Keyboard row, and cheatsheet row. */
   readonly title: string;
-  readonly section: "Navigation" | "Composer";
+  readonly section: "Link hints" | "Navigation" | "Composer";
   readonly action: DirectShortcut;
 }
 
 /** The commands, in cheatsheet order. */
 export const VIMIUM_COMMANDS: readonly VimiumCommand[] = [
+  { id: "show-hints", title: "Show hints", section: "Link hints", action: { kind: "hints" } },
   { id: "new-thread", title: "New thread", section: "Navigation", action: pinnedControl("n") },
   { id: "home", title: "Home", section: "Navigation", action: pinnedControl("h") },
   {

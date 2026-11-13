@@ -4,7 +4,7 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 
 ## What it does
 
-- Press `f` anywhere outside a text field. Every clickable element on screen gets a small yellow hint label.
+- Press `f` anywhere outside a text field. Every clickable element on screen gets a small yellow hint label. `f` is the bb command Show hints: bind it as shown under Direct keys, or to any key in Settings → Keyboard. `Cmd+Shift+F` stays Vimium's own key, because bb runs commands after the page's own key listeners and Agentation claims the same chord there first.
 - Native input autofocus is preserved. Press `i`, click the composer, or Tab to it to focus it manually.
 - Press `Cmd+Shift+F` anywhere, including bb's composer. `Escape` also leaves the composer. Press plain `f` for hints; `Escape` then `;` changes speed.
 - Type a label's letters to click that element. Already-typed letters dim, and non-matching labels disappear.
@@ -20,6 +20,7 @@ Vimium-style link hints for keyboard navigation of the bb UI.
 Outside a text field, single keys act without a hint prompt. Every one except scrolling is a bb command named under Vimium in Settings → Keyboard and the Quick palette, so you rebind, clear, or run them there. bb accepts single-key plugin shortcuts only as user bindings, never as plugin defaults, so the commands ship unbound. Bind them once:
 
 ```sh
+bb settings keyboard set plugin:vimium/show-hints f
 bb settings keyboard set plugin:vimium/new-thread n
 bb settings keyboard set plugin:vimium/home h
 bb settings keyboard set plugin:vimium/search-threads s

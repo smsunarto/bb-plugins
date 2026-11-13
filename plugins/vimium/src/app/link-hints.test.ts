@@ -4,13 +4,11 @@ import {
   activeTransition,
   isEditableProbe,
   isForceChord,
-  isIdleTrigger,
   isViableCandidate,
   opensDropdown,
   type CandidateView,
   type DropdownProbe,
   type EditableProbe,
-  type IdleKey,
 } from "./link-hints.ts";
 
 function probe(overrides: Partial<EditableProbe> = {}): EditableProbe {
@@ -58,51 +56,15 @@ describe("isEditableProbe", () => {
   });
 });
 
-describe("isIdleTrigger", () => {
-  function idleKey(overrides: Partial<IdleKey> = {}): IdleKey {
-    return {
-      key: "f",
-      code: "KeyF",
-      ctrlKey: false,
-      metaKey: false,
-      altKey: false,
-      shiftKey: false,
-      editableTarget: false,
-      ...overrides,
-    };
-  }
+describe("isForceChord", () => {
+  const chord = { code: "KeyF", metaKey: true, shiftKey: true, ctrlKey: false, altKey: false };
 
-  test("plain f triggers outside an editable target only", () => {
-    expect(isIdleTrigger(idleKey())).toBe(true);
-    expect(isIdleTrigger(idleKey({ editableTarget: true }))).toBe(false);
-  });
-
-  test("shifted or non-f keys do not trigger", () => {
-    expect(isIdleTrigger(idleKey({ key: "F", shiftKey: true }))).toBe(false);
-    expect(isIdleTrigger(idleKey({ key: "g", code: "KeyG" }))).toBe(false);
-  });
-
-  test("ctrl and alt chords never trigger", () => {
-    expect(isIdleTrigger(idleKey({ ctrlKey: true }))).toBe(false);
-    expect(isIdleTrigger(idleKey({ altKey: true }))).toBe(false);
-    expect(isIdleTrigger(idleKey({ metaKey: true }))).toBe(false);
-  });
-
-  test("Cmd+Shift+F triggers even inside an editable target", () => {
-    const chord = { key: "F", metaKey: true, shiftKey: true } as const;
-    expect(isIdleTrigger(idleKey({ ...chord, editableTarget: true }))).toBe(true);
-    expect(isIdleTrigger(idleKey(chord))).toBe(true);
-    expect(isIdleTrigger(idleKey({ ...chord, code: "KeyC", key: "C" }))).toBe(false);
-    expect(isIdleTrigger(idleKey({ ...chord, altKey: true }))).toBe(false);
-    expect(isIdleTrigger(idleKey({ ...chord, ctrlKey: true }))).toBe(false);
-  });
-
-  test("the force chord matches exactly Cmd+Shift+F", () => {
-    const chord = { code: "KeyF", ctrlKey: false, metaKey: true, altKey: false, shiftKey: true };
+  test("matches exactly Cmd+Shift+F", () => {
     expect(isForceChord(chord)).toBe(true);
     expect(isForceChord({ ...chord, metaKey: false })).toBe(false);
     expect(isForceChord({ ...chord, shiftKey: false })).toBe(false);
     expect(isForceChord({ ...chord, altKey: true })).toBe(false);
+    expect(isForceChord({ ...chord, ctrlKey: true })).toBe(false);
     expect(isForceChord({ ...chord, code: "KeyG" })).toBe(false);
   });
 });

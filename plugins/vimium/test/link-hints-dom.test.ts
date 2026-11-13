@@ -395,8 +395,10 @@ describe("mountLinkHints", () => {
 
     const input = document.getElementById("input") as HTMLElement;
     let received = 0;
-    input.addEventListener("keydown", () => {
-      received += 1;
+    // bb runs the force chord from its bubbling listener, so only the hint key
+    // must stay away from the input.
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "i") received += 1;
     });
     pressKey("F", input, { code: "KeyF", metaKey: true, shiftKey: true });
     expect(document.querySelector(".vimium-hint-layer")).not.toBeNull();

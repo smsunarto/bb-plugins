@@ -9,6 +9,7 @@ import { loadPluginApp } from "@get-bb/plugin-sdk/testing/app";
 
 /** The README's single-key bindings, by command id. */
 export const README_BINDINGS: Readonly<Record<string, PluginCommandShortcut>> = {
+  "show-hints": { key: "f" },
   "new-thread": { key: "n" },
   home: { key: "h" },
   "search-threads": { key: "s" },

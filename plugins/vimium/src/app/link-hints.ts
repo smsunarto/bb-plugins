@@ -1,8 +1,9 @@
 // @smsunarto/bb-plugin-vimium — Vimium-style `f` link hints over the bb app shell.
 //
 // One content script, one capture-phase keydown listener, one state machine:
-// idle until a plain `f` lands outside an editable target — or `Cmd+Shift+F`
-// lands anywhere — then a marker per
+// idle until bb runs the Show hints command (bound to a plain `f`, which
+// defers to an editable target) or `Cmd+Shift+F` lands anywhere, then a
+// marker per
 // visible clickable element until the typed characters pick one — or Escape,
 // Backspace past the start, a non-hint key, a scroll, a resize, or a blur
 // exits. Built-in composer controls keep pinned single-character labels and
@@ -118,38 +119,17 @@ export function activeTransition(
   return { kind: "retype", typed: next };
 }
 
-/** The keydown facts the idle-trigger decision reads. */
-export interface IdleKey {
-  readonly key: string;
-  readonly code: string;
-  readonly ctrlKey: boolean;
-  readonly metaKey: boolean;
-  readonly altKey: boolean;
-  readonly shiftKey: boolean;
-  readonly editableTarget: boolean;
-}
-
 /**
- * True for `Cmd+Shift+F`, which opens hints from anywhere and, while a
- * scoped reprompt is up, replaces it with a whole-screen prompt. Matched by
- * code, since shift changes the reported key.
+ * True for `Cmd+Shift+F`, which opens hints from anywhere and, while a scoped
+ * reprompt is up, replaces it with a whole-screen prompt. Matched by code,
+ * since shift changes the reported key. It stays Vimium's own key rather than
+ * a bb command: bb dispatches commands after the page's own listeners, and
+ * Agentation claims the same chord there first.
  */
 export function isForceChord(
-  key: Pick<IdleKey, "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
+  key: Pick<KeyboardEvent, "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">,
 ): boolean {
   return key.metaKey && key.shiftKey && !key.ctrlKey && !key.altKey && key.code === "KeyF";
-}
-
-/**
- * True when the keydown opens hint mode from idle. Plain `f` defers to an
- * editable target; the force chord does not, because bb autofocuses its
- * composer and would otherwise make hints unreachable without a click or an
- * Escape.
- */
-export function isIdleTrigger(key: IdleKey): boolean {
-  if (key.metaKey) return isForceChord(key);
-  if (key.ctrlKey || key.altKey) return false;
-  return key.key === "f" && !key.editableTarget;
 }
 
 /** The element facts the editable-target decision reads. */
@@ -788,6 +768,8 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
 
   function runDirectShortcut(shortcut: DirectShortcut): boolean {
     switch (shortcut.kind) {
+      case "hints":
+        return mode.kind === "idle" && enterTopLevel();
       case "undo-archive":
         return archiveUndo.undoLatest();
       case "focus-composer": {
@@ -947,26 +929,16 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
       }
     }
     scroller.noteKeydown({ code: event.code, repeat: event.repeat });
-    if (mode.kind === "idle" && !isForceChord(event)) {
-      const idleKey = {
-        key: event.key,
-        code: event.code,
-        ctrlKey: event.ctrlKey,
-        metaKey: event.metaKey,
-        altKey: event.altKey,
-        shiftKey: event.shiftKey,
-        editableTarget: isEditableEvent(event),
-      };
-      // An open native picker keeps every key. Finding one scans the document, so look only for
-      // a key Vimium would otherwise act on: typing in the composer never is one.
-      const wanted = directShortcutFor(idleKey) !== null || isIdleTrigger(idleKey);
-      if (!wanted || nativePickerPopups().length > 0) {
-        // Acts only on Enter in an armed model search, which sits inside an open picker.
-        followModelEnter(event);
-        return;
+    if (isForceChord(event)) {
+      exit();
+      if (enterTopLevelDismissing()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
       }
+      return;
     }
     if (mode.kind === "idle") {
+      // Idle, Vimium's own keys are the scroll keys; bb dispatches the rest.
       const shortcut = directShortcutFor({
         key: event.key,
         ctrlKey: event.ctrlKey,
@@ -975,37 +947,17 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
         shiftKey: event.shiftKey,
         editableTarget: isEditableEvent(event),
       });
-      if (shortcut !== null) {
-        // A shortcut with nothing to act on leaves the key to bb.
-        if (!runDirectShortcut(shortcut)) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
+      // An open native picker keeps every key. Finding one scans the document, so look only for
+      // a key Vimium would otherwise act on: typing in the composer never is one.
+      if (shortcut === null || nativePickerPopups().length > 0) {
+        // Acts only on Enter in an armed model search, which sits inside an open picker.
+        followModelEnter(event);
         return;
       }
-    }
-    if (mode.kind === "idle") {
-      const trigger = isIdleTrigger({
-        key: event.key,
-        code: event.code,
-        ctrlKey: event.ctrlKey,
-        metaKey: event.metaKey,
-        altKey: event.altKey,
-        shiftKey: event.shiftKey,
-        editableTarget: isEditableEvent(event),
-      });
-      if (!trigger) return;
-      const opened = isForceChord(event) ? enterTopLevelDismissing() : enterTopLevel();
-      if (!opened) return;
+      // A scroll with no conversation to move leaves the key to bb.
+      if (!runDirectShortcut(shortcut)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      return;
-    }
-    if (isForceChord(event)) {
-      exit();
-      if (enterTopLevelDismissing()) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }
       return;
     }
     if (event.ctrlKey || event.metaKey || event.altKey) {

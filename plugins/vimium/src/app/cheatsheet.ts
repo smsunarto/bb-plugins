@@ -64,7 +64,7 @@ export const CHEATSHEET: readonly CheatsheetSection[] = [
     title: "Link hints",
     note: "Every clickable element on screen gets a yellow label. Type it to click.",
     entries: [
-      { keys: ["f"], action: "Show hints" },
+      ...commandEntries("Link hints"),
       { keys: ["Cmd+Shift+F"], action: "Show hints from anywhere, even the composer" },
       { keys: ["Backspace"], action: "Drop the last typed letter" },
       { keys: ["Escape"], action: "Leave hint mode" },
