@@ -612,7 +612,8 @@ function ThreadRowLink({
           if (nestActive) return;
           const tree =
             event.currentTarget.closest("[data-sidebar-thread-tree]") ??
-            event.currentTarget.closest("ul");
+            // A family's own list holds only its children, not their parent.
+            event.currentTarget.closest("ul:not([data-gtd-family])");
           const rows = Array.from(
             tree?.querySelectorAll<HTMLAnchorElement>("[data-sidebar-thread-id]") ?? [],
           );

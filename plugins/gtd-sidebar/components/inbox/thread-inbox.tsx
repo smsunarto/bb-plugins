@@ -1,5 +1,13 @@
 import { SlidingDisclosure } from "./sliding-disclosure";
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -82,6 +90,7 @@ import {
   estimateInboxItemSize,
   shelfKey,
   windowSegments,
+  type InboxWindowSegment,
 } from "../../lib/inbox-window";
 
 const ALL_PROJECTS = "__all__";
@@ -169,7 +178,7 @@ function InboxList({
     () => projects.filter((project) => !project.isPersonal).map((project) => project.id),
     [projects],
   );
-  const { tree, shelves, toggleThread, revealFamily } = useInboxTree(
+  const { tree, shelves, foldingThreads, toggleThread, revealFamily } = useInboxTree(
     threads,
     lifecycle,
     scope,
@@ -382,7 +391,9 @@ function InboxList({
     const start = windowLayout.rowsStart.get(key);
     return start === undefined
       ? null
-      : windowedRows(inboxWindow, start, rows, gapFirst, (row) => renderRow(shelf, row));
+      : windowedRows(inboxWindow, start, rows, gapFirst, foldingThreads, (row) =>
+          renderRow(shelf, row),
+        );
   };
   const renderGroups = (shelf: InboxShelf, groups: readonly ProjectGroupRows[]) => {
     const groupIds = groups.map((group) => group.projectId);
@@ -692,42 +703,73 @@ function useShelfWindow(
  * A container's rows, windowed: the rows in and near view mount in their
  * wrappers, and each run between them collapses into one placeholder as tall
  * as the rows it stands for. The placeholder lists those threads for bb's
- * next/previous-thread keys, which walk the rows in DOM order.
+ * next/previous-thread keys, which walk the rows in DOM order. A family's
+ * children draw in a sliding panel after its row, so it folds the way a
+ * project group does.
  */
 function windowedRows(
   inboxWindow: InboxWindow,
   start: number,
   rows: readonly VisibleInboxRow[],
   gapFirst: boolean,
+  foldingThreads: ReadonlySet<string>,
   renderRow: (row: VisibleInboxRow) => React.ReactNode,
 ) {
-  return windowSegments(start, rows.length, inboxWindow.mounted).map((segment) => {
-    if (segment.kind === "placeholder") {
+  const placeholder = (from: number, to: number) => (
+    <li
+      key={`placeholder:${from}`}
+      aria-hidden
+      className="list-none"
+      style={{ height: inboxWindow.span(start + from, start + to) }}
+      data-sidebar-windowed-nav={encodeWindowedNav(rows.slice(from, to))}
+    />
+  );
+  const draw = (segments: readonly InboxWindowSegment[]): React.ReactNode[] =>
+    segments.map((segment) => {
+      if (segment.kind === "placeholder") return placeholder(segment.from, segment.to);
+      const row = rows[segment.offset]!;
+      const threadId = row.node.thread.id;
       return (
-        <li
-          key={`placeholder:${segment.from}`}
-          aria-hidden
-          className="list-none"
-          style={{ height: inboxWindow.span(start + segment.from, start + segment.to) }}
-          data-sidebar-windowed-nav={encodeWindowedNav(rows.slice(segment.from, segment.to))}
-        />
+        <Fragment key={threadId}>
+          {segment.mounted ? (
+            <li
+              key="row"
+              ref={inboxWindow.measureRef}
+              data-index={start + segment.offset}
+              data-gtd-row={threadId}
+              // The gap lives on the row, not the list, so a measured row
+              // carries it and a placeholder can stand in for it exactly.
+              className={cn("list-none", (gapFirst || segment.offset > 0) && "mt-0.5")}
+            >
+              {renderRow(row)}
+            </li>
+          ) : (
+            placeholder(segment.offset, segment.offset + 1)
+          )}
+          {segment.family === null ? null : (
+            <li key="family" className="list-none">
+              <SlidingDisclosure
+                open={row.expanded}
+                appear={false}
+                animate={foldingThreads.has(threadId)}
+              >
+                <ul data-gtd-family="" className="flex flex-col">
+                  {draw(segment.family)}
+                </ul>
+              </SlidingDisclosure>
+            </li>
+          )}
+        </Fragment>
       );
-    }
-    const row = rows[segment.offset]!;
-    return (
-      <li
-        key={row.node.thread.id}
-        ref={inboxWindow.measureRef}
-        data-index={start + segment.offset}
-        data-gtd-row={row.node.thread.id}
-        // The gap lives on the row, not the list, so a measured row carries
-        // it and a placeholder can stand in for it exactly.
-        className={cn("list-none", (gapFirst || segment.offset > 0) && "mt-0.5")}
-      >
-        {renderRow(row)}
-      </li>
-    );
-  });
+    });
+  return draw(
+    windowSegments(
+      start,
+      rows.map((row) => row.depth),
+      (offset) => rows[offset]!.node.children.length > 0,
+      inboxWindow.mounted,
+    ),
+  );
 }
 
 /**
@@ -964,7 +1006,7 @@ function useInboxTree(
       ),
     ];
   }, [threads]);
-  const { collapsedThreads, toggleThread } = useCollapsedThreads(familyIds);
+  const { collapsedThreads, foldingThreads, toggleThread } = useCollapsedThreads(familyIds);
   // The arrival memory lives for the mount: a row keeps the place it earned
   // when it entered its shelf until the shelf itself changes.
   const [arrivals] = useState(createShelfArrivals);
@@ -1004,7 +1046,7 @@ function useInboxTree(
   const revealFamily = useCommittedEvent((threadId: string) => {
     if (collapsedThreads.has(threadId)) toggleThread(threadId);
   });
-  return { tree, shelves, toggleThread, revealFamily };
+  return { tree, shelves, foldingThreads, toggleThread, revealFamily };
 }
 
 /**

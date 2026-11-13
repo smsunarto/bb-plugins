@@ -89,16 +89,52 @@ describe("buildInboxWindow", () => {
 });
 
 describe("windowSegments", () => {
+  const none = () => false;
+
   it("mounts the given rows and folds each run between them into one placeholder", () => {
-    expect(windowSegments(10, 6, new Set([9, 12, 13, 16]))).toEqual([
+    expect(windowSegments(10, [0, 0, 0, 0, 0, 0], none, new Set([9, 12, 13, 16]))).toEqual([
       { kind: "placeholder", from: 0, to: 2 },
-      { kind: "row", offset: 2 },
-      { kind: "row", offset: 3 },
+      { kind: "row", offset: 2, mounted: true, family: null },
+      { kind: "row", offset: 3, mounted: true, family: null },
       { kind: "placeholder", from: 4, to: 6 },
     ]);
-    expect(windowSegments(0, 2, new Set([0, 1]))).toEqual([
-      { kind: "row", offset: 0 },
-      { kind: "row", offset: 1 },
+  });
+
+  it("draws a family inside its parent and keeps placeholders within one level", () => {
+    // a, a1, a2, a2x, b
+    const depths = [0, 1, 1, 2, 0];
+    const families = new Set([0, 2]);
+    expect(windowSegments(0, depths, (offset) => families.has(offset), new Set([0, 3]))).toEqual([
+      {
+        kind: "row",
+        offset: 0,
+        mounted: true,
+        family: [
+          { kind: "placeholder", from: 1, to: 2 },
+          {
+            kind: "row",
+            offset: 2,
+            mounted: false,
+            family: [{ kind: "row", offset: 3, mounted: true, family: null }],
+          },
+        ],
+      },
+      { kind: "placeholder", from: 4, to: 5 },
+    ]);
+  });
+
+  it("folds a family with nothing mounted into its siblings' placeholder", () => {
+    const depths = [0, 1, 1, 0, 0];
+    expect(windowSegments(0, depths, (offset) => offset === 0, new Set([4]))).toEqual([
+      { kind: "placeholder", from: 0, to: 4 },
+      { kind: "row", offset: 4, mounted: true, family: null },
+    ]);
+  });
+
+  it("keeps a folded family's empty panel on its row", () => {
+    expect(windowSegments(0, [0, 0], (offset) => offset === 0, new Set([0, 1]))).toEqual([
+      { kind: "row", offset: 0, mounted: true, family: [] },
+      { kind: "row", offset: 1, mounted: true, family: null },
     ]);
   });
 });

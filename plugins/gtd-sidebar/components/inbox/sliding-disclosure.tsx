@@ -51,6 +51,16 @@ function viewPanel(panel: HTMLElement): PanelView {
 
 interface SlidingDisclosureProps {
   open: boolean;
+  /**
+   * Slide open on mount (default). A windowed panel mounts as it scrolls
+   * into view, which is no fold, so it opts out.
+   */
+  appear?: boolean;
+  /**
+   * Animate this change of `open` (default). False flips it at once, for a
+   * fold no click asked for, such as saved folds loading.
+   */
+  animate?: boolean;
   children?: ReactNode;
 }
 
@@ -85,7 +95,7 @@ export class SlidingDisclosure extends Component<
     // inner height animations here would make its measured destination too short.
     const insideDisclosure = this.panel.current?.parentElement?.closest("[data-gtd-disclosure]");
     const panel = this.panel.current;
-    if (panel && this.props.open && !insideDisclosure) {
+    if (panel && this.props.open && this.props.appear !== false && !insideDisclosure) {
       this.play({ height: 0, opacity: "0", content: null, view: viewPanel(panel) });
     }
   }
@@ -93,6 +103,14 @@ export class SlidingDisclosure extends Component<
   override getSnapshotBeforeUpdate(previous: SlidingDisclosureProps): DisclosureSnapshot | null {
     const panel = this.panel.current;
     if (!panel || previous.open === this.props.open) return null;
+    if (this.props.animate === false) {
+      this.stop();
+      // An exit copy is ours to drop; React's own rows are left for its commit.
+      if (!previous.open) panel.replaceChildren();
+      panel.style.overflow = "visible";
+      panel.style.maskImage = "none";
+      return null;
+    }
     const height = panel.getBoundingClientRect().height;
     const view = viewPanel(panel);
     const opacity = previous.open || this.animations.length ? getComputedStyle(panel).opacity : "0";

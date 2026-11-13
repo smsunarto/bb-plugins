@@ -20,6 +20,12 @@ const NO_INTENTS: ReadonlyMap<string, FoldIntent> = new Map();
 export interface CollapsedThreadsApi {
   /** Thread ids whose children are folded away. */
   collapsedThreads: ReadonlySet<string>;
+  /**
+   * Families this window folded or opened whose fold is still held over the
+   * reads. A fold animates only for these; one a read brings in, such as
+   * saved folds loading, lands at once.
+   */
+  foldingThreads: ReadonlySet<string>;
   toggleThread(threadId: string): void;
 }
 
@@ -124,5 +130,6 @@ export function useCollapsedThreads(
     setIntents((current) => new Map(current).set(threadId, { collapsed, pending: true }));
     mutate({ threadId, collapsed }).then(answered, answered);
   });
-  return { collapsedThreads, toggleThread };
+  const foldingThreads = useMemo(() => new Set(intents.keys()), [intents]);
+  return { collapsedThreads, foldingThreads, toggleThread };
 }

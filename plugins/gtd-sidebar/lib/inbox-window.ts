@@ -74,34 +74,74 @@ export function buildInboxWindow(
   return { items, headerIndex, rowsStart };
 }
 
-/** A run of a container's rows: mounted one by one, or folded into one placeholder. */
+/**
+ * A container's rows as they draw: each row mounted or standing in a
+ * one-row placeholder, and each run of rows with nothing mounted folded into
+ * one placeholder. `from` and `to` are offsets into the container, `to`
+ * exclusive.
+ */
 export type InboxWindowSegment =
-  | { kind: "row"; offset: number }
+  | {
+      kind: "row";
+      offset: number;
+      /** False draws a one-row placeholder: only rows in its family mount. */
+      mounted: boolean;
+      /**
+       * The row's children, which draw in their own sliding panel so a
+       * family folds the way a group does. Null for a row without children;
+       * empty while the family is folded.
+       */
+      family: InboxWindowSegment[] | null;
+    }
   | { kind: "placeholder"; from: number; to: number };
 
 /**
- * Splits a container's rows, `count` of them from flat index `start`, into
- * the rows that mount and the runs between them that a placeholder stands in
- * for. `from` and `to` are offsets into the container, `to` exclusive.
+ * Splits a container's rows, flat from index `start` in tree order, into the
+ * nested segments they draw as. `depths` holds each row's depth; a row's
+ * family is the rows after it that sit deeper. A placeholder never reaches
+ * into a family with a mounted row, so DOM order stays the flat order bb's
+ * next/previous-thread keys walk.
  */
 export function windowSegments(
   start: number,
-  count: number,
+  depths: readonly number[],
+  hasFamily: (offset: number) => boolean,
   mounted: ReadonlySet<number>,
 ): InboxWindowSegment[] {
-  const segments: InboxWindowSegment[] = [];
-  let runFrom: number | null = null;
+  const count = depths.length;
+  // ends[i]: the offset just past row i's family.
+  const ends = Array.from({ length: count }, () => count);
+  const open: number[] = [];
   for (let offset = 0; offset < count; offset += 1) {
-    if (mounted.has(start + offset)) {
-      if (runFrom !== null) segments.push({ kind: "placeholder", from: runFrom, to: offset });
-      runFrom = null;
-      segments.push({ kind: "row", offset });
-    } else {
-      runFrom ??= offset;
-    }
+    while (open.length && depths[open.at(-1)!]! >= depths[offset]!) ends[open.pop()!] = offset;
+    open.push(offset);
   }
-  if (runFrom !== null) segments.push({ kind: "placeholder", from: runFrom, to: count });
-  return segments;
+  // mountedBefore[i]: mounted rows among the first i.
+  const mountedBefore = [0];
+  for (let offset = 0; offset < count; offset += 1) {
+    mountedBefore.push(mountedBefore[offset]! + (mounted.has(start + offset) ? 1 : 0));
+  }
+  const level = (from: number, to: number): InboxWindowSegment[] => {
+    const segments: InboxWindowSegment[] = [];
+    let run: { kind: "placeholder"; from: number; to: number } | null = null;
+    for (let offset = from; offset < to; offset = ends[offset]!) {
+      const end = ends[offset]!;
+      if (mountedBefore[end] === mountedBefore[offset]) {
+        if (run) run.to = end;
+        else segments.push((run = { kind: "placeholder", from: offset, to: end }));
+        continue;
+      }
+      run = null;
+      segments.push({
+        kind: "row",
+        offset,
+        mounted: mounted.has(start + offset),
+        family: hasFamily(offset) ? level(offset + 1, end) : null,
+      });
+    }
+    return segments;
+  };
+  return level(0, count);
 }
 
 /**
