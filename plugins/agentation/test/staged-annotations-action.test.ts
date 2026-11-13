@@ -173,6 +173,25 @@ test("a context row stays empty while no annotation is waiting", async () => {
   expect(contextSlot.childElementCount).toBe(0);
 });
 
+test("an unreachable plugin server shows no chip in the composer", async () => {
+  let calls = 0;
+  const slot = renderAction({
+    contextRow: true,
+    rpc: {
+      listStagedAnnotations: () => {
+        calls += 1;
+        throw new Error("fetch failed");
+      },
+    },
+  });
+  await waitFor(() => expect(calls).toBe(1));
+  await act(async () => {});
+  const contextSlot = slot.container.querySelector("[data-composer-context-slot]")!;
+  expect(contextSlot.childElementCount).toBe(0);
+  expect(slot.container.querySelector("[data-agentation-staging-action]")).toBeNull();
+  expect(slot.queryByRole("alert")).toBeNull();
+});
+
 test("mentioning every waiting annotation from the chip still focuses the composer", async () => {
   const slot = renderAction({
     contextRow: true,

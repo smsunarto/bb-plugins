@@ -48,9 +48,6 @@ import type { rpcContract } from "@/server.ts";
 
 type Batch =
   | { kind: "loading" }
-  // `attempt` re-keys the alert so a retry that fails the same way is
-  // announced again.
-  | { kind: "failed"; error: string; attempt: number }
   | { kind: "ready"; annotations: StoredAnnotation[]; threadTitles: Record<string, string> };
 
 /** The one thing the list is doing; a `send` with no id sends the whole batch. */
@@ -98,14 +95,11 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
         annotations: result.annotations,
         threadTitles: result.threadTitles,
       });
-    } catch (cause) {
+    } catch {
+      // An unreachable plugin server shows no chip. The next realtime change
+      // or reconnect refreshes the batch and brings the chip back.
       if (sequence !== refreshSequence.current) return;
-      const error = cause instanceof Error ? cause.message : String(cause);
-      setBatch((previous) => ({
-        kind: "failed",
-        error,
-        attempt: previous.kind === "failed" ? previous.attempt + 1 : 1,
-      }));
+      setBatch({ kind: "loading" });
     }
   }, [rpc]);
 
@@ -180,27 +174,6 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
   );
 
   if (batch.kind === "loading") return place(null);
-
-  if (batch.kind === "failed") {
-    return place(
-      <span className="contents" title={`Couldn't load annotations: ${batch.error}`}>
-        <Button
-          type="button"
-          variant="ghost"
-          data-agentation-staging-action=""
-          aria-label="Retry loading annotations"
-          className={cn(asChip ? CHIP_CLASS : ACTION_BUTTON_CLASS, "text-destructive")}
-          onClick={() => void refresh()}
-        >
-          <Icon name="ChatFeedback" className="size-4 shrink-0" aria-hidden="true" />
-          <span className={asChip ? undefined : "text-xs font-medium"}>Retry</span>
-        </Button>
-        <span key={batch.attempt} role="alert" className="sr-only">
-          Couldn't load annotations: {batch.error}
-        </span>
-      </span>,
-    );
-  }
 
   // Beside the composer's own chip for mentioned annotations, the chip holds
   // only the ones still waiting, so the two never count the same annotation.
