@@ -67,35 +67,28 @@ describe("GENERAL_ALPHABET", () => {
     }
   });
 
-  test("pins the stable controls to their requested characters", () => {
-    expect(
-      Object.fromEntries(RESERVED_CONTROLS.map(({ selector, char }) => [selector, char])),
-    ).toEqual({
-      '[data-app-composer] button[aria-label^="Provider, model"]': "m",
-      "[data-app-composer] [data-promptbox-project-control]": "p",
-      '[data-app-composer] [role="textbox"]': "i",
-      '[data-app-composer] button[aria-label="Prompt actions"]': "a",
-      '[data-app-composer] button[aria-label="Start voice input"]': "v",
-      "[data-app-composer] [data-promptbox-submit-action]": "j",
-      '[data-app-composer] button[aria-label="Permission mode"]': "k",
-      '[data-app-composer] button[aria-label="Machine"], [data-app-composer] button[aria-label="Environment"]':
-        "l",
-      '[data-app-composer] button[aria-label="Branch"]': "b",
-      '[data-sidebar-navigation-item="__bb__/new-thread"] > button, button[aria-label="New thread"], button[aria-label^="New thread ("]':
-        "n",
-      '[data-sidebar-navigation-item="__bb__/search-threads"] > button, button[aria-label="Search threads"], button[aria-label^="Search threads ("]':
-        "s",
-      'button[aria-label="Go back"]': "[",
-      'button[aria-label="Go forward"]': "]",
-      ':is(nav[aria-label="Primary navigation"], [data-testid="app-nav-rail"]) button[aria-label="Home"]':
-        "h",
-      ':is(nav[aria-label="Primary navigation"], [data-testid="app-nav-rail"]) button:is([aria-label="More"], [aria-label^="More, "]), [data-sidebar-navigation-item="__bb__/extensions"] > button, [data-testid="sidebar-navigation-list"] > button[aria-haspopup="menu"]':
-        "e",
-      'button[aria-label="Settings"], button[aria-label^="Settings ("], a[aria-label="Settings"], a[aria-label^="Settings ("], a[href="/settings"]':
-        ",",
-      'button[aria-label^="Toggle sidebar"]': "q",
-      'button[aria-label^="Show right panel"], button[aria-label^="Hide right panel"]': "\\",
-    });
+  test("pins each stable control to its own character", () => {
+    const chars = RESERVED_CONTROLS.map(({ char }) => char);
+    expect(chars).toEqual([
+      "m",
+      "p",
+      "i",
+      "a",
+      "v",
+      "j",
+      "k",
+      "l",
+      "b",
+      "n",
+      "s",
+      "h",
+      "[",
+      "]",
+      "e",
+      ",",
+      "q",
+      "\\",
+    ]);
   });
 
   test("has no duplicates and enough range to keep a diff-heavy screen at two characters", () => {

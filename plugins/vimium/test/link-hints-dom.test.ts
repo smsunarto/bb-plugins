@@ -425,6 +425,26 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  test("gtd-sidebar rows and t3-composer's model trigger keep their pinned labels", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div data-app-composer><button id="model" aria-label="GPT-6-Astra" data-t3-model-picker-trigger aria-haspopup="dialog">GPT-6-Astra</button></div>' +
+      '<nav aria-label="Navigation"><button id="new-thread" data-sidebar-navigation-item="__bb__/new-thread">New thread</button>' +
+      '<button id="plugins" data-sidebar-navigation-item="__bb__/extensions">Plugins</button>' +
+      '<button id="more" data-sidebar-navigation-more aria-haspopup="menu">More</button></nav>';
+    for (const [index, id] of ["model", "new-thread", "plugins", "more"].entries()) {
+      giveRect(document.getElementById(id) as HTMLElement, 10, 10 + index * 30);
+    }
+
+    pressKey("f");
+    expect(markers()).toEqual(["m", "n", "dd", "e"]);
+
+    void dispose();
+    controller.abort();
+  });
+
   test("stable app controls keep their reserved single-character labels", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));

@@ -18,7 +18,9 @@ export const DROPDOWN_ALPHABET = "fjdkslahgewcmp";
  */
 export const RESERVED_CONTROLS = [
   {
-    selector: '[data-app-composer] button[aria-label^="Provider, model"]',
+    // bb's composer names the trigger; t3-composer labels it with the model.
+    selector:
+      '[data-app-composer] button[aria-label^="Provider, model"], [data-app-composer] button[data-t3-model-picker-trigger]',
     char: "m",
     nativePicker: "model",
   },
@@ -39,10 +41,11 @@ export const RESERVED_CONTROLS = [
     nativePicker: "machine",
   },
   { selector: '[data-app-composer] button[aria-label="Branch"]', char: "b" },
-  // List rows have stable ids; the rail header loses its label when unbound.
+  // List rows have stable ids, on a wrapper in bb's list and on the row itself
+  // in gtd-sidebar's; the rail header loses its label when unbound.
   {
     selector:
-      '[data-sidebar-navigation-item="__bb__/new-thread"] > button, button[aria-label="New thread"], button[aria-label^="New thread ("]',
+      '[data-sidebar-navigation-item="__bb__/new-thread"] > button, button[data-sidebar-navigation-item="__bb__/new-thread"], button[aria-label="New thread"], button[aria-label^="New thread ("]',
     char: "n",
     fallback: { selector: "[data-sidebar-header-slot] button", text: "New thread" },
   },
@@ -60,7 +63,7 @@ export const RESERVED_CONTROLS = [
   { selector: 'button[aria-label="Go forward"]', char: "]" },
   {
     selector:
-      ':is(nav[aria-label="Primary navigation"], [data-testid="app-nav-rail"]) button:is([aria-label="More"], [aria-label^="More, "]), [data-sidebar-navigation-item="__bb__/extensions"] > button, [data-testid="sidebar-navigation-list"] > button[aria-haspopup="menu"]',
+      ':is(nav[aria-label="Primary navigation"], [data-testid="app-nav-rail"]) button:is([aria-label="More"], [aria-label^="More, "]), [data-sidebar-navigation-item="__bb__/extensions"] > button, [data-testid="sidebar-navigation-list"] > button[aria-haspopup="menu"], button[data-sidebar-navigation-more]',
     char: "e",
   },
   {
