@@ -134,19 +134,25 @@ After focused checks and the affected user flow pass on the separate test instan
 If modifying an existing plugin:
 
 - Run `bb plugin source <id>` and make sure bb is loading the plugin from the correct local path instead of NPM installation, etc. If it's not, reinstall the plugin using local path source.
-- Always use `bb plugin reload <id>` against the live bb and confirm it is running before handoff.
+- Reload without asking: once the checks above pass, run `bb plugin reload <id>` against the live bb and confirm it is running. Other agents' applied or uncommitted work in the live checkout is not a reason to wait or ask.
+- **If another agent has uncommitted edits in the same plugin:** reload anyway when its typecheck and build pass with those edits. If they fail, wait for that agent's thread to go idle and reload then, as the global Version control instructions describe for a busy branch.
 - If the plugin cannot be reloaded, explicitly state that it was not reloaded and explain the blocking reason to the user. Never silently skip the reload.
 - Do not leave a development watcher targeting live; future edits belong in the test-instance loop.
 
 If creating a new plugin:
 
-- Run `bb plugin install [options] <source>` pointing at the user's live bb instance.
+- Run `bb plugin install [options] <source>` pointing at the user's live bb instance, without asking first.
+
+If deleting a plugin the user asked to remove:
+
+- Run `bb plugin remove <id>` on live in the same turn, without asking first, once its folder and catalog entries are gone. Removal deletes that plugin's settings, secrets, and schedules; name each removed plugin in the handoff.
+- Ask first only when the user's request did not cover the plugin, such as one found unused during other work.
 
 When communicating the handoff:
 
 - Explicitly state whether your work has been committed or remains uncommitted.
 - Report the test-instance identity, configuration differences, and verification separately from the final live install/reload.
-- If a plugin was installed or reloaded: insert a heading `Plugin Reloaded` with a bullet list of target plugins.
+- If a plugin was installed, reloaded, or removed: insert a heading `Plugin Reloaded` with a bullet list of target plugins and what happened to each.
 
 ## Traps
 
