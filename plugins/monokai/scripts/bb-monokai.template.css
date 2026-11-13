@@ -645,13 +645,19 @@
   background-color: var(--surface-selected);
 }
 
-/* bb pads some focus rings with a 2px --background offset, which blends into
- * bb's opaque cards. Monokai cards and fields are translucent layers, so the
- * offset paints a #151515 moat inside them. Drop the offset and keep the 25%
- * ring flush on whatever the control sits on. */
-.dark .ring-offset-background:focus-visible,
-.dark .focus-visible\:ring-offset-background:focus-visible {
+/* Focus indicators draw inside their control. bb's rings (Tailwind box-shadow)
+ * and outlines extend 1-3px outside the box, and every `overflow: hidden`
+ * ancestor (truncating rows, message action rows, the sidebar header, scroll
+ * viewports) clips them, so the cut-off edge varied by container. Inside the
+ * box no ancestor can clip them. Rings keep bb's width and color.
+ *
+ * The offset goes too: bb pads some rings with a 2px --background offset that
+ * blends into bb's opaque cards but paints a #151515 moat inside Monokai's
+ * translucent layers. Unlayered, this outranks every Tailwind focus utility. */
+.dark :focus-visible {
+  --tw-ring-inset: inset;
   --tw-ring-offset-width: 0px;
+  outline-offset: -2px;
 }
 
 /* The composer owns one 6% layer. Its editor is layout, not another surface. */

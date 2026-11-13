@@ -162,6 +162,12 @@ describe("bb Monokai contract audit", () => {
     expect(theme).not.toContain("0 0 0 1px var(--border),");
   });
 
+  test("draws every focus ring and outline inside its control", () => {
+    expect(theme).toContain(
+      ".dark :focus-visible {\n  --tw-ring-inset: inset;\n  --tw-ring-offset-width: 0px;\n  outline-offset: -2px;\n}",
+    );
+  });
+
   test("leaves Radix checkboxes to bb's checked fill", () => {
     const rules = theme.replace(/\/\*[\s\S]*?\*\//g, "");
     expect(rules.match(/button\.border-input(?!:not\(\[role="checkbox"\]\))/g)).toBeNull();
