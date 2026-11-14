@@ -14,6 +14,9 @@ const SECTIONS = [
 
 type SectionId = (typeof SECTIONS)[number]["id"];
 
+const SECTION_TAB_CLASS =
+  "inline-flex items-center rounded-md px-2 py-1 text-xs max-md:pointer-coarse:h-9 max-md:pointer-coarse:px-3";
+
 const STORAGE_KEY = "dotfiles:sidebar-section";
 
 function storedSection(): SectionId {
@@ -51,8 +54,8 @@ export function DotfilesSidebar(props: PluginNavPanelProps): ReactElement {
               aria-pressed={section === id}
               className={
                 section === id
-                  ? "rounded-md bg-sidebar-accent px-2 py-1 text-xs font-medium text-foreground"
-                  : "rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                  ? `${SECTION_TAB_CLASS} bg-sidebar-accent font-medium text-foreground`
+                  : `${SECTION_TAB_CLASS} text-muted-foreground hover:text-foreground`
               }
               onClick={() => {
                 setSection(id);

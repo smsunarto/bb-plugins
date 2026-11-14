@@ -27,7 +27,7 @@ export function HostPicker(): ReactElement | null {
   return (
     <select
       aria-label="Machine"
-      className="max-w-40 shrink-0 cursor-pointer truncate rounded-md border border-border bg-background px-1 py-0.5 text-xs text-foreground"
+      className="max-w-40 shrink-0 cursor-pointer truncate rounded-md border border-border bg-background px-1 py-0.5 text-xs text-foreground max-md:pointer-coarse:h-9"
       value={selectedHostId ?? ""}
       disabled={select.isPending}
       onChange={(event) => select.mutate({ hostId: event.target.value })}

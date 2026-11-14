@@ -196,6 +196,10 @@ function FileList({
   );
 }
 
+// The row's padding sits on its link or button, so the whole row height is the
+// tap target, 36px under a finger.
+const ROW_TARGET_CLASS = "py-1 max-md:pointer-coarse:min-h-9";
+
 function FileRow({
   item,
   instructionHref,
@@ -211,14 +215,14 @@ function FileRow({
   const removeSkillName = item.removeSkillName;
   return (
     <div
-      className={`group/row flex w-full items-center gap-2 rounded-md px-2 py-1 text-sm ${
+      className={`group/row flex w-full items-center gap-2 rounded-md px-2 text-sm ${
         selected ? "bg-accent text-accent-foreground" : "text-foreground hover:bg-accent/50"
       }`}
     >
       {instructionHref ? (
         <UrlLink
           href={instructionHref}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className={`${ROW_TARGET_CLASS} flex min-w-0 flex-1 items-center gap-2 text-left`}
           title="Edit in Agent Instructions"
         >
           <span className="truncate">{item.title}</span>
@@ -236,7 +240,7 @@ function FileRow({
           disabled={!item.exists}
           aria-current={selected ? "true" : undefined}
           onClick={() => nav.open(item.path)}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60"
+          className={`${ROW_TARGET_CLASS} flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60`}
           title={item.note}
         >
           <span className="min-w-0 flex-1 truncate">{item.title}</span>
@@ -255,7 +259,7 @@ function FileRow({
           aria-label={`Remove skill ${item.title}`}
           title={`Remove ${item.title} (npx skills remove)`}
           onClick={() => onRemove({ name: removeSkillName, path: item.path })}
-          className="shrink-0 rounded px-1 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100"
+          className="shrink-0 rounded px-1 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100 max-md:pointer-coarse:inline-flex max-md:pointer-coarse:size-9 max-md:pointer-coarse:items-center max-md:pointer-coarse:justify-center max-md:pointer-coarse:opacity-100"
         >
           ×
         </button>

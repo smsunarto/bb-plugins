@@ -19,6 +19,8 @@ const externalChange = Annotation.define<boolean>();
 const editorTheme = EditorView.theme({
   "&": { height: "100%", backgroundColor: "var(--background)", color: "var(--foreground)" },
   ".cm-scroller": { overflow: "auto", fontFamily: "var(--font-mono, monospace)", fontSize: "12px" },
+  // iOS zooms the page into a focused field under 16px and stays zoomed.
+  "@media (max-width: 767px) and (pointer: coarse)": { ".cm-scroller": { fontSize: "16px" } },
   ".cm-gutters": {
     backgroundColor: "var(--background)",
     color: "var(--muted-foreground)",
