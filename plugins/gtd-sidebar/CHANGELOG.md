@@ -219,6 +219,72 @@
   time this version loads. Provider names and marks now come from bb's own cached
   roster instead of a plugin round trip.
 
+## [0.7.0](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.6.0...gtd-sidebar/v0.7.0) (2026-11-14)
+
+
+### Features
+
+* **bots,gtd-sidebar:** one main chat per bot with routine and work subthreads ([584049d](https://github.com/smsunarto/bb-plugins/commit/584049d1676079c792758cb6d35ec85635787c1c))
+* **bots,gtd-sidebar:** pinned bot tiles, bot shelves, and Dr. Bot ([6104915](https://github.com/smsunarto/bb-plugins/commit/6104915757228850508e56b3d1fdad8d940b8149))
+* **bots:** add bot routines scheduled through Automations ([945b884](https://github.com/smsunarto/bb-plugins/commit/945b8844241ca67a1958b213c21d6b1a50a422fc))
+* **bots:** delete bots from the bot menu and bb bots delete ([2ac3e1e](https://github.com/smsunarto/bb-plugins/commit/2ac3e1e56fb350a37f8c53199d4d5f7d40151856))
+* **bots:** give each bot its own home project instead of BB's shared Personal workspace ([d4acc2e](https://github.com/smsunarto/bb-plugins/commit/d4acc2ec2598623baaaee0f13b642394f95769fa))
+* **bots:** give each bot its own skills in its home project ([c2523f1](https://github.com/smsunarto/bb-plugins/commit/c2523f15fe1da97b2381815c53e1471bf2fa744e))
+* **bots:** give each bot one main chat instead of the new-conversation dialog ([f950b29](https://github.com/smsunarto/bb-plugins/commit/f950b29933d2bc9896167391af452d9952898067))
+* **bots:** merge Bots plugin and sidebar integration ([9e7e378](https://github.com/smsunarto/bb-plugins/commit/9e7e378ccf0fa284b9ce8aed2060fab74f4f7dc2))
+* **bots:** merge scheduled bot routines ([7d0b7fc](https://github.com/smsunarto/bb-plugins/commit/7d0b7fc8d632b86eb52f9b3fc7b5dd303d748ca8))
+* **bots:** split bots into their own plugin with a GTD Sidebar shelf integration ([d2cf657](https://github.com/smsunarto/bb-plugins/commit/d2cf657c0e255d42290c044b372a3cd6f2810ae6))
+* **branding:** give every plugin a distinct BB-style icon ([e6a07fe](https://github.com/smsunarto/bb-plugins/commit/e6a07fe24cfd954203fc3007c3e9817de4b9376e))
+* **gtd-sidebar:** add GTD's row extras to bb's thread row ([e89ab71](https://github.com/smsunarto/bb-plugins/commit/e89ab714ddd19ba8b434317b0abee8847ddab3c1))
+* **gtd-sidebar:** animate sidebar disclosures and menus ([570a5a4](https://github.com/smsunarto/bb-plugins/commit/570a5a46d96a19dd4535139e1bb6d00b153ce41b))
+* **gtd-sidebar:** Capy-style list navigation ([266f1d5](https://github.com/smsunarto/bb-plugins/commit/266f1d5756e7ae2519a844ba1aebafe61d02c936))
+* **gtd-sidebar:** draw bb's status glyph and row metadata line ([4c79250](https://github.com/smsunarto/bb-plugins/commit/4c7925046fec1fdbc9d453abfcd20dcc4f6b940a))
+* **gtd-sidebar:** draw GTD shelves with bb's sections, rows, and menus ([4f0a152](https://github.com/smsunarto/bb-plugins/commit/4f0a15250af3da18161badbbc1f148095a9e043f))
+* **gtd-sidebar:** draw thread row metadata on the title line ([40403de](https://github.com/smsunarto/bb-plugins/commit/40403de95a70f8f21d95aff079a1b80ec54cc1e4))
+* **gtd-sidebar:** drop the shelf chevrons and the unused draft glyph ([beb39f1](https://github.com/smsunarto/bb-plugins/commit/beb39f1a538f10853fb5f70579a623ed9c5a7509))
+* **gtd-sidebar:** expose bb navigation item ids on list rows ([006784b](https://github.com/smsunarto/bb-plugins/commit/006784bea7e59081ef34c2a1b402f8b1838c607f))
+* **gtd-sidebar:** fill row menus from bb's thread-action registry ([0bf50f3](https://github.com/smsunarto/bb-plugins/commit/0bf50f3b2d2652bcbca0eec0ee3aeb301fd5e5b2))
+* **gtd-sidebar:** fold a shelf from a click on its name ([77b3f71](https://github.com/smsunarto/bb-plugins/commit/77b3f71c9399c613acfb916f09d5a369912f5920))
+* **gtd-sidebar:** fork Bots Sidebar into a Bots shelf ([1036df7](https://github.com/smsunarto/bb-plugins/commit/1036df73ab545786a5fb08c30a85b2556cc3ffc3))
+* **gtd-sidebar:** keep thread families nested on the Settled shelf ([1ca8f16](https://github.com/smsunarto/bb-plugins/commit/1ca8f1662e16519ecdf555413b1ef0feab78f760))
+* **gtd-sidebar:** open folds in 200ms so threads read sooner ([854df4e](https://github.com/smsunarto/bb-plugins/commit/854df4ea22a2f8101cf84629d4b068f4ba096d74))
+* **gtd-sidebar:** put a shelf's menu before its New thread button ([e407607](https://github.com/smsunarto/bb-plugins/commit/e407607819d242a7aa0d9066da16a754963df5d2))
+* **gtd-sidebar:** put the menu before New thread on every header ([f6b0865](https://github.com/smsunarto/bb-plugins/commit/f6b08653372e828133a13de24dd840cf896495ce))
+* **gtd-sidebar:** rebuild the bot editor with shadcn components ([f5dac14](https://github.com/smsunarto/bb-plugins/commit/f5dac147b96b6f9b79939ff2ae6368a4ccea14b1))
+* **gtd-sidebar:** restore GTD's folder and tree look and fold motion ([3b5a103](https://github.com/smsunarto/bb-plugins/commit/3b5a103d7d07d3c619726e73d41100c44b4ac223))
+* **gtd-sidebar:** restore the classic inbox UI on the new backend ([a5d2f38](https://github.com/smsunarto/bb-plugins/commit/a5d2f38c453515b9157d20437541d92516bac53b))
+* **gtd-sidebar:** share one row menu across the list and rework the touch sheet ([38759ce](https://github.com/smsunarto/bb-plugins/commit/38759ce41d7132150dd7377727d2e75c26d8ae79))
+* **gtd-sidebar:** shelve SlopCop threads in their own section ([c82a410](https://github.com/smsunarto/bb-plugins/commit/c82a410d40ce4103d96761aa5d88f78526a026f7))
+* **gtd-sidebar:** show a GitButler thread's own pull request on its card ([3221d48](https://github.com/smsunarto/bb-plugins/commit/3221d480da8c74a9ec423ba1f285cad49f8833d2))
+* **gtd-sidebar:** slide subthread families open and shut like project groups ([9052af6](https://github.com/smsunarto/bb-plugins/commit/9052af630acc09bfb08d532773ba2493b6b28ee0))
+* **gtd-sidebar:** split the sidebar into Code and Bots tabs with bot cards ([845dd5e](https://github.com/smsunarto/bb-plugins/commit/845dd5efe2ff21f0eeda3d58b25521430c308981))
+* **plugins:** adopt BB 0.48 SDK APIs ([7fcbe74](https://github.com/smsunarto/bb-plugins/commit/7fcbe74366553e460c2992080af34533c7642649))
+* **plugins:** replace plugin icons with Lucide via better-icons ([765f389](https://github.com/smsunarto/bb-plugins/commit/765f38988bcf8107889ec51890377f85c00dcdf3))
+
+
+### Bug Fixes
+
+* **ci:** repair main after the bots merge ([c0ce047](https://github.com/smsunarto/bb-plugins/commit/c0ce047aaa6df949b1e2043518d4ea3cb0a72ecb))
+* **gtd-sidebar:** address review findings in the shelf layer ([fd70761](https://github.com/smsunarto/bb-plugins/commit/fd70761d0a666b8c729e38e5bb551a7564bbd943))
+* **gtd-sidebar:** collapse SlopCop shelf by default ([1b064f2](https://github.com/smsunarto/bb-plugins/commit/1b064f287ff15c39201eb16d865652942da01e48))
+* **gtd-sidebar:** collapse subthreads by default ([5fb0507](https://github.com/smsunarto/bb-plugins/commit/5fb0507a35be0b29055e534591bfb7b6de59aee6))
+* **gtd-sidebar:** hide the project and machine filters on the Bots tab ([b6a7440](https://github.com/smsunarto/bb-plugins/commit/b6a74407e4f5eb94003e83e599d06342e5d68c76))
+* **gtd-sidebar:** list only persistent machines bb still knows in the machine menu ([03e3f85](https://github.com/smsunarto/bb-plugins/commit/03e3f85f1e355cbc1c814dc3a18baec077670bc7))
+* **gtd-sidebar:** make PR numbers compact chips ([037d95b](https://github.com/smsunarto/bb-plugins/commit/037d95b08ab5c134e485ef0181badf76d58b2f28))
+* **gtd-sidebar:** open the machine menu without animation ([4c6918e](https://github.com/smsunarto/bb-plugins/commit/4c6918eee3804ac85468d4064d3e3ffe017d2c24))
+* **gtd-sidebar:** quiet Settled rows and restore compact shelves ([7e1c755](https://github.com/smsunarto/bb-plugins/commit/7e1c755d81c065b2710fb60ec9b2c046cc0de1ff))
+* **gtd-sidebar:** restore inline shelf dividers and compact titles ([e82eb42](https://github.com/smsunarto/bb-plugins/commit/e82eb42e8735c23f6ec01b0a87261f78ca119173))
+* **gtd-sidebar:** show groups in place when switching sidebar tabs ([3dca05e](https://github.com/smsunarto/bb-plugins/commit/3dca05ed345dfa401358d9e990fbec7bd1e94bc9))
+* **gtd-sidebar:** slide a tall group only across the visible list ([ef49378](https://github.com/smsunarto/bb-plugins/commit/ef4937814c16eaf514b17ff7c94758556ebb9155))
+* **gtd-sidebar:** use GPT-6.1-Terra for thread titles ([6a3f6d3](https://github.com/smsunarto/bb-plugins/commit/6a3f6d39a0e04a4f839e9c232b7bde4974400a9b))
+* **machines:** use neutral Boat icons and stable ID colors ([29ca753](https://github.com/smsunarto/bb-plugins/commit/29ca7537feaf11e984be20a96a868be218be98c1))
+* **packaging:** bundle private runtime dependencies in release tarballs ([d344351](https://github.com/smsunarto/bb-plugins/commit/d3443517c9dda8c779a049f438f4fefa86253d99))
+
+
+### Performance Improvements
+
+* **plugins:** opt audited portals into owned-root CSS ([730f664](https://github.com/smsunarto/bb-plugins/commit/730f6647c8c2aa46967eec4ae572a2135fee71c4))
+
 ## [0.6.0](https://github.com/smsunarto/bb-plugins/compare/gtd-sidebar/v0.5.1...gtd-sidebar/v0.6.0) (2026-10-21)
 
 ### Features
