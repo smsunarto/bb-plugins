@@ -31,7 +31,7 @@ bb plugin rpc inspect kitchen-sink saveProjectScript
 Write JSON inputs to temporary files. List existing scripts first:
 
 ```json
-{"projectId":"<resolved-project-id>"}
+{ "projectId": "<resolved-project-id>" }
 ```
 
 ```sh
@@ -43,7 +43,13 @@ Keep existing scripts. Reuse an existing ID when updating the same intended scri
 Save one edit at a time:
 
 ```json
-{"projectId":"<resolved-project-id>","edit":{"kind":"upsert","script":{"id":"<script-id>","name":"Dev server","command":"<verified-repo-command>"}}}
+{
+  "projectId": "<resolved-project-id>",
+  "edit": {
+    "kind": "upsert",
+    "script": { "id": "<script-id>", "name": "Dev server", "command": "<verified-repo-command>" }
+  }
+}
 ```
 
 ```sh
