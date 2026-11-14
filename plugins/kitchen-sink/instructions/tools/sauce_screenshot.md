@@ -1,5 +1,0 @@
-Capture the device screen at native resolution, upright, and save it as a PNG in this thread's storage. Returns `path`, `width`, `height`, `rotation`, and `rotation_measured`.
-
-Open the PNG to see the screen. Its width and height define the frame `sauce_touch` uses: `x` and `y` are fractions of this image. `rotation` is how Sauce's canvas is turned; `sauce_touch` maps every touch through it, so take a new screenshot after `sauce_device` rotate, after the app launches or switches orientation, and whenever the layout may have changed. Cite `path` as evidence in reports.
-
-`rotation_measured: false` means this capture could not measure the rotation (the screen moved, as in a video or transition, or is too plain to compare). The result's `note` says what was used instead: the rotation the last screenshot measured, or the usual one for the screen's shape. If a touch then lands mirrored, take another screenshot on a still screen. `rotation` is `null` only when no rotation could be chosen; `sauce_touch` then refuses until a new screenshot sets one.
