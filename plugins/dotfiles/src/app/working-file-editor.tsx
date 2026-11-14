@@ -5,7 +5,7 @@ import { Annotation, EditorState, StateEffect } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { HighlightStyle, syntaxHighlighting, LanguageDescription } from "@codemirror/language";
-import { languages } from "@codemirror/language-data";
+import { languages } from "./editor-languages.ts";
 import type { RepoPath } from "./route.ts";
 
 export interface WorkingFileEditorProps {
