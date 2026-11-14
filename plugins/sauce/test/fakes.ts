@@ -1,0 +1,151 @@
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { createSauceCore, type SauceCoreDeps } from "../src/server/core.ts";
+import type { LeaseStore, SauceLease } from "../src/server/lease.ts";
+import { SauceError, type PageState, type SaucePage } from "../src/server/live.ts";
+
+export const SESSION_URL = "https://app.saucelabs.com/live/mobile/x";
+
+export function memoryStore(): LeaseStore {
+  let lease: SauceLease | null = null;
+  return { read: () => lease, write: (next) => void (lease = next) };
+}
+
+/** A flat grayscale sample; two screens with different `gray` read as changed. */
+export function screen(gray: number): Uint8Array {
+  return new Uint8Array(48 * 22).fill(gray);
+}
+
+/**
+ * A stand-in for the Sauce Live tab at the level the core drives it: what the device
+ * shows (`gray`), what reached it (`sent`), and a clock that only waiting advances.
+ */
+export function fakeDevice() {
+  const world = {
+    page: {
+      url: "https://app.saucelabs.com/live/app-testing",
+      kind: "live",
+      device: null,
+      capacityReached: false,
+    } as PageState,
+    /** The device screen as one gray level; `onSample` may change it between polls. */
+    gray: 10,
+    sent: [] as string[],
+    samples: 0,
+    captures: 0,
+    now: 1_000_000,
+    saved: [] as string[],
+    onSample: (_count: number): void => {},
+    onGesture: (_text: string): void => {},
+    failCapture: null as SauceError | null,
+  };
+  const requireSession = () => {
+    if (world.page.kind !== "session")
+      throw new SauceError("no_session", "No live session is open.");
+    return world.page;
+  };
+  const page = {
+    state: async () => world.page,
+    home: async () => world.page,
+    signIn: async () => world.page,
+    listApps: async () => [{ id: "f1", label: "Rampage/build.apk" }],
+    listDevices: async (_query: string, app?: string) => ({
+      app: app ?? "Rampage/build.apk",
+      devices: [
+        { name: "Samsung Galaxy S23", status: "Available", os: "Android 16", screen: "6.1" },
+      ],
+      truncated: false,
+    }),
+    startSession: async (input: { device: string }) => {
+      world.page = {
+        url: SESSION_URL,
+        kind: "session",
+        device: `${input.device} - Android 16`,
+        capacityReached: false,
+      };
+      return { app: "Rampage/build.apk", device: world.page.device as string, url: SESSION_URL };
+    },
+    tap: async (point: { x: number; y: number }, _rotation: number, holdMs = 0) => {
+      requireSession();
+      const text = `tap ${point.x} ${point.y}${holdMs ? ` hold ${holdMs}` : ""}`;
+      world.sent.push(text);
+      world.onGesture(text);
+    },
+    drag: async (
+      from: { x: number; y: number },
+      to: { x: number; y: number },
+      _rotation: number,
+      durationMs: number,
+      holdMs: number,
+    ) => {
+      requireSession();
+      const text = `drag ${from.x} ${from.y} ${to.x} ${to.y} ${durationMs} ${holdMs}`;
+      world.sent.push(text);
+      world.onGesture(text);
+    },
+    clickMenu: async (name: string) => {
+      requireSession();
+      world.sent.push(`menu ${name}`);
+    },
+    captureScreen: async (path: string) => {
+      requireSession();
+      if (world.failCapture) throw world.failCapture;
+      world.captures += 1;
+      const bytes = new Uint8Array(32);
+      bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+      const view = new DataView(bytes.buffer);
+      view.setUint32(16, 2340);
+      view.setUint32(20, 1080);
+      await writeFile(path, bytes);
+      return {
+        width: 2340,
+        height: 1080,
+        reading: { candidates: [90, 270] as const, best: 90, clear: true },
+        thumbnail: screen(world.gray),
+      };
+    },
+    sampleScreen: async () => {
+      if (world.page.kind !== "session") return null;
+      world.samples += 1;
+      world.onSample(world.samples);
+      return screen(world.gray);
+    },
+    requireSession: async () => requireSession(),
+    shell: async (command: string) => {
+      requireSession();
+      world.sent.push(`shell ${command}`);
+      return "ok";
+    },
+    downloadLog: async (path: string) => writeFile(path, "a\nUnity boom\nb"),
+    endSession: async () => {
+      if (world.page.kind !== "session") return false;
+      world.page = { ...world.page, kind: "session_ended" };
+      return true;
+    },
+    abortStart: async () => true,
+  } as unknown as SaucePage;
+  const deps: SauceCoreDeps = {
+    page,
+    store: memoryStore(),
+    now: () => world.now,
+    sleep: async (ms) => void (world.now += ms),
+    tempDir: () => mkdtemp(join(tmpdir(), "bb-sauce-fake-")),
+    save: async (threadId, name) => {
+      world.saved.push(name);
+      return `/storage/${threadId}/sauce/${name}`;
+    },
+    threadTitle: async (threadId) => `title of ${threadId}`,
+  };
+  return { world, deps, core: createSauceCore(deps) };
+}
+
+export async function codeOf(promise: Promise<unknown>) {
+  try {
+    await promise;
+    return "ok";
+  } catch (error) {
+    return error instanceof SauceError ? error.code : String(error);
+  }
+}

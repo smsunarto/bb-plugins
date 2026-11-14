@@ -62,6 +62,10 @@
     {
       "name": "scott-secrets",
       "source": "./plugins/scott-secrets"
+    },
+    {
+      "name": "sauce",
+      "source": "./plugins/sauce"
     }
   ]
 }
