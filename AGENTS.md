@@ -58,6 +58,8 @@ These patterns slowed BB or were implicated in this repository's performance inv
 - **Remount churn:** Hidden UI torn down and recreated on each navigation repeats its mount cost. Mount on first activation and keep the instance, preserving shortcuts and focus return.
 - **Fleet fan-out on a default path:** A tool or RPC that queries every host and waits for all of them runs at the slowest host's speed. Default to the calling thread's environment and host, matching canonical paths; make wider discovery an explicit argument. When fixing one caller, audit the other callers of the shared discovery helper.
 - **Heavy payloads:** Inline media or large blobs in thread events, startup context, or turn input bloat BB's database and every reader that parses them. Pass files or attachment references, and parse large JSON once rather than on every poll.
+- **Startup bundle weight:** bb loads every enabled plugin's whole `app.js` on every client at startup, a phone on a cellular connection included, and builds it as one file with no code splitting. A dynamic `import()` is bundled inline, so a package that lazy-loads its parts, such as `@codemirror/language-data`, ships all of them. Import only the modules the feature uses, and check `dist/app.js` size after adding a dependency.
+- **Private zod copy:** `bb plugin build` bundles a 190 KB zod into every app bundle that imports it. The build bb's server runs for a stale `dist` takes zod from the host instead. Before a live `bb plugin reload` of a plugin whose app imports zod, `touch` its app entry so the server rebuilds it, then confirm `runtimeSlots` in `dist/app.meta.json` lists `zod`.
 
 ## DOM hacks
 
