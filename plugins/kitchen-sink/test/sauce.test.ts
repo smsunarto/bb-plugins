@@ -570,3 +570,53 @@ test("picker and search actions that hit a re-rendering element retry instead of
   expect(calls.filter((c) => c === "click [data-qa=search-dialog-input-trigger]")).toHaveLength(2);
   expect(calls.filter((c) => c === "fill [data-qa=device-filter-bar-search]")).toHaveLength(2);
 });
+
+/** Answers the live page's eval probes for an iOS build, whose device list renders no tabs. */
+function iosDeviceListEval(script: string, pickerOpen: boolean): unknown {
+  if (script.includes("location.host")) {
+    return {
+      url: "https://app.saucelabs.com/live/app-testing",
+      host: "app.saucelabs.com",
+      path: "/live/app-testing",
+      ended: false,
+      device: null,
+      capacity: false,
+    };
+  }
+  if (script.includes("[data-qa=search-dialog]")) return pickerOpen;
+  if (script.includes("app-search-and-select-file-id-")) {
+    return [{ id: "f2", label: "Rampage/rampage.ipa Real Device" }];
+  }
+  if (script.includes("[role=tab]")) return false;
+  if (script.includes("[data-qa=device-table]")) {
+    return [{ name: "iPhone 15", status: "Available", os: "iOS 18.5", screen: "6.1" }];
+  }
+  return true;
+}
+
+test("an iOS build's device list has no Mobile Real tab and still lists devices", async () => {
+  const calls: string[][] = [];
+  let pickerOpen = false;
+  let now = 0;
+  const page = createSaucePage(
+    {
+      async run(args) {
+        calls.push([...args]);
+        const [command, target] = args;
+        if (command === "find" && args.includes("Mobile Real")) {
+          throw new Error("No element found: getByRole('tab', { name: 'Mobile Real' })");
+        }
+        if (command === "click" && target === "[data-qa=search-dialog-input-trigger]") {
+          pickerOpen = true;
+        }
+        if (command === "find" && args.includes("Dismiss")) pickerOpen = false;
+        return command === "eval" ? { result: iosDeviceListEval(target ?? "", pickerOpen) } : {};
+      },
+    },
+    { sleep: async (ms) => void (now += ms), now: () => now, grayThumbnail: async () => null },
+  );
+
+  const listed = await page.listDevices("iPhone", "rampage.ipa");
+  expect(listed.devices.map((d) => d.name)).toEqual(["iPhone 15"]);
+  expect(calls.some((c) => c[0] === "find" && c.includes("Mobile Real"))).toBe(false);
+});

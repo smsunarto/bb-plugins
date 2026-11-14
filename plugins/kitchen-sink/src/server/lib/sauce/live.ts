@@ -450,7 +450,32 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
   }
 
   async function showDeviceTable(query: string) {
-    await browser.run(["find", "role", "tab", "click", "--name", "Mobile Real", "--exact"]);
+    // An IPA's device page keeps its Mobile Real tab hidden, and the role lookup that clicks
+    // the tab skips hidden elements, so click only a visible one.
+    const tabbed = await poll(
+      5_000,
+      () =>
+        evaluate<boolean>(
+          `[...document.querySelectorAll("[role=tab]")].some((tab) => tab.checkVisibility() && tab.innerText.trim() === "Mobile Real")`,
+        ),
+      500,
+    );
+    if (tabbed) {
+      const clicked = await poll(
+        8_000,
+        () => tryAction(["find", "role", "tab", "click", "--name", "Mobile Real", "--exact"]),
+        700,
+      );
+      if (!clicked) {
+        const tabs = await evaluate<string[]>(
+          `[...document.querySelectorAll("[role=tab]")].map((tab) => (tab.checkVisibility() ? "" : "hidden ") + JSON.stringify(tab.innerText.trim().slice(0, 40)))`,
+        );
+        throw new SauceError(
+          "page_changed",
+          `The Sauce device list's Mobile Real tab did not accept a click. Tabs: ${tabs.join(", ")}.`,
+        );
+      }
+    }
     const table = await poll(
       10_000,
       () =>
