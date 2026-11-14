@@ -8,21 +8,24 @@ const { WORKSPACE_CHANGED_CHANNEL } = await import("../src/shared/contract.ts");
 
 const SOUND_PATH = "/api/v1/plugins/kitchen-sink/http/completion-sound";
 
-/** Every audible `<audio>.play()` the page attempted, by the path it played. */
+/** Every time the page sounded Cursor's decoded sound. */
 let played: string[] = [];
-let playOutcome: () => Promise<void> = async () => {};
 /** Every chime note the page synthesized, in hertz. */
 let chimed: number[] = [];
-/** Every `<audio>.pause()`, by the path it paused. */
-let paused: string[] = [];
+/** Every request for the sound route. */
+let fetched: string[] = [];
+/** What the sound route answers. */
+let route: () => Promise<Response> = async () => new Response(new Uint8Array([1, 2, 3]));
+/** Every `<audio>`/`<video>` play, which iOS would list in Now Playing. */
+let mediaPlays = 0;
 /** Every AudioContext the page created. */
 let contexts: FakeAudioContext[] = [];
 const originalPlay = HTMLMediaElement.prototype.play;
-const originalPause = HTMLMediaElement.prototype.pause;
+const originalFetch = globalThis.fetch;
 
 /**
- * The autoplay rule the fakes enforce. "webkit" is Safari's per-element rule:
- * an audio element or AudioContext sounds only after a gesture started it.
+ * The autoplay rule the fakes enforce. "webkit" is Safari's rule: an
+ * AudioContext sounds only after a gesture resumed it.
  */
 let policy: "permissive" | "webkit" = "permissive";
 let inGesture = false;
@@ -61,6 +64,16 @@ class FakeAudioContext {
   }
   async close() {
     this.state = "closed";
+  }
+  async decodeAudioData(_data: ArrayBuffer) {
+    return { duration: 0.01 };
+  }
+  createBufferSource() {
+    return {
+      buffer: null,
+      connect: (next: unknown) => next,
+      start: () => played.push(SOUND_PATH),
+    };
   }
   createGain() {
     const param = { setValueAtTime() {}, exponentialRampToValueAtTime() {} };
@@ -112,28 +125,27 @@ function installBrowserLocks() {
 beforeEach(() => {
   played = [];
   chimed = [];
-  paused = [];
+  fetched = [];
+  mediaPlays = 0;
   contexts = [];
   policy = "permissive";
   startedInGesture = new WeakSet();
-  playOutcome = async () => {};
-  HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
-    const permitted = mayStart(this);
-    // WebKit lets a muted element play without a gesture, but only a gesture unlocks it.
-    if (this.muted) return Promise.resolve();
-    if (!permitted) return Promise.reject(new DOMException("gesture required", "NotAllowedError"));
-    played.push(new URL(this.src).pathname);
-    return playOutcome();
+  route = async () => new Response(new Uint8Array([1, 2, 3]));
+  HTMLMediaElement.prototype.play = function () {
+    mediaPlays += 1;
+    return Promise.resolve();
   };
-  HTMLMediaElement.prototype.pause = function (this: HTMLMediaElement) {
-    paused.push(new URL(this.src).pathname);
-  };
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    fetched.push(String(input));
+    return route();
+  }) as typeof fetch;
   (globalThis as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
 });
 
 afterEach(() => {
+  expect(mediaPlays).toBe(0);
   HTMLMediaElement.prototype.play = originalPlay;
-  HTMLMediaElement.prototype.pause = originalPause;
+  globalThis.fetch = originalFetch;
   delete (globalThis as { AudioContext?: unknown }).AudioContext;
   delete (navigator as { locks?: unknown }).locks;
   delete (navigator as { userActivation?: unknown }).userActivation;
@@ -147,27 +159,33 @@ async function openTab() {
 }
 
 const idle = { threadId: "thr_done", parentThreadId: null, reason: "idle" };
+const noSound = async () => new Response(null, { status: 404 });
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 
-test("an idle thread plays Cursor's sound from the plugin route, and nothing else does", async () => {
+test("an idle thread plays Cursor's sound through Web Audio, and nothing else does", async () => {
   const tab = await openTab();
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, { ...idle, reason: "failed" });
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, { ...idle, reason: "archived" });
+  await settle();
   expect(played).toEqual([]);
 
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
+  await waitFor(() => expect(played).toEqual([SOUND_PATH]));
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
-  expect(played).toEqual([SOUND_PATH, SOUND_PATH]);
+  await waitFor(() => expect(played).toEqual([SOUND_PATH, SOUND_PATH]));
+  expect(fetched).toEqual([SOUND_PATH]);
   expect(chimed).toEqual([]);
   tab.unmount();
 });
 
 test("subthread completion stays silent, including the synthesized fallback", async () => {
-  playOutcome = () => Promise.reject(new DOMException("no source", "NotSupportedError"));
+  route = noSound;
   const tab = await openTab();
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, {
     ...idle,
     parentThreadId: "thr_parent",
   });
+  await settle();
   expect(played).toEqual([]);
   expect(chimed).toEqual([]);
 
@@ -182,6 +200,8 @@ test("several tabs in one browser play once, and another tab takes over when the
   const second = await openTab();
   await first.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
   await second.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
+  await waitFor(() => expect(played).toEqual([SOUND_PATH]));
+  await settle();
   expect(played).toEqual([SOUND_PATH]);
 
   first.unmount();
@@ -199,15 +219,16 @@ test("a tab the user has not touched stays out of the election until they intera
   });
   const tab = await openTab();
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
+  await settle();
   expect(played).toEqual([]);
 
   fireEvent.click(window);
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
-  expect(played).toEqual([SOUND_PATH]);
+  await waitFor(() => expect(played).toEqual([SOUND_PATH]));
   tab.unmount();
 });
 
-test("in WebKit, the first click unlocks one audio element that every later completion reuses", async () => {
+test("in WebKit, the first click starts one context that every later completion reuses, idle between sounds", async () => {
   policy = "webkit";
   Object.defineProperty(navigator, "userActivation", {
     configurable: true,
@@ -215,48 +236,39 @@ test("in WebKit, the first click unlocks one audio element that every later comp
   });
   const tab = await openTab();
   gesture(() => fireEvent.click(window));
+  await waitFor(() => expect(contexts.map(({ state }) => state)).toEqual(["suspended"]));
+
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
+  await waitFor(() => expect(played).toEqual([SOUND_PATH]));
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
-  expect(played).toEqual([SOUND_PATH, SOUND_PATH]);
+  await waitFor(() => expect(played).toEqual([SOUND_PATH, SOUND_PATH]));
+  await waitFor(() => expect(contexts.map(({ state }) => state)).toEqual(["suspended"]));
+
   tab.unmount();
+  expect(contexts.map(({ state }) => state)).toEqual(["closed"]);
 });
 
-test("in WebKit, a refused completion plays again after the next gesture", async () => {
+test("in WebKit, a refused completion stays silent and plays again after the next gesture", async () => {
   policy = "webkit";
   const tab = await openTab();
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
+  await new Promise((resolve) => setTimeout(resolve, 1_100));
   expect(played).toEqual([]);
+  expect(chimed).toEqual([]);
 
   gesture(() => fireEvent.keyDown(window, { key: "Enter" }));
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
-  expect(played).toEqual([SOUND_PATH]);
-
-  // The browser takes its permission back, as when the site's Auto-Play setting changes.
-  startedInGesture = new WeakSet();
-  await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
-  expect(played).toEqual([SOUND_PATH]);
-  gesture(() => fireEvent.click(window));
-  await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
-  expect(played).toEqual([SOUND_PATH, SOUND_PATH]);
+  await waitFor(() => expect(played).toEqual([SOUND_PATH]));
   tab.unmount();
 });
 
-test("a click while the sound plays leaves it playing", async () => {
-  const tab = await openTab();
-  await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
-  gesture(() => fireEvent.click(window));
-  expect(played).toEqual([SOUND_PATH]);
-  expect(paused).toEqual([]);
-  tab.unmount();
-});
-
-test("a click during a chime leaves it sounding", async () => {
-  playOutcome = () => Promise.reject(new DOMException("no source", "NotSupportedError"));
+test("a click during a sound leaves it sounding", async () => {
+  route = noSound;
   const tab = await openTab();
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
   await waitFor(() => expect(chimed).toEqual([880, 1318.5]));
   gesture(() => fireEvent.click(window));
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await settle();
   expect(contexts.map(({ state }) => state)).toEqual(["running"]);
   await waitFor(() => expect(contexts.map(({ state }) => state)).toEqual(["suspended"]), {
     timeout: 3_000,
@@ -264,44 +276,28 @@ test("a click during a chime leaves it sounding", async () => {
   tab.unmount();
 });
 
-test("in WebKit, the chime reuses one context the click started, idle between chimes", async () => {
-  policy = "webkit";
-  playOutcome = () => Promise.reject(new DOMException("no source", "NotSupportedError"));
-  const tab = await openTab();
-  gesture(() => fireEvent.click(window));
-  await waitFor(() => expect(contexts.map(({ state }) => state)).toEqual(["suspended"]));
-
-  await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
-  await waitFor(() => expect(chimed).toEqual([880, 1318.5]));
-  await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
-  await waitFor(() => expect(chimed).toEqual([880, 1318.5, 880, 1318.5]));
-  await waitFor(() => expect(contexts.map(({ state }) => state)).toEqual(["suspended"]), {
-    timeout: 3_000,
-  });
-
-  tab.unmount();
-  expect(contexts.map(({ state }) => state)).toEqual(["closed"]);
-});
-
 test("without a Cursor install anywhere, the browser synthesizes a chime instead", async () => {
-  playOutcome = () => Promise.reject(new DOMException("no source", "NotSupportedError"));
+  route = noSound;
   const tab = await openTab();
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
   await waitFor(() => expect(chimed).toEqual([880, 1318.5]));
 
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
   await waitFor(() => expect(chimed).toEqual([880, 1318.5, 880, 1318.5]));
-  expect(played).toEqual([SOUND_PATH]);
+  expect(played).toEqual([]);
+  expect(fetched).toEqual([SOUND_PATH]);
   tab.unmount();
 });
 
-test("a browser that blocks autoplay stays silent instead of chiming", async () => {
-  playOutcome = () => Promise.reject(new DOMException("blocked", "NotAllowedError"));
+test("a failed fetch chimes and fetches again on the next completion", async () => {
+  route = () => Promise.reject(new TypeError("offline"));
   const tab = await openTab();
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
+  await waitFor(() => expect(chimed).toEqual([880, 1318.5]));
+
+  route = async () => new Response(new Uint8Array([1]));
   await tab.behavior.emitRealtime(WORKSPACE_CHANGED_CHANNEL, idle);
-  await new Promise((resolve) => setTimeout(resolve, 10));
-  expect(played).toEqual([SOUND_PATH, SOUND_PATH]);
-  expect(chimed).toEqual([]);
+  await waitFor(() => expect(played).toEqual([SOUND_PATH]));
+  expect(fetched).toEqual([SOUND_PATH, SOUND_PATH]);
   tab.unmount();
 });

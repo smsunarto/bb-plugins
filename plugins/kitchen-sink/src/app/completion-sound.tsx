@@ -96,91 +96,66 @@ function usePlayerElection(player: CompletionPlayer): { readonly current: boolea
 }
 
 interface CompletionPlayer {
-  /** Call inside a user gesture. Does nothing while playback is unlocked. */
+  /** Call inside a user gesture. Starts the audio context for later plays. */
   unlock(): void;
   play(): Promise<void>;
   /** Frees the audio device once the tab no longer plays. */
   release(): void;
 }
 
-/**
- * Cursor's sound from the server's route, or a synthesized chime once the
- * route has none. WebKit lets an audio element or AudioContext sound only
- * after a gesture started it, so the player keeps one of each and unlocks them
- * inside a gesture. A refused play stays silent until the next gesture.
- */
-function completionPlayer(url: string): CompletionPlayer {
-  /** Undefined until first used, null once the route has no sound. */
-  let cursor: HTMLAudioElement | null | undefined;
-  const chime = chimePlayer();
-  let locked = true;
-  return {
-    unlock() {
-      if (!locked) return;
-      locked = false;
-      if (cursor !== null) {
-        cursor ??= new Audio(url);
-        // Playing inside the gesture unlocks the element. Muted and paused at once, it stays silent.
-        cursor.muted = true;
-        cursor.play().catch(() => {});
-        cursor.pause();
-        cursor.muted = false;
-      }
-      chime.unlock();
-    },
-    async play() {
-      if (cursor !== null) {
-        cursor ??= new Audio(url);
-        try {
-          cursor.currentTime = 0;
-          await cursor.play();
-          locked = false;
-          return;
-        } catch (error) {
-          if (!(error instanceof DOMException)) return;
-          // NotAllowedError is a refusal, which the next gesture lifts. Only a missing sound falls back.
-          if (error.name === "NotAllowedError") locked = true;
-          if (error.name !== "NotSupportedError") return;
-          cursor = null;
-        }
-      }
-      locked = !(await chime.play());
-    },
-    release() {
-      chime.close();
-      locked = true;
-    },
-  };
-}
-
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
- * One AudioContext serves every chime, because WebKit starts only a context
- * that a gesture resumed. It is suspended between chimes, so an idle tab holds
- * no audio device.
+ * Cursor's sound from the server's route, or a synthesized chime once the
+ * route has none, both through one AudioContext. Web Audio rather than an
+ * audio element, because iOS shows an audio element in Now Playing on the lock
+ * screen; WebKit lists an AudioContext there only on a page that set
+ * `navigator.audioSession.type` to playback. WebKit starts only a context that
+ * a gesture resumed, so the player keeps it and resumes it in each gesture.
+ * It is suspended between sounds, so an idle tab holds no audio device.
  */
-function chimePlayer() {
+function completionPlayer(url: string): CompletionPlayer {
   let context: AudioContext | undefined;
+  /** Undefined until fetched, null once the route has no sound. */
+  let cursor: Promise<AudioBuffer | null> | undefined;
   let sounding = 0;
   const rest = () => {
     if (sounding === 0) void context?.suspend().catch(() => {});
   };
+  const cursorSound = (audio: AudioContext) =>
+    (cursor ??= fetch(url).then(
+      async (response) =>
+        response.ok ? audio.decodeAudioData(await response.arrayBuffer()) : null,
+      (error: unknown) => {
+        // A network failure may pass, so the next play fetches again.
+        cursor = undefined;
+        throw error;
+      },
+    ));
   return {
     unlock() {
       if (typeof AudioContext === "undefined") return;
       context ??= new AudioContext();
-      context.resume().then(rest, () => {});
+      if (context.state !== "running") context.resume().then(rest, () => {});
     },
-    /** False when the browser refused to start audio. */
-    async play(): Promise<boolean> {
-      if (typeof AudioContext === "undefined") return true;
+    async play() {
+      if (typeof AudioContext === "undefined") return;
       const audio = (context ??= new AudioContext());
       sounding += 1;
       try {
+        const buffer = await cursorSound(audio).catch(() => null);
         await Promise.race([audio.resume(), delay(1_000)]);
-        if (audio.state !== "running") return false;
+        // A refusal stays silent until the next gesture resumes the context.
+        if (audio.state !== "running") return;
         const start = audio.currentTime;
+        if (buffer) {
+          const source = audio.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audio.destination);
+          source.start(start);
+          await delay(buffer.duration * 1_000 + 100);
+          return;
+        }
         CHIME_HZ.forEach((frequency, index) => {
           const at = start + index * 0.12;
           const tone = audio.createOscillator();
@@ -195,16 +170,16 @@ function chimePlayer() {
         });
         await delay(700);
       } catch {
-        // Audio unavailable: a missed chime must never surface as an error.
+        // Audio unavailable: a missed sound must never surface as an error.
       } finally {
         sounding -= 1;
         rest();
       }
-      return true;
     },
-    close() {
+    release() {
       void context?.close().catch(() => {});
       context = undefined;
+      cursor = undefined;
     },
   };
 }
