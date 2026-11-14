@@ -6,6 +6,8 @@ pre-commit:
   jobs:
     - name: lint staged files
       glob: "*.{js,jsx,ts,tsx}"
+      exclude:
+        - ".agents/skills/shadcn/**"
       run: bun run lint -- {staged_files}
 
     - name: check staged formatting

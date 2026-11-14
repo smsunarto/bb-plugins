@@ -5,6 +5,7 @@
   "ignorePatterns": [
     "**/dist/**",
     "**/vendor/**",
+    ".agents/skills/shadcn/**",
     "**/*.d.ts",
     "**/*.template.css",
     "**/generated/**",

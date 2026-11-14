@@ -20,6 +20,7 @@
     "**/dist/**",
     "**/node_modules/**",
     "**/vendor/**",
+    ".agents/skills/shadcn/**",
     "**/generated/**",
     "**/*.d.ts",
     "plugins/gtd-sidebar/bots-components/**"

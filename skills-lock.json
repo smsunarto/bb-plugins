@@ -1,29 +1,35 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
     "better-icons": {
       "source": "better-auth/better-icons",
       "sourceType": "github",
       "skillPath": "skills/SKILL.md",
-      "computedHash": "656a618d6d5d5e9c567253eff57a06bee3be5d4fb983bdc401a46a209c5b76de"
+      "computedHash": "3a2fcd05ef1f2d88ecd94578718c2dec6b98f5f0b660e52e713266eb0fc32962"
     },
     "diffs": {
       "source": "pierrecomputer/pierre",
       "sourceType": "github",
       "skillPath": "skills/diffs/SKILL.md",
-      "computedHash": "a71296d891eb7a598fdc77d1cf8b92dcdd5bac30a9c6bfbc32a046f0d496c85e"
+      "computedHash": ""
     },
     "effect-ts": {
       "source": "Effect-TS/skills",
       "sourceType": "github",
       "skillPath": "skills/effect-ts/SKILL.md",
-      "computedHash": "cb225ba5dda169883dfee680fba6c570c89245ba19242a9bc5c3f2ac8218a55f"
+      "computedHash": "0e5d926566561f7fe206f5f60c1c53e21d1519fd6de8408a7e3c9934d55ad04f"
     },
     "effect-v3-to-v4": {
       "source": "Effect-TS/skills",
       "sourceType": "github",
       "skillPath": "skills/effect-v3-to-v4/SKILL.md",
-      "computedHash": "0f4d927beabf2d53d07de7c7fd42e68d4100ead4129ed06e13b92986ff55713f"
+      "computedHash": ""
+    },
+    "shadcn": {
+      "source": "shadcn-ui/ui",
+      "sourceType": "github",
+      "skillPath": "skills/shadcn/SKILL.md",
+      "computedHash": "388962d16c7a4f13aaeee0d8f128e50a87df8553d42ef7988c39c0e1c74a40e8"
     }
   }
 }
