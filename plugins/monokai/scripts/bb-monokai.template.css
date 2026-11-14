@@ -1406,11 +1406,13 @@
 /* iOS Safari zooms the page into any focused field that renders text under
  * 16px, and bb's viewport meta sets no maximum-scale to stop it. bb keeps the
  * composer editor and the thread search field at 13px, so every field a phone
- * user types into sits at 16px on compact coarse-pointer layouts. The composer
+ * user types into sits at 16px on compact coarse-pointer layouts, the plugins'
+ * Markdown editors included: their prose root takes the 15px fluid size. The composer
  * placeholder is hidden separately. Checkbox, radio, range,
  * and file inputs draw no text and keep their native size. */
 @media (max-width: 767px) and (pointer: coarse) {
   .dark [data-promptbox] [data-promptbox-editor-content] .ProseMirror,
+  .dark .bb-markdown-prose[contenteditable="true"],
   .dark input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
   .dark textarea,
   .dark select {

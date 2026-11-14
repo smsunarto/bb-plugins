@@ -175,4 +175,11 @@
   :scope > :first-child {
     margin-top: 0;
   }
+  /* iOS zooms the page into a focused field under 16px and stays zoomed. bb's
+   * phone text-sm is 15px, so an editable root steps up to 16px there. */
+  @media (max-width: 767px) and (pointer: coarse) {
+    :scope[contenteditable="true"] {
+      font-size: 16px;
+    }
+  }
 }

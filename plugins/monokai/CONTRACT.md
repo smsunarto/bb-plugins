@@ -205,6 +205,7 @@ Syntax rules may never borrow these for non-feedback meaning:
   updates without a plugin reload.
 - Composer placeholder text is hidden at every width. Accessible editor labels
   remain available, and the touch editor stays at 16px to avoid iOS focus zoom.
+  Plugins' Markdown editors hold the same 16px floor on phones.
 
 - The composer environment selector shows a computer for providers that declare
   the folder icon, including project checkout and personal workspace. This
