@@ -198,10 +198,34 @@ const STATE_SCRIPT = `(() => {
 
 const CANVAS = "canvas.testobject-device__canvas";
 
+/**
+ * The ADB Shell command box. Sauce also renders a device paste box
+ * (textarea.testobject-device__paste-area) that forwards every key to the phone.
+ */
+const SHELL_INPUT = "textarea:not(.testobject-device__paste-area)";
+const SHELL_FOCUSED = `document.activeElement === document.querySelector(${JSON.stringify(SHELL_INPUT)})`;
+
+/** Sauce's device table shows this many pages at most before a list is reported truncated. */
+const MAX_DEVICE_PAGES = 12;
+
+/** Clicks the device table's Next Page button; returns the current page label, or "last". */
+const NEXT_PAGE = `(() => {
+  const next = [...document.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Go to Next Page");
+  if (!next || next.disabled) return "last";
+  const current = document.querySelector("button[aria-current=page]")?.getAttribute("aria-label") || "";
+  next.click();
+  return "from:" + current;
+})()`;
+
+const CURRENT_PAGE = `document.querySelector("button[aria-current=page]")?.getAttribute("aria-label") || ""`;
+
 /** Non-empty cell texts of a device-table row: name, status, OS version, screen. */
 const ROW_CELLS = `const rowCells = (r) => [...r.querySelectorAll("[role=gridcell],[role=rowheader]")].map((c) => c.innerText.trim()).filter(Boolean);`;
 
 export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = defaultPageDeps) {
+  /** Browser launches counted when the current session started; a later launch closed its page. */
+  let launchesAtStart: number | null = null;
+
   async function evaluate<T>(script: string, timeoutMs?: number): Promise<T> {
     const data = await browser.run(["eval", script], timeoutMs);
     return data.result as T;
@@ -295,9 +319,10 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
         "signed_out",
         "The Sauce sign-in page has no Authenticate with Google link.",
       );
+    // Google may stop on its own page (a password or account prompt); that is not signed in.
     const signedIn = await poll(45_000, async () => {
       const next = await state();
-      return next.kind === "signed_out" ? null : next;
+      return next.kind === "signed_out" || next.kind === "other" ? null : next;
     });
     if (!signedIn) {
       throw new SauceError(
@@ -325,10 +350,15 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
         "Run sauce_status. If the session is this thread's, call sauce_end first; otherwise do not end it.",
       );
     }
+    if (current.kind === "other") throw notOnSauce(current);
+    // Sauce's capacity banner stays up after a failed start; reload the page so a stale
+    // banner does not block browsing. A slot still busy shows at Start Test.
+    if (current.capacityReached) await open(LIVE_HOME);
     // Narrow windows collapse the device search box; a fresh browser starts narrow.
     await browser.run(["set", "viewport", "1600", "1000"]);
     // A build's device page (/file/<id>/device) lacks the picker anchors below, so start from home.
-    if (!/\/live\/app-testing\/?(\?|#|$)/.test(current.url)) await open(LIVE_HOME);
+    if (!current.capacityReached && !/\/live\/app-testing\/?(\?|#|$)/.test(current.url))
+      await open(LIVE_HOME);
     // The device picker renders a few seconds after the URL settles.
     const ready = await poll(
       30_000,
@@ -507,7 +537,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     await deps.sleep(1000);
   }
 
-  async function deviceRows(): Promise<DeviceRow[]> {
+  async function pageRows(): Promise<DeviceRow[]> {
     return evaluate<DeviceRow[]>(`(() => {
       ${ROW_CELLS}
       return [...document.querySelectorAll("[data-qa=device-table] [role=row]")]
@@ -517,6 +547,40 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     })()`);
   }
 
+  /** Moves the device table to its next page; false on the last page. */
+  async function nextPage(): Promise<boolean> {
+    const clicked = await evaluate<string>(NEXT_PAGE);
+    if (typeof clicked !== "string" || !clicked.startsWith("from:")) return false;
+    const from = clicked.slice("from:".length);
+    const moved = await poll(
+      8_000,
+      async () => (await evaluate<string>(CURRENT_PAGE)) !== from,
+      300,
+    );
+    if (!moved)
+      throw new SauceError("page_changed", "The Sauce device table did not turn the page.");
+    // The rows render a moment after the pager updates.
+    await deps.sleep(500);
+    return true;
+  }
+
+  /**
+   * Visits the device table page by page (Sauce shows 25 rows a page, newest OS
+   * first) until \`stop\` accepts a page's rows or the pages run out.
+   */
+  async function walkRows(
+    stop: (rows: DeviceRow[]) => boolean,
+  ): Promise<{ rows: DeviceRow[]; truncated: boolean }> {
+    const rows: DeviceRow[] = [];
+    for (let page = 1; ; page += 1) {
+      const found = await pageRows();
+      rows.push(...found);
+      if (stop(found)) return { rows, truncated: false };
+      if (page >= MAX_DEVICE_PAGES) return { rows, truncated: true };
+      if (!(await nextPage())) return { rows, truncated: false };
+    }
+  }
+
   /**
    * Devices that can run a build: Sauce filters the table by the build's platform,
    * so this selects the same build sauce_start would (newest when `app` is omitted).
@@ -524,11 +588,12 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
   async function listDevices(
     query: string,
     app?: string,
-  ): Promise<{ app: string; devices: DeviceRow[] }> {
+  ): Promise<{ app: string; devices: DeviceRow[]; truncated: boolean }> {
     await requireLive();
     const label = await selectApp(app);
     await showDeviceTable(query);
-    return { app: label, devices: await deviceRows() };
+    const { rows, truncated } = await walkRows(() => false);
+    return { app: label, devices: rows, truncated };
   }
 
   function rowMatches(row: DeviceRow, device: string, os: string | undefined) {
@@ -538,30 +603,9 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     );
   }
 
-  /** Starts a live session; resolves with the Sauce device header once the session page shows. */
-  async function startSession(
-    input: { app?: string; device: string; os?: string },
-    signal?: AbortSignal,
-  ): Promise<{ app: string; device: string; url: string }> {
-    const cancelled = () => new SauceError("cancelled", "The tool call was cancelled.");
-    await requireLive();
-    const app = await selectApp(input.app);
-    await showDeviceTable(input.device);
-    const rows = await deviceRows();
-    const matching = rows.filter((row) => rowMatches(row, input.device, input.os));
-    const available = matching.find((row) => /^available$/i.test(row.status));
-    if (!available) {
-      const seen = (matching.length > 0 ? matching : rows).slice(0, 12);
-      throw new SauceError(
-        "not_found",
-        `No available real device named "${input.device}"${input.os ? ` on ${input.os}` : ""}. Seen: ${
-          seen.map((row) => `${row.name} (${row.os}, ${row.status})`).join("; ") || "none"
-        }.`,
-        `Pick a name and os exactly as sauce_catalog kind: devices lists them for this build (app: ${JSON.stringify(app)}).`,
-      );
-    }
+  async function selectRow(row: DeviceRow) {
     const clicked = await evaluate<boolean>(`(() => {
-      const want = ${JSON.stringify(available)};
+      const want = ${JSON.stringify(row)};
       ${ROW_CELLS}
       const row = [...document.querySelectorAll("[data-qa=device-table] [role=row]")].find((r) => {
         const [name, status, os] = rowCells(r);
@@ -575,21 +619,105 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
         "page_changed",
         "The device row disappeared before it could be selected.",
       );
-    await deps.sleep(1200);
-    // Last point where stopping costs nothing: after this click a device is coming up.
-    if (signal?.aborted) throw cancelled();
-    await browser.run(["find", "role", "button", "click", "--name", "Start Test", "--exact"]);
-    const started = await poll(
-      150_000,
-      async () => {
-        if (signal?.aborted) return "cancelled" as const;
-        const next = await state();
-        if (next.capacityReached) return next;
-        return next.kind === "session" && next.device ? next : null;
-      },
-      2500,
+  }
+
+  /**
+   * Sauce renders Start Test once a row is selected and keeps it disabled while the
+   * account's one live slot is in use; a disabled button is the busy slot.
+   */
+  async function clickStartTest(signal: AbortSignal | undefined) {
+    const enabled = await poll(
+      8_000,
+      async () =>
+        (await evaluate<"enabled" | "disabled" | null>(`(() => {
+          const b = [...document.querySelectorAll("button")].find((b) => b.innerText.trim() === "Start Test");
+          return b ? (b.disabled || b.getAttribute("aria-disabled") === "true" ? "disabled" : "enabled") : null;
+        })()`)) === "enabled",
+      700,
     );
-    if (started === "cancelled") throw cancelled();
+    if (!enabled) {
+      const shown = await evaluate<boolean>(
+        `[...document.querySelectorAll("button")].some((b) => b.innerText.trim() === "Start Test")`,
+      );
+      if (shown) throw capacityReached();
+      throw new SauceError("page_changed", "Sauce showed no Start Test button for the device.");
+    }
+    // Last point where stopping costs nothing: after this click a device is coming up.
+    if (signal?.aborted) throw cancelledError();
+    const clicked = await tryAction([
+      "find",
+      "role",
+      "button",
+      "click",
+      "--name",
+      "Start Test",
+      "--exact",
+    ]);
+    if (clicked) return;
+    if ((await state()).capacityReached) throw capacityReached();
+    throw new SauceError("page_changed", "The Start Test button did not accept a click.");
+  }
+
+  /**
+   * Waits for the session page after Start Test. Any way out other than the session
+   * page or start_pending aborts the start, so no device comes up without a holder.
+   */
+  async function waitForSession(signal: AbortSignal | undefined): Promise<PageState | null> {
+    let started: PageState | "cancelled" | null;
+    try {
+      started = await poll(
+        150_000,
+        async () => {
+          if (signal?.aborted) return "cancelled" as const;
+          // One failed read (the page navigating) must not abandon a device coming up.
+          const next = await state().catch((error: unknown) => {
+            if (error instanceof BrowserUnavailableError) throw error;
+            return null;
+          });
+          if (!next) return null;
+          if (next.capacityReached) return next;
+          return next.kind === "session" && next.device ? next : null;
+        },
+        2500,
+      );
+    } catch (error) {
+      await abortStart().catch(() => false);
+      throw error;
+    }
+    if (started === "cancelled") {
+      await abortStart();
+      throw cancelledError();
+    }
+    return started;
+  }
+
+  /** Starts a live session; resolves with the Sauce device header once the session page shows. */
+  async function startSession(
+    input: { app?: string; device: string; os?: string },
+    signal?: AbortSignal,
+  ): Promise<{ app: string; device: string; url: string }> {
+    await requireLive();
+    const app = await selectApp(input.app);
+    await showDeviceTable(input.device);
+    const isWanted = (row: DeviceRow) =>
+      rowMatches(row, input.device, input.os) && /^available$/i.test(row.status);
+    // The table stays on the page where the wanted row was found, so it can be clicked.
+    const { rows } = await walkRows((page) => page.some(isWanted));
+    const matching = rows.filter((row) => rowMatches(row, input.device, input.os));
+    const available = matching.find(isWanted);
+    if (!available) {
+      const seen = (matching.length > 0 ? matching : rows).slice(0, 12);
+      throw new SauceError(
+        "not_found",
+        `No available real device named "${input.device}"${input.os ? ` on ${input.os}` : ""}. Seen: ${
+          seen.map((row) => `${row.name} (${row.os}, ${row.status})`).join("; ") || "none"
+        }.`,
+        `Pick a name and os exactly as sauce_catalog kind: devices lists them for this build (app: ${JSON.stringify(app)}).`,
+      );
+    }
+    await selectRow(available);
+    await clickStartTest(signal);
+    const started = await waitForSession(signal);
     if (!started) {
       throw new SauceError(
         "start_pending",
@@ -597,39 +725,66 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
         "The device may still be starting, and this thread keeps it. Call sauce_status in a minute: on session_mine, continue; otherwise call sauce_end to free the device.",
       );
     }
-    if (started.capacityReached && started.kind !== "session") {
-      throw new SauceError(
-        "capacity_reached",
-        "Sauce reports the account's one live-device slot is in use by another session.",
-        "Another thread or person holds the device. Run sauce_status to see whether a bb thread holds the lease.",
-      );
-    }
+    if (started.capacityReached && started.kind !== "session") throw capacityReached();
+    launchesAtStart = browser.launches?.() ?? 0;
     return { app, device: started.device ?? available.name, url: started.url };
+  }
+
+  /**
+   * Stops a start that Start Test set going: ends the session if its page is up,
+   * otherwise leaves the page, which Sauce treats as abandoning the start (measured
+   * 2026-11-13: a new session started 30 s after the session page was left).
+   * Resolves true once the tab is off any session page.
+   */
+  async function abortStart(): Promise<boolean> {
+    const current = await state();
+    if (current.kind === "session") return endSession();
+    await open(LIVE_HOME);
+    const left = await poll(20_000, async () => (await state()).kind !== "session", 1000);
+    if (!left) return endSession();
+    return true;
   }
 
   async function requireSession(): Promise<PageState> {
     const current = await state();
     if (current.kind !== "session") {
+      const restarted = launchesAtStart !== null && (browser.launches?.() ?? 0) > launchesAtStart;
       throw new SauceError(
         "no_session",
         current.kind === "session_ended"
           ? "The live session has ended (Sauce ends idle sessions after a few minutes)."
-          : "No live session is open.",
-        "Start one with sauce_start.",
+          : restarted
+            ? "The shared Sauce browser restarted, which closed the session page."
+            : "No live session is open.",
+        restarted
+          ? "Sauce may keep the slot busy for several minutes. Call sauce_status; on capacity_reached, wait and retry sauce_start."
+          : "Start one with sauce_start.",
       );
     }
     return current;
   }
 
+  /** The device canvas; it mounts a moment after the session page shows, so wait for it. */
   async function canvasRect(): Promise<Rect> {
-    const rect = await evaluate<Rect | null>(`(() => {
-      const c = document.querySelector(${JSON.stringify(CANVAS)});
-      if (!c) return null;
-      const r = c.getBoundingClientRect();
-      return { left: r.left, top: r.top, width: r.width, height: r.height };
-    })()`);
-    if (!rect || rect.width < 10)
-      throw new SauceError("page_changed", "The device screen is not on the session page.");
+    const rect = await poll(
+      10_000,
+      async () => {
+        const found = await evaluate<Rect | null>(`(() => {
+          const c = document.querySelector(${JSON.stringify(CANVAS)});
+          if (!c) return null;
+          const r = c.getBoundingClientRect();
+          return { left: r.left, top: r.top, width: r.width, height: r.height };
+        })()`);
+        return found && found.width >= 10 ? found : null;
+      },
+      500,
+    );
+    if (!rect)
+      throw new SauceError(
+        "page_changed",
+        "The device screen did not appear on the session page within 10 s.",
+        "Call sauce_status; if it says session_mine, take the screenshot again.",
+      );
     return rect;
   }
 
@@ -642,19 +797,26 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
    * step must not leave the button held for the next call. A timed-out "down" may still
    * have landed, so it lifts too, and a failed lift is retried once.
    */
-  async function withFingerDown(at: { x: number; y: number }, work: () => Promise<void>) {
+  async function withFingerDown(
+    at: { x: number; y: number },
+    work: (roundTripMs: number) => Promise<void>,
+  ) {
     await mouse("move", `${at.x}`, `${at.y}`);
     try {
+      const before = deps.now();
       await mouse("down");
-      await work();
+      await work(deps.now() - before);
     } finally {
       await mouse("up").catch(() => mouse("up"));
     }
   }
 
+  /** `rotation` is the screenshot's (picture) rotation; touches go through pointerRotation. */
   async function tap(point: Point, rotation: number) {
-    await requireSession();
-    await withFingerDown(toViewport(point, rotation, await canvasRect()), async () => {});
+    const session = await requireSession();
+    const rect = await canvasRect();
+    const pointer = pointerRotation(rotation, session.device, rect);
+    await withFingerDown(toViewport(point, pointer, rect), async () => {});
   }
 
   async function drag(
@@ -664,17 +826,22 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     durationMs: number,
     holdMs: number,
   ) {
-    await requireSession();
+    const session = await requireSession();
     const rect = await canvasRect();
-    const start = toViewport(from, rotation, rect);
-    const end = toViewport(to, rotation, rect);
-    const steps = Math.max(2, Math.min(20, Math.round(durationMs / 50)));
-    await withFingerDown(start, async () => {
+    const pointer = pointerRotation(rotation, session.device, rect);
+    const start = toViewport(from, pointer, rect);
+    const end = toViewport(to, pointer, rect);
+    await withFingerDown(start, async (downMs) => {
+      // Each move is one agent-browser round trip, so pace against the clock and take
+      // only as many steps as the round trip allows; otherwise a fling arrives as a slow drag.
+      const began = deps.now();
+      const steps = Math.max(2, Math.min(20, Math.floor(durationMs / Math.max(50, downMs))));
       for (let step = 1; step <= steps; step += 1) {
         const x = Math.round(start.x + ((end.x - start.x) * step) / steps);
         const y = Math.round(start.y + ((end.y - start.y) * step) / steps);
         await mouse("move", `${x}`, `${y}`);
-        if (durationMs > 0) await deps.sleep(durationMs / steps);
+        const wait = began + (durationMs * step) / steps - deps.now();
+        if (step < steps && wait > 0) await deps.sleep(wait);
       }
       if (holdMs > 0) await deps.sleep(holdMs);
     });
@@ -770,7 +937,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     const echo = `adb shell ${command}`;
     const panelText = () =>
       evaluate<string | null>(`(() => {
-        let n = document.querySelector("textarea");
+        let n = document.querySelector(${JSON.stringify(SHELL_INPUT)});
         for (let i = 0; i < 10 && n; i += 1) {
           n = n.parentElement;
           if (n && n.innerText.includes(${JSON.stringify(echo)})) return n.innerText;
@@ -780,11 +947,36 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     // A repeated command already has an echo and prompt on screen; wait for a new echo.
     const echoesBefore = countOf(await panelText(), echo);
     // After the first command Sauce ignores a programmatic fill, and Enter submits an
-    // empty line; real keystrokes always register.
-    await browser.run(["click", "textarea"]);
-    await browser.run(["press", "Control+a"]);
-    await browser.run(["press", "Backspace"]);
+    // empty line, so the command is typed. Sauce forwards keys pressed outside the
+    // shell box to the phone, and after each command it moves focus to the device's
+    // paste box; so every key waits until the shell box itself has focus.
+    const focusShell = async () => {
+      if (!(await tryAction(["focus", SHELL_INPUT]))) return false;
+      return evaluate<boolean>(SHELL_FOCUSED);
+    };
+    const shellValue = () =>
+      evaluate<string | null>(
+        `document.querySelector(${JSON.stringify(SHELL_INPUT)})?.value ?? null`,
+      );
+    const notSent = (why: string) =>
+      new SauceError(
+        "page_changed",
+        `adb shell ${command} was not sent: ${why}. No keys reached the device.`,
+        "Call sauce_device shell again; if it keeps failing, take a sauce_screenshot to check the device.",
+      );
+    if (!(await poll(5_000, focusShell, 500)))
+      throw notSent("the ADB shell box did not take focus");
+    if ((await shellValue()) !== "") {
+      await browser.run(["press", "Control+a"]);
+      if (!(await evaluate<boolean>(SHELL_FOCUSED))) throw notSent("the ADB shell box lost focus");
+      await browser.run(["press", "Backspace"]);
+    }
+    if (!(await evaluate<boolean>(SHELL_FOCUSED))) throw notSent("the ADB shell box lost focus");
     await browser.run(["keyboard", "type", command]);
+    if ((await shellValue()) !== command) {
+      throw notSent("the ADB shell box did not hold the typed command");
+    }
+    if (!(await evaluate<boolean>(SHELL_FOCUSED))) throw notSent("the ADB shell box lost focus");
     await browser.run(["press", "Enter"]);
     const output = await poll(
       timeoutMs,
@@ -883,18 +1075,21 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
   async function endSession(): Promise<boolean> {
     const current = await state();
     if (current.kind !== "session") return false;
-    await browser.run(["find", "role", "button", "click", "--name", "End Session", "--exact"]);
-    // Older layouts asked to confirm.
-    await deps.sleep(1500);
-    await evaluate(`(() => {
-      const b = [...document.querySelectorAll("button")].filter((b) => /^(End Session|End|Yes|Confirm)$/i.test(b.innerText.trim()) && b.offsetParent);
-      if (b.length > 1) b.at(-1).click();
-      return b.length;
-    })()`);
-    const ended = await poll(20_000, async () => (await state()).kind !== "session", 1000);
-    if (ended) return true;
+    // A missing or covered button falls through to leaving the page below.
+    if (await tryAction(["find", "role", "button", "click", "--name", "End Session", "--exact"])) {
+      // Older layouts asked to confirm.
+      await deps.sleep(1500);
+      await evaluate(`(() => {
+        const b = [...document.querySelectorAll("button")].filter((b) => /^(End Session|End|Yes|Confirm)$/i.test(b.innerText.trim()) && b.offsetParent);
+        if (b.length > 1) b.at(-1).click();
+        return b.length;
+      })()`).catch(() => 0);
+      const ended = await poll(20_000, async () => (await state()).kind !== "session", 1000);
+      if (ended) return true;
+    }
     // The End Session click missed or the page hung. Leaving the session page closes
-    // its device connection, which Sauce treats as the end of the session.
+    // its device connection, which Sauce treats as the end of the session (measured
+    // 2026-11-13: the slot took a new session 30 s after the page was left).
     await open(LIVE_HOME);
     const left = await poll(20_000, async () => (await state()).kind !== "session", 1000);
     if (!left) {
@@ -921,7 +1116,28 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     shell,
     downloadLog,
     endSession,
+    abortStart,
   };
+}
+
+function cancelledError() {
+  return new SauceError("cancelled", "The tool call was cancelled.");
+}
+
+export function capacityReached() {
+  return new SauceError(
+    "capacity_reached",
+    "Sauce reports the account's one live-device slot is in use by another session.",
+    "Another thread or person holds the device. Run sauce_status to see whether a bb thread holds the lease.",
+  );
+}
+
+export function notOnSauce(current: PageState) {
+  return new SauceError(
+    "page_changed",
+    `The Sauce browser did not reach Sauce Live; it shows ${current.url.slice(0, 120)}.`,
+    "The bb server machine may be offline, or Sauce may be down. Call sauce_status again in a minute; if it persists, report it.",
+  );
 }
 
 export type SaucePage = ReturnType<typeof createSaucePage>;
@@ -950,11 +1166,33 @@ export function canvasFraction(point: Point, rotation: number): [number, number]
         : [u, v];
 }
 
-/** Maps a point given as fractions of the upright screenshot to viewport pixels on the canvas. */
+/**
+ * The rotation a touch is mapped through, from the picture rotation a screenshot
+ * measured. Measured live on an iPhone 13 (iOS 27.0), 2026-11-13:
+ * - Portrait canvas, landscape app (picture reads 90): Sauce reads the pointer in a
+ *   frame turned 180 degrees from the picture, so touches need 270.
+ * - Portrait canvas with a portrait screen (0), and a canvas turned landscape by
+ *   Rotate Device with a portrait (90) or landscape (0) screen: touches follow the picture.
+ * Android follows the picture in every case measured.
+ */
+export function pointerRotation(rotation: number, device: string | null, canvas: Rect): number {
+  const ios = device !== null && / - iOS /.test(`${device} `);
+  const portraitCanvas = canvas.height > canvas.width;
+  if (ios && portraitCanvas && (rotation === 90 || rotation === 270)) return (rotation + 180) % 360;
+  return rotation;
+}
+
+/**
+ * Maps a point given as fractions of the upright screenshot to viewport pixels on
+ * the canvas. The canvas's right and bottom edges are exclusive, so fraction 1
+ * lands on its last pixel rather than the first pixel outside it.
+ */
 export function toViewport(point: Point, rotation: number, rect: Rect): { x: number; y: number } {
   const [cx, cy] = canvasFraction(point, rotation);
+  const clamp = (value: number, start: number, size: number) =>
+    Math.min(Math.ceil(start + size) - 1, Math.max(Math.ceil(start), Math.round(value)));
   return {
-    x: Math.round(rect.left + cx * rect.width),
-    y: Math.round(rect.top + cy * rect.height),
+    x: clamp(rect.left + cx * rect.width, rect.left, rect.width),
+    y: clamp(rect.top + cy * rect.height, rect.top, rect.height),
   };
 }

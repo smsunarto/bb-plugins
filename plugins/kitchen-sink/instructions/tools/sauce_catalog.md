@@ -1,4 +1,4 @@
-List what Sauce Live offers before starting a device: `kind: "apps"` lists the newest builds in Sauce app storage (about 10; add `query` to find older ones); `kind: "devices"` lists real devices matching `query` with status, OS, and screen size.
+List what Sauce Live offers before starting a device: `kind: "apps"` lists the newest builds in Sauce app storage (about 10; add `query` to find older ones); `kind: "devices"` lists real devices matching `query` with status, OS, and screen size, newest OS first. It returns `total` for a complete list; `truncated: true` instead means Sauce has more pages than were read, so narrow `query`.
 
 Sauce shows only the devices that can run the selected build, so for `kind: "devices"` pass the same `app` you will give `sauce_start` (omitted, the newest build, as in `sauce_start`). The result's `app` names the build the list belongs to.
 

@@ -64,7 +64,7 @@ function fakePage(state: FakeState): SaucePage {
     listApps: async () => [{ id: "f1", label: "Rampage/build.apk" }],
     listDevices: async (query, app) => {
       state.deviceQueries.push({ query, app });
-      return { app: app ?? "Rampage/build.apk", devices: [] };
+      return { app: app ?? "Rampage/build.apk", devices: [], truncated: false };
     },
     startSession: async (input) => {
       state.onStart?.();
@@ -97,6 +97,7 @@ function fakePage(state: FakeState): SaucePage {
       state.ended += 1;
       return true;
     },
+    abortStart: async () => true,
   } as SaucePage;
 }
 
@@ -154,8 +155,9 @@ test("touch points map onto the sideways session canvas", () => {
   const rect = { left: 726, top: 89, width: 404, height: 878 };
   expect(toViewport({ x: 0.935, y: 0.07 }, 90, rect)).toEqual({ x: 754, y: 146 });
   expect(toViewport({ x: 0, y: 0 }, 0, rect)).toEqual({ x: 726, y: 89 });
-  expect(toViewport({ x: 0, y: 0 }, 180, rect)).toEqual({ x: 1130, y: 967 });
-  expect(toViewport({ x: 0, y: 0 }, 270, rect)).toEqual({ x: 1130, y: 89 });
+  // The canvas's right and bottom edges are exclusive: an edge touch lands on its last pixel.
+  expect(toViewport({ x: 0, y: 0 }, 180, rect)).toEqual({ x: 1129, y: 966 });
+  expect(toViewport({ x: 0, y: 0 }, 270, rect)).toEqual({ x: 1129, y: 89 });
 });
 
 test("pngSize reads the IHDR dimensions", () => {
@@ -292,7 +294,8 @@ test("a start that outlasts the wait keeps the lease for the starter", async () 
   expect(await code(tools.start({ threadId: "thr_b" }, { device: "Pixel 8" }))).toBe(
     "held_by_other_thread",
   );
-  expect(await tools.end(a)).toEqual({ ended: false, released: true });
+  // Ending a pending start abandons it rather than leaving a session nobody leases.
+  expect(await tools.end(a)).toMatchObject({ ended: true, released: true });
   expect(store.read()).toBeNull();
 });
 
@@ -327,16 +330,21 @@ test("sauce tools reach only rampage projects, and every skill stays selected", 
   expect(other.skills).toEqual(SKILLS);
 });
 
-test("an unclear rotation never guesses between mirror images", async () => {
+test("an unclear rotation keeps or assumes Sauce's usual turn, never the reading's guess", async () => {
   const { tools, state } = harness();
   const a = { threadId: "thr_a" };
   await tools.start(a, { device: "Samsung Galaxy S23" });
 
-  // The screen changed during the first landscape capture: no frame, touches refuse.
+  // The screen moved during the first landscape capture (a launch cinematic): Sauce
+  // has always turned a landscape app in a portrait canvas by 90, so assume that.
   state.reading = { candidates: [90, 270], best: 270, clear: false };
-  expect(await tools.screenshot(a, {})).toMatchObject({ rotation: null, rotation_measured: false });
-  expect(await code(tools.touch(a, { x: 0.5, y: 0.5 }))).toBe("no_frame");
+  const first = (await tools.screenshot(a, {})) as { note?: string };
+  expect(first).toMatchObject({ rotation: 90, rotation_measured: false });
+  expect(first.note).toContain("assumed Sauce's usual sideways turn");
+  expect(await code(tools.touch(a, { x: 0.5, y: 0.5 }))).toBe("ok");
 
+  state.reading = { candidates: [90, 270], best: 270, clear: true };
+  expect(await tools.screenshot(a, {})).toMatchObject({ rotation: 270, rotation_measured: true });
   state.reading = { candidates: [90, 270], best: 90, clear: true };
   expect(await tools.screenshot(a, {})).toMatchObject({ rotation: 90, rotation_measured: true });
 

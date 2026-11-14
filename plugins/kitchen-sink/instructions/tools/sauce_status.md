@@ -9,4 +9,4 @@ Returns `state` with a `next` step:
 - `session_abandoned`: the holder went idle for 15 minutes; `sauce_start` takes the device over.
 - `session_untracked` or `capacity_reached`: someone outside these tools is using the slot. Wait or ask the user; do not end their session.
 
-A `browser_unavailable` error means the bb server machine cannot run the Sauce browser; report it rather than trying another browser.
+A `browser_unavailable` error means the bb server machine cannot run the Sauce browser; report it rather than trying another browser. A `page_changed` error means the browser could not reach Sauce Live (offline, or Sauce is down); call again in a minute, and report it if it persists.

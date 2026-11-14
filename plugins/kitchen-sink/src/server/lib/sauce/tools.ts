@@ -17,7 +17,14 @@ import {
   type LeaseStore,
   type SauceLease,
 } from "./lease.ts";
-import { SauceError, createSaucePage, type RotationReading, type SaucePage } from "./live.ts";
+import {
+  SauceError,
+  createSaucePage,
+  notOnSauce,
+  type PageState,
+  type RotationReading,
+  type SaucePage,
+} from "./live.ts";
 
 export const SAUCE_TOOLS = [
   "sauce_status",
@@ -102,22 +109,55 @@ function fail(error: unknown): PluginAgentToolResult {
   };
 }
 
+/** How chooseRotation settled on a rotation; each rule gets its own note. */
+export type RotationRule = "measured" | "kept" | "assumed_upright" | "assumed_sideways" | "unknown";
+
 /**
- * The rotation touches are mapped through. A clear reading wins. An unclear one (the
- * screen changed during the capture) keeps the previous rotation when the screen's
- * shape still allows it, assumes upright for a screen shaped like the canvas (apps
- * do not run upside down), and otherwise leaves the frame unset so touches refuse
- * rather than land mirrored.
+ * Sauce draws a landscape app in the portrait canvas turned this way: every measured
+ * reading of that case (169 across three threads and four devices, Android and iOS,
+ * on 2026-11-13) was 90, never 270.
+ */
+const SIDEWAYS_ROTATION = 90;
+
+/**
+ * The rotation of the canvas picture. A clear reading wins. An unclear one (the
+ * screen moved during the capture, or is too plain to compare) keeps the previous
+ * rotation when the screen's shape still allows it; otherwise it assumes upright for
+ * a screen shaped like the canvas (apps do not run upside down) and Sauce's usual
+ * turn for a landscape screen in a portrait canvas.
  */
 export function chooseRotation(
   reading: RotationReading,
   previous: number | null,
-): { rotation: number | null; measured: boolean } {
-  if (reading.clear && reading.best !== null) return { rotation: reading.best, measured: true };
+): { rotation: number | null; measured: boolean; rule: RotationRule } {
+  if (reading.clear && reading.best !== null)
+    return { rotation: reading.best, measured: true, rule: "measured" };
   if (previous !== null && reading.candidates.includes(previous))
-    return { rotation: previous, measured: false };
-  if (reading.candidates[0] === 0) return { rotation: 0, measured: false };
-  return { rotation: null, measured: false };
+    return { rotation: previous, measured: false, rule: "kept" };
+  if (reading.candidates[0] === 0) return { rotation: 0, measured: false, rule: "assumed_upright" };
+  if (reading.candidates.includes(SIDEWAYS_ROTATION))
+    return { rotation: SIDEWAYS_ROTATION, measured: false, rule: "assumed_sideways" };
+  return { rotation: null, measured: false, rule: "unknown" };
+}
+
+const ROTATION_NOTES: Record<RotationRule, string | undefined> = {
+  measured: undefined,
+  kept: "The rotation could not be measured on this capture (the screen moved, or is too plain to compare); kept the rotation the last screenshot used. If a touch lands mirrored, take another screenshot once the screen is still.",
+  assumed_upright:
+    "The rotation could not be measured on this capture (the screen moved, or is too plain to compare); assumed the app is upright. If a touch lands mirrored, take another screenshot once the screen is still.",
+  assumed_sideways:
+    "The rotation could not be measured on this capture (the screen moved, or is too plain to compare); assumed Sauce's usual sideways turn for a landscape app. If a touch lands mirrored, take another screenshot once the screen is still.",
+  unknown:
+    "The rotation could not be measured on this capture, so sauce_touch will refuse. Take another screenshot once the screen is still.",
+};
+
+function statusState(page: PageState, lease: LeaseCheck["kind"]) {
+  if (page.kind === "signed_out") return "signed_out";
+  if (page.kind === "session") {
+    if (lease === "mine") return "session_mine";
+    return lease === "free" ? "session_untracked" : "session_abandoned";
+  }
+  return page.capacityReached ? "capacity_reached" : "ready";
 }
 
 function stamp(now: number) {
@@ -231,15 +271,10 @@ export function createSauceTools(deps: SauceToolDeps) {
     try {
       const local = join(dir, "screen.png");
       const shot = await deps.page.captureScreen(local);
-      const { rotation, measured } = chooseRotation(shot.reading, previous);
+      const { rotation, measured, rule } = chooseRotation(shot.reading, previous);
       const lease = touchLease(deps.store, { rotation }, deps.now());
       const name = `${stamp(deps.now())}${label ? `-${slug(label)}` : ""}.png`;
-      const note =
-        rotation === null
-          ? "The screen changed during the capture, so its rotation is unknown and sauce_touch will refuse. Take another screenshot once the screen is still."
-          : measured
-            ? undefined
-            : "The screen changed during the capture; kept the rotation from before. If a touch lands mirrored, take another screenshot once the screen is still.";
+      const note = ROTATION_NOTES[rule];
       return {
         file: { dir, local, name } satisfies PendingFile,
         info: {
@@ -292,20 +327,10 @@ export function createSauceTools(deps: SauceToolDeps) {
         }
         let page = await deps.page.home();
         if (page.kind === "signed_out" && input.sign_in) page = await deps.page.signIn();
+        // `ready` promises a signed-in Sauce Live page; anything else is not ready.
+        if (page.kind === "other") throw notOnSauce(page);
         const lease = check.kind === "mine" ? check.lease : null;
-        const untracked = page.kind === "session" && check.kind === "free";
-        const state =
-          page.kind === "signed_out"
-            ? "signed_out"
-            : page.kind === "session"
-              ? lease
-                ? "session_mine"
-                : untracked
-                  ? "session_untracked"
-                  : "session_abandoned"
-              : page.capacityReached
-                ? "capacity_reached"
-                : "ready";
+        const state = statusState(page, check.kind);
         const next = {
           signed_out:
             "Call sauce_status with sign_in: true once. If it stays signed out, stop and report it.",
@@ -355,12 +380,18 @@ export function createSauceTools(deps: SauceToolDeps) {
             'Search by model, for example "Galaxy S23" or "iPhone 15".',
           );
         }
-        const { app, devices } = await deps.page.listDevices(input.query, input.app);
+        const { app, devices, truncated } = await deps.page.listDevices(input.query, input.app);
+        const shown = Math.min(devices.length, 60);
         return {
           app,
           devices: devices.slice(0, 60),
-          shown: Math.min(devices.length, 60),
-          total: devices.length,
+          shown,
+          ...(truncated
+            ? { truncated: true, note: "Sauce lists more devices than were read; narrow query." }
+            : { total: devices.length }),
+          ...(!truncated && shown < devices.length
+            ? { note: "Only the first 60 are shown; narrow query." }
+            : {}),
         };
       });
     },
@@ -409,6 +440,7 @@ export function createSauceTools(deps: SauceToolDeps) {
             throw error;
           }
           if (error instanceof SauceError && error.code === "cancelled") {
+            // The page aborted a start it had set going; a session that came up anyway ends here.
             await deps.page.endSession().catch(() => false);
             releaseLease(deps.store, ctx.threadId);
             throw error;
@@ -449,15 +481,16 @@ export function createSauceTools(deps: SauceToolDeps) {
           const from = { x: input.x, y: input.y };
           const hasTarget = input.to_x !== undefined || input.to_y !== undefined;
           const to = { x: input.to_x ?? input.x, y: input.to_y ?? input.y };
+          const rotation = lease.rotation;
           let gesture: string;
           if (!hasTarget && !input.hold_ms) {
-            await deps.page.tap(from, lease.rotation);
+            await deps.page.tap(from, rotation);
             gesture = "tap";
           } else {
             await deps.page.drag(
               from,
               to,
-              lease.rotation,
+              rotation,
               input.duration_ms ?? (hasTarget ? 300 : 0),
               input.hold_ms ?? 0,
             );
@@ -467,7 +500,15 @@ export function createSauceTools(deps: SauceToolDeps) {
           const result = { gesture, from, to: hasTarget ? to : undefined };
           if (input.screenshot_after_ms === undefined) return { result, shot: null };
           await deps.sleep(input.screenshot_after_ms);
-          return { result, shot: await captureScreen("after-touch", lease.rotation) };
+          // The gesture already landed: a failed capture must not read as a failed touch,
+          // or the agent repeats it.
+          try {
+            return { result, shot: await captureScreen("after-touch", lease.rotation) };
+          } catch (error) {
+            if (error instanceof SauceError && error.code === "no_session") throw error;
+            const reason = error instanceof Error ? error.message : String(error);
+            return { result: { ...result, screenshot_error: reason }, shot: null };
+          }
         });
       });
       if (!touched.shot) return touched.result;
@@ -572,6 +613,13 @@ export function createSauceTools(deps: SauceToolDeps) {
         const check = own.kind === "mine" ? own : await requireBrowsable(ctx.threadId);
         if (check.kind === "free") {
           return { ended: false, released: false, note: "This thread held no Sauce device." };
+        }
+        // A start still coming up (start_pending) has no session page yet; leaving the
+        // page abandons it, so no session appears later without a lease.
+        if (check.lease.device === null && (await deps.page.state()).kind !== "session") {
+          const ended = await deps.page.abortStart();
+          releaseLease(deps.store, check.lease.threadId);
+          return { ended, released: true, note: "The start was still pending; it was abandoned." };
         }
         const ended = await deps.page.endSession();
         releaseLease(deps.store, check.lease.threadId);

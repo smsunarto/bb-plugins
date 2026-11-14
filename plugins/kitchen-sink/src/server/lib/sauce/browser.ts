@@ -6,6 +6,8 @@ import { delimiter, join } from "node:path";
 /** Runs one agent-browser command against the shared Sauce Live browser and returns its `--json` data. */
 export interface BrowserRunner {
   run(args: readonly string[], timeoutMs?: number): Promise<Record<string, unknown>>;
+  /** How many times a call has launched or relaunched the browser since the runner was made. */
+  launches?(): number;
 }
 
 export class BrowserUnavailableError extends Error {
@@ -13,8 +15,13 @@ export class BrowserUnavailableError extends Error {
 }
 
 const SESSION = "sauce-live";
-/** Bounds the browser daemon when this call launches it; a bb restart then cannot orphan it forever. */
-const BROWSER_SCOPE_MAX_SECONDS = 4 * 60 * 60;
+/**
+ * Shuts the browser daemon down after this long without a command, so a bb restart
+ * cannot orphan it forever. Idleness, not age: a wall-clock limit (systemd
+ * RuntimeMaxSec) killed the browser in the middle of live sessions. Sauce ends a
+ * session after a few idle minutes, so an hour without commands holds none.
+ */
+export const BROWSER_IDLE_TIMEOUT_MS = 60 * 60 * 1000;
 
 export type SauceBrowserPaths = { profile: string; headedConfig: string };
 
@@ -31,15 +38,37 @@ export function sauceBrowserPaths(): SauceBrowserPaths {
   };
 }
 
-export function createAgentBrowserRunner(paths = sauceBrowserPaths()): BrowserRunner {
-  const env = {
-    ...process.env,
+export function browserEnv(paths: SauceBrowserPaths, base: NodeJS.ProcessEnv = process.env) {
+  return {
+    ...base,
     AGENT_BROWSER_PROFILE: paths.profile,
     AGENT_BROWSER_CONFIG: paths.headedConfig,
     AGENT_BROWSER_HEADED: "1",
+    AGENT_BROWSER_IDLE_TIMEOUT_MS: String(BROWSER_IDLE_TIMEOUT_MS),
   };
+}
+
+/**
+ * The process to spawn for one agent-browser call. A transient user scope keeps a
+ * browser this call launches alive across bb restarts; it carries no runtime limit.
+ */
+export function browserCommand(
+  binary: string,
+  args: readonly string[],
+  useScope: boolean,
+): [string, ...string[]] {
+  const command: [string, ...string[]] = [binary, "--json", "--session", SESSION, ...args];
+  return useScope
+    ? ["systemd-run", "--user", "--scope", "--quiet", "--collect", ...command]
+    : command;
+}
+
+export function createAgentBrowserRunner(paths = sauceBrowserPaths()): BrowserRunner {
+  const env = browserEnv(paths);
   const useScope = process.platform === "linux" && existsSync("/usr/bin/systemd-run");
+  let launches = 0;
   return {
+    launches: () => launches,
     run(args, timeoutMs = 30_000) {
       if (!existsSync(paths.profile)) {
         return Promise.reject(
@@ -54,23 +83,10 @@ export function createAgentBrowserRunner(paths = sauceBrowserPaths()): BrowserRu
           new BrowserUnavailableError("agent-browser is not on the bb server's PATH."),
         );
       }
-      const command = [binary, "--json", "--session", SESSION, ...args];
-      // A transient user scope keeps a browser this call launches alive across bb restarts.
-      const [file, ...argv] = useScope
-        ? [
-            "systemd-run",
-            "--user",
-            "--scope",
-            "--quiet",
-            "--collect",
-            "-p",
-            `RuntimeMaxSec=${BROWSER_SCOPE_MAX_SECONDS}`,
-            ...command,
-          ]
-        : command;
+      const [file, ...argv] = browserCommand(binary, args, useScope);
       return new Promise((resolve, reject) => {
         execFile(
-          file as string,
+          file,
           argv,
           { env, timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 },
           (error, stdout, stderr) => {
@@ -82,7 +98,9 @@ export function createAgentBrowserRunner(paths = sauceBrowserPaths()): BrowserRu
             }
             const parsed = parseJsonLine(stdout);
             if (parsed?.success === true) {
-              resolve((parsed.data ?? {}) as Record<string, unknown>);
+              const data = (parsed.data ?? {}) as Record<string, unknown>;
+              if (launchedBrowser(data)) launches += 1;
+              resolve(data);
               return;
             }
             const detail = `${parsed?.error ?? (stderr || stdout || error?.message || "no output")}`;
@@ -92,6 +110,14 @@ export function createAgentBrowserRunner(paths = sauceBrowserPaths()): BrowserRu
       });
     },
   };
+}
+
+/** agent-browser reports in `lifecycle` when a call started a browser that was not running. */
+export function launchedBrowser(data: Record<string, unknown>): boolean {
+  const lifecycle = data.lifecycle as
+    | { launched?: unknown; relaunchedBrowser?: unknown }
+    | undefined;
+  return lifecycle?.launched === true || lifecycle?.relaunchedBrowser === true;
 }
 
 function findOnPath(name: string): string | null {

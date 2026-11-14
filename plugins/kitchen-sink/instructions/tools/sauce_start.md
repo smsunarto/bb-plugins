@@ -9,4 +9,6 @@ RETURNS the device header and session URL. The app then installs and launches ov
 
 The account has one live slot. Hold it only while testing: call `sauce_end` as soon as you finish or before switching devices. A lease idle for 15 minutes can be taken over, and Sauce itself ends a session left idle for a few minutes (tools then report `no_session`).
 
-On `start_pending`, Start Test was clicked but the session page was slow; this thread keeps the device. Call `sauce_status` after a minute: continue on `session_mine`, otherwise call `sauce_end` to free the device.
+On `start_pending`, Start Test was clicked but the session page was slow; this thread keeps the device. Call `sauce_status` after a minute: continue on `session_mine`, otherwise call `sauce_end`, which abandons the start and frees the device.
+
+On `capacity_reached`, Sauce's one live slot is in use outside this browser (Start Test stays disabled). Call `sauce_status` after a few minutes and retry; do not try other devices or OS versions.
