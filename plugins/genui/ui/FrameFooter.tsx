@@ -196,6 +196,8 @@ function GalleryMarkdownCopy({ markdown }: { markdown: () => string }) {
 /** The reply's quiet actions under a UI: hidden at rest, shown while the reply is hovered or the action focused. */
 const REPLY_ACTION = cn(
   "inline-flex cursor-pointer items-center gap-1 rounded-sm text-[11px] text-subtle-foreground transition-opacity duration-150 hover:text-foreground focus-visible:opacity-100 group-hover/genui:opacity-100 [@media(hover:none)]:opacity-100",
+  // Fork: on a phone a pseudo-element gives the 18px text a 38px tap area without moving it.
+  "relative max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-x-1.5 max-md:pointer-coarse:after:-inset-y-2.5",
   FOCUS,
 );
 
@@ -256,7 +258,7 @@ export function ReplySource({
               title="Copy the source"
               onClick={copy}
               className={cn(
-                "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground",
+                "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground relative max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-1.5",
                 FOCUS,
               )}
             >
