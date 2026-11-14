@@ -304,7 +304,7 @@ function AccountPicker({
             "flex shrink-0 cursor-pointer items-center gap-2 rounded-[6px] bg-transparent text-muted-foreground disabled:cursor-default",
             phone
               ? "h-8 border-0 px-1 text-[14px] leading-5"
-              : "h-6 border border-solid border-border px-2 text-[12px] leading-4 enabled:hover:bg-surface-raised",
+              : "h-6 border border-solid border-border px-2 text-[12px] leading-4 enabled:hover:bg-surface-raised max-md:pointer-coarse:h-9",
           )}
         >
           {phone ? null : (
@@ -377,6 +377,8 @@ function Filters({ counts, variant }: { counts: Record<Filter, number>; variant:
               phone
                 ? "rounded-[6px] py-2 text-[14px] leading-5"
                 : "rounded-[4px] py-1 text-[12px] leading-4",
+              // The nav variant also fills the phone's sidebar sheet, where a finger needs more room.
+              !phone && "max-md:pointer-coarse:py-2",
               active
                 ? "bg-border font-semibold text-foreground"
                 : "bg-transparent text-muted-foreground hover:text-foreground",

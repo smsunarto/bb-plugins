@@ -435,6 +435,15 @@ form.pe-actions {
     background-position: -200% 0;
   }
 }
+/* A finger needs a 36px target, and iOS zooms into a field under 16px. */
+@media (max-width: 767px) and (pointer: coarse) {
+  .pe-row {
+    min-height: 36px;
+  }
+  .pe-textarea {
+    font-size: 16px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .pe-shimmer {
     animation: none;

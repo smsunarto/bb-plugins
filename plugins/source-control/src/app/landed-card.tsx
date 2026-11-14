@@ -272,7 +272,11 @@ function SettleButton({ threadId }: { threadId: string }) {
     return <ArchiveButton target={target} onDone={() => setAsked((n) => n + 1)} />;
   const settled = target !== null;
   return (
-    <Button variant="outline" className="h-7 w-full gap-1.5 text-[12px]" disabled>
+    <Button
+      variant="outline"
+      className="h-7 w-full gap-1.5 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
+      disabled
+    >
       {settled ? "Settled" : "Settle thread"}
       {settled ? <Icon name="Check" className="size-3" aria-hidden /> : null}
     </Button>
@@ -292,7 +296,7 @@ function ArchiveButton({
     <Button
       variant="default"
       data-testid="sc-landed-settle"
-      className="h-7 w-full gap-1.5 text-[12px]"
+      className="h-7 w-full gap-1.5 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
       disabled={!entry || entry.action.disabled === true || running}
       onClick={() => {
         if (!entry) return;

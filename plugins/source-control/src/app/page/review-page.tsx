@@ -498,7 +498,8 @@ function PhoneHeader({ detail }: { detail: Ready }) {
           type="button"
           aria-label="Back to changes"
           onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: "" })}
-          className="flex size-5 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-foreground"
+          // The pseudo-element widens the tap target to 36px without moving the title.
+          className="relative flex size-5 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-foreground after:absolute after:-inset-2"
         >
           <Chevron className="rotate-90" />
         </button>

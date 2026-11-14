@@ -20,7 +20,7 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { CARD, CardNote, CardSkeleton, ChangeCard, useSeen } from "./chat-card.tsx";
 import { cx, plural } from "./format.ts";
 import { STATE_CHIP } from "./page/rail.tsx";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CARD_ACTION_CLASS } from "./components/ui/button.tsx";
 import { Pending } from "./ui.tsx";
 
 /**
@@ -61,7 +61,7 @@ export function ShipButton({ ship }: { ship: ReturnType<typeof useShipThread> })
       data-testid="sc-card-ship"
       disabled={ship.pending}
       onClick={() => void ship.send()}
-      className="min-w-0 flex-[1_1_8rem] gap-2 px-3 font-semibold"
+      className={cx(CARD_ACTION_CLASS, "gap-2 px-3 font-semibold")}
     >
       <Pending pending={ship.pending} icon="Sent" />
       Ship it

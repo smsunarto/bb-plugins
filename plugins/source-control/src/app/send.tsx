@@ -1021,7 +1021,11 @@ export const SendControls = memo(function SendControls({
             aria-expanded={open}
             data-testid="sc-send"
             onClick={toggle}
-            className={cx(PRIMARY, "h-6 gap-2")}
+            // On a phone the pseudo-element makes the tap target 36px tall; the bar keeps its height.
+            className={cx(
+              PRIMARY,
+              "relative h-6 gap-2 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-y-1.5 max-md:pointer-coarse:after:inset-x-0",
+            )}
           >
             {destination === "agent" ? <Robot size={13} /> : null}
             {label}

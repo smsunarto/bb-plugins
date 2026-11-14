@@ -37,7 +37,7 @@ import { LegacyCards, pullRequestTarget } from "./legacy-card.tsx";
 import { OwnChangeCard, ThreadCard, type ThreadShip } from "./thread-card.tsx";
 import { CheckoutCard } from "./checkout-card.tsx";
 import { checkoutAttributes } from "../core/checkout-work.ts";
-import { Button } from "./components/ui/button.tsx";
+import { Button, CARD_ACTION_CLASS } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
@@ -236,7 +236,7 @@ function CardMerge({ detail }: { detail: Ready }) {
       label="Merge it"
       variant="default"
       testId="sc-card-merge"
-      className="min-w-0 flex-[1_1_8rem]"
+      className={CARD_ACTION_CLASS}
     />
   );
 }
@@ -291,7 +291,7 @@ function ReadyCard({
         <Button
           variant="outline"
           onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key }) })}
-          className="min-w-0 flex-[1_1_8rem] gap-2 px-3"
+          className={cx(CARD_ACTION_CLASS, "gap-2 px-3")}
         >
           Open review
           <OpenReviewArrow />
@@ -304,7 +304,7 @@ function ReadyCard({
             data-testid="sc-card-fix"
             disabled={fix.count === 0 || fix.pending || detail.head === null}
             onClick={fix.fix}
-            className="min-w-0 flex-[1_1_8rem] px-3 font-semibold"
+            className={cx(CARD_ACTION_CLASS, "px-3 font-semibold")}
           >
             {fixLabel(fix)}
           </Button>

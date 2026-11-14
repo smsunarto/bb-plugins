@@ -751,7 +751,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
           ) : null}
 
           <details className="border-t border-border pt-4">
-            <summary className="cursor-pointer text-sm font-semibold">
+            <summary className="cursor-pointer text-sm font-semibold max-md:pointer-coarse:py-2">
               Filters &amp; author exclusions
             </summary>
             <div className="mt-3 space-y-3">
@@ -890,7 +890,9 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
       </form>
       {rule ? (
         <details className="mt-4 border-t border-border pt-4">
-          <summary className="cursor-pointer text-sm font-semibold">Test this rule</summary>
+          <summary className="cursor-pointer text-sm font-semibold max-md:pointer-coarse:py-2">
+            Test this rule
+          </summary>
           <div className="mt-3">
             {hasUnsavedChanges ? (
               <p className="text-xs text-muted-foreground">

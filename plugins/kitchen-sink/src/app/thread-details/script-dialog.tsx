@@ -7,9 +7,9 @@ import { PORTAL_SCOPE, cx } from "./rows.tsx";
 export type ScriptDraft = Pick<ProjectScript, "name" | "command">;
 
 const FIELD =
-  "w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  "w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring max-md:pointer-coarse:text-base";
 const BUTTON =
-  "inline-flex h-8 items-center justify-center rounded-lg px-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60";
+  "inline-flex h-8 items-center justify-center rounded-lg px-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 max-md:pointer-coarse:h-9";
 
 /** Add or edit one project script. The parent owns saving; this form only collects the draft. */
 export function ScriptDialog({

@@ -32,6 +32,14 @@ const buttonVariants = cva(
   },
 );
 
+/**
+ * A card's wrapping action: 36px under a finger on a phone, as bb's own
+ * controls are. Opt-in per button, because a size in the variants would
+ * outrank the `h-*` and `size-*` that callers pass.
+ */
+const CARD_ACTION_CLASS =
+  "min-w-0 flex-[1_1_8rem] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]";
+
 export type ButtonProps = ComponentProps<"button"> & VariantProps<typeof buttonVariants>;
 
 function Button({ className, variant, size, type = "button", ...props }: ButtonProps) {
@@ -45,4 +53,4 @@ function Button({ className, variant, size, type = "button", ...props }: ButtonP
   );
 }
 
-export { Button, buttonVariants };
+export { Button, buttonVariants, CARD_ACTION_CLASS };
