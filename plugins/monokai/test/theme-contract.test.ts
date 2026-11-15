@@ -209,8 +209,11 @@ describe("bb Monokai contract audit", () => {
     expect(surfaces.every((rule) => !rule.atRules.includes("@media (min-width: 768px)"))).toBe(
       true,
     );
-    const placement = toastRules.filter((rule) =>
-      rule.atRules.includes("@supports (position-anchor: --bb-monokai-conversation)"),
+    const placement = toastRules.filter(
+      (rule) =>
+        rule.atRules.includes("@supports (position-anchor: --bb-monokai-conversation)") ||
+        rule.selector === ".dark [data-sonner-toast]" ||
+        rule.selector === '.dark [data-sonner-toast][data-mounted="false"]',
     );
     expect(placement.length).toBeGreaterThan(0);
     expect(placement.every((rule) => rule.atRules.includes("@media (min-width: 768px)"))).toBe(

@@ -1769,6 +1769,13 @@ diffs-container {
   color: var(--muted-foreground);
 }
 
+@media (hover: hover) {
+  .dark [data-sonner-toast].bb-app-toast[data-monokai-archive-toast] button[aria-label="Dismiss notification"]:hover {
+    background: var(--state-hover);
+    color: var(--popover-foreground);
+  }
+}
+
 /* Agent replies copy T3 Code's chat markdown (`.chat-markdown` in its
  * index.css). T3 sets prose in `text-sm` (0.875rem) at `leading-relaxed`, and
  * every gap, size, and radius is a rem multiple. --agent-md-rem rebuilds that

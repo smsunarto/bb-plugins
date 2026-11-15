@@ -94,6 +94,10 @@ toasts over the viewport instead. Native browser and operating-system banners
 from bb's push-notifications plugin are system-owned and cannot be restyled by a
 bb theme.
 
+The toast presentation is CSS-only. A palette-independent content script tags
+archive confirmations so switching palettes can restyle an existing toast
+immediately; only the selected Monokai theme applies the presentation overrides.
+
 ## Theme authoring
 
 `CONTRACT.md` and the vendored syntax rules are included in this checkout.
