@@ -9,6 +9,14 @@ import {
   type CheatsheetSection,
   type KeybindingOverride,
 } from "./cheatsheet.ts";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "./components/ui/card.tsx";
+import { Skeleton } from "./components/ui/skeleton.tsx";
 
 const PLATFORM = keybindingPlatform(navigator.platform);
 
@@ -45,8 +53,7 @@ function Key({ label }: { label: string }): ReactElement {
 }
 
 function Keys({ entry }: { entry: ResolvedEntry }): ReactElement {
-  if (entry.keys === null)
-    return <span aria-hidden className="block h-6 w-6 animate-pulse rounded bg-muted" />;
+  if (entry.keys === null) return <Skeleton aria-hidden className="size-6 rounded" />;
   if (entry.keys.length === 0)
     return <span className="text-xs text-muted-foreground">Unbound</span>;
   const keys = entry.keys;
@@ -75,20 +82,26 @@ function Section({
   resolve: (entry: CheatsheetEntry) => ResolvedEntry;
 }): ReactElement {
   return (
-    <section className="mb-4 break-inside-avoid rounded-lg border border-border bg-card p-4 last:mb-0">
-      <h2 className="text-sm font-semibold text-foreground">{section.title}</h2>
-      {section.note && <p className="mt-1 text-xs text-muted-foreground">{section.note}</p>}
-      <dl className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2">
-        {section.entries.map((entry) => (
-          <Fragment key={entry.action}>
-            <dt>
-              <Keys entry={resolve(entry)} />
-            </dt>
-            <dd className="text-sm text-foreground">{entry.action}</dd>
-          </Fragment>
-        ))}
-      </dl>
-    </section>
+    <Card className="mb-4 break-inside-avoid last:mb-0">
+      <CardHeader className="gap-1 p-4 pb-0">
+        <CardTitle className="text-sm">
+          <h2>{section.title}</h2>
+        </CardTitle>
+        {section.note && <CardDescription className="text-xs">{section.note}</CardDescription>}
+      </CardHeader>
+      <CardContent className="px-4 pt-3 pb-4">
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2">
+          {section.entries.map((entry) => (
+            <Fragment key={entry.action}>
+              <dt>
+                <Keys entry={resolve(entry)} />
+              </dt>
+              <dd className="text-sm text-foreground">{entry.action}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      </CardContent>
+    </Card>
   );
 }
 
