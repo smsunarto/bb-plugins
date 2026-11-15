@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+
 import {
   PluginCliError,
   cliCommand,
@@ -366,6 +368,30 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
               input.positionals.query ? { query: input.positionals.query } : {},
             ),
           ),
+      }),
+      upload: cliCommand({
+        summary:
+          "Upload an .apk, .aab, .ipa, or .zip build to Sauce app storage (minutes for a large file)",
+        description:
+          "The file is read on the bb server machine, where the Sauce browser runs. Needs the device free or held by this thread with no session open.\n" +
+          "Prints the build's label once Sauce lists it; pass text from the label as --app to `devices` and `start`.",
+        positionals: [
+          {
+            name: "path",
+            description: "Build file; a relative path is resolved from the current directory",
+            required: true,
+          },
+        ],
+        options: { json },
+        run: (input, cli) =>
+          answer(input.options.json, () => {
+            const path = resolve(cli.cwd ?? "/", input.positionals.path);
+            if (!/\.(apk|aab|ipa|zip)$/i.test(path))
+              throw usage(
+                `upload takes an .apk, .aab, .ipa, or .zip file, got "${input.positionals.path}"`,
+              );
+            return core.upload(caller(cli), { path });
+          }),
       }),
       devices: cliCommand({
         summary: "List real devices that can run a build, with status, OS, and screen size",

@@ -22,7 +22,7 @@ Older hunt prompts say to open Sauce Live in a local Chrome, sign in through Goo
 ## Workflow
 
 1. `bb sauce status`. Continue only on `ready`, `session_abandoned`, or `session_mine`. On `signed_out`, retry once with `--sign-in`. On any other state, wait or report it; the result's `next` says which.
-2. `bb sauce apps`, then `bb sauce devices <model> --app <build>`. Done when you have a build, an exact device name, and an OS.
+2. `bb sauce apps`, then `bb sauce devices <model> --app <build>`. If the build is not in storage yet, `bb sauce upload <file>` first. Done when you have a build, an exact device name, and an OS.
 3. `bb sauce start <device> --os <os> --app <build>`. Done when it prints the session URL.
 4. `bb sauce look` until the app shows its first screen (installs take 20-60 s; `bb sauce wait changed --timeout 60s` between looks). Open each PNG before deciding where to touch.
 5. Drive the app with the loop below. Keep the PNG paths as evidence.
@@ -46,7 +46,8 @@ Older hunt prompts say to open Sauce Live in a local Chrome, sign in through Goo
 - **One device for the whole machine:** never end or interrupt a session another thread or a person holds. Message the holder with `bb thread tell <thread> --mode steer`, or wait with `bb thread wait <thread>`.
 - **Stay active:** Sauce ends a session after a few idle minutes. Plan the next steps before starting the device; keep long analysis for after `bb sauce end`.
 - **Coordinates differ between devices:** read positions off the latest look; do not reuse them from another aspect ratio.
-- **Scripts go through `bb sauce` too.** A script that drives the Sauce browser directly bypasses the lease and can end another thread's session.
+- **Only `bb sauce` touches the Sauce browser.** Never run `agent-browser` against it, not even to read: a command with other launch settings restarts the browser and closes the live session. A script that drives it directly also bypasses the lease.
+- **Builds:** `bb sauce upload <file>` puts an `.apk` or `.ipa` in Sauce app storage; do not upload through a browser.
 - **iOS** has no ADB shell; looks, touches, rotation, and the device log still work.
 - **Evidence:** cite look and log paths from thread storage. Sauce's own session video and logs stay in the Sauce account under the session URL.
 

@@ -199,6 +199,9 @@ const STATE_SCRIPT = `(() => {
 
 const CANVAS = "canvas.testobject-device__canvas";
 
+/** The app picker's file input for uploading a build to app storage. */
+const UPLOAD_INPUT = "[data-qa=search-dialog] input[type=file]";
+
 /**
  * The ADB Shell command box. Sauce also renders a device paste box
  * (textarea.testobject-device__paste-area) that forwards every key to the phone.
@@ -488,6 +491,59 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     const apps = await appEntries(query);
     await closeAppPicker();
     return apps;
+  }
+
+  /**
+   * Uploads a build to Sauce app storage through the app picker's file input, and
+   * resolves with its entry once the picker lists it. `name` is the file's name,
+   * which Sauce shows in the build's label.
+   */
+  async function uploadApp(path: string, name: string, timeoutMs: number): Promise<AppBuild> {
+    await requireLive();
+    await openAppPicker();
+    const before = new Set((await appEntries(undefined)).map((app) => app.id));
+    const hasInput = await poll(
+      10_000,
+      () => evaluate<boolean>(`!!document.querySelector(${JSON.stringify(UPLOAD_INPUT)})`),
+      500,
+    );
+    if (!hasInput) {
+      await closeAppPicker();
+      throw new SauceError("page_changed", "The Sauce app picker has no file upload control.");
+    }
+    try {
+      await browser.run(["upload", UPLOAD_INPUT, path], timeoutMs);
+    } catch (error) {
+      if (!(error instanceof BrowserCommandError)) throw error;
+      await closeAppPicker().catch(() => {});
+      throw new SauceError(
+        "timeout",
+        `The upload of ${name} did not start: ${error.detail.slice(0, 200)}`,
+        "Nothing was uploaded. Run `bb sauce upload` again.",
+      );
+    }
+    // Sauce lists the build once it has received and processed the whole file.
+    const wanted = name.toLowerCase();
+    const uploaded = await poll(
+      timeoutMs,
+      async () => {
+        const apps = await appEntries(undefined).catch(() => [] as AppBuild[]);
+        return (
+          apps.find((app) => !before.has(app.id) && app.label.toLowerCase().includes(wanted)) ??
+          null
+        );
+      },
+      3000,
+    );
+    await closeAppPicker().catch(() => {});
+    if (!uploaded) {
+      throw new SauceError(
+        "timeout",
+        `Sauce did not list ${name} within ${Math.round(timeoutMs / 60_000)} min of the upload starting.`,
+        "It may still be processing. Run `bb sauce apps` in a minute before uploading again.",
+      );
+    }
+    return uploaded;
   }
 
   /** Picks a build from app storage, newest first, and opens its device list; returns its label. */
@@ -1271,6 +1327,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     home,
     signIn,
     listApps,
+    uploadApp,
     listDevices,
     startSession,
     tap,

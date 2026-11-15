@@ -212,3 +212,29 @@ test("a picture turns upright through a PNG round trip", async () => {
   for (const turn of [90, 180, 270])
     expect(turnPixels(turnPixels(canvas, turn), 360 - turn).data).toEqual(canvas.data);
 });
+
+test("upload sends a build that exists on the server, and refuses anything else unsent", async () => {
+  const { json, world } = cli();
+  const uploaded = await json(["upload", "/builds/bb-android.apk"]);
+  expect(uploaded.value).toMatchObject({
+    uploaded: "Uploads/bb-android.apk v1 • Build 1",
+    megabytes: 72.2,
+  });
+  expect(world.sent).toEqual(["upload /builds/bb-android.apk"]);
+
+  world.sent.length = 0;
+  expect((await json(["upload", "/builds/notes.txt"])).value.error.code).toBe("invalid_value");
+  const missing = await json(["upload", "/elsewhere/app.ipa"]);
+  expect(missing.value.error.code).toBe("not_found");
+  expect(missing.value.error.message).toContain("bb server machine");
+  expect(world.sent).toEqual([]);
+});
+
+test("upload waits its turn: not while another thread holds the device", async () => {
+  const fake = fakeDevice();
+  await fake.core.start({ threadId: "thr_b" }, { device: "Samsung Galaxy S23" });
+  expect(await codeOf(fake.core.upload(A, { path: "/builds/app.apk" }))).toBe(
+    "held_by_other_thread",
+  );
+  expect(fake.world.sent).toEqual([]);
+});

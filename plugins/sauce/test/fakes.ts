@@ -54,6 +54,10 @@ export function fakeDevice() {
     home: async () => world.page,
     signIn: async () => world.page,
     listApps: async () => [{ id: "f1", label: "Rampage/build.apk" }],
+    uploadApp: async (path: string, name: string) => {
+      world.sent.push(`upload ${path}`);
+      return { id: "f2", label: `Uploads/${name} v1 • Build 1` };
+    },
     listDevices: async (_query: string, app?: string) => ({
       app: app ?? "Rampage/build.apk",
       devices: [
@@ -158,6 +162,7 @@ export function fakeDevice() {
       return `/storage/${threadId}/sauce/${name}`;
     },
     threadTitle: async (threadId) => `title of ${threadId}`,
+    fileSize: async (path) => (path.startsWith("/builds/") ? 72_183_687 : null),
   };
   return { world, deps, core: createSauceCore(deps) };
 }

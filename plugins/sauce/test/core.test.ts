@@ -90,6 +90,7 @@ function fakePage(state: FakeState): SaucePage {
     },
     sampleScreen: async () => null,
     glanceScreen: async () => ({ width: 2340, height: 1080, thumbnail: null }),
+    uploadApp: async () => ({ id: "f2", label: "upload" }),
     typeText: async () => {},
     pressKey: async () => {},
     requireSession: async () => {
@@ -138,6 +139,7 @@ function harness() {
       return `/storage/${threadId}/sauce/${name}`;
     },
     threadTitle: async (threadId) => `title of ${threadId}`,
+    fileSize: async () => null,
   });
   return {
     tools,

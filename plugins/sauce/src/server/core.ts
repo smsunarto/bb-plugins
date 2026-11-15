@@ -1,6 +1,6 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
 import { BrowserCommandError, createAgentBrowserRunner, createQueue } from "./browser.ts";
@@ -34,6 +34,8 @@ export type SauceCoreDeps = {
   save(threadId: string, name: string, localPath: string): Promise<string>;
   threadTitle(threadId: string): Promise<string | null>;
   tempDir(): Promise<string>;
+  /** Size in bytes of a file on the bb server machine, where the Sauce browser runs; null when it is not a file there. */
+  fileSize(path: string): Promise<number | null>;
 };
 
 /** `signal` aborts when the calling `bb` process goes away or the plugin is disposed. */
@@ -99,6 +101,9 @@ type PendingFile = { dir: string; local: string; name: string };
 
 /** A lease without a device yet may be a start still coming up; it is not stale before this. */
 const START_GRACE_MS = 3 * 60 * 1000;
+
+/** A build of a few hundred megabytes uploads and processes within this. */
+const UPLOAD_TIMEOUT_MS = 20 * 60 * 1000;
 
 /** Longest grep match returned inline; logcat lines can carry whole payloads. */
 const MATCH_LINE_MAX = 400;
@@ -680,6 +685,31 @@ export function createSauceCore(deps: SauceCoreDeps) {
       });
     },
 
+    /**
+     * Uploads a build file to Sauce app storage. The browser that uploads it runs on
+     * the bb server machine, so the file is read there.
+     */
+    async upload(ctx: Caller, input: { path: string }) {
+      const bytes = await deps.fileSize(input.path);
+      if (bytes === null) {
+        throw new SauceError(
+          "not_found",
+          `${input.path} is not a file on ${hostname()}, the bb server machine.`,
+          "The Sauce browser uploads from that machine. Give a path that exists there; a thread on another host copies the file over first.",
+        );
+      }
+      return queued(ctx, async () => {
+        await requireBrowsable(ctx.threadId);
+        const app = await deps.page.uploadApp(input.path, basename(input.path), UPLOAD_TIMEOUT_MS);
+        return {
+          uploaded: app.label,
+          id: app.id,
+          megabytes: Math.round(bytes / 100_000) / 10,
+          next: "Pass text from this label as --app to `bb sauce devices` and `bb sauce start`.",
+        };
+      });
+    },
+
     async devices(ctx: Caller, input: { query: string; app?: string }) {
       return queued(ctx, async () => {
         await requireBrowsable(ctx.threadId);
@@ -950,6 +980,11 @@ export function defaultCoreDeps(bb: BbPluginApi): SauceCoreDeps {
     now: () => Date.now(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     tempDir: () => mkdtemp(join(tmpdir(), "bb-sauce-")),
+    fileSize: (path) =>
+      stat(path).then(
+        (found) => (found.isFile() ? found.size : null),
+        () => null,
+      ),
     async save(threadId, name, localPath) {
       const location = await bb.sdk.threads.storageLocation({ threadId });
       const path = join(location.storageRootPath, "sauce", name);
