@@ -24,7 +24,7 @@ import {
 } from "../core/status.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
-import { Pending } from "./ui.tsx";
+import { KEEP_COMPOSER_FOCUS, Pending } from "./ui.tsx";
 import { useDraftToggle } from "./status.tsx";
 import { Button } from "./components/ui/button.tsx";
 
@@ -233,6 +233,7 @@ function StripShip({ threadId }: { threadId: string }) {
       <Button
         variant="outline"
         data-testid="sc-strip-ship"
+        {...KEEP_COMPOSER_FOCUS}
         onClick={() => void ship.send()}
         disabled={ship.pending}
         className={STRIP_BUTTON}
@@ -253,6 +254,7 @@ function StripMarkReady({ threadId, summary }: { threadId: string; summary: Chan
       <Button
         variant="outline"
         data-testid="sc-strip-mark-ready"
+        {...KEEP_COMPOSER_FOCUS}
         onClick={draft.toggle}
         disabled={draft.pending}
         className={STRIP_BUTTON}

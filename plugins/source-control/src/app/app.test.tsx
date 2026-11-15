@@ -1045,6 +1045,29 @@ test("Ship it on a pushed branch with no pull request asks the thread's agent to
   );
 });
 
+/** A press the browser may not turn into a focus change, so a phone keeps the composer's keyboard up. */
+function expectPressKeepsFocus(control: HTMLElement) {
+  expect(fireEvent.pointerDown(control)).toBe(false);
+  expect(fireEvent.mouseDown(control)).toBe(false);
+}
+
+test("pressing the strip's Ship it and Mark ready leaves focus in the composer", async () => {
+  const row = boardB();
+  if (row.state !== "checkout") throw new Error("fixture");
+  row.forge = { read: { value: null, at: Date.now() }, problem: null };
+  const pushed = renderStrip(row);
+  const ship = await pushed.action.findByTestId("sc-strip-ship");
+  expectPressKeepsFocus(ship);
+  act(() => (ship as HTMLButtonElement).click());
+  await waitFor(() => expect(pushed.shipCalls).toHaveLength(1));
+  cleanup();
+  const draft = renderStrip(boardB());
+  const ready = await draft.action.findByTestId("sc-strip-mark-ready");
+  expectPressKeepsFocus(ready);
+  act(() => (ready as HTMLButtonElement).click());
+  await waitFor(() => expect(draft.forgeCalls).toHaveLength(1));
+});
+
 test("the strip offers no Ship it before GitHub answers or once a pull request exists", async () => {
   const row = boardB();
   if (row.state !== "checkout") throw new Error("fixture");
@@ -1388,6 +1411,21 @@ test("the composer banner shows each watched pull request's checks, and Unwatch 
     slot.getByRole("button", { name: "Unwatch smsunarto/bb-plugins#482" }).click(),
   );
   await waitFor(() => expect(stops).toEqual([{ threadId: "thread-a", ref: WATCH.ref }]));
+});
+
+test("pressing the banner's checks toggle or Unwatch leaves focus in the composer", async () => {
+  const stops: unknown[] = [];
+  const slot = renderBanner([WATCH], stops);
+  const toggle = await slot.findByRole("button", { name: /Show checks$/ });
+  expectPressKeepsFocus(toggle);
+  await act(async () => toggle.click());
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  const unwatch = slot.getByRole("button", { name: "Unwatch smsunarto/bb-plugins#482" });
+  expectPressKeepsFocus(unwatch);
+  await act(async () => unwatch.click());
+  await waitFor(() => expect(stops).toHaveLength(1));
+  // Opening GitHub leaves bb, so its link takes the press as usual.
+  expect(fireEvent.mouseDown(slot.getByRole("link", { name: /^Open .* on GitHub$/ }))).toBe(true);
 });
 
 test("a thread that watches nothing draws no banner", async () => {

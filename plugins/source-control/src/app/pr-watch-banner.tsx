@@ -23,6 +23,7 @@ import { cx, plural, shortAge, shortId } from "./format.ts";
 import { CheckIcon } from "./page/icons.tsx";
 import { useNow } from "./page/hooks.ts";
 import { Button } from "./components/ui/button.tsx";
+import { KEEP_COMPOSER_FOCUS } from "./ui.tsx";
 
 const NO_WATCHES: PrWatchView[] = [];
 
@@ -138,6 +139,7 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
         <button
           type="button"
           aria-expanded={expanded}
+          {...KEEP_COMPOSER_FOCUS}
           aria-controls={listId}
           aria-label={`${key} ${watch.title}: ${summary}. ${expanded ? "Hide" : "Show"} checks`}
           title={`${key} ${watch.title}: ${summary}`}
@@ -178,6 +180,7 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
           variant="ghost"
           className="h-6 px-1.5 text-muted-foreground"
           aria-label={`Unwatch ${key}`}
+          {...KEEP_COMPOSER_FOCUS}
           title="Stop watching. The agent is not told."
           disabled={stop.isPending}
           onClick={() => void stop.mutate({ threadId, ref: watch.ref }).catch(() => undefined)}

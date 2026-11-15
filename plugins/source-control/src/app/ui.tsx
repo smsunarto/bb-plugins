@@ -6,6 +6,15 @@ import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import type { ReactNode } from "react";
 import { Spinner } from "./components/ui/spinner.tsx";
 
+const cancelPress = (event: { preventDefault(): void }) => event.preventDefault();
+
+/**
+ * For a control beside the composer that acts and leaves the user typing:
+ * cancelling the press keeps focus, and a phone's keyboard, in the prompt
+ * editor. The action stays on click, and keyboard activation is unchanged.
+ */
+export const KEEP_COMPOSER_FOCUS = { onPointerDown: cancelPress, onMouseDown: cancelPress };
+
 /** A spinner while `pending`, else the icon, if any. */
 export function Pending({ pending, icon }: { pending: boolean; icon?: string }) {
   if (pending) return <Spinner />;
