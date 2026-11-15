@@ -74,6 +74,7 @@ import { Icon } from "@/components/ui/icon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ComposerPopupHost } from "./ComposerPopupHost";
 import { markComposerHost } from "./composer-host";
+import { NewThreadMachineSheet } from "./machine-picker/MachineSheet";
 import {
   COARSE_POINTER_PROMPT_ACTION_BUTTON_CLASS,
   COARSE_POINTER_PROMPT_ICON_ACTION_BUTTON_CLASS,
@@ -3289,6 +3290,7 @@ export function PromptBoxInternal({
                     <ComposerModelControls fallback={executionControls} handoffRef={handoffRef} />
                   </div>
                   <ComposerPermissionControl />
+                  {surface === "new-thread" ? <NewThreadMachineSheet anchor={formRef} /> : null}
                   <contributions.Actions />
                 </div>
               ) : null}
