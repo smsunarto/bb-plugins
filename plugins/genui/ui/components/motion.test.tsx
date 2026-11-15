@@ -196,12 +196,12 @@ describe("height changes", () => {
     container.querySelector("button")!.dispatchEvent(new Event("pointerdown", { bubbles: true }));
     act(() => deliver(200));
     expect(animate).toHaveBeenCalledTimes(1);
-    expect(animate.mock.calls[0]?.[0]).toEqual([{ height: "150px", overflow: "clip" }, { height: "auto", overflow: "clip" }]);
+    expect(animate.mock.calls[0]?.[0]).toEqual([{ height: "150px", overflowY: "clip" }, { height: "auto", overflowY: "clip" }]);
     read.mockReturnValue(new DOMRect(0, 0, 400, 175));
     container.querySelector("button")!.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
     act(() => deliver(250));
     expect(animate).toHaveBeenCalledTimes(2);
-    expect(animate.mock.calls[1]?.[0]?.[0]).toEqual({ height: "175px", overflow: "clip" });
+    expect(animate.mock.calls[1]?.[0]?.[0]).toEqual({ height: "175px", overflowY: "clip" });
     act(() => settings.set(OFF));
     act(() => deliver(300));
     expect(animate).toHaveBeenCalledTimes(2);

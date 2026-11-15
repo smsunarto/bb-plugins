@@ -239,10 +239,12 @@ export function useSmoothHeight<O extends HTMLElement, I extends HTMLElement>(in
       const height = box.getBoundingClientRect().height;
       const from = animation?.playState === "running" ? height : height - delta;
       animation?.cancel();
+      // Clip only the axis that moves: a ring or shadow drawn outside a
+      // control at the box's side edge stays whole while the box glides.
       animation = box.animate(
         [
-          { height: `${from}px`, overflow: "clip" },
-          { height: "auto", overflow: "clip" },
+          { height: `${from}px`, overflowY: "clip" },
+          { height: "auto", overflowY: "clip" },
         ],
         { duration: 420, easing: EASE_OUT_EXPO },
       );
