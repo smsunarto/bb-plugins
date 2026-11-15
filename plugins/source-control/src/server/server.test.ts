@@ -2249,6 +2249,7 @@ describe("grouped share", () => {
     expect(text).toContain('"branch": "scott/route-gh"');
     expect(text).toContain('"uncommittedFiles": 1');
     expect(text).toContain("`::source-control` on its own line");
+    expect(text).toContain("`bb thread archive --self`");
     // A thread bb has no checkout for is told so, and nothing is sent.
     expect(await harness.behavior.callRpc("shipThread", { threadId: "thread-none" })).toEqual({
       ok: false,

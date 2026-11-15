@@ -184,7 +184,8 @@ function useStripShip(threadId: string) {
 
 /**
  * Ship it: one message asking the thread's agent to commit and publish its
- * work with the repository's workflow, as the thread card's Ship it does.
+ * work with the repository's workflow and settle the thread if nothing is
+ * left, as the thread card's Ship it does.
  */
 function StripShip({ threadId }: { threadId: string }) {
   const ship = useStripShip(threadId);

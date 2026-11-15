@@ -5,7 +5,8 @@
  * Merge all is not this: the card merges each pull request itself.
  *
  * Ship it on a thread's own card is the same message for one thread's work,
- * committed or not, read from its row rather than named by the card.
+ * committed or not, read from its row rather than named by the card. It also
+ * asks the agent to settle the thread once the ship is clean; Ship all does not.
  */
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { ThreadChange } from "../core/change.ts";

@@ -516,10 +516,10 @@ export const sourceControlContract = defineRpcContract({
       z.object({ ok: z.literal(false), message: z.string() }).strict(),
     ]),
   },
-  /** Ship it on a thread's card: asks the thread's agent to commit and publish its work. Merges nothing. */
+  /** Ship it on a thread's card: asks the thread's agent to commit and publish its work, then settle the thread if nothing is left. Merges nothing. */
   shipThread: {
     experimental_description:
-      "Ship it on a thread's Source Control card: sends the thread one message naming its checkout, its branch and pull request if it has them, and how many files are uncommitted, for its agent to commit and ship with the repository's workflow. Merges nothing and changes no review state.",
+      "Ship it on a thread's Source Control card: sends the thread one message naming its checkout, its branch and pull request if it has them, and how many files are uncommitted, for its agent to commit and ship with the repository's workflow, then archive the thread when the ship was clean and no follow-up work remains. Merges nothing and changes no review state.",
     input: z
       .object({
         threadId: threadIdSchema,

@@ -25,7 +25,7 @@ import { Pending } from "./ui.tsx";
 
 /**
  * Ship it: one message asking the thread's agent to commit and publish its
- * work. `at` is the card's `workAtCheckout` key when it names a checkout or
+ * work, then settle the thread if nothing is left. `at` is the card's `workAtCheckout` key when it names a checkout or
  * branch other than the thread's own.
  */
 export function useShipThread(threadId: string, at?: string) {
