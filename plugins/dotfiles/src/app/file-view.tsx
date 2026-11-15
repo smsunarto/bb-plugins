@@ -1,6 +1,7 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import type { ReactElement } from "react";
 import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { buildDiff } from "./diff.ts";
 import {
   experimental_Diff as Diff,
@@ -80,24 +81,19 @@ function ReadyFileView({
           <div className="truncate font-mono text-sm text-foreground">{path}</div>
         </div>
         <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-2">
-          <div className="flex rounded-md border border-border p-0.5">
-            <Button
-              size="sm"
-              variant={view === "source" ? "secondary" : "ghost"}
-              aria-pressed={view === "source"}
-              onClick={() => setView("source")}
-            >
-              Source
-            </Button>
-            <Button
-              size="sm"
-              variant={view === "diff" ? "secondary" : "ghost"}
-              aria-pressed={view === "diff"}
-              onClick={() => setView("diff")}
-            >
-              Diff
-            </Button>
-          </div>
+          <ToggleGroup
+            type="single"
+            size="sm"
+            variant="outline"
+            aria-label="File view"
+            value={view}
+            onValueChange={(value) => {
+              if (value === "source" || value === "diff") setView(value);
+            }}
+          >
+            <ToggleGroupItem value="source">Source</ToggleGroupItem>
+            <ToggleGroupItem value="diff">Diff</ToggleGroupItem>
+          </ToggleGroup>
           <Button size="sm" variant="outline" onClick={editor.reload} disabled={editor.saving}>
             Reload
           </Button>

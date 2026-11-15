@@ -1,5 +1,13 @@
 import type { ReactElement } from "react";
 import { toast } from "sonner";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { queryClient } from "./query.ts";
 import { queryKey, useRpcMutation, useRpcQuery } from "./rpc.ts";
 import { errorMessage } from "./tasks.ts";
@@ -25,19 +33,26 @@ export function HostPicker(): ReactElement | null {
   if (hosts.data === undefined) return null;
   const { selectedHostId } = hosts.data;
   return (
-    <select
-      aria-label="Machine"
-      className="max-w-40 shrink-0 cursor-pointer truncate rounded-md border border-border bg-background px-1 py-0.5 text-xs text-foreground max-md:pointer-coarse:h-9"
-      value={selectedHostId ?? ""}
+    <Select
+      value={selectedHostId ?? undefined}
       disabled={select.isPending}
-      onChange={(event) => select.mutate({ hostId: event.target.value })}
+      onValueChange={(hostId) => select.mutate({ hostId })}
     >
-      {selectedHostId === null && <option value="">Choose a machine</option>}
-      {hosts.data.hosts.map((host) => (
-        <option key={host.id} value={host.id}>
-          {host.connected ? host.name : `${host.name} · offline`}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger
+        aria-label="Machine"
+        className="h-6 w-auto max-w-40 shrink-0 gap-1 px-1.5 py-0.5 text-xs max-md:pointer-coarse:h-9"
+      >
+        <SelectValue placeholder="Choose a machine" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {hosts.data.hosts.map((host) => (
+            <SelectItem key={host.id} value={host.id}>
+              {host.connected ? host.name : `${host.name} · offline`}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }

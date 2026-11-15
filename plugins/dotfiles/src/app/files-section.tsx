@@ -5,6 +5,8 @@ import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
 import { UrlLink } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -254,15 +256,21 @@ function FileRow({
         </button>
       )}
       {removeSkillName !== undefined && (
-        <button
-          type="button"
-          aria-label={`Remove skill ${item.title}`}
-          title={`Remove ${item.title} (npx skills remove)`}
-          onClick={() => onRemove({ name: removeSkillName, path: item.path })}
-          className="shrink-0 rounded px-1 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover/row:opacity-100 max-md:pointer-coarse:inline-flex max-md:pointer-coarse:size-9 max-md:pointer-coarse:items-center max-md:pointer-coarse:justify-center max-md:pointer-coarse:opacity-100"
-        >
-          ×
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={`Remove skill ${item.title}`}
+              onClick={() => onRemove({ name: removeSkillName, path: item.path })}
+              className="size-6 shrink-0 opacity-0 focus-visible:opacity-100 group-hover/row:opacity-100 max-md:pointer-coarse:size-9 max-md:pointer-coarse:opacity-100"
+            >
+              <Icon name="X" className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{`Remove ${item.title} (npx skills remove)`}</TooltipContent>
+        </Tooltip>
       )}
     </div>
   );

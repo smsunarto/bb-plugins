@@ -7,6 +7,10 @@ import type { ComponentType } from "react";
 // The DOM must exist BEFORE the SDK's render harness is evaluated,
 // so the import is dynamic and comes after installDom().
 installDom();
+// Radix's dismissable layer dispatches a global CustomEvent, which jsdom accepts only from its own window.
+globalThis.CustomEvent = window.CustomEvent;
+// jsdom has no layout, so the Select's scroll to its picked option is a no-op.
+window.HTMLElement.prototype.scrollIntoView = () => {};
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { fireEvent } = await import("@testing-library/react");
 const { queryClient } = await import("./query.ts");
@@ -30,7 +34,8 @@ function renderSection(
   options: Parameters<typeof renderSlot>[2],
 ) {
   const slot = renderSlot(sidebar(captured), props, options);
-  fireEvent.click(slot.getByRole("button", { name: section }));
+  // Radix tabs activate on mouse down, as a pointer press does.
+  fireEvent.mouseDown(slot.getByRole("tab", { name: section }));
   return slot;
 }
 
@@ -84,12 +89,12 @@ test("the sidebar remembers the picked section", async () => {
   const captured = await loadPluginApp(() => import("./app.tsx"));
   window.localStorage.clear();
   const first = renderSection(captured, "Tasks", { subPath: "" }, { rpc: server("host_mac") });
-  assert.equal(first.getByRole("button", { name: "Tasks" }).getAttribute("aria-pressed"), "true");
+  assert.equal(first.getByRole("tab", { name: "Tasks" }).getAttribute("aria-selected"), "true");
   first.unmount();
 
   const again = renderSlot(sidebar(captured), { subPath: "" }, { rpc: server("host_mac") });
-  assert.equal(again.getByRole("button", { name: "Tasks" }).getAttribute("aria-pressed"), "true");
-  assert.equal(again.getByRole("button", { name: "Files" }).getAttribute("aria-pressed"), "false");
+  assert.equal(again.getByRole("tab", { name: "Tasks" }).getAttribute("aria-selected"), "true");
+  assert.equal(again.getByRole("tab", { name: "Files" }).getAttribute("aria-selected"), "false");
   again.unmount();
   window.localStorage.clear();
 });
@@ -99,8 +104,8 @@ test("the Files section reads the picked machine and names it beside the repo pa
   const slot = renderSection(captured, "Files", { subPath: "" }, { rpc: server("host_mac") });
 
   await slot.findByText("/Users/example/git/dotfiles");
-  const picker = slot.getByRole("combobox", { name: "Machine" }) as HTMLSelectElement;
-  assert.equal(picker.selectedOptions[0]?.textContent, "Local Mac");
+  const picker = slot.getByRole("combobox", { name: "Machine" });
+  assert.equal(picker.textContent, "Local Mac");
   assert.deepEqual(
     slot.rpcCalls.filter((call) => call.method === "overview").map((call) => call.input),
     [{ hostId: "host_mac" }],
@@ -113,9 +118,8 @@ test("picking another machine stores it and reloads the file list from there", a
   const slot = renderSection(captured, "Files", { subPath: "" }, { rpc: server("host_server") });
   await slot.findByText("/home/codex/git/dotfiles");
 
-  fireEvent.change(slot.getByRole("combobox", { name: "Machine" }), {
-    target: { value: "host_mac" },
-  });
+  fireEvent.keyDown(slot.getByRole("combobox", { name: "Machine" }), { key: "Enter" });
+  fireEvent.click(await slot.findByRole("option", { name: "Local Mac" }));
 
   await slot.findByText("/Users/example/git/dotfiles");
   assert.deepEqual(
