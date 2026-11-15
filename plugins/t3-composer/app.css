@@ -392,6 +392,15 @@
   box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
 }
 
+/* Without its 2px of border, the inlay's 32px row sat at the top of BB's 35px
+   minimum height, 3px closer to the top edge than the bottom. Center it; once
+   the details open, the content outgrows the minimum and this does nothing. */
+[aria-label="Thread context before sending"] {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 /* These hairlines draw 0.5px outside their surfaces. BB's overflow fade
    ([data-overflow-fade]) is an absolutely positioned gradient whose opaque
    bottom row meets the composer's top edge, and positioned boxes paint over
