@@ -220,10 +220,12 @@ Syntax rules may never borrow these for non-feedback meaning:
   width: standard seams, ladder-based focus and hover fills, muted controls,
   and the UI font. On desktop its popover is rounded to 16 px with the standard
   border and layered shadow. Compact layouts keep bb's native drawer geometry.
-- Transient desktop toasts use the Monokai notification card: top-centered over
-  the focused conversation, rounded to 16 px, separated with the standard
-  border and layered shadow, with bb's native text and action flow and dismissal
-  inside the card. Compact layouts keep bb's native toast geometry and action layout.
+- Transient toasts use a compact shadcn-style card on mobile and desktop,
+  with the shared Card and Button radii, standard border and shadow, muted description, filled
+  actions, and inline dismissal. Desktop placement is top-centered over the
+  focused conversation; compact layouts keep bb's native placement and stacking.
+- Archive confirmations with Undo use a single-row card: dismiss, title, Undo.
+  Their thread-title description is hidden; other toast details remain visible.
 - Native browser and operating-system banners delivered by bb's push
   notification plugin are system-owned surfaces. A bb theme cannot restyle
   their layout or colors.

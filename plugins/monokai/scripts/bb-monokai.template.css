@@ -1580,9 +1580,9 @@ diffs-container {
   }
 }
 
-/* Sonner owns toast state and actions. On desktop the theme changes
- * presentation only. Compact mobile layouts keep bb's native notification
- * geometry. The last matching anchor is the focused conversation, with the
+/* Sonner owns toast state and actions. Shared shadcn-style surfaces apply
+ * on mobile and desktop; only desktop placement is overridden.
+ * The last matching anchor is the focused conversation, with the
  * app's main area covering compose/settings routes. Viewport coordinates are
  * the CSS fallback when an anchor is unavailable. */
 @media (min-width: 768px) {
@@ -1633,79 +1633,138 @@ diffs-container {
   .dark [data-sonner-toast][data-mounted="false"] {
     --y: translateY(-100%);
   }
+}
 
-  /* One 1px host edge and bb's --shadow-md, like the notification center. */
-  .dark [data-sonner-toast].bb-app-toast > div {
-    position: relative;
-    width: 100%;
-    max-width: 100%;
-    padding: 12px;
-    border-radius: 16px;
-    background: var(--popover);
-    border-color: var(--border);
+/* Match shadcn Sonner's compact type hierarchy without replacing host UI. */
+.dark [data-sonner-toaster] {
+  font-family: var(--font-sans);
+}
+
+.dark [data-sonner-toast].bb-app-toast [data-testid="app-toast-title"] {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+/* One 1px host edge and bb's --shadow-md, like the notification center. */
+.dark [data-sonner-toast].bb-app-toast > div {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-lg, 0.5rem);
+  background: var(--popover);
+  border-color: var(--border);
+  color: var(--popover-foreground);
+  box-shadow: var(--shadow-md);
+}
+
+.dark [data-sonner-toast].bb-app-toast > div > div {
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.dark [data-sonner-toast].bb-app-toast > div > div > div:first-child {
+  margin-top: 2px;
+  color: var(--muted-foreground);
+}
+
+/* Keep bb's title and details rows in normal flow. Flattening the details
+ * into a grid can place wrapped actions on top of the description. */
+.dark [data-sonner-toast].bb-app-toast svg {
+  margin: 0;
+}
+
+.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > div {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted-foreground);
+}
+
+/* bb wraps toast actions in a .flex-wrap row. Target that row so the
+ * description's Show more control keeps its link treatment. */
+.dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 0.375rem);
+  background: var(--secondary);
+  background-clip: padding-box;
+  color: var(--secondary-foreground);
+  text-decoration: none;
+}
+
+@media (hover: hover) {
+  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button:hover {
+    background: var(--state-hover);
+  }
+}
+
+.dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"] {
+  position: static;
+  width: 28px;
+  height: 28px;
+  margin: 0;
+  transform: none;
+  border: 0;
+  border-radius: var(--radius-md, 0.375rem);
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+@media (hover: hover) {
+  .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"]:hover {
+    background: var(--state-hover);
     color: var(--popover-foreground);
-    box-shadow: var(--shadow-md);
   }
+}
 
-  .dark [data-sonner-toast].bb-app-toast > div > div {
-    align-items: center;
-    gap: 10px;
-  }
+/* Archive confirmations follow the single-row card: dismiss, title, Undo.
+ * The content script tags the native toast; React keeps every handler. */
+.dark [data-sonner-toast].bb-app-toast[data-monokai-archive-toast] > div {
+  padding: 12px 16px;
+}
 
-  .dark [data-sonner-toast].bb-app-toast > div > div > div:first-child {
-    margin-top: 0;
-    color: var(--muted-foreground);
-  }
+.dark [data-sonner-toast].bb-app-toast[data-monokai-archive-toast] > div > div {
+  align-items: center;
+  gap: 12px;
+}
 
-  /* Keep bb's title and details rows in normal flow. Flattening the details
-   * into a grid can place wrapped actions on top of the description. */
-  .dark [data-sonner-toast].bb-app-toast svg {
-    margin: 0;
-  }
+.dark [data-sonner-toast].bb-app-toast[data-monokai-archive-toast] > div > div > div:first-child {
+  display: none;
+}
 
-  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > div {
-    font-size: 12px;
-    line-height: 18px;
-    color: var(--muted-foreground);
-  }
+.dark [data-sonner-toast].bb-app-toast[data-monokai-archive-toast] > div > div > div:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
 
-  /* bb 0.45 wraps toast actions in a .flex-wrap row. Stepping through it keeps
-   * the description's "Show more" link out of the chip. */
-  .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button {
-    height: 28px;
-    padding: 0 10px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--secondary);
-    background-clip: padding-box;
-    color: var(--secondary-foreground);
-    text-decoration: none;
-  }
+.dark [data-sonner-toast].bb-app-toast[data-monokai-archive-toast] > div > div > div:nth-child(2) > div:first-child {
+  flex: 1;
+}
 
-  @media (hover: hover) {
-    .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button:hover {
-      background: var(--state-hover);
-    }
-  }
+.dark [data-sonner-toast].bb-app-toast[data-monokai-archive-toast] > div > div > div:nth-child(2) > div:nth-child(2) {
+  display: contents;
+}
 
-  .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"] {
-    position: static;
-    width: 28px;
-    height: 28px;
-    margin: 0;
-    transform: none;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--muted-foreground);
-  }
+.dark [data-sonner-toast].bb-app-toast[data-monokai-archive-toast] [data-monokai-archive-description] {
+  display: none;
+}
 
-  @media (hover: hover) {
-    .dark [data-sonner-toast].bb-app-toast button[aria-label="Dismiss notification"]:hover {
-      background: var(--state-hover);
-      color: var(--popover-foreground);
-    }
-  }
+.dark [data-sonner-toast].bb-app-toast[data-monokai-archive-toast] [data-testid="app-toast-title"] {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dark [data-sonner-toast].bb-app-toast[data-monokai-archive-toast] button[aria-label="Dismiss notification"] {
+  order: -1;
+  width: 20px;
+  height: 20px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
 }
 
 /* Agent replies copy T3 Code's chat markdown (`.chat-markdown` in its

@@ -3,6 +3,7 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app/monaco-syntax-tokens.css";
 import "./app/diff-header.css";
 import "./app/project-control.css";
+import { mountArchiveToast } from "./app/archive-toast.ts";
 import { mountProjectControl } from "./app/project-control.ts";
 // workaround:monokai/secondary-swipe-width-property begin
 import "./app/secondary-panel-resize.css";
@@ -19,6 +20,7 @@ import { UiFontBridge } from "./app/ui-font-bridge.ts";
 import { HomeMarker } from "./app/home-marker.ts";
 
 export default definePluginApp((app) => {
+  app.contentScripts.register({ id: "archive-toast", mount: mountArchiveToast });
   app.contentScripts.register({ id: "diff-header", mount: mountDiffHeader });
   app.contentScripts.register({ id: "project-control", mount: mountProjectControl });
   // workaround:monokai/context-card-late-layout begin
