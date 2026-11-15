@@ -33,8 +33,8 @@
   }
 }
 
-/* The names and durations of the two exits matter: Radix keeps the scrim
-   and the layer mounted until each one's own exit animation ends. */
+/* The exit's name and duration matter: Radix keeps the layer, and the scrim
+   inside it, mounted until the layer's own exit animation ends. */
 @keyframes gtd-dim-out {
   to {
     opacity: 0;
@@ -44,21 +44,17 @@
 /* Dims the list behind the menu. No backdrop blur: the sheet above is
    opaque, so the list stays sharp around it. */
 .gtd-sheet-scrim {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 49;
+  z-index: -1;
   background: rgb(0 0 0 / 0.3);
-}
-.gtd-sheet-scrim[data-state="open"] {
   animation: gtd-dim-in 200ms ease-out both;
-}
-.gtd-sheet-scrim[data-state="closed"] {
-  animation: gtd-dim-out 150ms ease-in both;
 }
 .gtd-sheet-layer {
   position: fixed;
   inset: 0;
   z-index: 50;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   /* Clear of the status bar, notch and home indicator as well as the screen

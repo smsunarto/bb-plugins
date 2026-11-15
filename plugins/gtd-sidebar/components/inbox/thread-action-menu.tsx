@@ -69,6 +69,12 @@ export function captureSheetOrigin(row: HTMLElement): SheetOrigin {
  * does, and the sheet scrolls only on a screen too short to hold it at all.
  * CSS does all of it (app.css), with the safe-area insets read where they
  * are defined.
+ *
+ * Not a modal dialog: Radix's modal locks the body's scroll and turns off its
+ * pointer events, and each of those body style changes restyles the whole
+ * page — about 100 ms between the hold landing and the sheet's first frame,
+ * several times that on a phone. The layer covers the screen and takes every
+ * touch itself, so the list behind it can neither scroll nor be tapped.
  */
 export function ThreadActionSheet({
   target,
@@ -119,12 +125,12 @@ export function ThreadActionSheet({
   }, []);
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={onOpenChange} modal={false}>
       <Dialog.Portal>
-        <Dialog.Overlay {...scope} className="gtd-sheet-scrim" />
         <Dialog.Content
           {...scope}
           aria-describedby={undefined}
+          aria-modal
           data-side={side}
           className="gtd-sheet-layer"
           style={
@@ -152,6 +158,7 @@ export function ThreadActionSheet({
         >
           {/* Names the thread for a screen reader, which cannot see the lifted row. */}
           <Dialog.Title className="sr-only">{target.thread.displayTitle}</Dialog.Title>
+          <div aria-hidden className="gtd-sheet-scrim" />
           <div className="gtd-sheet-spacer" />
           <div ref={mountGroup} className="gtd-sheet-group">
             <div
