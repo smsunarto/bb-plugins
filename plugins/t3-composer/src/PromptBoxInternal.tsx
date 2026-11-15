@@ -829,6 +829,15 @@ function revealPromptEditorSelection({
   }
 }
 
+/**
+ * Keeps a press on a button BB renders inside the composer, such as the handoff banner's X or a
+ * failed recording's Retry, from taking focus off the editor, so a phone's keyboard stays up.
+ * Only mousedown: cancelling pointerdown would stop Radix triggers from opening.
+ */
+function keepEditorFocusOnButtonPress(event: ReactMouseEvent<HTMLElement>): void {
+  if (event.target instanceof Element && event.target.closest("button")) event.preventDefault();
+}
+
 function isPromptBoxChromeTarget(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
 
@@ -3066,23 +3075,28 @@ export function PromptBoxInternal({
         onChange={handleAttachmentInputChange}
       />
       {handoff ? (
+        // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- keeps focus on BB's buttons inside; adds no interaction of its own.
         <div
           ref={handoffBannerRef}
           inert={showVoiceActionGroup ? true : undefined}
           className="px-3 pt-1.5"
+          onMouseDown={keepEditorFocusOnButtonPress}
         >
           {handoff}
         </div>
       ) : null}
       {voice && voice.failedRecordings.length > 0 ? (
-        <FailedVoiceRecordings
-          recordings={voice.failedRecordings}
-          className="px-1.5 pt-1.5"
-          retryDisabled={false}
-          onRetry={voice.retry}
-          onDownload={voice.download}
-          onDiscard={voice.discard}
-        />
+        // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- keeps focus on BB's buttons inside; adds no interaction of its own.
+        <div className="contents" onMouseDown={keepEditorFocusOnButtonPress}>
+          <FailedVoiceRecordings
+            recordings={voice.failedRecordings}
+            className="px-1.5 pt-1.5"
+            retryDisabled={false}
+            onRetry={voice.retry}
+            onDownload={voice.download}
+            onDiscard={voice.discard}
+          />
+        </div>
       ) : null}
       <div
         data-promptbox-layout=""
@@ -3336,6 +3350,8 @@ export function PromptBoxInternal({
                         variant="secondary"
                         aria-label="Stop run"
                         data-t3-composer-stop=""
+                        onPointerDown={(event) => event.preventDefault()}
+                        onMouseDown={(event) => event.preventDefault()}
                         onClick={onStop}
                         className={
                           showCompactLayout

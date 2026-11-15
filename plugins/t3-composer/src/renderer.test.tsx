@@ -10,6 +10,7 @@ import type {
   ExperimentalComposerHistory,
   ExperimentalComposerInput,
   ExperimentalComposerRendererApi,
+  ExperimentalFailedVoiceRecordingsProps,
   PluginComposerScope,
 } from "@get-bb/plugin-sdk/app";
 import { SaveDraftAction } from "./SaveDraftAction";
@@ -22,10 +23,22 @@ import {
 import { resetStarredModelsForTest } from "./starred-models/useStarredModels";
 
 // The SDK harness draws other plugins' actions as nothing; mark where BB's group mounts.
+// Its failed-recordings list has no buttons; draw BB's Discard so a press can reach one.
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => {
   const sdk = await importOriginal<typeof import("@get-bb/plugin-sdk/app")>();
   return {
     ...sdk,
+    experimental_FailedVoiceRecordings: (props: ExperimentalFailedVoiceRecordingsProps) => (
+      <ul>
+        {props.recordings.map((recording) => (
+          <li key={recording.id}>
+            <button type="button" onClick={() => props.onDiscard(recording)}>
+              Discard
+            </button>
+          </li>
+        ))}
+      </ul>
+    ),
     experimental_useComposerContributions: () => ({
       ...sdk.experimental_useComposerContributions(),
       Actions: () => <span data-testid="plugin-actions" />,
@@ -187,8 +200,62 @@ describe("T3 composer SDK integration", () => {
       },
     });
     try {
-      fireEvent.click(await slot.findByRole("button", { name: "Stop run" }));
+      const stop = await slot.findByRole("button", { name: "Stop run" });
+      // A cancelled press leaves focus in the editor, so a phone's keyboard stays up.
+      expect(fireEvent.pointerDown(stop)).toBe(false);
+      expect(fireEvent.mouseDown(stop)).toBe(false);
+      fireEvent.click(stop);
       expect(onStop).toHaveBeenCalledOnce();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("keeps the editor focused when BB's handoff banner and failed recordings are pressed", async () => {
+    const exitHandoff = vi.fn();
+    const discard = vi.fn();
+    const recording = {
+      id: "r1",
+      key: "r1",
+      file: new File([], "voice.webm"),
+      promptContext: undefined,
+      delivery: "insert",
+      createdAt: 0,
+      errorMessage: "Transcription failed",
+      retrying: false,
+    } as const;
+    const { slot } = await mountComposer(
+      {
+        handoff: <button type="button" aria-label="Exit handoff" onClick={exitHandoff} />,
+        voice: {
+          state: "idle",
+          delivery: "insert",
+          microphoneWarning: null,
+          isSupported: true,
+          unsupportedMessage: "",
+          stream: null,
+          failedRecordings: [recording],
+          start: vi.fn(),
+          stop: vi.fn(),
+          send: vi.fn(),
+          retry: vi.fn(),
+          discard,
+          download: vi.fn(),
+          cancel: vi.fn(),
+        },
+      },
+      { kind: "thread", threadId: "t1" },
+    );
+    try {
+      const exit = slot.getByRole("button", { name: "Exit handoff" });
+      expect(fireEvent.mouseDown(exit)).toBe(false);
+      fireEvent.click(exit);
+      expect(exitHandoff).toHaveBeenCalledOnce();
+
+      const discardButton = await slot.findByRole("button", { name: /discard/i });
+      expect(fireEvent.mouseDown(discardButton)).toBe(false);
+      fireEvent.click(discardButton);
+      expect(discard).toHaveBeenCalledWith(recording);
     } finally {
       slot.lifecycle.unmount();
     }
