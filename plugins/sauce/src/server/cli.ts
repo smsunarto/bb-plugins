@@ -21,7 +21,7 @@ import {
   type Step,
   type Until,
 } from "./core.ts";
-import { DEVICE_KEYS, SauceError } from "./live.ts";
+import { DEVICE_KEYS, ORIENTATIONS, SauceError, type Orientation } from "./live.ts";
 
 const HOLD_MAX_MS = 30_000;
 const DRAG_MAX_MS = 5_000;
@@ -338,7 +338,18 @@ function caller(cli: PluginCliContext): Caller {
       hint: "Run it from a thread's shell, or set BB_THREAD_ID=<thread id> for the thread that should hold the device.",
     });
   }
-  return { threadId: cli.threadId, ...(cli.signal ? { signal: cli.signal } : {}) };
+  return {
+    threadId: cli.threadId,
+    ...(cli.projectId ? { projectId: cli.projectId } : {}),
+    ...(cli.signal ? { signal: cli.signal } : {}),
+  };
+}
+
+/** `--orientation` on `defaults`: an orientation, or `none` to clear the default. */
+const NO_ORIENTATION = "none";
+
+function orientation(text: string | undefined): Orientation | undefined {
+  return ORIENTATIONS.find((known) => known === text);
 }
 
 export function sauceCli(core: SauceCore): PluginCliRegistration {
@@ -448,16 +459,60 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
             type: "string",
             description: "Text from a build label in `bb sauce apps`; omitted, the newest build",
           },
+          orientation: {
+            type: "enum",
+            values: ORIENTATIONS,
+            description:
+              "How to hold the device; omitted, the project's default from `bb sauce defaults`, else portrait",
+          },
           json,
         },
         run: (input, cli) =>
-          answer(input.options.json, () =>
-            core.start(caller(cli), {
+          answer(input.options.json, () => {
+            const held = orientation(input.options.orientation);
+            return core.start(caller(cli), {
               device: input.positionals.device,
               ...(input.options.os ? { os: input.options.os } : {}),
               ...(input.options.app ? { app: input.options.app } : {}),
-            }),
-          ),
+              ...(held ? { orientation: held } : {}),
+            });
+          }),
+      }),
+      defaults: cliCommand({
+        summary: "Show or set what `bb sauce start` applies for a project",
+        description:
+          "Without options, shows the project's defaults. A default applies to every later `bb sauce start` from that project's threads.\n" +
+          "Needs no device and no thread; outside a thread's shell, name the project with --project.",
+        options: {
+          orientation: {
+            type: "enum",
+            values: [...ORIENTATIONS, NO_ORIENTATION],
+            description:
+              "How `start` holds the device for this project: landscape for a landscape app, or none to clear the default",
+          },
+          project: {
+            type: "string",
+            description: "Project id from `bb project list`; omitted, the calling thread's project",
+          },
+          json,
+        },
+        run: (input, cli) =>
+          answer(input.options.json, () => {
+            const projectId = input.options.project ?? cli.projectId;
+            if (!projectId) {
+              throw new PluginCliError("This shell names no project.", {
+                code: "no_project",
+                hint: "Run it from a thread's shell, or pass --project <id> from `bb project list`.",
+              });
+            }
+            const asked = input.options.orientation;
+            return core.defaults({
+              projectId,
+              ...(asked === undefined
+                ? {}
+                : { change: { orientation: orientation(asked) ?? null } }),
+            });
+          }),
       }),
       look: cliCommand({
         summary: "Capture the device screen as an upright PNG and set the frame touches refer to",

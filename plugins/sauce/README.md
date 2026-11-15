@@ -21,6 +21,19 @@ bb sauce end
 
 Run `bb sauce --help` for every command. The `sauce-live` skill holds the workflow agents follow.
 
+## Project defaults
+
+A project can set how `bb sauce start` holds the device, so a landscape game's sessions start landscape while a portrait app's stay portrait:
+
+```sh
+bb sauce defaults --orientation landscape   # this thread's project
+bb sauce defaults --project <id>            # show another project's
+bb sauce defaults --orientation none        # clear it
+bb sauce start "Samsung Galaxy S23" --orientation portrait   # one session only
+```
+
+The default is stored per bb project id in the plugin's database. Without one, a session starts as Sauce starts it, portrait.
+
 ## Requirements
 
 - `agent-browser` on the bb server's `PATH`.

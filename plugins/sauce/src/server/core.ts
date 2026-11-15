@@ -16,10 +16,17 @@ import {
   type SauceLease,
 } from "./lease.ts";
 import {
+  NO_DEFAULTS,
+  parseOrientation,
+  type DefaultsStore,
+  type ProjectDefaults,
+} from "./defaults.ts";
+import {
   SauceError,
   createSaucePage,
   notOnSauce,
   type DeviceKey,
+  type Orientation,
   type PageState,
   type RotationReading,
   type SaucePage,
@@ -28,6 +35,10 @@ import {
 export type SauceCoreDeps = {
   page: SaucePage;
   store: LeaseStore;
+  /** Each project's defaults for `start`. */
+  defaults: DefaultsStore;
+  /** A project's name, or null when bb has no such project. */
+  projectName(projectId: string): Promise<string | null>;
   now(): number;
   sleep(ms: number): Promise<void>;
   /** Where a command saves evidence for a thread; returns the path as the thread sees it. */
@@ -38,8 +49,11 @@ export type SauceCoreDeps = {
   fileSize(path: string): Promise<number | null>;
 };
 
-/** `signal` aborts when the calling `bb` process goes away or the plugin is disposed. */
-export type Caller = { threadId: string; signal?: AbortSignal };
+/**
+ * `signal` aborts when the calling `bb` process goes away or the plugin is disposed.
+ * `projectId` is the project the calling thread belongs to, whose defaults `start` applies.
+ */
+export type Caller = { threadId: string; projectId?: string; signal?: AbortSignal };
 
 /** What a wait watches for on the device screen. */
 export type WaitCondition = "stable" | "changed";
@@ -212,7 +226,7 @@ const ROTATION_NOTES: Record<RotationRule, string | undefined> = {
   measured: undefined,
   kept: `${UNMEASURED}; kept the rotation the last look used. ${RETRY}`,
   assumed_upright: `${UNMEASURED}; assumed the app is upright. ${RETRY}`,
-  assumed_sideways: `${UNMEASURED}; assumed Sauce's usual sideways turn for a landscape app. ${RETRY}`,
+  assumed_sideways: `${UNMEASURED}; assumed the screen is turned sideways in Sauce's canvas, as when the app and the device are held different ways. ${RETRY}`,
   unknown:
     "The rotation could not be measured on this capture, so taps and drags will refuse. Look again once the screen is still.",
 };
@@ -688,6 +702,49 @@ export function createSauceCore(deps: SauceCoreDeps) {
     );
   }
 
+  /**
+   * Holds a session that just started the way the command or the caller's project
+   * asks. The session is already live and leased, so a device that will not turn is
+   * reported on the start rather than failing it.
+   */
+  async function orient(ctx: Caller, asked: Orientation | undefined) {
+    const fromProject = ctx.projectId ? deps.defaults.read(ctx.projectId).orientation : null;
+    const orientation = asked ?? fromProject;
+    if (!orientation) return {};
+    const source = asked ? "option" : "project_default";
+    try {
+      await deps.page.orient(orientation);
+      return { orientation, orientation_from: source };
+    } catch (error) {
+      if (!(error instanceof SauceError) && !(error instanceof BrowserCommandError)) throw error;
+      return {
+        orientation_note: `The device was not turned ${orientation} (${source === "option" ? "--orientation" : "this project's default"}): ${error.message} Check with \`bb sauce look\`; \`bb sauce device rotate\` turns it.`,
+      };
+    }
+  }
+
+  /** Shows a project's defaults, after changing those `change` names. */
+  async function defaults(input: { projectId: string; change?: Partial<ProjectDefaults> }) {
+    const name = await deps.projectName(input.projectId);
+    if (name === null)
+      throw new SauceError(
+        "not_found",
+        `bb has no project ${input.projectId}.`,
+        "Give a project id from `bb project list`.",
+      );
+    const current = deps.defaults.read(input.projectId);
+    const next = { ...current, ...input.change };
+    if (input.change) deps.defaults.write(input.projectId, next);
+    return {
+      project: name,
+      project_id: input.projectId,
+      orientation: next.orientation,
+      note: next.orientation
+        ? `\`bb sauce start\` from this project's threads turns the device ${next.orientation}; \`--orientation\` overrides it for one session.`
+        : "No default: `bb sauce start` leaves the device as Sauce starts it, portrait.",
+    };
+  }
+
   async function device(ctx: Caller, input: { action: DeviceAction }) {
     return holding(ctx, async () => {
       switch (input.action) {
@@ -828,7 +885,10 @@ export function createSauceCore(deps: SauceCoreDeps) {
       });
     },
 
-    async start(ctx: Caller, input: { device: string; os?: string; app?: string }) {
+    async start(
+      ctx: Caller,
+      input: { device: string; os?: string; app?: string; orientation?: Orientation },
+    ) {
       return queued(ctx, async () => {
         const check = await requireBrowsable(ctx.threadId);
         const page = await deps.page.state();
@@ -867,6 +927,7 @@ export function createSauceCore(deps: SauceCoreDeps) {
             device: started.device,
             app: started.app,
             session_url: started.url,
+            ...(await orient(ctx, input.orientation)),
             lease_idle_minutes: LEASE_IDLE_MS / 60_000,
             next: "The app installs and launches over 20-60 s. Run `bb sauce look` before any tap: it sets the coordinate frame.",
           };
@@ -889,6 +950,8 @@ export function createSauceCore(deps: SauceCoreDeps) {
         }
       });
     },
+
+    defaults,
 
     look,
 
@@ -1064,8 +1127,10 @@ export function createSauceCore(deps: SauceCoreDeps) {
 
 export type SauceCore = ReturnType<typeof createSauceCore>;
 
-export const LEASE_MIGRATIONS = [
+/** In order; bb applies the ones a database has not seen. Append, never edit. */
+export const MIGRATIONS = [
   `CREATE TABLE sauce_lease (id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL)`,
+  `CREATE TABLE sauce_project_defaults (project_id TEXT PRIMARY KEY, orientation TEXT)`,
 ];
 
 export function createLeaseStore(bb: BbPluginApi): LeaseStore {
@@ -1087,11 +1152,38 @@ export function createLeaseStore(bb: BbPluginApi): LeaseStore {
   };
 }
 
+export function createDefaultsStore(bb: BbPluginApi): DefaultsStore {
+  const db = bb.storage.database();
+  return {
+    read(projectId) {
+      const row = db
+        .prepare("SELECT orientation FROM sauce_project_defaults WHERE project_id = ?")
+        .get(projectId) as { orientation: string | null } | undefined;
+      return row ? { orientation: parseOrientation(row.orientation) } : NO_DEFAULTS;
+    },
+    write(projectId, defaults) {
+      // A project with nothing set keeps no row, so a deleted project leaves none behind.
+      if (defaults.orientation === null)
+        db.prepare("DELETE FROM sauce_project_defaults WHERE project_id = ?").run(projectId);
+      else
+        db.prepare(
+          "INSERT OR REPLACE INTO sauce_project_defaults (project_id, orientation) VALUES (?, ?)",
+        ).run(projectId, defaults.orientation);
+    },
+  };
+}
+
 /** The core wired to the real Sauce browser and this bb's threads. */
 export function defaultCoreDeps(bb: BbPluginApi): SauceCoreDeps {
   return {
     page: createSaucePage(createAgentBrowserRunner()),
     store: createLeaseStore(bb),
+    defaults: createDefaultsStore(bb),
+    projectName: (projectId) =>
+      bb.sdk.projects.get({ projectId }).then(
+        (project) => project.name,
+        () => null,
+      ),
     now: () => Date.now(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     tempDir: () => mkdtemp(join(tmpdir(), "bb-sauce-")),

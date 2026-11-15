@@ -234,3 +234,29 @@ test("an upload waits out a progress notice and returns the build once Sauce lis
   // The tab stayed on the upload page until the notice stopped reporting progress.
   expect(notices).toBe(3);
 });
+
+const PORTRAIT = { left: 726, top: 89, width: 404, height: 878 };
+const LANDSCAPE = { left: 361, top: 180, width: 878, height: 404 };
+
+test("orienting clicks Rotate Device only when the canvas is the other shape, and waits for it to turn", async () => {
+  let canvas = PORTRAIT;
+  const { page, commands } = scripted(
+    [onSession(), [/getBoundingClientRect/, () => canvas]],
+    (args) => {
+      if (args[0] === "find" && args.includes("Rotate Device")) canvas = LANDSCAPE;
+    },
+  );
+  expect(await page.orient("portrait")).toEqual({ turned: false });
+  expect(commands()).toEqual([]);
+  expect(await page.orient("landscape")).toEqual({ turned: true });
+  expect(await page.orient("landscape")).toEqual({ turned: false });
+  expect(commands()).toEqual(["find role"]);
+});
+
+test("a device that never turns is a timeout after one click, not a second toggle", async () => {
+  const { page, commands } = scripted([onSession(), [/getBoundingClientRect/, () => PORTRAIT]]);
+  const turning = page.orient("landscape");
+  await expect(turning).rejects.toMatchObject({ code: "timeout" });
+  await expect(turning).rejects.toThrow("did not turn landscape");
+  expect(commands()).toEqual(["find role"]);
+});

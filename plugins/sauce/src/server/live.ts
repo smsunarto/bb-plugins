@@ -85,6 +85,19 @@ export const defaultPageDeps: SaucePageDeps = {
     imageMagickThumbnail("convert", path, width, height),
 };
 
+/** How the device is held. Sauce's Rotate Device turns the session canvas with it. */
+export type Orientation = "portrait" | "landscape";
+
+export const ORIENTATIONS: readonly Orientation[] = ["portrait", "landscape"];
+
+/** The canvas takes the device's shape, so its shape tells how the device is held. */
+export function orientationOf(canvas: Pick<Rect, "width" | "height">): Orientation {
+  return canvas.width > canvas.height ? "landscape" : "portrait";
+}
+
+/** The canvas redraws in the new shape within a second or two of Rotate Device. */
+const ORIENT_TIMEOUT_MS = 10_000;
+
 /**
  * How a screenshot's rotation was read. Sauce draws a landscape app sideways in a
  * portrait canvas, so the screen's shape allows two rotations, and comparing the
@@ -1021,6 +1034,29 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     await browser.run(["find", "role", "menuitem", "click", "--name", name, "--exact"]);
   }
 
+  /**
+   * Holds the device `target` way up. Rotate Device only toggles, so this reads the
+   * canvas's shape, clicks when it differs, and waits for the shape to follow; run
+   * twice, it clicks once. `turned` tells whether a click was needed.
+   */
+  async function orient(target: Orientation): Promise<{ turned: boolean }> {
+    await requireSession();
+    if (orientationOf(await canvasRect()) === target) return { turned: false };
+    await clickMenu("Rotate Device");
+    const turned = await poll(
+      ORIENT_TIMEOUT_MS,
+      async () => orientationOf(await canvasRect()) === target,
+      400,
+    );
+    if (!turned)
+      throw new SauceError(
+        "timeout",
+        `The device did not turn ${target} within ${ORIENT_TIMEOUT_MS / 1000} s of Rotate Device.`,
+        "Run `bb sauce look` to see how it is held; `bb sauce device rotate` turns it.",
+      );
+    return { turned: true };
+  }
+
   /** Clicks a marked element through agent-browser's download, which saves what the click downloads. */
   async function downloadMarked(markScript: string, path: string, what: string) {
     const marked = await evaluate<boolean>(markScript);
@@ -1459,6 +1495,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     typeText,
     pressKey,
     requireSession,
+    orient,
     shell,
     logTail,
     downloadLog,

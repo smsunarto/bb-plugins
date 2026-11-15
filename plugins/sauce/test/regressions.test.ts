@@ -18,6 +18,7 @@ import {
   type SaucePage,
 } from "../src/server/live.ts";
 import { createSauceCore } from "../src/server/core.ts";
+import { memoryDefaults } from "./fakes.ts";
 
 const LIVE = "https://app.saucelabs.com/live/app-testing";
 const SESSION =
@@ -139,6 +140,8 @@ function toolsFor(page: SaucePage, now: () => number = () => 1_000_000) {
   const tools = createSauceCore({
     page,
     store,
+    defaults: memoryDefaults(),
+    projectName: async () => null,
     now,
     sleep: async () => {},
     tempDir: () => mkdtemp(join(tmpdir(), "bb-sauce-bugs-")),

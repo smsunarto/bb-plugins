@@ -24,6 +24,8 @@ Older hunt prompts say to open Sauce Live in a local Chrome, sign in through Goo
 1. `bb sauce status`. Continue only on `ready`, `session_abandoned`, or `session_mine`. On `signed_out`, retry once with `--sign-in`. On any other state, wait or report it; the result's `next` says which.
 2. `bb sauce apps`, then `bb sauce devices <model> --app <build>`. If the build is not in storage yet, `bb sauce upload <file>` first. Done when you have a build, an exact device name, and an OS.
 3. `bb sauce start <device> --os <os> --app <build>`. Done when it prints the session URL.
+   - `start` holds the device the way the project's default says and reports it as `orientation`. `--orientation portrait|landscape` overrides the default for one session.
+   - `bb sauce defaults` shows the project's default. Change it with `--orientation` only when the user asks: it applies to every later session from the project.
 4. `bb sauce look` until the app shows its first screen (installs take 20-60 s, longer on iOS; `bb sauce wait changed --timeout 60s` between looks). Touches and text refuse with `not_ready` while Sauce is still installing. Open each PNG before deciding where to touch.
 5. Drive the app with the loop below. Keep the PNG paths as evidence.
 6. `bb sauce end`. Done when it reports `released: true`. End before reporting, and before switching devices.
@@ -53,7 +55,7 @@ Older hunt prompts say to open Sauce Live in a local Chrome, sign in through Goo
 
 ## Rampage notes
 
-- The game runs landscape. Looks come back upright; `bb sauce` handles Sauce's sideways canvas.
+- The game runs landscape. Looks come back upright whichever way the device is held.
 - First launch: tap SKIP on the cinematic, tap the title screen, then accept the guest prompt. Matches start from the HQ DEPLOY table, then DEPLOY on the ops table.
 - Joystick: drag from the stick's centre toward the direction with `--hold` for as long as the character should move.
 - Unity logs reach the device log: `bb sauce log --grep "Unity|Exception"` searches all of it; `bb sauce log --new --grep "Exception"` shows only what the panel printed since your last check.

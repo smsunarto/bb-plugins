@@ -31,6 +31,7 @@ test("help lists every command without touching the device", async () => {
     "apps",
     "devices",
     "start",
+    "defaults",
     "look",
     "tap",
     "drag",

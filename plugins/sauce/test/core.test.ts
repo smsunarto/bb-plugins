@@ -21,6 +21,7 @@ import {
 } from "../src/server/live.ts";
 import { pngGrayThumbnail, pngSize } from "../src/server/png.ts";
 import { createSauceCore } from "../src/server/core.ts";
+import { memoryDefaults } from "./fakes.ts";
 
 // A 2340x1080 PNG header is all pngSize reads.
 const PNG = (() => {
@@ -66,6 +67,7 @@ function fakePage(state: FakeState): SaucePage {
       state.deviceQueries.push({ query, app });
       return { app: app ?? "Rampage/build.apk", devices: [], truncated: false };
     },
+    orient: async () => ({ turned: false }),
     startSession: async (input) => {
       state.onStart?.();
       if (input.device === "Slow Phone") {
@@ -131,6 +133,8 @@ function harness() {
   const tools = createSauceCore({
     page: fakePage(state),
     store,
+    defaults: memoryDefaults(),
+    projectName: async () => null,
     now: () => now,
     sleep: async () => {},
     tempDir: () => mkdtemp(join(tmpdir(), "bb-sauce-test-")),
@@ -347,7 +351,7 @@ test("an unclear rotation keeps or assumes Sauce's usual turn, never the reading
   state.reading = { candidates: [90, 270], best: 270, clear: false };
   const first = (await tools.look(a, {})) as { note?: string };
   expect(first).toMatchObject({ rotation: 90, rotation_measured: false });
-  expect(first.note).toContain("assumed Sauce's usual sideways turn");
+  expect(first.note).toContain("turned sideways in Sauce's canvas");
   expect(await code(tools.tap(a, { x: 0.5, y: 0.5 }))).toBe("ok");
 
   state.reading = { candidates: [90, 270], best: 270, clear: true };

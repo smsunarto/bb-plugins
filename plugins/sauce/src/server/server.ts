@@ -2,7 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
 
 import { sauceCli } from "./cli.ts";
-import { LEASE_MIGRATIONS, createSauceCore, defaultCoreDeps, type SauceCoreDeps } from "./core.ts";
+import { MIGRATIONS, createSauceCore, defaultCoreDeps, type SauceCoreDeps } from "./core.ts";
 
 /** Every skill under skills/; configure must name them all, or none would be selected. */
 export const SKILLS = ["sauce-live"];
@@ -13,7 +13,7 @@ export const SAUCE_PROJECT_PATTERN = /rampage/i;
 const text = instructionFiles(import.meta.url);
 
 export function registerSauce(bb: BbPluginApi, overrides: Partial<SauceCoreDeps> = {}) {
-  bb.storage.migrate(bb.storage.database(), LEASE_MIGRATIONS);
+  bb.storage.migrate(bb.storage.database(), MIGRATIONS);
   const core = createSauceCore({ ...defaultCoreDeps(bb), ...overrides });
   bb.cli.register(sauceCli(core));
   const snippet = text.read("sauce");

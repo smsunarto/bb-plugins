@@ -3,8 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { createSauceCore, type SauceCoreDeps } from "../src/server/core.ts";
+import { NO_DEFAULTS, type DefaultsStore, type ProjectDefaults } from "../src/server/defaults.ts";
 import type { LeaseStore, SauceLease } from "../src/server/lease.ts";
-import { SauceError, type PageState, type SaucePage } from "../src/server/live.ts";
+import {
+  SauceError,
+  type Orientation,
+  type PageState,
+  type SaucePage,
+} from "../src/server/live.ts";
 
 export const SESSION_URL = "https://app.saucelabs.com/live/mobile/x";
 
@@ -12,6 +18,17 @@ export function memoryStore(): LeaseStore {
   let lease: SauceLease | null = null;
   return { read: () => lease, write: (next) => void (lease = next) };
 }
+
+export function memoryDefaults(): DefaultsStore {
+  const rows = new Map<string, ProjectDefaults>();
+  return {
+    read: (projectId) => rows.get(projectId) ?? NO_DEFAULTS,
+    write: (projectId, defaults) => void rows.set(projectId, defaults),
+  };
+}
+
+/** The projects the fake bb knows, by id. */
+export const PROJECTS: Record<string, string> = { proj_game: "rampage", proj_app: "bb" };
 
 /** A flat grayscale sample; two screens with different `gray` read as changed. */
 export function screen(gray: number): Uint8Array {
@@ -47,6 +64,9 @@ export function fakeDevice() {
     onSample: (_count: number): void => {},
     onGesture: (_text: string): void => {},
     failCapture: null as SauceError | null,
+    /** How the device is held; a session starts portrait. */
+    orientation: "portrait" as Orientation,
+    failOrient: null as SauceError | null,
   };
   const requireSession = () => {
     if (world.page.kind !== "session")
@@ -76,7 +96,16 @@ export function fakeDevice() {
         device: `${input.device} - Android 16`,
         capacityReached: false,
       };
+      world.orientation = "portrait";
       return { app: "Rampage/build.apk", device: world.page.device as string, url: SESSION_URL };
+    },
+    orient: async (target: Orientation) => {
+      requireSession();
+      if (world.failOrient) throw world.failOrient;
+      const turned = world.orientation !== target;
+      if (turned) world.sent.push(`orient ${target}`);
+      world.orientation = target;
+      return { turned };
     },
     tap: async (point: { x: number; y: number }, _rotation: number, holdMs = 0) => {
       requireSession();
@@ -164,6 +193,8 @@ export function fakeDevice() {
   const deps: SauceCoreDeps = {
     page,
     store: memoryStore(),
+    defaults: memoryDefaults(),
+    projectName: async (projectId) => PROJECTS[projectId] ?? null,
     now: () => world.now,
     sleep: async (ms) => void (world.now += ms),
     tempDir: () => mkdtemp(join(tmpdir(), "bb-sauce-fake-")),
