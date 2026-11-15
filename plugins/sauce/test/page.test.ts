@@ -175,3 +175,19 @@ test("a download Sauce never delivers is a timeout the caller can retry", async 
   );
   expect(await codeOf(page.captureScreen("/tmp/bb-sauce-page-test/none.png"))).toBe("timeout");
 });
+
+test("a touch or text refused while Sauce covers the device sends nothing", async () => {
+  const { page, commands } = scripted([
+    onSession(),
+    [/elementFromPoint/, () => "Installing your app..."],
+    [/getBoundingClientRect/, () => ({ left: 726, top: 89, width: 404, height: 878 })],
+  ]);
+  const tapped = page.tap({ x: 0.5, y: 0.5 }, 0);
+  await expect(tapped).rejects.toMatchObject({ code: "not_ready" });
+  await expect(tapped).rejects.toThrow("Installing your app...");
+  expect(await codeOf(page.drag({ x: 0.1, y: 0.5 }, { x: 0.9, y: 0.5 }, 0, 300, 0))).toBe(
+    "not_ready",
+  );
+  expect(await codeOf(page.typeText("abc"))).toBe("not_ready");
+  expect(commands()).toEqual([]);
+});

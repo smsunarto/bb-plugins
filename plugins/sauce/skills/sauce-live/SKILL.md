@@ -17,14 +17,14 @@ Older hunt prompts say to open Sauce Live in a local Chrome, sign in through Goo
 
 - **Virtual devices:** only real devices are listed.
 - **iOS:** only when `bb sauce apps` lists an iOS build (`.ipa`); otherwise report no iOS build in Sauce storage.
-- **Two-finger input:** one finger only.
+- **Two-finger input:** one finger only; report pinch and multi-touch checks as a gap.
 
 ## Workflow
 
 1. `bb sauce status`. Continue only on `ready`, `session_abandoned`, or `session_mine`. On `signed_out`, retry once with `--sign-in`. On any other state, wait or report it; the result's `next` says which.
 2. `bb sauce apps`, then `bb sauce devices <model> --app <build>`. If the build is not in storage yet, `bb sauce upload <file>` first. Done when you have a build, an exact device name, and an OS.
 3. `bb sauce start <device> --os <os> --app <build>`. Done when it prints the session URL.
-4. `bb sauce look` until the app shows its first screen (installs take 20-60 s; `bb sauce wait changed --timeout 60s` between looks). Open each PNG before deciding where to touch.
+4. `bb sauce look` until the app shows its first screen (installs take 20-60 s, longer on iOS; `bb sauce wait changed --timeout 60s` between looks). Touches and text refuse with `not_ready` while Sauce is still installing. Open each PNG before deciding where to touch.
 5. Drive the app with the loop below. Keep the PNG paths as evidence.
 6. `bb sauce end`. Done when it reports `released: true`. End before reporting, and before switching devices.
 

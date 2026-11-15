@@ -27,6 +27,7 @@ export type SauceErrorCode =
   | "start_pending"
   | "cancelled"
   | "upload_rejected"
+  | "not_ready"
   | "page_changed";
 
 export class SauceError extends Error {
@@ -943,10 +944,35 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     }
   }
 
+  /**
+   * Refuses while Sauce covers the device with its own overlay ("Installing your
+   * app...", for a minute or more on iOS). The overlay takes every pointer event, so
+   * a touch sent then would report success and reach nothing. Measured 2026-11-15.
+   */
+  async function requireUncovered(what: string) {
+    const cover = await evaluate<unknown>(`(() => {
+      const canvas = document.querySelector(${JSON.stringify(CANVAS)});
+      if (!canvas) return null;
+      const r = canvas.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      if (!top || top === canvas || canvas.contains(top)) return null;
+      const frame = canvas.parentElement;
+      if (!frame || !frame.contains(top)) return null;
+      return (top.innerText || "").replace(/\\s+/g, " ").trim().slice(0, 80) || "an overlay";
+    })()`);
+    if (typeof cover === "string")
+      throw new SauceError(
+        "not_ready",
+        `${what} was not sent: Sauce is covering the device with "${cover}".`,
+        "Nothing reached the device. Wait with `bb sauce wait changed --timeout 60s`, look, then send it again.",
+      );
+  }
+
   /** The session and its canvas in one read; the canvas mounts a moment after the page. */
   async function pointerFrame(rotation: number) {
     const session = await requireSession();
     const rect = await canvasRect();
+    await requireUncovered("The touch");
     return { rect, pointer: pointerRotation(rotation, session.device, rect) };
   }
 
@@ -1153,6 +1179,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
    */
   async function focusDevice(what: string) {
     await requireSession();
+    await requireUncovered(what);
     const focused = await poll(
       5_000,
       async () =>
