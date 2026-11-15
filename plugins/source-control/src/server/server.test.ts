@@ -2232,7 +2232,7 @@ describe("grouped share", () => {
       }),
     ).toEqual({ ok: true });
     const [text] = world.messages!["thread-a"]!;
-    expect(text).toContain("Ship the changes on this Source Control card");
+    expect(text).toContain("ship it\n\nThis came from Ship all");
     expect(text).toContain('"branch": "scott/second"');
     expect(text).toContain('"head": "beef01"');
     expect(text).toContain("source_control_share_change");
@@ -2244,7 +2244,7 @@ describe("grouped share", () => {
       ok: true,
     });
     const [text] = world.messages!["thread-a"]!;
-    expect(text).toContain("Ship this thread's work");
+    expect(text).toContain("ship it\n\nThis came from the Ship it button");
     expect(text).toContain('"checkout": "/Users/scott/bb-plugins"');
     expect(text).toContain('"branch": "scott/route-gh"');
     expect(text).toContain('"uncommittedFiles": 1');
