@@ -184,6 +184,36 @@ test("the Cloud toggle shows only while the composer's selected provider is Devi
   }
 });
 
+test("pressing Cloud arms the thread for a Devin Cloud VM", async () => {
+  const toggle = await cloudToggleBanner();
+  const sent: unknown[] = [];
+  const slot = renderSlot(
+    toggle,
+    {},
+    {
+      pluginId: "devin",
+      composer: {
+        scope: { kind: "new-thread", projectId: "prj_1" },
+        selection: { providerId: "devin", model: "swe-1.6" },
+      },
+      rpc: {
+        ...TOGGLE_RPC,
+        setCloudIntent: (input: unknown) => {
+          sent.push(input);
+          return input;
+        },
+      },
+    },
+  );
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  const button = slot.getByRole("button", { name: "Cloud" });
+  expect(button.getAttribute("aria-pressed")).toBe("false");
+  await act(async () => fireEvent.click(button));
+  expect(button.getAttribute("aria-pressed")).toBe("true");
+  expect(sent).toEqual([{ armed: true }]);
+  slot.unmount();
+});
+
 test("the Cloud toggle follows the provider picker as the user switches", async () => {
   const toggle = await cloudToggleBanner();
   const Toggle = toggle.component;
@@ -213,11 +243,11 @@ test("the Cloud toggle follows the provider picker as the user switches", async 
       rpc: TOGGLE_RPC,
     },
   );
-  expect(slot.queryByTitle("Run this thread on a Devin Cloud VM")).toBeNull();
+  expect(slot.queryByRole("button", { name: "Cloud" })).toBeNull();
   await act(async () => fireEvent.click(slot.getByText("Pick Devin")));
-  expect(slot.getByTitle("Run this thread on a Devin Cloud VM")).toBeTruthy();
+  expect(slot.getByRole("button", { name: "Cloud" })).toBeTruthy();
   await act(async () => fireEvent.click(slot.getByText("Pick Codex")));
-  expect(slot.queryByTitle("Run this thread on a Devin Cloud VM")).toBeNull();
+  expect(slot.queryByRole("button", { name: "Cloud" })).toBeNull();
 });
 
 test("copying the attach command goes through bb's clipboard writer", async () => {

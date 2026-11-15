@@ -11,6 +11,16 @@ import {
 import type { PluginBrowserBbSdk } from "@get-bb/plugin-sdk/app";
 import { DEVIN_LOGO_PATHS, DEVIN_LOGO_VIEW_BOX } from "../shared/devin-brand.ts";
 import { cloudSessionSettled, DEVIN_PROVIDER_ID } from "../shared/devin.ts";
+import { Badge } from "./components/ui/badge.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Input } from "./components/ui/input.tsx";
+import { Toggle } from "./components/ui/toggle.tsx";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./components/ui/tooltip.tsx";
 import { queryClient } from "./query.ts";
 import { queryKey, useRpcMutation, useRpcQuery } from "./rpc.ts";
 import "./devin.css";
@@ -160,17 +170,24 @@ function CloudToggle() {
   if (!visible) return null;
   return (
     <div className="mb-2 flex">
-      <button
-        aria-pressed={pressed}
-        className="devin-cloud-toggle"
-        disabled={submitting}
-        onClick={toggle}
-        title="Run this thread on a Devin Cloud VM"
-        type="button"
-      >
-        <DevinIcon />
-        Cloud
-      </button>
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Toggle
+              className="h-6 gap-1 rounded-full px-2 text-xs"
+              disabled={submitting}
+              onPressedChange={toggle}
+              pressed={pressed}
+              size="sm"
+              variant="outline"
+            >
+              <DevinIcon />
+              Cloud
+            </Toggle>
+          </TooltipTrigger>
+          <TooltipContent>Run this thread on a Devin Cloud VM</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   );
 }
@@ -218,30 +235,37 @@ function CloudBanner() {
             </a>
           )}
         </div>
-        <span aria-live="polite" className="devin-cloud-status" data-state={data.state}>
+        <Badge
+          aria-live="polite"
+          className="devin-cloud-status min-w-18 justify-center gap-1 uppercase"
+          data-state={data.state}
+          variant={active === null ? "secondary" : "info"}
+        >
           <span aria-hidden="true" className="devin-cloud-status-dot" />
           {active === null ? "Starting" : "Active"}
-        </span>
+        </Badge>
       </div>
 
-      <div className="mt-2 flex min-w-0 items-stretch overflow-hidden rounded-md border border-border bg-background">
-        <input
+      <div className="mt-2 flex min-w-0 items-center gap-2">
+        <Input
           aria-label="Devin attach command"
-          className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground"
+          className="min-w-0 flex-1 font-mono text-xs"
           placeholder="Waiting for the Devin session ID…"
           readOnly
           title={active?.attachCommand}
           value={active?.attachCommand ?? ""}
         />
-        <button
+        <Button
+          type="button"
           aria-label="Copy Devin attach command"
-          className="devin-cloud-copy w-20 border-l border-border px-2.5 py-1.5 text-xs font-medium disabled:opacity-50"
+          className="w-20"
           disabled={active === null}
           onClick={() => void copy()}
-          type="button"
+          size="sm"
+          variant="ghost"
         >
           {copied === "copied" ? "Copied" : copied === "failed" ? "Copy failed" : "Copy"}
-        </button>
+        </Button>
       </div>
     </div>
   );
