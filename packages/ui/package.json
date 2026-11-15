@@ -12,6 +12,7 @@
     "./card": "./src/card.tsx",
     "./separator": "./src/separator.tsx",
     "./badge": "./src/badge.tsx",
+    "./table": "./src/table.tsx",
     "./surface": "./src/surface.ts"
   },
   "dependencies": {
