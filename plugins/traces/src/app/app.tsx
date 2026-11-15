@@ -1,4 +1,4 @@
-import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import { definePluginApp, experimental_ShortcutHint as ShortcutHint } from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, RefObject } from "react";
@@ -22,44 +22,51 @@ import { Inspector } from "./inspector.tsx";
 import type { TraceRendererRegistry } from "./renderers.tsx";
 import { Sources } from "./sources.tsx";
 import { TraceToolbar, TraceNotice, ThreadScope } from "./ui-chrome.tsx";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./components/ui/dialog.tsx";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select.tsx";
+import { TooltipProvider } from "./components/ui/tooltip.tsx";
 import "./traces.css";
+
+const shortcuts = [
+  {
+    label: "j / k · ↓ / ↑",
+    keys: "J K ArrowDown ArrowUp",
+    description: "Move through the focused list",
+  },
+  { label: "Home / End", keys: "Home End", description: "First or last item on this page" },
+  { label: "Enter", keys: "Enter", description: "Move from sessions to timeline to inspector" },
+  { label: "Esc", keys: "Escape", description: "Move back to the previous pane" },
+  { label: "/", keys: "/", description: "Search events in the selected session" },
+  { label: "r", keys: "R", description: "Toggle formatted and raw record" },
+  { label: "?", keys: "Shift+?", description: "Show keyboard shortcuts" },
+];
 
 function KeyHelp({ onClose }: { onClose: () => void }) {
   return (
-    <dialog
-      className="tr-dialog tr-help"
-      ref={(node) => {
-        if (node && !node.open) node.showModal();
-      }}
-      onCancel={onClose}
-      onClose={onClose}
-      aria-labelledby="tr-help-title"
-    >
-      <div className="tr-dialog-header">
-        <h2 id="tr-help-title">Keyboard shortcuts</h2>
-        <button onClick={onClose} aria-label="Close keyboard shortcuts">
-          ×
-        </button>
-      </div>
-      <dl>
-        {[
-          ["j / k · ↓ / ↑", "Move through the focused list"],
-          ["Home / End", "First or last item on this page"],
-          ["Enter", "Move from sessions to timeline to inspector"],
-          ["Esc", "Move back to the previous pane"],
-          ["/", "Search events in the selected session"],
-          ["r", "Toggle formatted and raw record"],
-          ["?", "Show keyboard shortcuts"],
-        ].map(([key, description]) => (
-          <div key={key}>
-            <dt>
-              <kbd>{key}</kbd>
-            </dt>
-            <dd>{description}</dd>
-          </div>
-        ))}
-      </dl>
-    </dialog>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="tr-dialog tr-help" aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>Keyboard shortcuts</DialogTitle>
+        </DialogHeader>
+        <dl>
+          {shortcuts.map(({ label, keys, description }) => (
+            <div key={label}>
+              <dt>
+                <ShortcutHint shortcut={{ label, ariaKeyshortcuts: keys }} />
+              </dt>
+              <dd>{description}</dd>
+            </div>
+          ))}
+        </dl>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -257,7 +264,7 @@ export function TraceWorkbench({
         event.altKey ||
         !(target instanceof HTMLElement) ||
         !rootRef.current?.contains(target) ||
-        target.closest("input, textarea, select, [contenteditable=true], dialog")
+        target.closest("input, textarea, [role=combobox], [contenteditable=true], [role=dialog]")
       )
         return;
       if (event.key === "/") {
@@ -284,125 +291,127 @@ export function TraceWorkbench({
     return () => document.removeEventListener("keydown", keydown);
   }, [selected, raw, showHelp, stacked, back, visiblePane]);
   return (
-    <main
-      className="tr-app"
-      ref={rootRef}
-      data-sessions={panes.dataSessions}
-      style={panes.style}
-      {...layout}
-    >
-      <TraceToolbar
-        sessionSearch={sessionSearch}
-        setSessionSearch={setSessionSearch}
-        provider={provider}
-        setProvider={setProvider}
-        eventSearch={eventSearch}
-        setEventSearch={setEventSearch}
-        kind={kind}
-        setKind={setKind}
-        includeUsage={includeUsage}
-        setIncludeUsage={setIncludeUsage}
-        providers={status.data?.providers}
-        searchRef={searchRef}
-        sessionSearchRef={sessionSearchRef}
-        clearSession={() => {
-          setSession(null);
-          setSelected(null);
-          pane.reset();
-        }}
-        topic={topic}
-        setTopic={setTopic}
-        hostPicker={hostPicker}
-        onSources={showSources}
-        onHelp={showHelp}
-        onRefresh={() => void refresh(false)}
-        ready={Boolean(status.data)}
-        scanning={scanning}
-      />
-      <ThreadScope
-        visible={Boolean(nativeId)}
-        enabled={currentOnly}
-        onChange={(value) => {
-          setCurrentOnly(value);
-          setSession(null);
-          setSelected(null);
-          pane.reset();
-        }}
-      />
-      <TraceNotice
-        message={error || status.error?.message || ""}
-        retry={() => void status.refetch()}
-      />
-      {status.data?.lastError && <div className="tr-notice">{status.data.lastError}</div>}
-      <div className="tr-workspace" ref={panes.workspaceRef}>
-        <SessionList
-          key={`${hostId}:${provider}:${settledSessions}:${currentOnly}`}
-          hostId={hostId}
-          provider={provider || undefined}
-          query={settledSessions}
-          nativeId={currentOnly ? nativeId : undefined}
-          selected={session}
-          onSelect={selectSession}
-          listRef={sessionsRef}
-          onOpen={pane.open}
-          stacked={stacked}
-          revision={revision}
-        />
-        <Splitter {...panes.sessionsSplitter} />
-        <div className="tr-event-workspace" ref={panes.eventsRef}>
-          {session ? (
-            <Timeline
-              key={`${session.id}:${kind}:${topic}:${includeUsage}:${settledEvents}`}
-              hostId={hostId}
-              session={session}
-              kind={kind}
-              topic={topic}
-              includeUsage={includeUsage}
-              query={settledEvents}
-              selected={selected}
-              onSelect={setSelected}
-              listRef={timelineRef}
-              revision={revision}
-              onInspect={pane.inspect}
-              stacked={stacked}
-              onBack={onBack}
-              onShowSessions={panes.showSessions}
-            />
-          ) : (
-            <Empty title="Your session timeline">Select a session to inspect its events.</Empty>
-          )}
-          <Splitter {...panes.timelineSplitter} />
-          {selected ? (
-            <Inspector
-              key={selected.id}
-              hostId={hostId}
-              selected={selected}
-              raw={raw}
-              onRaw={setRaw}
-              onSelect={setSelected}
-              inspectorRef={inspectorRef}
-              onBack={onBack}
-              renderers={renderers}
-            />
-          ) : (
-            <Empty title="Inspect an event">
-              Messages, tools, context, and original JSON appear here.
-            </Empty>
-          )}
-        </div>
-      </div>
-      {sources && status.data && (
-        <Sources
-          hostId={hostId}
-          status={status.data}
-          onClose={hideSources}
-          onSaved={() => void status.refetch()}
-          onVerify={() => void refresh(true)}
+    <TooltipProvider delayDuration={400}>
+      <main
+        className="tr-app"
+        ref={rootRef}
+        data-sessions={panes.dataSessions}
+        style={panes.style}
+        {...layout}
+      >
+        <TraceToolbar
+          sessionSearch={sessionSearch}
+          setSessionSearch={setSessionSearch}
+          provider={provider}
+          setProvider={setProvider}
+          eventSearch={eventSearch}
+          setEventSearch={setEventSearch}
+          kind={kind}
+          setKind={setKind}
+          includeUsage={includeUsage}
+          setIncludeUsage={setIncludeUsage}
+          providers={status.data?.providers}
+          searchRef={searchRef}
+          sessionSearchRef={sessionSearchRef}
+          clearSession={() => {
+            setSession(null);
+            setSelected(null);
+            pane.reset();
+          }}
+          topic={topic}
+          setTopic={setTopic}
+          hostPicker={hostPicker}
+          onSources={showSources}
+          onHelp={showHelp}
+          onRefresh={() => void refresh(false)}
+          ready={Boolean(status.data)}
           scanning={scanning}
         />
-      )}
-      {help && <KeyHelp onClose={hideHelp} />}
-    </main>
+        <ThreadScope
+          visible={Boolean(nativeId)}
+          enabled={currentOnly}
+          onChange={(value) => {
+            setCurrentOnly(value);
+            setSession(null);
+            setSelected(null);
+            pane.reset();
+          }}
+        />
+        <TraceNotice
+          message={error || status.error?.message || ""}
+          retry={() => void status.refetch()}
+        />
+        {status.data?.lastError && <div className="tr-notice">{status.data.lastError}</div>}
+        <div className="tr-workspace" ref={panes.workspaceRef}>
+          <SessionList
+            key={`${hostId}:${provider}:${settledSessions}:${currentOnly}`}
+            hostId={hostId}
+            provider={provider || undefined}
+            query={settledSessions}
+            nativeId={currentOnly ? nativeId : undefined}
+            selected={session}
+            onSelect={selectSession}
+            listRef={sessionsRef}
+            onOpen={pane.open}
+            stacked={stacked}
+            revision={revision}
+          />
+          <Splitter {...panes.sessionsSplitter} />
+          <div className="tr-event-workspace" ref={panes.eventsRef}>
+            {session ? (
+              <Timeline
+                key={`${session.id}:${kind}:${topic}:${includeUsage}:${settledEvents}`}
+                hostId={hostId}
+                session={session}
+                kind={kind}
+                topic={topic}
+                includeUsage={includeUsage}
+                query={settledEvents}
+                selected={selected}
+                onSelect={setSelected}
+                listRef={timelineRef}
+                revision={revision}
+                onInspect={pane.inspect}
+                stacked={stacked}
+                onBack={onBack}
+                onShowSessions={panes.showSessions}
+              />
+            ) : (
+              <Empty heading="Your session timeline">Select a session to inspect its events.</Empty>
+            )}
+            <Splitter {...panes.timelineSplitter} />
+            {selected ? (
+              <Inspector
+                key={selected.id}
+                hostId={hostId}
+                selected={selected}
+                raw={raw}
+                onRaw={setRaw}
+                onSelect={setSelected}
+                inspectorRef={inspectorRef}
+                onBack={onBack}
+                renderers={renderers}
+              />
+            ) : (
+              <Empty heading="Inspect an event">
+                Messages, tools, context, and original JSON appear here.
+              </Empty>
+            )}
+          </div>
+        </div>
+        {sources && status.data && (
+          <Sources
+            hostId={hostId}
+            status={status.data}
+            onClose={hideSources}
+            onSaved={() => void status.refetch()}
+            onVerify={() => void refresh(true)}
+            scanning={scanning}
+          />
+        )}
+        {help && <KeyHelp onClose={hideHelp} />}
+      </main>
+    </TooltipProvider>
   );
 }
 
@@ -422,7 +431,7 @@ function TracesPanel({
     },
   );
   const [chosen, setChosen] = useState("");
-  if (overview.isPending) return <Empty title="Connecting to trace hosts…" />;
+  if (overview.isPending) return <Empty heading="Connecting to trace hosts…" />;
   if (overview.error)
     return <QueryError error={overview.error} retry={() => void overview.refetch()} />;
   const hosts = overview.data?.hosts ?? [];
@@ -430,21 +439,24 @@ function TracesPanel({
   const hostId = chosen || context?.hostId || hosts.find((host) => host.online)?.id;
   if (!hostId)
     return (
-      <Empty title="No connected hosts">Connect a BB host to inspect its session files.</Empty>
+      <Empty heading="No connected hosts">Connect a BB host to inspect its session files.</Empty>
     );
   const picker = (
-    <select
-      aria-label="Trace host"
-      value={hostId}
-      onChange={(event) => setChosen(event.target.value)}
-    >
-      {hosts.map((host) => (
-        <option key={host.id} value={host.id}>
-          {host.name}
-          {host.online ? "" : " · Offline"}
-        </option>
-      ))}
-    </select>
+    <Select value={hostId} onValueChange={setChosen}>
+      <SelectTrigger aria-label="Trace host" className="tr-host-picker h-8 text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {hosts.map((host) => (
+            <SelectItem key={host.id} value={host.id}>
+              {host.name}
+              {host.online ? "" : " · Offline"}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
   return (
     <TraceWorkbench

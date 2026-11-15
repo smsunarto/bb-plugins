@@ -1,8 +1,29 @@
-import { useRef, useState } from "react";
+import { useId, useState } from "react";
 import type { FormEvent } from "react";
 import type { SourceRoot, TraceStatus } from "../shared/schema.ts";
 import { useTracesRpc } from "./rpc.ts";
 import { providerLabel } from "./controls.tsx";
+import { Badge } from "./components/ui/badge.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { Checkbox } from "./components/ui/checkbox.tsx";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./components/ui/dialog.tsx";
+import { Input } from "./components/ui/input.tsx";
+import { Label } from "./components/ui/label.tsx";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select.tsx";
 
 export function Sources({
   hostId,
@@ -19,7 +40,7 @@ export function Sources({
   onVerify: () => void;
   scanning: boolean;
 }) {
-  const dialog = useRef<HTMLDialogElement | null>(null);
+  const formId = useId();
   const client = useTracesRpc();
   const [roots, setRoots] = useState<SourceRoot[]>(
     status.roots.map(({ provider, path, enabled }) => ({ provider, path, enabled })),
@@ -28,10 +49,6 @@ export function Sources({
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  function open(node: HTMLDialogElement | null) {
-    dialog.current = node;
-    if (node && !node.open) node.showModal();
-  }
   function add(event: FormEvent) {
     event.preventDefault();
     const normalized = path.trim();
@@ -61,98 +78,114 @@ export function Sources({
     }
   }
   return (
-    <dialog
-      className="tr-dialog"
-      ref={open}
-      onCancel={onClose}
-      onClose={onClose}
-      aria-labelledby="tr-sources-title"
-    >
-      <div className="tr-dialog-header">
-        <h2 id="tr-sources-title">Trace sources</h2>
-        <button onClick={onClose} aria-label="Close sources">
-          ×
-        </button>
-      </div>
-      <p>Read Claude Code and Codex session files on this host. Source files are never modified.</p>
-      <div className="tr-source-list">
-        {roots.map((root) => {
-          const current = status.roots.find(
-            (item) => item.path === root.path && item.provider === root.provider,
-          );
-          return (
-            <div className="tr-source" key={`${root.provider}:${root.path}`}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={root.enabled}
-                  onChange={(event) =>
-                    setRoots(
-                      roots.map((item) =>
-                        item === root ? { ...item, enabled: event.target.checked } : item,
-                      ),
-                    )
-                  }
-                />
-                <strong>{providerLabel(root.provider)}</strong>
-                <span className={`tr-source-state tr-source-${current?.state ?? "ready"}`}>
-                  {current?.state ?? "New"}
-                </span>
-              </label>
-              <code>{root.path}</code>
-              {current?.message && <small>{current.message}</small>}
-              <button
-                className="tr-text-button"
-                onClick={() => setRoots(roots.filter((item) => item !== root))}
-              >
-                Remove source
-              </button>
-            </div>
-          );
-        })}
-      </div>
-      <form onSubmit={add} className="tr-source-add">
-        <label>
-          Provider
-          <select value={provider} onChange={(event) => setProvider(event.target.value)}>
-            {status.providers.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Folder or JSONL file
-          <input
-            value={path}
-            onChange={(event) => setPath(event.target.value)}
-            placeholder="/absolute/path/to/sessions"
-            required
-          />
-        </label>
-        <button type="submit" disabled={roots.length >= 32}>
-          Add source
-        </button>
-      </form>
-      {error && (
-        <p className="tr-error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="tr-dialog-actions">
-        <span className="tr-index-count">
-          {status.sessions.toLocaleString()} sessions · {status.events.toLocaleString()} events
-          indexed
-        </span>
-        <button className="tr-text-button" disabled={scanning} onClick={onVerify}>
-          {scanning ? "Verifying…" : "Verify sources"}
-        </button>
-        <button onClick={onClose}>Cancel</button>
-        <button className="tr-primary" disabled={busy} onClick={() => void save()}>
-          {busy ? "Saving…" : "Save sources"}
-        </button>
-      </div>
-    </dialog>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        className="tr-dialog max-h-[85vh] overflow-y-auto sm:max-w-xl"
+        // A stray click outside must not discard source edits that are not saved yet.
+        onInteractOutside={(event) => event.preventDefault()}
+      >
+        <DialogHeader>
+          <DialogTitle>Trace sources</DialogTitle>
+          <DialogDescription>
+            Read Claude Code and Codex session files on this host. Source files are never modified.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="tr-source-list">
+          {roots.map((root) => {
+            const current = status.roots.find(
+              (item) => item.path === root.path && item.provider === root.provider,
+            );
+            const id = `${formId}-${root.provider}:${root.path}`;
+            const state = current?.state;
+            return (
+              <div className="tr-source" key={`${root.provider}:${root.path}`}>
+                <div className="tr-source-head">
+                  <Checkbox
+                    id={id}
+                    checked={root.enabled}
+                    onCheckedChange={(checked) =>
+                      setRoots(
+                        roots.map((item) =>
+                          item === root ? { ...item, enabled: checked === true } : item,
+                        ),
+                      )
+                    }
+                  />
+                  <Label htmlFor={id}>{providerLabel(root.provider)}</Label>
+                  <Badge
+                    variant={state === "missing" || state === "error" ? "warning" : "outline"}
+                    className="ml-auto"
+                  >
+                    {state ?? "New"}
+                  </Badge>
+                </div>
+                <code>{root.path}</code>
+                {current?.message && <small>{current.message}</small>}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="self-start"
+                  onClick={() => setRoots(roots.filter((item) => item !== root))}
+                >
+                  Remove source
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+        <form onSubmit={add} className="tr-source-add">
+          <div className="tr-source-field">
+            <Label htmlFor={`${formId}-provider`}>Provider</Label>
+            <Select value={provider} onValueChange={setProvider}>
+              <SelectTrigger id={`${formId}-provider`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {status.providers.map((item) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="tr-source-field tr-source-path">
+            <Label htmlFor={`${formId}-path`}>Folder or JSONL file</Label>
+            <Input
+              id={`${formId}-path`}
+              value={path}
+              onChange={(event) => setPath(event.target.value)}
+              placeholder="/absolute/path/to/sessions"
+              required
+            />
+          </div>
+          <Button type="submit" variant="outline" disabled={roots.length >= 32}>
+            Add source
+          </Button>
+        </form>
+        {error && (
+          <p className="tr-error" role="alert">
+            {error}
+          </p>
+        )}
+        <DialogFooter className="items-center">
+          <span className="tr-index-count">
+            {status.sessions.toLocaleString()} sessions · {status.events.toLocaleString()} events
+            indexed
+          </span>
+          <Button variant="ghost" size="sm" disabled={scanning} onClick={onVerify}>
+            {scanning ? "Verifying…" : "Verify sources"}
+          </Button>
+          <Button variant="outline" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" disabled={busy} onClick={() => void save()}>
+            {busy ? "Saving…" : "Save sources"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

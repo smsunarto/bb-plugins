@@ -92,8 +92,11 @@ test("an instruction body renders one section per plugin it was assembled from",
       related: [],
     }),
   );
-  assert.match(html, /<summary>agentation<\/summary>/);
-  assert.match(html, /<summary>workflows<\/summary>/);
+  // Each source is a disclosure that starts open, so its content renders.
+  assert.match(html, /<button[^>]*aria-expanded="true"[^>]*>agentation<\/button>/);
+  assert.match(html, /<button[^>]*aria-expanded="true"[^>]*>workflows<\/button>/);
+  assert.match(html, /Read pending feedback before searching the code\./);
+  assert.match(html, /Copy the preview directive into your response\./);
   assert.match(html, /Base instructions for the agent\./);
   assert.doesNotMatch(html, /come from the BB plugin/);
 });

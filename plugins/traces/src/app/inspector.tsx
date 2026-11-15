@@ -2,11 +2,19 @@ import { useState } from "react";
 import type { RefObject } from "react";
 import type { TraceEvent } from "../shared/model.ts";
 import { useRpcQuery } from "./rpc.ts";
-import { Empty, Evidence, QueryError } from "./controls.tsx";
+import { BackButton, Empty, Evidence, QueryError } from "./controls.tsx";
 import { defaultTraceRenderers } from "./renderers.tsx";
 import type { TraceRendererRegistry } from "./renderers.tsx";
 import { JsonView } from "./json-view.tsx";
 import { decodeRawPage } from "./raw-text.ts";
+import { experimental_ShortcutHint as ShortcutHint } from "@get-bb/plugin-sdk/app";
+import { Button } from "./components/ui/button.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./components/ui/collapsible.tsx";
+import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group.tsx";
 
 function RawRecord({ hostId, eventId }: { hostId: string; eventId: string }) {
   const [offsets, setOffsets] = useState([0]);
@@ -16,7 +24,7 @@ function RawRecord({ hostId, eventId }: { hostId: string; eventId: string }) {
     { hostId, eventId, offset: Math.max(0, offset - 3), limit: 65_542 },
     { gcTime: 0, staleTime: 0, retry: false },
   );
-  if (result.isPending) return <Empty title="Reading source record…" />;
+  if (result.isPending) return <Empty heading="Reading source record…" />;
   if (result.error) return <QueryError error={result.error} retry={() => void result.refetch()} />;
   if (!result.data) return null;
   const data = result.data;
@@ -47,18 +55,25 @@ function RawRecord({ hostId, eventId }: { hostId: string; eventId: string }) {
       {value === undefined ? <pre className="tr-code">{text}</pre> : <JsonView value={value} />}
       {(offset > 0 || data.nextOffset !== null) && (
         <div className="tr-pages">
-          <button disabled={offset === 0} onClick={() => setOffsets(offsets.slice(0, -1))}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={offset === 0}
+            onClick={() => setOffsets(offsets.slice(0, -1))}
+          >
             Previous chunk
-          </button>
+          </Button>
           <span>64 KiB chunks</span>
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             disabled={data.nextOffset === null}
             onClick={() => {
               if (data.nextOffset !== null) setOffsets([...offsets, offset + 65_536]);
             }}
           >
             Next chunk
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -76,14 +91,23 @@ function ViewSwitcher({
 }) {
   if (!available) return null;
   return (
-    <div className="tr-segment">
-      <button aria-pressed={!raw} onClick={() => onRaw(false)}>
+    <ToggleGroup
+      type="single"
+      size="sm"
+      aria-label="Record view"
+      value={raw ? "raw" : "formatted"}
+      onValueChange={(value) => {
+        if (value) onRaw(value === "raw");
+      }}
+    >
+      <ToggleGroupItem value="formatted" className="h-6 text-xs">
         Formatted
-      </button>
-      <button aria-pressed={raw} onClick={() => onRaw(true)}>
-        Raw <kbd>r</kbd>
-      </button>
-    </div>
+      </ToggleGroupItem>
+      <ToggleGroupItem value="raw" className="h-6 text-xs">
+        Raw
+        <ShortcutHint className="tr-shortcut" shortcut={{ label: "r", ariaKeyshortcuts: "R" }} />
+      </ToggleGroupItem>
+    </ToggleGroup>
   );
 }
 
@@ -119,11 +143,7 @@ export function Inspector({
   return (
     <section className="tr-inspector" ref={inspectorRef} tabIndex={-1} aria-label="Event inspector">
       <div className="tr-column-heading">
-        {onBack && (
-          <button className="tr-back-button" aria-label="Back to timeline" onClick={onBack}>
-            ‹
-          </button>
-        )}
+        {onBack && <BackButton label="Back to timeline" onBack={onBack} />}
         <span>Inspector</span>
         <ViewSwitcher available={hasFormattedView} raw={raw} onRaw={onRaw} />
       </div>
@@ -140,7 +160,7 @@ export function Inspector({
         {showRaw ? (
           <RawRecord key={event.id} hostId={hostId} eventId={event.id} />
         ) : result.isPending ? (
-          <Empty title="Loading event…" />
+          <Empty heading="Loading event…" />
         ) : result.error ? (
           <QueryError error={result.error} retry={() => void result.refetch()} />
         ) : data ? (
@@ -176,23 +196,27 @@ export function Inspector({
             )}
           </>
         ) : null}
-        <details className="tr-provenance">
-          <summary>Source · line {event.provenance.line}</summary>
-          <dl>
-            <dt>Path</dt>
-            <dd>{event.provenance.path}</dd>
-            <dt>Record pointer</dt>
-            <dd>{event.provenance.pointer || "/"}</dd>
-            <dt>Event ID</dt>
-            <dd>{event.id}</dd>
-            <dt>Bytes</dt>
-            <dd>
-              {event.provenance.byteOffset} + {event.provenance.byteLength}
-            </dd>
-            <dt>Record SHA-256</dt>
-            <dd>{event.provenance.recordHash}</dd>
-          </dl>
-        </details>
+        <Collapsible className="tr-provenance">
+          <CollapsibleTrigger className="tr-disclosure">
+            Source · line {event.provenance.line}
+          </CollapsibleTrigger>
+          <CollapsibleContent asChild>
+            <dl>
+              <dt>Path</dt>
+              <dd>{event.provenance.path}</dd>
+              <dt>Record pointer</dt>
+              <dd>{event.provenance.pointer || "/"}</dd>
+              <dt>Event ID</dt>
+              <dd>{event.id}</dd>
+              <dt>Bytes</dt>
+              <dd>
+                {event.provenance.byteOffset} + {event.provenance.byteLength}
+              </dd>
+              <dt>Record SHA-256</dt>
+              <dd>{event.provenance.recordHash}</dd>
+            </dl>
+          </CollapsibleContent>
+        </Collapsible>
       </div>
     </section>
   );

@@ -3,6 +3,11 @@ import { Markdown } from "@get-bb/plugin-sdk/app";
 import type { TraceBody, TraceEvent } from "../shared/model.ts";
 import { scanInstructions } from "../shared/providers/common.ts";
 import { JsonView } from "./json-view.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./components/ui/collapsible.tsx";
 
 export interface TraceRendererProps {
   event: TraceEvent;
@@ -120,10 +125,12 @@ function InstructionsRenderer({ body, related, onRaw }: TraceRendererProps) {
       <ContextHeading body={body} />
       {scan.preamble && <Text text={scan.preamble} markdown={markdown} />}
       {scan.sections.map((section) => (
-        <details className="tr-detail-section tr-instruction" key={section.label} open>
-          <summary>{section.label}</summary>
-          <Text text={section.content} markdown={markdown} />
-        </details>
+        <Collapsible className="tr-detail-section tr-instruction" key={section.label} defaultOpen>
+          <CollapsibleTrigger className="tr-disclosure">{section.label}</CollapsibleTrigger>
+          <CollapsibleContent>
+            <Text text={section.content} markdown={markdown} />
+          </CollapsibleContent>
+        </Collapsible>
       ))}
     </>
   );

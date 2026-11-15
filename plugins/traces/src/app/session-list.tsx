@@ -70,11 +70,11 @@ export function SessionList({
         <div className="tr-selection-notice">Current session is on another page.</div>
       )}
       {result.isPending ? (
-        <Empty title="Loading sessions…" />
+        <Empty heading="Loading sessions…" />
       ) : result.error ? (
         <QueryError error={result.error} retry={() => void result.refetch()} />
       ) : items.length === 0 ? (
-        <Empty title="No matching sessions">Try a different filter or check Sources.</Empty>
+        <Empty heading="No matching sessions">Try a different filter or check Sources.</Empty>
       ) : (
         <section
           ref={listRef}

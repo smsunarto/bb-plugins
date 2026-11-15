@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import type { KeyboardEvent, RefObject } from "react";
 import type { TraceEvidence } from "../shared/model.ts";
+import { Badge, type BadgeProps } from "./components/ui/badge.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { EmptyStatePanel } from "./components/ui/empty-state.tsx";
+import { Icon } from "./components/ui/icon.tsx";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./components/ui/tooltip.tsx";
 
 export function focusList(element: HTMLElement | null) {
   const selected = element?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]');
@@ -63,42 +68,55 @@ export function Splitter({
   onStep: (direction: number, coarse: boolean) => void;
   onReset: () => void;
 }) {
+  // The drag handler prevents the pointerdown default, which also stops the tooltip
+  // from closing itself, so the hint stays shut while a drag is in progress.
+  const [hint, setHint] = useState(false);
+  const [dragging, setDragging] = useState(false);
   return (
-    // hr carries an implicit role="separator". The ARIA window splitter pattern
-    // makes that separator focusable and arrow-key driven, which oxlint's
-    // non-interactive rules do not model.
-    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex
-    <hr
-      className="tr-splitter"
-      aria-orientation="vertical"
-      aria-label={label}
-      aria-valuenow={Math.round(value)}
-      aria-valuemin={min}
-      aria-valuemax={max}
-      // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex
-      tabIndex={0}
-      title={`${label}. Drag, or arrow keys. Double-click to reset.`}
-      onDoubleClick={onReset}
-      onPointerDown={(event) => {
-        event.preventDefault();
-        const move = (moved: PointerEvent) => onMove(moved.clientX);
-        const stop = () => {
-          document.removeEventListener("pointermove", move);
-          document.removeEventListener("pointerup", stop);
-          document.body.classList.remove("tr-resizing");
-        };
-        document.body.classList.add("tr-resizing");
-        document.addEventListener("pointermove", move);
-        document.addEventListener("pointerup", stop);
-      }}
-      onKeyDown={(event) => {
-        const direction = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
-        if (direction === 0) return;
-        event.preventDefault();
-        event.stopPropagation();
-        onStep(direction, event.shiftKey);
-      }}
-    />
+    <Tooltip open={hint && !dragging} onOpenChange={setHint}>
+      <TooltipTrigger asChild>
+        {/* hr carries an implicit role="separator". The ARIA window splitter pattern
+            makes that separator focusable and arrow-key driven, which oxlint's
+            non-interactive rules do not model. */}
+        {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/no-noninteractive-tabindex */}
+        <hr
+          className="tr-splitter"
+          aria-orientation="vertical"
+          aria-label={label}
+          aria-valuenow={Math.round(value)}
+          aria-valuemin={min}
+          aria-valuemax={max}
+          // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+          tabIndex={0}
+          onDoubleClick={onReset}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            setHint(false);
+            setDragging(true);
+            const move = (moved: PointerEvent) => onMove(moved.clientX);
+            const stop = () => {
+              setDragging(false);
+              document.removeEventListener("pointermove", move);
+              document.removeEventListener("pointerup", stop);
+              document.body.classList.remove("tr-resizing");
+            };
+            document.body.classList.add("tr-resizing");
+            document.addEventListener("pointermove", move);
+            document.addEventListener("pointerup", stop);
+          }}
+          onKeyDown={(event) => {
+            const direction = event.key === "ArrowLeft" ? -1 : event.key === "ArrowRight" ? 1 : 0;
+            if (direction === 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onStep(direction, event.shiftKey);
+          }}
+        />
+      </TooltipTrigger>
+      <TooltipContent side="right">
+        {label}. Drag, or arrow keys. Double-click to reset.
+      </TooltipContent>
+    </Tooltip>
   );
 }
 export function useDisclosure() {
@@ -248,6 +266,15 @@ const stateNames: Readonly<Record<EvidenceState, string>> = {
   pending: "Pending",
   unavailable: "Unavailable",
 };
+// A blocked fact warns, a fact the agent acted on reads as accent, and the rest stay quiet.
+export function actionTone(
+  action: TraceEvidence["action"],
+  quiet: BadgeProps["variant"] = "outline",
+): BadgeProps["variant"] {
+  if (action === "blocked" || action === "bypass_requested") return "warning";
+  if (action === "invoked" || action === "loaded") return "info";
+  return quiet;
+}
 export function Evidence({ evidence }: { evidence: readonly TraceEvidence[] }) {
   const groups = groupEvidence(evidence);
   if (groups.length === 0) return null;
@@ -270,17 +297,21 @@ export function Evidence({ evidence }: { evidence: readonly TraceEvidence[] }) {
           </h4>
           <div className="tr-evidence-chips">
             {group.items.map((item) => (
-              <span
-                key={evidenceLabel(item)}
-                className={`tr-evidence-chip tr-evidence-${item.action}`}
-                title={`${item.basis === "recorded" ? "Recorded" : "Inferred from submitted content"} · ${item.pointer}`}
-              >
-                <span>{group.topic === "mcp" ? mcpEntry(item.label) : item.label}</span>
-                <small>
-                  {item.action.replaceAll("_", " ")}
-                  {item.basis === "inferred" ? " · inferred" : ""}
-                </small>
-              </span>
+              <Tooltip key={evidenceLabel(item)}>
+                <TooltipTrigger asChild>
+                  <Badge variant={actionTone(item.action)} className="tr-evidence-chip">
+                    <span>{group.topic === "mcp" ? mcpEntry(item.label) : item.label}</span>
+                    <small>
+                      {item.action.replaceAll("_", " ")}
+                      {item.basis === "inferred" ? " · inferred" : ""}
+                    </small>
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {item.basis === "recorded" ? "Recorded" : "Inferred from submitted content"} ·{" "}
+                  {item.pointer}
+                </TooltipContent>
+              </Tooltip>
             ))}
           </div>
         </section>
@@ -288,22 +319,43 @@ export function Evidence({ evidence }: { evidence: readonly TraceEvidence[] }) {
     </div>
   );
 }
-export function Empty({ title, children }: { title: string; children?: React.ReactNode }) {
+export function Empty({ heading, children }: { heading: string; children?: React.ReactNode }) {
   return (
-    <div className="tr-empty">
-      <strong>{title}</strong>
+    <EmptyStatePanel className="tr-empty">
+      <strong>{heading}</strong>
       {children && <div>{children}</div>}
-    </div>
+    </EmptyStatePanel>
   );
 }
 export function QueryError({ error, retry }: { error: Error; retry: () => void }) {
   return (
     <div className="tr-error" role="alert">
       <p>{error.message}</p>
-      <button onClick={retry}>Try again</button>
+      <Button variant="outline" size="sm" onClick={retry}>
+        Try again
+      </Button>
     </div>
   );
 }
+export function BackButton({ label, onBack }: { label: string; onBack: () => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0"
+          aria-label={label}
+          onClick={onBack}
+        >
+          <Icon name="ChevronLeft" aria-hidden />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function Pages({
   page,
   hasNext,
@@ -319,13 +371,25 @@ export function Pages({
 }) {
   return (
     <div className="tr-pages">
-      <button disabled={page === 0 || loading} onClick={onPrevious} aria-label="Previous page">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={page === 0 || loading}
+        onClick={onPrevious}
+        aria-label="Previous page"
+      >
         ← Previous
-      </button>
+      </Button>
       <span>Page {page + 1}</span>
-      <button disabled={!hasNext || loading} onClick={onNext} aria-label="Next page">
+      <Button
+        variant="outline"
+        size="sm"
+        disabled={!hasNext || loading}
+        onClick={onNext}
+        aria-label="Next page"
+      >
         Next →
-      </button>
+      </Button>
     </div>
   );
 }

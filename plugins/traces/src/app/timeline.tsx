@@ -14,7 +14,11 @@ import {
   evidenceTag,
   moveSelection,
   providerLabel,
+  actionTone,
+  BackButton,
 } from "./controls.tsx";
+import { Badge } from "./components/ui/badge.tsx";
+import { Button } from "./components/ui/button.tsx";
 
 const EMPTY_EVENTS: TraceEvent[] = [];
 const symbols: Record<string, string> = {
@@ -131,15 +135,11 @@ export function Timeline({
   return (
     <div className="tr-list-column tr-timeline-column">
       <div className="tr-column-heading tr-timeline-heading">
-        {onBack && (
-          <button className="tr-back-button" aria-label="Back to sessions" onClick={onBack}>
-            ‹
-          </button>
-        )}
+        {onBack && <BackButton label="Back to sessions" onBack={onBack} />}
         {onShowSessions && (
-          <button className="tr-text-button" onClick={onShowSessions}>
+          <Button variant="ghost" size="sm" className="shrink-0" onClick={onShowSessions}>
             Sessions
-          </button>
+          </Button>
         )}
         <h2 title={session.title}>
           {session.title}
@@ -160,11 +160,11 @@ export function Timeline({
         </div>
       )}
       {result.isPending ? (
-        <Empty title="Loading events…" />
+        <Empty heading="Loading events…" />
       ) : result.error ? (
         <QueryError error={result.error} retry={() => void refetch()} />
       ) : items.length === 0 ? (
-        <Empty title="No matching events">Choose another topic or clear the filter.</Empty>
+        <Empty heading="No matching events">Choose another topic or clear the filter.</Empty>
       ) : (
         <section ref={listRef} tabIndex={-1} className="tr-timeline" aria-label="Trace events">
           {items.map((event, index) => {
@@ -206,7 +206,12 @@ export function Timeline({
                   <span className="tr-event-heading">
                     <strong>{event.title}</strong>
                     {status && (
-                      <span className={`tr-event-status tr-event-status-${status}`}>{status}</span>
+                      <Badge
+                        variant={status === "error" ? "warning" : "outline"}
+                        className="tr-event-status"
+                      >
+                        {status}
+                      </Badge>
                     )}
                     <time title={eventTime(event.timestamp)}>
                       {elapsedTime(event.timestamp, session.startedAt)}
@@ -219,13 +224,14 @@ export function Timeline({
                     {distinctEvidence(event.evidence)
                       .slice(0, 3)
                       .map((evidence) => (
-                        <span
+                        <Badge
                           key={evidenceLabel(evidence)}
-                          className={`tr-tag tr-tag-${evidence.action}`}
+                          variant={actionTone(evidence.action, "secondary")}
+                          className="tr-tag"
                           title={evidenceLabel(evidence)}
                         >
                           {evidenceTag(evidence)}
-                        </span>
+                        </Badge>
                       ))}
                   </span>
                 </span>
