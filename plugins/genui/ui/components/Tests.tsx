@@ -31,6 +31,9 @@ import { formatNumber, optionalText, type Props } from "../values";
 import { ErrorLine } from "./display";
 import { CAPTION, FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, FADE, RISE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight, type Entrance } from "./motion";
+import { Button } from "@/components/ui/button";
+import { IconButton, WithTooltip } from "./iconButton";
+import { Badge } from "@/components/ui/badge";
 
 /** Failures shown before "N more failures", and how many each click adds. */
 const FAILURE_PAGE = 20;
@@ -42,16 +45,6 @@ const TEST_PAGE = 100;
 const MESSAGE_LINES = 40;
 
 const GROW_X: Entrance = { keyframes: [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], duration: CHART_DRAW_MS };
-
-const TEXT_BUTTON = cn(
-  "w-fit shrink-0 cursor-pointer rounded-sm text-xs leading-5 text-muted-foreground transition-colors duration-150 hover:text-foreground",
-  FOCUS_RING,
-);
-
-const ICON_BUTTON = cn(
-  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground",
-  FOCUS_RING,
-);
 
 const ANSI_CLASS: Record<AnsiColor, string> = {
   red: "text-destructive",
@@ -120,9 +113,9 @@ function FileLink({ path, line, className }: { path: string; line: number | null
     );
   }
   return (
+    <WithTooltip tip={`Open ${target}`}>
     <button
       type="button"
-      title={`Open ${target}`}
       onClick={async (event) => {
         event.stopPropagation();
         let opened = false;
@@ -141,6 +134,7 @@ function FileLink({ path, line, className }: { path: string; line: number | null
     >
       {label}
     </button>
+    </WithTooltip>
   );
 }
 
@@ -293,9 +287,15 @@ function Message({ text }: { text: string }) {
         )}
       </div>
       {items.length > MESSAGE_LINES ? (
-        <button type="button" onClick={() => setAll((value) => !value)} className={TEXT_BUTTON}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setAll((value) => !value)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+        >
           {all ? "Show fewer lines" : `Show ${formatNumber(items.length - MESSAGE_LINES)} more lines`}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -308,10 +308,9 @@ function OpenFrame({ path, line }: { path: string; line: number }) {
   const target = workspacePath(path, root);
   if (openFile === null || target === null) return null;
   return (
-    <button
-      type="button"
-      title={`Open ${target}:${line}`}
-      aria-label={`Open ${target} at line ${line}`}
+    <IconButton
+      label={`Open ${target} at line ${line}`}
+      tooltip={`Open ${target}:${line}`}
       onClick={async () => {
         let opened = false;
         try {
@@ -321,10 +320,10 @@ function OpenFrame({ path, line }: { path: string; line: number }) {
         }
         if (!opened) toast.error(`Couldn't open ${target}`);
       }}
-      className={cn(ICON_BUTTON, "-my-[3px] size-5")}
+      className="-my-[3px] size-5"
     >
       <Icon name="FileText" className="size-3" />
-    </button>
+    </IconButton>
   );
 }
 
@@ -383,9 +382,9 @@ function Disclosure({
 function Detail({ detail }: { detail: string | null }) {
   if (detail === null) return null;
   return (
-    <span className="mt-px shrink-0 rounded-full bg-muted px-1.5 text-[10.5px] font-medium leading-4 text-muted-foreground">
+    <Badge variant="secondary" className="mt-px px-1.5 py-0 font-medium">
       {detail}
-    </span>
+    </Badge>
   );
 }
 
@@ -427,9 +426,9 @@ function Failure({ test }: { test: TestCase }) {
                 {suite === null ? null : <span className="min-w-0 truncate">{suite}</span>}
                 {test.file === null ? null : <FileLink path={test.file} line={test.line} />}
               </span>
-              <button type="button" title="Copy failure" aria-label={`Copy the failure of ${test.name}`} onClick={copy} className={ICON_BUTTON}>
+              <IconButton label={`Copy the failure of ${test.name}`} tooltip="Copy failure" onClick={copy}>
                 <Icon name="Copy" className="size-3.5" />
-              </button>
+              </IconButton>
             </div>
             {test.message === null ? (
               <p className="m-0 text-xs text-muted-foreground">No message was reported.</p>
@@ -473,9 +472,15 @@ function Failures({ failures }: { failures: readonly TestCase[] }) {
         ))}
       </ul>
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + FAILURE_PAGE)} className={cn(TEXT_BUTTON, "pl-[42px]")}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + FAILURE_PAGE)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground pl-[42px]"
+        >
           Show {formatNumber(Math.min(rest, FAILURE_PAGE))} more of {formatNumber(rest)} failures
-        </button>
+        </Button>
       ) : null}
     </section>
   );
@@ -515,9 +520,15 @@ function GroupTests({ tests }: { tests: readonly TestCase[] }) {
         ))}
       </ul>
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + TEST_PAGE)} className={TEXT_BUTTON}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + TEST_PAGE)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+        >
           Show {formatNumber(Math.min(rest, TEST_PAGE))} more of {formatNumber(rest)}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -568,9 +579,15 @@ function Groups({ groups, heading }: { groups: readonly TestGroup[]; heading: st
         ))}
       </ul>
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + GROUP_PAGE)} className={cn(TEXT_BUTTON, "pt-1")}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + GROUP_PAGE)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground pt-1"
+        >
           Show {formatNumber(Math.min(rest, GROUP_PAGE))} more of {formatNumber(rest)}
-        </button>
+        </Button>
       ) : null}
     </section>
   );

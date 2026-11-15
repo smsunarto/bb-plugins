@@ -39,13 +39,17 @@ import {
 } from "../../core/tracking";
 import { CardDepthContext, useUiRuntime } from "../runtime";
 import { usePersistedState, propsKey } from "../usePersistedState";
-import { formatNumber, TONE_DOT, TONE_PILL, TONE_TEXT, type Props, type Tone } from "../values";
+import { formatNumber, TONE_BADGE, TONE_DOT, TONE_TEXT, type Props, type Tone } from "../values";
 import { actionIntent } from "./action-logic";
 import { CHAR_WIDTH, useWidth } from "./chartKit";
 import { ErrorLine } from "./display";
 import { ActionHint, FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, EASE_OUT_EXPO, FADE, RISE, useEntrance, type Entrance } from "./motion";
 import { QuietLine, ShowAll } from "./projectKit";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { IconButton } from "./iconButton";
 
 /** Cards a column shows before "N more", and how many each press adds. */
 const COLUMN_PAGE = 8;
@@ -59,11 +63,6 @@ const GROW_X: Entrance = { keyframes: [{ transform: "scaleX(0)" }, { transform: 
 
 const ACCENT_BG = "bg-[var(--color-timeline-accent,var(--primary))]";
 const ACCENT_TEXT = "text-[var(--color-timeline-accent,var(--primary))]";
-
-const TEXT_BUTTON = cn(
-  "w-fit shrink-0 cursor-pointer rounded-sm text-xs leading-5 text-muted-foreground transition-colors duration-150 hover:text-foreground",
-  FOCUS_RING,
-);
 
 /** Notes and details: small prose at every width (BB's markdown sizes its own paragraphs up on phones). */
 const SMALL_PROSE =
@@ -142,9 +141,9 @@ function Owners({ names }: { names: readonly string[] }) {
 
 function Pill({ tone, children, className }: { tone: Tone; children: ReactNode; className?: string }) {
   return (
-    <span className={cn("inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium leading-4", TONE_PILL[tone], className)}>
+    <Badge variant={TONE_BADGE[tone]} className={cn("w-fit gap-1 font-medium", className)}>
       {children}
-    </span>
+    </Badge>
   );
 }
 
@@ -425,9 +424,15 @@ function Column({
         </ul>
       )}
       {rest > 0 ? (
-        <button type="button" onClick={onMore} className={cn(TEXT_BUTTON, "self-center px-1 pb-0.5")}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={onMore}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground self-center px-1 pb-0.5"
+        >
           {formatNumber(rest)} more
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -702,9 +707,9 @@ function ItemDetail({ item, roadmap, onClose }: { item: RoadmapItem; roadmap: Ro
         <span className="min-w-0 flex-1 text-[13px] font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{item.title}</span>
         <Pill tone={ROADMAP_TONE[item.status]}>{item.milestone ? "Milestone" : ROADMAP_STATUS_LABEL[item.status]}</Pill>
         {onClose === undefined ? null : (
-          <button type="button" aria-label="Close" onClick={onClose} className={cn(TEXT_BUTTON, "inline-flex size-5 items-center justify-center")}>
-            <Icon name="X" aria-hidden className="size-3.5" />
-          </button>
+          <IconButton label="Close" onClick={onClose} className="size-5">
+            <Icon name="X" aria-hidden />
+          </IconButton>
         )}
       </div>
       <p className="m-0 flex flex-wrap gap-x-1.5 text-xs leading-5 text-muted-foreground">
@@ -1080,20 +1085,13 @@ function HealthBar({ item }: { item: HealthItem }) {
   const tone = item.status === null ? "neutral" : HEALTH_TONE[item.status];
   return (
     <span className="flex min-w-0 items-center gap-2">
-      <span
-        role="progressbar"
+      <Progress
         aria-label={`${item.name} progress`}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(item.progress)}
-        className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
-      >
-        <span
-          ref={fill}
-          className={cn("block h-full origin-left rounded-full", tone === "neutral" ? ACCENT_BG : TONE_DOT[tone])}
-          style={{ width: `${item.progress}%` }}
-        />
-      </span>
+        value={Math.round(item.progress)}
+        indicatorRef={fill}
+        indicatorClassName={cn("transition-none", tone === "neutral" ? ACCENT_BG : TONE_DOT[tone])}
+        className="min-w-0 flex-1"
+      />
       <span className="min-w-9 shrink-0 whitespace-nowrap text-right text-xs leading-5 tabular-nums text-foreground">{Math.round(item.progress)}%</span>
     </span>
   );

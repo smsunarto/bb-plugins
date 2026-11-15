@@ -34,10 +34,12 @@ import { useUiRuntime } from "../runtime";
 import { propsKey, usePersistedState } from "../usePersistedState";
 import { ACCENT, optionalText, type Props } from "../values";
 import { ErrorLine } from "./display";
-import { FIELD, FOCUS_RING } from "./inputs";
+import { FOCUS_RING } from "./inputs";
 import { reducedMotion } from "./motion";
 import { Frame, Heading, Quiet, Segmented } from "./perfKit";
-import { ICON_BUTTON } from "./projectKit";
+import { IconButton, WithTooltip } from "./iconButton";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type View = "timeline" | "text";
 
@@ -604,18 +606,16 @@ function Controls({
     <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
       {source.status === "none" ? null : (
         <div className="flex min-w-0 items-center gap-2">
-          <button
+          <Button
             type="button"
+            size="icon"
             onClick={player.toggle}
             disabled={source.status !== "ready"}
             aria-label={player.playing ? "Pause recording" : "Play recording"}
-            className={cn(
-              "inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-full bg-foreground text-background transition-opacity duration-150 hover:opacity-85 disabled:cursor-default disabled:opacity-35",
-              FOCUS_RING,
-            )}
+            className="size-8 shrink-0 rounded-full [&_[data-icon-root]]:size-3.5"
           >
-            <Icon name={player.playing ? "Pause" : "Play"} aria-hidden className="size-3.5" />
-          </button>
+            <Icon name={player.playing ? "Pause" : "Play"} aria-hidden />
+          </Button>
           {source.status === "failed" ? (
             <span className="min-w-0 truncate text-xs leading-5 text-destructive" title={source.error}>
               Recording unavailable: {source.error}
@@ -634,15 +634,15 @@ function Controls({
         </div>
       )}
       <div className="flex shrink-0 items-center gap-0.5" role="group" aria-label="Errors">
-        <button type="button" onClick={() => onStep(-1)} disabled={regions.length === 0} aria-label="Previous error" className={ICON_BUTTON}>
+        <IconButton label="Previous error" onClick={() => onStep(-1)} disabled={regions.length === 0}>
           <Icon name="ChevronLeft" aria-hidden className="size-3.5" />
-        </button>
+        </IconButton>
         <span className="min-w-[5.5rem] text-center text-xs leading-5 tabular-nums text-muted-foreground" aria-live="polite">
           {regions.length === 0 ? "No errors" : selected === null ? `${regions.length} error${regions.length === 1 ? "" : "s"}` : `Error ${selected + 1} of ${regions.length}`}
         </span>
-        <button type="button" onClick={() => onStep(1)} disabled={regions.length === 0} aria-label="Next error" className={ICON_BUTTON}>
+        <IconButton label="Next error" onClick={() => onStep(1)} disabled={regions.length === 0}>
           <Icon name="ChevronRight" aria-hidden className="size-3.5" />
-        </button>
+        </IconButton>
       </div>
       {timed ? (
         <form
@@ -652,7 +652,8 @@ function Controls({
             submit();
           }}
         >
-          <input
+          <WithTooltip tip={invalid ? `Type a time between 0:00 and ${formatClock(span, false)}` : "Type a time such as 0:12 and press Enter"}>
+          <Input
             value={jump}
             onChange={(event) => {
               setJump(event.target.value);
@@ -662,26 +663,24 @@ function Controls({
             placeholder="Go to m:ss"
             aria-label="Go to a time (m:ss)"
             aria-invalid={invalid}
-            title={invalid ? `Type a time between 0:00 and ${formatClock(span, false)}` : "Type a time such as 0:12 and press Enter"}
-            className={cn(FIELD, "h-7 w-[6.5rem] px-2 text-xs tabular-nums", invalid && "border-destructive")}
+            className={cn("h-7 w-[6.5rem] px-2 text-xs tabular-nums", invalid && "border-destructive")}
           />
+          </WithTooltip>
         </form>
       ) : null}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {view === "timeline" ? (
           <div className="flex items-center" role="group" aria-label="Zoom">
-            <button type="button" aria-label="Zoom out" disabled={zoomAt <= 0} onClick={() => onZoom(ZOOM_STEPS[Math.max(0, zoomAt - 1)])} className={ICON_BUTTON}>
+            <IconButton label="Zoom out" disabled={zoomAt <= 0} onClick={() => onZoom(ZOOM_STEPS[Math.max(0, zoomAt - 1)])}>
               <Icon name="ZoomOut" aria-hidden className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              aria-label="Zoom in"
+            </IconButton>
+            <IconButton
+              label="Zoom in"
               disabled={zoomAt >= ZOOM_STEPS.length - 1}
               onClick={() => onZoom(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, zoomAt + 1)])}
-              className={ICON_BUTTON}
             >
               <Icon name="ZoomIn" aria-hidden className="size-3.5" />
-            </button>
+            </IconButton>
           </div>
         ) : null}
         {timed ? <Segmented label="View" value={view} options={VIEWS} onChange={onView} /> : null}
@@ -1335,15 +1334,15 @@ function AlignedText({
       </div>
       {pages > 1 ? (
         <div className="flex items-center gap-2 text-xs leading-5 tabular-nums text-muted-foreground">
-          <button type="button" aria-label="Earlier words" disabled={page === 0} onClick={() => turn(page - 1)} className={ICON_BUTTON}>
+          <IconButton label="Earlier words" disabled={page === 0} onClick={() => turn(page - 1)}>
             <Icon name="ChevronLeft" aria-hidden className="size-3.5" />
-          </button>
+          </IconButton>
           <span>
             Columns {(from + 1).toLocaleString("en-US")}–{to.toLocaleString("en-US")} of {cols.length.toLocaleString("en-US")}
           </span>
-          <button type="button" aria-label="Later words" disabled={page >= pages - 1} onClick={() => turn(page + 1)} className={ICON_BUTTON}>
+          <IconButton label="Later words" disabled={page >= pages - 1} onClick={() => turn(page + 1)}>
             <Icon name="ChevronRight" aria-hidden className="size-3.5" />
-          </button>
+          </IconButton>
         </div>
       ) : null}
     </div>

@@ -6,18 +6,15 @@ import { createContext, useContext, useEffect, useId, useState, type ReactNode }
 import { useSdk } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Icon } from "@/components/ui/icon";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { displayPath, workspacePath } from "../../core/test-results";
 import { useUiRuntime, type TextFile } from "../runtime";
 import { formatNumber } from "../values";
 import { FOCUS_RING } from "./inputs";
 import { SMOOTH_HEIGHT_CLASS, useSmoothHeight } from "./motion";
-import { ICON_BUTTON } from "./projectKit";
-
-export const TEXT_BUTTON = cn(
-  "w-fit shrink-0 cursor-pointer rounded-sm text-xs leading-5 text-muted-foreground transition-colors duration-150 hover:text-foreground",
-  FOCUS_RING,
-);
+import { IconButton } from "./iconButton";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -93,18 +90,16 @@ export function OpenFileButton({ path, line, label }: { path: string; line: numb
   if (file === null) return null;
   const where = line === null ? file.target : `${file.target}:${line}`;
   return (
-    <button
-      type="button"
-      title={`Open ${where}`}
-      aria-label={label ?? (line === null ? `Open ${file.target}` : `Open ${file.target} at line ${line}`)}
+    <IconButton
+      label={label ?? (line === null ? `Open ${file.target}` : `Open ${file.target} at line ${line}`)}
+      tooltip={`Open ${where}`}
       onClick={(event) => {
         event.stopPropagation();
         void file.open(line);
       }}
-      className={ICON_BUTTON}
     >
-      <Icon name="FileText" className="size-3.5" />
-    </button>
+      <Icon name="FileText" />
+    </IconButton>
   );
 }
 
@@ -221,9 +216,9 @@ function Placeholder({ rows, label }: { rows: number; label: string }) {
   return (
     <div role="status" aria-label={label} className="flex flex-col gap-2 px-3 py-[7px]">
       {Array.from({ length: rows }, (_, index) => (
-        <div
+        <Skeleton
           key={index}
-          className="h-3 animate-pulse rounded-sm bg-muted motion-reduce:animate-none"
+          className="h-3 rounded-sm motion-reduce:animate-none"
           style={{ width: `${[62, 80, 45, 70, 54][index % 5]}%` }}
         />
       ))}
@@ -414,7 +409,7 @@ export function Disclosure({
   );
 }
 
-/** Two or three exclusive views (By file / By severity), as Choice draws its segments. */
+/** Two or three exclusive views (By file / By severity): a single-choice toggle group. */
 export function Segmented<T extends string>({
   label,
   options,
@@ -427,29 +422,22 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex w-fit max-w-full shrink-0 gap-0.5 rounded-lg bg-surface-recessed p-0.5">
-      {options.map((option) => {
-        const selected = option.value === value;
-        return (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            onClick={() => onChange(option.value)}
-            className={cn(
-              "h-6 cursor-pointer whitespace-nowrap rounded-md px-2.5 text-xs transition-[color,background-color,box-shadow] duration-150",
-              FOCUS_RING,
-              selected
-                ? "bg-background font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_0.5px_var(--border)]"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {option.label}
-          </button>
-        );
-      })}
-    </div>
+    <ToggleGroup
+      type="single"
+      aria-label={label}
+      value={value}
+      // A press on the chosen view would clear it; one view is always shown.
+      onValueChange={(next) => {
+        if (next !== "") onChange(next as T);
+      }}
+      className="w-fit max-w-full shrink-0 justify-start gap-0.5 rounded-lg bg-surface-recessed p-0.5"
+    >
+      {options.map((option) => (
+        <ToggleGroupItem key={option.value} value={option.value} className="h-6 min-w-0 whitespace-nowrap px-2.5 text-xs">
+          {option.label}
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   );
 }
 

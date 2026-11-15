@@ -3,15 +3,9 @@
 // segmented switch, links through the runtime, and the CSS grid lines of a
 // shared axis.
 import { useContext, type ReactNode } from "react";
-import { cn } from "@/lib/utils";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { CardDepthContext, useUiRuntime } from "../runtime";
-import { FOCUS_RING } from "./inputs";
 import { FADE, useEntrance } from "./motion";
-
-export const TEXT_BUTTON = cn(
-  "w-fit shrink-0 cursor-pointer rounded-sm text-xs leading-5 text-muted-foreground transition-colors duration-150 hover:text-foreground",
-  FOCUS_RING,
-);
 
 /** The outermost component draws the frame; inside a Card it sits flat. */
 export function Frame({ label, children }: { label: string; children: ReactNode }) {
@@ -50,7 +44,7 @@ export function Quiet({ children }: { children: ReactNode }) {
   return <p className="m-0 text-xs leading-5 text-muted-foreground">{children}</p>;
 }
 
-/** A small two-or-more-way switch (Map | List); each option is a pressed/unpressed button. */
+/** A small two-or-more-way switch (Map | List): a single-choice toggle group. */
 export function Segmented<T extends string>({
   label,
   value,
@@ -63,23 +57,23 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div role="group" aria-label={label} className="flex shrink-0 rounded-md bg-surface-recessed p-0.5">
+    <ToggleGroup
+      type="single"
+      size="sm"
+      aria-label={label}
+      value={value}
+      // A press on the chosen option would clear it; a switch always has one.
+      onValueChange={(next) => {
+        if (next !== "") onChange(next as T);
+      }}
+      className="shrink-0 gap-0 rounded-md bg-surface-recessed p-0.5"
+    >
       {options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          aria-pressed={option.value === value}
-          onClick={() => onChange(option.value)}
-          className={cn(
-            "cursor-pointer rounded-[5px] px-2 text-xs leading-5 transition-colors duration-150",
-            FOCUS_RING,
-            option.value === value ? "bg-background font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-muted-foreground hover:text-foreground",
-          )}
-        >
+        <ToggleGroupItem key={option.value} value={option.value} className="h-5 min-w-0 px-2 text-xs leading-5">
           {option.label}
-        </button>
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   );
 }
 

@@ -17,7 +17,8 @@ import { detailFor, mermaidNodeId, type DiagramDetail } from "./explain-logic";
 import { FOCUS_RING } from "./inputs";
 import { SMOOTH_HEIGHT_CLASS, useSmoothHeight } from "./motion";
 import { sketchPalette, type SketchPalette } from "./sketch";
-import { FullScreen, VIEWER_BUTTON, ZoomPane } from "./viewer";
+import { FullScreen, VIEWER_TOOLTIP_LAYER, ViewerButton, ZoomPane } from "./viewer";
+import { IconButton } from "./iconButton";
 
 /** The attribute that marks a decorated node; its value is the detail key. */
 const NODE_ATTR = "data-genui-node";
@@ -268,17 +269,9 @@ export function DiagramDetails({ details, children }: { details: readonly Diagra
                   <h4 className="m-0 min-w-0 text-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">
                     {title}
                   </h4>
-                  <button
-                    type="button"
-                    aria-label={`Close ${title}`}
-                    onClick={() => setSelected(null)}
-                    className={cn(
-                      "-my-0.5 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground",
-                      FOCUS_RING,
-                    )}
-                  >
-                    <Icon name="X" aria-hidden className="size-3.5" />
-                  </button>
+                  <IconButton label={`Close ${title}`} onClick={() => setSelected(null)} className="-my-0.5">
+                    <Icon name="X" aria-hidden />
+                  </IconButton>
                 </div>
                 <DetailBody detail={detail} />
               </div>
@@ -333,7 +326,6 @@ export function DiagramViewer({
   };
   const detail = list.find((candidate) => candidate.key === selected) ?? null;
   const title = detail === null ? "" : (labels[detail.key] ?? detail.key);
-  const button = cn(VIEWER_BUTTON, "bg-surface-recessed text-foreground hover:bg-state-hover focus-visible:ring-ring");
 
   return (
     <FullScreen
@@ -347,9 +339,9 @@ export function DiagramViewer({
         }
       }}
       actions={
-        <button type="button" aria-label="Copy Mermaid source" title="Copy Mermaid source" onClick={() => void run([{ kind: "action", type: "copy", text: source }])} className={button}>
-          <Icon name="Copy" className="size-4" />
-        </button>
+        <ViewerButton tone="page" label="Copy Mermaid source" onClick={() => void run([{ kind: "action", type: "copy", text: source }])} className="[&_[data-icon-root]]:size-4">
+          <Icon name="Copy" />
+        </ViewerButton>
       }
     >
       <div className="relative flex min-h-0 flex-1">
@@ -390,14 +382,9 @@ export function DiagramViewer({
                 <Icon name="ChevronDown" aria-hidden className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none", folded && "-rotate-90")} />
                 <h4 className="m-0 min-w-0 truncate text-sm font-medium leading-5">{title}</h4>
               </button>
-              <button
-                type="button"
-                aria-label={`Close ${title}`}
-                onClick={() => setSelected(null)}
-                className={cn("inline-flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground", FOCUS_RING)}
-              >
-                <Icon name="X" aria-hidden className="size-4" />
-              </button>
+              <IconButton label={`Close ${title}`} tooltipLayer={VIEWER_TOOLTIP_LAYER} onClick={() => setSelected(null)} className="size-7 [&_[data-icon-root]]:size-4">
+                <Icon name="X" aria-hidden />
+              </IconButton>
             </div>
             {folded ? null : (
               <div id={`${popupId}-body`} className="min-h-0 select-text overflow-y-auto overscroll-contain px-3 pb-3">

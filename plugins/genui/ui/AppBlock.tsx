@@ -33,7 +33,8 @@ import { Frame, useBlockAnswerTarget, type AnswerTarget } from "./LiveUi";
 import { usePaneBounds } from "./paneBounds";
 import { rememberHeight, storedHeight } from "./reservedHeight";
 import { AnswersContext } from "./runtime";
-import { FOCUS_RING, InMessageLine, SentLine } from "./components/inputs";
+import { IconButton } from "./components/iconButton";
+import { InMessageLine, SentLine } from "./components/inputs";
 import { useAnimationsOff } from "./components/motion";
 
 const CARD = "border-0 bg-transparent p-0";
@@ -45,11 +46,6 @@ const PREVIEW_POST_MS = 300;
 const QUESTION = "app";
 /** The app's one question is the block's first; module-level so the answer hook's `stage` keeps its identity. */
 const placeApp = () => 0;
-
-const TOOL_BUTTON = cn(
-  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground",
-  FOCUS_RING,
-);
 
 const clampHeight = (height: number) => Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, Math.ceil(height)));
 
@@ -423,18 +419,21 @@ function AppFrame({
             full ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover/app:opacity-100 [@media(hover:none)]:opacity-100",
           )}
         >
-          <button type="button" aria-label="Download as HTML" title="Download as HTML" onClick={download} className={TOOL_BUTTON}>
-            <Icon name="Download" aria-hidden className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label={full ? "Close full screen" : "Full screen"}
-            title={full ? "Close full screen (Esc)" : "Full screen"}
-            onClick={() => setFull((shown) => !shown)}
-            className={TOOL_BUTTON}
-          >
-            <Icon name={full ? "X" : "Maximize2"} aria-hidden className="size-3.5" />
-          </button>
+          {/* Full screen, the dialog is in the top layer, above the tooltips' portal, so a native title carries each hint there. */}
+          <span className="inline-flex" title={full ? "Download as HTML" : undefined}>
+            <IconButton label="Download as HTML" onClick={download}>
+              <Icon name="Download" aria-hidden />
+            </IconButton>
+          </span>
+          <span className="inline-flex" title={full ? "Close full screen (Esc)" : undefined}>
+            <IconButton
+              label={full ? "Close full screen" : "Full screen"}
+              tooltip={full ? "Close full screen (Esc)" : "Full screen"}
+              onClick={() => setFull((shown) => !shown)}
+            >
+              <Icon name={full ? "X" : "Maximize2"} aria-hidden />
+            </IconButton>
+          </span>
         </div>
       </dialog>
     </AnswersContext>

@@ -45,6 +45,8 @@ import {
   useProjectQuery,
   useVisible,
 } from "./projectKit";
+import { Button } from "@/components/ui/button";
+import { WithTooltip } from "./iconButton";
 
 const COLLAPSED_THREADS = 8;
 const COLLAPSE_FROM = 11;
@@ -264,17 +266,16 @@ function PendingCard({ pending, now, onOpen }: { pending: PendingAsk; now: numbe
           <span className="font-medium text-warning-text">{pending.action}</span>
           {meta === "" ? null : <span className="tabular-nums text-muted-foreground"> · {meta}</span>}
         </span>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={onOpen}
-          className={cn(
-            "-my-0.5 inline-flex shrink-0 cursor-pointer items-center gap-0.5 rounded px-1.5 py-0.5 font-medium text-foreground transition-colors duration-150 hover:bg-state-hover",
-            FOCUS_RING,
-          )}
+          className="-my-0.5 h-auto shrink-0 gap-0.5 rounded px-1.5 py-0.5 text-xs leading-5 text-foreground [&_[data-icon-root]]:size-3"
         >
           {PENDING_VERB[pending.kind]}
-          <Icon name="ChevronRight" aria-hidden className="size-3" />
-        </button>
+          <Icon name="ChevronRight" aria-hidden />
+        </Button>
       </div>
       {pending.text === null ? null : pending.code ? (
         <code title={pending.text} className="mt-1 line-clamp-3 min-w-0 rounded bg-background/70 px-1.5 py-0.5 font-mono text-[11px] leading-4 text-foreground [overflow-wrap:anywhere]">
@@ -301,10 +302,7 @@ function LatestMessage({ threadId, message, onOpen }: { threadId: string; messag
   const [expanded, setExpanded] = usePersistedState(`threads:message:${threadId}`, false, (stored) => (typeof stored === "boolean" ? stored : null));
   const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
   const preview = useMemo(() => previewText(message.text), [message.text]);
-  const link = cn(
-    "inline-flex cursor-pointer items-center gap-0.5 rounded text-muted-foreground transition-colors duration-150 hover:text-foreground",
-    FOCUS_RING,
-  );
+  const link = "h-auto gap-0.5 p-0 text-[11px] font-normal leading-4 text-muted-foreground hover:text-foreground [&_[data-icon-root]]:size-3";
   return (
     <div ref={outer} className={cn("min-w-0", SMOOTH_HEIGHT_CLASS)}>
       <div ref={inner} className="min-w-0 border-l-2 border-border pl-2.5">
@@ -315,24 +313,25 @@ function LatestMessage({ threadId, message, onOpen }: { threadId: string; messag
               className="max-h-80 min-w-0 overflow-y-auto text-[13px] [&>:first-child]:mt-0 [&>:last-child]:mb-0"
             />
             <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 text-[11px] leading-4">
-              <button type="button" aria-expanded onClick={() => setExpanded(false)} className={link}>
+              <Button type="button" variant="link" size="sm" aria-expanded onClick={() => setExpanded(false)} className={link}>
                 Show less
-                <Icon name="ChevronUp" aria-hidden className="size-3" />
-              </button>
+                <Icon name="ChevronUp" aria-hidden />
+              </Button>
               {message.truncated ? (
-                <button type="button" onClick={onOpen} className={link}>
+                <Button type="button" variant="link" size="sm" onClick={onOpen} className={link}>
                   The message goes on in the thread
-                  <Icon name="ChevronRight" aria-hidden className="size-3" />
-                </button>
+                  <Icon name="ChevronRight" aria-hidden />
+                </Button>
               ) : null}
             </span>
           </>
         ) : (
+          // The clamped preview is the control: a Button's one-line layout can't clamp two lines.
+          <WithTooltip tip="Show the whole message">
           <button
             type="button"
             aria-expanded={false}
             onClick={() => setExpanded(true)}
-            title="Show the whole message"
             className={cn("group/message block w-full min-w-0 cursor-pointer rounded-sm text-left", FOCUS_RING)}
           >
             <span className="sr-only">Latest message: </span>
@@ -340,6 +339,7 @@ function LatestMessage({ threadId, message, onOpen }: { threadId: string; messag
               {preview}
             </span>
           </button>
+          </WithTooltip>
         )}
       </div>
     </div>

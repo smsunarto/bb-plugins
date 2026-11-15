@@ -30,7 +30,7 @@ import { checkCounts, CHECKS_LABEL, PR_STATE_LABEL, relativeTime, RUNNING, threa
 import type { rpcContract } from "../../server";
 import { useUiRuntime } from "../runtime";
 import { propsKey, usePersistedState } from "../usePersistedState";
-import { formatNumber, TONE_DOT, TONE_PILL, TONE_TEXT, type Props, type Tone } from "../values";
+import { formatNumber, TONE_BADGE, TONE_DOT, TONE_TEXT, type Props, type Tone } from "../values";
 import { DETAIL_CONCURRENCY, detailsDue, ENVIRONMENT_PAGE, shownEnvironments } from "./environments-logic";
 import { FOCUS_RING } from "./inputs";
 import { RISE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight } from "./motion";
@@ -49,6 +49,9 @@ import {
 } from "./projectKit";
 import { CHECKS_TONE, STATE_ICON, STATE_TEXT } from "./pullRequest";
 import { LiveDot, statusTone } from "./threads";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /** Thread lines a row lists; the rest are counted. */
 const THREAD_LINES = 3;
@@ -285,17 +288,16 @@ function EnvironmentList({ view, details, now, stateId }: { view: EnvironmentsVi
 
 function MoreButton({ count, onClick }: { count: number; onClick: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
       onClick={onClick}
-      className={cn(
-        "flex w-full cursor-pointer items-center justify-center gap-1 border-t border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground",
-        FOCUS_RING,
-      )}
+      className="h-auto w-full gap-1 rounded-none border-t border-border py-2 font-normal text-muted-foreground"
     >
       Show {count} more
-      <Icon name="ChevronDown" aria-hidden className="size-3.5" />
-    </button>
+      <Icon name="ChevronDown" aria-hidden />
+    </Button>
   );
 }
 
@@ -339,10 +341,14 @@ function EnvironmentRow({
         </span>
         <span className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground">{kindLabel(environment)}</span>
         {environment.current ? (
-          <span className={cn("shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-medium leading-4", TONE_PILL.info)}>this thread</span>
+          <Badge variant="info" className="px-1.5 py-px font-medium">
+            this thread
+          </Badge>
         ) : null}
         {life === null ? null : (
-          <span className={cn("shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-medium leading-4", TONE_PILL[LIFE_TONE[environment.life]])}>{life}</span>
+          <Badge variant={TONE_BADGE[LIFE_TONE[environment.life]]} className="px-1.5 py-px font-medium">
+            {life}
+          </Badge>
         )}
       </span>
       {environment.activeAt === null ? null : (
@@ -433,8 +439,8 @@ function Facts({ environment, detail }: { environment: EnvironmentInfo; detail: 
   if (detail === null) {
     return (
       <span role="status" aria-label="Reading git status" className="flex h-5 items-center gap-2">
-        <span className="h-2.5 w-24 animate-pulse rounded-sm bg-muted motion-reduce:animate-none" />
-        <span className="h-2.5 w-16 animate-pulse rounded-sm bg-muted motion-reduce:animate-none" />
+        <Skeleton className="h-2.5 w-24 rounded-sm motion-reduce:animate-none" />
+        <Skeleton className="h-2.5 w-16 rounded-sm motion-reduce:animate-none" />
       </span>
     );
   }

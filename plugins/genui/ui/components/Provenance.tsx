@@ -25,13 +25,17 @@ import {
 import { formatElapsed } from "../../core/pipeline";
 import { CardDepthContext, useUiRuntime } from "../runtime";
 import { formatNumber, TONE_DOT, TONE_TEXT, type Props } from "../values";
-import { CodeExcerpt, OpenFileButton, ReportFrame, TEXT_BUTTON, useFileOpener, useFileText } from "./codeHealthKit";
+import { CodeExcerpt, OpenFileButton, ReportFrame, useFileOpener, useFileText } from "./codeHealthKit";
 import { ErrorLine } from "./display";
 import { FOCUS_RING } from "./inputs";
 import { useImageUrl } from "./media";
 import { FADE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight } from "./motion";
-import { EXACT_TIME, ICON_BUTTON } from "./projectKit";
+import { EXACT_TIME } from "./projectKit";
 import { useGroupPicture, ViewerGroup } from "./viewer";
+import { Button } from "@/components/ui/button";
+import { IconButton, WithTooltip } from "./iconButton";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /** Past this many stages the chain is a timeline at every width: a row would squeeze them. */
 const MAX_ROW_STAGES = 6;
@@ -50,21 +54,17 @@ const MONO_KEYS: Readonly<Record<string, true>> = { branch: true, sha: true, bui
 // ---------------------------------------------------------------------------
 // Marks
 
-/** Done (a check), failed (a cross), done but carrying a wrong fact (an alert), running (an arc), the rest rings. */
+/** Done (a check), failed (a cross), done but carrying a wrong fact (an alert), running (BB's spinner), the rest rings. */
 function StageMark({ stage, wrong }: { stage: Stage; wrong: boolean }) {
   const base = "relative size-[18px] shrink-0 rounded-full bg-background";
   if (stage.status === "failed") return <Icon name="CircleX" aria-hidden className={cn(base, "text-destructive")} />;
   if (wrong) return <Icon name="AlertCircle" aria-hidden className={cn(base, "text-destructive")} />;
   if (stage.status === "done") return <Icon name="CircleCheck" aria-hidden className={cn(base, "text-success")} />;
   if (stage.receipt === "none") return <Icon name="CircleQuestion" aria-hidden className={cn(base, "text-warning-text")} />;
+  if (stage.status === "running") return <Icon name="Spinner" aria-hidden className={cn(base, "animate-spin text-warning motion-reduce:animate-none")} />;
   return (
-    <svg viewBox="0 0 16 16" aria-hidden className={cn(base, stage.status === "running" ? "text-warning" : "text-muted-foreground")}>
-      {stage.status === "running" ? (
-        <>
-          <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="1.75" />
-          <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" className="origin-center animate-spin motion-reduce:animate-none" />
-        </>
-      ) : stage.status === "skipped" ? (
+    <svg viewBox="0 0 16 16" aria-hidden className={cn(base, "text-muted-foreground")}>
+      {stage.status === "skipped" ? (
         <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="2.6 2.1" />
       ) : (
         <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
@@ -98,9 +98,9 @@ function FactChip({ fact, requested, quiet }: { fact: Fact; requested: boolean; 
   const other =
     fact.check === null ? null : fact.check.kind === "expected" ? `expected ${shortValue(fact.key, fact.check.expected)}` : `was ${shortValue(fact.key, fact.check.previous)}`;
   return (
+    <WithTooltip tip={`${fact.label}: ${fact.value}${other === null ? "" : ` (${other})`}. Click to copy.`}>
     <button
       type="button"
-      title={`${fact.label}: ${fact.value}${other === null ? "" : ` (${other})`}. Click to copy.`}
       aria-label={`Copy ${fact.label} ${fact.value}${other === null ? "" : `, ${other}`}`}
       onClick={() => void run([{ kind: "action", type: "copy", text: fact.value }])}
       className={cn(
@@ -120,6 +120,7 @@ function FactChip({ fact, requested, quiet }: { fact: Fact; requested: boolean; 
       </span>
       {other === null ? null : <span className="min-w-0 max-w-full truncate text-[10.5px] leading-4 text-destructive/80">{other}</span>}
     </button>
+    </WithTooltip>
   );
 }
 
@@ -211,7 +212,9 @@ function StageItem({
           )}
         </button>
         {stage.last ? (
-          <span className="w-fit rounded-full bg-surface-recessed px-1.5 text-[10.5px] font-medium leading-4 text-muted-foreground">Last receipt</span>
+          <Badge variant="secondary" className="w-fit px-1.5 py-0 font-medium">
+            Last receipt
+          </Badge>
         ) : null}
         {shown.length === 0 ? null : (
           <div className="flex min-w-0 flex-wrap items-start gap-1">
@@ -219,9 +222,16 @@ function StageItem({
               <FactChip key={fact.key} fact={fact} requested={requested.has(fact.key)} quiet={missing} />
             ))}
             {hidden > 0 ? (
-              <button type="button" onClick={onToggle} className={cn(TEXT_BUTTON, "text-[11px] leading-[18px]")} aria-label={`${stage.name}: ${hidden} more facts`}>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={onToggle}
+                aria-label={`${stage.name}: ${hidden} more facts`}
+                className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground text-[11px] leading-[18px]"
+              >
                 +{hidden}
-              </button>
+              </Button>
             ) : null}
           </div>
         )}
@@ -267,7 +277,7 @@ function FileEvidence({ evidence }: { evidence: Extract<Evidence, { kind: "file"
       {file === null ? (
         <div role="status" aria-label={`Reading ${evidence.path}`} className="flex flex-col gap-2 px-3 py-2.5">
           {[70, 52, 84, 40].map((width, index) => (
-            <div key={index} className="h-3 animate-pulse rounded-sm bg-muted motion-reduce:animate-none" style={{ width: `${width}%` }} />
+            <Skeleton key={index} className="h-3 rounded-sm motion-reduce:animate-none" style={{ width: `${width}%` }} />
           ))}
         </div>
       ) : file.ok ? (
@@ -298,7 +308,7 @@ function ImageEvidence({ evidence, order }: { evidence: Extract<Evidence, { kind
             <img src={image.url} alt={caption} decoding="async" className="block h-full w-auto max-w-full object-contain" />
           </button>
         ) : image.status === "loading" ? (
-          <div role="status" aria-label={`Loading ${caption}`} className="size-full animate-pulse motion-reduce:animate-none" />
+          <Skeleton role="status" aria-label={`Loading ${caption}`} className="size-full rounded-none motion-reduce:animate-none" />
         ) : (
           <p className="m-0 px-3 text-center text-xs leading-5 text-muted-foreground">
             {image.off ? "Not shown: web lookups are off in the Generative UI plugin settings." : `Couldn't show ${evidence.src}: ${image.error}`}
@@ -358,9 +368,9 @@ function FactRow({ fact, requested }: { fact: Fact; requested: boolean }) {
         {check === null ? null : <span className={cn("text-[11px] leading-4 [overflow-wrap:anywhere]", check.tone)}>{check.text}</span>}
       </dd>
       <span className="py-0.5">
-        <button type="button" aria-label={`Copy ${fact.label}`} title={`Copy ${fact.label}`} onClick={() => void run([{ kind: "action", type: "copy", text: fact.value }])} className={ICON_BUTTON}>
+        <IconButton label={`Copy ${fact.label}`} onClick={() => void run([{ kind: "action", type: "copy", text: fact.value }])}>
           <Icon name="Copy" aria-hidden className="size-3.5" />
-        </button>
+        </IconButton>
       </span>
     </div>
   );
@@ -383,9 +393,9 @@ function StageDetail({ stage, id, requested, onClose }: { stage: Stage; id: stri
           <span className="text-[13px] font-semibold leading-5 text-foreground [overflow-wrap:anywhere]">{stage.name}</span>
           <span className="text-[11px] leading-4 text-muted-foreground">{facts.join(" · ")}</span>
         </div>
-        <button type="button" aria-label={`Close ${stage.name}`} title="Close" onClick={onClose} className={ICON_BUTTON}>
+        <IconButton label={`Close ${stage.name}`} tooltip="Close" onClick={onClose}>
           <Icon name="X" aria-hidden className="size-3.5" />
-        </button>
+        </IconButton>
       </div>
       {stage.detail === null ? null : <p className="m-0 whitespace-pre-wrap text-xs leading-5 text-foreground [overflow-wrap:anywhere]">{stage.detail}</p>}
       {stage.facts.length === 0 ? null : (

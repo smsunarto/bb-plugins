@@ -7,6 +7,7 @@ import { useContext, useEffect, useId, useState, type ReactNode } from "react";
 import { Markdown } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { Button as BaseButton } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
@@ -42,14 +43,19 @@ import {
 import type { Value } from "../../core/types";
 import { NodeKeyContext, questionClosed, sentFor, useAnswers, useUiRuntime } from "../runtime";
 import { propsKey, usePersistedState } from "../usePersistedState";
-import { formatNumber, TONE_PILL, type Props, type Tone } from "../values";
+import { formatNumber, TONE_BADGE, type Props, type Tone } from "../values";
 import { actionIntent, sendEffect } from "./action-logic";
 import { niceScale } from "./chartMath";
-import { CheckMark, ErrorLine } from "./display";
-import { ActionGlyph, ActionHint, Button, ButtonGroup, CAPTION, FIELD, FOCUS_RING, InMessageLine, SentLine } from "./inputs";
+import { ErrorLine } from "./display";
+import { ActionGlyph, ActionHint, Button, ButtonGroup, CAPTION, FOCUS_RING, InMessageLine, SentLine } from "./inputs";
 import { RISE, useEntrance } from "./motion";
-import { ICON_BUTTON, Panel, QuietLine, ShowAll } from "./projectKit";
+import { Panel, QuietLine, ShowAll } from "./projectKit";
 import { keepTyping } from "../keepTyping";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { IconButton, WithTooltip } from "./iconButton";
 
 /** Rows shown before "Show all N". */
 const PLAN_ROWS = 20;
@@ -62,9 +68,9 @@ const RISK_LABEL: Record<Risk, string> = { low: "Low risk", medium: "Medium risk
 
 function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
-    <span className={cn("inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-1.5 py-px text-[11px] font-medium leading-4", TONE_PILL[tone])}>
+    <Badge variant={TONE_BADGE[tone]} className="px-1.5 py-px font-medium">
       {children}
-    </span>
+    </Badge>
   );
 }
 
@@ -87,46 +93,26 @@ function FileChip({ file }: { file: PlanFile }) {
     );
   }
   return (
-    <button
-      type="button"
-      title={`Open ${label}`}
-      onClick={async () => {
-        if (!(await openFile(file.path, file.line ?? undefined))) toast.error(`Couldn't open ${file.path}`);
-      }}
-      className={cn(shape, "cursor-pointer text-foreground transition-colors duration-150 hover:bg-state-hover", FOCUS_RING)}
-    >
-      {content}
-    </button>
+    <WithTooltip tip={`Open ${label}`}>
+      <button
+        type="button"
+        onClick={async () => {
+          if (!(await openFile(file.path, file.line ?? undefined))) toast.error(`Couldn't open ${file.path}`);
+        }}
+        className={cn(shape, "cursor-pointer text-foreground transition-colors duration-150 hover:bg-state-hover", FOCUS_RING)}
+      >
+        {content}
+      </button>
+    </WithTooltip>
   );
 }
 
-/** A square checkbox drawn like Checklist's. */
+/** Checklist's checkbox, in a 28px press area. */
 function CheckBox({ checked, disabled, label, onToggle }: { checked: boolean; disabled: boolean; label: string; onToggle: () => void }) {
   return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onToggle}
-      {...keepTyping}
-      className={cn(
-        "-m-1.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md disabled:cursor-default",
-        FOCUS_RING,
-      )}
-    >
-      <span
-        aria-hidden
-        className={cn(
-          "flex size-4 items-center justify-center rounded-[4px] border transition-colors duration-150",
-          checked ? "border-transparent bg-primary text-primary-foreground" : "border-border bg-background",
-          disabled && "opacity-70",
-        )}
-      >
-        {checked ? <CheckMark className="size-3" /> : null}
-      </span>
-    </button>
+    <span className="-m-1.5 flex size-7 shrink-0 items-center justify-center">
+      <Checkbox checked={checked} aria-label={label} disabled={disabled} onCheckedChange={onToggle} {...keepTyping} />
+    </span>
   );
 }
 
@@ -371,27 +357,31 @@ function WeightControl({
 }) {
   return (
     <div role="group" aria-label={`Weight of ${name}`} className="inline-flex h-7 shrink-0 items-center rounded-md border border-border bg-background">
-      <button
+      <BaseButton
         type="button"
+        variant="ghost"
+        size="icon"
         aria-label={`Lower weight of ${name}`}
         disabled={disabled || weight <= 0}
         onClick={() => onChange(nudgeWeight(weight, -1, step, max))}
-        className={cn(ICON_BUTTON, "rounded-r-none disabled:opacity-40")}
+        className="size-6 rounded-r-none text-muted-foreground [&_[data-icon-root]]:size-3"
       >
-        <Icon name="Minus" aria-hidden className="size-3" />
-      </button>
+        <Icon name="Minus" aria-hidden />
+      </BaseButton>
       <output aria-live="polite" className="min-w-7 px-0.5 text-center text-xs font-medium tabular-nums text-foreground">
         {round(weight, 4)}
       </output>
-      <button
+      <BaseButton
         type="button"
+        variant="ghost"
+        size="icon"
         aria-label={`Raise weight of ${name}`}
         disabled={disabled || weight >= max}
         onClick={() => onChange(nudgeWeight(weight, 1, step, max))}
-        className={cn(ICON_BUTTON, "rounded-l-none disabled:opacity-40")}
+        className="size-6 rounded-l-none text-muted-foreground [&_[data-icon-root]]:size-3"
       >
-        <Icon name="Plus" aria-hidden className="size-3" />
-      </button>
+        <Icon name="Plus" aria-hidden />
+      </BaseButton>
     </div>
   );
 }
@@ -528,14 +518,16 @@ export function Decision({ props }: { props: Props }) {
             {model.options.length} options · {model.criteria.length} {model.criteria.length === 1 ? "criterion" : "criteria"} · scores 0–{model.scale}
           </span>
           {changed && !frozen ? (
-            <button
+            <BaseButton
               type="button"
               onClick={() => setWeights(initial)}
-              className={cn("ml-auto inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground", FOCUS_RING)}
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-6 gap-1 px-1.5 font-normal text-muted-foreground [&_[data-icon-root]]:size-3"
             >
-              <Icon name="RotateCcw" aria-hidden className="size-3" />
+              <Icon name="RotateCcw" aria-hidden />
               Reset weights
-            </button>
+            </BaseButton>
           ) : null}
         </>
       }
@@ -543,61 +535,61 @@ export function Decision({ props }: { props: Props }) {
       <div className="@container flex min-w-0 flex-col gap-3 px-3 py-3">
         <Verdict model={model} ranked={ranked} />
         {/* Wide: criteria as rows (weights at hand), options as columns in the given order. */}
-        <div className="hidden min-w-0 overflow-x-auto @lg:block">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="text-xs text-muted-foreground">
-                <th scope="col" className="pb-2 pr-3 text-left font-normal">
+        <div className="hidden min-w-0 @lg:block">
+          <Table className="border-collapse">
+            <TableHeader className="[&_tr]:border-b-0">
+              <TableRow className="text-xs hover:bg-transparent">
+                <TableHead scope="col" className="h-auto pb-2 pl-0 pr-3 font-normal">
                   Criterion
-                </th>
-                <th scope="col" className="pb-2 pr-3 text-left font-normal">
+                </TableHead>
+                <TableHead scope="col" className="h-auto pb-2 pl-0 pr-3 font-normal">
                   Weight
-                </th>
+                </TableHead>
                 {model.options.map((option, index) => (
-                  <th key={index} scope="col" className="max-w-40 px-1.5 pb-2 text-center align-bottom font-medium text-foreground">
+                  <TableHead key={index} scope="col" className="h-auto max-w-40 px-1.5 pb-2 text-center align-bottom text-foreground">
                     <span className="flex flex-col items-center gap-1">
                       {index === leader && !tiedLead ? <Pill tone="info">Leads</Pill> : null}
                       <span className="[overflow-wrap:anywhere]">{option.name}</span>
                     </span>
-                  </th>
+                  </TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {model.criteria.map((criterion, criterionIndex) => (
-                <tr key={criterionIndex} className="border-t border-border/60">
-                  <th scope="row" className="max-w-56 py-1.5 pr-3 text-left align-middle font-normal">
+                <TableRow key={criterionIndex} className="border-b-0 border-t border-border hover:bg-transparent">
+                  <TableHead scope="row" className="h-auto max-w-56 py-1.5 pl-0 pr-3 font-normal">
                     <span className="block text-sm leading-5 text-foreground">{criterion.name}</span>
                     {criterion.note === null ? null : <span className="block text-xs leading-4 text-muted-foreground">{criterion.note}</span>}
-                  </th>
-                  <td className="py-1.5 pr-3 align-middle">{weightCell(criterionIndex)}</td>
+                  </TableHead>
+                  <TableCell className="py-1.5 pl-0 pr-3">{weightCell(criterionIndex)}</TableCell>
                   {model.options.map((option, index) => (
-                    <td key={index} className="px-1.5 py-1.5 text-center align-middle">
+                    <TableCell key={index} className="px-1.5 py-1.5 text-center">
                       {scoreCell(option.scores[criterionIndex])}
-                    </td>
+                    </TableCell>
                   ))}
-                </tr>
+                </TableRow>
               ))}
-              <tr className="border-t border-border">
-                <th scope="row" colSpan={2} className="py-2 pr-3 text-left align-middle text-xs font-normal text-muted-foreground">
+              <TableRow className="border-b-0 border-t border-border hover:bg-transparent">
+                <TableHead scope="row" colSpan={2} className="h-auto py-2 pl-0 pr-3 text-xs font-normal">
                   Weighted score
-                </th>
+                </TableHead>
                 {model.options.map((option, index) => {
                   const entry = ranked[rankOf.get(index) ?? 0];
                   return (
-                    <td key={index} className="px-1.5 py-2 text-center align-middle">
+                    <TableCell key={index} className="px-1.5 py-2 text-center">
                       <span className="flex flex-col items-center gap-0.5">
                         <span className={cn("text-[15px] font-semibold tabular-nums leading-5", index === leader ? "text-foreground" : "text-muted-foreground")}>
                           {formatNumber(entry.total)}
                         </span>
                         <span className="text-[11px] tabular-nums text-muted-foreground">#{(rankOf.get(index) ?? 0) + 1}</span>
                       </span>
-                    </td>
+                    </TableCell>
                   );
                 })}
-              </tr>
-            </tbody>
-          </table>
+              </TableRow>
+            </TableBody>
+          </Table>
         </div>
         {details ? (
           <ul aria-label="Pros and cons" className="m-0 hidden min-w-0 list-none grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-2 p-0 @lg:grid">
@@ -655,15 +647,18 @@ export function Decision({ props }: { props: Props }) {
           </ol>
         </div>
         {hasDetails ? (
-          <button
+          // Shows every option's pros and cons in place, so no one region to collapse: a button that says it expands.
+          <BaseButton
             type="button"
+            variant="ghost"
+            size="sm"
             aria-expanded={details}
             onClick={() => setDetails((open) => !open)}
-            className={cn("-ml-1.5 inline-flex w-fit cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground", FOCUS_RING)}
+            className="-ml-1.5 h-6 w-fit gap-1 px-1.5 font-normal text-muted-foreground [&_[data-icon-root]]:size-3.5"
           >
-            <Icon name={details ? "ChevronDown" : "ChevronRight"} aria-hidden className="size-3.5" />
+            <Icon name={details ? "ChevronDown" : "ChevronRight"} aria-hidden />
             {details ? "Hide pros and cons" : "Show pros and cons"}
-          </button>
+          </BaseButton>
         ) : null}
         {model.issues.slice(0, 5).map((issue, index) => (
           <QuietLine key={index} icon="AlertTriangle">
@@ -695,10 +690,10 @@ function NumberField({
   const [draft, setDraft] = useState(value === null ? "" : String(value));
   return (
     <span className="flex min-w-0 flex-col gap-0.5">
-      <label htmlFor={id} className="text-[11px] leading-4 text-muted-foreground">
+      <Label htmlFor={id} className="text-[11px] font-normal leading-4 text-muted-foreground">
         {label}
-      </label>
-      <input
+      </Label>
+      <Input
         id={id}
         type="text"
         inputMode="decimal"
@@ -709,7 +704,7 @@ function NumberField({
           setDraft(raw);
           onChange(raw.trim() === "" ? null : readNumber(raw.replace(",", ".")));
         }}
-        className={cn(FIELD, "h-7 w-[4.5rem] px-2 tabular-nums placeholder:text-muted-foreground/60")}
+        className="h-7 w-[4.5rem] px-2 text-[13px] tabular-nums placeholder:text-muted-foreground/60"
       />
     </span>
   );
@@ -783,15 +778,9 @@ function EstimateRow({
             {value(task.low)} · {task.likely === null ? <span title="midpoint of low and high">({value(estimate.error === null ? estimate.likely : null)})</span> : value(task.likely)} · {value(task.high)}
           </span>
         </span>
-        <button
-          type="button"
-          aria-label={`Edit ${task.title}`}
-          aria-expanded={editing}
-          onClick={onEdit}
-          className={cn(ICON_BUTTON, editing && "bg-state-hover text-foreground")}
-        >
-          <Icon name="Edit" aria-hidden className="size-3.5" />
-        </button>
+        <IconButton label={`Edit ${task.title}`} aria-expanded={editing} data-state={editing ? "open" : "closed"} onClick={onEdit}>
+          <Icon name="Edit" aria-hidden />
+        </IconButton>
       </div>
       {editing ? (
         <div className="order-last col-span-full flex flex-wrap items-end gap-2 pb-1 pt-1">
@@ -891,17 +880,19 @@ export function Estimate({ props }: { props: Props }) {
             {totals.excluded > 0 ? ` · ${totals.excluded} not counted` : ""}
           </span>
           {edited ? (
-            <button
+            <BaseButton
               type="button"
               onClick={() => {
                 setEdits({});
                 setEditing(null);
               }}
-              className={cn("ml-auto inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground transition-colors hover:bg-state-hover hover:text-foreground", FOCUS_RING)}
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-6 gap-1 px-1.5 font-normal text-muted-foreground [&_[data-icon-root]]:size-3"
             >
-              <Icon name="RotateCcw" aria-hidden className="size-3" />
+              <Icon name="RotateCcw" aria-hidden />
               Reset edits
-            </button>
+            </BaseButton>
           ) : null}
         </>
       }

@@ -1,7 +1,10 @@
-import { useContext, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useContext, useId, useRef, useState, type ReactNode } from "react";
 import { sameCaption, sourceCaption } from "../../core/source";
 import type { UiNode } from "../../core/types";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Icon } from "@/components/ui/icon";
+import { Separator } from "@/components/ui/separator";
+import { Tabs as TabsRoot, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { RenderNode, RenderNodes } from "../render";
 import { CardDepthContext } from "../runtime";
@@ -183,14 +186,11 @@ export function Details({ props }: { props: Props }) {
   if (open && !mounted) setMounted(true);
   const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
   return (
+    <Collapsible open={open} onOpenChange={setOpen} asChild>
     <div ref={outer} className={cn("min-w-0", SMOOTH_HEIGHT_CLASS)}>
       <div ref={inner} className="flex min-w-0 flex-col">
-        <button
-          type="button"
+        <CollapsibleTrigger
           id={`${id}-summary`}
-          aria-expanded={open}
-          aria-controls={`${id}-body`}
-          onClick={() => setOpen((value) => !value)}
           className="group flex w-full min-w-0 cursor-pointer items-start gap-1.5 rounded-sm text-left text-sm font-medium leading-5 text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <Icon
@@ -202,33 +202,32 @@ export function Details({ props }: { props: Props }) {
             )}
           />
           <span className="min-w-0 flex-1 text-balance [overflow-wrap:anywhere]">{text(props.title)}</span>
-        </button>
-        <div
-          id={`${id}-body`}
+        </CollapsibleTrigger>
+        {/* Kept mounted once opened (forceMount), so a closed body keeps its state; hidden while closed. */}
+        <CollapsibleContent
+          forceMount
           role="region"
           aria-labelledby={`${id}-summary`}
-          hidden={!open}
           className={cn("min-w-0 flex-col gap-3 pl-5 pt-3", open ? "flex" : "hidden")}
         >
           {mounted ? <RenderNodes nodes={nodes(props.children)} /> : null}
-        </div>
+        </CollapsibleContent>
       </div>
     </div>
+    </Collapsible>
   );
 }
 
 export function Divider() {
-  return <hr className="m-0 h-px w-full shrink-0 border-0 bg-border" />;
+  return <Separator className="w-full shrink-0" />;
 }
 
 /**
- * Underlined tabs over one panel per label. Every panel stays mounted (the
- * inactive ones hidden), so switching keeps their state and never replays
- * their entrance; the panel area glides between heights.
+ * Tabs over one panel per label. Every panel stays mounted (the inactive ones
+ * hidden), so switching keeps their state and never replays their entrance;
+ * the panel area glides between heights.
  */
 export function Tabs({ props }: { props: Props }) {
-  const id = useId();
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const interactionScope = useRef<HTMLDivElement>(null);
   const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>(interactionScope);
   const [selected, setSelected] = useState(0);
@@ -238,63 +237,36 @@ export function Tabs({ props }: { props: Props }) {
   // A streaming spec can shrink the tab count for a moment.
   const active = Math.min(selected, count - 1);
 
-  const onKeyDown = (event: KeyboardEvent) => {
-    const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
-    if (step === 0) return;
-    event.preventDefault();
-    const next = (active + step + count) % count;
-    setSelected(next);
-    tabRefs.current[next]?.focus();
-  };
-
   return (
-    <div ref={interactionScope} className="flex min-w-0 flex-col gap-3">
-      <div
-        role="tablist"
-        onKeyDown={onKeyDown}
-        className="flex min-w-0 gap-4 overflow-x-auto border-b border-border [scrollbar-width:none]"
-      >
+    <TabsRoot
+      ref={interactionScope}
+      value={String(active)}
+      onValueChange={(value) => setSelected(Number(value))}
+      className="flex min-w-0 flex-col gap-3"
+    >
+      <TabsList className="max-w-full justify-start self-start overflow-x-auto [scrollbar-width:none]">
         {Array.from({ length: count }, (_, index) => (
-          <button
-            key={index}
-            ref={(element) => {
-              tabRefs.current[index] = element;
-            }}
-            type="button"
-            role="tab"
-            id={`${id}-tab-${index}`}
-            aria-selected={index === active}
-            aria-controls={`${id}-panel-${index}`}
-            tabIndex={index === active ? 0 : -1}
-            onClick={() => setSelected(index)}
-            className={cn(
-              "-mb-px shrink-0 cursor-pointer whitespace-nowrap border-b-2 pb-2 text-[13px] transition-colors duration-150 focus-visible:outline-none focus-visible:text-foreground",
-              index === active
-                ? "border-foreground font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
+          <TabsTrigger key={index} value={String(index)} className="shrink-0 text-[13px]">
             {labels[index] || `Tab ${index + 1}`}
-          </button>
+          </TabsTrigger>
         ))}
-      </div>
+      </TabsList>
       <div ref={outer} className={cn("min-w-0", SMOOTH_HEIGHT_CLASS)}>
         <div ref={inner} className="min-w-0">
           {Array.from({ length: count }, (_, index) => (
-            <div
+            <TabsContent
               // Panels are positional, like their labels.
               key={index}
-              role="tabpanel"
-              id={`${id}-panel-${index}`}
-              aria-labelledby={`${id}-tab-${index}`}
-              hidden={index !== active}
-              className={cn("min-w-0 flex-col gap-3", index === active ? "flex" : "hidden")}
+              value={String(index)}
+              // Every panel stays mounted (hidden while inactive): switching keeps its state and never replays its entrance.
+              forceMount
+              className={cn("mt-0 min-w-0 flex-col gap-3", index === active ? "flex" : "hidden")}
             >
               {panels[index] === undefined ? null : <RenderNode node={panels[index]} />}
-            </div>
+            </TabsContent>
           ))}
         </div>
       </div>
-    </div>
+    </TabsRoot>
   );
 }

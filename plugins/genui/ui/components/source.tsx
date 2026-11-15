@@ -6,6 +6,7 @@ import { useUiRuntime } from "../runtime";
 import { FOCUS_RING } from "./inputs";
 import { FADE, useEntrance } from "./motion";
 import { useOpenUrl } from "./perfKit";
+import { WithTooltip } from "./iconButton";
 
 const LINK = cn("cursor-pointer rounded-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline", FOCUS_RING);
 
@@ -15,9 +16,9 @@ function FileName({ path }: { path: string }) {
   const label = sourceFileLabel(path);
   if (openFile === null) return <span title={path}>{label}</span>;
   return (
+    <WithTooltip tip={`Open ${path}`}>
     <button
       type="button"
-      title={`Open ${path}`}
       onClick={async () => {
         let opened = false;
         try {
@@ -31,6 +32,7 @@ function FileName({ path }: { path: string }) {
     >
       {label}
     </button>
+    </WithTooltip>
   );
 }
 

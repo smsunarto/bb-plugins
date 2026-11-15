@@ -35,13 +35,16 @@ import {
 import { CardDepthContext, useUiRuntime } from "../runtime";
 import { propsKey, usePersistedState } from "../usePersistedState";
 import { formatNumber, TONE_TEXT, type Props } from "../values";
-import { CodeExcerpt, Disclosure, ReportPathsContext, Segmented, TEXT_BUTTON, useFileOpener, useFileText, useShownPath, useWorkspaceRoot, type MarkTone } from "./codeHealthKit";
+import { CodeExcerpt, Disclosure, ReportPathsContext, Segmented, useFileOpener, useFileText, useShownPath, useWorkspaceRoot, type MarkTone } from "./codeHealthKit";
 import { ErrorLine } from "./display";
 import { CAPTION, FOCUS_RING } from "./inputs";
 import { useImageUrl } from "./media";
 import { CHART_DRAW_MS, FADE, RISE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight, type Entrance } from "./motion";
-import { ICON_BUTTON } from "./projectKit";
 import { useGroupPicture, ViewerGroup } from "./viewer";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { IconButton, WithTooltip } from "./iconButton";
 
 /** Criteria shown before "Show N more", and how many each press adds. */
 const PAGE = 30;
@@ -363,14 +366,11 @@ function EvidenceFile({ item, tone }: { item: Extract<Evidence, { kind: "file" }
     );
   }
   return (
-    <button
-      type="button"
-      title={`Open ${opener.target}`}
-      onClick={() => void opener.open(null)}
-      className={cn("group/file cursor-pointer hover:bg-state-hover", box, FOCUS_RING)}
-    >
-      {content}
-    </button>
+    <WithTooltip tip={`Open ${opener.target}`}>
+      <button type="button" onClick={() => void opener.open(null)} className={cn("group/file cursor-pointer hover:bg-state-hover", box, FOCUS_RING)}>
+        {content}
+      </button>
+    </WithTooltip>
   );
 }
 
@@ -425,7 +425,7 @@ function EvidenceImage({ item, order }: { item: Extract<Evidence, { kind: "image
           {image.status === "ready" ? (
             <img src={image.url} alt={item.label ?? `Evidence: ${name}`} className="block max-h-full max-w-full object-contain" />
           ) : (
-            <span role="status" aria-label={`Loading ${name}`} className="block size-full animate-pulse bg-muted motion-reduce:animate-none" />
+            <Skeleton role="status" aria-label={`Loading ${name}`} className="block size-full rounded-none motion-reduce:animate-none" />
           )}
         </button>
       )}
@@ -519,10 +519,9 @@ function EvidencePanel({ criterion, column, check, onClose, id }: { criterion: C
             </p>
           )}
         </div>
-        <button
-          type="button"
-          title="Copy"
-          aria-label={`Copy: ${criterion.name}${column === null ? "" : ` · ${column}`}`}
+        <IconButton
+          label={`Copy: ${criterion.name}${column === null ? "" : ` · ${column}`}`}
+          tooltip="Copy"
           onClick={() =>
             void run([
               {
@@ -532,14 +531,13 @@ function EvidencePanel({ criterion, column, check, onClose, id }: { criterion: C
               },
             ])
           }
-          className={ICON_BUTTON}
         >
           <Icon name="Copy" className="size-3.5" />
-        </button>
+        </IconButton>
         {onClose === null ? null : (
-          <button type="button" title="Close" aria-label="Close the evidence" onClick={onClose} className={ICON_BUTTON}>
+          <IconButton label="Close the evidence" tooltip="Close" onClick={onClose}>
             <Icon name="X" className="size-3.5" />
-          </button>
+          </IconButton>
         )}
       </div>
       {criterion.detail !== null && column === null && criterion.cells === null ? <p className="m-0 text-xs leading-5 text-muted-foreground">{criterion.detail}</p> : null}
@@ -576,12 +574,12 @@ function hasOwnDetail(criterion: Criterion): boolean {
 /** One compact status cell: the mark on its status's fill, a dot when it carries evidence. */
 function Cell({ criterion, column, check, open, controls, onToggle, wide }: { criterion: Criterion; column: string; check: Check; open: boolean; controls: string; onToggle: () => void; wide: boolean }) {
   return (
+    <WithTooltip tip={`${column}: ${checkLabel(check)}`}>
     <button
       type="button"
       aria-expanded={open}
       aria-controls={open ? controls : undefined}
       aria-label={`${criterion.name} · ${column}: ${checkLabel(check)}${check.evidence.length > 0 ? ", with evidence" : ""}`}
-      title={`${column}: ${checkLabel(check)}`}
       onClick={onToggle}
       className={cn(
         "relative flex min-w-0 cursor-pointer items-center rounded-md text-left transition-[box-shadow,filter] duration-150 hover:brightness-[0.97] dark:hover:brightness-110",
@@ -596,6 +594,7 @@ function Cell({ criterion, column, check, open, controls, onToggle, wide }: { cr
       {wide ? null : <span className="min-w-0 text-xs leading-4 text-foreground [overflow-wrap:anywhere]">{column}</span>}
       {check.evidence.length > 0 ? <span aria-hidden className={cn("absolute right-1 top-1 size-1 rounded-full bg-foreground/45", wide ? "" : "static ml-0.5 shrink-0")} /> : null}
     </button>
+    </WithTooltip>
   );
 }
 
@@ -652,12 +651,12 @@ function MatrixRow({
   const controls = `${drawerId}-w${criterion.index}`;
   return (
     <>
-      <tr ref={rise} className="border-t border-border/60">
-        <th scope="row" className="sticky left-0 z-[1] min-w-[11rem] max-w-[18rem] bg-background py-1.5 pr-3 text-left align-middle font-normal">
+      <TableRow ref={rise} className="border-b-0 border-t border-border">
+        <TableHead scope="row" className="sticky left-0 z-[1] h-auto min-w-[11rem] max-w-[18rem] bg-background py-1.5 pl-0 pr-3 font-normal text-foreground">
           <RowName criterion={criterion} open={rowOpen} onToggle={hasOwnDetail(criterion) ? () => toggle(rowKey) : null} controls={controls} />
-        </th>
+        </TableHead>
         {report.columns.map((column, position) => (
-          <td key={column} className="w-[4.75rem] px-[3px] py-1 align-middle">
+          <TableCell key={column} className="w-[4.75rem] px-[3px] py-1">
             <Cell
               criterion={criterion}
               column={column}
@@ -667,12 +666,12 @@ function MatrixRow({
               onToggle={() => toggle(`${rowKey}:${position}`)}
               wide
             />
-          </td>
+          </TableCell>
         ))}
-      </tr>
+      </TableRow>
       {rowOpen || openColumn !== null ? (
-        <tr>
-          <td colSpan={report.columns.length + 1} className="pb-2 pt-0.5">
+        <TableRow className="border-b-0 hover:bg-transparent">
+          <TableCell colSpan={report.columns.length + 1} className="px-0 pb-2 pt-0.5">
             <div className="sticky left-0 max-w-[min(100%,40rem)]">
               <EvidencePanel
                 id={controls}
@@ -682,8 +681,8 @@ function MatrixRow({
                 onClose={() => toggle(opened!)}
               />
             </div>
-          </td>
-        </tr>
+          </TableCell>
+        </TableRow>
       ) : null}
     </>
   );
@@ -691,26 +690,26 @@ function MatrixRow({
 
 function MatrixTable({ report, criteria, opened, toggle, drawerId }: { report: AcceptanceReport; criteria: readonly Criterion[]; opened: string | null; toggle: (key: string) => void; drawerId: string }) {
   return (
-    <div className="hidden min-w-0 overflow-x-auto @lg:block">
-      <table className="w-full border-collapse text-sm">
-        <thead>
-          <tr>
-            <th scope="col" className="sticky left-0 z-[1] bg-background pb-1.5 pr-3 text-left align-bottom text-xs font-normal text-muted-foreground">
+    <div className="hidden min-w-0 @lg:block">
+      <Table className="border-collapse">
+        <TableHeader className="[&_tr]:border-b-0">
+          <TableRow className="hover:bg-transparent">
+            <TableHead scope="col" className="sticky left-0 z-[1] h-auto bg-background pb-1.5 pl-0 pr-3 align-bottom text-xs font-normal">
               Criterion
-            </th>
+            </TableHead>
             {report.columns.map((column) => (
-              <th key={column} scope="col" className="w-[4.75rem] px-[3px] pb-1.5 text-center align-bottom text-[11.5px] font-medium leading-4 text-foreground [overflow-wrap:anywhere]">
+              <TableHead key={column} scope="col" className="h-auto w-[4.75rem] px-[3px] pb-1.5 text-center align-bottom text-xs leading-4 text-foreground [overflow-wrap:anywhere]">
                 {column}
-              </th>
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {criteria.map((criterion) => (
             <MatrixRow key={criterion.index} report={report} criterion={criterion} opened={opened} toggle={toggle} drawerId={drawerId} />
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }
@@ -917,9 +916,15 @@ export function Acceptance({ props }: { props: Props }) {
           </ul>
         )}
         {rest > 0 ? (
-          <button type="button" onClick={() => setShown((count) => count + PAGE)} className={TEXT_BUTTON}>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            onClick={() => setShown((count) => count + PAGE)}
+            className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+          >
             Show {formatNumber(Math.min(rest, PAGE))} more of {formatNumber(rest)}
-          </button>
+          </Button>
         ) : null}
       </ReportPathsContext>
     </Frame>

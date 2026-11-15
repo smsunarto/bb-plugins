@@ -49,6 +49,7 @@ import {
   type SourceLink,
 } from "./references-model";
 import { ExpandButton, useViewer } from "./viewer";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // ---------------------------------------------------------------------------
 // Shared
@@ -220,7 +221,7 @@ export function Entity({ props }: { props: Props }) {
       >
         {hasPicture ? (
           <>
-            {shown ? null : <div aria-hidden className="absolute inset-0 animate-pulse motion-reduce:animate-none" />}
+            {shown ? null : <Skeleton aria-hidden className="absolute inset-0 rounded-none motion-reduce:animate-none" />}
             {url === null ? null : (
               <img
                 src={url}
@@ -625,11 +626,7 @@ export function Hotspots({ props }: { props: Props }) {
           style={{ width: `min(100%, ${HOTSPOT_MAX_HEIGHT_REM * ratio}rem)`, aspectRatio: String(ratio) }}
         >
           {ready ? null : (
-            <div
-              role="status"
-              aria-label="Loading image"
-              className="absolute inset-0 animate-pulse rounded-lg bg-surface-recessed motion-reduce:animate-none"
-            />
+            <Skeleton role="status" aria-label="Loading image" className="absolute inset-0 rounded-lg motion-reduce:animate-none" />
           )}
           {url === null ? null : (
             <img

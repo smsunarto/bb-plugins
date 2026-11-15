@@ -21,7 +21,7 @@ import {
 } from "../../core/compare";
 import { useUiRuntime } from "../runtime";
 import { propsKey, usePersistedState } from "../usePersistedState";
-import { formatNumber, TONE_PILL, type Props } from "../values";
+import { formatNumber, type Props } from "../values";
 import { useWidth } from "./chartKit";
 import {
   changedRegions,
@@ -34,12 +34,18 @@ import {
   type Region,
 } from "./compare-logic";
 import { ErrorLine } from "./display";
-import { FIELD, FOCUS_RING } from "./inputs";
+import { FOCUS_RING } from "./inputs";
 import { imageSource, useImageUrl } from "./media";
 import { Frame, Heading, Quiet, Segmented, useOpenUrl } from "./perfKit";
-import { ICON_BUTTON } from "./projectKit";
 import { NO_BB_SWIPE, useViewer } from "./viewer";
 import { clampView, FIT_VIEW, panBy, pinchView, placeImage, wheelZoomFactor, zoomAround, type Point, type View } from "./zoomMath";
+import { IconButton } from "./iconButton";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Slider } from "@/components/ui/slider";
+import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Mode = "side" | "wipe" | "overlay" | "difference";
 
@@ -62,12 +68,6 @@ const BLINK_MS = 650;
 const CHANGED_RGB = [255, 0, 80] as const;
 const CHANGED_CSS = `rgb(${CHANGED_RGB.join(" ")})`;
 
-const RANGE = cn(
-  "h-1 w-full min-w-0 cursor-pointer appearance-none rounded-full",
-  "[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-border [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)]",
-  "[&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-border [&::-moz-range-thumb]:bg-background",
-  "focus-visible:outline-none focus-visible:[&::-webkit-slider-thumb]:ring-2 focus-visible:[&::-webkit-slider-thumb]:ring-ring/30",
-);
 
 /** The chip laid over a pane's corner: readable over any image. */
 const PANE_TAG =
@@ -407,18 +407,20 @@ function CandidatePicker({ images, index, onPick }: { images: readonly CompareIm
       {short ? (
         <Segmented label={`Compare ${images[0]!.label} with`} value={String(index)} options={candidates} onChange={(value) => onPick(Number(value))} />
       ) : (
-        <select
-          aria-label={`Compare ${images[0]!.label} with`}
-          value={String(index)}
-          onChange={(event) => onPick(Number(event.currentTarget.value))}
-          className={cn(FIELD, "h-7 w-auto max-w-full px-2 text-xs")}
-        >
-          {candidates.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <Select value={String(index)} onValueChange={(value) => onPick(Number(value))}>
+          <SelectTrigger aria-label={`Compare ${images[0]!.label} with`} className="h-7 w-auto max-w-full gap-1.5 px-2 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {candidates.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       )}
     </div>
   );
@@ -441,7 +443,9 @@ function Identity({ role, image, size, differing }: { role: string; image: Compa
   return (
     <div className="flex min-w-0 flex-col gap-1 rounded-lg bg-surface-recessed/60 px-2.5 py-1.5">
       <div className="flex min-w-0 items-center gap-1.5">
-        <span className={cn("shrink-0 rounded-full px-1.5 text-[11px] font-medium leading-[18px]", TONE_PILL.neutral)}>{role}</span>
+        <Badge variant="secondary" className="px-1.5 py-0 font-medium">
+          {role}
+        </Badge>
         {showLabel ? (
           <span className="min-w-0 truncate text-[13px] font-medium leading-5 text-foreground" title={image.label}>
             {image.label}
@@ -451,9 +455,9 @@ function Identity({ role, image, size, differing }: { role: string; image: Compa
           {size === null ? "…" : size === "failed" ? "not loaded" : `${size.width}×${size.height}`}
         </span>
         {open === null ? null : (
-          <button type="button" aria-label={`Open ${image.label}`} title={`Open ${image.src}`} onClick={() => void open()} className={cn(ICON_BUTTON, "size-5")}>
+          <IconButton label={`Open ${image.label}`} tooltip={`Open ${image.src}`} onClick={() => void open()} className="size-5">
             <Icon name={source.kind === "url" ? "ExternalLink" : "FileText"} aria-hidden className="size-3" />
-          </button>
+          </IconButton>
         )}
       </div>
       {image.meta.length === 0 ? null : (
@@ -461,13 +465,14 @@ function Identity({ role, image, size, differing }: { role: string; image: Compa
           {image.meta.map(([metaName, value]) => {
             const differs = differing.has(metaKey(metaName));
             return (
-              <span
+              <Badge
                 key={metaName}
+                variant={differs ? "warning" : "outline"}
                 title={differs ? `${metaName} differs between the two` : undefined}
-                className={cn("max-w-full truncate rounded px-1.5 text-[11px] leading-[18px]", differs ? TONE_PILL.warn : "bg-background text-muted-foreground")}
+                className="block max-w-full truncate px-1.5 py-0 font-normal"
               >
                 <span className="opacity-75">{metaName}</span> {value}
-              </span>
+              </Badge>
             );
           })}
         </div>
@@ -679,7 +684,7 @@ function Stage(props: StageProps) {
 
   const paneState = (decoded: Decoded, label: string): ReactNode =>
     decoded.status === "loading" ? (
-      <div role="status" aria-label={`Loading ${label}`} className="absolute inset-0 animate-pulse bg-muted/40 motion-reduce:animate-none" />
+      <Skeleton role="status" aria-label={`Loading ${label}`} className="absolute inset-0 rounded-none motion-reduce:animate-none" />
     ) : decoded.status === "failed" ? (
       <p className="absolute inset-0 m-0 flex items-center justify-center p-4">
         <span className="rounded-md bg-background/90 px-2 py-1 text-center text-xs leading-5 text-destructive shadow-[0_1px_2px_rgb(0_0_0/0.12)]">Couldn't load {label}</span>
@@ -840,28 +845,25 @@ function Stage(props: StageProps) {
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
         <Segmented label="View" value={mode} options={MODES} onChange={props.onMode} />
         <div role="group" aria-label="Zoom" className="flex items-center gap-0.5">
-          <button type="button" aria-label="Zoom out" title="Zoom out (−)" disabled={!zoomed} onClick={() => zoomBy(1 / ZOOM_STEP)} className={ICON_BUTTON}>
+          <IconButton label="Zoom out" tooltip="Zoom out (−)" disabled={!zoomed} onClick={() => zoomBy(1 / ZOOM_STEP)}>
             <Icon name="ZoomOut" aria-hidden className="size-3.5" />
-          </button>
+          </IconButton>
           <span className="w-11 text-center text-xs leading-5 tabular-nums text-muted-foreground" aria-label={`Zoom ${percent}% of actual pixels`}>
             {percent}%
           </span>
-          <button type="button" aria-label="Zoom in" title="Zoom in (+)" disabled={shown.zoom >= 31.99} onClick={() => zoomBy(ZOOM_STEP)} className={ICON_BUTTON}>
+          <IconButton label="Zoom in" tooltip="Zoom in (+)" disabled={shown.zoom >= 31.99} onClick={() => zoomBy(ZOOM_STEP)}>
             <Icon name="ZoomIn" aria-hidden className="size-3.5" />
-          </button>
-          <button type="button" aria-label="Fit" title="Fit (0)" disabled={!zoomed} onClick={() => setView(FIT_VIEW)} className={ICON_BUTTON}>
+          </IconButton>
+          <IconButton label="Fit" tooltip="Fit (0)" disabled={!zoomed} onClick={() => setView(FIT_VIEW)}>
             <Icon name="RotateCcw" aria-hidden className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Open full screen"
-            title="Open full screen"
+          </IconButton>
+          <IconButton
+            label="Open full screen"
             disabled={referenceImage.status !== "ready" && candidateImage.status !== "ready"}
             onClick={(event) => open(0, event.currentTarget)}
-            className={ICON_BUTTON}
           >
             <Icon name="Maximize2" aria-hidden className="size-3.5" />
-          </button>
+          </IconButton>
         </div>
       </div>
       <div ref={frame} className="min-w-0">
@@ -936,33 +938,32 @@ function ModeControls(props: StageProps & { pane: Size; image: Size }) {
   if (mode === "overlay") {
     return (
       <div className="flex min-h-7 min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-        <label className="flex min-w-[12rem] flex-1 items-center gap-2 text-xs leading-5 text-muted-foreground">
+        <div className="flex min-w-[12rem] flex-1 items-center gap-2 text-xs font-normal leading-5 text-muted-foreground">
           <span className="shrink-0">Opacity of {candidate.label}</span>
-          <input
-            type="range"
+          <Slider
             min={0}
             max={100}
             step={1}
-            value={props.opacity}
+            value={[props.opacity]}
             disabled={props.blinking}
-            onChange={(event) => props.setOpacity(Number(event.currentTarget.value))}
-            className={cn(RANGE, "disabled:opacity-50")}
-            style={{ background: `linear-gradient(to right, var(--primary) ${props.opacity}%, var(--muted) ${props.opacity}%)` }}
+            thumbLabel={`Opacity of ${candidate.label}`}
+            thumbValueText={`${props.opacity}%`}
+            onValueChange={([next]) => {
+              if (next !== undefined) props.setOpacity(next);
+            }}
+            className="min-w-0 flex-1"
           />
           <span className="w-9 shrink-0 text-right tabular-nums text-foreground">{props.opacity}%</span>
-        </label>
-        <button
-          type="button"
-          aria-pressed={props.blinking}
-          onClick={() => props.setBlinking((on) => !on)}
-          className={cn(
-            "h-7 shrink-0 cursor-pointer rounded-md border border-border px-2.5 text-xs transition-colors duration-150",
-            FOCUS_RING,
-            props.blinking ? "bg-foreground text-background" : "bg-background text-foreground hover:bg-state-hover",
-          )}
+        </div>
+        <Toggle
+          variant="outline"
+          size="sm"
+          pressed={props.blinking}
+          onPressedChange={props.setBlinking}
+          className="h-7 shrink-0 px-2.5 text-xs font-normal"
         >
           Blink
-        </button>
+        </Toggle>
       </div>
     );
   }
@@ -970,22 +971,23 @@ function ModeControls(props: StageProps & { pane: Size; image: Size }) {
     const ready = diff.status === "ready" ? diff : null;
     return (
       <div className="flex min-w-0 flex-col gap-1.5">
-        <label className="flex min-h-7 min-w-0 items-center gap-2 text-xs leading-5 text-muted-foreground">
+        <div className="flex min-h-7 min-w-0 items-center gap-2 text-xs font-normal leading-5 text-muted-foreground">
           <span className="shrink-0">Tolerance</span>
-          <input
-            type="range"
+          <Slider
             min={0}
             max={MAX_TOLERANCE}
             step={1}
-            value={props.tolerance}
-            aria-valuetext={`plus or minus ${props.tolerance} of 255 per channel`}
-            onChange={(event) => props.setTolerance(Number(event.currentTarget.value))}
-            className={cn(RANGE, "max-w-64")}
-            style={{ background: `linear-gradient(to right, var(--primary) ${(props.tolerance / MAX_TOLERANCE) * 100}%, var(--muted) ${(props.tolerance / MAX_TOLERANCE) * 100}%)` }}
+            value={[props.tolerance]}
+            thumbLabel="Tolerance"
+            thumbValueText={`plus or minus ${props.tolerance} of 255 per channel`}
+            onValueChange={([next]) => {
+              if (next !== undefined) props.setTolerance(next);
+            }}
+            className="min-w-0 max-w-64 flex-1"
           />
           <span className="shrink-0 tabular-nums text-foreground">±{props.tolerance}</span>
           <span className="hidden shrink-0 @md:inline">of 255 per channel</span>
-        </label>
+        </div>
         <div className="flex h-6 min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
           {ready === null ? (
             <span className="text-xs leading-5 text-muted-foreground">{diff.status === "failed" ? `No difference: ${diff.error}` : "Finding changed regions…"}</span>
@@ -994,25 +996,29 @@ function ModeControls(props: StageProps & { pane: Size; image: Size }) {
           ) : (
             <>
               <span className="shrink-0 text-xs leading-5 text-muted-foreground">Regions</span>
-              {ready.regions.map((region, position) => (
-                <button
-                  key={`${region.x},${region.y}`}
-                  type="button"
-                  aria-pressed={props.selected === position}
-                  aria-label={`Zoom to changed region ${position + 1}: ${Math.round(region.width)} by ${Math.round(region.height)} pixels at ${Math.round(region.x)}, ${Math.round(region.y)}`}
-                  onClick={() => {
-                    props.setSelected(position);
-                    props.setView(viewOfRegion(region, props.pane, props.image));
-                  }}
-                  className={cn(
-                    "h-6 shrink-0 cursor-pointer whitespace-nowrap rounded-md px-1.5 text-[11px] tabular-nums transition-colors duration-150",
-                    FOCUS_RING,
-                    props.selected === position ? "bg-foreground text-background" : "bg-surface-recessed text-foreground hover:bg-state-hover",
-                  )}
-                >
-                  <span className="font-semibold">{position + 1}</span> · {Math.round(region.width)}×{Math.round(region.height)}
-                </button>
-              ))}
+              <ToggleGroup
+                type="single"
+                aria-label="Changed regions"
+                value={props.selected === null ? "" : String(props.selected)}
+                // Each press zooms to its region (onClick), the chosen one again included; the group only shows which.
+                onValueChange={() => {}}
+                className="shrink-0 justify-start gap-1.5"
+              >
+                {ready.regions.map((region, position) => (
+                  <ToggleGroupItem
+                    key={`${region.x},${region.y}`}
+                    value={String(position)}
+                    aria-label={`Zoom to changed region ${position + 1}: ${Math.round(region.width)} by ${Math.round(region.height)} pixels at ${Math.round(region.x)}, ${Math.round(region.y)}`}
+                    onClick={() => {
+                      props.setSelected(position);
+                      props.setView(viewOfRegion(region, props.pane, props.image));
+                    }}
+                    className="h-6 min-w-0 shrink-0 whitespace-nowrap px-1.5 text-[11px] font-normal tabular-nums"
+                  >
+                    <span className="font-semibold">{position + 1}</span> · {Math.round(region.width)}×{Math.round(region.height)}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
               {ready.more > 0 ? <span className="shrink-0 text-[11px] text-muted-foreground">+{ready.more} smaller</span> : null}
             </>
           )}

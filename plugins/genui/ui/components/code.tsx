@@ -21,6 +21,10 @@ import { ErrorLine } from "./display";
 import { parseDetails } from "./explain-logic";
 import { sketchMermaid } from "./sketch";
 import { usePanZoom } from "./viewer";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
+import { IconButton } from "./iconButton";
 
 /** Language names models write → the file extension BB detects languages by. */
 const EXTENSIONS: Readonly<Record<string, string>> = {
@@ -43,9 +47,6 @@ const EXTENSIONS: Readonly<Record<string, string>> = {
   text: "txt",
   plaintext: "txt",
 };
-
-const ICON_BUTTON =
-  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
 /**
  * A bordered code surface with a quiet caption bar. With `lines` (Code and
@@ -71,15 +72,9 @@ function CodeFrame({ caption, actions, lines, children }: { caption: ReactNode; 
 function CopyButton({ code }: { code: string }) {
   const { run } = useUiRuntime();
   return (
-    <button
-      type="button"
-      title="Copy code"
-      aria-label="Copy code"
-      onClick={() => run([{ kind: "action", type: "copy", text: code }])}
-      className={ICON_BUTTON}
-    >
+    <IconButton label="Copy code" onClick={() => run([{ kind: "action", type: "copy", text: code }])}>
       <Icon name="Copy" className="size-3.5" />
-    </button>
+    </IconButton>
   );
 }
 
@@ -180,7 +175,7 @@ export function Snippet({ props }: { props: PropsOf<"Snippet"> }) {
       body = (
         <div role="status" aria-label={`Loading ${label}`} className="flex flex-col gap-2 px-3 py-3">
           {["w-3/5", "w-4/5", "w-2/5", "w-1/2"].map((width) => (
-            <div key={width} className={`h-3 animate-pulse rounded-sm bg-muted motion-reduce:animate-none ${width}`} />
+            <Skeleton key={width} className={cn("h-3 rounded-sm motion-reduce:animate-none", width)} />
           ))}
         </div>
       );
@@ -207,17 +202,14 @@ export function Snippet({ props }: { props: PropsOf<"Snippet"> }) {
       actions={
         <span className="flex shrink-0 items-center gap-0.5">
           {openFile === null ? null : (
-            <button
-              type="button"
-              title={`Open ${path}`}
-              aria-label={`Open ${path}`}
+            <IconButton
+              label={`Open ${path}`}
               onClick={async () => {
                 if (!(await openFile(path, from))) toast.error(`Couldn't open ${path}`);
               }}
-              className={ICON_BUTTON}
             >
               <Icon name="FileText" className="size-3.5" />
-            </button>
+            </IconButton>
           )}
           {shown.status === "ready" ? <CopyButton code={shown.code} /> : null}
         </span>
@@ -456,17 +448,19 @@ export function Diagram({ props }: { props: Props }) {
           className="genui-drawing min-w-0 text-sm"
         />
       ) : (
-        <div role="status" aria-label="Drawing diagram" className="h-40 animate-pulse rounded-lg bg-surface-recessed" />
+        <Skeleton role="status" aria-label="Drawing diagram" className="h-40 rounded-lg" />
       )}
       {zoom.zoomed ? (
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="sm"
           onClick={zoom.reset}
-          className="absolute left-0 top-0 inline-flex h-7 cursor-pointer items-center gap-1 rounded-md bg-surface-scrim/90 px-2 text-xs text-muted-foreground backdrop-blur-sm transition-colors duration-150 hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="absolute left-0 top-0 h-7 gap-1 px-2 font-normal [&_[data-icon-root]]:size-3.5"
         >
-          <Icon name="RotateCcw" aria-hidden className="size-3.5" />
+          <Icon name="RotateCcw" aria-hidden />
           Reset zoom
-        </button>
+        </Button>
       ) : null}
     </div>
   );

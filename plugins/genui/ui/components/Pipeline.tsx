@@ -29,7 +29,10 @@ import { formatNumber, TONE_DOT, TONE_TEXT, type Props, type Tone } from "../val
 import { ErrorLine } from "./display";
 import { Button, ButtonGroup, FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, FADE, RISE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight, type Entrance } from "./motion";
-import { EXACT_TIME, ICON_BUTTON } from "./projectKit";
+import { EXACT_TIME } from "./projectKit";
+import { Button as BaseButton, buttonVariants } from "@/components/ui/button";
+import { IconButton, WithTooltip } from "./iconButton";
+import { Badge } from "@/components/ui/badge";
 
 /** Jobs a stage or group lists before "N more". */
 const JOB_PAGE = 12;
@@ -61,27 +64,18 @@ const BAR_FILL: Record<PipelineStatus, string> = {
   skipped: "bg-muted-foreground/25",
 };
 
-const TEXT_BUTTON = cn(
-  "w-fit shrink-0 cursor-pointer rounded-sm text-xs leading-5 text-muted-foreground transition-colors duration-150 hover:text-foreground",
-  FOCUS_RING,
-);
-
 // ---------------------------------------------------------------------------
 // Marks
 
-/** The state as GitHub draws it: a check, a cross, a turning arc, rings for the rest. */
+/** The state as GitHub draws it: a check, a cross, BB's spinner, rings for the rest. */
 function StatusMark({ status, className }: { status: PipelineStatus; className?: string }) {
   const base = cn("size-3.5 shrink-0", className);
   if (status === "success") return <Icon name="CircleCheck" aria-hidden className={cn(base, "text-success")} />;
   if (status === "failure") return <Icon name="CircleX" aria-hidden className={cn(base, "text-destructive")} />;
+  if (status === "in_progress") return <Icon name="Spinner" aria-hidden className={cn(base, "animate-spin text-warning motion-reduce:animate-none")} />;
   return (
-    <svg viewBox="0 0 16 16" aria-hidden className={cn(base, status === "in_progress" ? "text-warning" : "text-muted-foreground")}>
-      {status === "in_progress" ? (
-        <>
-          <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="1.75" />
-          <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" className="origin-center animate-spin motion-reduce:animate-none" />
-        </>
-      ) : status === "queued" ? (
+    <svg viewBox="0 0 16 16" aria-hidden className={cn(base, "text-muted-foreground")}>
+      {status === "queued" ? (
         <>
           <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="1.5" />
           <circle cx="8" cy="8" r="1.75" fill="currentColor" />
@@ -119,15 +113,24 @@ function Chevron({ open }: { open: boolean }) {
 
 function DetailChip({ detail }: { detail: string | null }) {
   if (detail === null) return null;
-  return <span className="shrink-0 rounded-full bg-muted px-1.5 text-[10.5px] font-medium leading-4 text-muted-foreground">{detail}</span>;
+  return (
+    <Badge variant="secondary" className="px-1.5 py-0 font-medium">
+      {detail}
+    </Badge>
+  );
 }
 
 /** An icon that opens `url` in a new tab: a job's or a run's page on the CI. */
 function OutLink({ url, label }: { url: string; label: string }) {
   return (
-    <UrlLink href={url} title={label} aria-label={label} className={cn(ICON_BUTTON, "no-underline")}>
-      <Icon name="ExternalLink" aria-hidden className="size-3.5" />
-    </UrlLink>
+    // UrlLink takes no ref, so the tooltip anchors on a wrapper; focus inside it still opens the tooltip.
+    <WithTooltip tip={label}>
+      <span className="inline-flex shrink-0">
+        <UrlLink href={url} aria-label={label} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "size-6 text-muted-foreground no-underline")}>
+          <Icon name="ExternalLink" aria-hidden className="size-3.5" />
+        </UrlLink>
+      </span>
+    </WithTooltip>
   );
 }
 
@@ -209,9 +212,15 @@ function JobDetail({ job }: { job: PipelineJob }) {
         </ol>
       )}
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + STEP_PAGE)} className={cn(TEXT_BUTTON, "pl-[34px]")}>
+        <BaseButton
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + STEP_PAGE)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground pl-[34px]"
+        >
           Show {formatNumber(rest)} more {rest === 1 ? "step" : "steps"}
-        </button>
+        </BaseButton>
       ) : null}
       {job.url === null ? null : (
         <UrlLink
@@ -321,9 +330,15 @@ function JobList({ jobs, stage, cut, span, opened, inline }: { jobs: readonly Pi
         ))}
       </ul>
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + JOB_PAGE * 4)} className={cn(TEXT_BUTTON, "pl-5")}>
+        <BaseButton
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + JOB_PAGE * 4)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground pl-5"
+        >
           Show {formatNumber(rest)} more {rest === 1 ? "job" : "jobs"}
-        </button>
+        </BaseButton>
       ) : null}
     </>
   );
@@ -399,9 +414,9 @@ function Stages({ run, opened }: { run: PipelineRun; opened: Opened }) {
                 <StatusMark status={job.status} />
                 <span className="min-w-0 flex-1 truncate">{job.name}</span>
                 {job.ms === null ? null : <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">{jobTime(job)}</span>}
-                <button type="button" aria-label={`Close ${job.name}`} title="Close" onClick={() => opened.toggle(id)} className={ICON_BUTTON}>
+                <IconButton label={`Close ${job.name}`} tooltip="Close" onClick={() => opened.toggle(id)}>
                   <Icon name="X" aria-hidden className="size-3.5" />
-                </button>
+                </IconButton>
               </div>
               <JobDetail job={job} />
             </section>

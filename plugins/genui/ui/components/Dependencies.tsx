@@ -25,20 +25,17 @@ import {
 } from "../../core/dependencies";
 import type { Action } from "../../core/types";
 import { CardDepthContext, NodeKeyContext } from "../runtime";
-import { formatNumber, TONE_DOT, TONE_PILL, TONE_TEXT, type Props, type Tone } from "../values";
+import { formatNumber, TONE_BADGE, TONE_DOT, TONE_TEXT, type Props, type Tone } from "../values";
 import { ErrorLine } from "./display";
 import { Button, ButtonGroup, FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, FADE, RISE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight, type Entrance } from "./motion";
+import { Button as BaseButton } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 /** Rows a group or the vulnerable list shows before "N more". */
 const ROW_PAGE = 15;
 
 const GROW_X: Entrance = { keyframes: [{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], duration: CHART_DRAW_MS };
-
-const TEXT_BUTTON = cn(
-  "w-fit shrink-0 cursor-pointer rounded-sm text-xs leading-5 text-muted-foreground transition-colors duration-150 hover:text-foreground",
-  FOCUS_RING,
-);
 
 /** As npm-check-updates colours them: major red, minor blue, patch green. */
 const GROUP_TONE: Record<OutdatedGroupKey, Tone> = {
@@ -100,22 +97,20 @@ function Chevron({ open }: { open: boolean }) {
 
 function Chip({ children, tone = "neutral", title }: { children: ReactNode; tone?: Tone; title?: string }) {
   return (
-    <span title={title} className={cn("shrink-0 rounded-full px-1.5 text-[10.5px] font-medium leading-4", TONE_PILL[tone])}>
+    <Badge variant={TONE_BADGE[tone]} title={title} className="px-1.5 py-0 font-medium">
       {children}
-    </span>
+    </Badge>
   );
 }
 
 function SeverityPill({ severity }: { severity: Severity }) {
   return (
-    <span
-      className={cn(
-        "inline-flex w-[68px] shrink-0 justify-center rounded-full px-1.5 text-[10.5px] font-semibold uppercase leading-4 tracking-[0.03em]",
-        severity === "critical" ? "bg-destructive text-destructive-foreground" : TONE_PILL[SEVERITY_TONE[severity]],
-      )}
+    <Badge
+      variant={severity === "critical" ? "destructive" : TONE_BADGE[SEVERITY_TONE[severity]]}
+      className="w-[68px] justify-center px-1.5 py-0 uppercase tracking-[0.03em]"
     >
       {severity}
-    </span>
+    </Badge>
   );
 }
 
@@ -175,9 +170,15 @@ function Strip({ label, parts }: { label: string; parts: readonly { key: string;
 
 function MoreButton({ rest, noun, onClick }: { rest: number; noun: string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className={cn(TEXT_BUTTON, "pl-[22px]")}>
+    <BaseButton
+      type="button"
+      variant="link"
+      size="sm"
+      onClick={onClick}
+      className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground pl-[22px]"
+    >
       Show {formatNumber(rest)} more {noun}
-    </button>
+    </BaseButton>
   );
 }
 

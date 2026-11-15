@@ -11,6 +11,7 @@ import { LiveUi, RenderFailure, type AnswerTarget } from "./LiveUi";
 import { useVideoLoader, useAssetLoader, useAudioLoader, useImageLoader, useLoadedData, useTextLoader } from "./useLoadedData";
 import { useReplyIndex, useSuperseded } from "./useSuperseded";
 import { useMotionScope } from "./components/motion";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export type FenceLanguage = "ui" | "app";
 
@@ -169,12 +170,7 @@ function UiFence({
     return complete ? (
       <RenderFailure source={code} diagnostics={result.diagnostics} />
     ) : (
-      <div
-        {...motion}
-        role="status"
-        aria-label="Building UI"
-        className="not-prose my-3 h-20 animate-pulse rounded-xl bg-surface-recessed"
-      />
+      <Skeleton {...motion} role="status" aria-label="Building UI" className="not-prose my-3 h-20 rounded-xl" />
     );
   }
   return (

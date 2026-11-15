@@ -5,6 +5,7 @@ import { useUiRuntime } from "../runtime";
 import { optionalText, text, type Props } from "../values";
 import { ErrorLine } from "./display";
 import { useHeightHold, useImageUrl } from "./media";
+import { Button } from "@/components/ui/button";
 
 type Playback =
   | { status: "loading" }
@@ -136,15 +137,11 @@ function VideoFile({
 
   if (playback.status === "failed")
     return (
-      <div className="space-y-2">
+      <div className="flex flex-col items-start gap-2">
         <ErrorLine message={`Couldn't show ${src}: ${playback.error}`} />
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-md border border-border px-3 py-1 text-sm hover:bg-muted focus-visible:outline focus-visible:outline-ring"
-        >
+        <Button type="button" variant="outline" size="sm" onClick={onRetry}>
           Retry video
-        </button>
+        </Button>
       </div>
     );
 

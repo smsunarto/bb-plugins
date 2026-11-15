@@ -35,14 +35,13 @@ import {
 } from "../../core/project";
 import type { rpcContract } from "../../server";
 import { useUiRuntime } from "../runtime";
-import { TONE_DOT, TONE_PILL, type Props, type Tone } from "../values";
+import { TONE_BADGE, TONE_DOT, type Props, type Tone } from "../values";
 import { ErrorLine } from "./display";
 import { FOCUS_RING } from "./inputs";
 import {
   EXACT_TIME,
   FailureLine,
   Freshness,
-  ICON_BUTTON,
   LoadingRows,
   NeedsThread,
   Panel,
@@ -52,6 +51,9 @@ import {
   useVisible,
   type Query,
 } from "./projectKit";
+import { IconButton } from "./iconButton";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export const STATE_TONE: Record<PullRequestState, Tone> = { open: "good", draft: "neutral", merged: "info", closed: "bad" };
 // A pull request's state wears Source Control's colours (its PR_LOOK and state icons), so a
@@ -69,12 +71,12 @@ const STATE_DOT: Record<PullRequestState, string> = {
   merged: "bg-[var(--pr-merged,var(--color-timeline-accent,var(--primary)))]",
   closed: "bg-destructive",
 };
-const STATE_PILL: Record<PullRequestState, string> = {
-  open: "bg-[color-mix(in_oklab,var(--success)_14%,transparent)] text-success",
-  draft: "bg-surface-raised text-muted-foreground",
-  merged: "bg-[color-mix(in_oklab,var(--pr-merged,var(--color-timeline-accent,var(--primary)))_14%,transparent)] text-[var(--pr-merged,var(--color-timeline-accent,var(--primary)))]",
-  closed: "bg-[color-mix(in_oklab,var(--destructive)_14%,transparent)] text-destructive",
-};
+const STATE_BADGE = {
+  open: "success",
+  draft: "secondary",
+  merged: "info",
+  closed: "danger",
+} as const satisfies Record<PullRequestState, "success" | "secondary" | "info" | "danger">;
 export const STATE_ICON: Record<PullRequestState, string> = {
   open: "GitPullRequest",
   draft: "GitPullRequestDraft",
@@ -178,9 +180,9 @@ function PullRequestHeader({ pr, children }: { pr: PullRequestInfo | null; child
         <span className="font-medium text-foreground">Pull request</span>
       </span>
       {pr === null ? null : (
-        <span className={cn("rounded-full px-2 py-px text-[11px] font-medium leading-4", STATE_PILL[pr.state])}>
+        <Badge variant={STATE_BADGE[pr.state]} className="py-px font-medium">
           {PR_STATE_LABEL[pr.state]}
-        </span>
+        </Badge>
       )}
       {children}
     </>
@@ -293,16 +295,9 @@ function PullRequestList({ threadId, refs }: { threadId: string; refs: readonly 
               <span className="font-medium text-foreground">Pull requests</span>
               <span className="tabular-nums">{refs.length}</span>
             </span>
-            <button
-              type="button"
-              aria-label="Refresh"
-              title="Refresh"
-              disabled={refreshing > 0}
-              onClick={() => setRefreshes((count) => count + 1)}
-              className={cn(ICON_BUTTON, "ml-auto")}
-            >
+            <IconButton label="Refresh" disabled={refreshing > 0} onClick={() => setRefreshes((count) => count + 1)} className="ml-auto">
               <Icon name="RotateCcw" aria-hidden className={cn("size-3.5", refreshing > 0 && "animate-spin motion-reduce:animate-none")} />
-            </button>
+            </IconButton>
           </>
         }
       >
@@ -393,12 +388,12 @@ function PullRequestRowItem({ prRef, read }: { prRef: PullRequestRef; read: Pull
     return (
       <li className="flex min-w-0 flex-col gap-1 border-t border-border/60 px-3 py-2 first:border-t-0" aria-busy="true">
         <span className="flex h-5 min-w-0 items-center gap-2">
-          <span className={cn("size-3.5 shrink-0", BAR)} />
+          <Skeleton className={cn("size-3.5 shrink-0", BAR)} />
           <span className="min-w-0 truncate text-[13px]">{name}</span>
-          <span className={cn("h-3 w-2/5", BAR)} />
+          <Skeleton className={cn("h-3 w-2/5", BAR)} />
         </span>
         <span className="flex h-5 items-center pl-[22px]">
-          <span className={cn("h-3 w-1/2", BAR)} />
+          <Skeleton className={cn("h-3 w-1/2", BAR)} />
         </span>
       </li>
     );
@@ -430,11 +425,15 @@ function PullRequestRowItem({ prRef, read }: { prRef: PullRequestRef; read: Pull
         </UrlLink>
       </span>
       <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 pl-[22px] text-[11.5px] leading-5 text-muted-foreground">
-        <span className={cn(CHIP, STATE_PILL[pr.state])}>{PR_STATE_LABEL[pr.state]}</span>
+        <Badge variant={STATE_BADGE[pr.state]} className={CHIP}>
+          {PR_STATE_LABEL[pr.state]}
+        </Badge>
         {final ? null : <ChecksChip checks={pr.checks} />}
         <RowFact tone={REVIEW_TONE[pr.review.state]} label={REVIEW_LABEL[pr.review.state]} detail="" />
         {final ? null : attention !== null ? (
-          <span className={cn("rounded-sm px-1.5 text-[11px] font-medium leading-4", TONE_PILL[ATTENTION_TONE[pr.attention]])}>{attention}</span>
+          <Badge variant={TONE_BADGE[ATTENTION_TONE[pr.attention]]} className="px-1.5 py-0 font-medium">
+            {attention}
+          </Badge>
         ) : (
           <RowFact tone={MERGE_TONE[pr.mergeability]} label={MERGEABILITY_LABEL[pr.mergeability]} detail={pr.inMergeQueue ? "in merge queue" : ""} />
         )}
@@ -445,23 +444,28 @@ function PullRequestRowItem({ prRef, read }: { prRef: PullRequestRef; read: Pull
 
 // Source Control's chip (workspace-lane.tsx CHIP and ChecksChip), so a pull request's
 // checks read the same in both plugins: failing, running, or passed, on open ones only.
-const CHIP = "inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-1.5 text-[11px] leading-none font-medium whitespace-nowrap";
+const CHIP = "h-5 gap-1 px-1.5 py-0 leading-none font-medium";
 
 function ChecksChip({ checks }: { checks: PullRequestInfo["checks"] }) {
-  if (checks.failed > 0) return <span className={cn(CHIP, "bg-[color-mix(in_oklab,var(--destructive)_14%,transparent)] text-destructive")}>{checks.failed} Failing</span>;
+  if (checks.failed > 0)
+    return (
+      <Badge variant="danger" className={CHIP}>
+        {checks.failed} Failing
+      </Badge>
+    );
   if (checks.pending > 0)
     return (
-      <span className={cn(CHIP, "bg-[color-mix(in_oklab,var(--warning)_14%,transparent)] text-warning")}>
+      <Badge variant="warning" className={CHIP}>
         <span aria-hidden className="size-1.5 rounded-full bg-current" />
         {checks.pending} Running
-      </span>
+      </Badge>
     );
   if (checks.passed > 0)
     return (
-      <span className={cn(CHIP, STATE_PILL.open)}>
+      <Badge variant="success" className={CHIP}>
         <Icon name="Check" aria-hidden className="size-3" />
         Passed
-      </span>
+      </Badge>
     );
   return null;
 }
@@ -511,11 +515,11 @@ function PullRequestBody({ pr, now }: { pr: PullRequestInfo; now: number }) {
         </span>
       </div>
       {attention === null ? null : (
-        <div className={cn("flex w-fit max-w-full items-center gap-2 rounded-md px-2.5 py-1 text-xs font-medium leading-5", TONE_PILL[ATTENTION_TONE[pr.attention]])}>
+        <Badge variant={TONE_BADGE[ATTENTION_TONE[pr.attention]]} className="w-fit max-w-full gap-2 whitespace-normal px-2.5 py-1 text-xs font-medium leading-5">
           <span className="sr-only">Needs: </span>
           {attention}
           {pr.autoMerge ? <span className="font-normal opacity-80">· auto-merge on</span> : null}
-        </div>
+        </Badge>
       )}
       <dl className="m-0 grid min-w-0 grid-cols-1 gap-x-6 gap-y-2 text-xs min-[420px]:grid-cols-3">
         <Fact label="Checks" tone={CHECKS_TONE[pr.checks.state]} value={CHECKS_VALUE[pr.checks.state]} detail={counts} pulse={pr.checks.state === "pending"} />
@@ -536,7 +540,7 @@ function PullRequestBody({ pr, now }: { pr: PullRequestInfo; now: number }) {
   );
 }
 
-const BAR = "animate-pulse rounded-sm bg-muted motion-reduce:animate-none";
+const BAR = "rounded-sm motion-reduce:animate-none";
 
 /**
  * The body's layout while BB answers, so the panel opens at about its final
@@ -548,21 +552,21 @@ function PullRequestSkeleton() {
     <div role="status" aria-label="Loading the pull request" className="flex min-w-0 flex-col gap-3 px-3 py-3">
       <div className="flex min-w-0 flex-col gap-1">
         <div className="flex h-12 flex-col justify-center gap-3 min-[420px]:h-6">
-          <div className={cn("h-3.5 w-11/12", BAR)} />
-          <div className={cn("h-3.5 w-1/2 min-[420px]:hidden", BAR)} />
+          <Skeleton className={cn("h-3.5 w-11/12", BAR)} />
+          <Skeleton className={cn("h-3.5 w-1/2 min-[420px]:hidden", BAR)} />
         </div>
         <div className="flex h-5 items-center">
-          <div className={cn("h-3 w-1/2", BAR)} />
+          <Skeleton className={cn("h-3 w-1/2", BAR)} />
         </div>
       </div>
       <div className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-2 min-[420px]:grid-cols-3">
         {[0, 1, 2].map((index) => (
           <div key={index} className="flex min-w-0 flex-col gap-0.5">
             <div className="flex h-4 items-center">
-              <div className={cn("h-2.5 w-12", BAR)} />
+              <Skeleton className={cn("h-2.5 w-12", BAR)} />
             </div>
             <div className="flex h-5 items-center">
-              <div className={cn("h-3 w-20", BAR)} />
+              <Skeleton className={cn("h-3 w-20", BAR)} />
             </div>
           </div>
         ))}

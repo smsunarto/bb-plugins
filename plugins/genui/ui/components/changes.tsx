@@ -25,7 +25,7 @@ import {
 } from "../../core/project";
 import type { rpcContract } from "../../server";
 import { useUiRuntime } from "../runtime";
-import { formatNumber, TONE_PILL, type Props, type Tone } from "../values";
+import { formatNumber, TONE_BADGE, type Props, type Tone } from "../values";
 import { ErrorLine } from "./display";
 import { FOCUS_RING } from "./inputs";
 import { RISE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight } from "./motion";
@@ -33,7 +33,6 @@ import { ratioBlocks } from "./project-logic";
 import {
   FailureLine,
   Freshness,
-  ICON_BUTTON,
   LoadingRows,
   NeedsThread,
   Panel,
@@ -42,6 +41,8 @@ import {
   useNow,
   useProjectQuery,
 } from "./projectKit";
+import { Badge } from "@/components/ui/badge";
+import { IconButton } from "./iconButton";
 
 /** Files listed before "Show all"; a list only a few longer shows whole. */
 const COLLAPSED_FILES = 12;
@@ -293,16 +294,10 @@ function FileList({ threadId, target, view }: { threadId: string; target: Change
 function KindMark({ file }: { file: ChangedFile }) {
   const label = `${CHANGE_LABEL[file.kind]}${file.untracked ? ", untracked" : ""}`;
   return (
-    <span
-      title={label}
-      className={cn(
-        "flex size-4 shrink-0 items-center justify-center rounded-[4px] font-mono text-[10px] font-semibold leading-none",
-        TONE_PILL[KIND_TONE[file.kind]],
-      )}
-    >
+    <Badge variant={TONE_BADGE[KIND_TONE[file.kind]]} title={label} className="size-4 justify-center rounded-sm p-0 font-mono text-[10px] leading-none">
       <span aria-hidden>{file.untracked ? "U" : CHANGE_LETTER[file.kind]}</span>
       <span className="sr-only">{label}</span>
-    </span>
+    </Badge>
   );
 }
 
@@ -390,17 +385,15 @@ function FileRow({
           )}
         </button>
         {openFile === null || file.kind === "deleted" ? null : (
-          <button
-            type="button"
-            title={`Open ${file.path}`}
-            aria-label={`Open ${file.path}`}
+          <IconButton
+            label={`Open ${file.path}`}
             onClick={async () => {
               if (!(await openFile(file.path))) toast.error(`Couldn't open ${file.path}`);
             }}
-            className={cn(ICON_BUTTON, "opacity-70 group-hover/file:opacity-100 focus-visible:opacity-100")}
+            className="opacity-70 group-hover/file:opacity-100 focus-visible:opacity-100"
           >
             <Icon name="FileText" aria-hidden className="size-3.5" />
-          </button>
+          </IconButton>
         )}
       </div>
       <div id={`${id}-diff`} role="region" aria-label={`Diff of ${file.path}`} hidden={!open} className={open ? "block" : "hidden"}>

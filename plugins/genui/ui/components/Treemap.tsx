@@ -4,7 +4,9 @@
 // a group zooms in on click and a breadcrumb leads back. The list view (a
 // toggle, and always the screen-reader version) has the same level sorted by
 // size.
-import { useCallback, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
+import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatAmount, formatShare } from "../../core/perf-units";
 import { findNode, GROUP_HEADER, layoutTreemap, readTreemap, trail, type Tile, type TreeNode } from "../../core/treemap";
@@ -12,7 +14,7 @@ import { ACCENT, optionalText, type Props } from "../values";
 import { ErrorLine } from "./display";
 import { FOCUS_RING } from "./inputs";
 import { RISE, useEntrance } from "./motion";
-import { Frame, Heading, Quiet, Segmented, TEXT_BUTTON } from "./perfKit";
+import { Frame, Heading, Quiet, Segmented } from "./perfKit";
 
 /** List rows shown before "Show N more". */
 const LIST_PAGE = 50;
@@ -76,34 +78,36 @@ function TreemapView({ root, unit, ignored }: { root: TreeNode; unit: string | n
     <>
       <Heading
         title={
-          <nav aria-label="Treemap level" className="flex min-w-0 flex-wrap items-baseline gap-x-1">
-            {crumbs.map((node, index) => {
-              const last = index === crumbs.length - 1;
-              const name = node.name === "" ? "All" : node.name;
-              return (
-                <span key={node.path} className="inline-flex min-w-0 items-baseline gap-x-1">
-                  {last ? (
-                    <span aria-current="location" className="truncate">
-                      {name}
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => go(node.path)}
-                      className={cn("cursor-pointer truncate rounded-sm font-normal text-muted-foreground hover:text-foreground", FOCUS_RING)}
-                    >
-                      {name}
-                    </button>
-                  )}
-                  {last ? null : (
-                    <span aria-hidden className="font-normal text-muted-foreground">
-                      ›
-                    </span>
-                  )}
-                </span>
-              );
-            })}
-          </nav>
+          <Breadcrumb aria-label="Treemap level" className="min-w-0">
+            <BreadcrumbList className="min-w-0 items-baseline gap-x-1 gap-y-0 text-[length:inherit] sm:gap-x-1">
+              {crumbs.map((node, index) => {
+                const last = index === crumbs.length - 1;
+                const name = node.name === "" ? "All" : node.name;
+                return (
+                  <Fragment key={node.path}>
+                    <BreadcrumbItem className="min-w-0">
+                      {last ? (
+                        <BreadcrumbPage className="truncate font-[inherit]">{name}</BreadcrumbPage>
+                      ) : (
+                        <BreadcrumbLink asChild>
+                          <Button
+                            type="button"
+                            variant="link"
+                            size="sm"
+                            onClick={() => go(node.path)}
+                            className="h-auto truncate p-0 text-[length:inherit] font-normal text-muted-foreground hover:text-foreground"
+                          >
+                            {name}
+                          </Button>
+                        </BreadcrumbLink>
+                      )}
+                    </BreadcrumbItem>
+                    {last ? null : <BreadcrumbSeparator className="font-normal">›</BreadcrumbSeparator>}
+                  </Fragment>
+                );
+              })}
+            </BreadcrumbList>
+          </Breadcrumb>
         }
         meta={[
           formatAmount(current.value, unit),
@@ -292,9 +296,15 @@ function ListView({ node, unit, onZoom }: { node: TreeNode; unit: string | null;
         })}
       </ol>
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + LIST_PAGE)} className={TEXT_BUTTON}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + LIST_PAGE)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+        >
           Show {Math.min(rest, LIST_PAGE)} more of {rest}
-        </button>
+        </Button>
       ) : null}
     </div>
   );

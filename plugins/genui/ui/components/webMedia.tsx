@@ -14,6 +14,7 @@ import { croppable, singleBox, tileLayout, type TileLayout } from "./gallery-log
 import { decodedSize, imageSource, imageTarget, useImageUrl, WebOffLine } from "./media";
 import { RISE, useEntrance } from "./motion";
 import { useViewer, type Viewable } from "./viewer";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /** A Gallery tile's picture, once it can be shown. */
 interface TilePicture {
@@ -52,7 +53,7 @@ export function Credit({ image, compact = false, className }: { image: FoundImag
   );
 }
 
-const SKELETON = "animate-pulse bg-surface-recessed motion-reduce:animate-none";
+const SKELETON = "motion-reduce:animate-none";
 const FRAME = "relative block w-full overflow-hidden rounded-lg border border-border bg-surface-recessed";
 const ZOOM_BUTTON =
   "block w-full cursor-zoom-in p-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
@@ -75,7 +76,7 @@ export function Fill({
   const ready = decoded === url;
   return (
     <>
-      {ready ? null : <span aria-hidden className={cn("absolute inset-0", SKELETON)} />}
+      {ready ? null : <Skeleton aria-hidden className={cn("absolute inset-0 rounded-none", SKELETON)} />}
       <img
         src={url}
         alt={alt}
@@ -131,7 +132,7 @@ export function ImageSearch({ props }: { props: Props }) {
     <figure data-bb-image-preview-ignore="" className={cn("m-0 flex min-w-0 flex-col gap-1.5", aspect.width)}>
       <div className={cn(FRAME, aspect.box)}>
         {url === null || credit === null ? (
-          <span role="status" aria-label={`Finding a photo of ${query}`} className={cn("absolute inset-0", SKELETON)} />
+          <Skeleton role="status" aria-label={`Finding a photo of ${query}`} className={cn("absolute inset-0 rounded-none", SKELETON)} />
         ) : (
           <button
             type="button"
@@ -144,7 +145,7 @@ export function ImageSearch({ props }: { props: Props }) {
         )}
       </div>
       {credit === null ? (
-        <span aria-hidden className={cn("h-4 w-2/3 rounded", SKELETON)} />
+        <Skeleton aria-hidden className={cn("h-4 w-2/3 rounded", SKELETON)} />
       ) : (
         <figcaption>
           <Credit image={credit} />
@@ -256,7 +257,7 @@ function Tile({
             {off ? "Web lookups are off" : failure}
           </span>
         ) : (
-          <span role="status" aria-label={label === "" ? "Loading picture" : `Loading ${label}`} className={cn("absolute inset-0", SKELETON)} />
+          <Skeleton role="status" aria-label={label === "" ? "Loading picture" : `Loading ${label}`} className={cn("absolute inset-0 rounded-none", SKELETON)} />
         )}
       </div>
       {caption === null && credit === null ? null : (

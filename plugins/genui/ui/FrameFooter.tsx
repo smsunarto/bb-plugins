@@ -4,10 +4,12 @@
 // diagnostics. Chat replies show no chrome under a UI.
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import { CompactButton } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import type { Diagnostic } from "../core/types";
 import { SourceView, viewerPath } from "./components/code";
+import { WithTooltip } from "./components/iconButton";
 
 /** A file the spec reads with Load or Snippet, as the source panel lists it. */
 export interface SourceFile {
@@ -75,13 +77,8 @@ function useCopy(text: () => string, what: { done: string; failed: string }): { 
 
 const SOURCE_COPY = { done: "Source copied", failed: "Couldn't copy the source" };
 
-const FOCUS = "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
-
 /** The gallery footer's quiet actions: icon and label from 32rem of width, icon alone below it (the label stays for screen readers). */
-const ACTION = cn(
-  "inline-flex size-9 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md text-xs text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground @lg:h-7 @lg:w-auto @lg:px-2",
-  FOCUS,
-);
+const ACTION = "size-9 shrink-0 px-0 text-xs [&_[data-icon-root]]:size-3.5 text-muted-foreground hover:text-foreground @lg:h-7 @lg:w-auto @lg:px-2";
 const ACTION_LABEL = "sr-only @lg:not-sr-only";
 
 /**
@@ -131,26 +128,32 @@ export function GalleryFooter({
           <span className="truncate font-mono text-[11px] leading-4 text-subtle-foreground">{example.file}</span>
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-controls={panelId}
-            title={open ? "Hide the source" : "Show the source"}
-            onClick={() => setOpen((shown) => !shown)}
-            className={cn(ACTION, open && "bg-state-hover text-foreground")}
-          >
-            <Icon name="Code" aria-hidden className="size-3.5" />
-            <span className={ACTION_LABEL}>Source</span>
-          </button>
-          <button type="button" title="Copy the source" onClick={copy} className={ACTION}>
-            <Icon name={copied ? "Check" : "Copy"} aria-hidden className="size-3.5" />
-            <span className={ACTION_LABEL}>Copy</span>
-          </button>
+          <WithTooltip tip={open ? "Hide the source" : "Show the source"}>
+            <CompactButton
+              variant="ghost"
+              size="xs"
+              aria-expanded={open}
+              aria-controls={panelId}
+              onClick={() => setOpen((shown) => !shown)}
+              className={cn(ACTION, open && "bg-state-hover text-foreground")}
+            >
+              <Icon name="Code" aria-hidden className="size-3.5" />
+              <span className={ACTION_LABEL}>Source</span>
+            </CompactButton>
+          </WithTooltip>
+          <WithTooltip tip="Copy the source">
+            <CompactButton variant="ghost" size="xs" onClick={copy} className={ACTION}>
+              <Icon name={copied ? "Check" : "Copy"} aria-hidden className="size-3.5" />
+              <span className={ACTION_LABEL}>Copy</span>
+            </CompactButton>
+          </WithTooltip>
           {example.open === null ? null : (
-            <button type="button" title="Show this example alone" onClick={example.open} className={ACTION}>
-              <Icon name="ArrowUpRight" aria-hidden className="size-3.5" />
-              <span className={ACTION_LABEL}>Open</span>
-            </button>
+            <WithTooltip tip="Show this example alone">
+              <CompactButton variant="ghost" size="xs" onClick={example.open} className={ACTION}>
+                <Icon name="ArrowUpRight" aria-hidden className="size-3.5" />
+                <span className={ACTION_LABEL}>Open</span>
+              </CompactButton>
+            </WithTooltip>
           )}
         </div>
       </div>

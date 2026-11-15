@@ -37,13 +37,15 @@ import {
   ReportFrame,
   ReportPathsContext,
   Segmented,
-  TEXT_BUTTON,
   useFileText,
   useWorkspaceRoot,
 } from "./codeHealthKit";
 import { ErrorLine } from "./display";
-import { FIELD, FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, FADE, RISE, useEntrance, type Entrance } from "./motion";
+import { Button } from "@/components/ui/button";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Input } from "@/components/ui/input";
+import { WithTooltip } from "./iconButton";
 
 /** Files a list or an opened folder shows before "Show N more", and how many each click adds. */
 const FILE_PAGE = 30;
@@ -167,41 +169,50 @@ function RangeChips({ file, context }: { file: FileCoverage; context: RowContext
   if (range === null) return <p className="m-0 pb-2 pl-[22px] text-xs text-muted-foreground">Every line ran.</p>;
   return (
     <div className="flex min-w-0 flex-col gap-2 pb-2.5 pl-[22px] pt-1">
-      <div role="group" aria-label={`Uncovered ${context.unit} in ${context.shown(file)}`} className="flex min-w-0 flex-wrap gap-1">
+      <ToggleGroup
+        type="single"
+        aria-label={`Uncovered ${context.unit} in ${context.shown(file)}`}
+        value={String(range.start)}
+        // A press on the shown range would clear it; one range is always shown.
+        onValueChange={(next) => {
+          if (next !== "") context.pick(file.path, Number(next));
+        }}
+        className="min-w-0 flex-wrap justify-start gap-1"
+      >
         {shown.map((item) => (
-          <ChipButton key={item.start} range={item} selected={item === range} onClick={() => context.pick(file.path, item.start)} />
+          <RangeChip key={item.start} range={item} />
         ))}
         {ranges.length > shown.length ? (
-          <button type="button" onClick={() => setAll(true)} className={cn(TEXT_BUTTON, "px-1")}>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            onClick={() => setAll(true)}
+            className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground px-1"
+          >
             {formatNumber(ranges.length - shown.length)} more
-          </button>
+          </Button>
         ) : null}
-      </div>
+      </ToggleGroup>
       <CodeExcerpt path={file.path} file={fileText} tone="bad" mark={{ start: range.start, end: range.end, lines: new Set(range.missed) }} />
     </div>
   );
 }
 
-function ChipButton({ range, selected, onClick }: { range: LineRange; selected: boolean; onClick: () => void }) {
+function RangeChip({ range }: { range: LineRange }) {
   const count = range.missed.length;
   return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      title={`${formatNumber(count)} uncovered ${count === 1 ? "line" : "lines"}`}
-      aria-label={`${range.start === range.end ? "Line" : "Lines"} ${rangeLabel(range)}, ${formatNumber(count)} uncovered`}
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-6 cursor-pointer items-center gap-1 rounded-md border px-1.5 font-mono text-[11px] tabular-nums transition-colors duration-150",
-        FOCUS_RING,
-        selected
-          ? "border-destructive/50 bg-destructive/10 text-destructive"
-          : "border-border bg-background text-muted-foreground hover:border-destructive/40 hover:text-foreground",
-      )}
-    >
-      {rangeLabel(range)}
-      {range.end > range.start ? <span className="text-[10px] opacity-70">·{count}</span> : null}
-    </button>
+    <WithTooltip tip={`${formatNumber(count)} uncovered ${count === 1 ? "line" : "lines"}`}>
+      <ToggleGroupItem
+        value={String(range.start)}
+        variant="outline"
+        aria-label={`${range.start === range.end ? "Line" : "Lines"} ${rangeLabel(range)}, ${formatNumber(count)} uncovered`}
+        className="h-6 min-w-0 gap-1 px-1.5 font-mono text-[11px] font-normal tabular-nums data-[state=on]:text-destructive"
+      >
+        {rangeLabel(range)}
+        {range.end > range.start ? <span className="text-[10px] opacity-70">·{count}</span> : null}
+      </ToggleGroupItem>
+    </WithTooltip>
   );
 }
 
@@ -299,9 +310,16 @@ function TreeRows({ nodes, context, depth }: { nodes: readonly CoverageNode[]; c
         )}
       </ul>
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + FILE_PAGE)} className={cn(TEXT_BUTTON, "py-1")} style={{ paddingLeft: `${depth * 16 + 22}px` }}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + FILE_PAGE)}
+          style={{ paddingLeft: `${depth * 16 + 22}px` }}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground py-1"
+        >
           Show {formatNumber(Math.min(rest, FILE_PAGE))} more of {formatNumber(rest)}
-        </button>
+        </Button>
       ) : null}
     </>
   );
@@ -320,9 +338,15 @@ function FlatRows({ files, context }: { files: readonly FileCoverage[]; context:
         })}
       </ul>
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + FILE_PAGE)} className={cn(TEXT_BUTTON, "py-1")}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + FILE_PAGE)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground py-1"
+        >
           Show {formatNumber(Math.min(rest, FILE_PAGE))} more of {formatNumber(rest)}
-        </button>
+        </Button>
       ) : null}
     </>
   );
@@ -395,18 +419,18 @@ export function Coverage({ props }: { props: Props }) {
                     ]}
                   />
                   {files.length > 1 ? (
-                    <label htmlFor={filterId} className="relative min-w-[9rem] flex-1">
-                      <span className="sr-only">Filter files</span>
+                    <div className="relative min-w-[9rem] flex-1">
                       <Icon name="Search" aria-hidden className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                      <input
+                      <Input
                         id={filterId}
                         type="search"
+                        aria-label="Filter files"
                         value={filter}
                         onChange={(event) => setFilter(event.target.value)}
                         placeholder="Filter files"
-                        className={cn(FIELD, "h-7 pl-7 pr-2 text-xs")}
+                        className="h-7 pl-7 pr-2 text-xs"
                       />
-                    </label>
+                    </div>
                   ) : null}
                 </div>
                 <div className="flex min-w-0 items-center gap-2 border-b border-border/60 pb-1 text-[11px] leading-4 text-muted-foreground">

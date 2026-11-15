@@ -6,7 +6,12 @@
 // text, lists of lines and JSON log records (core/logs.ts).
 import { useContext, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
+import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import {
   LOG_LEVELS,
@@ -25,11 +30,11 @@ import { workspacePath, type AnsiColor } from "../../core/test-results";
 import { CardDepthContext, useUiRuntime } from "../runtime";
 import { propsKey, usePersistedState } from "../usePersistedState";
 import { finiteNumber, formatNumber, optionalText, type Props } from "../values";
-import { ReportFrame, TEXT_BUTTON, acceptStrings, useWorkspaceRoot } from "./codeHealthKit";
+import { ReportFrame, acceptStrings, useWorkspaceRoot } from "./codeHealthKit";
 import { ErrorLine } from "./display";
 import { FOCUS_RING } from "./inputs";
 import { FADE, useEntrance } from "./motion";
-import { ICON_BUTTON } from "./projectKit";
+import { IconButton, WithTooltip } from "./iconButton";
 
 /** Rows past which the output opens at its tail. */
 const LONG = 80;
@@ -222,27 +227,16 @@ function Header({ command, exit, output }: { command: string | null; exit: numbe
               <span className="select-none text-muted-foreground">$ </span>
               {command}
             </code>
-            <button
-              type="button"
-              title="Copy the command"
-              aria-label="Copy the command"
-              onClick={() => void run([{ kind: "action", type: "copy", text: command }])}
-              className={ICON_BUTTON}
-            >
+            <IconButton label="Copy the command" onClick={() => void run([{ kind: "action", type: "copy", text: command }])}>
               <Icon name="Copy" className="size-3.5" />
-            </button>
+            </IconButton>
           </div>
         )}
         {exit === null ? null : (
-          <span
-            className={cn(
-              "mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full px-2 text-xs font-medium leading-5 tabular-nums",
-              exit === 0 ? "bg-success/10 text-success" : "bg-destructive/10 text-destructive",
-            )}
-          >
+          <Badge variant={exit === 0 ? "success" : "danger"} className="mt-0.5 gap-1 px-2 font-medium tabular-nums">
             <Icon name={exit === 0 ? "CircleCheck" : "CircleX"} aria-hidden className="size-3.5" />
             exit {exit}
-          </span>
+          </Badge>
         )}
       </div>
       <p className="m-0 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{facts.join(" · ")}</p>
@@ -254,29 +248,31 @@ function LevelChips({ output, selected, onToggle }: { output: LogOutput; selecte
   const present = LOG_LEVELS.filter((level) => output.counts[level] > 0);
   if (present.length === 0) return null;
   return (
-    <div role="group" aria-label="Show levels" className="flex min-w-0 flex-wrap gap-1">
-      {present.map((level) => {
-        const on = selected.includes(level);
-        return (
-          <button
-            key={level}
-            type="button"
-            aria-pressed={on}
-            aria-label={`${LEVEL_LABEL[level]}, ${formatNumber(output.counts[level])}`}
-            onClick={() => onToggle(level)}
-            className={cn(
-              "inline-flex h-6 cursor-pointer items-center gap-1.5 rounded-full border px-2 text-xs leading-none transition-colors duration-150",
-              FOCUS_RING,
-              on ? "border-foreground/30 bg-muted font-medium text-foreground" : "border-border text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <span aria-hidden className={cn("size-1.5 rounded-full", LEVEL_BAR[level])} />
-            {LEVEL_LABEL[level]}
-            <span className="tabular-nums text-muted-foreground">{formatNumber(output.counts[level])}</span>
-          </button>
-        );
-      })}
-    </div>
+    <ToggleGroup
+      type="multiple"
+      aria-label="Show levels"
+      value={present.filter((level) => selected.includes(level))}
+      // The group reports the whole set; the caller toggles the one level that changed.
+      onValueChange={(next) => {
+        const changed = present.find((level) => next.includes(level) !== selected.includes(level));
+        if (changed !== undefined) onToggle(changed);
+      }}
+      className="min-w-0 flex-wrap justify-start gap-1"
+    >
+      {present.map((level) => (
+        <ToggleGroupItem
+          key={level}
+          value={level}
+          variant="outline"
+          aria-label={`${LEVEL_LABEL[level]}, ${formatNumber(output.counts[level])}`}
+          className="h-6 min-w-0 gap-1.5 rounded-full px-2 text-xs font-normal leading-none"
+        >
+          <span aria-hidden className={cn("size-1.5 rounded-full", LEVEL_BAR[level])} />
+          {LEVEL_LABEL[level]}
+          <span className="tabular-nums text-muted-foreground">{formatNumber(output.counts[level])}</span>
+        </ToggleGroupItem>
+      ))}
+    </ToggleGroup>
   );
 }
 
@@ -399,11 +395,11 @@ function LogView({ output, command, exit, id }: { output: LogOutput; command: st
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
             <LevelChips output={output} selected={levels} onToggle={toggleLevel} />
             <div className="flex min-w-0 flex-1 basis-56 items-center gap-1">
-              <label className="relative flex min-w-0 flex-1 items-center">
-                <span className="sr-only">Search the output</span>
+              <div className="relative flex min-w-0 flex-1 items-center">
                 <Icon name="Search" aria-hidden className="pointer-events-none absolute left-2 size-3.5 text-muted-foreground" />
-                <input
+                <Input
                   type="search"
+                  aria-label="Search the output"
                   value={query}
                   placeholder="Search"
                   onChange={(event) => {
@@ -411,52 +407,54 @@ function LogView({ output, command, exit, id }: { output: LogOutput; command: st
                     setCurrent(0);
                   }}
                   onKeyDown={onSearchKey}
-                  className={cn(
-                    "h-7 w-full min-w-0 rounded-md border border-border bg-background pl-7 pr-2 text-xs text-foreground placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden",
-                    FOCUS_RING,
-                  )}
+                  className="h-7 min-w-0 pl-7 pr-2 text-xs [&::-webkit-search-cancel-button]:hidden"
                 />
-              </label>
+              </div>
               {query === "" ? null : (
                 <>
                   <span aria-live="polite" className="shrink-0 px-1 text-xs tabular-nums text-muted-foreground">
                     {matches.length === 0 ? "No matches" : `${formatNumber(Math.min(current, matches.length - 1) + 1)} of ${formatNumber(matches.length)}`}
                   </span>
-                  <button type="button" aria-label="Previous match" title="Previous match (Shift+Enter)" disabled={matches.length === 0} onClick={() => step(-1)} className={ICON_BUTTON}>
+                  <IconButton label="Previous match" tooltip="Previous match (Shift+Enter)" disabled={matches.length === 0} onClick={() => step(-1)}>
                     <Icon name="ChevronUp" className="size-3.5" />
-                  </button>
-                  <button type="button" aria-label="Next match" title="Next match (Enter)" disabled={matches.length === 0} onClick={() => step(1)} className={ICON_BUTTON}>
+                  </IconButton>
+                  <IconButton label="Next match" tooltip="Next match (Enter)" disabled={matches.length === 0} onClick={() => step(1)}>
                     <Icon name="ChevronDown" className="size-3.5" />
-                  </button>
+                  </IconButton>
                 </>
               )}
             </div>
             <div className="flex shrink-0 items-center gap-0.5">
               {firstErrorLine === -1 ? null : (
-                <button type="button" onClick={jumpToError} className={cn(TEXT_BUTTON, "mr-1 inline-flex items-center gap-1 text-destructive hover:text-destructive")}>
-                  <Icon name="ArrowUp" aria-hidden className="size-3.5" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={jumpToError}
+                  className="mr-1 h-6 gap-1 px-1.5 font-normal text-destructive hover:text-destructive [&_[data-icon-root]]:size-3.5"
+                >
+                  <Icon name="ArrowUp" aria-hidden />
                   First error
-                </button>
+                </Button>
               )}
-              <button
-                type="button"
-                aria-pressed={wrap}
-                aria-label="Wrap long lines"
-                title={wrap ? "Don't wrap long lines" : "Wrap long lines"}
-                onClick={() => setWrap((value) => !value)}
-                className={cn(ICON_BUTTON, wrap && "bg-muted text-foreground")}
-              >
-                <Icon name="TextWrap" className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                title="Copy all"
-                aria-label="Copy all of the output"
+              <WithTooltip tip={wrap ? "Don't wrap long lines" : "Wrap long lines"}>
+                <Toggle
+                  size="sm"
+                  pressed={wrap}
+                  onPressedChange={setWrap}
+                  aria-label="Wrap long lines"
+                  className="size-6 min-w-0 p-0 [&_[data-icon-root]]:size-3.5"
+                >
+                  <Icon name="TextWrap" />
+                </Toggle>
+              </WithTooltip>
+              <IconButton
+                label="Copy all of the output"
+                tooltip="Copy all"
                 onClick={() => void run([{ kind: "action", type: "copy", text: output.lines.map((line) => line.text).join("\n") }])}
-                className={ICON_BUTTON}
               >
                 <Icon name="Copy" className="size-3.5" />
-              </button>
+              </IconButton>
             </div>
           </div>
           <div
@@ -466,14 +464,16 @@ function LogView({ output, command, exit, id }: { output: LogOutput; command: st
             className="relative max-h-[28rem] min-w-0 overflow-auto rounded-md bg-surface-recessed py-1.5 font-mono text-[11.5px] leading-[18px] text-foreground"
           >
             {earlier > 0 ? (
-              <button
+              <Button
                 type="button"
                 onClick={() => setRange({ view, start: Math.max(0, range.start - PAGE), end: range.end })}
-                className={cn(TEXT_BUTTON, "sticky left-0 mb-1 block px-3 font-sans")}
+                variant="ghost"
+                size="sm"
+                className="sticky left-0 mb-1 h-auto px-3 py-0 font-sans font-normal leading-5 text-muted-foreground"
               >
                 Show {formatNumber(Math.min(PAGE, earlier))} earlier {Math.min(PAGE, earlier) === 1 ? "line" : "lines"}
                 {earlier > PAGE ? ` (${formatNumber(earlier)} in all)` : ""}
-              </button>
+              </Button>
             ) : null}
             <div className={wrap ? "min-w-0" : "min-w-max"}>
               {rows.length === 0 ? (
@@ -496,14 +496,16 @@ function LogView({ output, command, exit, id }: { output: LogOutput; command: st
               )}
             </div>
             {later > 0 ? (
-              <button
+              <Button
                 type="button"
                 onClick={() => setRange({ view, start: range.start, end: end + PAGE >= rows.length ? null : end + PAGE })}
-                className={cn(TEXT_BUTTON, "sticky left-0 mt-1 block px-3 font-sans")}
+                variant="ghost"
+                size="sm"
+                className="sticky left-0 mt-1 h-auto px-3 py-0 font-sans font-normal leading-5 text-muted-foreground"
               >
                 Show {formatNumber(Math.min(PAGE, later))} later {Math.min(PAGE, later) === 1 ? "line" : "lines"}
                 {later > PAGE ? ` (${formatNumber(later)} in all)` : ""}
-              </button>
+              </Button>
             ) : null}
           </div>
         </>

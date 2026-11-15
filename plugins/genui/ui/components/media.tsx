@@ -8,6 +8,7 @@ import { useUiRuntime, type ImageSize, type ImageUrl } from "../runtime";
 import { optionalText, text, type Props } from "../values";
 import { ErrorLine } from "./display";
 import { useViewer } from "./viewer";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type Source =
   | { readonly kind: "url"; readonly url: string }
@@ -186,10 +187,10 @@ export function Image({ props }: { props: Props }) {
           // Of a known size, the box is the picture's from the first frame; otherwise a placeholder until it decodes.
           <span className={cn("relative block", size === null && "h-48 w-full")} style={size === null ? undefined : pictureBox(size)}>
             {ready ? null : (
-              <span
+              <Skeleton
                 role="status"
                 aria-label={alt === "" ? "Loading image" : `Loading image: ${alt}`}
-                className="absolute inset-0 animate-pulse motion-reduce:animate-none"
+                className="absolute inset-0 rounded-none motion-reduce:animate-none"
               />
             )}
             {url === null ? null : (

@@ -42,7 +42,7 @@ import {
 import { commonDirectory, displayPath } from "../../core/test-results";
 import { CardDepthContext, NodeKeyContext, sentFor, useAnswers, useUiRuntime, type TextFile } from "../runtime";
 import { propsKey, usePersistedState } from "../usePersistedState";
-import { formatNumber, optionalText, TONE_DOT, TONE_PILL, TONE_TEXT, type Props, type Tone } from "../values";
+import { formatNumber, optionalText, TONE_BADGE, TONE_DOT, TONE_TEXT, type Props, type Tone } from "../values";
 import { actionIntent, sendEffect } from "./action-logic";
 import {
   acceptStrings,
@@ -53,7 +53,6 @@ import {
   ReportFrame,
   ReportPathsContext,
   Segmented,
-  TEXT_BUTTON,
   useFileOpener,
   useFileText,
   useShownPath,
@@ -64,8 +63,9 @@ import { Code, Diff } from "./code";
 import { ErrorLine } from "./display";
 import { ActionGlyph, ActionHint, FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, FADE, RISE, useEntrance, type Entrance } from "./motion";
-import { ICON_BUTTON } from "./projectKit";
 import { keepTyping } from "../keepTyping";
+import { Badge } from "@/components/ui/badge";
+import { IconButton, WithTooltip } from "./iconButton";
 
 /** Findings shown before "Show N more", and how many each click adds. */
 const FINDING_PAGE = 25;
@@ -314,9 +314,9 @@ function FindingBody({ finding, scale }: { finding: Finding; scale: SeverityScal
           )}
         </span>
         {finding.file === null ? null : <OpenFileButton path={finding.file} line={finding.line} />}
-        <button type="button" title="Copy finding" aria-label={`Copy the finding: ${finding.title}`} onClick={copy} className={ICON_BUTTON}>
+        <IconButton label={`Copy the finding: ${finding.title}`} tooltip="Copy finding" onClick={copy}>
           <Icon name="Copy" className="size-3.5" />
-        </button>
+        </IconButton>
       </div>
       {finding.detail === null ? null : finding.detailIsText ? (
         <pre className="m-0 whitespace-pre-wrap font-mono text-[11.5px] leading-5 text-muted-foreground [overflow-wrap:anywhere]">{finding.detail}</pre>
@@ -376,7 +376,9 @@ function LifecycleView({ finding }: { finding: Finding }) {
 function StatusPill({ status }: { status: FindingStatus }) {
   const style = STATUS_STYLE[status];
   return (
-    <span className={cn("mt-0.5 inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-1.5 text-[10.5px] font-medium leading-4", TONE_PILL[style.tone])}>{style.label}</span>
+    <Badge variant={TONE_BADGE[style.tone]} className="mt-0.5 px-1.5 py-0 font-medium">
+      {style.label}
+    </Badge>
   );
 }
 
@@ -511,14 +513,11 @@ function FileLink({ path, shown, className }: { path: string; shown: string; cla
     );
   }
   return (
-    <button
-      type="button"
-      title={`Open ${file.target}`}
-      onClick={() => void file.open(null)}
-      className={cn("group/file cursor-pointer rounded-sm text-left", FOCUS_RING, shape)}
-    >
-      {content}
-    </button>
+    <WithTooltip tip={`Open ${file.target}`}>
+      <button type="button" onClick={() => void file.open(null)} className={cn("group/file cursor-pointer rounded-sm text-left", FOCUS_RING, shape)}>
+        {content}
+      </button>
+    </WithTooltip>
   );
 }
 
@@ -734,9 +733,15 @@ export function Findings({ props }: { props: Props }) {
               ))}
             </div>
             {rest > 0 ? (
-              <button type="button" onClick={() => setShown((count) => count + FINDING_PAGE)} className={TEXT_BUTTON}>
+              <BaseButton
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={() => setShown((count) => count + FINDING_PAGE)}
+                className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+              >
                 Show {formatNumber(Math.min(rest, FINDING_PAGE))} more of {formatNumber(rest)}
-              </button>
+              </BaseButton>
             ) : null}
             {review === undefined || review.evidence.length + review.artifacts.length === 0 ? null : (
               <ReviewEvidence review={review} open={evidenceOpen} onToggle={() => setEvidenceOpen((value) => !value)} />

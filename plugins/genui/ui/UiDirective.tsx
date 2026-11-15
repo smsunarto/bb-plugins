@@ -10,6 +10,7 @@ import { LiveUi, RenderFailure, type AnswerTarget } from "./LiveUi";
 import { useVideoLoader, useAssetLoader, useAudioLoader, useImageLoader, useLoadedData, useTextLoader } from "./useLoadedData";
 import { useReplyIndex, useSuperseded } from "./useSuperseded";
 import { useMotionScope } from "./components/motion";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const UI_ID = /^[a-z0-9]{10}$/;
 
@@ -100,12 +101,7 @@ function StoredUi({
   switch (load.status) {
     case "loading":
       return (
-        <div
-          {...motion}
-          role="status"
-          aria-label="Loading UI"
-          className="not-prose my-3 h-28 animate-pulse rounded-lg border border-border bg-surface-recessed"
-        />
+        <Skeleton {...motion} role="status" aria-label="Loading UI" className="not-prose my-3 h-28 rounded-lg border border-border" />
       );
     case "failed":
       return (

@@ -12,6 +12,10 @@ import {
 } from "react";
 import type { PropsOf, Value } from "../../core/types";
 import { Button as BaseButton } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { useUiRuntime } from "../runtime";
 import { ACCENT, list, text } from "../values";
@@ -30,7 +34,7 @@ import {
   stepRange,
   stepperValue,
 } from "./fieldLogic";
-import { CAPTION, FIELD, FOCUS_RING } from "./inputs";
+import { CAPTION, FOCUS_RING } from "./inputs";
 import { RISE, useEntrance } from "./motion";
 import { keepTyping } from "../keepTyping";
 
@@ -177,28 +181,14 @@ export function Stepper({ props }: { props: PropsOf<"Stepper"> }) {
 // ── Radio ────────────────────────────────────────────────────────────────────
 
 /** Radio-group arrow keys: next or previous option, wrapping. */
-const RADIO_KEYS: Readonly<Record<string, number>> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
 
 export function Radio({ props }: { props: PropsOf<"Radio"> }) {
   const { setValue } = useUiRuntime();
   const labelId = useId();
-  const group = useRef<HTMLDivElement>(null);
   const binding = props.value;
   const label = props.label ?? null;
   const options = radioOptions(props.options);
   const selected = options.findIndex((option) => option.value === binding.value);
-  // Roving focus: Tab lands on the selected option, else the first.
-  const focusable = Math.max(0, selected);
-  const onKeyDown = (event: KeyboardEvent) => {
-    const delta = RADIO_KEYS[event.key];
-    const radios = Array.from(group.current?.querySelectorAll<HTMLElement>('[role="radio"]') ?? []);
-    const from = radios.indexOf(event.target as HTMLElement);
-    if (delta === undefined || from < 0) return;
-    event.preventDefault();
-    const to = (from + delta + radios.length) % radios.length;
-    radios[to]?.focus();
-    setValue(binding.name, options[to]?.value ?? null);
-  };
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       {label === null ? null : (
@@ -206,57 +196,36 @@ export function Radio({ props }: { props: PropsOf<"Radio"> }) {
           {label}
         </span>
       )}
-      <div
-        ref={group}
-        role="radiogroup"
+      {/* Roving focus and arrow keys come with the group; an arrow key moves the pick too. */}
+      <RadioGroup
         aria-labelledby={label === null ? undefined : labelId}
         aria-label={label === null ? binding.name : undefined}
-        onKeyDown={onKeyDown}
-        className="-mx-1.5 flex min-w-0 flex-col"
+        // Options are positional: the same value may repeat, and any scalar round-trips.
+        value={selected < 0 ? "" : String(selected)}
+        onValueChange={(next) => setValue(binding.name, options[Number(next)]?.value ?? null)}
+        className="-mx-1.5 flex min-w-0 flex-col gap-0"
       >
         {options.map((option, index) => {
-          const checked = index === selected;
+          const id = `${labelId}-${index}`;
           return (
-            <button
+            <div
               // Options are positional; the same value may repeat.
               key={index}
-              type="button"
-              role="radio"
-              aria-checked={checked}
-              tabIndex={index === focusable ? 0 : -1}
-              onClick={() => setValue(binding.name, option.value)}
-              {...keepTyping}
-              className={cn(
-                "flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-md px-1.5 py-1.5 text-left text-sm leading-5 text-foreground transition-colors duration-150 hover:bg-surface-recessed",
-                FOCUS_RING,
-              )}
+              className="flex w-full min-w-0 items-start gap-2.5 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-surface-recessed"
             >
-              <span
-                aria-hidden
-                className={cn(
-                  "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border transition-colors duration-150",
-                  checked ? "border-transparent bg-primary" : "border-border bg-background",
-                )}
-              >
-                <span
-                  className={cn(
-                    "size-1.5 rounded-full bg-primary-foreground transition-transform duration-150 motion-reduce:transition-none",
-                    checked ? "scale-100" : "scale-0",
-                  )}
-                />
-              </span>
-              <span className="flex min-w-0 flex-col gap-0.5">
+              <RadioGroupItem id={id} value={String(index)} {...keepTyping} className="mt-0.5 shrink-0" />
+              <Label htmlFor={id} {...keepTyping} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 text-sm font-normal leading-5 text-foreground">
                 <span className="[overflow-wrap:anywhere]">{itemText(option.value)}</span>
                 {option.detail === null ? null : (
                   <span className="text-xs leading-4 text-muted-foreground [overflow-wrap:anywhere]">
                     {option.detail}
                   </span>
                 )}
-              </span>
-            </button>
+              </Label>
+            </div>
           );
         })}
-      </div>
+      </RadioGroup>
     </div>
   );
 }
@@ -297,9 +266,9 @@ export function ListEditor({ props }: { props: PropsOf<"ListEditor"> }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       {label === null ? null : (
-        <label htmlFor={id} className={CAPTION}>
+        <Label htmlFor={id} className={cn(CAPTION, "font-normal")}>
           {label}
-        </label>
+        </Label>
       )}
       {items.length === 0 ? null : (
         <ul aria-label={label ?? binding.name} className="-mx-1 flex min-w-0 flex-col">
@@ -317,7 +286,7 @@ export function ListEditor({ props }: { props: PropsOf<"ListEditor"> }) {
         </ul>
       )}
       <div className="flex min-w-0 items-center gap-2">
-        <input
+        <Input
           id={id}
           ref={input}
           type="text"
@@ -332,7 +301,7 @@ export function ListEditor({ props }: { props: PropsOf<"ListEditor"> }) {
             event.preventDefault();
             add();
           }}
-          className={cn(FIELD, "px-2.5 placeholder:text-subtle-foreground")}
+          className="h-8 px-2.5 text-[13px] placeholder:text-subtle-foreground"
         />
         <BaseButton
           type="button"
@@ -380,7 +349,7 @@ function ListEditorRow({
   return (
     <li ref={row} className="flex min-h-8 min-w-0 items-center gap-1">
       {editing ? (
-        <input
+        <Input
           type="text"
           autoFocus
           defaultValue={shown}
@@ -396,7 +365,7 @@ function ListEditorRow({
             refocus.current = true;
             event.currentTarget.blur();
           }}
-          className={cn(FIELD, "h-7 flex-1 px-1.5 text-sm")}
+          className="h-7 flex-1 px-1.5"
         />
       ) : (
         <button
@@ -412,17 +381,16 @@ function ListEditorRow({
           {shown}
         </button>
       )}
-      <button
+      <BaseButton
         type="button"
+        variant="ghost"
+        size="icon"
         aria-label={`Remove ${shown}`}
         onClick={onRemove}
-        className={cn(
-          "flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-surface-recessed hover:text-foreground",
-          FOCUS_RING,
-        )}
+        className="size-7 shrink-0 text-muted-foreground [&_svg]:size-3"
       >
         <Glyph d={CROSS} className="size-3" />
-      </button>
+      </BaseButton>
     </li>
   );
 }
@@ -470,11 +438,11 @@ export function TextArea({ props }: { props: PropsOf<"TextArea"> }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       {label === null ? null : (
-        <label htmlFor={id} className={CAPTION}>
+        <Label htmlFor={id} className={cn(CAPTION, "font-normal")}>
           {label}
-        </label>
+        </Label>
       )}
-      <textarea
+      <Textarea
         id={id}
         ref={area}
         rows={3}
@@ -482,10 +450,7 @@ export function TextArea({ props }: { props: PropsOf<"TextArea"> }) {
         placeholder={placeholder ?? undefined}
         aria-label={label === null ? (placeholder ?? binding.name) : undefined}
         onChange={(event) => setValue(binding.name, event.currentTarget.value)}
-        className={cn(
-          FIELD,
-          "block h-auto resize-none overflow-y-hidden px-2.5 py-1.5 leading-5 [scrollbar-width:thin] placeholder:text-subtle-foreground",
-        )}
+        className="block h-auto min-h-0 resize-none overflow-y-hidden px-2.5 py-1.5 text-[13px] leading-5 [scrollbar-width:thin] placeholder:text-subtle-foreground"
       />
     </div>
   );
@@ -502,19 +467,19 @@ export function DateInput({ props }: { props: PropsOf<"DateInput"> }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       {label === null ? null : (
-        <label htmlFor={id} className={CAPTION}>
+        <Label htmlFor={id} className={cn(CAPTION, "font-normal")}>
           {label}
-        </label>
+        </Label>
       )}
-      <input
+      {/* The browser's own date picker: no calendar is vendored (react-day-picker isn't a dependency). */}
+      <Input
         id={id}
         type="date"
         value={date ?? ""}
         aria-label={label === null ? binding.name : undefined}
         onChange={(event) => setValue(binding.name, isoDate(event.currentTarget.value))}
         className={cn(
-          FIELD,
-          "max-w-52 px-2.5 tabular-nums [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-date-and-time-value]:text-left",
+          "h-8 max-w-52 px-2.5 text-[13px] tabular-nums [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-date-and-time-value]:text-left",
           date === null && "text-muted-foreground",
         )}
       />

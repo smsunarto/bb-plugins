@@ -4,20 +4,17 @@
 // line and the one-line states.
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { relativeTime, type ProjectFailure } from "../../core/project";
-import { FOCUS_RING } from "./inputs";
+import { IconButton } from "./iconButton";
 import { RISE, useEntrance, type Entrance } from "./motion";
 import { answerSignature, pollDelay } from "./project-logic";
 
 /** The frame enters at once; only its rows are staggered (as layout.tsx's Card). */
 const FRAME_RISE: Entrance = { ...RISE, stagger: false };
-
-export const ICON_BUTTON = cn(
-  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground disabled:cursor-default disabled:opacity-60",
-  FOCUS_RING,
-);
 
 /** The current time, re-read every `intervalMs` so relative times stay true. */
 export function useNow(intervalMs = 30_000): number {
@@ -176,16 +173,14 @@ export function Freshness({
       <time dateTime={new Date(at).toISOString()} title={`${stored ? "Saved with this reply" : "Read from BB"} ${EXACT_TIME.format(at)}`} className="tabular-nums">
         {label}
       </time>
-      <button
-        type="button"
-        aria-label={stored ? "Refresh: replace this snapshot with the current state" : "Refresh"}
-        title={stored ? "Replace this snapshot with the current state" : "Refresh"}
+      <IconButton
+        label={stored ? "Refresh: replace this snapshot with the current state" : "Refresh"}
+        tooltip={stored ? "Replace this snapshot with the current state" : "Refresh"}
         disabled={refreshing}
         onClick={onRefresh}
-        className={ICON_BUTTON}
       >
-        <Icon name="RotateCcw" aria-hidden className={cn("size-3.5", refreshing && "animate-spin motion-reduce:animate-none")} />
-      </button>
+        <Icon name="RotateCcw" aria-hidden className={cn(refreshing && "animate-spin motion-reduce:animate-none")} />
+      </IconButton>
     </span>
   );
 }
@@ -228,11 +223,8 @@ export function LoadingRows({ label, rows = 3 }: { label: string; rows?: number 
     <div role="status" aria-label={label} className="flex flex-col gap-2.5 px-3 py-3">
       {Array.from({ length: rows }, (_, index) => (
         <div key={index} className="flex items-center gap-2">
-          <div className="size-4 shrink-0 animate-pulse rounded-sm bg-muted motion-reduce:animate-none" />
-          <div
-            className="h-3 animate-pulse rounded-sm bg-muted motion-reduce:animate-none"
-            style={{ width: `${[58, 42, 66, 50][index % 4]}%` }}
-          />
+          <Skeleton className="size-4 shrink-0 rounded-sm motion-reduce:animate-none" />
+          <Skeleton className="h-3 rounded-sm motion-reduce:animate-none" style={{ width: `${[58, 42, 66, 50][index % 4]}%` }} />
         </div>
       ))}
     </div>
@@ -242,17 +234,16 @@ export function LoadingRows({ label, rows = 3 }: { label: string; rows?: number 
 /** "Show all 40 files" under a collapsed list. */
 export function ShowAll({ count, noun, onClick }: { count: number; noun: string; onClick: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
       onClick={onClick}
-      className={cn(
-        "flex w-full cursor-pointer items-center justify-center gap-1 border-t border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground",
-        FOCUS_RING,
-      )}
+      className="h-auto w-full gap-1 rounded-none border-t border-border py-2 font-normal text-muted-foreground"
     >
       Show all {count} {noun}
-      <Icon name="ChevronDown" aria-hidden className="size-3.5" />
-    </button>
+      <Icon name="ChevronDown" aria-hidden />
+    </Button>
   );
 }
 

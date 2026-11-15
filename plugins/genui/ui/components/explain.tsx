@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { resolveIconName } from "../icons";
 import { RenderNode } from "../render";
 import { NodeKeyContext, questionClosed, sentFor, useAnswers, useUiRuntime } from "../runtime";
-import { ACCENT, isNode, list, TONE_DOT, TONE_PILL, TONE_TEXT, type Props } from "../values";
+import { ACCENT, INFO_WASH, isNode, list, TONE_BADGE, TONE_DOT, TONE_TEXT, type Props } from "../values";
 import { ACTION_GLYPHS, actionIntent, sendEffect } from "./action-logic";
 import { Code } from "./code";
 import { CheckMark, ErrorLine } from "./display";
@@ -40,15 +40,12 @@ import {
 import { ActionHint, CAPTION, FOCUS_RING, InMessageLine } from "./inputs";
 import { FADE, RISE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight } from "./motion";
 import { keepTyping } from "../keepTyping";
+import { Badge } from "@/components/ui/badge";
+import { Toggle } from "@/components/ui/toggle";
+import { IconButton } from "./iconButton";
 
 /** Outline buttons sit on the page color, as inputs.tsx's quiet buttons do. */
 const QUIET = "bg-background";
-
-/** A quiet text button for secondary toggles. */
-const TEXT_BUTTON = cn(
-  "shrink-0 cursor-pointer rounded-sm text-xs leading-5 text-muted-foreground transition-colors duration-150 hover:text-foreground",
-  FOCUS_RING,
-);
 
 const PROSE = "min-w-0 text-sm [&>:first-child]:mt-0 [&>:last-child]:mb-0";
 
@@ -133,7 +130,7 @@ function AllSteps({ steps }: { steps: readonly WalkthroughStep[] }) {
             <span
               className={cn(
                 "flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold tabular-nums",
-                TONE_PILL.info,
+                INFO_WASH,
               )}
             >
               {index + 1}
@@ -210,9 +207,9 @@ export function Walkthrough({ props }: { props: Props }) {
           {showAll ? `${count} steps` : `Step ${at + 1} of ${count}`}
         </span>
         {count > 1 ? (
-          <button type="button" aria-pressed={showAll} onClick={() => setShowAll((value) => !value)} className={TEXT_BUTTON}>
+          <Toggle size="sm" pressed={showAll} onPressedChange={setShowAll} className="h-6 min-w-0 shrink-0 px-1.5 text-xs font-normal">
             {showAll ? "One at a time" : "Show all"}
-          </button>
+          </Toggle>
         ) : null}
       </div>
       {showAll || count === 1 ? null : <Progress at={at} count={count} />}
@@ -525,9 +522,9 @@ function DayCell({
       {events.length === 0 ? null : (
         <span aria-hidden className="hidden min-w-0 flex-col gap-0.5 @lg:flex">
           {events.slice(0, events.length > CHIPS_PER_DAY + 1 ? CHIPS_PER_DAY : CHIPS_PER_DAY + 1).map((event, index) => (
-            <span key={index} className={cn("truncate rounded px-1 text-[11px] leading-4", TONE_PILL[event.tone])}>
+            <Badge key={index} variant={TONE_BADGE[event.tone]} className="block truncate rounded px-1 py-0 font-normal">
               {event.title || "Event"}
-            </span>
+            </Badge>
           ))}
           {events.length > CHIPS_PER_DAY + 1 ? (
             <span className="truncate px-1 text-[11px] leading-4 text-muted-foreground">+{more} more</span>
@@ -559,10 +556,7 @@ function DayEvents({ date, events, heading }: { date: Day; events: readonly Cale
   );
 }
 
-const NAV_BUTTON = cn(
-  "inline-flex size-7 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground disabled:cursor-default disabled:opacity-35 disabled:hover:bg-transparent",
-  FOCUS_RING,
-);
+const NAV_BUTTON = "size-7 [&_[data-icon-root]]:size-4";
 
 export function Calendar({ props }: { props: Props }) {
   const format = useCalendarFormat();
@@ -678,24 +672,12 @@ export function Calendar({ props }: { props: Props }) {
         </h4>
         {atFirst && atLast ? null : (
           <div className="flex shrink-0 items-center">
-            <button
-              type="button"
-              aria-label="Previous month"
-              disabled={atFirst}
-              onClick={() => showMonth(addMonths(month, -1))}
-              className={NAV_BUTTON}
-            >
-              <HostIcon name="ChevronLeft" aria-hidden className="size-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Next month"
-              disabled={atLast}
-              onClick={() => showMonth(addMonths(month, 1))}
-              className={NAV_BUTTON}
-            >
-              <HostIcon name="ChevronRight" aria-hidden className="size-4" />
-            </button>
+            <IconButton label="Previous month" disabled={atFirst} onClick={() => showMonth(addMonths(month, -1))} className={NAV_BUTTON}>
+              <HostIcon name="ChevronLeft" aria-hidden />
+            </IconButton>
+            <IconButton label="Next month" disabled={atLast} onClick={() => showMonth(addMonths(month, 1))} className={NAV_BUTTON}>
+              <HostIcon name="ChevronRight" aria-hidden />
+            </IconButton>
           </div>
         )}
       </div>

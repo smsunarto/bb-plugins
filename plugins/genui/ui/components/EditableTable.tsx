@@ -19,9 +19,12 @@ import {
   type TableColumn,
   type TableRow,
 } from "./choose-logic";
-import { CheckMark, ErrorLine } from "./display";
-import { CAPTION, FIELD, FOCUS_RING } from "./inputs";
+import { ErrorLine } from "./display";
+import { CAPTION } from "./inputs";
 import { RISE, useEntrance } from "./motion";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * Grid track per column type in the table layout; the last track holds the
@@ -174,9 +177,9 @@ function EditableRow({
             role="cell"
             className="grid min-w-0 grid-cols-[minmax(0,5.5rem)_minmax(0,1fr)] items-center gap-3 @lg:block"
           >
-            <label htmlFor={field} className="truncate text-xs leading-5 text-muted-foreground @lg:sr-only">
+            <Label htmlFor={field} className="truncate text-xs font-normal leading-5 text-muted-foreground @lg:sr-only">
               {column.label}
-            </label>
+            </Label>
             <CellField
               id={field}
               type={column.type}
@@ -188,18 +191,17 @@ function EditableRow({
         );
       })}
       <div role="cell" className="absolute right-2 top-2.5 @lg:static @lg:flex @lg:justify-center">
-        <button
+        <BaseButton
           type="button"
+          variant="ghost"
+          size="icon"
           data-remove=""
           aria-label={`Remove row ${index + 1} of ${tableName}`}
           onClick={onRemove}
-          className={cn(
-            "flex size-7 cursor-pointer touch-manipulation items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-surface-recessed hover:text-foreground motion-reduce:transition-none",
-            FOCUS_RING,
-          )}
+          className="size-7 touch-manipulation text-muted-foreground [&_[data-icon-root]]:size-3.5"
         >
-          <Icon name="X" aria-hidden className="size-3.5" />
-        </button>
+          <Icon name="X" aria-hidden />
+        </BaseButton>
       </div>
     </div>
   );
@@ -224,34 +226,12 @@ function CellField({
     return (
       // Narrow, the box lines up with the fields' left edge; in the table it is centered.
       <span className="-ml-1.5 flex h-8 items-center @lg:ml-0 @lg:justify-center">
-        <button
-          id={id}
-          type="button"
-          role="checkbox"
-          data-field=""
-          aria-checked={checked}
-          aria-label={name}
-          onClick={() => onChange(!checked)}
-          className={cn(
-            "flex size-7 cursor-pointer touch-manipulation items-center justify-center rounded-md transition-colors duration-150 hover:bg-surface-recessed motion-reduce:transition-none",
-            FOCUS_RING,
-          )}
-        >
-          <span
-            aria-hidden
-            className={cn(
-              "flex size-4 items-center justify-center rounded-[4px] border transition-colors duration-150 motion-reduce:transition-none",
-              checked ? "border-transparent bg-primary text-primary-foreground" : "border-border bg-background",
-            )}
-          >
-            {checked ? <CheckMark className="size-3" /> : null}
-          </span>
-        </button>
+        <Checkbox id={id} data-field="" checked={checked} aria-label={name} onCheckedChange={(next) => onChange(next === true)} />
       </span>
     );
   }
   return (
-    <input
+    <Input
       id={id}
       type="text"
       data-field=""
@@ -260,7 +240,7 @@ function CellField({
       autoComplete="off"
       enterKeyHint="next"
       onChange={(event) => onChange(event.currentTarget.value)}
-      className={cn(FIELD, "px-2")}
+      className="h-8 px-2 text-[13px]"
     />
   );
 }
@@ -284,7 +264,7 @@ function NumberField({
   const [draft, setDraft] = useState<string | null>(null);
   const invalid = draft !== null && parseNumberInput(draft) === undefined;
   return (
-    <input
+    <Input
       id={id}
       type="text"
       inputMode="decimal"
@@ -301,7 +281,7 @@ function NumberField({
         if (parsed !== undefined) onChange(parsed);
       }}
       onBlur={() => setDraft(null)}
-      className={cn(FIELD, "px-2 text-right tabular-nums", invalid && "border-destructive/60")}
+      className={cn("h-8 px-2 text-right text-[13px] tabular-nums", invalid && "border-destructive/60")}
     />
   );
 }

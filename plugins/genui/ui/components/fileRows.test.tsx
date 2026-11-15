@@ -84,6 +84,15 @@ function render(component: (props: { props: Props }) => ReactNode, props: Props,
 
 const renderFindings = (items: Value, canOpen = true) => render(Findings, { items }, canOpen);
 
+/** The hint BB's tooltip shows a keyboard user who tabs to `control`. */
+function hintOf(control: HTMLElement): string | null {
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+  act(() => control.focus());
+  const hint = document.querySelector('[role="tooltip"]')?.textContent ?? null;
+  act(() => control.blur());
+  return hint;
+}
+
 /** Presses the first button whose text starts with `text`. */
 function press(text: string): void {
   const button = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim().startsWith(text));
@@ -103,7 +112,7 @@ describe("A file group's header", () => {
     renderFindings(items);
     const header = container.querySelector("h4")!;
     const link = header.querySelector("button")!;
-    expect(link.title).toBe("Open src/mapMath.ts");
+    expect(hintOf(link)).toBe("Open src/mapMath.ts");
     expect(link.textContent).toBe("src/mapMath.ts");
     expect(icons(header)).toEqual(["FileText"]);
     await act(async () => link.click());
@@ -128,7 +137,7 @@ describe("A review's artifacts", () => {
     });
     press("Review evidence");
     const [file, web] = [...container.querySelectorAll('[aria-label="Review evidence"] li')];
-    expect(file!.querySelector("button")!.title).toBe("Open review/hud-390x844.png");
+    expect(hintOf(file!.querySelector("button")!)).toBe("Open review/hud-390x844.png");
     expect(icons(file!)).toEqual(["FileText"]);
     expect(web!.querySelector("a")!.getAttribute("href")).toBe("https://ci.example.com/runs/42");
     expect(icons(web!)).toEqual(["Globe", "ExternalLink"]);
@@ -151,11 +160,14 @@ describe("Acceptance's file evidence", () => {
     ],
   };
 
+  /** The evidence box naming the gate result's file. */
+  const gateBox = () => [...container.querySelectorAll("button")].find((button) => button.textContent === "Gate resultdata/acceptance/coil-gate.json")!;
+
   it("is one box that opens the file, as the link's box beside it opens the page", async () => {
     render(Acceptance, { criteria });
     press("The gate result is kept");
-    const box = container.querySelector<HTMLButtonElement>('button[title="Open data/acceptance/coil-gate.json"]')!;
-    expect(box.textContent).toBe("Gate resultdata/acceptance/coil-gate.json");
+    const box = gateBox();
+    expect(hintOf(box)).toBe("Open data/acceptance/coil-gate.json");
     expect(icons(box)).toEqual(["FileText"]);
     await act(async () => box.click());
     expect(openFile).toHaveBeenCalledWith("data/acceptance/coil-gate.json", undefined);
@@ -165,7 +177,7 @@ describe("Acceptance's file evidence", () => {
     openFile.mockResolvedValueOnce(false);
     render(Acceptance, { criteria });
     press("The gate result is kept");
-    await act(async () => container.querySelector<HTMLButtonElement>('button[title="Open data/acceptance/coil-gate.json"]')!.click());
+    await act(async () => gateBox().click());
     expect(toastError).toHaveBeenCalledWith("Couldn't open data/acceptance/coil-gate.json");
   });
 

@@ -93,6 +93,10 @@ export const TONE_TEXT: Record<Tone, string> = {
   info: "text-[var(--color-timeline-accent,var(--primary))]",
 };
 
+/** The info tone's faint wash with its ink, for marks that aren't badges (Steps' current step). */
+export const INFO_WASH =
+  "bg-[color-mix(in_oklch,var(--color-timeline-accent,var(--primary))_12%,transparent)] text-[var(--color-timeline-accent,var(--primary))]";
+
 /** Status-dot fill per tone. */
 export const TONE_DOT: Record<Tone, string> = {
   neutral: "bg-muted-foreground/45",
@@ -102,14 +106,14 @@ export const TONE_DOT: Record<Tone, string> = {
   info: "bg-[var(--color-timeline-accent,var(--primary))]",
 };
 
-/** Pill surface per tone: a faint wash of the tone, no border. */
-export const TONE_PILL: Record<Tone, string> = {
-  neutral: "bg-surface-recessed text-muted-foreground",
-  good: "bg-success/12 text-success",
-  warn: "bg-warning/14 text-warning-text",
-  bad: "bg-destructive/10 text-destructive",
-  info: "bg-[color-mix(in_oklch,var(--color-timeline-accent,var(--primary))_12%,transparent)] text-[var(--color-timeline-accent,var(--primary))]",
-};
+/** Badge variant per tone (@bb-plugins/ui's status tones). */
+export const TONE_BADGE = {
+  neutral: "secondary",
+  good: "success",
+  warn: "warning",
+  bad: "danger",
+  info: "info",
+} as const satisfies Record<Tone, "secondary" | "success" | "warning" | "danger" | "info">;
 
 export function tone(value: Value | undefined): Tone {
   return typeof value === "string" && Object.hasOwn(TONE_TEXT, value)

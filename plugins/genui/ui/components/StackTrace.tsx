@@ -10,11 +10,12 @@ import { LANGUAGE_NAMES, frameRows, memberPlaces, readTrace, relationLabel, sour
 import { commonDirectory } from "../../core/test-results";
 import { CardDepthContext, useUiRuntime } from "../runtime";
 import { formatNumber, optionalText, type Props } from "../values";
-import { CodeExcerpt, OpenFileButton, ReportFrame, ReportPathsContext, TEXT_BUTTON, useFileText, useShownPath, useWorkspaceRoot } from "./codeHealthKit";
+import { CodeExcerpt, OpenFileButton, ReportFrame, ReportPathsContext, useFileText, useShownPath, useWorkspaceRoot } from "./codeHealthKit";
 import { ErrorLine } from "./display";
 import { FOCUS_RING } from "./inputs";
 import { FADE, RISE, useEntrance } from "./motion";
-import { ICON_BUTTON } from "./projectKit";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "./iconButton";
 
 /** Sections shown before "Show N more errors". */
 const SECTION_PAGE = 6;
@@ -126,13 +127,15 @@ function Frames({
         {shown.map((row) =>
           row.type === "fold" ? (
             <li key={`fold-${row.start}`} className="border-l-2 border-transparent pl-2">
-              <button
+              <Button
                 type="button"
+                variant="link"
+                size="sm"
                 onClick={() => setUnfolded((previous) => new Set(previous).add(row.start))}
-                className={cn(TEXT_BUTTON, "font-mono text-[11.5px]")}
+                className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground font-mono"
               >
                 … {formatNumber(row.count)} library frames
-              </button>
+              </Button>
             </li>
           ) : (
             <FrameRow
@@ -151,9 +154,15 @@ function Frames({
         ) : null}
       </ol>
       {rows.length > FRAME_PAGE ? (
-        <button type="button" onClick={() => setAll((value) => !value)} className={cn(TEXT_BUTTON, "pl-2.5")}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setAll((value) => !value)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground pl-2.5"
+        >
           {all ? "Show fewer frames" : `Show ${formatNumber(rows.length - FRAME_PAGE)} more frames`}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -177,9 +186,15 @@ function Message({ text, large }: { text: string; large: boolean }) {
         {cut ? lines.slice(0, MESSAGE_LINES).join("\n") : text}
       </p>
       {lines.length > MESSAGE_LINES ? (
-        <button type="button" onClick={() => setAll((value) => !value)} className={TEXT_BUTTON}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setAll((value) => !value)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+        >
           {all ? "Show fewer lines" : `Show all ${formatNumber(lines.length)} lines`}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -268,15 +283,9 @@ function Header({ trace, title }: { trace: Trace; title: string | null }) {
         {title === null ? null : <h2 className="m-0 text-[13px] font-semibold leading-5 text-foreground [overflow-wrap:anywhere]">{title}</h2>}
         <p className="m-0 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">{facts.join(" · ") || "Stack trace"}</p>
       </div>
-      <button
-        type="button"
-        title="Copy the trace"
-        aria-label="Copy the trace"
-        onClick={() => void run([{ kind: "action", type: "copy", text: trace.raw }])}
-        className={ICON_BUTTON}
-      >
+      <IconButton label="Copy the trace" onClick={() => void run([{ kind: "action", type: "copy", text: trace.raw }])}>
         <Icon name="Copy" className="size-3.5" />
-      </button>
+      </IconButton>
     </div>
   );
 }
@@ -320,9 +329,15 @@ export function StackTrace({ props }: { props: Props }) {
           />
         ))}
         {rest > 0 ? (
-          <button type="button" onClick={() => setMore(true)} className={TEXT_BUTTON}>
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            onClick={() => setMore(true)}
+            className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+          >
             Show {formatNumber(rest)} more {rest === 1 ? "error" : "errors"}
-          </button>
+          </Button>
         ) : null}
       </div>
     </ReportPathsContext>

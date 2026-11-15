@@ -21,6 +21,7 @@ import {
   type JsonRow,
 } from "./json-logic";
 import { FADE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight } from "./motion";
+import { IconButton } from "./iconButton";
 
 /** Per tree level, in px. */
 const INDENT = 14;
@@ -41,11 +42,6 @@ const SCALAR_CLASS: Record<JsonKind, string> = {
 
 const ROW_ACTION = cn(
   "inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 font-sans text-[10.5px] text-muted-foreground transition-colors duration-150 hover:bg-background hover:text-foreground",
-  FOCUS_RING,
-);
-
-const ICON_BUTTON = cn(
-  "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-background hover:text-foreground",
   FOCUS_RING,
 );
 
@@ -198,15 +194,9 @@ export function Json({ props }: { props: Props }) {
           <span className="truncate font-mono text-foreground">{label ?? "JSON"}</span>
           <span className="shrink-0 tabular-nums">{caption}</span>
         </span>
-        <button
-          type="button"
-          title="Copy JSON"
-          aria-label={`Copy ${label ?? "the JSON"}`}
-          onClick={() => copy(JSON.stringify(value, null, 2))}
-          className={ICON_BUTTON}
-        >
+        <IconButton label={`Copy ${label ?? "the JSON"}`} tooltip="Copy JSON" onClick={() => copy(JSON.stringify(value, null, 2))}>
           <Icon name="Copy" className="size-3.5" />
-        </button>
+        </IconButton>
       </div>
       <div ref={outer} className={cn("max-h-[28rem] min-w-0 overflow-auto", SMOOTH_HEIGHT_CLASS)}>
         <div

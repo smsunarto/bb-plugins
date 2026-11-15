@@ -21,7 +21,7 @@ import {
 } from "../../core/plugins";
 import type { PluginsResult } from "../../core/project";
 import type { rpcContract } from "../../server";
-import { formatNumber, TONE_PILL, TONE_TEXT, type Props } from "../values";
+import { formatNumber, TONE_TEXT, type Props } from "../values";
 import { ErrorLine } from "./display";
 import { RISE, useEntrance } from "./motion";
 import {
@@ -34,6 +34,7 @@ import {
   useVisible,
 } from "./projectKit";
 import { LiveDot } from "./threads";
+import { Badge } from "@/components/ui/badge";
 
 export function Plugins({ props }: { props: Props }) {
   const claims = useMemo(() => parsePluginClaims(props.items), [props.items]);
@@ -145,14 +146,12 @@ function PluginLine({ row }: { row: PluginRow }) {
               v{state.version}
             </span>
           ) : null}
-          <span
-            className={cn(
-              "ml-auto shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium leading-4",
-              TONE_PILL[claim.action === "not-reloaded" ? "warn" : "neutral"],
-            )}
+          <Badge
+            variant={claim.action === "not-reloaded" ? "warning" : "secondary"}
+            className="ml-auto font-medium"
           >
             {PLUGIN_ACTION_LABEL[claim.action]}
-          </span>
+          </Badge>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-[11px] leading-4 text-muted-foreground">
           <span

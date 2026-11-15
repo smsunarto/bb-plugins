@@ -5,7 +5,9 @@
 // send, waiting, download) with status and size, failures marked. The header
 // gives the total and the critical path, which can dim everything else.
 import { useId, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
 import { formatAmount, formatBytes, formatMs, niceTicks } from "../../core/perf-units";
 import { ancestry, PHASE_LABEL, PHASES, readWaterfall, type PhaseName, type Span, type Waterfall as WaterfallData } from "../../core/waterfall";
@@ -13,9 +15,10 @@ import { ACCENT, optionalText, TONE_TEXT, type Props } from "../values";
 import { actionIntent } from "./action-logic";
 import { TONE_STROKE } from "./chartKit";
 import { ErrorLine } from "./display";
+import { WithTooltip } from "./iconButton";
 import { ActionHint, FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight, type Entrance } from "./motion";
-import { Frame, gridLines, Heading, Quiet, TEXT_BUTTON, useOpenUrl } from "./perfKit";
+import { Frame, gridLines, Heading, Quiet, useOpenUrl } from "./perfKit";
 
 /** Rows shown before "Show N more", and how many each press adds. */
 const ROW_PAGE = 60;
@@ -113,20 +116,17 @@ function WaterfallView({ data }: { data: WaterfallData }) {
         meta={meta.length === 0 ? null : meta.join(" · ")}
         aside={
           data.critical.length > 0 ? (
-            <button
-              type="button"
-              aria-pressed={critical}
-              onClick={() => setCritical((value) => !value)}
-              title="The chain of spans that decided when everything finished"
-              className={cn(
-                "mt-0.5 flex shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-2 text-xs leading-6 tabular-nums transition-colors duration-150",
-                FOCUS_RING,
-                critical ? "bg-foreground text-background" : "bg-surface-recessed text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Icon name="Workflow" aria-hidden className="size-3.5" />
-              Critical path · {formatMs(data.criticalMs)}
-            </button>
+            <WithTooltip tip="The chain of spans that decided when everything finished">
+              <Toggle
+                size="sm"
+                pressed={critical}
+                onPressedChange={setCritical}
+                className="mt-0.5 h-6 shrink-0 gap-1.5 px-2 text-xs font-normal tabular-nums"
+              >
+                <Icon name="Workflow" aria-hidden className="size-3.5" />
+                Critical path · {formatMs(data.criticalMs)}
+              </Toggle>
+            </WithTooltip>
           ) : null
         }
       />
@@ -167,9 +167,15 @@ function WaterfallView({ data }: { data: WaterfallData }) {
         </ul>
       </div>
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + ROW_PAGE)} className={TEXT_BUTTON}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + ROW_PAGE)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+        >
           Show {Math.min(rest, ROW_PAGE)} more of {rest} rows
-        </button>
+        </Button>
       ) : null}
     </>
   );
@@ -389,10 +395,16 @@ function Detail({ data, span }: { data: WaterfallData; span: Span }) {
           <span className="min-w-0 flex-1 break-all font-mono text-[11px] text-foreground">{request.url}</span>
           {/^https?:\/\//i.test(request.url) ? (
             <ActionHint hint={actionIntent([{ kind: "action", type: "openUrl", url: request.url }]).hint}>
-              <button type="button" onClick={() => openUrl(request.url)} className={cn(TEXT_BUTTON, "inline-flex items-center gap-1")}>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                onClick={() => openUrl(request.url)}
+                className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+              >
                 Open
                 <Icon name="ExternalLink" aria-hidden className="size-3 shrink-0" />
-              </button>
+              </Button>
             </ActionHint>
           ) : null}
         </div>

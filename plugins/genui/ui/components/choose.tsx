@@ -26,6 +26,8 @@ import { useImageUrl, type ImageState } from "./media";
 import { reducedMotion, RISE, useEntrance } from "./motion";
 import { ExpandButton, useGroupPicture, ViewerGroup } from "./viewer";
 import { keepTyping } from "../keepTyping";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 /** Selectable tiles get an offset ring, so focus never reads as selection. */
 const TILE_FOCUS =
@@ -68,7 +70,7 @@ function OptionPicture({ src, picture }: { src: string; picture: ImageState }) {
           {picture.status === "failed" && picture.off ? "Web images are off" : "Image unavailable"}
         </span>
       ) : result === null ? (
-        <span className="absolute inset-0 animate-pulse bg-muted/60 motion-reduce:animate-none" />
+        <Skeleton className="absolute inset-0 rounded-none motion-reduce:animate-none" />
       ) : null}
       {url === null || failed !== null ? null : (
         <img
@@ -582,15 +584,17 @@ function Slide({ index, count, children }: { index: number; count: number; child
 /** A round arrow over one end of the row; only where a pointer can hover, and only when that way has more. */
 function CarouselArrow({ side, hidden, onClick }: { side: "previous" | "next"; hidden: boolean; onClick: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="outline"
+      size="icon"
       // The focused row already scrolls with ← and →.
       tabIndex={-1}
       aria-label={side === "previous" ? "Previous cards" : "Next cards"}
       aria-hidden={hidden}
       onClick={onClick}
       className={cn(
-        "absolute top-1/2 hidden size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-foreground shadow-[0_2px_8px_rgb(0_0_0/0.12)] transition-opacity duration-150 hover:bg-surface-recessed motion-reduce:transition-none [@media(hover:hover)]:flex",
+        "absolute top-1/2 hidden size-8 -translate-y-1/2 rounded-full bg-background shadow-md transition-opacity duration-150 motion-reduce:transition-none [@media(hover:hover)]:flex",
         side === "previous" ? "left-1" : "right-1",
         hidden
           ? "pointer-events-none opacity-0"
@@ -598,6 +602,6 @@ function CarouselArrow({ side, hidden, onClick }: { side: "previous" | "next"; h
       )}
     >
       <Icon name={side === "previous" ? "ChevronLeft" : "ChevronRight"} aria-hidden className="size-4" />
-    </button>
+    </Button>
   );
 }

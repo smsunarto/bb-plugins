@@ -37,6 +37,9 @@ import {
 import { EASE_OUT_EXPO, reducedMotion, RISE, useAnimationsOff, useEntrance } from "./motion";
 import { NO_BB_SWIPE } from "./viewer";
 import { Credit, Fill } from "./webMedia";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { IconButton } from "./iconButton";
 
 /** How long the last place must stay unchanged before its name is looked up (it may still be streaming its lat/lng). */
 const SETTLE_MS = 700;
@@ -157,10 +160,9 @@ function Backdrop({ view, size, z }: { view: View; size: Size; z: number }) {
 
 // A shadow keeps the white number legible on the lighter day colours.
 const MARKER = "flex shrink-0 items-center justify-center rounded-full font-semibold tabular-nums text-white [text-shadow:0_0_2px_rgb(0_0_0/0.45)]";
-const CONTROL =
-  "flex size-8 cursor-pointer items-center justify-center bg-background text-foreground transition-colors hover:bg-surface-recessed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
-const TOUR_BUTTON =
-  "flex h-7 cursor-pointer items-center gap-1 bg-background px-2 text-xs font-medium text-foreground transition-colors hover:bg-surface-recessed focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring";
+/** The map's joined control stacks: square, flush buttons on the map's own background. */
+const CONTROL = "size-8 rounded-none bg-background text-foreground focus-visible:ring-inset [&_[data-icon-root]]:size-4 [&_svg]:size-4";
+const TOUR_BUTTON = "h-7 gap-1 rounded-none bg-background px-2 text-foreground focus-visible:ring-inset [&_[data-icon-root]]:size-3.5";
 
 type Gesture =
   | { readonly kind: "press"; readonly id: number; readonly x: number; readonly y: number; readonly view: View }
@@ -277,7 +279,7 @@ function useTour(wanted: boolean, count: number, target: RefObject<HTMLElement |
   };
 }
 
-const SKELETON = "animate-pulse bg-surface-recessed motion-reduce:animate-none";
+const SKELETON = "motion-reduce:animate-none";
 
 /**
  * A place's Wikipedia lead photo with its credit, under its card text. The
@@ -292,7 +294,7 @@ function PlacePhoto({ title, name, onOff }: { title: string; name: string; onOff
   useEffect(() => {
     if (off) onOff();
   }, [off, onOff]);
-  if (found === null) return <span aria-hidden className={cn("ml-[38px] mr-2 mb-1.5 block aspect-[16/9] rounded-md", SKELETON)} />;
+  if (found === null) return <Skeleton aria-hidden className={cn("ml-[38px] mr-2 mb-1.5 block aspect-[16/9] rounded-md", SKELETON)} />;
   if (photo === null || off) return null;
   const url = image.status === "ready" ? image.url : null;
   if (image.status === "failed" || (url !== null && broken === url)) {
@@ -301,7 +303,7 @@ function PlacePhoto({ title, name, onOff }: { title: string; name: string; onOff
   return (
     <figure className="mb-1.5 ml-[38px] mr-2 flex min-w-0 flex-col gap-1">
       <div className="relative aspect-[16/9] overflow-hidden rounded-md border border-border bg-surface-recessed">
-        {url === null ? <span aria-hidden className={cn("absolute inset-0", SKELETON)} /> : <Fill url={url} alt={name} onFailed={() => setBroken(url)} />}
+        {url === null ? <Skeleton aria-hidden className={cn("absolute inset-0 rounded-none", SKELETON)} /> : <Fill url={url} alt={name} onFailed={() => setBroken(url)} />}
       </div>
       <figcaption>
         <Credit image={photo} compact />
@@ -661,28 +663,28 @@ export function MapView({ props }: { props: Props }) {
                 );
               })}
               <div className="absolute right-2 top-2 flex flex-col overflow-hidden rounded-md border border-border shadow-[0_1px_2px_rgb(0_0_0/0.08)]">
-                <button type="button" aria-label="Zoom in" title="Zoom in" onClick={() => zoomBy(1)} disabled={view !== null && view.zoom >= MAX_ZOOM} className={CONTROL}>
-                  <Icon name="Plus" className="size-4" />
-                </button>
-                <button type="button" aria-label="Zoom out" title="Zoom out" onClick={() => zoomBy(-1)} className={cn(CONTROL, "border-y border-border")}>
-                  <Icon name="Minus" className="size-4" />
-                </button>
-                <button type="button" aria-label="Show every place" title="Show every place" onClick={showAll} className={CONTROL}>
-                  <Icon name="Maximize2" className="size-4" />
-                </button>
+                <IconButton label="Zoom in" onClick={() => zoomBy(1)} disabled={view !== null && view.zoom >= MAX_ZOOM} className={CONTROL}>
+                  <Icon name="Plus" />
+                </IconButton>
+                <IconButton label="Zoom out" onClick={() => zoomBy(-1)} className={cn(CONTROL, "border-y border-border")}>
+                  <Icon name="Minus" />
+                </IconButton>
+                <IconButton label="Show every place" onClick={showAll} className={CONTROL}>
+                  <Icon name="Maximize2" />
+                </IconButton>
               </div>
               {tour.active && tour.started ? (
                 <div className="absolute bottom-2 left-2 flex overflow-hidden rounded-md border border-border shadow-[0_1px_2px_rgb(0_0_0/0.08)]">
                   {tour.done ? null : (
-                    <button type="button" aria-label={tour.paused ? "Resume the tour" : "Pause the tour"} onClick={tour.toggle} className={cn(TOUR_BUTTON, "border-r border-border")}>
-                      <Icon name={tour.paused ? "Play" : "Pause"} aria-hidden className="size-3.5" />
+                    <Button type="button" variant="ghost" size="sm" aria-label={tour.paused ? "Resume the tour" : "Pause the tour"} onClick={tour.toggle} className={cn(TOUR_BUTTON, "border-r border-border")}>
+                      <Icon name={tour.paused ? "Play" : "Pause"} aria-hidden />
                       {tour.paused ? "Resume" : "Pause"}
-                    </button>
+                    </Button>
                   )}
-                  <button type="button" aria-label="Replay the tour" onClick={tour.replay} className={TOUR_BUTTON}>
-                    <Icon name="RotateCcw" aria-hidden className="size-3.5" />
+                  <Button type="button" variant="ghost" size="sm" aria-label="Replay the tour" onClick={tour.replay} className={TOUR_BUTTON}>
+                    <Icon name="RotateCcw" aria-hidden />
                     Replay
-                  </button>
+                  </Button>
                 </div>
               ) : null}
               <p className="absolute bottom-0 right-0 m-0 rounded-tl-md bg-background/85 px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground">

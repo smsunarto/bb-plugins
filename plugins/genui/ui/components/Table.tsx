@@ -1,6 +1,14 @@
 import type { ReactNode } from "react";
 import { Markdown } from "@get-bb/plugin-sdk/app";
 import type { Value } from "../../core/types";
+import {
+  Table as TableView,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { RenderNode } from "../render";
 import { InTableContext } from "../runtime";
@@ -32,7 +40,11 @@ function Cell({ value }: { value: Value }): ReactNode {
 /** A body row: rises in with its siblings the first time it appears. */
 function BodyRow({ children }: { children: ReactNode }) {
   const ref = useEntrance<HTMLTableRowElement>(RISE);
-  return <tr ref={ref}>{children}</tr>;
+  return (
+    <TableRow ref={ref} className="border-b-0 hover:bg-transparent">
+      {children}
+    </TableRow>
+  );
 }
 
 export function Table({ props }: { props: Props }) {
@@ -47,47 +59,47 @@ export function Table({ props }: { props: Props }) {
   return (
     // No box of its own: the table sits on its Card's surface and is ruled
     // only between rows, like a typeset table.
-    <div className="min-w-0 overflow-x-auto">
-      <table className="w-full border-collapse text-left text-sm leading-5">
+    <div className="min-w-0">
+      <TableView className="border-collapse text-left leading-5">
         {columns.length === 0 ? null : (
-          <thead>
-            <tr>
+          <TableHeader className="[&_tr]:border-b-0">
+            <TableRow className="hover:bg-transparent">
               {columns.map((column, index) => (
-                <th
+                <TableHead
                   key={index}
                   scope="col"
                   className={cn(
-                    "whitespace-nowrap border-b border-border pb-2 pr-4 align-bottom text-xs font-medium text-muted-foreground last:pr-0",
+                    "h-auto whitespace-nowrap border-b border-border pb-2 pl-0 pr-4 align-bottom text-xs last:pr-0",
                     numeric[index] && "text-right",
                   )}
                 >
                   <Cell value={column} />
-                </th>
+                </TableHead>
               ))}
-            </tr>
-          </thead>
+            </TableRow>
+          </TableHeader>
         )}
         <InTableContext value={true}>
-          <tbody className="[&>tr:last-child>td]:border-b-0">
+          <TableBody className="[&>tr:last-child>td]:border-b-0">
             {rows.map((row, rowIndex) => (
               <BodyRow key={rowIndex}>
                 {Array.from({ length: width }, (_, column) => (
-                  <td
+                  <TableCell
                     key={column}
                     className={cn(
-                      "border-b border-border/60 py-2.5 pr-4 align-top text-foreground last:pr-0",
+                      "border-b border-border py-2.5 pl-0 pr-4 align-top text-foreground last:pr-0",
                       column === 0 && width > 1 && "min-w-[7rem] font-medium",
                       numeric[column] && "whitespace-nowrap text-right tabular-nums",
                     )}
                   >
                     <Cell value={row[column] ?? null} />
-                  </td>
+                  </TableCell>
                 ))}
               </BodyRow>
             ))}
-          </tbody>
+          </TableBody>
         </InTableContext>
-      </table>
+      </TableView>
     </div>
   );
 }

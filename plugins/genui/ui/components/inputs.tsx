@@ -1,7 +1,14 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { Action, PropsOf, Value } from "../../core/types";
 import { Button as BaseButton } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
+import { Input as InputField } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Slider as SliderControl } from "@/components/ui/slider";
+import { Select as SelectRoot, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { resolveIconName } from "../icons";
@@ -16,7 +23,6 @@ import {
   type Props,
 } from "../values";
 import { ACTION_GLYPHS, actionIntent, sendEffect } from "./action-logic";
-import { CheckMark } from "./display";
 // fields.tsx imports this module's field styles; Radio is only used at render time, so the cycle is safe.
 import { Radio } from "./fields";
 import { reducedMotion, useEntrance, type Entrance } from "./motion";
@@ -34,10 +40,6 @@ export const FIELD = cn(
 /** The small caption above a control. */
 export const CAPTION = "text-xs leading-5 text-muted-foreground";
 
-/** One thumb style for both engines: a white knob with a hairline and a soft drop. */
-const THUMB =
-  "[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-border [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)] [&::-webkit-slider-thumb]:transition-transform active:[&::-webkit-slider-thumb]:scale-110 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-border [&::-moz-range-thumb]:bg-background [&::-moz-range-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)]";
-
 export function Slider({ props }: { props: PropsOf<"Slider"> }) {
   const { setValue } = useUiRuntime();
   const id = useId();
@@ -47,35 +49,28 @@ export function Slider({ props }: { props: PropsOf<"Slider"> }) {
   const step = props.step ?? (Number.isInteger(min) && Number.isInteger(max) ? 1 : (max - min) / 100);
   const current = finiteNumber(binding.value) ?? min;
   const label = props.label ?? null;
-  const fill = max === min ? 0 : ((Math.min(max, Math.max(min, current)) - min) / (max - min)) * 100;
   return (
     <div className="flex min-w-0 flex-col gap-2">
       <div className="flex h-5 items-center justify-between gap-3 text-xs">
-        <label htmlFor={id} className="truncate text-muted-foreground">
+        <Label id={`${id}-label`} className="truncate text-xs font-normal leading-5 text-muted-foreground">
           {label}
-        </label>
+        </Label>
         <span className="text-sm font-semibold leading-5 tabular-nums text-foreground">
           {formatNumber(current)}
         </span>
       </div>
-      <input
+      <SliderControl
         id={id}
-        type="range"
         min={min}
         max={max}
         step={step}
-        value={current}
-        aria-label={label === null ? binding.name : undefined}
-        onChange={(event) => setValue(binding.name, Number(event.currentTarget.value))}
-        // The filled part of the track shows the value at a glance.
-        style={{
-          background: `linear-gradient(to right, var(--primary) ${fill}%, var(--muted) ${fill}%)`,
+        value={[current]}
+        thumbLabel={label === null ? binding.name : undefined}
+        thumbLabelledBy={label === null ? undefined : `${id}-label`}
+        onValueChange={([next]) => {
+          if (next !== undefined) setValue(binding.name, next);
         }}
-        className={cn(
-          "my-1 h-1 w-full cursor-pointer appearance-none rounded-full",
-          THUMB,
-          "focus-visible:outline-none focus-visible:[&::-webkit-slider-thumb]:ring-2 focus-visible:[&::-webkit-slider-thumb]:ring-ring/30",
-        )}
+        className="my-1.5"
       />
     </div>
   );
@@ -83,32 +78,16 @@ export function Slider({ props }: { props: PropsOf<"Slider"> }) {
 
 export function Toggle({ props }: { props: PropsOf<"Toggle"> }) {
   const { setValue } = useUiRuntime();
+  const id = useId();
   const binding = props.value;
   const on = Boolean(binding.value);
   return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      onClick={() => setValue(binding.name, !on)}
-      {...keepTyping}
-      className="group/switch inline-flex w-fit max-w-full cursor-pointer items-center gap-2 self-start text-sm text-foreground focus-visible:outline-none"
-    >
-      <span
-        className={cn(
-          "inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors duration-150 group-focus-visible/switch:ring-1 group-focus-visible/switch:ring-ring",
-          on ? "border-transparent bg-primary" : "border-border bg-muted",
-        )}
-      >
-        <span
-          className={cn(
-            "size-4 rounded-full bg-card shadow-sm transition-transform duration-150 motion-reduce:transition-none",
-            on ? "translate-x-4" : "translate-x-0.5",
-          )}
-        />
-      </span>
-      <span className="min-w-0 truncate">{props.label}</span>
-    </button>
+    <div className="flex w-fit max-w-full items-center gap-2 self-start">
+      <Switch id={id} checked={on} size="default" onCheckedChange={(next) => setValue(binding.name, next)} {...keepTyping} />
+      <Label htmlFor={id} {...keepTyping} className="min-w-0 cursor-pointer truncate text-sm font-normal leading-5 text-foreground">
+        {props.label}
+      </Label>
+    </div>
   );
 }
 
@@ -129,6 +108,7 @@ export function Choice({ props }: { props: PropsOf<"Choice"> }) {
     labels.join("").length <= SEGMENT_MAX_TOTAL;
   if (!fits) return <Radio props={props} />;
   const label = props.label ?? null;
+  const scalars = options.filter(isScalar);
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {label === null ? null : (
@@ -136,37 +116,23 @@ export function Choice({ props }: { props: PropsOf<"Choice"> }) {
           {label}
         </span>
       )}
-      <div
-        role="radiogroup"
+      <ToggleGroup
+        type="single"
         aria-labelledby={label === null ? undefined : labelId}
-        className="flex w-fit max-w-full flex-wrap gap-0.5 rounded-lg bg-surface-recessed p-0.5"
+        // Options are positional: the same value may repeat, and any scalar round-trips.
+        value={String(scalars.findIndex((option) => option === binding.value))}
+        onValueChange={(next) => {
+          // A press on the chosen option would clear it; a choice keeps one.
+          if (next !== "") setValue(binding.name, scalars[Number(next)] ?? null);
+        }}
+        className="w-fit max-w-full flex-wrap justify-start gap-0.5 rounded-lg bg-surface-recessed p-0.5"
       >
-        {options
-          .filter(isScalar)
-          .map((option, index) => {
-            const selected = option === binding.value;
-            return (
-              <button
-                // Options are positional; the same value may repeat.
-                key={index}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => setValue(binding.name, option)}
-                {...keepTyping}
-                className={cn(
-                  "h-7 cursor-pointer rounded-md px-3 text-[13px] transition-[color,background-color,box-shadow] duration-150",
-                  FOCUS_RING,
-                  selected
-                    ? "bg-background font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_0.5px_var(--border)]"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {option === null ? "None" : String(option)}
-              </button>
-            );
-          })}
-      </div>
+        {scalars.map((option, index) => (
+          <ToggleGroupItem key={index} value={String(index)} {...keepTyping} className="h-7 min-w-0 px-3 text-[13px] font-normal data-[state=on]:font-medium">
+            {option === null ? "None" : String(option)}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
     </div>
   );
 }
@@ -180,24 +146,24 @@ export function Input({ props }: { props: PropsOf<"Input"> }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       {label === null ? null : (
-        <label htmlFor={id} className={CAPTION}>
+        <Label htmlFor={id} className={cn(CAPTION, "font-normal")}>
           {label}
-        </label>
+        </Label>
       )}
-      <input
+      <InputField
         id={id}
         type="text"
         value={text(binding.value)}
         placeholder={placeholder ?? undefined}
         aria-label={label === null ? (placeholder ?? binding.name) : undefined}
         onChange={(event) => setValue(binding.name, event.currentTarget.value)}
-        className={cn(FIELD, "px-2.5 placeholder:text-subtle-foreground")}
+        className="h-8 px-2.5 text-[13px] placeholder:text-subtle-foreground"
       />
     </div>
   );
 }
 
-/** A native dropdown dressed as a field; option values are positions, so any scalar round-trips. */
+/** BB's dropdown as a field; option values are positions, so any scalar round-trips. */
 export function Select({ props }: { props: PropsOf<"Select"> }) {
   const { setValue } = useUiRuntime();
   const id = useId();
@@ -208,36 +174,25 @@ export function Select({ props }: { props: PropsOf<"Select"> }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       {label === null ? null : (
-        <label htmlFor={id} className={CAPTION}>
+        <Label htmlFor={id} className={cn(CAPTION, "font-normal")}>
           {label}
-        </label>
+        </Label>
       )}
-      <div className="relative min-w-0">
-        <select
-          id={id}
-          value={selected < 0 ? "" : String(selected)}
-          aria-label={label === null ? binding.name : undefined}
-          onChange={(event) => setValue(binding.name, options[Number(event.currentTarget.value)] ?? null)}
-          className={cn(FIELD, "cursor-pointer appearance-none truncate pl-2.5 pr-8", selected < 0 && "text-muted-foreground")}
-        >
-          {selected < 0 ? (
-            <option value="" disabled>
-              Choose…
-            </option>
-          ) : null}
-          {options.map((option, index) => (
-            // Options are positional; the same value may repeat.
-            <option key={index} value={index}>
-              {option === null ? "None" : String(option)}
-            </option>
-          ))}
-        </select>
-        <Icon
-          name="ChevronDown"
-          aria-hidden
-          className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-        />
-      </div>
+      <SelectRoot value={selected < 0 ? "" : String(selected)} onValueChange={(next) => setValue(binding.name, options[Number(next)] ?? null)}>
+        <SelectTrigger id={id} aria-label={label === null ? binding.name : undefined} className="h-8 min-w-0 pl-2.5 pr-2.5 text-[13px]">
+          <SelectValue placeholder="Choose…" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {options.map((option, index) => (
+              // Options are positional; the same value may repeat.
+              <SelectItem key={index} value={String(index)}>
+                {option === null ? "None" : String(option)}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </SelectRoot>
     </div>
   );
 }
@@ -275,31 +230,18 @@ export function Checklist({ props }: { props: PropsOf<"Checklist"> }) {
       >
         {options.map((option, index) => {
           const checked = picked.includes(option);
+          const id = `${labelId}-${index}`;
           return (
-            <button
+            <div
               // Options are positional; the same value may repeat.
               key={index}
-              type="button"
-              role="checkbox"
-              aria-checked={checked}
-              onClick={() => toggle(option)}
-              {...keepTyping}
-              className={cn(
-                "flex w-fit max-w-full cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 text-left text-sm leading-5 text-foreground transition-colors duration-150 hover:bg-surface-recessed",
-                FOCUS_RING,
-              )}
+              className="flex w-fit max-w-full items-start gap-2 rounded-md px-1.5 py-1 transition-colors duration-150 hover:bg-surface-recessed"
             >
-              <span
-                aria-hidden
-                className={cn(
-                  "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors duration-150",
-                  checked ? "border-transparent bg-primary text-primary-foreground" : "border-border bg-background",
-                )}
-              >
-                {checked ? <CheckMark className="size-3" /> : null}
-              </span>
-              <span className="min-w-0 [overflow-wrap:anywhere]">{option === null ? "None" : String(option)}</span>
-            </button>
+              <Checkbox id={id} checked={checked} onCheckedChange={() => toggle(option)} {...keepTyping} className="mt-0.5" />
+              <Label htmlFor={id} {...keepTyping} className="min-w-0 cursor-pointer text-sm font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
+                {option === null ? "None" : String(option)}
+              </Label>
+            </div>
           );
         })}
       </div>

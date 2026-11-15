@@ -9,7 +9,10 @@
 // conditions, the best per metric marked and failed runs kept, grouped by a
 // condition the reader picks.
 import { useId, useMemo, useState, type CSSProperties } from "react";
-import { Icon } from "@/components/ui/icon";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import {
   formatConditions,
@@ -34,12 +37,12 @@ import {
 } from "../../core/benchmark";
 import { formatAmount, formatDelta, formatPercent, niceTicks, unitInfo } from "../../core/perf-units";
 import { propsKey, usePersistedState } from "../usePersistedState";
-import { ACCENT, optionalText, TONE_PILL, TONE_TEXT, type Props, type Tone } from "../values";
+import { ACCENT, optionalText, TONE_BADGE, TONE_TEXT, type Props, type Tone } from "../values";
 import { useWidth } from "./chartKit";
 import { ErrorLine } from "./display";
-import { FIELD, FOCUS_RING } from "./inputs";
+import { FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, RISE, useEntrance, type Entrance } from "./motion";
-import { Frame, gridLines, Heading, Quiet, TEXT_BUTTON } from "./perfKit";
+import { Frame, gridLines, Heading, Quiet } from "./perfKit";
 
 /** Rows shown before "Show N more". */
 const ROW_PAGE = 30;
@@ -148,9 +151,15 @@ function Comparisons({ report }: { report: CompareReport }) {
         ))}
       </ul>
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + ROW_PAGE)} className={TEXT_BUTTON}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + ROW_PAGE)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+        >
           Show {Math.min(rest, ROW_PAGE)} more of {rest}
-        </button>
+        </Button>
       ) : null}
     </>
   );
@@ -197,9 +206,9 @@ function ComparisonRow({ row, max, words, shared }: { row: Comparison; max: numb
         {repeatNote === null ? null : <span className="block text-[10.5px] leading-4">{repeatNote}</span>}
       </span>
       <span aria-hidden className="col-start-2 row-start-1 flex flex-col items-end @lg:col-start-4">
-        <span className={cn("whitespace-nowrap rounded-full px-1.5 text-[11px] font-medium leading-[18px] tabular-nums", TONE_PILL[tone])} title={verdictWord}>
+        <Badge variant={TONE_BADGE[tone]} className="px-1.5 py-0 font-medium tabular-nums" title={verdictWord}>
           {row.comparable ? change : "not comparable"}
-        </span>
+        </Badge>
         <span className={cn("whitespace-nowrap text-[10.5px] leading-4 tabular-nums", row.comparable ? TONE_TEXT[tone] || "text-muted-foreground" : "text-muted-foreground")}>
           {!row.comparable ? `measured ${change}` : row.percent === null ? verdictWord : formatDelta(row.delta, row.unit)}
         </span>
@@ -311,9 +320,15 @@ function RunGroupView({ group, unit, tool }: { group: RunGroup; unit: string; to
       </ol>
       <Axis ticks={ticks} unit={unit} />
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + ROW_PAGE)} className={TEXT_BUTTON}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + ROW_PAGE)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+        >
           Show {Math.min(rest, ROW_PAGE)} more of {rest}
-        </button>
+        </Button>
       ) : null}
     </section>
   );
@@ -569,38 +584,46 @@ function AllRuns({ report, persistId }: { report: AllRunsReport; persistId: stri
         ))}
       </div>
       {rest > 0 ? (
-        <button type="button" onClick={() => setShown((count) => count + ROW_PAGE)} className={TEXT_BUTTON}>
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={() => setShown((count) => count + ROW_PAGE)}
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground"
+        >
           Show {Math.min(rest, ROW_PAGE)} more of {rest}
-        </button>
+        </Button>
       ) : null}
     </>
   );
 }
+
+/** Select's value for "None": Radix reserves "" for no selection. */
+const NO_GROUP = "\u0000none";
 
 /** The condition to group runs by, or none. */
 function GroupBy({ value, options, onChange }: { value: string | null; options: readonly string[]; onChange: (value: string) => void }) {
   const id = useId();
   return (
     <div className="flex shrink-0 items-center gap-1.5">
-      <label htmlFor={id} className="text-xs leading-5 text-muted-foreground">
+      <Label htmlFor={id} className="text-xs font-normal leading-5 text-muted-foreground">
         Group by
-      </label>
-      <span className="relative">
-        <select
-          id={id}
-          value={value ?? ""}
-          onChange={(event) => onChange(event.currentTarget.value)}
-          className={cn(FIELD, "h-7 w-auto max-w-[11rem] cursor-pointer appearance-none truncate pl-2 pr-7 text-xs")}
-        >
-          <option value="">None</option>
-          {options.map((option) => (
-            <option key={option} value={option}>
-              {option}
-            </option>
-          ))}
-        </select>
-        <Icon name="ChevronDown" aria-hidden className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-      </span>
+      </Label>
+      <Select value={value ?? NO_GROUP} onValueChange={(next) => onChange(next === NO_GROUP ? "" : next)}>
+        <SelectTrigger id={id} className="h-7 w-auto max-w-[11rem] gap-1.5 px-2 text-xs">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value={NO_GROUP}>None</SelectItem>
+            {options.map((option) => (
+              <SelectItem key={option} value={option}>
+                {option}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
     </div>
   );
 }
@@ -630,7 +653,9 @@ function RunRecordRow({
             {run.name}
           </span>
           {measured ? null : (
-            <span className={cn("shrink-0 rounded-full px-1.5 text-[11px] font-medium leading-[18px]", TONE_PILL[tone])}>{runStatusWord(run)}</span>
+            <Badge variant={TONE_BADGE[tone]} className="px-1.5 py-0 font-medium">
+              {runStatusWord(run)}
+            </Badge>
           )}
         </span>
         {recorded.length === 0 ? null : (

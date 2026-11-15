@@ -10,6 +10,7 @@
 // which is also what stops iOS from zooming the whole page instead.
 import {
   createContext,
+  forwardRef,
   useCallback,
   useContext,
   useEffect,
@@ -29,6 +30,7 @@ import { cn } from "@/lib/utils";
 import type { Size } from "../../core/compare";
 import { usePaneBounds } from "../paneBounds";
 import { useUiRuntime } from "../runtime";
+import { IconButton, type IconButtonProps } from "./iconButton";
 import { EASE_OUT_EXPO, reducedMotion, useMotionScope } from "./motion";
 import {
   clampView,
@@ -349,8 +351,24 @@ export function usePanZoom(surface: HTMLElement | null, options: PanZoomOptions)
 
 const ZOOM_STEP = 1.5;
 
-export const VIEWER_BUTTON =
-  "flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2";
+/** The zoom bar's buttons: a size down from the bars', with 16px icons. */
+const ZOOM_BUTTON = "size-9 [&_[data-icon-root]]:size-4 [&_svg]:size-4";
+
+/** The full screen's stacking, above BB's chrome; its tooltips go one above. */
+const VIEWER_LAYER = "z-[2147483000]";
+export const VIEWER_TOOLTIP_LAYER = "z-[2147483001]";
+
+/** A round icon control in the viewer's bars, toned for the viewer's background. */
+export const ViewerButton = forwardRef<HTMLButtonElement, IconButtonProps & { tone: ViewerTone }>(function ViewerButton({ tone, className, ...props }, ref) {
+  return (
+    <IconButton
+      ref={ref}
+      tooltipLayer={VIEWER_TOOLTIP_LAYER}
+      className={cn("size-10 rounded-full [&_[data-icon-root]]:size-5 [&_svg]:size-5", TONES[tone].button, className)}
+      {...props}
+    />
+  );
+});
 
 /**
  * A zoomable pane filling the viewer: `children` drawn at `content`'s size
@@ -396,7 +414,6 @@ export function ZoomPane({
     return () => observer.disconnect();
   }, [pane, content, redraw]);
 
-  const button = cn(VIEWER_BUTTON, "size-9", TONES[tone].button);
   return (
     <div
       ref={setPane}
@@ -419,15 +436,15 @@ export function ZoomPane({
         aria-label="Zoom"
         className={cn("absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full p-1 backdrop-blur-md", TONES[tone].bar)}
       >
-        <button type="button" aria-label="Zoom out" title="Zoom out (−)" disabled={!zoom.zoomed} onClick={() => zoom.zoomBy(1 / ZOOM_STEP)} className={cn(button, "disabled:opacity-40")}>
-          <Icon name="ZoomOut" aria-hidden className="size-4" />
-        </button>
-        <button type="button" aria-label="Zoom in" title="Zoom in (+)" onClick={() => zoom.zoomBy(ZOOM_STEP)} className={button}>
-          <Icon name="ZoomIn" aria-hidden className="size-4" />
-        </button>
-        <button type="button" aria-label="Reset zoom" title="Fit (0)" disabled={!zoom.zoomed} onClick={zoom.reset} className={cn(button, "disabled:opacity-40")}>
-          <Icon name="RotateCcw" aria-hidden className="size-4" />
-        </button>
+        <ViewerButton tone={tone} label="Zoom out" tooltip="Zoom out (−)" disabled={!zoom.zoomed} onClick={() => zoom.zoomBy(1 / ZOOM_STEP)} className={ZOOM_BUTTON}>
+          <Icon name="ZoomOut" aria-hidden />
+        </ViewerButton>
+        <ViewerButton tone={tone} label="Zoom in" tooltip="Zoom in (+)" onClick={() => zoom.zoomBy(ZOOM_STEP)} className={ZOOM_BUTTON}>
+          <Icon name="ZoomIn" aria-hidden />
+        </ViewerButton>
+        <ViewerButton tone={tone} label="Reset zoom" tooltip="Fit (0)" disabled={!zoom.zoomed} onClick={zoom.reset} className={ZOOM_BUTTON}>
+          <Icon name="RotateCcw" aria-hidden />
+        </ViewerButton>
       </div>
     </div>
   );
@@ -547,7 +564,7 @@ export function FullScreen({
       onPointerUp={stop}
       onMouseDown={stop}
     >
-      {bounds === null ? null : <div aria-hidden className="fixed inset-0 z-[2147483000] bg-black/40" onClick={onClose} />}
+      {bounds === null ? null : <div aria-hidden className={cn("fixed inset-0 bg-black/40", VIEWER_LAYER)} onClick={onClose} />}
       <div
         ref={dialog}
         role="dialog"
@@ -560,16 +577,16 @@ export function FullScreen({
         onClick={(event) => {
           if (event.target === event.currentTarget) onClose();
         }}
-        className={cn("fixed inset-0 z-[2147483000] flex select-none flex-col overscroll-none outline-none", TONES[tone].shell)}
+        className={cn("fixed inset-0 flex select-none flex-col overscroll-none outline-none", VIEWER_LAYER, TONES[tone].shell)}
         style={bounds === null ? undefined : { ...bounds, right: "auto", bottom: "auto" }}
       >
         <div className="flex shrink-0 items-center justify-between gap-3 px-3 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))]">
           <span className={cn("min-w-0 truncate text-xs tabular-nums", TONES[tone].muted)}>{status}</span>
           <span className="flex shrink-0 items-center gap-2">
             {actions}
-            <button ref={close} type="button" aria-label="Close" title="Close (Esc)" onClick={onClose} className={cn(VIEWER_BUTTON, TONES[tone].button)}>
-              <Icon name="X" className="size-5" />
-            </button>
+            <ViewerButton ref={close} tone={tone} label="Close" tooltip="Close (Esc)" onClick={onClose}>
+              <Icon name="X" />
+            </ViewerButton>
           </span>
         </div>
         {children}
@@ -613,7 +630,7 @@ export function ImageViewer({
   const path = item.path;
   const size = natural?.url === item.url ? natural.size : null;
   const text = item.caption ?? (item.alt || null);
-  const button = cn(VIEWER_BUTTON, TONES.photo.button, "absolute top-1/2 z-10 -translate-y-1/2 max-sm:hidden");
+  const button = "absolute top-1/2 z-10 -translate-y-1/2 max-sm:hidden";
 
   return (
     <FullScreen
@@ -622,18 +639,16 @@ export function ImageViewer({
       status={many ? `${index + 1} / ${items.length}` : null}
       actions={
         path === undefined || openFile === null ? null : (
-          <button
-            type="button"
-            aria-label={`Open ${path}`}
-            title={`Open ${path}`}
+          <ViewerButton
+            tone="photo"
+            label={`Open ${path}`}
             onClick={async () => {
               if (await openFile(path)) onClose();
               else toast.error(`Couldn't open ${path}`);
             }}
-            className={cn(VIEWER_BUTTON, TONES.photo.button)}
           >
-            <Icon name="FileText" className="size-5" />
-          </button>
+            <Icon name="FileText" />
+          </ViewerButton>
         )
       }
       onClose={onClose}
@@ -678,12 +693,12 @@ export function ImageViewer({
         </ZoomPane>
         {many ? (
           <>
-            <button type="button" aria-label="Previous picture" onClick={() => step(-1)} className={cn(button, "left-3")}>
-              <Icon name="ChevronLeft" className="size-5" />
-            </button>
-            <button type="button" aria-label="Next picture" onClick={() => step(1)} className={cn(button, "right-3")}>
-              <Icon name="ChevronRight" className="size-5" />
-            </button>
+            <ViewerButton tone="photo" label="Previous picture" onClick={() => step(-1)} className={cn(button, "left-3")}>
+              <Icon name="ChevronLeft" />
+            </ViewerButton>
+            <ViewerButton tone="photo" label="Next picture" onClick={() => step(1)} className={cn(button, "right-3")}>
+              <Icon name="ChevronRight" />
+            </ViewerButton>
           </>
         ) : null}
       </div>
@@ -783,20 +798,18 @@ export function useGroupPicture(order: number, picture: Viewable | null): (opene
 /** The open affordance on a picture that already does something when pressed (pins, a selection): an expand button at its corner. */
 export function ExpandButton({ label, onOpen, className }: { label: string; onOpen: (opener: HTMLButtonElement) => void; className?: string }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
+    <IconButton
+      label={label}
       onClick={(event) => {
         event.stopPropagation();
         onOpen(event.currentTarget);
       }}
       className={cn(
-        "absolute z-10 flex size-7 cursor-zoom-in items-center justify-center rounded-full bg-black/55 text-white shadow-[0_1px_3px_rgb(0_0_0/0.3)] backdrop-blur-sm transition-colors duration-150 hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-8",
+        "absolute z-10 size-7 cursor-zoom-in rounded-full bg-black/55 text-white shadow-sm backdrop-blur-sm hover:bg-black/75 hover:text-white pointer-coarse:size-8",
         className,
       )}
     >
       <Icon name="Maximize2" aria-hidden className="size-3.5" />
-    </button>
+    </IconButton>
   );
 }

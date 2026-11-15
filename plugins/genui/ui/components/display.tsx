@@ -12,12 +12,17 @@ import {
   optionalText,
   text,
   tone,
+  INFO_WASH,
+  TONE_BADGE,
   TONE_DOT,
-  TONE_PILL,
   TONE_TEXT,
   type Props,
 } from "../values";
 import { CHART_DRAW_MS, EASE_OUT_EXPO, FADE, RISE, useEntrance, type Entrance } from "./motion";
+import { Badge as BadgeView } from "@/components/ui/badge";
+import { Progress as ProgressBar } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
+import { WithTooltip } from "./iconButton";
 
 export function Text({ props }: { props: Props }) {
   const ref = useEntrance<HTMLDivElement>(FADE);
@@ -72,14 +77,9 @@ export function Badge({ props }: { props: Props }) {
     );
   }
   return (
-    <span
-      className={cn(
-        "inline-block w-fit max-w-full self-start rounded-full px-2 py-0.5 text-[11px] font-medium leading-4 [overflow-wrap:anywhere]",
-        TONE_PILL[toneName],
-      )}
-    >
+    <BadgeView variant={TONE_BADGE[toneName]} className="w-fit max-w-full self-start whitespace-normal font-medium [overflow-wrap:anywhere]">
       {label}
-    </span>
+    </BadgeView>
   );
 }
 
@@ -102,16 +102,17 @@ export function File({ props }: { props: Props }) {
     );
   }
   return (
-    <button
-      type="button"
-      title={`Open ${label}`}
-      onClick={async () => {
-        if (!(await openFile(path))) toast.error(`Couldn't open ${path}`);
-      }}
-      className="inline-flex w-fit max-w-full cursor-pointer items-center gap-1.5 self-start rounded-sm font-mono text-xs text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-    >
-      {content}
-    </button>
+    <WithTooltip tip={`Open ${label}`}>
+      <button
+        type="button"
+        onClick={async () => {
+          if (!(await openFile(path))) toast.error(`Couldn't open ${path}`);
+        }}
+        className="inline-flex w-fit max-w-full cursor-pointer items-center gap-1.5 self-start rounded-sm font-mono text-xs text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        {content}
+      </button>
+    </WithTooltip>
   );
 }
 
@@ -137,23 +138,16 @@ export function Progress({ props }: { props: Props }) {
         <span className="truncate text-muted-foreground">{label}</span>
         <span className="shrink-0 font-medium tabular-nums text-foreground">{readout}</span>
       </div>
-      <div
-        role="progressbar"
+      <ProgressBar
         aria-label={label ?? undefined}
-        aria-valuemin={0}
-        aria-valuemax={max}
-        aria-valuenow={value}
-        className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
-      >
-        <div
-          ref={fill}
-          className={cn(
-            "h-full origin-left rounded-full transition-[width] duration-500 motion-reduce:transition-none",
-            toneName === "neutral" ? "bg-[var(--color-timeline-accent,var(--primary))]" : TONE_DOT[toneName],
-          )}
-          style={{ width: `${ratio * 100}%`, transitionTimingFunction: EASE_OUT_EXPO }}
-        />
-      </div>
+        value={value}
+        max={max}
+        indicatorRef={fill}
+        indicatorClassName={
+          toneName === "neutral" ? "bg-[var(--color-timeline-accent,var(--primary))]" : TONE_DOT[toneName]
+        }
+        indicatorStyle={{ transitionTimingFunction: EASE_OUT_EXPO }}
+      />
     </div>
   );
 }
@@ -178,7 +172,7 @@ type StepStatus = "done" | "current" | "todo" | "blocked";
 
 const STEP_MARKER: Record<StepStatus, string> = {
   done: "bg-success/12 text-success",
-  current: TONE_PILL.info,
+  current: INFO_WASH,
   todo: "bg-surface-recessed text-muted-foreground",
   blocked: "bg-destructive/10 text-destructive",
 };
@@ -282,13 +276,10 @@ const LINE_SIZED: Partial<Record<string, true>> = {
 export function LoadingPlaceholder({ path, component }: { path: string; component: string | null }) {
   const name = path.split("/").pop() ?? path;
   return (
-    <div
+    <Skeleton
       role="status"
       aria-label={`Loading ${name}`}
-      className={cn(
-        "animate-pulse rounded-md bg-surface-recessed motion-reduce:animate-none",
-        component !== null && LINE_SIZED[component] === true ? "h-5 w-2/3" : "h-24 w-full rounded-lg",
-      )}
+      className={cn("motion-reduce:animate-none", component !== null && LINE_SIZED[component] === true ? "h-5 w-2/3" : "h-24 w-full rounded-lg")}
     />
   );
 }
