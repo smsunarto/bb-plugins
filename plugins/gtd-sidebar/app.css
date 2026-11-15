@@ -41,17 +41,13 @@
   }
 }
 
-/* One blur for the whole menu. The sheet above is translucent over it, so
-   it reads as frosted without a second backdrop filter, which the sheet's
-   scale would have re-blurred on every frame. */
+/* Dims the list behind the menu. No backdrop blur: the sheet above is
+   opaque, so the list stays sharp around it. */
 .gtd-sheet-scrim {
   position: fixed;
   inset: 0;
   z-index: 49;
   background: rgb(0 0 0 / 0.3);
-  /* Unprefixed only: the builder adds the WebKit form, and drops this one
-     when both are written. */
-  backdrop-filter: blur(8px);
 }
 .gtd-sheet-scrim[data-state="open"] {
   animation: gtd-dim-in 200ms ease-out both;
@@ -112,24 +108,34 @@
     0 0 0 1px var(--border),
     var(--shadow-xl);
 }
-/* On the row's leading edge, as wide as the row or as its longest label,
-   and never off screen. */
-.gtd-sheet {
+/* The sheet's line: a spacer as wide as the row's offset, then the sheet,
+   so the sheet starts under the row's leading edge wherever the sidebar sits.
+   As with the spacer above, only it shrinks: a sheet wider than the room
+   beside the row slides back only as far as it must to stay on screen. */
+.gtd-sheet-row {
   --gtd-sheet-inset-start: calc(12px + env(safe-area-inset-left, 0px));
   --gtd-sheet-inset-end: calc(12px + env(safe-area-inset-right, 0px));
+  display: flex;
   flex: 0 1 auto;
-  align-self: flex-start;
-  box-sizing: border-box;
-  min-width: min(
-    var(--gtd-lift-width),
-    100% - var(--gtd-sheet-inset-start) - var(--gtd-sheet-inset-end)
-  );
-  max-width: calc(100% - var(--gtd-sheet-inset-start) - var(--gtd-sheet-inset-end));
   min-height: 0;
-  margin-inline: var(--gtd-sheet-inset-start) var(--gtd-sheet-inset-end);
+  /* A row nearer the edge than the inset is already on screen; follow it. */
+  padding-inline: min(var(--gtd-sheet-inset-start), var(--gtd-lift-left)) var(--gtd-sheet-inset-end);
+}
+.gtd-sheet-row::before {
+  content: "";
+  flex: 0 1 max(0px, var(--gtd-lift-left) - var(--gtd-sheet-inset-start));
+}
+/* As wide as the row or as its longest label, and never off screen. */
+.gtd-sheet {
+  flex: none;
+  box-sizing: border-box;
+  min-width: min(var(--gtd-lift-width), 100%);
+  max-width: 100%;
+  min-height: 0;
   overflow: hidden auto;
   overscroll-behavior: contain;
   border-radius: 12px;
+  box-shadow: var(--shadow-xl);
   transform-origin: top left;
   will-change: transform;
 }

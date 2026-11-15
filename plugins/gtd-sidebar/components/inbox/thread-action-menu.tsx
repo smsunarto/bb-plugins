@@ -165,18 +165,20 @@ export function ThreadActionSheet({
                 } as CSSProperties
               }
             />
-            <div
-              ref={watchOverflow}
-              // Theme tokens only: a `dark:` variant would follow the OS, not bb's theme.
-              className="gtd-sheet border border-border-hairline bg-popover/80 text-popover-foreground shadow-[var(--shadow-xl)]"
-            >
-              <ThreadSheetMenu
-                thread={target.thread}
-                plan={target.plan}
-                haptics={!scrollable}
-                requestRename={() => rename.startEditingFromMenu(close)}
-                onClose={close}
-              />
+            <div className="gtd-sheet-row">
+              <div
+                ref={watchOverflow}
+                // Theme tokens only: a `dark:` variant would follow the OS, not bb's theme.
+                className="gtd-sheet border border-border-hairline bg-popover text-popover-foreground"
+              >
+                <ThreadSheetMenu
+                  thread={target.thread}
+                  plan={target.plan}
+                  haptics={!scrollable}
+                  requestRename={() => rename.startEditingFromMenu(close)}
+                  onClose={close}
+                />
+              </div>
             </div>
           </div>
         </Dialog.Content>

@@ -11,7 +11,11 @@ import * as ContextMenu from "@radix-ui/react-context-menu";
 import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import { attachHapticTrigger } from "../../lib/ios-haptics";
-import { ARCHIVE_ACTION_KEY, toThreadActionTarget } from "../../lib/thread-action-target";
+import {
+  ARCHIVE_ACTION_KEY,
+  SHEET_HIDDEN_ACTION_KEYS,
+  toThreadActionTarget,
+} from "../../lib/thread-action-target";
 import type { ThreadActionPlan } from "./thread-actions";
 import { MENU_ITEM_CLASS, MenuSeparator, MenuSubSurface } from "./menu-surface";
 
@@ -214,12 +218,14 @@ export function ThreadContextMenuItems({
 const SHEET_ITEM_CLASS =
   "relative flex min-h-[44px] cursor-default select-none items-center gap-3.5 px-4 text-[16px] font-normal leading-none tracking-[-0.01em] outline-none focus-visible:bg-state-hover active:bg-state-active aria-disabled:pointer-events-none aria-disabled:opacity-50";
 // A hairline across the sheet, edge to edge like an item's pressed fill.
+// Only a choice list's hint sits under one; the actions run as one list.
 const SHEET_SEPARATOR_CLASS = "my-1.5 h-0 border-0 border-t-[0.5px] border-solid border-border";
 const SHEET_ICON_CLASS = "flex size-[20px] shrink-0 items-center justify-center";
 
 /**
- * The sheet's menu. It shows one choice list at a time in place of the
- * actions, with Back, as bb's own drawer does.
+ * The sheet's menu: one undivided list, without the actions in
+ * `SHEET_HIDDEN_ACTION_KEYS`. It shows one choice list at a time in place of
+ * the actions, with Back, as bb's own drawer does.
  */
 export function ThreadSheetMenu({
   thread,
@@ -236,11 +242,13 @@ export function ThreadSheetMenu({
   /** Closes the sheet once an action or a choice has run. */
   onClose: () => void;
 }) {
-  const groups = useThreadMenuGroups(thread, plan, requestRename);
+  const rows = useThreadMenuGroups(thread, plan, requestRename)
+    .flat()
+    .filter((row) => !SHEET_HIDDEN_ACTION_KEYS.has(row.key));
   const { values } = useSettings();
   const haptics = hapticsAllowed && values?.mobileHaptics === true;
   const [step, setStep] = useState<string | null>(null);
-  const stepRow = step === null ? undefined : groups.flat().find((row) => row.key === step);
+  const stepRow = step === null ? undefined : rows.find((row) => row.key === step);
   // An action closes the sheet behind it; moving between the actions and a
   // choice list does not.
   const runAndClose = (row: MenuRow, value?: string) => () => {
@@ -281,27 +289,22 @@ export function ThreadSheetMenu({
           )}
         </>
       ) : (
-        groups.map((group, index) => (
-          <Fragment key={group[0]!.key}>
-            {index > 0 && <hr className={SHEET_SEPARATOR_CLASS} />}
-            {group.map((row) => (
-              <SheetItem
-                key={row.key}
-                haptics={haptics}
-                label={row.choices === undefined ? undefined : choiceRowName(row)}
-                disabled={row.disabled}
-                destructive={row.destructive}
-                tall={hasDetailLine(row)}
-                onSelect={row.choices === undefined ? runAndClose(row) : () => setStep(row.key)}
-              >
-                <span className={SHEET_ICON_CLASS}>{row.icon}</span>
-                <RowLabel row={row} />
-                {row.choices === undefined ? null : (
-                  <Icon name="ChevronRight" className="ml-auto size-4 shrink-0 opacity-60" />
-                )}
-              </SheetItem>
-            ))}
-          </Fragment>
+        rows.map((row) => (
+          <SheetItem
+            key={row.key}
+            haptics={haptics}
+            label={row.choices === undefined ? undefined : choiceRowName(row)}
+            disabled={row.disabled}
+            destructive={row.destructive}
+            tall={hasDetailLine(row)}
+            onSelect={row.choices === undefined ? runAndClose(row) : () => setStep(row.key)}
+          >
+            <span className={SHEET_ICON_CLASS}>{row.icon}</span>
+            <RowLabel row={row} />
+            {row.choices === undefined ? null : (
+              <Icon name="ChevronRight" className="ml-auto size-4 shrink-0 opacity-60" />
+            )}
+          </SheetItem>
         ))
       )}
     </div>

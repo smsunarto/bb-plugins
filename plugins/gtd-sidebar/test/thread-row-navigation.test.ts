@@ -147,6 +147,11 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     unarchive: (args: { threadId: string }) => Promise<{ ok: true }>;
     /** A plugin's per-thread notification level, offered as a choice list. */
     notifications?: Readonly<Record<string, string>>;
+    /**
+     * The key that choice list registers under. The touch sheet hides
+     * push-notifications' own, so a sheet test registers it as another plugin's.
+     */
+    notificationsKey?: string;
     splitThreads: readonly string[];
     focusedSplitThread?: string;
     splitEnabled: boolean;
@@ -401,7 +406,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     if (level !== undefined) {
       entries.push(
         entry(
-          "bb--push-notifications/notifications",
+          host.notificationsKey ?? "push-notifications/notifications",
           "1_state",
           {
             label: "Notifications",
@@ -580,20 +585,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     } else {
       fireEvent.contextMenu(anchor);
     }
-  }
-
-  async function holdInRenameInput(input: HTMLElement, draft: string) {
-    fireEvent.touchStart(input, { touches: [{ clientX: 0, clientY: 0 }] });
-    fireEvent.mouseDown(input, { button: 0 });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 650));
-    });
-    fireEvent.touchEnd(input);
-    fireEvent.mouseUp(input);
-    assert.ok(screen.queryByRole("menu") === null);
-    assert.equal(screen.getAllByRole("textbox", { name: "Thread name" }).length, 1);
-    assert.equal((input as HTMLInputElement).value, draft);
-    assert.equal(document.activeElement, input);
   }
 
   /** Holds a touch past the tap delay, when a resting finger tints its row. */
@@ -1342,7 +1333,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       }
     });
 
-    it("mutes selection on a touch row, beside its own padding, until it is renamed", async () => {
+    it("mutes selection on a touch row, beside its own padding", () => {
       const host = hostState([thread("card"), thread("snoozed")]);
       host.lifecycle = lifecycle(["snoozed"]);
       const view = mount(host, { isCompactViewport: true });
@@ -1357,14 +1348,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         [true, "calc(22px + var(--gtd-leaf-group-indent, 0px))"],
         [true, "calc(22px + var(--gtd-leaf-group-indent, 0px))"],
       ]);
-      // The editor's input would inherit the muted selection.
-      await openMenu(row(view.slot, "card"), true);
-      fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
-      await screen.findByRole("textbox", { name: "Thread name" });
-      assert.deepEqual(
-        touchRows().map(([muted]) => muted),
-        [false, true],
-      );
     });
 
     it("lifts a copy of the pressed row: its line, padding, chevron and restore glyph", async () => {
@@ -1448,9 +1431,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.deepEqual(
         [
           classes.filter((name) => name.startsWith("dark:")),
-          classes.includes("bg-popover/80"),
+          classes.includes("bg-popover"),
           within(menu)
-            .getByRole("menuitem", { name: "Rename" })
+            .getByRole("menuitem", { name: "Pin" })
             .classList.contains("active:bg-state-active"),
         ],
         [[], true, true],
@@ -2898,8 +2881,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           });
           await openMenu(row(view.slot, "a"), true);
           const menu = screen.getByRole("menu", { name: "Thread actions" });
-          assert.equal(within(menu).getAllByRole("menuitem").length, 7);
-          assert.equal(menu.querySelectorAll("[data-haptic-trigger]").length, overflow ? 0 : 7);
+          assert.equal(within(menu).getAllByRole("menuitem").length, 4);
+          assert.equal(menu.querySelectorAll("[data-haptic-trigger]").length, overflow ? 0 : 4);
         } finally {
           cleanup();
           Object.defineProperty(prototype, "clientHeight", clientHeight);
@@ -2914,31 +2897,39 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       "keeps all actions in order for the clicked row with mobile=%s",
       async (isCompactViewport) => {
         const currentActions = actions();
-        const host = { ...hostState([thread("a"), thread("b")]), actions: currentActions };
+        const host = {
+          ...hostState([thread("a"), thread("b")]),
+          actions: currentActions,
+          notifications: { a: "all" },
+        };
         const view = mount(host, { activeThreadId: "b", isCompactViewport });
         await openMenu(row(view.slot, "a"), isCompactViewport);
         await act(async () => {});
+        // The touch sheet leaves out copy link, read state, notifications and
+        // rename; the desktop menu keeps every action.
+        const desktopOnly = (...names: string[]) => (isCompactViewport ? [] : names);
         assert.deepEqual(
           screen.getAllByRole("menuitem").map((item) => item.textContent),
           [
             "Settle",
             "Snooze until tomorrow",
-            ...(!isCompactViewport ? ["Open in split"] : []),
-            "Copy link",
+            ...desktopOnly("Open in split", "Copy link"),
             "Pin",
-            "Mark unread",
-            "Rename",
+            ...desktopOnly("Mark unread", "Notifications", "Rename"),
             "Delete",
           ],
         );
         assert.equal(screen.queryByRole("menuitem", { name: /archive/i }), null);
-        if (!isCompactViewport) {
-          fireEvent.click(screen.getByRole("menuitem", { name: "Open in split" }));
-          assert.deepEqual(currentActions.open.mock.calls, [["a", { split: true }]]);
-          await openMenu(row(view.slot, "a"), isCompactViewport);
-        } else {
-          assert.equal(screen.queryByRole("menuitem", { name: "Open in split" }), null);
+        if (isCompactViewport) {
+          // One undivided list.
+          assert.equal(document.querySelector(".gtd-sheet hr"), null);
+          fireEvent.click(screen.getByRole("menuitem", { name: "Pin" }));
+          assert.deepEqual(currentActions.setPinned.mock.calls, [["a", true]]);
+          return;
         }
+        fireEvent.click(screen.getByRole("menuitem", { name: "Open in split" }));
+        assert.deepEqual(currentActions.open.mock.calls, [["a", { split: true }]]);
+        await openMenu(row(view.slot, "a"), isCompactViewport);
         fireEvent.click(screen.getByRole("menuitem", { name: "Mark unread" }));
         assert.deepEqual(currentActions.setRead.mock.calls, [["a", false]]);
 
@@ -2949,16 +2940,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
         await openMenu(row(view.slot, "a"), isCompactViewport);
         fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
-        if (isCompactViewport) {
-          assert.equal(
-            document.activeElement,
-            screen.getByRole("textbox", { name: "Thread name" }),
-          );
-        }
         const title = await screen.findByRole("textbox", { name: "Thread name" });
         await waitFor(() => assert.ok(document.activeElement === title));
         fireEvent.change(title, { target: { value: "  New title  " } });
-        if (isCompactViewport) await holdInRenameInput(title, "  New title  ");
         fireEvent.keyDown(title, { key: "Enter" });
         await waitFor(() =>
           assert.equal(screen.queryByRole("textbox", { name: "Thread name" }) === null, true),
@@ -3022,13 +3006,14 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         ...hostState([thread("a"), thread("b")]),
         actions: currentActions,
         notifications: { a: "all" },
+        notificationsKey: "fixture/notify",
       };
       const view = mount(host, { activeThreadId: "b", isCompactViewport: true });
       const closed = () => waitFor(() => assert.ok(screen.queryByRole("menu") === null));
 
       await openMenu(row(view.slot, "a"), true);
-      fireEvent.click(screen.getByRole("menuitem", { name: "Mark unread" }));
-      assert.deepEqual(currentActions.setRead.mock.calls, [["a", false]]);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Pin" }));
+      assert.deepEqual(currentActions.setPinned.mock.calls, [["a", true]]);
       await closed();
       // The row steps back in once its lifted copy is gone.
       assert.equal(row(view.slot, "a").parentElement!.classList.contains("opacity-0"), false);
@@ -3077,20 +3062,17 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       }
     });
 
-    it.each([false, true])(
-      "marks the target row read with mobile=%s",
-      async (isCompactViewport) => {
-        const currentActions = actions();
-        const view = mount(
-          { ...hostState([thread("a", { isUnread: true }), thread("b")]), actions: currentActions },
-          { activeThreadId: "b", isCompactViewport },
-        );
-        await openMenu(row(view.slot, "a"), isCompactViewport);
-        fireEvent.click(screen.getByRole("menuitem", { name: "Mark read" }));
-        assert.deepEqual(currentActions.setRead.mock.calls, [["a", true]]);
-        await act(async () => {});
-      },
-    );
+    it("marks the target row read from the desktop menu", async () => {
+      const currentActions = actions();
+      const view = mount(
+        { ...hostState([thread("a", { isUnread: true }), thread("b")]), actions: currentActions },
+        { activeThreadId: "b" },
+      );
+      await openMenu(row(view.slot, "a"), false);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Mark read" }));
+      assert.deepEqual(currentActions.setRead.mock.calls, [["a", true]]);
+      await act(async () => {});
+    });
 
     it.each([false, true])(
       "lists another plugin's choice action and runs the pick with mobile=%s",
@@ -3100,17 +3082,18 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           ...hostState([thread("a"), thread("b")]),
           actions: currentActions,
           notifications: { a: "all" },
+          ...(isCompactViewport ? { notificationsKey: "fixture/notify" } : {}),
         };
         const view = mount(host, { activeThreadId: "b", isCompactViewport });
         await openMenu(row(view.slot, "a"), isCompactViewport);
-        // It joins bb's state group, after Pin and Mark unread, and its current
-        // value is read out with its name.
+        // It joins bb's state group, after Pin and Mark unread (which the
+        // sheet leaves out), and its current value is read out with its name.
         const names = screen
           .getAllByRole("menuitem")
           .map((item) => item.getAttribute("aria-label") ?? item.textContent);
         assert.equal(
           names.indexOf("Notifications, All activity"),
-          names.indexOf("Mark unread") + 1,
+          names.indexOf(isCompactViewport ? "Pin" : "Mark unread") + 1,
         );
         const trigger = screen.getByRole("menuitem", { name: "Notifications, All activity" });
         if (isCompactViewport) {
@@ -3154,24 +3137,18 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         await openMenu(row(view.slot, "settled"), isCompactViewport);
         assert.equal(screen.getAllByRole("menuitem")[0]?.textContent, "Un-settle");
         assert.equal(screen.queryByRole("menuitem", { name: /archive/i }), null);
-        if (!isCompactViewport) {
-          fireEvent.click(screen.getByRole("menuitem", { name: "Open in split" }));
-          assert.deepEqual(currentActions.open.mock.calls, [["settled", { split: true }]]);
-          await openMenu(row(view.slot, "settled"), isCompactViewport);
-        } else {
-          assert.equal(screen.queryByRole("menuitem", { name: "Open in split" }), null);
-        }
-        fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
         if (isCompactViewport) {
-          assert.equal(
-            document.activeElement,
-            screen.getByRole("textbox", { name: "Thread name" }),
-          );
+          assert.equal(screen.queryByRole("menuitem", { name: "Open in split" }), null);
+          assert.equal(screen.queryByRole("menuitem", { name: "Rename" }), null);
+          return;
         }
+        fireEvent.click(screen.getByRole("menuitem", { name: "Open in split" }));
+        assert.deepEqual(currentActions.open.mock.calls, [["settled", { split: true }]]);
+        await openMenu(row(view.slot, "settled"), isCompactViewport);
+        fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
         const title = await screen.findByRole("textbox", { name: "Thread name" });
         await waitFor(() => assert.ok(document.activeElement === title));
         fireEvent.change(title, { target: { value: "Unsaved title" } });
-        if (isCompactViewport) await holdInRenameInput(title, "Unsaved title");
         fireEvent.keyDown(title, { key: "Escape" });
         assert.equal(screen.queryByRole("textbox", { name: "Thread name" }), null);
         assert.equal(currentActions.rename.mock.calls.length, 0);

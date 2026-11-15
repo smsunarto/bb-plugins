@@ -2020,21 +2020,6 @@
     "source": ".gtd-thread-row.bg-state-active[data-drop-target=\"true\"] {"
   },
   {
-    "file": "plugins/gtd-sidebar/bot-shelf.css",
-    "rule": "raw-color",
-    "source": "background: color-mix(in srgb, var(--sidebar-foreground) 4%, transparent);"
-  },
-  {
-    "file": "plugins/gtd-sidebar/bot-shelf.css",
-    "rule": "raw-color",
-    "source": "background: color-mix(in srgb, var(--sidebar-foreground) 6%, transparent);"
-  },
-  {
-    "file": "plugins/gtd-sidebar/bot-shelf.css",
-    "rule": "raw-color",
-    "source": "color-mix(in srgb, var(--success) 25%, transparent) 0"
-  },
-  {
     "file": "plugins/gtd-sidebar/components/inbox/disc.tsx",
     "rule": "raw-color",
     "source": "backgroundColor: thread === null ? \"var(--muted-foreground)\" : `oklch(0.72 0.13 ${hue})`,"
@@ -2058,21 +2043,6 @@
     "file": "plugins/gtd-sidebar/components/inbox/sliding-disclosure.tsx",
     "rule": "raw-color",
     "source": "panel.style.maskImage = `linear-gradient(to bottom, #000 calc(100% - ${FADE}px), transparent)`;"
-  },
-  {
-    "file": "plugins/gtd-sidebar/components/inbox/thread-action-menu.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"relative rounded-[11px] py-1\","
-  },
-  {
-    "file": "plugins/gtd-sidebar/components/inbox/thread-action-menu.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"shadow-[var(--shadow-xl)]\","
-  },
-  {
-    "file": "plugins/gtd-sidebar/components/inbox/thread-action-menu.tsx",
-    "rule": "arbitrary-edge",
-    "source": "className=\"gtd-sheet border border-border-hairline bg-popover/80 text-popover-foreground shadow-[var(--shadow-xl)]\""
   },
   {
     "file": "plugins/gtd-sidebar/components/inbox/thread-menu-actions.tsx",
