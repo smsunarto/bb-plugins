@@ -7,6 +7,10 @@ import { join } from "node:path";
 import { experimental_createHostEntryHarness } from "@get-bb/plugin-sdk/testing/host";
 import hostEntry from "./host.ts";
 
+// Git hooks export GIT_DIR and friends. Inherited from a linked worktree's pre-push hook, they
+// point this file's `git init` and commit at the real repository, which turns it bare.
+for (const name of Object.keys(process.env)) if (name.startsWith("GIT_")) delete process.env[name];
+
 const host = experimental_createHostEntryHarness(hostEntry);
 const noise =
   "source: Error encountered while sourcing file '/Users/example/.unity/env.fish':\n" +
