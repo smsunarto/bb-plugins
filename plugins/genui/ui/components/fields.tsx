@@ -32,6 +32,7 @@ import {
 } from "./fieldLogic";
 import { CAPTION, FIELD, FOCUS_RING } from "./inputs";
 import { RISE, useEntrance } from "./motion";
+import { keepTyping } from "../keepTyping";
 
 /** A 16px stroke glyph in currentColor; host icon names are not guaranteed. */
 function Glyph({ d, className }: { d: string; className?: string }) {
@@ -224,6 +225,7 @@ export function Radio({ props }: { props: PropsOf<"Radio"> }) {
               aria-checked={checked}
               tabIndex={index === focusable ? 0 : -1}
               onClick={() => setValue(binding.name, option.value)}
+              {...keepTyping}
               className={cn(
                 "flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-md px-1.5 py-1.5 text-left text-sm leading-5 text-foreground transition-colors duration-150 hover:bg-surface-recessed",
                 FOCUS_RING,
@@ -597,6 +599,7 @@ export function Rating({ props }: { props: PropsOf<"Rating"> }) {
             onPointerEnter={(event) => {
               if (event.pointerType === "mouse") setPreview(star);
             }}
+            {...keepTyping}
             onClick={() => {
               // Clicking the current rating clears it; drop the preview so the clear shows.
               setValue(binding.name, star === value ? 0 : star);

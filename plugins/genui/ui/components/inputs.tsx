@@ -20,6 +20,7 @@ import { CheckMark } from "./display";
 // fields.tsx imports this module's field styles; Radio is only used at render time, so the cycle is safe.
 import { Radio } from "./fields";
 import { reducedMotion, useEntrance, type Entrance } from "./motion";
+import { keepTyping } from "../keepTyping";
 
 export const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
@@ -90,6 +91,7 @@ export function Toggle({ props }: { props: PropsOf<"Toggle"> }) {
       role="switch"
       aria-checked={on}
       onClick={() => setValue(binding.name, !on)}
+      {...keepTyping}
       className="group/switch inline-flex w-fit max-w-full cursor-pointer items-center gap-2 self-start text-sm text-foreground focus-visible:outline-none"
     >
       <span
@@ -151,6 +153,7 @@ export function Choice({ props }: { props: PropsOf<"Choice"> }) {
                 role="radio"
                 aria-checked={selected}
                 onClick={() => setValue(binding.name, option)}
+                {...keepTyping}
                 className={cn(
                   "h-7 cursor-pointer rounded-md px-3 text-[13px] transition-[color,background-color,box-shadow] duration-150",
                   FOCUS_RING,
@@ -280,6 +283,7 @@ export function Checklist({ props }: { props: PropsOf<"Checklist"> }) {
               role="checkbox"
               aria-checked={checked}
               onClick={() => toggle(option)}
+              {...keepTyping}
               className={cn(
                 "flex w-fit max-w-full cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 text-left text-sm leading-5 text-foreground transition-colors duration-150 hover:bg-surface-recessed",
                 FOCUS_RING,
@@ -370,6 +374,7 @@ function ButtonView({ props }: { props: Props }) {
         aria-pressed={picks ? pressed : undefined}
         onPointerEnter={measure}
         onFocus={measure}
+        {...(picks ? keepTyping : undefined)}
         onClick={async () => {
           setRunning(true);
           try {

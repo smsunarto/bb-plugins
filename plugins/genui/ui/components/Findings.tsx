@@ -65,6 +65,7 @@ import { ErrorLine } from "./display";
 import { ActionGlyph, ActionHint, FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, FADE, RISE, useEntrance, type Entrance } from "./motion";
 import { ICON_BUTTON } from "./projectKit";
+import { keepTyping } from "../keepTyping";
 
 /** Findings shown before "Show N more", and how many each click adds. */
 const FINDING_PAGE = 25;
@@ -224,6 +225,7 @@ function SendButton({ message, label, icon, primary = false }: { message: string
         data-genui-question={question}
         aria-pressed={target === "direct" ? undefined : pressed}
         onClick={() => void stage(question, pressed ? null : { text: message, selection: true })}
+        {...keepTyping}
         className={cn(
           "h-7 w-fit max-w-full gap-1.5 px-2.5 text-xs",
           (!primary || pressed) && "bg-background text-foreground",

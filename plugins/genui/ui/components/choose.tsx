@@ -25,6 +25,7 @@ import { ActionHint, CAPTION, InMessageLine, SentLine, useClosedChoices } from "
 import { useImageUrl, type ImageState } from "./media";
 import { reducedMotion, RISE, useEntrance } from "./motion";
 import { ExpandButton, useGroupPicture, ViewerGroup } from "./viewer";
+import { keepTyping } from "../keepTyping";
 
 /** Selectable tiles get an offset ring, so focus never reads as selection. */
 const TILE_FOCUS =
@@ -140,6 +141,7 @@ function OptionCard({
         aria-checked={checked}
         tabIndex={tabIndex}
         onClick={onSelect}
+        {...keepTyping}
         className={cn(
           "relative flex min-w-0 flex-1 cursor-pointer touch-manipulation flex-col overflow-hidden rounded-lg border bg-background text-left transition-[border-color,box-shadow,background-color] duration-150 motion-reduce:transition-none",
           TILE_FOCUS,
@@ -333,6 +335,7 @@ function SwatchChip({
       title={role === undefined ? `Copy ${value}` : value}
       tabIndex={tabIndex}
       onClick={onClick}
+      {...keepTyping}
       className={cn(
         "group/swatch flex min-w-0 cursor-pointer touch-manipulation items-center gap-2.5 rounded-lg border bg-background p-1.5 pr-2.5 text-left transition-[border-color,box-shadow,background-color] duration-150 motion-reduce:transition-none",
         TILE_FOCUS,
@@ -427,6 +430,7 @@ function FollowUpRow({ prompt, pressed, effect, onPick }: { prompt: string; pres
           type="button"
           aria-pressed={pressed}
           onClick={onPick}
+          {...keepTyping}
           className={cn(
             "group/follow flex min-h-10 w-full min-w-0 cursor-pointer touch-manipulation items-center gap-3 rounded-sm py-2 text-left text-sm leading-5 transition-colors duration-150 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default motion-reduce:transition-none",
             pressed ? "font-medium text-foreground" : "text-muted-foreground",

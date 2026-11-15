@@ -39,6 +39,7 @@ import {
 } from "./explain-logic";
 import { ActionHint, CAPTION, FOCUS_RING, InMessageLine } from "./inputs";
 import { FADE, RISE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight } from "./motion";
+import { keepTyping } from "../keepTyping";
 
 /** Outline buttons sit on the page color, as inputs.tsx's quiet buttons do. */
 const QUIET = "bg-background";
@@ -352,6 +353,7 @@ function ListItem({ row, leading, choice }: { row: ListRow; leading: Leading; ch
             disabled={running}
             aria-busy={running || undefined}
             aria-pressed={replies ? pressed : undefined}
+            {...(replies ? keepTyping : undefined)}
             onClick={async () => {
               setRunning(true);
               try {

@@ -2,6 +2,7 @@
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type * as PluginSdkApp from "@get-bb/plugin-sdk/app";
+import { fireEvent } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Action, Value } from "../../core/types";
 import { useBlockAnswerTarget, type AnswerTarget } from "../LiveUi";
@@ -102,7 +103,31 @@ function renderButton(props: Props, target?: AnswerTarget): HTMLButtonElement {
   return container.querySelector("button")!;
 }
 
+/** Presses `target` with a `pointerType` pointer (jsdom has no PointerEvent); false when the press's default was cancelled. */
+function pointerDown(target: Element, pointerType: "touch" | "mouse"): boolean {
+  const event = new MouseEvent("pointerdown", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "pointerType", { value: pointerType });
+  let result = true;
+  act(() => {
+    result = target.dispatchEvent(event);
+  });
+  return result;
+}
+
 describe("Button", () => {
+  it("keeps a focused text field focused when a reply choice is pressed, not when a button opens a link", () => {
+    const field = document.createElement("input");
+    document.body.append(field);
+    field.focus();
+    const reply = renderButton({ label: "Use Redis" });
+    expect(pointerDown(reply, "touch")).toBe(false);
+    expect(fireEvent.mouseDown(reply)).toBe(false);
+    const link = renderButton({ label: "Release notes", action: [open("https://github.com/vitest-dev/vitest/releases")] });
+    expect(pointerDown(link, "touch")).toBe(true);
+    expect(fireEvent.mouseDown(link)).toBe(true);
+    field.remove();
+  });
+
   it("ends a reply choice with the send glyph, and its hint says the pick goes into the message, then back out", async () => {
     const button = renderButton({ label: "Use Redis" });
     expect(face(button)).toBe("Use Redis [Sent]");

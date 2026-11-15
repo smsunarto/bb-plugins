@@ -435,3 +435,63 @@ describe("the composer is the answer sheet", () => {
     expect(within(block2).getByRole("button", { name: "Send" })).toBeTruthy();
   });
 });
+
+/** Presses `target` with a `pointerType` pointer (jsdom has no PointerEvent); false when the press's default was cancelled. */
+function pointerDown(target: Element, pointerType: "touch" | "mouse"): boolean {
+  const event = new MouseEvent("pointerdown", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "pointerType", { value: pointerType });
+  let result = true;
+  act(() => {
+    result = target.dispatchEvent(event);
+  });
+  return result;
+}
+
+// A phone drops its keyboard when a press moves focus off the field the user
+// is typing in; a press whose default is cancelled leaves focus where it was.
+describe("a pick while the user types keeps their field focused", () => {
+  /** The composer's editor, focused as the user types in it. */
+  function typeInPrompt(): HTMLTextAreaElement {
+    const prompt = document.createElement("textarea");
+    document.body.append(prompt);
+    prompt.focus();
+    return prompt;
+  }
+
+  it("cancels the press on reply buttons and Form fields, and the pick still goes into the message", () => {
+    const prompt = typeInPrompt();
+    const pro = within(block1).getByRole("button", { name: "Pro" });
+    const json = within(block2).getByRole("checkbox", { name: "JSON" });
+    for (const control of [pro, json]) {
+      expect(pointerDown(control, "touch")).toBe(false);
+      expect(fireEvent.mouseDown(control)).toBe(false);
+    }
+    fireEvent.click(pro);
+    fireEvent.click(json);
+    expect(fake.composer.draft.text).toBe("Pro\nProject name: —\nWhich formats? JSON (not: CSV, XLSX)");
+    expect(document.activeElement).toBe(prompt);
+    prompt.remove();
+  });
+
+  it("writes a Form field's typing at once when a press elsewhere in the Form keeps it focused", () => {
+    const name = within(block2).getByLabelText("Project name");
+    name.focus();
+    fireEvent.change(name, { target: { value: "Orbit" } });
+    const json = within(block2).getByRole("checkbox", { name: "JSON" });
+    // The field never blurs, so the press itself must write what was typed.
+    expect(pointerDown(json, "touch")).toBe(false);
+    expect(fake.composer.draft.text).toBe("Project name: Orbit\nWhich formats? none (options: CSV, JSON, XLSX)");
+    fireEvent.click(json);
+    expect(fake.composer.draft.text).toBe("Project name: Orbit\nWhich formats? JSON (not: CSV, XLSX)");
+    expect(document.activeElement).toBe(name);
+  });
+
+  it("leaves presses alone when no text field has focus, and a mouse's pointerdown always", () => {
+    const pro = within(block1).getByRole("button", { name: "Pro" });
+    expect(pointerDown(pro, "touch")).toBe(true);
+    expect(fireEvent.mouseDown(pro)).toBe(true);
+    const prompt = typeInPrompt();
+    expect(pointerDown(pro, "mouse")).toBe(true);
+    prompt.remove();
+  });
+});

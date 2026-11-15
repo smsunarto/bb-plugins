@@ -49,6 +49,7 @@ import { CheckMark, ErrorLine } from "./display";
 import { ActionGlyph, ActionHint, Button, ButtonGroup, CAPTION, FIELD, FOCUS_RING, InMessageLine, SentLine } from "./inputs";
 import { RISE, useEntrance } from "./motion";
 import { ICON_BUTTON, Panel, QuietLine, ShowAll } from "./projectKit";
+import { keepTyping } from "../keepTyping";
 
 /** Rows shown before "Show all N". */
 const PLAN_ROWS = 20;
@@ -109,6 +110,7 @@ function CheckBox({ checked, disabled, label, onToggle }: { checked: boolean; di
       aria-label={label}
       disabled={disabled}
       onClick={onToggle}
+      {...keepTyping}
       className={cn(
         "-m-1.5 flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md disabled:cursor-default",
         FOCUS_RING,
@@ -314,6 +316,7 @@ export function Plan({ props }: { props: Props }) {
               aria-busy={sending || undefined}
               aria-pressed={target === "direct" ? undefined : approved}
               onClick={() => void approve()}
+              {...keepTyping}
               className={cn("w-fit max-w-full gap-1.5 text-[13px]", approved && "border-transparent bg-surface-recessed text-foreground ring-2 ring-[var(--color-timeline-accent,var(--primary))] ring-offset-1 ring-offset-background")}
             >
               {approved ? <Icon name="Check" aria-hidden className="size-3.5 shrink-0" /> : null}
