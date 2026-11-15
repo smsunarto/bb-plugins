@@ -9,6 +9,11 @@ import "./naming.css";
 import { ThreadInbox } from "./components/inbox/thread-inbox";
 import { CapyNavigation, CapyNavigationHeader } from "./components/nav/capy-navigation";
 import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";
+import {
+  HeaderSettle,
+  type LegacyThreadHeaderActionSlots,
+} from "./components/header/header-settle";
+import { mountHeaderSettleStyle } from "./components/header/header-settle-style";
 
 export default definePluginApp((app) => {
   // Versions up to 0.4.x cached the shelves and provider marks in web storage,
@@ -35,6 +40,17 @@ export default definePluginApp((app) => {
     placement: "list",
     component: CapyNavigation,
     headerComponent: CapyNavigationHeader,
+  });
+
+  // On a phone, Settle takes the place of bb's "…" thread menu in the header.
+  (app.slots as unknown as LegacyThreadHeaderActionSlots).experimental_threadHeaderAction({
+    id: "header-settle",
+    title: "Settle thread",
+    component: HeaderSettle,
+  });
+  app.contentScripts.register({
+    id: "header-settle-style",
+    mount: ({ signal }) => mountHeaderSettleStyle(document, signal),
   });
 
   app.slots.commandPaletteAction({
