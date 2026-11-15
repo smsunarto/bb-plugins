@@ -53,6 +53,9 @@ export function installDom(): void {
       value: domWindow[name],
     });
   }
+  // jsdom rejects events built by the runtime's own constructors, so code that
+  // dispatches a global CustomEvent on a DOM node (Radix's focus scope) needs jsdom's.
+  target["CustomEvent"] = domWindow["CustomEvent"];
   target["window"] = domWindow;
   target["document"] = domWindow["document"];
 }
