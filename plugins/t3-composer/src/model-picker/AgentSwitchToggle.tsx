@@ -19,7 +19,7 @@ export function AgentSwitchToggle(props: {
     <PanelIconButton
       large={props.large}
       label={label}
-      title={option.description ? `${label}. ${option.description}` : label}
+      tooltip={option.description ? `${label}. ${option.description}` : label}
       active={on === true}
       // Unknown or in flight, a press could not say which way it goes.
       disabled={on === null || props.pending}

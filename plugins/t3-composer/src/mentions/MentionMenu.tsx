@@ -9,6 +9,7 @@ import {
   type ExperimentalComposerCommandTrigger,
   type ExperimentalComposerThreadRelation,
 } from "@get-bb/plugin-sdk/app";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Pill } from "@/components/ui/pill";
 import { TruncateStart } from "@/components/ui/truncate-start";
@@ -230,15 +231,17 @@ function ThreadSuggestionRow({
 
 function CloseSuggestionsButton({ onDismiss }: { onDismiss: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="icon"
       aria-label="Close suggestions"
       onMouseDown={(event) => event.preventDefault()}
       onClick={onDismiss}
-      className="flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground"
+      className="size-11 shrink-0 text-muted-foreground"
     >
       <Icon name="X" className="size-4" aria-hidden />
-    </button>
+    </Button>
   );
 }
 

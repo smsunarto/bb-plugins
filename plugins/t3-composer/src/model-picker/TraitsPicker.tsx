@@ -16,8 +16,10 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { Button } from "@/components/ui/button";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 import { Icon } from "@/components/ui/icon";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { AgentSwitchToggle } from "./AgentSwitchToggle";
 import {
@@ -134,29 +136,36 @@ export function TraitsPicker(props: {
 
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          disabled={props.disabled}
-          aria-label={triggerName}
-          title={triggerName}
-          data-t3-traits-trigger=""
-          data-t3-traits-word={effortWord ? "" : undefined}
-          className="shrink-0 gap-1 whitespace-nowrap"
-        >
-          {activeSpeed ? (
-            <span data-t3-traits-speed="" className="flex shrink-0">
-              <FastBolt ultra={activeSpeed.ultra} />
-            </span>
-          ) : null}
-          {daybreakOn ? (
-            <span data-t3-traits-agent-switch="" className="flex shrink-0">
-              <DaybreakGlyph className="size-3" />
-            </span>
-          ) : null}
-          {effortWord ?? (activeSpeed || daybreakOn ? null : fallbackWord)}
-        </button>
-      </DropdownMenuTrigger>
+      {/* The menu's trigger is outermost, so its data-state="open" reaches the pill. */}
+      <Tooltip>
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={props.disabled}
+              aria-label={triggerName}
+              data-t3-traits-trigger=""
+              data-t3-traits-word={effortWord ? "" : undefined}
+              className="shrink-0 gap-1 whitespace-nowrap"
+            >
+              {activeSpeed ? (
+                <span data-t3-traits-speed="" className="flex shrink-0">
+                  <FastBolt ultra={activeSpeed.ultra} />
+                </span>
+              ) : null}
+              {daybreakOn ? (
+                <span data-t3-traits-agent-switch="" className="flex shrink-0">
+                  <DaybreakGlyph className="size-3" />
+                </span>
+              ) : null}
+              {effortWord ?? (activeSpeed || daybreakOn ? null : fallbackWord)}
+            </Button>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
+        <TooltipContent side="top">{triggerName}</TooltipContent>
+      </Tooltip>
       {/* Out of sight and inert between drives; see bb-picker-driver.ts. */}
       {bbPickerMounted ? (
         <span ref={attachHost} data-t3-bb-picker-host="" aria-hidden inert>
@@ -379,24 +388,28 @@ function panelKeyTarget(
 /** The panel's reset button; a menu item so the menu's arrow keys reach it. */
 function ResetButton(props: { label: string; hidden: boolean; onSelect(): void }) {
   return (
-    <DropdownMenuItem
-      aria-label={props.label}
-      title={props.label}
-      // Typeahead matches this text; the icon gives the item none of its own.
-      textValue={props.label}
-      disabled={props.hidden}
-      aria-hidden={props.hidden || undefined}
-      // The panel stays open, as Codex's does.
-      onSelect={(event) => {
-        event.preventDefault();
-        props.onSelect();
-      }}
-      className={cn(
-        "size-8 justify-center rounded-md p-0 text-muted-foreground data-[highlighted]:text-foreground",
-        props.hidden && "invisible",
-      )}
-    >
-      <Icon name="RotateCcw" className="size-4" aria-hidden />
-    </DropdownMenuItem>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <DropdownMenuItem
+          aria-label={props.label}
+          // Typeahead matches this text; the icon gives the item none of its own.
+          textValue={props.label}
+          disabled={props.hidden}
+          aria-hidden={props.hidden || undefined}
+          // The panel stays open, as Codex's does.
+          onSelect={(event) => {
+            event.preventDefault();
+            props.onSelect();
+          }}
+          className={cn(
+            "size-8 justify-center rounded-md p-0 text-muted-foreground data-[highlighted]:text-foreground",
+            props.hidden && "invisible",
+          )}
+        >
+          <Icon name="RotateCcw" className="size-4" aria-hidden />
+        </DropdownMenuItem>
+      </TooltipTrigger>
+      <TooltipContent side="top">{props.label}</TooltipContent>
+    </Tooltip>
   );
 }

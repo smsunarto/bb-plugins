@@ -13,6 +13,7 @@ import {
 } from "react";
 import { experimental_ProviderIcon as ProviderIcon } from "@get-bb/plugin-sdk/app";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { useCloseWhenAnchorDetaches } from "@/components/ui/overlay-anchor";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -160,6 +161,10 @@ export function ModelPicker(props: {
       </Tooltip>
       <PopoverContent
         data-t3-model-picker-popover=""
+        align="start"
+        sideOffset={6}
+        collisionPadding={8}
+        className="flex w-auto max-w-[calc(100vw-1rem)]"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           (event.currentTarget as HTMLElement | null)
@@ -463,13 +468,15 @@ function ListNotice(props: {
     return (
       <div className="shrink-0 border-t border-border/70 px-3 py-2 text-xs leading-snug text-muted-foreground">
         <p className="line-clamp-3">{tabCatalog.message}</p>
-        <button
+        <Button
           type="button"
+          variant="link"
+          size="sm"
           onClick={props.onRetry}
-          className="mt-1 font-medium text-foreground underline-offset-2 hover:underline"
+          className="mt-1 h-auto p-0 text-foreground underline-offset-2"
         >
           Retry
-        </button>
+        </Button>
       </div>
     );
   }

@@ -1,9 +1,10 @@
 // Codex's speed bolt, at the top left of the effort panel: each press moves to
 // the next speed, Normal → Fast (→ Ultrafast) → Normal.
 import type { ReactNode } from "react";
+import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FastBolt } from "./glyphs";
 import { DEFAULT_SERVICE_TIER, type SpeedTrait } from "./traits";
 
@@ -38,38 +39,32 @@ export function speedCycle(speed: SpeedTrait) {
 export function PanelIconButton(props: {
   large: boolean;
   label: string;
-  title: string;
+  tooltip: string;
   active: boolean;
   disabled?: boolean;
   data: Record<`data-${string}`, string>;
   onPress(): void;
   children: ReactNode;
 }) {
-  const className = cn(
-    "flex shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground outline-none data-[highlighted]:text-foreground data-[active]:text-foreground data-[disabled]:opacity-50",
-    props.large ? "size-11 active:bg-state-active" : "size-8",
-  );
   const shared = {
     ...props.data,
     "data-active": props.active ? "" : undefined,
     "aria-label": props.label,
-    title: props.title,
-    className,
   };
-  if (props.large) {
-    return (
-      <button
-        type="button"
-        {...shared}
-        disabled={props.disabled}
-        data-disabled={props.disabled ? "" : undefined}
-        onClick={props.onPress}
-      >
-        {props.children}
-      </button>
-    );
-  }
-  return (
+  const control = props.large ? (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      {...shared}
+      disabled={props.disabled}
+      data-disabled={props.disabled ? "" : undefined}
+      onClick={props.onPress}
+      className="size-11 shrink-0 text-muted-foreground active:bg-state-active data-[active]:text-foreground"
+    >
+      {props.children}
+    </Button>
+  ) : (
     <DropdownMenuItem
       {...shared}
       textValue={props.label}
@@ -79,9 +74,16 @@ export function PanelIconButton(props: {
         event.preventDefault();
         props.onPress();
       }}
+      className="flex size-8 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground outline-none data-[highlighted]:text-foreground data-[active]:text-foreground data-[disabled]:opacity-50"
     >
       {props.children}
     </DropdownMenuItem>
+  );
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{control}</TooltipTrigger>
+      <TooltipContent side="top">{props.tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -97,7 +99,7 @@ export function SpeedToggle(props: {
     <PanelIconButton
       large={props.large}
       label={label}
-      title={next.description ? `${label}: ${next.description}` : label}
+      tooltip={next.description ? `${label}: ${next.description}` : label}
       active={active !== null}
       data={{ "data-t3-speed-toggle": "" }}
       onPress={() => props.onChange(next.id)}

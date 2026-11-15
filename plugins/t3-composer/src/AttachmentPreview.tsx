@@ -14,7 +14,10 @@ import {
   withoutMentions,
   type ContextMentionGroup,
 } from "./context-mentions";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 function resolveAttachmentPreviewSrc(
   renderer: ExperimentalComposerRendererApi,
@@ -29,26 +32,25 @@ const TILE_CLASS =
   "relative flex h-[120px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background";
 const IMAGE_TILE_CLASS = `${TILE_CLASS} w-[120px]`;
 const FILE_TILE_CLASS = `${TILE_CLASS} w-[160px]`;
-const REMOVE_BUTTON_CLASS =
-  "group/attachment-remove absolute right-1.5 top-1.5 z-10 inline-flex size-5 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-md:pointer-coarse:size-7";
-
 function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="icon"
       data-t3-attachment-remove=""
       onMouseDown={(event) => event.preventDefault()}
       onClick={(event) => {
         event.currentTarget.blur();
         onRemove();
       }}
-      className={REMOVE_BUTTON_CLASS}
+      className="group/attachment-remove absolute right-1.5 top-1.5 z-10 size-5 rounded-full hover:bg-transparent max-md:pointer-coarse:size-7"
       aria-label={label}
     >
       <span className="inline-flex size-5 items-center justify-center rounded-full bg-black/60 text-white transition-colors group-hover/attachment-remove:bg-black/80">
         <Icon name="X" className="size-3" />
       </span>
-    </button>
+    </Button>
   );
 }
 
@@ -103,14 +105,16 @@ function FileAttachmentName({ name, path }: { name: string; path: string }) {
     return <span className="truncate">{name}</span>;
   }
   return (
-    <button
+    <Button
       type="button"
+      variant="link"
+      size="sm"
       onMouseDown={(event) => event.preventDefault()}
       onClick={open}
-      className="truncate hover:underline focus-visible:outline-none focus-visible:underline"
+      className="block h-auto min-w-0 truncate p-0 text-[13px] font-normal text-foreground focus-visible:underline"
     >
       {name}
-    </button>
+    </Button>
   );
 }
 
@@ -156,6 +160,8 @@ function FileUploadPreview({ file }: { file: File }) {
   );
 }
 
+const CONTEXT_CHIP_LABEL_CLASS = "h-full gap-1.5 rounded-lg pl-2.5 pr-1 text-[13px] font-normal";
+
 function ContextMentionChip({ group }: { group: ContextMentionGroup }) {
   const composer = useComposer();
   const resolveMentionLink = useComposerRenderer().input.resolveMentionLink;
@@ -169,24 +175,46 @@ function ContextMentionChip({ group }: { group: ContextMentionGroup }) {
     icon: first.icon,
   });
   const keys = new Set(group.mentions.map((mention) => `${mention.from}:${mention.to}`));
+  const label = (
+    <>
+      <Icon name="MessageSquare" className="size-4 shrink-0 text-muted-foreground" />
+      {group.label}
+    </>
+  );
   return (
     <span
       data-t3-context-chip=""
       className="relative inline-flex h-8 shrink-0 items-center rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background text-[13px] text-foreground"
     >
-      <button
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            {open ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={open}
+                className={CONTEXT_CHIP_LABEL_CLASS}
+              >
+                {label}
+              </Button>
+            ) : (
+              <span className={cn("inline-flex items-center", CONTEXT_CHIP_LABEL_CLASS)}>
+                {label}
+              </span>
+            )}
+          </TooltipTrigger>
+          <TooltipContent side="top" className="whitespace-pre-line">
+            {group.mentions.map((mention) => mention.label).join("\n")}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <Button
         type="button"
-        disabled={!open}
-        onMouseDown={(event) => event.preventDefault()}
-        onClick={open ?? undefined}
-        title={group.mentions.map((mention) => mention.label).join("\n")}
-        className="inline-flex h-full items-center gap-1.5 rounded-[10px] pl-2.5 pr-1 disabled:cursor-default"
-      >
-        <Icon name="MessageSquare" className="size-4 shrink-0 text-muted-foreground" />
-        {group.label}
-      </button>
-      <button
-        type="button"
+        variant="ghost"
+        size="icon"
         onMouseDown={(event) => event.preventDefault()}
         onClick={() =>
           composer.replace((current) =>
@@ -194,10 +222,10 @@ function ContextMentionChip({ group }: { group: ContextMentionGroup }) {
           )
         }
         aria-label={`Remove ${group.label}`}
-        className="mr-1 inline-flex size-6 items-center justify-center rounded-full text-muted-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_8%,transparent)] hover:text-foreground"
+        className="mr-1 size-6 rounded-full text-muted-foreground"
       >
         <Icon name="X" className="size-3" />
-      </button>
+      </Button>
     </span>
   );
 }
