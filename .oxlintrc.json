@@ -57,6 +57,15 @@
       }
     },
     {
+      "files": ["plugins/*/components/ui/**", "plugins/*/src/app/components/ui/**"],
+      "rules": {
+        "jsx-a11y/prefer-tag-over-role": "off",
+        "jsx-a11y/interactive-supports-focus": "off",
+        "react/refs": "off",
+        "react/no-object-type-as-default-prop": "off"
+      }
+    },
+    {
       "files": ["plugins/scott-docs/components/ui/**"],
       "rules": {
         "jsx-a11y/prefer-tag-over-role": "off"

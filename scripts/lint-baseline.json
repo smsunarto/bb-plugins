@@ -150,12 +150,6 @@
     "source": "setPreviewUrl(null);"
   },
   {
-    "filename": "plugins/scott-tasks/components/ui/menu-item-hover.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "handlersRef.current = handlers;"
-  },
-  {
     "filename": "plugins/scott-tasks/editor/tasks-editor.tsx",
     "code": "react(refs)",
     "message": "Cannot access refs during render",
@@ -274,24 +268,6 @@
     "code": "react(set-state-in-effect)",
     "message": "Calling setState synchronously within an effect can trigger cascading renders",
     "source": "if (open) handleOpenChange(false);"
-  },
-  {
-    "filename": "plugins/t3-composer/components/ui/dropdown-menu.tsx",
-    "code": "jsx-a11y(prefer-tag-over-role)",
-    "message": "Prefer `address, details, fieldset, hgroup, optgroup` over `role` attribute `group`.",
-    "source": "<div ref={ref} role=\"group\" {...props}>"
-  },
-  {
-    "filename": "plugins/t3-composer/components/ui/menu-item-hover.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "handlersRef.current = handlers;"
-  },
-  {
-    "filename": "plugins/t3-composer/components/ui/responsive-overlay.tsx",
-    "code": "jsx-a11y(prefer-tag-over-role)",
-    "message": "Prefer `dialog` over `role` attribute `dialog`.",
-    "source": "role=\"dialog\""
   },
   {
     "filename": "plugins/t3-composer/components/ui/video.tsx",

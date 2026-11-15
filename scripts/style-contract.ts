@@ -11,7 +11,7 @@
  * match it byte for byte; `--sync <plugin>` copies it in.
  */
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 
 export interface Rule {
@@ -258,10 +258,15 @@ function toBaseline(found: readonly Entry[]): Entry[] {
 /** Overwrite a plugin's existing kit files with the canonical copies. */
 export function syncPlugin(plugin: string, root = "."): string[] {
   const written: string[] = [];
-  const files = execFileSync("git", ["ls-files", `plugins/${plugin}`], {
-    cwd: root,
-    encoding: "utf8",
-  })
+  // Include untracked files so a freshly vendored copy syncs before its first commit.
+  const files = execFileSync(
+    "git",
+    ["ls-files", "--cached", "--others", "--exclude-standard", `plugins/${plugin}`],
+    {
+      cwd: root,
+      encoding: "utf8",
+    },
+  )
     .split("\n")
     .filter(Boolean);
   for (const file of files) {
@@ -273,6 +278,7 @@ export function syncPlugin(plugin: string, root = "."): string[] {
     } catch {
       continue;
     }
+    if (!existsSync(`${root}/${file}`)) continue;
     if (readFileSync(`${root}/${file}`, "utf8") === canonical) continue;
     writeFileSync(`${root}/${file}`, canonical);
     written.push(file);
