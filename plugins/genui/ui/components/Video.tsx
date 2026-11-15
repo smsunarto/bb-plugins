@@ -212,9 +212,10 @@ function VideoFile({
                 } else {
                   setPlayback({
                     status: "failed",
-                    error: expired && !decodeFailed
-                      ? "The playback link expired and could not be renewed. Retry when the host is available."
-                      : "The recording could not be loaded or decoded. Check the host connection and file; H.264 MP4 is recommended.",
+                    error:
+                      expired && !decodeFailed
+                        ? "The playback link expired and could not be renewed. Retry when the host is available."
+                        : "The recording could not be loaded or decoded. Check the host connection and file; H.264 MP4 is recommended.",
                   });
                 }
               }}
