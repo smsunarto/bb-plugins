@@ -96,6 +96,19 @@ export function stripParts(summary: ChangeSummary, countUncommitted: boolean): P
   return parts;
 }
 
+/*
+ * Below 34rem, where bb compacts the composer (its `promptbox-shell`
+ * container), the strip stacks: the lead on one line and the rest under it,
+ * so a branch name reads in full instead of truncating beside the lead.
+ */
+const STACKED =
+  "@max-[34rem]/promptbox-shell:flex-col @max-[34rem]/promptbox-shell:items-start @max-[34rem]/promptbox-shell:gap-0 @max-[34rem]/promptbox-shell:py-0.5";
+/** Under a finger on a phone, the lead reads at the composer's size. */
+const LEAD_TOUCH = "max-md:pointer-coarse:text-[13px] max-md:pointer-coarse:leading-[18px]";
+/** A strip button: 36px under a finger on a phone, as bb's own controls are. */
+const STRIP_BUTTON =
+  "h-6 px-3 font-semibold max-md:pointer-coarse:h-9 max-md:pointer-coarse:px-3.5 max-md:pointer-coarse:text-[13px]";
+
 export function StripSummary({
   threadId,
   environment,
@@ -105,33 +118,56 @@ export function StripSummary({
   if (!summary) return null;
   const countUncommitted = !segments.some((segment) => segment.key === CHANGED_FILES_SEGMENT);
   const chips = attentionChips(summary);
+  const [first, ...rest] = stripParts(summary, countUncommitted);
+  const hasBranch = rest.some((part) => part.icon);
   return (
     <span
       data-bb-plugin="source-control"
       data-testid="sc-strip"
-      className="flex min-h-6 min-w-0 items-center gap-2 overflow-hidden px-2 py-1 text-[12px] leading-4 whitespace-nowrap"
+      className={cx(
+        "flex min-h-6 min-w-0 items-center gap-2 overflow-hidden px-2 py-1 text-[12px] leading-4 whitespace-nowrap",
+        STACKED,
+      )}
       title={chips.map((chip) => chip.label).join(" · ") || undefined}
     >
-      {stripParts(summary, countUncommitted).map((part, index) => (
+      {first && (
         <span
-          key={part.text}
           className={cx(
-            part.tone,
-            index > 0 && "min-w-0 truncate",
-            part.icon && "flex items-center gap-1",
+            first.tone,
+            LEAD_TOUCH,
+            "@max-[34rem]/promptbox-shell:max-w-full @max-[34rem]/promptbox-shell:truncate",
           )}
-          data-promptbox-hide-compact={index > 1 ? "" : undefined}
         >
-          {part.icon ? (
-            <>
-              <Icon name={part.icon} className="size-3 shrink-0" aria-hidden />
-              <span className="min-w-0 truncate">{part.text}</span>
-            </>
-          ) : (
-            part.text
-          )}
+          {first.text}
         </span>
-      ))}
+      )}
+      {rest.length > 0 && (
+        <span className="flex min-w-0 items-center gap-2 @max-[34rem]/promptbox-shell:self-stretch">
+          {rest.map((part) => (
+            <span
+              key={part.text}
+              // Beside a branch, a count keeps its width and the branch truncates.
+              className={cx(
+                part.tone,
+                part.icon
+                  ? "flex min-w-0 items-center gap-1"
+                  : hasBranch
+                    ? "shrink-0"
+                    : "min-w-0 truncate",
+              )}
+            >
+              {part.icon ? (
+                <>
+                  <Icon name={part.icon} className="size-3 shrink-0" aria-hidden />
+                  <span className="min-w-0 truncate">{part.text}</span>
+                </>
+              ) : (
+                part.text
+              )}
+            </span>
+          ))}
+        </span>
+      )}
     </span>
   );
 }
@@ -152,6 +188,8 @@ function StripMessage({ text, failed = true }: { text: string | null; failed?: b
     <output
       className={cx(
         "max-w-60 truncate text-[12px] leading-4",
+        // Stacked, it wraps to two lines in a narrow column beside the button.
+        "@max-[34rem]/promptbox-shell:line-clamp-2 @max-[34rem]/promptbox-shell:max-w-32 @max-[34rem]/promptbox-shell:whitespace-normal",
         failed ? "text-warning" : "text-muted-foreground",
       )}
       title={text}
@@ -197,7 +235,7 @@ function StripShip({ threadId }: { threadId: string }) {
         data-testid="sc-strip-ship"
         onClick={() => void ship.send()}
         disabled={ship.pending}
-        className="h-6 px-3 font-semibold"
+        className={STRIP_BUTTON}
       >
         <Pending pending={ship.pending} icon="Sent" />
         Ship it
@@ -217,7 +255,7 @@ function StripMarkReady({ threadId, summary }: { threadId: string; summary: Chan
         data-testid="sc-strip-mark-ready"
         onClick={draft.toggle}
         disabled={draft.pending}
-        className="h-6 px-3 font-semibold"
+        className={STRIP_BUTTON}
       >
         <Pending pending={draft.pending} />
         Mark ready
