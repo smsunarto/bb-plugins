@@ -19,7 +19,7 @@ import {
   type KeyName,
   type SauceCore,
   type Step,
-  type WaitCondition,
+  type Until,
 } from "./core.ts";
 import { DEVICE_KEYS, SauceError } from "./live.ts";
 
@@ -45,10 +45,9 @@ const hold = {
   description: "Keep the finger down this long before lifting (max 30s)",
 } as const;
 const wait = {
-  type: "enum",
-  values: ["stable", "changed"],
+  type: "string",
   description:
-    "After the gesture, wait until the screen holds still (stable) or differs from before the gesture (changed)",
+    "Afterwards, wait until the screen holds still (stable), differs from before (changed), or a new device-log line matches (log:<regex>)",
 } as const;
 const timeout = {
   type: "duration",
@@ -101,9 +100,22 @@ export function milliseconds(text: string, name: string, max: number): number {
   return Math.round(value);
 }
 
-function condition(text: string | undefined): WaitCondition {
+/** `stable`, `changed`, or `log:<regex>` (case-insensitive, matched against new device-log lines). */
+function until(text: string | undefined): Until {
   if (text === "stable" || text === "changed") return text;
-  throw usage(`wait takes stable or changed, got "${text ?? ""}"`);
+  if (text?.startsWith("log:") && text.length > 4) {
+    const pattern = text.slice(4);
+    try {
+      new RegExp(pattern, "i");
+    } catch {
+      throw usage(`wait log: needs a valid regular expression, got "${pattern}"`);
+    }
+    return { log: pattern };
+  }
+  throw usage(
+    `wait takes stable, changed, or log:<regex>, got "${text ?? ""}"`,
+    'For example: bb sauce wait "log:Unity.*match started" --timeout 30s',
+  );
 }
 
 function keyName(text: string | undefined): KeyName {
@@ -215,7 +227,7 @@ export function parseStep(text: string): Step {
       const timeoutMs = duration("timeout", WAIT_MAX_MS);
       return {
         do: "wait",
-        condition: condition(bare[0]),
+        until: until(bare[0]),
         ...(timeoutMs === undefined ? {} : { timeoutMs }),
       };
     }
@@ -250,7 +262,7 @@ function afterOptions(options: {
   fast: boolean;
 }): AfterOptions {
   return {
-    ...(options.wait ? { wait: condition(options.wait) } : {}),
+    ...(options.wait ? { wait: until(options.wait) } : {}),
     ...(options.timeout === undefined ? {} : { timeoutMs: options.timeout }),
     ...(options.fast ? { look: "fast" as const } : options.look ? { look: "full" as const } : {}),
   };
@@ -580,21 +592,22 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
           }),
       }),
       wait: cliCommand({
-        summary: "Wait until the screen holds still (stable) or changes (changed)",
+        summary:
+          "Wait until the screen holds still, changes, or the device log prints a matching line",
         positionals: [
           {
             name: "condition",
             description:
-              "stable: two matching samples in a row; changed: differs from when the wait began",
+              "stable: two matching samples in a row; changed: differs from when the wait began; log:<regex>: a new line in the Device Log panel matches (its app and level filters apply)",
             required: true,
           },
         ],
         options: { timeout, json },
         run: (input, cli) =>
           answer(input.options.json, () => {
-            const until = condition(input.positionals.condition);
+            const condition = until(input.positionals.condition);
             return core.wait(caller(cli), {
-              condition: until,
+              until: condition,
               timeoutMs: input.options.timeout ?? WAIT_DEFAULT_MS,
             });
           }),
@@ -603,7 +616,7 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
         summary: "Run several steps in one command, stopping at the first failure",
         description:
           'Each argument is one quoted step: "tap <x> <y> [--hold 2s] [--frame 4]", "drag <x> <y> <to-x> <to-y> [--duration 300ms] [--hold 2s] [--frame 4]",\n' +
-          '"type <text>" (all that follows is the text), "key enter|backspace|tab|escape|back", "wait stable|changed [--timeout 10s]",\n' +
+          '"type <text>" (all that follows is the text), "key enter|backspace|tab|escape|back", "wait stable|changed|log:<regex> [--timeout 10s]" (no spaces in the regex; use \\s),\n' +
           '"look [--label name] [--if-changed] [--fast]", "device home|rotate|restart-app".\n' +
           'Example: bb sauce batch "tap 0.93 0.07" "wait stable" "look"\n' +
           "Nothing prints until the last step ends; the result and each look are also saved to thread storage.",
@@ -691,11 +704,19 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
             type: "string",
             description: "Case-insensitive regex; also prints the last 100 matching lines",
           },
+          new: {
+            type: "boolean",
+            description:
+              "Read only the Device Log panel's live tail and print the lines since this thread's last --new: quick, saves no file, and sees only the panel's app and level filters",
+          },
           json,
         },
         run: (input, cli) =>
           answer(input.options.json, () =>
-            core.log(caller(cli), input.options.grep ? { grep: input.options.grep } : {}),
+            core.log(caller(cli), {
+              ...(input.options.grep ? { grep: input.options.grep } : {}),
+              fresh: input.options.new,
+            }),
           ),
       }),
       end: cliCommand({

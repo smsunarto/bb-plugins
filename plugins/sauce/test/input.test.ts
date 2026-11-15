@@ -3,6 +3,7 @@ import { expect, test } from "bun:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 
 import { BrowserCommandError } from "../src/server/browser.ts";
+import { newLines } from "../src/server/core.ts";
 import { parseStep } from "../src/server/cli.ts";
 import { pngEncode, pngPixels, pngSize, turnPixels } from "../src/server/png.ts";
 import { registerSauce } from "../src/server/server.ts";
@@ -168,7 +169,7 @@ test("a batch step may carry its own frame, text, and keys", async () => {
   const ran = await core.batch(A, [
     { do: "tap", x: 0.5, y: 0.5, frame: 2 },
     { do: "type", text: "abc" },
-    { do: "wait", condition: "changed" },
+    { do: "wait", until: "changed" },
     { do: "key", key: "enter" },
     { do: "look", fast: true },
   ]);
@@ -237,4 +238,67 @@ test("upload waits its turn: not while another thread holds the device", async (
     "held_by_other_thread",
   );
   expect(fake.world.sent).toEqual([]);
+});
+
+test("wait log: ends on a new matching line, not one already in the log", async () => {
+  const { core, world } = await started();
+  world.log.push("12:00:02 W Unity : match started");
+  // The line above was there before the wait began, so only a later one counts.
+  world.onTail = (count) => {
+    if (count === 3) world.log.push("12:00:05 I Unity : Match Started (round 2)");
+  };
+  const waited = await core.wait(A, { until: { log: "match started" }, timeoutMs: 5000 });
+  expect(waited).toMatchObject({
+    condition: "log",
+    met: true,
+    line: "12:00:05 I Unity : Match Started (round 2)",
+  });
+
+  world.onTail = () => {};
+  const none = await core.wait(A, { until: { log: "never printed" }, timeoutMs: 1500 });
+  expect(none).toMatchObject({ condition: "log", met: false, timed_out: true });
+});
+
+test("tap --wait log: compares with the log before the tap", async () => {
+  const { json, world } = cli();
+  await json(["start", "Samsung Galaxy S23"]);
+  await json(["look"]);
+  world.onGesture = () => void world.log.push("12:00:09 E Unity : NullReferenceException");
+  const tapped = await json(["tap", "0.5", "0.5", "--wait", "log:exception"]);
+  expect(tapped.value.wait).toMatchObject({ condition: "log", met: true });
+  expect(tapped.value.wait.line).toContain("NullReferenceException");
+
+  expect((await json(["wait", "log:("])).value.error.code).toBe("invalid_value");
+  expect((await json(["wait", "soon"])).value.error.code).toBe("invalid_value");
+  expect(parseStep("wait log:Unity.*boom --timeout 30s")).toEqual({
+    do: "wait",
+    until: { log: "Unity.*boom" },
+    timeoutMs: 30_000,
+  });
+});
+
+test("log --new returns only the lines since this thread's last read, and saves no file", async () => {
+  const { json, world } = cli();
+  await json(["start", "Samsung Galaxy S23"]);
+  const first = await json(["log", "--new"]);
+  expect(first.value).toMatchObject({ new_lines: 1, lines: ["12:00:01 I Unity : boot"] });
+
+  world.log.push("12:00:03 E Unity : boom", "12:00:04 I Unity : fine");
+  const second = await json(["log", "--new", "--grep", "boom"]);
+  expect(second.value).toMatchObject({ new_lines: 2, matches: ["12:00:03 E Unity : boom"] });
+  expect((await json(["log", "--new"])).value.new_lines).toBe(0);
+  expect(world.saved).toEqual([]);
+});
+
+test("new log lines are found where the previous window ends inside the current one", () => {
+  // The panel's window slid: two old lines dropped off the top, two new ones arrived.
+  expect(newLines(["a", "b", "c", "d"], ["c", "d", "e", "f"])).toEqual(["e", "f"]);
+  // Load more: older lines were added above; nothing new arrived.
+  expect(newLines(["c", "d"], ["a", "b", "c", "d"])).toEqual([]);
+  // Identical repeats cannot be told apart, so they align on the latest run: a wait
+  // must not end on a line that may have been there before.
+  expect(newLines(["x", "x", "x"], ["x", "x", "x", "x", "y"])).toEqual(["y"]);
+  // No overlap: the window moved past everything seen.
+  expect(newLines(["a", "b"], ["y", "z"])).toEqual(["y", "z"]);
+  expect(newLines([], ["a"])).toEqual(["a"]);
 });

@@ -92,6 +92,7 @@ function fakePage(state: FakeState): SaucePage {
     glanceScreen: async () => ({ width: 2340, height: 1080, thumbnail: null }),
     uploadApp: async () => ({ id: "f2", label: "upload" }),
     typeText: async () => {},
+    logTail: async () => [],
     pressKey: async () => {},
     requireSession: async () => {
       requireSession();

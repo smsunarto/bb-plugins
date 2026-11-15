@@ -44,6 +44,23 @@ export type Caller = { threadId: string; signal?: AbortSignal };
 /** What a wait watches for on the device screen. */
 export type WaitCondition = "stable" | "changed";
 
+/** What a wait ends on: a screen condition, or a new device-log line matching a pattern. */
+export type Until = WaitCondition | { log: string };
+
+/** How things stood before the action a wait follows: the screen, or the log's tail. */
+type Before = { screen?: Uint8Array | null; log?: readonly string[] };
+
+export type LogWaitResult = {
+  condition: "log";
+  pattern: string;
+  met: boolean;
+  waited_ms: number;
+  /** The first new line that matched. */
+  line?: string;
+  timed_out?: true;
+  note?: string;
+};
+
 export type WaitResult = {
   condition: WaitCondition;
   met: boolean;
@@ -79,7 +96,7 @@ export type LookInput = { label?: string; ifChanged?: boolean; fast?: boolean };
 
 /** What follows an action on the device: optionally a wait, then optionally a look. */
 export type AfterOptions = {
-  wait?: WaitCondition;
+  wait?: Until;
   timeoutMs?: number;
   look?: LookKind;
 };
@@ -92,7 +109,7 @@ export type Step =
   | ({ do: "tap" | "drag"; frame?: number } & GestureInput)
   | { do: "type"; text: string }
   | { do: "key"; key: KeyName }
-  | { do: "wait"; condition: WaitCondition; timeoutMs?: number }
+  | { do: "wait"; until: Until; timeoutMs?: number }
   | ({ do: "look" } & LookInput)
   | { do: "device"; action: DeviceAction };
 
@@ -107,6 +124,27 @@ const UPLOAD_TIMEOUT_MS = 20 * 60 * 1000;
 
 /** Longest grep match returned inline; logcat lines can carry whole payloads. */
 const MATCH_LINE_MAX = 400;
+
+/** Pause between reads of the device log's tail while waiting on it. */
+const LOG_POLL_MS = 500;
+
+/**
+ * The lines of `current` that came after `previous`. Both are windows over the same
+ * growing log (Sauce's panel shows its latest ~200 lines), so the end of the previous
+ * window is found inside the current one and everything after it is new. With no
+ * overlap the window moved past everything seen, and every line is new.
+ */
+export function newLines(previous: readonly string[], current: readonly string[]): string[] {
+  for (let keep = Math.min(previous.length, current.length); keep > 0; keep -= 1) {
+    const from = previous.length - keep;
+    for (let at = current.length - keep; at >= 0; at -= 1) {
+      let same = true;
+      for (let i = 0; same && i < keep; i += 1) same = current[at + i] === previous[from + i];
+      if (same) return current.slice(at + keep);
+    }
+  }
+  return [...current];
+}
 
 /** Pause between screen samples while waiting. Each sample is one browser round trip. */
 const WAIT_POLL_MS = 250;
@@ -229,6 +267,8 @@ export function createSauceCore(deps: SauceCoreDeps) {
    * against the page's video), so only looks of the same kind are compared.
    */
   const lastLook = new Map<string, { kind: LookKind; pixels: Uint8Array }>();
+  /** The log tail each holder last read with `log --new`, so the next read returns only what followed. */
+  const logMark = new Map<string, readonly string[]>();
 
   function throwIfCancelled(ctx: Caller) {
     if (ctx.signal?.aborted)
@@ -485,6 +525,67 @@ export function createSauceCore(deps: SauceCoreDeps) {
     }
   }
 
+  /** The device log's latest lines, as Sauce's Device Log panel shows them. */
+  function tail(ctx: Caller): Promise<string[]> {
+    return holding(ctx, async () => {
+      const lines = await deps.page.logTail();
+      touchLease(deps.store, {}, deps.now());
+      return lines;
+    });
+  }
+
+  /** Polls the device log until a line newer than `baseline` matches; a timeout is a result. */
+  async function waitForLog(
+    ctx: Caller,
+    pattern: string,
+    timeoutMs: number,
+    baseline?: readonly string[],
+  ): Promise<LogWaitResult> {
+    const matcher = new RegExp(pattern, "i");
+    const began = deps.now();
+    const limit = Math.min(WAIT_MAX_MS, Math.max(0, timeoutMs));
+    let previous = baseline ?? (await tail(ctx));
+    for (;;) {
+      if (deps.now() - began >= limit) {
+        return {
+          condition: "log",
+          pattern,
+          met: false,
+          waited_ms: deps.now() - began,
+          timed_out: true,
+          note: "No new log line matched. The panel shows only its current app and level filters; `bb sauce log --grep` searches the whole log.",
+        };
+      }
+      await deps.sleep(LOG_POLL_MS);
+      throwIfCancelled(ctx);
+      const current = await tail(ctx);
+      const line = newLines(previous, current).find((candidate) => matcher.test(candidate));
+      if (line !== undefined) {
+        return {
+          condition: "log",
+          pattern,
+          met: true,
+          waited_ms: deps.now() - began,
+          line: line.length > MATCH_LINE_MAX ? `${line.slice(0, MATCH_LINE_MAX)}…` : line,
+        };
+      }
+      previous = current;
+    }
+  }
+
+  /** What a wait for `until` must know from before the action it follows. */
+  async function before(ctx: Caller, until: Until | undefined): Promise<Before> {
+    if (until === "changed") return { screen: await sample(ctx) };
+    if (typeof until === "object") return { log: await tail(ctx) };
+    return {};
+  }
+
+  function waitUntil(ctx: Caller, until: Until, timeoutMs: number, from: Before = {}) {
+    return typeof until === "object"
+      ? waitForLog(ctx, until.log, timeoutMs, from.log)
+      : waitFor(ctx, until, timeoutMs, from.screen);
+  }
+
   /** Sends one tap, press, or drag. Its result reports only what reached the device. */
   function sendGesture(ctx: Caller, input: GestureInput, frame: number | undefined) {
     return holding(ctx, async (lease) => {
@@ -556,12 +657,12 @@ export function createSauceCore(deps: SauceCoreDeps) {
     send: () => Promise<T>,
     options: AfterOptions,
   ) {
-    const baseline = options.wait === "changed" ? await sample(ctx) : undefined;
+    const from = await before(ctx, options.wait);
     const sent = await send();
     if (!options.wait && !options.look) return sent;
     try {
       const waited = options.wait
-        ? await waitFor(ctx, options.wait, options.timeoutMs ?? WAIT_DEFAULT_MS, baseline)
+        ? await waitUntil(ctx, options.wait, options.timeoutMs ?? WAIT_DEFAULT_MS, from)
         : undefined;
       const seen = options.look
         ? await look(ctx, { label: `after-${label}`, fast: options.look === "fast" })
@@ -613,12 +714,7 @@ export function createSauceCore(deps: SauceCoreDeps) {
     });
   }
 
-  async function runStep(
-    ctx: Caller,
-    step: Step,
-    frame: number | undefined,
-    baseline: Uint8Array | null | undefined,
-  ) {
+  async function runStep(ctx: Caller, step: Step, frame: number | undefined, from: Before) {
     switch (step.do) {
       case "tap":
       case "drag":
@@ -629,7 +725,7 @@ export function createSauceCore(deps: SauceCoreDeps) {
       case "key":
         return sendKeys(ctx, { key: step.key });
       case "wait":
-        return waitFor(ctx, step.condition, step.timeoutMs ?? WAIT_DEFAULT_MS, baseline);
+        return waitUntil(ctx, step.until, step.timeoutMs ?? WAIT_DEFAULT_MS, from);
       case "look":
         return look(ctx, step);
       case "device":
@@ -757,6 +853,7 @@ export function createSauceCore(deps: SauceCoreDeps) {
         throwIfCancelled(ctx);
         acquireLease(deps.store, ctx.threadId, deps.now());
         lastLook.delete(ctx.threadId);
+        logMark.delete(ctx.threadId);
         try {
           const started = await deps.page.startSession(input, ctx.signal);
           // Stopped while the device came up: nobody will drive it, so hand it back.
@@ -816,8 +913,8 @@ export function createSauceCore(deps: SauceCoreDeps) {
       return act(ctx, `key-${input.key}`, () => sendKeys(ctx, input), options);
     },
 
-    wait(ctx: Caller, input: { condition: WaitCondition; timeoutMs?: number }) {
-      return waitFor(ctx, input.condition, input.timeoutMs ?? WAIT_DEFAULT_MS);
+    wait(ctx: Caller, input: { until: Until; timeoutMs?: number }) {
+      return waitUntil(ctx, input.until, input.timeoutMs ?? WAIT_DEFAULT_MS);
     },
 
     device,
@@ -835,7 +932,12 @@ export function createSauceCore(deps: SauceCoreDeps) {
       });
     },
 
-    async log(ctx: Caller, input: { grep?: string } = {}) {
+    /**
+     * The device log. By default the whole log (Sauce's last 50,000 lines) is saved to
+     * thread storage. `fresh` instead reads the panel's live tail and returns only the
+     * lines since this thread's previous fresh read: cheap enough to run after a step.
+     */
+    async log(ctx: Caller, input: { grep?: string; fresh?: boolean } = {}) {
       let pattern: RegExp | undefined;
       if (input.grep) {
         try {
@@ -846,6 +948,22 @@ export function createSauceCore(deps: SauceCoreDeps) {
             `--grep is not a valid regular expression: ${input.grep}`,
           );
         }
+      }
+      const clip = (line: string) =>
+        line.length > MATCH_LINE_MAX ? `${line.slice(0, MATCH_LINE_MAX)}…` : line;
+      if (input.fresh) {
+        const current = await tail(ctx);
+        const marked = logMark.get(ctx.threadId);
+        const fresh = marked ? newLines(marked, current) : current;
+        logMark.set(ctx.threadId, current);
+        const kept = pattern ? fresh.filter((line) => pattern.test(line)) : fresh;
+        return {
+          new_lines: fresh.length,
+          since: marked ? "this thread's previous `log --new`" : "the start of the panel's tail",
+          ...(pattern
+            ? { matches: kept.slice(-100).map(clip) }
+            : { lines: kept.slice(-100).map(clip) }),
+        };
       }
       const done = await holding(ctx, async () => {
         const dir = await deps.tempDir();
@@ -858,9 +976,7 @@ export function createSauceCore(deps: SauceCoreDeps) {
             ? lines
                 .filter((line) => pattern.test(line))
                 .slice(-100)
-                .map((line) =>
-                  line.length > MATCH_LINE_MAX ? `${line.slice(0, MATCH_LINE_MAX)}…` : line,
-                )
+                .map(clip)
             : undefined;
           return {
             result: { lines: lines.length, matches },
@@ -884,19 +1000,18 @@ export function createSauceCore(deps: SauceCoreDeps) {
       let failed: { step: number; code: string; error: string; hint?: string } | undefined;
       // Coordinates given with the batch belong to `frame` until a look inside it sets a new one.
       let frame = options.frame;
-      let baseline: Uint8Array | null | undefined;
+      let from: Before = {};
       for (const [index, step] of steps.entries()) {
         try {
           throwIfCancelled(ctx);
           const isAction =
             step.do === "tap" || step.do === "drag" || step.do === "type" || step.do === "key";
-          // A wait for `changed` right after an action compares with the screen before it.
+          // A wait right after an action compares with the screen or log before it.
           const next = steps[index + 1];
-          if (isAction && next?.do === "wait" && next.condition === "changed")
-            baseline = await sample(ctx);
-          results.push(await runStep(ctx, step, frame, step.do === "wait" ? baseline : undefined));
+          if (isAction && next?.do === "wait") from = await before(ctx, next.until);
+          results.push(await runStep(ctx, step, frame, step.do === "wait" ? from : {}));
           if (step.do === "look") frame = undefined;
-          if (!isAction) baseline = undefined;
+          if (!isAction) from = {};
         } catch (error) {
           failed = { step: index + 1, ...describeError(error) };
           break;

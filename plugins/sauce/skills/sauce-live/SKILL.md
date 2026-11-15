@@ -32,8 +32,8 @@ Older hunt prompts say to open Sauce Live in a local Chrome, sign in through Goo
 
 - **Look:** `bb sauce look` saves an upright PNG and prints its `frame` id. Coordinates are fractions (0 to 1) of that image from its top-left corner. `changed: false` means the screen matches the previous look.
 - **Act:** `bb sauce tap <x> <y>` or `bb sauce drag <x> <y> <to-x> <to-y>`. Pass `--frame <id>` so a touch aimed at an older picture fails with `stale_frame` instead of landing somewhere else.
-- **Text and keys:** tap the field, then `bb sauce type "<text>"`. `bb sauce key enter|backspace|tab|escape` presses one key; `bb sauce key back` is Android's BACK button.
-- **Wait for a condition, not a guessed time:** `--wait stable` returns once the screen holds still; `--wait changed` returns once it differs from before the gesture. Use `changed` for slow loads, then `stable`.
+- **Text and keys:** tap the field, then `bb sauce type "<text>" --wait changed --look`; the device shows the text a moment after the command returns. `bb sauce key enter|backspace|tab|escape` presses one key; `bb sauce key back` is Android's BACK button.
+- **Wait for a condition, not a guessed time:** `--wait changed` returns once the screen differs from before the action; `--wait stable` once it holds still; `--wait "log:<regex>"` once the device log prints a matching new line. Use `changed` for slow loads, then `stable`.
 - **One command per step:** `bb sauce tap 0.93 0.07 --frame 4 --wait changed --look` taps, waits, and prints the new look.
 - **Fast looks for navigating:** `--fast` (on `look`, `tap`, `drag`, `type`, `key`) saves the page's picture of the device instead of Sauce's screenshot. It is smaller and quicker, and good enough to find the next button. Take a full look for evidence, and whenever a fast look comes back sideways.
 - **Fixed sequences:** `bb sauce batch "tap 0.5 0.9" "wait changed --timeout 30s" "wait stable" "look"` runs steps in order and stops at the first failure. It prints only when the last step ends and saves the run to thread storage.
@@ -56,4 +56,4 @@ Older hunt prompts say to open Sauce Live in a local Chrome, sign in through Goo
 - The game runs landscape. Looks come back upright; `bb sauce` handles Sauce's sideways canvas.
 - First launch: tap SKIP on the cinematic, tap the title screen, then accept the guest prompt. Matches start from the HQ DEPLOY table, then DEPLOY on the ops table.
 - Joystick: drag from the stick's centre toward the direction with `--hold` for as long as the character should move.
-- Unity logs reach the device log: `bb sauce log --grep "Unity|Exception"`.
+- Unity logs reach the device log: `bb sauce log --grep "Unity|Exception"` searches all of it; `bb sauce log --new --grep "Exception"` shows only what the panel printed since your last check.

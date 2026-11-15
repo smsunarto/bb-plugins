@@ -36,6 +36,10 @@ export function fakeDevice() {
     samples: 0,
     captures: 0,
     glances: 0,
+    /** The Device Log panel's tail; `onTail` may append to it between reads. */
+    log: ["12:00:01 I Unity : boot"] as string[],
+    tails: 0,
+    onTail: (_count: number): void => {},
     /** What the next full look reads the rotation as. */
     reading: { candidates: [90, 270] as const, best: 90 as number | null, clear: true },
     now: 1_000_000,
@@ -142,6 +146,12 @@ export function fakeDevice() {
       requireSession();
       world.sent.push(`shell ${command}`);
       return "ok";
+    },
+    logTail: async () => {
+      requireSession();
+      world.tails += 1;
+      world.onTail(world.tails);
+      return [...world.log];
     },
     downloadLog: async (path: string) => writeFile(path, "a\nUnity boom\nb"),
     endSession: async () => {

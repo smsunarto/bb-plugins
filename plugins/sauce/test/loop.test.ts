@@ -52,7 +52,7 @@ test("wait stable returns once the screen holds still for two comparisons in a r
   // An animation: every sample differs until the fourth, then the screen rests.
   world.onSample = (count) => void (world.gray = count < 4 ? count * 40 : 200);
   const began = world.now;
-  const waited = await core.wait(A, { condition: "stable", timeoutMs: 10_000 });
+  const waited = await core.wait(A, { until: "stable", timeoutMs: 10_000 });
   expect(waited).toMatchObject({ condition: "stable", met: true });
   expect(waited.waited_ms).toBe(world.now - began);
   // Samples 4, 5 and 6 match: two still comparisons.
@@ -62,7 +62,7 @@ test("wait stable returns once the screen holds still for two comparisons in a r
 test("a screen that never holds still times out as a result, not an error", async () => {
   const { core, world } = await started();
   world.onSample = (count) => void (world.gray = (count * 40) % 256);
-  const waited = await core.wait(A, { condition: "stable", timeoutMs: 2_000 });
+  const waited = await core.wait(A, { until: "stable", timeoutMs: 2_000 });
   expect(waited).toMatchObject({ met: false, timed_out: true });
   expect(waited.waited_ms).toBeGreaterThanOrEqual(2_000);
   expect(waited.waited_ms).toBeLessThan(2_500);
@@ -105,7 +105,7 @@ test("a session that ends during a wait frees the device", async () => {
   world.onSample = (count) => {
     if (count === 2) world.page = { ...world.page, kind: "session_ended" };
   };
-  expect(await codeOf(core.wait(A, { condition: "changed", timeoutMs: 5_000 }))).toBe("no_session");
+  expect(await codeOf(core.wait(A, { until: "changed", timeoutMs: 5_000 }))).toBe("no_session");
   expect(deps.store.read()).toBeNull();
 });
 
@@ -115,7 +115,7 @@ test("a batch runs its steps in order and stops at the first failure", async () 
   world.onGesture = () => void (world.gray = 200);
   const ran = await core.batch(A, [
     { do: "tap", x: 0.5, y: 0.9 },
-    { do: "wait", condition: "changed" },
+    { do: "wait", until: "changed" },
     { do: "look", label: "lobby" },
     { do: "device", action: "rotate" },
     // The rotation cleared the frame, so this tap must not reach the device.
@@ -172,7 +172,7 @@ test("a batch whose caller went away stops before the next step", async () => {
 test("only the holder may wait or batch", async () => {
   const { core } = await started();
   const b = { threadId: "thr_b" };
-  expect(await codeOf(core.wait(b, { condition: "stable" }))).toBe("held_by_other_thread");
+  expect(await codeOf(core.wait(b, { until: "stable" }))).toBe("held_by_other_thread");
   const ran = await core.batch(b, [{ do: "look" }]);
   expect(ran).toMatchObject({ ok: false, failed: { step: 1, code: "held_by_other_thread" } });
 });

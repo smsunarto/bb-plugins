@@ -26,6 +26,7 @@ export type SauceErrorCode =
   | "timeout"
   | "start_pending"
   | "cancelled"
+  | "upload_rejected"
   | "page_changed";
 
 export class SauceError extends Error {
@@ -199,8 +200,11 @@ const STATE_SCRIPT = `(() => {
 
 const CANVAS = "canvas.testobject-device__canvas";
 
-/** The app picker's file input for uploading a build to app storage. */
-const UPLOAD_INPUT = "[data-qa=search-dialog] input[type=file]";
+/** Sauce's App Management page, and its file input for uploading a build to app storage. */
+const APP_MANAGEMENT = "https://app.saucelabs.com/app-management";
+const UPLOAD_INPUT = "[data-qa=app-management-upload-box-input]";
+/** How the page's notification words a refused upload ("406 NotAcceptable Uploading has failed. ..."). */
+const UPLOAD_FAILED = /fail|unable|error|invalid|not ?acceptable|denied|too large/i;
 
 /**
  * The ADB Shell command box. Sauce also renders a device paste box
@@ -493,41 +497,74 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     return apps;
   }
 
+  /** Builds listed by the app picker right now, as file ids. */
+  async function listedAppIds(): Promise<Set<string>> {
+    await openAppPicker();
+    const apps = await appEntries(undefined);
+    await closeAppPicker();
+    return new Set(apps.map((app) => app.id));
+  }
+
   /**
-   * Uploads a build to Sauce app storage through the app picker's file input, and
-   * resolves with its entry once the picker lists it. `name` is the file's name,
-   * which Sauce shows in the build's label.
+   * Uploads a build to Sauce app storage from the App Management page and resolves
+   * with its entry once the app picker lists it. The page reports the outcome in a
+   * notification; the tab stays on it until then, since leaving would cut the upload
+   * short. `name` is the file's name, which Sauce shows in the build's label.
    */
   async function uploadApp(path: string, name: string, timeoutMs: number): Promise<AppBuild> {
     await requireLive();
-    await openAppPicker();
-    const before = new Set((await appEntries(undefined)).map((app) => app.id));
-    const hasInput = await poll(
-      10_000,
+    const before = await listedAppIds();
+    await open(APP_MANAGEMENT);
+    const ready = await poll(
+      30_000,
       () => evaluate<boolean>(`!!document.querySelector(${JSON.stringify(UPLOAD_INPUT)})`),
-      500,
+      700,
     );
-    if (!hasInput) {
-      await closeAppPicker();
-      throw new SauceError("page_changed", "The Sauce app picker has no file upload control.");
+    if (!ready) {
+      await open(LIVE_HOME);
+      throw new SauceError("page_changed", "Sauce's App Management page has no upload control.");
     }
+    const notice = () =>
+      evaluate<string>(
+        `(document.querySelector("[data-qa=notifications-wrapper]")?.innerText ?? "").replace(/\\s+/g, " ").trim()`,
+      );
+    const stale = await notice();
+    let said: string | null;
     try {
-      await browser.run(["upload", UPLOAD_INPUT, path], timeoutMs);
+      await browser.run(["upload", UPLOAD_INPUT, path], 60_000);
+      said = await poll(
+        timeoutMs,
+        async () => {
+          const text = await notice();
+          return text && text !== stale ? text : null;
+        },
+        1000,
+      );
     } catch (error) {
+      await open(LIVE_HOME).catch(() => {});
       if (!(error instanceof BrowserCommandError)) throw error;
-      await closeAppPicker().catch(() => {});
       throw new SauceError(
-        "timeout",
+        "page_changed",
         `The upload of ${name} did not start: ${error.detail.slice(0, 200)}`,
         "Nothing was uploaded. Run `bb sauce upload` again.",
       );
     }
-    // Sauce lists the build once it has received and processed the whole file.
+    await open(LIVE_HOME);
+    if (said && UPLOAD_FAILED.test(said)) {
+      throw new SauceError(
+        "upload_rejected",
+        `Sauce rejected ${name}: ${said.slice(0, 400)}`,
+        "Check that the file is a complete .apk, .aab, .ipa, or zipped .app build.",
+      );
+    }
+    // Sauce lists the build a moment after it reports the upload.
     const wanted = name.toLowerCase();
     const uploaded = await poll(
-      timeoutMs,
+      said ? 90_000 : 5_000,
       async () => {
-        const apps = await appEntries(undefined).catch(() => [] as AppBuild[]);
+        await openAppPicker();
+        const apps = await appEntries(undefined);
+        await closeAppPicker();
         return (
           apps.find((app) => !before.has(app.id) && app.label.toLowerCase().includes(wanted)) ??
           null
@@ -535,12 +572,13 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
       },
       3000,
     );
-    await closeAppPicker().catch(() => {});
     if (!uploaded) {
       throw new SauceError(
         "timeout",
-        `Sauce did not list ${name} within ${Math.round(timeoutMs / 60_000)} min of the upload starting.`,
-        "It may still be processing. Run `bb sauce apps` in a minute before uploading again.",
+        said
+          ? `Sauce reported "${said.slice(0, 200)}" for ${name}, but the app picker does not list it yet.`
+          : `Sauce reported nothing for ${name} within ${Math.round(timeoutMs / 60_000)} min, and the tab left the upload page.`,
+        "Run `bb sauce apps` in a minute before uploading again.",
       );
     }
     return uploaded;
@@ -1106,15 +1144,22 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
   }
 
   /**
-   * Sauce forwards keys pressed in its paste box to the device's focused field, and
-   * moves focus there on its own after most actions. Keys pressed anywhere else are
-   * lost or land in Sauce's own UI, so each send first confirms the box has focus.
+   * Sauce forwards keys pressed in its paste box to the device's focused field. The
+   * box exists only while the pointer is over the device: Sauce removes it when focus
+   * moves to its own controls (a look clicks a menu item), and mounts and focuses it
+   * again when the pointer moves onto the canvas. A move sends no touch. Keys pressed
+   * anywhere else are lost or land in Sauce's own UI, so each send first confirms the
+   * box has focus. Measured 2026-11-15.
    */
   async function focusDevice(what: string) {
     await requireSession();
     const focused = await poll(
       5_000,
-      async () => (await tryAction(["focus", PASTE_AREA])) && evaluate<boolean>(PASTE_FOCUSED),
+      async () =>
+        (await evaluate<boolean>(PASTE_FOCUSED)) ||
+        ((await tryAction(["hover", CANVAS])) &&
+          ((await evaluate<boolean>(PASTE_FOCUSED)) ||
+            ((await tryAction(["focus", PASTE_AREA])) && evaluate<boolean>(PASTE_FOCUSED)))),
       500,
     );
     if (!focused)
@@ -1125,10 +1170,28 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
       );
   }
 
-  /** Types text into whatever field has focus on the device. */
+  /**
+   * Types text into whatever field has focus on the device, as one paste into Sauce's
+   * box. Measured 2026-11-15 on a Galaxy S23: Sauce forwards a paste and single key
+   * presses, but not agent-browser's `keyboard type` or `inserttext`. The paste event
+   * is made in the page, so the bb server's own clipboard is left alone.
+   */
   async function typeText(text: string) {
     await focusDevice("The text");
-    await browser.run(["keyboard", "type", text], 30_000 + text.length * 100);
+    const sent = await evaluate<boolean>(`(() => {
+      const box = document.querySelector(${JSON.stringify(PASTE_AREA)});
+      if (!box || document.activeElement !== box) return false;
+      const data = new DataTransfer();
+      data.setData("text/plain", ${JSON.stringify(text)});
+      box.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+      return true;
+    })()`);
+    if (!sent)
+      throw new SauceError(
+        "page_changed",
+        "The text was not sent: the device's keyboard box lost focus. No text reached the device.",
+        "Run the command again.",
+      );
   }
 
   async function pressKey(key: DeviceKey) {
@@ -1146,6 +1209,33 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     }
     await browser.run(["find", "role", "tab", "click", "--name", tab, "--exact"]);
     await deps.sleep(1200);
+  }
+
+  /**
+   * The Device Log panel's live tail, oldest line first: the latest lines (about 200)
+   * that pass the panel's app and level filters, as "12:56:22 W Unity : message".
+   * Opens the panel when another developer tab is showing. One page read once open,
+   * against a 50,000-line download for the whole log.
+   */
+  async function logTail(): Promise<string[]> {
+    await requireSession();
+    const read = () =>
+      evaluate<string[] | null>(`(() => {
+        const open = [...document.querySelectorAll("select")].some((s) => [...s.options].some((o) => o.text === "VERBOSE"));
+        return open ? [...document.querySelectorAll('pre[class*="LogLine__"]')].map((line) => line.innerText) : null;
+      })()`);
+    let lines = await read();
+    if (lines === null) {
+      await openDeveloperTab("Device Log");
+      lines = await poll(5_000, read, 500);
+    }
+    if (lines === null)
+      throw new SauceError(
+        "page_changed",
+        "The Device Log panel did not open on the session page.",
+        "Run `bb sauce log` for the whole log instead.",
+      );
+    return lines;
   }
 
   async function shell(command: string, timeoutMs: number): Promise<string> {
@@ -1340,6 +1430,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     pressKey,
     requireSession,
     shell,
+    logTail,
     downloadLog,
     endSession,
     abortStart,

@@ -192,7 +192,7 @@ test("batch steps parse in the same words as the standalone commands", () => {
   });
   expect(parseStep("wait changed --timeout 30s")).toEqual({
     do: "wait",
-    condition: "changed",
+    until: "changed",
     timeoutMs: 30_000,
   });
   expect(parseStep("look --label lobby --if-changed")).toEqual({
