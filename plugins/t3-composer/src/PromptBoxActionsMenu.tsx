@@ -17,6 +17,7 @@ import {
 import { Icon, type IconName } from "@/components/ui/icon";
 import { COARSE_POINTER_PROMPT_ICON_ACTION_BUTTON_CLASS } from "@/components/ui/coarse-pointer-sizing";
 import { CHROME_SUBTLE_ICON_BUTTON_FOREGROUND_CLASS } from "@/components/ui/chrome-style-tokens";
+import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
 
 type PromptBoxActionKind = PromptBoxAction["kind"];
 
@@ -56,8 +57,10 @@ function orderedPromptActions(actions: readonly PromptBoxAction[]): PromptBoxAct
   });
 }
 
+const NO_PROMPT_ACTIONS: readonly PromptBoxAction[] = [];
+
 export function PromptBoxActionsMenu({
-  actions = [],
+  actions = NO_PROMPT_ACTIONS,
   onAttach,
   onAction,
   plugins,
@@ -66,6 +69,7 @@ export function PromptBoxActionsMenu({
   const selectedItemRef = useRef(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const pluginSelectionRef = useRef<ExperimentalComposerMenuSelection | null>(null);
+  const isCompactViewport = useIsCompactViewport();
   const visibleActions = orderedPromptActions(actions).filter((action) => action.text.length > 0);
   const clearSelectedActionAfterClose = useCallback(() => {
     const clear = () => {
@@ -95,6 +99,34 @@ export function PromptBoxActionsMenu({
     return null;
   }
 
+  const triggerClassName = cn(
+    COARSE_POINTER_PROMPT_ICON_ACTION_BUTTON_CLASS,
+    CHROME_SUBTLE_ICON_BUTTON_FOREGROUND_CLASS,
+  );
+
+  // On phones the + opens the OS file picker directly (iOS shows its Photo
+  // Library / Take Photo / Choose Files menu); the click must stay synchronous
+  // inside the tap so the browser treats it as a user gesture. Cancelling the
+  // press keeps focus in the editor, so an open keyboard stays up, as the
+  // submit button does.
+  if (isCompactViewport && onAttach) {
+    return (
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        aria-label="Attach files"
+        data-t3-composer-actions-menu=""
+        className={triggerClassName}
+        onPointerDown={(event) => event.preventDefault()}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={onAttach}
+      >
+        <Icon name="Plus" className="size-5" />
+      </Button>
+    );
+  }
+
   return (
     <DropdownMenu
       modal={false}
@@ -112,10 +144,7 @@ export function PromptBoxActionsMenu({
           variant="ghost"
           aria-label="Prompt actions"
           data-t3-composer-actions-menu=""
-          className={cn(
-            COARSE_POINTER_PROMPT_ICON_ACTION_BUTTON_CLASS,
-            CHROME_SUBTLE_ICON_BUTTON_FOREGROUND_CLASS,
-          )}
+          className={triggerClassName}
         >
           <Icon name="Plus" className="size-5" />
         </Button>

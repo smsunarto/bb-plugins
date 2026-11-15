@@ -324,12 +324,6 @@
     "source": "composerRef.current = composer;"
   },
   {
-    "filename": "plugins/t3-composer/src/PromptBoxActionsMenu.tsx",
-    "code": "react(no-object-type-as-default-prop)",
-    "message": "Do not use an array literal as default prop value. Use a stable reference instead.",
-    "source": "actions = [],"
-  },
-  {
     "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
     "code": "eslint(no-unused-vars)",
     "message": "Identifier 'useContext' is imported but never used.",
