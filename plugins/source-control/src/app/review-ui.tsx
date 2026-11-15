@@ -7,7 +7,9 @@ import { createContext, useContext, type ReactNode } from "react";
 import type { Viewer } from "../core/items.ts";
 import { Checkbox as UiCheckbox } from "./components/ui/checkbox.tsx";
 import { cx } from "./format.ts";
+import { cn } from "./lib/utils.ts";
 import { Avatar, AvatarFallback, AvatarImage } from "./components/ui/avatar.tsx";
+import { Badge } from "./components/ui/badge.tsx";
 
 /** shadcn's Checkbox with its label: `label` names it when no visible `children` follow the mark. */
 export function Checkbox({
@@ -40,38 +42,29 @@ export function Checkbox({
   );
 }
 
-const PRIORITY = [
-  "bg-destructive text-primary-foreground",
-  "bg-[color-mix(in_oklab,var(--warning)_15%,transparent)] text-warning",
-  "bg-surface-raised text-(--tertiary-foreground)",
-  "bg-surface-raised text-(--tertiary-foreground)",
-] as const;
+const PRIORITY = ["destructive", "warning", "secondary", "secondary"] as const;
 
 /** P0 to P3. Only findings have one. */
 export function PriorityChip({ priority }: { priority: number }) {
   return (
-    <span
-      className={cx(
-        "flex h-4 shrink-0 items-center rounded-[4px] px-1 text-[11px] leading-3 font-bold",
-        PRIORITY[priority] ?? PRIORITY[3],
-      )}
+    <Badge
+      variant={PRIORITY[priority] ?? PRIORITY[3]}
+      className="h-4 rounded-sm px-1 py-0 leading-3 font-bold"
     >
       P{priority}
-    </span>
+    </Badge>
   );
 }
 
 /** A small pill after a line's author: Pending, Outdated, Resolved. */
 export function StatePill({ tone, children }: { tone: "warning" | "quiet"; children: ReactNode }) {
   return (
-    <span
-      className={cx(
-        "flex h-4 shrink-0 items-center rounded-full border border-solid border-border px-2 text-[11px] leading-3 font-semibold",
-        tone === "warning" ? "text-warning" : "text-(--tertiary-foreground)",
-      )}
+    <Badge
+      variant={tone === "warning" ? "warning" : "outline"}
+      className="h-4 rounded-full px-2 py-0 leading-3"
     >
       {children}
-    </span>
+    </Badge>
   );
 }
 
@@ -119,7 +112,9 @@ export function GitHubAvatar({
         src={url ?? `https://github.com/${encodeURIComponent(login)}.png?size=48`}
         alt=""
       />
-      <AvatarFallback className={fallbackClassName}>
+      <AvatarFallback
+        className={cn("text-[9px] leading-none text-muted-foreground uppercase", fallbackClassName)}
+      >
         {fallbackClassName ? null : login.charAt(0)}
       </AvatarFallback>
     </Avatar>

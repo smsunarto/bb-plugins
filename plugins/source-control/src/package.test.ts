@@ -13,6 +13,8 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect a
       // Parses the built stylesheet in css.test.ts.
       /^lightningcss$/,
       /^react(\/jsx-runtime)?$/,
+      // The vendored responsive overlay flushes a sync render; bb provides react-dom.
+      /^react-dom$/,
       // bb's runtime provides Pierre's diff renderer to plugin apps, as for gitbutler.
       /^@pierre\/diffs(\/react)?$/,
       // The server's Effect runtime; layering.test.ts keeps both out of every other layer.
@@ -27,7 +29,9 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect a
       // The review page's list window.
       /^@tanstack\/virtual-core$/,
       // shadcn components in src/app/components/ui: Radix primitives and their class helpers.
-      /^@radix-ui\/react-(avatar|checkbox|dialog|dropdown-menu|select|tabs)$/,
+      /^@radix-ui\/react-(avatar|checkbox|collapsible|dialog|dropdown-menu|label|popover|select|slot|tabs|toggle|toggle-group|tooltip)$/,
+      // The shared Button, Badge, Input, Textarea and cn, re-exported from components/ui.
+      /^@bb-plugins\/ui\/(badge|button|input|motion|textarea|utils)$/,
       /^class-variance-authority$/,
       /^clsx$/,
       /^tailwind-merge$/,

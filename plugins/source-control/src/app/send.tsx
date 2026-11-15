@@ -13,7 +13,7 @@ import {
   experimental_useRpcQuery as useRpcQuery,
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
-import { memo, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { describeProblem, type Problem } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import type {
@@ -25,7 +25,6 @@ import type {
   ReviewItem,
 } from "../core/items.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { useEscapeLayer } from "./escape.ts";
 import { cx, plural } from "./format.ts";
 import { useChangeReview, useReviewActions, useSend, type SendActions } from "./review-data.ts";
 import {
@@ -40,13 +39,15 @@ import {
 import { PriorityChip, RunGlyph } from "./review-ui.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
+import { Badge } from "./components/ui/badge.tsx";
+import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.tsx";
+import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group.tsx";
+import { Hint, ReasonHint, TEXT_LINK } from "./ui.tsx";
 
 /** The review's send actions keep the theme's accent, not the default foreground fill. */
 const PRIMARY =
   "bg-(--primary) px-3 font-semibold text-primary-foreground enabled:hover:bg-(--primary) enabled:hover:opacity-90";
 
-const LINK =
-  "shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[12px] leading-4 whitespace-nowrap text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-60";
 const SECTION_LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
 
@@ -196,41 +197,48 @@ function BatchPill({ batch, commands }: { batch: BatchView; commands: BatchComma
   let action: ReactNode = null;
   if (batch.phase === "posted")
     action = batch.url ? (
-      <a href={batch.url} target="_blank" rel="noreferrer" className={LINK}>
-        View
-      </a>
+      <Button variant="link" size="sm" className={TEXT_LINK} asChild>
+        <a href={batch.url} target="_blank" rel="noreferrer">
+          View
+        </a>
+      </Button>
     ) : null;
   else if (batch.phase === "queued" || batch.phase === "failed")
     action = (
-      <button
-        type="button"
-        className={LINK}
+      <Button
+        variant="link"
+        size="sm"
+        className={TEXT_LINK}
         disabled={commands.busy}
         onClick={commands.retry}
         data-testid="sc-batch-retry"
       >
         Retry
-      </button>
+      </Button>
     );
   else if (commands.openThread)
     action = (
-      <button type="button" className={LINK} onClick={commands.openThread}>
+      <Button variant="link" size="sm" className={TEXT_LINK} onClick={commands.openThread}>
         Open thread
-      </button>
+      </Button>
     );
   return (
-    <span
-      className="flex h-6 min-w-0 shrink-0 items-center gap-2 rounded-[6px] border border-solid border-border px-3"
+    <Badge
+      variant="outline"
+      className="h-6 min-w-0 gap-2 px-3"
       data-testid="sc-batch-pill"
       data-phase={batch.phase}
-      title={batch.phase === "queued" || batch.phase === "failed" ? problemText(batch) : undefined}
     >
       <PhaseGlyph batch={batch} />
-      <span className="min-w-0 truncate text-[12px] leading-4 font-semibold text-foreground">
-        {batchLabel(batch)}
-      </span>
+      <Hint
+        label={batch.phase === "queued" || batch.phase === "failed" ? problemText(batch) : null}
+      >
+        <span className="min-w-0 truncate text-[12px] leading-4 font-semibold text-foreground">
+          {batchLabel(batch)}
+        </span>
+      </Hint>
       {action}
-    </span>
+    </Badge>
   );
 }
 
@@ -291,39 +299,48 @@ export const BatchBanner = memo(function BatchBanner({
   let action: ReactNode = null;
   if (batch.phase === "fixing")
     action = (
-      <button
-        type="button"
-        className={cx(LINK, "font-medium")}
+      <Button
+        variant="link"
+        size="sm"
+        className={cx(TEXT_LINK, "font-medium")}
         disabled={commands.busy}
         onClick={commands.stop}
         data-testid="sc-batch-stop"
       >
         {commands.busy ? "Stopping…" : "Stop agent"}
-      </button>
+      </Button>
     );
   else if (batch.phase === "queued" || batch.phase === "failed")
     action = (
-      <button
-        type="button"
-        className={cx(LINK, "font-medium")}
+      <Button
+        variant="link"
+        size="sm"
+        className={cx(TEXT_LINK, "font-medium")}
         disabled={commands.busy}
         onClick={commands.retry}
         data-testid="sc-batch-retry"
       >
         Retry
-      </button>
+      </Button>
     );
   else if (batch.phase === "posted" && batch.url)
     action = (
-      <a href={batch.url} target="_blank" rel="noreferrer" className={cx(LINK, "font-medium")}>
-        View
-      </a>
+      <Button variant="link" size="sm" className={cx(TEXT_LINK, "font-medium")} asChild>
+        <a href={batch.url} target="_blank" rel="noreferrer">
+          View
+        </a>
+      </Button>
     );
   else if ((batch.phase === "verify" || batch.phase === "stopped") && commands.openThread)
     action = (
-      <button type="button" className={cx(LINK, "font-medium")} onClick={commands.openThread}>
+      <Button
+        variant="link"
+        size="sm"
+        className={cx(TEXT_LINK, "font-medium")}
+        onClick={commands.openThread}
+      >
         Open thread
-      </button>
+      </Button>
     );
   const bad = batch.phase === "queued" || batch.phase === "failed";
   return (
@@ -373,27 +390,34 @@ export function BatchLine({
   let action: ReactNode = null;
   if (batch.phase === "queued" || batch.phase === "failed")
     action = (
-      <button
-        type="button"
-        className={LINK}
+      <Button
+        variant="link"
+        size="sm"
+        className={TEXT_LINK}
         disabled={commands.busy}
         onClick={commands.retry}
         data-testid="sc-batch-retry"
       >
         Retry
-      </button>
+      </Button>
     );
   else if (batch.phase === "fixing")
     action = (
-      <button type="button" className={LINK} disabled={commands.busy} onClick={commands.stop}>
+      <Button
+        variant="link"
+        size="sm"
+        className={TEXT_LINK}
+        disabled={commands.busy}
+        onClick={commands.stop}
+      >
         Stop agent
-      </button>
+      </Button>
     );
   else if (!here && commands.openThread)
     action = (
-      <button type="button" className={LINK} onClick={commands.openThread}>
+      <Button variant="link" size="sm" className={TEXT_LINK} onClick={commands.openThread}>
         Open thread
-      </button>
+      </Button>
     );
   return (
     <span
@@ -402,14 +426,13 @@ export function BatchLine({
       data-phase={batch.phase}
     >
       <PhaseGlyph batch={batch} />
-      <span
-        className="min-w-0 truncate text-[12px] leading-4 font-semibold text-foreground"
-        title={
-          batch.phase === "queued" || batch.phase === "failed" ? problemText(batch) : undefined
-        }
+      <Hint
+        label={batch.phase === "queued" || batch.phase === "failed" ? problemText(batch) : null}
       >
-        {batchLabel(batch)}
-      </span>
+        <span className="min-w-0 truncate text-[12px] leading-4 font-semibold text-foreground">
+          {batchLabel(batch)}
+        </span>
+      </Hint>
       {action}
       {commands.error ? (
         <span role="alert" className="min-w-0 truncate text-[12px] leading-4 text-warning">
@@ -476,7 +499,10 @@ export function githubBlocked(number: number | null, problem: Problem | null): s
   return null;
 }
 
-function Toggle({
+const SEGMENT = "h-6 min-w-0 rounded-sm px-3 text-[12px] leading-4 data-[state=on]:font-semibold";
+
+/** Where the review goes: the agent, or GitHub when the Change has a pull request there. */
+function DestinationToggle({
   destination,
   blocked,
   onChange,
@@ -485,37 +511,31 @@ function Toggle({
   blocked: string | null;
   onChange: (destination: Destination) => void;
 }) {
-  const option = (value: Destination, label: string, disabled: string | null) => {
-    const active = destination === value;
-    return (
-      <label
-        title={disabled ?? undefined}
-        className={cx(
-          "cursor-pointer rounded-[4px] px-3 py-1 text-[12px] leading-4 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50 has-[:focus-visible]:outline-2",
-          active
-            ? "bg-border font-semibold text-foreground"
-            : "text-muted-foreground has-[:enabled]:hover:text-foreground",
-        )}
-      >
-        <input
-          type="radio"
-          name="sc-destination"
-          className="sr-only"
-          checked={active}
-          disabled={disabled !== null}
-          data-testid={`sc-destination-${value}`}
-          onChange={() => onChange(value)}
-        />
-        {label}
-      </label>
-    );
-  };
   return (
-    <fieldset className="m-0 flex shrink-0 rounded-[6px] border-0 bg-surface-raised p-1">
-      <legend className="sr-only">Review goes to</legend>
-      {option("agent", "Agent", null)}
-      {option("github", "GitHub", blocked)}
-    </fieldset>
+    <ToggleGroup
+      type="single"
+      aria-label="Review goes to"
+      value={destination}
+      // A single group reports "" when its pressed item is pressed again: one destination stays chosen.
+      onValueChange={(next) => {
+        if (next) onChange(next as Destination);
+      }}
+      className="shrink-0 gap-0 rounded-md bg-surface-raised p-1"
+    >
+      <ToggleGroupItem value="agent" data-testid="sc-destination-agent" className={SEGMENT}>
+        Agent
+      </ToggleGroupItem>
+      <ReasonHint reason={blocked}>
+        <ToggleGroupItem
+          value="github"
+          disabled={blocked !== null}
+          data-testid="sc-destination-github"
+          className={SEGMENT}
+        >
+          GitHub
+        </ToggleGroupItem>
+      </ReasonHint>
+    </ToggleGroup>
   );
 }
 
@@ -554,9 +574,9 @@ const TrayItem = memo(function TrayItem({
       <span className="shrink-0 text-[12px] leading-4 text-(--tertiary-foreground)">
         {placeLabel(item.anchor)}
       </span>
-      <button type="button" className={LINK} onClick={() => onRemove(item.id)}>
+      <Button variant="link" size="sm" className={TEXT_LINK} onClick={() => onRemove(item.id)}>
         Remove
-      </button>
+      </Button>
     </li>
   );
 });
@@ -583,9 +603,14 @@ const TrayDraft = memo(function TrayDraft({
         </span>
         <span className="truncate text-[12px] leading-4 text-(--tertiary-foreground)">{on}</span>
       </span>
-      <button type="button" className={cx(LINK, "leading-5")} onClick={() => onRemove(draft.id)}>
+      <Button
+        variant="link"
+        size="sm"
+        className={cx(TEXT_LINK, "leading-5")}
+        onClick={() => onRemove(draft.id)}
+      >
         Remove
-      </button>
+      </Button>
     </li>
   );
 });
@@ -614,9 +639,9 @@ function TargetPicker({
             <span className="min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
               Couldn't list threads. {error}
             </span>
-            <button type="button" className={LINK} onClick={onRetry}>
+            <Button variant="link" size="sm" className={TEXT_LINK} onClick={onRetry}>
               Try again
-            </button>
+            </Button>
           </div>
         ) : (
           <div
@@ -739,15 +764,16 @@ function TrayRecipient({
         </span>
         <span className="min-w-0 flex-1" />
         {agent ? (
-          <button
-            type="button"
-            className={LINK}
+          <Button
+            variant="link"
+            size="sm"
+            className={TEXT_LINK}
             aria-expanded={picking}
             data-testid="sc-tray-change-thread"
             onClick={() => setPicking((value) => !value)}
           >
             Change thread
-          </button>
+          </Button>
         ) : null}
       </div>
       {picking && agent ? (
@@ -829,7 +855,7 @@ function TrayLists({
   );
 }
 
-function Tray(facts: TrayFacts & { hidden: boolean }) {
+function Tray(facts: TrayFacts) {
   const { changeKey, stable, destination, number, head, items, drafts } = facts;
   const actions = useReviewActions(changeKey);
   const send = useSend(changeKey);
@@ -839,7 +865,7 @@ function Tray(facts: TrayFacts & { hidden: boolean }) {
     contract: sourceControlContract,
     method: "agentTargets",
     input: { key: changeKey },
-    enabled: !facts.hidden && agent,
+    enabled: agent,
   });
   const targets = targetsQuery.data?.targets;
   const prTarget: BatchTarget | null = number !== null ? { kind: "pull-request", number } : null;
@@ -864,18 +890,7 @@ function Tray(facts: TrayFacts & { hidden: boolean }) {
     }
   };
   return (
-    <dialog
-      open={!facts.hidden}
-      aria-label="Send tray"
-      data-bb-plugin="source-control"
-      data-testid="sc-tray"
-      // Focusable, so a click on its text keeps focus inside and the tray open.
-      tabIndex={-1}
-      className={cx(
-        facts.hidden ? "hidden" : "flex",
-        "absolute start-auto top-full right-0 z-20 m-0 mt-2 w-[440px] max-w-[calc(100cqw-2rem)] flex-col overflow-clip rounded-[10px] border border-solid border-border bg-popover p-0 text-start text-foreground shadow-xl outline-none",
-      )}
-    >
+    <>
       <TrayRecipient
         changeKey={changeKey}
         agent={agent}
@@ -905,16 +920,17 @@ function Tray(facts: TrayFacts & { hidden: boolean }) {
           {trayNote({ error, agent, target, isDraft: facts.isDraft, number })}
         </span>
         <Button
+          size="sm"
           variant="default"
           data-testid="sc-tray-send"
           disabled={!canSend}
           onClick={() => void onSend()}
-          className={PRIMARY}
+          className={cx("h-7", PRIMARY)}
         >
           {sendLabel(send.pending, agent, count)}
         </Button>
       </div>
-    </dialog>
+    </>
   );
 }
 
@@ -956,8 +972,8 @@ function showsPill(batch: BatchView | null, count: number): batch is BatchView {
 
 /**
  * The tabs row's review controls (board A): where the review goes, the sent
- * batch's pill, and the Send button that opens the tray. The tray mounts on
- * first open and stays, hidden, after it closes.
+ * batch's pill, and the Send button that opens the tray: a Popover, which
+ * closes on Escape, a click outside or focus leaving it.
  */
 export const SendControls = memo(function SendControls({
   changeKey,
@@ -974,7 +990,6 @@ export const SendControls = memo(function SendControls({
   const actions = useReviewActions(changeKey);
   const send = useSend(changeKey);
   const [open, setOpen] = useState(false);
-  const [opened, setOpened] = useState(false);
   const blocked = githubBlocked(number, review?.forge.problem ?? null);
   const destination: Destination =
     stable.tray.destination === "github" && blocked === null ? "github" : "agent";
@@ -983,13 +998,6 @@ export const SendControls = memo(function SendControls({
   const commands = useBatchCommands(send, batch);
   const count = items.length + drafts.length;
   const pill = showsPill(batch, count);
-  const toggle = () => {
-    setOpened(true);
-    setOpen((value) => !value);
-  };
-  // Escape with the tray open closes the tray, never the page behind it.
-  const trayScope = useRef<HTMLDivElement>(null);
-  useEscapeLayer(trayScope, () => setOpen(false), { open });
   let label = "Submit to GitHub";
   if (destination === "agent") label = count > 0 ? `Send ${count} to agent` : "Send to agent";
   return (
@@ -1000,40 +1008,39 @@ export const SendControls = memo(function SendControls({
       <span className="hidden shrink-0 text-[12px] leading-4 text-(--tertiary-foreground) @3xl:inline">
         Review goes to
       </span>
-      <Toggle
+      <DestinationToggle
         destination={destination}
         blocked={blocked}
         onChange={(next) => actions.setTray({ destination: next, target: stable.tray.target })}
       />
       {pill ? <BatchPill batch={batch} commands={commands} /> : null}
       {!pill || count > 0 ? (
-        <div
-          ref={trayScope}
-          className="relative flex shrink-0"
-          onBlur={(event) => {
-            if (open && !event.currentTarget.contains(event.relatedTarget as Node | null))
-              setOpen(false);
-          }}
-        >
-          <Button
-            variant="default"
-            aria-haspopup="dialog"
-            aria-expanded={open}
-            data-testid="sc-send"
-            onClick={toggle}
-            // On a phone the pseudo-element makes the tap target 36px tall; the bar keeps its height.
-            className={cx(
-              PRIMARY,
-              "relative h-6 gap-2 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-y-1.5 max-md:pointer-coarse:after:inset-x-0",
-            )}
+        <Popover open={open} onOpenChange={setOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              size="sm"
+              variant="default"
+              data-testid="sc-send"
+              // On a phone the pseudo-element makes the tap target 36px tall; the bar keeps its height.
+              className={cx(
+                PRIMARY,
+                "relative h-6 gap-2 [&_svg]:size-3 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-y-1.5 max-md:pointer-coarse:after:inset-x-0",
+              )}
+            >
+              {destination === "agent" ? <Robot size={13} /> : null}
+              {label}
+              <ChevronDown />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            sideOffset={8}
+            aria-label="Send tray"
+            mobileTitle="Send tray"
+            data-testid="sc-tray"
+            className="flex w-[440px] max-w-[calc(100vw-2rem)] flex-col overflow-clip p-0"
           >
-            {destination === "agent" ? <Robot size={13} /> : null}
-            {label}
-            <ChevronDown />
-          </Button>
-          {opened ? (
             <Tray
-              hidden={!open}
               changeKey={changeKey}
               stable={stable}
               destination={destination}
@@ -1049,8 +1056,8 @@ export const SendControls = memo(function SendControls({
               }}
               onClose={() => setOpen(false)}
             />
-          ) : null}
-        </div>
+          </PopoverContent>
+        </Popover>
       ) : null}
       {commands.error ? (
         <span role="alert" className="min-w-0 truncate text-[12px] leading-4 text-warning">

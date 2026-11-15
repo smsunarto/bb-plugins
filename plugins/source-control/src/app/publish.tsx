@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { useHostGate } from "./host-gate.ts";
 import { Button } from "./components/ui/button.tsx";
-import { Pending } from "./ui.tsx";
+import { Pending, ReasonHint } from "./ui.tsx";
 
 /** While a child works, the tab looks this often to see it finish. */
 const PUBLISH_POLL_MS = 5_000;
@@ -73,9 +73,10 @@ export function CreatePullRequest({
   return (
     <>
       {running ? null : (
-        // A disabled button takes no hover, so the reason sits on a wrapper.
-        <span className="flex shrink-0" title={gate ?? undefined}>
+        <ReasonHint reason={gate} className="flex shrink-0">
           <Button
+            size="sm"
+            className="h-7"
             variant="outline"
             disabled={busy || gate !== null || pending}
             data-host-bound="createPullRequest"
@@ -86,7 +87,7 @@ export function CreatePullRequest({
             <Pending pending={pending} icon="GitPullRequest" />
             Create PR
           </Button>
-        </span>
+        </ReasonHint>
       )}
       {current ? (
         // `output` is the native polite live region, so the hand-off is announced.
@@ -99,7 +100,12 @@ export function CreatePullRequest({
               ? "A subthread is writing and opening the PR."
               : "The PR subthread stopped without opening a PR."}
           </span>
-          <Button variant="ghost" onClick={() => navigate.toThread(current.threadId)}>
+          <Button
+            size="sm"
+            className="h-7"
+            variant="ghost"
+            onClick={() => navigate.toThread(current.threadId)}
+          >
             Open subthread
           </Button>
         </output>

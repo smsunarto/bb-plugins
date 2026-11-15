@@ -15,6 +15,7 @@ import { useMemo } from "react";
 import { parsePrReference, prKey } from "../core/watch.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import type { ChangeKey } from "../core/ids.ts";
+import { Skeleton } from "./components/ui/skeleton.tsx";
 import { ChangeCard } from "./chat-card.tsx";
 import { ChangeGroup, type GroupItem } from "./group-card.tsx";
 
@@ -99,7 +100,7 @@ function LegacyNote({ target, found, failed }: { target: Target; found: Found; f
       ) : failed ? (
         `Could not look up ${target.label}.`
       ) : (
-        <span className="inline-block h-4 w-40 animate-pulse rounded bg-surface-raised motion-reduce:animate-none" />
+        <Skeleton className="inline-block h-4 w-40 align-middle" />
       )}
     </div>
   );

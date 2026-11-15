@@ -25,6 +25,10 @@ import {
 } from "../components/ui/dropdown-menu.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
+import { Badge } from "../components/ui/badge.tsx";
+import { Button } from "../components/ui/button.tsx";
+import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group.tsx";
+import { TEXT_LINK } from "../ui.tsx";
 import { useGo, useNow } from "./hooks.ts";
 import { Chevron, HostIcon, StackIcon, StateIcon } from "./icons.tsx";
 import {
@@ -110,12 +114,7 @@ const LINE_TONE = {
 
 function HostChip({ name, phone }: { name: string; phone: boolean }) {
   return (
-    <span
-      className={cx(
-        "flex h-5 shrink-0 items-center gap-1 rounded-full px-2",
-        phone ? "bg-surface-raised" : "border border-solid border-border",
-      )}
-    >
+    <Badge variant={phone ? "secondary" : "outline"} className="h-5 gap-1 rounded-full px-2 py-0">
       <HostIcon />
       <span
         className={cx(
@@ -125,7 +124,7 @@ function HostChip({ name, phone }: { name: string; phone: boolean }) {
       >
         {name}
       </span>
-    </span>
+    </Badge>
   );
 }
 
@@ -296,15 +295,16 @@ function AccountPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
+        <Button
+          variant={phone ? "ghost" : "outline"}
+          size="sm"
           disabled={accounts.length < 2}
           data-testid="sc-account-picker"
           className={cx(
-            "flex shrink-0 cursor-pointer items-center gap-2 rounded-[6px] bg-transparent text-muted-foreground disabled:cursor-default",
+            "shrink-0 gap-2 font-normal text-muted-foreground",
             phone
-              ? "h-8 border-0 px-1 text-[14px] leading-5"
-              : "h-6 border border-solid border-border px-2 text-[12px] leading-4 enabled:hover:bg-surface-raised max-md:pointer-coarse:h-9",
+              ? "h-8 px-1 text-[14px] leading-5"
+              : "h-6 px-2 text-[12px] leading-4 max-md:pointer-coarse:h-9",
           )}
         >
           {phone ? null : (
@@ -321,7 +321,7 @@ function AccountPicker({
           )}
           <span className="max-w-36 truncate">{label}</span>
           {accounts.length > 1 ? <Chevron /> : null}
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-44">
         <DropdownMenuRadioGroup
@@ -354,41 +354,42 @@ function Filters({ counts, variant }: { counts: Record<Filter, number>; variant:
   const filter = useFilter();
   const phone = variant === "phone";
   return (
-    <fieldset
+    <ToggleGroup
+      type="single"
+      aria-label="Show"
+      value={filter}
+      // A single group reports "" when its pressed item is pressed again: one filter stays chosen.
+      onValueChange={(next) => {
+        if (next) chooseFilter(next as Filter);
+      }}
       className={cx(
-        "m-0 flex min-w-0 border-0 bg-surface-raised p-1",
-        phone ? "rounded-[8px]" : "rounded-[6px]",
+        "flex min-w-0 gap-0 bg-surface-raised p-1",
+        phone ? "rounded-lg" : "rounded-md",
       )}
     >
-      <legend className="sr-only">Show</legend>
       {FILTERS.map((option) => {
-        const active = option.id === filter;
         // Pinned shows only for a reader who pins, or while it is the chosen filter.
-        if (option.id === "pinned" && counts.pinned === 0 && !active) return null;
+        if (option.id === "pinned" && counts.pinned === 0 && option.id !== filter) return null;
         return (
-          <button
+          <ToggleGroupItem
             key={option.id}
-            type="button"
-            aria-pressed={active}
+            value={option.id}
             data-testid={`sc-filter-${option.id}`}
-            onClick={() => chooseFilter(option.id)}
             className={cx(
-              "min-w-0 flex-1 cursor-pointer border-0 text-center transition-colors duration-150 motion-reduce:transition-none",
+              "h-auto min-w-0 flex-1",
               phone
-                ? "rounded-[6px] py-2 text-[14px] leading-5"
-                : "rounded-[4px] py-1 text-[12px] leading-4",
+                ? "rounded-md py-2 text-[14px] leading-5"
+                : "rounded-sm py-1 text-[12px] leading-4",
               // The nav variant also fills the phone's sidebar sheet, where a finger needs more room.
               !phone && "max-md:pointer-coarse:py-2",
-              active
-                ? "bg-border font-semibold text-foreground"
-                : "bg-transparent text-muted-foreground hover:text-foreground",
+              "data-[state=on]:font-semibold",
             )}
           >
             {option.label} {counts[option.id]}
-          </button>
+          </ToggleGroupItem>
         );
       })}
-    </fieldset>
+    </ToggleGroup>
   );
 }
 
@@ -416,13 +417,9 @@ function SourceLine({
           Still reading {where}
         </span>
         {state.kind === "host" ? (
-          <button
-            type="button"
-            onClick={() => stopHost(state.id)}
-            className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[12px] leading-4 text-muted-foreground hover:text-foreground"
-          >
+          <Button variant="link" size="sm" onClick={() => stopHost(state.id)} className={TEXT_LINK}>
             Stop
-          </button>
+          </Button>
         ) : null}
       </li>
     );
@@ -443,13 +440,9 @@ function SourceLine({
           ? `${problem} Showing ${where}'s last read. ${readAgo(state.at, now)}.`
           : `Couldn't read ${where}. ${problem}`}
       </span>
-      <button
-        type="button"
-        onClick={retry}
-        className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[12px] leading-4 text-muted-foreground hover:text-foreground"
-      >
+      <Button variant="link" size="sm" onClick={retry} className={TEXT_LINK}>
         Retry
-      </button>
+      </Button>
     </li>
   );
 }
@@ -482,13 +475,14 @@ function SourcesFooter({
           <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-(--tertiary-foreground)">
             Not reading {host.name}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="sm"
             onClick={() => resumeHost(host.hostId)}
-            className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[12px] leading-4 text-muted-foreground hover:text-foreground"
+            className={TEXT_LINK}
           >
             Read again
-          </button>
+          </Button>
         </li>
       ))}
     </ul>

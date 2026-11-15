@@ -63,8 +63,9 @@ test("overlays portal into a scope root named for the plugin", () => {
 
 test("Escape closes the innermost overlay first, and bb never sees it", () => {
   const bb = vi.fn();
+  // bb leaves the page on an Escape no overlay handled: one not marked defaultPrevented.
   const leave = (event: KeyboardEvent) => {
-    if (event.key === "Escape") bb();
+    if (event.key === "Escape" && !event.defaultPrevented) bb();
   };
   document.addEventListener("keydown", leave);
   const view = render(<Fixture />);

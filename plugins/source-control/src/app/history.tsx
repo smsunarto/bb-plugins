@@ -15,8 +15,14 @@ import { useCallback, useState } from "react";
 import { describeProblem } from "../core/change.ts";
 import type { OplogEntry } from "../core/oplog.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { absoluteTime, cx, shortAge, shortId } from "./format.ts";
+import { absoluteTime, shortAge, shortId } from "./format.ts";
 import { Button } from "./components/ui/button.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./components/ui/collapsible.tsx";
+import { DISCLOSURE, DisclosureChevron, Hint } from "./ui.tsx";
 
 /**
  * `but` titles most entries with the operation's own name, as in
@@ -52,7 +58,8 @@ function useAskAgent(): ((text: string) => void) | null {
   return composer.scope.kind === "new-thread" ? null : ask;
 }
 
-const ICON_BUTTON = "size-6 text-muted-foreground";
+/** Its 12px glyph, not the shared Button's 16px. */
+const ICON_BUTTON = "size-6 text-muted-foreground [&_svg]:size-3";
 
 function OperationRow({ entry, path, now }: { entry: OplogEntry; path: string; now: number }) {
   const ask = useAskAgent();
@@ -83,27 +90,29 @@ function OperationRow({ entry, path, now }: { entry: OplogEntry; path: string; n
           ) : null}
         </span>
       </span>
-      <Button
-        variant="ghost"
-        size="icon"
-        className={ICON_BUTTON}
-        aria-label={`Copy snapshot id ${short}`}
-        title={`Copy snapshot id ${short}`}
-        onClick={() => void copyToClipboard({ text: entry.id })}
-      >
-        <Icon name="Copy" className="size-3" aria-hidden />
-      </Button>
-      {ask ? (
+      <Hint label={`Copy snapshot id ${short}`}>
         <Button
           variant="ghost"
           size="icon"
           className={ICON_BUTTON}
-          aria-label={`Ask agent to restore snapshot ${short}`}
-          title={`Ask agent to restore snapshot ${short}`}
-          onClick={() => ask(restoreRequest(entry, title, path))}
+          aria-label={`Copy snapshot id ${short}`}
+          onClick={() => void copyToClipboard({ text: entry.id })}
         >
-          <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
+          <Icon name="Copy" className="size-3" aria-hidden />
         </Button>
+      </Hint>
+      {ask ? (
+        <Hint label={`Ask agent to restore snapshot ${short}`}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className={ICON_BUTTON}
+            aria-label={`Ask agent to restore snapshot ${short}`}
+            onClick={() => ask(restoreRequest(entry, title, path))}
+          >
+            <Icon name="MessageSquarePlus" className="size-3" aria-hidden />
+          </Button>
+        </Hint>
       ) : null}
     </li>
   );
@@ -120,7 +129,7 @@ function Operations({ threadId, path, now }: { threadId: string; path: string; n
     <p className="m-0 flex flex-wrap items-center gap-2 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
       {text}
       {data?.ok === false || oplog.error ? (
-        <Button variant="outline" onClick={() => void oplog.refetch()}>
+        <Button size="sm" className="h-7" variant="outline" onClick={() => void oplog.refetch()}>
           Try again
         </Button>
       ) : null}
@@ -157,32 +166,20 @@ export function HistoryCard({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <section className={className} aria-label="Operation history" data-testid="sc-history">
-      <header className="flex min-h-10 min-w-0 items-center px-3 py-2">
-        <button
-          type="button"
-          className="flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-[4px] border-0 bg-transparent p-0 text-start"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <Icon
-            name="ChevronDown"
-            className={cx(
-              "size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
-              !open && "-rotate-90",
-            )}
-            aria-hidden
-          />
-          <span className="truncate text-[13px] leading-5 font-semibold text-foreground">
-            Operation history
-          </span>
-        </button>
-      </header>
-      {open ? (
-        <div className="border-t border-border-hairline">
+    <Collapsible asChild open={open} onOpenChange={setOpen}>
+      <section className={className} aria-label="Operation history" data-testid="sc-history">
+        <header className="flex min-h-10 min-w-0 items-center px-3 py-2">
+          <CollapsibleTrigger className={DISCLOSURE}>
+            <DisclosureChevron open={open} />
+            <span className="truncate text-[13px] leading-5 font-semibold text-foreground">
+              Operation history
+            </span>
+          </CollapsibleTrigger>
+        </header>
+        <CollapsibleContent className="border-t border-border-hairline">
           <Operations threadId={threadId} path={path} now={now} />
-        </div>
-      ) : null}
-    </section>
+        </CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }

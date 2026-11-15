@@ -23,9 +23,10 @@ import {
   statusChip,
   useSeen,
 } from "./chat-card.tsx";
-import { cx, plural } from "./format.ts";
+import { plural } from "./format.ts";
 import { Quiet, ShipButton, threadShip, UncommittedCard, useShipThread } from "./thread-card.tsx";
 import { Button } from "./components/ui/button.tsx";
+import { StateBadge } from "./page/rail.tsx";
 
 /** A branch with commits that no listed checkout or pull request has: what it is, where, and Ship it. */
 function BranchCard({
@@ -46,14 +47,7 @@ function BranchCard({
         <BranchGlyph />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-            <span
-              className={cx(
-                "flex h-4 shrink-0 items-center rounded-full px-2 text-[11px] leading-3 font-semibold",
-                chip.className,
-              )}
-            >
-              {chip.label}
-            </span>
+            <StateBadge state={chip.state} label={chip.label} className="h-4 leading-3" />
             <span className="min-w-0 truncate font-mono text-[11px] leading-4 text-(--tertiary-foreground)">
               {branch.name}
             </span>
@@ -112,7 +106,7 @@ function Unread({
           Couldn't read this checkout. {error.message}
         </p>
         <div>
-          <Button variant="outline" onClick={retry}>
+          <Button size="sm" className="h-7" variant="outline" onClick={retry}>
             Try again
           </Button>
         </div>

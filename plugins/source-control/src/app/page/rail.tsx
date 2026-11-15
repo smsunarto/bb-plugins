@@ -21,6 +21,9 @@ import { sourceControlContract } from "../../contract/rpc.ts";
 import { FixDialog, type FixTarget } from "../fix-dialog.tsx";
 import { cx } from "../format.ts";
 import { Checkbox } from "../review-ui.tsx";
+import { MERGED_BADGE, ReasonHint } from "../ui.tsx";
+import { Badge, type BadgeProps } from "../components/ui/badge.tsx";
+import { cn } from "../lib/utils.ts";
 import { Button } from "../components/ui/button.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import type { Go } from "./hooks.ts";
@@ -32,25 +35,34 @@ type StackEntry = NonNullable<Ready["stack"]>[number];
 const RAIL_LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
 
-export const STATE_CHIP: Record<RowState, { label: string; className: string }> = {
-  local: {
-    label: "Unpushed",
-    className: "border border-solid border-border bg-surface-raised text-foreground",
-  },
-  draft: { label: "Draft", className: "bg-border text-muted-foreground" },
-  open: {
-    label: "Open",
-    className: "bg-[color-mix(in_oklab,var(--success)_20%,transparent)] text-success-foreground",
-  },
-  merged: {
-    label: "Merged",
-    className: "bg-[color-mix(in_oklab,var(--pr-merged)_20%,transparent)] text-(--pr-merged)",
-  },
-  closed: {
-    label: "Closed",
-    className: "bg-[color-mix(in_oklab,var(--destructive)_20%,transparent)] text-destructive-text",
-  },
+const STATE_LOOK: Record<
+  RowState,
+  { label: string; variant: NonNullable<BadgeProps["variant"]>; className?: string }
+> = {
+  local: { label: "Unpushed", variant: "outline" },
+  draft: { label: "Draft", variant: "secondary" },
+  open: { label: "Open", variant: "success" },
+  merged: { label: "Merged", variant: "outline", className: MERGED_BADGE },
+  closed: { label: "Closed", variant: "danger" },
 };
+
+/** A Change's state as a pill: Unpushed, Draft, Open, Merged or Closed, or `label` in that state's tone. */
+export function StateBadge({
+  state,
+  label,
+  className,
+}: {
+  state: RowState;
+  label?: string;
+  className?: string;
+}) {
+  const look = STATE_LOOK[state];
+  return (
+    <Badge variant={look.variant} className={cn("rounded-full py-0", look.className, className)}>
+      {label ?? look.label}
+    </Badge>
+  );
+}
 
 const StackRow = memo(function StackRow({
   entry,
@@ -59,7 +71,6 @@ const StackRow = memo(function StackRow({
   entry: StackEntry;
   onOpen: (key: ChangeKey) => void;
 }) {
-  const chip = STATE_CHIP[entry.state];
   return (
     <li className="min-w-0">
       <button
@@ -80,14 +91,7 @@ const StackRow = memo(function StackRow({
           >
             {entry.branch}
           </span>
-          <span
-            className={cx(
-              "flex h-5 shrink-0 items-center rounded-full px-2 text-[11px] leading-4 font-semibold",
-              chip.className,
-            )}
-          >
-            {chip.label}
-          </span>
+          <StateBadge state={entry.state} className="h-5" />
         </span>
         <span className="text-[12px] leading-4 text-(--tertiary-foreground)">
           {[
@@ -222,11 +226,11 @@ function FixButton({ count, onFix }: { count: number; onFix: () => void }) {
   if (count === 0) reason = "Select at least one failing check";
   else if (tooMany) reason = `Fix takes up to ${MAX_FIX_CHECKS} checks at a time`;
   return (
-    // A disabled button shows no tooltip of its own, so the reason sits on a wrapper.
-    <span className="flex px-2 pb-1" title={reason}>
+    <ReasonHint reason={reason} off={count === 0 || tooMany} className="flex px-2 pb-1">
       <Button
+        size="sm"
         variant="outline"
-        className="min-w-0 flex-1"
+        className="h-7 min-w-0 flex-1"
         data-testid="sc-fix-checks"
         disabled={count === 0 || tooMany}
         onClick={onFix}
@@ -234,7 +238,7 @@ function FixButton({ count, onFix }: { count: number; onFix: () => void }) {
         <Icon name="Toolbox" className="size-3.5 shrink-0" aria-hidden />
         {count > 1 ? `Fix ${count} checks` : "Fix"}
       </Button>
-    </span>
+    </ReasonHint>
   );
 }
 
@@ -288,18 +292,18 @@ function CheckList({
         ))}
         {!expanded && passed.length > 0 ? (
           <li>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               aria-expanded={false}
               onClick={() => setExpanded(true)}
-              className="flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 py-1 text-start hover:bg-surface-raised"
+              className="h-auto w-full min-w-0 justify-start gap-2 px-2 py-1 text-start font-normal"
             >
               <CheckIcon outcome="passed" />
               <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-muted-foreground">
                 {passedLine(passed)}
               </span>
               <Chevron />
-            </button>
+            </Button>
           </li>
         ) : null}
         {problem ? (

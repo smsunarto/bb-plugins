@@ -35,6 +35,7 @@ import {
 import { BatchBanner } from "../send.tsx";
 import { SLOPCOP_PLUGIN_ID, slopCopContract, slopCopInput } from "../slopcop-contract.ts";
 import { Button } from "../components/ui/button.tsx";
+import { ReasonHint, TEXT_LINK } from "../ui.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { useNow } from "./hooks.ts";
 import { FocusContext, useIsFocused } from "./review-focus.ts";
@@ -42,8 +43,6 @@ import { FocusContext, useIsFocused } from "./review-focus.ts";
 const RAIL_LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
 const NOTE = "m-0 px-2 text-[12px] leading-4 text-muted-foreground";
-const LINK =
-  "shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[11px] leading-4 font-medium whitespace-nowrap text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-60";
 
 // ── bb's run ───────────────────────────────────────────────────────────
 
@@ -70,24 +69,26 @@ function RunStatus({ changeKey, run }: { changeKey: ChangeKey; run: ReviewRun | 
     );
   };
   const action = (label: string) => (
-    <button
-      type="button"
-      className={LINK}
+    <Button
+      variant="link"
+      size="sm"
+      className={cx(TEXT_LINK, "text-[11px] font-medium")}
       disabled={start.isPending}
       data-testid="sc-review-start"
       onClick={onStart}
     >
       {start.isPending ? "Starting…" : label}
-    </button>
+    </Button>
   );
   const open = run ? (
-    <button
-      type="button"
-      className={LINK}
+    <Button
+      variant="link"
+      size="sm"
+      className={cx(TEXT_LINK, "text-[11px] font-medium")}
       onClick={() => navigate.toThread(run.threadId, { split: true })}
     >
       Open
-    </button>
+    </Button>
   ) : null;
   let status;
   if (!run || (started && started.tone === "warning"))
@@ -180,16 +181,18 @@ function SlopCopStatus({
     );
   };
   const run = (
-    <button
-      type="button"
-      className={LINK}
-      disabled={!state.canRunAgain || again.isPending}
-      title={!state.canRunAgain ? (state.reason ?? undefined) : undefined}
-      data-testid="sc-slopcop-run"
-      onClick={onRun}
-    >
-      {again.isPending ? "Starting…" : "Run again"}
-    </button>
+    <ReasonHint reason={state.canRunAgain ? null : state.reason}>
+      <Button
+        variant="link"
+        size="sm"
+        className={cx(TEXT_LINK, "text-[11px] font-medium")}
+        disabled={!state.canRunAgain || again.isPending}
+        data-testid="sc-slopcop-run"
+        onClick={onRun}
+      >
+        {again.isPending ? "Starting…" : "Run again"}
+      </Button>
+    </ReasonHint>
   );
   const quiet =
     "min-w-0 truncate text-[11px] leading-4 whitespace-pre text-(--tertiary-foreground)";
@@ -382,9 +385,14 @@ function ReviewUnread({ error, refetch }: { error: string | null; refetch: () =>
         <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
           Couldn't read the review. {error}
         </p>
-        <button type="button" className={LINK} onClick={refetch}>
+        <Button
+          variant="link"
+          size="sm"
+          className={cx(TEXT_LINK, "text-[11px] font-medium")}
+          onClick={refetch}
+        >
           Try again
-        </button>
+        </Button>
       </div>
     );
   return (
@@ -427,6 +435,7 @@ function SelectionBar({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 px-2 pt-2">
       <Button
+        size="sm"
         variant="default"
         data-testid="sc-review-select-all"
         onClick={onClick}

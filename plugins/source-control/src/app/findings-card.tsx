@@ -22,6 +22,7 @@ import {
   type StableReview,
 } from "./review-model.ts";
 import { Checkbox, FixingMark, PriorityChip } from "./review-ui.tsx";
+import { Hint, TEXT_LINK } from "./ui.tsx";
 import { BatchLine, useFixSelected, type FixSelected } from "./send.tsx";
 import { Button } from "./components/ui/button.tsx";
 
@@ -49,9 +50,11 @@ const FindingRow = memo(function FindingRow({
       data-item={item.id}
     >
       {fixing ? (
-        <span title="Agent fixing" className="flex">
-          <FixingMark />
-        </span>
+        <Hint label="Agent fixing">
+          <span className="flex">
+            <FixingMark />
+          </span>
+        </Hint>
       ) : (
         <Checkbox
           checked={checked}
@@ -128,14 +131,15 @@ export function FindingList({
         ))}
       </ul>
       {items.length > CARD_ROWS ? (
-        <button
-          type="button"
+        <Button
+          variant="link"
+          size="sm"
           data-testid="sc-findings-more"
           onClick={() => setAll((value) => !value)}
-          className="flex h-6 shrink-0 cursor-pointer items-center self-start border-0 bg-transparent p-0 text-[12px] leading-4 text-muted-foreground hover:text-foreground"
+          className={cx(TEXT_LINK, "h-6 self-start")}
         >
           {all ? "Show fewer" : `Show all ${items.length}`}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -194,8 +198,9 @@ export const FindingsCard = memo(function FindingsCard({
           {countLabel(items)}
         </h2>
         {open.length > 0 ? (
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="sm"
             data-testid="sc-findings-select-all"
             onClick={() =>
               unchecked.length > 0
@@ -208,10 +213,10 @@ export const FindingsCard = memo(function FindingsCard({
                     false,
                   )
             }
-            className="shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[12px] leading-4 text-muted-foreground hover:text-foreground"
+            className={TEXT_LINK}
           >
             {unchecked.length > 0 ? "Select all" : "Clear selection"}
-          </button>
+          </Button>
         ) : null}
       </div>
       <FindingList
@@ -231,11 +236,12 @@ export const FindingsCard = memo(function FindingsCard({
       ) : null}
       <div className="flex min-w-0 flex-wrap items-center gap-2 border-t border-solid border-border-hairline bg-surface-recessed px-3 py-2">
         <Button
+          size="sm"
           variant="outline"
           data-testid="sc-fix-selected"
           disabled={fix.count === 0 || fix.pending || head === null}
           onClick={fix.fix}
-          className="px-3 font-semibold"
+          className="h-7 px-3 font-semibold"
         >
           {fixLabel(fix)}
         </Button>
@@ -246,11 +252,12 @@ export const FindingsCard = memo(function FindingsCard({
         ) : null}
         <span className="min-w-0 flex-1" />
         <Button
+          size="sm"
           variant="outline"
           onClick={() =>
             navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key: changeKey }) })
           }
-          className="gap-1 px-3 font-normal"
+          className="h-7 gap-1 px-3 font-normal"
         >
           Open review
           <OpenReviewArrow />

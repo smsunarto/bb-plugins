@@ -6,16 +6,19 @@
  * checkout's host only once the reader opens the card, and once per base,
  * since history under a commit never changes.
  */
-import {
-  experimental_Icon as Icon,
-  experimental_useRpcQuery as useRpcQuery,
-} from "@get-bb/plugin-sdk/app";
+import { experimental_useRpcQuery as useRpcQuery } from "@get-bb/plugin-sdk/app";
 import { useState } from "react";
 import { describeProblem, type Target } from "../core/change.ts";
 import { BASE_HISTORY_MAX, BASE_HISTORY_PAGE, type BaseCommit } from "../core/history.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { absoluteTime, cx, shortAge, shortId } from "./format.ts";
+import { absoluteTime, shortAge, shortId } from "./format.ts";
 import { Button } from "./components/ui/button.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./components/ui/collapsible.tsx";
+import { DISCLOSURE, DisclosureChevron } from "./ui.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
 
 /**
@@ -79,7 +82,7 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
         <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
           History unavailable. {describeProblem(answer.problem)}
         </p>
-        <Button variant="outline" onClick={() => void query.refetch()}>
+        <Button size="sm" className="h-7" variant="outline" onClick={() => void query.refetch()}>
           Try again
         </Button>
       </div>
@@ -90,7 +93,7 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
         <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-muted-foreground">
           History failed to load. {query.error.message}
         </p>
-        <Button variant="outline" onClick={() => void query.refetch()}>
+        <Button size="sm" className="h-7" variant="outline" onClick={() => void query.refetch()}>
           Try again
         </Button>
       </div>
@@ -118,6 +121,8 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
       {more || (fresh === null && commits.length > 0) ? (
         <div className="border-t border-border-hairline px-3 py-2">
           <Button
+            size="sm"
+            className="h-7"
             variant="outline"
             disabled={fresh === null}
             aria-busy={fresh === null}
@@ -146,48 +151,36 @@ export function BaseCard({
   const [open, setOpen] = useState(false);
   const { base } = target;
   return (
-    <section className={className} aria-label="Common base" data-testid="sc-base-card">
-      <header className="flex min-h-10 min-w-0 items-center px-3 py-2">
-        <button
-          type="button"
-          className="flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-[4px] border-0 bg-transparent p-0 text-start"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <Icon
-            name="ChevronDown"
-            className={cx(
-              "size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
-              !open && "-rotate-90",
-            )}
-            aria-hidden
-          />
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-[13px] leading-5 font-semibold text-foreground">
-              Common base
-            </span>
-            <span className="flex min-w-0 items-center gap-1 text-[11px] leading-4 text-muted-foreground">
-              <span className="min-w-0 truncate" title={base.subject}>
-                {base.subject || "(no message)"}
+    <Collapsible asChild open={open} onOpenChange={setOpen}>
+      <section className={className} aria-label="Common base" data-testid="sc-base-card">
+        <header className="flex min-h-10 min-w-0 items-center px-3 py-2">
+          <CollapsibleTrigger className={DISCLOSURE}>
+            <DisclosureChevron open={open} />
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-[13px] leading-5 font-semibold text-foreground">
+                Common base
               </span>
-              <code className="shrink-0 font-mono" translate="no">
-                · {shortId(base.id)} on {target.ref}
-              </code>
-              {target.lastFetched ? (
-                <span className="shrink-0">· fetched {shortAge(target.lastFetched, now)}</span>
-              ) : null}
+              <span className="flex min-w-0 items-center gap-1 text-[11px] leading-4 text-muted-foreground">
+                <span className="min-w-0 truncate" title={base.subject}>
+                  {base.subject || "(no message)"}
+                </span>
+                <code className="shrink-0 font-mono" translate="no">
+                  · {shortId(base.id)} on {target.ref}
+                </code>
+                {target.lastFetched ? (
+                  <span className="shrink-0">· fetched {shortAge(target.lastFetched, now)}</span>
+                ) : null}
+              </span>
             </span>
-          </span>
-        </button>
-      </header>
-      {open ? (
-        <div className="border-t border-border-hairline">
+          </CollapsibleTrigger>
+        </header>
+        <CollapsibleContent className="border-t border-border-hairline">
           <p className="m-0 px-3 pt-2 pb-1 text-[11px] leading-4 font-medium text-muted-foreground">
             Before the common base
           </p>
           <History threadId={threadId} from={base.id} now={now} />
-        </div>
-      ) : null}
-    </section>
+        </CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }

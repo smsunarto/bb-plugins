@@ -19,7 +19,8 @@ import {
   SelectValue,
 } from "./components/ui/select.tsx";
 import { Textarea } from "./components/ui/textarea.tsx";
-import { Pending } from "./ui.tsx";
+import { Label } from "./components/ui/label.tsx";
+import { Pending, ReasonHint } from "./ui.tsx";
 
 /**
  * Opening moves focus to the message; closing returns it to Commit. Escape
@@ -107,9 +108,12 @@ export function CommitControl({
         if (canSend) send();
       }}
     >
-      <label htmlFor={`${id}-message`} className="text-[12px] leading-4 text-muted-foreground">
+      <Label
+        htmlFor={`${id}-message`}
+        className="text-[12px] leading-4 font-normal text-muted-foreground"
+      >
         Commit message
-      </label>
+      </Label>
       <Textarea
         id={`${id}-message`}
         data-testid="sc-commit-message"
@@ -146,19 +150,28 @@ export function CommitControl({
         {more > 0 ? `; ${plural(more, "more file")} stay uncommitted.` : "."}
       </p>
       <div className="flex min-w-0 flex-wrap justify-end gap-2">
-        <Button variant="outline" onClick={() => setOpen(false)}>
+        <Button
+          size="sm"
+          className="h-7"
+          type="button"
+          variant="outline"
+          onClick={() => setOpen(false)}
+        >
           Cancel
         </Button>
-        <Button
-          type="submit"
-          variant="default"
-          data-host-bound="commit"
-          data-testid="sc-commit-confirm"
-          title={gate ?? undefined}
-          disabled={!canSend}
-        >
-          Commit
-        </Button>
+        <ReasonHint reason={gate}>
+          <Button
+            size="sm"
+            className="h-7"
+            type="submit"
+            variant="default"
+            data-host-bound="commit"
+            data-testid="sc-commit-confirm"
+            disabled={!canSend}
+          >
+            Commit
+          </Button>
+        </ReasonHint>
       </div>
     </form>
   );
@@ -181,23 +194,23 @@ function CommitOpener({
   onOpen: () => void;
 }) {
   return (
-    // A disabled button takes no hover, so the reason sits on the row.
-    <div
-      className="flex min-w-0 border-t border-border-hairline px-3 py-2"
-      title={gate ?? undefined}
-    >
-      <Button
-        variant="outline"
-        ref={opener}
-        disabled={off}
-        data-host-bound="commit"
-        data-testid="sc-commit-open"
-        aria-label={`Commit ${plural(files, "file")}`}
-        onClick={onOpen}
-      >
-        <Pending pending={pending} icon="Check" />
-        Commit
-      </Button>
+    <div className="flex min-w-0 border-t border-border-hairline px-3 py-2">
+      <ReasonHint reason={gate}>
+        <Button
+          size="sm"
+          className="h-7"
+          variant="outline"
+          ref={opener}
+          disabled={off}
+          data-host-bound="commit"
+          data-testid="sc-commit-open"
+          aria-label={`Commit ${plural(files, "file")}`}
+          onClick={onOpen}
+        >
+          <Pending pending={pending} icon="Check" />
+          Commit
+        </Button>
+      </ReasonHint>
     </div>
   );
 }

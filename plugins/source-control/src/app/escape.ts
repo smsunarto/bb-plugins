@@ -1,14 +1,16 @@
 /**
- * Escape for every Source Control dialog, confirm row, menu and panel.
+ * Escape for Source Control's own confirm rows and panels.
  *
  * bb leaves a plugin page on an Escape that nothing claimed, and it sees the
  * key before a React handler can stop it. So one capture listener on window
  * claims Escape for the innermost open layer (the last one opened): a modal
- * layer wherever focus is, any other only while focus is inside it. A picker
- * of bb's own (the new-thread composer's menus), which opens outside the
- * plugin, gets Escape first. When a layer closes, focus goes back to what
- * had it before the layer opened, or to the control drawn in its place, if
- * focus would otherwise be lost.
+ * layer wherever focus is, any other only while focus is inside it. A Radix
+ * overlay (the shadcn menus, selects, popovers and dialogs, and bb's own
+ * pickers such as the new-thread composer's) handles its Escape itself and
+ * marks it handled, so while one is open these layers wait for the next
+ * Escape. When a layer closes, focus goes back to what had it before the
+ * layer opened, or to the control drawn in its place, if focus would
+ * otherwise be lost.
  */
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 
@@ -28,20 +30,28 @@ let focused: Element | null = null;
 let focusedBefore: Element | null = null;
 let installed = false;
 
-/** bb's own menus and popovers, which it portals outside the plugin. */
-const FOREIGN_PICKER = "[data-radix-popper-content-wrapper], [role=menu], [role=listbox]";
+/** Radix overlays, the plugin's and bb's, all portaled outside the plugin's own roots. */
+const RADIX_OVERLAY =
+  "[data-radix-popper-content-wrapper], [role=menu], [role=listbox], [role=dialog][data-state=open]";
 const ROOT = "[data-bb-plugin='source-control']";
 
-/** A tooltip is not a picker: Escape goes past it to the layer it decorates. */
-function foreignPickerOpen(): boolean {
-  for (const node of document.querySelectorAll(FOREIGN_PICKER))
-    if (!node.closest(ROOT) && !node.querySelector("[role=tooltip]")) return true;
+/**
+ * A tooltip is not an overlay: Escape goes past it to the layer it decorates.
+ * Nor is one that holds a layer: a dialog that registered itself here, or a
+ * sheet of bb's that hosts the plugin.
+ */
+function radixOverlayOpen(): boolean {
+  for (const node of document.querySelectorAll(RADIX_OVERLAY)) {
+    if (node.parentElement?.closest(ROOT) || node.querySelector("[role=tooltip]")) continue;
+    if (layers.some((layer) => layer.scope.current && node.contains(layer.scope.current))) continue;
+    return true;
+  }
   return false;
 }
 
 function onKeyDown(event: KeyboardEvent) {
   if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
-  if (layers.length === 0 || foreignPickerOpen()) return;
+  if (layers.length === 0 || radixOverlayOpen()) return;
   const target = event.target instanceof Node ? event.target : null;
   for (let index = layers.length - 1; index >= 0; index--) {
     const layer = layers[index]!;
@@ -152,7 +162,7 @@ export function useFocusContainment(scope: RefObject<Element | null>, open = tru
       const node = scope.current;
       const target = event.target;
       if (!node || !(target instanceof Element) || node.contains(target)) return;
-      if (target.closest(FOREIGN_PICKER)) return;
+      if (target.closest(RADIX_OVERLAY)) return;
       // The first (or last) that really takes focus: a match may be hidden.
       const focusable = [...node.querySelectorAll<HTMLElement>(FOCUSABLE)];
       for (const candidate of backwards ? focusable.toReversed() : focusable) {

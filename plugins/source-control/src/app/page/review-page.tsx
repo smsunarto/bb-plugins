@@ -29,6 +29,7 @@ import { MergeButton, mergeTarget, useChangeMerge } from "../merge.tsx";
 import { useChangeReview } from "../review-data.ts";
 import { SendControls } from "../send.tsx";
 import { ShipPath } from "../status.tsx";
+import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
 import {
   DropdownMenu,
@@ -38,7 +39,8 @@ import {
 } from "../components/ui/dropdown-menu.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.tsx";
-import { Pending } from "../ui.tsx";
+import { Toggle } from "../components/ui/toggle.tsx";
+import { Hint, OpenOnGitHub, Pending } from "../ui.tsx";
 import { ChangesList } from "./changes-nav.tsx";
 import { CommitsView } from "./commits-view.tsx";
 import { ConversationView } from "./conversation-view.tsx";
@@ -46,7 +48,7 @@ import { FilesView } from "./files-view.tsx";
 import { GuidedView, ViewedProgress } from "./guided-view.tsx";
 import { PANEL_PATH, PHONE, WIDE, useGo, useNow, useWidth, type Go } from "./hooks.ts";
 import { AskHost, BotIcon, useAskAgent } from "./ask-panel.tsx";
-import { ArrowRight, Chevron, GitHubMark, StackIcon, StateIcon } from "./icons.tsx";
+import { ArrowRight, Chevron, StackIcon, StateIcon } from "./icons.tsx";
 import { revisionId } from "./patches.ts";
 import { RailSections } from "./rail.tsx";
 import { FocusContext, ReviewFocus } from "./review-focus.ts";
@@ -116,8 +118,8 @@ function useDraftToggle(detail: Ready) {
   return { toggle, pending, message: outcomeText(outcome, head) };
 }
 
-const CHIP =
-  "flex h-6 shrink-0 items-center gap-1 rounded-full border-0 bg-border px-2 text-[12px] leading-4 font-semibold text-foreground";
+/** The status chip's pill, its glyphs at 12px rather than the shared Button's 16px. */
+const CHIP = "h-6 gap-1 rounded-full px-2 [&_svg]:size-3";
 
 function StatusMenu({
   detail,
@@ -130,19 +132,19 @@ function StatusMenu({
   const icon = <StateIcon state={state} size={11} />;
   if (!draft.toggle)
     return (
-      <span className={CHIP} data-testid="sc-review-state">
+      <Badge variant="secondary" className={CHIP} data-testid="sc-review-state">
         {icon}
         {detail.status.label}
-      </span>
+      </Badge>
     );
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" data-testid="sc-review-state" className={cx(CHIP, "cursor-pointer")}>
+        <Button variant="secondary" size="sm" data-testid="sc-review-state" className={CHIP}>
           {icon}
           {detail.status.label}
           <Chevron />
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
         <DropdownMenuItem disabled={draft.pending} onSelect={() => draft.toggle?.()}>
@@ -168,20 +170,22 @@ function AskButton({ compact }: { compact?: boolean }) {
   const ask = useAskAgent();
   if (!ask) return null;
   return (
-    <Button
-      variant="outline"
-      data-testid="sc-ask-agent"
-      aria-label={compact ? "Ask agent" : undefined}
-      title={compact ? "Ask agent" : undefined}
-      onClick={(event) => ask({ trigger: event.currentTarget })}
-      className={cx(
-        "border-border bg-surface-raised hover:bg-surface-recessed",
-        compact ? "size-7 px-0" : "h-8 gap-2 px-3 text-[13px] leading-5",
-      )}
-    >
-      <BotIcon />
-      {compact ? null : "Ask agent"}
-    </Button>
+    <Hint label={compact ? "Ask agent" : null}>
+      <Button
+        size="sm"
+        variant="outline"
+        data-testid="sc-ask-agent"
+        aria-label={compact ? "Ask agent" : undefined}
+        onClick={(event) => ask({ trigger: event.currentTarget })}
+        className={cx(
+          "border-border bg-surface-raised hover:bg-surface-recessed",
+          compact ? "size-7 px-0" : "h-8 gap-2 px-3 text-[13px] leading-5",
+        )}
+      >
+        <BotIcon />
+        {compact ? null : "Ask agent"}
+      </Button>
+    </Hint>
   );
 }
 
@@ -208,40 +212,36 @@ function PinButton({ row, compact }: { row: Ready["row"]; compact?: boolean }) {
   const pinned = chosen ?? listed;
   const label = pinned ? "Unpin from the Changes list" : "Pin to the Changes list";
   return (
-    <Button
-      variant="outline"
-      data-testid="sc-pin"
-      aria-pressed={pinned}
-      aria-label={label}
-      title={label}
-      disabled={pins.data === undefined || setPinned.isPending}
-      onClick={() => {
-        const next = !pinned;
-        setChosen(next);
-        setPinned.mutate({ ref, pinned: next }).catch(() => setChosen(null));
-      }}
-      className={cx(
-        "border-border px-0 hover:bg-surface-raised",
-        compact ? "size-7" : "size-8",
-        pinned ? "bg-surface-raised text-foreground" : "bg-transparent text-muted-foreground",
-      )}
-    >
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 16 16"
-        fill={pinned ? "currentColor" : "none"}
-        aria-hidden
+    <Hint label={label}>
+      <Toggle
+        variant="outline"
+        data-testid="sc-pin"
+        pressed={pinned}
+        aria-label={label}
+        disabled={pins.data === undefined || setPinned.isPending}
+        onPressedChange={(next) => {
+          setChosen(next);
+          setPinned.mutate({ ref, pinned: next }).catch(() => setChosen(null));
+        }}
+        className={cx("min-w-0 px-0", compact ? "size-7" : "size-8")}
       >
-        <path
-          d="M9.5 1.5 14.5 6.5 12 7.5 9.5 10 9 13.5 2.5 7 6 6.5 8.5 4z M5.5 10.5 2 14"
-          stroke="currentColor"
-          strokeWidth="1.3"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-      </svg>
-    </Button>
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 16 16"
+          fill={pinned ? "currentColor" : "none"}
+          aria-hidden
+        >
+          <path
+            d="M9.5 1.5 14.5 6.5 12 7.5 9.5 10 9 13.5 2.5 7 6 6.5 8.5 4z M5.5 10.5 2 14"
+            stroke="currentColor"
+            strokeWidth="1.3"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        </svg>
+      </Toggle>
+    </Hint>
   );
 }
 
@@ -349,22 +349,17 @@ function Header({ detail, now }: { detail: Ready; now: number }) {
       </div>
       <div className="flex shrink-0 items-center gap-2 @3xl:pt-5">
         {row.url ? (
-          <a
+          <OpenOnGitHub
             href={row.url}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={row.number !== null ? `Open #${row.number} in GitHub` : "Open in GitHub"}
-            title="Open in GitHub"
-            className="flex size-8 shrink-0 items-center justify-center rounded-[6px] border border-solid border-border text-foreground transition-colors hover:bg-surface-raised motion-reduce:transition-none"
-          >
-            <GitHubMark />
-          </a>
+            label={row.number !== null ? `Open #${row.number} in GitHub` : "Open in GitHub"}
+          />
         ) : null}
         <PinButton row={row} />
         <AskButton />
         <PageMerge detail={detail} />
         {row.state === "draft" && draft.toggle ? (
           <Button
+            size="sm"
             variant="outline"
             data-testid="sc-mark-ready"
             className="h-8 px-3 text-[13px] font-semibold"
@@ -406,17 +401,20 @@ function ReviewTabs({
       onValueChange={(tab) => go({ key: location.key, tab: tab as ReviewTab })}
       className={cx(
         // Wrapping in reverse keeps the tabs on the bottom line, against their border.
-        "shrink-0 flex-row flex-wrap-reverse items-end gap-x-6 border-b border-solid border-border-hairline",
+        "flex shrink-0 flex-row flex-wrap-reverse items-end gap-x-6 border-b border-solid border-border-hairline",
         PAD,
       )}
     >
-      <TabsList aria-label="Review" className="gap-6">
+      <TabsList
+        aria-label="Review"
+        className="h-auto justify-start gap-6 rounded-none bg-transparent p-0"
+      >
         {tabs.map((tab) => (
           <TabsTrigger
             key={tab.id}
             value={tab.id}
             data-testid={`sc-tab-${tab.id}`}
-            className="-mb-px gap-2 border-b-2 border-solid border-b-transparent px-0 py-2 text-[13px] leading-5 hover:text-foreground data-[state=active]:border-b-foreground data-[state=active]:font-semibold"
+            className="-mb-px cursor-pointer gap-2 rounded-none border-b-2 border-solid border-b-transparent px-0 py-2 text-[13px] leading-5 font-normal hover:text-foreground data-[state=active]:border-b-foreground data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:shadow-none"
           >
             {tab.label}
             {tab.count !== null ? (
@@ -494,15 +492,16 @@ function PhoneHeader({ detail }: { detail: Ready }) {
   return (
     <header className="flex shrink-0 flex-col" data-testid="sc-phone-header">
       <div className="flex min-w-0 items-center gap-3 px-4 pt-2 pb-3">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           aria-label="Back to changes"
           onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: "" })}
           // The pseudo-element widens the tap target to 36px without moving the title.
-          className="relative flex size-5 shrink-0 cursor-pointer items-center justify-center border-0 bg-transparent p-0 text-foreground after:absolute after:-inset-2"
+          className="relative size-5 after:absolute after:-inset-2 [&_svg]:size-3"
         >
           <Chevron className="rotate-90" />
-        </button>
+        </Button>
         <h1
           className="m-0 min-w-0 flex-1 truncate text-[15px] leading-5 font-semibold text-foreground"
           data-testid="sc-review-title"
@@ -777,7 +776,12 @@ function Review({ location, width }: { location: Here; width: number }) {
             Couldn't read this change. {query.error.message}
           </p>
           <div>
-            <Button variant="outline" onClick={() => void query.refetch()}>
+            <Button
+              size="sm"
+              className="h-7"
+              variant="outline"
+              onClick={() => void query.refetch()}
+            >
               Try again
             </Button>
           </div>

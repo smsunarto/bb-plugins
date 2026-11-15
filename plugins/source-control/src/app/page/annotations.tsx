@@ -12,6 +12,7 @@ import { Button } from "../components/ui/button.tsx";
 import { Textarea } from "../components/ui/textarea.tsx";
 import { useEscapeLayer } from "../escape.ts";
 import { cx } from "../format.ts";
+import { Hint, TEXT_LINK } from "../ui.tsx";
 import { newDraftId, type ReviewActions } from "../review-data.ts";
 import { useAskAgent } from "./ask-panel.tsx";
 import { itemAuthor, type Entry, type ItemEntry } from "../review-model.ts";
@@ -37,9 +38,6 @@ export type AnnotationContext = {
 
 /** Only for tests: told each time a line's annotations draw. */
 export const annotationProbe: { onRender: ((key: string) => void) | null } = { onRender: null };
-
-const TEXT_BUTTON =
-  "shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[12px] leading-4 text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-60";
 
 function blockClass(inset: boolean): string {
   // Under a diff line, the block starts at the code column; above the diff, it lines up with it.
@@ -124,10 +122,11 @@ function Composer({
           </span>
         ) : null}
         {canAsk ? (
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="sm"
             data-testid="sc-ask-line"
-            className={cx(TEXT_BUTTON, "me-auto flex items-center gap-1.5 px-2")}
+            className={cx(TEXT_LINK, "me-auto flex items-center gap-1.5 px-2")}
             disabled={!body || saving}
             onClick={(event) => {
               askAgent({
@@ -143,12 +142,13 @@ function Composer({
             }}
           >
             Ask agent
-          </button>
+          </Button>
         ) : null}
-        <button type="button" className={cx(TEXT_BUTTON, "px-2")} onClick={onDone}>
+        <Button variant="link" size="sm" className={cx(TEXT_LINK, "px-2")} onClick={onDone}>
           Cancel
-        </button>
+        </Button>
         <Button
+          size="sm"
           variant={primary ? "default" : "outline"}
           disabled={!body || saving}
           onClick={submit}
@@ -205,12 +205,18 @@ const DraftBody = memo(function DraftBody({
           <StatePill tone="warning">Pending</StatePill>
         )}
         <span className="min-w-0 flex-1" />
-        <button type="button" className={TEXT_BUTTON} onClick={() => setEditing(true)}>
+        <Button variant="link" size="sm" className={TEXT_LINK} onClick={() => setEditing(true)}>
           Edit
-        </button>
-        <button type="button" className={TEXT_BUTTON} disabled={deleting} onClick={onDelete}>
+        </Button>
+        <Button
+          variant="link"
+          size="sm"
+          className={TEXT_LINK}
+          disabled={deleting}
+          onClick={onDelete}
+        >
           {deleting ? "Deleting…" : "Delete"}
-        </button>
+        </Button>
       </div>
       <p className="m-0 min-w-0 text-[13px] leading-5 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
         {draft.body}
@@ -299,15 +305,16 @@ function ItemAction({
   const [error, setError] = useState<string | null>(null);
   if (item.origin.kind !== "bb")
     return (
-      <button
-        type="button"
-        className={TEXT_BUTTON}
+      <Button
+        variant="link"
+        size="sm"
+        className={TEXT_LINK}
         data-testid="sc-reply"
         disabled={replying}
         onClick={onReply}
       >
         Reply
-      </button>
+      </Button>
     );
   const onDismiss = async () => {
     setDismissing(true);
@@ -321,15 +328,16 @@ function ItemAction({
   };
   return (
     <>
-      <button
-        type="button"
-        className={TEXT_BUTTON}
+      <Button
+        variant="link"
+        size="sm"
+        className={TEXT_LINK}
         data-testid="sc-dismiss"
         disabled={dismissing}
         onClick={() => void onDismiss()}
       >
         {dismissing ? "Dismissing…" : "Dismiss"}
-      </button>
+      </Button>
       {error ? (
         <span role="alert" className="basis-full text-[12px] leading-4 text-warning">
           {error}
@@ -489,23 +497,24 @@ export const LineThread = memo(function LineThread({
 /** The "+" Pierre shows in the gutter of the hovered line (board A3). */
 export function AddCommentButton({ onClick }: { onClick: () => void }) {
   return (
-    <button
-      type="button"
-      aria-label="Comment on this line"
-      title="Comment on this line"
-      data-testid="sc-add-comment"
-      onClick={onClick}
-      className="flex size-[18px] cursor-pointer items-center justify-center rounded-[4px] border-0 bg-(--primary) p-0 text-primary-foreground"
-    >
-      <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
-        <path
-          d="M5 2V8M2 5H8"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-        />
-      </svg>
-    </button>
+    <Hint label="Comment on this line">
+      <Button
+        size="icon"
+        aria-label="Comment on this line"
+        data-testid="sc-add-comment"
+        onClick={onClick}
+        className="size-[18px] rounded-sm bg-(--primary) p-0 text-primary-foreground hover:bg-(--primary) [&_svg]:size-2.5"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+          <path
+            d="M5 2V8M2 5H8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </svg>
+      </Button>
+    </Hint>
   );
 }

@@ -16,14 +16,19 @@ import {
   UrlLink,
   useComposer,
 } from "@get-bb/plugin-sdk/app";
-import { useId, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { prKey, type PrWatchView, type WatchCheck } from "../core/watch.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { cx, plural, shortAge, shortId } from "./format.ts";
 import { CheckIcon } from "./page/icons.tsx";
 import { useNow } from "./page/hooks.ts";
 import { Button } from "./components/ui/button.tsx";
-import { KEEP_COMPOSER_FOCUS } from "./ui.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./components/ui/collapsible.tsx";
+import { Hint, KEEP_COMPOSER_FOCUS } from "./ui.tsx";
 
 const NO_WATCHES: PrWatchView[] = [];
 
@@ -128,22 +133,17 @@ function StateIcon({ watch }: { watch: PrWatchView }) {
 
 function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWatchView }) {
   const [expanded, setExpanded] = useState(false);
-  const listId = useId();
   const stop = useRpcMutation({ contract: sourceControlContract, method: "stopPrWatch" });
   const key = prKey(watch.ref);
   const summary = watchSummary(watch);
   const note = mergeNote(watch);
   return (
-    <div className="flex min-w-0 flex-col">
+    <Collapsible open={expanded} onOpenChange={setExpanded} className="flex min-w-0 flex-col">
       <div className="flex min-h-7 min-w-0 items-center gap-0.5">
-        <button
-          type="button"
-          aria-expanded={expanded}
+        <CollapsibleTrigger
           {...KEEP_COMPOSER_FOCUS}
-          aria-controls={listId}
           aria-label={`${key} ${watch.title}: ${summary}. ${expanded ? "Hide" : "Show"} checks`}
           title={`${key} ${watch.title}: ${summary}`}
-          onClick={() => setExpanded((current) => !current)}
           className={cx(
             "flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-[4px] border-0 bg-transparent px-2 py-1 text-start hover:bg-surface-raised focus-visible:outline-1",
             expanded ? "text-foreground" : "text-muted-foreground",
@@ -167,36 +167,45 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
             )}
             aria-hidden
           />
-        </button>
-        <UrlLink
-          href={watch.url}
-          className={cx(ACTION, "size-6")}
-          aria-label={`Open ${key} on GitHub`}
-          title="Open on GitHub"
-        >
-          <Icon name="ArrowUpRight" className="size-3.5" aria-hidden />
-        </UrlLink>
-        <Button
-          variant="ghost"
-          className="h-6 px-1.5 text-muted-foreground"
-          aria-label={`Unwatch ${key}`}
-          {...KEEP_COMPOSER_FOCUS}
-          title="Stop watching. The agent is not told."
-          disabled={stop.isPending}
-          onClick={() => void stop.mutate({ threadId, ref: watch.ref }).catch(() => undefined)}
-        >
-          Unwatch
-        </Button>
+        </CollapsibleTrigger>
+        <Hint label="Open on GitHub">
+          {/* UrlLink takes no ref: the tooltip anchors on this span. */}
+          <span className="inline-flex shrink-0">
+            <UrlLink
+              href={watch.url}
+              className={cx(ACTION, "size-6")}
+              aria-label={`Open ${key} on GitHub`}
+            >
+              <Icon name="ArrowUpRight" className="size-3.5" aria-hidden />
+            </UrlLink>
+          </span>
+        </Hint>
+        <Hint label="Stop watching. The agent is not told.">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-6 px-1.5 text-muted-foreground"
+            aria-label={`Unwatch ${key}`}
+            {...KEEP_COMPOSER_FOCUS}
+            disabled={stop.isPending}
+            onClick={() => void stop.mutate({ threadId, ref: watch.ref }).catch(() => undefined)}
+          >
+            Unwatch
+          </Button>
+        </Hint>
       </div>
       {stop.error ? (
         <p className="m-0 px-2 pb-1 text-[11px] text-destructive-text">{stop.error.message}</p>
       ) : null}
-      {expanded ? <WatchDetails id={listId} watch={watch} /> : null}
-    </div>
+      <CollapsibleContent>
+        <WatchDetails watch={watch} />
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
-function WatchDetails({ id, watch }: { id: string; watch: PrWatchView }) {
+function WatchDetails({ watch }: { watch: PrWatchView }) {
   const now = useNow();
   const key = prKey(watch.ref);
   const notes = [
@@ -208,7 +217,7 @@ function WatchDetails({ id, watch }: { id: string; watch: PrWatchView }) {
   ].filter(Boolean);
   const { checks } = watch.checks;
   return (
-    <div id={id} className="flex min-w-0 flex-col pb-1">
+    <div className="flex min-w-0 flex-col pb-1">
       <p className="m-0 min-w-0 truncate ps-2 text-[11px] text-muted-foreground" translate="no">
         {notes.join(" · ")}
       </p>
@@ -249,14 +258,17 @@ function WatchDetails({ id, watch }: { id: string; watch: PrWatchView }) {
                 {check.name}
               </span>
               {check.detailsUrl ? (
-                <UrlLink
-                  href={check.detailsUrl}
-                  className={cx(ACTION, "size-5")}
-                  aria-label={`Details for ${check.name}`}
-                  title="Open the run's details"
-                >
-                  <Icon name="ArrowUpRight" className="size-3.5" aria-hidden />
-                </UrlLink>
+                <Hint label="Open the run's details">
+                  <span className="inline-flex shrink-0">
+                    <UrlLink
+                      href={check.detailsUrl}
+                      className={cx(ACTION, "size-5")}
+                      aria-label={`Details for ${check.name}`}
+                    >
+                      <Icon name="ArrowUpRight" className="size-3.5" aria-hidden />
+                    </UrlLink>
+                  </span>
+                </Hint>
               ) : null}
             </li>
           ))}

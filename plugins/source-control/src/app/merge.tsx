@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "./components/ui/dialog.tsx";
 import { Pending } from "./ui.tsx";
+import { cn } from "./lib/utils.ts";
 
 /** The pull request as the reader saw it when they chose to merge. */
 export type MergeTarget = {
@@ -147,9 +148,10 @@ export function MergeButton({
   return (
     <>
       <Button
+        size="sm"
         ref={trigger}
         variant={variant}
-        className={className}
+        className={cn("h-7", className)}
         data-testid={testId}
         disabled={disabled}
         aria-label={`Merge #${target.number}`}
@@ -220,15 +222,11 @@ export function MergeDialog({
       }}
     >
       <DialogContent
-        showCloseButton={false}
+        hideCloseButton
         data-testid="sc-merge-dialog"
-        onCloseAutoFocus={(event) => {
-          if (!returnFocus) return;
-          event.preventDefault();
-          returnFocus();
-        }}
+        {...(returnFocus ? { onAfterCloseAutoFocus: returnFocus } : {})}
       >
-        <DialogHeader className="pr-0">
+        <DialogHeader>
           <DialogTitle>Merge pull request</DialogTitle>
           <DialogDescription>
             {target.repo}#{target.number}: {target.title}. Destination: {target.base}.
@@ -240,15 +238,22 @@ export function MergeDialog({
           </p>
         ) : null}
         <DialogFooter>
-          <Button variant="outline" disabled={merge.pending} onClick={close}>
+          <Button
+            size="sm"
+            className="h-7"
+            variant="outline"
+            disabled={merge.pending}
+            onClick={close}
+          >
             Cancel
           </Button>
           <Button
+            size="sm"
             variant="default"
             data-testid="sc-merge-confirm"
             disabled={merge.pending}
             onClick={() => void merge.confirm()}
-            className={cx(merge.pending && "cursor-progress")}
+            className={cx("h-7", merge.pending && "cursor-progress")}
           >
             <Pending pending={merge.pending} />
             {merge.pending ? "Merging…" : "Squash and merge"}

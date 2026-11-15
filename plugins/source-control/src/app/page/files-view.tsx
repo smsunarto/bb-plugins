@@ -62,6 +62,7 @@ import { FileTree } from "./file-tree.tsx";
 import { Chevron } from "./icons.tsx";
 import { usePatch, usePatchStore, type PatchEntry, type PatchStore } from "./patches.ts";
 import { FocusContext } from "./review-focus.ts";
+import { Skeleton } from "../components/ui/skeleton.tsx";
 
 // ── Near the viewport ──────────────────────────────────────────────────
 
@@ -492,11 +493,11 @@ function PatchBody({
   });
   if (!entry || entry.state === "loading")
     return (
-      <div
+      <Skeleton
         aria-busy="true"
         aria-label={`Loading ${file.path}`}
         data-testid="sc-patch-loading"
-        className="animate-pulse border-t border-solid border-border-hairline bg-surface-recessed motion-reduce:animate-none"
+        className="rounded-none border-t border-solid border-border-hairline"
         style={{ height: reservedHeight(file) }}
       />
     );

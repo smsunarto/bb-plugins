@@ -18,6 +18,7 @@ import type { TimelineItem } from "../../core/items.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { PatchesProblem } from "../file-cards.tsx";
 import { absoluteTime, cx, plural, shortId } from "../format.ts";
+import { Badge, type BadgeProps } from "../components/ui/badge.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
 
@@ -54,32 +55,23 @@ function Timestamp({ iso }: { iso: string }) {
 }
 
 type ReviewState = Extract<TimelineItem, { kind: "review" }>["state"];
-type Look = { icon: string; tone: string; label: string };
+type Look = { icon: string; variant: NonNullable<BadgeProps["variant"]>; label: string };
 
 const REVIEW_LOOK: Readonly<Record<ReviewState, Look>> = {
-  approved: { icon: "Check", tone: "text-success", label: "Approved" },
-  changes_requested: {
-    icon: "AlertCircle",
-    tone: "text-destructive-text",
-    label: "Changes requested",
-  },
-  commented: { icon: "MessageSquare", tone: "text-muted-foreground", label: "Commented" },
-  dismissed: { icon: "X", tone: "text-subtle-foreground", label: "Dismissed" },
+  approved: { icon: "Check", variant: "success", label: "Approved" },
+  changes_requested: { icon: "AlertCircle", variant: "danger", label: "Changes requested" },
+  commented: { icon: "MessageSquare", variant: "outline", label: "Commented" },
+  dismissed: { icon: "X", variant: "secondary", label: "Dismissed" },
 };
 
 /** One reviewer's review as code-review's outlined chip. */
 function ReviewStateBadge({ state }: { state: ReviewState }) {
   const look = REVIEW_LOOK[state];
   return (
-    <span
-      className={cx(
-        "inline-flex h-4.5 shrink-0 items-center gap-1 rounded-full px-1.5 text-[11px] font-medium whitespace-nowrap ring-1 ring-current/30 ring-inset",
-        look.tone,
-      )}
-    >
+    <Badge variant={look.variant} className="h-4.5 gap-1 rounded-full px-1.5 py-0 font-medium">
       <Icon name={look.icon} className="size-3" aria-hidden />
       {look.label}
-    </span>
+    </Badge>
   );
 }
 

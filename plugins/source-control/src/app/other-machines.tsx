@@ -25,10 +25,15 @@ import { reviewPath, type ChangeRow, type SourceRows } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
 import { PANEL_PATH } from "./page/hooks.ts";
-import { STATE_CHIP } from "./page/rail.tsx";
+import { StateBadge } from "./page/rail.tsx";
 import { Button } from "./components/ui/button.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./components/ui/collapsible.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
-import { Pending } from "./ui.tsx";
+import { DISCLOSURE, DisclosureChevron, Pending } from "./ui.tsx";
 
 type Checkout = { path: string; repo: string | null };
 type Host = { hostId: string; name: string; checkouts: Checkout[] };
@@ -46,7 +51,6 @@ export function repositoryRows(
 
 function BranchRow({ row, mine }: { row: ChangeRow; mine: boolean }) {
   const navigate = useBbNavigate();
-  const chip = STATE_CHIP[row.state];
   return (
     <li className="flex min-w-0 border-t border-border-hairline first:border-t-0">
       <button
@@ -57,14 +61,7 @@ function BranchRow({ row, mine }: { row: ChangeRow; mine: boolean }) {
           navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key: row.key }) })
         }
       >
-        <span
-          className={cx(
-            "flex h-4 shrink-0 items-center rounded-full px-2 text-[11px] leading-3 font-semibold",
-            chip.className,
-          )}
-        >
-          {chip.label}
-        </span>
+        <StateBadge state={row.state} className="h-4 leading-3" />
         <span className="min-w-0 truncate text-[12px] leading-4 text-foreground" translate="no">
           {row.number !== null ? `#${row.number} · ${row.branch}` : row.branch}
         </span>
@@ -133,6 +130,8 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
         </span>
         <span className="flex shrink-0 gap-1">
           <Button
+            size="sm"
+            className="h-7"
             variant="ghost"
             disabled={opening !== null}
             aria-busy={opening === "open"}
@@ -143,6 +142,8 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
             Open checkout
           </Button>
           <Button
+            size="sm"
+            className="h-7"
             variant="outline"
             disabled={opening !== null}
             aria-busy={opening === "chat"}
@@ -305,32 +306,20 @@ export function OtherMachinesCard({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <section className={className} aria-label="Other machines" data-testid="sc-other-machines">
-      <header className="flex min-h-10 min-w-0 items-center px-3 py-2">
-        <button
-          type="button"
-          className="flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-[4px] border-0 bg-transparent p-0 text-start"
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-        >
-          <Icon
-            name="ChevronDown"
-            className={cx(
-              "size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
-              !open && "-rotate-90",
-            )}
-            aria-hidden
-          />
-          <span className="truncate text-[13px] leading-5 font-semibold text-foreground">
-            Other machines
-          </span>
-        </button>
-      </header>
-      {open ? (
-        <div className="border-t border-border-hairline">
+    <Collapsible asChild open={open} onOpenChange={setOpen}>
+      <section className={className} aria-label="Other machines" data-testid="sc-other-machines">
+        <header className="flex min-h-10 min-w-0 items-center px-3 py-2">
+          <CollapsibleTrigger className={DISCLOSURE}>
+            <DisclosureChevron open={open} />
+            <span className="truncate text-[13px] leading-5 font-semibold text-foreground">
+              Other machines
+            </span>
+          </CollapsibleTrigger>
+        </header>
+        <CollapsibleContent className="border-t border-border-hairline">
           <Hosts hostId={hostId} repo={repo} changeKey={changeKey} now={now} />
-        </div>
-      ) : null}
-    </section>
+        </CollapsibleContent>
+      </section>
+    </Collapsible>
   );
 }

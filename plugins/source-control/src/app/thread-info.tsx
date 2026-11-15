@@ -25,6 +25,7 @@ import type { ThreadChange } from "../core/change.ts";
 import { attentionChips, headerLabel, summarize } from "../core/status.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { GitHubMark, StateIcon } from "./page/icons.tsx";
+import { Hint } from "./ui.tsx";
 
 /** The thread's Source Control tab, as `openTab` names it. */
 export const SOURCE_CONTROL_TAB = {
@@ -189,10 +190,12 @@ export function BranchesInfoSection({ threadId, environment }: ExperimentalThrea
         ? {}
         : {
             accessory: (
-              <span className="inline-flex" title="Couldn't refresh">
-                <Icon name="AlertTriangle" className="size-3 text-attention" aria-hidden />
-                <span className="sr-only">Couldn't refresh. Showing the last workspace.</span>
-              </span>
+              <Hint label="Couldn't refresh">
+                <span className="inline-flex">
+                  <Icon name="AlertTriangle" className="size-3 text-attention" aria-hidden />
+                  <span className="sr-only">Couldn't refresh. Showing the last workspace.</span>
+                </span>
+              </Hint>
             ),
           })}
     >

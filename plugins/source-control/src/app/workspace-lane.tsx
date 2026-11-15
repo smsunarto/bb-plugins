@@ -32,8 +32,14 @@ import {
   usePatches,
 } from "./file-cards.tsx";
 import { absoluteTime, cx, plural, shortAge } from "./format.ts";
-import { Badge } from "./components/ui/badge.tsx";
-import { SectionLabel } from "./ui.tsx";
+import { Badge, badgeVariants, type BadgeProps } from "./components/ui/badge.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "./components/ui/collapsible.tsx";
+import { cn } from "./lib/utils.ts";
+import { Hint, MERGED_BADGE, SectionLabel } from "./ui.tsx";
 import { Button } from "./components/ui/button.tsx";
 
 export const CARD =
@@ -131,6 +137,7 @@ function ReviewJump({
   return (
     <div className="flex justify-end border-t border-border-hairline px-3.5 py-1">
       <Button
+        size="sm"
         variant="ghost"
         data-testid="sc-review-jump"
         onClick={() =>
@@ -381,42 +388,36 @@ function ChangesCard({
   const count = changes.length + more;
   const empty = count === 0;
   return (
-    <section className={CARD} aria-label={title} data-testid={testId}>
-      <header
-        className={cx(
-          "flex min-h-10 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2",
-          attention && !empty && "bg-[color-mix(in_oklab,var(--warning)_12%,transparent)]",
-        )}
-      >
-        <button
-          type="button"
-          className="flex min-h-6 min-w-0 flex-[1_1_11rem] cursor-pointer items-center gap-2 rounded-[4px] text-start focus-visible:-outline-offset-2 disabled:cursor-default"
-          onClick={() => setOpen((current) => !current)}
-          aria-expanded={open && !empty}
-          disabled={empty}
+    <Collapsible asChild open={open && !empty} onOpenChange={setOpen} disabled={empty}>
+      <section className={CARD} aria-label={title} data-testid={testId}>
+        <header
+          className={cx(
+            "flex min-h-10 min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2",
+            attention && !empty && "bg-[color-mix(in_oklab,var(--warning)_12%,transparent)]",
+          )}
         >
-          <Icon
-            name="ChevronDown"
-            className={cx(
-              "size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
-              !open && "-rotate-90",
-              empty && "invisible",
-            )}
-            aria-hidden
-          />
-          <span className="truncate text-[13px] leading-5 font-semibold text-foreground">
-            {empty ? `No ${title.toLowerCase()}` : title}
-          </span>
-          {empty ? null : <Badge variant="count">{count}</Badge>}
-        </button>
-        {conflicted > 0 ? (
-          <span className="shrink-0 text-[11px] leading-4 text-destructive">
-            {plural(conflicted, "file")} with conflict markers
-          </span>
-        ) : null}
-      </header>
-      {open && !empty ? (
-        <div className="border-t border-border-hairline">
+          <CollapsibleTrigger className="flex min-h-6 min-w-0 flex-[1_1_11rem] cursor-pointer items-center gap-2 rounded-sm text-start focus-visible:-outline-offset-2 disabled:cursor-default">
+            <Icon
+              name="ChevronDown"
+              className={cx(
+                "size-3 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
+                !open && "-rotate-90",
+                empty && "invisible",
+              )}
+              aria-hidden
+            />
+            <span className="truncate text-[13px] leading-5 font-semibold text-foreground">
+              {empty ? `No ${title.toLowerCase()}` : title}
+            </span>
+            {empty ? null : <Badge variant="count">{count}</Badge>}
+          </CollapsibleTrigger>
+          {conflicted > 0 ? (
+            <span className="shrink-0 text-[11px] leading-4 text-destructive">
+              {plural(conflicted, "file")} with conflict markers
+            </span>
+          ) : null}
+        </header>
+        <CollapsibleContent className="border-t border-border-hairline">
           <FileRows
             changes={changes}
             more={more}
@@ -424,10 +425,10 @@ function ChangesCard({
             onToggle={toggle}
             diff={expanded ? <UncommittedDiff threadId={threadId} path={expanded} /> : null}
           />
-        </div>
-      ) : null}
-      {footer}
-    </section>
+        </CollapsibleContent>
+        {footer}
+      </section>
+    </Collapsible>
   );
 }
 
@@ -464,59 +465,40 @@ export function UncommittedCard({
   );
 }
 
-const CHIP =
-  "inline-flex h-5 shrink-0 items-center gap-1 rounded-full px-1.5 text-[11px] leading-none font-medium whitespace-nowrap";
-
-/** A small pill beside the branch name, so status costs no row of its own. */
-export function Chip({
-  className,
-  title,
-  children,
-}: {
-  className?: string;
-  title?: string;
-  children: ReactNode;
-}) {
-  return (
-    <span className={cx(CHIP, className)} title={title}>
-      {children}
-    </span>
-  );
-}
-
-const OUTLINE_CHIP = "border border-border-hairline text-muted-foreground";
-
-/** Chips tinted with a theme colour: the token's text on a faint fill of itself. */
-const TINT = {
-  success: "bg-[color-mix(in_oklab,var(--success)_14%,transparent)] text-success",
-  warning: "bg-[color-mix(in_oklab,var(--warning)_14%,transparent)] text-warning",
-  destructive: "bg-[color-mix(in_oklab,var(--destructive)_14%,transparent)] text-destructive",
-  merged: "bg-[color-mix(in_oklab,var(--pr-merged)_14%,transparent)] text-(--pr-merged)",
-} as const;
+/** A status pill's shape beside the branch name, so status costs no row of its own. */
+const PILL = "h-5 gap-1 rounded-full px-1.5 py-0 leading-none";
 
 const PR_LOOK = {
-  open: { label: "Open", className: TINT.success },
-  draft: { label: "Draft", className: "bg-surface-raised text-muted-foreground" },
-  merged: { label: "Merged", className: TINT.merged },
-  closed: { label: "Closed", className: TINT.destructive },
-} as const;
+  open: { label: "Open", variant: "success" },
+  draft: { label: "Draft", variant: "secondary" },
+  merged: { label: "Merged", variant: "outline", className: MERGED_BADGE },
+  closed: { label: "Closed", variant: "danger" },
+} as const satisfies Record<
+  string,
+  { label: string; variant: NonNullable<BadgeProps["variant"]>; className?: string }
+>;
 
 /** The pull request's checks overall, from the forge facet. */
 function ChecksChip({ checks }: { checks: NonNullable<ForgeValue>["checks"] }) {
-  if (checks.failed > 0) return <Chip className={TINT.destructive}>{checks.failed} Failing</Chip>;
+  if (checks.failed > 0)
+    return (
+      <Badge variant="danger" className={PILL}>
+        {checks.failed} Failing
+      </Badge>
+    );
   if (checks.pending > 0)
     return (
-      <Chip className={TINT.warning}>
+      <Badge variant="warning" className={PILL}>
         <span className="size-1.5 rounded-full bg-current" aria-hidden />
         {checks.pending} Running
-      </Chip>
+      </Badge>
     );
   if (checks.passed > 0)
     return (
-      <Chip className={TINT.success}>
+      <Badge variant="success" className={PILL}>
         <Icon name="Check" className="size-3" aria-hidden />
         Passed
-      </Chip>
+      </Badge>
     );
   return null;
 }
@@ -527,18 +509,32 @@ function ReviewChips({ branch, forge }: { branch: Branch; forge: ForgeValue | un
     const look = PR_LOOK[forge.state === "open" && forge.isDraft ? "draft" : forge.state];
     return (
       <>
-        <UrlLink
-          href={forge.url}
-          className={cx(CHIP, look.className, "no-underline hover:opacity-90")}
-          title={`Open PR #${forge.number}`}
-        >
-          #{forge.number} {look.label}
-        </UrlLink>
+        <Hint label={`Open PR #${forge.number}`}>
+          {/* UrlLink takes no ref: the tooltip anchors on this span. */}
+          <span className="inline-flex shrink-0">
+            <UrlLink
+              href={forge.url}
+              className={cn(
+                badgeVariants({ variant: look.variant }),
+                PILL,
+                "className" in look && look.className,
+                "no-underline hover:opacity-90",
+              )}
+            >
+              #{forge.number} {look.label}
+            </UrlLink>
+          </span>
+        </Hint>
         {forge.state === "open" ? <ChecksChip checks={forge.checks} /> : null}
       </>
     );
   }
-  if (branch.reviewId) return <Chip className={OUTLINE_CHIP}>{branch.reviewId}</Chip>;
+  if (branch.reviewId)
+    return (
+      <Badge variant="outline" className={PILL}>
+        {branch.reviewId}
+      </Badge>
+    );
   return null;
 }
 
@@ -683,15 +679,12 @@ const BranchCard = memo(function BranchCard({
         trailing={
           <>
             {look.label && !forge ? (
-              <Chip
-                className={
-                  branch.status === "conflicted"
-                    ? "bg-destructive text-destructive-foreground"
-                    : OUTLINE_CHIP
-                }
+              <Badge
+                variant={branch.status === "conflicted" ? "destructive" : "outline"}
+                className={PILL}
               >
                 {look.label}
-              </Chip>
+              </Badge>
             ) : null}
             <ReviewChips branch={branch} forge={forge} />
           </>

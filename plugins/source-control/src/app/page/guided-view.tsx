@@ -44,6 +44,7 @@ import { cx, plural } from "../format.ts";
 import { useGuide, useRewriteGuide, type GuideRead, type Rewrite } from "../guide-data.ts";
 import { useChangeReview } from "../review-data.ts";
 import { ViewerContext } from "../review-ui.tsx";
+import { Hint, TEXT_LINK } from "../ui.tsx";
 import {
   ColumnContext,
   DiffColumn,
@@ -64,8 +65,6 @@ import { FocusContext } from "./review-focus.ts";
 
 const LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
-const LINK =
-  "shrink-0 cursor-pointer border-0 bg-transparent p-0 text-[12px] leading-4 font-medium whitespace-nowrap text-foreground underline-offset-2 hover:underline disabled:cursor-default disabled:opacity-60";
 
 // ── The file being read ────────────────────────────────────────────────
 
@@ -261,15 +260,16 @@ function GuideStatus({
         {status.text}
       </p>
       {status.action ? (
-        <button
-          type="button"
-          className={LINK}
+        <Button
+          variant="link"
+          size="sm"
+          className={cx(TEXT_LINK, "font-medium text-foreground")}
           disabled={rewrite.pending}
           data-testid="sc-guide-action"
           onClick={run}
         >
           {rewrite.pending ? "Starting…" : status.label}
-        </button>
+        </Button>
       ) : null}
       {rewrite.error ? (
         <span role="alert" className="min-w-0 text-[12px] leading-4 text-warning">
@@ -455,27 +455,26 @@ const OutlineRow = memo(function OutlineRow({
           {title}
         </span>
         {findings ? (
-          <span
-            className="flex h-5 shrink-0 items-center gap-2"
-            title={plural(findings.count, "finding")}
-          >
-            <span
-              aria-hidden
-              className={cx(
-                "size-1.5 shrink-0 rounded-full",
-                DOT[findings.top as 0 | 1] ?? "bg-(--tertiary-foreground)",
-              )}
-            />
-            <span
-              className={cx(
-                "text-[12px] leading-4",
-                current ? "text-muted-foreground" : "text-(--tertiary-foreground)",
-              )}
-            >
-              {findings.count}
-              <span className="sr-only"> findings</span>
+          <Hint label={plural(findings.count, "finding")}>
+            <span className="flex h-5 shrink-0 items-center gap-2">
+              <span
+                aria-hidden
+                className={cx(
+                  "size-1.5 shrink-0 rounded-full",
+                  DOT[findings.top as 0 | 1] ?? "bg-(--tertiary-foreground)",
+                )}
+              />
+              <span
+                className={cx(
+                  "text-[12px] leading-4",
+                  current ? "text-muted-foreground" : "text-(--tertiary-foreground)",
+                )}
+              >
+                {findings.count}
+                <span className="sr-only"> findings</span>
+              </span>
             </span>
-          </span>
+          </Hint>
         ) : (
           <span className="shrink-0 text-[12px] leading-5 text-(--tertiary-foreground)">
             {files}
@@ -608,7 +607,7 @@ function Step({
   label: string;
 }) {
   return (
-    <Button variant="ghost" aria-label={label} onClick={onClick} className="size-11 px-0">
+    <Button size="sm" variant="ghost" aria-label={label} onClick={onClick} className="size-11 px-0">
       <Chevron className={direction < 0 ? "rotate-90" : "-rotate-90"} />
     </Button>
   );

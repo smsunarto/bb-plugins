@@ -21,12 +21,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import { describeProblem, readAgo, type CheckRow } from "../core/change.ts";
 import { parseDirective, parseGroup } from "../core/directive.ts";
 import type { ChangeKey } from "../core/ids.ts";
-import { reviewPath, type ChangeDetail } from "../core/review.ts";
+import { reviewPath, type ChangeDetail, type RowState } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { FindingList, OpenReviewArrow, fixLabel } from "./findings-card.tsx";
 import { cx, plural, shortId } from "./format.ts";
 import { PANEL_PATH, useNow } from "./page/hooks.ts";
-import { STATE_CHIP } from "./page/rail.tsx";
+import { StateBadge } from "./page/rail.tsx";
 import type { ChangeState } from "../core/status.ts";
 import { useChangeReview, useReviewActions } from "./review-data.ts";
 import { MergeButton, mergeTarget, readyToMerge, useChangeMerge } from "./merge.tsx";
@@ -37,16 +37,17 @@ import { LegacyCards, pullRequestTarget } from "./legacy-card.tsx";
 import { OwnChangeCard, ThreadCard, type ThreadShip } from "./thread-card.tsx";
 import { CheckoutCard } from "./checkout-card.tsx";
 import { checkoutAttributes } from "../core/checkout-work.ts";
-import { Button, CARD_ACTION_CLASS } from "./components/ui/button.tsx";
+import { Badge } from "./components/ui/badge.tsx";
+import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
+import { CARD_ACTION_CLASS } from "./ui.tsx";
 
 type Ready = Extract<ChangeDetail, { state: "change" }>;
 
 /** True once the element has been on screen; IntersectionObserver reports it without forcing layout. */
 /** The chip for `changeState`, the words the composer strip leads with. */
-export function statusChip(status: ChangeState): { label: string; className: string } {
-  const tone = status.tone === "pushed" ? "local" : status.tone;
-  return { label: status.label, className: STATE_CHIP[tone].className };
+export function statusChip(status: ChangeState): { label: string; state: RowState } {
+  return { label: status.label, state: status.tone === "pushed" ? "local" : status.tone };
 }
 
 export function useSeen(ref: RefObject<HTMLElement | null>): boolean {
@@ -96,13 +97,14 @@ function ChecksChip({ rows }: { rows: readonly CheckRow[] }) {
         ? [`${running} Running`, "text-warning", "bg-warning"]
         : ["Passed", "text-success-foreground", "bg-success"];
   return (
-    <span
-      className="flex h-5 shrink-0 items-center gap-1 rounded-full border border-solid border-border px-2"
+    <Badge
+      variant="outline"
+      className="h-5 gap-1 rounded-full px-2 py-0"
       data-testid="sc-card-checks"
     >
       <span aria-hidden className={cx("size-1.5 shrink-0 rounded-full", dot)} />
       <span className={cx("text-[11px] leading-4 font-medium whitespace-pre", tone)}>{text}</span>
-    </span>
+    </Badge>
   );
 }
 
@@ -189,14 +191,7 @@ function CardHeader({
       <BranchGlyph />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          <span
-            className={cx(
-              "flex h-4 shrink-0 items-center rounded-full px-2 text-[11px] leading-3 font-semibold",
-              chip.className,
-            )}
-          >
-            {chip.label}
-          </span>
+          <StateBadge state={chip.state} label={chip.label} className="h-4 leading-3" />
           <span className="min-w-0 truncate font-mono text-[11px] leading-4 text-(--tertiary-foreground)">
             {row.number !== null ? `#${row.number} · ${row.branch}` : row.branch}
           </span>
@@ -289,6 +284,7 @@ function ReadyCard({
       ) : null}
       <div className="flex min-w-0 flex-wrap gap-2 px-3 pt-1 pb-3">
         <Button
+          size="sm"
           variant="default"
           onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key }) })}
           className={cx(CARD_ACTION_CLASS, "gap-2 px-3")}
@@ -300,6 +296,7 @@ function ReadyCard({
         {!grouped && readyToMerge(detail) ? <CardMerge detail={detail} /> : null}
         {hasItems ? (
           <Button
+            size="sm"
             variant="default"
             data-testid="sc-card-fix"
             disabled={fix.count === 0 || fix.pending || detail.head === null}
@@ -356,7 +353,12 @@ export function ChangeCard({
             Couldn't read this change. {query.error.message}
           </p>
           <div>
-            <Button variant="outline" onClick={() => void query.refetch()}>
+            <Button
+              size="sm"
+              className="h-7"
+              variant="outline"
+              onClick={() => void query.refetch()}
+            >
               Try again
             </Button>
           </div>

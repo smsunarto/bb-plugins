@@ -23,6 +23,33 @@ const FALLBACK_SUPPORTS =
 const KEYED = new Set(["type", "class", "id"]);
 /** Subjects that match one element, the document root or a shadow host. */
 const ROOT_ONLY = new Set(["root", "host"]);
+/**
+ * bb's icon root, which the vendored shadcn kit (coarse-pointer-sizing,
+ * toggle) sizes as `[&_[data-icon-root]]:size-4`. Blink buckets it by
+ * attribute name, and every such rule sits under a class-keyed control.
+ */
+const KEYED_ATTRIBUTES = new Set(["data-icon-root"]);
+
+/** A one-part compound keyed by bb's icon root or an svg tag. */
+const iconPart = (selector: Selector) =>
+  selector.length === 1 &&
+  ((selector[0]!.type === "type" && selector[0]!.name === "svg") ||
+    (selector[0]!.type === "attribute" && KEYED_ATTRIBUTES.has(selector[0]!.name)));
+
+/**
+ * The shared Button's icon sizing in @bb-plugins/ui's controls.css, which
+ * ends in `:is(svg, [data-icon-root])` and `:where(svg, [data-icon-root])`.
+ * Known, and reported to that package; any other `:is` or `:where` subject fails.
+ */
+function sharedIconRule(parts: Selector): boolean {
+  if (parts.length !== 1) return false;
+  const [part] = parts;
+  return (
+    part!.type === "pseudo-class" &&
+    (part!.kind === "is" || part!.kind === "where") &&
+    part!.selectors.every(iconPart)
+  );
+}
 
 type Found = { selector: string; within: string[] };
 
@@ -34,6 +61,9 @@ function subject(selector: Selector) {
 function universal(selector: Selector): boolean {
   const parts = subject(selector);
   if (parts.some((part) => KEYED.has(part.type))) return false;
+  if (parts.some((part) => part.type === "attribute" && KEYED_ATTRIBUTES.has(part.name)))
+    return false;
+  if (sharedIconRule(parts)) return false;
   return !parts.some((part) => part.type === "pseudo-class" && ROOT_ONLY.has(part.kind));
 }
 

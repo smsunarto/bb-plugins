@@ -25,7 +25,7 @@ import { useEscapeLayer } from "./escape.ts";
 import { useHostGate } from "./host-gate.ts";
 import { cx, plural, squashMessage } from "./format.ts";
 import { Button } from "./components/ui/button.tsx";
-import { Pending } from "./ui.tsx";
+import { Pending, ReasonHint } from "./ui.tsx";
 import { Input } from "./components/ui/input.tsx";
 import { Textarea } from "./components/ui/textarea.tsx";
 
@@ -223,6 +223,8 @@ export function Confirm({
       {/* One unit, so a long prompt never wraps Cancel apart from its answer. */}
       <div className="ms-auto flex shrink-0 gap-1.5">
         <Button
+          size="sm"
+          className="h-7"
           variant="ghost"
           disabled={pending}
           aria-describedby={promptId}
@@ -233,8 +235,10 @@ export function Confirm({
         >
           Cancel
         </Button>
-        <span className="flex" title={blocked ?? undefined}>
+        <ReasonHint reason={blocked} className="flex">
           <Button
+            size="sm"
+            className="h-7"
             variant={tone === "destructive" ? "destructive" : "default"}
             disabled={pending || blocked !== null}
             aria-describedby={promptId}
@@ -243,7 +247,7 @@ export function Confirm({
             <Pending pending={pending} />
             {label}
           </Button>
-        </span>
+        </ReasonHint>
       </div>
     </div>
   );
@@ -801,9 +805,11 @@ function ActionRow({
   const pushLabel = force ? "Force push" : "Push";
   return (
     // A disabled button takes no hover, so the row says why its buttons are off.
-    <div className="flex min-w-0 flex-wrap items-center gap-1.5" title={blocked ?? undefined}>
+    <ReasonHint reason={blocked} className="flex min-w-0 flex-wrap items-center gap-1.5">
       {available.push === "none" ? null : (
         <Button
+          size="sm"
+          className="h-7"
           variant="outline"
           disabled={busy}
           data-host-bound="push"
@@ -816,6 +822,8 @@ function ActionRow({
       )}
       {available.land ? (
         <Button
+          size="sm"
+          className="h-7"
           variant="outline"
           disabled={busy}
           data-host-bound="land"
@@ -828,8 +836,9 @@ function ActionRow({
       ) : null}
       {prAction}
       <Button
+        size="sm"
         variant="ghost"
-        className="ms-auto shrink-0 text-muted-foreground"
+        className="h-7 ms-auto shrink-0 text-muted-foreground"
         disabled={busy}
         data-host-bound="rename"
         aria-label={`Rename ${branch.name}`}
@@ -840,8 +849,9 @@ function ActionRow({
       </Button>
       {/* Apart from the rest and quiet, so it is never the button a hand drifts to. */}
       <Button
+        size="sm"
         variant="ghost"
-        className="shrink-0 text-muted-foreground enabled:hover:text-destructive"
+        className="h-7 shrink-0 text-muted-foreground enabled:hover:text-destructive"
         disabled={busy}
         data-host-bound="delete"
         aria-label={`Delete ${branch.name}`}
@@ -850,7 +860,7 @@ function ActionRow({
         <Pending pending={running === "delete"} icon="Trash2" />
         Delete
       </Button>
-    </div>
+    </ReasonHint>
   );
 }
 
@@ -873,9 +883,9 @@ export function PullButton({
   if (gate) title = gate;
   else if (busy && !running) title = "Another action is running";
   return (
-    // A disabled button takes no hover, so the reason sits on a wrapper.
-    <span className="flex shrink-0" title={title}>
+    <ReasonHint reason={title} off={busy || gate !== null} className="flex shrink-0">
       <Button
+        size="sm"
         variant="outline"
         className="size-7 px-0!"
         aria-label={behind > 0 ? `Pull ${plural(behind, "new commit")}` : "Pull"}
@@ -887,7 +897,7 @@ export function PullButton({
       >
         <Pending pending={running} icon="ArrowDown" />
       </Button>
-    </span>
+    </ReasonHint>
   );
 }
 

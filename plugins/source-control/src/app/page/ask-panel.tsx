@@ -30,6 +30,7 @@ import type { ChangeDetail } from "../../core/review.ts";
 import { Button } from "../components/ui/button.tsx";
 import { useEscapeLayer } from "../escape.ts";
 import { cx } from "../format.ts";
+import { Hint } from "../ui.tsx";
 
 /** Where a question comes from: the header's button, or a diff line with its text. */
 export type AskRequest = {
@@ -167,7 +168,7 @@ type Ready = Extract<ChangeDetail, { state: "change" }>;
  */
 const PHONE_CHAT = "[&_div[data-follow-up-composer-footer]]:hidden";
 
-const ICON_BUTTON = "size-6 px-0 text-muted-foreground hover:text-foreground";
+const ICON_BUTTON = "size-6 px-0 text-muted-foreground hover:text-foreground [&_svg]:size-[13px]";
 
 /** Why questions cannot be sent now, or null. */
 function unavailable(detail: Ready | null): string | null {
@@ -232,6 +233,7 @@ function FirstQuestion({
         />
         <div className="flex items-center justify-end">
           <Button
+            size="sm"
             variant="default"
             aria-label="Send question"
             disabled={!canSend}
@@ -339,25 +341,29 @@ function AskPanel({
         <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-muted-foreground">
           {row?.title ?? ""}
         </span>
-        <Button
-          variant="ghost"
-          aria-label="Open as full thread"
-          title="Open as full thread"
-          disabled={!threadId || full.isPending}
-          onClick={() => void openFull()}
-          className={ICON_BUTTON}
-        >
-          <OpenIcon />
-        </Button>
-        <Button
-          variant="ghost"
-          aria-label="Close"
-          title="Close"
-          onClick={onClose}
-          className={ICON_BUTTON}
-        >
-          <CloseIcon />
-        </Button>
+        <Hint label="Open as full thread">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Open as full thread"
+            disabled={!threadId || full.isPending}
+            onClick={() => void openFull()}
+            className={ICON_BUTTON}
+          >
+            <OpenIcon />
+          </Button>
+        </Hint>
+        <Hint label="Close">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Close"
+            onClick={onClose}
+            className={ICON_BUTTON}
+          >
+            <CloseIcon />
+          </Button>
+        </Hint>
       </div>
       {blocked ? (
         <output

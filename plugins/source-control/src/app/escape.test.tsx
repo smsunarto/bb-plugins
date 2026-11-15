@@ -120,6 +120,30 @@ test("an open picker of bb's own gets Escape first", () => {
   expect(view.queryByTestId("dialog")).toBeNull();
 });
 
+test("an open dialog of bb's own holds Escape back, unless it hosts the plugin", () => {
+  // A Radix dialog beside the plugin, such as bb's settings, handles its own Escape.
+  const view = render(<Layer name="row" modal />);
+  fireEvent.click(view.getByText("Open row"));
+  const dialog = document.createElement("div");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("data-state", "open");
+  document.body.append(dialog);
+  expect(escape()).toBe(true);
+  expect(view.getByTestId("row")).toBeTruthy();
+  dialog.remove();
+  cleanup();
+
+  // A sheet of bb's that the plugin renders in (a phone's side panel) is not above it.
+  const sheet = document.createElement("div");
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("data-state", "open");
+  document.body.append(sheet);
+  const hosted = render(<Layer name="row" modal />, { container: sheet });
+  fireEvent.click(hosted.getByText("Open row"));
+  expect(escape()).toBe(false);
+  expect(hosted.queryByTestId("row")).toBeNull();
+});
+
 test("a contained dialog keeps Tab inside, except for bb's portaled pickers", () => {
   const view = render(
     <>

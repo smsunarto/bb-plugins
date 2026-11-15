@@ -254,7 +254,7 @@ export function PatchesProblem({ text, onRetry }: { text: string; onRetry: () =>
       <span className="min-w-0 grow basis-40 text-[12px] leading-4 text-muted-foreground">
         {text}
       </span>
-      <Button variant="ghost" onClick={onRetry}>
+      <Button size="sm" className="h-7" variant="ghost" onClick={onRetry}>
         Try again
       </Button>
     </div>

@@ -604,8 +604,9 @@ test("Merge squashes on confirm without reading first, pinned to the head and ba
 
 test("Escape closes the merge dialog and returns focus to Merge, never leaving the page", async () => {
   const left: string[] = [];
+  // bb leaves the page on an Escape no overlay handled: one not marked defaultPrevented.
   const leave = (event: KeyboardEvent) => {
-    if (event.key === "Escape") left.push(event.key);
+    if (event.key === "Escape" && !event.defaultPrevented) left.push(event.key);
   };
   document.addEventListener("keydown", leave);
   const { slot } = renderRow(readyToMerge());
@@ -938,8 +939,9 @@ test("strip, tab header and the sidebar's row say the same for one Change", asyn
 
 test("the pull request chip's menu marks a draft ready, and Escape closes the menu, not the page", async () => {
   const left: string[] = [];
+  // bb leaves the page on an Escape no overlay handled: one not marked defaultPrevented.
   const leave = (event: KeyboardEvent) => {
-    if (event.key === "Escape") left.push(event.key);
+    if (event.key === "Escape" && !event.defaultPrevented) left.push(event.key);
   };
   document.addEventListener("keydown", leave);
   const { slot, of } = renderRow(boardB());
@@ -1447,5 +1449,13 @@ test("with the host offline, every host-bound control is off and says why", asyn
     return node;
   });
   expect(create.disabled).toBe(true);
-  expect(create.parentElement!.title).toBe(offlineReason(row.placement.hostName));
+  // Its reason, as a keyboard reader gets it: the tooltip on the span around it.
+  fireEvent.keyDown(document, { key: "Tab" });
+  act(() => create.parentElement!.focus());
+  await waitFor(() => {
+    const tip = create.parentElement!.getAttribute("aria-describedby");
+    expect(document.getElementById(tip ?? "")?.textContent).toBe(
+      offlineReason(row.placement.hostName),
+    );
+  });
 });

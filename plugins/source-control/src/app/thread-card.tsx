@@ -19,9 +19,9 @@ import type { ChangeKey } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { CARD, CardNote, CardSkeleton, ChangeCard, useSeen } from "./chat-card.tsx";
 import { cx, plural } from "./format.ts";
-import { STATE_CHIP } from "./page/rail.tsx";
-import { Button, CARD_ACTION_CLASS } from "./components/ui/button.tsx";
-import { Pending } from "./ui.tsx";
+import { StateBadge } from "./page/rail.tsx";
+import { Button } from "./components/ui/button.tsx";
+import { CARD_ACTION_CLASS, Pending } from "./ui.tsx";
 
 /**
  * Ship it: one message asking the thread's agent to commit and publish its
@@ -57,6 +57,7 @@ const uncommittedLine = (count: number, where: string) =>
 export function ShipButton({ ship }: { ship: ReturnType<typeof useShipThread> }) {
   return (
     <Button
+      size="sm"
       variant="default"
       data-testid="sc-card-ship"
       disabled={ship.pending}
@@ -91,14 +92,7 @@ export function UncommittedCard({
   return (
     <div className={CARD} data-testid="sc-card-uncommitted">
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 p-3">
-        <span
-          className={cx(
-            "flex h-4 shrink-0 items-center rounded-full px-2 text-[11px] leading-3 font-semibold",
-            STATE_CHIP.local.className,
-          )}
-        >
-          Uncommitted
-        </span>
+        <StateBadge state="local" label="Uncommitted" className="h-4 leading-3" />
         <span className="min-w-0 text-[13px] leading-5 font-semibold break-words text-foreground">
           {uncommittedLine(count, where)}
         </span>
@@ -218,7 +212,7 @@ export function ThreadCard({ threadId }: { threadId: string }) {
           Couldn't read this thread's changes. {query.error.message}
         </p>
         <div>
-          <Button variant="outline" onClick={() => void query.refetch()}>
+          <Button size="sm" className="h-7" variant="outline" onClick={() => void query.refetch()}>
             Try again
           </Button>
         </div>

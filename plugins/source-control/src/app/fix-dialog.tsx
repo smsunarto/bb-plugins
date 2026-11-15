@@ -5,14 +5,14 @@
  * Ported from code-review (`src/app/fix-dialog.tsx`).
  */
 import {
-  experimental_Icon as Icon,
   experimental_NewThreadComposer as NewThreadComposer,
   experimental_useRpcMutation as useRpcMutation,
   experimental_useRpcQuery as useRpcQuery,
   useBbNavigate,
   type NewThreadRequest,
 } from "@get-bb/plugin-sdk/app";
-import { useState } from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { useRef, useState } from "react";
 import type { CheckRow } from "../core/change.ts";
 import { checkId, checkNames } from "../core/fix-checks.ts";
 import type { ChangeKey } from "../core/ids.ts";
@@ -24,9 +24,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "./components/ui/dialog.tsx";
+import { useEscapeLayer, useFocusContainment } from "./escape.ts";
+import { usePortalScopeProps } from "./lib/portal-scope.ts";
 import { cx } from "./format.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
+import { Spinner } from "./components/ui/spinner.tsx";
 
 export type FixTarget = { changeKey: ChangeKey; head: string; checks: CheckRow[] };
 
@@ -56,18 +59,14 @@ function FixComposer({ target, onClose }: { target: FixTarget; onClose: () => vo
         <p className="m-0 min-w-0 flex-1 text-[12px] leading-4 text-destructive-text">
           Could not prepare the fix. {prompt.error.message}
         </p>
-        <Button variant="outline" onClick={() => void prompt.refetch()}>
+        <Button size="sm" className="h-7" variant="outline" onClick={() => void prompt.refetch()}>
           Try again
         </Button>
       </div>
     ) : (
       <output className="flex flex-col gap-2 text-[12px] leading-4" aria-busy="true">
         <span className="flex items-center gap-1.5 text-muted-foreground">
-          <Icon
-            name="Spinner"
-            className="size-3 animate-spin motion-reduce:animate-none"
-            aria-hidden
-          />
+          <Spinner className="size-3" />
           Fetching the failing logs…
         </span>
         <Skeleton className="h-64 w-full" />
@@ -129,9 +128,15 @@ function FixComposer({ target, onClose }: { target: FixTarget; onClose: () => vo
 /**
  * The dialog, opened on the checks the reader picked. Not modal: the
  * composer's pickers open outside it, and a modal one would keep them under
- * it. Escape or Close closes it, and focus returns to what opened it.
+ * it. So a click outside does not close it, Tab stays inside it, and Escape
+ * goes through escape.ts, which leaves it to an open picker first. Escape or
+ * Close closes it, and focus returns to what opened it.
  */
 export function FixDialog({ target, onClose }: { target: FixTarget; onClose: () => void }) {
+  const node = useRef<HTMLDivElement>(null);
+  useEscapeLayer(node, onClose, { modal: true });
+  useFocusContainment(node);
+  const scopeProps = usePortalScopeProps();
   return (
     <Dialog
       modal={false}
@@ -140,13 +145,20 @@ export function FixDialog({ target, onClose }: { target: FixTarget; onClose: () 
         if (!open) onClose();
       }}
     >
+      {/* Radix draws no overlay for a non-modal dialog, so dim the page here. */}
+      <DialogPrimitive.Portal>
+        <div aria-hidden {...scopeProps} className="fixed inset-0 z-50 bg-black/40" />
+      </DialogPrimitive.Portal>
       <DialogContent
+        ref={node}
         aria-modal="true"
         data-testid="sc-fix-dialog"
+        onEscapeKeyDown={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
         // The composer takes focus itself once its prompt is ready.
         onOpenAutoFocus={(event) => event.preventDefault()}
         // Scrolls as a whole: bb caps the composer's editor against the viewport, not this dialog.
-        className="w-[720px]"
+        className="max-h-[calc(100%-2rem)] w-[720px] max-w-[calc(100%-2rem)] overflow-y-auto"
       >
         <DialogHeader>
           <DialogTitle>Fix failing checks</DialogTitle>

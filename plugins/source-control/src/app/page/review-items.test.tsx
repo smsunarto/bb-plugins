@@ -471,13 +471,23 @@ test("the tray lists what was checked in the rail, an annotation and the thread 
   expect(within(rail).getAllByTestId("sc-review-fixing")).toHaveLength(2);
 });
 
+/** The reason a disabled control gives a keyboard reader: its tooltip, once the span around it takes focus. */
+async function reasonOf(control: HTMLElement): Promise<string | null> {
+  fireEvent.keyDown(document, { key: "Tab" });
+  act(() => control.parentElement!.focus());
+  return waitFor(() => {
+    const tip = control.parentElement!.getAttribute("aria-describedby");
+    const text = document.getElementById(tip ?? "")?.textContent;
+    if (!text) throw new Error("no tooltip");
+    return text;
+  });
+}
+
 test("the destination toggle changes the send label; GitHub is off with a reason without a pull request", async () => {
   const local = render(reviewServer([finding(1, 2)]).handlers);
   const github = await local.findByTestId("sc-destination-github");
   expect((github as HTMLButtonElement).disabled).toBe(true);
-  expect(github.closest("label")!.getAttribute("title")).toBe(
-    "This change has no pull request on GitHub yet.",
-  );
+  expect(await reasonOf(github)).toBe("This change has no pull request on GitHub yet.");
   cleanup();
 
   const server = reviewServer([finding(1, 2)], { selected: [finding(1, 2).id] });
@@ -615,10 +625,11 @@ test("Escape with the tray open closes the tray and goes no further", async () =
   fireEvent.click(within(rail).getAllByTestId("sc-review-check")[0]!);
   const send = slot.getByTestId("sc-send");
   fireEvent.click(send);
-  const tray = await slot.findByTestId("sc-tray");
+  await slot.findByTestId("sc-tray");
   let reachedPage = 0;
+  // bb leaves the page on an Escape no overlay handled: one not marked defaultPrevented.
   const onPage = (event: KeyboardEvent) => {
-    if (event.key === "Escape") reachedPage += 1;
+    if (event.key === "Escape" && !event.defaultPrevented) reachedPage += 1;
   };
   document.addEventListener("keydown", onPage);
   try {
@@ -627,7 +638,7 @@ test("Escape with the tray open closes the tray and goes no further", async () =
     document.removeEventListener("keydown", onPage);
   }
   expect(send.getAttribute("aria-expanded")).toBe("false");
-  expect(tray.className).toContain("hidden");
+  await waitFor(() => expect(slot.queryByTestId("sc-tray")).toBeNull());
   expect(reachedPage).toBe(0);
 });
 

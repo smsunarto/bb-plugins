@@ -231,6 +231,8 @@ function StripShip({ threadId }: { threadId: string }) {
     <span data-bb-plugin="source-control" className="ml-auto flex shrink-0 items-center gap-2">
       <StripMessage text={ship.sent?.text ?? null} failed={ship.sent?.failed} />
       <Button
+        type="button"
+        size="sm"
         variant="outline"
         data-testid="sc-strip-ship"
         {...KEEP_COMPOSER_FOCUS}
@@ -252,6 +254,8 @@ function StripMarkReady({ threadId, summary }: { threadId: string; summary: Chan
     <span data-bb-plugin="source-control" className="ml-auto flex shrink-0 items-center gap-2">
       <StripMessage text={draft.message} />
       <Button
+        type="button"
+        size="sm"
         variant="outline"
         data-testid="sc-strip-mark-ready"
         {...KEEP_COMPOSER_FOCUS}

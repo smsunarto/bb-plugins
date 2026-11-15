@@ -181,8 +181,9 @@ function GroupActions({
       {remaining.length > 0 ? (
         <div className="flex min-w-0 flex-wrap gap-2">
           <Button
+            size="sm"
             variant="outline"
-            className="min-w-0 flex-[1_1_8rem]"
+            className="h-7 min-w-0 flex-[1_1_8rem]"
             data-testid="sc-group-ship"
             disabled={busy}
             onClick={() => void ship.send()}
@@ -192,8 +193,9 @@ function GroupActions({
           </Button>
           {targets ? (
             <Button
+              size="sm"
               variant="default"
-              className="min-w-0 flex-[1_1_8rem]"
+              className="h-7 min-w-0 flex-[1_1_8rem]"
               data-testid="sc-group-merge"
               disabled={busy}
               // The run keeps the heads and bases seen now, whatever arrives meanwhile.
@@ -230,10 +232,18 @@ function GroupFooter({ threadId, status }: { threadId: string; status: GroupStat
           the head shown here. It stops at the first that does not merge.
         </p>
         <div className="flex flex-wrap justify-end gap-2">
-          <Button variant="outline" ref={cancel} onClick={() => merging.setConfirming(null)}>
+          <Button
+            size="sm"
+            className="h-7"
+            variant="outline"
+            ref={cancel}
+            onClick={() => merging.setConfirming(null)}
+          >
             Cancel
           </Button>
           <Button
+            size="sm"
+            className="h-7"
             variant="default"
             data-testid="sc-group-merge-confirm"
             onClick={() => void merging.run(confirming)}

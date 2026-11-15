@@ -160,9 +160,14 @@ function LandedCard({ target, threadId }: { target: LandedListed; threadId: stri
       {read.state === "failed" ? (
         <div role="alert" className="px-3 py-2 text-[11px] text-destructive-text">
           {read.message}{" "}
-          <button type="button" className="cursor-pointer underline" onClick={retry}>
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-[11px] underline"
+            onClick={retry}
+          >
             Retry
-          </button>
+          </Button>
         </div>
       ) : null}
       <div className="px-3 pt-1 pb-3">
@@ -273,6 +278,7 @@ function SettleButton({ threadId }: { threadId: string }) {
   const settled = target !== null;
   return (
     <Button
+      size="sm"
       variant="outline"
       className="h-7 w-full gap-1.5 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
       disabled
@@ -294,6 +300,7 @@ function ArchiveButton({
   const [running, setRunning] = useState(false);
   return (
     <Button
+      size="sm"
       variant="default"
       data-testid="sc-landed-settle"
       className="h-7 w-full gap-1.5 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
