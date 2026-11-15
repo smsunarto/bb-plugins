@@ -48,9 +48,6 @@
   font-size: 0.75rem;
   color: var(--muted-foreground);
 }
-.rpiv-todo-notice button {
-  text-decoration: underline;
-}
 @media (prefers-reduced-motion: reduce) {
   .rpiv-todo-spin {
     animation: none;

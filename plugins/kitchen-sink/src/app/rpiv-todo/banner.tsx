@@ -16,6 +16,7 @@ import {
   todoSignalSchema,
   type TodoSnapshot,
 } from "../../shared/rpiv-todo.ts";
+import { Button } from "../components/ui/button.tsx";
 import { CheckIcon, ChevronDownIcon, ListTodoIcon, LoaderIcon, SquareIcon } from "./icons.tsx";
 import type { TodoItem } from "../../shared/rpiv-todo-types.ts";
 
@@ -205,13 +206,16 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
         <output className="rpiv-todo-notice">
           {truncated ? "Loading task history…" : "Could not refresh tasks"}
           {error && connection === "connected" ? (
-            <button
+            <Button
               type="button"
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
               {...KEEP_COMPOSER_FOCUS}
               onClick={() => refresh((value) => value + 1)}
             >
               Retry
-            </button>
+            </Button>
           ) : null}
         </output>
       ) : null}

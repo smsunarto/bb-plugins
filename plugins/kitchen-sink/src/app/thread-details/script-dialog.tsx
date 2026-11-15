@@ -1,15 +1,20 @@
-import * as Dialog from "@radix-ui/react-dialog";
 import { useId, useState, type RefObject } from "react";
 
 import type { ProjectScript } from "../../shared/thread-details.ts";
-import { PORTAL_SCOPE, cx } from "./rows.tsx";
+import { Button } from "../components/ui/button.tsx";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog.tsx";
+import { Input } from "../components/ui/input.tsx";
+import { Label } from "../components/ui/label.tsx";
+import { Textarea } from "../components/ui/textarea.tsx";
 
 export type ScriptDraft = Pick<ProjectScript, "name" | "command">;
-
-const FIELD =
-  "w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-[13px] text-foreground outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring max-md:pointer-coarse:text-base";
-const BUTTON =
-  "inline-flex h-8 items-center justify-center rounded-lg px-3 text-[13px] font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60 max-md:pointer-coarse:h-9";
 
 /** Add or edit one project script. The parent owns saving; this form only collects the draft. */
 export function ScriptDialog({
@@ -39,83 +44,75 @@ export function ScriptDialog({
     if (valid && !pending) onSave({ name: name.trim(), command: command.trim() });
   };
   return (
-    <Dialog.Root open onOpenChange={(open) => (open ? undefined : onClose())}>
-      <Dialog.Portal>
-        <Dialog.Overlay {...PORTAL_SCOPE} className="fixed inset-0 z-50 bg-black/40" />
-        <Dialog.Content
-          {...PORTAL_SCOPE}
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            returnFocus.current?.focus();
-          }}
-          className="fixed top-1/2 left-1/2 z-50 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border bg-popover p-4 text-popover-foreground shadow-xl outline-none"
-        >
-          <Dialog.Title className="text-sm font-semibold">
-            {script ? "Edit project script" : "Add project script"}
-          </Dialog.Title>
-          <Dialog.Description className="mt-1 text-xs text-muted-foreground">
+    <Dialog open onOpenChange={(open) => (open ? undefined : onClose())}>
+      <DialogContent
+        // The card that opened it has already closed, so focus returns to its menu trigger.
+        onCloseAutoFocus={(event) => event.preventDefault()}
+        onAfterCloseAutoFocus={() => returnFocus.current?.focus()}
+        className="w-[min(28rem,calc(100vw-2rem))] gap-3 p-4"
+      >
+        <DialogHeader>
+          <DialogTitle>{script ? "Edit project script" : "Add project script"}</DialogTitle>
+          <DialogDescription>
             Runs in a terminal at the thread's checkout
             {projectName ? `. Saved for every thread in ${projectName}.` : "."}
-          </Dialog.Description>
-          <form
-            className="mt-3 flex flex-col gap-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit();
-            }}
-          >
-            <label className="flex flex-col gap-1 text-xs font-medium" htmlFor={`${id}-name`}>
-              Name
-              <input
-                id={`${id}-name`}
-                className={FIELD}
-                value={name}
-                maxLength={80}
-                placeholder="Dev server"
-                onChange={(event) => setName(event.target.value)}
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium" htmlFor={`${id}-command`}>
-              Command
-              <textarea
-                id={`${id}-command`}
-                className={cx(FIELD, "min-h-20 resize-y font-mono")}
-                value={command}
-                maxLength={4000}
-                placeholder="bun run dev"
-                onChange={(event) => setCommand(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit();
-                }}
-              />
-            </label>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {script ? (
-                <button
-                  type="button"
-                  className={cx(BUTTON, "me-auto text-destructive hover:bg-destructive/10")}
-                  disabled={pending}
-                  onClick={onDelete}
-                >
-                  Delete
-                </button>
-              ) : null}
-              <Dialog.Close asChild>
-                <button type="button" className={cx(BUTTON, "hover:bg-foreground/[0.06]")}>
-                  Cancel
-                </button>
-              </Dialog.Close>
-              <button
-                type="submit"
-                className={cx(BUTTON, "bg-primary text-primary-foreground hover:bg-primary/85")}
-                disabled={!valid || pending}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`${id}-name`}>Name</Label>
+            <Input
+              id={`${id}-name`}
+              value={name}
+              maxLength={80}
+              placeholder="Dev server"
+              onChange={(event) => setName(event.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`${id}-command`}>Command</Label>
+            <Textarea
+              id={`${id}-command`}
+              className="min-h-20 resize-y font-mono"
+              value={command}
+              maxLength={4000}
+              placeholder="bun run dev"
+              onChange={(event) => setCommand(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit();
+              }}
+            />
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {script ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="me-auto text-destructive"
+                disabled={pending}
+                onClick={onDelete}
               >
-                {pending ? "Saving…" : "Save"}
-              </button>
-            </div>
-          </form>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+                Delete
+              </Button>
+            ) : null}
+            <DialogClose asChild>
+              <Button type="button" variant="ghost" size="sm">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" size="sm" disabled={!valid || pending}>
+              {pending ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
