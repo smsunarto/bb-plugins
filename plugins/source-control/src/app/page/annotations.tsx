@@ -494,7 +494,12 @@ export const LineThread = memo(function LineThread({
   );
 });
 
-/** The "+" Pierre shows in the gutter of the hovered line (board A3). */
+/**
+ * The "+" Pierre shows in the gutter of the hovered line (board A3). Pierre's
+ * slot right-aligns it to the gutter edge, over the line number; the negative
+ * right margin pushes it past the edge so it starts after the number, as
+ * Pierre's built-in button does.
+ */
 export function AddCommentButton({ onClick }: { onClick: () => void }) {
   return (
     <Hint label="Comment on this line">
@@ -503,7 +508,7 @@ export function AddCommentButton({ onClick }: { onClick: () => void }) {
         aria-label="Comment on this line"
         data-testid="sc-add-comment"
         onClick={onClick}
-        className="size-[18px] rounded-sm bg-(--primary) p-0 text-primary-foreground hover:bg-(--primary) [&_svg]:size-2.5"
+        className="mr-[calc(1ch-18px)] size-[18px] rounded-sm bg-(--primary) p-0 text-primary-foreground hover:bg-(--primary) [&_svg]:size-2.5"
       >
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
           <path
