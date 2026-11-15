@@ -1,4 +1,16 @@
 import { useState, type ReactNode } from "react";
+import * as CollapsiblePrimitive from "@radix-ui/react-collapsible";
+import * as TogglePrimitive from "@radix-ui/react-toggle";
+import { Badge as ToneBadge, type BadgeProps } from "@bb-plugins/ui/badge";
+import { Button } from "@bb-plugins/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@bb-plugins/ui/table";
 import { unityYamlKind } from "./model.ts";
 import type { UnityCitation, UnityDiff, UnityMetaDiff } from "./model.ts";
 import "./app.css";
@@ -128,12 +140,12 @@ const views: { diff: View<DiffRow>; citation: View<CitationRow> } = {
     columns: ["Before", "After"],
     cells: (row) => (
       <>
-        <td className="unity-diff-before">
+        <TableCell className="unity-diff-before">
           <Value value={row.before} />
-        </td>
-        <td className="unity-diff-after">
+        </TableCell>
+        <TableCell className="unity-diff-after">
           <Value value={row.after} />
-        </td>
+        </TableCell>
       </>
     ),
   },
@@ -141,15 +153,42 @@ const views: { diff: View<DiffRow>; citation: View<CitationRow> } = {
     label: "properties",
     columns: ["Value"],
     cells: (row) => (
-      <td className="unity-diff-value">
+      <TableCell className="unity-diff-value">
         <Value value={row.value} />
-      </td>
+      </TableCell>
     ),
   },
 };
 
+const badgeTone: Record<Badge, BadgeProps["variant"]> = {
+  added: "success",
+  removed: "danger",
+  modified: "secondary",
+};
 function ChangeBadge({ status }: { status: Badge }) {
-  return <span className={`unity-diff-badge unity-diff-${status}`}>{status}</span>;
+  return (
+    <ToneBadge variant={badgeTone[status]} className="unity-diff-badge">
+      {status}
+    </ToneBadge>
+  );
+}
+/** The Raw YAML switch: one pressed-or-not toolbar button. */
+function YamlToggle({
+  pressed,
+  onPressedChange,
+  children,
+}: {
+  pressed: boolean;
+  onPressedChange: (pressed: boolean) => void;
+  children: ReactNode;
+}) {
+  return (
+    <TogglePrimitive.Root asChild pressed={pressed} onPressedChange={onPressedChange}>
+      <Button variant="outline" size="sm">
+        {children}
+      </Button>
+    </TogglePrimitive.Root>
+  );
 }
 function ComponentCard<Row extends DiffRow | CitationRow>({
   component,
@@ -159,46 +198,46 @@ function ComponentCard<Row extends DiffRow | CitationRow>({
   view: View<Row>;
 }) {
   return (
-    <details className="unity-diff-component" open>
-      <summary>
+    <CollapsiblePrimitive.Root className="unity-diff-component" defaultOpen>
+      <CollapsiblePrimitive.Trigger className="unity-diff-summary">
         <span className="unity-diff-component-name">{component.type}</span>
         <span className="unity-diff-id" title="Unity file ID">
           #{component.id}
         </span>
         {component.badge ? <ChangeBadge status={component.badge} /> : null}
-      </summary>
-      {component.rows.length ? (
-        <div className="unity-diff-table-wrap">
-          <table className="unity-diff-properties">
-            <thead>
-              <tr>
-                <th scope="col">Property</th>
+      </CollapsiblePrimitive.Trigger>
+      <CollapsiblePrimitive.Content>
+        {component.rows.length ? (
+          <Table wrapperClassName="unity-diff-table-wrap" className="unity-diff-properties">
+            <TableHeader>
+              <TableRow>
+                <TableHead scope="col">Property</TableHead>
                 {view.columns.map((column) => (
-                  <th key={column} scope="col">
+                  <TableHead key={column} scope="col">
                     {column}
-                  </th>
+                  </TableHead>
                 ))}
-              </tr>
-            </thead>
-            <tbody>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {component.rows.map((row) => (
-                <tr key={row.path}>
-                  <th scope="row" title={row.path}>
+                <TableRow key={row.path}>
+                  <TableHead scope="row" title={row.path}>
                     {propertyLabel(row.label ?? row.path)}
                     {row.target ? (
                       <span className="unity-diff-property-target">#{row.target}</span>
                     ) : null}
-                  </th>
+                  </TableHead>
                   {view.cells(row)}
-                </tr>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="unity-diff-empty">No serialized properties.</p>
-      )}
-    </details>
+            </TableBody>
+          </Table>
+        ) : (
+          <p className="unity-diff-empty">No serialized properties.</p>
+        )}
+      </CollapsiblePrimitive.Content>
+    </CollapsiblePrimitive.Root>
   );
 }
 function Groups<Row extends DiffRow | CitationRow>({
@@ -211,8 +250,8 @@ function Groups<Row extends DiffRow | CitationRow>({
   return (
     <div className="unity-diff-groups">
       {groups.map((group) => (
-        <details key={group.id} className="unity-diff-object" open>
-          <summary>
+        <CollapsiblePrimitive.Root key={group.id} className="unity-diff-object" defaultOpen>
+          <CollapsiblePrimitive.Trigger className="unity-diff-summary">
             <svg
               viewBox="0 0 24 24"
               fill="none"
@@ -229,13 +268,13 @@ function Groups<Row extends DiffRow | CitationRow>({
               <strong>{group.name}</strong>
             </span>
             {group.badge ? <ChangeBadge status={group.badge} /> : null}
-          </summary>
-          <div className="unity-diff-components">
+          </CollapsiblePrimitive.Trigger>
+          <CollapsiblePrimitive.Content className="unity-diff-components">
             {group.components.map((component) => (
               <ComponentCard key={component.id} component={component} view={view} />
             ))}
-          </div>
-        </details>
+          </CollapsiblePrimitive.Content>
+        </CollapsiblePrimitive.Root>
       ))}
     </div>
   );
@@ -272,9 +311,9 @@ function UnityInspector({
           </span>
         </div>
         {raw === undefined ? null : (
-          <button type="button" aria-pressed={yaml} onClick={() => setYaml((value) => !value)}>
+          <YamlToggle pressed={yaml} onPressedChange={setYaml}>
             {yaml ? "Object view" : "Raw YAML"}
-          </button>
+          </YamlToggle>
         )}
       </div>
       {yaml && raw !== undefined ? raw : groups}
@@ -327,9 +366,9 @@ export function UnityMetaDiffView({
           </span>
         </div>
         {raw === undefined ? null : (
-          <button type="button" aria-pressed={yaml} onClick={() => setYaml((value) => !value)}>
+          <YamlToggle pressed={yaml} onPressedChange={setYaml}>
             {yaml ? "Settings view" : "Raw YAML"}
-          </button>
+          </YamlToggle>
         )}
       </div>
       {yaml && raw !== undefined ? (
@@ -369,32 +408,33 @@ export function UnityMetaDiffView({
             </dd>
           </dl>
           {diff.properties.length ? (
-            <div className="unity-diff-object unity-diff-table-wrap">
-              <table className="unity-diff-properties">
-                <thead>
-                  <tr>
-                    <th scope="col">Setting</th>
-                    <th scope="col">Before</th>
-                    <th scope="col">After</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {diff.properties.map((property) => (
-                    <tr key={property.path}>
-                      <th scope="row" title={property.path}>
-                        {propertyLabel(property.path)}
-                      </th>
-                      <td className="unity-diff-before">
-                        <Value value={property.before} />
-                      </td>
-                      <td className="unity-diff-after">
-                        <Value value={property.after} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <Table
+              wrapperClassName="unity-diff-object unity-diff-table-wrap"
+              className="unity-diff-properties"
+            >
+              <TableHeader>
+                <TableRow>
+                  <TableHead scope="col">Setting</TableHead>
+                  <TableHead scope="col">Before</TableHead>
+                  <TableHead scope="col">After</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {diff.properties.map((property) => (
+                  <TableRow key={property.path}>
+                    <TableHead scope="row" title={property.path}>
+                      {propertyLabel(property.path)}
+                    </TableHead>
+                    <TableCell className="unity-diff-before">
+                      <Value value={property.before} />
+                    </TableCell>
+                    <TableCell className="unity-diff-after">
+                      <Value value={property.after} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           ) : (
             <p className="unity-diff-empty">No import settings changed.</p>
           )}

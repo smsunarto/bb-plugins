@@ -12,6 +12,10 @@
     "./editor.css": "./src/editor.css"
   },
   "dependencies": {
+    "@bb-plugins/markdown-prose": "workspace:*",
+    "@bb-plugins/ui": "workspace:*",
+    "@radix-ui/react-label": "^2.1.17",
+    "@radix-ui/react-toggle-group": "^1.2.1",
     "@tiptap/core": "^2.27.2",
     "@tiptap/extension-image": "^2.27.2",
     "@tiptap/extension-link": "^2.27.2",
@@ -24,10 +28,9 @@
     "@tiptap/extension-task-list": "^2.27.2",
     "@tiptap/pm": "^2.27.2",
     "@tiptap/starter-kit": "^2.27.2",
+    "markdown-it": "^14.3.3",
     "tiptap-markdown": "^0.8.10",
-    "yaml": "^2.8.2",
-    "@bb-plugins/markdown-prose": "workspace:*",
-    "markdown-it": "^14.3.3"
+    "yaml": "^2.8.2"
   },
   "peerDependencies": {
     "react": ">=19"

@@ -17,12 +17,13 @@
   flex-shrink: 0;
 }
 .bb-markdown-editor-toolbar button {
+  height: auto;
   border-radius: 0.25rem;
   padding: 0.25rem 0.5rem;
   font-size: 12px;
   color: var(--muted-foreground);
 }
-.bb-markdown-editor-toolbar button[aria-pressed="true"] {
+.bb-markdown-editor-toolbar button[data-state="on"] {
   background: var(--accent);
   color: var(--foreground);
 }
@@ -44,6 +45,8 @@
 }
 .bb-markdown-editor-source {
   width: 100%;
+  border: 0;
+  border-radius: 0;
   min-width: 0;
   min-height: 8rem;
   flex: 1;

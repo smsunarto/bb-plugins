@@ -27,6 +27,7 @@
 }
 .unity-diff-toolbar button {
   flex-shrink: 0;
+  height: auto;
   border: 1px solid var(--border);
   border-radius: 0.375rem;
   padding: 0.375rem 0.625rem;
@@ -51,17 +52,19 @@
   overflow: hidden;
   background: var(--card);
 }
-.unity-diff summary {
+.unity-diff-summary {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   cursor: pointer;
-  list-style: none;
 }
-.unity-diff summary::-webkit-details-marker {
-  display: none;
-}
-.unity-diff summary::before {
+.unity-diff-summary::before {
   content: "›";
   flex-shrink: 0;
   width: 0.625rem;
@@ -69,13 +72,13 @@
   line-height: 1;
   color: var(--muted-foreground);
 }
-.unity-diff details[open] > summary::before {
+.unity-diff-summary[data-state="open"]::before {
   transform: rotate(90deg);
 }
-.unity-diff-object > summary {
+.unity-diff-object > .unity-diff-summary {
   padding: 0.75rem;
 }
-.unity-diff-object > summary > svg {
+.unity-diff-object > .unity-diff-summary > svg {
   width: 1.125rem;
   height: 1.125rem;
   flex-shrink: 0;
@@ -89,24 +92,13 @@
 }
 .unity-diff-badge {
   margin-left: auto;
-  border: 1px solid currentColor;
-  border-radius: 0.25rem;
-  padding: 0.0625rem 0.3125rem;
-  font-size: 0.625rem;
-  line-height: 1rem;
   text-transform: capitalize;
-  flex-shrink: 0;
 }
-.unity-diff-added,
 .unity-diff-after {
   color: var(--diff-added, var(--success, var(--primary)));
 }
-.unity-diff-removed,
 .unity-diff-before {
   color: var(--diff-removed, var(--destructive));
-}
-.unity-diff-modified {
-  color: var(--muted-foreground);
 }
 .unity-diff-components {
   border-top: 1px solid var(--border);
@@ -115,7 +107,7 @@
 .unity-diff-component {
   margin-top: 0.75rem;
 }
-.unity-diff-component > summary {
+.unity-diff-component > .unity-diff-summary {
   padding: 0.375rem 0 0.625rem;
 }
 .unity-diff-component-name {
@@ -141,6 +133,7 @@
 }
 .unity-diff-properties th,
 .unity-diff-properties td {
+  height: auto;
   padding: 0.5rem 0.625rem;
   vertical-align: top;
   overflow-wrap: anywhere;
@@ -157,6 +150,7 @@
 }
 .unity-diff-properties tbody th {
   font-weight: 500;
+  color: inherit;
 }
 .unity-diff-properties tbody tr + tr {
   border-top: 1px solid var(--border);
@@ -174,7 +168,7 @@
 .unity-diff-after {
   background: color-mix(in oklch, var(--diff-added, var(--primary)) 5%, transparent);
 }
-.unity-diff summary:focus-visible,
+.unity-diff-summary:focus-visible,
 .unity-diff button:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;

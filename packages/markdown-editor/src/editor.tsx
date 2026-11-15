@@ -8,6 +8,10 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
+import * as LabelPrimitive from "@radix-ui/react-label";
+import * as ToggleGroupPrimitive from "@radix-ui/react-toggle-group";
+import { Button } from "@bb-plugins/ui/button";
+import { Textarea } from "@bb-plugins/ui/textarea";
 import type { Editor, Extensions, EditorOptions } from "@tiptap/core";
 import { Extension } from "@tiptap/core";
 import { Plugin } from "@tiptap/pm/state";
@@ -241,9 +245,9 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
       }}
     >
       {header && (
-        <label className="bb-markdown-frontmatter">
+        <LabelPrimitive.Root className="bb-markdown-frontmatter">
           <span>Frontmatter</span>
-          <textarea
+          <Textarea
             aria-label="Frontmatter"
             className="bb-markdown-editor-source"
             readOnly={props.readOnly}
@@ -259,13 +263,20 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
               change(parts.prefix + yaml + parts.suffix + parts.body);
             }}
           />
-        </label>
+        </LabelPrimitive.Root>
       )}
-      <div className="bb-markdown-editor-toolbar" role="toolbar" aria-label="Markdown editing mode">
-        <button
-          type="button"
-          aria-pressed={mode === "rich" && !reason}
+      {/* One mode at a time. Each item acts on click, so picking the current
+          mode again still refocuses the rich editor. */}
+      <ToggleGroupPrimitive.Root
+        type="single"
+        className="bb-markdown-editor-toolbar"
+        aria-label="Markdown editing mode"
+        value={reason ? "source" : mode}
+      >
+        <ToggleGroupPrimitive.Item
+          value="rich"
           disabled={!!reason}
+          asChild
           onClick={() => {
             focusOnMount.current = true;
             inspect(document.body, false);
@@ -273,16 +284,16 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
             editorRef.current?.view.focus();
           }}
         >
-          Rich text
-        </button>
-        <button
-          type="button"
-          aria-pressed={mode === "source" || !!reason}
-          onClick={() => setMode("source")}
-        >
-          Markdown source
-        </button>
-      </div>
+          <Button variant="ghost" size="sm">
+            Rich text
+          </Button>
+        </ToggleGroupPrimitive.Item>
+        <ToggleGroupPrimitive.Item value="source" asChild onClick={() => setMode("source")}>
+          <Button variant="ghost" size="sm">
+            Markdown source
+          </Button>
+        </ToggleGroupPrimitive.Item>
+      </ToggleGroupPrimitive.Root>
       {reason && <p className="bb-markdown-editor-notice">{reason}</p>}
       {limit && (
         <p role="alert" className="bb-markdown-editor-notice">
@@ -294,13 +305,15 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
       ) : props.renderSource ? (
         props.renderSource(sourceProps)
       ) : (
-        <textarea
+        <Textarea
           data-markdown-source=""
           id={props.id}
           aria-label={props["aria-label"]}
           aria-describedby={props["aria-describedby"]}
           aria-keyshortcuts={props["aria-keyshortcuts"]}
-          className="bb-markdown-editor-source"
+          // Its own fill: the source box is the editor surface, not a field,
+          // so the theme leaves it on the page ground.
+          className="bb-markdown-editor-source bg-background"
           value={document.body}
           placeholder={props.placeholder}
           readOnly={props.readOnly}

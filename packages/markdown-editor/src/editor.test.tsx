@@ -47,17 +47,17 @@ it("mode switches emit no change or save; external blur saves latest draft once"
       <button>Outside</button>
     </>,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Markdown source" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Markdown source" }));
   const source = screen.getByRole("textbox");
   source.focus();
   fireEvent.change(source, { target: { value: "Latest\n" } });
-  const rich = screen.getByRole("button", { name: "Rich text" });
+  const rich = screen.getByRole("radio", { name: "Rich text" });
   rich.focus();
   fireEvent.click(rich);
   await act(async () => {});
   expect(changes).toEqual(["Latest\n"]);
   expect(blurs).toEqual([]);
-  const toggle = screen.getByRole("button", { name: "Markdown source" });
+  const toggle = screen.getByRole("radio", { name: "Markdown source" });
   toggle.focus();
   fireEvent.click(toggle);
   await act(async () => {});
@@ -74,7 +74,7 @@ it("preserves CRLF and suggestion fences in source mode without an initial chang
   render(
     <Controlled aria-label="Summary" value={original} onChange={(text) => changes.push(text)} />,
   );
-  expect(screen.getByRole("button", { name: "Rich text" })).toHaveProperty("disabled", true);
+  expect(screen.getByRole("radio", { name: "Rich text" })).toHaveProperty("disabled", true);
   expect(changes).toEqual([]);
   fireEvent.change(screen.getByRole("textbox"), { target: { value: "```suggestion\nnew\n```\n" } });
   expect(changes).toEqual(["```suggestion\r\nnew\r\n```\r\n"]);
@@ -94,7 +94,7 @@ it("rejects rich transactions exceeding the serialized Markdown limit", () => {
       }}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Rich text" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Rich text" }));
   if (!editor) throw new Error("Rich editor did not mount");
   const active: Editor = editor;
   act(() => {
@@ -123,7 +123,7 @@ it("keeps read-only source content and forwards submission shortcuts", () => {
       }}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Markdown source" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Markdown source" }));
   expect(screen.getByRole("textbox")).toHaveProperty("readOnly", true);
   fireEvent.keyDown(screen.getByRole("textbox"), { ctrlKey: true, key: "Enter" });
   expect(submitted).toBe(1);
@@ -166,7 +166,7 @@ describe("agent instruction syntax opens in rich text", () => {
       />,
     );
     expect(screen.getByRole("textbox", { name: "Instructions" }).tagName).toBe("DIV");
-    expect(screen.getByRole("button", { name: "Rich text" })).toHaveProperty("disabled", false);
+    expect(screen.getByRole("radio", { name: "Rich text" })).toHaveProperty("disabled", false);
     expect(screen.queryByText(/Source mode preserves/)).toBeNull();
     expect(changes).toEqual([]);
   });
@@ -207,14 +207,14 @@ it("offers rich editing after hidden source is replaced without remounting", () 
       onChange={(text) => changes.push(text)}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Rich text" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Rich text" }));
   expect(
     screen.getByText("Source mode preserves content the rich editor cannot display."),
   ).toBeTruthy();
   fireEvent.change(screen.getByRole("textbox", { name: "Instructions" }), {
     target: { value: "Ordinary Markdown" },
   });
-  const rich = screen.getByRole("button", { name: "Rich text" });
+  const rich = screen.getByRole("radio", { name: "Rich text" });
   expect(rich).toHaveProperty("disabled", false);
   expect(screen.getByRole("textbox", { name: "Instructions" }).tagName).toBe("TEXTAREA");
   fireEvent.click(rich);
@@ -237,7 +237,7 @@ it("renders rich immediately and keeps code containing angle brackets editable",
   );
   const rich = screen.getByRole("textbox", { name: "Instructions" });
   expect(rich.tagName).toBe("DIV");
-  expect(screen.getByRole("button", { name: "Rich text" })).toHaveProperty("disabled", false);
+  expect(screen.getByRole("radio", { name: "Rich text" })).toHaveProperty("disabled", false);
   act(() => {
     editor!.commands.insertContentAt(editor!.state.doc.content.size - 1, " Array<U>");
   });
@@ -295,9 +295,9 @@ it("shows and edits bounded skill YAML separately without rewriting the body", (
     target: { value: "name: other\n" },
   });
   expect(changes).toEqual(["---\nname: other\n---\n\n__Body__\n"]);
-  fireEvent.click(screen.getByRole("button", { name: "Markdown source" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Markdown source" }));
   expect(screen.getByRole("textbox", { name: "SKILL.md" })).toHaveProperty("value", "\n__Body__\n");
-  fireEvent.click(screen.getByRole("button", { name: "Rich text" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Rich text" }));
   expect(changes).toHaveLength(1);
 });
 
@@ -351,7 +351,7 @@ for (const blocked of [true, false]) {
     fireEvent.keyDown(rich, { ctrlKey: true, key: "Enter" });
     expect(submitted).toBe(blocked ? 0 : 1);
     expect(changes).toEqual([]);
-    fireEvent.click(screen.getByRole("button", { name: "Markdown source" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Markdown source" }));
     const source = screen.getByRole("textbox", { name: "Review" });
     expect(source).toHaveProperty("value", "Draft");
     expect(source.getAttribute("aria-keyshortcuts")).toBe("Control+Enter Meta+Enter");

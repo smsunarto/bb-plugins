@@ -10,6 +10,9 @@
     "./app": "./src/app.tsx"
   },
   "dependencies": {
+    "@bb-plugins/ui": "workspace:*",
+    "@radix-ui/react-collapsible": "^1.2.1",
+    "@radix-ui/react-toggle": "^1.2.1",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
