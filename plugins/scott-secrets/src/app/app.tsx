@@ -104,6 +104,9 @@ function SecretField(props: {
         className="absolute right-1 top-1/2 h-7 -translate-y-1/2 px-2 text-xs text-muted-foreground"
         aria-label={`${visible ? "Hide" : "Show"} ${props.name}`}
         aria-pressed={visible}
+        // The press leaves focus in the field, so a phone keeps its keyboard up.
+        onPointerDown={(event) => event.preventDefault()}
+        onMouseDown={(event) => event.preventDefault()}
         onClick={() => setVisible((shown) => !shown)}
         disabled={props.disabled}
       >
