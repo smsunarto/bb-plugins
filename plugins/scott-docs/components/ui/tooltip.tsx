@@ -32,13 +32,7 @@ const TooltipContent = React.forwardRef<
   React.ComponentRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
 >(function TooltipContentComponent(
-  {
-    avoidCollisions = true,
-    className,
-    collisionPadding = 8,
-    sideOffset = 4,
-    ...props
-  },
+  { avoidCollisions = true, className, collisionPadding = 8, sideOffset = 4, ...props },
   ref,
 ) {
   return (

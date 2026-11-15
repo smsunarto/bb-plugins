@@ -44,6 +44,7 @@ import {
 } from "./document-session.js";
 import type { Proposal } from "./proposals.js";
 import { Icon } from "@/components/ui/icon";
+import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { docsRpcContract, errorMessage } from "./contract.js";
 import {
@@ -55,15 +56,8 @@ import { Editor, Node, mergeAttributes } from "@tiptap/core";
 import { preparePresortedFileTreeInput } from "@pierre/trees";
 import { FileTree as PierreFileTree, useFileTree } from "@pierre/trees/react";
 import { toast } from "sonner";
-import AlertCircleIcon from "@hugeicons/core-free-icons/AlertCircleIcon";
-import ArrowUpRight01Icon from "@hugeicons/core-free-icons/ArrowUpRight01Icon";
-import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
-import Delete02Icon from "@hugeicons/core-free-icons/Delete02Icon";
 import FileAddIcon from "@hugeicons/core-free-icons/FileAddIcon";
-import FolderAddIcon from "@hugeicons/core-free-icons/FolderAddIcon";
 import HtmlFile01Icon from "@hugeicons/core-free-icons/HtmlFile01Icon";
-import PlusSignIcon from "@hugeicons/core-free-icons/PlusSignIcon";
-import Search01Icon from "@hugeicons/core-free-icons/Search01Icon";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { Button } from "@/components/ui/button";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
@@ -760,15 +754,17 @@ function DocumentAction({
     <Tooltip>
       <TooltipTrigger asChild>
         <span className="inline-flex">
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
             aria-label={label}
             disabled={disabled}
             onClick={onClick}
-            className="inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-default disabled:opacity-40"
+            className="size-5 shrink-0"
           >
             <Icon name={icon} className="size-3" />
-          </button>
+          </Button>
         </span>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>
@@ -1080,7 +1076,7 @@ function DocsDirectiveCard({ attributes }: PluginMessageDirectiveProps) {
         aria-label="Open in Docs"
         onClick={openInDocs}
       >
-        <HugeiconsIcon icon={ArrowUpRight01Icon} className="size-4" />
+        <Icon name="ArrowUpRight" className="size-4" />
       </Button>
     </div>
   );
@@ -1435,7 +1431,7 @@ function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
               })
             }
           >
-            <HugeiconsIcon icon={ArrowUpRight01Icon} className="size-4" />
+            <Icon name="ArrowUpRight" className="size-4" />
           </Button>
         </div>
       )}
@@ -1510,8 +1506,8 @@ function NotesSidebarNavigation(props: NotesSidebarNavigationProps) {
       {props.searchOpen ? (
         <>
           <div className="relative min-w-0 flex-1">
-            <HugeiconsIcon
-              icon={Search01Icon}
+            <Icon
+              name="Search"
               className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             />
             <Input
@@ -1536,7 +1532,7 @@ function NotesSidebarNavigation(props: NotesSidebarNavigationProps) {
               props.onSearchOpenChange(false);
             }}
           >
-            <HugeiconsIcon icon={Cancel01Icon} className="size-4" />
+            <Icon name="X" className="size-4" />
           </Button>
         </>
       ) : null}
@@ -1549,7 +1545,7 @@ function NotesSidebarNavigation(props: NotesSidebarNavigationProps) {
             aria-label="Search notes"
             onClick={() => props.onSearchOpenChange(true)}
           >
-            <HugeiconsIcon icon={Search01Icon} className="size-4" />
+            <Icon name="Search" className="size-4" />
           </Button>
           <Button
             className="size-8"
@@ -1567,7 +1563,7 @@ function NotesSidebarNavigation(props: NotesSidebarNavigationProps) {
             aria-label="New folder"
             onClick={props.onNewFolder}
           >
-            <HugeiconsIcon icon={FolderAddIcon} className="size-4" />
+            <Icon name="FolderPlus" className="size-4" />
           </Button>
           <span className="min-w-0 flex-1" />
         </>
@@ -1778,7 +1774,7 @@ function Tree({
                   role="menuitem"
                   type="button"
                 >
-                  <HugeiconsIcon icon={Delete02Icon} className="size-4" />
+                  <Icon name="Trash2" className="size-4" />
                   Delete
                 </button>
               </div>
@@ -1830,12 +1826,12 @@ function Tree({
             aria-label="Add vault"
             onClick={onAddVault}
           >
-            <HugeiconsIcon icon={PlusSignIcon} className="size-4" />
+            <Icon name="Plus" className="size-4" />
           </Button>
         </div>
         {hostUnavailable ? (
           <output className="flex items-center gap-1.5 px-1 text-xs text-destructive">
-            <HugeiconsIcon icon={AlertCircleIcon} className="size-4 shrink-0" />
+            <Icon name="AlertCircle" className="size-4 shrink-0" />
             <span className="truncate">Host unavailable</span>
           </output>
         ) : null}
@@ -2190,15 +2186,15 @@ function NotesWorkspace({
                   Create it {selectedFolder ? `inside ${selectedFolder}` : "at the vault root"}.
                 </DialogDescription>
               </DialogHeader>
-              <label htmlFor="docs-folder-name" className="grid gap-1.5 text-sm font-medium">
-                Folder name
+              <div className="grid gap-1.5">
+                <Label htmlFor="docs-folder-name">Folder name</Label>
                 <Input
                   id="docs-folder-name"
                   value={folderName}
                   onChange={(event) => setFolderName(event.target.value)}
                   placeholder="Projects"
                 />
-              </label>
+              </div>
               {folderError ? <p className="text-xs text-destructive">{folderError}</p> : null}
               <DialogFooter>
                 <Button type="button" variant="ghost" onClick={() => setFolderDialogOpen(false)}>
@@ -2228,26 +2224,26 @@ function NotesWorkspace({
                   Open a notes folder on one of your connected machines.
                 </DialogDescription>
               </DialogHeader>
-              <label htmlFor="docs-vault-name" className="grid gap-1.5 text-sm font-medium">
-                Name
+              <div className="grid gap-1.5">
+                <Label htmlFor="docs-vault-name">Name</Label>
                 <Input
                   id="docs-vault-name"
                   value={vaultName}
                   onChange={(event) => setVaultName(event.target.value)}
                   placeholder="Personal"
                 />
-              </label>
-              <label htmlFor="docs-vault-path" className="grid gap-1.5 text-sm font-medium">
-                Folder path
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="docs-vault-path">Folder path</Label>
                 <Input
                   id="docs-vault-path"
                   value={vaultRootPath}
                   onChange={(event) => setVaultRootPath(event.target.value)}
                   placeholder="Absolute path on that machine"
                 />
-              </label>
-              <label htmlFor="docs-vault-host" className="grid gap-1.5 text-sm font-medium">
-                Machine
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="docs-vault-host">Machine</Label>
                 <Select value={vaultHostId} onValueChange={setVaultHostId}>
                   <SelectTrigger id="docs-vault-host" aria-label="Vault host">
                     <SelectValue placeholder="Choose machine" />
@@ -2261,7 +2257,7 @@ function NotesWorkspace({
                     ))}
                   </SelectContent>
                 </Select>
-              </label>
+              </div>
               {vaultError ? <p className="text-xs text-destructive">{vaultError}</p> : null}
               <DialogFooter>
                 <Button type="button" variant="ghost" onClick={() => setVaultDialogOpen(false)}>
