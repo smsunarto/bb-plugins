@@ -4,15 +4,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { collectLoads, dataKey, evaluate, imageSearches, initialState, toMarkdownWithImages, wikiPhotos, type LoadedData, type Program } from "../core";
+import { collectLoads, dataKey, evaluate, initialState, type LoadedData, type Program } from "../core";
 import { answersText } from "../core/answers";
-import type { Action, Diagnostic, Value } from "../core/types";
+import type { Action, Diagnostic, UiNode, Value } from "../core/types";
 import { GALLERY_SHEET, sheetFor, useBlockAnswers, type Selection } from "./answerSheet";
 import {
   DiagnosticList,
   exampleTitle,
   GalleryFooter,
-  ReplySource,
   type GalleryExample,
   type SourceFile,
   type SourceLanguage,
@@ -23,7 +22,6 @@ import { AnswersContext, UiRuntimeContext, type Answers, type UiRuntime } from "
 import { openableLink } from "./components/action-logic";
 import { HintProvider } from "./components/inputs";
 import { EntranceContext, newStreamCadence, trackStream, useMotionScope } from "./components/motion";
-import { foundImages, foundWikiPhotos } from "./webLookups";
 
 /** Blocks mounted in this page, so a remount (BB's timeline while scrolling) doesn't replay entrances. */
 const MOUNTED = new Set<string>();
@@ -215,10 +213,6 @@ export function LiveUi({
   const { roots, diagnostics } = useMemo(() => evaluate(program, state, data), [program, state, data]);
   // Memoized elements let React skip the tree when only a parent re-renders.
   const tree = useMemo(() => <RenderNodes nodes={roots} isolate />, [roots]);
-  // Built only when the user copies: the block as it reads now, with the photos
-  // its searches already found on this page (Project components, which need
-  // BB's answer, name themselves instead).
-  const markdown = useCallback(() => toMarkdownWithImages(roots, foundImages(imageSearches(roots)), foundWikiPhotos(wikiPhotos(roots))), [roots]);
   // The gallery reads files from its own folder, so they're listed under gallery/.
   const inGallery = gallery !== undefined;
   const files = useMemo(
@@ -256,7 +250,7 @@ export function LiveUi({
       <AnswersContext value={answers}>
         <EntranceContext value={entrance}>
           <HintProvider>
-            <Frame source={source} diagnostics={[...compileDiagnostics, ...diagnostics]} files={files} gallery={gallery} markdown={markdown}>
+            <Frame source={source} diagnostics={[...compileDiagnostics, ...diagnostics]} files={files} gallery={gallery}>
               {/* Holds the height this block last settled at while what it reads arrives (reservedHeight.ts). */}
               <div ref={blockRoot} style={minHeight === undefined ? undefined : { minHeight }}>
                 <div ref={content} className="flex flex-col gap-3">
@@ -338,9 +332,8 @@ function AnswersPreview({ text }: { text: string }) {
 }
 
 /**
- * Stacks the rendered content over its source chrome. In a chat reply that is
- * a Source toggle shown on hover, so replies stay quiet; with `gallery` it is
- * the gallery's footer naming the example, always shown. Both open the same
+ * Wraps the rendered content. A chat reply shows the content alone; with
+ * `gallery` it sits over the gallery's footer naming the example, with its
  * source panel (FrameFooter.tsx).
  */
 export function Frame({
@@ -349,7 +342,6 @@ export function Frame({
   diagnostics,
   files = [],
   gallery,
-  markdown,
   children,
 }: {
   source: string;
@@ -359,8 +351,6 @@ export function Frame({
   files?: readonly SourceFile[];
   /** Set on the gallery page: which example this is. */
   gallery?: GalleryExample;
-  /** A rendered ```ui block's current markdown, for "Copy as markdown"; apps and failures have none. */
-  markdown?: () => string;
   children: ReactNode;
 }) {
   const motion = useMotionScope();
@@ -369,7 +359,6 @@ export function Frame({
   return gallery === undefined ? (
     <div {...motion} data-bb-image-preview-ignore="" className="group/genui not-prose my-3 flex flex-col gap-3">
       {children}
-      <ReplySource source={source} language={language} files={files} diagnostics={diagnostics} markdown={markdown} />
     </div>
   ) : (
     <div
@@ -386,7 +375,6 @@ export function Frame({
         language={language}
         files={files}
         diagnostics={diagnostics}
-        markdown={markdown}
       />
     </div>
   );

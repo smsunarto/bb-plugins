@@ -136,7 +136,7 @@ bb genui ask "Plan a two-day trip to Lisbon"
 - **Web lookups**, on by default and controlled by the plugin's _Web lookups_ setting. They run on the BB server, never in the page: photo search on Wikimedia Commons (ImageSearch), the lead photo of a Wikipedia article a Map place names (en.wikipedia.org and Commons), place names to coordinates with Photon (Map), map tiles from OpenStreetMap, and https images a UI shows, fetched through a proxy that refuses private addresses. Each service sees your IP address and what is looked up (the search words, the article titles, the place names, the map area), never the rest of the thread. With the setting off, nothing is fetched and the components say so.
 - **Files.** Components read only the thread's workspace, its thread storage and `/tmp`.
 - **Size and GPU.** The 3D components bundle three.js, so the plugin's page code is about 1.6 MB (0.9 MB without them). A Scene or Shader holds a WebGL context only while it is near the screen, at most six at once; the others show their last frame as an image.
-- **Elsewhere.** `bb genui render` prints a thread's last reply with every UI turned into plain markdown, for the terminal or for tools that read BB's SDK. In BB, _Copy as markdown_ beside a block's _Source_ toggle copies the same text, with the values you changed.
+- **Elsewhere.** `bb genui render` prints a thread's last reply with every UI turned into plain markdown, for the terminal or for tools that read BB's SDK.
 
 ## How it fits into BB
 

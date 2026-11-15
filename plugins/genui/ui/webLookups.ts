@@ -61,19 +61,7 @@ export function useImageSearch(query: string): SearchResult | null {
   return known === undefined ? null : { ok: true, image: known };
 }
 
-/** The photos this page already found for `queries`, by query as written; searches not answered yet are left out. */
-export function foundImages(queries: readonly string[]): Map<string, FoundImage> {
-  const images = new Map<string, FoundImage>();
-  for (const query of queries) {
-    const image = found.get(searchKey(query));
-    if (image !== undefined) images.set(query, image);
-  }
-  return images;
-}
-
 const wikiRequests = new Map<string, Promise<PhotoResult>>();
-/** The Wikipedia photos found so far, by article title, readable without waiting (copying a UI as markdown). */
-const wikiFound = new Map<string, WikiPhoto>();
 
 /** The credited lead photo of the Wikipedia article `title`; null while looking or when `title` is empty. */
 export function useWikiPhoto(title: string | null): PhotoResult | null {
@@ -85,7 +73,6 @@ export function useWikiPhoto(title: string | null): PhotoResult | null {
     if (key === "") return;
     let live = true;
     void remember(wikiRequests, key, () => rpc.call("web_photo", { title: key })).then((answer) => {
-      if (answer.ok) wikiFound.set(key, answer.photo);
       if (live) setResult({ key, result: answer });
     });
     return () => {
@@ -93,16 +80,6 @@ export function useWikiPhoto(title: string | null): PhotoResult | null {
     };
   }, [rpc, key]);
   return result !== null && result.key === key ? result.result : null;
-}
-
-/** The Wikipedia photos this page already found for `titles`, by title as written; lookups not answered yet are left out. */
-export function foundWikiPhotos(titles: readonly string[]): Map<string, WikiPhoto> {
-  const photos = new Map<string, WikiPhoto>();
-  for (const title of titles) {
-    const photo = wikiFound.get(title.trim().replace(/\s+/g, " "));
-    if (photo !== undefined) photos.set(title, photo);
-  }
-  return photos;
 }
 
 const places = new Map<string, Promise<PlaceResult>>();

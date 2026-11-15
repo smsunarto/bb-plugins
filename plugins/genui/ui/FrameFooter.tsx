@@ -1,10 +1,7 @@
-// What sits under a rendered UI (see Frame in LiveUi.tsx). A chat reply keeps
-// a Source toggle that shows only on hover, so replies read quiet; the
-// gallery names each example in a footer with Source, Copy and Open. Both
-// open the same source panel: the spec with numbered lines in BB's code
-// viewer, the files it reads, and its diagnostics. A ```ui block also gets
-// "Copy as markdown": the block's plain-markdown form (core/markdown.ts) with
-// the values the user moved, built only when clicked.
+// What sits under a rendered UI on the gallery page (see Frame in LiveUi.tsx):
+// a footer naming the example, with Source, Copy and Open. Source opens the
+// spec with numbered lines in BB's code viewer, the files it reads, and its
+// diagnostics. Chat replies show no chrome under a UI.
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Icon } from "@/components/ui/icon";
@@ -77,7 +74,6 @@ function useCopy(text: () => string, what: { done: string; failed: string }): { 
 }
 
 const SOURCE_COPY = { done: "Source copied", failed: "Couldn't copy the source" };
-const MARKDOWN_COPY = { done: "Copied as markdown", failed: "Couldn't copy as markdown" };
 
 const FOCUS = "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
@@ -90,7 +86,7 @@ const ACTION_LABEL = "sr-only @lg:not-sr-only";
 
 /**
  * The gallery's footer under one example: what it is on the left, Source,
- * Copy, Markdown and Open on the right. Its height never changes; Source
+ * Copy and Open on the right. Its height never changes; Source
  * opens the panel below it, inside one bordered box with the footer as its
  * header.
  */
@@ -100,15 +96,12 @@ export function GalleryFooter({
   language,
   files,
   diagnostics,
-  markdown,
 }: {
   example: GalleryExample;
   source: string;
   language: SourceLanguage;
   files: readonly SourceFile[];
   diagnostics: readonly Diagnostic[];
-  /** The block as markdown at its current values; ```ui blocks only. */
-  markdown?: () => string;
 }) {
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -153,7 +146,6 @@ export function GalleryFooter({
             <Icon name={copied ? "Check" : "Copy"} aria-hidden className="size-3.5" />
             <span className={ACTION_LABEL}>Copy</span>
           </button>
-          {markdown === undefined ? null : <GalleryMarkdownCopy markdown={markdown} />}
           {example.open === null ? null : (
             <button type="button" title="Show this example alone" onClick={example.open} className={ACTION}>
               <Icon name="ArrowUpRight" aria-hidden className="size-3.5" />
@@ -173,125 +165,6 @@ export function GalleryFooter({
         />
       ) : null}
     </div>
-  );
-}
-
-/** The gallery footer's "Copy as markdown" action. */
-function GalleryMarkdownCopy({ markdown }: { markdown: () => string }) {
-  const { copied, copy } = useCopy(markdown, MARKDOWN_COPY);
-  return (
-    <button
-      type="button"
-      aria-label="Copy as markdown"
-      title="Copy as markdown, with the values as they are now"
-      onClick={copy}
-      className={ACTION}
-    >
-      <Icon name={copied ? "Check" : "FileText"} aria-hidden className="size-3.5" />
-      <span className={ACTION_LABEL}>Markdown</span>
-    </button>
-  );
-}
-
-/** The reply's quiet actions under a UI: hidden at rest, shown while the reply is hovered or the action focused. */
-const REPLY_ACTION = cn(
-  "inline-flex cursor-pointer items-center gap-1 rounded-sm text-[11px] text-subtle-foreground transition-opacity duration-150 hover:text-foreground focus-visible:opacity-100 group-hover/genui:opacity-100 [@media(hover:none)]:opacity-100",
-  // Fork: on a phone a pseudo-element gives the 18px text a 38px tap area without moving it.
-  "relative max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-x-1.5 max-md:pointer-coarse:after:-inset-y-2.5",
-  FOCUS,
-);
-
-/**
- * A reply's Source toggle, and for ```ui blocks a "Copy as markdown" action
- * beside it: hidden until the reply is hovered or one is focused, then the
- * source panel under them.
- */
-export function ReplySource({
-  source,
-  language,
-  files,
-  diagnostics,
-  markdown,
-}: {
-  source: string;
-  language: SourceLanguage;
-  files: readonly SourceFile[];
-  diagnostics: readonly Diagnostic[];
-  /** The block as markdown at its current values; ```ui blocks only. */
-  markdown?: () => string;
-}) {
-  const [open, setOpen] = useState(false);
-  const panelId = useId();
-  const { copied, copy } = useCopy(() => source, SOURCE_COPY);
-  const lines = source.replace(/\n$/, "").split("\n").length;
-  return (
-    <>
-      <div className="-mt-2 flex justify-end gap-3">
-        {markdown === undefined ? null : <ReplyMarkdownCopy markdown={markdown} shown={open} />}
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={panelId}
-          onClick={() => setOpen((shown) => !shown)}
-          // Quiet at rest; once open, the way to close it stays in view.
-          className={cn(REPLY_ACTION, open ? "opacity-100" : "opacity-0")}
-        >
-          <Icon name="Code" aria-hidden className="size-3" />
-          {open ? "Hide source" : "Source"}
-        </button>
-      </div>
-      {open ? (
-        <div className="-mt-1 overflow-hidden rounded-lg border border-border bg-background">
-          <div className="flex h-8 items-center justify-between gap-3 bg-surface-recessed pl-3 pr-1 text-[11px] text-muted-foreground">
-            <span className="truncate">
-              {language === "html" ? "HTML app" : "Spec"}
-              <span aria-hidden className="px-1.5 text-subtle-foreground">
-                ·
-              </span>
-              <span className="tabular-nums">
-                {lines} {lines === 1 ? "line" : "lines"}
-              </span>
-            </span>
-            <button
-              type="button"
-              aria-label="Copy the source"
-              title="Copy the source"
-              onClick={copy}
-              className={cn(
-                "inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground relative max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-1.5",
-                FOCUS,
-              )}
-            >
-              <Icon name={copied ? "Check" : "Copy"} aria-hidden className="size-3.5" />
-            </button>
-          </div>
-          <SourceBody
-            id={panelId}
-            name={language === "html" ? "app.html" : "reply.ui"}
-            source={source}
-            language={language}
-            files={files}
-            diagnostics={diagnostics}
-          />
-        </div>
-      ) : null}
-    </>
-  );
-}
-
-/** The reply's "Copy as markdown" action; `shown` keeps it in view while the source panel is open. */
-function ReplyMarkdownCopy({ markdown, shown }: { markdown: () => string; shown: boolean }) {
-  const { copied, copy } = useCopy(markdown, MARKDOWN_COPY);
-  return (
-    <button
-      type="button"
-      title="Copy this UI as markdown, with the values as they are now"
-      onClick={copy}
-      className={cn(REPLY_ACTION, shown || copied ? "opacity-100" : "opacity-0")}
-    >
-      <Icon name={copied ? "Check" : "FileText"} aria-hidden className="size-3" />
-      Copy as markdown
-    </button>
   );
 }
 
