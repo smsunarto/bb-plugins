@@ -665,9 +665,15 @@ export function ChangesList({ subPath, variant }: { subPath: string; variant: Va
         </div>
         <Filters counts={merged.counts} variant={variant} />
       </div>
-      {/* bb's sidebar scrolls this list; on the page the panel's column does. */}
-      <div ref={setList} data-testid="sc-nav-scroll" className="min-h-0 flex-1 pb-2">
-        {body}
+      {/* bb's sidebar scrolls this list; on a phone page nothing above it does, so it scrolls
+          itself. The window follows `list`'s nearest scrolling ancestor, so the ref sits inside. */}
+      <div
+        data-testid="sc-nav-scroll"
+        className={cx("min-h-0 flex-1", phone && "overflow-y-auto overscroll-contain")}
+      >
+        <div ref={setList} className="pb-2">
+          {body}
+        </div>
       </div>
       <SourcesFooter sources={sources} now={now} phone={phone} />
     </nav>
