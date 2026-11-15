@@ -55,6 +55,19 @@
     visibility: visible;
   }
 }
+/* On phones the clear action sits after the project row (project-control.ts),
+ * so the row keeps its folder icon and the button shows only the cross. */
+@media (width < 48rem) {
+  [data-monokai-project-icon] {
+    visibility: visible;
+  }
+  .monokai-project-clear > svg:first-child {
+    visibility: hidden;
+  }
+  .monokai-project-clear > svg:last-child {
+    visibility: visible;
+  }
+}
 
 /* Only a picker opened by the clear action receives this tag. Keep it out of
  * the painted UI while BB runs its native selection and exit animation. */

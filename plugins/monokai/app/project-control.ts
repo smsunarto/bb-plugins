@@ -1,10 +1,18 @@
+const PHONE_CLEAR_SIZE = 32;
+
 /** BB owns project selection. This adapter only invokes its native no-project option. */
 export function mountProjectControl() {
   const triggerSelector = "[data-new-thread-footer] button[data-promptbox-project-control]";
   const optionSelector = '[cmdk-item][data-value="no-project"]';
   const controls = new Map<
     HTMLButtonElement,
-    { anchor: HTMLElement; clear: HTMLButtonElement; icon: SVGElement; resize: ResizeObserver }
+    {
+      anchor: HTMLElement;
+      clear: HTMLButtonElement;
+      icon: SVGElement;
+      position: () => void;
+      resize: ResizeObserver;
+    }
   >();
   const renamed = new Map<Text, string>();
   let pending: HTMLButtonElement | null = null;
@@ -50,6 +58,13 @@ export function mountProjectControl() {
       restorePicker?.();
   }
   document.addEventListener("click", onNativePickerClick, true);
+
+  // Matches project-control.css and t3-composer's stacked phone rows.
+  const phone = window.matchMedia("(width < 48rem)");
+  const onPhoneChange = () => {
+    for (const control of controls.values()) control.position();
+  };
+  phone.addEventListener("change", onPhoneChange);
 
   function renameOptions() {
     for (const node of renamed.keys()) {
@@ -134,8 +149,18 @@ export function mountProjectControl() {
       trigger.before(anchor);
       icon.setAttribute("data-monokai-project-icon", "");
       const position = () => {
-        const target = icon.getBoundingClientRect();
         const origin = anchor.getBoundingClientRect();
+        if (phone.matches) {
+          // Phones have no hover to reveal the clear action over the icon, so it
+          // sits after the row, leaving the project's folder icon in place.
+          const row = trigger.getBoundingClientRect();
+          clear.style.left = `${row.right - origin.x}px`;
+          clear.style.top = `${row.y - origin.y + (row.height - PHONE_CLEAR_SIZE) / 2}px`;
+          clear.style.width = `${PHONE_CLEAR_SIZE}px`;
+          clear.style.height = `${PHONE_CLEAR_SIZE}px`;
+          return;
+        }
+        const target = icon.getBoundingClientRect();
         clear.style.left = `${target.x - origin.x - 6}px`;
         clear.style.top = `${target.y - origin.y - 6}px`;
         clear.style.width = `${target.width + 12}px`;
@@ -159,7 +184,7 @@ export function mountProjectControl() {
         if (openedForClear) trigger.click();
         schedule();
       });
-      controls.set(trigger, { anchor, clear, icon, resize });
+      controls.set(trigger, { anchor, clear, icon, position, resize });
       position();
     }
   }
@@ -204,6 +229,7 @@ export function mountProjectControl() {
     cancelPending();
     restorePicker?.();
     document.removeEventListener("click", onNativePickerClick, true);
+    phone.removeEventListener("change", onPhoneChange);
     for (const [trigger, { anchor, icon, resize }] of controls) {
       if (document.activeElement === anchor.firstElementChild && trigger.isConnected)
         trigger.focus();
