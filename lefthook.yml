@@ -17,4 +17,6 @@ pre-commit:
 pre-push:
   jobs:
     - name: check repository
-      run: bun run typecheck && bun run test
+      # A linked worktree's hook exports GIT_DIR and friends; tests that `git init` a scratch
+      # repo would otherwise re-init the shared repository and set core.bare=true.
+      run: unset $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); bun run typecheck && bun run test
