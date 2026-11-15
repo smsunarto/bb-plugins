@@ -18,7 +18,6 @@ Older hunt prompts say to open Sauce Live in a local Chrome, sign in through Goo
 - **Virtual devices:** only real devices are listed.
 - **iOS:** only when `bb sauce apps` lists an iOS build (`.ipa`); otherwise report no iOS build in Sauce storage.
 - **Two-finger input:** one finger only.
-- **Keys and text:** there is no keyboard command. On Android, `bb sauce shell -- input keyevent <code>` sends a key (4 is BACK). `input text <text>` is untried: look afterwards to confirm it typed. Report text entry on iOS as a gap.
 
 ## Workflow
 
@@ -33,8 +32,10 @@ Older hunt prompts say to open Sauce Live in a local Chrome, sign in through Goo
 
 - **Look:** `bb sauce look` saves an upright PNG and prints its `frame` id. Coordinates are fractions (0 to 1) of that image from its top-left corner. `changed: false` means the screen matches the previous look.
 - **Act:** `bb sauce tap <x> <y>` or `bb sauce drag <x> <y> <to-x> <to-y>`. Pass `--frame <id>` so a touch aimed at an older picture fails with `stale_frame` instead of landing somewhere else.
+- **Text and keys:** tap the field, then `bb sauce type "<text>"`. `bb sauce key enter|backspace|tab|escape` presses one key; `bb sauce key back` is Android's BACK button.
 - **Wait for a condition, not a guessed time:** `--wait stable` returns once the screen holds still; `--wait changed` returns once it differs from before the gesture. Use `changed` for slow loads, then `stable`.
-- **One command per step:** `bb sauce tap 0.93 0.07 --frame 4 --wait stable --look` taps, waits, and prints the new look.
+- **One command per step:** `bb sauce tap 0.93 0.07 --frame 4 --wait changed --look` taps, waits, and prints the new look.
+- **Fast looks for navigating:** `--fast` (on `look`, `tap`, `drag`, `type`, `key`) saves the page's picture of the device instead of Sauce's screenshot. It is smaller and quicker, and good enough to find the next button. Take a full look for evidence, and whenever a fast look comes back sideways.
 - **Fixed sequences:** `bb sauce batch "tap 0.5 0.9" "wait changed --timeout 30s" "wait stable" "look"` runs steps in order and stops at the first failure. It prints only when the last step ends and saves the run to thread storage.
 - **A wait that times out is a result (`timed_out: true`), not a failure.** An animated scene may never read as stable: look, and judge the picture.
 - **A gesture result with `after_error` means the touch landed** and only the wait or look after it failed. Look again; do not repeat the touch.

@@ -10,7 +10,9 @@ bb sauce apps
 bb sauce devices "Galaxy S23"
 bb sauce start "Samsung Galaxy S23" --os "Android 16"
 bb sauce look
-bb sauce tap 0.93 0.07 --wait stable --look
+bb sauce tap 0.93 0.07 --wait changed --look
+bb sauce type "hello" --fast
+bb sauce key enter
 bb sauce batch "drag 0.5 0.8 0.5 0.2" "wait stable" "look"
 bb sauce end
 ```

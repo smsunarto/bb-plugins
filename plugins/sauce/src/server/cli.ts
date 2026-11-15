@@ -7,28 +7,31 @@ import {
   type PluginCliResult,
 } from "@get-bb/plugin-sdk";
 
-import { BrowserUnavailableError } from "./browser.ts";
+import { BrowserCommandError, BrowserUnavailableError } from "./browser.ts";
 import {
   WAIT_DEFAULT_MS,
   WAIT_MAX_MS,
+  type AfterOptions,
   type Caller,
   type DeviceAction,
-  type GestureOptions,
+  type KeyName,
   type SauceCore,
   type Step,
   type WaitCondition,
 } from "./core.ts";
-import { SauceError } from "./live.ts";
+import { DEVICE_KEYS, SauceError } from "./live.ts";
 
 const HOLD_MAX_MS = 30_000;
 const DRAG_MAX_MS = 5_000;
 const BATCH_MAX_STEPS = 40;
+const TYPE_MAX_CHARS = 500;
+const FRAME_MAX = 1_000_000;
 
 const json = { type: "boolean", description: "Print the result as JSON" } as const;
 const frame = {
   type: "integer",
   min: 1,
-  max: 1_000_000,
+  max: FRAME_MAX,
   description:
     "Frame id of the look the coordinates were read from; refuses with stale_frame when a newer look exists",
 } as const;
@@ -56,6 +59,13 @@ const look = {
   type: "boolean",
   description: "Capture the screen afterwards (after the wait, when both are given)",
 } as const;
+const fast = {
+  type: "boolean",
+  description:
+    "Make that look a fast one: the page's picture of the device, smaller and several times quicker than a full look",
+} as const;
+
+const KEY_NAMES = [...Object.keys(DEVICE_KEYS), "back"] as KeyName[];
 
 const DEVICE_ACTIONS: Record<string, DeviceAction> = {
   home: "home",
@@ -94,6 +104,25 @@ function condition(text: string | undefined): WaitCondition {
   throw usage(`wait takes stable or changed, got "${text ?? ""}"`);
 }
 
+function keyName(text: string | undefined): KeyName {
+  const key = KEY_NAMES.find((name) => name === text);
+  if (!key) throw usage(`key takes one of ${KEY_NAMES.join(", ")}, got "${text ?? ""}"`);
+  return key;
+}
+
+/** Text for the device's focused field. Control characters would press keys Sauce reads as its own. */
+function typedText(text: string): string {
+  if (text === "") throw usage("type needs text", 'For example: bb sauce type "hello"');
+  if (text.length > TYPE_MAX_CHARS)
+    throw usage(`type takes at most ${TYPE_MAX_CHARS} characters, got ${text.length}`);
+  if ([...text].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127))
+    throw usage(
+      "type takes printable text only",
+      "Send Enter, Tab, or Backspace with `bb sauce key`.",
+    );
+  return text;
+}
+
 function deviceAction(text: string | undefined): DeviceAction {
   const action = DEVICE_ACTIONS[text ?? ""];
   if (!action) throw usage(`device takes home, rotate, or restart-app, got "${text ?? ""}"`);
@@ -103,9 +132,12 @@ function deviceAction(text: string | undefined): DeviceAction {
 /**
  * One batch step from its text, in the same words as the standalone commands:
  * `tap .9 .1 --hold 2s`, `drag .5 .8 .5 .2 --duration 300`, `wait stable --timeout 5s`,
- * `look --label lobby --if-changed`, `device rotate`.
+ * `look --label lobby --if-changed`, `key enter`, `device rotate`. A `type` step is
+ * the exception: everything after the word is the text, spaces and dashes included.
  */
 export function parseStep(text: string): Step {
+  const typed = /^\s*type\s(.*)$/s.exec(text);
+  if (typed) return { do: "type", text: typedText(typed[1] as string) };
   const tokens = text.trim().split(/\s+/).filter(Boolean);
   const [verb, ...rest] = tokens;
   const bare: string[] = [];
@@ -117,7 +149,7 @@ export function parseStep(text: string): Step {
       continue;
     }
     const name = token.slice(2);
-    if (name === "if-changed") flags.set(name, true);
+    if (name === "if-changed" || name === "fast") flags.set(name, true);
     else flags.set(name, rest[(at += 1)] ?? "");
   }
   const allow = (...names: string[]) => {
@@ -132,9 +164,17 @@ export function parseStep(text: string): Step {
     const value = flags.get(name);
     return typeof value === "string" ? milliseconds(value, `--${name}`, max) : undefined;
   };
+  const stepFrame = () => {
+    const value = flags.get("frame");
+    if (value === undefined) return {};
+    const id = Number(value);
+    if (!Number.isInteger(id) || id < 1 || id > FRAME_MAX)
+      throw usage(`step "${text}": --frame takes a look's frame id, got "${String(value)}"`);
+    return { frame: id };
+  };
   switch (verb) {
     case "tap": {
-      allow("hold");
+      allow("hold", "frame");
       take(2);
       const holdMs = duration("hold", HOLD_MAX_MS);
       return {
@@ -142,10 +182,11 @@ export function parseStep(text: string): Step {
         x: fraction(bare[0] as string, "x"),
         y: fraction(bare[1] as string, "y"),
         ...(holdMs === undefined ? {} : { holdMs }),
+        ...stepFrame(),
       };
     }
     case "drag": {
-      allow("hold", "duration");
+      allow("hold", "duration", "frame");
       take(4);
       const holdMs = duration("hold", HOLD_MAX_MS);
       const durationMs = duration("duration", DRAG_MAX_MS);
@@ -157,8 +198,15 @@ export function parseStep(text: string): Step {
         toY: fraction(bare[3] as string, "to-y"),
         ...(durationMs === undefined ? {} : { durationMs }),
         ...(holdMs === undefined ? {} : { holdMs }),
+        ...stepFrame(),
       };
     }
+    case "type":
+      throw usage(`step "${text}": type needs text`);
+    case "key":
+      allow();
+      take(1);
+      return { do: "key", key: keyName(bare[0]) };
     case "wait": {
       allow("timeout");
       take(1);
@@ -170,13 +218,14 @@ export function parseStep(text: string): Step {
       };
     }
     case "look": {
-      allow("label", "if-changed");
+      allow("label", "if-changed", "fast");
       take(0);
       const label = flags.get("label");
       return {
         do: "look",
         ...(typeof label === "string" && label ? { label } : {}),
         ...(flags.has("if-changed") ? { ifChanged: true } : {}),
+        ...(flags.has("fast") ? { fast: true } : {}),
       };
     }
     case "device":
@@ -186,22 +235,29 @@ export function parseStep(text: string): Step {
     default:
       throw usage(
         `step "${text}": unknown step "${verb ?? ""}"`,
-        "A step is one of: tap, drag, wait, look, device.",
+        "A step is one of: tap, drag, type, key, wait, look, device.",
       );
   }
 }
 
-function gestureOptions(options: {
-  frame?: number;
+/** `--fast` alone asks for a look too: it names the kind of look. */
+function afterOptions(options: {
   wait?: string;
   timeout?: number;
   look: boolean;
-}): GestureOptions {
+  fast: boolean;
+}): AfterOptions {
   return {
-    ...(options.frame === undefined ? {} : { frame: options.frame }),
     ...(options.wait ? { wait: condition(options.wait) } : {}),
     ...(options.timeout === undefined ? {} : { timeoutMs: options.timeout }),
-    look: options.look,
+    ...(options.fast ? { look: "fast" as const } : options.look ? { look: "full" as const } : {}),
+  };
+}
+
+function gestureOptions(options: Parameters<typeof afterOptions>[0] & { frame?: number }) {
+  return {
+    ...afterOptions(options),
+    ...(options.frame === undefined ? {} : { frame: options.frame }),
   };
 }
 
@@ -241,6 +297,12 @@ async function answer(asJson: boolean, work: () => Promise<unknown>): Promise<Pl
         ...(error.hint ? { hint: error.hint } : {}),
       });
     }
+    if (error instanceof BrowserCommandError) {
+      throw new PluginCliError(error.message, {
+        code: "browser_failed",
+        hint: "The Sauce page did not respond as expected. Run `bb sauce status`, then `bb sauce look` before repeating a touch: it may have landed.",
+      });
+    }
     if (error instanceof BrowserUnavailableError) {
       throw new PluginCliError(error.message, {
         code: "browser_unavailable",
@@ -268,7 +330,7 @@ function caller(cli: PluginCliContext): Caller {
 export function sauceCli(core: SauceCore): PluginCliRegistration {
   return defineCli({
     name: "sauce",
-    summary: "Drive a Sauce Labs real device: start, look, tap, drag, wait, batch, end",
+    summary: "Drive a Sauce Labs real device: start, look, tap, drag, type, wait, batch, end",
     description:
       "One device for the whole machine, leased to the calling thread. Read the sauce-live skill before `bb sauce start`.\n" +
       "Coordinates are fractions (0 to 1) of the latest `look`, from its top-left corner.",
@@ -369,6 +431,11 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
             description:
               "Save nothing and keep the current frame when the screen matches the last look",
           },
+          fast: {
+            type: "boolean",
+            description:
+              "Save the page's picture of the device instead of Sauce's screenshot: smaller and several times quicker. Needs one full look first, and another after the screen turns",
+          },
           json,
         },
         run: (input, cli) =>
@@ -376,6 +443,7 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
             core.look(caller(cli), {
               ...(input.options.label ? { label: input.options.label } : {}),
               ifChanged: input.options["if-changed"],
+              fast: input.options.fast,
             }),
           ),
       }),
@@ -393,7 +461,7 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
             required: true,
           },
         ],
-        options: { hold, frame, wait, timeout, look, json },
+        options: { hold, frame, wait, timeout, look, fast, json },
         run: (input, cli) =>
           answer(input.options.json, () => {
             // Check the arguments before the thread rule, so a typo reads as a typo.
@@ -431,6 +499,7 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
           wait,
           timeout,
           look,
+          fast,
           json,
         },
         run: (input, cli) =>
@@ -446,6 +515,42 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
               ...(input.options.hold === undefined ? {} : { holdMs: input.options.hold }),
             };
             return core.drag(caller(cli), path, gestureOptions(input.options));
+          }),
+      }),
+      type: cliCommand({
+        summary: "Type text into the field that has focus on the device",
+        description:
+          "Tap the field first so the device shows its keyboard. Text goes through Sauce's keyboard box, on Android and iOS.\n" +
+          'Example: bb sauce type "hello world" --look. Put text that starts with a dash after `--`.',
+        positionals: [
+          {
+            name: "text",
+            description: `Printable text, up to ${TYPE_MAX_CHARS} characters; several words are joined with spaces`,
+            variadic: true,
+          },
+        ],
+        passthrough: true,
+        options: { wait, timeout, look, fast, json },
+        run: (input, cli) =>
+          answer(input.options.json, () => {
+            const text = typedText([...input.positionals.text, ...input.passthrough].join(" "));
+            return core.type(caller(cli), { text }, afterOptions(input.options));
+          }),
+      }),
+      key: cliCommand({
+        summary: "Press one key on the device: enter, backspace, tab, escape, or Android's back",
+        positionals: [
+          {
+            name: "key",
+            description: `${KEY_NAMES.join(", ")}. back is Android's BACK button (through adb, a few seconds)`,
+            required: true,
+          },
+        ],
+        options: { wait, timeout, look, fast, json },
+        run: (input, cli) =>
+          answer(input.options.json, () => {
+            const key = keyName(input.positionals.key);
+            return core.key(caller(cli), { key }, afterOptions(input.options));
           }),
       }),
       wait: cliCommand({
@@ -471,8 +576,9 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
       batch: cliCommand({
         summary: "Run several steps in one command, stopping at the first failure",
         description:
-          'Each argument is one quoted step: "tap <x> <y> [--hold 2s]", "drag <x> <y> <to-x> <to-y> [--duration 300ms] [--hold 2s]",\n' +
-          '"wait stable|changed [--timeout 10s]", "look [--label name] [--if-changed]", "device home|rotate|restart-app".\n' +
+          'Each argument is one quoted step: "tap <x> <y> [--hold 2s] [--frame 4]", "drag <x> <y> <to-x> <to-y> [--duration 300ms] [--hold 2s] [--frame 4]",\n' +
+          '"type <text>" (all that follows is the text), "key enter|backspace|tab|escape|back", "wait stable|changed [--timeout 10s]",\n' +
+          '"look [--label name] [--if-changed] [--fast]", "device home|rotate|restart-app".\n' +
           'Example: bb sauce batch "tap 0.93 0.07" "wait stable" "look"\n' +
           "Nothing prints until the last step ends; the result and each look are also saved to thread storage.",
         positionals: [

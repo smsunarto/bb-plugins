@@ -1,7 +1,8 @@
 import { promisify } from "node:util";
-import { inflate } from "node:zlib";
+import { deflate, inflate } from "node:zlib";
 
 const inflateAsync = promisify(inflate);
+const deflateAsync = promisify(deflate);
 
 /** PNG width and height from the IHDR chunk. */
 export function pngSize(bytes: Uint8Array): { width: number; height: number } | null {
@@ -109,4 +110,117 @@ function unfilter(
       out[i] = (x + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 0xff;
     } else out[i] = x;
   }
+}
+
+export type Pixels = { width: number; height: number; channels: number; data: Uint8Array };
+
+/** Decodes the same PNGs pngGrayThumbnail reads (8-bit, non-interlaced) to raw pixels. */
+export async function pngPixels(bytes: Uint8Array): Promise<Pixels | null> {
+  const size = pngSize(bytes);
+  const channels = CHANNELS[bytes[25] ?? -1];
+  if (!size || bytes[24] !== 8 || bytes[28] !== 0 || !channels) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const idat: Uint8Array[] = [];
+  for (let at = 8; at + 8 <= bytes.length;) {
+    const length = view.getUint32(at);
+    const type = String.fromCharCode(...bytes.subarray(at + 4, at + 8));
+    if (type === "IDAT") idat.push(bytes.subarray(at + 8, at + 8 + length));
+    if (type === "IEND") break;
+    at += 12 + length;
+  }
+  let raw: Uint8Array;
+  try {
+    raw = await inflateAsync(Buffer.concat(idat));
+  } catch {
+    return null;
+  }
+  const stride = size.width * channels;
+  if (raw.length < size.height * (stride + 1)) return null;
+  const data = new Uint8Array(size.height * stride);
+  let previous: Uint8Array = new Uint8Array(stride);
+  for (let y = 0; y < size.height; y += 1) {
+    const offset = y * (stride + 1);
+    const row = data.subarray(y * stride, (y + 1) * stride);
+    unfilter(
+      raw[offset] ?? 0,
+      raw.subarray(offset + 1, offset + 1 + stride),
+      previous,
+      row,
+      channels,
+    );
+    previous = row;
+  }
+  return { ...size, channels, data };
+}
+
+/** The picture turned clockwise by 0, 90, 180, or 270 degrees. */
+export function turnPixels(source: Pixels, clockwise: number): Pixels {
+  const { width, height, channels, data } = source;
+  const turn = ((clockwise % 360) + 360) % 360;
+  if (turn === 0) return source;
+  const sideways = turn === 90 || turn === 270;
+  const out: Pixels = {
+    width: sideways ? height : width,
+    height: sideways ? width : height,
+    channels,
+    data: new Uint8Array(data.length),
+  };
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const [tx, ty] =
+        turn === 90
+          ? [height - 1 - y, x]
+          : turn === 180
+            ? [width - 1 - x, height - 1 - y]
+            : [y, width - 1 - x];
+      const from = (y * width + x) * channels;
+      const to = (ty * out.width + tx) * channels;
+      for (let c = 0; c < channels; c += 1) out.data[to + c] = data[from + c]!;
+    }
+  }
+  return out;
+}
+
+const COLOR_TYPES: Record<number, number> = { 1: 0, 2: 4, 3: 2, 4: 6 };
+
+/** An 8-bit PNG of the pixels, every scanline unfiltered. */
+export async function pngEncode(pixels: Pixels): Promise<Uint8Array> {
+  const { width, height, channels, data } = pixels;
+  const stride = width * channels;
+  const raw = new Uint8Array(height * (stride + 1));
+  for (let y = 0; y < height; y += 1)
+    raw.set(data.subarray(y * stride, (y + 1) * stride), y * (stride + 1) + 1);
+  const header = new Uint8Array(13);
+  const view = new DataView(header.buffer);
+  view.setUint32(0, width);
+  view.setUint32(4, height);
+  header.set([8, COLOR_TYPES[channels] ?? 6, 0, 0, 0], 8);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", await deflateAsync(raw)),
+    chunk("IEND", new Uint8Array(0)),
+  ]);
+}
+
+const CRC_TABLE = Uint32Array.from({ length: 256 }, (_, n) => {
+  let c = n;
+  for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+  return c >>> 0;
+});
+
+function crc32(bytes: Uint8Array): number {
+  let c = 0xffffffff;
+  for (const byte of bytes) c = CRC_TABLE[(c ^ byte) & 0xff]! ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function chunk(type: string, body: Uint8Array): Uint8Array {
+  const out = new Uint8Array(12 + body.length);
+  const view = new DataView(out.buffer);
+  view.setUint32(0, body.length);
+  out.set(Buffer.from(type, "latin1"), 4);
+  out.set(body, 8);
+  view.setUint32(8 + body.length, crc32(out.subarray(4, 8 + body.length)));
+  return out;
 }

@@ -395,7 +395,7 @@ test("SB-08 a touch whose follow-up screenshot fails still reports that the touc
   );
   await tools.start(A, { device: "Samsung Galaxy S23" });
   await tools.look(A, {});
-  const touched = await outcome(tools.tap(A, { x: 0.5, y: 0.5 }, { look: true }));
+  const touched = await outcome(tools.tap(A, { x: 0.5, y: 0.5 }, { look: "full" }));
   expect(taps).toHaveLength(1);
   // The tap landed. An error result makes the agent tap again (a double tap on the device).
   expect(touched.ok).toBe(true);

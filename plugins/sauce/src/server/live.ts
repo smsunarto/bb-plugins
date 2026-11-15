@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { BrowserUnavailableError, type BrowserRunner } from "./browser.ts";
-import { pngGrayThumbnail, pngSize } from "./png.ts";
+import { readFile, writeFile } from "node:fs/promises";
+import { BrowserCommandError, BrowserUnavailableError, type BrowserRunner } from "./browser.ts";
+import { pngEncode, pngGrayThumbnail, pngPixels, pngSize, turnPixels } from "./png.ts";
 
 /**
  * Sauce Labs Live, driven through its web app. The account is on a Live Testing
@@ -203,11 +203,22 @@ const CANVAS = "canvas.testobject-device__canvas";
  * The ADB Shell command box. Sauce also renders a device paste box
  * (textarea.testobject-device__paste-area) that forwards every key to the phone.
  */
+const PASTE_AREA = "textarea.testobject-device__paste-area";
+const PASTE_FOCUSED = `document.activeElement === document.querySelector(${JSON.stringify(PASTE_AREA)})`;
 const SHELL_INPUT = "textarea:not(.testobject-device__paste-area)";
 const SHELL_FOCUSED = `document.activeElement === document.querySelector(${JSON.stringify(SHELL_INPUT)})`;
 
 /** Longest edge, in pixels, of the grayscale samples used to compare screens. */
 const SAMPLE_EDGE = 48;
+
+/** Keys `bb sauce key` sends through the device's keyboard, by the name agent-browser presses. */
+export const DEVICE_KEYS = {
+  enter: "Enter",
+  backspace: "Backspace",
+  tab: "Tab",
+  escape: "Escape",
+} as const;
+export type DeviceKey = keyof typeof DEVICE_KEYS;
 
 /** Time allowed for a gesture's process and browser round trips, beyond its own duration. */
 const GESTURE_TIMEOUT_MS = 30_000;
@@ -892,7 +903,25 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     const marked = await evaluate<boolean>(markScript);
     if (!marked)
       throw new SauceError("page_changed", `The ${what} control is not on the session page.`);
-    await browser.run(["download", "[data-bb-sauce-target]", path], 90_000);
+    await download(path, what);
+  }
+
+  /**
+   * Clicks the marked control and saves what it downloads. Sauce sometimes never
+   * delivers the file (the device is reconnecting, or the menu did not register the
+   * click); that is a page failure the caller can retry, not a bug.
+   */
+  async function download(path: string, what: string) {
+    try {
+      await browser.run(["download", "[data-bb-sauce-target]", path], 90_000);
+    } catch (error) {
+      if (!(error instanceof BrowserCommandError)) throw error;
+      throw new SauceError(
+        "timeout",
+        `Sauce did not deliver the ${what} file: ${error.detail.slice(0, 200)}`,
+        "Nothing was saved. Run the command again; if it keeps failing, run `bb sauce status`.",
+      );
+    }
   }
 
   /**
@@ -977,6 +1006,78 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
       if (error instanceof BrowserUnavailableError) throw error;
       return null;
     }
+  }
+
+  /**
+   * A quick look: the device area as the page shows it, turned upright by `rotation`
+   * (the turn a full look measured) and saved to `path`. One page screenshot, so it
+   * is several times faster than Sauce's native capture, at the size and quality of
+   * the page's video rather than the device's own pixels. It cannot measure the
+   * rotation itself.
+   */
+  async function glanceScreen(
+    path: string,
+    rotation: number,
+  ): Promise<{ width: number; height: number; thumbnail: Uint8Array | null }> {
+    await requireSession();
+    try {
+      await browser.run(["screenshot", CANVAS, path]);
+    } catch (error) {
+      if (!(error instanceof BrowserCommandError)) throw error;
+      throw new SauceError(
+        "page_changed",
+        "The device screen could not be captured from the session page.",
+        "Run `bb sauce look --full`.",
+      );
+    }
+    const pixels = await pngPixels(new Uint8Array(await readFile(path)));
+    if (!pixels || pixels.width < 10 || pixels.height < 10)
+      throw new SauceError(
+        "page_changed",
+        "The session page's picture of the device could not be read.",
+        "Run `bb sauce look --full`.",
+      );
+    const upright = turnPixels(pixels, rotation);
+    const bytes = await pngEncode(upright);
+    await writeFile(path, bytes);
+    const scale = SAMPLE_EDGE / Math.max(upright.width, upright.height);
+    const thumbnail = await pngGrayThumbnail(
+      bytes,
+      Math.max(8, Math.round(upright.width * scale)),
+      Math.max(8, Math.round(upright.height * scale)),
+    );
+    return { width: upright.width, height: upright.height, thumbnail };
+  }
+
+  /**
+   * Sauce forwards keys pressed in its paste box to the device's focused field, and
+   * moves focus there on its own after most actions. Keys pressed anywhere else are
+   * lost or land in Sauce's own UI, so each send first confirms the box has focus.
+   */
+  async function focusDevice(what: string) {
+    await requireSession();
+    const focused = await poll(
+      5_000,
+      async () => (await tryAction(["focus", PASTE_AREA])) && evaluate<boolean>(PASTE_FOCUSED),
+      500,
+    );
+    if (!focused)
+      throw new SauceError(
+        "page_changed",
+        `${what} was not sent: the device's keyboard box did not take focus. No keys reached the device.`,
+        "Run the command again; if it keeps failing, run `bb sauce look` to check the device.",
+      );
+  }
+
+  /** Types text into whatever field has focus on the device. */
+  async function typeText(text: string) {
+    await focusDevice("The text");
+    await browser.run(["keyboard", "type", text], 30_000 + text.length * 100);
+  }
+
+  async function pressKey(key: DeviceKey) {
+    await focusDevice(`The ${key} key`);
+    await browser.run(["press", DEVICE_KEYS[key]]);
   }
 
   async function openDeveloperTab(tab: "ADB Shell" | "Device Log") {
@@ -1132,7 +1233,7 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
         "No button in the Device Log toolbar has a Download Log tooltip, so nothing was clicked.",
       );
     }
-    await browser.run(["download", "[data-bb-sauce-target]", path], 90_000);
+    await download(path, "device log");
   }
 
   async function endSession(): Promise<boolean> {
@@ -1176,7 +1277,10 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
     drag,
     clickMenu,
     captureScreen,
+    glanceScreen,
     sampleScreen,
+    typeText,
+    pressKey,
     requireSession,
     shell,
     downloadLog,

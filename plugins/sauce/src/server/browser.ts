@@ -14,6 +14,17 @@ export class BrowserUnavailableError extends Error {
   override readonly name = "BrowserUnavailableError";
 }
 
+/** An agent-browser command ran and reported a failure, or timed out: the page did not do what was asked. */
+export class BrowserCommandError extends Error {
+  override readonly name = "BrowserCommandError";
+  constructor(
+    readonly command: string,
+    readonly detail: string,
+  ) {
+    super(`agent-browser ${command} failed: ${detail}`);
+  }
+}
+
 const SESSION = "sauce-live";
 /**
  * Shuts the browser daemon down after this long without a command, so a bb restart
@@ -104,7 +115,7 @@ export function createAgentBrowserRunner(paths = sauceBrowserPaths()): BrowserRu
               return;
             }
             const detail = `${parsed?.error ?? (stderr || stdout || error?.message || "no output")}`;
-            reject(new Error(`agent-browser ${args[0]} failed: ${detail.trim().slice(0, 600)}`));
+            reject(new BrowserCommandError(args[0] ?? "", detail.trim().slice(0, 600)));
           },
         );
       });

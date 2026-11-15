@@ -35,6 +35,9 @@ export function fakeDevice() {
     sent: [] as string[],
     samples: 0,
     captures: 0,
+    glances: 0,
+    /** What the next full look reads the rotation as. */
+    reading: { candidates: [90, 270] as const, best: 90 as number | null, clear: true },
     now: 1_000_000,
     saved: [] as string[],
     onSample: (_count: number): void => {},
@@ -102,9 +105,27 @@ export function fakeDevice() {
       return {
         width: 2340,
         height: 1080,
-        reading: { candidates: [90, 270] as const, best: 90, clear: true },
+        reading: world.reading,
         thumbnail: screen(world.gray),
       };
+    },
+    glanceScreen: async (path: string, rotation: number) => {
+      requireSession();
+      world.glances += 1;
+      world.sent.push(`glance ${rotation}`);
+      await writeFile(path, new Uint8Array(8));
+      // The page's video is a little lighter than the device's own pixels.
+      return { width: 900, height: 415, thumbnail: screen(world.gray + 3) };
+    },
+    typeText: async (text: string) => {
+      requireSession();
+      world.sent.push(`type ${text}`);
+      world.onGesture(`type ${text}`);
+    },
+    pressKey: async (key: string) => {
+      requireSession();
+      world.sent.push(`key ${key}`);
+      world.onGesture(`key ${key}`);
     },
     sampleScreen: async () => {
       if (world.page.kind !== "session") return null;

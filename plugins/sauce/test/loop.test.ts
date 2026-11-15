@@ -92,7 +92,7 @@ test("tap --wait --look waits first, then returns the new look and its frame", a
   const { core, world } = await started();
   await core.look(A);
   world.onGesture = () => void (world.gray = 200);
-  const tapped = await core.tap(A, { x: 0.9, y: 0.1 }, { wait: "stable", look: true });
+  const tapped = await core.tap(A, { x: 0.9, y: 0.1 }, { wait: "stable", look: "full" });
   expect(tapped).toMatchObject({
     wait: { met: true },
     look: { frame: 2, changed: true, path: expect.stringMatching(/-after-tap\.png$/) },
@@ -226,5 +226,5 @@ test("errors keep their code when a look after a gesture is cancelled", async ()
   const { core, world } = await started();
   await core.look(A);
   world.failCapture = new SauceError("cancelled", "The command was cancelled.");
-  expect(await codeOf(core.tap(A, { x: 0.5, y: 0.5 }, { look: true }))).toBe("cancelled");
+  expect(await codeOf(core.tap(A, { x: 0.5, y: 0.5 }, { look: "full" }))).toBe("cancelled");
 });

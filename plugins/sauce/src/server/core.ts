@@ -3,7 +3,7 @@ import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 
-import { createAgentBrowserRunner, createQueue } from "./browser.ts";
+import { BrowserCommandError, createAgentBrowserRunner, createQueue } from "./browser.ts";
 import {
   LEASE_IDLE_MS,
   acquireLease,
@@ -19,6 +19,7 @@ import {
   SauceError,
   createSaucePage,
   notOnSauce,
+  type DeviceKey,
   type PageState,
   type RotationReading,
   type SaucePage,
@@ -63,19 +64,34 @@ export type GestureInput = {
   holdMs?: number;
 };
 
-/** After a gesture: check its frame first, then optionally wait and look. */
-export type GestureOptions = {
-  frame?: number;
+/** A key the device's keyboard takes, or Android's BACK button. */
+export type KeyName = DeviceKey | "back";
+
+/** Text or one key for the field that has focus on the device. */
+export type KeysInput = { text: string } | { key: KeyName };
+
+/** How a look captures the screen: Sauce's own screenshot, or the page's picture of it. */
+export type LookKind = "full" | "fast";
+
+export type LookInput = { label?: string; ifChanged?: boolean; fast?: boolean };
+
+/** What follows an action on the device: optionally a wait, then optionally a look. */
+export type AfterOptions = {
   wait?: WaitCondition;
   timeoutMs?: number;
-  look?: boolean;
+  look?: LookKind;
 };
+
+/** A gesture checks its frame first. */
+export type GestureOptions = AfterOptions & { frame?: number };
 
 /** One entry of a batch. Parsed from text at the CLI; the core trusts these values. */
 export type Step =
-  | ({ do: "tap" | "drag" } & GestureInput)
+  | ({ do: "tap" | "drag"; frame?: number } & GestureInput)
+  | { do: "type"; text: string }
+  | { do: "key"; key: KeyName }
   | { do: "wait"; condition: WaitCondition; timeoutMs?: number }
-  | { do: "look"; label?: string; ifChanged?: boolean }
+  | ({ do: "look" } & LookInput)
   | { do: "device"; action: DeviceAction };
 
 /** A file captured inside the browser queue, saved to thread storage after the queue moves on. */
@@ -196,13 +212,18 @@ function slug(value: string) {
 function describeError(error: unknown) {
   if (error instanceof SauceError)
     return { code: error.code as string, error: error.message, hint: error.hint };
+  if (error instanceof BrowserCommandError) return { code: "browser_failed", error: error.message };
   return { code: "failed", error: error instanceof Error ? error.message : String(error) };
 }
 
 export function createSauceCore(deps: SauceCoreDeps) {
   const enqueue = createQueue();
-  /** The upright thumbnail of each holder's latest look, for reporting whether the next one changed. */
-  const lastLook = new Map<string, Uint8Array>();
+  /**
+   * The upright thumbnail of each holder's latest look, for reporting whether the next
+   * one changed. A full and a fast look picture the screen differently (device pixels
+   * against the page's video), so only looks of the same kind are compared.
+   */
+  const lastLook = new Map<string, { kind: LookKind; pixels: Uint8Array }>();
 
   function throwIfCancelled(ctx: Caller) {
     if (ctx.signal?.aborted)
@@ -317,31 +338,56 @@ export function createSauceCore(deps: SauceCoreDeps) {
     }
   }
 
-  async function look(ctx: Caller, input: { label?: string; ifChanged?: boolean } = {}) {
+  async function look(ctx: Caller, input: LookInput = {}) {
     const shot = await holding(ctx, async (lease) => {
       const dir = await deps.tempDir();
       try {
         const local = join(dir, "screen.png");
-        const capture = await deps.page.captureScreen(local);
-        const { rotation, measured, rule } = chooseRotation(capture.reading, lease.rotation);
+        // A fast look turns the page's picture by a rotation it cannot check, so it
+        // runs only on one a full look measured; otherwise this is a full look.
+        const kind: LookKind =
+          input.fast && lease.measured && lease.rotation !== null ? "fast" : "full";
+        let capture: { width: number; height: number; thumbnail: Uint8Array | null };
+        let rotation = lease.rotation;
+        let measured = lease.measured;
+        // Whether this look itself read the rotation, which is what its result reports.
+        let measuredNow = false;
+        let note: string | undefined;
+        if (kind === "fast") {
+          capture = await deps.page.glanceScreen(local, lease.rotation as number);
+        } else {
+          const full = await deps.page.captureScreen(local);
+          const chosen = chooseRotation(full.reading, lease.rotation);
+          capture = full;
+          rotation = chosen.rotation;
+          // An unclear reading that kept a measured rotation leaves it measured.
+          measuredNow = chosen.measured;
+          measured = chosen.measured || (chosen.rule === "kept" && lease.measured);
+          note = ROTATION_NOTES[chosen.rule];
+          if (input.fast && !note)
+            note = "Took a full look: a fast look needs a rotation a full look measured first.";
+        }
         const before = lastLook.get(ctx.threadId);
         const change =
-          before && capture.thumbnail ? difference(before, capture.thumbnail) : undefined;
+          before?.kind === kind && capture.thumbnail
+            ? difference(before.pixels, capture.thumbnail)
+            : undefined;
         // Without a picture to compare, say changed: skipping a capture must be earned.
         const changed = change === undefined || change >= CHANGE_MIN;
         const skip = input.ifChanged === true && !changed && lease.frame > 0;
         const frame = skip ? lease.frame : lease.frame + 1;
-        touchLease(deps.store, { rotation, frame }, deps.now());
-        if (capture.thumbnail && !skip) lastLook.set(ctx.threadId, capture.thumbnail);
-        const note = ROTATION_NOTES[rule];
+        touchLease(deps.store, { rotation, measured, frame }, deps.now());
+        if (capture.thumbnail && !skip)
+          lastLook.set(ctx.threadId, { kind, pixels: capture.thumbnail });
         const info = {
           frame,
+          kind,
           changed,
           ...(change === undefined ? {} : { change: Math.round(change * 1000) / 1000 }),
           width: capture.width,
           height: capture.height,
           rotation,
-          rotation_measured: measured,
+          rotation_measured: measuredNow,
           device: lease.device,
           ...(note ? { note } : {}),
         };
@@ -469,20 +515,52 @@ export function createSauceCore(deps: SauceCoreDeps) {
     });
   }
 
+  /** Sends text or one key to the field that has focus on the device. */
+  function sendKeys(ctx: Caller, input: KeysInput) {
+    return holding(ctx, async (lease) => {
+      if ("text" in input) {
+        await deps.page.typeText(input.text);
+        touchLease(deps.store, {}, deps.now());
+        return { typed: input.text.length };
+      }
+      if (input.key === "back") {
+        // BACK is a device button, not a keyboard key; only Android's shell can press it.
+        if (lease.device && !/ - Android /.test(lease.device))
+          throw new SauceError(
+            "unsupported",
+            "BACK is an Android button; this device has none.",
+            "Tap the app's own back control, or swipe in from the left edge with `bb sauce drag`.",
+          );
+        await deps.page.shell("input keyevent 4", 20_000);
+      } else {
+        await deps.page.pressKey(input.key);
+      }
+      touchLease(deps.store, {}, deps.now());
+      return { key: input.key, device: lease.device };
+    });
+  }
+
   /**
-   * A gesture, then its optional wait and look. The gesture has landed once it
-   * returns, so a wait or look that fails afterwards is reported beside it rather
-   * than as a failed gesture, which the caller would repeat.
+   * An action on the device, then its optional wait and look. The action has landed
+   * once it returns, so a wait or look that fails afterwards is reported beside it
+   * rather than as a failed action, which the caller would repeat.
    */
-  async function gesture(ctx: Caller, input: GestureInput, options: GestureOptions = {}) {
+  async function act<T extends object>(
+    ctx: Caller,
+    label: string,
+    send: () => Promise<T>,
+    options: AfterOptions,
+  ) {
     const baseline = options.wait === "changed" ? await sample(ctx) : undefined;
-    const sent = await sendGesture(ctx, input, options.frame);
+    const sent = await send();
     if (!options.wait && !options.look) return sent;
     try {
       const waited = options.wait
         ? await waitFor(ctx, options.wait, options.timeoutMs ?? WAIT_DEFAULT_MS, baseline)
         : undefined;
-      const seen = options.look ? await look(ctx, { label: `after-${sent.gesture}` }) : undefined;
+      const seen = options.look
+        ? await look(ctx, { label: `after-${label}`, fast: options.look === "fast" })
+        : undefined;
       return { ...sent, ...(waited ? { wait: waited } : {}), ...(seen ? { look: seen } : {}) };
     } catch (error) {
       if (
@@ -494,23 +572,34 @@ export function createSauceCore(deps: SauceCoreDeps) {
     }
   }
 
+  function gesture(ctx: Caller, input: GestureInput, options: GestureOptions = {}) {
+    const isDrag = input.toX !== undefined || input.toY !== undefined;
+    return act(
+      ctx,
+      isDrag ? "drag" : input.holdMs ? "press" : "tap",
+      () => sendGesture(ctx, input, options.frame),
+      options,
+    );
+  }
+
   async function device(ctx: Caller, input: { action: DeviceAction }) {
     return holding(ctx, async () => {
       switch (input.action) {
         case "home":
           await deps.page.clickMenu("Home");
-          touchLease(deps.store, {}, deps.now());
+          // The home screen may be turned differently from the app.
+          touchLease(deps.store, { measured: false }, deps.now());
           return { done: "home" };
         case "restart_app":
           await deps.page.clickMenu("Restart App");
-          touchLease(deps.store, {}, deps.now());
+          touchLease(deps.store, { measured: false }, deps.now());
           return {
             done: "restart_app",
             next: "Wait for the app to relaunch (`bb sauce wait changed`), then look.",
           };
         case "rotate":
           await deps.page.clickMenu("Rotate Device");
-          touchLease(deps.store, { rotation: null }, deps.now());
+          touchLease(deps.store, { rotation: null, measured: false }, deps.now());
           return {
             done: "rotate",
             next: "Run `bb sauce look` to set the new coordinate frame before touching.",
@@ -528,7 +617,12 @@ export function createSauceCore(deps: SauceCoreDeps) {
     switch (step.do) {
       case "tap":
       case "drag":
-        return sendGesture(ctx, step, frame);
+        // A frame on the step itself is the caller's own check and wins over the batch's.
+        return sendGesture(ctx, step, step.frame ?? frame);
+      case "type":
+        return sendKeys(ctx, { text: step.text });
+      case "key":
+        return sendKeys(ctx, { key: step.key });
       case "wait":
         return waitFor(ctx, step.condition, step.timeoutMs ?? WAIT_DEFAULT_MS, baseline);
       case "look":
@@ -637,7 +731,11 @@ export function createSauceCore(deps: SauceCoreDeps) {
           const started = await deps.page.startSession(input, ctx.signal);
           // Stopped while the device came up: nobody will drive it, so hand it back.
           throwIfCancelled(ctx);
-          touchLease(deps.store, { device: started.device, rotation: null, frame: 0 }, deps.now());
+          touchLease(
+            deps.store,
+            { device: started.device, rotation: null, measured: false, frame: 0 },
+            deps.now(),
+          );
           return {
             device: started.device,
             app: started.app,
@@ -678,6 +776,14 @@ export function createSauceCore(deps: SauceCoreDeps) {
       options?: GestureOptions,
     ) {
       return gesture(ctx, input, options);
+    },
+
+    type(ctx: Caller, input: { text: string }, options: AfterOptions = {}) {
+      return act(ctx, "type", () => sendKeys(ctx, input), options);
+    },
+
+    key(ctx: Caller, input: { key: KeyName }, options: AfterOptions = {}) {
+      return act(ctx, `key-${input.key}`, () => sendKeys(ctx, input), options);
     },
 
     wait(ctx: Caller, input: { condition: WaitCondition; timeoutMs?: number }) {
@@ -752,14 +858,15 @@ export function createSauceCore(deps: SauceCoreDeps) {
       for (const [index, step] of steps.entries()) {
         try {
           throwIfCancelled(ctx);
-          const isGesture = step.do === "tap" || step.do === "drag";
-          // A wait for `changed` right after a gesture compares with the screen before it.
+          const isAction =
+            step.do === "tap" || step.do === "drag" || step.do === "type" || step.do === "key";
+          // A wait for `changed` right after an action compares with the screen before it.
           const next = steps[index + 1];
-          if (isGesture && next?.do === "wait" && next.condition === "changed")
+          if (isAction && next?.do === "wait" && next.condition === "changed")
             baseline = await sample(ctx);
           results.push(await runStep(ctx, step, frame, step.do === "wait" ? baseline : undefined));
           if (step.do === "look") frame = undefined;
-          if (!isGesture) baseline = undefined;
+          if (!isAction) baseline = undefined;
         } catch (error) {
           failed = { step: index + 1, ...describeError(error) };
           break;

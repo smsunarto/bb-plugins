@@ -89,6 +89,9 @@ function fakePage(state: FakeState): SaucePage {
       return { width: 2340, height: 1080, reading: state.reading, thumbnail: null };
     },
     sampleScreen: async () => null,
+    glanceScreen: async () => ({ width: 2340, height: 1080, thumbnail: null }),
+    typeText: async () => {},
+    pressKey: async () => {},
     requireSession: async () => {
       requireSession();
       return state.page;

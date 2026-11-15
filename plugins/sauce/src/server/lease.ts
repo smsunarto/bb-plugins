@@ -10,6 +10,11 @@ export type SauceLease = {
   device: string | null;
   /** Clockwise degrees that turn the session canvas upright; null until a look measures it. */
   rotation: number | null;
+  /**
+   * Whether a full look measured `rotation` and nothing has turned the screen since.
+   * Only then may a quick look reuse it.
+   */
+  measured: boolean;
   /** Id of the latest look, the picture touch coordinates are read from; 0 before the first. */
   frame: number;
 };
@@ -45,6 +50,7 @@ export function acquireLease(store: LeaseStore, threadId: string, now: number): 
     lastUsedAt: now,
     device: null,
     rotation: null,
+    measured: false,
     frame: 0,
   };
   store.write(lease);
@@ -80,6 +86,7 @@ export function parseLease(payload: string): SauceLease | null {
       lastUsedAt: value.lastUsedAt,
       device: typeof value.device === "string" ? value.device : null,
       rotation: typeof value.rotation === "number" ? value.rotation : null,
+      measured: value.measured === true,
       frame: typeof value.frame === "number" ? value.frame : 0,
     };
   } catch {
