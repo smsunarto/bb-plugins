@@ -1,7 +1,23 @@
 import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../../../components/ui/alert-dialog.tsx";
+import { Button, buttonVariants } from "../../../components/ui/button.tsx";
+import { Input } from "../../../components/ui/input.tsx";
+import { Label } from "../../../components/ui/label.tsx";
+import { Skeleton } from "../../../components/ui/skeleton.tsx";
 import { Switch } from "../../../components/ui/switch.tsx";
+import { Textarea } from "../../../components/ui/textarea.tsx";
 import { queryClient } from "../../app/query.ts";
 import { queryKey, useRpcQuery } from "../../app/rpc.ts";
 import type { CatalogChange, CatalogListing } from "../contract.ts";
@@ -144,9 +160,9 @@ type OpenFile = ReturnType<typeof useOpenFile>;
 function EditorPlaceholder() {
   return (
     <div className="pe-editor" aria-busy="true">
-      <span className="pe-shimmer" style={{ width: "30%" }} />
-      <span className="pe-shimmer" style={{ width: "50%", height: 18 }} />
-      <div className="pe-textarea pe-placeholder" />
+      <Skeleton className="h-3 w-[30%]" />
+      <Skeleton className="h-[18px] w-1/2" />
+      <Skeleton className="min-h-60 flex-1" />
     </div>
   );
 }
@@ -164,9 +180,9 @@ function RenameForm(props: { open: OpenFile; doc: Doc; onDone: () => void }) {
         if (done?.outcome === "saved") props.onDone();
       }}
     >
-      <input
+      <Input
         ref={input}
-        className="pe-input"
+        className="h-8 w-auto flex-[1_1_160px]"
         aria-label="Doc name"
         maxLength={80}
         value={name}
@@ -175,17 +191,12 @@ function RenameForm(props: { open: OpenFile; doc: Doc; onDone: () => void }) {
           if (event.key === "Escape") props.onDone();
         }}
       />
-      <button type="button" className="pe-button" onClick={props.onDone}>
+      <Button type="button" variant="ghost" size="sm" onClick={props.onDone}>
         Cancel
-      </button>
-      <button
-        type="submit"
-        className="pe-button"
-        data-primary
-        disabled={props.open.change.isPending}
-      >
+      </Button>
+      <Button type="submit" size="sm" disabled={props.open.change.isPending}>
         Rename
-      </button>
+      </Button>
     </form>
   );
 }
@@ -211,15 +222,21 @@ function EditorHeader(props: {
           <div className="pe-status-row">
             <h2 className={subject.kind === "skill" ? "pe-mono" : undefined}>{f.title}</h2>
             {subject.kind === "doc" && (
-              <button type="button" className="pe-link" onClick={() => setRenaming(true)}>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-xs"
+                onClick={() => setRenaming(true)}
+              >
                 Rename
-              </button>
+              </Button>
             )}
           </div>
         )}
       </div>
       <div className="pe-actions pe-wrap-actions">
-        <label className="pe-switch">
+        <Label className="inline-flex cursor-pointer items-center gap-1.5 font-normal">
           <Switch
             checked={f.enabled}
             disabled={busy}
@@ -227,27 +244,27 @@ function EditorHeader(props: {
             onCheckedChange={(next) => void open.run(f.toggle(next))}
           />
           <span className="pe-meta">{f.enabled ? "On" : "Off"}</span>
-        </label>
+        </Label>
         {editable && (
           <>
-            <button
+            <Button
               type="button"
-              className="pe-button"
+              variant="outline"
+              size="sm"
               disabled={open.draft === undefined || busy}
               onClick={() => updateDraft(open.key, () => undefined)}
             >
               Revert
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="pe-button"
-              data-primary
+              size="sm"
               disabled={!canSave || busy}
               aria-keyshortcuts="Control+S Meta+S"
               onClick={onSubmit}
             >
               {busy && isSave(open.change.variables?.op) ? "Saving…" : "Save"}
-            </button>
+            </Button>
           </>
         )}
       </div>
@@ -255,44 +272,38 @@ function EditorHeader(props: {
   );
 }
 
-/** A button that asks once more before it acts. */
+/** A button that asks once more, in a dialog, before it acts. */
 function ConfirmButton(props: {
   label: string;
   confirm: string;
+  description: string;
   disabled?: boolean;
   onConfirm: () => void;
 }) {
-  const [asking, setAsking] = useState(false);
-  if (!asking) {
-    return (
-      <button
-        type="button"
-        className="pe-button"
-        disabled={props.disabled}
-        onClick={() => setAsking(true)}
-      >
-        {props.label}
-      </button>
-    );
-  }
   return (
-    <span className="pe-actions">
-      <button type="button" className="pe-button" onClick={() => setAsking(false)}>
-        Cancel
-      </button>
-      <button
-        type="button"
-        className="pe-button"
-        data-destructive
-        disabled={props.disabled}
-        onClick={() => {
-          setAsking(false);
-          props.onConfirm();
-        }}
-      >
-        {props.confirm}
-      </button>
-    </span>
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm" disabled={props.disabled}>
+          {props.label}
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{props.confirm}?</AlertDialogTitle>
+          <AlertDialogDescription>{props.description}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            className={buttonVariants({ variant: "destructive" })}
+            disabled={props.disabled}
+            onClick={props.onConfirm}
+          >
+            {props.confirm}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -303,6 +314,7 @@ function DocToolbar({ doc, open, moved }: { doc: Doc; open: OpenFile; moved: boo
       <ConfirmButton
         label="Delete doc"
         confirm="Delete doc"
+        description={`${doc.name} moves to Recently deleted, where you can restore it.`}
         disabled={open.change.isPending || moved}
         onConfirm={async () => {
           const done = await open.run({ op: "deleteDoc", id: doc.id, expectedSha256: doc.sha256 });
@@ -350,23 +362,26 @@ function SkillToolbar(props: { skill: Skill; path: string; open: OpenFile; file:
         <ConfirmButton
           label="Delete file"
           confirm="Delete file"
+          description={`This removes ${path} from ${skill.name}.`}
           disabled={busy}
           onConfirm={() => void deleteFile(file.sha256!)}
         />
       )}
       {file.sha256 === null && open.draft !== undefined && (
-        <button
+        <Button
           type="button"
-          className="pe-button"
+          variant="outline"
+          size="sm"
           onClick={() => updateDraft(open.key, () => undefined)}
         >
           Discard new file
-        </button>
+        </Button>
       )}
       {path === "SKILL.md" && (
         <ConfirmButton
           label="Delete skill"
           confirm={`Delete ${skill.name}`}
+          description={`${skill.name} and its files move to Recently deleted, where you can restore them.`}
           disabled={busy}
           onConfirm={() => void deleteSkill()}
         />
@@ -450,21 +465,23 @@ function ResultNotices(props: {
             {file.sha256 === null ? "This file was deleted" : "This file changed"} in bb after you
             started editing.
           </span>
-          <button
+          <Button
             type="button"
-            className="pe-button"
+            variant="outline"
+            size="sm"
             onClick={() => updateDraft(open.key, () => undefined)}
           >
             Discard mine
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="pe-button"
+            variant="outline"
+            size="sm"
             disabled={change.isPending}
             onClick={onOverwrite}
           >
             Overwrite with mine
-          </button>
+          </Button>
         </div>
       )}
       {failed.length > 0 && !(result?.outcome === "conflict" && moved) && (
@@ -520,7 +537,7 @@ function TextEditor(props: {
       onSave={onSave}
     />
   ) : (
-    <textarea
+    <Textarea
       className="pe-textarea"
       aria-label={label}
       aria-keyshortcuts="Control+S Meta+S"
@@ -647,9 +664,9 @@ function NewFileForm({ skill, onCreate }: { skill: Skill; onCreate: (path: strin
   const [open, setOpen] = useState(false);
   if (!open) {
     return (
-      <button type="button" className="pe-button" onClick={() => setOpen(true)}>
+      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
         New file
-      </button>
+      </Button>
     );
   }
   return (
@@ -675,6 +692,7 @@ function NewFilePath(props: {
   const trimmed = path.trim().replace(/^\/+/, "");
   const taken = props.skill.files.some((file) => file.path === trimmed);
   const usable = trimmed !== "" && !trimmed.endsWith("/") && !taken;
+  const takenId = useId();
   return (
     <form
       className="pe-actions"
@@ -684,10 +702,12 @@ function NewFilePath(props: {
         if (usable) props.onCreate(trimmed);
       }}
     >
-      <input
+      <Input
         ref={input}
-        className="pe-input pe-mono"
+        className="pe-mono h-8 w-auto flex-[1_1_160px]"
         aria-label="New file path"
+        aria-invalid={taken || undefined}
+        aria-describedby={taken ? takenId : undefined}
         maxLength={512}
         value={path}
         onChange={(event) => setPath(event.target.value)}
@@ -695,18 +715,17 @@ function NewFilePath(props: {
           if (event.key === "Escape") props.onClose();
         }}
       />
-      <button type="button" className="pe-button" onClick={props.onClose}>
+      <Button type="button" variant="ghost" size="sm" onClick={props.onClose}>
         Cancel
-      </button>
-      <button
-        type="submit"
-        className="pe-button"
-        data-primary
-        disabled={!usable}
-        title={taken ? `${trimmed} already exists` : undefined}
-      >
+      </Button>
+      <Button type="submit" size="sm" disabled={!usable}>
         Open
-      </button>
+      </Button>
+      {taken && (
+        <p id={takenId} className="pe-meta pe-wrap basis-full" data-tone="bad">
+          {trimmed} already exists.
+        </p>
+      )}
     </form>
   );
 }
@@ -725,9 +744,9 @@ function CatalogPageBody({ subPath }: { subPath: string }) {
           </div>
         ) : (
           <div className="pe-editor" aria-busy="true">
-            <span className="pe-shimmer" style={{ width: "30%" }} />
-            <span className="pe-shimmer" style={{ width: "50%", height: 18 }} />
-            <div className="pe-textarea pe-placeholder" />
+            <Skeleton className="h-3 w-[30%]" />
+            <Skeleton className="h-[18px] w-1/2" />
+            <Skeleton className="min-h-60 flex-1" />
           </div>
         )}
       </main>

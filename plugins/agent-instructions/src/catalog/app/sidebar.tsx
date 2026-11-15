@@ -1,5 +1,11 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { memo, useLayoutEffect, useRef, useState } from "react";
+import { Badge } from "../../../components/ui/badge.tsx";
+import { Button } from "../../../components/ui/button.tsx";
+import { Input } from "../../../components/ui/input.tsx";
+import { Skeleton } from "../../../components/ui/skeleton.tsx";
+import { TooltipProvider } from "../../../components/ui/tooltip.tsx";
+import { Hint, UnsavedDot } from "../../app/hint.tsx";
 import { queryClient } from "../../app/query.ts";
 import { RulesSection } from "../../app/rules.tsx";
 import { useRpcQuery } from "../../app/rpc.ts";
@@ -26,9 +32,9 @@ function Shimmer({ rows }: { rows: number }) {
   return (
     <div className="pe-list" aria-busy="true" aria-label="Loading the catalog">
       {Array.from({ length: rows }, (_, index) => (
-        <span
+        <Skeleton
           key={index}
-          className="pe-shimmer"
+          className="m-2 h-3"
           style={{ width: `${60 + ((index * 23) % 35)}%` }}
         />
       ))}
@@ -58,14 +64,16 @@ function StatusLine({
           {state.text}
         </span>
         {state.tone !== undefined && (
-          <button
+          <Button
             type="button"
-            className="pe-link"
+            variant="link"
+            size="sm"
+            className="h-auto p-0 text-xs"
             disabled={publish.isPending}
             onClick={() => publish.mutate(null)}
           >
             {publish.isPending ? "Publishing…" : "Publish"}
-          </button>
+          </Button>
         )}
       </div>
       {refreshError !== null && (
@@ -123,33 +131,48 @@ const CatalogSkillGroup = memo(function CatalogSkillGroup(props: {
       onClick={() => onSelect({ skill: skill.name, path })}
     >
       <span className="pe-row-label">{path}</span>
-      {isNew && <span className="pe-tag">new</span>}
-      {pending.includes(path) && <span className="pe-dot" title="Unsaved" />}
+      {isNew && (
+        <Badge variant="secondary" className="py-0">
+          new
+        </Badge>
+      )}
+      {pending.includes(path) && <UnsavedDot />}
     </button>
   );
   return (
     <details ref={disclosure} className="pe-skill" data-skill={skill.name}>
-      <summary className="pe-skill-summary" title={skill.description}>
-        <span className="pe-summary-line">
-          <span className="pe-row-label">{skill.name}</span>
-          {!skill.enabled && <span className="pe-tag">off</span>}
-          {trouble && (
-            <span className="pe-tag" data-tone="bad">
-              clash
-            </span>
-          )}
-          {owner !== undefined && (
-            <span
-              className="pe-tag"
-              data-tone="warn"
-              title={`bb also delivers ${skill.name} from ${owner}`}
-            >
-              shadows
-            </span>
-          )}
-          {pending.length > 0 && <span className="pe-dot" title="Unsaved" />}
-        </span>
-      </summary>
+      <Hint
+        label={
+          owner === undefined
+            ? skill.description
+            : `${skill.description} Shadows: bb also delivers ${skill.name} from ${owner}.`.trim()
+        }
+      >
+        <summary className="pe-skill-summary">
+          <span className="pe-summary-line">
+            <span className="pe-row-label">{skill.name}</span>
+            {!skill.enabled && (
+              <Badge variant="outline" className="py-0">
+                off
+              </Badge>
+            )}
+            {trouble && (
+              <Badge variant="danger" className="py-0">
+                clash
+              </Badge>
+            )}
+            {owner !== undefined && (
+              <Badge variant="warning" className="py-0">
+                shadows
+                <span className="sr-only">
+                  : bb also delivers {skill.name} from {owner}
+                </span>
+              </Badge>
+            )}
+            {pending.length > 0 && <UnsavedDot />}
+          </span>
+        </summary>
+      </Hint>
       {skill.files.map((file) => row(file.path, false))}
       {extra.map((path) => row(path, true))}
     </details>
@@ -206,10 +229,10 @@ function InlineFormFields(props: {
       }}
     >
       {props.fields.map((field, index) => (
-        <input
+        <Input
           key={field.name}
           ref={index === 0 ? first : undefined}
-          className="pe-input"
+          className="h-8"
           aria-label={field.label}
           placeholder={field.placeholder}
           maxLength={field.maxLength}
@@ -226,12 +249,12 @@ function InlineFormFields(props: {
         </p>
       ))}
       <div className="pe-actions">
-        <button type="button" className="pe-button" onClick={props.onClose}>
+        <Button type="button" variant="ghost" size="sm" onClick={props.onClose}>
           Cancel
-        </button>
-        <button type="submit" className="pe-button" data-primary disabled={busy}>
+        </Button>
+        <Button type="submit" size="sm" disabled={busy}>
           {busy ? "Creating…" : props.submit}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -246,35 +269,52 @@ function DeletedRow({ entry }: { entry: Deleted }) {
     <div className="pe-deleted">
       <div className="pe-status-row">
         <span className="pe-row-label">{entry.name}</span>
-        <span className="pe-tag">{entry.kind}</span>
+        <Badge variant="outline" className="py-0">
+          {entry.kind}
+        </Badge>
         {confirm ? (
           <>
-            <button
+            <Button
               type="button"
-              className="pe-link"
-              data-tone="bad"
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs text-destructive"
               disabled={change.isPending}
               onClick={() => change.mutate({ op: "forget", ...ref })}
             >
               Remove for good
-            </button>
-            <button type="button" className="pe-link" onClick={() => setConfirm(false)}>
+            </Button>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
+              onClick={() => setConfirm(false)}
+            >
               Keep
-            </button>
+            </Button>
           </>
         ) : (
           <>
-            <button
+            <Button
               type="button"
-              className="pe-link"
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
               disabled={change.isPending}
               onClick={() => change.mutate({ op: "restore", ...ref })}
             >
               Restore
-            </button>
-            <button type="button" className="pe-link" onClick={() => setConfirm(true)}>
+            </Button>
+            <Button
+              type="button"
+              variant="link"
+              size="sm"
+              className="h-auto p-0 text-xs"
+              onClick={() => setConfirm(true)}
+            >
               Remove
-            </button>
+            </Button>
           </>
         )}
       </div>
@@ -325,9 +365,9 @@ function CatalogNav(props: { listing: CatalogListing; subPath: string; filterTex
         <h3 className="pe-label">
           Global instructions
           {agentsTrouble && (
-            <span className="pe-tag" data-tone="bad">
+            <Badge variant="danger" className="ml-1.5 py-0 normal-case tracking-normal">
               clash
-            </span>
+            </Badge>
           )}
         </h3>
         {docs.map((doc) => {
@@ -341,8 +381,12 @@ function CatalogNav(props: { listing: CatalogListing; subPath: string; filterTex
               onClick={() => go(entry)}
             >
               <span className="pe-row-label">{doc.name}</span>
-              {!doc.enabled && <span className="pe-tag">off</span>}
-              {dirty.has(draftKey(entry)) && <span className="pe-dot" title="Unsaved" />}
+              {!doc.enabled && (
+                <Badge variant="outline" className="py-0">
+                  off
+                </Badge>
+              )}
+              {dirty.has(draftKey(entry)) && <UnsavedDot />}
             </button>
           );
         })}
@@ -430,7 +474,7 @@ function CatalogTabBody({ subPath }: { subPath: string }) {
         ) : (
           <>
             <div className="pe-status">
-              <span className="pe-shimmer" style={{ width: "70%" }} />
+              <Skeleton className="m-2 h-3" style={{ width: "70%" }} />
             </div>
             <Shimmer rows={8} />
           </>
@@ -447,8 +491,8 @@ function CatalogTabBody({ subPath }: { subPath: string }) {
           refreshError={listing.isError ? listing.error.message : null}
         />
         <div className="pe-filter">
-          <input
-            className="pe-input"
+          <Input
+            className="h-8"
             type="search"
             aria-label="Filter the catalog"
             placeholder="Filter docs, skills, and files"
@@ -465,7 +509,9 @@ function CatalogTabBody({ subPath }: { subPath: string }) {
 export function CatalogTab({ subPath }: { subPath: string }) {
   return (
     <QueryClientProvider client={queryClient}>
-      <CatalogTabBody subPath={subPath} />
+      <TooltipProvider>
+        <CatalogTabBody subPath={subPath} />
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }

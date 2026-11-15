@@ -152,14 +152,14 @@ test("an unsaved edit on the page is marked in the tab", async () => {
   const file = await page(path);
   const tab = await pluginsTab(path);
   const row = await tab.findByRole("button", { name: /notes_find/ });
-  expect(within(row).queryByTitle("Unsaved")).toBeNull();
+  expect(within(row).queryByText("Unsaved")).toBeNull();
 
   const editor = await file.findByLabelText("instructions/tools/notes_find.md").then(sourceTextbox);
   fireEvent.change(editor, { target: { value: "Find a note by title." } });
-  expect(await within(row).findByTitle("Unsaved")).toBeTruthy();
+  expect(await within(row).findByText("Unsaved")).toBeTruthy();
 
   fireEvent.click(file.getByRole("button", { name: "Revert" }));
-  expect(within(row).queryByTitle("Unsaved")).toBeNull();
+  expect(within(row).queryByText("Unsaved")).toBeNull();
   tab.lifecycle.unmount();
   file.lifecycle.unmount();
 });
@@ -258,7 +258,7 @@ test("references appear under their nearest skill and keep full-path navigation"
         target: { value: "Updated reference draft" },
       });
       await waitFor(() =>
-        expect(within(advanced.querySelector("summary")!).getByTitle("Unsaved")).toBeTruthy(),
+        expect(within(advanced.querySelector("summary")!).getByText("Unsaved")).toBeTruthy(),
       );
       expect(advanced).toHaveProperty("open", false);
       const Tab = tabRegistration.component;
@@ -270,7 +270,10 @@ test("references appear under their nearest skill and keep full-path navigation"
     fireEvent.click(within(advanced).getByText("review/advanced"));
     expect(advanced).toHaveProperty("open", false);
     fireEvent.click(within(advanced).getByText("review/advanced"));
-    const reference = within(advanced).getByRole("button", { name: "references/guide.md" });
+    // The draft typed above is still unsaved, and the row's name says so.
+    const reference = within(advanced).getByRole("button", {
+      name: "references/guide.md Unsaved",
+    });
     expect(
       within(advanced).getByRole("button", { name: "SKILL.md" }).getAttribute("aria-current"),
     ).toBe("true");
@@ -284,7 +287,9 @@ test("references appear under their nearest skill and keep full-path navigation"
     fireEvent.click(within(reviewer).getByText("reviewer"));
     expect(within(reviewer).getAllByRole("button")).toHaveLength(2);
     expect(tab.getByRole("button", { name: "shared/guide.md" })).toBeTruthy();
-    expect(tab.getAllByRole("button", { name: "references/guide.md" })).toHaveLength(3);
+    expect(tab.getAllByRole("button", { name: /^references\/guide\.md( Unsaved)?$/ })).toHaveLength(
+      3,
+    );
   } finally {
     tab.unmount();
   }

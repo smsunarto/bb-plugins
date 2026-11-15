@@ -1,8 +1,27 @@
 import { MarkdownEditor } from "@bb-plugins/markdown-editor";
-import { useBbNavigate, type PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
+import {
+  experimental_Icon as Icon,
+  useBbNavigate,
+  type PluginNavPanelProps,
+} from "@get-bb/plugin-sdk/app";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 import { Button } from "../../components/ui/button.tsx";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "../../components/ui/collapsible.tsx";
+import { Input } from "../../components/ui/input.tsx";
+import { Label } from "../../components/ui/label.tsx";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select.tsx";
 import { useIsCompactViewport } from "../../components/ui/hooks/use-compact-viewport.tsx";
 import { queryClient } from "../app/query.ts";
 import { queryKey, useRpcMutation, useRpcQuery } from "../app/rpc.ts";
@@ -88,8 +107,6 @@ export function resetDocumentDraftsForTest() {
   for (const listener of listeners) listener();
 }
 const identity = (file: DocumentFile) => JSON.stringify(file);
-const selectClass =
-  "w-full min-w-0 rounded-md border border-input bg-background px-2 py-1.5 text-sm";
 
 function SourceControls({
   metadata,
@@ -114,40 +131,46 @@ function SourceControls({
       (source?.projectId ??
         (route.scope === "global" ? metadata.globalProjectId : route.projectId)),
   );
+  const projectLabel = route.scope === "global" ? "Global source project" : "Project";
+  const projectId = useId();
+  const checkoutId = useId();
   return (
     <div className="flex flex-wrap gap-3 border-b border-border p-4">
-      <label className="min-w-0 flex-1 text-xs text-muted-foreground">
-        {route.scope === "global" ? "Global source project" : "Project"}
-        <select
-          aria-label={route.scope === "global" ? "Global source project" : "Project"}
-          className={selectClass}
-          value={source?.projectId ?? ""}
+      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <Label htmlFor={projectId} className="text-xs font-normal text-muted-foreground">
+          {projectLabel}
+        </Label>
+        <Select
+          value={source?.projectId || undefined}
           disabled={configure.isPending}
-          onChange={(event) => {
-            const id = event.target.value;
+          onValueChange={(id) => {
             if (route.scope === "global") configure.mutate({ projectId: id });
             else navigate.toPluginPanel("instructions", { subPath: `projects/${id}` });
           }}
         >
-          <option value="" disabled>
-            Choose a project
-          </option>
-          {metadata.projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          <SelectTrigger id={projectId} className="w-full min-w-0">
+            <SelectValue placeholder="Choose a project" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              {metadata.projects.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </div>
       {project && (
-        <label className="min-w-0 flex-1 text-xs text-muted-foreground">
-          Checkout / machine
-          <select
-            aria-label="Checkout / machine"
-            className={selectClass}
-            value={source?.sourceId ?? ""}
-            onChange={(event) => {
-              const next = project.sources.find((s) => s.id === event.target.value);
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <Label htmlFor={checkoutId} className="text-xs font-normal text-muted-foreground">
+            Checkout / machine
+          </Label>
+          <Select
+            value={source?.sourceId || undefined}
+            onValueChange={(id) => {
+              const next = project.sources.find((s) => s.id === id);
               if (next)
                 navigate.toPluginPanel("instructions", {
                   subPath: routePath({
@@ -160,14 +183,21 @@ function SourceControls({
                 });
             }}
           >
-            {project.sources.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.hostName}
-                {s.connected ? "" : " (offline)"} · {s.rootPath}
-              </option>
-            ))}
-          </select>
-        </label>
+            <SelectTrigger id={checkoutId} className="w-full min-w-0">
+              <SelectValue placeholder="Choose a checkout" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {project.sources.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>
+                    {s.hostName}
+                    {s.connected ? "" : " (offline)"} · {s.rootPath}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
       )}
       {configure.isError && (
         <p role="alert" className="w-full text-sm text-destructive">
@@ -368,12 +398,28 @@ function GlobalApply({ file, disabled }: { file: DocumentFile; disabled: boolean
         </p>
       )}
       {apply.data && (
-        <details>
-          <summary>{apply.data.exitCode === 0 ? "Applied" : "Apply failed"}</summary>
-          <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-xs">
-            {apply.data.output}
-          </pre>
-        </details>
+        <Collapsible>
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="group h-auto gap-1 px-1 py-0.5 text-xs text-muted-foreground"
+            >
+              <Icon
+                name="ChevronRight"
+                className="size-3.5 transition-transform group-data-[state=open]:rotate-90"
+                aria-hidden
+              />
+              {apply.data.exitCode === 0 ? "Applied" : "Apply failed"}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-xs">
+              {apply.data.output}
+            </pre>
+          </CollapsibleContent>
+        </Collapsible>
       )}
     </div>
   );
@@ -490,10 +536,11 @@ function DocumentList({
     navigate.toPluginPanel("instructions", { subPath: routePath(source, path) });
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-3">
-      <input
+      <Input
+        type="search"
         aria-label="Find instruction or skill file"
         placeholder="Find a file…"
-        className={selectClass}
+        className="h-8"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
@@ -529,14 +576,14 @@ function DocumentList({
         )}
       </nav>
       <div className="shrink-0 border-t border-border pt-2">
-        <input
+        <Input
           aria-label="New instruction or skill file path"
           placeholder={
             source.scope === "global"
               ? ".dotfiles/.agents/skills/name/SKILL.md"
               : ".agents/skills/name/SKILL.md"
           }
-          className={selectClass}
+          className="h-8"
           value={newPath}
           onChange={(event) => setNewPath(event.target.value)}
         />

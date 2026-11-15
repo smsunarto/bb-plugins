@@ -11,6 +11,11 @@ import type {
   SaveResult,
   Tool,
 } from "../shared/schema.ts";
+import { Badge } from "../../../components/ui/badge.tsx";
+import { Button } from "../../../components/ui/button.tsx";
+import { Textarea } from "../../../components/ui/textarea.tsx";
+import { TooltipProvider } from "../../../components/ui/tooltip.tsx";
+import { Hint, UnsavedDot } from "../../app/hint.tsx";
 import { queryClient } from "./query.ts";
 import { queryKey, useRpcMutation, useRpcQuery } from "./rpc.ts";
 import "./prompt-editor.css";
@@ -131,7 +136,7 @@ function SkillGroup({
     <details ref={disclosure} className="pe-skill" aria-label={label}>
       <summary className="pe-skill-summary">
         {label.replace(/\/?SKILL\.md$/, "") || "Skills"}
-        {dirty && <span className="pe-dot" title="Unsaved" />}
+        {dirty && <UnsavedDot />}
       </summary>
       {children}
     </details>
@@ -193,7 +198,7 @@ function PluginGroup(props: {
         onClick={() => onSelect(entry)}
       >
         <span className="pe-row-label">{label}</span>
-        {dirty.has(draftKey(plugin.id, file.path)) && <span className="pe-dot" title="Unsaved" />}
+        {dirty.has(draftKey(plugin.id, file.path)) && <UnsavedDot />}
       </button>
     );
   };
@@ -226,14 +231,18 @@ function PluginGroup(props: {
                   onClick={() => onSelect(entry)}
                 >
                   <span className="pe-row-label pe-mono">{tool.name}</span>
-                  {tool.file === null && <span className="pe-tag">code</span>}
+                  {tool.file === null && (
+                    <Badge variant="outline" className="py-0">
+                      code
+                    </Badge>
+                  )}
                   {tool.drift && (
-                    <span className="pe-tag" data-tone="warn">
+                    <Badge variant="warning" className="py-0">
                       stale
-                    </span>
+                    </Badge>
                   )}
                   {tool.file !== null && dirty.has(draftKey(plugin.id, tool.file)) && (
-                    <span className="pe-dot" title="Unsaved" />
+                    <UnsavedDot />
                   )}
                 </button>
                 {snippet && fileRow(snippet, "thread snippet", true)}
@@ -353,11 +362,13 @@ function Footer(props: { chars: number; over: boolean; loaded: FileContent }) {
         {loaded.maxChars !== null && ` / ${loaded.maxChars.toLocaleString()}`} chars
       </span>
       {loaded.placeholders.length > 0 && (
-        <span className="pe-chips" title="The plugin's code fills these. Keep each one.">
-          {loaded.placeholders.map((key) => (
-            <code key={key} className="pe-chip">{`{{${key}}}`}</code>
-          ))}
-        </span>
+        <Hint label="The plugin's code fills these. Keep each one.">
+          <span className="pe-chips">
+            {loaded.placeholders.map((key) => (
+              <Badge key={key} variant="secondary" className="font-mono">{`{{${key}}}`}</Badge>
+            ))}
+          </span>
+        </Hint>
       )}
     </footer>
   );
@@ -419,23 +430,23 @@ function FileEditor(props: {
           <h2 className="pe-mono">{file.path}</h2>
         </div>
         <div className="pe-actions">
-          <button
+          <Button
             type="button"
-            className="pe-button"
+            variant="outline"
+            size="sm"
             disabled={!changed || save.isPending}
             onClick={() => onDraft(() => undefined)}
           >
             Revert
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="pe-button"
-            data-primary
+            size="sm"
             disabled={!changed || over || readOnly !== null || save.isPending}
             onClick={submit}
           >
             {save.isPending ? "Saving…" : "Save & reload"}
-          </button>
+          </Button>
         </div>
       </header>
       <Notices
@@ -466,7 +477,7 @@ function FileEditor(props: {
           }}
         />
       ) : (
-        <textarea
+        <Textarea
           className="pe-textarea"
           aria-label={file.path}
           spellCheck={false}
@@ -566,7 +577,9 @@ function PromptEditor({ subPath }: { subPath: string }) {
 export function PromptEditorPage({ subPath }: PluginNavPanelProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <PromptEditor subPath={subPath} />
+      <TooltipProvider>
+        <PromptEditor subPath={subPath} />
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }
@@ -574,7 +587,9 @@ export function PromptEditorPage({ subPath }: PluginNavPanelProps) {
 export function PluginsTab({ subPath }: PluginNavPanelProps) {
   return (
     <QueryClientProvider client={queryClient}>
-      <PluginsTabBody subPath={subPath} />
+      <TooltipProvider>
+        <PluginsTabBody subPath={subPath} />
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }

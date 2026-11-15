@@ -48,12 +48,19 @@
     "THIRD_PARTY_NOTICES.md"
   ],
   "dependencies": {
+    "@bb-plugins/instructions": "workspace:*",
+    "@bb-plugins/markdown-editor": "workspace:*",
     "@pierre/trees": "1.0.0-beta.6",
+    "@radix-ui/react-alert-dialog": "^1.2.1",
+    "@radix-ui/react-collapsible": "^1.2.1",
+    "@radix-ui/react-label": "^2.1.17",
+    "@radix-ui/react-select": "^2.4.1",
+    "@radix-ui/react-toggle": "^1.2.1",
+    "@radix-ui/react-toggle-group": "^1.2.1",
+    "@radix-ui/react-tooltip": "^1.4.1",
     "@tanstack/react-query": "^5.101.4",
     "yaml": "^2.8.2",
-    "zod": "^4.4.3",
-    "@bb-plugins/instructions": "workspace:*",
-    "@bb-plugins/markdown-editor": "workspace:*"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@bb-plugins/testing": "workspace:*",

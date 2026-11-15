@@ -1,9 +1,14 @@
 import { MarkdownEditor } from "@bb-plugins/markdown-editor";
 import { experimental_Icon as Icon, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Badge } from "../../components/ui/badge.tsx";
 import { Button } from "../../components/ui/button.tsx";
 import { Input } from "../../components/ui/input.tsx";
+import { Label } from "../../components/ui/label.tsx";
+import { Skeleton } from "../../components/ui/skeleton.tsx";
 import { Switch } from "../../components/ui/switch.tsx";
+import { Toggle } from "../../components/ui/toggle.tsx";
+import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group.tsx";
 import {
   ANYWHERE,
   newRuleId,
@@ -77,7 +82,7 @@ function ScopeEditor({
   if (parseModels(models).join(",") !== when.models.join(",")) setModels(when.models.join(", "));
   const modelsId = useId();
   return (
-    <div className="space-y-2.5 rounded-md bg-muted/40 p-3">
+    <div className="flex flex-col gap-2.5 rounded-md bg-muted/40 p-3">
       {SCOPES.map(({ key, label, any }) => {
         // Show saved ids bb no longer lists, so they can still be removed.
         const stale = when[key]
@@ -86,44 +91,42 @@ function ScopeEditor({
         return (
           <div key={key} className="flex flex-wrap items-center gap-1.5">
             <span className="w-16 shrink-0 text-xs text-muted-foreground">{label}</span>
-            <Button
+            <Toggle
               size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-xs"
-              aria-pressed={when[key].length === 0}
-              onClick={() => onChange({ ...when, [key]: [] })}
+              className="h-6 min-w-0 px-2 text-xs"
+              pressed={when[key].length === 0}
+              onPressedChange={() => onChange({ ...when, [key]: [] })}
             >
               {any}
-            </Button>
-            {[...targets[key], ...stale].map((target) => {
-              const selected = when[key].includes(target.id);
-              return (
-                <Button
+            </Toggle>
+            <ToggleGroup
+              type="multiple"
+              size="sm"
+              aria-label={label}
+              value={when[key]}
+              onValueChange={(ids) => onChange({ ...when, [key]: ids })}
+              className="flex-wrap justify-start gap-1.5"
+            >
+              {[...targets[key], ...stale].map((target) => (
+                <ToggleGroupItem
                   key={target.id}
-                  size="sm"
-                  variant="ghost"
-                  className="h-6 px-2 text-xs"
-                  aria-pressed={selected}
-                  onClick={() =>
-                    onChange({
-                      ...when,
-                      [key]: selected
-                        ? when[key].filter((id) => id !== target.id)
-                        : [...when[key], target.id],
-                    })
-                  }
+                  value={target.id}
+                  className="h-6 min-w-0 px-2 text-xs"
                 >
                   {target.name}
-                </Button>
-              );
-            })}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
           </div>
         );
       })}
       <div className="flex items-center gap-1.5">
-        <label htmlFor={modelsId} className="w-16 shrink-0 text-xs text-muted-foreground">
+        <Label
+          htmlFor={modelsId}
+          className="w-16 shrink-0 text-xs font-normal text-muted-foreground"
+        >
           Model
-        </label>
+        </Label>
         <Input
           id={modelsId}
           value={models}
@@ -390,7 +393,7 @@ export function RulesSection({ subPath }: { subPath: string }) {
           {rules.error.message}
         </p>
       ) : (
-        <span className="pe-shimmer" style={{ width: "60%" }} />
+        <Skeleton className="m-2 h-3 w-3/5" />
       )}
     </section>
   );
@@ -416,8 +419,16 @@ function RuleRows({ server, selected }: { server: RulesState; selected: string |
             onClick={() => navigate.toPluginPanel("instructions", { subPath: ruleRoute(rule.id) })}
           >
             <span className="pe-row-label">{rule.name.trim() || "Untitled rule"}</span>
-            {!rule.enabled && <span className="pe-tag">off</span>}
-            {scope !== "Always" && <span className="pe-tag pe-scope">{scope}</span>}
+            {!rule.enabled && (
+              <Badge variant="outline" className="py-0">
+                off
+              </Badge>
+            )}
+            {scope !== "Always" && (
+              <Badge variant="secondary" className="block min-w-0 max-w-[55%] shrink truncate py-0">
+                {scope}
+              </Badge>
+            )}
           </button>
         );
       })}

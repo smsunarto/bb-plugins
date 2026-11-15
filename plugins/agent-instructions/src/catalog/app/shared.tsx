@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { Button } from "../../../components/ui/button.tsx";
 import { queryKey, useRpcMutation } from "../../app/rpc.ts";
 import type { PublishOutcome } from "../contract.ts";
 
@@ -26,14 +27,15 @@ export function PublishNotices({
           {verb ? `${verb}, but publishing did not finish` : "Publishing did not finish"}:{" "}
           {shown.error}
         </span>
-        <button
+        <Button
           type="button"
-          className="pe-button"
+          variant="outline"
+          size="sm"
           disabled={publish.isPending}
           onClick={() => publish.mutate(null)}
         >
           {publish.isPending ? "Publishing…" : "Retry publish"}
-        </button>
+        </Button>
       </div>
     );
   }

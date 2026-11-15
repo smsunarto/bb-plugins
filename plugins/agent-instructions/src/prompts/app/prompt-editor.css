@@ -41,6 +41,8 @@
 }
 .pe-plugin,
 .pe-row {
+  /* Contains the sr-only "Unsaved" text, so it cannot add scroll area to the list. */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -76,8 +78,7 @@
   color: var(--foreground);
 }
 .pe-plugin:focus-visible,
-.pe-row:focus-visible,
-.pe-button:focus-visible {
+.pe-row:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
@@ -108,26 +109,6 @@
 }
 .pe-meta[data-tone="bad"] {
   color: var(--pe-bad);
-}
-.pe-tag {
-  flex: none;
-  padding: 0 5px;
-  border: 1px solid var(--pe-hairline);
-  border-radius: 4px;
-  font-size: 10.5px;
-  line-height: 16px;
-}
-/* A rule's scope can be long; it gives way before the rule's name does. */
-.pe-tag.pe-scope {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 55%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.pe-tag[data-tone="warn"] {
-  color: var(--pe-warn);
 }
 .pe-dot {
   flex: none;
@@ -168,24 +149,6 @@
   display: flex;
   flex: none;
   gap: 8px;
-}
-.pe-button {
-  padding: 5px 12px;
-  border: 1px solid var(--input, var(--border));
-  border-radius: 6px;
-  background: var(--background);
-  color: var(--foreground);
-  font: inherit;
-  cursor: pointer;
-}
-.pe-button[data-primary] {
-  border-color: var(--primary);
-  background: var(--primary);
-  color: var(--primary-foreground);
-}
-.pe-button:disabled {
-  opacity: 0.5;
-  cursor: default;
 }
 .pe-notice {
   padding: 8px 10px;
@@ -238,14 +201,9 @@
   flex-wrap: wrap;
   gap: 4px;
 }
-.pe-chip {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: var(--pe-recessed);
-  font-size: 11.5px;
-}
 
 .pe-skill-summary {
+  position: relative;
   padding: 4px 8px;
   border-radius: 6px;
   color: var(--muted-foreground);
@@ -308,55 +266,11 @@
 .pe-status .pe-meta {
   white-space: normal;
 }
-.pe-meta[data-tone="warn"],
-.pe-tag[data-tone="warn"] {
+.pe-meta[data-tone="warn"] {
   color: var(--pe-warn);
-}
-.pe-tag[data-tone="bad"] {
-  color: var(--pe-bad);
-}
-.pe-label .pe-tag {
-  margin-left: 6px;
-  letter-spacing: normal;
-  text-transform: none;
-}
-.pe-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--primary);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-.pe-link[data-tone="bad"] {
-  color: var(--pe-bad);
-}
-.pe-link:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.pe-link:focus-visible,
-.pe-input:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
 }
 .pe-filter {
   padding: 2px 8px 0;
-}
-.pe-input {
-  width: 100%;
-  min-width: 0;
-  padding: 5px 8px;
-  border: 1px solid var(--input, var(--border));
-  border-radius: 6px;
-  background: var(--background);
-  color: var(--foreground);
-  font: inherit;
-}
-.pe-actions .pe-input {
-  flex: 1 1 160px;
-  width: auto;
 }
 .pe-actions form,
 form.pe-actions {
@@ -396,45 +310,6 @@ form.pe-actions {
 .pe-deleted .pe-row-label {
   color: var(--muted-foreground);
 }
-.pe-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-.pe-button[data-destructive] {
-  border-color: var(--destructive);
-  background: var(--destructive);
-  color: var(--destructive-foreground, var(--primary-foreground));
-}
-.pe-shimmer {
-  display: block;
-  height: 12px;
-  margin: 8px;
-  border-radius: 4px;
-  background: linear-gradient(
-    90deg,
-    var(--pe-recessed) 25%,
-    var(--state-hover, var(--accent)) 50%,
-    var(--pe-recessed) 75%
-  );
-  background-size: 200% 100%;
-  animation: pe-shimmer 1.4s linear infinite;
-}
-.pe-editor > .pe-shimmer {
-  margin: 0;
-}
-.pe-placeholder {
-  background: var(--pe-recessed);
-}
-@keyframes pe-shimmer {
-  from {
-    background-position: 200% 0;
-  }
-  to {
-    background-position: -200% 0;
-  }
-}
 /* A finger needs a 36px target, and iOS zooms into a field under 16px. */
 @media (max-width: 767px) and (pointer: coarse) {
   .pe-row {
@@ -442,11 +317,6 @@ form.pe-actions {
   }
   .pe-textarea {
     font-size: 16px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .pe-shimmer {
-    animation: none;
   }
 }
 .pe-panel output {

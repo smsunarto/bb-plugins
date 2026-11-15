@@ -208,12 +208,9 @@ test("typing filters a complete cached list without extra host requests", async 
       .querySelector("file-tree-container")
       ?.shadowRoot?.querySelector(`[data-item-path="${path}"]`);
   await waitFor(() => expect(row("AGENTS.md")).toBeTruthy());
-  fireEvent.change(
-    sourceTextbox(slot.getByRole("textbox", { name: "Find instruction or skill file" })),
-    {
-      target: { value: ".agents" },
-    },
-  );
+  fireEvent.change(slot.getByRole("searchbox", { name: "Find instruction or skill file" }), {
+    target: { value: ".agents" },
+  });
   await waitFor(() => expect(row(".agents/skills/sample/references/checklist.md")).toBeTruthy());
   expect(row("AGENTS.md")).toBeNull();
   expect(slot.rpcCalls.filter((c) => c.method === "documentFiles")).toHaveLength(1);
