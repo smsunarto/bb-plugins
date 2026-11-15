@@ -1531,11 +1531,77 @@ diffs-container {
   color: inherit !important;
 }
 
-/* p-0 replaces responsive overlays' safe-area padding in pickers and dialogs.
- * Keep explicit max-md:p-0 bodies unchanged: the context-window card owns its
- * mobile padding. BB's body variable removes the inset while the keyboard is up. */
+/* p-0 removes responsive overlays' bottom padding in pickers and dialogs.
+ * The drawer card below already clears the safe area, so these bodies need
+ * only an inner gap. Keep explicit max-md:p-0 bodies unchanged: the
+ * context-window card owns its mobile padding. */
 .dark [data-persistent-drawer-content] > .p-0:not(.max-md\:p-0) {
-  padding-bottom: max(1rem, var(--bb-safe-area-bottom, env(safe-area-inset-bottom)));
+  padding-bottom: 8px;
+}
+
+/* Compact drawers follow shadcn's Maia Drawer: a blurred 80% scrim and a
+ * popover card floating 8px from the sides and bottom, with one full border,
+ * shadcn's --radius-4xl (base radius + 16px), and a 100x6 muted grabber 6px
+ * below the card's top edge. bb's persistent drawer and the vaul drawers
+ * plugins vendor share it.
+ *
+ * The card is painted by ::before inside a transparent panel, as shadcn's
+ * vaul-based Maia drawer does, so bb's closed transform (translateY(100%))
+ * still hides all of it. A margin would leave the card's top 8px showing.
+ * On phones with a home indicator the card's bottom rises to the safe-area
+ * inset, which clears the screen's rounded corners: at 8px they would clip the
+ * card's lower corners. The keyboard zeroes bb's inset, leaving 8px above it.
+ * bb keeps state, drag, transforms, transitions, and height. The persistent
+ * handle keeps a 32px-tall drag target. */
+.dark [data-persistent-drawer-backdrop],
+.dark [data-vaul-overlay] {
+  background-color: rgb(0 0 0 / 0.8);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+}
+
+.dark [data-persistent-drawer-content],
+.dark [data-vaul-drawer][data-vaul-drawer-direction="bottom"] {
+  border-width: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--popover-foreground);
+  --monokai-drawer-bottom: max(8px, var(--bb-safe-area-bottom, env(safe-area-inset-bottom)));
+  padding-inline: 8px;
+  padding-bottom: calc(var(--monokai-drawer-bottom) + 8px);
+}
+
+.dark [data-persistent-drawer-content]::before,
+.dark [data-vaul-drawer][data-vaul-drawer-direction="bottom"]::before {
+  content: "";
+  position: absolute;
+  inset: 8px 8px var(--monokai-drawer-bottom);
+  z-index: -1;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius, 0.5rem) + 16px);
+  background: var(--popover);
+  pointer-events: none;
+}
+
+.dark [data-persistent-drawer-handle] {
+  width: 132px;
+  height: 32px;
+  align-items: flex-start;
+  padding-top: 14px;
+}
+
+.dark [data-persistent-drawer-handle] > div,
+.dark [data-vaul-drawer][data-vaul-drawer-direction="bottom"] > [data-vaul-handle] {
+  width: 100px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--muted);
+  opacity: 1;
+}
+
+.dark [data-vaul-drawer][data-vaul-drawer-direction="bottom"] > [data-vaul-handle] {
+  margin-top: 14px;
+  margin-bottom: 8px;
 }
 
 /* bb's notification history is a first-class themed surface, separate from

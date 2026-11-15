@@ -221,6 +221,37 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
+  test("gives compact drawers shadcn's Maia card without taking over host motion", () => {
+    const blocks = Array.from(
+      theme
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .matchAll(/([^{}]*\[data-(?:persistent-drawer|vaul)-[^{}]*)\{([^{}]*)\}/g),
+      ([, selector = "", body = ""]) => ({ selector: selector.trim(), body }),
+    );
+    const declarations = blocks.map((block) => block.body).join("\n");
+    expect(declarations).toContain("background-color: rgb(0 0 0 / 0.8);");
+    expect(declarations).toContain("backdrop-filter: blur(4px);");
+    // The card is a ::before inside the panel so bb's closed translateY(100%) hides it fully.
+    const card = blocks.find((block) =>
+      block.selector.includes("[data-persistent-drawer-content]::before"),
+    );
+    // Rising to the safe-area inset keeps the card's corners inside a phone's rounded screen.
+    expect(card?.body).toContain("inset: 8px 8px var(--monokai-drawer-bottom);");
+    expect(declarations).toContain(
+      "--monokai-drawer-bottom: max(8px, var(--bb-safe-area-bottom, env(safe-area-inset-bottom)));",
+    );
+    expect(card?.body).toContain("border: 1px solid var(--border);");
+    expect(card?.body).toContain("border-radius: calc(var(--radius, 0.5rem) + 16px);");
+    expect(declarations).toContain("width: 100px;\n  height: 6px;");
+    expect(
+      blocks.filter(
+        (block) =>
+          /^\s*(transform|transition|max-height|will-change):/m.test(block.body) ||
+          (!block.selector.includes("handle") && /^\s*margin/m.test(block.body)),
+      ),
+    ).toEqual([]);
+  });
+
   test("gives the framed macOS window Capy's flat desktop shell", () => {
     expect(theme).toContain(
       '.dark [data-testid="app-layout-root"][data-framed] {\n  --bb-window-frame-lip: 0px;\n  --bb-window-frame-leading-lip: 0px;\n  background-image: none;',

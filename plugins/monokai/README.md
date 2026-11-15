@@ -87,7 +87,9 @@ a subtle border, quiet icons, a filled action button, and an inline dismiss
 button. Desktop toasts sit at the top center of the focused conversation.
 Archive confirmations use a single-row card with dismissal, title, and Undo;
 the thread-title description is hidden. Other notifications keep their details.
-Compact layouts keep bb's native drawer and toast placement. Undo, links, dismissal, and stacking keep bb's
+Compact drawers, bb's own and the ones plugins vendor, use shadcn's Maia
+Drawer look: a blurred dark scrim and a rounded card floating 8 px from the
+screen edges (above the home indicator on iPhone, clear of the rounded corners), with shadcn's wide grabber. Compact layouts keep bb's native toast placement. Undo, links, dismissal, and stacking keep bb's
 existing behavior. This is a theme-only CSS override. Switching palettes
 restores bb's placement. Desktop browsers without CSS anchor positioning center
 toasts over the viewport instead. Native browser and operating-system banners

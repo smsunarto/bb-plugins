@@ -219,7 +219,14 @@ Syntax rules may never borrow these for non-feedback meaning:
 - The in-app notification center follows the Monokai surface contract at every
   width: standard seams, ladder-based focus and hover fills, muted controls,
   and the UI font. On desktop its popover is rounded to 16 px with the standard
-  border and layered shadow. Compact layouts keep bb's native drawer geometry.
+  border and layered shadow. On compact layouts it opens in the shared drawer.
+- Compact drawers use shadcn's Maia Drawer: a blurred 80% black scrim and a
+  popover card floating 8 px from the sides and bottom (or above the
+  home-indicator inset, so the screen's rounded corners never clip it), with the standard
+  border on every side, shadcn's 4xl radius, and a 100 x 6 px muted grabber
+  6 px below the card's top. This covers bb's persistent drawer and the vaul
+  drawers plugins vendor. bb keeps drawer state, drag, motion, height, and
+  safe-area padding.
 - Transient toasts use a compact shadcn-style card on mobile and desktop,
   with the shared Card and Button radii, standard border and shadow, muted description, filled
   actions, and inline dismissal. Desktop placement is top-centered over the
