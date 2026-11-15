@@ -1579,9 +1579,23 @@ diffs-container {
   position: absolute;
   inset: 8px 8px var(--monokai-drawer-bottom);
   z-index: -1;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: calc(var(--radius, 0.5rem) + 16px);
   background: var(--popover);
+  pointer-events: none;
+}
+
+/* The card's ring sits above the content: pickers fill their body with
+ * bg-popover flush to the card's edge, which hid a ring drawn by ::before along
+ * the sides. ::before keeps a transparent border so the fill's shape matches. */
+.dark [data-persistent-drawer-content]::after,
+.dark [data-vaul-drawer][data-vaul-drawer-direction="bottom"]::after {
+  content: "";
+  position: absolute;
+  inset: 8px 8px var(--monokai-drawer-bottom);
+  z-index: 1;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius, 0.5rem) + 16px);
   pointer-events: none;
 }
 

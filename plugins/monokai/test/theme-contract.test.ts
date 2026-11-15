@@ -240,8 +240,14 @@ describe("bb Monokai contract audit", () => {
     expect(declarations).toContain(
       "--monokai-drawer-bottom: max(8px, var(--bb-safe-area-bottom, env(safe-area-inset-bottom)));",
     );
-    expect(card?.body).toContain("border: 1px solid var(--border);");
     expect(card?.body).toContain("border-radius: calc(var(--radius, 0.5rem) + 16px);");
+    // The ring is an ::after above the content, so pickers' flush bg-popover cannot cover it.
+    const ring = blocks.find((block) =>
+      block.selector.includes("[data-persistent-drawer-content]::after"),
+    );
+    expect(ring?.body).toContain("inset: 8px 8px var(--monokai-drawer-bottom);");
+    expect(ring?.body).toContain("border: 1px solid var(--border);");
+    expect(ring?.body).toContain("z-index: 1;");
     expect(declarations).toContain("width: 100px;\n  height: 6px;");
     expect(
       blocks.filter(
