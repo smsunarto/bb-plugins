@@ -1,5 +1,6 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { draftDispatchDecision } from "./src/draft-dispatch";
+import { registerInlinePrompts } from "./src/inline-prompts/server";
 import { registerStarredModels } from "./src/starred-models/server";
 
 export default async function plugin(bb: BbPluginApi): Promise<void> {
@@ -7,4 +8,5 @@ export default async function plugin(bb: BbPluginApi): Promise<void> {
     draftDispatchDecision({ pluginId: bb.pluginId, context }),
   );
   registerStarredModels(bb);
+  registerInlinePrompts(bb);
 }

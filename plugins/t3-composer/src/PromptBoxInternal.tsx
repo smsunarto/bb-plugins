@@ -121,6 +121,7 @@ import {
 } from "./editor/prompt-editor-blockquote";
 import { applyPromptParagraphNewline } from "./editor/prompt-editor-paragraph";
 import { MentionMenu } from "./mentions/MentionMenu";
+import { inlinePromptMentionTarget, useInlinePromptNames } from "./inline-prompts/useInlinePrompts";
 import { useTypeaheadMenuMaxHeight } from "./useTypeaheadMenuMaxHeight";
 import {
   findPastedThreadLinkCandidates,
@@ -1142,6 +1143,7 @@ export function PromptBoxInternal({
   const composerMenuRef = useRef<ComposerMenuState>(null);
   const mentionSearch = useComposerMentionSearch();
   const commandSearch = useComposerCommandSearch();
+  const inlinePromptNames = useInlinePromptNames();
   const searchRef = useRef({
     mention: mentionSearch.search,
     command: commandSearch.search,
@@ -2373,14 +2375,19 @@ export function PromptBoxInternal({
       }
 
       const trailingText = mentionPillTrailingText(currentEditor.state.doc, activeTrigger.to);
+      // An inline prompt's text must not read as a command: a leading `/name` would still make
+      // Claude load the skill, sending the prompt twice.
+      const inlinePrompt = inlinePromptMentionTarget(item, inlinePromptNames);
       insertPromptMentionPill({
         editor: currentEditor,
         range: { from: activeTrigger.from, to: activeTrigger.to },
         pills: [
-          {
-            mention: commandMentionTarget(item, activeTrigger.char),
-            serializedText: `${activeTrigger.char}${item.name}`,
-          },
+          inlinePrompt
+            ? { mention: inlinePrompt, serializedText: `@${item.name}` }
+            : {
+                mention: commandMentionTarget(item, activeTrigger.char),
+                serializedText: `${activeTrigger.char}${item.name}`,
+              },
         ],
         trailingText,
         dismissedTrigger: {
@@ -2393,7 +2400,7 @@ export function PromptBoxInternal({
         },
       });
     },
-    [activeTrigger, insertPromptMentionPill, setComposerMenu, startHandoff],
+    [activeTrigger, inlinePromptNames, insertPromptMentionPill, setComposerMenu, startHandoff],
   );
 
   const applyTrigger = useCallback(
