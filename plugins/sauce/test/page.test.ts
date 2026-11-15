@@ -191,3 +191,46 @@ test("a touch or text refused while Sauce covers the device sends nothing", asyn
   expect(await codeOf(page.typeText("abc"))).toBe("not_ready");
   expect(commands()).toEqual([]);
 });
+
+test("an upload waits out a progress notice and returns the build once Sauce lists it", async () => {
+  let url = HOME;
+  let notices = 0;
+  let uploaded = false;
+  const { page } = scripted(
+    [
+      [
+        /location\.href/,
+        () => ({
+          url,
+          host: "app.saucelabs.com",
+          path: new URL(url).pathname,
+          ended: false,
+          device: null,
+          capacity: false,
+        }),
+      ],
+      [
+        /notifications-wrapper/,
+        () => (uploaded ? (++notices < 3 ? "Uploading app.apk 40%" : "app.apk uploaded") : ""),
+      ],
+      [
+        /app-search-and-select-file-id-/,
+        () => [
+          ...(uploaded && url === HOME ? [{ id: "f2", label: "Demo/app.apk v2" }] : []),
+          { id: "f1", label: "Demo/app.apk v1" },
+        ],
+      ],
+      [/./, () => true],
+    ],
+    (args) => {
+      if (args[0] === "open") url = args[1] ?? url;
+      if (args[0] === "upload") uploaded = true;
+    },
+  );
+  expect(await page.uploadApp("/builds/app.apk", "app.apk", 60_000)).toEqual({
+    id: "f2",
+    label: "Demo/app.apk v2",
+  });
+  // The tab stayed on the upload page until the notice stopped reporting progress.
+  expect(notices).toBe(3);
+});

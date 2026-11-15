@@ -206,6 +206,8 @@ const APP_MANAGEMENT = "https://app.saucelabs.com/app-management";
 const UPLOAD_INPUT = "[data-qa=app-management-upload-box-input]";
 /** How the page's notification words a refused upload ("406 NotAcceptable Uploading has failed. ..."). */
 const UPLOAD_FAILED = /fail|unable|error|invalid|not ?acceptable|denied|too large/i;
+/** A notification that reports progress, not an outcome; leaving the page on it would cut the upload short. */
+const UPLOAD_PENDING = /uploading|in progress|processing|\d\s*%/i;
 
 /**
  * The ADB Shell command box. Sauce also renders a device paste box
@@ -537,7 +539,8 @@ export function createSaucePage(browser: BrowserRunner, deps: SaucePageDeps = de
         timeoutMs,
         async () => {
           const text = await notice();
-          return text && text !== stale ? text : null;
+          if (!text || text === stale) return null;
+          return UPLOAD_FAILED.test(text) || !UPLOAD_PENDING.test(text) ? text : null;
         },
         1000,
       );

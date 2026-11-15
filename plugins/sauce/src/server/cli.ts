@@ -114,7 +114,7 @@ function until(text: string | undefined): Until {
   }
   throw usage(
     `wait takes stable, changed, or log:<regex>, got "${text ?? ""}"`,
-    'For example: bb sauce wait "log:Unity.*match started" --timeout 30s',
+    'For example: bb sauce wait "log:Exception|FATAL" --timeout 30s',
   );
 }
 
@@ -559,7 +559,7 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
         summary: "Type text into the field that has focus on the device",
         description:
           "Tap the field first so the device shows its keyboard. Text goes through Sauce's keyboard box, on Android and iOS.\n" +
-          'Example: bb sauce type "hello world" --look. Put text that starts with a dash after `--`.',
+          'Example: bb sauce type "hello world" --look. Put text that starts with a dash after `--`, and every option before it.',
         positionals: [
           {
             name: "text",
@@ -675,7 +675,8 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
         summary: "Run an adb shell command on an Android device (up to 20 s)",
         description:
           "Sauce allows a fixed list of commands such as am, dumpsys, getprop, input, grep; logcat, cat, tail and wm are refused.\n" +
-          "A page_changed error saying the command was not sent means no keys reached the device; run it again.",
+          "A page_changed error saying the command was not sent means no keys reached the device; run it again.\n" +
+          "Everything after `--` goes to the device, so put --json before it.",
         positionals: [
           {
             name: "command",
