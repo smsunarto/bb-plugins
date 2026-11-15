@@ -14,7 +14,7 @@ import {
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { FindingsCard } from "../findings-card.tsx";
 import { resetPendingViewed } from "../guide-data.ts";
-import { resetPendingChecks } from "../review-data.ts";
+import { resetPendingWrites } from "../review-data.ts";
 import { ReviewPanel } from "../review-entry.tsx";
 import { resetNavStores } from "./sources.ts";
 import { resetPatchStores } from "./patches.ts";
@@ -237,7 +237,7 @@ const width = window.innerWidth;
 beforeEach(() => {
   localStorage.clear();
   resetNavStores();
-  resetPendingChecks();
+  resetPendingWrites();
   resetPendingViewed();
   resetPatchStores();
 });

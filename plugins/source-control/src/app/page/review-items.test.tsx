@@ -15,7 +15,7 @@ import { reviewPath, type ChangeDetail, type ChangeRow } from "../../core/review
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { ChangeDirective } from "../chat-card.tsx";
 import { FindingsCard } from "../findings-card.tsx";
-import { resetPendingChecks } from "../review-data.ts";
+import { resetPendingWrites } from "../review-data.ts";
 import { ReviewPanel } from "../review-entry.tsx";
 import { patchLines } from "../review-model.ts";
 import { annotationProbe } from "./annotations.tsx";
@@ -250,7 +250,7 @@ const checked = (element: Element) => String(element.getAttribute("aria-checked"
 beforeEach(() => {
   localStorage.clear();
   resetNavStores();
-  resetPendingChecks();
+  resetPendingWrites();
   resetPatchStores();
   annotationProbe.onRender = null;
 });
@@ -655,4 +655,108 @@ test("two checks one after another both stay checked, before and after the serve
   await waitFor(() => expect(server.state.selected).toHaveLength(2));
   await slot.experimental_invalidateRpc([reviewTag(KEY)]);
   await waitFor(() => expect(boxes().map(checked)).toEqual(["true", "true"]));
+});
+
+/**
+ * The review page on a server that pushes the review's invalidation from
+ * inside each draft write, as bb's server does: the read it starts can
+ * answer after the write's own reply.
+ */
+function pushingServer(items: ReviewItem[]) {
+  const server = reviewServer(items);
+  const { saveDraft, deleteDraft } = server.handlers as Required<Handlers>;
+  let pushed: Promise<void> = Promise.resolve();
+  let failNext = false;
+  const slot = render({
+    ...server.handlers,
+    saveDraft: (input) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error("The server said no.");
+      }
+      const answer = saveDraft(input);
+      pushed = slot.experimental_invalidateRpc([reviewTag(KEY)]);
+      return answer;
+    },
+    deleteDraft: (input) => {
+      const answer = deleteDraft(input);
+      pushed = slot.experimental_invalidateRpc([reviewTag(KEY)]);
+      return answer;
+    },
+  });
+  const shown = () =>
+    slot.queryAllByTestId("sc-draft").map((draft) => draft.querySelector("p")?.textContent);
+  const reply = async (index: number, text: string) => {
+    const annotation = (await slot.findAllByTestId("sc-annotation"))[index]!;
+    fireEvent.click(within(annotation).getByTestId("sc-reply"));
+    const box = await within(annotation).findByRole("textbox", { name: "Reply" });
+    fireEvent.change(box, { target: { value: text } });
+    fireEvent.click(within(annotation).getByRole("button", { name: "Add reply" }));
+    return annotation;
+  };
+  const closed = (annotation: HTMLElement) =>
+    waitFor(() => expect(within(annotation).queryByRole("textbox")).toBeNull());
+  return {
+    server,
+    slot,
+    shown,
+    reply,
+    closed,
+    pushed: () => pushed,
+    failNext: () => (failNext = true),
+  };
+}
+
+test("two comments one after another both stay, before and after the server answers", async () => {
+  const page = pushingServer([comment(1, 2), comment(2, 4)]);
+  await page.closed(await page.reply(0, "First."));
+  await page.pushed();
+  await page.closed(await page.reply(1, "Second."));
+  expect(page.shown()).toEqual(["First.", "Second."]);
+  await page.pushed();
+  await waitFor(() => expect(page.shown()).toEqual(["First.", "Second."]));
+  expect(page.server.state.drafts.map((draft) => draft.body)).toEqual(["First.", "Second."]);
+
+  // Once the reads agree, they are the truth: a draft gone from the server goes from the page.
+  page.server.state.drafts = page.server.state.drafts.slice(1);
+  await page.slot.experimental_invalidateRpc([reviewTag(KEY)]);
+  await waitFor(() => expect(page.shown()).toEqual(["Second."]));
+});
+
+test("an edit or a delete followed by a new comment keeps both writes", async () => {
+  const page = pushingServer([comment(1, 2), comment(2, 4)]);
+  await page.closed(await page.reply(0, "First."));
+  await page.closed(await page.reply(1, "Second."));
+  await page.pushed();
+
+  const [first] = page.slot.getAllByTestId("sc-draft");
+  fireEvent.click(within(first!).getByRole("button", { name: "Edit" }));
+  const box = await page.slot.findByRole("textbox", { name: "Reply" });
+  fireEvent.change(box, { target: { value: "First, edited." } });
+  fireEvent.click(page.slot.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(page.slot.queryByRole("textbox")).toBeNull());
+  await page.closed(await page.reply(1, "Third."));
+  await page.pushed();
+  await waitFor(() => expect(page.shown()).toEqual(["First, edited.", "Second.", "Third."]));
+
+  const second = page.slot.getAllByTestId("sc-draft")[1]!;
+  fireEvent.click(within(second).getByRole("button", { name: "Delete" }));
+  await page.closed(await page.reply(0, "Fourth."));
+  await page.pushed();
+  await waitFor(() => expect(page.shown()).toEqual(["First, edited.", "Fourth.", "Third."]));
+  expect(page.server.state.drafts.map((draft) => draft.body)).toEqual([
+    "First, edited.",
+    "Third.",
+    "Fourth.",
+  ]);
+});
+
+test("a comment the server refuses leaves the page and says why; the earlier one stays", async () => {
+  const page = pushingServer([comment(1, 2), comment(2, 4)]);
+  await page.closed(await page.reply(0, "First."));
+  await page.pushed();
+  page.failNext();
+  const annotation = await page.reply(1, "Refused.");
+  expect(await within(annotation).findByRole("alert")).toBeTruthy();
+  expect(page.shown()).toEqual(["First."]);
 });

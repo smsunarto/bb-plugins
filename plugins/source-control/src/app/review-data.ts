@@ -30,6 +30,7 @@ const NO_KEYS: readonly string[] = [];
  * one is predicted on the same Change, so the selection keeps its own: each
  * box shows the reader's choice from the click until a read agrees, the
  * write fails, or a few seconds pass, when the server's read is the truth.
+ * workaround:source-control/keyed-prediction-drop
  */
 const PENDING_MS = 5_000;
 const pendingChecks = new Map<ChangeKey, ReadonlyMap<string, boolean>>();
@@ -74,9 +75,63 @@ function withPending(
     : { ...review, selected: [...selected] };
 }
 
-/** For tests: forget every pending check. */
-export function resetPendingChecks(): void {
+/**
+ * Drafts the reader saved (a draft input) or deleted (null) that the server
+ * has not shown back yet, by Change and draft id. bb's keyed prediction loses
+ * an earlier accepted draft the same way it loses a check, so a second
+ * comment replaced the first on screen until a reload. Each entry shows from
+ * the click until a read agrees, the write fails, or a few seconds after the
+ * write succeeds, when the server's read is the truth.
+ * workaround:source-control/keyed-prediction-drop
+ */
+const pendingDrafts = new Map<ChangeKey, ReadonlyMap<string, DraftInput | null>>();
+
+function setPendingDraft(key: ChangeKey, id: string, value: DraftInput | null | undefined): void {
+  const next = new Map(pendingDrafts.get(key));
+  if (value === undefined) next.delete(id);
+  else next.set(id, value);
+  if (next.size === 0) pendingDrafts.delete(key);
+  else pendingDrafts.set(key, next);
+  for (const listener of pendingListeners) listener();
+}
+
+/** Drops a pending draft that is still `value`; a later save or delete of it owns the entry. */
+function clearPendingDraft(key: ChangeKey, id: string, value: DraftInput | null): void {
+  if (pendingDrafts.get(key)?.get(id) === value) setPendingDraft(key, id, undefined);
+}
+
+/** Whether the read shows the pending save or delete as the reader left it. */
+function draftAgrees(read: ChangeReview, id: string, value: DraftInput | null): boolean {
+  const shown = read.drafts.find((draft) => draft.id === id);
+  if (value === null) return shown === undefined;
+  return shown !== undefined && shown.body === value.body && shown.replyTo === value.replyTo;
+}
+
+/** The server's review with the reader's unconfirmed drafts applied. */
+function withPendingDrafts(
+  review: ChangeReview | undefined,
+  pending: ReadonlyMap<string, DraftInput | null> | undefined,
+): ChangeReview | undefined {
+  if (!review || !pending) return review;
+  const drafts: Draft[] = [];
+  for (const draft of review.drafts) {
+    if (!pending.has(draft.id)) drafts.push(draft);
+    else {
+      const input = pending.get(draft.id);
+      // Times are the server's; an edit keeps them.
+      if (input) drafts.push({ ...draft, ...input, state: "pending" });
+    }
+  }
+  for (const [id, input] of pending)
+    if (input && !review.drafts.some((draft) => draft.id === id))
+      drafts.push({ ...input, state: "pending", createdAt: 0, updatedAt: 0 });
+  return { ...review, drafts };
+}
+
+/** For tests: forget every pending check and draft. */
+export function resetPendingWrites(): void {
   pendingChecks.clear();
+  pendingDrafts.clear();
 }
 
 export type ReviewRead = {
@@ -99,6 +154,9 @@ export function useChangeReview(key: ChangeKey | null, enabled = true): ReviewRe
   const pending = useSyncExternalStore(subscribePending, () =>
     key ? pendingChecks.get(key) : undefined,
   );
+  const drafts = useSyncExternalStore(subscribePending, () =>
+    key ? pendingDrafts.get(key) : undefined,
+  );
   // A read that shows a pending check as the reader left it confirms it.
   useLayoutEffect(() => {
     if (!key || !read || !pending) return;
@@ -111,7 +169,16 @@ export function useChangeReview(key: ChangeKey | null, enabled = true): ReviewRe
         checked,
       );
   }, [key, read, pending]);
-  const review = useMemo(() => withPending(read, pending), [read, pending]);
+  // A read that shows a pending draft as the reader left it confirms it.
+  useLayoutEffect(() => {
+    if (!key || !read || !drafts) return;
+    for (const [id, value] of drafts)
+      if (draftAgrees(read, id, value)) clearPendingDraft(key, id, value);
+  }, [key, read, drafts]);
+  const review = useMemo(
+    () => withPendingDrafts(withPending(read, pending), drafts),
+    [read, pending, drafts],
+  );
   const [interner] = useState(() => new ReviewInterner());
   const stable = useMemo(() => interner.stable(review), [interner, review]);
   const refetch = useRef(query.refetch);
@@ -137,40 +204,30 @@ export type ReviewActions = {
   deleteDraft(id: string): Promise<void>;
 };
 
-function upsert(drafts: readonly Draft[], input: DraftInput): Draft[] {
-  const old = drafts.find((draft) => draft.id === input.id);
-  // Times are the server's; a prediction keeps the old ones, or none yet.
-  const next: Draft = {
-    ...input,
-    state: "pending",
-    createdAt: old?.createdAt ?? 0,
-    updatedAt: old?.updatedAt ?? 0,
-  };
-  return old ? drafts.map((draft) => (draft.id === input.id ? next : draft)) : [...drafts, next];
+/** Shows a draft write at once; a failed one drops it, a done one hands over to the reads. */
+async function writeDraft(
+  key: ChangeKey,
+  id: string,
+  value: DraftInput | null,
+  write: () => Promise<unknown>,
+): Promise<void> {
+  setPendingDraft(key, id, value);
+  try {
+    await write();
+  } catch (error) {
+    clearPendingDraft(key, id, value);
+    throw error;
+  }
+  setTimeout(() => clearPendingDraft(key, id, value), PENDING_MS);
 }
 
 /** The review's writes for one Change, as one object that never changes. */
 export function useReviewActions(key: ChangeKey): ReviewActions {
   // Predicted by the pending checks above, not by bb's keyed prediction.
   const select = useRpcMutation({ contract: sourceControlContract, method: "setSelected" });
-  const save = useRpcMutation({
-    contract: sourceControlContract,
-    method: "saveDraft",
-    optimistic: (input, cache) =>
-      cache.updateKey("reviewForChange", input.key, (current) =>
-        current ? { ...current, drafts: upsert(current.drafts, input.draft) } : current,
-      ),
-  });
-  const remove = useRpcMutation({
-    contract: sourceControlContract,
-    method: "deleteDraft",
-    optimistic: (input, cache) =>
-      cache.updateKey("reviewForChange", input.key, (current) =>
-        current
-          ? { ...current, drafts: current.drafts.filter((draft) => draft.id !== input.id) }
-          : current,
-      ),
-  });
+  // Predicted by the pending drafts above, not by bb's keyed prediction.
+  const save = useRpcMutation({ contract: sourceControlContract, method: "saveDraft" });
+  const remove = useRpcMutation({ contract: sourceControlContract, method: "deleteDraft" });
   const dismiss = useRpcMutation({
     contract: sourceControlContract,
     method: "dismissItem",
@@ -217,10 +274,10 @@ export function useReviewActions(key: ChangeKey): ReviewActions {
         );
       },
       async saveDraft(draft) {
-        await latest.current.save({ key, draft });
+        await writeDraft(key, draft.id, draft, () => latest.current.save({ key, draft }));
       },
       async deleteDraft(id) {
-        await latest.current.remove({ key, id });
+        await writeDraft(key, id, null, () => latest.current.remove({ key, id }));
       },
       async dismissItem(id) {
         await latest.current.dismiss({ key, id });

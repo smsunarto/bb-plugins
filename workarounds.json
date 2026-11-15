@@ -33,6 +33,20 @@
       "verify": "Remove the @property rule and fill the right panel to about 2,300 elements (a busy GitButler tab). Open and close the panel and drag its divider: worst frames stay at or under the with-rule figures in `defect`."
     },
     {
+      "id": "source-control/keyed-prediction-drop",
+      "defect": "bb's keyed RPC prediction (cache.updateKey) loses an earlier accepted write to a key when a later write to the same key is predicted while the server's pushed invalidation read is in flight: the first check is unticked and the first new review comment disappears until a reload, though the server stored both.",
+      "verifiedOn": "0.49.0",
+      "manual": "In plugins/source-control/src/app/review-data.ts, delete pendingChecks, pendingDrafts and their helpers, and predict setSelected, saveDraft and deleteDraft with cache.updateKey on reviewForChange again.",
+      "probe": {
+        "needed": null,
+        "fixed": null
+      },
+      "afterRemoval": [
+        "cd plugins/source-control && bun run typecheck && bunx vitest run src/app/page/review-items.test.tsx"
+      ],
+      "verify": "On a pull request's Files tab, add comments on three lines one after another: all three stay on screen without a reload. Then tick two findings one after another: both stay ticked."
+    },
+    {
       "id": "genui/source-view-remount",
       "defect": "bb's source viewer (@pierre/diffs VirtualizedFile before 1.3.0) keeps a blank placeholder after being hidden with display:none and shown again.",
       "verifiedOn": "0.49.0",
