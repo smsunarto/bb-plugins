@@ -20,6 +20,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
@@ -676,9 +677,9 @@ function AnnotationRow({
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5" aria-hidden="true">
         <div className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground">
-          <span className="inline-flex min-w-0 max-w-[60%] shrink-0 items-center rounded-sm border border-border bg-muted px-1.5 py-px font-mono text-[11px] leading-[14px] font-medium">
+          <Badge variant="secondary" className="min-w-0 max-w-[60%] shrink-0 font-mono">
             <span className="truncate">{parts.target}</span>
-          </span>
+          </Badge>
           <span className="min-w-0 truncate">{parts.location}</span>
         </div>
         <p className="break-words whitespace-pre-wrap text-foreground">{parts.comment}</p>

@@ -13,8 +13,12 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { EmptyStatePanel } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 import { broadcastType, sharedRequest } from "@/lib/shared-request.ts";
 import type { rpcContract } from "@/server.ts";
@@ -45,14 +49,9 @@ const statusTone: Record<AnnotationStatus, string> = {
 
 function Pill({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] leading-4 text-muted-foreground",
-        className,
-      )}
-    >
+    <Badge variant="outline" className={cn("rounded-full text-muted-foreground", className)}>
       {children}
-    </span>
+    </Badge>
   );
 }
 
@@ -394,31 +393,38 @@ export function AnnotationPanel() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 md:p-5">
-        <div className="flex flex-wrap items-center gap-1.5">
+        <ToggleGroup
+          type="single"
+          size="sm"
+          value={filter}
+          onValueChange={(value) => {
+            if (value) setFilter(value as FilterId);
+          }}
+          aria-label="Filter annotations"
+          className="flex-wrap justify-start"
+        >
           {statusFilters.map((entry) => (
-            <Button
-              key={entry.id}
-              size="sm"
-              variant={filter === entry.id ? "secondary" : "ghost"}
-              onClick={() => setFilter(entry.id)}
-            >
+            <ToggleGroupItem key={entry.id} value={entry.id} className="px-3">
               {entry.label}
-            </Button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
 
         {error ? (
           <p className="text-sm text-destructive">{error}</p>
         ) : isLoading ? (
-          <p className="text-sm text-muted-foreground">Loading annotations…</p>
+          <div className="flex flex-col gap-2" aria-busy="true" aria-label="Loading annotations">
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </div>
         ) : grouped.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-6 text-center">
+          <EmptyStatePanel>
             <p className="text-sm text-foreground">No annotations here yet.</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Open Agentation from the sidebar footer, click any element — including one drawn by a
               plugin — and describe what should change.
             </p>
-          </div>
+          </EmptyStatePanel>
         ) : (
           grouped.map(([sessionId, sessionAnnotations]) => {
             const session = sessionsById.get(sessionId);
