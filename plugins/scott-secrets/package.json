@@ -44,6 +44,9 @@
     "LICENSE"
   ],
   "dependencies": {
+    "@radix-ui/react-label": "^2.1.17",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.7.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

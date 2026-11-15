@@ -13,6 +13,7 @@ import {
 } from "../shared/schema.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Input } from "./components/ui/input.tsx";
+import { Label } from "./components/ui/label.tsx";
 
 type Busy = "submit" | "cancel" | null;
 
@@ -180,13 +181,13 @@ function SecretRequestForm({ interaction, submit, cancel }: PluginPendingInterac
           return (
             <div key={field.name} className="flex min-w-0 flex-col gap-1.5">
               <div className="flex flex-col gap-0.5">
-                <label
+                <Label
                   htmlFor={id}
-                  className="font-mono text-xs font-semibold text-foreground"
+                  className="font-mono text-xs font-semibold leading-normal"
                   translate="no"
                 >
                   {field.name}
-                </label>
+                </Label>
                 {field.description ? (
                   <p className="text-xs leading-snug text-muted-foreground">{field.description}</p>
                 ) : null}
@@ -275,9 +276,9 @@ function SudoRequestForm({ interaction, submit, cancel }: PluginPendingInteracti
         </p>
       </div>
       <div className="flex min-w-0 flex-col gap-1.5">
-        <label htmlFor={passwordId} className="text-xs font-semibold text-foreground">
+        <Label htmlFor={passwordId} className="text-xs font-semibold leading-normal">
           sudo password
-        </label>
+        </Label>
         <SecretField
           id={passwordId}
           name="sudo password"
