@@ -31,7 +31,7 @@ function selectionSubPath(selection: Selection): string {
     : `${selection.pluginId}/tool/${selection.tool}`;
 }
 
-function parseSelection(subPath: string): Selection | null {
+export function parsePromptSelection(subPath: string): Selection | null {
   const [pluginId, kind, ...rest] = subPath.split("/");
   if (!pluginId || rest.length === 0) return null;
   if (kind === "file") return { pluginId, path: rest.join("/") };
@@ -512,7 +512,7 @@ function PluginsTabBody({ subPath }: { subPath: string }) {
     <div className="pe-panel pe-sidebar">
       <PluginList
         plugins={plugins.data.plugins}
-        selection={parseSelection(subPath)}
+        selection={parsePromptSelection(subPath)}
         dirty={new Set(dirty.keys())}
         onSelect={select}
       />
@@ -535,7 +535,7 @@ function PromptEditor({ subPath }: { subPath: string }) {
     );
   }
 
-  const selection = parseSelection(subPath);
+  const selection = parsePromptSelection(subPath);
   const plugin = plugins.data.plugins.find((p) => p.id === selection?.pluginId);
 
   let body = (

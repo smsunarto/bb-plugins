@@ -3,6 +3,7 @@ import { useBbNavigate, type PluginNavPanelProps } from "@get-bb/plugin-sdk/app"
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Button } from "../../components/ui/button.tsx";
+import { useIsCompactViewport } from "../../components/ui/hooks/use-compact-viewport.tsx";
 import { queryClient } from "../app/query.ts";
 import { queryKey, useRpcMutation, useRpcQuery } from "../app/rpc.ts";
 import {
@@ -378,8 +379,17 @@ function GlobalApply({ file, disabled }: { file: DocumentFile; disabled: boolean
   );
 }
 
-function DocumentsBody({ subPath, list = false }: PluginNavPanelProps & { list?: boolean }) {
+/**
+ * `list` is the sidebar's file list; `home` is a phone's Projects root, which has no sidebar,
+ * so it shows the project pickers and then that list in the page.
+ */
+function DocumentsBody({
+  subPath,
+  list = false,
+  home = false,
+}: PluginNavPanelProps & { list?: boolean; home?: boolean }) {
   const route = parseDocumentRoute(subPath);
+  const compact = useIsCompactViewport();
   const metadata = useRpcQuery("documentSources", null);
   if (!metadata.data)
     return (
@@ -394,16 +404,18 @@ function DocumentsBody({ subPath, list = false }: PluginNavPanelProps & { list?:
       .find((p) => p.id === source.projectId)
       ?.sources.find((s) => s.id === source.sourceId)?.connected;
   const file = source && route.path ? { ...source, path: route.path } : null;
+  // A phone's open file has a back bar to its project's list, which holds these pickers.
+  const pickers = !list && !(compact && file);
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
-      {!list && <SourceControls metadata={metadata.data} route={route} source={source} />}
-      {!list && source?.scope === "global" && (
+      {pickers && <SourceControls metadata={metadata.data} route={route} source={source} />}
+      {pickers && source?.scope === "global" && (
         <p className="px-4 pt-2 text-xs text-muted-foreground">
           Edits stay in this checkout. A receiving fleet sync may replace local changes; publish
           authoring changes before syncing.
         </p>
       )}
-      {!list && (
+      {pickers && (
         <Button
           size="sm"
           variant="ghost"
@@ -422,7 +434,7 @@ function DocumentsBody({ subPath, list = false }: PluginNavPanelProps & { list?:
         <p className="p-4 text-sm text-muted-foreground">
           Choose a source project and checkout to edit its instructions and skills.
         </p>
-      ) : list ? (
+      ) : list || home ? (
         <DocumentList
           key={JSON.stringify(source)}
           source={source}
@@ -542,7 +554,7 @@ function DocumentList({
   );
 }
 
-export function DocumentsPage(props: PluginNavPanelProps) {
+export function DocumentsPage(props: PluginNavPanelProps & { home?: boolean }) {
   return (
     <QueryClientProvider client={queryClient}>
       <DocumentsBody {...props} />

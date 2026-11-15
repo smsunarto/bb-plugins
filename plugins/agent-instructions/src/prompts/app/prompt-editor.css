@@ -457,5 +457,25 @@ form.pe-actions {
   top: var(--ai-nav-height, 0px);
   z-index: 5;
   padding-bottom: 6px;
-  background: var(--sidebar, var(--background));
+  /* The phone home sets --ai-surface, since there the list sits on the page, not the sidebar. */
+  background: var(--ai-surface, var(--sidebar, var(--background)));
+}
+/* A phone scrolls the whole page, so an editor grows with its text instead of nesting a scroll area. */
+@media (max-width: 767px) {
+  .pe-panel {
+    height: auto;
+  }
+  .pe-panel .pe-editor {
+    flex: none;
+    overflow-y: visible;
+  }
+  .pe-panel .pe-textarea,
+  .bb-markdown-editor-surface {
+    flex: none;
+    overflow: visible;
+  }
+  .bb-markdown-frontmatter textarea {
+    field-sizing: content;
+    max-height: 40vh;
+  }
 }
