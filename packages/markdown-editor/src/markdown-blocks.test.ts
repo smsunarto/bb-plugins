@@ -180,4 +180,52 @@ describe("markdown blocks", () => {
       editor.destroy();
     }
   });
+
+  it.each([
+    ["a multi-line directive", ":::note\nBe careful here.\n:::", "Be careful", "Be careful now"],
+    ["display math", "$$\na*b\n$$", "a*b", "a*b*c"],
+    ["a directive in a list item", "- item\n  :::tip\n  hi\n  :::", "hi", "hi there"],
+  ])("edits %s as raw source", (_name, block, from, to) => {
+    const markdown = `Intro.\n\n${block}\n\nOutro.\n`;
+    const { editor, save } = open(markdown);
+    try {
+      const raw: string[] = [];
+      editor.state.doc.forEach((node) => {
+        if (node.type.name === "htmlBlock") raw.push(node.textContent);
+      });
+      expect(raw).toEqual([block]);
+      const at = textPosition(editor, from) + from.length;
+      editor.commands.insertContentAt(at, to.slice(from.length));
+      expect(save()).toBe(markdown.replace(from, to));
+    } finally {
+      editor.destroy();
+    }
+  });
+
+  it("keeps directive-like text inside code as code", () => {
+    const { editor } = open("`::x` and\n\n```\n:::note\n```\n");
+    try {
+      const types: string[] = [];
+      editor.state.doc.forEach((node) => types.push(node.type.name));
+      expect(types).toEqual(["paragraph", "codeBlock"]);
+    } finally {
+      editor.destroy();
+    }
+  });
+
+  it.each([
+    ["an HTML comment", "<!-- gitbutler-agent-setup:start -->", "setup"],
+    ["a placeholder tag", "Name a skill <kebab-name> today.", "today"],
+    ["an HTML-like block", "<DIGEST IF FILE PATH UNAVAILABLE>", "DIGEST"],
+    ["a list item opening with a comment", "- <!-- note --> item\n- two", "two"],
+  ])("edits inside %s byte for byte", (_name, block, after) => {
+    const markdown = `Intro.\n\n${block}\n\nOutro.\n`;
+    const { editor, save } = open(markdown);
+    try {
+      editor.commands.insertContentAt(textPosition(editor, after) + after.length, "X");
+      expect(save()).toBe(markdown.replace(after, `${after}X`));
+    } finally {
+      editor.destroy();
+    }
+  });
 });

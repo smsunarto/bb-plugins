@@ -12,7 +12,12 @@ import TableHeader from "@tiptap/extension-table-header";
 import TableRow from "@tiptap/extension-table-row";
 import Placeholder from "@tiptap/extension-placeholder";
 import { Markdown } from "tiptap-markdown";
-import { loadMarkdownBlocks, saveMarkdownBlocks, type MarkdownBlocks } from "./markdown-blocks";
+import {
+  hasRawText,
+  loadMarkdownBlocks,
+  saveMarkdownBlocks,
+  type MarkdownBlocks,
+} from "./markdown-blocks";
 import { parseMarkdownDocument } from "./markdown-document";
 import { HtmlBlock, HtmlSource } from "./raw-html";
 
@@ -116,24 +121,31 @@ export function createMarkdownEditor(
 
 const fidelityParser = new MarkdownIt({ html: true });
 
-export function sourceModeReason(value: string): string | null {
+/**
+ * Why rich mode cannot show `value` losslessly, or null when it can.
+ * A `rawSyntax` editor, one built with the default `markdownExtensions`, shows HTML,
+ * `::` directives, and `$$` math as raw source, so only line endings and reference
+ * definitions block it.
+ */
+export function sourceModeReason(
+  value: string,
+  options: { rawSyntax?: boolean } = {},
+): string | null {
   const { body } = parseMarkdownDocument(value);
   if (/\r/.test(value)) return "Source mode preserves this document’s line endings.";
   const environment: { references?: Record<string, unknown> } = {};
   const tokens = fidelityParser.parse(body, environment);
   if (environment.references && Object.keys(environment.references).length)
     return "Source mode preserves link reference definitions.";
+  if (options.rawSyntax) return null;
   if (
     tokens.some(
       (token) =>
         token.type === "html_block" ||
         (token.type === "fence" && token.info.trim().startsWith("suggestion")) ||
-        token.children?.some(
-          (child) =>
-            child.type === "html_inline" ||
-            (child.type === "text" && /^(?:::|\$\$)/m.test(child.content)),
-        ),
-    )
+        token.children?.some((child) => child.type === "html_inline"),
+    ) ||
+    hasRawText(tokens)
   )
     return "Source mode preserves embedded syntax in this document.";
   return null;

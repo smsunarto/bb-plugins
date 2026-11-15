@@ -61,17 +61,19 @@ export function MarkdownEditor(props: MarkdownEditorProps) {
   const latest = useRef(props);
   const current = useRef(props.value);
   const emitted = useRef<string | null>(null);
+  // The default extensions show raw HTML and directives; custom ones may not.
+  const rawSyntax = props.extensions === undefined;
   const document = splitEditableDocument(props.value);
   const header = document.prefix + document.yaml + document.suffix;
   const [blocked, setBlocked] = useState<{ body: string; reason: string } | null>(() => {
-    const reason = sourceModeReason(document.body);
+    const reason = sourceModeReason(document.body, { rawSyntax });
     return reason ? { body: document.body, reason } : null;
   });
   const reason = blocked?.body === document.body ? blocked.reason : null;
   const rich = mode === "rich" && !reason;
   /** Record why rich mode cannot show `body`: its syntax first, then content the parse dropped. */
   const inspect = (body: string, hidden: boolean) => {
-    const reason = sourceModeReason(body) ?? (hidden ? HIDDEN_CONTENT : null);
+    const reason = sourceModeReason(body, { rawSyntax }) ?? (hidden ? HIDDEN_CONTENT : null);
     setBlocked(reason ? { body, reason } : null);
   };
   useLayoutEffect(() => {

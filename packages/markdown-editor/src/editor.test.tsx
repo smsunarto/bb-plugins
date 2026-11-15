@@ -130,15 +130,65 @@ it("keeps read-only source content and forwards submission shortcuts", () => {
 });
 
 describe("source fidelity gate", () => {
-  for (const source of [
-    "[ref]: https://example.com\n",
-    "before\n\n<!-- hidden -->",
-    "$$\nx\n$$",
-    '::html{src="x"}',
-  ]) {
-    it(`keeps syntax visible: ${source.slice(0, 15)}`, () =>
+  const embedded = ["before\n\n<!-- hidden -->", "$$\nx\n$$", '::html{src="x"}', "Use <id> here."];
+  for (const source of ["[ref]: https://example.com\n", ...embedded]) {
+    it(`keeps syntax visible by default: ${source.slice(0, 15)}`, () =>
       expect(sourceModeReason(source)).not.toBeNull());
   }
+  for (const source of embedded) {
+    it(`lets a raw-syntax editor show: ${source.slice(0, 15)}`, () =>
+      expect(sourceModeReason(source, { rawSyntax: true })).toBeNull());
+  }
+  it("still blocks reference definitions and CRLF in a raw-syntax editor", () => {
+    expect(sourceModeReason("[ref]: https://example.com\n", { rawSyntax: true })).not.toBeNull();
+    expect(sourceModeReason("a\r\nb", { rawSyntax: true })).not.toBeNull();
+  });
+});
+
+describe("agent instruction syntax opens in rich text", () => {
+  const AGENTS =
+    [
+      "# Rules",
+      "<!-- gitbutler-agent-setup:start -->",
+      "Name it `<kebab-name>` or <kebab-name>.",
+      "<DIGEST IF FILE PATH UNAVAILABLE>",
+      ":::note\nBe careful here.\n:::",
+      "<!-- gitbutler-agent-setup:end -->",
+    ].join("\n\n") + "\n";
+
+  it("mounts rich without emitting a change", () => {
+    const changes: string[] = [];
+    render(
+      <Controlled
+        aria-label="Instructions"
+        value={AGENTS}
+        onChange={(text) => changes.push(text)}
+      />,
+    );
+    expect(screen.getByRole("textbox", { name: "Instructions" }).tagName).toBe("DIV");
+    expect(screen.getByRole("button", { name: "Rich text" })).toHaveProperty("disabled", false);
+    expect(screen.queryByText(/Source mode preserves/)).toBeNull();
+    expect(changes).toEqual([]);
+  });
+
+  it("keeps every raw block byte-exact when a heading is edited", () => {
+    let editor: Editor | null = null;
+    const changes: string[] = [];
+    render(
+      <Controlled
+        aria-label="Instructions"
+        value={AGENTS}
+        onChange={(text) => changes.push(text)}
+        onEditor={(value) => {
+          editor = value;
+        }}
+      />,
+    );
+    act(() => {
+      editor!.commands.insertContentAt(1, "Agent ");
+    });
+    expect(changes.at(-1)).toBe(AGENTS.replace("# Rules", "# Agent Rules"));
+  });
 });
 
 it("keeps an untouched equal paragraph's source when another paragraph becomes equal", () => {

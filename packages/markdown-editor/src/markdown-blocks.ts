@@ -29,6 +29,37 @@ function topLevelNodes(editor: Editor, owner: Document, children: ChildNode[]): 
   return nodes.length === 1 && nodes[0]!.isTextblock && !nodes[0]!.content.size ? [] : nodes;
 }
 
+interface InlineToken {
+  type: string;
+  content: string;
+  children: InlineToken[] | null;
+}
+
+/**
+ * Whether parsed Markdown holds text the serializer cannot write back verbatim:
+ * `::` directives and `$$` math, which an edit would escape or join onto one line.
+ */
+export function hasRawText(tokens: InlineToken[]): boolean {
+  return tokens.some((token) =>
+    token.children?.some((child) => child.type === "text" && /^(?:::|\$\$)/m.test(child.content)),
+  );
+}
+
+/**
+ * Show a block holding `::` or `$$` text as its raw source, so an edit keeps it byte-exact.
+ * A block a display transform rendered as other nodes, such as an embed, keeps those nodes.
+ */
+function showRawText(editor: Editor, block: Block): void {
+  const raw = editor.schema.nodes.htmlBlock;
+  if (
+    !raw ||
+    !block.nodes.some((node) => /::|\$\$/.test(node.textContent)) ||
+    !hasRawText(editor.storage.markdown.parser.md.parse(block.source, {}))
+  )
+    return;
+  block.nodes = [raw.create(null, editor.schema.text(block.source))];
+}
+
 function parseMarkdownBlocks(
   editor: Editor,
   markdown: string,
@@ -83,20 +114,18 @@ function parseMarkdownBlocks(
     if (child.textContent === `<!--${marker}-->`) groups.push([]);
     else groups.at(-1)!.push(child);
   }
-  if (groups.length !== Math.max(starts.length, 1))
-    return {
-      leading: "",
-      blocks: [
-        {
-          source: markdown,
-          after: "",
-          nodes: topLevelNodes(editor, body.ownerDocument, groups.flat()),
-        },
-      ],
-      newline: false,
+  if (groups.length !== Math.max(starts.length, 1)) {
+    const block = {
+      source: markdown,
+      after: "",
+      nodes: topLevelNodes(editor, body.ownerDocument, groups.flat()),
     };
+    showRawText(editor, block);
+    return { leading: "", blocks: [block], newline: false };
+  }
   starts.forEach((index, position) => {
     blocks[index]!.nodes = topLevelNodes(editor, body.ownerDocument, groups[position]!);
+    showRawText(editor, blocks[index]!);
   });
   return { leading, blocks, newline: markdown.endsWith("\n") };
 }
