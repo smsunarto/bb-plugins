@@ -27,6 +27,14 @@ export class BrowserCommandError extends Error {
 
 const SESSION = "sauce-live";
 /**
+ * The daemon runs in its own agent-browser namespace, so a command run by hand in
+ * the default one (`agent-browser --session sauce-live ...`, `session list`) cannot
+ * reach it. On 2026-11-15 such a command, meant as read-only, carried other launch
+ * settings: agent-browser relaunched the shared browser, which closed another
+ * thread's live session and left it running on Sauce with no page to end it from.
+ */
+export const NAMESPACE = "bb-sauce";
+/**
  * Shuts the browser daemon down after this long without a command, so a bb restart
  * cannot orphan it forever. Idleness, not age: a wall-clock limit (systemd
  * RuntimeMaxSec) killed the browser in the middle of live sessions. Sauce ends a
@@ -55,6 +63,7 @@ export function browserEnv(paths: SauceBrowserPaths, base: NodeJS.ProcessEnv = p
     AGENT_BROWSER_PROFILE: paths.profile,
     AGENT_BROWSER_CONFIG: paths.headedConfig,
     AGENT_BROWSER_HEADED: "1",
+    AGENT_BROWSER_NAMESPACE: NAMESPACE,
     AGENT_BROWSER_IDLE_TIMEOUT_MS: String(BROWSER_IDLE_TIMEOUT_MS),
   };
 }

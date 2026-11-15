@@ -144,6 +144,7 @@ function toolsFor(page: SaucePage, now: () => number = () => 1_000_000) {
     tempDir: () => mkdtemp(join(tmpdir(), "bb-sauce-bugs-")),
     save: async (threadId, name) => `/storage/${threadId}/sauce/${name}`,
     threadTitle: async (threadId) => `title of ${threadId}`,
+    fileSize: async () => null,
   });
   return { tools, store };
 }
@@ -471,6 +472,8 @@ test("SB-02 the browser is bounded by idleness, never by a wall-clock runtime li
   expect(command.some((arg) => /RuntimeMax/i.test(arg))).toBe(false);
   const env = browserEnv({ profile: "/p", headedConfig: "/c" }, {});
   expect(env.AGENT_BROWSER_IDLE_TIMEOUT_MS).toBe(String(BROWSER_IDLE_TIMEOUT_MS));
+  // A private namespace: a by-hand `agent-browser --session sauce-live` cannot reach this daemon.
+  expect(env.AGENT_BROWSER_NAMESPACE).toBe("bb-sauce");
   expect(BROWSER_IDLE_TIMEOUT_MS).toBeGreaterThan(0);
 });
 
