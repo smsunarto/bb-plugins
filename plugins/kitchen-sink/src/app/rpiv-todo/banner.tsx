@@ -59,6 +59,14 @@ function TodoRow({ item }: { item: TodoItem }) {
 
 const snapshots = new Map<string, TodoSnapshot>();
 
+const cancelPress = (event: { preventDefault(): void }) => event.preventDefault();
+/**
+ * The banner sits above the composer and its controls leave the user typing:
+ * cancelling the press keeps focus, and a phone's keyboard, in the prompt
+ * editor. The action stays on click, and keyboard activation is unchanged.
+ */
+const KEEP_COMPOSER_FOCUS = { onPointerDown: cancelPress, onMouseDown: cancelPress };
+
 export function TodoBanner() {
   const composer = useComposer();
   const threadId = threadIdFromScope(composer.scope);
@@ -179,6 +187,7 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
           aria-expanded={expanded}
           aria-controls={bodyId}
           aria-label={`To-do list: ${aria}`}
+          {...KEEP_COMPOSER_FOCUS}
           onClick={() => {
             manuallyToggled.current = true;
             setExpanded((open) => !open);
@@ -196,7 +205,11 @@ function ThreadTodoBanner({ threadId, running }: { threadId: string; running: bo
         <output className="rpiv-todo-notice">
           {truncated ? "Loading task history…" : "Could not refresh tasks"}
           {error && connection === "connected" ? (
-            <button type="button" onClick={() => refresh((value) => value + 1)}>
+            <button
+              type="button"
+              {...KEEP_COMPOSER_FOCUS}
+              onClick={() => refresh((value) => value + 1)}
+            >
               Retry
             </button>
           ) : null}

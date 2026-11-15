@@ -160,3 +160,37 @@ test("hides an empty truncated snapshot during reconnect", async () => {
   expect(slot.container.textContent).toBe("");
   slot.unmount();
 });
+
+/** A press the browser may not turn into a focus change, so a phone keeps the composer's keyboard up. */
+function expectPressKeepsFocus(control: HTMLElement) {
+  expect(fireEvent.pointerDown(control)).toBe(false);
+  expect(fireEvent.mouseDown(control)).toBe(false);
+}
+
+test("pressing the to-do toggle or Retry leaves focus in the composer", async () => {
+  let fail = true;
+  const slot = renderSlot(
+    { component: TodoBanner },
+    {},
+    {
+      composer: { scope: { kind: "thread", threadId: "keep-focus" } },
+      sdk: { subscribe: () => () => {} },
+      rpc: {
+        getRpivTodos: () => {
+          if (fail) throw new Error("offline");
+          return result("Task");
+        },
+      },
+    },
+  );
+  const toggle = await slot.findByRole("button", { name: /To-do list/ });
+  expectPressKeepsFocus(toggle);
+  fireEvent.click(toggle);
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  const retry = await slot.findByRole("button", { name: "Retry" });
+  expectPressKeepsFocus(retry);
+  fail = false;
+  fireEvent.click(retry);
+  await waitFor(() => expect(slot.queryByRole("button", { name: "Retry" })).toBeNull());
+  slot.unmount();
+});
