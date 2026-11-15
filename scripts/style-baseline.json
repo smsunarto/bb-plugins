@@ -100,6 +100,11 @@
     "source": "coarse-pointer-sizing.ts"
   },
   {
+    "file": "plugins/agentation/components/ui/dialog.tsx",
+    "rule": "registry-drift",
+    "source": "dialog.tsx"
+  },
+  {
     "file": "plugins/agentation/components/ui/hooks/use-media-query.ts",
     "rule": "registry-drift",
     "source": "hooks/use-media-query.ts"
@@ -305,51 +310,6 @@
     "source": "\"h-5.5 cursor-pointer rounded-[4px] px-2 text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring aria-pressed:bg-state-selected aria-pressed:text-foreground\","
   },
   {
-    "file": "plugins/devin/src/app/devin.css",
-    "rule": "raw-color",
-    "source": "background: color-mix(in oklch, var(--muted-foreground) 8%, transparent);"
-  },
-  {
-    "file": "plugins/devin/src/app/devin.css",
-    "rule": "raw-color",
-    "source": "background: color-mix(in oklch, var(--primary) 8%, transparent);"
-  },
-  {
-    "file": "plugins/devin/src/app/devin.css",
-    "rule": "raw-color",
-    "source": "background: color-mix(in oklch, var(--primary) 8%, transparent);"
-  },
-  {
-    "file": "plugins/devin/src/app/devin.css",
-    "rule": "raw-color",
-    "source": "background: color-mix(in oklch, var(--primary) 8%, transparent);"
-  },
-  {
-    "file": "plugins/devin/src/app/devin.css",
-    "rule": "raw-color",
-    "source": "border-color: color-mix(in oklch, var(--muted-foreground) 30%, transparent);"
-  },
-  {
-    "file": "plugins/devin/src/app/devin.css",
-    "rule": "raw-color",
-    "source": "border-color: color-mix(in oklch, var(--primary) 35%, transparent);"
-  },
-  {
-    "file": "plugins/devin/src/app/devin.css",
-    "rule": "raw-color",
-    "source": "border: 1px solid color-mix(in oklch, var(--primary) 35%, transparent);"
-  },
-  {
-    "file": "plugins/genui/components/ui/button.tsx",
-    "rule": "local-primitive",
-    "source": "button"
-  },
-  {
-    "file": "plugins/genui/components/ui/dialog.tsx",
-    "rule": "universal-bucket",
-    "source": "className={cn(\"flex flex-col space-y-1.5 text-left\", className)}"
-  },
-  {
     "file": "plugins/genui/components/ui/hooks/use-compact-viewport.tsx",
     "rule": "registry-drift",
     "source": "hooks/use-compact-viewport.tsx"
@@ -358,11 +318,6 @@
     "file": "plugins/genui/components/ui/hooks/use-media-query.ts",
     "rule": "registry-drift",
     "source": "hooks/use-media-query.ts"
-  },
-  {
-    "file": "plugins/genui/components/ui/motion.ts",
-    "rule": "local-primitive",
-    "source": "motion"
   },
   {
     "file": "plugins/genui/components/ui/overlay-trigger.ts",
@@ -386,11 +341,6 @@
   },
   {
     "file": "plugins/genui/ui/components/Acceptance.tsx",
-    "rule": "edge-opacity",
-    "source": "<tr ref={rise} className=\"border-t border-border/60\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/Acceptance.tsx",
     "rule": "hairline-literal",
     "source": "<pre className=\"m-0 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-[11.5px] leading-5 text-foreground [overflow-wrap:anywhere]\">"
   },
@@ -398,11 +348,6 @@
     "file": "plugins/genui/ui/components/Acceptance.tsx",
     "rule": "hairline-literal",
     "source": "<span className=\"truncate text-[11.5px] leading-5 text-primary group-hover/link:underline\">{host}</span>"
-  },
-  {
-    "file": "plugins/genui/ui/components/Acceptance.tsx",
-    "rule": "hairline-literal",
-    "source": "<th key={column} scope=\"col\" className=\"w-[4.75rem] px-[3px] pb-1.5 text-center align-bottom text-[11.5px] font-medium leading-4 text-foreground [overflow-wrap:anywhere]\">"
   },
   {
     "file": "plugins/genui/ui/components/Acceptance.tsx",
@@ -662,27 +607,12 @@
   {
     "file": "plugins/genui/ui/components/Dependencies.tsx",
     "rule": "hairline-literal",
-    "source": "<span title={title} className={cn(\"shrink-0 rounded-full px-1.5 text-[10.5px] font-medium leading-4\", TONE_PILL[tone])}>"
-  },
-  {
-    "file": "plugins/genui/ui/components/Dependencies.tsx",
-    "rule": "hairline-literal",
-    "source": "\"inline-flex w-[68px] shrink-0 justify-center rounded-full px-1.5 text-[10.5px] font-semibold uppercase leading-4 tracking-[0.03em]\","
-  },
-  {
-    "file": "plugins/genui/ui/components/Dependencies.tsx",
-    "rule": "hairline-literal",
     "source": "const label = <span className=\"min-w-0 truncate font-mono text-[12.5px] leading-5 text-foreground\">{name}</span>;"
   },
   {
     "file": "plugins/genui/ui/components/Dependencies.tsx",
     "rule": "universal-bucket",
     "source": "<ul className=\"m-0 flex min-w-0 list-none flex-col divide-y divide-border/50 p-0\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/EditableTable.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"flex size-4 items-center justify-center rounded-[4px] border transition-colors duration-150 motion-reduce:transition-none\","
   },
   {
     "file": "plugins/genui/ui/components/EditableTable.tsx",
@@ -718,11 +648,6 @@
     "file": "plugins/genui/ui/components/Findings.tsx",
     "rule": "hairline-literal",
     "source": "<pre className=\"m-0 whitespace-pre-wrap font-mono text-[11.5px] leading-5 text-muted-foreground [overflow-wrap:anywhere]\">{finding.detail}</pre>"
-  },
-  {
-    "file": "plugins/genui/ui/components/Findings.tsx",
-    "rule": "hairline-literal",
-    "source": "<span className={cn(\"mt-0.5 inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-1.5 text-[10.5px] font-medium leading-4\", TONE_PILL[style.tone])}>{style.label}</span>"
   },
   {
     "file": "plugins/genui/ui/components/Findings.tsx",
@@ -805,19 +730,9 @@
     "source": "<section key={id} aria-label={`${job.name}, steps`} className=\"flex min-w-0 flex-col gap-0.5 border-t border-border/60 pt-2\">"
   },
   {
-    "file": "plugins/genui/ui/components/Pipeline.tsx",
-    "rule": "hairline-literal",
-    "source": "return <span className=\"shrink-0 rounded-full bg-muted px-1.5 text-[10.5px] font-medium leading-4 text-muted-foreground\">{detail}</span>;"
-  },
-  {
     "file": "plugins/genui/ui/components/Provenance.tsx",
     "rule": "edge-opacity",
     "source": "{cut > 0 ? <p className=\"m-0 border-b border-border/60 px-3 py-1 text-[11px] leading-5 text-muted-foreground\">{formatNumber(cut)} earlier lines</p> : null}"
-  },
-  {
-    "file": "plugins/genui/ui/components/Provenance.tsx",
-    "rule": "hairline-literal",
-    "source": "<span className=\"w-fit rounded-full bg-surface-recessed px-1.5 text-[10.5px] font-medium leading-4 text-muted-foreground\">Last receipt</span>"
   },
   {
     "file": "plugins/genui/ui/components/Provenance.tsx",
@@ -867,17 +782,7 @@
   {
     "file": "plugins/genui/ui/components/StackTrace.tsx",
     "rule": "hairline-literal",
-    "source": "className={cn(TEXT_BUTTON, \"font-mono text-[11.5px]\")}"
-  },
-  {
-    "file": "plugins/genui/ui/components/StackTrace.tsx",
-    "rule": "hairline-literal",
     "source": "top ? \"text-[13px] leading-5\" : \"text-[12.5px] leading-5\","
-  },
-  {
-    "file": "plugins/genui/ui/components/Table.tsx",
-    "rule": "edge-opacity",
-    "source": "\"border-b border-border/60 py-2.5 pr-4 align-top text-foreground last:pr-0\","
   },
   {
     "file": "plugins/genui/ui/components/Tests.tsx",
@@ -893,11 +798,6 @@
     "file": "plugins/genui/ui/components/Tests.tsx",
     "rule": "hairline-literal",
     "source": "<div className=\"max-h-96 min-w-0 overflow-auto rounded-md bg-surface-recessed py-2 font-mono text-[11.5px] leading-[18px] text-foreground\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/Tests.tsx",
-    "rule": "hairline-literal",
-    "source": "<span className=\"mt-px shrink-0 rounded-full bg-muted px-1.5 text-[10.5px] font-medium leading-4 text-muted-foreground\">"
   },
   {
     "file": "plugins/genui/ui/components/Tests.tsx",
@@ -1082,11 +982,6 @@
   {
     "file": "plugins/genui/ui/components/Video.tsx",
     "rule": "universal-bucket",
-    "source": "<div className=\"space-y-2\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/Video.tsx",
-    "rule": "universal-bucket",
     "source": "<figure className=\"m-0 min-w-0 space-y-2\">"
   },
   {
@@ -1173,11 +1068,6 @@
     "file": "plugins/genui/ui/components/changes.tsx",
     "rule": "arbitrary-edge",
     "source": "<span key={index} className={cn(\"size-1.5 rounded-[1px]\", color)} />"
-  },
-  {
-    "file": "plugins/genui/ui/components/changes.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"flex size-4 shrink-0 items-center justify-center rounded-[4px] font-mono text-[10px] font-semibold leading-none\","
   },
   {
     "file": "plugins/genui/ui/components/changes.tsx",
@@ -1297,11 +1187,6 @@
   {
     "file": "plugins/genui/ui/components/choose.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"absolute top-1/2 hidden size-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-foreground shadow-[0_2px_8px_rgb(0_0_0/0.12)] transition-opacity duration-150 hover:bg-surface-recessed motion-reduce:transition-none [@media(hover:hover)]:flex\","
-  },
-  {
-    "file": "plugins/genui/ui/components/choose.tsx",
-    "rule": "arbitrary-edge",
     "source": "multiple ? \"rounded-[5px]\" : \"rounded-full\","
   },
   {
@@ -1323,11 +1208,6 @@
     "file": "plugins/genui/ui/components/choose.tsx",
     "rule": "raw-color",
     "source": ": `linear-gradient(to right, transparent, #000 ${edges.start ? \"0px\" : EDGE_FADE}, #000 calc(100% - ${edges.end ? \"0px\" : EDGE_FADE}), transparent)`;"
-  },
-  {
-    "file": "plugins/genui/ui/components/codeHealthKit.tsx",
-    "rule": "arbitrary-edge",
-    "source": "? \"bg-background font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_0.5px_var(--border)]\""
   },
   {
     "file": "plugins/genui/ui/components/codeHealthKit.tsx",
@@ -1402,11 +1282,6 @@
   {
     "file": "plugins/genui/ui/components/decisions.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"flex size-4 items-center justify-center rounded-[4px] border transition-colors duration-150\","
-  },
-  {
-    "file": "plugins/genui/ui/components/decisions.tsx",
-    "rule": "arbitrary-edge",
     "source": "className={cn(\"w-fit max-w-full gap-1.5 text-[13px]\", approved && \"border-transparent bg-surface-recessed text-foreground ring-2 ring-[var(--color-timeline-accent,var(--primary))] ring-offset-1 ring-offset-background\")}"
   },
   {
@@ -1423,11 +1298,6 @@
     "file": "plugins/genui/ui/components/decisions.tsx",
     "rule": "edge-opacity",
     "source": "<p className=\"m-0 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/60 px-3 py-2 text-[11px] leading-4 text-muted-foreground\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/decisions.tsx",
-    "rule": "edge-opacity",
-    "source": "<tr key={criterionIndex} className=\"border-t border-border/60\">"
   },
   {
     "file": "plugins/genui/ui/components/decisions.tsx",
@@ -1501,11 +1371,6 @@
   },
   {
     "file": "plugins/genui/ui/components/environments.tsx",
-    "rule": "edge-opacity",
-    "source": "\"flex w-full cursor-pointer items-center justify-center gap-1 border-t border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground\","
-  },
-  {
-    "file": "plugins/genui/ui/components/environments.tsx",
     "rule": "hairline-literal",
     "source": "<span className=\"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] leading-5 text-muted-foreground\">"
   },
@@ -1518,16 +1383,6 @@
     "file": "plugins/genui/ui/components/environments.tsx",
     "rule": "hairline-literal",
     "source": "<span className={cn(\"min-w-0 max-w-full truncate text-[13px] font-medium leading-5 text-foreground\", environment.branch !== null && \"font-mono text-[12.5px]\")}>"
-  },
-  {
-    "file": "plugins/genui/ui/components/environments.tsx",
-    "rule": "hairline-literal",
-    "source": "<span className={cn(\"shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-medium leading-4\", TONE_PILL.info)}>this thread</span>"
-  },
-  {
-    "file": "plugins/genui/ui/components/environments.tsx",
-    "rule": "hairline-literal",
-    "source": "<span className={cn(\"shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-medium leading-4\", TONE_PILL[LIFE_TONE[environment.life]])}>{life}</span>"
   },
   {
     "file": "plugins/genui/ui/components/environments.tsx",
@@ -1572,11 +1427,6 @@
   {
     "file": "plugins/genui/ui/components/inputs.tsx",
     "rule": "arbitrary-edge",
-    "source": "? \"bg-background font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08),0_0_0_0.5px_var(--border)]\""
-  },
-  {
-    "file": "plugins/genui/ui/components/inputs.tsx",
-    "rule": "arbitrary-edge",
     "source": "\"[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-border [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)] [&::-webkit-slider-thumb]:transition-transform active:[&::-webkit-slider-thumb]:scale-110 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-border [&::-moz-range-thumb]:bg-background [&::-moz-range-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)]\";"
   },
   {
@@ -1588,11 +1438,6 @@
     "file": "plugins/genui/ui/components/inputs.tsx",
     "rule": "arbitrary-edge",
     "source": "\"h-8 w-full min-w-0 rounded-md border border-border bg-background text-[13px] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-shadow duration-150\","
-  },
-  {
-    "file": "plugins/genui/ui/components/inputs.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors duration-150\","
   },
   {
     "file": "plugins/genui/ui/components/inputs.tsx",
@@ -1616,16 +1461,6 @@
   },
   {
     "file": "plugins/genui/ui/components/perfKit.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"cursor-pointer rounded-[5px] px-2 text-xs leading-5 transition-colors duration-150\","
-  },
-  {
-    "file": "plugins/genui/ui/components/perfKit.tsx",
-    "rule": "arbitrary-edge",
-    "source": "option.value === value ? \"bg-background font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08)]\" : \"text-muted-foreground hover:text-foreground\","
-  },
-  {
-    "file": "plugins/genui/ui/components/perfKit.tsx",
     "rule": "raw-color",
     "source": "return `repeating-linear-gradient(to right, color-mix(in oklch, var(--border) 70%, transparent) 0 1px, transparent 1px ${percent}%)`;"
   },
@@ -1633,11 +1468,6 @@
     "file": "plugins/genui/ui/components/plugins.tsx",
     "rule": "edge-opacity",
     "source": "className=\"flex min-w-0 items-start gap-2.5 border-b border-border/60 px-3 py-2 last:border-b-0\""
-  },
-  {
-    "file": "plugins/genui/ui/components/projectKit.tsx",
-    "rule": "edge-opacity",
-    "source": "\"flex w-full cursor-pointer items-center justify-center gap-1 border-t border-border/60 px-3 py-2 text-xs text-muted-foreground transition-colors duration-150 hover:bg-state-hover hover:text-foreground\","
   },
   {
     "file": "plugins/genui/ui/components/pullRequest.tsx",
@@ -1673,31 +1503,6 @@
     "file": "plugins/genui/ui/components/pullRequest.tsx",
     "rule": "hairline-literal",
     "source": "<span className=\"min-w-0 pl-[22px] text-[11.5px] leading-5 text-muted-foreground [overflow-wrap:anywhere]\">{read.message}</span>"
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "raw-color",
-    "source": "<span className={cn(CHIP, \"bg-[color-mix(in_oklab,var(--warning)_14%,transparent)] text-warning\")}>"
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "raw-color",
-    "source": "closed: \"bg-[color-mix(in_oklab,var(--destructive)_14%,transparent)] text-destructive\","
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "raw-color",
-    "source": "if (checks.failed > 0) return <span className={cn(CHIP, \"bg-[color-mix(in_oklab,var(--destructive)_14%,transparent)] text-destructive\")}>{checks.failed} Failing</span>;"
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "raw-color",
-    "source": "merged: \"bg-[color-mix(in_oklab,var(--pr-merged,var(--color-timeline-accent,var(--primary)))_14%,transparent)] text-[var(--pr-merged,var(--color-timeline-accent,var(--primary)))]\","
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "raw-color",
-    "source": "open: \"bg-[color-mix(in_oklab,var(--success)_14%,transparent)] text-success\","
   },
   {
     "file": "plugins/genui/ui/components/references.tsx",
@@ -1838,11 +1643,6 @@
     "file": "plugins/genui/ui/components/tracking.tsx",
     "rule": "universal-bucket",
     "source": "<ul className=\"m-0 flex min-w-0 list-none flex-col divide-y divide-border/60 p-0\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/viewer.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"absolute z-10 flex size-7 cursor-zoom-in items-center justify-center rounded-full bg-black/55 text-white shadow-[0_1px_3px_rgb(0_0_0/0.3)] backdrop-blur-sm transition-colors duration-150 hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring pointer-coarse:size-8\","
   },
   {
     "file": "plugins/genui/ui/components/viewer.tsx",
@@ -2060,11 +1860,6 @@
     "source": "\"flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-[6px] px-2\","
   },
   {
-    "file": "plugins/gtd-sidebar/components/nav/capy-navigation.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"flex shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-sidebar-foreground\","
-  },
-  {
     "file": "plugins/html/src/app/app.css",
     "rule": "raw-color",
     "source": "background: #1e1e1e;"
@@ -2215,41 +2010,6 @@
     "source": "<div className=\"space-y-4\">"
   },
   {
-    "file": "plugins/scott-docs/components/ui/coarse-pointer-sizing.ts",
-    "rule": "registry-drift",
-    "source": "coarse-pointer-sizing.ts"
-  },
-  {
-    "file": "plugins/scott-docs/components/ui/dialog.tsx",
-    "rule": "universal-bucket",
-    "source": "\"flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2\","
-  },
-  {
-    "file": "plugins/scott-docs/components/ui/dialog.tsx",
-    "rule": "universal-bucket",
-    "source": "className={cn(\"flex flex-col space-y-1.5 text-left\", className)}"
-  },
-  {
-    "file": "plugins/scott-docs/components/ui/hooks/use-compact-viewport.tsx",
-    "rule": "registry-drift",
-    "source": "hooks/use-compact-viewport.tsx"
-  },
-  {
-    "file": "plugins/scott-docs/components/ui/hooks/use-media-query.ts",
-    "rule": "registry-drift",
-    "source": "hooks/use-media-query.ts"
-  },
-  {
-    "file": "plugins/scott-docs/components/ui/overlay-trigger.ts",
-    "rule": "registry-drift",
-    "source": "overlay-trigger.ts"
-  },
-  {
-    "file": "plugins/scott-docs/components/ui/tooltip.tsx",
-    "rule": "registry-drift",
-    "source": "tooltip.tsx"
-  },
-  {
     "file": "plugins/scott-docs/editor.css",
     "rule": "raw-color",
     "source": "background: color-mix(in oklab, var(--primary) 14%, transparent);"
@@ -2315,11 +2075,6 @@
     "source": "<section className=\"min-w-0 space-y-3 border-t border-border pt-4\" aria-label=\"Agent settings\">"
   },
   {
-    "file": "plugins/source-control/src/app/base-card.tsx",
-    "rule": "arbitrary-edge",
-    "source": "className=\"flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-[4px] border-0 bg-transparent p-0 text-start\""
-  },
-  {
     "file": "plugins/source-control/src/app/branch-actions.tsx",
     "rule": "arbitrary-edge",
     "source": "box: \"border-[color-mix(in_oklab,var(--destructive)_35%,transparent)] bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)]\","
@@ -2360,94 +2115,9 @@
     "source": "<div className=\"flex flex-col gap-3 rounded-[8px] border border-border-hairline p-3\">"
   },
   {
-    "file": "plugins/source-control/src/app/changes-tab.tsx",
-    "rule": "arbitrary-edge",
-    "source": "className=\"flex size-8 shrink-0 items-center justify-center rounded-[6px] border border-solid border-border text-foreground transition-colors hover:bg-surface-raised motion-reduce:transition-none\""
-  },
-  {
     "file": "plugins/source-control/src/app/chat-card.tsx",
     "rule": "arbitrary-edge",
     "source": "\"flex w-full max-w-[576px] min-w-0 flex-col overflow-clip rounded-[8px] border border-solid border-border bg-background text-start font-sans text-foreground\";"
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/badge.tsx",
-    "rule": "local-primitive",
-    "source": "badge"
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/button.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-[6px] whitespace-nowrap transition-colors duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 disabled:cursor-default disabled:opacity-60 motion-reduce:transition-none\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/button.tsx",
-    "rule": "local-primitive",
-    "source": "button"
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/checkbox.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"peer inline-flex size-3.5 shrink-0 cursor-pointer items-center justify-center rounded-[4px] border border-solid border-border bg-transparent p-0 text-background focus-visible:outline-2 focus-visible:outline-offset-1 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-foreground data-[state=checked]:bg-foreground\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/dialog.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100%-2rem)] w-[440px] max-w-[calc(100%-2rem)] min-w-0 -translate-x-1/2 -translate-y-1/2 flex-col gap-3 overflow-y-auto rounded-[10px] border border-solid border-border bg-popover p-4 text-start text-foreground shadow-xl outline-none\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/dropdown-menu.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"flex h-7 cursor-pointer items-center gap-2 rounded-[6px] px-2 text-left text-[12px] leading-4 outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-surface-raised\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/dropdown-menu.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"flex h-7 cursor-pointer items-center gap-2 rounded-[6px] px-2 text-left text-[12px] leading-4 text-foreground outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-surface-raised data-[state=checked]:font-semibold\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/dropdown-menu.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"z-50 flex max-h-(--radix-dropdown-menu-content-available-height) min-w-48 flex-col overflow-y-auto rounded-[8px] border border-solid border-border bg-popover p-1 text-foreground shadow-md outline-none\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/input.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"h-7 w-full min-w-0 rounded-[6px] border border-solid border-border bg-transparent px-2 text-[12px] leading-4 text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-foreground disabled:cursor-not-allowed disabled:opacity-50\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/input.tsx",
-    "rule": "local-primitive",
-    "source": "input"
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/select.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"inline-flex h-7 min-w-0 cursor-pointer items-center justify-between gap-1.5 rounded-[6px] border border-solid border-border-hairline bg-transparent px-2 text-[12px] leading-4 whitespace-nowrap text-foreground enabled:hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-1 disabled:cursor-default disabled:opacity-60 data-[placeholder]:text-muted-foreground [&>span]:truncate\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/select.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"relative flex h-7 cursor-pointer items-center rounded-[6px] pr-7 pl-2 text-[12px] leading-4 text-foreground outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-surface-raised\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/select.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"relative z-50 max-h-(--radix-select-content-available-height) min-w-(--radix-select-trigger-width) overflow-y-auto rounded-[8px] border border-solid border-border bg-popover p-1 text-foreground shadow-md\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/skeleton.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"shrink-0 rounded-[4px] bg-surface-raised motion-safe:animate-pulse\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/textarea.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"min-h-16 w-full min-w-0 rounded-[6px] border border-solid border-border bg-transparent px-2 py-1.5 text-[12px] leading-4 text-foreground outline-none placeholder:text-muted-foreground focus-visible:border-foreground disabled:cursor-not-allowed disabled:opacity-50\","
-  },
-  {
-    "file": "plugins/source-control/src/app/components/ui/textarea.tsx",
-    "rule": "local-primitive",
-    "source": "textarea"
   },
   {
     "file": "plugins/source-control/src/app/findings-card.tsx",
@@ -2460,11 +2130,6 @@
     "source": "\"flex w-full max-w-[576px] min-w-0 flex-col gap-2 rounded-[8px] border border-solid border-border bg-background px-3 py-2 text-[12px] leading-4 text-foreground\";"
   },
   {
-    "file": "plugins/source-control/src/app/history.tsx",
-    "rule": "arbitrary-edge",
-    "source": "className=\"flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-[4px] border-0 bg-transparent p-0 text-start\""
-  },
-  {
     "file": "plugins/source-control/src/app/landed-card.tsx",
     "rule": "arbitrary-edge",
     "source": "className=\"my-3 w-full max-w-[576px] overflow-hidden rounded-[8px] border border-solid border-border bg-background text-[12px] leading-4 text-foreground\""
@@ -2473,11 +2138,6 @@
     "file": "plugins/source-control/src/app/legacy-card.tsx",
     "rule": "arbitrary-edge",
     "source": "<div className=\"w-full max-w-[576px] rounded-[8px] border border-solid border-border bg-background px-3 py-2 text-[12px] leading-4 text-muted-foreground\">"
-  },
-  {
-    "file": "plugins/source-control/src/app/other-machines.tsx",
-    "rule": "arbitrary-edge",
-    "source": "className=\"flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-[4px] border-0 bg-transparent p-0 text-start\""
   },
   {
     "file": "plugins/source-control/src/app/page/annotations.tsx",
@@ -2493,11 +2153,6 @@
     "file": "plugins/source-control/src/app/page/annotations.tsx",
     "rule": "arbitrary-edge",
     "source": "\"w-full min-w-0 resize-y rounded-[8px] border border-solid border-primary bg-background px-3 py-2 font-sans text-[13px] leading-5 text-foreground shadow-[0_0_0_3px_color-mix(in_oklab,var(--primary)_15%,transparent)] outline-none placeholder:text-(--tertiary-foreground) focus-visible:ring-0\","
-  },
-  {
-    "file": "plugins/source-control/src/app/page/annotations.tsx",
-    "rule": "arbitrary-edge",
-    "source": "className=\"flex size-[18px] cursor-pointer items-center justify-center rounded-[4px] border-0 bg-(--primary) p-0 text-primary-foreground\""
   },
   {
     "file": "plugins/source-control/src/app/page/annotations.tsx",
@@ -2522,11 +2177,6 @@
   {
     "file": "plugins/source-control/src/app/page/changes-nav.tsx",
     "rule": "arbitrary-edge",
-    "source": ": \"rounded-[4px] py-1 text-[12px] leading-4\","
-  },
-  {
-    "file": "plugins/source-control/src/app/page/changes-nav.tsx",
-    "rule": "arbitrary-edge",
     "source": "<div className=\"h-full rounded-t-[10px] border border-b-0 border-solid border-border-hairline px-1 pt-1\">"
   },
   {
@@ -2537,32 +2187,12 @@
   {
     "file": "plugins/source-control/src/app/page/changes-nav.tsx",
     "rule": "arbitrary-edge",
-    "source": "? \"rounded-[6px] py-2 text-[14px] leading-5\""
-  },
-  {
-    "file": "plugins/source-control/src/app/page/changes-nav.tsx",
-    "rule": "arbitrary-edge",
     "source": "\"flex h-14 w-full min-w-0 cursor-pointer flex-col gap-1 rounded-[8px] border-0 bg-transparent px-2 py-1.5 text-start transition-colors duration-150 hover:bg-border-hairline focus-visible:-outline-offset-2 motion-reduce:transition-none\","
   },
   {
     "file": "plugins/source-control/src/app/page/changes-nav.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"flex shrink-0 cursor-pointer items-center gap-2 rounded-[6px] bg-transparent text-muted-foreground disabled:cursor-default\","
-  },
-  {
-    "file": "plugins/source-control/src/app/page/changes-nav.tsx",
-    "rule": "arbitrary-edge",
     "source": "className=\"-ms-1 size-3.5 border-[1.5px] border-solid border-popover first:ms-0\""
-  },
-  {
-    "file": "plugins/source-control/src/app/page/changes-nav.tsx",
-    "rule": "arbitrary-edge",
-    "source": "phone ? \"rounded-[8px]\" : \"rounded-[6px]\","
-  },
-  {
-    "file": "plugins/source-control/src/app/page/changes-nav.tsx",
-    "rule": "arbitrary-edge",
-    "source": "phone ? \"rounded-[8px]\" : \"rounded-[6px]\","
   },
   {
     "file": "plugins/source-control/src/app/page/changes-nav.tsx",
@@ -2605,31 +2235,6 @@
     "source": "className=\"flex min-w-0 flex-1 items-center gap-2 rounded-[6px] px-2 py-1 no-underline hover:bg-surface-raised\""
   },
   {
-    "file": "plugins/source-control/src/app/page/rail.tsx",
-    "rule": "arbitrary-edge",
-    "source": "className=\"flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 py-1 text-start hover:bg-surface-raised\""
-  },
-  {
-    "file": "plugins/source-control/src/app/page/rail.tsx",
-    "rule": "raw-color",
-    "source": "className: \"bg-[color-mix(in_oklab,var(--destructive)_20%,transparent)] text-destructive-text\","
-  },
-  {
-    "file": "plugins/source-control/src/app/page/rail.tsx",
-    "rule": "raw-color",
-    "source": "className: \"bg-[color-mix(in_oklab,var(--pr-merged)_20%,transparent)] text-(--pr-merged)\","
-  },
-  {
-    "file": "plugins/source-control/src/app/page/rail.tsx",
-    "rule": "raw-color",
-    "source": "className: \"bg-[color-mix(in_oklab,var(--success)_20%,transparent)] text-success-foreground\","
-  },
-  {
-    "file": "plugins/source-control/src/app/page/review-page.tsx",
-    "rule": "arbitrary-edge",
-    "source": "className=\"flex size-8 shrink-0 items-center justify-center rounded-[6px] border border-solid border-border text-foreground transition-colors hover:bg-surface-raised motion-reduce:transition-none\""
-  },
-  {
     "file": "plugins/source-control/src/app/page/review-section.tsx",
     "rule": "arbitrary-edge",
     "source": "className={cx(\"flex min-w-0 gap-2 rounded-[6px] px-2 py-1\", focused && \"bg-border-hairline\")}"
@@ -2657,42 +2262,12 @@
   {
     "file": "plugins/source-control/src/app/review-ui.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"flex h-4 shrink-0 items-center rounded-[4px] px-1 text-[11px] leading-3 font-bold\","
-  },
-  {
-    "file": "plugins/source-control/src/app/review-ui.tsx",
-    "rule": "arbitrary-edge",
     "source": "className=\"flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-surface-raised\""
-  },
-  {
-    "file": "plugins/source-control/src/app/review-ui.tsx",
-    "rule": "raw-color",
-    "source": "\"bg-[color-mix(in_oklab,var(--warning)_15%,transparent)] text-warning\","
-  },
-  {
-    "file": "plugins/source-control/src/app/send.tsx",
-    "rule": "arbitrary-edge",
-    "source": "<fieldset className=\"m-0 flex shrink-0 rounded-[6px] border-0 bg-surface-raised p-1\">"
-  },
-  {
-    "file": "plugins/source-control/src/app/send.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"absolute start-auto top-full right-0 z-20 m-0 mt-2 w-[440px] max-w-[calc(100cqw-2rem)] flex-col overflow-clip rounded-[10px] border border-solid border-border bg-popover p-0 text-start text-foreground shadow-xl outline-none\","
-  },
-  {
-    "file": "plugins/source-control/src/app/send.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"cursor-pointer rounded-[4px] px-3 py-1 text-[12px] leading-4 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50 has-[:focus-visible]:outline-2\","
   },
   {
     "file": "plugins/source-control/src/app/send.tsx",
     "rule": "arbitrary-edge",
     "source": "\"flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 rounded-[6px] border-0 bg-transparent px-2 text-start text-[12px] leading-4 text-foreground hover:bg-surface-raised\";"
-  },
-  {
-    "file": "plugins/source-control/src/app/send.tsx",
-    "rule": "arbitrary-edge",
-    "source": "className=\"flex h-6 min-w-0 shrink-0 items-center gap-2 rounded-[6px] border border-solid border-border px-3\""
   },
   {
     "file": "plugins/source-control/src/app/send.tsx",
@@ -2732,11 +2307,6 @@
   {
     "file": "plugins/source-control/src/app/workspace-lane.tsx",
     "rule": "arbitrary-edge",
-    "source": "className=\"flex min-h-6 min-w-0 flex-[1_1_11rem] cursor-pointer items-center gap-2 rounded-[4px] text-start focus-visible:-outline-offset-2 disabled:cursor-default\""
-  },
-  {
-    "file": "plugins/source-control/src/app/workspace-lane.tsx",
-    "rule": "arbitrary-edge",
     "source": "diamond ? \"scale-[0.86] rotate-45 rounded-[2px]\" : \"rounded-full\","
   },
   {
@@ -2750,34 +2320,9 @@
     "source": "commit.conflicted && \"bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)]\","
   },
   {
-    "file": "plugins/source-control/src/app/workspace-lane.tsx",
-    "rule": "raw-color",
-    "source": "destructive: \"bg-[color-mix(in_oklab,var(--destructive)_14%,transparent)] text-destructive\","
-  },
-  {
-    "file": "plugins/source-control/src/app/workspace-lane.tsx",
-    "rule": "raw-color",
-    "source": "merged: \"bg-[color-mix(in_oklab,var(--pr-merged)_14%,transparent)] text-(--pr-merged)\","
-  },
-  {
-    "file": "plugins/source-control/src/app/workspace-lane.tsx",
-    "rule": "raw-color",
-    "source": "success: \"bg-[color-mix(in_oklab,var(--success)_14%,transparent)] text-success\","
-  },
-  {
-    "file": "plugins/source-control/src/app/workspace-lane.tsx",
-    "rule": "raw-color",
-    "source": "warning: \"bg-[color-mix(in_oklab,var(--warning)_14%,transparent)] text-warning\","
-  },
-  {
     "file": "plugins/t3-composer/app.css",
     "rule": "hairline-literal",
     "source": "--tw-ring-shadow: 0 0 0 0.5px var(--t3-composer-hairline);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);"
   },
   {
     "file": "plugins/t3-composer/app.css",
@@ -2802,16 +2347,6 @@
   {
     "file": "plugins/t3-composer/app.css",
     "rule": "hairline-literal",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 12%, transparent);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, transparent);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
     "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
   },
   {
@@ -2823,11 +2358,6 @@
     "file": "plugins/t3-composer/app.css",
     "rule": "hairline-literal",
     "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "hairline-literal",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);"
   },
   {
     "file": "plugins/t3-composer/app.css",
@@ -2858,11 +2388,6 @@
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
     "source": "--t3-composer-hairline: color-mix(in srgb, var(--foreground) 8%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
-    "source": "0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);"
   },
   {
     "file": "plugins/t3-composer/app.css",
@@ -2977,16 +2502,6 @@
   {
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 12%, transparent);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, transparent);"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
     "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
   },
   {
@@ -2998,11 +2513,6 @@
     "file": "plugins/t3-composer/app.css",
     "rule": "raw-color",
     "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));"
-  },
-  {
-    "file": "plugins/t3-composer/app.css",
-    "rule": "raw-color",
-    "source": "box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, transparent);"
   },
   {
     "file": "plugins/t3-composer/app.css",
@@ -3095,26 +2605,6 @@
     "source": "[data-t3-model-picker-popover] [role=\"option\"] :is(.text-sm) {"
   },
   {
-    "file": "plugins/t3-composer/components/ui/button.tsx",
-    "rule": "local-primitive",
-    "source": "button"
-  },
-  {
-    "file": "plugins/t3-composer/components/ui/motion.ts",
-    "rule": "local-primitive",
-    "source": "motion"
-  },
-  {
-    "file": "plugins/t3-composer/components/ui/popover.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"z-50 flex max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-foreground/10 bg-popover text-popover-foreground shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:zoom-in-[0.98] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]\","
-  },
-  {
-    "file": "plugins/t3-composer/components/ui/popover.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"z-50 flex max-w-[calc(100vw-1rem)] overflow-hidden rounded-lg border border-foreground/10 bg-popover text-popover-foreground shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:zoom-in-[0.98] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]\","
-  },
-  {
     "file": "plugins/t3-composer/src/AttachmentPreview.tsx",
     "rule": "arbitrary-edge",
     "source": "\"relative flex h-[120px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background\";"
@@ -3123,11 +2613,6 @@
     "file": "plugins/t3-composer/src/AttachmentPreview.tsx",
     "rule": "arbitrary-edge",
     "source": "\"relative flex h-[120px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background\";"
-  },
-  {
-    "file": "plugins/t3-composer/src/AttachmentPreview.tsx",
-    "rule": "arbitrary-edge",
-    "source": "className=\"inline-flex h-full items-center gap-1.5 rounded-[10px] pl-2.5 pr-1 disabled:cursor-default\""
   },
   {
     "file": "plugins/t3-composer/src/AttachmentPreview.tsx",
@@ -3148,11 +2633,6 @@
     "file": "plugins/t3-composer/src/AttachmentPreview.tsx",
     "rule": "raw-color",
     "source": "\"relative flex h-[120px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background\";"
-  },
-  {
-    "file": "plugins/t3-composer/src/AttachmentPreview.tsx",
-    "rule": "raw-color",
-    "source": "className=\"mr-1 inline-flex size-6 items-center justify-center rounded-full text-muted-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_8%,transparent)] hover:text-foreground\""
   },
   {
     "file": "plugins/t3-composer/src/AttachmentPreview.tsx",
@@ -3192,22 +2672,12 @@
   {
     "file": "plugins/traces/src/app/traces.css",
     "rule": "raw-color",
-    "source": "--tr-accent: #78cbb1;"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
     "source": "--tr-accent: var(--primary, #78cbb1);"
   },
   {
     "file": "plugins/traces/src/app/traces.css",
     "rule": "raw-color",
     "source": "--tr-added: var(--diff-added, #99d4a8);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "--tr-bg: #191c1e;"
   },
   {
     "file": "plugins/traces/src/app/traces.css",
@@ -3222,17 +2692,7 @@
   {
     "file": "plugins/traces/src/app/traces.css",
     "rule": "raw-color",
-    "source": "--tr-line: #34383b;"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
     "source": "--tr-line: var(--border, #303336);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "--tr-muted: #929a9f;"
   },
   {
     "file": "plugins/traces/src/app/traces.css",
@@ -3267,16 +2727,6 @@
   {
     "file": "plugins/traces/src/app/traces.css",
     "rule": "raw-color",
-    "source": "background: #0007;"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "background: color-mix(in srgb, currentColor 6%, transparent);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
     "source": "background: color-mix(in srgb, currentColor 6%, transparent);"
   },
   {
@@ -3307,67 +2757,17 @@
   {
     "file": "plugins/traces/src/app/traces.css",
     "rule": "raw-color",
-    "source": "background: var(--tr-bg, #151719);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
     "source": "border-bottom: 1px solid color-mix(in srgb, var(--tr-line) 65%, transparent);"
   },
   {
     "file": "plugins/traces/src/app/traces.css",
     "rule": "raw-color",
-    "source": "border-color: color-mix(in srgb, var(--tr-accent) 20%, transparent);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "border-color: color-mix(in srgb, var(--tr-accent) 35%, transparent);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
     "source": "border-color: color-mix(in srgb, var(--tr-warning) 45%, transparent);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "border-color: color-mix(in srgb, var(--tr-warning) 45%, transparent);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "border-color: color-mix(in srgb, var(--tr-warning) 45%, transparent);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "border: 1px solid #3e4448;"
   },
   {
     "file": "plugins/traces/src/app/traces.css",
     "rule": "raw-color",
     "source": "border: 1px solid color-mix(in srgb, var(--tr-warning) 28%, transparent);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "border: 1px solid var(--tr-line, #303336);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "border: 1px solid var(--tr-line, #303336);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "border: 1px solid var(--tr-line, #404448);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "box-shadow: 0 20px 80px #0006;"
   },
   {
     "file": "plugins/traces/src/app/traces.css",
@@ -3387,17 +2787,7 @@
   {
     "file": "plugins/traces/src/app/traces.css",
     "rule": "raw-color",
-    "source": "color: #e5e7e9;"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
     "source": "color: var(--tr-accent, #78cbb1);"
-  },
-  {
-    "file": "plugins/traces/src/app/traces.css",
-    "rule": "raw-color",
-    "source": "color: var(--tr-muted, #a1a8ad);"
   },
   {
     "file": "plugins/traces/src/app/traces.css",
