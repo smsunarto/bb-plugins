@@ -23,8 +23,8 @@ const diffHeaderCss = await readFile(new URL("../app/diff-header.css", import.me
 
 // Each style rule with the at-rule preludes around it, outermost first. The
 // theme has no braces inside strings, so brace depth is the nesting.
-function styleRules(css: string): Array<{ selector: string; atRules: string[] }> {
-  const rules: Array<{ selector: string; atRules: string[] }> = [];
+function styleRules(css: string): Array<{ selector: string; atRules: string[]; body: string }> {
+  const rules: Array<{ selector: string; atRules: string[]; body: string }> = [];
   const open: string[] = [];
   for (const [, text = "", brace] of css
     .replace(/\/\*[\s\S]*?\*\//g, "")
@@ -34,7 +34,7 @@ function styleRules(css: string): Array<{ selector: string; atRules: string[] }>
       continue;
     }
     const selector = open.pop() ?? "";
-    if (!selector.startsWith("@")) rules.push({ selector, atRules: [...open] });
+    if (!selector.startsWith("@")) rules.push({ selector, atRules: [...open], body: text });
   }
   return rules;
 }
@@ -258,18 +258,38 @@ describe("bb Monokai contract audit", () => {
     ).toEqual([]);
   });
 
-  test("gives the framed macOS window Capy's flat desktop shell", () => {
-    expect(theme).toContain(
-      '.dark [data-testid="app-layout-root"][data-framed] {\n  --bb-window-frame-lip: 0px;\n  --bb-window-frame-leading-lip: 0px;\n  background-image: none;',
+  test("gives the framed macOS window Capy's flat sidebar and inset page", () => {
+    const rules = styleRules(theme);
+    const body = (selector: string) => rules.find((rule) => rule.selector === selector)?.body;
+    // bb's own 8px frame lip stays, so the page sits off the window's edges.
+    expect(theme).not.toMatch(/--bb-window-frame(-leading)?-lip:/);
+    expect(body('.dark [data-framed] [data-sidebar="collapsible-body"]')).toContain(
+      "border-color: transparent;",
     );
-    expect(theme).toContain(
-      '.dark [data-framed] [data-sidebar="collapsible-body"] {\n  border-color: transparent;',
+    // The mask keeps the title-bar band whole and rounds the page below it;
+    // the SVG's rx and the edge's radius are the same 12px.
+    const inset = body('.dark [data-framed] [data-sidebar="inset"]');
+    expect(inset).toContain("linear-gradient(black, black)");
+    expect(inset).toContain("rx='12'");
+    expect(inset).toContain(
+      "100% var(--bb-window-title-bar-height, 0px),\n    100% calc(100% - var(--bb-window-title-bar-height, 0px));",
     );
-    expect(theme).toContain(
-      '.dark [data-framed] [data-sidebar="inset"] {\n  mask-image: none;\n  clip-path: inset(0 round var(--bb-frame-card-radius, 10px) 0 0 0);',
+    expect(inset).toContain("mask-position: top, bottom;");
+    expect(inset).toContain("clip-path: none;");
+    expect(body('.dark [data-framed] [data-sidebar="inset-edge"]')).toBe(
+      "\n  border: 0.5px solid #ebebec14;\n  border-radius: 12px;\n  transition: none;\n",
     );
+    expect(body('.dark [data-framed] [data-sidebar="inset"]::after')).toContain("display: none;");
+    // Neither sidebar edge glows; the right divider is the page's hairline.
+    expect(body('.dark [data-testid="app-sidebar-resize-handle"]::before')).toBe(
+      "\n  display: none;\n",
+    );
+    expect(body(".dark #thread-detail-secondary-panel-handle > span + span")).toBe(
+      "\n  width: 0.5px;\n  background-color: #ebebec14;\n",
+    );
+    // The New thread screen drops the framed edge too.
     expect(theme).toContain(
-      '.dark [data-framed] [data-sidebar="inset-edge"],\n.dark [data-framed] [data-sidebar="inset"]::after {\n  display: none;',
+      '.dark[data-monokai-home] [data-framed] [data-sidebar="inset-edge"] {\n  display: none;',
     );
   });
 
@@ -287,9 +307,7 @@ describe("bb Monokai contract audit", () => {
     );
     expect(theme).toContain("border: 0.5px solid #ebebec14;\n    border-radius: 12px;");
     // The New thread screen drops that overlay.
-    expect(theme).toContain(
-      ".dark[data-monokai-home] [data-app-content-shell]::after {\n  display: none;",
-    );
+    expect(theme).toContain(".dark[data-monokai-home] [data-app-content-shell]::after,");
     expect(theme).toContain("order: 1;\n  margin-top: auto;\n  margin-bottom: auto;");
     // The halftone starts below the macOS title bar, which bb tints translucent.
     expect(theme).toContain(

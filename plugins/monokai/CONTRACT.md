@@ -467,9 +467,11 @@ and composes its surfaces differently, so the adapter maps the shared roles as f
   divider owns that edge while active, so a panel border cannot stack beneath
   it and brighten the result.
 - The macOS framed window takes Capy's desktop shell: the sidebar lies flat on
-  the frame with no card or outline, and the page fills the window to its right
-  and bottom edges with only its top-left corner rounded. bb's frame lip, card
-  mask, page outline, and title-bar seam are removed.
+  the frame with no card or outline, and the page below the title bar is
+  Capy's inset panel. bb's own 8px frame lip keeps it off the window's edges,
+  all four corners round at 12px, and it draws the unframed page's 0.5 CSS px
+  8% shell-ink edge, which the New thread screen drops. bb's card mask and
+  title-bar seam are replaced.
 - On desktop widths the outer sidebars move on Capy's timing, with its
   ease-out-quint curve. The left sidebar opens over 200ms and closes over
   150ms, and its contents fade and drift 16px behind it. The right panel takes

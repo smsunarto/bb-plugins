@@ -456,12 +456,12 @@
 }
 
 /* The macOS framed window takes Capy's desktop shell. The sidebar lies flat
- * on the frame with no card or outline, and the page fills the window to its
- * right and bottom edges with only its top-left corner rounded. bb's frame
- * lip, card mask, outlines, title-bar seam, and the rail's own 4% fill all go. */
+ * on the frame with no card or outline. The page is Capy's inset panel below
+ * the title bar: bb's own 8px frame lip keeps it off the window's edges, and
+ * all four corners round at 12px under a 0.5px hairline, as on the unframed
+ * page. bb's card mask (8px corners, the top-left squared beside an open
+ * sidebar), title-bar seam, and the rail's own 4% fill go. */
 .dark [data-testid="app-layout-root"][data-framed] {
-  --bb-window-frame-lip: 0px;
-  --bb-window-frame-leading-lip: 0px;
   background-image: none;
 }
 
@@ -476,15 +476,31 @@
   clip-path: inset(0 -6px 0 0);
 }
 
+/* The inset spans the title bar, whose band holds the page header, so the
+ * mask keeps that band whole and clips everything below it to the rounded
+ * page. The SVG's rx is the page radius; keep it equal to the edge's. */
 .dark [data-framed] [data-sidebar="inset"] {
-  mask-image: none;
-  clip-path: inset(0 round var(--bb-frame-card-radius, 10px) 0 0 0);
+  mask-image:
+    linear-gradient(black, black),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100%25' height='100%25'%3E%3Crect width='100%25' height='100%25' rx='12'/%3E%3C/svg%3E");
+  mask-size:
+    100% var(--bb-window-title-bar-height, 0px),
+    100% calc(100% - var(--bb-window-title-bar-height, 0px));
+  mask-position: top, bottom;
+  mask-repeat: no-repeat;
+  clip-path: none;
 }
 
-.dark [data-framed] [data-sidebar="inset-edge"],
+.dark [data-framed] [data-sidebar="inset-edge"] {
+  border: 0.5px solid {{shell.ink08}};
+  border-radius: 12px;
+  transition: none;
+}
+
 .dark [data-framed] [data-sidebar="inset"]::after {
   display: none;
 }
+
 
 /* Unframed desktop layouts (Linux, the web app) take Capy's inset page: the
  * frame shows 8px around the page on every side, so the gap holds while the
@@ -676,6 +692,19 @@
   + #thread-detail-secondary-panel
   > aside {
   border-color: transparent;
+}
+
+/* The outer sidebars' edges are the page's own hairline, and neither lights
+ * up on hover or drag. The left resize handle's line goes; the right
+ * divider keeps its full height through the title bar but takes the page
+ * edge's 0.5px 8% ink instead of a 12% line. */
+.dark [data-testid="app-sidebar-resize-handle"]::before {
+  display: none;
+}
+
+.dark #thread-detail-secondary-panel-handle > span + span {
+  width: 0.5px;
+  background-color: {{shell.ink08}};
 }
 
 /* bb paints the active settings and plugins row with the same 8%
@@ -929,9 +958,9 @@
 }
 
 /* The New thread screen has no page outline. app/home-marker.ts sets the
- * attribute while that screen is open; bb marks no route itself. The framed
- * macOS shell draws no outlines at all (see above). */
-.dark[data-monokai-home] [data-app-content-shell]::after {
+ * attribute while that screen is open; bb marks no route itself. */
+.dark[data-monokai-home] [data-app-content-shell]::after,
+.dark[data-monokai-home] [data-framed] [data-sidebar="inset-edge"] {
   display: none;
 }
 
