@@ -3,8 +3,22 @@ import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { definePluginApp, useBbNavigate, useRealtime, useRpc } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import type { rpcContract } from "./server";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ExecutionSettings } from "./execution-settings";
 import type { Run, RunStatus, ThreadRequest } from "./lib/types";
 
@@ -97,55 +111,72 @@ function describeCondition(condition: ConditionView): string {
   }
 }
 
+const CHIP_TONE = {
+  default: "secondary",
+  trigger: "info",
+  guard: "success",
+  warn: "warning",
+} as const satisfies Record<string, BadgeProps["variant"]>;
+
 function Chip({
   children,
   tone = "default",
 }: {
   children: React.ReactNode;
-  tone?: "default" | "trigger" | "guard" | "warn";
+  tone?: keyof typeof CHIP_TONE;
 }) {
-  const tones: Record<string, string> = {
-    default: "border-border text-muted-foreground bg-surface-recessed",
-    trigger: "border-timeline-accent/30 text-timeline-accent",
-    guard: "border-success/30 text-success-foreground bg-success/10",
-    warn: "border-attention/40 text-warning-text bg-surface-attention",
-  };
+  return <Badge variant={CHIP_TONE[tone]}>{children}</Badge>;
+}
+
+/** One value picker for the rule form's fixed option lists. */
+function OptionSelect({
+  id,
+  value,
+  onValueChange,
+  options,
+  label,
+  className,
+}: {
+  id?: string;
+  value: string;
+  onValueChange: (value: string) => void;
+  options: ReadonlyArray<readonly [value: string, label: string]>;
+  label?: string;
+  className?: string;
+}) {
   return (
-    <span className={`rounded-md border px-1.5 py-px text-xs ${tones[tone]}`}>{children}</span>
+    <Select value={value} onValueChange={onValueChange}>
+      <SelectTrigger id={id} aria-label={label} className={className}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {options.map(([option, text]) => (
+            <SelectItem key={option} value={option}>
+              {text}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
   );
 }
 
-function Toggle({
-  on,
-  onChange,
-  label,
-}: {
-  on: boolean;
-  onChange: (next: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      role="switch"
-      aria-checked={on}
-      onClick={(event) => {
-        event.stopPropagation();
-        onChange(!on);
-      }}
-      className={`relative inline-block h-[17px] w-[30px] shrink-0 cursor-pointer rounded-full transition-colors ${
-        on ? "bg-primary" : "bg-muted"
-      }`}
-    >
-      <span
-        className={`absolute top-0.5 h-[13px] w-[13px] rounded-full transition-all ${
-          on ? "left-[15px] bg-primary-foreground" : "left-0.5 bg-subtle-foreground"
-        }`}
-      />
-    </button>
-  );
-}
+/** Rule triggers in the order the editor offers them. */
+const TRIGGER_LABEL: Record<string, string> = {
+  ready_for_review: "PR ready for review",
+  new_commits: "New commits",
+  new_issue: "New issue",
+  pr_description_matches: "PR description matches",
+  comment_matches: "Comment matches",
+};
+
+const TRUST_OPTIONS = [
+  ["org_members", "Organization members only"],
+  ["write_access", "Write access only"],
+  ["past_contributors", "Write access + past contributors"],
+  ["anyone", "Anyone"],
+] as const;
 
 // --------------------------------------------------------------------------
 
@@ -185,42 +216,34 @@ function RulesList({
           }`}
         >
           <div className="flex items-center gap-2">
-            <button
-              type="button"
+            <Button
+              variant="link"
+              size="sm"
               onClick={() => onEdit(rule)}
-              className="min-w-0 text-left text-sm font-semibold hover:underline"
+              className="h-auto min-w-0 p-0 text-sm font-semibold text-foreground"
             >
               {rule.name}
-            </button>
-            <span className="rounded-md border border-border bg-surface-recessed px-1.5 py-px font-mono text-xs text-muted-foreground">
+            </Button>
+            <Badge variant="outline" className="font-mono text-muted-foreground">
               {rule.repo}
-            </span>
+            </Badge>
             {rule.mode === "shadow" ? (
               <Chip tone="trigger">shadow</Chip>
             ) : (
               <Chip tone="guard">live</Chip>
             )}
             <span className="flex-1" />
-            <Toggle
-              label={`Enable ${rule.name}`}
-              on={rule.enabled}
-              onChange={(next) => onToggle(rule, next)}
+            <Switch
+              aria-label={`Enable ${rule.name}`}
+              checked={rule.enabled}
+              onClick={(event) => event.stopPropagation()}
+              onCheckedChange={(next) => onToggle(rule, next)}
             />
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {rule.triggers.map((trigger) => (
               <Chip key={trigger} tone="trigger">
-                {
-                  (
-                    {
-                      ready_for_review: "PR ready for review",
-                      new_commits: "New commits",
-                      new_issue: "New issue",
-                      pr_description_matches: "PR description matches",
-                      comment_matches: "Comment matches",
-                    } as Record<string, string>
-                  )[trigger]
-                }
+                {TRIGGER_LABEL[trigger] ?? trigger}
               </Chip>
             ))}
             {rule.commentKeywords.map((keyword) => (
@@ -309,14 +332,16 @@ function RunOnTarget({ rule }: { rule: RuleView }) {
         <span className="text-xs font-semibold text-muted-foreground">Run now</span>
         <span className="flex-1" />
         {supportsPullRequests && supportsIssues ? (
-          <select
+          <OptionSelect
+            label="Target kind"
             value={targetKind}
-            onChange={(event) => setTargetKind(event.target.value as "pull_request" | "issue")}
-            className="h-7 rounded-md border border-input bg-card px-2 text-xs"
-          >
-            <option value="pull_request">PR</option>
-            <option value="issue">Issue</option>
-          </select>
+            onValueChange={(value) => setTargetKind(value as "pull_request" | "issue")}
+            options={[
+              ["pull_request", "PR"],
+              ["issue", "Issue"],
+            ]}
+            className="h-7 w-24 text-xs"
+          />
         ) : null}
         <Input
           value={number}
@@ -630,163 +655,171 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
         </div>
         <fieldset disabled={saving} className="contents">
           <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
-            <label className="flex min-w-0 flex-col gap-1.5" htmlFor={`${fieldId}-name`}>
-              <span className="text-xs font-semibold text-muted-foreground">Rule name</span>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <Label
+                htmlFor={`${fieldId}-name`}
+                className="text-xs font-semibold text-muted-foreground"
+              >
+                Rule name
+              </Label>
               <Input
                 id={`${fieldId}-name`}
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="security-sweep"
               />
-            </label>
-            <label className="flex min-w-0 flex-col gap-1.5" htmlFor={`${fieldId}-repo`}>
-              <span className="text-xs font-semibold text-muted-foreground">Repository</span>
+            </div>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <Label
+                htmlFor={`${fieldId}-repo`}
+                className="text-xs font-semibold text-muted-foreground"
+              >
+                Repository
+              </Label>
               <Input
                 id={`${fieldId}-repo`}
                 value={repo}
                 onChange={(event) => setRepo(event.target.value)}
                 placeholder="owner/repo"
               />
-            </label>
+            </div>
           </div>
 
           <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
-            <label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              Review mode
-              <select
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <Label
+                htmlFor={`${fieldId}-mode`}
+                className="text-xs font-semibold text-muted-foreground"
+              >
+                Review mode
+              </Label>
+              <OptionSelect
+                id={`${fieldId}-mode`}
                 value={mode}
-                onChange={(event) => setMode(event.target.value)}
-                className="h-9 rounded-md border border-input bg-card px-2 text-foreground"
+                onValueChange={setMode}
+                options={[
+                  ["shadow", "Shadow — review without posting"],
+                  ["live", "Live — post to GitHub"],
+                ]}
+              />
+            </div>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <Label
+                htmlFor={`${fieldId}-visibility`}
+                className="text-xs font-semibold text-muted-foreground"
               >
-                <option value="shadow">Shadow — review without posting</option>
-                <option value="live">Live — post to GitHub</option>
-              </select>
-            </label>
-            <label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold text-muted-foreground">
-              Review threads
-              <select
+                Review threads
+              </Label>
+              <OptionSelect
+                id={`${fieldId}-visibility`}
                 value={visibility}
-                onChange={(event) => setVisibility(event.target.value)}
-                className="h-9 rounded-md border border-input bg-card px-2 text-foreground"
-              >
-                <option value="visible">Show in sidebar</option>
-                <option value="hidden">Hide from sidebar</option>
-              </select>
-            </label>
+                onValueChange={setVisibility}
+                options={[
+                  ["visible", "Show in sidebar"],
+                  ["hidden", "Hide from sidebar"],
+                ]}
+              />
+            </div>
           </div>
           <div className="flex min-w-0 flex-col gap-1.5">
             <h3 className="text-sm font-semibold">Run when</h3>
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                "ready_for_review",
-                "new_commits",
-                "new_issue",
-                "pr_description_matches",
-                "comment_matches",
-              ].map((trigger) => (
-                <button
-                  key={trigger}
-                  type="button"
-                  aria-pressed={triggers.includes(trigger)}
-                  onClick={() =>
-                    setTriggers((current) =>
-                      current.includes(trigger)
-                        ? current.filter((value) => value !== trigger)
-                        : [...current, trigger],
-                    )
-                  }
-                  className={`rounded-md border px-2.5 py-1 text-xs ${
-                    triggers.includes(trigger)
-                      ? "border-transparent bg-surface-selected font-semibold text-foreground"
-                      : "border-border text-muted-foreground"
-                  }`}
-                >
-                  {
-                    (
-                      {
-                        ready_for_review: "PR ready for review",
-                        new_commits: "New commits",
-                        new_issue: "New issue",
-                        pr_description_matches: "PR description matches",
-                        comment_matches: "Comment matches",
-                      } as Record<string, string>
-                    )[trigger]
-                  }
-                </button>
+            <ToggleGroup
+              type="multiple"
+              size="sm"
+              variant="outline"
+              value={triggers}
+              onValueChange={setTriggers}
+              className="flex-wrap justify-start"
+            >
+              {Object.entries(TRIGGER_LABEL).map(([trigger, text]) => (
+                <ToggleGroupItem key={trigger} value={trigger} className="text-xs">
+                  {text}
+                </ToggleGroupItem>
               ))}
-            </div>
+            </ToggleGroup>
           </div>
 
           {triggers.some((trigger) =>
             ["comment_matches", "pr_description_matches"].includes(trigger),
           ) ? (
             <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
-              <label className="flex min-w-0 flex-col gap-1.5" htmlFor={`${fieldId}-keywords`}>
-                <span className="text-xs font-semibold text-muted-foreground">Match keywords</span>
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <Label
+                  htmlFor={`${fieldId}-keywords`}
+                  className="text-xs font-semibold text-muted-foreground"
+                >
+                  Match keywords
+                </Label>
                 <Input
                   id={`${fieldId}-keywords`}
                   value={commentKeywords}
                   onChange={(event) => setCommentKeywords(event.target.value)}
                   placeholder="@slopcop, slop check"
                 />
-              </label>
+              </div>
               {triggers.includes("comment_matches") ? (
-                <label className="flex min-w-0 flex-col gap-1.5">
-                  <span className="text-xs font-semibold text-muted-foreground">
-                    Who can request a review
-                  </span>
-                  <select
-                    value={requesterTrust}
-                    onChange={(event) => setRequesterTrust(event.target.value)}
-                    className="h-9 rounded-md border border-input bg-card px-2 text-xs"
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <Label
+                    htmlFor={`${fieldId}-requester`}
+                    className="text-xs font-semibold text-muted-foreground"
                   >
-                    <option value="org_members">Organization members only</option>
-                    <option value="write_access">Write access only</option>
-                    <option value="past_contributors">Write access + past contributors</option>
-                    <option value="anyone">Anyone</option>
-                  </select>
-                </label>
+                    Who can request a review
+                  </Label>
+                  <OptionSelect
+                    id={`${fieldId}-requester`}
+                    value={requesterTrust}
+                    onValueChange={setRequesterTrust}
+                    options={TRUST_OPTIONS}
+                    className="text-xs"
+                  />
+                </div>
               ) : null}
             </div>
           ) : null}
 
-          <details className="border-t border-border pt-4">
-            <summary className="cursor-pointer text-sm font-semibold max-md:pointer-coarse:py-2">
+          <Collapsible className="border-t border-border pt-4">
+            <CollapsibleTrigger className="cursor-pointer text-sm font-semibold max-md:pointer-coarse:py-2">
               Filters &amp; author exclusions
-            </summary>
-            <div className="mt-3 space-y-3">
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-3 flex flex-col gap-3">
               <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
-                <label className="flex min-w-0 flex-col gap-1.5" htmlFor={`${fieldId}-paths`}>
-                  <span className="text-xs font-semibold text-muted-foreground">
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <Label
+                    htmlFor={`${fieldId}-paths`}
+                    className="text-xs font-semibold text-muted-foreground"
+                  >
                     Changed paths match (PR only)
-                  </span>
+                  </Label>
                   <Input
                     id={`${fieldId}-paths`}
                     value={pathGlobs}
                     onChange={(event) => setPathGlobs(event.target.value)}
                     placeholder="src/auth/**, src/payments/**"
                   />
-                </label>
-                <label className="flex min-w-0 flex-col gap-1.5" htmlFor={`${fieldId}-branch`}>
-                  <span className="text-xs font-semibold text-muted-foreground">
+                </div>
+                <div className="flex min-w-0 flex-col gap-1.5">
+                  <Label
+                    htmlFor={`${fieldId}-branch`}
+                    className="text-xs font-semibold text-muted-foreground"
+                  >
                     Base branch (PR only)
-                  </span>
+                  </Label>
                   <Input
                     id={`${fieldId}-branch`}
                     value={baseBranch}
                     onChange={(event) => setBaseBranch(event.target.value)}
                     placeholder="main"
                   />
-                </label>
+                </div>
               </div>
 
               <div className="flex min-w-0 flex-col gap-1.5">
-                <label
+                <Label
                   htmlFor={excludedAuthorsId}
                   className="text-xs font-semibold text-muted-foreground"
                 >
                   Exclude PR authors
-                </label>
+                </Label>
                 <Input
                   id={excludedAuthorsId}
                   aria-describedby={`${excludedAuthorsId}-hint`}
@@ -805,23 +838,22 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
                   </span>
                 ) : null}
               </div>
-            </div>
-          </details>
-          <div className="space-y-2">
-            <label className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold">PR authors</span>
+            </CollapsibleContent>
+          </Collapsible>
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor={`${fieldId}-trust`} className="text-sm font-semibold">
+                PR authors
+              </Label>
               <span className="flex-1" />
-              <select
+              <OptionSelect
+                id={`${fieldId}-trust`}
                 value={trust}
-                onChange={(event) => setTrust(event.target.value)}
-                className="rounded-md border border-input bg-card px-2 py-1 text-xs"
-              >
-                <option value="org_members">Organization members only</option>
-                <option value="write_access">Write access only</option>
-                <option value="past_contributors">Write access + past contributors</option>
-                <option value="anyone">Anyone</option>
-              </select>
-            </label>
+                onValueChange={setTrust}
+                options={TRUST_OPTIONS}
+                className="h-7 w-auto text-xs"
+              />
+            </div>
             <p className="text-xs text-muted-foreground">
               Past contributors have had a commit merged into the repository.
             </p>
@@ -889,11 +921,11 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
         </div>
       </form>
       {rule ? (
-        <details className="mt-4 border-t border-border pt-4">
-          <summary className="cursor-pointer text-sm font-semibold max-md:pointer-coarse:py-2">
+        <Collapsible className="mt-4 border-t border-border pt-4">
+          <CollapsibleTrigger className="cursor-pointer text-sm font-semibold max-md:pointer-coarse:py-2">
             Test this rule
-          </summary>
-          <div className="mt-3">
+          </CollapsibleTrigger>
+          <CollapsibleContent className="mt-3">
             {hasUnsavedChanges ? (
               <p className="text-xs text-muted-foreground">
                 Save your changes before testing this rule.
@@ -901,8 +933,8 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
             ) : (
               <RunOnTarget rule={rule} />
             )}
-          </div>
-        </details>
+          </CollapsibleContent>
+        </Collapsible>
       ) : null}
     </div>
   );
@@ -958,23 +990,25 @@ function Activity({ runs }: { runs: Run[] }) {
                 <span>{run.trigger.replace(/_/g, " ")}</span>
                 <span>{relative(run.startedAt)}</span>
                 {run.threadId !== null ? (
-                  <button
-                    type="button"
-                    className="text-timeline-accent hover:underline"
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs text-timeline-accent"
                     onClick={() => navigate.toThread(run.threadId as string)}
                   >
                     thread
-                  </button>
+                  </Button>
                 ) : null}
                 {run.commentCount > 0 ? (
-                  <button
-                    type="button"
-                    className="text-timeline-accent hover:underline"
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto p-0 text-xs text-timeline-accent"
                     onClick={() => expand(run.id)}
                   >
                     {run.commentCount} comment
                     {run.commentCount === 1 ? "" : "s"}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
               {run.detail !== null ? (
@@ -1066,23 +1100,18 @@ function SlopCopPanel() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-1.5 border-b border-border px-4 py-2">
-        {(["rules", "activity"] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => setTab(value)}
-            className={`rounded-md px-2.5 py-1 text-sm capitalize ${
-              tab === value
-                ? "bg-secondary font-medium text-foreground"
-                : "text-muted-foreground hover:bg-state-hover"
-            }`}
-          >
-            {value}
-            <span className="ml-1.5 rounded-md bg-muted px-1 text-xs text-muted-foreground">
-              {value === "rules" ? rules.length : runs.length}
-            </span>
-          </button>
-        ))}
+        <Tabs value={tab} onValueChange={(value) => setTab(value as "rules" | "activity")}>
+          <TabsList>
+            {(["rules", "activity"] as const).map((value) => (
+              <TabsTrigger key={value} value={value} className="capitalize">
+                {value}
+                <Badge variant="count" className="ml-1.5">
+                  {value === "rules" ? rules.length : runs.length}
+                </Badge>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
         <span className="flex-1" />
         {ghLogin === null ? (
           <span className="text-xs text-warning-text">gh not authenticated</span>

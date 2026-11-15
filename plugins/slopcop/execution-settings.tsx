@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   experimental_PermissionModePicker as PermissionModePicker,
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -8,6 +8,15 @@ import type { ExperimentalProviderModelPickerRouting } from "@get-bb/plugin-sdk/
 import { z } from "zod";
 import type { ThreadRequest } from "./lib/types";
 import { Button } from "./components/ui/button";
+import { Label } from "./components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./components/ui/select";
 
 const targetSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("reuse"), environmentId: z.string() }),
@@ -71,6 +80,7 @@ export function ExecutionSettings({
   onChange: (value: ThreadRequest) => void;
 }) {
   const sdk = useSdk();
+  const fieldId = useId();
   const [editing, setEditing] = useState(!value.model);
   const [machines, setMachines] = useState<Awaited<ReturnType<typeof sdk.hosts.list>>>([]);
   const [projects, setProjects] = useState<Awaited<ReturnType<typeof sdk.projects.list>>>([]);
@@ -172,36 +182,45 @@ export function ExecutionSettings({
       {editing ? (
         <div className="space-y-3">
           <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
-            <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
-              Project
-              <select
-                className="h-9 min-w-0 rounded-md border border-input bg-card px-2"
-                value={value.projectId}
-                onChange={(event) => void changeProject(event.target.value)}
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <Label htmlFor={`${fieldId}-project`} className="text-xs font-medium">
+                Project
+              </Label>
+              <Select
+                value={value.projectId || undefined}
+                onValueChange={(projectId) => void changeProject(projectId)}
               >
-                <option value="">Choose a project</option>
-                {value.projectId && !projects.some((item) => item.id === value.projectId) ? (
-                  <option value={value.projectId}>{projectName} (saved)</option>
-                ) : null}
-                {projects.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex min-w-0 flex-col gap-1.5 text-xs font-medium">
-              Workspace
-              <select
-                className="h-9 min-w-0 rounded-md border border-input bg-card px-2"
+                <SelectTrigger id={`${fieldId}-project`} className="min-w-0">
+                  <SelectValue placeholder="Choose a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {value.projectId && !projects.some((item) => item.id === value.projectId) ? (
+                      <SelectItem value={value.projectId}>{projectName} (saved)</SelectItem>
+                    ) : null}
+                    {projects.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <Label htmlFor={`${fieldId}-workspace`} className="text-xs font-medium">
+                Workspace
+              </Label>
+              <Select
                 value="saved"
                 disabled={!value.projectId}
-                onChange={(event) => {
+                onValueChange={(hostId) => {
+                  if (hostId === "saved") return;
                   generation.current++;
                   setLoadingDefaults(false);
                   const environment = {
                     type: "host",
-                    hostId: event.target.value,
+                    hostId: hostId,
                     workspace:
                       project?.kind === "personal"
                         ? { type: "personal" }
@@ -210,16 +229,23 @@ export function ExecutionSettings({
                   onChange({ ...value, environment });
                 }}
               >
-                <option value="saved">{targetLabel}</option>
-                {hosts.map((hostId) => (
-                  <option key={hostId} value={hostId}>
-                    Fresh worktree ·{" "}
-                    {machines.find((machine) => machine.id === hostId)?.name ??
-                      "Saved project machine"}
-                  </option>
-                ))}
-              </select>
-            </label>
+                <SelectTrigger id={`${fieldId}-workspace`} className="min-w-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="saved">{targetLabel}</SelectItem>
+                    {hosts.map((hostId) => (
+                      <SelectItem key={hostId} value={hostId}>
+                        Fresh worktree ·{" "}
+                        {machines.find((machine) => machine.id === hostId)?.name ??
+                          "Saved project machine"}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <p className="text-xs text-muted-foreground">
             Saved checkout settings are preserved. Fresh worktrees create a separate checkout for

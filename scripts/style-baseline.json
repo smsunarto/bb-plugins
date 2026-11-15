@@ -2290,26 +2290,6 @@
     "source": "style={{ background: \"color-mix(in oklab, var(--ink) 60%, transparent)\" }}"
   },
   {
-    "file": "plugins/slopcop/app.tsx",
-    "rule": "universal-bucket",
-    "source": "<div className=\"mt-3 space-y-3\">"
-  },
-  {
-    "file": "plugins/slopcop/app.tsx",
-    "rule": "universal-bucket",
-    "source": "<div className=\"space-y-2\">"
-  },
-  {
-    "file": "plugins/slopcop/components/ui/hooks/use-media-query.ts",
-    "rule": "registry-drift",
-    "source": "hooks/use-media-query.ts"
-  },
-  {
-    "file": "plugins/slopcop/components/ui/overlay-trigger.ts",
-    "rule": "registry-drift",
-    "source": "overlay-trigger.ts"
-  },
-  {
     "file": "plugins/slopcop/execution-settings.tsx",
     "rule": "universal-bucket",
     "source": "<div className=\"min-w-0 space-y-1\">"

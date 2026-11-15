@@ -165,6 +165,7 @@ it("does not mark reordered saved filters as unsaved changes", async () => {
       { kind: "exclude_author", logins: ["owner"] },
     ],
   });
+  fireEvent.click(slot.getByText("Test this rule"));
   expect(slot.queryByText("Save your changes before testing this rule.")).toBeNull();
   expect(slot.getByRole("button", { name: "Dry run" })).toBeTruthy();
 });
