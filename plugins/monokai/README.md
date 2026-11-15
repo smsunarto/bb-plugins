@@ -82,15 +82,21 @@ private attachments, it leaves the terminal untouched.
 
 The in-app notification center now uses the same Monokai surfaces and states as
 the rest of bb, including its selected row, controls, dividers, and desktop
-card. On desktop, transient toasts also use a compact Codex-inspired layout at
-the top center of the focused conversation: rounded cards, a subtle border,
-quiet icons, and an inline dismiss button. Compact layouts keep bb's native
-drawer and toast geometry. Undo, links, dismissal, and stacking keep bb's
+card. Transient toasts use compact shadcn-style cards on mobile and desktop:
+a subtle border, quiet icons, a filled action button, and an inline dismiss
+button. Desktop toasts sit at the top center of the focused conversation.
+Archive confirmations use a single-row card with dismissal, title, and Undo;
+the thread-title description is hidden. Other notifications keep their details.
+Compact layouts keep bb's native drawer and toast placement. Undo, links, dismissal, and stacking keep bb's
 existing behavior. This is a theme-only CSS override. Switching palettes
 restores bb's placement. Desktop browsers without CSS anchor positioning center
 toasts over the viewport instead. Native browser and operating-system banners
 from bb's push-notifications plugin are system-owned and cannot be restyled by a
 bb theme.
+
+The toast presentation is CSS-only. A palette-independent content script tags
+archive confirmations so switching palettes can restyle an existing toast
+immediately; only the selected Monokai theme applies the presentation overrides.
 
 ## Theme authoring
 

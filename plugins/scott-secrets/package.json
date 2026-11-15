@@ -20,7 +20,11 @@
     "name": "Secrets",
     "description": "Request credentials into dotenv files, and run approved sudo commands without retyping the password.",
     "branding": {
-      "icon": "Lock"
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
     },
     "server": "./src/server/server.ts",
     "app": "./src/app/app.tsx",
@@ -33,6 +37,7 @@
     "dist/*.js",
     "dist/*.css",
     "dist/*.json",
+    "assets/",
     "src/",
     "!src/**/*.test.ts",
     "skills/",

@@ -157,7 +157,7 @@ describe("bb Monokai contract audit", () => {
       '  .dark [data-testid="notification-center"] {\n    overflow: hidden;\n    border-color: var(--border);\n    border-radius: 16px;\n    background: var(--popover);\n    box-shadow: var(--shadow-md);\n  }',
     );
     expect(theme).toContain(
-      "    border-color: var(--border);\n    color: var(--popover-foreground);\n    box-shadow: var(--shadow-md);\n  }",
+      "  border-color: var(--border);\n  color: var(--popover-foreground);\n  box-shadow: var(--shadow-md);\n}",
     );
     expect(theme).not.toContain("0 0 0 1px var(--border),");
   });
@@ -202,11 +202,22 @@ describe("bb Monokai contract audit", () => {
     expect(hovered).toBeCloseTo(alpha(roleValues["layer.active"]), 2);
   });
 
-  test("leaves compact mobile toasts on bb's native layout", () => {
+  test("shares toast surfaces across widths while keeping placement desktop-only", () => {
     const toastRules = styleRules(theme).filter((rule) => rule.selector.includes("[data-sonner-"));
-    expect(toastRules.length).toBeGreaterThan(0);
-    expect(toastRules.filter((rule) => rule.atRules[0] !== "@media (min-width: 768px)")).toEqual(
-      [],
+    const surfaces = toastRules.filter((rule) => rule.selector.includes(".bb-app-toast"));
+    expect(surfaces.length).toBeGreaterThan(0);
+    expect(surfaces.every((rule) => !rule.atRules.includes("@media (min-width: 768px)"))).toBe(
+      true,
+    );
+    const placement = toastRules.filter(
+      (rule) =>
+        rule.atRules.includes("@supports (position-anchor: --bb-monokai-conversation)") ||
+        rule.selector === ".dark [data-sonner-toast]" ||
+        rule.selector === '.dark [data-sonner-toast][data-mounted="false"]',
+    );
+    expect(placement.length).toBeGreaterThan(0);
+    expect(placement.every((rule) => rule.atRules.includes("@media (min-width: 768px)"))).toBe(
+      true,
     );
   });
 
