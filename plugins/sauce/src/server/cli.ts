@@ -598,7 +598,7 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
           {
             name: "condition",
             description:
-              "stable: two matching samples in a row; changed: differs from when the wait began; log:<regex>: a new line in the Device Log panel matches (its app and level filters apply)",
+              "stable: two matching samples in a row; changed: differs from when the wait began; log:<regex>: a new line in the Device Log panel matches (the panel shows the tested app at WARN and above)",
             required: true,
           },
         ],
@@ -707,7 +707,7 @@ export function sauceCli(core: SauceCore): PluginCliRegistration {
           new: {
             type: "boolean",
             description:
-              "Read only the Device Log panel's live tail and print the lines since this thread's last --new: quick, saves no file, and sees only the panel's app and level filters",
+              "Read only the Device Log panel's live tail and print the lines since this thread's last --new: quick, saves no file, and sees what the panel shows (the tested app at WARN and above, its latest 200 lines)",
           },
           json,
         },

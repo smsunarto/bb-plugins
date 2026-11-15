@@ -553,7 +553,7 @@ export function createSauceCore(deps: SauceCoreDeps) {
           met: false,
           waited_ms: deps.now() - began,
           timed_out: true,
-          note: "No new log line matched. The panel shows only its current app and level filters; `bb sauce log --grep` searches the whole log.",
+          note: "No new log line matched. The panel shows the tested app at WARN and above; `bb sauce log --grep` searches the whole log.",
         };
       }
       await deps.sleep(LOG_POLL_MS);
