@@ -1,4 +1,5 @@
 import {
+  experimental_ShortcutHint as ShortcutHint,
   experimental_ThreadStatusGlyph as ThreadStatusGlyph,
   useSidebarThreadRowStatus,
   type PluginSidebarThread,
@@ -132,12 +133,10 @@ function AgeLabel({ at, isCompactViewport }: { at: number; isCompactViewport: bo
  * and bb's own row swaps its trailing cell the same way.
  */
 export function ShortcutPill({ shortcut }: { shortcut: PluginSidebarThreadShortcut }) {
+  // The row already names its key through aria-keyshortcuts.
   return (
-    <kbd
-      aria-hidden
-      className="pointer-events-none inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-sm bg-sidebar-accent px-1 py-0.5 font-sans text-2xs font-normal leading-none tabular-nums text-muted-foreground"
-    >
-      {shortcut.label}
-    </kbd>
+    <span aria-hidden className="pointer-events-none inline-flex shrink-0">
+      <ShortcutHint shortcut={shortcut} />
+    </span>
   );
 }

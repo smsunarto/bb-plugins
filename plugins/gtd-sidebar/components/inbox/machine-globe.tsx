@@ -22,7 +22,6 @@ export function MachineGlobe({
             ? { color: colorOf(machine.id) }
             : undefined
       }
-      title={machine?.name}
       aria-hidden="true"
       data-machine-id={machine?.id}
     >

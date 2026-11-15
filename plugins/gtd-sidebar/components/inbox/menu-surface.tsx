@@ -1,11 +1,11 @@
-import type { KeyboardEvent } from "react";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import type { ComponentPropsWithoutRef, KeyboardEvent } from "react";
+import {
+  ContextMenuContent,
+  ContextMenuPortal,
+  ContextMenuSeparator,
+  ContextMenuSubContent,
+} from "../ui/context-menu";
 import { cn } from "../../lib/utils";
-import { usePortalScopeProps } from "../../lib/portal-scope";
-
-/** A desktop menu item's geometry and highlight fill; each menu adds its own text tone. */
-export const MENU_ITEM_CLASS =
-  "flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent";
 
 /**
  * The one material every desktop right-click menu draws on, thread rows and
@@ -15,39 +15,37 @@ export const MENU_ITEM_CLASS =
 export function MenuSurface({
   children,
   ...props
-}: Omit<ContextMenu.ContextMenuContentProps, "className" | "style">) {
+}: Omit<ComponentPropsWithoutRef<typeof ContextMenuContent>, "className" | "style">) {
   return (
-    <ContextMenu.Portal>
-      <ContextMenu.Content
-        {...usePortalScopeProps()}
-        {...props}
-        // In a window too short for the menu, the material scrolls inside
-        // the space Radix reports, so the last actions stay reachable.
-        className={cn(
-          MENU_CONTENT_CLASS,
-          "flex max-h-[var(--radix-context-menu-content-available-height)] flex-col",
-        )}
-        style={MENU_CONTENT_RESET_STYLE}
-      >
-        <div className={cn(MENU_MATERIAL_CLASS, "min-h-0 overflow-y-auto")}>{children}</div>
-      </ContextMenu.Content>
-    </ContextMenu.Portal>
+    <ContextMenuContent
+      {...props}
+      // In a window too short for the menu, the material scrolls inside
+      // the space Radix reports, so the last actions stay reachable. The
+      // material's shadow draws outside the content box, so nothing clips it.
+      className={cn(
+        MENU_CONTENT_CLASS,
+        "flex max-h-[var(--radix-context-menu-content-available-height)] flex-col overflow-visible",
+      )}
+      style={MENU_CONTENT_RESET_STYLE}
+    >
+      <div className={cn(MENU_MATERIAL_CLASS, "min-h-0 overflow-y-auto")}>{children}</div>
+    </ContextMenuContent>
   );
 }
 
 /**
  * A submenu on the same material, for a thread action's choice list (a
  * plugin's Notifications levels, say). It hangs off its trigger row the way
- * bb's own thread menu opens one.
+ * bb's own thread menu opens one, portaled so the parent's scroll never
+ * clips it.
  */
 export function MenuSubSurface({
   children,
   ...props
-}: Omit<ContextMenu.ContextMenuSubContentProps, "className" | "style">) {
+}: Omit<ComponentPropsWithoutRef<typeof ContextMenuSubContent>, "className" | "style">) {
   return (
-    <ContextMenu.Portal>
-      <ContextMenu.SubContent
-        {...usePortalScopeProps()}
+    <ContextMenuPortal>
+      <ContextMenuSubContent
         sideOffset={6}
         alignOffset={-5}
         {...props}
@@ -55,8 +53,8 @@ export function MenuSubSurface({
         style={MENU_CONTENT_RESET_STYLE}
       >
         <div className={MENU_MATERIAL_CLASS}>{children}</div>
-      </ContextMenu.SubContent>
-    </ContextMenu.Portal>
+      </ContextMenuSubContent>
+    </ContextMenuPortal>
   );
 }
 
@@ -68,7 +66,7 @@ export function MenuSubSurface({
  * one device pixel, where a sub-pixel box could round away.
  */
 export function MenuSeparator() {
-  return <ContextMenu.Separator style={MENU_SEPARATOR_STYLE} />;
+  return <ContextMenuSeparator style={MENU_SEPARATOR_STYLE} />;
 }
 
 const MENU_SEPARATOR_STYLE = {
@@ -78,7 +76,7 @@ const MENU_SEPARATOR_STYLE = {
   borderTop: "0.5px solid var(--border)",
 } as const;
 
-const MENU_CONTENT_CLASS = "z-50 min-w-44 text-popover-foreground";
+const MENU_CONTENT_CLASS = "min-w-44";
 // The theme paints context-menu content as an opaque, bordered 15px card.
 // Inline resets outrank that selector so the blurred layer below is the only
 // surface, with the theme's geometry on it.

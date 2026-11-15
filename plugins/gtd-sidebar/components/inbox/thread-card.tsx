@@ -15,6 +15,7 @@ import {
   type PluginSidebarThreadShortcut,
 } from "@get-bb/plugin-sdk/app";
 import { Icon, type IconName } from "../ui/icon";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { openMenuFromKeyboard } from "./menu-surface";
 import { useThreadRename, type ThreadRename } from "./inline-rename";
@@ -719,27 +720,35 @@ function ParkButton({
   onActivate: () => void;
   disabled?: boolean;
 }) {
+  // aria-disabled, not `disabled`: a disabled button takes no pointer or
+  // focus, so its hint could never say why it is unavailable.
   return (
-    <button
-      type="button"
-      aria-label={label}
-      title={disabled ? "Snooze is available when this thread is idle" : label}
-      disabled={disabled}
-      onPointerDown={(event) => {
-        if (disabled || event.button > 0) return;
-        event.preventDefault();
-        event.stopPropagation();
-        onActivate();
-      }}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.detail === 0) onActivate();
-      }}
-      className="flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground disabled:opacity-35 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-    >
-      <Icon name={icon} className="size-3.5" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={label}
+          aria-disabled={disabled || undefined}
+          onPointerDown={(event) => {
+            if (event.button > 0) return;
+            event.preventDefault();
+            event.stopPropagation();
+            if (!disabled) onActivate();
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!disabled && event.detail === 0) onActivate();
+          }}
+          className="flex size-6 items-center justify-center rounded text-muted-foreground hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-35 aria-disabled:hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        >
+          <Icon name={icon} className="size-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>
+        {disabled ? "Snooze is available when this thread is idle" : label}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

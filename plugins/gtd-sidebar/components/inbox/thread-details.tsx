@@ -1,9 +1,8 @@
 import { useLayoutEffect, useRef, type ReactElement } from "react";
-import * as Tooltip from "@radix-ui/react-tooltip";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { ProviderGlyph, type ProviderGlyphInfo } from "./provider-glyph";
-import { usePortalScopeProps } from "../../lib/portal-scope";
 import { cn } from "../../lib/utils";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { MachineGlobe } from "./machine-globe";
 import { useRemoteMachine } from "./machine-appearance";
 
@@ -74,47 +73,36 @@ export function ThreadDetails({
   enabled: boolean;
   children: ReactElement;
 }) {
-  const portalScope = usePortalScopeProps();
   // Rows show a remote machine only as a globe, so the details name it.
   const remote = useRemoteMachine(thread.host);
   if (!enabled) return children;
   return (
-    <Tooltip.Provider delayDuration={550}>
-      <Tooltip.Root>
+    <TooltipProvider delayDuration={550}>
+      <Tooltip>
         {/* asChild keeps the anchor a direct child of the row, which the
-            row's focus-visible selectors in app.css depend on. */}
-        <Tooltip.Trigger
-          asChild
-          // Focus opens the details only where it draws the focus ring. A menu
-          // handing focus back after a mouse pick would otherwise pin them open
-          // beside the row until the next click.
-          onFocus={(event) => {
-            if (!event.currentTarget.matches(":focus-visible")) event.preventDefault();
-          }}
+            row's focus-visible selectors in app.css depend on. The kit's
+            trigger opens on focus only after a key press, so a menu handing
+            focus back after a mouse pick does not pin the details open. */}
+        <TooltipTrigger asChild>{children}</TooltipTrigger>
+        {/* The details read as a card, not a label: the popover ground. */}
+        <TooltipContent
+          side="right"
+          sideOffset={8}
+          className="gtd-thread-tooltip max-w-80 border border-border bg-popover px-3 py-2 text-popover-foreground shadow-md"
         >
-          {children}
-        </Tooltip.Trigger>
-        <Tooltip.Portal>
-          <Tooltip.Content
-            {...portalScope}
-            side="right"
-            sideOffset={8}
-            className="gtd-thread-tooltip z-50 max-w-80 rounded-md border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-md"
-          >
-            <div className="font-medium">{thread.displayTitle}</div>
-            <div className="mt-1 text-muted-foreground">
-              {[projectName, branchName, remote ? thread.host?.name : null]
-                .filter(Boolean)
-                .join(" · ")}
-            </div>
-            {relation ? <div className="mt-1 text-muted-foreground">{relation}</div> : null}
-            <div className="mt-1.5 flex items-center gap-1.5 text-muted-foreground">
-              <ProviderGlyph providerId={thread.providerId} provider={provider} />
-              {provider?.displayName ?? thread.providerId}
-            </div>
-          </Tooltip.Content>
-        </Tooltip.Portal>
-      </Tooltip.Root>
-    </Tooltip.Provider>
+          <div className="font-medium">{thread.displayTitle}</div>
+          <div className="mt-1 text-muted-foreground">
+            {[projectName, branchName, remote ? thread.host?.name : null]
+              .filter(Boolean)
+              .join(" · ")}
+          </div>
+          {relation ? <div className="mt-1 text-muted-foreground">{relation}</div> : null}
+          <div className="mt-1.5 flex items-center gap-1.5 text-muted-foreground">
+            <ProviderGlyph providerId={thread.providerId} provider={provider} />
+            {provider?.displayName ?? thread.providerId}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

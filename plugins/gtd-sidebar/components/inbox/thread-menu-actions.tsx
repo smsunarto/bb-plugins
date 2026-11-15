@@ -7,7 +7,12 @@ import {
   type PluginThreadActionChoices,
   type PluginThreadActionEntry,
 } from "@get-bb/plugin-sdk/app";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import {
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+} from "../ui/context-menu";
 import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import { attachHapticTrigger } from "../../lib/ios-haptics";
@@ -17,7 +22,7 @@ import {
   toThreadActionTarget,
 } from "../../lib/thread-action-target";
 import type { ThreadActionPlan } from "./thread-actions";
-import { MENU_ITEM_CLASS, MenuSeparator, MenuSubSurface } from "./menu-surface";
+import { MenuSeparator, MenuSubSurface } from "./menu-surface";
 
 /** One menu row, from the GTD plan or from bb's thread action registry. */
 interface MenuRow {
@@ -128,11 +133,10 @@ function ChoiceMarks({ choice }: { choice: PluginThreadActionChoices["items"][nu
 // ---------------------------------------------------------------------------
 // Desktop: the right-click menu's items.
 
-const DESKTOP_TONE_CLASS = {
-  plain: "data-[highlighted]:text-accent-foreground",
-  destructive: "text-destructive-text",
-};
+const DESTRUCTIVE_TONE_CLASS = "text-destructive-text";
 const DESKTOP_ICON_CLASS = "flex size-4 shrink-0 items-center justify-center";
+// The kit's sub-trigger has no disabled state of its own.
+const SUB_TRIGGER_DISABLED_CLASS = "data-[disabled]:pointer-events-none data-[disabled]:opacity-50";
 
 export function ThreadContextMenuItems({
   thread,
@@ -147,67 +151,66 @@ export function ThreadContextMenuItems({
   return groups.map((group, index) => (
     <Fragment key={group[0]!.key}>
       {index > 0 && <MenuSeparator />}
-      {group.map((row) => {
-        const className = cn(
-          MENU_ITEM_CLASS,
-          row.destructive ? DESKTOP_TONE_CLASS.destructive : DESKTOP_TONE_CLASS.plain,
-        );
-        const content = (
-          <>
-            <span className={DESKTOP_ICON_CLASS}>{row.icon}</span>
-            <RowLabel row={row} />
-          </>
-        );
-        if (row.choices === undefined) {
-          return (
-            <ContextMenu.Item
-              key={row.key}
-              disabled={row.disabled}
-              onSelect={() => row.run()}
-              className={className}
-            >
-              {content}
-            </ContextMenu.Item>
+      <ContextMenuGroup>
+        {group.map((row) => {
+          const tone = row.destructive ? DESTRUCTIVE_TONE_CLASS : undefined;
+          const content = (
+            <>
+              <span className={DESKTOP_ICON_CLASS}>{row.icon}</span>
+              <RowLabel row={row} />
+            </>
           );
-        }
-        const { choices } = row;
-        return (
-          <ContextMenu.Sub key={row.key}>
-            <ContextMenu.SubTrigger
-              aria-label={choiceRowName(row)}
-              disabled={row.disabled}
-              className={cn(className, "data-[state=open]:bg-accent")}
-            >
-              {content}
-              <Icon name="ChevronRight" className="ml-auto size-3.5 shrink-0 opacity-60" />
-            </ContextMenu.SubTrigger>
-            <MenuSubSurface aria-label={choices.heading ?? row.label} aria-labelledby={undefined}>
-              {choices.items.map((choice) => (
-                <ContextMenu.Item
-                  key={choice.id}
-                  aria-current={choice.selected ? "true" : undefined}
-                  disabled={choice.disabled}
-                  onSelect={() => row.run(choice.id)}
-                  className={cn(MENU_ITEM_CLASS, DESKTOP_TONE_CLASS.plain)}
-                >
-                  {choice.icon === undefined ? null : (
-                    <RegistryIcon name={choice.icon} aria-hidden className="size-4 shrink-0" />
-                  )}
-                  <ChoiceMarks choice={choice} />
-                </ContextMenu.Item>
-              ))}
-              {choices.hint === undefined ? null : (
-                <>
-                  <MenuSeparator />
-                  <div className="max-w-56 px-2 py-1 text-xs text-muted-foreground">
-                    {choices.hint}
-                  </div>
-                </>
-              )}
-            </MenuSubSurface>
-          </ContextMenu.Sub>
-        );
-      })}
+          if (row.choices === undefined) {
+            return (
+              <ContextMenuItem
+                key={row.key}
+                disabled={row.disabled}
+                onSelect={() => row.run()}
+                className={tone}
+              >
+                {content}
+              </ContextMenuItem>
+            );
+          }
+          const { choices } = row;
+          return (
+            <ContextMenuSub key={row.key}>
+              <ContextMenuSubTrigger
+                aria-label={choiceRowName(row)}
+                disabled={row.disabled}
+                className={cn(tone, SUB_TRIGGER_DISABLED_CLASS)}
+              >
+                {content}
+              </ContextMenuSubTrigger>
+              <MenuSubSurface aria-label={choices.heading ?? row.label} aria-labelledby={undefined}>
+                <ContextMenuGroup>
+                  {choices.items.map((choice) => (
+                    <ContextMenuItem
+                      key={choice.id}
+                      aria-current={choice.selected ? "true" : undefined}
+                      disabled={choice.disabled}
+                      onSelect={() => row.run(choice.id)}
+                    >
+                      {choice.icon === undefined ? null : (
+                        <RegistryIcon name={choice.icon} aria-hidden className="size-4 shrink-0" />
+                      )}
+                      <ChoiceMarks choice={choice} />
+                    </ContextMenuItem>
+                  ))}
+                </ContextMenuGroup>
+                {choices.hint === undefined ? null : (
+                  <>
+                    <MenuSeparator />
+                    <div className="max-w-56 px-2 py-1 text-xs text-muted-foreground">
+                      {choices.hint}
+                    </div>
+                  </>
+                )}
+              </MenuSubSurface>
+            </ContextMenuSub>
+          );
+        })}
+      </ContextMenuGroup>
     </Fragment>
   ));
 }

@@ -2,10 +2,9 @@
 // 13px medium label above the thread list, and Search as an icon in the
 // sidebar header. bb owns the items, their order, and what each one does;
 // this file only draws them.
-import { memo, type MouseEvent } from "react";
-import * as ContextMenu from "@radix-ui/react-context-menu";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { memo, useRef, type MouseEvent } from "react";
 import {
+  experimental_ShortcutHint as ShortcutHint,
   experimental_SidebarNavigationIcon as NavigationIcon,
   experimental_useSidebarNavigation as useSidebarNavigation,
   experimental_useSidebarNavigationSplit as useSidebarNavigationSplit,
@@ -14,10 +13,26 @@ import {
   type ExperimentalSidebarNavigationItem as NavigationItem,
   type ExperimentalSidebarNavigationProps,
 } from "@get-bb/plugin-sdk/app";
+import { Button } from "@bb-plugins/ui/button";
 import { cn } from "../../lib/utils";
-import { usePortalScopeProps } from "../../lib/portal-scope";
+import { Badge } from "../ui/badge";
+import {
+  ContextMenu,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "../ui/context-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { Icon } from "../ui/icon";
-import { MENU_ITEM_CLASS, MENU_MATERIAL_CLASS, MenuSurface } from "../inbox/menu-surface";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
+import { MenuSurface } from "../inbox/menu-surface";
 
 const SEARCH_ID = "__bb__/search-threads";
 
@@ -42,8 +57,8 @@ export function CapyNavigation(_props: ExperimentalSidebarNavigationProps) {
   const hidden = items.filter((item) => !item.isVisible);
 
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger asChild>
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
         <nav aria-label="Navigation" className="flex shrink-0 flex-col gap-px px-2 py-1">
           {items.map((item) =>
             item.isVisible && item.id !== SEARCH_ID ? (
@@ -58,14 +73,16 @@ export function CapyNavigation(_props: ExperimentalSidebarNavigationProps) {
           )}
           {hidden.length > 0 ? <MoreRow hidden={hidden} actions={actions} /> : null}
         </nav>
-      </ContextMenu.Trigger>
+      </ContextMenuTrigger>
       <MenuSurface>
-        <ContextMenu.Item className={MENU_ITEM_CLASS} onSelect={() => actions.openCustomize()}>
-          <Icon name="Settings" className="size-3.5" aria-hidden />
-          Customize navigation…
-        </ContextMenu.Item>
+        <ContextMenuGroup>
+          <ContextMenuItem onSelect={() => actions.openCustomize()}>
+            <Icon name="Settings" className="size-3.5" aria-hidden />
+            Customize navigation…
+          </ContextMenuItem>
+        </ContextMenuGroup>
       </MenuSurface>
-    </ContextMenu.Root>
+    </ContextMenu>
   );
 }
 
@@ -103,16 +120,17 @@ const NavigationRow = memo(function NavigationRow({
       <NavigationIcon icon={item.icon} className="size-3.5 shrink-0" />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {showShortcut && item.shortcut !== null ? (
-        <kbd className="shrink-0 font-sans text-[11px] text-subtle-foreground">
-          {item.shortcut.label}
-        </kbd>
+        <ShortcutHint
+          shortcut={{
+            label: item.shortcut.label,
+            ariaKeyshortcuts: item.shortcut.ariaKeyShortcuts,
+          }}
+          className="shrink-0"
+        />
       ) : badge !== null ? (
-        <span
-          aria-hidden
-          className="ml-auto flex h-4 min-w-4 shrink-0 items-center justify-center rounded-full bg-sidebar-accent px-1 text-[10px] font-semibold text-sidebar-accent-foreground tabular-nums"
-        >
+        <Badge variant="count" aria-hidden className="ml-auto min-w-4 justify-center">
           {badge.count === undefined ? (badge.text ?? "•") : badge.count > 99 ? "99+" : badge.count}
-        </span>
+        </Badge>
       ) : null}
     </button>
   );
@@ -120,44 +138,47 @@ const NavigationRow = memo(function NavigationRow({
 
 /** Items the user hid stay reachable here, with the editor that unhides them. */
 function MoreRow({ hidden, actions }: { hidden: NavigationItem[]; actions: NavigationActions }) {
-  const portalScope = usePortalScopeProps();
+  // A pick runs on select, the one event every input and the phone sheet
+  // fire; the click before it, when there is one, says whether a modifier
+  // asked for a browser tab.
+  const target = useRef<"current" | "tab">("current");
+  const activate = (id: string) => {
+    actions.activate(id, { target: target.current });
+    target.current = "current";
+  };
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
         <button type="button" data-sidebar-navigation-more="" className={ROW_CLASS}>
           <Icon name="MoreHorizontal" className="size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate">More</span>
         </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          {...portalScope}
-          side="bottom"
-          align="start"
-          sideOffset={4}
-          className="z-50 min-w-48 text-popover-foreground"
-        >
-          <div className={MENU_MATERIAL_CLASS}>
-            {hidden.map((item) => (
-              <DropdownMenu.Item
-                key={item.id}
-                disabled={item.isDisabled}
-                className={MENU_ITEM_CLASS}
-                onClick={(event) => actions.activate(item.id, { target: activationTarget(event) })}
-              >
-                <NavigationIcon icon={item.icon} className="size-3.5 shrink-0" />
-                {item.label}
-              </DropdownMenu.Item>
-            ))}
-            <DropdownMenu.Separator className="mx-2 my-1 h-px bg-border" />
-            <DropdownMenu.Item className={MENU_ITEM_CLASS} onSelect={() => actions.openCustomize()}>
-              <Icon name="Settings" className="size-3.5 shrink-0" aria-hidden />
-              Customize navigation…
-            </DropdownMenu.Item>
-          </div>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="bottom" align="start" mobileTitle="More" className="min-w-48">
+        <DropdownMenuGroup>
+          {hidden.map((item) => (
+            <DropdownMenuItem
+              key={item.id}
+              disabled={item.isDisabled}
+              onClick={(event) => {
+                target.current = activationTarget(event);
+              }}
+              onSelect={() => activate(item.id)}
+            >
+              <NavigationIcon icon={item.icon} className="size-3.5 shrink-0" />
+              {item.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuItem onSelect={() => actions.openCustomize()}>
+            <Icon name="Settings" className="size-3.5 shrink-0" aria-hidden />
+            Customize navigation…
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -168,25 +189,27 @@ export function CapyNavigationHeader({ width, controlSize }: ExperimentalSidebar
   if (search === undefined || width < controlSize) return <div className="flex-1" />;
   return (
     <div className="flex min-w-0 flex-1 items-center justify-end">
-      <button
-        type="button"
-        aria-label={search.label}
-        aria-keyshortcuts={search.shortcut?.ariaKeyShortcuts}
-        title={
-          search.shortcut === null ? search.label : `${search.label} (${search.shortcut.label})`
-        }
-        disabled={search.isDisabled}
-        onClick={(event) => actions.activate(search.id, { target: activationTarget(event) })}
-        style={{ width: controlSize, height: controlSize }}
-        className={cn(
-          "flex shrink-0 cursor-pointer items-center justify-center rounded-[6px] text-sidebar-foreground",
-          "outline-none transition-colors duration-100",
-          "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-          "focus-visible:ring-1 focus-visible:ring-sidebar-ring focus-visible:ring-inset",
-        )}
-      >
-        <NavigationIcon icon={search.icon} className="size-3.5" />
-      </button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label={search.label}
+              aria-keyshortcuts={search.shortcut?.ariaKeyShortcuts}
+              disabled={search.isDisabled}
+              onClick={(event) => actions.activate(search.id, { target: activationTarget(event) })}
+              style={{ width: controlSize, height: controlSize }}
+              className="shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring focus-visible:ring-inset"
+            >
+              <NavigationIcon icon={search.icon} className="size-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {search.shortcut === null ? search.label : `${search.label} (${search.shortcut.label})`}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   );
 }

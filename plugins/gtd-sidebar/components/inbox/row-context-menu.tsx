@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import { ContextMenu, ContextMenuTrigger } from "../ui/context-menu";
 import { MenuSurface } from "./menu-surface";
 import { ThreadContextMenuItems } from "./thread-menu-actions";
 import { useThreadRename } from "./inline-rename";
@@ -25,12 +25,12 @@ export function RowContextMenu({
   onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <ContextMenu.Root onOpenChange={onOpenChange}>
-      <ContextMenu.Trigger asChild>
+    <ContextMenu onOpenChange={onOpenChange}>
+      <ContextMenuTrigger asChild>
         <span ref={triggerRef} hidden />
-      </ContextMenu.Trigger>
+      </ContextMenuTrigger>
       {target === null ? null : <RowContextMenuSurface target={target} />}
-    </ContextMenu.Root>
+    </ContextMenu>
   );
 }
 

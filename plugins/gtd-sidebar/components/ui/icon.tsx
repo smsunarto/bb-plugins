@@ -18,6 +18,7 @@ import {
   Calendar01Icon,
   Cancel01Icon,
   CancelCircleIcon,
+  CircleIcon,
   CheckListIcon,
   CheckmarkCircle02Icon,
   Clock01Icon,
@@ -101,6 +102,7 @@ const ICON_MAP = {
   ChevronLeft: ArrowLeft01Icon,
   ChevronRight: ArrowRight01Icon,
   ChevronUp: ArrowUp01Icon,
+  Circle: CircleIcon,
   CircleQuestion: HelpCircleIcon,
   CircleX: CancelCircleIcon,
   Clock: Clock01Icon,
@@ -191,6 +193,9 @@ export function Icon({
       // glyph's name everywhere, including inside a row's description.
       role={ariaLabel ? "img" : undefined}
       data-icon={name}
+      // The registry kit sizes a menu's glyphs by this attribute, as it does
+      // bb's own icons.
+      data-icon-root=""
     />
   );
 }

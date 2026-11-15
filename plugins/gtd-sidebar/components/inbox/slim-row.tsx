@@ -5,6 +5,7 @@ import {
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Icon } from "../ui/icon";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { cn } from "../../lib/utils";
 import { openMenuFromKeyboard } from "./menu-surface";
 import { useThreadRename } from "./inline-rename";
@@ -332,24 +333,28 @@ function RestoreButton({
   isCompactViewport: boolean;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={action.label}
-      title={action.label}
-      onPointerDown={(event) => event.stopPropagation()}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        action.execute();
-      }}
-      className={cn(
-        "pointer-events-auto rounded text-muted-foreground hover:text-foreground",
-        isCompactViewport
-          ? "relative z-[1] flex size-10 shrink-0 items-center justify-center hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          : "gtd-restore-button absolute -right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center opacity-0 focus-visible:opacity-100 group-hover/slim:opacity-100",
-      )}
-    >
-      <Icon name={action.icon} className={isCompactViewport ? "size-4" : "size-3.5"} />
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={action.label}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            action.execute();
+          }}
+          className={cn(
+            "pointer-events-auto rounded text-muted-foreground hover:text-foreground",
+            isCompactViewport
+              ? "relative z-[1] flex size-10 shrink-0 items-center justify-center hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              : "gtd-restore-button absolute -right-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center opacity-0 focus-visible:opacity-100 group-hover/slim:opacity-100",
+          )}
+        >
+          <Icon name={action.icon} className={isCompactViewport ? "size-4" : "size-3.5"} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{action.label}</TooltipContent>
+    </Tooltip>
   );
 }

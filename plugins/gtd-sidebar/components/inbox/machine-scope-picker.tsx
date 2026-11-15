@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState, type ComponentPropsWithoutRef } from "react";
-import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import { Icon } from "../ui/icon";
-import { usePortalScopeProps } from "../../lib/portal-scope";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import type { MachineVisibilityChange } from "../../lib/machine-visibility";
 import type { machineVisibility, SidebarMachine } from "../../lib/machines";
 import { SelectTrigger } from "../ui/select";
@@ -90,53 +98,62 @@ export function MachineVisibilityPicker({
     active && !selectedMachine ? `${visible.length} of ${machines.length}` : label;
   const machineIds = machines.map((machine) => machine.id);
   const itemClassName = cn(
-    "flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 outline-none data-[highlighted]:bg-state-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 aria-[disabled=true]:opacity-50",
+    "gap-2 aria-[disabled=true]:opacity-50",
     scopeItemClassName(isCompactViewport),
   );
   const focusRing = useFocusRingSource();
   return (
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger asChild>
-        <button
-          type="button"
-          {...focusRing}
-          aria-label={`Visible machines: ${accessibleLabel}`}
-          title={label}
-          className={scopeTriggerClassName(
-            isCompactViewport,
-            "ml-auto flex max-w-[60%] shrink-0 items-center whitespace-nowrap rounded-md bg-transparent transition-colors duration-150 hover:duration-0 focus:outline-none",
-          )}
-        >
-          <MachineGlobe machine={selectedMachine ?? null} />
-          <span className="truncate">{label}</span>
-          <Icon name="ChevronDown" className="size-4 shrink-0 opacity-50" />
-        </button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          {...usePortalScopeProps()}
-          align="end"
-          sideOffset={4}
-          aria-label="Visible machines"
-          aria-labelledby={undefined}
-          className="z-50 min-w-48 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-          style={{ maxHeight: "var(--radix-dropdown-menu-content-available-height)" }}
-        >
-          <DropdownMenu.Item className={itemClassName} onSelect={() => onChange({ kind: "all" })}>
+    <DropdownMenu>
+      {/* The menu's trigger outside the tooltip's, so the button carries the
+          menu's data-state, which draws the open picker's fill. */}
+      <Tooltip>
+        <DropdownMenuTrigger asChild>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              {...focusRing}
+              aria-label={`Visible machines: ${accessibleLabel}`}
+              className={scopeTriggerClassName(
+                isCompactViewport,
+                "ml-auto flex max-w-[60%] shrink-0 items-center whitespace-nowrap rounded-md bg-transparent transition-colors duration-150 hover:duration-0 focus:outline-none",
+              )}
+            >
+              <MachineGlobe machine={selectedMachine ?? null} />
+              <span className="truncate">{label}</span>
+              <Icon name="ChevronDown" className="size-4 shrink-0 opacity-50" />
+            </button>
+          </TooltipTrigger>
+        </DropdownMenuTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent
+        align="end"
+        mobileTitle="Visible machines"
+        aria-label="Visible machines"
+        aria-labelledby={undefined}
+        className="min-w-48 max-w-[calc(100vw-1rem)] overflow-y-auto"
+        style={{ maxHeight: "var(--radix-dropdown-menu-content-available-height)" }}
+      >
+        <DropdownMenuGroup>
+          <DropdownMenuItem className={itemClassName} onSelect={() => onChange({ kind: "all" })}>
             <MachineGlobe machine={null} />
             All machines
-          </DropdownMenu.Item>
-          <DropdownMenu.Separator className="my-1 h-px bg-border" />
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
           {machines.map((machine) => {
             const checked = !hiddenMachineIds.has(machine.id);
             // aria-disabled, not Radix's `disabled`, which drops the item from
-            // arrow-key navigation and hides that it is still checked.
+            // arrow-key navigation and hides that it is still checked. The
+            // phone sheet's plain buttons take only `disabled`.
             const locked = checked && visible.length === 1;
             return (
               <div key={machine.id} className="flex items-center">
-                <DropdownMenu.CheckboxItem
+                <DropdownMenuCheckboxItem
                   checked={checked}
                   aria-disabled={locked || undefined}
+                  disabled={isCompactViewport ? locked : undefined}
                   onCheckedChange={(next) => {
                     if (locked) return;
                     onChange({
@@ -151,27 +168,22 @@ export function MachineVisibilityPicker({
                   textValue={machine.name}
                   aria-label={machine.name}
                 >
-                  <span className="flex size-4 shrink-0 items-center justify-center">
-                    <DropdownMenu.ItemIndicator>
-                      <Icon name="Check" className="size-4" />
-                    </DropdownMenu.ItemIndicator>
-                  </span>
                   <MachineGlobe machine={machine} />
                   <span className="truncate">{machine.name}</span>
-                </DropdownMenu.CheckboxItem>
-                <DropdownMenu.Item
-                  className={cn(itemClassName, "shrink-0 text-muted-foreground")}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuItem
+                  className={cn(itemClassName, "w-auto shrink-0 text-muted-foreground")}
                   aria-label={`Only ${machine.name}`}
                   textValue={`Only ${machine.name}`}
                   onSelect={() => onChange({ kind: "only", machineId: machine.id, machineIds })}
                 >
                   Only
-                </DropdownMenu.Item>
+                </DropdownMenuItem>
               </div>
             );
           })}
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

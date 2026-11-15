@@ -63,6 +63,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   globalThis.requestAnimationFrame = (callback) =>
     setTimeout(() => callback(performance.now()), 0) as unknown as number;
   globalThis.cancelAnimationFrame = (handle) => clearTimeout(handle);
+  // The registry's phone sheet asks the window for its frames.
+  dom.window.requestAnimationFrame = globalThis.requestAnimationFrame;
+  dom.window.cancelAnimationFrame = globalThis.cancelAnimationFrame;
   globalThis.ResizeObserver = class {
     observe() {}
     unobserve() {}
@@ -551,6 +554,15 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     );
     assert.ok(element);
     return element;
+  }
+
+  /**
+   * Focus as a key press moves it. A row's details open on keyboard focus
+   * only, judged by the last input, so the press comes first.
+   */
+  function keyboardFocus(element: HTMLElement) {
+    fireEvent.keyDown(document.body, { key: "Tab" });
+    act(() => element.focus());
   }
 
   /**
@@ -1806,11 +1818,10 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       host.actions = currentActions;
       const view = mount(host, { isCompactViewport: true });
       await act(async () => {});
-      fireEvent.keyDown(view.slot.getByRole("button", { name: "Visible machines: All machines" }), {
-        key: "ArrowDown",
-      });
-      fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Laptop" }));
-      assert.ok(screen.getByRole("menu", { name: "Visible machines" }));
+      // A phone opens the picker as bb's bottom sheet, from a tap.
+      fireEvent.click(view.slot.getByRole("button", { name: "Visible machines: All machines" }));
+      fireEvent.click(await screen.findByRole("menuitemcheckbox", { name: "Laptop" }));
+      assert.ok(screen.getByRole("dialog", { name: "Visible machines" }));
       assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "server", "unknown"]));
       assert.equal(
         screen.getByRole("menuitemcheckbox", { name: "Laptop" }).getAttribute("aria-checked"),
@@ -1830,7 +1841,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       fireEvent.click(last);
       assert.deepEqual(new Set(rowIds(view.slot)), new Set(["studio", "unknown"]));
       fireEvent.click(screen.getByRole("menuitem", { name: "All machines" }));
-      await waitFor(() => assert.ok(screen.queryByRole("menu") === null));
+      await waitFor(() =>
+        assert.ok(screen.queryByRole("dialog", { name: "Visible machines" }) === null),
+      );
       assert.deepEqual(
         new Set(rowIds(view.slot)),
         new Set(["studio", "server", "laptop", "unknown"]),
@@ -2126,7 +2139,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           ["primary", "Primary computer"],
           ["remote", "Remote computer"],
         ] as const) {
-          act(() => row(view.slot, id).focus());
+          keyboardFocus(row(view.slot, id));
           const details = (await screen.findByRole("tooltip")).textContent!;
           assert.equal(details.includes(name), globed.includes(id), id);
           act(() => row(view.slot, id).blur());
@@ -2137,7 +2150,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
     it("opens thread details from the keyboard navigation anchor", async () => {
       const view = mount(hostState([thread("root"), thread("child", { parentThreadId: "root" })]));
-      act(() => row(view.slot, "child").focus());
+      keyboardFocus(row(view.slot, "child"));
       const tooltip = await screen.findByRole("tooltip");
       assert.match(tooltip.textContent ?? "", /child/);
       assert.match(tooltip.textContent ?? "", /One/);
@@ -2148,7 +2161,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
 
     it("shows a root row's details even while its title fits", async () => {
       const view = mount(hostState([thread("short")]));
-      act(() => row(view.slot, "short").focus());
+      keyboardFocus(row(view.slot, "short"));
       const tooltip = await screen.findByRole("tooltip");
       assert.equal(tooltip.firstElementChild?.textContent, "short");
       act(() => row(view.slot, "short").blur());
@@ -2160,7 +2173,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         const host = { ...hostState([thread("snoozed")]), lifecycle: lifecycle(["snoozed"]) };
         const view = mount(host, { isCompactViewport });
         fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
-        act(() => row(view.slot, "snoozed").focus());
+        keyboardFocus(row(view.slot, "snoozed"));
         if (isCompactViewport) {
           await act(async () => {});
           assert.equal(screen.queryByRole("tooltip"), null);
@@ -2175,12 +2188,9 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     it("keeps a row's details closed when a mouse-picked menu hands focus back", async () => {
       const view = mount(hostState([thread("a")]));
       const anchor = row(view.slot, "a");
-      // jsdom rings every focus. A browser draws no ring for a click's focus,
-      // nor for the focus a menu hands back after a mouse pick.
-      const matches = anchor.matches.bind(anchor);
-      anchor.matches = ((selectors: string) =>
-        selectors !== ":focus-visible" && matches(selectors)) as typeof anchor.matches;
-
+      // A mouse pick starts with the pointer down, which marks the focus the
+      // menu hands back as the mouse's.
+      fireEvent.pointerDown(document.body);
       act(() => anchor.focus());
       fireEvent.contextMenu(anchor);
       fireEvent.click(await screen.findByRole("menuitem", { name: "Mark unread" }));
@@ -2799,12 +2809,12 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         act(() => row(view.slot, id).blur());
         await waitFor(() => assert.equal(screen.queryByRole("tooltip"), null));
       };
-      act(() => row(view.slot, "plain").focus());
+      keyboardFocus(row(view.slot, "plain"));
       await waitFor(() => assert.ok(details().includes("scott/feature")));
       assert.ok(!details().includes("env-plain-branch"));
       await close("plain");
       for (const id of ["worktree", "unknown"]) {
-        act(() => row(view.slot, id).focus());
+        keyboardFocus(row(view.slot, id));
         await waitFor(() => assert.ok(details().includes(`env-${id}-branch`)));
         await close(id);
       }

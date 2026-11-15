@@ -24,7 +24,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { cn } from "../../lib/utils";
-import { Select, SelectContent, SelectItem, SelectValue } from "../ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectValue } from "../ui/select";
 import { ThreadCard } from "./thread-card";
 import { SlimRow } from "./slim-row";
 import { rowActionPlan, type ActiveThreadShelf, type RowCommand } from "./thread-actions";
@@ -79,6 +79,7 @@ import { MachineVisibilityPicker, ScopeTrigger, scopeItemClassName } from "./mac
 import { MachineAppearanceProvider } from "./machine-appearance";
 import { RenameProvider } from "./inline-rename";
 import { CompactViewportOverrideProvider } from "../ui/hooks/use-compact-viewport";
+import { TooltipProvider } from "../ui/tooltip";
 import {
   useInboxWindow,
   type HeaderMeasureProps,
@@ -113,12 +114,15 @@ export function ThreadInbox(props: PluginThreadListProps) {
     [sdk],
   );
   // bb's slot prop, not a media query, decides compact for the vendored
-  // registry hooks, so the rename editor and the rows agree.
+  // registry hooks, so the rename editor and the rows agree. One tooltip
+  // provider serves every row control's hint.
   return (
     <CompactViewportOverrideProvider isCompactViewport={props.isCompactViewport}>
-      <RenameProvider renameThread={renameThread}>
-        <InboxList {...props} />
-      </RenameProvider>
+      <TooltipProvider>
+        <RenameProvider renameThread={renameThread}>
+          <InboxList {...props} />
+        </RenameProvider>
+      </TooltipProvider>
     </CompactViewportOverrideProvider>
   );
 }
@@ -529,18 +533,23 @@ function InboxList({
                 <SelectValue />
               </ScopeTrigger>
               <SelectContent>
-                <SelectItem value={ALL_PROJECTS} className={scopeItemClassName(isCompactViewport)}>
-                  All projects
-                </SelectItem>
-                {projects.map((project) => (
+                <SelectGroup>
                   <SelectItem
-                    key={project.id}
-                    value={project.id}
+                    value={ALL_PROJECTS}
                     className={scopeItemClassName(isCompactViewport)}
                   >
-                    {project.name}
+                    All projects
                   </SelectItem>
-                ))}
+                  {projects.map((project) => (
+                    <SelectItem
+                      key={project.id}
+                      value={project.id}
+                      className={scopeItemClassName(isCompactViewport)}
+                    >
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
             <MachineVisibilityPicker

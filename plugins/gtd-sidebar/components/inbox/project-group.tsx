@@ -2,11 +2,17 @@ import { SlidingDisclosure } from "./sliding-disclosure";
 import { useCallback, useState, type CSSProperties, type ReactNode } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import * as ContextMenu from "@radix-ui/react-context-menu";
+import {
+  ContextMenu,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "../ui/context-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { Icon } from "../ui/icon";
 import { cn } from "../../lib/utils";
 import { FadingText } from "./thread-details";
-import { MENU_ITEM_CLASS, MenuSurface, openMenuFromKeyboard } from "./menu-surface";
+import { MenuSurface, openMenuFromKeyboard } from "./menu-surface";
 import { useNestProjectHeader } from "../../hooks/use-nest-drag";
 import { DRAG_KIND } from "../../lib/sidebar-drag";
 import type { InboxShelf } from "../../lib/inbox-tree";
@@ -148,29 +154,25 @@ export function ProjectGroup({
       {onMoveUp === undefined && onMoveDown === undefined ? (
         header
       ) : (
-        <ContextMenu.Root>
-          <ContextMenu.Trigger asChild>{header}</ContextMenu.Trigger>
+        <ContextMenu>
+          <ContextMenuTrigger asChild>{header}</ContextMenuTrigger>
           <MenuSurface aria-label={`${name} project actions`}>
-            {onMoveUp === undefined ? null : (
-              <ContextMenu.Item
-                onSelect={onMoveUp}
-                className={cn(MENU_ITEM_CLASS, "data-[highlighted]:text-accent-foreground")}
-              >
-                <Icon name="ChevronUp" className="size-4 shrink-0" />
-                Move up
-              </ContextMenu.Item>
-            )}
-            {onMoveDown === undefined ? null : (
-              <ContextMenu.Item
-                onSelect={onMoveDown}
-                className={cn(MENU_ITEM_CLASS, "data-[highlighted]:text-accent-foreground")}
-              >
-                <Icon name="ChevronDown" className="size-4 shrink-0" />
-                Move down
-              </ContextMenu.Item>
-            )}
+            <ContextMenuGroup>
+              {onMoveUp === undefined ? null : (
+                <ContextMenuItem onSelect={onMoveUp}>
+                  <Icon name="ChevronUp" />
+                  Move up
+                </ContextMenuItem>
+              )}
+              {onMoveDown === undefined ? null : (
+                <ContextMenuItem onSelect={onMoveDown}>
+                  <Icon name="ChevronDown" />
+                  Move down
+                </ContextMenuItem>
+              )}
+            </ContextMenuGroup>
           </MenuSurface>
-        </ContextMenu.Root>
+        </ContextMenu>
       )}
       <SlidingDisclosure open={expanded}>
         <ul className="gtd-project-group-rows flex flex-col">{children}</ul>
@@ -197,17 +199,21 @@ function NewThreadButton({
   onFocusVisibleChange: (focusVisible: boolean) => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={`New thread in ${name}`}
-      title={`New thread in ${name}`}
-      onClick={onClick}
-      onFocus={(event) => onFocusVisibleChange(event.currentTarget.matches(":focus-visible"))}
-      onBlur={() => onFocusVisibleChange(false)}
-      className="gtd-project-group-new"
-    >
-      <Icon name="Plus" className="size-3" />
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label={`New thread in ${name}`}
+          onClick={onClick}
+          onFocus={(event) => onFocusVisibleChange(event.currentTarget.matches(":focus-visible"))}
+          onBlur={() => onFocusVisibleChange(false)}
+          className="gtd-project-group-new"
+        >
+          <Icon name="Plus" className="size-3" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>New thread in {name}</TooltipContent>
+    </Tooltip>
   );
 }
 
