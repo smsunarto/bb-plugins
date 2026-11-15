@@ -148,7 +148,9 @@ an app owned by a person dies with that person's access:
 1. Open `https://github.com/organizations/<org>/settings/apps/new`.
 2. Clear the **Webhook → Active** checkbox. SlopCop polls, so it needs no webhook.
 3. Grant repository permissions: Pull requests **Read and write**, Issues
-   **Read and write**, Contents **Read-only**, Metadata **Read-only**.
+   **Read and write**, Contents **Read-only**, Metadata **Read-only**. Grant the
+   organization permission Members **Read-only** too. Without it the app sees a private
+   org member as `CONTRIBUTOR`, not `MEMBER`, so an `org_members` trust gate refuses them.
 4. Create the app. Record the App ID. Generate a private key and save the `.pem` file.
 5. Install the app on every repo a rule watches. The poller reads through the same
    identity, so a missing installation fails the poll for that repo.
