@@ -9,10 +9,13 @@ import {
 import { nativeHaptic } from "../lib/native-haptics";
 
 /**
- * `UILongPressGestureRecognizer.minimumPressDuration` default: 0.5 s.
- * https://developer.apple.com/documentation/uikit/uilongpressgesturerecognizer/minimumpressduration
+ * iOS's Fast Haptic Touch duration (Settings > Accessibility > Touch >
+ * Haptic Touch, iOS 17+): about 200 ms, against Default's 500 ms, which is
+ * also `UILongPressGestureRecognizer.minimumPressDuration`'s default.
+ * Apple publishes no figure; 9to5Mac timed both.
+ * https://9to5mac.com/2023/06/22/ios-17-fast-long-press-menu/
  */
-export const IOS_LONG_PRESS_MS = 500;
+export const IOS_LONG_PRESS_MS = 200;
 
 /**
  * `UILongPressGestureRecognizer.allowableMovement` default: 10 points. A CSS
@@ -51,8 +54,9 @@ interface LongPressOptions<Target> {
 }
 
 /**
- * A long press with UIKit's defaults: fires after 500 ms unless the pointer
- * drifts more than 10 px, a second finger lands, or the press ends.
+ * A long press at iOS's Fast Haptic Touch speed: fires after 200 ms unless
+ * the pointer drifts more than 10 px, a second finger lands, or the press
+ * ends.
  *
  * `onPressChange` reports the target after 100 ms of touch (the native tap
  * timeout, so scroll flicks don't flash) and at once for a mouse.
