@@ -1,5 +1,6 @@
 import type { DisplayComment } from "../../shared/contract.js";
 import { commentByline } from "./time.js";
+import { Button } from "@/components/ui/button";
 
 export function CommentAuthor({
   comment,
@@ -11,14 +12,16 @@ export function CommentAuthor({
   const byline = commentByline(comment);
   if (byline.kind === "thread-link") {
     return (
-      <button
-        type="button"
+      <Button
+        variant="link"
+        size="sm"
         onClick={() => onOpenThread(byline.threadId)}
-        className="truncate font-semibold text-primary hover:underline"
-        title={byline.title}
+        className="h-auto min-w-0 p-0 font-semibold"
       >
-        {byline.title}
-      </button>
+        <span className="truncate" title={byline.title}>
+          {byline.title}
+        </span>
+      </Button>
     );
   }
   return <span className="font-semibold">{byline.name}</span>;

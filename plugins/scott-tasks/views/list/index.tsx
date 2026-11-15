@@ -6,7 +6,7 @@ import { useActiveThreads, useLabels, useProjects } from "../../shell/data.js";
 import { useTasksNavigation } from "../../shell/routes.js";
 import { useTasksUi } from "../../shell/ui-store.js";
 import { DetailToasts, useDetailToasts } from "../detail/toast.js";
-import { EmptyState } from "../../components/empty-state.js";
+import { ViewEmptyState } from "../../components/empty-state.js";
 import { Button } from "@/components/ui/button";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
 import { Icon } from "@/components/ui/icon";
@@ -179,16 +179,20 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
   let body: React.ReactNode;
   if (tasksQuery.phase === "failed") {
     body = (
-      <EmptyState icon="AlertCircle" title="Couldn't load tasks" description={tasksQuery.error} />
+      <ViewEmptyState
+        icon="AlertCircle"
+        heading="Couldn't load tasks"
+        description={tasksQuery.error}
+      />
     );
   } else if (tasksQuery.phase === "loading") {
     body = <LoadingRows />;
   } else if (tasks.length === 0) {
     if (filtered) {
       body = (
-        <EmptyState
+        <ViewEmptyState
           icon="Search"
-          title="No tasks match these filters"
+          heading="No tasks match these filters"
           action={
             <Button variant="outline" size="sm" onClick={() => setFilters(EMPTY_FILTERS)}>
               Clear filters
@@ -198,17 +202,17 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
       );
     } else if (activeOnly) {
       body = (
-        <EmptyState
+        <ViewEmptyState
           icon="Zap"
-          title="No agents working right now"
+          heading="No agents working right now"
           description="Dispatch a task to an agent preset and it will show up here while it runs."
         />
       );
     } else {
       body = (
-        <EmptyState
+        <ViewEmptyState
           icon="ListTodo"
-          title="No tasks yet"
+          heading="No tasks yet"
           description="Create the first task to start tracking work."
           action={
             <Button size="sm" onClick={() => openNewTask({ projectId })}>

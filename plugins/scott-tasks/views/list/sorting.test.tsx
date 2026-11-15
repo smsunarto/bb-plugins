@@ -102,7 +102,7 @@ async function rowOrder(slot: ReturnType<typeof renderList>) {
 async function selectSort(slot: ReturnType<typeof renderList>, label: string) {
   fireEvent.click(slot.getByRole("button", { name: /Sort/ }));
   const drawer = await slot.findByRole("dialog", { name: "Sort tasks" });
-  fireEvent.click(await within(drawer).findByRole("menuitemcheckbox", { name: label }));
+  fireEvent.click(await within(drawer).findByRole("menuitemradio", { name: label }));
 }
 
 describe("list sorting (compact viewport)", () => {
@@ -127,7 +127,7 @@ describe("list sorting (compact viewport)", () => {
 
     fireEvent.click(slot.getByRole("button", { name: /Sort/ }));
     const drawer = await slot.findByRole("dialog", { name: "Sort tasks" });
-    const options = await within(drawer).findAllByRole("menuitemcheckbox");
+    const options = await within(drawer).findAllByRole("menuitemradio");
     expect(options.map((option) => option.textContent)).toEqual(["Manual", "Priority", "Due date"]);
     expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual([
       "true",
@@ -136,7 +136,7 @@ describe("list sorting (compact viewport)", () => {
     ]);
 
     fireEvent.click(
-      await within(drawer).findByRole("menuitemcheckbox", {
+      await within(drawer).findByRole("menuitemradio", {
         name: "Priority",
       }),
     );

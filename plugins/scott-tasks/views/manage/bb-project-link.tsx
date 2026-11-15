@@ -2,6 +2,7 @@ import type { BbProjectOption } from "../../shared/contract.js";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -35,15 +36,19 @@ export function BbProjectLinkPicker({
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={NO_LINK}>{noneLabel}</SelectItem>
-        {unavailableSelection !== null ? (
-          <SelectItem value={unavailableSelection}>Unavailable · {unavailableSelection}</SelectItem>
-        ) : null}
-        {bbProjects.map((project) => (
-          <SelectItem key={project.id} value={project.id}>
-            {project.name}
-          </SelectItem>
-        ))}
+        <SelectGroup>
+          <SelectItem value={NO_LINK}>{noneLabel}</SelectItem>
+          {unavailableSelection !== null ? (
+            <SelectItem value={unavailableSelection}>
+              Unavailable · {unavailableSelection}
+            </SelectItem>
+          ) : null}
+          {bbProjects.map((project) => (
+            <SelectItem key={project.id} value={project.id}>
+              {project.name}
+            </SelectItem>
+          ))}
+        </SelectGroup>
       </SelectContent>
     </Select>
   );

@@ -286,15 +286,18 @@ describe("NewTaskDialog", () => {
     fireEvent.click(await slot.findByRole("button", { name: /New task/ }));
     fireEvent.click(await slot.findByRole("button", { name: /Labels/ }));
     const search = await slot.findByPlaceholderText("Add labels…");
+    fireEvent.change(search, { target: { value: "do" } });
+    expect(await slot.findByRole("option", { name: "docs" })).toBeDefined();
+    expect(slot.queryByRole("option", { name: /Create/ })).toBeNull();
+
     fireEvent.change(search, { target: { value: "  dank  " } });
 
-    const createBtn = await slot.findByRole("button", {
+    const createOption = await slot.findByRole("option", {
       name: /Create .*dank/,
     });
-    const emptyContainer = createBtn.closest("[cmdk-empty]");
-    expect(emptyContainer).not.toBeNull();
+    expect(slot.queryByRole("option", { name: "docs" })).toBeNull();
 
-    fireEvent.click(createBtn);
+    fireEvent.click(createOption);
     await waitFor(() => expect(createLabelCalls).toHaveLength(1));
     expect(createLabelCalls[0]).toMatchObject({
       projectId: PROJECT_ID,

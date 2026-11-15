@@ -119,7 +119,7 @@ describe("project view preference", () => {
 
   it("restores the remembered view when the URL names none", async () => {
     const listed = openProject(`${PROJECT_ID}?view=list`);
-    fireEvent.click(await listed.findByRole("button", { name: "Board" }));
+    fireEvent.click(await listed.findByRole("radio", { name: "Board" }));
     expect(listed.navigateCalls).toContainEqual({
       method: "toPluginPanel",
       path: "tasks",
@@ -128,14 +128,14 @@ describe("project view preference", () => {
     listed.lifecycle.unmount();
 
     const reopened = openProject(PROJECT_ID);
-    const boardSegment = await reopened.findByRole("button", { name: "Board" });
-    expect(boardSegment.getAttribute("aria-pressed")).toBe("true");
+    const boardSegment = await reopened.findByRole("radio", { name: "Board" });
+    expect(boardSegment.getAttribute("aria-checked")).toBe("true");
     await reopened.findByText("In Review");
   });
 
   it("keeps per-project choices apart and defaults unseen projects to the last one used", async () => {
     const slot = openProject(`${PROJECT_ID}?view=list`);
-    fireEvent.click(await slot.findByRole("button", { name: "Board" }));
+    fireEvent.click(await slot.findByRole("radio", { name: "Board" }));
     slot.lifecycle.unmount();
 
     expect(loadViewMode(PROJECT_ID)).toBe("board");
@@ -146,7 +146,7 @@ describe("project view preference", () => {
       { subPath: `${OTHER_PROJECT_ID}?view=list` },
       { rpc: seededRpc() },
     );
-    fireEvent.click(await other.findByRole("button", { name: "List" }));
+    fireEvent.click(await other.findByRole("radio", { name: "List" }));
     expect(loadViewMode(OTHER_PROJECT_ID)).toBe("list");
     expect(loadViewMode(PROJECT_ID)).toBe("board");
   });
@@ -170,7 +170,7 @@ describe("project view preference", () => {
       throw new DOMException("Storage is disabled", "SecurityError");
     });
     const slot = openProject(`${PROJECT_ID}?view=list`);
-    fireEvent.click(await slot.findByRole("button", { name: "Board" }));
+    fireEvent.click(await slot.findByRole("radio", { name: "Board" }));
     expect(slot.navigateCalls).toContainEqual({
       method: "toPluginPanel",
       path: "tasks",

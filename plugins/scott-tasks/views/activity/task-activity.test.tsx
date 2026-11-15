@@ -140,11 +140,12 @@ describe("AgentNotificationControl", () => {
       />,
     );
 
-    const toggle = screen.getByRole("switch", {
+    const toggle = screen.getByRole("button", {
       name: "Notify Fix the login bug",
     });
     expect(toggle.getAttribute("aria-disabled")).toBe("false");
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.getAttribute("data-state")).toBe("on");
     fireEvent.click(toggle);
     expect(onCheckedChange).toHaveBeenCalledWith(false);
   });
@@ -159,11 +160,11 @@ describe("AgentNotificationControl", () => {
       />,
     );
 
-    const toggle = screen.getByRole("switch", {
+    const toggle = screen.getByRole("button", {
       name: "Notify Fix the login bug",
     });
     expect(toggle.getAttribute("aria-disabled")).toBe("false");
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(toggle);
     expect(onCheckedChange).toHaveBeenCalledWith(true);
   });
@@ -178,7 +179,7 @@ describe("AgentNotificationControl", () => {
       />,
     );
 
-    expect(screen.getByRole("switch", { name: `Notify ${title}` })).toBeTruthy();
+    expect(screen.getByRole("button", { name: `Notify ${title}` })).toBeTruthy();
   });
 
   it("never reads as on and cannot be toggled while unavailable", () => {
@@ -191,11 +192,11 @@ describe("AgentNotificationControl", () => {
       />,
     );
 
-    const toggle = screen.getByRole("switch", {
+    const toggle = screen.getByRole("button", {
       name: "Latest responding agent can’t be notified",
     });
     expect(toggle.getAttribute("aria-disabled")).toBe("true");
-    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(toggle);
     expect(onCheckedChange).not.toHaveBeenCalled();
   });
@@ -210,7 +211,7 @@ describe("AgentNotificationControl", () => {
       />,
     );
 
-    const toggle = screen.getByRole("switch", {
+    const toggle = screen.getByRole("button", {
       name: "No prior agent reply to notify",
     });
     expect(toggle.getAttribute("aria-disabled")).toBe("true");

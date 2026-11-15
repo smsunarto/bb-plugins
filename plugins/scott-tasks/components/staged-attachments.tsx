@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 
 import { HugeiconsIcon } from "@hugeicons/react";
 import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 import File01Icon from "@hugeicons/core-free-icons/File01Icon";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { MAX_ATTACHMENT_SIZE_BYTES } from "../shared/attachments.js";
 import type { AttachmentOwner } from "../shared/contract.js";
@@ -134,13 +136,9 @@ export function AttachmentChip({
   const retrying = entry.status === "failed" && entry.retrying;
   const image = entry.file.type.startsWith("image/");
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs",
-        broken
-          ? "border-destructive/50 bg-destructive/10 text-destructive"
-          : "border-border bg-background",
-      )}
+    <Badge
+      variant={broken ? "danger" : "outline"}
+      className="gap-1.5 px-2 py-1 text-xs font-normal"
       title={error}
     >
       {!broken && image ? (
@@ -157,29 +155,28 @@ export function AttachmentChip({
       </span>
       {error ? <span className="sr-only">{error}</span> : null}
       {entry.status === "failed" ? (
-        <button
-          type="button"
+        <Button
+          variant="link"
+          size="sm"
           aria-label={`Retry upload of ${entry.file.name}`}
           aria-busy={entry.retrying}
           disabled={disabled || entry.retrying}
-          className="font-medium underline underline-offset-2 disabled:opacity-60"
+          className="h-auto p-0 text-current underline"
           onClick={() => onRetry(entry)}
         >
           {entry.retrying ? "Retrying…" : "Retry"}
-        </button>
+        </Button>
       ) : null}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="icon"
         aria-label={`Remove ${entry.file.name}`}
         disabled={disabled || retrying}
-        className={cn(
-          "disabled:opacity-60",
-          !broken && "text-muted-foreground hover:text-foreground",
-        )}
+        className={cn("size-4 rounded-sm", !broken && "text-muted-foreground")}
         onClick={onRemove}
       >
         <HugeiconsIcon icon={Cancel01Icon} className="size-3" />
-      </button>
-    </span>
+      </Button>
+    </Badge>
   );
 }

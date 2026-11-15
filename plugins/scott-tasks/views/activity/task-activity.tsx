@@ -6,7 +6,8 @@ import File01Icon from "@hugeicons/core-free-icons/File01Icon";
 import Notification02Icon from "@hugeicons/core-free-icons/Notification02Icon";
 import NotificationOff02Icon from "@hugeicons/core-free-icons/NotificationOff02Icon";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Toggle } from "@/components/ui/toggle";
+import { Hint } from "../../components/hint.js";
 import { cn } from "@/lib/utils";
 import { TasksEditor } from "../../editor/tasks-editor.js";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
@@ -361,36 +362,29 @@ export function AgentNotificationControl({
         ? "No prior agent reply to notify"
         : "Latest responding agent can’t be notified";
   return (
-    <TooltipProvider delayDuration={300}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            role="switch"
-            aria-checked={on}
-            aria-disabled={!enabled}
-            aria-label={label}
-            onClick={() => {
-              if (enabled) onCheckedChange(!checked);
-            }}
-            className={cn(
-              "mr-auto size-6.5 shrink-0",
-              on ? "text-foreground" : "text-muted-foreground",
-              !enabled &&
-                "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-muted-foreground",
-            )}
-          >
-            <HugeiconsIcon
-              icon={on ? Notification02Icon : NotificationOff02Icon}
-              className="size-3.5"
-            />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="top">{label}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Hint label={label}>
+      <span className="mr-auto flex shrink-0">
+        <Toggle
+          size="sm"
+          pressed={on}
+          aria-disabled={!enabled}
+          aria-label={label}
+          onPressedChange={(pressed) => {
+            if (enabled) onCheckedChange(pressed);
+          }}
+          className={cn(
+            "size-6.5 min-w-0 p-0",
+            !enabled &&
+              "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-muted-foreground",
+          )}
+        >
+          <HugeiconsIcon
+            icon={on ? Notification02Icon : NotificationOff02Icon}
+            className="size-3.5"
+          />
+        </Toggle>
+      </span>
+    </Hint>
   );
 }
 

@@ -658,12 +658,12 @@ describe("shared Markdown document boundaries", () => {
           plugin.spec.key?.constructor.name === "PluginKey" && plugin.spec.view !== undefined,
       ),
     ).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "Markdown source" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Markdown source" }));
     expect(screen.getByRole("textbox", { name: "Description Markdown source" })).toHaveProperty(
       "value",
       "A description",
     );
-    fireEvent.click(screen.getByRole("button", { name: "Rich text" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Rich text" }));
     expect(screen.queryByRole("textbox", { name: "Description Markdown source" })).toBeNull();
     expect(screen.container.querySelector(".tiptap")?.textContent).toBe("A description");
     expect(onChange).not.toHaveBeenCalled();

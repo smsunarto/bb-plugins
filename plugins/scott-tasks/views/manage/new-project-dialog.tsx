@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useFolders, useProjects, useTasksRpc } from "../../shell/data.js";
 import { bbProjectsQuery } from "../../shell/query.js";
@@ -16,6 +16,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectSeparator,
   SelectTrigger,
@@ -45,6 +46,8 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
   const rpc = useTasksRpc();
   const navigation = useTasksNavigation();
   const projects = useProjects();
+  const nameId = useId();
+  const prefixId = useId();
   const folders = useFolders();
 
   const [name, setName] = useState("");
@@ -152,8 +155,9 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
           <DialogDescription>Projects group tasks under a shared key prefix.</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
-          <Field label="Name">
+          <Field label="Name" htmlFor={nameId}>
             <Input
+              id={nameId}
               autoFocus
               value={name}
               placeholder="e.g. Tasks Plugin"
@@ -166,9 +170,11 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
           </Field>
           <Field
             label="Prefix"
+            htmlFor={prefixId}
             hint={prefixError ?? "Task keys use this prefix, e.g. TSK-12. Uppercase, unique."}
           >
             <Input
+              id={prefixId}
               value={prefix}
               placeholder="TSK"
               aria-invalid={prefixError !== null}
@@ -204,14 +210,18 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NO_FOLDER}>No folder</SelectItem>
-                {folderList.map((folder) => (
-                  <SelectItem key={folder.id} value={folder.id}>
-                    {folderName(folder.id)}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  <SelectItem value={NO_FOLDER}>No folder</SelectItem>
+                  {folderList.map((folder) => (
+                    <SelectItem key={folder.id} value={folder.id}>
+                      {folderName(folder.id)}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
                 <SelectSeparator />
-                <SelectItem value={NEW_FOLDER}>New folder…</SelectItem>
+                <SelectGroup>
+                  <SelectItem value={NEW_FOLDER}>New folder…</SelectItem>
+                </SelectGroup>
               </SelectContent>
             </Select>
             {newFolderMode ? (

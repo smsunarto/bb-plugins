@@ -194,7 +194,7 @@ function renderProject(projectId: string) {
 async function selectSort(slot: ReturnType<typeof renderProject>, label: string) {
   fireEvent.click(slot.getByRole("button", { name: /Sort/ }));
   const drawer = await slot.findByRole("dialog", { name: "Sort tasks" });
-  fireEvent.click(await within(drawer).findByRole("menuitemcheckbox", { name: label }));
+  fireEvent.click(await within(drawer).findByRole("menuitemradio", { name: label }));
 }
 
 describe("list filter/sort preference persistence", () => {

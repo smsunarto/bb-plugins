@@ -16,7 +16,7 @@ import { DetailView } from "../views/detail/index.js";
 import { NewTaskDialog } from "../views/manage/new-task-dialog.js";
 import { NewProjectDialog } from "../views/manage/new-project-dialog.js";
 import { ManagePanel } from "../views/manage/manage-panel.js";
-import { EmptyState } from "../components/empty-state.js";
+import { ViewEmptyState } from "../components/empty-state.js";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { TasksDataRoot } from "./data-root.js";
@@ -34,7 +34,11 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 function hasOpenOverlay(): boolean {
-  return document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]') !== null;
+  return (
+    document.querySelector(
+      '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]',
+    ) !== null
+  );
 }
 
 function RouteOutlet({ route, boardUsable }: { route: ResolvedTasksRoute; boardUsable: boolean }) {
@@ -155,9 +159,9 @@ function TasksAppShellContent({ subPath }: PluginNavPanelProps) {
         />
         <div className="min-h-0 flex-1 overflow-auto">
           {noProjects && route.kind !== "task" && route.kind !== "manage" ? (
-            <EmptyState
+            <ViewEmptyState
               icon="ListTodo"
-              title="No projects yet"
+              heading="No projects yet"
               description="Create a project to start tracking tasks and dispatching work to agents."
               action={
                 <Button size="sm" onClick={() => setNewProjectOpen(true)}>

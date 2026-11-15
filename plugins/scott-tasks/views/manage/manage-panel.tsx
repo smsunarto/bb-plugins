@@ -15,12 +15,21 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Icon } from "@/components/ui/icon";
 import { ConfirmDialog } from "../../components/confirm-dialog.js";
@@ -146,18 +155,20 @@ function LabelsSection() {
           <SelectValue placeholder="Project" />
         </SelectTrigger>
         <SelectContent>
-          {projectList.map((project) => (
-            <SelectItem key={project.id} value={project.id}>
-              <span className="flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className="size-2.5 rounded-sm"
-                  style={{ backgroundColor: project.color }}
-                />
-                {project.name}
-              </span>
-            </SelectItem>
-          ))}
+          <SelectGroup>
+            {projectList.map((project) => (
+              <SelectItem key={project.id} value={project.id}>
+                <span className="flex items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="size-2.5 rounded-sm"
+                    style={{ backgroundColor: project.color }}
+                  />
+                  {project.name}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectGroup>
         </SelectContent>
       </Select>
       <div className="rounded-md border border-border">
@@ -238,7 +249,7 @@ function LabelsSection() {
         onOpenChange={(open) => {
           if (!open) setConfirmDelete(null);
         }}
-        title={`Delete label “${confirmDelete?.label.name ?? ""}”?`}
+        heading={`Delete label “${confirmDelete?.label.name ?? ""}”?`}
         description={
           confirmDelete && confirmDelete.usedBy > 0
             ? `Used by ${confirmDelete.usedBy} task${confirmDelete.usedBy > 1 ? "s" : ""} — removing it detaches them.`
@@ -287,48 +298,54 @@ function PresetsSection() {
         </Button>
       </div>
       <div className="overflow-x-auto rounded-md border border-border">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-border-hairline text-xs text-muted-foreground">
-              <th className="px-3 py-2 font-medium">Name</th>
-              <th className="px-3 py-2 font-medium">Provider</th>
-              <th className="px-3 py-2 font-medium">Model</th>
-              <th className="px-3 py-2 font-medium">Reasoning</th>
-              <th className="px-3 py-2 font-medium">Tier</th>
-              <th className="px-3 py-2 font-medium">Permissions</th>
-              <th className="px-3 py-2 font-medium">Environment</th>
-              <th className="px-3 py-2 font-medium">Instructions</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody className="[&>tr+tr]:border-t [&>tr+tr]:border-border-hairline">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-border-hairline text-xs hover:bg-transparent">
+              <TableHead className="h-auto px-3 py-2">Name</TableHead>
+              <TableHead className="h-auto px-3 py-2">Provider</TableHead>
+              <TableHead className="h-auto px-3 py-2">Model</TableHead>
+              <TableHead className="h-auto px-3 py-2">Reasoning</TableHead>
+              <TableHead className="h-auto px-3 py-2">Tier</TableHead>
+              <TableHead className="h-auto px-3 py-2">Permissions</TableHead>
+              <TableHead className="h-auto px-3 py-2">Environment</TableHead>
+              <TableHead className="h-auto px-3 py-2">Instructions</TableHead>
+              <TableHead className="h-auto px-3 py-2" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {(presets.data ?? []).map((preset) => (
-              <tr key={preset.id} className="group">
-                <td className="px-3 py-2">
+              <TableRow key={preset.id} className="group border-border-hairline">
+                <TableCell className="px-3 py-2">
                   <span className="flex items-center gap-2">
                     <Icon name="Bot" className="size-3.5 text-muted-foreground" />
                     {preset.name}
                   </span>
-                </td>
-                <td className="px-3 py-2 text-muted-foreground">{preset.providerId}</td>
-                <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                </TableCell>
+                <TableCell className="px-3 py-2 text-muted-foreground">
+                  {preset.providerId}
+                </TableCell>
+                <TableCell className="px-3 py-2 font-mono text-xs text-muted-foreground">
                   {preset.modelId}
-                </td>
-                <td className="px-3 py-2 text-muted-foreground">{preset.reasoningLevel}</td>
-                <td className="px-3 py-2 text-muted-foreground">{preset.serviceTier ?? "—"}</td>
-                <td className="px-3 py-2 text-muted-foreground">
+                </TableCell>
+                <TableCell className="px-3 py-2 text-muted-foreground">
+                  {preset.reasoningLevel}
+                </TableCell>
+                <TableCell className="px-3 py-2 text-muted-foreground">
+                  {preset.serviceTier ?? "—"}
+                </TableCell>
+                <TableCell className="px-3 py-2 text-muted-foreground">
                   {PERMISSION_LABELS[preset.permissionMode]}
-                </td>
-                <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">
+                </TableCell>
+                <TableCell className="whitespace-nowrap px-3 py-2 text-muted-foreground">
                   {describePresetEnvironment(preset, machines.data ?? [])}
-                </td>
-                <td
+                </TableCell>
+                <TableCell
                   className="max-w-48 truncate px-3 py-2 text-xs text-muted-foreground"
                   title={preset.instructions}
                 >
                   {preset.instructions === "" ? "—" : preset.instructions}
-                </td>
-                <td className="px-3 py-2">
+                </TableCell>
+                <TableCell className="px-3 py-2">
                   <span className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100">
                     <Button
                       size="icon"
@@ -355,18 +372,18 @@ function PresetsSection() {
                       <Icon name="Trash2" className="size-3.5" />
                     </Button>
                   </span>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
             {(presets.data ?? []).length === 0 ? (
-              <tr>
-                <td colSpan={8} className="px-3 py-3 text-sm text-muted-foreground">
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={8} className="px-3 py-3 text-sm text-muted-foreground">
                   No presets yet.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ) : null}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
       {error ? (
         <p role="alert" className="text-xs text-destructive">
@@ -455,12 +472,14 @@ function FolderRow({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ROOT_PARENT}>Top level</SelectItem>
-              {parentOptions.map((parent) => (
-                <SelectItem key={parent.id} value={parent.id}>
-                  {parent.name}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                <SelectItem value={ROOT_PARENT}>Top level</SelectItem>
+                {parentOptions.map((parent) => (
+                  <SelectItem key={parent.id} value={parent.id}>
+                    {parent.name}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
           <Button
@@ -571,7 +590,7 @@ function FoldersSection() {
         onOpenChange={(open) => {
           if (!open) setConfirmDelete(null);
         }}
-        title={`Delete folder “${confirmDelete?.name ?? ""}”?`}
+        heading={`Delete folder “${confirmDelete?.name ?? ""}”?`}
         description={confirmDelete ? describeDeleteImpact(confirmDelete) : ""}
         confirmLabel="Delete folder"
         confirmDisabled={!impactReady}

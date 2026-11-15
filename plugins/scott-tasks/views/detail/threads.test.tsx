@@ -143,7 +143,51 @@ describe("task detail pull request pills", () => {
 
     await slot.findByText("Offline worker");
     expect(slot.getAllByText("PR unavailable")).toHaveLength(1);
-    expect(slot.queryByRole("link")).toBeNull();
+    expect(slot.queryByRole("link", { name: /Pull request/ })).toBeNull();
+  });
+
+  it("closes the detach confirmation on Escape without leaving the task", async () => {
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "task/TSK-5" },
+      {
+        rpc: detailRpc({
+          listTaskThreads: () => ({
+            taskThreads: [taskThreadRow(THREAD_ROW_ID, "thr_worker000", "Worker")],
+          }),
+        }),
+      },
+    );
+
+    fireEvent.click(await slot.findByRole("button", { name: "Detach Worker" }));
+    const confirm = await slot.findByRole("alertdialog", { name: "Detach thread?" });
+    const callsBefore = slot.navigateCalls.length;
+    fireEvent.keyDown(confirm, { key: "Escape" });
+
+    await waitFor(() => expect(slot.queryByRole("alertdialog")).toBeNull());
+    expect(slot.navigateCalls.slice(callsBefore)).toEqual([]);
+    expect(slot.rpcCalls.some((call) => call.method === "taskThreadsDetach")).toBe(false);
+  });
+
+  it("keeps the new-task shortcut inert while the detach confirmation is open", async () => {
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "task/TSK-5" },
+      {
+        rpc: detailRpc({
+          listTaskThreads: () => ({
+            taskThreads: [taskThreadRow(THREAD_ROW_ID, "thr_worker000", "Worker")],
+          }),
+        }),
+      },
+    );
+
+    fireEvent.click(await slot.findByRole("button", { name: "Detach Worker" }));
+    const confirm = await slot.findByRole("alertdialog", { name: "Detach thread?" });
+    fireEvent.keyDown(confirm, { key: "c" });
+
+    expect(slot.queryByRole("dialog")).toBeNull();
+    expect(slot.getByRole("alertdialog", { name: "Detach thread?" })).toBeDefined();
   });
 
   it("detaches a thread from its card after confirmation and refetches the list", async () => {

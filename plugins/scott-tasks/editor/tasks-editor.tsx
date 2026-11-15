@@ -18,7 +18,9 @@ import SourceCodeIcon from "@hugeicons/core-free-icons/SourceCodeIcon";
 import TextBoldIcon from "@hugeicons/core-free-icons/TextBoldIcon";
 import TextItalicIcon from "@hugeicons/core-free-icons/TextItalicIcon";
 import type { SuggestionProps } from "@tiptap/suggestion";
-import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { usePointerCoarse } from "@/components/ui/hooks/use-pointer-coarse";
 import { cn } from "@/lib/utils";
 import {
@@ -535,32 +537,33 @@ export function TasksEditor({
       onMouseDown={variant === "doc" ? focusOnEmptyMouseDown : undefined}
     >
       {isDocument && (
-        <div className="flex flex-wrap gap-2 text-xs">
-          <button
-            type="button"
-            disabled={!!reason}
-            aria-pressed={!source && !reason}
-            onClick={() => setSource(false)}
-          >
-            Rich text
-          </button>
-          <button
-            type="button"
-            aria-pressed={source || !!reason}
-            onClick={() => {
+        <ToggleGroup
+          type="single"
+          size="sm"
+          aria-label="Description editor"
+          value={source || reason ? "source" : "rich"}
+          onValueChange={(next) => {
+            if (next === "rich") setSource(false);
+            if (next === "source") {
               setInspected({ value, reason: sourceModeReason(value) });
               setSource(true);
-            }}
-          >
+            }
+          }}
+          className="flex-wrap justify-start gap-2"
+        >
+          <ToggleGroupItem value="rich" disabled={!!reason} className="h-6 px-1.5 text-xs">
+            Rich text
+          </ToggleGroupItem>
+          <ToggleGroupItem value="source" className="h-6 px-1.5 text-xs">
             Markdown source
-          </button>
-        </div>
+          </ToggleGroupItem>
+        </ToggleGroup>
       )}
       {reason && <p className="text-xs text-muted-foreground">{reason}</p>}
       {isDocument && (source || reason) && (
-        <textarea
+        <Textarea
           aria-label="Description Markdown source"
-          className="min-h-24 w-full bg-background p-2 font-mono text-sm"
+          className="min-h-24 p-2 font-mono"
           readOnly={readOnly}
           value={value}
           onChange={(event) => {
@@ -583,19 +586,12 @@ export function TasksEditor({
             className="flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-md"
           >
             {BUBBLE_ACTIONS.map((action) => (
-              <Button
+              <Toggle
                 key={action.id}
-                type="button"
-                size="icon"
-                variant="ghost"
+                size="sm"
                 aria-label={action.label}
-                aria-pressed={editor ? action.isActive(editor) : false}
-                className={cn(
-                  "size-7 text-muted-foreground",
-                  editor && action.isActive(editor)
-                    ? "bg-accent text-accent-foreground"
-                    : undefined,
-                )}
+                pressed={editor ? action.isActive(editor) : false}
+                className="size-7 min-w-0 p-0"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   const current = editorRef.current;
@@ -604,7 +600,7 @@ export function TasksEditor({
                 }}
               >
                 <HugeiconsIcon icon={action.icon} className="size-4" />
-              </Button>
+              </Toggle>
             ))}
           </div>
         </div>

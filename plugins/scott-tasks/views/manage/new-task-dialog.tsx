@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   TASK_PRIORITIES,
   TASK_STATUSES,
@@ -28,6 +28,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -42,9 +43,14 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { CreateLabelItem } from "../../components/create-label-item.js";
+import { Hint } from "../../components/hint.js";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { CheckboxField, DEFAULT_COLOR } from "./shared.js";
+import { DEFAULT_COLOR } from "./shared.js";
 import { PRIORITY_LABELS, STATUS_LABELS } from "../list/lib.js";
 
 const CHIP_TRIGGER = "h-7 w-auto gap-1.5 rounded-md px-2 text-xs text-muted-foreground";
@@ -78,6 +84,7 @@ export function NewTaskDialog({
   const [error, setError] = useState<string | null>(null);
   const [labelQuery, setLabelQuery] = useState("");
   const [creatingLabel, setCreatingLabel] = useState(false);
+  const createMoreId = useId();
   const [pendingFiles, setPendingFiles] = useState<StagedAttachment[]>([]);
   const [createdTask, setCreatedTask] = useState<Task | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -118,8 +125,9 @@ export function NewTaskDialog({
       current.includes(labelId) ? current.filter((id) => id !== labelId) : [...current, labelId],
     );
 
+  const trimmedLabelQuery = labelQuery.trim();
   const createLabelFromQuery = async () => {
-    const name = labelQuery.trim();
+    const name = trimmedLabelQuery;
     if (!name || effectiveProjectId === null || creatingLabel) return;
     setCreatingLabel(true);
     try {
@@ -332,18 +340,20 @@ export function NewTaskDialog({
               <SelectValue placeholder="Project" />
             </SelectTrigger>
             <SelectContent>
-              {projectList.map((entry) => (
-                <SelectItem key={entry.id} value={entry.id}>
-                  <span className="flex items-center gap-2">
-                    <span
-                      aria-hidden
-                      className="size-2.5 rounded-sm"
-                      style={{ backgroundColor: entry.color }}
-                    />
-                    {entry.name}
-                  </span>
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                {projectList.map((entry) => (
+                  <SelectItem key={entry.id} value={entry.id}>
+                    <span className="flex items-center gap-2">
+                      <span
+                        aria-hidden
+                        className="size-2.5 rounded-sm"
+                        style={{ backgroundColor: entry.color }}
+                      />
+                      {entry.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
           <Select value={status} onValueChange={(value) => setStatus(value as TaskStatus)}>
@@ -351,11 +361,13 @@ export function NewTaskDialog({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {TASK_STATUSES.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {STATUS_LABELS[value]}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                {TASK_STATUSES.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {STATUS_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
           <Select value={priority} onValueChange={(value) => setPriority(value as TaskPriority)}>
@@ -363,11 +375,13 @@ export function NewTaskDialog({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {TASK_PRIORITIES.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {PRIORITY_LABELS[value]}
-                </SelectItem>
-              ))}
+              <SelectGroup>
+                {TASK_PRIORITIES.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {PRIORITY_LABELS[value]}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
             </SelectContent>
           </Select>
           <Popover>
@@ -409,21 +423,14 @@ export function NewTaskDialog({
                   onValueChange={setLabelQuery}
                 />
                 <CommandList>
-                  <CommandEmpty className={labelQuery.trim() !== "" ? "p-1 text-left" : undefined}>
-                    {labelQuery.trim() !== "" ? (
-                      <button
-                        type="button"
-                        disabled={creatingLabel}
-                        className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                        onClick={() => void createLabelFromQuery()}
-                      >
-                        <Icon name="Plus" className="size-3.5" />
-                        Create “{labelQuery.trim()}”
-                      </button>
-                    ) : (
-                      "No labels in this project."
-                    )}
-                  </CommandEmpty>
+                  {trimmedLabelQuery === "" ? (
+                    <CommandEmpty>No labels in this project.</CommandEmpty>
+                  ) : null}
+                  <CreateLabelItem
+                    name={trimmedLabelQuery}
+                    disabled={creatingLabel}
+                    onCreate={() => void createLabelFromQuery()}
+                  />
                   <CommandGroup>
                     {(labels.data ?? []).map((label) => (
                       <CommandItem
@@ -447,12 +454,12 @@ export function NewTaskDialog({
               </Command>
             </PopoverContent>
           </Popover>
-          <input
+          <Input
             type="date"
             value={dueDate}
             onChange={(event) => setDueDate(event.target.value)}
             aria-label="Due date"
-            className="h-7 rounded-md border border-input bg-transparent px-2 text-xs text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            className="h-7 w-auto px-2 text-xs text-muted-foreground"
           />
         </div>
         {error ? (
@@ -470,22 +477,29 @@ export function NewTaskDialog({
             </>
           ) : (
             <>
-              <CheckboxField
-                checked={createMore}
-                onCheckedChange={setCreateMore}
-                label="Create more"
-              />
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id={createMoreId}
+                  checked={createMore}
+                  onCheckedChange={(checked) => setCreateMore(checked === true)}
+                />
+                <Label htmlFor={createMoreId} className="text-xs font-normal text-muted-foreground">
+                  Create more
+                </Label>
+              </div>
               <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  title="Attach files"
-                  aria-label="Attach files"
-                  disabled={submitting}
-                  className="flex size-6.5 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground disabled:opacity-50"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  <Icon name="Paperclip" className="size-4" />
-                </button>
+                <Hint label="Attach files">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Attach files"
+                    disabled={submitting}
+                    className="size-6.5 text-muted-foreground"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Icon name="Paperclip" className="size-4" />
+                  </Button>
+                </Hint>
                 <input
                   ref={fileInputRef}
                   type="file"

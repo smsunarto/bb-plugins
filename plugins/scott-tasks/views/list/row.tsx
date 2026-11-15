@@ -1,34 +1,34 @@
 import { memo, useState } from "react";
 import type { Label, Project, Task, TaskThread } from "../../shared/contract.js";
+import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { activeWorkLabel, formatDueDate, partitionLabels } from "./lib.js";
 import type { EditFn } from "./property-menus.js";
 import { isBareKey, PriorityEditor, StatusEditor, TaskContextMenu } from "./property-menus.js";
 
-const RAIL_CHIP_CLASS =
-  "flex items-center gap-1 rounded-md border border-border px-1.5 py-px text-xs text-muted-foreground";
+const RAIL_CHIP_CLASS = "gap-1 px-1.5 py-px text-xs font-normal text-muted-foreground";
 
 function ActiveChip({ threads }: { threads: readonly TaskThread[] }) {
   if (threads.length === 0) return null;
   return (
-    <span title={activeWorkLabel(threads)} className={RAIL_CHIP_CLASS}>
+    <Badge variant="outline" title={activeWorkLabel(threads)} className={RAIL_CHIP_CLASS}>
       <span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-success" />
       Active
-    </span>
+    </Badge>
   );
 }
 
 function LabelChip({ label }: { label: Label }) {
   return (
-    <span className={`${RAIL_CHIP_CLASS} max-w-32`}>
+    <Badge variant="outline" className={cn(RAIL_CHIP_CLASS, "max-w-32")}>
       <span
         aria-hidden
         className="size-1.5 shrink-0 rounded-full"
         style={{ backgroundColor: label.color }}
       />
       <span className="truncate">{label.name}</span>
-    </span>
+    </Badge>
   );
 }
 
@@ -40,12 +40,13 @@ function LabelChipRow({ labels, maxVisible }: { labels: readonly Label[]; maxVis
         <LabelChip key={label.id} label={label} />
       ))}
       {hidden.length > 0 ? (
-        <span
+        <Badge
+          variant="outline"
           title={hidden.map((label) => label.name).join(", ")}
-          className={`${RAIL_CHIP_CLASS} tabular-nums`}
+          className={cn(RAIL_CHIP_CLASS, "tabular-nums")}
         >
           +{hidden.length}
-        </span>
+        </Badge>
       ) : null}
     </>
   );
@@ -144,10 +145,10 @@ export const TaskRow = memo(function TaskRow({
           {activeThreads ? <ActiveChip threads={activeThreads} /> : null}
           <LabelChips task={task} labelsById={labelsById} />
           {task.dueDate !== null ? (
-            <span className={`${RAIL_CHIP_CLASS} shrink-0 tabular-nums`}>
+            <Badge variant="outline" className={cn(RAIL_CHIP_CLASS, "tabular-nums")}>
               <Icon name="Clock" className="size-3 shrink-0" />
               {formatDueDate(task.dueDate)}
-            </span>
+            </Badge>
           ) : null}
           {showProject && project !== undefined ? (
             <span

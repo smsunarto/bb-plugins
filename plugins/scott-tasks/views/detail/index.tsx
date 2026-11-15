@@ -35,7 +35,9 @@ import { InlineProperties, PropertiesRail, type TaskPropertyUpdate } from "./rai
 import { ThreadsSection } from "./threads.js";
 import { DetailToasts, useDetailToasts } from "./toast.js";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Hint } from "../../components/hint.js";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface DetailViewProps {
@@ -50,21 +52,23 @@ function SubTaskDonut({ subtasks, onClick }: { subtasks: Task[]; onClick: () => 
   const done = subtasks.filter((subtask) => subtask.status === "done").length;
   const degrees = (done / subtasks.length) * 360;
   return (
-    <button
-      type="button"
-      title="Sub-tasks completed"
-      onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary px-2.5 py-0.5 text-xs text-muted-foreground shadow-2xs hover:border-input hover:text-foreground"
-    >
-      <span
-        aria-hidden
-        className="inline-block size-3 rounded-full"
-        style={{
-          background: `conic-gradient(var(--primary) ${degrees}deg, var(--muted) 0)`,
-        }}
-      />
-      {done}/{subtasks.length} sub-tasks
-    </button>
+    <Hint label="Sub-tasks completed">
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={onClick}
+        className="h-6 gap-1.5 rounded-full px-2.5 font-normal text-muted-foreground"
+      >
+        <span
+          aria-hidden
+          className="inline-block size-3 rounded-full"
+          style={{
+            background: `conic-gradient(var(--primary) ${degrees}deg, var(--muted) 0)`,
+          }}
+        />
+        {done}/{subtasks.length} sub-tasks
+      </Button>
+    </Hint>
   );
 }
 
@@ -159,14 +163,15 @@ function SubTasksSection({
           />
         </div>
       ) : null}
-      <button
-        type="button"
-        className="flex items-center gap-1.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+      <Button
+        variant="ghost"
+        size="sm"
+        className="-ml-2 h-7 gap-1.5 px-2 text-muted-foreground"
         onClick={() => setAdding(true)}
       >
         <Icon name="Plus" className="size-3" />
         Add sub-task
-      </button>
+      </Button>
     </section>
   );
 }
@@ -321,16 +326,17 @@ function TaskDetail({ task }: { task: Task }) {
           {parentTask || subtasks.data?.length ? (
             <div className="mb-4 flex flex-wrap items-center gap-2">
               {parentTask ? (
-                <button
-                  type="button"
-                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-secondary px-2.5 py-0.5 text-xs text-muted-foreground shadow-2xs hover:border-input"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 max-w-full gap-1.5 rounded-full px-2.5 font-normal text-muted-foreground"
                   onClick={() => navigation.go({ kind: "task", taskKey: parentTask.key })}
                 >
                   Sub-task of
                   <StatusIcon status={parentTask.status} className="size-3" />
                   <span className="font-medium text-foreground">{parentTask.key}</span>
                   <span className="min-w-0 truncate">{parentTask.title}</span>
-                </button>
+                </Button>
               ) : null}
               <SubTaskDonut
                 subtasks={subtasks.data ?? []}
@@ -367,24 +373,30 @@ function TaskDetail({ task }: { task: Task }) {
           />
 
           <div className="mb-1 mt-3 flex items-center gap-1">
-            <button
-              type="button"
-              title="Reactions coming soon"
-              aria-label="Add reaction"
-              disabled
-              className="flex size-6.5 items-center justify-center rounded-md text-muted-foreground opacity-50"
-            >
-              <HugeiconsIcon icon={SmilePlusIcon} className="size-4" />
-            </button>
-            <button
-              type="button"
-              title="Attach file"
-              aria-label="Attach file"
-              className="flex size-6.5 items-center justify-center rounded-md text-muted-foreground hover:bg-state-hover hover:text-foreground"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Icon name="Paperclip" className="size-4" />
-            </button>
+            <Hint label="Reactions coming soon">
+              <span className="inline-flex">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Add reaction"
+                  disabled
+                  className="size-6.5 text-muted-foreground"
+                >
+                  <HugeiconsIcon icon={SmilePlusIcon} className="size-4" />
+                </Button>
+              </span>
+            </Hint>
+            <Hint label="Attach file">
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Attach file"
+                className="size-6.5 text-muted-foreground"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Icon name="Paperclip" className="size-4" />
+              </Button>
+            </Hint>
             <input
               ref={fileInputRef}
               type="file"

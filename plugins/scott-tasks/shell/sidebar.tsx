@@ -6,7 +6,8 @@ import { PresetDialog, savePresetDraft } from "../views/manage/preset-dialog.js"
 import { Icon } from "@/components/ui/icon";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Hint } from "../components/hint.js";
 import { cn } from "@/lib/utils";
 
 interface SidebarRowProps {
@@ -34,41 +35,10 @@ function SidebarRow({ active, onClick, children, title }: SidebarRowProps) {
   );
 }
 
-function SectionHeader({
-  label,
-  collapsed,
-  onToggle,
-}: {
-  label: string;
-  collapsed?: boolean;
-  onToggle?: () => void;
-}) {
-  const content = (
-    <>
-      {onToggle ? (
-        <Icon
-          name="ChevronDown"
-          className={cn("size-3 transition-transform", collapsed && "-rotate-90")}
-        />
-      ) : null}
-      {label}
-    </>
-  );
-  if (onToggle) {
-    return (
-      <button
-        type="button"
-        onClick={onToggle}
-        className="mt-3.5 flex w-full items-center gap-1 rounded-md px-2 pb-1 text-xs font-semibold text-muted-foreground hover:text-foreground"
-        aria-expanded={!collapsed}
-      >
-        {content}
-      </button>
-    );
-  }
+function SectionHeader({ label }: { label: string }) {
   return (
     <div className="mt-3.5 flex items-center gap-1 px-2 pb-1 text-xs font-semibold text-muted-foreground">
-      {content}
+      {label}
     </div>
   );
 }
@@ -182,27 +152,32 @@ export function TasksSidebar({
     const folderProjects = (projects ?? []).filter((p) => p.folderId === folder.id);
     const children = childFolders.filter((f) => f.parentFolderId === folder.id);
     return (
-      <div key={folder.id} className={cn(indent && "pl-3")}>
-        <SectionHeader
-          label={folder.name}
-          collapsed={collapsed}
-          onToggle={() => toggleFolder(folder.id)}
-        />
-        {!collapsed ? (
-          <div className="flex flex-col gap-px">
-            {folderProjects.map((project) => (
-              <ProjectRow
-                key={project.id}
-                project={project}
-                summary={summaryByProject.get(project.id)}
-                active={activeProjectId === project.id}
-                onClick={() => openProject(project.id)}
-              />
-            ))}
-            {!indent ? children.map((child) => renderFolder(child, true)) : null}
-          </div>
-        ) : null}
-      </div>
+      <Collapsible
+        key={folder.id}
+        open={!collapsed}
+        onOpenChange={() => toggleFolder(folder.id)}
+        className={cn(indent && "pl-3")}
+      >
+        <CollapsibleTrigger className="group mt-3.5 flex w-full items-center gap-1 rounded-md px-2 pb-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
+          <Icon
+            name="ChevronDown"
+            className="size-3 transition-transform group-data-[state=closed]:-rotate-90"
+          />
+          {folder.name}
+        </CollapsibleTrigger>
+        <CollapsibleContent className="flex flex-col gap-px">
+          {folderProjects.map((project) => (
+            <ProjectRow
+              key={project.id}
+              project={project}
+              summary={summaryByProject.get(project.id)}
+              active={activeProjectId === project.id}
+              onClick={() => openProject(project.id)}
+            />
+          ))}
+          {!indent ? children.map((child) => renderFolder(child, true)) : null}
+        </CollapsibleContent>
+      </Collapsible>
     );
   };
 
@@ -248,7 +223,7 @@ export function TasksSidebar({
             {rootFolders.map((folder) => renderFolder(folder, false))}
             {(projects ?? []).length > 0 ? (
               <div className="mt-1.5">
-                <SidebarRow onClick={onNewProject} title="New project">
+                <SidebarRow onClick={onNewProject}>
                   <Icon name="Plus" className="size-3.5 shrink-0" />
                   <span className="flex-1">New project</span>
                 </SidebarRow>
@@ -261,35 +236,26 @@ export function TasksSidebar({
                   {presets.map((preset) => (
                     <SidebarRow
                       key={preset.id}
-                      title={`Edit preset ${preset.name}`}
                       onClick={() => setPresetDialog({ key: Date.now(), editing: preset })}
                     >
                       <Icon name="Bot" className="size-3.5 shrink-0" />
                       <span className="min-w-0 flex-1 truncate">{preset.name}</span>
                       {preset.environmentKind === "new-worktree" ? (
-                        <TooltipProvider delayDuration={300}>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                aria-label="Spawns a new worktree"
-                                className="flex shrink-0 text-muted-foreground/70"
-                              >
-                                <Icon name="GitBranch" className="size-3" />
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="left">Spawns a new worktree</TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        <Hint label="Spawns a new worktree" side="left">
+                          <span
+                            aria-label="Spawns a new worktree"
+                            className="flex shrink-0 text-muted-foreground/70"
+                          >
+                            <Icon name="GitBranch" className="size-3" />
+                          </span>
+                        </Hint>
                       ) : null}
                     </SidebarRow>
                   ))}
                   {presets.length === 0 ? (
                     <div className="px-2 py-1 text-xs text-muted-foreground">No presets yet.</div>
                   ) : null}
-                  <SidebarRow
-                    title="New preset"
-                    onClick={() => setPresetDialog({ key: Date.now(), editing: null })}
-                  >
+                  <SidebarRow onClick={() => setPresetDialog({ key: Date.now(), editing: null })}>
                     <Icon name="Plus" className="size-3.5 shrink-0" />
                     <span className="flex-1">New preset</span>
                   </SidebarRow>

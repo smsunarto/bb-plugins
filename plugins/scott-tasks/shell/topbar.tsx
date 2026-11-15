@@ -11,7 +11,16 @@ import type { ResolvedTasksRoute, TaskViewMode, TasksRoute } from "./routes.js";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Hint } from "../components/hint.js";
 
 const REFRESH_TASKS_LABEL = "Refresh tasks";
 
@@ -96,26 +105,25 @@ function ViewToggle({
   view: TaskViewMode;
   onChange: (view: TaskViewMode) => void;
 }) {
-  const segment = (mode: TaskViewMode, label: string) => (
-    <button
-      type="button"
-      onClick={() => onChange(mode)}
-      aria-pressed={view === mode}
-      className={cn(
-        "rounded-sm px-2.5 py-0.5 text-xs max-md:pointer-coarse:py-1.5",
-        view === mode
-          ? "bg-background text-foreground shadow-2xs"
-          : "text-muted-foreground hover:text-foreground",
-      )}
-    >
-      {label}
-    </button>
-  );
   return (
-    <div className="flex items-center rounded-md bg-muted p-0.5">
-      {segment("list", "List")}
-      {segment("board", "Board")}
-    </div>
+    <ToggleGroup
+      type="single"
+      size="sm"
+      aria-label="View"
+      value={view}
+      onValueChange={(next) => {
+        // Pressing the current view emits "", which still pins that view as before.
+        onChange(next === "list" || next === "board" ? next : view);
+      }}
+      className="gap-0.5 rounded-md bg-muted p-0.5"
+    >
+      <ToggleGroupItem value="list" className="h-6 px-2.5 text-xs max-md:pointer-coarse:h-8">
+        List
+      </ToggleGroupItem>
+      <ToggleGroupItem value="board" className="h-6 px-2.5 text-xs max-md:pointer-coarse:h-8">
+        Board
+      </ToggleGroupItem>
+    </ToggleGroup>
   );
 }
 
@@ -123,25 +131,20 @@ function RefreshTasksButton() {
   const isRefreshing = useTasksUi((state) => state.refreshing);
 
   return (
-    <TooltipProvider delayDuration={300}>
-      <Tooltip disableHoverableContent>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="size-7 shrink-0 text-muted-foreground hover:text-foreground active:bg-state-active active:text-foreground max-md:pointer-coarse:size-9"
-            aria-label={REFRESH_TASKS_LABEL}
-            aria-busy={isRefreshing}
-            disabled={isRefreshing}
-            onClick={refreshTasks}
-          >
-            <Icon name="RotateCcw" className={cn("size-3.5", isRefreshing && "animate-spin")} />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{REFRESH_TASKS_LABEL}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Hint label={REFRESH_TASKS_LABEL} side="bottom">
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7 shrink-0 text-muted-foreground hover:text-foreground active:bg-state-active active:text-foreground max-md:pointer-coarse:size-9"
+        aria-label={REFRESH_TASKS_LABEL}
+        aria-busy={isRefreshing}
+        disabled={isRefreshing}
+        onClick={refreshTasks}
+      >
+        <Icon name="RotateCcw" className={cn("size-3.5", isRefreshing && "animate-spin")} />
+      </Button>
+    </Hint>
   );
 }
 
@@ -220,35 +223,42 @@ export function TasksTopbar({
             >
               <Icon name="ChevronLeft" className="size-4" />
             </Button>
-            {project ? (
-              <button
-                type="button"
-                className="hidden min-w-0 items-center gap-2 text-muted-foreground hover:text-foreground @md:flex"
-                onClick={() =>
-                  onNavigate({
-                    kind: "project",
-                    projectId: project.id,
-                    view: null,
-                  })
-                }
-              >
-                <span
-                  aria-hidden
-                  className="size-3 shrink-0 rounded-sm"
-                  style={{ backgroundColor: project.color }}
-                />
-                <span className="truncate font-medium">{project.name}</span>
-              </button>
-            ) : null}
-            {project ? (
-              <Icon
-                name="ChevronRight"
-                className="hidden size-3 shrink-0 text-muted-foreground @md:block"
-              />
-            ) : null}
-            <span className="min-w-0 truncate font-medium text-muted-foreground">
-              {route.taskKey}
-            </span>
+            <Breadcrumb className="min-w-0">
+              <BreadcrumbList className="flex-nowrap gap-1.5 sm:gap-1.5">
+                {project ? (
+                  <>
+                    <BreadcrumbItem className="hidden min-w-0 @md:inline-flex">
+                      <BreadcrumbLink asChild>
+                        <button
+                          type="button"
+                          className="flex min-w-0 items-center gap-2"
+                          onClick={() =>
+                            onNavigate({
+                              kind: "project",
+                              projectId: project.id,
+                              view: null,
+                            })
+                          }
+                        >
+                          <span
+                            aria-hidden
+                            className="size-3 shrink-0 rounded-sm"
+                            style={{ backgroundColor: project.color }}
+                          />
+                          <span className="truncate font-medium">{project.name}</span>
+                        </button>
+                      </BreadcrumbLink>
+                    </BreadcrumbItem>
+                    <BreadcrumbSeparator className="hidden @md:block" />
+                  </>
+                ) : null}
+                <BreadcrumbItem className="min-w-0">
+                  <BreadcrumbPage className="truncate font-medium text-muted-foreground">
+                    {route.taskKey}
+                  </BreadcrumbPage>
+                </BreadcrumbItem>
+              </BreadcrumbList>
+            </Breadcrumb>
           </span>
         );
     }

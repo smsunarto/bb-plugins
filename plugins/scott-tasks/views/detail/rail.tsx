@@ -17,9 +17,12 @@ import { bbProjectsQuery } from "../../shell/query.js";
 import { PriorityIcon, StatusIcon, formatDueDate, isActiveThread } from "./meta.js";
 import { DUE_DATE_PRESETS, localIsoDate, PRIORITY_LABELS, STATUS_LABELS } from "../list/lib.js";
 import { DispatchControl } from "./threads.js";
+import { CreateLabelItem } from "../../components/create-label-item.js";
 import { DEFAULT_COLOR } from "../manage/shared.js";
 import { BbProjectLinkPicker } from "../manage/bb-project-link.js";
-import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Button, type ButtonProps } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,35 +56,48 @@ interface TaskPropertiesProps {
   onUpdate: (update: TaskPropertyUpdate) => void;
 }
 
+/** How a property menu's trigger looks: a full-width rail row or an inline chip. */
+type PropertyTrigger = Pick<ButtonProps, "variant" | "className">;
+
+const RAIL_TRIGGER: PropertyTrigger = {
+  variant: "ghost",
+  className: "-mx-1.5 h-7 w-[calc(100%+0.75rem)] justify-start px-1.5 text-sm font-normal",
+};
+
+const CHIP_TRIGGER: PropertyTrigger = {
+  variant: "secondary",
+  className: "h-6 gap-1.5 px-2.5 font-normal",
+};
+
 function LabelChip({ label }: { label: Label }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-0.5 text-2xs text-muted-foreground">
+    <Badge variant="outline" className="gap-1.5 font-normal text-muted-foreground">
       <span
         aria-hidden
         className="size-1.5 rounded-full"
         style={{ backgroundColor: label.color }}
       />
       {label.name}
-    </span>
+    </Badge>
   );
 }
 
 function StatusMenu({
   task,
   onUpdate,
-  triggerClassName,
+  trigger,
 }: {
   task: Task;
   onUpdate: (update: TaskPropertyUpdate) => void;
-  triggerClassName: string;
+  trigger: PropertyTrigger;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className={triggerClassName}>
+        <Button size="sm" {...trigger}>
           <StatusIcon status={task.status} />
           {STATUS_LABELS[task.status]}
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         {TASK_STATUSES.map((status) => (
@@ -99,19 +115,19 @@ function StatusMenu({
 function PriorityMenu({
   task,
   onUpdate,
-  triggerClassName,
+  trigger,
 }: {
   task: Task;
   onUpdate: (update: TaskPropertyUpdate) => void;
-  triggerClassName: string;
+  trigger: PropertyTrigger;
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button type="button" className={triggerClassName}>
+        <Button size="sm" {...trigger}>
           <PriorityIcon priority={task.priority} />
           {PRIORITY_LABELS[task.priority]}
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         {TASK_PRIORITIES.map((priority) => (
@@ -129,11 +145,11 @@ function PriorityMenu({
 function DueDateMenu({
   task,
   onUpdate,
-  triggerClassName,
+  trigger,
 }: {
   task: Task;
   onUpdate: (update: TaskPropertyUpdate) => void;
-  triggerClassName: string;
+  trigger: PropertyTrigger;
 }) {
   const [open, setOpen] = useState(false);
   const pick = (dueDate: string | null) => {
@@ -143,44 +159,46 @@ function DueDateMenu({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" className={triggerClassName}>
+        <Button size="sm" {...trigger}>
           <Icon name="Clock" className="size-3.5 shrink-0" />
           {task.dueDate ? formatDueDate(task.dueDate) : "Set due date"}
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-52 p-2">
         <div className="flex flex-col">
           {DUE_DATE_PRESETS.map(([label, days]) => (
-            <button
+            <Button
               key={label}
-              type="button"
-              className="flex items-center justify-between rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+              variant="ghost"
+              size="sm"
+              className="justify-between px-2 text-sm font-normal"
               onClick={() => pick(localIsoDate(days))}
             >
               {label}
               <span className="text-xs text-muted-foreground">
                 {formatDueDate(localIsoDate(days))}
               </span>
-            </button>
+            </Button>
           ))}
-          <input
+          <Input
             type="date"
             aria-label="Due date"
-            className="mt-1 h-7 rounded-md border border-input bg-transparent px-2 text-sm text-foreground"
+            className="mt-1 h-7 px-2"
             value={task.dueDate ?? ""}
             onChange={(event) => {
               if (event.target.value) pick(event.target.value);
             }}
           />
           {task.dueDate ? (
-            <button
-              type="button"
-              className="mt-1 flex items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+            <Button
+              variant="ghost"
+              size="sm"
+              className="mt-1 justify-start px-2 text-sm font-normal text-muted-foreground"
               onClick={() => pick(null)}
             >
               <Icon name="X" className="size-3.5" />
               Remove due date
-            </button>
+            </Button>
           ) : null}
         </div>
       </PopoverContent>
@@ -227,6 +245,7 @@ function LabelsMenu({
   };
 
   const labelList = labels ?? [];
+  const trimmed = query.trim();
   return (
     <Popover onOpenChange={(open) => open || setQuery("")}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
@@ -234,22 +253,13 @@ function LabelsMenu({
         <Command>
           <CommandInput placeholder="Add labels…" value={query} onValueChange={setQuery} />
           <CommandList>
-            <CommandEmpty className={query.trim() !== "" ? "p-1 text-left" : undefined}>
-              {query.trim() !== "" ? (
-                <button
-                  type="button"
-                  disabled={creating}
-                  className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                  onClick={() => void createLabel(query.trim())}
-                >
-                  <Icon name="Plus" className="size-3.5" />
-                  Create “{query.trim()}”
-                </button>
-              ) : (
-                "No labels in this project."
-              )}
-            </CommandEmpty>
-            {labels !== undefined && labelList.length === 0 ? (
+            {trimmed === "" ? <CommandEmpty>No labels in this project.</CommandEmpty> : null}
+            <CreateLabelItem
+              name={trimmed}
+              disabled={creating}
+              onCreate={() => void createLabel(trimmed)}
+            />
+            {labels !== undefined && labelList.length === 0 && trimmed === "" ? (
               <CommandGroup>
                 <CommandItem
                   disabled={creating}
@@ -291,12 +301,12 @@ function DispatchTargetMenu({
   project,
   bbProjects,
   onError,
-  triggerClassName,
+  trigger,
 }: {
   project: Project;
   bbProjects: readonly BbProjectOption[];
   onError: (message: string) => void;
-  triggerClassName: string;
+  trigger: PropertyTrigger;
 }) {
   const rpc = useTasksRpc();
   const [open, setOpen] = useState(false);
@@ -330,7 +340,7 @@ function DispatchTargetMenu({
       }}
     >
       <PopoverTrigger asChild>
-        <button type="button" aria-label="Edit dispatch target" className={triggerClassName}>
+        <Button size="sm" aria-label="Edit dispatch target" {...trigger}>
           <Icon name="ArrowUpRight" className="size-3.5 shrink-0" />
           {linkedBbProjectId !== null ? (
             <span className="truncate" title={linkedBbProjectId}>
@@ -339,7 +349,7 @@ function DispatchTargetMenu({
           ) : (
             <span className="truncate text-muted-foreground">Link a bb project…</span>
           )}
-        </button>
+        </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-3">
         <BbProjectLinkPicker
@@ -372,9 +382,6 @@ function DispatchTargetMenu({
   );
 }
 
-const RAIL_ROW_CLASS =
-  "-mx-1.5 flex w-[calc(100%+0.75rem)] items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm hover:bg-state-hover";
-
 export function PropertiesRail({
   task,
   project,
@@ -395,9 +402,9 @@ export function PropertiesRail({
   return (
     <aside className={cn("w-56 shrink-0 py-10 pl-2 pr-6", className)}>
       <h2 className="mb-1.5 text-xs font-semibold text-muted-foreground">Properties</h2>
-      <StatusMenu task={task} onUpdate={onUpdate} triggerClassName={RAIL_ROW_CLASS} />
-      <PriorityMenu task={task} onUpdate={onUpdate} triggerClassName={RAIL_ROW_CLASS} />
-      <DueDateMenu task={task} onUpdate={onUpdate} triggerClassName={RAIL_ROW_CLASS} />
+      <StatusMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
+      <PriorityMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
+      <DueDateMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
 
       <div className="mb-1 mt-3 text-2xs font-semibold text-muted-foreground">Labels</div>
       <div className="flex flex-wrap items-center gap-1 py-0.5">
@@ -405,13 +412,14 @@ export function PropertiesRail({
           <LabelChip key={label.id} label={label} />
         ))}
         <LabelsMenu task={task} labels={labels} onUpdate={onUpdate}>
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="icon"
             aria-label="Edit labels"
-            className="inline-flex items-center rounded-md border border-dashed border-border px-1.5 py-0.5 text-muted-foreground hover:border-input hover:text-foreground"
+            className="h-5 w-6 border-dashed text-muted-foreground"
           >
             <Icon name="Plus" className="size-3" />
-          </button>
+          </Button>
         </LabelsMenu>
       </div>
 
@@ -431,7 +439,7 @@ export function PropertiesRail({
           project={project}
           bbProjects={bbProjects.data ?? []}
           onError={onError}
-          triggerClassName={RAIL_ROW_CLASS}
+          trigger={RAIL_TRIGGER}
         />
       ) : (
         <div className="py-0.5 text-sm text-muted-foreground">…</div>
@@ -469,9 +477,6 @@ export function PropertiesRail({
   );
 }
 
-const CHIP_CLASS =
-  "inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary px-2.5 py-0.5 text-xs text-foreground hover:border-input";
-
 export function InlineProperties({
   task,
   labels,
@@ -487,20 +492,21 @@ export function InlineProperties({
   const taskLabels = (labels ?? []).filter((label) => task.labelIds.includes(label.id));
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
-      <StatusMenu task={task} onUpdate={onUpdate} triggerClassName={CHIP_CLASS} />
-      <PriorityMenu task={task} onUpdate={onUpdate} triggerClassName={CHIP_CLASS} />
-      <DueDateMenu task={task} onUpdate={onUpdate} triggerClassName={CHIP_CLASS} />
+      <StatusMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
+      <PriorityMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
+      <DueDateMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
       {taskLabels.map((label) => (
         <LabelChip key={label.id} label={label} />
       ))}
       <LabelsMenu task={task} labels={labels} onUpdate={onUpdate}>
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="icon"
           aria-label="Edit labels"
-          className="inline-flex items-center rounded-md border border-dashed border-border px-2 py-1 text-muted-foreground hover:border-input hover:text-foreground"
+          className="h-6 w-7 border-dashed text-muted-foreground"
         >
           <Icon name="Plus" className="size-3" />
-        </button>
+        </Button>
       </LabelsMenu>
       <DispatchControl
         taskId={task.id}

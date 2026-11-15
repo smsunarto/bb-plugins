@@ -1,5 +1,5 @@
-import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { errorMessage } from "../../shared/errors.js";
 
 const COLOR_PALETTE = [
@@ -44,69 +44,46 @@ export function ColorSwatchPicker({
   onChange: (color: string) => void;
 }) {
   return (
-    <div role="radiogroup" aria-label="Color" className="flex flex-wrap gap-1.5">
+    <ToggleGroup
+      type="single"
+      aria-label="Color"
+      value={value}
+      onValueChange={(next) => {
+        if (next) onChange(next);
+      }}
+      className="flex-wrap justify-start gap-1.5"
+    >
       {COLOR_PALETTE.map((swatch) => (
-        <button
+        <ToggleGroupItem
           key={swatch.value}
-          type="button"
-          role="radio"
-          aria-checked={value === swatch.value}
+          value={swatch.value}
           aria-label={swatch.label}
           title={swatch.label}
-          onClick={() => onChange(swatch.value)}
-          className={cn(
-            "size-5 rounded-md",
-            value === swatch.value && "ring-2 ring-ring ring-offset-2 ring-offset-background",
-          )}
+          className="size-5 min-w-0 rounded-md p-0 data-[state=on]:ring-2 data-[state=on]:ring-ring data-[state=on]:ring-offset-2 data-[state=on]:ring-offset-background"
           style={{ backgroundColor: swatch.value }}
         />
       ))}
-    </div>
-  );
-}
-
-export function CheckboxField({
-  checked,
-  onCheckedChange,
-  label,
-}: {
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={checked}
-      onClick={() => onCheckedChange(!checked)}
-      className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
-    >
-      <span
-        className={cn(
-          "flex size-3.5 items-center justify-center rounded-sm border",
-          checked ? "border-primary bg-primary text-primary-foreground" : "border-input",
-        )}
-      >
-        {checked ? <Icon name="Check" className="size-3" /> : null}
-      </span>
-      {label}
-    </button>
+    </ToggleGroup>
   );
 }
 
 export function Field({
   label,
+  htmlFor,
   children,
   hint,
 }: {
   label: string;
+  /** The id of the control the label names, when the control is labelable. */
+  htmlFor?: string;
   children: React.ReactNode;
   hint?: string;
 }) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{label}</label>
+      <Label htmlFor={htmlFor} className="mb-1.5 block text-xs text-muted-foreground">
+        {label}
+      </Label>
       {children}
       {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
     </div>

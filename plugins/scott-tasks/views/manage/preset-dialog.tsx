@@ -1,5 +1,5 @@
 import { MarkdownEditor } from "@bb-plugins/markdown-editor";
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   experimental_PermissionModePicker as PermissionModePicker,
   experimental_ProviderModelPicker as ProviderModelPicker,
@@ -22,6 +22,7 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -148,6 +149,7 @@ export function PresetDialog({
   );
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const nameId = useId();
   const set = <K extends keyof PresetDraft>(key: K, value: PresetDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
 
@@ -180,8 +182,9 @@ export function PresetDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
-          <Field label="Name">
+          <Field label="Name" htmlFor={nameId}>
             <Input
+              id={nameId}
               autoFocus
               value={draft.name}
               placeholder="e.g. Sonnet · high"
@@ -233,11 +236,13 @@ export function PresetDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PRESET_ENVIRONMENT_KINDS.map((kind) => (
-                  <SelectItem key={kind} value={kind}>
-                    {ENVIRONMENT_LABELS[kind]}
-                  </SelectItem>
-                ))}
+                <SelectGroup>
+                  {PRESET_ENVIRONMENT_KINDS.map((kind) => (
+                    <SelectItem key={kind} value={kind}>
+                      {ENVIRONMENT_LABELS[kind]}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           </Field>
@@ -263,16 +268,18 @@ export function PresetDialog({
                     <SelectValue placeholder={machines === undefined ? "Loading…" : "Machine"} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value={DEFAULT_MACHINE_VALUE}>Project's machine</SelectItem>
-                    {(machines ?? []).map((machine) => (
-                      <SelectItem key={machine.id} value={machine.id}>
-                        {machine.name}
-                      </SelectItem>
-                    ))}
-                    {draft.machineId !== "" &&
-                    !(machines ?? []).some((machine) => machine.id === draft.machineId) ? (
-                      <SelectItem value={draft.machineId}>{draft.machineId}</SelectItem>
-                    ) : null}
+                    <SelectGroup>
+                      <SelectItem value={DEFAULT_MACHINE_VALUE}>Project's machine</SelectItem>
+                      {(machines ?? []).map((machine) => (
+                        <SelectItem key={machine.id} value={machine.id}>
+                          {machine.name}
+                        </SelectItem>
+                      ))}
+                      {draft.machineId !== "" &&
+                      !(machines ?? []).some((machine) => machine.id === draft.machineId) ? (
+                        <SelectItem value={draft.machineId}>{draft.machineId}</SelectItem>
+                      ) : null}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </Field>

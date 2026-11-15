@@ -33,6 +33,7 @@ import { byManualOrder } from "../../shared/sort.js";
 import { Button } from "@/components/ui/button";
 import { DelayedLoading } from "@/components/ui/delayed-loading";
 import { Icon } from "@/components/ui/icon";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -181,9 +182,10 @@ function TaskCard({
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         <PriorityIcon priority={task.priority} />
         {labels.map((label) => (
-          <span
+          <Badge
             key={label.id}
-            className="flex items-center gap-1 rounded-md border border-border px-1.5 text-2xs text-muted-foreground"
+            variant="outline"
+            className="gap-1 px-1.5 py-0 text-2xs font-normal text-muted-foreground"
           >
             <span
               aria-hidden
@@ -191,7 +193,7 @@ function TaskCard({
               style={{ backgroundColor: label.color }}
             />
             {label.name}
-          </span>
+          </Badge>
         ))}
         {meta.subTotal > 0 ? (
           <span className="flex items-center gap-0.5 text-2xs text-muted-foreground">

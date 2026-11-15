@@ -7,7 +7,9 @@ import { PR_STATE_META, THREAD_STATUS_META, formatRelativeTime, isActiveThread }
 import { PresetDialog, savePresetDraft } from "../manage/preset-dialog.js";
 import { ConfirmDialog } from "../../components/confirm-dialog.js";
 import { useTasksRpc } from "../../shell/data.js";
+import { badgeVariants } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Hint } from "../../components/hint.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,26 +30,30 @@ function ThreadPullRequestPill({
   if (pullRequest) {
     const meta = PR_STATE_META[pullRequest.state];
     return (
-      <UrlLink
-        href={pullRequest.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={`${pullRequest.title} (${meta.label})`}
-        aria-label={`Pull request #${pullRequest.number}: ${pullRequest.title} (${meta.label})`}
-        className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-xs font-medium shadow-2xs hover:border-input"
-      >
-        <Icon name={meta.icon} className={cn("size-3", meta.textClassName)} />#{pullRequest.number}
-      </UrlLink>
+      <Hint label={`${pullRequest.title} (${meta.label})`}>
+        <span className="flex shrink-0">
+          <UrlLink
+            href={pullRequest.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Pull request #${pullRequest.number}: ${pullRequest.title} (${meta.label})`}
+            className={cn(
+              badgeVariants({ variant: "outline" }),
+              "gap-1 rounded-full hover:border-input",
+            )}
+          >
+            <Icon name={meta.icon} className={cn("size-3", meta.textClassName)} />#
+            {pullRequest.number}
+          </UrlLink>
+        </span>
+      </Hint>
     );
   }
   if (unavailable) {
     return (
-      <span
-        title="Couldn't check this thread's pull request"
-        className="shrink-0 text-xs text-muted-foreground"
-      >
-        PR unavailable
-      </span>
+      <Hint label="Couldn't check this thread's pull request">
+        <span className="shrink-0 text-xs text-muted-foreground">PR unavailable</span>
+      </Hint>
     );
   }
   return null;
@@ -83,24 +89,27 @@ function ThreadCard({
         </div>
       </div>
       <ThreadPullRequestPill pullRequest={pullRequest} unavailable={pullRequestUnavailable} />
-      <button
-        type="button"
-        className="flex shrink-0 items-center gap-1 text-xs font-medium underline decoration-input underline-offset-2 hover:decoration-current"
+      <Button
+        variant="link"
+        size="sm"
+        className="h-auto shrink-0 gap-1 p-0"
         onClick={() => navigate.toThread(thread.threadId)}
       >
         Open thread
         <Icon name="ArrowUpRight" className="size-3" />
-      </button>
-      <button
-        type="button"
-        aria-label={`Detach ${thread.title}`}
-        title="Detach from task"
-        disabled={busy}
-        className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-state-hover hover:text-foreground disabled:opacity-70"
-        onClick={onDetach}
-      >
-        <Icon name="X" className="size-3" />
-      </button>
+      </Button>
+      <Hint label="Detach from task">
+        <Button
+          variant="ghost"
+          size="icon"
+          aria-label={`Detach ${thread.title}`}
+          disabled={busy}
+          className="size-5 shrink-0 text-muted-foreground"
+          onClick={onDetach}
+        >
+          <Icon name="X" className="size-3" />
+        </Button>
+      </Hint>
     </div>
   );
 }
@@ -298,7 +307,7 @@ export function ThreadsSection({
         onOpenChange={(open) => {
           if (!open) setConfirm(null);
         }}
-        title="Detach thread?"
+        heading="Detach thread?"
         description={
           confirm
             ? `"${confirm.title}" will no longer be listed on this task. The thread itself is not deleted; re-attach it with bb tasks attach.`
