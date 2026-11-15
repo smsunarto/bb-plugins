@@ -420,6 +420,110 @@
   display: none;
 }
 
+/* On a phone the new-thread tray gives way to a list above the card, as in
+   ChatGPT's Codex app: machine, project and branch each get a full-width row
+   with their full label and an up/down chevron. BB still owns the pickers. */
+@media (width < 48rem) {
+  /* BB's promptbox-shell container query hides full labels with a layered
+     !important that no plugin rule can outrank. The rows have room for them,
+     so this composer stops being that container; the card's own promptbox
+     container and t3-composer's container still apply. */
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host][data-promptbox-shell] {
+    container-type: normal;
+  }
+
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host] > [data-new-thread-footer],
+  .dark
+    [data-app-composer][data-t3-composer-host][data-t3-composer-host]
+    > [data-new-thread-footer] {
+    min-height: 0;
+    margin: 0 0 6px;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font-size: 16px;
+  }
+
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host]
+    > [data-new-thread-footer]
+    > div:first-child {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host]
+    > [data-new-thread-footer]
+    button[data-state] {
+    height: 40px;
+    min-height: 40px;
+    max-width: 100%;
+    gap: 12px;
+    padding: 0 16px;
+    border-radius: 10px;
+    color: var(--muted-foreground);
+    font-size: 16px;
+  }
+
+  /* BB lists project, then machine or environment, then branch; the machine
+     comes first because it owns the other two. */
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host]
+    > [data-new-thread-footer]
+    button:is([aria-label="Environment"], [aria-label="Machine"]) {
+    order: -1;
+  }
+
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host]
+    > [data-new-thread-footer]
+    svg:not([viewBox="0 0 16 16"]) {
+    width: 18px;
+    height: 18px;
+  }
+
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host]
+    > [data-new-thread-footer]
+    [data-promptbox-full-label] {
+    display: block;
+  }
+
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host]
+    > [data-new-thread-footer]
+    [data-promptbox-compact-label] {
+    display: none !important;
+  }
+
+  /* Like the design, the branch row names just the branch, not "Current (…)". */
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host]
+    > [data-new-thread-footer]
+    [data-promptbox-hide-compact] {
+    display: none;
+  }
+
+  /* The branch picker colors its name; every row reads as one muted list. */
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host]
+    > [data-new-thread-footer]
+    button[data-state]
+    span {
+    color: inherit;
+    font-size: inherit;
+  }
+
+  [data-app-composer][data-t3-composer-host][data-t3-composer-host]
+    > [data-new-thread-footer]
+    button[data-state]::after {
+    content: "";
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    margin-left: -4px;
+    background: currentColor;
+    opacity: 0.7;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5M7 9l5-5 5 5'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+  }
+}
+
 /* BB stacks banner cards on the composer: plugin prompt banners and its own
    Parent thread, Child threads, and status banners. Each draws a 1px
    border-border edge and a 1px divider over its expanded body, and an active
