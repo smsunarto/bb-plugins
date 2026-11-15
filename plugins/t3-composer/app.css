@@ -60,6 +60,22 @@
   padding: 0;
 }
 
+/* BB's recording bar fills the action row, which BB's main region clips. Its own
+   6px padding and 40px touch buttons made it 52px tall in this 36px row, so it
+   takes the row's height and the composer's button sizes instead. */
+[data-t3-composer][data-promptbox] [data-promptbox-voice-controls] > div {
+  height: 100%;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+[data-t3-composer][data-promptbox] [data-promptbox-voice-controls] button {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
 /* Left cluster: + menu, model pills, permission mode, then other plugins' actions. */
 [data-t3-composer][data-promptbox] [data-t3-composer-actions-menu] {
   order: -3;
@@ -787,7 +803,8 @@
   [data-t3-composer][data-promptbox] [data-t3-composer-actions-menu],
   [data-t3-composer][data-promptbox] [data-t3-composer-voice]:not([data-promptbox-submit-action]),
   [data-t3-composer][data-promptbox] [data-t3-composer-save-draft],
-  [data-t3-composer][data-promptbox] [data-promptbox-submit-action] {
+  [data-t3-composer][data-promptbox] [data-promptbox-submit-action],
+  [data-t3-composer][data-promptbox] [data-promptbox-voice-controls] button {
     width: 36px;
     min-width: 36px;
     height: 36px;
@@ -796,6 +813,17 @@
 
   [data-t3-composer][data-promptbox] [data-t3-composer-submit-kind="MessageSquarePlus"] {
     width: auto;
+  }
+
+  /* BB truncates a failed recording's error to one line and shows the rest in a
+     hover tooltip, which touch cannot open. Wrap it so the whole reason shows. */
+  [data-t3-composer] [data-promptbox-failed-voice-recordings] [role="group"] > p {
+    display: block;
+    white-space: normal;
+  }
+
+  [data-t3-composer] [data-promptbox-failed-voice-recordings] [role="group"] > p > span {
+    white-space: normal;
   }
 
   [data-t3-composer][data-promptbox] [data-promptbox-submit-action] > svg {
