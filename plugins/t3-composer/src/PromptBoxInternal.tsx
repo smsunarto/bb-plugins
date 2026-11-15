@@ -232,6 +232,15 @@ function withUniqueAttachmentNames(
 }
 type VoiceActionTransition = "entering" | "active" | "exiting";
 
+// workaround:t3-composer/empty-voice-transcript begin
+/** bb fails a recording whose transcript is empty; nothing was said, so it is dropped instead. */
+const EMPTY_VOICE_TRANSCRIPT_ERROR = "Voice transcription returned an empty result.";
+
+function isEmptyVoiceTranscript(recording: { errorMessage: string | null }): boolean {
+  return recording.errorMessage === EMPTY_VOICE_TRANSCRIPT_ERROR;
+}
+// workaround:t3-composer/empty-voice-transcript end
+
 function shouldFinishVoiceCompletionTransitionImmediately(): boolean {
   return (
     getMediaQuerySnapshot(REDUCED_MOTION_QUERY) ||
@@ -1190,6 +1199,20 @@ export function PromptBoxInternal({
   const [selectedSuggestionKey, setSelectedSuggestionKey] = useState<string | null>(null);
   const [expandedImageIndex, setExpandedImageIndex] = useState<number | null>(null);
   const [historySession, setHistorySession] = useState<HistorySession | null>(null);
+  // workaround:t3-composer/empty-voice-transcript begin
+  const allFailedVoiceRecordings = voice?.failedRecordings;
+  const discardVoiceRecording = voice?.discard;
+  const failedVoiceRecordings = useMemo(
+    () => allFailedVoiceRecordings?.filter((recording) => !isEmptyVoiceTranscript(recording)) ?? [],
+    [allFailedVoiceRecordings],
+  );
+  useEffect(() => {
+    if (!allFailedVoiceRecordings || !discardVoiceRecording) return;
+    for (const recording of allFailedVoiceRecordings) {
+      if (isEmptyVoiceTranscript(recording)) discardVoiceRecording(recording);
+    }
+  }, [allFailedVoiceRecordings, discardVoiceRecording]);
+  // workaround:t3-composer/empty-voice-transcript end
   const isVoiceRecording = voice?.state === "recording";
   const isVoiceProcessing = voice?.state === "transcribing";
   const showVoiceActionGroup = isVoiceRecording || isVoiceProcessing;
@@ -3086,11 +3109,11 @@ export function PromptBoxInternal({
           {handoff}
         </div>
       ) : null}
-      {voice && voice.failedRecordings.length > 0 ? (
+      {voice && failedVoiceRecordings.length > 0 ? (
         // oxlint-disable-next-line jsx-a11y/no-static-element-interactions -- keeps focus on BB's buttons inside; adds no interaction of its own.
         <div className="contents" onMouseDown={keepEditorFocusOnButtonPress}>
           <FailedVoiceRecordings
-            recordings={voice.failedRecordings}
+            recordings={failedVoiceRecordings}
             className="px-1.5 pt-1.5"
             retryDisabled={false}
             onRetry={voice.retry}

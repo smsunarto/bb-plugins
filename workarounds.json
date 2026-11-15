@@ -57,6 +57,18 @@
       },
       "afterRemoval": ["cd plugins/genui && bun run typecheck && bun run test"],
       "verify": "Collapse and reopen a Code or Snippet block in a GenUI card: the source lines are drawn when it reopens."
+    },
+    {
+      "id": "t3-composer/empty-voice-transcript",
+      "defect": "bb fails a voice recording whose transcript is empty (\"Voice transcription returned an empty result.\") and shows it as a failed recording with Retry and Download, though nothing was said. t3-composer discards those recordings and never shows them.",
+      "verifiedOn": "0.49.0",
+      "files": [],
+      "probe": {
+        "needed": "Voice transcription returned an empty result",
+        "fixed": null
+      },
+      "afterRemoval": ["cd plugins/t3-composer && bun run typecheck && bun run test"],
+      "verify": "On a phone, record a second of silence and stop: no failed-recording card may appear in the composer."
     }
   ]
 }
