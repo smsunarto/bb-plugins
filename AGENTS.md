@@ -134,6 +134,10 @@ Use BB's bundled `bb-plugin-authoring` skill and its `references/testing.md` for
 - Use `bb plugin dev` on the test-owned source when the affected plugin is not already watched on that test instance. Inspect its source, status, logs, or RPC with commands routed to the same test server.
 - Confirm the test instance runs the intended plugin source and current task changes before exercising the flow; a successful check against the live plugin is not verification of the test build.
 - Verify the changed user flow in a browser when rendering or host integration matters. Capture and inspect evidence, remove this run's test records, and close only its browser session.
+- **If the change touches compact UI near a screen edge** (drawers, sheets, toasts, bottom bars): emulate the phone's insets and screen shape. agent-browser's phone preset (`set device "iPhone 16 Pro"`, after `open`) sets only size and pixel ratio, with square corners, zero safe areas, and no touch, so it misses clipping a phone shows.
+  - **Insets:** send the CDP command `Emulation.setSafeAreaInsetsOverride` with `{insets: {top: 62, bottom: 34}}` to the page target behind `agent-browser get cdp-url`; it feeds CSS `env(safe-area-inset-*)`. bb's native shell writes `--bb-safe-area-bottom` on `<html>` instead, so set that to `34px` as well.
+  - **Corners:** no browser or device screenshot shows the display's rounded corners. Mask each screenshot to a rounded rectangle of about 62pt per corner (186px at 3x). The check passes when no content, border, or corner of the UI falls outside the mask.
+  - **Repeat** with zero insets, which matches Android and an open keyboard.
 - Use disposable test state and BB's own QA tooling. Stop only test resources that this task created.
 
 For plugin UI performance investigations, read `.agents/skills/bb-plugin-performance/SKILL.md`.
