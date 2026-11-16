@@ -561,6 +561,97 @@ test("Fix sends the failing checks the reader kept to a composed thread", async 
   });
 });
 
+test("Fix opens as a sheet on a phone", async () => {
+  // bb's compact query: the shared Dialog turns into a drawer with no Radix root under it.
+  const matchMedia = window.matchMedia;
+  window.matchMedia = ((query: string) => ({
+    matches: query.includes("max-width: 767px"),
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia;
+  try {
+    const selected = row("scott/forge-host", { number: 482, title: "Checks fail" });
+    const head = "abc1234def";
+    const check = (name: string, outcome: "passed" | "failed", job: number) => ({
+      name,
+      workflow: "CI",
+      outcome,
+      url: `https://github.com/smsunarto/bb-plugins/actions/runs/1/job/${job}`,
+      startedAt: null,
+      completedAt: null,
+    });
+    const prompts: { head: string; checks: string[] }[] = [];
+    const started: { head: string; projectId: string }[] = [];
+    const slot = render(
+      {
+        inbox: () => ({ smsunarto: read([selected]) }),
+        changeDetail: ({ keys }) => Object.fromEntries(keys.map((k) => [k, detail(selected)])),
+        checksForChange: ({ keys }) =>
+          Object.fromEntries(
+            keys.map((k) => [
+              k,
+              {
+                read: {
+                  value: {
+                    head,
+                    rows: [
+                      check("lint", "failed", 11),
+                      check("test", "failed", 12),
+                      check("build", "passed", 13),
+                    ],
+                    more: false,
+                  },
+                  at: Date.now(),
+                },
+                problem: null,
+              },
+            ]),
+          ),
+        fixChecksPrompt: ({ head: at, checks }) => {
+          prompts.push({ head: at, checks });
+          return {
+            ok: true as const,
+            prompt: "Fix the failing checks",
+            projectId: "proj_1",
+            environment: {
+              type: "host" as const,
+              hostId: "host-a",
+              workspace: {
+                type: "managed-worktree" as const,
+                baseBranch: { kind: "default" as const },
+              },
+            },
+          };
+        },
+        startFix: ({ head: at, request }) => {
+          started.push({ head: at, projectId: request.projectId });
+          return { ok: true as const, threadId: "thr_fix" };
+        },
+      },
+      reviewPath({ key: selected.key }),
+    );
+    expect((await slot.findByTestId("sc-fix-checks")).textContent).toBe("Fix 2 checks");
+    // Leaving one out: Fix takes the rest.
+    fireEvent.click(slot.getByRole("checkbox", { name: "Include test (CI) in Fix" }));
+    expect(slot.getByTestId("sc-fix-checks").textContent).toBe("Fix");
+    fireEvent.click(slot.getByTestId("sc-fix-checks"));
+    const composer = await slot.findByTestId("bb-new-thread-composer");
+    expect(prompts).toEqual([{ head, checks: ["CI:lint"] }]);
+    expect(composer.getAttribute("data-default-project-id")).toBe("proj_1");
+    expect(composer.getAttribute("data-draft-key")).toBe(
+      `source-control-fix:${selected.key}@${head}:CI:lint`,
+    );
+    expect(slot.getByTestId("sc-fix-dialog").textContent).toContain("failing logs of lint");
+  } finally {
+    window.matchMedia = matchMedia;
+  }
+});
+
 test("Fix says so when the checks moved, and starts nothing", async () => {
   const selected = row("scott/forge-host", { number: 482, title: "Checks fail" });
   const slot = render(

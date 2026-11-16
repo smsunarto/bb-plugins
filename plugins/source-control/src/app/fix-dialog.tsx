@@ -26,6 +26,7 @@ import {
 } from "./components/ui/dialog.tsx";
 import { useEscapeLayer, useFocusContainment } from "./escape.ts";
 import { usePortalScopeProps } from "./lib/portal-scope.ts";
+import { useResponsiveOverlayBehavior } from "./components/ui/responsive-overlay.tsx";
 import { cx } from "./format.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
@@ -105,7 +106,7 @@ function FixComposer({ target, onClose }: { target: FixTarget; onClose: () => vo
     // Natural height: the composer sizes its own editor.
     <div
       aria-busy={start.isPending}
-      className={cx("flex min-h-0 shrink-0 flex-col gap-2", start.isPending && "opacity-70")}
+      className={cx("flex shrink-0 flex-col gap-2", start.isPending && "opacity-70")}
     >
       {failure ? (
         <p role="alert" className="m-0 text-[12px] leading-4 text-destructive-text">
@@ -137,6 +138,8 @@ export function FixDialog({ target, onClose }: { target: FixTarget; onClose: () 
   useEscapeLayer(node, onClose, { modal: true });
   useFocusContainment(node);
   const scopeProps = usePortalScopeProps();
+  // On a phone the shared Dialog is a drawer with its own scrim and no Radix root to portal from.
+  const sheet = useResponsiveOverlayBehavior().presentation === "drawer";
   return (
     <Dialog
       modal={false}
@@ -146,9 +149,11 @@ export function FixDialog({ target, onClose }: { target: FixTarget; onClose: () 
       }}
     >
       {/* Radix draws no overlay for a non-modal dialog, so dim the page here. */}
-      <DialogPrimitive.Portal>
-        <div aria-hidden {...scopeProps} className="fixed inset-0 z-50 bg-black/40" />
-      </DialogPrimitive.Portal>
+      {sheet ? null : (
+        <DialogPrimitive.Portal>
+          <div aria-hidden {...scopeProps} className="fixed inset-0 z-50 bg-black/40" />
+        </DialogPrimitive.Portal>
+      )}
       <DialogContent
         ref={node}
         aria-modal="true"
@@ -158,7 +163,11 @@ export function FixDialog({ target, onClose }: { target: FixTarget; onClose: () 
         // The composer takes focus itself once its prompt is ready.
         onOpenAutoFocus={(event) => event.preventDefault()}
         // Scrolls as a whole: bb caps the composer's editor against the viewport, not this dialog.
-        className="max-h-[calc(100%-2rem)] w-[720px] max-w-[calc(100%-2rem)] overflow-y-auto"
+        className={
+          sheet
+            ? undefined
+            : "max-h-[calc(100%-2rem)] w-[720px] max-w-[calc(100%-2rem)] overflow-y-auto"
+        }
       >
         <DialogHeader>
           <DialogTitle>Fix failing checks</DialogTitle>
