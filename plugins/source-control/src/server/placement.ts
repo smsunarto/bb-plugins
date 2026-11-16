@@ -6,25 +6,32 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { Effect } from "effect";
 import type { Placement } from "../core/change.ts";
-import type { Store, ThreadPlacement } from "./store.ts";
+import { HOST_REMOVED, type Store, type ThreadPlacement } from "./store.ts";
 
 export const checkoutId = (placement: { hostId: string; path: string }) =>
   `${placement.hostId}\0${placement.path}`;
+
+const GONE = Symbol("host gone");
+
+/** The SDK's `BbHttpError` carries the HTTP status: 404 is bb's `host_not_found`. */
+function isNotFound(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "status" in error && error.status === 404;
+}
 
 export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () => number }) {
   const { bb, store } = deps;
   const names = new Map<string, string>();
 
+  /** The host's record; `GONE` when bb answers that it has no such machine; null when bb did not answer. */
+  const lookup = (hostId: string) =>
+    Effect.promise(() =>
+      bb.sdk.hosts.get({ hostId }).then(
+        (record) => record,
+        (error: unknown) => (isNotFound(error) ? GONE : null),
+      ),
+    );
   const host = (hostId: string) =>
-    Effect.tryPromise(() => bb.sdk.hosts.get({ hostId })).pipe(Effect.orElseSucceed(() => null));
-
-  const hostName = Effect.fnUntraced(function* (hostId: string) {
-    const known = names.get(hostId);
-    if (known) return known;
-    const name = (yield* host(hostId))?.name ?? hostId;
-    names.set(hostId, name);
-    return name;
-  });
+    lookup(hostId).pipe(Effect.map((record) => (record === GONE ? null : record)));
 
   /** Whether bb has the host connected now. Unknown counts as connected: the call's deadline decides. */
   const connected = (hostId: string) =>
@@ -47,9 +54,14 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
         state: "none",
         reason: `This thread's environment is ${environment.status}.`,
       } as const;
+    // bb keeps a removed machine's environments pointing at it: the machine is what says it is gone.
+    const record = yield* lookup(environment.hostId);
+    if (record === GONE) return { state: "none", reason: HOST_REMOVED } as const;
+    const hostName = names.get(environment.hostId) ?? record?.name ?? environment.hostId;
+    if (record) names.set(environment.hostId, hostName);
     const placement: Placement = {
       hostId: environment.hostId,
-      hostName: yield* hostName(environment.hostId),
+      hostName,
       path: environment.path,
       environmentId: environment.id,
     };

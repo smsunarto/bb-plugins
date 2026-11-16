@@ -129,8 +129,16 @@ export function createReviewSources(deps: {
       if (known.length === 0) return 0;
       const live = new Set(known);
       let rows = 0;
-      for (const hostId of store.hostIds()) if (!live.has(hostId)) rows += forgetHost(hostId);
-      if (rows > 0) yield* Effect.logInfo(`Forgot ${rows} stored rows of machines bb removed.`);
+      const forgotten: string[] = [];
+      for (const hostId of store.hostIds()) {
+        if (live.has(hostId)) continue;
+        rows += forgetHost(hostId);
+        forgotten.push(hostId);
+      }
+      if (rows > 0)
+        yield* Effect.logInfo(
+          `Forgot ${rows} stored rows of machines bb removed: ${forgotten.join(", ")}.`,
+        );
       return rows;
     }),
   );

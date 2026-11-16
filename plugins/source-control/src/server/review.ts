@@ -44,7 +44,11 @@ export function createReview(deps: {
 }) {
   const sources = createReviewSources({
     ...deps,
-    knownHosts: Effect.tryPromise(() => deps.bb.sdk.hosts.list()).pipe(
+    // A machine still being created is listed too, so only removed machines are missing.
+    knownHosts: Effect.tryPromise((signal) =>
+      deps.bb.sdk.hosts.list({ includeCreating: true, signal }),
+    ).pipe(
+      Effect.timeout(deps.deadlineMs),
       Effect.map((hosts) => hosts.map((host) => host.id)),
     ),
   });
