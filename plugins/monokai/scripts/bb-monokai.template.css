@@ -561,6 +561,23 @@
     transition: width 150ms cubic-bezier(0.23, 1, 0.32, 1);
   }
 
+  /* bb slides the page header's left padding (room for the sidebar toggle)
+   * on its own linear 200ms. Against the eased gap, the thread title
+   * overshot by about 14px and crept back. Run it on the gap's timing. */
+  .dark
+    [data-variant="sidebar"][data-side="left"][data-state="expanded"]
+    ~ [data-sidebar="inset"]
+    [data-testid="app-page-header-content-row"] {
+    transition: padding 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .dark
+    [data-variant="sidebar"][data-side="left"][data-state="collapsed"]
+    ~ [data-sidebar="inset"]
+    [data-testid="app-page-header-content-row"] {
+    transition: padding 150ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
   .dark [data-variant="sidebar"][data-side="left"][data-state="expanded"] > [data-sidebar="panel"] {
     transition:
       left 200ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -662,6 +679,10 @@
 @media (min-width: 768px) and (prefers-reduced-motion: reduce) {
   .dark [data-variant="sidebar"][data-side="left"][data-state] > [data-sidebar="gap"],
   .dark [data-variant="sidebar"][data-side="left"][data-state] > [data-sidebar="panel"],
+  .dark
+    [data-variant="sidebar"][data-side="left"][data-state]
+    ~ [data-sidebar="inset"]
+    [data-testid="app-page-header-content-row"],
   .dark [data-collapsible="rail"] [data-sidebar="collapsible-body"],
   .dark [id^="thread-detail-secondary-panel"] > aside[aria-hidden] > div {
     transition: none;
