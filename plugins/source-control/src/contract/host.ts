@@ -25,7 +25,7 @@ import {
   baseHistorySchema,
   commitIdSchema as baseIdSchema,
 } from "../core/history.ts";
-import { timelineItemSchema } from "../core/items.ts";
+import { conversationSchema } from "../core/items.ts";
 import { changeFileSchema, forgeFileSchema, inboxEntrySchema } from "../core/review.ts";
 import {
   baseBranchSchema,
@@ -171,7 +171,10 @@ export const reviewAnswerSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("inbox"), entries: z.array(inboxEntrySchema).max(250) }).strict(),
   z.object({ kind: z.literal("files"), files: z.array(forgeFileSchema).max(3_000) }).strict(),
   z.object({ kind: z.literal("commits"), commits: z.array(commitSchema).max(1_000) }).strict(),
-  z.object({ kind: z.literal("timeline"), items: z.array(timelineItemSchema).max(100) }).strict(),
+  z
+    .object({ kind: z.literal("timeline") })
+    .extend(conversationSchema.shape)
+    .strict(),
   z.object({ kind: z.literal("watch"), read: watchReadSchema }).strict(),
   z.object({ kind: z.literal("landed"), landed: landedSchema }).strict(),
   z.object({ kind: z.literal("prHead"), head: prHeadSchema }).strict(),

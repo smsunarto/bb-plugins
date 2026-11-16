@@ -4,7 +4,7 @@
  * read (`plugins/code-review/src/server/lib/pull-request.ts`), timeline only.
  */
 import type { Repo } from "../core/ids.ts";
-import type { TimelineItem } from "../core/items.ts";
+import type { Conversation, TimelineItem } from "../core/items.ts";
 import { classifyFailure, GhError, type Exec } from "./github.ts";
 
 const ACTOR = "login avatarUrl";
@@ -12,6 +12,7 @@ const ACTOR = "login avatarUrl";
 const TIMELINE = `query($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
+      author { ${ACTOR} } body createdAt url
       timelineItems(last: 100, itemTypes: [ISSUE_COMMENT, PULL_REQUEST_REVIEW, PULL_REQUEST_COMMIT, HEAD_REF_FORCE_PUSHED_EVENT, REVIEW_REQUESTED_EVENT, READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT, MERGED_EVENT, CLOSED_EVENT, REOPENED_EVENT]) {
         nodes {
           __typename
@@ -180,7 +181,7 @@ export async function readTimeline(
   repo: Repo,
   number: number,
   signal?: AbortSignal,
-): Promise<TimelineItem[]> {
+): Promise<Conversation> {
   const body = JSON.stringify({
     query: TIMELINE,
     variables: { owner: repo.owner, name: repo.name, number },
@@ -190,7 +191,13 @@ export async function readTimeline(
     | {
         data?: {
           repository?: {
-            pullRequest?: { timelineItems?: { nodes?: (GqlTimelineItem | null)[] } } | null;
+            pullRequest?: {
+              author?: GqlActor;
+              body?: string;
+              createdAt?: string;
+              url?: string;
+              timelineItems?: { nodes?: (GqlTimelineItem | null)[] };
+            } | null;
           } | null;
         };
         errors?: { message?: string }[];
@@ -204,6 +211,17 @@ export async function readTimeline(
   const error = parsed?.errors?.[0];
   if (error) throw new GhError("failed", error.message ?? "GitHub GraphQL request failed.");
   if (result.code !== 0 || !parsed?.data) throw classifyFailure(result);
-  const nodes = parsed.data.repository?.pullRequest?.timelineItems?.nodes ?? [];
-  return mapTimeline(nodes.filter((node): node is GqlTimelineItem => node !== null));
+  const pr = parsed.data.repository?.pullRequest;
+  const nodes = pr?.timelineItems?.nodes ?? [];
+  return {
+    description: pr
+      ? {
+          author: actor(pr.author),
+          body: pr.body ?? "",
+          createdAt: pr.createdAt ?? "",
+          url: pr.url ?? "",
+        }
+      : null,
+    items: mapTimeline(nodes.filter((node): node is GqlTimelineItem => node !== null)),
+  };
 }

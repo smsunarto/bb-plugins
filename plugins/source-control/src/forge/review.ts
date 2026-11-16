@@ -5,7 +5,7 @@
  */
 import type { Commit, FilePatch, PullRequest } from "../core/change.ts";
 import type { Repo } from "../core/ids.ts";
-import type { TimelineItem } from "../core/items.ts";
+import type { Conversation } from "../core/items.ts";
 import type { MergePolicy } from "../core/merge.ts";
 import type { ChangeFile, ForgeFile, InboxEntry } from "../core/review.ts";
 import { classifyFailure, GhError, type Exec } from "./github.ts";
@@ -419,7 +419,7 @@ export type ReviewAnswer =
   | { kind: "inbox"; entries: InboxEntry[] }
   | { kind: "files"; files: ForgeFile[] }
   | { kind: "commits"; commits: Commit[] }
-  | { kind: "timeline"; items: TimelineItem[] }
+  | ({ kind: "timeline" } & Conversation)
   | { kind: "watch"; read: WatchRead }
   | { kind: "landed"; landed: Landed }
   | { kind: "prHead"; head: PrHead }
@@ -450,7 +450,7 @@ export async function runReviewRead(
         files: await readCompareFiles(exec, read.repo, read.base, read.head, signal),
       };
     case "timeline":
-      return { kind: "timeline", items: await readTimeline(exec, read.repo, read.number, signal) };
+      return { kind: "timeline", ...(await readTimeline(exec, read.repo, read.number, signal)) };
     case "watch":
       return { kind: "watch", read: await readWatch(exec, read.ref, signal) };
     case "landed":

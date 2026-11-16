@@ -522,8 +522,32 @@ export const timelineItemSchema = z.discriminatedUnion("kind", [
 ]);
 export type TimelineItem = z.infer<typeof timelineItemSchema>;
 
+/** The pull request's description: its opening post, as its author wrote it. */
+export const descriptionSchema = z
+  .object({
+    author: actorSchema.nullable(),
+    body: z.string(),
+    createdAt: z.string(),
+    url: z.string(),
+  })
+  .strict();
+export type Description = z.infer<typeof descriptionSchema>;
+
+/** A pull request's conversation: its description and its timeline. */
+export const conversationSchema = z
+  .object({
+    /** Null when GitHub no longer finds the pull request. */
+    description: descriptionSchema.nullable(),
+    items: z.array(timelineItemSchema).max(100),
+  })
+  .strict();
+export type Conversation = z.infer<typeof conversationSchema>;
+
 export const conversationResultSchema = z.discriminatedUnion("ok", [
-  z.object({ ok: z.literal(true), items: z.array(timelineItemSchema).max(100) }).strict(),
+  z
+    .object({ ok: z.literal(true) })
+    .extend(conversationSchema.shape)
+    .strict(),
   z.object({ ok: z.literal(false), problem: problemSchema }).strict(),
 ]);
 export type ConversationResult = z.infer<typeof conversationResultSchema>;

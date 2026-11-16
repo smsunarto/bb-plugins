@@ -555,8 +555,8 @@ export function startsCollapsed(path: string): boolean {
 
 // ── Deep links ─────────────────────────────────────────────────────────
 
-/** Guided first: a Change opens on its reading guide (board A). */
-export const REVIEW_TABS = ["guided", "files", "commits", "conversation"] as const;
+/** Overview first: a Change opens on its description and reading guide (board A). */
+export const REVIEW_TABS = ["overview", "files", "commits", "conversation"] as const;
 export type ReviewTab = (typeof REVIEW_TABS)[number];
 
 export type ReviewLocation = {
@@ -568,7 +568,7 @@ export type ReviewLocation = {
   line: number | null;
 };
 
-const EMPTY: ReviewLocation = { key: null, tab: "guided", commit: null, path: null, line: null };
+const EMPTY: ReviewLocation = { key: null, tab: "overview", commit: null, path: null, line: null };
 
 /**
  * The panel's subPath, `c/<key>/<tab>[/k/<commit>][/f/<path>[/l/<line>]]`,
@@ -602,7 +602,7 @@ export function parseReviewPath(subPath: string): ReviewLocation {
   if (!key.success) return EMPTY;
   const tab = (REVIEW_TABS as readonly string[]).includes(decoded[2] ?? "")
     ? (decoded[2] as ReviewTab)
-    : "guided";
+    : "overview";
   const location: ReviewLocation = { ...EMPTY, key: key.data, tab };
   for (let index = 3; index + 1 < decoded.length; index += 2) {
     const value = decoded[index + 1]!;
@@ -619,7 +619,7 @@ export function parseReviewPath(subPath: string): ReviewLocation {
  * `/`, are encoded here first and survive as one segment each.
  */
 export function reviewPath(location: Partial<ReviewLocation> & { key: ChangeKey }): string {
-  const parts = ["c", encodeURIComponent(location.key), location.tab ?? "guided"];
+  const parts = ["c", encodeURIComponent(location.key), location.tab ?? "overview"];
   if (location.commit) parts.push("k", location.commit);
   if (location.path) {
     parts.push("f", encodeURIComponent(location.path));

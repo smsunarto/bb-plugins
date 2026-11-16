@@ -11,14 +11,15 @@ import {
   experimental_Icon as Icon,
   experimental_useRpcQuery as useRpcQuery,
 } from "@get-bb/plugin-sdk/app";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { describeProblem } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
-import type { TimelineItem } from "../../core/items.ts";
+import type { Description, TimelineItem } from "../../core/items.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { PatchesProblem } from "../file-cards.tsx";
 import { absoluteTime, cx, plural, shortId } from "../format.ts";
 import { Badge, type BadgeProps } from "../components/ui/badge.tsx";
+import { Button } from "../components/ui/button.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
 
@@ -235,14 +236,101 @@ function Activity({ items }: { items: readonly TimelineItem[] }) {
   );
 }
 
-// ── The tab ────────────────────────────────────────────────────────────
-
-function Timeline({ changeKey }: { changeKey: ChangeKey }) {
-  const query = useRpcQuery({
+/** The conversation read, shared by the Conversation tab and the Overview's description. */
+function useConversation(changeKey: ChangeKey) {
+  return useRpcQuery({
     contract: sourceControlContract,
     method: "changeConversation",
     input: { key: changeKey },
   });
+}
+
+/** Past this many characters a description starts clipped, so the guide stays in view. */
+const LONG_DESCRIPTION = 800;
+
+/** The pull request's description as GitHub's opening post: its author, when, and the body. */
+function DescriptionCard({ description }: { description: Description }) {
+  const body = description.body.trim();
+  const long = body.length > LONG_DESCRIPTION;
+  const [expanded, setExpanded] = useState(false);
+  const clipped = long && !expanded;
+  return (
+    <article
+      aria-label="Description"
+      data-testid="sc-description"
+      className="rounded-lg border border-solid border-border bg-card text-[12px] leading-4"
+    >
+      <header className="flex flex-wrap items-center gap-1.5 border-b border-solid border-border-hairline px-3 py-1.5 text-muted-foreground">
+        <Who {...(description.author ?? GHOST)} />
+        opened this
+        <span className="ms-auto">
+          <When at={description.createdAt} href={description.url} />
+        </span>
+      </header>
+      {body ? (
+        <>
+          <div className={cx("relative", clipped && "max-h-48 overflow-hidden")}>
+            <Markdown
+              content={body}
+              className="min-w-0 px-3 py-2 text-xs [overflow-wrap:anywhere]"
+            />
+            {clipped ? (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-linear-to-t from-card"
+              />
+            ) : null}
+          </div>
+          {long ? (
+            <div className="border-t border-solid border-border-hairline px-1.5 py-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-expanded={expanded}
+                onClick={() => setExpanded((open) => !open)}
+              >
+                {expanded ? "Show less" : "Show full description"}
+              </Button>
+            </div>
+          ) : null}
+        </>
+      ) : (
+        <p className="m-0 px-3 py-2 text-muted-foreground italic">No description provided.</p>
+      )}
+    </article>
+  );
+}
+
+/** The Overview's first card: the pull request's description, from the conversation read. */
+export function PullRequestDescription({ changeKey }: { changeKey: ChangeKey }) {
+  const query = useConversation(changeKey);
+  const answer = query.data;
+  if (answer === undefined)
+    return query.error ? (
+      <PatchesProblem text={query.error.message} onRetry={() => void query.refetch()} />
+    ) : (
+      <div
+        aria-busy="true"
+        aria-label="Reading the description"
+        data-testid="sc-description-loading"
+        className="flex flex-col gap-2 rounded-lg border border-solid border-border p-3"
+      >
+        <Skeleton className="h-3 w-1/3" />
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-2/3" />
+      </div>
+    );
+  if (!answer.ok)
+    return (
+      <PatchesProblem text={describeProblem(answer.problem)} onRetry={() => void query.refetch()} />
+    );
+  return answer.description ? <DescriptionCard description={answer.description} /> : null;
+}
+
+// ── The tab ────────────────────────────────────────────────────────────
+
+function Timeline({ changeKey }: { changeKey: ChangeKey }) {
+  const query = useConversation(changeKey);
   const answer = query.data;
   if (answer === undefined)
     return query.error ? (

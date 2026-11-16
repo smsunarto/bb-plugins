@@ -394,10 +394,14 @@ export function createReviewItems(deps: ReviewItemsDeps) {
           .pipe(Effect.result);
         if (answer._tag === "Failure")
           return { ok: false, problem: answer.failure.problem } satisfies ConversationResult;
-        return {
-          ok: true,
-          items: answer.success.kind === "timeline" ? answer.success.items : [],
-        } satisfies ConversationResult;
+        const { success } = answer;
+        return success.kind === "timeline"
+          ? ({
+              ok: true,
+              description: success.description,
+              items: success.items,
+            } satisfies ConversationResult)
+          : ({ ok: true, description: null, items: [] } satisfies ConversationResult);
       }),
   };
 }

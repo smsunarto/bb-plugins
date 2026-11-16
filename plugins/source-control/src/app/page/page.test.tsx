@@ -476,7 +476,7 @@ test("deep links round-trip a key and path holding slashes, colons and spaces", 
   const files = reviewPath({ key: changeKey });
   expect(parseReviewPath(files.split("/").map(encodeURIComponent).join("/"))).toEqual({
     key: changeKey,
-    tab: "guided",
+    tab: "overview",
     commit: null,
     path: null,
     line: null,

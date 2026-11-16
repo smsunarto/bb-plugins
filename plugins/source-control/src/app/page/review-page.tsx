@@ -43,7 +43,7 @@ import { Toggle } from "../components/ui/toggle.tsx";
 import { Hint, OpenOnGitHub, Pending } from "../ui.tsx";
 import { ChangesList } from "./changes-nav.tsx";
 import { CommitsView } from "./commits-view.tsx";
-import { ConversationView } from "./conversation-view.tsx";
+import { ConversationView, PullRequestDescription } from "./conversation-view.tsx";
 import { FilesView, WrapContext } from "./files-view.tsx";
 import { GuidedView, ReviewBar, ViewedProgress } from "./guided-view.tsx";
 import { PANEL_PATH, PHONE, WIDE, useGo, useNow, useWidth, type Go } from "./hooks.ts";
@@ -401,7 +401,7 @@ function ReviewTabs({
   children?: ReactNode;
 }) {
   const tabs: { id: ReviewTab; label: string; count: number | null }[] = [
-    { id: "guided", label: "Guided", count: null },
+    { id: "overview", label: "Overview", count: null },
     { id: "files", label: "Files", count: files },
     { id: "commits", label: "Commits", count: null },
     { id: "conversation", label: "Conversation", count: null },
@@ -619,6 +619,10 @@ function TabBody({
 }) {
   const { key, tab } = location;
   const { revision } = detail;
+  const description =
+    tab === "overview" && detail.row.number !== null ? (
+      <PullRequestDescription changeKey={key} />
+    ) : null;
   if (tab === "conversation")
     return (
       <ConversationView changeKey={key} hasPullRequest={detail.row.number !== null} lead={lead} />
@@ -628,6 +632,7 @@ function TabBody({
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4 px-4 py-4 @3xl:px-6">
           {lead}
+          {description}
           <p
             className="m-0 text-[13px] leading-5 text-muted-foreground"
             data-testid="sc-no-revision"
@@ -639,7 +644,7 @@ function TabBody({
         </div>
       </div>
     );
-  if (tab === "guided")
+  if (tab === "overview")
     return (
       <GuidedView
         changeKey={key}
@@ -649,6 +654,7 @@ function TabBody({
         onPath={onPath}
         // Board E opens on the guide: the rail's sections stay on the other tabs.
         lead={phone ? null : lead}
+        description={description}
         wide={wide}
         phone={phone}
         bar={bar}
@@ -697,7 +703,7 @@ function TabControls({
 }) {
   const { revision } = detail;
   const progress =
-    revision && (location.tab === "guided" || location.tab === "files") ? (
+    revision && (location.tab === "overview" || location.tab === "files") ? (
       <ViewedProgress changeKey={location.key} revision={revision} />
     ) : null;
   return (
@@ -848,7 +854,7 @@ function ReviewReady({
             </aside>
           ) : null}
         </div>
-        {phone && location.tab !== "guided" ? (
+        {phone && location.tab !== "overview" ? (
           <PhoneBar changeKey={key} revision={detail.revision}>
             {barSend}
           </PhoneBar>

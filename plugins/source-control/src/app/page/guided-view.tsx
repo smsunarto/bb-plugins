@@ -1,6 +1,7 @@
 /**
- * The Guided tab (boards A and E): the Change's files in the guide's reading
- * order, with the outline, the summary, each group's intro, a note per file
+ * The Overview tab (boards A and E): the pull request's description, then the
+ * Change's files in the guide's reading order, with the outline, the summary,
+ * each group's intro, a note per file
  * and the viewed boxes. It draws the derived order at once and lays the
  * guide over it when the read lands, through the Files tab's own column and
  * cards: one virtualized diff renderer for both tabs.
@@ -867,6 +868,7 @@ export function GuidedView({
   line,
   onPath,
   lead,
+  description,
   wide,
   phone,
   bar,
@@ -878,6 +880,8 @@ export function GuidedView({
   onPath: (path: string) => void;
   /** Drawn above the guide, inside the scrolling column (the rail on a narrow page). */
   lead?: ReactNode;
+  /** The pull request's description, first under the lead. */
+  description?: ReactNode;
   /** Wide enough for the outline beside the column. */
   wide: boolean;
   /** Board E: larger group intros and the review bar under the column. */
@@ -1002,6 +1006,7 @@ export function GuidedView({
               )}
             >
               {lead}
+              {description}
               <GuideStatus read={read} resolved={resolved} rewrite={rewrite} />
               {resolved.summary ? <SummaryCard summary={resolved.summary} /> : null}
               <ViewerContext.Provider value={viewer}>{body}</ViewerContext.Provider>

@@ -158,6 +158,7 @@ type Server = {
   files: ChangeFile[];
   head: string;
   items: ReviewItem[];
+  description?: string;
   guideRead?: Handlers["guideForChange"];
 };
 
@@ -194,6 +195,16 @@ function handlers(server: Server): Partial<Handlers> {
       server.guide = { ...server.guide, viewed: viewed ? [...rest, { path, blob: at }] : rest };
       return { ok: true as const };
     },
+    changeConversation: () => ({
+      ok: true as const,
+      description: {
+        author: { login: "scott", avatarUrl: null },
+        body: server.description ?? "",
+        createdAt: new Date().toISOString(),
+        url: "https://github.com/o/r/pull/482",
+      },
+      items: [],
+    }),
     agentTargets: () => ({ targets: [] }),
     startReview: () => ({ ok: true as const, threadId: "thread-r", reused: false }),
   };
@@ -212,7 +223,7 @@ function render(server: Server, component: () => React.ReactNode = Guided) {
 }
 
 function Guided() {
-  return <ReviewPanel subPath={reviewPath({ key: KEY, tab: "guided" })} />;
+  return <ReviewPanel subPath={reviewPath({ key: KEY, tab: "overview" })} />;
 }
 
 const order = (root: HTMLElement) =>
@@ -251,7 +262,36 @@ test("the derived order paints while the guide read hangs", async () => {
   const cards = await slot.findByTestId("sc-guided-cards");
   await waitFor(() => expect(order(cards)).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]));
   expect(slot.queryByTestId("sc-guide-summary")).toBeNull();
-  expect(slot.getByTestId("sc-tab-guided").getAttribute("aria-selected")).toBe("true");
+  expect(slot.getByTestId("sc-tab-overview").getAttribute("aria-selected")).toBe("true");
+});
+
+test("the Overview opens on the pull request's description, above the guide", async () => {
+  const slot = render(server({ description: "Fixes the helmet overlap at 4:3." }));
+  const description = await slot.findByTestId("sc-description");
+  expect(description.textContent).toContain("Fixes the helmet overlap at 4:3.");
+  expect(description.textContent).toContain("scott");
+  const cards = await slot.findByTestId("sc-guided-cards");
+  expect(
+    description.compareDocumentPosition(cards) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(slot.getByTestId("sc-tab-overview").textContent).toContain("Overview");
+});
+
+test("a long description starts clipped and opens in full", async () => {
+  const slot = render(server({ description: "word ".repeat(400) }));
+  const description = await slot.findByTestId("sc-description");
+  const toggle = within(description).getByRole("button", { name: "Show full description" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(
+    within(description).getByRole("button", { name: "Show less" }).getAttribute("aria-expanded"),
+  ).toBe("true");
+});
+
+test("an empty description says so", async () => {
+  const slot = render(server());
+  const description = await slot.findByTestId("sc-description");
+  expect(description.textContent).toContain("No description provided.");
 });
 
 test("the guide landing reorders cards without remounting: focus, composer text and collapsed state stay", async () => {
