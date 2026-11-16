@@ -607,13 +607,14 @@ export const FileCard = memo(function FileCard({
       aria-label={file.path}
       className={card}
     >
-      <div className="flex h-9 min-w-0 items-center bg-surface-recessed hover:bg-surface-raised">
+      <div className="flex min-h-9 min-w-0 items-center bg-surface-recessed hover:bg-surface-raised">
         <button
           type="button"
           aria-expanded={open}
           title={file.path}
           onClick={() => onToggle(file.path)}
-          className="flex h-full min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent ps-2.5 pe-3 text-start text-[12px] leading-4"
+          // In a narrow column the note drops to its own line rather than truncating to a word.
+          className="flex min-h-9 min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-2 border-0 bg-transparent ps-2.5 pe-3 text-start text-[12px] leading-4 @max-lg:gap-y-1 @max-lg:py-2"
         >
           <Chevron
             className={cx(
@@ -625,11 +626,11 @@ export const FileCard = memo(function FileCard({
           {note ? (
             <>
               {/* The path keeps its width; the note takes what is left. */}
-              <span className="flex max-w-full min-w-0">
+              <span className="flex max-w-full min-w-0 @max-lg:flex-1">
                 <FileName path={file.path} />
               </span>
               <span
-                className="min-w-0 flex-1 basis-0 truncate text-(--tertiary-foreground)"
+                className="min-w-0 flex-1 basis-0 truncate text-(--tertiary-foreground) @max-lg:order-last @max-lg:line-clamp-2 @max-lg:basis-full @max-lg:ps-10.5 @max-lg:whitespace-normal"
                 data-testid="sc-file-note"
               >
                 {note}

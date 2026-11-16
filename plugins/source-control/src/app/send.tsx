@@ -499,18 +499,27 @@ export function githubBlocked(number: number | null, problem: Problem | null): s
   return null;
 }
 
-const SEGMENT = "h-6 min-w-0 rounded-sm px-3 text-[12px] leading-4 data-[state=on]:font-semibold";
+const SEGMENT = "min-w-0 rounded-sm data-[state=on]:font-semibold";
+/** Desktop's tab row, or the phone's bottom bar, whose controls are finger-sized. */
+const SEGMENT_SIZE = {
+  row: "h-6 px-3 text-[12px] leading-4",
+  bar: "h-8 px-3.5 text-[13px] leading-5",
+} as const;
+type ControlSize = keyof typeof SEGMENT_SIZE;
 
 /** Where the review goes: the agent, or GitHub when the Change has a pull request there. */
 function DestinationToggle({
   destination,
   blocked,
+  size,
   onChange,
 }: {
   destination: Destination;
   blocked: string | null;
+  size: ControlSize;
   onChange: (destination: Destination) => void;
 }) {
+  const segment = cx(SEGMENT, SEGMENT_SIZE[size]);
   return (
     <ToggleGroup
       type="single"
@@ -522,7 +531,7 @@ function DestinationToggle({
       }}
       className="shrink-0 gap-0 rounded-md bg-surface-raised p-1"
     >
-      <ToggleGroupItem value="agent" data-testid="sc-destination-agent" className={SEGMENT}>
+      <ToggleGroupItem value="agent" data-testid="sc-destination-agent" className={segment}>
         Agent
       </ToggleGroupItem>
       <ReasonHint reason={blocked}>
@@ -530,7 +539,7 @@ function DestinationToggle({
           value="github"
           disabled={blocked !== null}
           data-testid="sc-destination-github"
-          className={SEGMENT}
+          className={segment}
         >
           GitHub
         </ToggleGroupItem>
@@ -963,6 +972,13 @@ function useTraySelection(stable: StableReview, destination: Destination) {
   return { items, drafts, onExclude, reset };
 }
 
+/** The Send button's words; in the bar its toggle sits beside it and already names the destination. */
+function triggerLabel(destination: Destination, count: number, bar: boolean): string {
+  if (destination === "github") return bar ? "Submit" : "Submit to GitHub";
+  const send = count > 0 ? `Send ${count}` : "Send";
+  return bar ? send : `${send} to agent`;
+}
+
 /** The pill shows while a batch is under way, and after it until something new is checked. */
 function showsPill(batch: BatchView | null, count: number): batch is BatchView {
   if (!batch) return false;
@@ -980,11 +996,13 @@ export const SendControls = memo(function SendControls({
   number,
   isDraft,
   head,
+  size = "row",
 }: {
   changeKey: ChangeKey;
   number: number | null;
   isDraft: boolean;
   head: string | null;
+  size?: ControlSize;
 }) {
   const { review, stable } = useChangeReview(changeKey);
   const actions = useReviewActions(changeKey);
@@ -998,11 +1016,14 @@ export const SendControls = memo(function SendControls({
   const commands = useBatchCommands(send, batch);
   const count = items.length + drafts.length;
   const pill = showsPill(batch, count);
-  let label = "Submit to GitHub";
-  if (destination === "agent") label = count > 0 ? `Send ${count} to agent` : "Send to agent";
+  const bar = size === "bar";
+  const label = triggerLabel(destination, count, bar);
   return (
     <div
-      className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-3 self-center py-1"
+      className={cx(
+        "ms-auto flex min-w-0 items-center justify-end self-center",
+        bar ? "flex-wrap gap-2" : "flex-wrap gap-3 py-1",
+      )}
       data-testid="sc-send-controls"
     >
       <span className="hidden shrink-0 text-[12px] leading-4 text-(--tertiary-foreground) @3xl:inline">
@@ -1011,6 +1032,7 @@ export const SendControls = memo(function SendControls({
       <DestinationToggle
         destination={destination}
         blocked={blocked}
+        size={size}
         onChange={(next) => actions.setTray({ destination: next, target: stable.tray.target })}
       />
       {pill ? <BatchPill batch={batch} commands={commands} /> : null}
@@ -1021,10 +1043,12 @@ export const SendControls = memo(function SendControls({
               size="sm"
               variant="default"
               data-testid="sc-send"
-              // On a phone the pseudo-element makes the tap target 36px tall; the bar keeps its height.
+              // In the tab row on a phone the pseudo-element makes the tap target 36px tall; the row keeps its height.
               className={cx(
                 PRIMARY,
-                "relative h-6 gap-2 [&_svg]:size-3 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-y-1.5 max-md:pointer-coarse:after:inset-x-0",
+                size === "bar"
+                  ? "h-10 gap-2 rounded-md px-4 text-[14px] [&_svg]:size-3.5"
+                  : "relative h-6 gap-2 [&_svg]:size-3 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-y-1.5 max-md:pointer-coarse:after:inset-x-0",
               )}
             >
               {destination === "agent" ? <Robot size={13} /> : null}

@@ -28,7 +28,7 @@ import { useOpenGuide } from "../guide-data.ts";
 import { MergeButton, mergeTarget, useChangeMerge } from "../merge.tsx";
 import { useChangeReview } from "../review-data.ts";
 import { SendControls } from "../send.tsx";
-import { ShipPath } from "../status.tsx";
+import { DETAIL_TONE, ShipPath } from "../status.tsx";
 import { Badge } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
 import {
@@ -407,14 +407,16 @@ function ReviewTabs({
     >
       <TabsList
         aria-label="Review"
-        className="h-auto justify-start gap-6 rounded-none bg-transparent p-0"
+        // The list overlaps the row's border by a pixel so the active underline sits on it. Under
+        // 24rem, where the four tabs no longer fit, it scrolls sideways rather than clipping one.
+        className="-mb-px h-auto max-w-full justify-start gap-6 rounded-none bg-transparent p-0 [scrollbar-width:none] @max-sm:overflow-x-auto"
       >
         {tabs.map((tab) => (
           <TabsTrigger
             key={tab.id}
             value={tab.id}
             data-testid={`sc-tab-${tab.id}`}
-            className="-mb-px cursor-pointer gap-2 rounded-none border-b-2 border-solid border-b-transparent px-0 py-2 text-[13px] leading-5 font-normal hover:text-foreground data-[state=active]:border-b-foreground data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:shadow-none"
+            className="cursor-pointer gap-2 rounded-none border-b-2 border-solid border-b-transparent px-0 py-2 text-[13px] leading-5 font-normal hover:text-foreground data-[state=active]:border-b-foreground data-[state=active]:bg-transparent data-[state=active]:font-semibold data-[state=active]:shadow-none"
           >
             {tab.label}
             {tab.count !== null ? (
@@ -478,7 +480,11 @@ function Missing({ problem }: { problem: Extract<ChangeDetail, { state: "missing
 
 // ── Phone header (board E) ─────────────────────────────────────────────
 
-/** Board E's compact head: back to the list, the title and number, then state, findings and checks. */
+/**
+ * Board E's compact head: back to the list and the title, then one line of
+ * state, number, findings, checks and viewed progress, so the guide starts
+ * three rows sooner than under the full header.
+ */
 function PhoneHeader({ detail }: { detail: Ready }) {
   const { row } = detail;
   const navigate = useBbNavigate();
@@ -488,10 +494,9 @@ function PhoneHeader({ detail }: { detail: Ready }) {
     (item) => item.state === "open" && item.priority !== null,
   ).length;
   const checks = detail.ship.find((step) => step.id === "checks");
-  const checksText = checks?.detail.map((part) => part.text).join(" · ");
   return (
-    <header className="flex shrink-0 flex-col" data-testid="sc-phone-header">
-      <div className="flex min-w-0 items-center gap-3 px-4 pt-2 pb-3">
+    <header className="flex shrink-0 flex-col gap-2.5 pt-2 pb-3" data-testid="sc-phone-header">
+      <div className="flex min-w-0 items-center gap-3 px-4">
         <Button
           variant="ghost"
           size="icon"
@@ -503,41 +508,42 @@ function PhoneHeader({ detail }: { detail: Ready }) {
           <Chevron className="rotate-90" />
         </Button>
         <h1
-          className="m-0 min-w-0 flex-1 truncate text-[15px] leading-5 font-semibold text-foreground"
+          className="m-0 line-clamp-2 min-w-0 flex-1 text-[15px] leading-5 font-semibold break-words text-foreground"
           data-testid="sc-review-title"
         >
           {row.title}
         </h1>
-        {row.number !== null ? (
-          <span className="shrink-0 text-[13px] leading-5 text-(--tertiary-foreground)">
-            #{row.number}
-          </span>
-        ) : null}
         <PinButton row={detail.row} compact />
         <AskButton compact />
       </div>
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-5 pt-1 pb-3">
-        <span className="flex min-w-0 items-center gap-2 text-[13px] leading-5 text-foreground">
-          <StatusMenu detail={detail} draft={draft} />
-          {open > 0 ? <span>{plural(open, "finding")} to settle</span> : null}
-        </span>
-        {checks && checksText ? (
-          <span
-            className={cx(
-              "text-[13px] leading-5",
-              checks.state === "failed"
-                ? "text-destructive-text"
-                : checks.state === "running"
-                  ? "text-warning"
-                  : "text-muted-foreground",
-            )}
-          >
-            Checks {checksText}
+      {/* One line: the checks give way first, so state, number and progress always show. */}
+      <div className="flex min-w-0 items-center gap-2.5 px-4 text-[13px] leading-5">
+        <StatusMenu detail={detail} draft={draft} />
+        {row.number !== null ? (
+          <span className="shrink-0 font-mono text-(--tertiary-foreground)">#{row.number}</span>
+        ) : null}
+        {open > 0 ? (
+          <span className="shrink-0 text-foreground">{plural(open, "finding")}</span>
+        ) : null}
+        {checks && checks.detail.length > 0 ? (
+          <span className="min-w-0 flex-1 truncate" data-testid="sc-phone-checks">
+            <span className="text-muted-foreground @max-sm:sr-only">Checks</span>
+            {checks.detail.map((part) => (
+              <span key={part.text} className={DETAIL_TONE[part.tone]}>
+                {" "}
+                {part.text}
+              </span>
+            ))}
           </span>
+        ) : (
+          <span className="flex-1" />
+        )}
+        {detail.revision ? (
+          <ViewedProgress changeKey={row.key} revision={detail.revision} compact />
         ) : null}
       </div>
       {draft.message ? (
-        <output className="px-5 pb-2 text-[12px] leading-4 text-warning">{draft.message}</output>
+        <output className="px-4 text-[12px] leading-4 text-warning">{draft.message}</output>
       ) : null}
     </header>
   );
@@ -555,7 +561,7 @@ function TabBody({
   wide,
   phone,
   now,
-  send,
+  bar,
   onPath,
   onCommit,
 }: {
@@ -565,7 +571,8 @@ function TabBody({
   wide: boolean;
   phone: boolean;
   now: number;
-  send: ReactNode;
+  /** The phone's bottom-bar send controls, or null. */
+  bar: ReactNode;
   onPath: (path: string) => void;
   onCommit: (commit: string) => void;
 }) {
@@ -603,7 +610,7 @@ function TabBody({
         lead={phone ? null : lead}
         wide={wide}
         phone={phone}
-        bar={phone ? send : null}
+        bar={bar}
       />
     );
   if (tab === "commits")
@@ -651,19 +658,15 @@ function TabControls({
 }) {
   const { revision } = detail;
   const progress =
-    revision && (location.tab === "guided" || location.tab === "files") ? (
+    revision && !phoneGuided && (location.tab === "guided" || location.tab === "files") ? (
       <ViewedProgress changeKey={location.key} revision={revision} />
     ) : null;
-  if (!progress && phoneGuided) return null;
+  if (phoneGuided) return null;
   return (
     <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-3">
       {progress}
-      {phoneGuided ? null : (
-        <>
-          {progress ? <span aria-hidden className="h-4 w-px shrink-0 bg-border" /> : null}
-          {send}
-        </>
-      )}
+      {progress ? <span aria-hidden className="h-4 w-px shrink-0 bg-border" /> : null}
+      {send}
     </div>
   );
 }
@@ -711,6 +714,15 @@ function ReviewReady({
   );
   // On a phone the guided screen carries the send controls in its bottom bar (board E).
   const phoneGuided = phone && location.tab === "guided";
+  const barSend = phoneGuided ? (
+    <SendControls
+      changeKey={key}
+      number={detail.row.number}
+      isDraft={detail.row.state === "draft"}
+      head={detail.head}
+      size="bar"
+    />
+  ) : null;
   return (
     <FocusContext.Provider value={focus}>
       {phoneGuided ? (
@@ -734,7 +746,7 @@ function ReviewReady({
           wide={wide}
           phone={phone}
           now={now}
-          send={send}
+          bar={barSend}
           onPath={onPath}
           onCommit={onCommit}
         />

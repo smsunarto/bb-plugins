@@ -94,7 +94,7 @@ const LABEL_TONE: Record<ShipStep["state"], string> = {
   failed: "text-muted-foreground",
   todo: "text-(--tertiary-foreground)",
 };
-const DETAIL_TONE = {
+export const DETAIL_TONE = {
   warning: "text-warning",
   error: "text-destructive-text",
   muted: "text-(--tertiary-foreground)",

@@ -607,7 +607,13 @@ function Step({
   label: string;
 }) {
   return (
-    <Button size="sm" variant="ghost" aria-label={label} onClick={onClick} className="size-11 px-0">
+    <Button
+      size="sm"
+      variant="ghost"
+      aria-label={label}
+      onClick={onClick}
+      className="h-full w-10 px-0"
+    >
       <Chevron className={direction < 0 ? "rotate-90" : "-rotate-90"} />
     </Button>
   );
@@ -656,10 +662,13 @@ export function ReviewBar({
   return (
     <div
       data-testid="sc-review-bar"
-      className="flex shrink-0 items-center gap-2 border-t border-solid border-border-hairline bg-sidebar px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+      // bb's shell already pads the page above the home indicator and clips the panel, so the bar
+      // takes the shell's colour to run on into that padding. Where bb gives no inset (Android, an
+      // open keyboard) it keeps 1.5rem below the buttons, clear of the screen's rounded corners.
+      className="flex shrink-0 items-center gap-2 border-t border-solid border-border-hairline bg-background px-4 pt-2.5 pb-[max(0.625rem,calc(1.5rem-var(--bb-content-bottom-inset,0px)))]"
     >
       {items.length > 0 ? (
-        <div className="flex h-11 shrink-0 items-center rounded-[10px] border border-solid border-border">
+        <div className="flex h-10 shrink-0 items-center rounded-md border border-solid border-border">
           <Step direction={-1} label="Previous item" onClick={() => go(-1)} />
           <span
             className="px-1 text-[14px] leading-5 whitespace-pre text-foreground"
@@ -678,13 +687,18 @@ export function ReviewBar({
 
 // ── Progress ───────────────────────────────────────────────────────────
 
-/** "5 of 14 viewed" and its bar, for the tab row (board A). Reads what the tabs already read. */
+/**
+ * "5 of 14 viewed" and its bar, for the tab row (board A); "5/14 viewed" and
+ * a shorter bar in the phone header (board E). Reads what the tabs already read.
+ */
 export const ViewedProgress = memo(function ViewedProgress({
   changeKey,
   revision,
+  compact = false,
 }: {
   changeKey: ChangeKey;
   revision: ReviewRevision;
+  compact?: boolean;
 }) {
   const query = useRpcQuery({
     contract: sourceControlContract,
@@ -702,11 +716,15 @@ export const ViewedProgress = memo(function ViewedProgress({
   const share = Math.round((count / files.length) * 100);
   return (
     <span className="flex shrink-0 items-center gap-2" data-testid="sc-viewed-progress">
-      <span className="text-[12px] leading-4 text-(--tertiary-foreground)">
-        {count} of {files.length} viewed
+      <span className="text-[12px] leading-4 text-(--tertiary-foreground) tabular-nums">
+        {compact ? `${count}/${files.length}` : `${count} of ${files.length}`}
+        <span className={compact ? "@max-sm:sr-only" : undefined}> viewed</span>
       </span>
       {/* The words say it; the bar only draws it. */}
-      <span aria-hidden className="flex h-1 w-16 shrink-0 rounded-full bg-surface-raised">
+      <span
+        aria-hidden
+        className={cx("flex h-1 shrink-0 rounded-full bg-surface-raised", compact ? "w-8" : "w-16")}
+      >
         <span
           className="h-1 shrink-0 rounded-full bg-muted-foreground"
           style={{ width: `${share}%` }}
