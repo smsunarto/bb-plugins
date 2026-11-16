@@ -65,7 +65,7 @@ export function ScriptDialog({
             submit();
           }}
         >
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1">
             <Label htmlFor={`${id}-name`}>Name</Label>
             <Input
               id={`${id}-name`}
@@ -75,7 +75,7 @@ export function ScriptDialog({
               onChange={(event) => setName(event.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-1">
             <Label htmlFor={`${id}-command`}>Command</Label>
             <Textarea
               id={`${id}-command`}
