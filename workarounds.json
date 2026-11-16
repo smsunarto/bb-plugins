@@ -81,6 +81,23 @@
       },
       "afterRemoval": ["cd plugins/vimium && bun run typecheck && bun run test"],
       "verify": "With vimium's bare-key bindings (h, n, s, f), open Search threads and the Quick palette (Mod+K) and type `hens`: the dialog stays open with `hens` in the field."
+    },
+    {
+      "id": "scott-docs/sidebar-fill",
+      "defect": "bb mounts a navPanel's experimental_sidebar in an auto-height block inside the scrolling [data-sidebar=\"content\"] column and offers no fill layout, so a sidebar whose content sizes itself with flex-1 min-h-0 (the Docs notes tree, the Agent instructions project file tree) renders 0px tall.",
+      "verifiedOn": "0.49.0",
+      "files": ["packages/ui/src/sidebar-fill.ts", "packages/ui/test/sidebar-fill.test.ts"],
+      "probe": {
+        "needed": null,
+        "fixed": null
+      },
+      "afterRemoval": [
+        "cd plugins/scott-docs && bun run typecheck && bun run test",
+        "cd plugins/agent-instructions && bun run typecheck && bun run test",
+        "cd packages/ui && bun run test"
+      ],
+      "verify": "Open Docs, then Agent instructions → Projects with a project chosen, in the left sidebar at viewport heights 400 and 1080: each file tree fills the space above its footer or the sidebar bottom, and the outer sidebar does not scroll.",
+      "manual": "Remove the useSidebarColumnFill calls and their root refs in plugins/scott-docs/app.tsx (NotesNavigationPanel) and plugins/agent-instructions/src/app/app.tsx (AgentInstructionsSidebar), then the ./sidebar-fill export in packages/ui/package.json."
     }
   ]
 }

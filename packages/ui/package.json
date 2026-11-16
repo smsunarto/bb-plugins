@@ -13,7 +13,8 @@
     "./separator": "./src/separator.tsx",
     "./badge": "./src/badge.tsx",
     "./table": "./src/table.tsx",
-    "./surface": "./src/surface.ts"
+    "./surface": "./src/surface.ts",
+    "./sidebar-fill": "./src/sidebar-fill.ts"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.3.0",

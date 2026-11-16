@@ -80,6 +80,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useSidebarColumnFill } from "@bb-plugins/ui/sidebar-fill";
 
 interface Vault {
   id: string;
@@ -2334,7 +2335,14 @@ function NotesPanel(props: PluginNavPanelProps) {
 }
 
 function NotesNavigationPanel(props: PluginNavPanelProps) {
-  return <NotesWorkspace {...props} navigationOnly />;
+  const root = useRef<HTMLDivElement>(null);
+  // workaround:scott-docs/sidebar-fill (manual removal; see workarounds.json)
+  useSidebarColumnFill(root);
+  return (
+    <div ref={root} className="flex min-h-0 min-w-0 flex-col">
+      <NotesWorkspace {...props} navigationOnly />
+    </div>
+  );
 }
 
 export default definePluginApp((app) => {
