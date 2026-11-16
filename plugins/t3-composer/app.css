@@ -1028,7 +1028,8 @@
 
 /* BB's project and machine menus, styled like ChatGPT's: a rounded sheet with
    quiet headings and rounded rows. They portal out of the composer, so this
-   applies wherever BB shows them. */
+   applies wherever BB shows them. src/branch-picker-style.ts gives the branch
+   popover the same card. */
 [data-bb-portaled-overlay][role="dialog"]:is([aria-label="Project"], [aria-label="Environment"]) {
   overflow: hidden;
   border: 0.5px solid color-mix(in srgb, var(--foreground) 12%, transparent);
