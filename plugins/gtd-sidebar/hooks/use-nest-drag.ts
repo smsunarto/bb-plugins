@@ -29,6 +29,17 @@ import { DRAG_KIND, sidebarDragPayload, type SidebarDragPayload } from "../lib/s
  */
 const DRAG_DISTANCE_PX = 8;
 
+// Module constants: dnd-kit rebuilds its sensors, and with them the context every row reads,
+// whenever an options object changes identity, so inline literals re-render all rows on
+// each list render.
+const POINTER_SENSOR_OPTIONS = { activationConstraint: { distance: DRAG_DISTANCE_PX } };
+// Space starts and drops; Enter stays the anchor's own open, and the
+// arrows move the pick between droppables only while a drag is live.
+const KEYBOARD_SENSOR_OPTIONS = {
+  coordinateGetter: sortableKeyboardCoordinates,
+  keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] },
+};
+
 /** Droppable ids: one per thread row, one per project header per shelf. */
 export function threadDropId(threadId: string): string {
   return `thread:${threadId}`;
@@ -128,13 +139,8 @@ export function useSidebarDrag({
   const nester = useMemo(() => createThreadNester(sdk.threads), [sdk]);
   const [source, setSource] = useState<SidebarDragPayload | null>(null);
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: DRAG_DISTANCE_PX } }),
-    // Space starts and drops; Enter stays the anchor's own open, and the
-    // arrows move the pick between droppables only while a drag is live.
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-      keyboardCodes: { start: ["Space"], cancel: ["Escape"], end: ["Space"] },
-    }),
+    useSensor(PointerSensor, POINTER_SENSOR_OPTIONS),
+    useSensor(KeyboardSensor, KEYBOARD_SENSOR_OPTIONS),
   );
   const onDragStart = useCommittedEvent((event: DragStartEvent) =>
     setSource(sidebarDragPayload(event.active)),
