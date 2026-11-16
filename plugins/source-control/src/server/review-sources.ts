@@ -41,14 +41,18 @@ export const HOST_LIST_MS = 60_000;
 /** Hosts read at once while the page is open. */
 export const HOST_CONCURRENCY = 3;
 
-/** Every branch of a checkout as rows, from its last read and the stored pull requests. */
-export function rowsOf(store: Store, placement: Placement): ChangeRow[] {
+/**
+ * Every branch of a checkout as rows, from its last read and the stored pull
+ * requests; `listed` keeps only branches with work, as the nav shows them.
+ */
+export function rowsOf(store: Store, placement: Placement, listed = false): ChangeRow[] {
   const workspace = store.local(placement.hostId, placement.path).read?.value;
   if (!workspace) return [];
   return workspaceRows({
     hostId: placement.hostId,
     workspace,
     forgeOf: (key) => store.forge(key).read?.value ?? undefined,
+    listed,
   });
 }
 
@@ -64,7 +68,7 @@ function hostRows(store: Store, hostId: string): SourceRows {
   if (read.length === 0) return { read: null, problem };
   return {
     read: {
-      rows: checkouts.flatMap((placement) => rowsOf(store, placement)),
+      rows: checkouts.flatMap((placement) => rowsOf(store, placement, true)),
       at: Math.min(...read),
     },
     problem,

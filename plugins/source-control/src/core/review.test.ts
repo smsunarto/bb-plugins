@@ -8,7 +8,9 @@ import {
   startsCollapsed,
   type ChangeRow,
   lineTone,
+  workspaceRows,
 } from "./review.ts";
+import type { Branch, WorkspaceValue } from "./change.ts";
 
 const key = (raw: string) => raw as ChangeKey;
 
@@ -177,5 +179,74 @@ describe("the phone line's tone", () => {
     ["local, not pushed", [chip("local", "neutral")], "neutral"],
   ] as const)("%s", (_, chips, tone) => {
     expect(lineTone({ chips: [...chips] })).toBe(tone);
+  });
+});
+
+describe("workspaceRows", () => {
+  function branch(name: string, commits: number): Branch {
+    return {
+      name,
+      head: commits > 0 ? "c0ffee" : null,
+      remote: null,
+      status: commits > 0 ? "unpushed" : "empty",
+      push: "none",
+      ahead: 0,
+      behind: 0,
+      newUpstream: 0,
+      reviewId: null,
+      commits: Array.from({ length: commits }, (_, n) => ({
+        id: `c0ffee${n}`,
+        subject: `${name} commit ${n}`,
+        createdAt: null,
+        conflicted: false,
+      })),
+      moreCommits: 0,
+      upstreamCommits: [],
+    };
+  }
+
+  function gitbutler(branches: Branch[], uncommitted = 0): WorkspaceValue {
+    return {
+      provider: "gitbutler",
+      path: "/srv/bb-plugins",
+      commonDir: "/srv/bb-plugins/.git",
+      checkedOut: null,
+      github: null,
+      uncommitted: Array.from({ length: uncommitted }, (_, n) => ({
+        path: `f${n}.ts`,
+        kind: "modified" as const,
+      })),
+      moreUncommitted: 0,
+      conflicted: [],
+      stacks: [{ key: branches.at(-1)!.name, branches, assigned: [] }],
+      target: { ref: "origin/main", head: "aaa111", behind: 0, base: null, lastFetched: null },
+    };
+  }
+
+  const rows = (workspace: WorkspaceValue, listed: boolean) =>
+    workspaceRows({ hostId: "h1", workspace, forgeOf: () => null, listed });
+
+  test("the nav's rows leave out empty branches and count the stack without them", () => {
+    const workspace = gitbutler([branch("empty-top", 0), branch("work", 2), branch("base", 1)]);
+    const listed = rows(workspace, true);
+    expect(listed.map((row) => [row.branch, row.stack?.position, row.stack?.size])).toEqual([
+      ["work", 2, 2],
+      ["base", 1, 2],
+    ]);
+    // A link still resolves the empty branch.
+    expect(rows(workspace, false).map((row) => row.branch)).toContain("empty-top");
+  });
+
+  test("an empty branch stays listed only while it holds uncommitted work of its own", () => {
+    const workspace = gitbutler([branch("fresh", 0)], 1);
+    // Unassigned edits belong to no branch.
+    expect(rows(workspace, true)).toEqual([]);
+    const assigned: WorkspaceValue = {
+      ...workspace,
+      stacks: [{ ...workspace.stacks[0]!, assigned: [{ path: "a.ts", kind: "modified" }] }],
+    };
+    expect(rows(assigned, true).map((row) => row.branch)).toEqual(["fresh"]);
+    const plain: WorkspaceValue = { ...workspace, provider: "git", checkedOut: "fresh" };
+    expect(rows(plain, true).map((row) => row.branch)).toEqual(["fresh"]);
   });
 });

@@ -198,33 +198,52 @@ const folder = (path: string) =>
 
 /**
  * Every branch of a checkout's workspace as rows, with each branch's pull
- * request from the forge facets the server already holds.
+ * request from the forge facets the server already holds. `listed` leaves
+ * out empty branches, with no commits, pull request or uncommitted work:
+ * the nav lists work, while a link still opens an empty branch's page.
  */
 export function workspaceRows(input: {
   hostId: string;
   workspace: WorkspaceValue;
   forgeOf: (key: ChangeKey) => ForgeValue | undefined;
+  listed?: boolean;
 }): ChangeRow[] {
   const { hostId, workspace } = input;
   const repo = workspace.github
     ? `${workspace.github.repo.owner}/${workspace.github.repo.name}`
     : folder(workspace.commonDir.replace(/[\\/]\.git$/, ""));
   const uncommitted = uncommittedCount(workspace);
-  return workspace.stacks.flatMap((stack: Stack) =>
-    stack.branches.map((branch: Branch, index): ChangeRow => {
+  return workspace.stacks.flatMap((stack: Stack) => {
+    const entries = stack.branches.map((branch: Branch, index) => {
       const key = changeKeyForBranch(hostId, workspace, branch);
-      const pr = input.forgeOf(key);
       const checkedOut =
         workspace.provider === "git" ? workspace.checkedOut === branch.name : index === 0;
+      return { branch, key, pr: input.forgeOf(key), uncommitted: checkedOut ? uncommitted : 0 };
+    });
+    // Under GitButler only files assigned to the stack are its branch's own;
+    // unassigned edits, often other agents', keep no empty branch listed.
+    const hasOwnEdits = (entry: (typeof entries)[number], index: number) =>
+      workspace.provider === "git"
+        ? entry.uncommitted > 0
+        : index === 0 && stack.assigned.length > 0;
+    const kept = input.listed
+      ? entries.filter(
+          (entry, index) =>
+            entry.branch.commits.length > 0 || entry.pr || hasOwnEdits(entry, index),
+        )
+      : entries;
+    return kept.map((entry, index): ChangeRow => {
+      const { branch, key, pr } = entry;
       const summary: ChangeSummary = {
         key,
         branch,
         onGitHub: workspace.github !== null,
-        uncommitted: checkedOut ? uncommitted : 0,
+        uncommitted: entry.uncommitted,
         conflicted: branch.status === "conflicted",
         pullRequest: pr,
         findings: 0,
       };
+      const { line, chips, sort } = derived(summary);
       return {
         key,
         repo,
@@ -241,15 +260,17 @@ export function workspaceRows(input: {
         stack: {
           id: `${hostId}:${workspace.commonDir}:${stack.key}`,
           // Branches are listed top first; the bottom merges first.
-          position: stack.branches.length - index,
-          size: stack.branches.length,
+          position: kept.length - index,
+          size: kept.length,
         },
         hostId,
-        ...derived(summary),
+        line,
+        chips,
+        sort,
         updatedAt: branch.commits[0]?.createdAt ?? null,
       };
-    }),
-  );
+    });
+  });
 }
 
 // ── Merge ──────────────────────────────────────────────────────────────
