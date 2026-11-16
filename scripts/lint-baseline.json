@@ -36,12 +36,6 @@
     "source": ".flatMap((item) => [{ provider: ANNOTATION_MENTION_PROVIDER, ...item }, \" \"]);"
   },
   {
-    "filename": "plugins/devin/src/app/app.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "refresh.current = () => {"
-  },
-  {
     "filename": "plugins/dotfiles/src/app/use-file-editor.ts",
     "code": "react(refs)",
     "message": "Cannot access refs during render",

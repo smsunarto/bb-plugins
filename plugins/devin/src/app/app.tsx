@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import {
@@ -70,13 +70,12 @@ function useCloudSession(threadId: string | null) {
   const { refetch } = session;
   // Panes showing the same thread share one fetch per change. A read already
   // in flight may predate the change, so it gets one follow-up after it.
-  const refresh = useRef(() => {});
-  refresh.current = () => {
+  const refresh = useCallback(() => {
     const key = queryKey("cloudSession", { threadId: threadId ?? "" });
     const inFlight = queryClient.getQueryState(key)?.fetchStatus === "fetching";
     const read = refetch({ cancelRefetch: false });
     if (inFlight) void read.then(() => refetch({ cancelRefetch: false }));
-  };
+  }, [queryClient, threadId, refetch]);
 
   useEffect(() => {
     if (!live) return;
@@ -84,22 +83,22 @@ function useCloudSession(threadId: string | null) {
       event: "thread:changed",
       threadId,
       callback: (event) => {
-        if (event.id === threadId && movesCloudSession(event)) refresh.current();
+        if (event.id === threadId && movesCloudSession(event)) refresh();
       },
     });
-  }, [sdk, threadId, live]);
+  }, [sdk, threadId, live, refresh]);
 
   const lastConnection = useRef(connection);
   useEffect(() => {
     const previous = lastConnection.current;
     lastConnection.current = connection;
-    if (live && connection === "connected" && previous !== "connected") refresh.current();
-  }, [connection, live]);
+    if (live && connection === "connected" && previous !== "connected") refresh();
+  }, [connection, live, refresh]);
 
   useEffect(() => {
     if (!live) return;
-    return composer.onSubmitted(() => refresh.current());
-  }, [composer, live]);
+    return composer.onSubmitted(() => refresh());
+  }, [composer, live, refresh]);
 
   return session.data;
 }
