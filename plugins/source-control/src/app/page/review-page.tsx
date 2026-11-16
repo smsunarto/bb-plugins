@@ -39,7 +39,6 @@ import {
 } from "../components/ui/dropdown-menu.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { Tabs, TabsList, TabsTrigger } from "../components/ui/tabs.tsx";
-import { Toggle } from "../components/ui/toggle.tsx";
 import { Hint, OpenOnGitHub, Pending } from "../ui.tsx";
 import { ChangesList } from "./changes-nav.tsx";
 import { CommitsView } from "./commits-view.tsx";
@@ -201,62 +200,6 @@ function AskButton({ compact }: { compact?: boolean }) {
   );
 }
 
-/** The pull request in `owner/name`, from a row of a GitHub Change; null for a branch without one. */
-function prRefOf(row: Ready["row"]) {
-  const slash = row.repo.indexOf("/");
-  if (row.number === null || slash <= 0) return null;
-  return { owner: row.repo.slice(0, slash), repo: row.repo.slice(slash + 1), number: row.number };
-}
-
-/** Pins the pull request to the Changes list, or unpins it: the list's Pinned filter. */
-function PinButton({ row, compact }: { row: Ready["row"]; compact?: boolean }) {
-  const ref = useMemo(() => prRefOf(row), [row]);
-  const pins = useRpcQuery({ contract: sourceControlContract, method: "pins", input: {} });
-  const setPinned = useRpcMutation({ contract: sourceControlContract, method: "setPinned" });
-  const [chosen, setChosen] = useState<boolean | null>(null);
-  if (!ref) return null;
-  const listed =
-    pins.data?.pins.some(
-      (pin) =>
-        pin.number === ref.number &&
-        `${pin.owner}/${pin.repo}`.toLowerCase() === `${ref.owner}/${ref.repo}`.toLowerCase(),
-    ) ?? false;
-  const pinned = chosen ?? listed;
-  const label = pinned ? "Unpin from the Changes list" : "Pin to the Changes list";
-  return (
-    <Hint label={label}>
-      <Toggle
-        variant="outline"
-        data-testid="sc-pin"
-        pressed={pinned}
-        aria-label={label}
-        disabled={pins.data === undefined || setPinned.isPending}
-        onPressedChange={(next) => {
-          setChosen(next);
-          setPinned.mutate({ ref, pinned: next }).catch(() => setChosen(null));
-        }}
-        className={cx("min-w-0 px-0", compact ? "size-7" : "size-8")}
-      >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 16 16"
-          fill={pinned ? "currentColor" : "none"}
-          aria-hidden
-        >
-          <path
-            d="M9.5 1.5 14.5 6.5 12 7.5 9.5 10 9 13.5 2.5 7 6 6.5 8.5 4z M5.5 10.5 2 14"
-            stroke="currentColor"
-            strokeWidth="1.3"
-            strokeLinejoin="round"
-            strokeLinecap="round"
-          />
-        </svg>
-      </Toggle>
-    </Hint>
-  );
-}
-
 /** Merge for an open pull request, at the head and base the header shows. */
 function PageMerge({ detail, compact }: { detail: Ready; compact?: boolean }) {
   const submit = useChangeMerge();
@@ -370,7 +313,6 @@ function Header({ detail, now }: { detail: Ready; now: number }) {
             label={row.number !== null ? `Open #${row.number} in GitHub` : "Open in GitHub"}
           />
         ) : null}
-        <PinButton row={row} />
         <AskButton />
         <PageMerge detail={detail} />
         {row.state === "draft" && draft.toggle ? (
@@ -545,7 +487,6 @@ function PhoneHeader({ detail, now }: { detail: Ready; now: number }) {
               compact
             />
           ) : null}
-          <PinButton row={detail.row} compact />
           <AskButton compact />
         </span>
       </div>

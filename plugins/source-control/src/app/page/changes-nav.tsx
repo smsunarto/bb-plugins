@@ -552,7 +552,7 @@ const FILTER_EMPTY: Record<Filter, string> = {
   all: "No changes. Open pull requests and checkout branches appear here.",
   mine: "None of these changes are yours.",
   asked: "No one has asked you to review a change.",
-  pinned: "No pinned pull requests. Pin one from its review page.",
+  pinned: "No pinned pull requests.",
 };
 
 /** What the list says instead of rows, or null when it has rows to show. */
