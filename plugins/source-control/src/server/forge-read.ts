@@ -121,16 +121,18 @@ export function createForgeReads(deps: {
     const result =
       action.kind === "setDraft"
         ? yield* deps.sites.setDraft({ ...write, draft: action.draft }, placement)
-        : yield* deps.sites.merge(
-            {
-              repo: write.repo,
-              number: write.number,
-              method: action.method,
-              expectedHead: write.expectedHead,
-              expectedBase: action.base,
-            },
-            [placement],
-          );
+        : action.kind === "close"
+          ? yield* deps.sites.close(write, placement)
+          : yield* deps.sites.merge(
+              {
+                repo: write.repo,
+                number: write.number,
+                method: action.method,
+                expectedHead: write.expectedHead,
+                expectedBase: action.base,
+              },
+              [placement],
+            );
     // Done, already so, moved or unknown: the reader sees GitHub's state either way.
     yield* readForge(threadId, placement);
     return result;

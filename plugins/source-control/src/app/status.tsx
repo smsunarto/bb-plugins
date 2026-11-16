@@ -6,7 +6,7 @@
  */
 import { experimental_useRpcMutation as useRpcMutation } from "@get-bb/plugin-sdk/app";
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { ForgeResult, PullRequest } from "../core/change.ts";
+import type { ForgeAction, ForgeResult, PullRequest } from "../core/change.ts";
 import type { AttentionChip, ShipStep } from "../core/status.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
@@ -211,11 +211,11 @@ export const Chips = memo(function Chips({ chips }: { chips: readonly AttentionC
   );
 });
 
-// ── Draft toggle ───────────────────────────────────────────────────────
+// ── Pull request actions ─────────────────────────────────────────────
 
 export type DraftOutcome = { head: string; result: ForgeResult } | null;
 
-/** What the reader is told after Mark ready or Convert to draft did not simply happen. */
+/** What the reader is told after Mark ready, Convert to draft, or Close did not simply happen. */
 export function draftOutcomeText(outcome: DraftOutcome, pr: PullRequest | null): string | null {
   if (!outcome || !pr || outcome.head !== pr.headRefOid) return null;
   const { result } = outcome;
@@ -226,11 +226,11 @@ export function draftOutcomeText(outcome: DraftOutcome, pr: PullRequest | null):
 }
 
 /**
- * Mark ready or Convert to draft for the thread's pull request, at the head
- * the reader sees. The answer is kept per head, so it clears once GitHub's
- * new state arrives.
+ * Mark ready, Convert to draft, or Close for the thread's open pull request,
+ * at the head the reader sees. The answer is kept per head, so it clears
+ * once GitHub's new state arrives.
  */
-export function useDraftToggle(threadId: string, pr: PullRequest | null) {
+export function usePullRequestActions(threadId: string, pr: PullRequest | null) {
   const mutation = useRpcMutation({ contract: sourceControlContract, method: "forgeAction" });
   const [outcome, setOutcome] = useState<DraftOutcome>(null);
   const pending = mutation.pendingInputs.some((input) => input.threadId === threadId);
@@ -238,36 +238,31 @@ export function useDraftToggle(threadId: string, pr: PullRequest | null) {
   useLayoutEffect(() => {
     mutate.current = mutation.mutate;
   });
-  const toggle = useMemo(
-    () =>
-      pr && pr.state === "open"
-        ? () => {
-            const head = pr.headRefOid;
-            setOutcome(null);
-            mutate
-              .current({
-                threadId,
-                action: { kind: "setDraft", draft: !pr.isDraft },
-                expected: { number: pr.number, head },
-              })
-              .then(
-                (result) => setOutcome({ head, result }),
-                (error: unknown) =>
-                  setOutcome({
-                    head,
-                    result: {
-                      status: "failed",
-                      problem: {
-                        kind: "failed",
-                        site: "GitHub",
-                        detail: error instanceof Error ? error.message : "The request failed.",
-                      },
-                    },
-                  }),
-              );
-          }
-        : null,
-    [pr, threadId],
-  );
-  return { toggle, pending, message: draftOutcomeText(outcome, pr) };
+  const actions = useMemo(() => {
+    if (!pr || pr.state !== "open") return { toggle: null, close: null };
+    const head = pr.headRefOid;
+    const run = (action: ForgeAction) => () => {
+      setOutcome(null);
+      mutate.current({ threadId, action, expected: { number: pr.number, head } }).then(
+        (result) => setOutcome({ head, result }),
+        (error: unknown) =>
+          setOutcome({
+            head,
+            result: {
+              status: "failed",
+              problem: {
+                kind: "failed",
+                site: "GitHub",
+                detail: error instanceof Error ? error.message : "The request failed.",
+              },
+            },
+          }),
+      );
+    };
+    return {
+      toggle: run({ kind: "setDraft", draft: !pr.isDraft }),
+      close: run({ kind: "close" }),
+    };
+  }, [pr, threadId]);
+  return { ...actions, pending, message: draftOutcomeText(outcome, pr) };
 }

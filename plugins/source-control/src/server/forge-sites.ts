@@ -22,8 +22,10 @@ import {
   GhError,
   readAccounts,
   readPullRequest,
+  closeAt,
   setDraftAt,
   submitReviewAt,
+  type CloseWrite,
   type DraftWrite,
   type ReviewSubmitted,
   type ReviewWrite,
@@ -54,6 +56,11 @@ export type HostForge = {
   setDraft(
     hostId: string,
     write: DraftWrite & { account: ForgeAccount },
+    signal: AbortSignal,
+  ): Promise<Outcome<ForgeResult>>;
+  close(
+    hostId: string,
+    write: CloseWrite & { account: ForgeAccount },
     signal: AbortSignal,
   ): Promise<Outcome<ForgeResult>>;
   merge(
@@ -228,16 +235,25 @@ const submitAt = (asAccount: AsAccount, host: HostForge, access: Access, write: 
         host.submitReview(access.hostId!, { ...write, account: access.account }, signal),
       );
 
-/** Marks a pull request draft or ready as the access's account, on the server or through its host. */
-const writeAt = (asAccount: AsAccount, host: HostForge, access: Access, write: DraftWrite) =>
+/** A convergent state write: draft or ready, or close. */
+type StateWrite = { op: "setDraft"; write: DraftWrite } | { op: "close"; write: CloseWrite };
+
+/** Writes a pull request's state as the access's account, on the server or through its host. */
+const writeAt = (asAccount: AsAccount, host: HostForge, access: Access, state: StateWrite) =>
   access.hostId === null
     ? Effect.tryPromise({
-        try: (signal) =>
-          setDraftAt(asAccount(access.account.login, access.account.active), write, signal),
+        try: (signal) => {
+          const exec = asAccount(access.account.login, access.account.active);
+          return state.op === "close"
+            ? closeAt(exec, state.write, signal)
+            : setDraftAt(exec, state.write, signal);
+        },
         catch: (error) => ghRefused(access.site, error),
       })
     : hostAnswer(access, (signal) =>
-        host.setDraft(access.hostId!, { ...write, account: access.account }, signal),
+        state.op === "close"
+          ? host.close(access.hostId!, { ...state.write, account: access.account }, signal)
+          : host.setDraft(access.hostId!, { ...state.write, account: access.account }, signal),
       );
 
 /** Merges a pull request as the access's account, on the server or through its host. Never retried. */
@@ -577,6 +593,31 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
       return { ok: false as const, reason: refusedReason(code), message };
     });
 
+  /**
+   * A state write as the account that read the repository: a write never
+   * falls back to another account. Reads first when none has read it yet.
+   */
+  const stateWrite = (state: StateWrite, placement: Placement | null) =>
+    withinDeadline(
+      Effect.gen(function* () {
+        const repo = repoName(state.write);
+        if (!seen.has(repo)) yield* pullRequest(state.write, placement);
+        const access = seen.get(repo);
+        if (!access)
+          return yield* unavailable({
+            kind: "no-site",
+            host: placement?.hostName ?? SERVER_SITE_NAME,
+          });
+        return yield* writeAt(asAccount, deps.host, access, state).pipe(
+          Effect.mapError((refused) => unavailable(refusedProblem(refused))),
+        );
+      }),
+    ).pipe(
+      Effect.catchTag("ForgeUnavailable", (error) =>
+        Effect.succeed<ForgeResult>({ status: "failed", problem: error.problem }),
+      ),
+    );
+
   return {
     /** Accounts the page can read an inbox as, without waiting on a host. */
     knownAccounts: (placements: readonly Placement[]) =>
@@ -605,31 +646,12 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
           );
         }),
       ),
-    /**
-     * Marks the pull request draft or ready, as the account that read it:
-     * a write never falls back to another account. Reads first when no
-     * account has read the repository yet.
-     */
+    /** Marks the pull request draft or ready. */
     setDraft: (write: DraftWrite, placement: Placement | null) =>
-      withinDeadline(
-        Effect.gen(function* () {
-          const repo = repoName(write);
-          if (!seen.has(repo)) yield* pullRequest(write, placement);
-          const access = seen.get(repo);
-          if (!access)
-            return yield* unavailable({
-              kind: "no-site",
-              host: placement?.hostName ?? SERVER_SITE_NAME,
-            });
-          return yield* writeAt(asAccount, deps.host, access, write).pipe(
-            Effect.mapError((refused) => unavailable(refusedProblem(refused))),
-          );
-        }),
-      ).pipe(
-        Effect.catchTag("ForgeUnavailable", (error) =>
-          Effect.succeed<ForgeResult>({ status: "failed", problem: error.problem }),
-        ),
-      ),
+      stateWrite({ op: "setDraft", write }, placement),
+    /** Closes the pull request without merging. */
+    close: (write: CloseWrite, placement: Placement | null) =>
+      stateWrite({ op: "close", write }, placement),
     /**
      * What merging the pull request needs, read as the account that read the
      * repository (so the permission is the merging account's own).

@@ -323,20 +323,30 @@ export const sourceControlHostContract = defineRpcContract({
     output: outcome(reviewAnswerSchema),
   },
   /**
-   * Marks the pull request draft or ready while its head is still
-   * `expectedHead`. Convergent, so it may be retried.
+   * Marks the pull request draft or ready, or closes it, while its head is
+   * still `expectedHead`. Convergent, so it may be retried.
    */
   forgeWrite: {
     experimental_retryable: true,
-    input: z
-      .object({
-        op: z.literal("pr.setDraft"),
-        ...pullRequestQuery,
-        number: z.number().int().positive(),
-        draft: z.boolean(),
-        expectedHead: z.string().min(1),
-      })
-      .strict(),
+    input: z.discriminatedUnion("op", [
+      z
+        .object({
+          op: z.literal("pr.setDraft"),
+          ...pullRequestQuery,
+          number: z.number().int().positive(),
+          draft: z.boolean(),
+          expectedHead: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          op: z.literal("pr.close"),
+          ...pullRequestQuery,
+          number: z.number().int().positive(),
+          expectedHead: z.string().min(1),
+        })
+        .strict(),
+    ]),
     output: outcome(forgeResultSchema),
   },
   /**

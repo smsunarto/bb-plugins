@@ -185,7 +185,7 @@ export const sourceControlContract = defineRpcContract({
   },
   forgeAction: {
     experimental_description:
-      "Mark the thread's pull request draft or ready for review, or merge it, only while it is still #`expected.number` at `expected.head` (and, for a merge, still targets `action.base`). Returns `conflict` and changes nothing otherwise; already so returns `upToDate`. A merge is never retried: a failed answer may mean it is unknown, so read the pull request again.",
+      "Mark the thread's pull request draft or ready for review, close it, or merge it, only while it is still #`expected.number` at `expected.head` (and, for a merge, still targets `action.base`). Returns `conflict` and changes nothing otherwise; already so returns `upToDate`. A merge is never retried: a failed answer may mean it is unknown, so read the pull request again.",
     input: z
       .object({
         threadId: threadIdSchema,
@@ -275,7 +275,7 @@ export const sourceControlContract = defineRpcContract({
   },
   changeForgeAction: {
     experimental_description:
-      "Mark a Change's pull request draft or ready for review, or merge it, only while it is still #`expected.number` at `expected.head` (and, for a merge, still targets `action.base`). Returns `conflict` and changes nothing otherwise. A merge is never retried.",
+      "Mark a Change's pull request draft or ready for review, close it, or merge it, only while it is still #`expected.number` at `expected.head` (and, for a merge, still targets `action.base`). Returns `conflict` and changes nothing otherwise. A merge is never retried.",
     input: z
       .object({
         key: changeKeySchema,

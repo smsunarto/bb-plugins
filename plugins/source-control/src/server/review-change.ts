@@ -318,16 +318,27 @@ export function createReviewChange(deps: {
                 },
                 placement,
               )
-            : yield* deps.sites.merge(
-                {
-                  repo,
-                  number: expected.number,
-                  method: action.method,
-                  expectedHead: expected.head,
-                  expectedBase: action.base,
-                },
-                placement ? [placement] : [],
-              );
+            : action.kind === "close"
+              ? yield* deps.sites.close(
+                  {
+                    repo,
+                    headOwner,
+                    branch,
+                    number: expected.number,
+                    expectedHead: expected.head,
+                  },
+                  placement,
+                )
+              : yield* deps.sites.merge(
+                  {
+                    repo,
+                    number: expected.number,
+                    method: action.method,
+                    expectedHead: expected.head,
+                    expectedBase: action.base,
+                  },
+                  placement ? [placement] : [],
+                );
         // Done, already so, moved or unknown: the reader sees GitHub's state either way.
         yield* readForge(key);
         return result;

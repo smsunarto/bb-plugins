@@ -52,7 +52,7 @@ import { HistoryCard } from "./history.tsx";
 import { OtherMachinesCard } from "./other-machines.tsx";
 import { CARD, StackLane, UncommittedCard } from "./workspace-lane.tsx";
 import { attentionChips, summarize } from "../core/status.ts";
-import { Chips, useDraftToggle } from "./status.tsx";
+import { Chips, usePullRequestActions } from "./status.tsx";
 
 export function ChangesTab({ threadId }: { threadId: string }) {
   const visible = useTabVisible();
@@ -595,7 +595,7 @@ const CHIP = "h-6 gap-1 rounded-full px-2 [&_svg]:size-3";
 
 /**
  * The pull request's state; for an open one, a menu with Mark ready for
- * review or Convert to draft.
+ * review or Convert to draft, and Close.
  */
 function PullRequestChip({
   threadId,
@@ -607,7 +607,7 @@ function PullRequestChip({
   onGitHub: boolean;
 }) {
   const label = chipLabel(forge, onGitHub);
-  const draft = useDraftToggle(threadId, forge ?? null);
+  const draft = usePullRequestActions(threadId, forge ?? null);
   if (!draft.toggle || !forge)
     return (
       <Badge variant="secondary" data-testid="sc-pr-chip" className={CHIP}>
@@ -639,6 +639,14 @@ function PullRequestChip({
             onSelect={() => draft.toggle?.()}
           >
             {forge.isDraft ? "Mark ready for review" : "Convert to draft"}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            variant="destructive"
+            data-testid="sc-close-pr"
+            disabled={draft.pending}
+            onSelect={() => draft.close?.()}
+          >
+            Close pull request
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

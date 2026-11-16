@@ -284,6 +284,49 @@ test("a Change that conflicts with its base says so in the header and on the shi
   expect(slot.getByTestId("sc-review-page").textContent).toContain("MergedConflicts with main");
 });
 
+test("the status menu closes the reader's own pull request, and offers nothing on another's", async () => {
+  const own = row("scott/own", { number: 7, state: "open" });
+  const theirs = row("mira/theirs", { number: 8, state: "open", mine: false, author: "mira" });
+  const open = { label: "Open", tone: "open" as const, number: 7, noPullRequest: false };
+  const calls: unknown[] = [];
+  const slot = render(
+    {
+      inbox: () => ({ smsunarto: read([own, theirs]) }),
+      changeDetail: ({ keys }) =>
+        Object.fromEntries(
+          keys.map((k) => [k, detail(k === own.key ? own : theirs, { status: open })]),
+        ),
+      changeForgeAction: (input) => {
+        calls.push(input);
+        return { status: "done" as const };
+      },
+    },
+    reviewPath({ key: own.key }),
+  );
+  const chip = await slot.findByTestId("sc-review-state");
+  act(() => {
+    chip.focus();
+    fireEvent.keyDown(chip, { key: "Enter" });
+  });
+  const item = await slot.findByTestId("sc-close-pr", {}, { timeout: 4000 });
+  act(() => {
+    item.focus();
+    fireEvent.keyDown(item, { key: "Enter" });
+  });
+  await waitFor(() => expect(calls).toHaveLength(1));
+  expect(calls[0]).toEqual({
+    key: own.key,
+    action: { kind: "close" },
+    expected: { number: 7, head: "scott/own-head" },
+  });
+
+  act(() => moveTo(reviewPath({ key: theirs.key })));
+  await waitFor(() =>
+    expect(slot.getByTestId("sc-review-title").textContent).toBe("Title of mira/theirs"),
+  );
+  expect(slot.getByTestId("sc-review-state").tagName).not.toBe("BUTTON");
+});
+
 test("a late changeDetail answer for A never draws in B's pane", async () => {
   const a = row("scott/a", { number: 1, title: "Change A" });
   const b = row("scott/b", { number: 2, title: "Change B" });

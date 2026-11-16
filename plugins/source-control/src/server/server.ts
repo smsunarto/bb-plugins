@@ -109,6 +109,8 @@ function forgeCalls(host: HostClient): HostForge {
       host.call("forgeCall", { op: "pr.read", ...query }, options(hostId, signal)),
     setDraft: (hostId, write, signal) =>
       host.call("forgeWrite", { op: "pr.setDraft", ...write }, options(hostId, signal)),
+    close: (hostId, write, signal) =>
+      host.call("forgeWrite", { op: "pr.close", ...write }, options(hostId, signal)),
     // A merge is never retried, and may take GitHub longer than a read.
     merge: (hostId, write, signal) =>
       host.call("forgeMerge", write, { hostId, signal, timeoutMs: MERGE_DEADLINE_MS }),

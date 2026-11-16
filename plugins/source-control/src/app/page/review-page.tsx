@@ -14,7 +14,7 @@ import {
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
 import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { describeProblem, readAgo, type ForgeResult } from "../../core/change.ts";
+import { describeProblem, readAgo, type ForgeAction, type ForgeResult } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import {
   parseReviewPath,
@@ -71,8 +71,12 @@ function outcomeText(outcome: Outcome, head: string | null): string | null {
   return null;
 }
 
-/** Mark ready or Convert to draft, only while the pull request is still at the head the reader sees. */
-function useDraftToggle(detail: Ready) {
+/**
+ * Mark ready, Convert to draft, or Close, only while the pull request is
+ * still at the head the reader sees. Close is offered on the reader's own
+ * pull requests, as Convert to draft is.
+ */
+function useStateActions(detail: Ready) {
   const mutation = useRpcMutation({ contract: sourceControlContract, method: "changeForgeAction" });
   const [outcome, setOutcome] = useState<Outcome>(null);
   const mutate = useRef(mutation.mutate);
@@ -81,41 +85,36 @@ function useDraftToggle(detail: Ready) {
   });
   const { row, head } = detail;
   const pending = mutation.pendingInputs.some((input) => input.key === row.key);
-  const can =
-    row.number !== null &&
-    head !== null &&
-    ((row.state === "draft" && detail.canMarkReady) || (row.state === "open" && row.mine));
-  const toggle = useMemo(
-    () =>
-      can
-        ? () => {
-            setOutcome(null);
-            mutate
-              .current({
-                key: row.key,
-                action: { kind: "setDraft", draft: row.state !== "draft" },
-                expected: { number: row.number!, head: head! },
-              })
-              .then(
-                (result) => setOutcome({ head: head!, result }),
-                (error: unknown) =>
-                  setOutcome({
-                    head: head!,
-                    result: {
-                      status: "failed",
-                      problem: {
-                        kind: "failed",
-                        site: "GitHub",
-                        detail: error instanceof Error ? error.message : "The request failed.",
-                      },
-                    },
-                  }),
-              );
-          }
-        : null,
-    [can, row.key, row.state, row.number, head],
-  );
-  return { toggle, pending, message: outcomeText(outcome, head) };
+  const live = row.number !== null && head !== null;
+  const canToggle =
+    live && ((row.state === "draft" && detail.canMarkReady) || (row.state === "open" && row.mine));
+  const canClose = live && row.mine && (row.state === "draft" || row.state === "open");
+  return useMemo(() => {
+    const run = (action: ForgeAction) => () => {
+      setOutcome(null);
+      mutate.current({ key: row.key, action, expected: { number: row.number!, head: head! } }).then(
+        (result) => setOutcome({ head: head!, result }),
+        (error: unknown) =>
+          setOutcome({
+            head: head!,
+            result: {
+              status: "failed",
+              problem: {
+                kind: "failed",
+                site: "GitHub",
+                detail: error instanceof Error ? error.message : "The request failed.",
+              },
+            },
+          }),
+      );
+    };
+    return {
+      toggle: canToggle ? run({ kind: "setDraft", draft: row.state !== "draft" }) : null,
+      close: canClose ? run({ kind: "close" }) : null,
+      pending,
+      message: outcomeText(outcome, head),
+    };
+  }, [canToggle, canClose, row.key, row.state, row.number, head, pending, outcome]);
 }
 
 /** The status chip's pill, its glyphs at 12px rather than the shared Button's 16px. */
@@ -126,11 +125,11 @@ function StatusMenu({
   draft,
 }: {
   detail: Ready;
-  draft: ReturnType<typeof useDraftToggle>;
+  draft: ReturnType<typeof useStateActions>;
 }) {
   const { state } = detail.row;
   const icon = <StateIcon state={state} size={11} />;
-  if (!draft.toggle)
+  if (!draft.toggle && !draft.close)
     return (
       <Badge variant="secondary" className={CHIP} data-testid="sc-review-state">
         {icon}
@@ -147,9 +146,21 @@ function StatusMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuItem disabled={draft.pending} onSelect={() => draft.toggle?.()}>
-          {state === "draft" ? "Mark ready for review" : "Convert to draft"}
-        </DropdownMenuItem>
+        {draft.toggle ? (
+          <DropdownMenuItem disabled={draft.pending} onSelect={() => draft.toggle?.()}>
+            {state === "draft" ? "Mark ready for review" : "Convert to draft"}
+          </DropdownMenuItem>
+        ) : null}
+        {draft.close ? (
+          <DropdownMenuItem
+            variant="destructive"
+            data-testid="sc-close-pr"
+            disabled={draft.pending}
+            onSelect={() => draft.close?.()}
+          >
+            Close pull request
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -264,7 +275,7 @@ function PageMerge({ detail, compact }: { detail: Ready; compact?: boolean }) {
 
 function Header({ detail, now }: { detail: Ready; now: number }) {
   const { row } = detail;
-  const draft = useDraftToggle(detail);
+  const draft = useStateActions(detail);
   const slash = row.repo.indexOf("/");
   const owner = slash > 0 ? row.repo.slice(0, slash) : null;
   const name = slash > 0 ? row.repo.slice(slash + 1) : row.repo;
@@ -492,7 +503,7 @@ function PhoneHeader({ detail, now }: { detail: Ready; now: number }) {
   const { row } = detail;
   const conflict = conflictText(row);
   const navigate = useBbNavigate();
-  const draft = useDraftToggle(detail);
+  const draft = useStateActions(detail);
   const { stable } = useChangeReview(row.key);
   const open = stable.items.filter(
     (item) => item.state === "open" && item.priority !== null,

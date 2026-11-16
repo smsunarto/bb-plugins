@@ -19,6 +19,7 @@ import {
   readAccounts,
   readPullRequest,
   setDraftAt,
+  closeAt,
   submitReviewAt,
 } from "../forge/github.ts";
 import type { Checkout } from "./checkout.ts";
@@ -311,9 +312,13 @@ export default experimental_defineHostEntry({
         return { ok: false as const, error: ghFailure(error) };
       }
     },
-    async forgeWrite({ op: _op, account, ...write }, { signal }) {
+    async forgeWrite(input, { signal }) {
       try {
-        return { ok: true as const, value: await setDraftAt(ghFor(account), write, signal) };
+        const value =
+          input.op === "pr.close"
+            ? await closeAt(ghFor(input.account), input, signal)
+            : await setDraftAt(ghFor(input.account), input, signal);
+        return { ok: true as const, value };
       } catch (error) {
         if (signal.aborted) throw error;
         return { ok: false as const, error: ghFailure(error) };

@@ -467,6 +467,39 @@ export async function setDraftAt(
   return { status: "done" };
 }
 
+export type CloseWrite = PullRequestQuery & { number: number; expectedHead: string };
+
+/**
+ * Closes the pull request without merging, only while it is still open at
+ * `expectedHead`. Convergent: one already closed is `upToDate`, so a retry
+ * after a lost answer is safe.
+ */
+export async function closeAt(
+  exec: Exec,
+  write: CloseWrite,
+  signal?: AbortSignal,
+): Promise<ForgeResult> {
+  const { pullRequest } = await readPullRequest(exec, write, signal);
+  if (pullRequest && pullRequest.number === write.number && pullRequest.state === "closed")
+    return { status: "upToDate" };
+  if (!pullRequest || pullRequest.number !== write.number || pullRequest.state !== "open")
+    return {
+      status: "conflict",
+      detail: `#${write.number} is no longer this branch's open pull request.`,
+    };
+  if (pullRequest.headRefOid !== write.expectedHead)
+    return {
+      status: "conflict",
+      detail: `#${write.number} moved to ${pullRequest.headRefOid.slice(0, 7)} since you looked.`,
+    };
+  const result = await exec(
+    ["pr", "close", String(write.number), "--repo", `${write.repo.owner}/${write.repo.name}`],
+    { signal },
+  );
+  if (result.code !== 0 || result.failure) throw classifyFailure(result);
+  return { status: "done" };
+}
+
 /** One line comment of a review. */
 export type ReviewComment = {
   path: string;

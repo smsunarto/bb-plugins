@@ -25,7 +25,7 @@ import {
 import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
 import { KEEP_COMPOSER_FOCUS, Pending } from "./ui.tsx";
-import { useDraftToggle } from "./status.tsx";
+import { usePullRequestActions } from "./status.tsx";
 import { Button } from "./components/ui/button.tsx";
 
 /** bb's own changed-files segment, which already counts uncommitted files. */
@@ -257,7 +257,7 @@ function StripShip({ threadId }: { threadId: string }) {
 }
 
 function StripMarkReady({ threadId, summary }: { threadId: string; summary: ChangeSummary }) {
-  const draft = useDraftToggle(threadId, summary.pullRequest ?? null);
+  const draft = usePullRequestActions(threadId, summary.pullRequest ?? null);
   if (!draft.toggle) return null;
   return (
     <span data-bb-plugin="source-control" className="ml-auto flex shrink-0 items-center gap-2">

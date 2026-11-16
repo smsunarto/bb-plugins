@@ -394,6 +394,8 @@ export type ChecksValue = z.infer<typeof checksValueSchema>;
 /** A write to the pull request, made only if its head is still `expected.head`. */
 export const forgeActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("setDraft"), draft: z.boolean() }).strict(),
+  /** Close without merging. Already closed is `upToDate`. */
+  z.object({ kind: z.literal("close") }).strict(),
   /** Merge with `method`, only while it still targets `base`. Never retried. */
   z
     .object({ kind: z.literal("merge"), method: mergeMethodSchema, base: z.string().min(1) })

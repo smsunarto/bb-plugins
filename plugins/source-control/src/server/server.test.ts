@@ -146,7 +146,7 @@ type World = {
   cannotSee?: string[];
   /** The account each pull request read on the server ran as. */
   readAs?: string[];
-  /** Each `gh pr ready` on the server, with the account it ran as. */
+  /** Each `gh pr ready` or `gh pr close` on the server, with the account it ran as. */
   writes?: { login: string; args: readonly string[] }[];
   /** Inbox searches, by the account they ran as, and what GitHub answers. */
   inboxReads?: string[];
@@ -388,7 +388,7 @@ function serverGh(world: World): Exec {
     if (special) return special;
     const token = options?.env?.GH_TOKEN;
     const login = token ? token.replace(/^tok-/, "") : world.serverAccounts[0]!;
-    if (args[0] === "pr" && args[1] === "ready") {
+    if (args[0] === "pr" && (args[1] === "ready" || args[1] === "close")) {
       (world.writes ??= []).push({ login, args });
       if (world.cannotSee?.includes(login))
         return {
@@ -1016,6 +1016,40 @@ describe("accounts", () => {
     });
     expect(world.writes ?? []).toEqual([]);
   });
+
+  const close = (head: string) => ({
+    threadId: "thread-a",
+    action: { kind: "close" as const },
+    expected: { number: 482, head },
+  });
+
+  test("Close runs as the account that read the pull request, at the head the reader saw", async () => {
+    const world = twoAccounts();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("forgeAction", close("0ld"))).toEqual({
+      status: "conflict",
+      detail: "#482 moved to c0ffee since you looked.",
+    });
+    expect(world.writes ?? []).toEqual([]);
+    expect(await harness.behavior.callRpc("forgeAction", close("c0ffee"))).toEqual({
+      status: "done",
+    });
+    expect(world.writes).toEqual([
+      { login: "sms-yui", args: ["pr", "close", "482", "--repo", "smsunarto/bb-plugins"] },
+    ]);
+  });
+
+  test("Close on a pull request already closed is up to date, so a retry is safe", async () => {
+    const world = twoAccounts();
+    world.pullRequests["scott/route-gh"] = [{ ...PR, state: "CLOSED" }];
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await harness.behavior.callRpc("forgeAction", close("c0ffee"))).toEqual({
+      status: "upToDate",
+    });
+    expect(world.writes ?? []).toEqual([]);
+  });
 });
 
 describe("merge", () => {
@@ -1152,6 +1186,22 @@ describe("merge", () => {
       }),
     ).toEqual({ status: "done" });
     expect(world.merged).toMatchObject([{ body: { merge_method: "merge" } }]);
+  });
+
+  test("the review page closes a Change's pull request by its key", async () => {
+    const world = ready();
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(
+      await harness.behavior.callRpc("changeForgeAction", {
+        key: KEY,
+        action: { kind: "close" },
+        expected: { number: 482, head: "c0ffee" },
+      }),
+    ).toEqual({ status: "done" });
+    expect(world.writes).toEqual([
+      { login: "sms-yui", args: ["pr", "close", "482", "--repo", "smsunarto/bb-plugins"] },
+    ]);
   });
 });
 

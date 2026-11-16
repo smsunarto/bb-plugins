@@ -970,6 +970,26 @@ test("the pull request chip's menu marks a draft ready, and Escape closes the me
   expect(screen.queryByRole("menu")).toBeNull();
 });
 
+test("the pull request chip's menu closes the pull request", async () => {
+  const { slot, of } = renderRow(boardB());
+  const chip = await slot.findByTestId("sc-pr-chip");
+  act(() => {
+    chip.focus();
+    fireEvent.keyDown(chip, { key: "Enter" });
+  });
+  const item = screen.getByTestId("sc-close-pr");
+  expect(item.textContent).toBe("Close pull request");
+  act(() => {
+    item.focus();
+    fireEvent.keyDown(item, { key: "Enter" });
+  });
+  await waitFor(() => expect(of("forgeAction")).toHaveLength(1));
+  expect(of("forgeAction")[0]!.input).toMatchObject({
+    action: { kind: "close" },
+    expected: { number: 482, head: "c0ffee" },
+  });
+});
+
 test("a pull request that conflicts with its base says so before its failed checks, everywhere", async () => {
   const { threadStatus } = await import("../core/status.ts");
   const row = boardB();
