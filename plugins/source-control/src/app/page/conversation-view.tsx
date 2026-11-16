@@ -245,6 +245,10 @@ function useConversation(changeKey: ChangeKey) {
   });
 }
 
+/** The Overview's section label, as guided-view's "Read in this order". */
+const SECTION_LABEL =
+  "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
+
 /** Past this many characters a description starts clipped, so the guide stays in view. */
 const LONG_DESCRIPTION = 800;
 
@@ -276,26 +280,35 @@ function DescriptionCard({ description }: { description: Description }) {
   const long = body.length > LONG_DESCRIPTION;
   const [expanded, setExpanded] = useState(false);
   const clipped = long && !expanded;
+  const author = description.author ?? GHOST;
   return (
     <article
       aria-label="Description"
       data-testid="sc-description"
       className="rounded-lg border border-solid border-border bg-card text-[12px] leading-4"
     >
-      <header className="flex flex-wrap items-center gap-1.5 border-b border-solid border-border-hairline px-3 py-1.5 text-muted-foreground">
-        <Who {...(description.author ?? GHOST)} />
-        opened this
-        <span className="ms-auto">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3">
+        <h2 className={SECTION_LABEL}>Description</h2>
+        <span className="ms-auto flex min-w-0 items-center gap-1.5 text-muted-foreground">
+          <GitHubAvatar login={author.login} url={author.avatarUrl} className="size-4" />
+          <span className="truncate font-medium text-foreground">{author.login}</span>
+          <span aria-hidden>·</span>
           <When at={description.createdAt} href={description.url} />
         </span>
       </header>
       {body ? (
         <>
           <div className={cx("relative", clipped && "max-h-64 overflow-hidden")}>
-            <Markdown
-              content={body}
-              className={cx("min-w-0 px-3 py-2.5 [overflow-wrap:anywhere]", DESCRIPTION_TYPOGRAPHY)}
-            />
+            <div className="px-4 pt-2 pb-3">
+              {/* bb widens a table to its nearest clipping ancestor; clipping here keeps it inside the padding. */}
+              <Markdown
+                content={body}
+                className={cx(
+                  "min-w-0 overflow-x-clip [overflow-wrap:anywhere]",
+                  DESCRIPTION_TYPOGRAPHY,
+                )}
+              />
+            </div>
             {clipped ? (
               <div
                 aria-hidden
@@ -317,7 +330,7 @@ function DescriptionCard({ description }: { description: Description }) {
           ) : null}
         </>
       ) : (
-        <p className="m-0 px-3 py-2 text-muted-foreground italic">No description provided.</p>
+        <p className="m-0 px-4 pt-2 pb-3 text-muted-foreground italic">No description provided.</p>
       )}
     </article>
   );

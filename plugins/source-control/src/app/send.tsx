@@ -1047,12 +1047,12 @@ export const SendControls = memo(function SendControls({
               size="sm"
               variant="default"
               data-testid="sc-send"
-              // In the tab row on a phone the pseudo-element makes the tap target 36px tall; the row keeps its height.
+              // Matches the destination toggle's 32px; on a phone the pseudo-element makes the tap target 40px tall.
               className={cx(
                 PRIMARY,
                 size === "bar"
                   ? "h-10 gap-2 rounded-md px-4 text-[14px] [&_svg]:size-3.5"
-                  : "relative h-6 gap-2 [&_svg]:size-3 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-y-1.5 max-md:pointer-coarse:after:inset-x-0",
+                  : "relative h-8 gap-2 [&_svg]:size-3 max-md:pointer-coarse:after:absolute max-md:pointer-coarse:after:-inset-y-1 max-md:pointer-coarse:after:inset-x-0",
               )}
             >
               {destination === "agent" ? <Robot size={13} /> : null}
