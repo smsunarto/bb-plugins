@@ -182,7 +182,7 @@ export function ExecutionSettings({
       {editing ? (
         <div className="space-y-3">
           <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
-            <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1">
               <Label htmlFor={`${fieldId}-project`} className="text-xs font-medium">
                 Project
               </Label>
@@ -207,7 +207,7 @@ export function ExecutionSettings({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1">
               <Label htmlFor={`${fieldId}-workspace`} className="text-xs font-medium">
                 Workspace
               </Label>

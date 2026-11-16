@@ -240,7 +240,7 @@ function RulesList({
               onCheckedChange={(next) => onToggle(rule, next)}
             />
           </div>
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-2 flex flex-wrap gap-2">
             {rule.triggers.map((trigger) => (
               <Chip key={trigger} tone="trigger">
                 {TRIGGER_LABEL[trigger] ?? trigger}
@@ -655,7 +655,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
         </div>
         <fieldset disabled={saving} className="contents">
           <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
-            <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1">
               <Label
                 htmlFor={`${fieldId}-name`}
                 className="text-xs font-semibold text-muted-foreground"
@@ -669,7 +669,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
                 placeholder="security-sweep"
               />
             </div>
-            <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1">
               <Label
                 htmlFor={`${fieldId}-repo`}
                 className="text-xs font-semibold text-muted-foreground"
@@ -686,7 +686,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
           </div>
 
           <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
-            <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1">
               <Label
                 htmlFor={`${fieldId}-mode`}
                 className="text-xs font-semibold text-muted-foreground"
@@ -703,7 +703,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
                 ]}
               />
             </div>
-            <div className="flex min-w-0 flex-col gap-1.5">
+            <div className="flex min-w-0 flex-col gap-1">
               <Label
                 htmlFor={`${fieldId}-visibility`}
                 className="text-xs font-semibold text-muted-foreground"
@@ -721,7 +721,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
               />
             </div>
           </div>
-          <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-1">
             <h3 className="text-sm font-semibold">Run when</h3>
             <ToggleGroup
               type="multiple"
@@ -743,7 +743,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
             ["comment_matches", "pr_description_matches"].includes(trigger),
           ) ? (
             <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
-              <div className="flex min-w-0 flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1">
                 <Label
                   htmlFor={`${fieldId}-keywords`}
                   className="text-xs font-semibold text-muted-foreground"
@@ -758,7 +758,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
                 />
               </div>
               {triggers.includes("comment_matches") ? (
-                <div className="flex min-w-0 flex-col gap-1.5">
+                <div className="flex min-w-0 flex-col gap-1">
                   <Label
                     htmlFor={`${fieldId}-requester`}
                     className="text-xs font-semibold text-muted-foreground"
@@ -783,7 +783,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
             </CollapsibleTrigger>
             <CollapsibleContent className="mt-3 flex flex-col gap-3">
               <div className="grid min-w-0 grid-cols-1 gap-3 @min-[480px]:grid-cols-2">
-                <div className="flex min-w-0 flex-col gap-1.5">
+                <div className="flex min-w-0 flex-col gap-1">
                   <Label
                     htmlFor={`${fieldId}-paths`}
                     className="text-xs font-semibold text-muted-foreground"
@@ -797,7 +797,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
                     placeholder="src/auth/**, src/payments/**"
                   />
                 </div>
-                <div className="flex min-w-0 flex-col gap-1.5">
+                <div className="flex min-w-0 flex-col gap-1">
                   <Label
                     htmlFor={`${fieldId}-branch`}
                     className="text-xs font-semibold text-muted-foreground"
@@ -813,7 +813,7 @@ function RuleEditor({ rule, onDone }: { rule: RuleView | null; onDone: () => voi
                 </div>
               </div>
 
-              <div className="flex min-w-0 flex-col gap-1.5">
+              <div className="flex min-w-0 flex-col gap-1">
                 <Label
                   htmlFor={excludedAuthorsId}
                   className="text-xs font-semibold text-muted-foreground"
@@ -968,10 +968,10 @@ function Activity({ runs }: { runs: Run[] }) {
   return (
     <div className="flex flex-col">
       {runs.map((run) => (
-        <div key={run.id} className="border-b border-border py-2.5 last:border-0">
+        <div key={run.id} className="min-h-10 border-b border-border py-2 last:border-0">
           <div className="flex gap-3">
             <span
-              className={`mt-0.5 h-fit min-w-[104px] rounded-md px-1.5 py-0.5 text-center text-xs font-semibold ${
+              className={`inline-flex h-5 min-w-[104px] items-center justify-center rounded-md px-1 text-xs font-semibold ${
                 STATUS_TONE[run.status]
               }`}
             >
@@ -984,7 +984,7 @@ function Activity({ runs }: { runs: Run[] }) {
                 </span>{" "}
                 <span className="font-medium">{run.prTitle}</span>
               </p>
-              <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-subtle-foreground">
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-subtle-foreground">
                 <span className="text-muted-foreground">{run.ruleName}</span>
                 {run.mode === "shadow" ? <span>shadow</span> : null}
                 <span>{run.trigger.replace(/_/g, " ")}</span>
@@ -1015,7 +1015,7 @@ function Activity({ runs }: { runs: Run[] }) {
                 <p className="mt-1 text-xs text-warning-text">{run.detail}</p>
               ) : null}
               {expanded === run.id ? (
-                <div className="mt-2 flex flex-col gap-1.5 border-l-2 border-border pl-2.5">
+                <div className="mt-2 flex flex-col gap-2 border-l-2 border-border pl-3">
                   {(comments[run.id] ?? []).map((comment, index) => (
                     <div key={index} className="flex gap-2 text-xs">
                       <span className="min-w-[56px] shrink-0 rounded border border-border px-1 text-center font-mono text-subtle-foreground">
@@ -1099,13 +1099,13 @@ function SlopCopPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-1.5 border-b border-border px-4 py-2">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-2">
         <Tabs value={tab} onValueChange={(value) => setTab(value as "rules" | "activity")}>
           <TabsList>
             {(["rules", "activity"] as const).map((value) => (
               <TabsTrigger key={value} value={value} className="capitalize">
                 {value}
-                <Badge variant="count" className="ml-1.5">
+                <Badge variant="count" className="ml-1">
                   {value === "rules" ? rules.length : runs.length}
                 </Badge>
               </TabsTrigger>
