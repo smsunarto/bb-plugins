@@ -13,6 +13,7 @@ import { createRpcClient } from "@/lib/plugin-rpc.ts";
 import {
   activateFeedbackMode,
   FEEDBACK_MODE_LABEL,
+  feedbackModeLauncherLabel,
   feedbackModeSnapshot,
   setFeedbackModeActive,
 } from "@/lib/feedback-mode.ts";
@@ -51,7 +52,7 @@ export default definePluginApp((app) => {
   app.experimental_sidebarFooter.register({
     kind: "action",
     id: "toggle-toolbar",
-    label: FEEDBACK_MODE_LABEL,
+    label: feedbackModeLauncherLabel(navigator.platform),
     icon: "ChatFeedback",
     onActivate: queueToolbarToggle,
   });

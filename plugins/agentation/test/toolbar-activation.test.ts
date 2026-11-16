@@ -2,7 +2,11 @@ import { afterEach, expect, test } from "bun:test";
 import { installDom } from "@bb-plugins/testing";
 import { createElement, useState } from "react";
 import type { AgentationProps } from "../vendor/agentation/dist/index.mjs";
-import { FEEDBACK_MODE_LABEL, feedbackModeLauncher } from "../lib/feedback-mode.ts";
+import {
+  FEEDBACK_MODE_LABEL,
+  feedbackModeLauncher,
+  feedbackModeLauncherLabel,
+} from "../lib/feedback-mode.ts";
 
 installDom();
 const { render, fireEvent, cleanup, waitFor } = await import("@testing-library/react");
@@ -68,4 +72,13 @@ test("an initially active toolbar focuses its controls after mounting", async ()
         ?.shadowRoot?.activeElement?.getAttribute("aria-label"),
     ).toBe("Pause animations"),
   );
+});
+
+test("the footer launcher's tooltip shows the toolbar's shortcut and still finds the launcher", () => {
+  expect(feedbackModeLauncherLabel("MacIntel")).toBe("Toggle Agentation (⇧ ⌘ F)");
+  expect(feedbackModeLauncherLabel("Linux x86_64")).toBe("Toggle Agentation (⌃ ⇧ F)");
+  const view = render(
+    createElement("button", { "aria-label": feedbackModeLauncherLabel("Linux x86_64") }, "Footer"),
+  );
+  expect(feedbackModeLauncher()).toBe(view.getByText("Footer"));
 });
