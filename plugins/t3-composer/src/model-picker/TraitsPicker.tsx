@@ -1,7 +1,8 @@
 // Adapted from T3 Code's TraitsPicker.tsx: the effort word that reads on from the
-// model name, opening Codex's effort panel. The panel's header holds the speed bolt and
-// Daybreak at the left and, on desktop, a reset button at the right; the phone sheet has
-// a larger slider. Daybreak has no SDK setter, so the panel drives BB's own picker for it.
+// model name, opening Codex's effort panel. The panel's header holds the speed bolt at the
+// left and, on desktop, a reset button at the right; Daybreak is a switch row under the
+// slider. The phone sheet has a larger slider. Daybreak has no SDK setter, so the panel
+// drives BB's own picker for it.
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,7 +22,7 @@ import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport
 import { Icon } from "@/components/ui/icon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { AgentSwitchToggle } from "./AgentSwitchToggle";
+import { AGENT_SWITCH, AgentSwitchRow } from "./AgentSwitchRow";
 import {
   BbSwitchMissing,
   DRIVING_ATTRIBUTE,
@@ -89,13 +90,16 @@ export function TraitsPicker(props: {
     attachHost,
     toggle: toggleDaybreak,
   } = useAgentSwitch(
-    daybreak && props.bbPicker ? daybreak.label : null,
+    daybreak && !daybreak.fixed && props.bbPicker ? daybreak.label : null,
     open && panel !== null,
     props,
   );
-  const agentSwitch = daybreak && !daybreakMissing ? daybreak : null;
+  // A fixed value is shown in the panel but, as before, does not mark the pill.
+  const agentSwitch = daybreak && !daybreak.fixed && !daybreakMissing ? daybreak : null;
+  const switchRow = daybreak && !daybreakMissing ? daybreak : null;
   // A missing switch keeps the pill, so a later open can find it again.
-  if (!effort && !speed && !daybreak) return null;
+  // A fixed Daybreak alone gives the pill nothing to change.
+  if (!effort && !speed && (!daybreak || daybreak.fixed)) return null;
 
   const effortWord =
     effort?.options.find((option) => option.id === effort.current)?.label ?? effort?.current;
@@ -116,23 +120,10 @@ export function TraitsPicker(props: {
   ];
   const defaultEffort = effort?.options.find((option) => option.isDefault);
 
-  const leading =
-    speed || agentSwitch ? (
-      <>
-        {speed ? (
-          <SpeedToggle speed={speed} large={isSheet} onChange={props.onSpeedChange} />
-        ) : null}
-        {agentSwitch ? (
-          <AgentSwitchToggle
-            option={agentSwitch}
-            on={daybreakValue}
-            pending={daybreakPending}
-            large={isSheet}
-            onToggle={toggleDaybreak}
-          />
-        ) : null}
-      </>
-    ) : null;
+  const leading = speed ? (
+    <SpeedToggle speed={speed} large={isSheet} onChange={props.onSpeedChange} />
+  ) : null;
+  const agentRow = () => contentRef.current?.querySelector<HTMLElement>(AGENT_SWITCH);
 
   return (
     <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
@@ -190,7 +181,11 @@ export function TraitsPicker(props: {
         }}
         onKeyDown={(event) => {
           if (isSheet) return;
-          const target = panelKeyTarget(event, headerItems(), slider());
+          // Up from the Daybreak switch, below the slider, returns to the slider.
+          const target =
+            event.target === agentRow() && event.key === "ArrowUp"
+              ? slider()
+              : panelKeyTarget(event, headerItems(), slider());
           if (!target) return;
           event.preventDefault();
           target.focus();
@@ -224,13 +219,22 @@ export function TraitsPicker(props: {
               : {
                   onArrowUpDown: (key: "ArrowUp" | "ArrowDown") => {
                     const items = headerItems();
-                    (key === "ArrowUp" ? items.at(-1) : items[0])?.focus();
+                    (key === "ArrowUp" ? items.at(-1) : (agentRow() ?? items[0]))?.focus();
                   },
                 })}
           />
         ) : (
           <div className="flex items-center gap-1">{leading}</div>
         )}
+        {switchRow ? (
+          <AgentSwitchRow
+            option={switchRow}
+            on={switchRow.fixed ? switchRow.fixed.on : daybreakValue}
+            pending={daybreakPending}
+            large={isSheet}
+            onToggle={toggleDaybreak}
+          />
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

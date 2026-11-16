@@ -230,7 +230,7 @@ function ModelControls(props: {
           effort={traits.effort}
           speed={traits.speed}
           daybreak={traits.daybreak}
-          bbPicker={traits.daybreak ? <HostControl /> : null}
+          bbPicker={traits.daybreak && !traits.daybreak.fixed ? <HostControl /> : null}
           switchKey={`${composer.key}|${selection.providerId}|${selection.model ?? ""}`}
           onEffortChange={(reasoningLevel) => apply({ reasoningLevel })}
           onSpeedChange={(serviceTier) => void apply({ serviceTier })}

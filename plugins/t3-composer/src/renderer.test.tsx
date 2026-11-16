@@ -844,9 +844,19 @@ describe("T3 Code model picker", () => {
         expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
       );
       fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
-      // The panel reads the switch from BB's picker, then sets it there.
-      fireEvent.click(await slot.findByRole("menuitem", { name: "Daybreak: off" }));
-      expect(await slot.findByRole("menuitem", { name: "Daybreak: on" })).toBeTruthy();
+      // The switch under the slider waits for BB's picker, reads it, then sets it there.
+      const daybreak = await slot.findByRole("switch", { name: /^Daybreak/ });
+      await waitFor(() => expect(daybreak.getAttribute("aria-checked")).toBe("false"));
+      await waitFor(() => expect(daybreak.hasAttribute("disabled")).toBe(false));
+      // Down from the slider reaches the switch, and Up from the switch returns.
+      const slider = slot.getByRole("slider", { name: "Effort" });
+      slider.focus();
+      fireEvent.keyDown(slider, { key: "ArrowDown" });
+      expect(document.activeElement).toBe(daybreak);
+      fireEvent.keyDown(daybreak, { key: "ArrowUp" });
+      expect(document.activeElement).toBe(slider);
+      fireEvent.click(daybreak);
+      await waitFor(() => expect(daybreak.getAttribute("aria-checked")).toBe("true"));
       expect(await slot.findByRole("button", { name: "Effort: high · Daybreak" })).toBeTruthy();
       // BB's popover closed again, and only the panel is open.
       expect(document.getElementById("fake-bb-popover")).toBeNull();
@@ -868,11 +878,82 @@ describe("T3 Code model picker", () => {
         expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
       );
       fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
-      expect(await slot.findByRole("menuitem", { name: "Daybreak: checking" })).toBeTruthy();
-      await waitFor(() => expect(slot.queryByRole("menuitem", { name: /^Daybreak/ })).toBeNull(), {
+      // Unknown at first: the row shows it is checking and its switch cannot be pressed.
+      const checking = await slot.findByRole("switch", { name: /^Daybreak/ });
+      expect(checking.hasAttribute("disabled")).toBe(true);
+      expect(checking.getAttribute("aria-busy")).toBe("true");
+      expect(checking.closest("label")?.textContent).toContain("Checking…");
+      await waitFor(() => expect(slot.queryByRole("switch", { name: /^Daybreak/ })).toBeNull(), {
         timeout: 4000,
       });
       expect(slot.queryByRole("alert")).toBeNull();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("shows Daybreak fixed by the model as a disabled switch", async () => {
+    window.PointerEvent ??= class extends MouseEvent {} as typeof PointerEvent;
+    const { slot } = await mountComposer(
+      { executionControls: <FakeBbPicker /> },
+      undefined,
+      pickerOptions({ providerId: "codex", model: "gpt-6.1-sol", reasoningLevel: "high" }),
+    );
+    try {
+      const traits = await slot.findByRole("button", { name: "Effort: high" });
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
+      );
+      fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
+      const daybreak = await slot.findByRole("switch", { name: /^Daybreak/ });
+      expect(daybreak.getAttribute("aria-checked")).toBe("false");
+      expect(daybreak.hasAttribute("disabled")).toBe(true);
+      expect(daybreak.closest("label")?.textContent).toContain("Set by this model");
+      // Nothing to read, so BB's picker is never opened.
+      expect(document.getElementById("fake-bb-popover")).toBeNull();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("moves down from the slider past a Daybreak switch the model fixes", async () => {
+    window.PointerEvent ??= class extends MouseEvent {} as typeof PointerEvent;
+    const { slot } = await mountComposer(
+      { executionControls: <FakeBbPicker /> },
+      undefined,
+      pickerOptions({ providerId: "codex", model: "gpt-6.1-sol", reasoningLevel: "low" }),
+    );
+    try {
+      const traits = await slot.findByRole("button", { name: "Effort: low" });
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
+      );
+      fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
+      const daybreak = await slot.findByRole("switch", { name: /^Daybreak/ });
+      expect(daybreak.hasAttribute("disabled")).toBe(true);
+      const slider = slot.getByRole("slider", { name: "Effort" });
+      slider.focus();
+      fireEvent.keyDown(slider, { key: "ArrowDown" });
+      // The disabled switch cannot take focus, so Down goes on to the header, as without one.
+      expect(document.activeElement).toBe(
+        slot.getByRole("menuitem", { name: "Reset effort to high" }),
+      );
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+
+  it("shows no Daybreak switch for a model without the option", async () => {
+    window.PointerEvent ??= class extends MouseEvent {} as typeof PointerEvent;
+    const { slot } = await mountComposer({}, undefined, pickerOptions(OPUS_HIGH));
+    try {
+      const traits = await slot.findByRole("button", { name: "Effort: High" });
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
+      );
+      fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "mouse" });
+      expect(await slot.findByRole("slider", { name: "Effort" })).toBeTruthy();
+      expect(slot.queryByRole("switch")).toBeNull();
     } finally {
       slot.lifecycle.unmount();
     }

@@ -19,6 +19,8 @@ export interface AgentSwitchTrait {
   id: string;
   label: string;
   description?: string;
+  /** Set when the model fixes the option's value; then it shows but cannot change. */
+  fixed?: { on: boolean };
 }
 
 export interface Traits {
@@ -72,14 +74,15 @@ export function buildTraits(
   };
 }
 
-/** The model's on/off option by id, unless the model fixes its value. */
+/** The model's on/off option by id, with its value when the model fixes it. */
 function agentSwitch(model: CatalogModel, id: string): AgentSwitchTrait | null {
   const option = model.sessionOptions?.find((candidate) => candidate.id === id);
-  if (option?.type !== "boolean" || option.fixed === true) return null;
+  if (option?.type !== "boolean") return null;
   return {
     id: option.id,
     label: option.label,
     ...(option.description ? { description: option.description } : {}),
+    ...(option.fixed === true ? { fixed: { on: option.value } } : {}),
   };
 }
 
