@@ -40,7 +40,7 @@ export function HostPicker(): ReactElement | null {
     >
       <SelectTrigger
         aria-label="Machine"
-        className="h-6 w-auto max-w-40 shrink-0 gap-1 px-1.5 py-0.5 text-xs max-md:pointer-coarse:h-9"
+        className="h-6 w-auto max-w-40 shrink-0 gap-1 px-1 py-0 text-xs max-md:pointer-coarse:h-9"
       >
         <SelectValue placeholder="Choose a machine" />
       </SelectTrigger>

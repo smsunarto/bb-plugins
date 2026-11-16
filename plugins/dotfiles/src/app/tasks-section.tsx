@@ -71,7 +71,7 @@ export function TasksSection(): ReactElement {
           </div>
         ) : (
           <>
-            <div className="flex items-center justify-between px-4 py-1.5">
+            <div className="flex min-h-11 items-center justify-between px-4 py-1">
               <span className="text-xs font-medium text-muted-foreground">
                 {tasks.current.id} on {tasks.current.host} — exit {tasks.current.exitCode}
               </span>
