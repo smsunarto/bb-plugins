@@ -1957,6 +1957,102 @@ describe("bb tasks CLI", () => {
     await harness.dispose();
   });
 
+  it("dispatches as a child thread with a base branch", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        projects: {
+          get: async () => ({
+            id: "proj_crew",
+            name: "crew",
+            kind: "standard",
+            sources: [{ hostId: "host_primary", isDefault: true }],
+          }),
+        },
+        hosts: { list: async () => [{ id: "host_primary", name: "dev", status: "connected" }] },
+        threads: {
+          spawn: async () => ({ id: "thr_crew" }),
+          get: async () => makeThreadResponse({ id: "thr_crew", status: "starting" }),
+        },
+      },
+    });
+    await plugin(bb);
+    stdout(
+      await harness.runCli([
+        "project",
+        "create",
+        "--name",
+        "Crew",
+        "--prefix",
+        "CRW",
+        "--link-bb-project",
+        "proj_crew",
+      ]),
+    );
+    stdout(await harness.runCli(["create", "--project", "CRW", "--title", "Crew work"]));
+    stdout(
+      await harness.runCli([
+        "preset",
+        "create",
+        "--name",
+        "Crew worker",
+        "--provider",
+        "codex",
+        "--model",
+        "gpt-5.6-sol",
+        "--reasoning",
+        "high",
+        "--permission",
+        "full",
+      ]),
+    );
+
+    const missingParent = await harness.runCli([
+      "delegate",
+      "CRW-1",
+      "--preset",
+      "Crew worker",
+      "--parent-notifications",
+      "stuck",
+    ]);
+    expect(missingParent).toMatchObject({
+      exitCode: 1,
+      stderr: "--parent-notifications requires --parent-thread\n",
+    });
+
+    const result = await harness.runCli([
+      "delegate",
+      "CRW-1",
+      "--preset",
+      "Crew worker",
+      "--parent-thread",
+      "thr_captain",
+      "--parent-notifications",
+      "stuck",
+      "--base-branch",
+      "scott/captain",
+    ]);
+    expect(stdout(result)).toBe("thr_crew");
+    expect(harness.sdk.callsTo("threads.spawn")).toEqual([
+      [
+        expect.objectContaining({
+          parentThreadId: "thr_captain",
+          parentNotifications: "stuck",
+          environment: {
+            type: "host",
+            hostId: "host_primary",
+            workspace: {
+              type: "managed-worktree",
+              baseBranch: { kind: "named", name: "scott/captain" },
+            },
+          },
+        }),
+      ],
+    ]);
+
+    await harness.dispose();
+  });
+
   it("prints help at every level and never runs a command for it", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
     await plugin(bb);

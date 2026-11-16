@@ -20,7 +20,7 @@ import {
   readAttachmentContent,
   saveAttachmentFromBytes,
 } from "../attachments";
-import { delegationRpcContract } from "../delegate/contract";
+import { delegationRpcContract, PARENT_NOTIFICATIONS } from "../delegate/contract";
 import { handlers as delegationHandlers } from "../delegate";
 import {
   tasksRpcContract,
@@ -2338,10 +2338,36 @@ export function registerTasksCli(
               aliases: ["extra-instructions"],
               description: "Extra instructions for this dispatch only",
             },
+            "parent-thread": {
+              type: "string",
+              placeholder: "thread-id",
+              description:
+                "Spawn the thread as this thread's child, so bb reports its turns there, as in --parent-thread $BB_THREAD_ID",
+            },
+            "parent-notifications": {
+              type: "enum",
+              values: PARENT_NOTIFICATIONS,
+              description:
+                "Which child turns bb reports to the parent: auto (every turn), stuck (only when it needs help) or off; needs --parent-thread",
+            },
+            "base-branch": {
+              type: "string",
+              placeholder: "branch",
+              description:
+                "Start a new worktree from this branch, overriding the preset's environment for this dispatch",
+            },
             json: JSON_OPTION,
           },
           run(input) {
             return guard(async () => {
+              if (
+                input.options["parent-notifications"] !== undefined &&
+                input.options["parent-thread"] === undefined
+              ) {
+                throw new CliError("--parent-notifications requires --parent-thread", {
+                  code: "missing_required",
+                });
+              }
               const task = await resolveTask(domain, input.positionals["key-or-id"]);
               const preset = resolvePreset(await listPresets(domain), input.options.preset);
               const result = delegationRpcContract.delegate.output.parse(
@@ -2350,6 +2376,9 @@ export function registerTasksCli(
                     taskId: task.id,
                     presetId: preset.id,
                     extraInstructions: input.options.instructions,
+                    parentThreadId: input.options["parent-thread"],
+                    parentNotifications: input.options["parent-notifications"],
+                    baseBranch: input.options["base-branch"],
                   }),
                 ),
               );

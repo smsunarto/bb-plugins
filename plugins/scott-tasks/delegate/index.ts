@@ -181,16 +181,22 @@ function managedWorktree(hostId: string, baseBranch: string | null): SpawnEnviro
  * `project-default` always targets the server's primary host, so off that host
  * the plugin applies core's rule itself: a worktree from the default base
  * branch, or the source folder when it is not a git checkout.
+ *
+ * A dispatch's `baseBranchOverride` always means a new worktree from that
+ * branch, on the preset's machine or where the project lives.
  */
 async function presetSpawnEnvironment(
   bb: BbPluginApi,
   preset: Preset,
   bbProjectId: string,
+  baseBranchOverride: string | undefined,
 ): Promise<SpawnEnvironment> {
-  if (preset.machineId !== null) return managedWorktree(preset.machineId, preset.baseBranch);
+  const baseBranch = baseBranchOverride ?? preset.baseBranch;
+  if (preset.machineId !== null) return managedWorktree(preset.machineId, baseBranch);
 
   const project = await bb.sdk.projects.get({ projectId: bbProjectId });
-  const projectDefault = preset.environmentKind === "project-default";
+  const projectDefault =
+    preset.environmentKind === "project-default" && baseBranchOverride === undefined;
   if (projectDefault && project.kind === "personal") return { type: "project-default" };
   const hosts = await bb.sdk.hosts.list();
   const connected = new Set(
@@ -209,7 +215,7 @@ async function presetSpawnEnvironment(
         : `bb project "${project.name}" has no source folder on a connected machine; it lives on ${offline.join(", ")}`,
     );
   }
-  if (!projectDefault) return managedWorktree(source.hostId, preset.baseBranch);
+  if (!projectDefault) return managedWorktree(source.hostId, baseBranch);
   if (source.hostId === (await bb.sdk.system.config()).primaryHostId) {
     return { type: "project-default" };
   }
@@ -328,6 +334,9 @@ export function handlers(
 ): PluginRpcHandlers<typeof delegationRpcContract> {
   return {
     async delegate(input) {
+      if (input.parentNotifications !== undefined && input.parentThreadId === undefined) {
+        throw new Error("parentNotifications needs a parentThreadId");
+      }
       const task = requireTask(store.tasks, input.taskId);
       const project = requireProject(store.tasks, task.projectId);
       const linkedBbProjectId = requireLinkedBbProject(project);
@@ -352,11 +361,20 @@ export function handlers(
         extraInstructions: input.extraInstructions,
       });
 
-      const environment = await presetSpawnEnvironment(bb, preset, linkedBbProjectId);
+      const environment = await presetSpawnEnvironment(
+        bb,
+        preset,
+        linkedBbProjectId,
+        input.baseBranch,
+      );
       const thread = await bb.sdk.threads
         .spawn({
           projectId: linkedBbProjectId,
           environment,
+          ...(input.parentThreadId === undefined ? {} : { parentThreadId: input.parentThreadId }),
+          ...(input.parentNotifications === undefined
+            ? {}
+            : { parentNotifications: input.parentNotifications }),
           providerId: execution.providerId,
           model: execution.model,
           reasoningLevel: execution.reasoningLevel,
