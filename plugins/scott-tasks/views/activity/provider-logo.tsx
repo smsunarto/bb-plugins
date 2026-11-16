@@ -4,7 +4,7 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import type { CommentProvider } from "../../shared/contract.js";
 
-const AVATAR_LAYOUT_CLASS = "z-[1] mt-px flex size-[22px] shrink-0 items-center justify-center";
+const AVATAR_LAYOUT_CLASS = "z-[1] flex size-6 shrink-0 items-center justify-center";
 const PROVIDER_AVATAR_CLASS = `${AVATAR_LAYOUT_CLASS} rounded-full border border-border bg-secondary text-foreground`;
 const FALLBACK_AVATAR_CLASS = `${AVATAR_LAYOUT_CLASS} rounded-full bg-primary text-primary-foreground outline outline-2 outline-background`;
 

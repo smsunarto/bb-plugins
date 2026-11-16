@@ -138,7 +138,7 @@ export function AttachmentChip({
   return (
     <Badge
       variant={broken ? "danger" : "outline"}
-      className="gap-1.5 px-2 py-1 text-xs font-normal"
+      className="gap-1 px-2 py-1 text-xs font-normal"
       title={error}
     >
       {!broken && image ? (

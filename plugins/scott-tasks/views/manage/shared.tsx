@@ -51,7 +51,7 @@ export function ColorSwatchPicker({
       onValueChange={(next) => {
         if (next) onChange(next);
       }}
-      className="flex-wrap justify-start gap-1.5"
+      className="flex-wrap justify-start gap-2"
     >
       {COLOR_PALETTE.map((swatch) => (
         <ToggleGroupItem
@@ -81,11 +81,11 @@ export function Field({
 }) {
   return (
     <div>
-      <Label htmlFor={htmlFor} className="mb-1.5 block text-xs text-muted-foreground">
+      <Label htmlFor={htmlFor} className="mb-1 block text-xs text-muted-foreground">
         {label}
       </Label>
       {children}
-      {hint ? <p className="mt-1.5 text-xs text-muted-foreground">{hint}</p> : null}
+      {hint ? <p className="mt-1 text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   );
 }

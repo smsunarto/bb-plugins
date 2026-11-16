@@ -1995,11 +1995,6 @@
     "source": "background: \"color-mix(in oklab, var(--ink) 55%, transparent)\","
   },
   {
-    "file": "plugins/scott-tasks/views/detail/attachments.tsx",
-    "rule": "raw-color",
-    "source": "style={{ background: \"color-mix(in oklab, var(--ink) 60%, transparent)\" }}"
-  },
-  {
     "file": "plugins/slopcop/execution-settings.tsx",
     "rule": "universal-bucket",
     "source": "<div className=\"min-w-0 space-y-1\">"

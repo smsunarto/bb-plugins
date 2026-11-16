@@ -70,7 +70,7 @@ function TaskPager({
     if (key !== null) onNavigate({ kind: "task", taskKey: key });
   };
   return (
-    <div className="hidden shrink-0 items-center gap-0.5 text-xs tabular-nums text-muted-foreground @sm:flex">
+    <div className="hidden shrink-0 items-center gap-1 text-xs tabular-nums text-muted-foreground @sm:flex">
       <span className="hidden px-1 @md:inline">
         {position.index} / {position.total}
       </span>
@@ -115,12 +115,12 @@ function ViewToggle({
         // Pressing the current view emits "", which still pins that view as before.
         onChange(next === "list" || next === "board" ? next : view);
       }}
-      className="gap-0.5 rounded-md bg-muted p-0.5"
+      className="gap-1 rounded-md bg-muted p-1"
     >
-      <ToggleGroupItem value="list" className="h-6 px-2.5 text-xs max-md:pointer-coarse:h-8">
+      <ToggleGroupItem value="list" className="h-5 px-2 text-xs max-md:pointer-coarse:h-8">
         List
       </ToggleGroupItem>
-      <ToggleGroupItem value="board" className="h-6 px-2.5 text-xs max-md:pointer-coarse:h-8">
+      <ToggleGroupItem value="board" className="h-5 px-2 text-xs max-md:pointer-coarse:h-8">
         Board
       </ToggleGroupItem>
     </ToggleGroup>
@@ -213,7 +213,7 @@ export function TasksTopbar({
         );
       case "task":
         return (
-          <span className="flex min-w-0 items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-2">
             <Button
               variant="ghost"
               size="icon"
@@ -224,7 +224,7 @@ export function TasksTopbar({
               <Icon name="ChevronLeft" className="size-4" />
             </Button>
             <Breadcrumb className="min-w-0">
-              <BreadcrumbList className="flex-nowrap gap-1.5 sm:gap-1.5">
+              <BreadcrumbList className="flex-nowrap gap-2 sm:gap-2">
                 {project ? (
                   <>
                     <BreadcrumbItem className="hidden min-w-0 @md:inline-flex">
@@ -265,7 +265,7 @@ export function TasksTopbar({
   })();
 
   return (
-    <header className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border-hairline bg-background px-3.5 text-sm max-md:h-12 max-md:pl-12 max-md:pointer-coarse:pl-14">
+    <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border-hairline bg-background px-4 text-sm max-md:h-12 max-md:pl-12 max-md:pointer-coarse:pl-14">
       <div className="min-w-0 flex-1 overflow-hidden">{breadcrumb}</div>
       {route.kind === "task" && (pagerScope !== null || projects !== undefined) ? (
         <TaskPager
@@ -283,7 +283,7 @@ export function TasksTopbar({
       {route.kind !== "task" && route.kind !== "manage" ? (
         <Button
           size="sm"
-          className="h-7 gap-1.5 max-md:pointer-coarse:h-9"
+          className="h-7 gap-1 max-md:pointer-coarse:h-9"
           aria-label="New task"
           onClick={onNewTask}
         >

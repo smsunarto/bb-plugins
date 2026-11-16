@@ -149,7 +149,7 @@ export function AttachmentsGrid({
   const fileCard = (attachment: Attachment) => (
     <div
       key={attachment.id}
-      className="flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-sm shadow-2xs"
+      className="flex min-h-12 items-center gap-2 rounded-md border border-border bg-card px-3 py-1 text-sm shadow-2xs"
     >
       <a
         href={attachmentDownloadUrl(attachment.id)}
@@ -183,7 +183,7 @@ export function AttachmentsGrid({
             className="block h-24 w-36 object-cover transition-opacity group-hover:opacity-90"
           />
           <span
-            className="absolute inset-x-0 bottom-0 truncate px-1.5 py-0.5 text-left text-2xs opacity-0 transition-opacity group-hover:opacity-100"
+            className="absolute inset-x-0 bottom-0 h-5 truncate px-1 text-left text-2xs leading-5 opacity-0 transition-opacity group-hover:opacity-100"
             style={{
               background: "color-mix(in oklab, var(--ink) 55%, transparent)",
               color: "var(--canvas)",

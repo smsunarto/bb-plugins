@@ -57,7 +57,7 @@ function UserAvatar({ name }: { name: string }) {
   return (
     <span
       aria-hidden
-      className="z-[1] mt-px flex size-[22px] shrink-0 items-center justify-center rounded-full bg-attention text-2xs font-bold text-background outline outline-2 outline-background"
+      className="z-[1] flex size-6 shrink-0 items-center justify-center rounded-full bg-attention text-2xs font-bold text-background outline outline-2 outline-background"
     >
       {initial}
     </span>
@@ -70,7 +70,7 @@ function FileAttachmentCard({ attachment }: { attachment: Attachment }) {
       href={attachmentDownloadUrl(attachment.id)}
       download={attachment.fileName}
       title={`${attachment.fileName} · ${formatFileSize(attachment.sizeBytes)}`}
-      className="inline-flex min-w-0 max-w-60 items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs shadow-2xs hover:border-input hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      className="inline-flex min-w-0 max-w-60 items-center gap-2 rounded-md border border-border bg-card min-h-11 px-3 py-1 text-xs shadow-2xs hover:border-input hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >
       <span className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-secondary text-muted-foreground">
         <HugeiconsIcon icon={File01Icon} className="size-3.5" />
@@ -98,7 +98,7 @@ function ImageAttachmentFigure({
         type="button"
         aria-label={`View ${attachment.fileName}`}
         title={attachment.fileName}
-        className="block max-w-[211px] rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring @2xl:max-w-[282px]"
+        className="block max-w-53 rounded-md focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring @2xl:max-w-71"
         onClick={() => onOpenImage(attachment)}
       >
         <img
@@ -109,7 +109,7 @@ function ImageAttachmentFigure({
       </button>
       <figcaption
         title={attachment.fileName}
-        className="mt-0.5 w-0 min-w-full truncate px-1 text-center text-2xs text-muted-foreground"
+        className="mt-1 w-0 min-w-full truncate px-1 text-center text-2xs text-muted-foreground"
       >
         {attachment.fileName}
       </figcaption>
@@ -127,9 +127,9 @@ export function AttachmentTracks({
   const files = attachments.filter((attachment) => !attachment.isImage);
   const images = attachments.filter((attachment) => attachment.isImage);
   return (
-    <div className="mt-1.5">
+    <div className="mt-2">
       {files.length > 0 ? (
-        <div className="flex flex-wrap items-start gap-1.5">
+        <div className="flex flex-wrap items-start gap-2">
           {files.map((attachment) => (
             <FileAttachmentCard key={attachment.id} attachment={attachment} />
           ))}
@@ -137,7 +137,7 @@ export function AttachmentTracks({
       ) : null}
       {images.length > 0 ? (
         <div
-          className={cn("flex flex-wrap items-start gap-x-2.5 gap-y-2", files.length > 0 && "mt-2")}
+          className={cn("flex flex-wrap items-start gap-x-3 gap-y-2", files.length > 0 && "mt-2")}
         >
           {images.map((attachment) => (
             <ImageAttachmentFigure
@@ -157,7 +157,7 @@ function SystemEvent({ comment, nowMs }: { comment: Comment; nowMs: number }) {
     <div className="relative z-[1] my-2 flex items-center gap-2 text-xs text-muted-foreground">
       <span
         aria-hidden
-        className="mx-[7px] size-2 shrink-0 rounded-full border-2 border-muted bg-card"
+        className="mx-2 size-2 shrink-0 rounded-full border-2 border-muted bg-card"
       />
       <span className="min-w-0 truncate">
         {splitSystemBody(comment.body, comment.authorName).map((segment, index) =>
@@ -183,14 +183,14 @@ function CommentCard({ comment, nowMs }: { comment: DisplayComment; nowMs: numbe
   const navigate = useBbNavigate();
   const [lightbox, setLightbox] = useState<Attachment | null>(null);
   return (
-    <div className="relative mb-3.5 flex gap-2.5">
+    <div className="relative mb-4 flex gap-2">
       {source.kind === "agent" ? (
         <CommentProviderAvatar provider={source.provider} />
       ) : (
         <UserAvatar name={comment.authorName} />
       )}
       <div className="min-w-0 flex-1">
-        <div className="mb-0.5 flex items-baseline gap-1.5 text-xs">
+        <div className="mb-1 flex items-baseline gap-1 text-xs">
           <CommentAuthor comment={comment} onOpenThread={navigate.toThread} />
           <time className="text-2xs text-muted-foreground">
             {formatRelativeTime(comment.createdAt, nowMs)}
@@ -278,7 +278,7 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
   };
 
   return (
-    <div className="mt-3.5 rounded-lg border border-border bg-card px-3.5 pb-2.5 pt-3 shadow-2xs transition-colors focus-within:border-input focus-within:ring-1 focus-within:ring-ring">
+    <div className="mt-4 rounded-lg border border-border bg-card px-4 pb-3 pt-3 shadow-2xs transition-colors focus-within:border-input focus-within:ring-1 focus-within:ring-ring">
       <TasksEditor
         value={body}
         onChange={setBody}
@@ -290,7 +290,7 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
         onSubmit={() => void send()}
       />
       {pendingFiles.length > 0 ? (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="mt-2 flex flex-wrap gap-2">
           {pendingFiles.map((entry) => (
             <AttachmentChip
               key={entry.id}
@@ -302,7 +302,7 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
         </div>
       ) : null}
       {error ? <div className="mt-2 text-xs text-destructive">{error}</div> : null}
-      <div className="mt-2 flex items-center gap-1.5">
+      <div className="mt-2 flex items-center gap-2">
         <AgentNotificationControl
           target={notificationTarget}
           checked={notify}
@@ -324,7 +324,7 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
           size="icon"
           variant="ghost"
           aria-label="Attach file"
-          className="size-6.5 shrink-0 text-muted-foreground"
+          className="size-7 shrink-0 text-muted-foreground"
           onClick={() => fileInputRef.current?.click()}
         >
           <HugeiconsIcon icon={AttachmentIcon} className="size-3.5" />
@@ -334,7 +334,7 @@ export function CommentComposer({ taskId, notificationTarget }: ComposerProps) {
           size="icon"
           aria-label="Comment"
           disabled={!canSend}
-          className="size-6.5 shrink-0 rounded-md bg-foreground text-background hover:bg-foreground/90"
+          className="size-7 shrink-0 rounded-md bg-foreground text-background hover:bg-foreground/90"
           onClick={() => void send()}
         >
           <HugeiconsIcon icon={ArrowUp02Icon} className="size-3.5" />
@@ -373,7 +373,7 @@ export function AgentNotificationControl({
             if (enabled) onCheckedChange(pressed);
           }}
           className={cn(
-            "size-6.5 min-w-0 p-0",
+            "size-7 min-w-0 p-0",
             !enabled &&
               "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-muted-foreground",
           )}
@@ -406,7 +406,7 @@ export function TaskActivity({ taskId }: TaskActivityProps) {
         className={cn(
           "relative",
           comments.length > 0 &&
-            "before:absolute before:bottom-1.5 before:left-[11px] before:top-1.5 before:w-px before:bg-border-hairline",
+            "before:absolute before:bottom-2 before:left-3 before:top-2 before:w-px before:bg-border-hairline",
         )}
       >
         {feed.error ? (

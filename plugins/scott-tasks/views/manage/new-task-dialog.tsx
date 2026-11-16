@@ -53,7 +53,7 @@ import { cn } from "@/lib/utils";
 import { DEFAULT_COLOR } from "./shared.js";
 import { PRIORITY_LABELS, STATUS_LABELS } from "../list/lib.js";
 
-const CHIP_TRIGGER = "h-7 w-auto gap-1.5 rounded-md px-2 text-xs text-muted-foreground";
+const CHIP_TRIGGER = "h-7 w-auto gap-1 rounded-md px-2 text-xs text-muted-foreground";
 
 interface NewTaskDialogProps {
   open: boolean;
@@ -275,7 +275,7 @@ export function NewTaskDialog({
             <p className="mt-1 text-xs text-muted-foreground">
               Retry the uploads below, remove a file to skip it, or skip them all and open the task.
             </p>
-            <div className="mt-3 flex flex-wrap gap-1.5">
+            <div className="mt-3 flex flex-wrap gap-2">
               {pendingFiles.map((entry) => (
                 <AttachmentChip
                   key={entry.id}
@@ -314,7 +314,7 @@ export function NewTaskDialog({
             onAttachFiles={stageMore}
           />
           {createdTask === null && pendingFiles.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="mt-2 flex flex-wrap gap-2">
               {pendingFiles.map((entry) => (
                 <AttachmentChip
                   key={entry.id}
@@ -332,9 +332,7 @@ export function NewTaskDialog({
             </p>
           ) : null}
         </div>
-        <div
-          className={cn("flex flex-wrap items-center gap-1.5 px-4 pt-3", createdTask && "hidden")}
-        >
+        <div className={cn("flex flex-wrap items-center gap-2 px-4 pt-3", createdTask && "hidden")}>
           <Select value={effectiveProjectId ?? undefined} onValueChange={changeProject}>
             <SelectTrigger aria-label="Project" className={cn(CHIP_TRIGGER, "max-w-44")}>
               <SelectValue placeholder="Project" />
@@ -398,7 +396,7 @@ export function NewTaskDialog({
                   </>
                 ) : (
                   <>
-                    <span className="flex items-center gap-0.5">
+                    <span className="flex items-center gap-1">
                       {selectedLabels.slice(0, 3).map((label) => (
                         <span
                           key={label.id}
@@ -487,14 +485,14 @@ export function NewTaskDialog({
                   Create more
                 </Label>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <Hint label="Attach files">
                   <Button
                     variant="ghost"
                     size="icon"
                     aria-label="Attach files"
                     disabled={submitting}
-                    className="size-6.5 text-muted-foreground"
+                    className="size-7 text-muted-foreground"
                     onClick={() => fileInputRef.current?.click()}
                   >
                     <Icon name="Paperclip" className="size-4" />

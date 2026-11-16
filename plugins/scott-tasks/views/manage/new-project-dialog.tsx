@@ -225,7 +225,7 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
               </SelectContent>
             </Select>
             {newFolderMode ? (
-              <div className="mt-1.5 flex items-center gap-1.5">
+              <div className="mt-2 flex items-center gap-2">
                 <Input
                   autoFocus
                   value={newFolderName}

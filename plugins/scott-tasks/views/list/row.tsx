@@ -7,7 +7,7 @@ import { activeWorkLabel, formatDueDate, partitionLabels } from "./lib.js";
 import type { EditFn } from "./property-menus.js";
 import { isBareKey, PriorityEditor, StatusEditor, TaskContextMenu } from "./property-menus.js";
 
-const RAIL_CHIP_CLASS = "gap-1 px-1.5 py-px text-xs font-normal text-muted-foreground";
+const RAIL_CHIP_CLASS = "h-5 gap-1 px-1 py-0 text-xs font-normal text-muted-foreground";
 
 function ActiveChip({ threads }: { threads: readonly TaskThread[] }) {
   if (threads.length === 0) return null;
@@ -57,10 +57,10 @@ function LabelChips({ task, labelsById }: { task: Task; labelsById: Map<string, 
   if (labels.length === 0) return null;
   return (
     <>
-      <span className="hidden items-center gap-1.5 @xl:flex">
+      <span className="hidden items-center gap-2 @xl:flex">
         <LabelChipRow labels={labels} maxVisible={2} />
       </span>
-      <span className="flex items-center gap-1.5 @xl:hidden">
+      <span className="flex items-center gap-2 @xl:hidden">
         <LabelChipRow labels={labels} maxVisible={1} />
       </span>
     </>
@@ -99,8 +99,8 @@ export const TaskRow = memo(function TaskRow({
         data-task-key={task.key}
         aria-busy={pending || undefined}
         className={cn(
-          "relative grid w-full grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1 border-b border-border-hairline px-3.5 py-1.5 text-left transition-opacity hover:bg-state-hover",
-          "@md:flex @md:h-[34px] @md:py-0",
+          "relative grid w-full grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1 border-b border-border-hairline px-4 py-2 text-left transition-opacity hover:bg-state-hover",
+          "@md:flex @md:h-9 @md:py-0",
           pending && "opacity-70",
         )}
       >
@@ -141,7 +141,7 @@ export const TaskRow = memo(function TaskRow({
         <span className="col-start-2 col-span-2 row-start-1 min-w-0 truncate text-sm @md:flex-1">
           {task.title}
         </span>
-        <span className="col-start-3 row-start-2 flex min-w-0 items-center gap-1.5 justify-self-end text-xs text-subtle-foreground @max-md:overflow-hidden @md:shrink-0">
+        <span className="col-start-3 row-start-2 flex min-w-0 items-center gap-2 justify-self-end text-xs text-subtle-foreground @max-md:overflow-hidden @md:shrink-0">
           {activeThreads ? <ActiveChip threads={activeThreads} /> : null}
           <LabelChips task={task} labelsById={labelsById} />
           {task.dueDate !== null ? (

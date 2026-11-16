@@ -169,23 +169,23 @@ function TaskCard({
       onPointerDown={onPointerDown}
       onClick={onClick}
       className={cn(
-        "shrink-0 rounded-lg border border-border bg-card px-2.5 py-2 shadow-2xs select-none",
+        "shrink-0 rounded-lg border border-border bg-card px-3 py-2 shadow-2xs select-none",
         ghost ? "rotate-2 shadow-md" : "cursor-pointer touch-none hover:border-input",
         dragging && "opacity-40",
       )}
     >
-      <div className="flex items-center gap-1.5 text-2xs text-muted-foreground">
+      <div className="flex items-center gap-1 text-2xs text-muted-foreground">
         <span className="tabular-nums">{task.key}</span>
         <WorkingAgentsChip threads={meta.workingThreads} />
       </div>
       <div className="mt-1 line-clamp-2 text-sm leading-snug font-medium">{task.title}</div>
-      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      <div className="mt-2 flex flex-wrap items-center gap-2">
         <PriorityIcon priority={task.priority} />
         {labels.map((label) => (
           <Badge
             key={label.id}
             variant="outline"
-            className="gap-1 px-1.5 py-0 text-2xs font-normal text-muted-foreground"
+            className="h-5 gap-1 px-1 py-0 text-2xs font-normal text-muted-foreground"
           >
             <span
               aria-hidden
@@ -196,7 +196,7 @@ function TaskCard({
           </Badge>
         ))}
         {meta.subTotal > 0 ? (
-          <span className="flex items-center gap-0.5 text-2xs text-muted-foreground">
+          <span className="flex items-center gap-1 text-2xs text-muted-foreground">
             <Icon name="GitBranch" className="size-3" />
             {meta.subDone}/{meta.subTotal}
           </span>
@@ -218,7 +218,7 @@ function BoardSkeleton() {
     <DelayedLoading>
       <div className="flex h-full items-start gap-3 overflow-x-auto p-4">
         {BOARD_STATUSES.map((status) => (
-          <div key={status} className="flex w-[230px] shrink-0 flex-col gap-2 p-1">
+          <div key={status} className="flex w-58 shrink-0 flex-col gap-2 p-1">
             <Skeleton className="h-5 w-24" />
             <Skeleton className="h-20 w-full rounded-lg" />
             <Skeleton className="h-20 w-full rounded-lg" />
@@ -420,8 +420,8 @@ export function BoardView({ projectId }: BoardViewProps) {
     if (indicatorBeforeTaskId === null) children.push(indicator);
 
     return (
-      <div key={status} className="flex max-h-full w-[230px] shrink-0 flex-col">
-        <div className="flex items-center gap-1.5 px-1 pb-2 text-sm font-semibold">
+      <div key={status} className="flex max-h-full w-58 shrink-0 flex-col">
+        <div className="flex items-center gap-2 px-1 pb-2 text-sm font-semibold">
           <StatusIcon status={status} />
           <span>{STATUS_LABELS[status]}</span>
           <span className="font-normal text-muted-foreground">{cards.length}</span>

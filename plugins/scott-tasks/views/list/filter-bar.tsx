@@ -172,8 +172,8 @@ export function ListFilterBar({
       })),
   ];
   return (
-    <div className="flex shrink-0 items-center gap-1.5 border-b border-border-hairline px-3.5 py-1.5">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+    <div className="flex min-h-9 shrink-0 items-center gap-2 border-b border-border-hairline px-4 py-1 max-md:pointer-coarse:min-h-11">
+      <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
         <FilterMenu
           icon="Circle"
           label="Status"
@@ -212,7 +212,7 @@ export function ListFilterBar({
             variant="outline"
             size="sm"
             onClick={() => onChange(EMPTY_FILTERS)}
-            className="h-6 shrink-0 gap-1 border-dashed px-2.5 text-muted-foreground max-md:pointer-coarse:h-8"
+            className="h-6 shrink-0 gap-1 border-dashed px-2 text-muted-foreground max-md:pointer-coarse:h-8"
           >
             <Icon name="X" className="size-3" />
             Clear

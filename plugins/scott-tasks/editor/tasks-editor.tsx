@@ -504,7 +504,7 @@ export function TasksEditor({
       role="option"
       aria-selected={index === mention?.selectedIndex}
       className={cn(
-        "flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm",
+        "flex min-h-8 w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-sm",
         index === mention?.selectedIndex
           ? "bg-accent text-accent-foreground"
           : "hover:bg-accent hover:text-accent-foreground",
@@ -551,10 +551,10 @@ export function TasksEditor({
           }}
           className="flex-wrap justify-start gap-2"
         >
-          <ToggleGroupItem value="rich" disabled={!!reason} className="h-6 px-1.5 text-xs">
+          <ToggleGroupItem value="rich" disabled={!!reason} className="h-6 px-1 text-xs">
             Rich text
           </ToggleGroupItem>
-          <ToggleGroupItem value="source" className="h-6 px-1.5 text-xs">
+          <ToggleGroupItem value="source" className="h-6 px-1 text-xs">
             Markdown source
           </ToggleGroupItem>
         </ToggleGroup>
@@ -583,7 +583,7 @@ export function TasksEditor({
             role="toolbar"
             aria-label="Formatting"
             style={{ visibility: "hidden" }}
-            className="flex items-center gap-0.5 rounded-lg border border-border bg-popover p-0.5 text-popover-foreground shadow-md"
+            className="flex items-center gap-1 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md"
           >
             {BUBBLE_ACTIONS.map((action) => (
               <Toggle
@@ -618,13 +618,11 @@ export function TasksEditor({
           style={mentionRect ? { top: mentionRect.bottom + 4, left: mentionRect.left } : undefined}
         >
           {taskItems.length > 0 ? (
-            <div className="px-2 pb-0.5 pt-1 text-2xs font-semibold text-muted-foreground">
-              Tasks
-            </div>
+            <div className="px-2 pb-1 pt-1 text-2xs font-semibold text-muted-foreground">Tasks</div>
           ) : null}
           {taskItems.map(mentionRow)}
           {threadItems.length > 0 ? (
-            <div className="px-2 pb-0.5 pt-1 text-2xs font-semibold text-muted-foreground">
+            <div className="px-2 pb-1 pt-1 text-2xs font-semibold text-muted-foreground">
               Threads
             </div>
           ) : null}

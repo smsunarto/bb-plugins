@@ -132,7 +132,7 @@ function TaskDirectiveCardContent({ attributes }: PluginMessageDirectiveProps) {
               {fallbackTitle}
             </span>
           ) : (
-            <Skeleton className="h-3.5 w-1/2" />
+            <Skeleton className="h-3 w-1/2" />
           )}
         </div>
       </CardShell>

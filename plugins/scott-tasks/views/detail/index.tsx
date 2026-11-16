@@ -57,7 +57,7 @@ function SubTaskDonut({ subtasks, onClick }: { subtasks: Task[]; onClick: () => 
         variant="outline"
         size="sm"
         onClick={onClick}
-        className="h-6 gap-1.5 rounded-full px-2.5 font-normal text-muted-foreground"
+        className="h-6 gap-1 rounded-full px-2 font-normal text-muted-foreground"
       >
         <span
           aria-hidden
@@ -80,7 +80,7 @@ function EditableTitle({ task, onSave }: { task: Task; onSave: (title: string) =
       suppressContentEditableWarning
       role="textbox"
       aria-label="Task title"
-      className="mb-2.5 mt-1 text-2xl font-semibold leading-tight outline-none"
+      className="mb-3 mt-1 text-2xl font-semibold leading-tight outline-none"
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
@@ -132,7 +132,7 @@ function SubTasksSection({
         <button
           key={subtask.id}
           type="button"
-          className="flex h-8 w-full items-center gap-2 border-b border-border-hairline px-0.5 text-left text-sm hover:bg-state-hover"
+          className="flex h-8 w-full items-center gap-2 border-b border-border-hairline text-left text-sm hover:bg-state-hover"
           title={STATUS_LABELS[subtask.status]}
           onClick={() => navigation.go({ kind: "task", taskKey: subtask.key })}
         >
@@ -142,7 +142,7 @@ function SubTasksSection({
         </button>
       ))}
       {adding ? (
-        <div className="flex h-8 items-center gap-2 border-b border-border-hairline px-0.5">
+        <div className="flex h-8 items-center gap-2 border-b border-border-hairline">
           <StatusIcon status="todo" className="opacity-60" />
           <input
             autoFocus
@@ -166,7 +166,7 @@ function SubTasksSection({
       <Button
         variant="ghost"
         size="sm"
-        className="-ml-2 h-7 gap-1.5 px-2 text-muted-foreground"
+        className="-ml-2 h-7 gap-1 px-2 text-muted-foreground"
         onClick={() => setAdding(true)}
       >
         <Icon name="Plus" className="size-3" />
@@ -329,7 +329,7 @@ function TaskDetail({ task }: { task: Task }) {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-6 max-w-full gap-1.5 rounded-full px-2.5 font-normal text-muted-foreground"
+                  className="h-6 max-w-full gap-1 rounded-full px-2 font-normal text-muted-foreground"
                   onClick={() => navigation.go({ kind: "task", taskKey: parentTask.key })}
                 >
                   Sub-task of
@@ -380,7 +380,7 @@ function TaskDetail({ task }: { task: Task }) {
                   size="icon"
                   aria-label="Add reaction"
                   disabled
-                  className="size-6.5 text-muted-foreground"
+                  className="size-7 text-muted-foreground"
                 >
                   <HugeiconsIcon icon={SmilePlusIcon} className="size-4" />
                 </Button>
@@ -391,7 +391,7 @@ function TaskDetail({ task }: { task: Task }) {
                 variant="ghost"
                 size="icon"
                 aria-label="Attach file"
-                className="size-6.5 text-muted-foreground"
+                className="size-7 text-muted-foreground"
                 onClick={() => fileInputRef.current?.click()}
               >
                 <Icon name="Paperclip" className="size-4" />

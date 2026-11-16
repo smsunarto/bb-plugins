@@ -61,17 +61,17 @@ type PropertyTrigger = Pick<ButtonProps, "variant" | "className">;
 
 const RAIL_TRIGGER: PropertyTrigger = {
   variant: "ghost",
-  className: "-mx-1.5 h-7 w-[calc(100%+0.75rem)] justify-start px-1.5 text-sm font-normal",
+  className: "-mx-2 h-7 w-[calc(100%+1rem)] justify-start px-2 text-sm font-normal",
 };
 
 const CHIP_TRIGGER: PropertyTrigger = {
   variant: "secondary",
-  className: "h-6 gap-1.5 px-2.5 font-normal",
+  className: "h-6 gap-1 px-2 font-normal",
 };
 
 function LabelChip({ label }: { label: Label }) {
   return (
-    <Badge variant="outline" className="gap-1.5 font-normal text-muted-foreground">
+    <Badge variant="outline" className="gap-1 font-normal text-muted-foreground">
       <span
         aria-hidden
         className="size-1.5 rounded-full"
@@ -358,7 +358,7 @@ function DispatchTargetMenu({
           bbProjects={bbProjects}
           noneLabel={linkedBbProjectId !== null ? "Unlink" : "Not linked"}
         />
-        <div className="mt-2.5 flex items-center justify-between gap-2">
+        <div className="mt-3 flex items-center justify-between gap-2">
           {linkedBbProjectId !== null ? (
             <Button
               variant="ghost"
@@ -401,13 +401,13 @@ export function PropertiesRail({
   const bbProjects = useQuery(bbProjectsQuery);
   return (
     <aside className={cn("w-56 shrink-0 py-10 pl-2 pr-6", className)}>
-      <h2 className="mb-1.5 text-xs font-semibold text-muted-foreground">Properties</h2>
+      <h2 className="mb-1 text-xs font-semibold text-muted-foreground">Properties</h2>
       <StatusMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
       <PriorityMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
       <DueDateMenu task={task} onUpdate={onUpdate} trigger={RAIL_TRIGGER} />
 
       <div className="mb-1 mt-3 text-2xs font-semibold text-muted-foreground">Labels</div>
-      <div className="flex flex-wrap items-center gap-1 py-0.5">
+      <div className="flex min-h-6 flex-wrap items-center gap-1">
         {taskLabels.map((label) => (
           <LabelChip key={label.id} label={label} />
         ))}
@@ -424,7 +424,7 @@ export function PropertiesRail({
       </div>
 
       <div className="mb-1 mt-3 text-2xs font-semibold text-muted-foreground">Project</div>
-      <div className="flex items-center gap-2 py-0.5 text-sm">
+      <div className="flex h-6 items-center gap-2 text-sm">
         <span
           aria-hidden
           className="size-3 shrink-0 rounded-sm"
@@ -442,10 +442,10 @@ export function PropertiesRail({
           trigger={RAIL_TRIGGER}
         />
       ) : (
-        <div className="py-0.5 text-sm text-muted-foreground">…</div>
+        <div className="flex h-6 items-center text-sm text-muted-foreground">…</div>
       )}
 
-      <div className="mt-2.5 py-0.5">
+      <div className="mt-3">
         <DispatchControl
           taskId={task.id}
           presets={presets}
@@ -456,10 +456,10 @@ export function PropertiesRail({
       </div>
 
       <div className="mb-1 mt-3 text-2xs font-semibold text-muted-foreground">Agents</div>
-      <div className="flex flex-col gap-1 py-0.5 text-xs">
+      <div className="flex flex-col gap-1 text-xs">
         {active.length > 0 ? (
           active.map((thread) => (
-            <span key={thread.id} className="flex items-center gap-1.5 font-medium text-success">
+            <span key={thread.id} className="flex items-center gap-1 font-medium text-success">
               <span
                 aria-hidden
                 className="size-1.5 shrink-0 animate-pulse rounded-full bg-success"
@@ -491,7 +491,7 @@ export function InlineProperties({
 }) {
   const taskLabels = (labels ?? []).filter((label) => task.labelIds.includes(label.id));
   return (
-    <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
+    <div className={cn("flex flex-wrap items-center gap-2", className)}>
       <StatusMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
       <PriorityMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
       <DueDateMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />

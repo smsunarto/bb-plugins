@@ -37,7 +37,7 @@ function SidebarRow({ active, onClick, children, title }: SidebarRowProps) {
 
 function SectionHeader({ label }: { label: string }) {
   return (
-    <div className="mt-3.5 flex items-center gap-1 px-2 pb-1 text-xs font-semibold text-muted-foreground">
+    <div className="mt-4 flex items-center gap-1 px-2 pb-1 text-xs font-semibold text-muted-foreground">
       {label}
     </div>
   );
@@ -158,14 +158,14 @@ export function TasksSidebar({
         onOpenChange={() => toggleFolder(folder.id)}
         className={cn(indent && "pl-3")}
       >
-        <CollapsibleTrigger className="group mt-3.5 flex w-full items-center gap-1 rounded-md px-2 pb-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
+        <CollapsibleTrigger className="group mt-4 flex w-full items-center gap-1 rounded-md px-2 pb-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
           <Icon
             name="ChevronDown"
             className="size-3 transition-transform group-data-[state=closed]:-rotate-90"
           />
           {folder.name}
         </CollapsibleTrigger>
-        <CollapsibleContent className="flex flex-col gap-px">
+        <CollapsibleContent className="flex flex-col">
           {folderProjects.map((project) => (
             <ProjectRow
               key={project.id}
@@ -184,7 +184,7 @@ export function TasksSidebar({
   return (
     <div className="flex h-full min-h-0 flex-col bg-sidebar">
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 pt-2">
-        <div className="flex flex-col gap-px">
+        <div className="flex flex-col">
           <SidebarRow active={route.kind === "all"} onClick={() => onNavigate({ kind: "all" })}>
             <Icon name="ListView" className="size-3.5 shrink-0" />
             <span className="flex-1">All tasks</span>
@@ -207,7 +207,7 @@ export function TasksSidebar({
             {ungrouped.length > 0 ? (
               <>
                 <SectionHeader label="Projects" />
-                <div className="flex flex-col gap-px">
+                <div className="flex flex-col">
                   {ungrouped.map((project) => (
                     <ProjectRow
                       key={project.id}
@@ -222,7 +222,7 @@ export function TasksSidebar({
             ) : null}
             {rootFolders.map((folder) => renderFolder(folder, false))}
             {(projects ?? []).length > 0 ? (
-              <div className="mt-1.5">
+              <div className="mt-2">
                 <SidebarRow onClick={onNewProject}>
                   <Icon name="Plus" className="size-3.5 shrink-0" />
                   <span className="flex-1">New project</span>
@@ -232,7 +232,7 @@ export function TasksSidebar({
             {presets ? (
               <>
                 <SectionHeader label="Agent presets" />
-                <div className="flex flex-col gap-px">
+                <div className="flex flex-col">
                   {presets.map((preset) => (
                     <SidebarRow
                       key={preset.id}
@@ -265,7 +265,7 @@ export function TasksSidebar({
           </>
         )}
       </nav>
-      <div className="shrink-0 border-t border-border-hairline px-2 py-1.5">
+      <div className="shrink-0 border-t border-border-hairline px-2 py-2">
         <SidebarRow active={route.kind === "manage"} onClick={() => onNavigate({ kind: "manage" })}>
           <Icon name="Settings" className="size-3.5 shrink-0" />
           <span className="flex-1">Manage</span>

@@ -48,13 +48,10 @@ interface ListViewProps {
 function LoadingRows() {
   return (
     <DelayedLoading>
-      <div className="px-3.5 pt-3">
+      <div className="px-4 pt-3">
         <Skeleton className="mb-3 h-4 w-28" />
         {Array.from({ length: 7 }, (_, index) => (
-          <div
-            key={index}
-            className="flex h-[34px] items-center gap-2 border-b border-border-hairline"
-          >
+          <div key={index} className="flex h-9 items-center gap-2 border-b border-border-hairline">
             <Skeleton className="size-3.5 rounded-full" />
             <Skeleton className="h-3 w-12" />
             <Skeleton className="size-3.5 rounded-full" />
@@ -232,7 +229,7 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
         <section key={group.status}>
           <div
             data-status-group-header={group.status}
-            className="sticky top-0 z-20 isolate flex items-center gap-2 border-b border-border-hairline bg-background px-3.5 pb-1.5 pt-2.5 text-sm font-semibold"
+            className="sticky top-0 z-20 isolate flex items-center gap-2 border-b border-border-hairline bg-background px-4 py-2 text-sm font-semibold"
           >
             <StatusIcon status={group.status} />
             {STATUS_LABELS[group.status]}
