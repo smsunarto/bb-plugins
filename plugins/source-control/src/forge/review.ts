@@ -9,6 +9,8 @@ import type { Conversation } from "../core/items.ts";
 import type { MergePolicy } from "../core/merge.ts";
 import type { ChangeFile, ForgeFile, InboxEntry } from "../core/review.ts";
 import { classifyFailure, GhError, graphql, type Exec } from "./github.ts";
+import { parseGitHubImage } from "../core/pr-images.ts";
+import { resolveImage } from "./images.ts";
 import { readJobLogs, type JobLog } from "./job-logs.ts";
 import { readMergePolicy } from "./merge.ts";
 import { readTimeline } from "./timeline.ts";
@@ -384,7 +386,8 @@ export type ReviewRead =
   | { kind: "prHead"; ref: PrRef }
   | { kind: "landed"; prs: PrRef[]; commits: CommitRef[] }
   | { kind: "mergePolicy"; repo: Repo; number: number }
-  | { kind: "jobLogs"; repo: Repo; jobIds: number[] };
+  | { kind: "jobLogs"; repo: Repo; jobIds: number[] }
+  | { kind: "image"; repo: Repo; src: string };
 export type ReviewAnswer =
   | { kind: "inbox"; entries: InboxEntry[] }
   | { kind: "files"; files: ForgeFile[] }
@@ -394,7 +397,8 @@ export type ReviewAnswer =
   | { kind: "landed"; landed: Landed }
   | { kind: "prHead"; head: PrHead }
   | { kind: "mergePolicy"; policy: MergePolicy }
-  | { kind: "jobLogs"; logs: JobLog[] };
+  | { kind: "jobLogs"; logs: JobLog[] }
+  | { kind: "image"; location: string | null };
 
 export async function runReviewRead(
   exec: Exec,
@@ -431,5 +435,19 @@ export async function runReviewRead(
       return { kind: "mergePolicy", policy: await readMergePolicy(exec, read, signal) };
     case "jobLogs":
       return { kind: "jobLogs", logs: await readJobLogs(exec, read.repo, read.jobIds, signal) };
+    case "image": {
+      // Checked again where the token is: only GitHub's own image URLs are asked for.
+      const image = parseGitHubImage(read.src);
+      if (!image) throw new GhError("not-found", "Not a GitHub image.");
+      // An image this account cannot see is an answer, not a failure: a failure would make
+      // the server forget which account reads the repository, for every other read too.
+      try {
+        return { kind: "image", location: await resolveImage(exec, image, signal) };
+      } catch (error) {
+        if (error instanceof GhError && (error.code === "not-found" || error.code === "forbidden"))
+          return { kind: "image", location: null };
+        throw error;
+      }
+    }
   }
 }

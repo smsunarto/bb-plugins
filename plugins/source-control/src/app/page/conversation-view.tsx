@@ -6,7 +6,6 @@
  * use), so it keeps code-review's look. Read on demand while the tab shows.
  */
 import {
-  Markdown,
   UrlLink,
   experimental_Icon as Icon,
   experimental_useRpcQuery as useRpcQuery,
@@ -21,6 +20,7 @@ import { absoluteTime, cx, plural, shortId } from "../format.ts";
 import { Badge, type BadgeProps } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
+import { PrMarkdown } from "../pr-markdown.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
 import { useNow } from "./hooks.ts";
 
@@ -121,7 +121,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
               <When at={item.createdAt} href={item.url} />
             </span>
           </header>
-          <Markdown
+          <PrMarkdown
             content={item.body}
             className="min-w-0 px-3 py-2 text-xs [overflow-wrap:anywhere]"
           />
@@ -150,7 +150,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
             </span>
           </header>
           {body ? (
-            <Markdown
+            <PrMarkdown
               content={body}
               className="min-w-0 px-3 py-2 text-xs [overflow-wrap:anywhere]"
             />
@@ -315,7 +315,7 @@ function DescriptionCard({ description }: { description: Description }) {
           <div className={cx("relative", clipped && "max-h-64 overflow-hidden")}>
             <div className="px-4 pt-2 pb-3">
               {/* bb widens a table to its nearest clipping ancestor; clipping here keeps it inside the padding. */}
-              <Markdown
+              <PrMarkdown
                 content={body}
                 className={cx(
                   "min-w-0 overflow-x-clip [overflow-wrap:anywhere]",

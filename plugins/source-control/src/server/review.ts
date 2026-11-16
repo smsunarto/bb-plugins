@@ -16,6 +16,7 @@ import type { ForgeSites } from "./forge-sites.ts";
 import type { HostCalls } from "./host-calls.ts";
 import type { LocalReads } from "./local-read.ts";
 import { createReviewChange, localMatch } from "./review-change.ts";
+import { createPrImages } from "./pr-images.ts";
 import { createReviewItems } from "./review-items.ts";
 import { createRevisionReads } from "./review-revision.ts";
 import { checkoutsOn, createReviewSources, rowsOf } from "./review-sources.ts";
@@ -90,8 +91,16 @@ export function createReview(deps: {
     now: deps.now,
   });
   headMayHaveMoved = items.settleIfBehind;
+  const images = createPrImages({
+    sites: deps.sites,
+    share: deps.share,
+    placementsFor: revision.placementsFor,
+    now: deps.now,
+  });
   return {
     items,
+    /** The pull request text's GitHub images, for the `/pr-image` route. */
+    images,
     batches,
     pageSources: sources.pageSources,
     inbox: sources.inbox,

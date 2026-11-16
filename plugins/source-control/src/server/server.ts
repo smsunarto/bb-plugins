@@ -52,6 +52,8 @@ import { worktreeHostSetting } from "./worktree-host.ts";
 import { createMoved, type Moved } from "./moved.ts";
 import { createCheckoutReads, type CheckoutReads } from "./checkout-reads.ts";
 import { createPlacements } from "./placement.ts";
+import { imageResponse } from "./pr-images.ts";
+import { PR_IMAGE_PATH } from "../core/pr-images.ts";
 
 export type SourceControlDeps = {
   serverExec: Exec;
@@ -352,6 +354,25 @@ function registerRpc(
   });
 }
 
+/**
+ * The pull request text's GitHub images, which the page points here: a
+ * redirect to GitHub, or the failed state as an image. bb's "local" auth
+ * admits the page's own origin and a plain image request, which sends none.
+ */
+function registerImageRoute(bb: BbPluginApi, runtime: Runtime, changes: Changes) {
+  bb.http.route("GET", PR_IMAGE_PATH, async (context) => {
+    const url = new URL(context.req.url);
+    const answer = await runtime.run(
+      changes.review.images.image(
+        url.searchParams.get("change") ?? undefined,
+        url.searchParams.get("src") ?? undefined,
+      ),
+      context.req.raw.signal,
+    );
+    return imageResponse(answer);
+  });
+}
+
 function listen(
   bb: BbPluginApi,
   runtime: Runtime,
@@ -637,6 +658,7 @@ export function createSourceControl(deps: SourceControlDeps) {
       }),
     );
     registerAgents(bb, runtime, changes, guides, moved);
+    registerImageRoute(bb, runtime, changes);
     listen(bb, runtime, host, changes, guides, moved);
   };
 }

@@ -44,6 +44,7 @@ import { Hint, OpenOnGitHub, Pending } from "../ui.tsx";
 import { ChangesList } from "./changes-nav.tsx";
 import { CommitsView } from "./commits-view.tsx";
 import { ConversationView, PullRequestDescription } from "./conversation-view.tsx";
+import { PrImagesContext } from "../pr-markdown.tsx";
 import { FilesView, WrapContext } from "./files-view.tsx";
 import { GuidedView, ReviewBar, ViewedProgress } from "./guided-view.tsx";
 import { PANEL_PATH, PHONE, WIDE, useGo, useNow, useWidth, type Go } from "./hooks.ts";
@@ -834,17 +835,19 @@ function ReviewReady({
           {phone ? null : <TabControls location={location} detail={detail} send={send} />}
         </ReviewTabs>
         <div className="flex min-h-0 min-w-0 flex-1">
-          <TabBody
-            location={location}
-            detail={detail}
-            lead={lead}
-            wide={wide}
-            phone={phone}
-            now={now}
-            bar={barSend}
-            onPath={onPath}
-            onCommit={onCommit}
-          />
+          <PrImagesContext value={location.key}>
+            <TabBody
+              location={location}
+              detail={detail}
+              lead={lead}
+              wide={wide}
+              phone={phone}
+              now={now}
+              bar={barSend}
+              onPath={onPath}
+              onCommit={onCommit}
+            />
+          </PrImagesContext>
           {wide ? (
             <aside
               aria-label="Stack, checks and review"

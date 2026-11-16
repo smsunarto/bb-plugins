@@ -377,6 +377,16 @@ function fakeApi(world: World, args: readonly string[], options: Parameters<Exec
   const merge = fakeMerge(world, args, options);
   if (merge) return merge;
   if (args[0] !== "api") return null;
+  // A committed file's download URL, as the contents API gives it to a signed-in reader.
+  const contents = /^repos\/([^/]+)\/([^/]+)\/contents\/([^?]+)\?ref=(.+)$/.exec(args[1] ?? "");
+  if (contents) {
+    const [, owner, name, path, ref] = contents;
+    return {
+      code: 0,
+      stdout: `https://raw.githubusercontent.com/${owner}/${name}/${ref}/${path}?token=SIGNED\n`,
+      stderr: "",
+    };
+  }
   const review = fakeReviews(world, args, options?.stdin);
   if (review) return review;
   return args[1] === "--paginate" ? fakeRest(world, args) : null;
@@ -1537,6 +1547,38 @@ describe("review page", () => {
     ).toMatchObject({ ok: true, files: [{ path: "src/retry.ts" }] });
     // The thread's own pull request (route-gh), the inbox, #77, then its files: all on host-a.
     expect(world.hostForge).toEqual(["host-a:pr", "host-a:inbox", "host-a:pr", "host-a:files"]);
+  });
+
+  test("a private image resolves through the host that has the gh account, and the page gets only a redirect", async () => {
+    const world = twoHosts();
+    world.serverAccounts = [];
+    world.hosts["host-a"]!.ghAccounts = ["smsunarto"];
+    world.hosts["host-a"]!.forgeLive = true;
+    world.pullRequests["scott/route-gh"] = [PR];
+    // GitHub refuses the image to anyone signed out.
+    vi.stubGlobal("fetch", async () => new Response(null, { status: 404 }));
+    try {
+      const { harness } = await start(world);
+      await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+      const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+      const src = "https://github.com/smsunarto/bb-plugins/blob/abc123/docs/a.png?raw=true";
+      const response = await harness.behavior.fetchHttp(
+        "GET",
+        `/pr-image?${new URLSearchParams({ change: key, src })}`,
+      );
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe(
+        "https://raw.githubusercontent.com/smsunarto/bb-plugins/abc123/docs/a.png?token=SIGNED",
+      );
+      expect(world.hostForge).toContain("host-a:image");
+      const elsewhere = await harness.behavior.fetchHttp(
+        "GET",
+        `/pr-image?${new URLSearchParams({ change: key, src: "https://evil.example/a.png" })}`,
+      );
+      expect(elsewhere.status).toBe(400);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   test("a pull request with no checkout anywhere opens and reads entirely from GitHub", async () => {

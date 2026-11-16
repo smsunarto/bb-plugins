@@ -5,7 +5,7 @@
  * writes one. Text being typed lives in its composer alone, so a keystroke
  * redraws that composer and nothing else.
  */
-import { Markdown, ThreadTitle } from "@get-bb/plugin-sdk/app";
+import { ThreadTitle } from "@get-bb/plugin-sdk/app";
 import { memo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { isReaderReply, type Anchor, type Draft, type ItemReply } from "../../core/items.ts";
 import { Button } from "../components/ui/button.tsx";
@@ -26,6 +26,7 @@ import {
   StatePill,
   YouMark,
 } from "../review-ui.tsx";
+import { PrMarkdown } from "../pr-markdown.tsx";
 
 /** A new comment being written on a line. */
 export type ComposerEntry = { kind: "composer"; id: string; anchor: Anchor };
@@ -259,7 +260,7 @@ function Reply({ reply }: { reply: ItemReply }) {
           </span>
         ) : null}
       </div>
-      <Markdown
+      <PrMarkdown
         content={body}
         className="min-w-0 text-[13px] leading-5 text-foreground [overflow-wrap:anywhere]"
       />
@@ -420,7 +421,7 @@ const ItemBlock = memo(function ItemBlock({
           onReply={() => setReplying(newDraftId())}
         />
       </div>
-      <Markdown
+      <PrMarkdown
         content={item.body}
         className="min-w-0 text-[13px] leading-5 text-foreground [overflow-wrap:anywhere]"
       />

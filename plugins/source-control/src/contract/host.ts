@@ -18,6 +18,7 @@ import {
 } from "../core/change.ts";
 import { LOG_CHARS, MAX_LOGS, MISSING_CHARS } from "../core/fix-checks.ts";
 import { repoSchema } from "../core/ids.ts";
+import { MAX_IMAGE_URL, MAX_SIGNED_URL } from "../core/pr-images.ts";
 import { mergeMethodSchema, mergePolicySchema } from "../core/merge.ts";
 import { oplogSchema } from "../core/oplog.ts";
 import {
@@ -172,6 +173,10 @@ export const reviewReadSchema = z.discriminatedUnion("kind", [
       jobIds: z.array(z.number().int().positive()).min(1).max(MAX_LOGS),
     })
     .strict(),
+  /** Where a signed-in reader finds an image in the repository's pull request text. */
+  z
+    .object({ kind: z.literal("image"), repo: repoSchema, src: z.string().max(MAX_IMAGE_URL) })
+    .strict(),
 ]);
 
 export const reviewAnswerSchema = z.discriminatedUnion("kind", [
@@ -201,6 +206,10 @@ export const reviewAnswerSchema = z.discriminatedUnion("kind", [
         )
         .max(MAX_LOGS),
     })
+    .strict(),
+  /** GitHub's short-lived URL for the image: never stored or logged. */
+  z
+    .object({ kind: z.literal("image"), location: z.string().max(MAX_SIGNED_URL).nullable() })
     .strict(),
 ]);
 

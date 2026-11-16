@@ -292,6 +292,23 @@ test("a long description starts clipped and opens in full", async () => {
   ).toBe("true");
 });
 
+test("the description's GitHub images load through the plugin's image route; others keep their URL", async () => {
+  const github = changeKeySchema.parse("gh:o/r:o:scott/guided");
+  const upload = "https://github.com/user-attachments/assets/0993b262-b0ae-4631-b40a-65c93ae1420c";
+  const badge = "https://img.shields.io/badge/x-y-green";
+  const slot = render(
+    server({
+      description: `![shot](${upload})\n\n<img width="300" alt="html" src="${upload}">\n\n![badge](${badge})`,
+    }),
+    () => <ReviewPanel subPath={reviewPath({ key: github, tab: "overview" })} />,
+  );
+  const description = await slot.findByTestId("sc-description");
+  const route = `${window.location.origin}/api/v1/plugins/source-control/http/pr-image?${new URLSearchParams({ change: github, src: upload })}`;
+  expect(within(description).getByTestId("bb-markdown").textContent).toBe(
+    `![shot](${route})\n\n<img width="300" alt="html" src="${route}">\n\n![badge](${badge})`,
+  );
+});
+
 test("an empty description says so", async () => {
   const slot = render(server());
   const description = await slot.findByTestId("sc-description");
