@@ -1233,16 +1233,15 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         const view = mount(host, { isCompactViewport });
         fireEvent.click(view.slot.getByRole("button", { name: "Snoozed (1)" }));
         for (const id of ["a", "snoozed"]) {
-          assert.equal(
-            row(view.slot, id)
-              .parentElement!.querySelector('[data-gtd-naming="true"]')
-              ?.getAttribute("aria-busy"),
-            "true",
-          );
+          const title = row(view.slot, id).parentElement!.querySelector('[data-gtd-naming="true"]');
+          assert.equal(title?.getAttribute("aria-busy"), "true");
+          // bb's compositor sweep, on the element that holds the title.
+          assert.equal(title?.classList.contains("animate-shine"), true);
         }
         assert.equal(row(view.slot, "b").parentElement!.querySelector("[data-gtd-naming]"), null);
         view.update({ host: { ...host, naming: new Set() } });
         assert.equal(view.slot.container.querySelector("[data-gtd-naming]"), null);
+        assert.equal(view.slot.container.querySelector(".animate-shine"), null);
       },
     );
 

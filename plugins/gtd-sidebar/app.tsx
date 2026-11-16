@@ -5,7 +5,6 @@
 // each thread arrived on it, most recent first.
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
-import "./naming.css";
 import { ThreadInbox } from "./components/inbox/thread-inbox";
 import { CapyNavigation, CapyNavigationHeader } from "./components/nav/capy-navigation";
 import { archiveThread, hasSidebarActions } from "./lib/sidebar-actions-bridge";

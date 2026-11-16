@@ -31,7 +31,7 @@ import {
 } from "./thread-actions";
 import type { ProviderGlyphInfo } from "./provider-glyph";
 import { STATUS_SLOT_CLASS, StatusOrTime, useRowDescribedBy } from "./status-slot";
-import { FadingText, HostLead, ThreadDetails } from "./thread-details";
+import { FadingText, HostLead, NAMING_TITLE_CLASS, ThreadDetails } from "./thread-details";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { useNestRow, type SidebarDragApi } from "../../hooks/use-nest-drag";
 
@@ -421,7 +421,7 @@ function ThreadTitle({
     <span
       data-gtd-naming={isNaming || undefined}
       aria-busy={isNaming || undefined}
-      className={typography}
+      className={cn(typography, isNaming && NAMING_TITLE_CLASS)}
     >
       <FadingText text={title} />
     </span>

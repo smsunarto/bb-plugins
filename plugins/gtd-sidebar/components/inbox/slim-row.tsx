@@ -18,7 +18,7 @@ import {
   type ThreadAction,
 } from "./thread-actions";
 import { STATUS_SLOT_CLASS, ShortcutPill, StatusOrTime, useRowDescribedBy } from "./status-slot";
-import { FadingText, HostLead, ThreadDetails } from "./thread-details";
+import { FadingText, HostLead, NAMING_TITLE_CLASS, ThreadDetails } from "./thread-details";
 import type { ProviderGlyphInfo } from "./provider-glyph";
 import { snoozeWakeLabel } from "../../lib/lifecycle";
 import { useCommittedEvent } from "../../hooks/use-committed-event";
@@ -199,8 +199,7 @@ const SlimRowBody = memo(function SlimRowBody({
           aria-busy={isNaming || undefined}
           className={cn(
             "pointer-events-none relative min-w-0 flex-1 truncate",
-            // The compact viewport paints the title here, not in a FadingText.
-            isCompactViewport && "gtd-naming-text",
+            isNaming && NAMING_TITLE_CLASS,
             titleClassName,
             "group-hover/slim:text-foreground",
           )}

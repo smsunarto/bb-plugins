@@ -24,6 +24,14 @@ function observeOverflow(element: HTMLElement) {
   return () => overflowObserver?.unobserve(element);
 }
 
+/**
+ * A title the auto-namer is still writing wears bb's working sweep, an
+ * animated mask the compositor advances. The `background-position` keyframe it
+ * replaces repainted on the main thread every frame and froze whenever that
+ * thread was busy.
+ */
+export const NAMING_TITLE_CLASS = "animate-shine";
+
 export function FadingText({ text, className }: { text: string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
   // Re-observing on a text change queues a fresh measurement: a longer title

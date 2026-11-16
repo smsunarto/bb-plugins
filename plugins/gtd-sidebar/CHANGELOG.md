@@ -34,6 +34,11 @@
   deleted machines no longer add a `host_…` entry each, and disposable
   sandboxes such as Boat stay out of the menu.
 
+- A title the auto-namer is still writing uses bb's own working sweep, which
+  the browser animates off the main thread. The old shimmer repainted on the
+  main thread every frame and stalled whenever bb was busy, such as during a
+  thread switch.
+
 ### Minor Changes
 
 - Add a Bots shelf above Next Action while the separate Bots plugin is enabled:

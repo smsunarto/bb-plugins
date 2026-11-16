@@ -63,7 +63,6 @@
     "host/",
     "app.tsx",
     "app.css",
-    "naming.css",
     "thread-namer.ts",
     "thread-title-inference.ts",
     "lib/",
