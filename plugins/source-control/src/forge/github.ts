@@ -346,13 +346,15 @@ export function pickPullRequest(nodes: readonly PullRequestNode[], headOwner: st
 
 export type PullRequestQuery = { repo: Repo; headOwner: string; branch: string };
 
-function graphqlError(error: { message?: string; type?: string }): GhError {
+/** A GraphQL `errors` entry as a `GhError`, by GitHub's error type. */
+export function graphqlError(error: { message?: string; type?: string }): GhError {
   const code: GhErrorCode =
     error.type === "NOT_FOUND"
       ? "not-found"
       : error.type === "FORBIDDEN"
         ? "forbidden"
-        : error.type === "RATE_LIMITED"
+        : // GitHub answers RATE_LIMIT for the hourly limit and RATE_LIMITED for the secondary one.
+          error.type === "RATE_LIMIT" || error.type === "RATE_LIMITED"
           ? "rate-limited"
           : "failed";
   return new GhError(code, error.message ?? "GitHub GraphQL request failed.");

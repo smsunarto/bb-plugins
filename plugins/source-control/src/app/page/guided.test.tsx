@@ -199,6 +199,8 @@ function handlers(server: Server): Partial<Handlers> {
     },
     changeConversation: () => ({
       ok: true as const,
+      readAt: Date.now(),
+      stale: null,
       description: {
         author: { login: "scott", avatarUrl: null },
         body: server.description ?? "",

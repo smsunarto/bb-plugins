@@ -545,7 +545,13 @@ export type Conversation = z.infer<typeof conversationSchema>;
 
 export const conversationResultSchema = z.discriminatedUnion("ok", [
   z
-    .object({ ok: z.literal(true) })
+    .object({
+      ok: z.literal(true),
+      /** When GitHub answered with this conversation. */
+      readAt: z.number(),
+      /** Why the latest read failed, when this is an earlier read; null when current. */
+      stale: problemSchema.nullable(),
+    })
     .extend(conversationSchema.shape)
     .strict(),
   z.object({ ok: z.literal(false), problem: problemSchema }).strict(),

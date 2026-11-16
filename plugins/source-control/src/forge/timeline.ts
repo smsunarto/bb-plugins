@@ -5,7 +5,7 @@
  */
 import type { Repo } from "../core/ids.ts";
 import type { Conversation, TimelineItem } from "../core/items.ts";
-import { classifyFailure, GhError, type Exec } from "./github.ts";
+import { classifyFailure, graphqlError, type Exec } from "./github.ts";
 
 const ACTOR = "login avatarUrl";
 
@@ -200,7 +200,7 @@ export async function readTimeline(
             } | null;
           } | null;
         };
-        errors?: { message?: string }[];
+        errors?: { message?: string; type?: string }[];
       }
     | undefined;
   try {
@@ -209,7 +209,7 @@ export async function readTimeline(
     parsed = undefined;
   }
   const error = parsed?.errors?.[0];
-  if (error) throw new GhError("failed", error.message ?? "GitHub GraphQL request failed.");
+  if (error) throw graphqlError(error);
   if (result.code !== 0 || !parsed?.data) throw classifyFailure(result);
   const pr = parsed.data.repository?.pullRequest;
   const nodes = pr?.timelineItems?.nodes ?? [];

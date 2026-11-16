@@ -14,6 +14,7 @@ import {
   moveAnchor,
   type Anchor,
   type ChangeReview,
+  type Conversation,
   type ConversationResult,
   type Draft,
   type DraftInput,
@@ -24,9 +25,15 @@ import {
   type Viewer,
 } from "../core/items.ts";
 import { parseChangeKey, type ChangeDetail, type ReviewRevision } from "../core/review.ts";
+import { FORGE_BACKOFF_MS } from "./forge-read.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
+
+/** A conversation read answers the page again for this long, unless the pull request's head moved. */
+export const CONVERSATION_FRESH_MS = 60_000;
+/** Conversations kept for a stale answer; the oldest read is dropped past this. */
+const CONVERSATIONS_KEPT = 50;
 
 /** Paths per patch read: the host contract's limit is higher, the page's is this. */
 const PATCH_CHUNK = 40;
@@ -90,6 +97,10 @@ function moved(anchor: Anchor, edits: FileEdits | null, head: string): Anchor | 
 
 export function createReviewItems(deps: ReviewItemsDeps) {
   const { store } = deps;
+  /** Each Change's last conversation GitHub gave, for the pull request at `pr` ("number:head"). */
+  const conversations = new Map<ChangeKey, { pr: string; at: number; value: Conversation }>();
+  /** Each Change's last refused conversation read. */
+  const refusals = new Map<ChangeKey, { at: number; problem: Problem }>();
 
   const headOf = (key: ChangeKey) => {
     const detail = deps.detail(key);
@@ -376,7 +387,12 @@ export function createReviewItems(deps: ReviewItemsDeps) {
       store.putRun(linked.key, { ...linked.run, state: failed ? "failed" : "finished" });
       deps.invalidate([reviewTag(linked.key)]);
     },
-    /** The pull request's conversation, through any site that can see it. */
+    /**
+     * The pull request's conversation, through any site that can see it. A
+     * read under a minute old for the same head answers again, and a refused
+     * read falls back to the last one GitHub gave, marked stale. After GitHub
+     * rate-limits, it is not asked again until the forge read would retry.
+     */
     conversation: (key: ChangeKey) =>
       Effect.gen(function* () {
         const parsed = parseChangeKey(key);
@@ -386,22 +402,47 @@ export function createReviewItems(deps: ReviewItemsDeps) {
             ok: false,
             problem: { kind: "moved", detail: "This Change has no pull request yet." },
           } satisfies ConversationResult;
-        const answer = yield* deps.sites
-          .repoRead(
-            { kind: "timeline", repo: parsed.repo, number: pr.number },
-            deps.placementsFor(key),
+        const id = `${pr.number}:${pr.headRefOid}`;
+        const kept = conversations.get(key);
+        const last = kept?.pr.startsWith(`${pr.number}:`) ? kept : null;
+        if (last && last.pr === id && deps.now() - last.at < CONVERSATION_FRESH_MS)
+          return {
+            ok: true,
+            readAt: last.at,
+            stale: null,
+            ...last.value,
+          } satisfies ConversationResult;
+        const refusedWith = (problem: Problem): ConversationResult =>
+          last
+            ? { ok: true, readAt: last.at, stale: problem, ...last.value }
+            : { ok: false, problem };
+        const refused = refusals.get(key);
+        if (refused?.problem.kind === "rate-limited" && deps.now() - refused.at < FORGE_BACKOFF_MS)
+          return refusedWith(refused.problem);
+        const read = yield* deps
+          .share(
+            `conversation:${key}`,
+            deps.sites.repoRead(
+              { kind: "timeline", repo: parsed.repo, number: pr.number },
+              deps.placementsFor(key),
+            ),
           )
           .pipe(Effect.result);
-        if (answer._tag === "Failure")
-          return { ok: false, problem: answer.failure.problem } satisfies ConversationResult;
-        const { success } = answer;
-        return success.kind === "timeline"
-          ? ({
-              ok: true,
-              description: success.description,
-              items: success.items,
-            } satisfies ConversationResult)
-          : ({ ok: true, description: null, items: [] } satisfies ConversationResult);
+        if (read._tag === "Failure") {
+          refusals.set(key, { at: deps.now(), problem: read.failure.problem });
+          return refusedWith(read.failure.problem);
+        }
+        const value: Conversation =
+          read.success.kind === "timeline"
+            ? { description: read.success.description, items: read.success.items }
+            : { description: null, items: [] };
+        const at = deps.now();
+        refusals.delete(key);
+        conversations.delete(key);
+        conversations.set(key, { pr: id, at, value });
+        if (conversations.size > CONVERSATIONS_KEPT)
+          conversations.delete(conversations.keys().next().value!);
+        return { ok: true, readAt: at, stale: null, ...value } satisfies ConversationResult;
       }),
   };
 }

@@ -8,7 +8,7 @@ import type { Repo } from "../core/ids.ts";
 import type { Conversation } from "../core/items.ts";
 import type { MergePolicy } from "../core/merge.ts";
 import type { ChangeFile, ForgeFile, InboxEntry } from "../core/review.ts";
-import { classifyFailure, GhError, type Exec } from "./github.ts";
+import { classifyFailure, GhError, graphqlError, type Exec } from "./github.ts";
 import { readJobLogs, type JobLog } from "./job-logs.ts";
 import { readMergePolicy } from "./merge.ts";
 import { readTimeline } from "./timeline.ts";
@@ -172,15 +172,7 @@ export async function graphql<T>(
     parsed = undefined;
   }
   const error = parsed?.errors?.[0];
-  if (error) {
-    const code =
-      error.type === "RATE_LIMITED"
-        ? "rate-limited"
-        : error.type === "FORBIDDEN"
-          ? "forbidden"
-          : "failed";
-    throw new GhError(code, error.message ?? "GitHub GraphQL request failed.");
-  }
+  if (error) throw graphqlError(error);
   if (result.code !== 0 || !parsed?.data) throw classifyFailure(result);
   return parsed.data;
 }

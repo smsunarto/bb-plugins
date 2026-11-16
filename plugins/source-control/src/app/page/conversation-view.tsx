@@ -12,7 +12,7 @@ import {
   experimental_useRpcQuery as useRpcQuery,
 } from "@get-bb/plugin-sdk/app";
 import { useState, type ReactNode } from "react";
-import { describeProblem } from "../../core/change.ts";
+import { describeProblem, readAgo, type Problem } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import type { Description, TimelineItem } from "../../core/items.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
@@ -22,6 +22,7 @@ import { Badge, type BadgeProps } from "../components/ui/badge.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { GitHubAvatar } from "../review-ui.tsx";
+import { useNow } from "./hooks.ts";
 
 // ── code-review's helpers ──────────────────────────────────────────────
 
@@ -245,6 +246,19 @@ function useConversation(changeKey: ChangeKey) {
   });
 }
 
+/** Why the conversation shown is an earlier read, and how old it is. */
+function StaleNote({ stale, readAt }: { stale: Problem; readAt: number }) {
+  const now = useNow();
+  return (
+    <p
+      className="m-0 text-[12px] leading-4 text-muted-foreground"
+      data-testid="sc-conversation-stale"
+    >
+      {describeProblem(stale)} {readAgo(readAt, now)}.
+    </p>
+  );
+}
+
 /** The Overview's section label, as guided-view's "Read in this order". */
 const SECTION_LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
@@ -359,7 +373,13 @@ export function PullRequestDescription({ changeKey }: { changeKey: ChangeKey }) 
     return (
       <PatchesProblem text={describeProblem(answer.problem)} onRetry={() => void query.refetch()} />
     );
-  return answer.description ? <DescriptionCard description={answer.description} /> : null;
+  if (!answer.description) return null;
+  return (
+    <>
+      {answer.stale ? <StaleNote stale={answer.stale} readAt={answer.readAt} /> : null}
+      <DescriptionCard description={answer.description} />
+    </>
+  );
 }
 
 // ── The tab ────────────────────────────────────────────────────────────
@@ -387,7 +407,12 @@ function Timeline({ changeKey }: { changeKey: ChangeKey }) {
     return (
       <PatchesProblem text={describeProblem(answer.problem)} onRetry={() => void query.refetch()} />
     );
-  return <Activity items={answer.items} />;
+  return (
+    <>
+      {answer.stale ? <StaleNote stale={answer.stale} readAt={answer.readAt} /> : null}
+      <Activity items={answer.items} />
+    </>
+  );
 }
 
 export function ConversationView({
