@@ -997,6 +997,14 @@ test("the strip leaves the uncommitted count to bb's own changed-files segment w
   );
 });
 
+test("the strip leaves Mark ready to bb's own pull request segment when it shows", async () => {
+  const strip = renderStrip(boardB(), [
+    { key: "bb--github-pr-status/pull-request", pluginId: "bb--github-pr-status" },
+  ]);
+  await strip.summary.findByTestId("sc-strip");
+  expect(strip.action.queryByTestId("sc-strip-mark-ready")).toBeNull();
+});
+
 test("Mark ready names the pull request and head the reader saw", async () => {
   const strip = renderStrip(boardB());
   const button = await strip.action.findByTestId("sc-strip-mark-ready");

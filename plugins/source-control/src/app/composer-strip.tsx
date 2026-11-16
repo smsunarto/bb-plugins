@@ -30,6 +30,8 @@ import { Button } from "./components/ui/button.tsx";
 
 /** bb's own changed-files segment, which already counts uncommitted files. */
 const CHANGED_FILES_SEGMENT = "bb--git/changed-files";
+/** bb's GitHub PR Status segment, which has its own Mark ready (and Merge) while it shows. */
+const PULL_REQUEST_SEGMENT = "bb--github-pr-status/pull-request";
 
 /** The thread's Change from the same keyed read the tab uses, so both share one read. */
 function useThreadChange(threadId: string, enabled: boolean): ThreadChange | undefined {
@@ -172,13 +174,20 @@ export function StripSummary({
   );
 }
 
-export function StripAction({ threadId, environment }: ExperimentalThreadContextSegmentProps) {
+export function StripAction({
+  threadId,
+  environment,
+  segments,
+}: ExperimentalThreadContextSegmentProps) {
   const row = useThreadChange(threadId, environment !== null);
   const summary = stripSummary(row);
   if (!summary || row?.state !== "checkout") return null;
   const kind = primaryAction(summary)?.kind;
   if (kind === "ship") return <StripShip threadId={threadId} />;
-  if (kind === "markReady") return <StripMarkReady threadId={threadId} summary={summary} />;
+  // Leave Mark ready to bb's pull request segment when it shows, so the strip has one.
+  const bbMarksReady = segments.some((segment) => segment.key === PULL_REQUEST_SEGMENT);
+  if (kind === "markReady" && !bbMarksReady)
+    return <StripMarkReady threadId={threadId} summary={summary} />;
   return null;
 }
 
