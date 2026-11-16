@@ -249,4 +249,19 @@ describe("workspaceRows", () => {
     const plain: WorkspaceValue = { ...workspace, provider: "git", checkedOut: "fresh" };
     expect(rows(plain, true).map((row) => row.branch)).toEqual(["fresh"]);
   });
+
+  test("a checkout on its default branch is not listed, even with commits or edits", () => {
+    const plain = (name: string, target: WorkspaceValue["target"]): WorkspaceValue => ({
+      ...gitbutler([{ ...branch(name, 2), remote: { ref: `origin/${name}`, name } }], 3),
+      provider: "git",
+      checkedOut: name,
+      target,
+    });
+    const target = { ref: "origin/main", head: "aaa111", behind: 0, base: null, lastFetched: null };
+    expect(rows(plain("main", target), true)).toEqual([]);
+    // No origin/HEAD: main and master still count as the default.
+    expect(rows(plain("master", null), true)).toEqual([]);
+    expect(rows(plain("feature", target), true).map((row) => row.branch)).toEqual(["feature"]);
+    expect(rows(plain("main", target), false).map((row) => row.branch)).toEqual(["main"]);
+  });
 });

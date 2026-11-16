@@ -197,10 +197,21 @@ const folder = (path: string) =>
     .at(-1) ?? path;
 
 /**
+ * Whether a branch is its checkout's default branch: the target's branch,
+ * or `main` or `master` when the checkout knows no target.
+ */
+function onDefault(workspace: WorkspaceValue, branch: Branch): boolean {
+  const target = workspace.target?.ref;
+  if (!target) return branch.name === "main" || branch.name === "master";
+  return branch.remote?.ref === target || branch.name === target.slice(target.indexOf("/") + 1);
+}
+
+/**
  * Every branch of a checkout's workspace as rows, with each branch's pull
  * request from the forge facets the server already holds. `listed` leaves
- * out empty branches, with no commits, pull request or uncommitted work:
- * the nav lists work, while a link still opens an empty branch's page.
+ * out branches with no pull request that are empty (no commits or
+ * uncommitted work of their own) or sit on the default branch: the nav lists
+ * work, while a link still opens such a branch's page.
  */
 export function workspaceRows(input: {
   hostId: string;
@@ -229,7 +240,9 @@ export function workspaceRows(input: {
     const kept = input.listed
       ? entries.filter(
           (entry, index) =>
-            entry.branch.commits.length > 0 || entry.pr || hasOwnEdits(entry, index),
+            entry.pr ||
+            (!onDefault(workspace, entry.branch) &&
+              (entry.branch.commits.length > 0 || hasOwnEdits(entry, index))),
         )
       : entries;
     return kept.map((entry, index): ChangeRow => {
