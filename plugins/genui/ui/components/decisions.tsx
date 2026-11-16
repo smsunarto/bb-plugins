@@ -68,7 +68,7 @@ const RISK_LABEL: Record<Risk, string> = { low: "Low risk", medium: "Medium risk
 
 function Pill({ tone, children }: { tone: Tone; children: ReactNode }) {
   return (
-    <Badge variant={TONE_BADGE[tone]} className="px-1.5 py-px font-medium">
+    <Badge variant={TONE_BADGE[tone]} className="h-5 px-1 py-0 font-medium">
       {children}
     </Badge>
   );
@@ -84,7 +84,7 @@ function FileChip({ file }: { file: PlanFile }) {
       <span className="min-w-0 truncate">{label}</span>
     </>
   );
-  const shape = "inline-flex h-6 max-w-full min-w-0 items-center gap-1 rounded-md bg-surface-recessed px-1.5 font-mono text-[11.5px] leading-4";
+  const shape = "inline-flex h-6 max-w-full min-w-0 items-center gap-1 rounded-md bg-surface-recessed px-1 font-mono text-[11.5px] leading-4";
   if (openFile === null) {
     return (
       <span title={label} className={cn(shape, "text-muted-foreground")}>
@@ -149,8 +149,8 @@ function PlanRow({
 }) {
   const rise = useEntrance<HTMLLIElement>(RISE);
   return (
-    <li ref={rise} className="flex min-w-0 gap-3 px-3 py-2.5">
-      <div className="flex shrink-0 items-start gap-2.5 pt-px">
+    <li ref={rise} className="flex min-w-0 gap-3 px-3 py-3">
+      <div className="flex shrink-0 items-start gap-2 pt-px">
         <CheckBox
           checked={checked}
           disabled={frozen}
@@ -171,7 +171,7 @@ function PlanRow({
           >
             {step.title}
           </span>
-          <span className="flex shrink-0 items-center gap-1.5">
+          <span className="flex shrink-0 items-center gap-1">
             {step.optional ? <Pill tone="neutral">Optional</Pill> : null}
             {step.risk === null ? null : <Pill tone={RISK_TONE[step.risk]}>{RISK_LABEL[step.risk]}</Pill>}
             {step.estimate === null ? null : (
@@ -190,7 +190,7 @@ function PlanRow({
           />
         )}
         {step.files.length === 0 ? null : (
-          <div className="flex min-w-0 flex-wrap gap-1 pt-0.5">
+          <div className="flex min-w-0 flex-wrap gap-1 pt-1">
             {step.files.map((file, fileIndex) => (
               <FileChip key={fileIndex} file={file} />
             ))}
@@ -268,14 +268,14 @@ export function Plan({ props }: { props: Props }) {
           </span>
           {risky > 0 ? <span className="text-destructive">{risky} high risk</span> : null}
           {totalText === null ? null : (
-            <span className="ml-auto inline-flex items-center gap-1 pr-1.5 tabular-nums">
+            <span className="ml-auto inline-flex items-center gap-1 pr-1 tabular-nums">
               <Icon name="Clock" aria-hidden className="size-3" />
               <span className="sr-only">Estimated total </span>
               <span className="font-medium text-foreground">{totalText}</span>
               {selected.unparsed > 0 ? <span>+ {selected.unparsed} unsized</span> : null}
             </span>
           )}
-          {selected.mixed ? <span className="ml-auto pr-1.5">Estimates mix points and time</span> : null}
+          {selected.mixed ? <span className="ml-auto pr-1">Estimates mix points and time</span> : null}
         </>
       }
     >
@@ -287,11 +287,11 @@ export function Plan({ props }: { props: Props }) {
       {shown.length < steps.length ? <ShowAll count={steps.length} noun="steps" onClick={() => setShowAll(true)} /> : null}
       {answered !== null ? (
         // The whole message, wrapped: it is the plan the agent will follow.
-        <div className="border-t border-border px-3 py-2.5 [&_.truncate]:whitespace-normal [&_p]:items-start [&_svg]:mt-1">
+        <div className="border-t border-border px-3 py-3 [&_.truncate]:whitespace-normal [&_p]:items-start [&_svg]:mt-1">
           <SentLine text={answered.question !== null || answered.text === message ? answered.text : null} />
         </div>
       ) : closed ? null : (
-        <div data-genui-question={question} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-t border-border px-3 py-3">
+        <div data-genui-question={question} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-t border-border px-3 py-3">
           {/* The caption beside it already quotes the approval. */}
           <ActionHint hint={actionIntent([{ kind: "action", type: "send", text: message }], { send: sendEffect(target, true, approved), shown: message }).hint}>
             <BaseButton
@@ -303,7 +303,7 @@ export function Plan({ props }: { props: Props }) {
               aria-pressed={target === "direct" ? undefined : approved}
               onClick={() => void approve()}
               {...keepTyping}
-              className={cn("w-fit max-w-full gap-1.5 text-[13px]", approved && "border-transparent bg-surface-recessed text-foreground ring-2 ring-[var(--color-timeline-accent,var(--primary))] ring-offset-1 ring-offset-background")}
+              className={cn("w-fit max-w-full gap-1 text-[13px]", approved && "border-transparent bg-surface-recessed text-foreground ring-2 ring-[var(--color-timeline-accent,var(--primary))] ring-offset-1 ring-offset-background")}
             >
               {approved ? <Icon name="Check" aria-hidden className="size-3.5 shrink-0" /> : null}
               <span className="truncate">Approve</span>
@@ -368,7 +368,7 @@ function WeightControl({
       >
         <Icon name="Minus" aria-hidden />
       </BaseButton>
-      <output aria-live="polite" className="min-w-7 px-0.5 text-center text-xs font-medium tabular-nums text-foreground">
+      <output aria-live="polite" className="min-w-7 px-1 text-center text-xs font-medium tabular-nums text-foreground">
         {round(weight, 4)}
       </output>
       <BaseButton
@@ -391,14 +391,14 @@ function ProsCons({ pros, cons, note }: { pros: readonly string[]; cons: readonl
   return (
     <div className="flex min-w-0 flex-col gap-1 text-xs leading-4">
       {pros.map((pro, index) => (
-        <span key={`p${index}`} className="flex min-w-0 gap-1.5">
+        <span key={`p${index}`} className="flex min-w-0 gap-1">
           <span aria-hidden className="shrink-0 font-semibold text-success">+</span>
           <span className="sr-only">Pro: </span>
           <span className="min-w-0 text-foreground [overflow-wrap:anywhere]">{pro}</span>
         </span>
       ))}
       {cons.map((con, index) => (
-        <span key={`c${index}`} className="flex min-w-0 gap-1.5">
+        <span key={`c${index}`} className="flex min-w-0 gap-1">
           <span aria-hidden className="shrink-0 font-semibold text-destructive">−</span>
           <span className="sr-only">Con: </span>
           <span className="min-w-0 text-foreground [overflow-wrap:anywhere]">{con}</span>
@@ -502,7 +502,7 @@ export function Decision({ props }: { props: Props }) {
   );
   const scoreCell = (score: number | null) => (
     <span
-      className="inline-flex h-6 min-w-8 items-center justify-center rounded-md px-1.5 text-xs font-medium tabular-nums text-foreground"
+      className="inline-flex h-6 min-w-8 items-center justify-center rounded-md px-1 text-xs font-medium tabular-nums text-foreground"
       style={{ background: scoreTint(score, model.scale) }}
     >
       {score === null ? <span className="text-muted-foreground">—</span> : formatAmount(score)}
@@ -523,7 +523,7 @@ export function Decision({ props }: { props: Props }) {
               onClick={() => setWeights(initial)}
               variant="ghost"
               size="sm"
-              className="ml-auto h-6 gap-1 px-1.5 font-normal text-muted-foreground [&_[data-icon-root]]:size-3"
+              className="ml-auto h-6 gap-1 px-1 font-normal text-muted-foreground [&_[data-icon-root]]:size-3"
             >
               <Icon name="RotateCcw" aria-hidden />
               Reset weights
@@ -546,7 +546,7 @@ export function Decision({ props }: { props: Props }) {
                   Weight
                 </TableHead>
                 {model.options.map((option, index) => (
-                  <TableHead key={index} scope="col" className="h-auto max-w-40 px-1.5 pb-2 text-center align-bottom text-foreground">
+                  <TableHead key={index} scope="col" className="h-auto max-w-40 px-1 pb-2 text-center align-bottom text-foreground">
                     <span className="flex flex-col items-center gap-1">
                       {index === leader && !tiedLead ? <Pill tone="info">Leads</Pill> : null}
                       <span className="[overflow-wrap:anywhere]">{option.name}</span>
@@ -558,13 +558,13 @@ export function Decision({ props }: { props: Props }) {
             <TableBody>
               {model.criteria.map((criterion, criterionIndex) => (
                 <TableRow key={criterionIndex} className="border-b-0 border-t border-border hover:bg-transparent">
-                  <TableHead scope="row" className="h-auto max-w-56 py-1.5 pl-0 pr-3 font-normal">
+                  <TableHead scope="row" className="h-10 max-w-56 py-1 pl-0 pr-3 font-normal">
                     <span className="block text-sm leading-5 text-foreground">{criterion.name}</span>
                     {criterion.note === null ? null : <span className="block text-xs leading-4 text-muted-foreground">{criterion.note}</span>}
                   </TableHead>
-                  <TableCell className="py-1.5 pl-0 pr-3">{weightCell(criterionIndex)}</TableCell>
+                  <TableCell className="h-10 py-1 pl-0 pr-3">{weightCell(criterionIndex)}</TableCell>
                   {model.options.map((option, index) => (
-                    <TableCell key={index} className="px-1.5 py-1.5 text-center">
+                    <TableCell key={index} className="h-10 px-1 py-1 text-center">
                       {scoreCell(option.scores[criterionIndex])}
                     </TableCell>
                   ))}
@@ -577,8 +577,8 @@ export function Decision({ props }: { props: Props }) {
                 {model.options.map((option, index) => {
                   const entry = ranked[rankOf.get(index) ?? 0];
                   return (
-                    <TableCell key={index} className="px-1.5 py-2 text-center">
-                      <span className="flex flex-col items-center gap-0.5">
+                    <TableCell key={index} className="px-1 py-2 text-center">
+                      <span className="flex flex-col items-center gap-1">
                         <span className={cn("text-[15px] font-semibold tabular-nums leading-5", index === leader ? "text-foreground" : "text-muted-foreground")}>
                           {formatNumber(entry.total)}
                         </span>
@@ -594,7 +594,7 @@ export function Decision({ props }: { props: Props }) {
         {details ? (
           <ul aria-label="Pros and cons" className="m-0 hidden min-w-0 list-none grid-cols-[repeat(auto-fit,minmax(11rem,1fr))] gap-2 p-0 @lg:grid">
             {model.options.map((option, index) => (
-              <li key={index} className="flex min-w-0 flex-col gap-1.5 rounded-lg bg-surface-recessed px-3 py-2.5">
+              <li key={index} className="flex min-w-0 flex-col gap-2 rounded-lg bg-surface-recessed px-3 py-3">
                 <span className="text-xs font-medium leading-4 text-foreground">{option.name}</span>
                 <ProsCons pros={option.pros} cons={option.cons} note={option.note} />
               </li>
@@ -619,7 +619,7 @@ export function Decision({ props }: { props: Props }) {
             {ranked.map((entry, position) => {
               const option = model.options[entry.index];
               return (
-                <li key={entry.index} className="flex min-w-0 flex-col gap-2 rounded-lg bg-surface-recessed px-3 py-2.5">
+                <li key={entry.index} className="flex min-w-0 flex-col gap-2 rounded-lg bg-surface-recessed px-3 py-3">
                   <div className="flex min-w-0 items-baseline gap-2">
                     <span className="text-xs tabular-nums text-muted-foreground">#{position + 1}</span>
                     <span className="min-w-0 flex-1 text-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{option.name}</span>
@@ -654,7 +654,7 @@ export function Decision({ props }: { props: Props }) {
             size="sm"
             aria-expanded={details}
             onClick={() => setDetails((open) => !open)}
-            className="-ml-1.5 h-6 w-fit gap-1 px-1.5 font-normal text-muted-foreground [&_[data-icon-root]]:size-3.5"
+            className="-ml-1 h-6 w-fit gap-1 px-1 font-normal text-muted-foreground [&_[data-icon-root]]:size-3.5"
           >
             <Icon name={details ? "ChevronDown" : "ChevronRight"} aria-hidden />
             {details ? "Hide pros and cons" : "Show pros and cons"}
@@ -689,7 +689,7 @@ function NumberField({
   // Kept as typed ("2." mid-entry) and parsed on every change.
   const [draft, setDraft] = useState(value === null ? "" : String(value));
   return (
-    <span className="flex min-w-0 flex-col gap-0.5">
+    <span className="flex min-w-0 flex-col gap-1">
       <Label htmlFor={id} className="text-[11px] font-normal leading-4 text-muted-foreground">
         {label}
       </Label>
@@ -761,14 +761,14 @@ function EstimateRow({
       <div className="flex min-w-0 flex-col">
         <span className="text-sm leading-5 text-foreground [overflow-wrap:anywhere]">
           {task.title}
-          {edited ? <span className="ml-1.5 text-[11px] text-muted-foreground">edited</span> : null}
+          {edited ? <span className="ml-1 text-[11px] text-muted-foreground">edited</span> : null}
         </span>
         {estimate.error === null ? null : <span className="text-xs leading-4 text-destructive">Not counted: {estimate.error}</span>}
       </div>
       <div className="order-last col-span-2 min-w-0 @lg:order-none @lg:col-span-1">
         <RangeBar estimate={estimate} max={max} />
       </div>
-      <div className="flex items-center justify-end gap-1.5">
+      <div className="flex items-center justify-end gap-2">
         <span className="flex flex-col items-end">
           <span className="text-sm font-medium leading-5 tabular-nums text-foreground">
             {estimate.error === null ? formatWithUnit(estimate.mean, unit) : "—"}
@@ -800,11 +800,11 @@ function TotalRange({ low, high, marks, unit }: { low: number; high: number; mar
   const at = (value: number) => (span > 0 ? ((value - low) / span) * 100 : 50);
   return (
     <div className="flex min-w-0 flex-col gap-1">
-      <div aria-hidden className="relative mx-1 mt-4 h-2.5 rounded-full bg-[color-mix(in_oklch,var(--color-timeline-accent,var(--primary))_18%,transparent)]">
+      <div aria-hidden className="relative mx-1 mt-4 h-2 rounded-full bg-[color-mix(in_oklch,var(--color-timeline-accent,var(--primary))_18%,transparent)]">
         {marks.map((mark) => (
           <span
             key={mark.label}
-            className="absolute -top-0.5 h-3.5 w-0.5 -translate-x-1/2 rounded-full bg-[var(--color-timeline-accent,var(--primary))] transition-[left] duration-300 motion-reduce:transition-none"
+            className="absolute -top-1 h-4 w-0.5 -translate-x-1/2 rounded-full bg-[var(--color-timeline-accent,var(--primary))] transition-[left] duration-300 motion-reduce:transition-none"
             style={{ left: `${at(mark.value)}%` }}
           />
         ))}
@@ -888,7 +888,7 @@ export function Estimate({ props }: { props: Props }) {
               }}
               variant="ghost"
               size="sm"
-              className="ml-auto h-6 gap-1 px-1.5 font-normal text-muted-foreground [&_[data-icon-root]]:size-3"
+              className="ml-auto h-6 gap-1 px-1 font-normal text-muted-foreground [&_[data-icon-root]]:size-3"
             >
               <Icon name="RotateCcw" aria-hidden />
               Reset edits
@@ -925,7 +925,7 @@ export function Estimate({ props }: { props: Props }) {
         <ol aria-label="Tasks" className="m-0 flex min-w-0 list-none flex-col p-0">
           <li aria-hidden className={cn(ESTIMATE_GRID, "pt-2")}>
             <span className="hidden @lg:block" />
-            <div className="relative col-span-2 h-3.5 @lg:col-span-1">
+            <div className="relative col-span-2 h-4 @lg:col-span-1">
               {scale.ticks.map((tick, index) => (
                 <span
                   key={tick}

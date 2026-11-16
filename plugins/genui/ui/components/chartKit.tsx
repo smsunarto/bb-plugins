@@ -197,7 +197,7 @@ export function SeriesLegend({ series, swatch = "square" }: { series: readonly S
   return (
     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
       {series.map((entry) => (
-        <span key={entry.name} className="inline-flex items-center gap-1.5">
+        <span key={entry.name} className="inline-flex items-center gap-1">
           <span
             aria-hidden
             className={cn(
@@ -215,7 +215,7 @@ export function SeriesLegend({ series, swatch = "square" }: { series: readonly S
 
 /** The floating readout's surface. */
 export const TOOLTIP =
-  "pointer-events-none absolute z-10 min-w-[7rem] rounded-md border border-border bg-background px-2.5 py-1.5 text-xs shadow-[0_4px_12px_rgb(0_0_0/0.08)]";
+  "pointer-events-none absolute z-10 min-w-[7rem] rounded-md border border-border bg-background px-3 py-2 text-xs shadow-[0_4px_12px_rgb(0_0_0/0.08)]";
 
 /**
  * A readout for something spanning `top`..`bottom` at `x` in a frame `width`
@@ -261,7 +261,7 @@ export function ChartTooltip({
 export function TooltipRow({ color, name, value }: { color?: string; name: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 leading-5">
-      <span className="inline-flex min-w-0 items-center gap-1.5 text-muted-foreground">
+      <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
         {color === undefined ? null : (
           <span aria-hidden className="size-2 shrink-0 rounded-[2px]" style={{ background: color }} />
         )}

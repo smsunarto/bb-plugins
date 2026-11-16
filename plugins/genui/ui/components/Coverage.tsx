@@ -72,7 +72,7 @@ interface RowContext {
 function Bar({ value, className }: { value: number | null; className?: string }) {
   const grow = useEntrance<HTMLDivElement>(GROW_X);
   return (
-    <span aria-hidden className={cn("h-1.5 shrink-0 overflow-hidden rounded-full bg-muted", className)}>
+    <span aria-hidden className={cn("h-2 shrink-0 overflow-hidden rounded-full bg-muted", className)}>
       {value === null ? null : (
         <span ref={grow} className={cn("block h-full origin-left rounded-full", TONE_FILL[coverageTone(value)])} style={{ width: `${value}%` }} />
       )}
@@ -84,7 +84,7 @@ function Bar({ value, className }: { value: number | null; className?: string })
 function RowFigures({ ratio, missed, unit }: { ratio: Ratio | null; missed: number; unit: CoverageUnit }) {
   const value = percent(ratio);
   return (
-    <span className="flex shrink-0 items-center gap-2.5 text-xs tabular-nums">
+    <span className="flex shrink-0 items-center gap-2 text-xs tabular-nums">
       <Bar value={value} className="w-10 sm:w-20" />
       <span
         className={cn("w-11 text-right font-medium", value === null ? "text-muted-foreground" : TONE_INK[coverageTone(value)])}
@@ -107,7 +107,7 @@ function MetricStat({ label, ratio }: { label: string; ratio: Ratio }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <span className="text-xs leading-4 text-muted-foreground">{label}</span>
-      <span className="flex items-baseline gap-1.5 tabular-nums">
+      <span className="flex items-baseline gap-1 tabular-nums">
         <span className={cn("text-[13px] font-semibold", value === null ? "text-muted-foreground" : "text-foreground")}>
           {value === null ? "—" : formatPercent(value)}
         </span>
@@ -146,7 +146,7 @@ function Summary({ total, unit, files }: { total: CoverageMetrics; unit: Coverag
         </span>
       </div>
       {others.length === 0 ? null : (
-        <div className="grid min-w-0 flex-1 grid-cols-3 gap-4 pb-0.5">
+        <div className="grid min-w-0 flex-1 grid-cols-3 gap-4">
           {others.map(([label, ratio]) => (
             <MetricStat key={label} label={label} ratio={ratio} />
           ))}
@@ -168,7 +168,7 @@ function RangeChips({ file, context }: { file: FileCoverage; context: RowContext
   const shown = all ? ranges : ranges.slice(0, CHIP_PAGE);
   if (range === null) return <p className="m-0 pb-2 pl-[22px] text-xs text-muted-foreground">Every line ran.</p>;
   return (
-    <div className="flex min-w-0 flex-col gap-2 pb-2.5 pl-[22px] pt-1">
+    <div className="flex min-w-0 flex-col gap-2 pb-3 pl-[22px] pt-1">
       <ToggleGroup
         type="single"
         aria-label={`Uncovered ${context.unit} in ${context.shown(file)}`}
@@ -207,7 +207,7 @@ function RangeChip({ range }: { range: LineRange }) {
         value={String(range.start)}
         variant="outline"
         aria-label={`${range.start === range.end ? "Line" : "Lines"} ${rangeLabel(range)}, ${formatNumber(count)} uncovered`}
-        className="h-6 min-w-0 gap-1 px-1.5 font-mono text-[11px] font-normal tabular-nums data-[state=on]:text-destructive"
+        className="h-6 min-w-0 gap-1 px-1 font-mono text-[11px] font-normal tabular-nums data-[state=on]:text-destructive"
       >
         {rangeLabel(range)}
         {range.end > range.start ? <span className="text-[10px] opacity-70">·{count}</span> : null}
@@ -225,7 +225,7 @@ function FileRow({ file, name, dir, context, depth }: { file: FileCoverage; name
   const expandable = file.uncovered !== null && file.missed > 0;
   const open = expandable && context.isOpen(key);
   const label = (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+    <span className="flex min-w-0 flex-1 items-center gap-1">
       <span className="min-w-0 truncate font-mono text-[12px] leading-5" title={context.shown(file)}>
         {dir === null || dir === "" ? null : <span className="text-muted-foreground">{dir}/</span>}
         <span className="text-foreground">{name}</span>
@@ -241,7 +241,7 @@ function FileRow({ file, name, dir, context, depth }: { file: FileCoverage; name
           onToggle={() => context.toggle(key)}
           label={`${context.shown(file)}: ${formatPercent(percent(headline(file, context.unit)) ?? 100)}, ${formatNumber(file.missed)} ${context.unit} uncovered`}
           header={
-            <span className="flex w-full min-w-0 items-center gap-2 py-1.5" style={indent}>
+            <span className="flex w-full min-w-0 items-center gap-2 min-h-8 py-1" style={indent}>
               <Chevron open={open} />
               {label}
               <RowFigures ratio={headline(file, context.unit)} missed={file.missed} unit={context.unit} />
@@ -255,7 +255,7 @@ function FileRow({ file, name, dir, context, depth }: { file: FileCoverage; name
           )}
         </Disclosure>
       ) : (
-        <div className="flex w-full min-w-0 items-center gap-2 py-1.5" style={indent}>
+        <div className="flex w-full min-w-0 items-center gap-2 min-h-8 py-1" style={indent}>
           <span aria-hidden className="size-3.5 shrink-0" />
           {label}
           <OpenFileButton path={file.path} line={null} />
@@ -278,9 +278,9 @@ function FolderRow({ folder, context, depth }: { folder: CoverageFolder; context
         onToggle={() => context.toggle(key)}
         label={`${folder.path}: ${formatPercent(percent(ratio) ?? 100)}, ${formatNumber(folder.fileCount)} files`}
         header={
-          <span className="flex w-full min-w-0 items-center gap-2 py-1.5" style={{ paddingLeft: `${depth * 16}px` }}>
+          <span className="flex w-full min-w-0 items-center gap-2 min-h-8 py-1" style={{ paddingLeft: `${depth * 16}px` }}>
             <Chevron open={open} />
-            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="flex min-w-0 flex-1 items-center gap-1">
               <Icon name={open ? "FolderOpen" : "Folder"} aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
               <span className="min-w-0 truncate font-mono text-[12px] leading-5 text-foreground">{folder.name}</span>
               <span className="hidden shrink-0 text-[11px] text-muted-foreground sm:inline">{formatNumber(folder.fileCount)}</span>
@@ -402,7 +402,7 @@ export function Coverage({ props }: { props: Props }) {
     <ReportFrame depth={depth} label="Coverage">
       <CardDepthContext value={depth + 1}>
         <ReportPathsContext value={paths}>
-          <div className="flex min-w-0 flex-col gap-3.5">
+          <div className="flex min-w-0 flex-col gap-4">
             <Summary total={total} unit={unit} files={files.length} />
             {files.length === 0 ? (
               <p className="m-0 text-xs leading-5 text-muted-foreground">The report lists no files.</p>
@@ -437,7 +437,7 @@ export function Coverage({ props }: { props: Props }) {
                   <span className="min-w-0 flex-1 truncate pl-[22px] font-mono">
                     {matches !== null ? `${formatNumber(matches.length)} of ${formatNumber(files.length)} files` : view === "tree" ? (tree.base ?? "Files") : "Files"}
                   </span>
-                  <span className="flex shrink-0 items-center gap-2.5">
+                  <span className="flex shrink-0 items-center gap-2">
                     <span className="w-10 sm:w-20" />
                     <span className="w-11 text-right">{unit === "lines" ? "Lines" : "Stmts"}</span>
                     <span className="w-10 text-right">Missed</span>

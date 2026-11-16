@@ -111,7 +111,7 @@ export function Form({ props }: { props: PropsOf<"Form"> }) {
               await stage(question, { text: message, selection: true });
               setSending(false);
             }}
-            className="w-fit max-w-full gap-1.5 text-[13px]"
+            className="w-fit max-w-full gap-1 text-[13px]"
           >
             Send
             <ActionGlyph name="Sent" />

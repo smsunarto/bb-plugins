@@ -265,7 +265,7 @@ function XYChart({
   });
 
   return (
-    <div className="flex min-w-0 flex-col gap-2.5">
+    <div className="flex min-w-0 flex-col gap-3">
       <SeriesLegend series={series} swatch={type === "line" ? "line" : "square"} />
       <div
         ref={frame}
@@ -384,7 +384,7 @@ function XYChart({
               const value = entry.values[hover] ?? null;
               return (
                 <div key={entry.name} className="flex items-center justify-between gap-3 leading-5">
-                  <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                  <span className="inline-flex items-center gap-1 text-muted-foreground">
                     <span aria-hidden className="size-2 rounded-[2px]" style={{ background: entry.color }} />
                     {entry.name || "Value"}
                   </span>

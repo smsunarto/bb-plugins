@@ -126,21 +126,21 @@ function Comparisons({ report }: { report: CompareReport }) {
       />
       {shared === "" ? null : <p className="m-0 text-xs leading-5 text-muted-foreground">Same conditions for every row: {shared}</p>}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs leading-5 text-muted-foreground" aria-hidden>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-1.5 w-3 rounded-full bg-muted-foreground/30" />
+        <span className="inline-flex items-center gap-1">
+          <span className="h-2 w-3 rounded-full bg-muted-foreground/30" />
           Before
         </span>
-        <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1">
           <span className="flex gap-[2px]">
-            <span className="h-1.5 w-2 rounded-l-full bg-success" />
-            <span className="h-1.5 w-2 bg-destructive" />
-            <span className="h-1.5 w-2 rounded-r-full" style={{ background: ACCENT }} />
+            <span className="h-2 w-2 rounded-l-full bg-success" />
+            <span className="h-2 w-2 bg-destructive" />
+            <span className="h-2 w-2 rounded-r-full" style={{ background: ACCENT }} />
           </span>
           After: {report.words.better}, {report.words.worse}, within noise
         </span>
         {report.incomparable > 0 ? (
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-1.5 w-3 rounded-full" style={INCOMPARABLE_FILL} />
+          <span className="inline-flex items-center gap-1">
+            <span className="h-2 w-3 rounded-full" style={INCOMPARABLE_FILL} />
             Not comparable
           </span>
         ) : null}
@@ -189,7 +189,7 @@ function ComparisonRow({ row, max, words, shared }: { row: Comparison; max: numb
         {row.note === null ? null : <span className="truncate text-[11px] leading-4 text-muted-foreground">{row.note}</span>}
         {row.comparability === null ? null : <Conditions comparability={row.comparability} shared={shared} />}
       </div>
-      <div aria-hidden className="col-span-2 row-start-2 flex min-w-0 flex-col gap-[3px] @lg:col-span-1 @lg:col-start-2 @lg:row-start-1">
+      <div aria-hidden className="col-span-2 row-start-2 flex min-w-0 flex-col gap-1 @lg:col-span-1 @lg:col-start-2 @lg:row-start-1">
         <Bar width={width(row.before)} className="bg-muted-foreground/30" />
         <Bar
           width={width(row.after)}
@@ -206,7 +206,7 @@ function ComparisonRow({ row, max, words, shared }: { row: Comparison; max: numb
         {repeatNote === null ? null : <span className="block text-[10.5px] leading-4">{repeatNote}</span>}
       </span>
       <span aria-hidden className="col-start-2 row-start-1 flex flex-col items-end @lg:col-start-4">
-        <Badge variant={TONE_BADGE[tone]} className="px-1.5 py-0 font-medium tabular-nums" title={verdictWord}>
+        <Badge variant={TONE_BADGE[tone]} className="h-5 px-1 py-0 font-medium tabular-nums" title={verdictWord}>
           {row.comparable ? change : "not comparable"}
         </Badge>
         <span className={cn("whitespace-nowrap text-[10.5px] leading-4 tabular-nums", row.comparable ? TONE_TEXT[tone] || "text-muted-foreground" : "text-muted-foreground")}>
@@ -257,7 +257,7 @@ function Conditions({ comparability, shared }: { comparability: Comparability; s
 function Bar({ width, className, style }: { width: string; className: string; style?: CSSProperties }) {
   const grow = useEntrance<HTMLDivElement>(GROW_X);
   return (
-    <div className="h-1.5 w-full overflow-hidden rounded-full">
+    <div className="h-2 w-full overflow-hidden rounded-full">
       <div ref={grow} className={cn("h-full min-w-[2px] origin-left rounded-full", className)} style={{ width, ...style }} />
     </div>
   );
@@ -370,7 +370,7 @@ function RunRow({ run, rank, unit, ticks, fastest }: { run: Run; rank: number; u
           </code>
           <span className={cn("text-[11px] leading-4 tabular-nums", first ? "text-success" : "text-muted-foreground")}>
             {relative}
-            {run.failed ? <span className="ml-1.5 text-destructive">exited non-zero</span> : null}
+            {run.failed ? <span className="ml-1 text-destructive">exited non-zero</span> : null}
           </span>
         </span>
         <span aria-hidden className="col-span-3 col-start-1 row-start-2 min-w-0 @lg:col-span-1 @lg:col-start-3 @lg:row-start-1">
@@ -384,10 +384,10 @@ function RunRow({ run, rank, unit, ticks, fastest }: { run: Run; rank: number; u
       <dl
         id={`${id}-facts`}
         hidden={!open}
-        className={cn("m-0 grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-x-4 gap-y-1 pb-2.5 pl-8 text-xs leading-5", open ? "grid" : "hidden")}
+        className={cn("m-0 grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-x-4 gap-y-1 pb-3 pl-8 text-xs leading-5", open ? "grid" : "hidden")}
       >
         {facts.map((fact) => (
-          <div key={fact.label} className="flex min-w-0 items-baseline gap-1.5">
+          <div key={fact.label} className="flex min-w-0 items-baseline gap-1">
             <dt className="text-muted-foreground">{fact.label}</dt>
             <dd className="m-0 font-medium tabular-nums text-foreground">{fact.value}</dd>
           </div>
@@ -605,12 +605,12 @@ const NO_GROUP = "\u0000none";
 function GroupBy({ value, options, onChange }: { value: string | null; options: readonly string[]; onChange: (value: string) => void }) {
   const id = useId();
   return (
-    <div className="flex shrink-0 items-center gap-1.5">
+    <div className="flex shrink-0 items-center gap-2">
       <Label htmlFor={id} className="text-xs font-normal leading-5 text-muted-foreground">
         Group by
       </Label>
       <Select value={value ?? NO_GROUP} onValueChange={(next) => onChange(next === NO_GROUP ? "" : next)}>
-        <SelectTrigger id={id} className="h-7 w-auto max-w-[11rem] gap-1.5 px-2 text-xs">
+        <SelectTrigger id={id} className="h-7 w-auto max-w-[11rem] gap-1 px-2 text-xs">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -646,14 +646,14 @@ function RunRecordRow({
   const tone = STATUS_TONE[run.status];
   const recorded = conditions.filter((key) => Object.hasOwn(run.context, key));
   return (
-    <div ref={rise} role="row" className={cn("grid min-w-0 grid-cols-1 gap-x-3 gap-y-1.5 border-b border-border/60 py-2 last:border-b-0", table && WIDE_ROW)}>
+    <div ref={rise} role="row" className={cn("grid min-w-0 grid-cols-1 gap-x-3 gap-y-2 border-b border-border/60 py-2 last:border-b-0", table && WIDE_ROW)}>
       <div role="rowheader" className="flex min-w-0 flex-col">
-        <span className="flex min-w-0 items-center gap-1.5">
+        <span className="flex min-w-0 items-center gap-2">
           <span className="truncate text-[13px] leading-5 text-foreground" title={run.name}>
             {run.name}
           </span>
           {measured ? null : (
-            <Badge variant={TONE_BADGE[tone]} className="px-1.5 py-0 font-medium">
+            <Badge variant={TONE_BADGE[tone]} className="h-5 px-1 py-0 font-medium">
               {runStatusWord(run)}
             </Badge>
           )}

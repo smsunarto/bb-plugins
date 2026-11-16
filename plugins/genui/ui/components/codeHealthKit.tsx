@@ -214,7 +214,7 @@ export interface ExcerptMark {
 
 function Placeholder({ rows, label }: { rows: number; label: string }) {
   return (
-    <div role="status" aria-label={label} className="flex flex-col gap-2 px-3 py-[7px]">
+    <div role="status" aria-label={label} className="flex flex-col gap-2 px-3 py-3">
       {Array.from({ length: rows }, (_, index) => (
         <Skeleton
           key={index}
@@ -270,8 +270,8 @@ export function CodeExcerpt({
   }
   if (!file.ok) {
     return (
-      <div className="flex min-w-0 flex-col gap-1.5">
-        <p className="m-0 flex min-w-0 items-start gap-1.5 text-xs leading-5 text-muted-foreground">
+      <div className="flex min-w-0 flex-col gap-2">
+        <p className="m-0 flex min-w-0 items-start gap-1 text-xs leading-5 text-muted-foreground">
           <Icon name="FileQuestion" aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           <span className="min-w-0 [overflow-wrap:anywhere]">
             Couldn't show {shownPath}:{mark.start}: {file.error}
@@ -308,7 +308,7 @@ export function CodeExcerpt({
 function ExcerptLines({ lines, first, mark, tone }: { lines: readonly string[]; first: number; mark: ExcerptMark; tone: MarkTone }) {
   const width = String(first + lines.length - 1).length;
   return (
-    <div className="max-h-[26rem] overflow-auto py-1.5 font-mono text-[11.5px] leading-5 [tab-size:2]">
+    <div className="max-h-[26rem] overflow-auto py-2 font-mono text-[11.5px] leading-5 [tab-size:2]">
       <div className="min-w-max">
         {lines.map((text, index) => {
           const number = first + index;
@@ -430,10 +430,10 @@ export function Segmented<T extends string>({
       onValueChange={(next) => {
         if (next !== "") onChange(next as T);
       }}
-      className="w-fit max-w-full shrink-0 justify-start gap-0.5 rounded-lg bg-surface-recessed p-0.5"
+      className="w-fit max-w-full shrink-0 justify-start gap-1 rounded-lg bg-surface-recessed p-1"
     >
       {options.map((option) => (
-        <ToggleGroupItem key={option.value} value={option.value} className="h-6 min-w-0 whitespace-nowrap px-2.5 text-xs">
+        <ToggleGroupItem key={option.value} value={option.value} className="h-5 pointer-coarse:h-6 min-w-0 whitespace-nowrap px-2 text-xs">
           {option.label}
         </ToggleGroupItem>
       ))}

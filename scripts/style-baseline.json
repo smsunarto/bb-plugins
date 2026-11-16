@@ -342,7 +342,7 @@
   {
     "file": "plugins/genui/ui/components/Acceptance.tsx",
     "rule": "hairline-literal",
-    "source": "<pre className=\"m-0 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-[11.5px] leading-5 text-foreground [overflow-wrap:anywhere]\">"
+    "source": "<pre className=\"m-0 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background px-3 py-2 font-mono text-[11.5px] leading-5 text-foreground [overflow-wrap:anywhere]\">"
   },
   {
     "file": "plugins/genui/ui/components/Acceptance.tsx",
@@ -367,12 +367,12 @@
   {
     "file": "plugins/genui/ui/components/Acceptance.tsx",
     "rule": "hairline-literal",
-    "source": "{criterion.required ? null : <span className=\"ml-1.5 rounded-sm bg-surface-recessed px-1 text-[10.5px] font-normal text-muted-foreground\">optional</span>}"
+    "source": "{criterion.required ? null : <span className=\"ml-1 rounded-sm bg-surface-recessed px-1 text-[10.5px] font-normal text-muted-foreground\">optional</span>}"
   },
   {
     "file": "plugins/genui/ui/components/Acceptance.tsx",
     "rule": "hairline-literal",
-    "source": "{criterion.required ? null : <span className=\"ml-1.5 rounded-sm bg-surface-recessed px-1 text-[10.5px] text-muted-foreground\">optional</span>}"
+    "source": "{criterion.required ? null : <span className=\"ml-1 rounded-sm bg-surface-recessed px-1 text-[10.5px] text-muted-foreground\">optional</span>}"
   },
   {
     "file": "plugins/genui/ui/components/Acceptance.tsx",
@@ -392,7 +392,7 @@
   {
     "file": "plugins/genui/ui/components/Benchmark.tsx",
     "rule": "edge-opacity",
-    "source": "<div ref={rise} role=\"row\" className={cn(\"grid min-w-0 grid-cols-1 gap-x-3 gap-y-1.5 border-b border-border/60 py-2 last:border-b-0\", table && WIDE_ROW)}>"
+    "source": "<div ref={rise} role=\"row\" className={cn(\"grid min-w-0 grid-cols-1 gap-x-3 gap-y-2 border-b border-border/60 py-2 last:border-b-0\", table && WIDE_ROW)}>"
   },
   {
     "file": "plugins/genui/ui/components/Benchmark.tsx",
@@ -512,11 +512,6 @@
   {
     "file": "plugins/genui/ui/components/Compare.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-border [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)]\","
-  },
-  {
-    "file": "plugins/genui/ui/components/Compare.tsx",
-    "rule": "arbitrary-edge",
     "source": "\"absolute cursor-zoom-in rounded-[3px] border-[1.5px] p-0 transition-[border-color,box-shadow] duration-150 hover:shadow-[0_0_0_3px_rgb(255_0_80/0.25)]\","
   },
   {
@@ -532,12 +527,12 @@
   {
     "file": "plugins/genui/ui/components/Compare.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"pointer-events-none absolute z-10 max-w-[calc(50%-0.75rem)] truncate rounded-[5px] bg-background/85 px-1.5 text-[10.5px] font-medium leading-[18px] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.12)]\";"
+    "source": "\"pointer-events-none absolute z-10 max-w-[calc(50%-0.75rem)] truncate rounded-[5px] bg-background/85 px-1 text-[10.5px] font-medium leading-[18px] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.12)]\";"
   },
   {
     "file": "plugins/genui/ui/components/Compare.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"pointer-events-none absolute z-10 max-w-[calc(50%-0.75rem)] truncate rounded-[5px] bg-background/85 px-1.5 text-[10.5px] font-medium leading-[18px] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.12)]\";"
+    "source": "\"pointer-events-none absolute z-10 max-w-[calc(50%-0.75rem)] truncate rounded-[5px] bg-background/85 px-1 text-[10.5px] font-medium leading-[18px] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.12)]\";"
   },
   {
     "file": "plugins/genui/ui/components/Compare.tsx",
@@ -557,7 +552,7 @@
   {
     "file": "plugins/genui/ui/components/Compare.tsx",
     "rule": "hairline-literal",
-    "source": "\"pointer-events-none absolute z-10 max-w-[calc(50%-0.75rem)] truncate rounded-[5px] bg-background/85 px-1.5 text-[10.5px] font-medium leading-[18px] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.12)]\";"
+    "source": "\"pointer-events-none absolute z-10 max-w-[calc(50%-0.75rem)] truncate rounded-[5px] bg-background/85 px-1 text-[10.5px] font-medium leading-[18px] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.12)]\";"
   },
   {
     "file": "plugins/genui/ui/components/Compare.tsx",
@@ -617,7 +612,7 @@
   {
     "file": "plugins/genui/ui/components/EditableTable.tsx",
     "rule": "edge-opacity",
-    "source": "className=\"relative grid min-w-0 grid-cols-1 gap-2 rounded-lg bg-surface-recessed py-3 pl-3 pr-10 @lg:items-center @lg:rounded-none @lg:border-b @lg:border-border/60 @lg:bg-transparent @lg:px-0 @lg:py-1.5 @lg:[grid-template-columns:var(--cols)] @lg:last:border-b-0\""
+    "source": "className=\"relative grid min-w-0 grid-cols-1 gap-2 rounded-lg bg-surface-recessed py-3 pl-3 pr-10 @lg:items-center @lg:rounded-none @lg:border-b @lg:border-border/60 @lg:bg-transparent @lg:px-0 @lg:py-1 @lg:[grid-template-columns:var(--cols)] @lg:last:border-b-0\""
   },
   {
     "file": "plugins/genui/ui/components/Findings.tsx",
@@ -627,17 +622,17 @@
   {
     "file": "plugins/genui/ui/components/Findings.tsx",
     "rule": "edge-opacity",
-    "source": "<p className=\"m-0 flex items-center gap-1.5 border-t border-border/60 pt-2 text-xs leading-5 text-muted-foreground\">"
+    "source": "<p className=\"m-0 flex items-center gap-1 border-t border-border/60 pt-2 text-xs leading-5 text-muted-foreground\">"
   },
   {
     "file": "plugins/genui/ui/components/Findings.tsx",
     "rule": "edge-opacity",
-    "source": "<section aria-label=\"Review evidence\" className=\"min-w-0 border-t border-border/60 pt-1.5\">"
+    "source": "<section aria-label=\"Review evidence\" className=\"min-w-0 border-t border-border/60 pt-2\">"
   },
   {
     "file": "plugins/genui/ui/components/Findings.tsx",
     "rule": "edge-opacity",
-    "source": "className=\"flex min-w-0 flex-col border-t border-border/60 pt-1.5\""
+    "source": "className=\"flex min-w-0 flex-col border-t border-border/60 pt-2\""
   },
   {
     "file": "plugins/genui/ui/components/Findings.tsx",
@@ -657,7 +652,7 @@
   {
     "file": "plugins/genui/ui/components/Findings.tsx",
     "rule": "hairline-literal",
-    "source": "className=\"mt-0.5 hidden max-w-[11rem] shrink-0 truncate rounded-sm bg-surface-recessed px-1.5 font-mono text-[10.5px] leading-4 text-muted-foreground sm:inline\""
+    "source": "className=\"mt-0.5 hidden max-w-[11rem] shrink-0 truncate rounded-sm bg-surface-recessed px-1 font-mono text-[10.5px] leading-4 text-muted-foreground sm:inline\""
   },
   {
     "file": "plugins/genui/ui/components/Json.tsx",
@@ -1072,7 +1067,7 @@
   {
     "file": "plugins/genui/ui/components/changes.tsx",
     "rule": "edge-opacity",
-    "source": "<QuietLine icon=\"Filter\" className=\"border-b border-border/60 px-3 py-1.5\">"
+    "source": "<QuietLine icon=\"Filter\" className=\"border-b border-border/60 px-3 min-h-8 items-center py-1\">"
   },
   {
     "file": "plugins/genui/ui/components/changes.tsx",
@@ -1112,7 +1107,7 @@
   {
     "file": "plugins/genui/ui/components/chartKit.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"pointer-events-none absolute z-10 min-w-[7rem] rounded-md border border-border bg-background px-2.5 py-1.5 text-xs shadow-[0_4px_12px_rgb(0_0_0/0.08)]\";"
+    "source": "\"pointer-events-none absolute z-10 min-w-[7rem] rounded-md border border-border bg-background px-3 py-2 text-xs shadow-[0_4px_12px_rgb(0_0_0/0.08)]\";"
   },
   {
     "file": "plugins/genui/ui/components/chartKit.tsx",
@@ -1222,7 +1217,7 @@
   {
     "file": "plugins/genui/ui/components/codeHealthKit.tsx",
     "rule": "hairline-literal",
-    "source": "<div className=\"max-h-[26rem] overflow-auto py-1.5 font-mono text-[11.5px] leading-5 [tab-size:2]\">"
+    "source": "<div className=\"max-h-[26rem] overflow-auto py-2 font-mono text-[11.5px] leading-5 [tab-size:2]\">"
   },
   {
     "file": "plugins/genui/ui/components/codeHealthKit.tsx",
@@ -1272,7 +1267,7 @@
   {
     "file": "plugins/genui/ui/components/content.tsx",
     "rule": "edge-opacity",
-    "source": "className=\"col-span-full grid grid-cols-subgrid gap-y-0.5 border-b border-border/60 py-2 first:pt-0 last:border-b-0 last:pb-0\""
+    "source": "className=\"col-span-full grid grid-cols-subgrid gap-y-1 border-b border-border/60 py-2 first:pt-0 last:border-b-0 last:pb-0\""
   },
   {
     "file": "plugins/genui/ui/components/content.tsx",
@@ -1282,7 +1277,7 @@
   {
     "file": "plugins/genui/ui/components/decisions.tsx",
     "rule": "arbitrary-edge",
-    "source": "className={cn(\"w-fit max-w-full gap-1.5 text-[13px]\", approved && \"border-transparent bg-surface-recessed text-foreground ring-2 ring-[var(--color-timeline-accent,var(--primary))] ring-offset-1 ring-offset-background\")}"
+    "source": "className={cn(\"w-fit max-w-full gap-1 text-[13px]\", approved && \"border-transparent bg-surface-recessed text-foreground ring-2 ring-[var(--color-timeline-accent,var(--primary))] ring-offset-1 ring-offset-background\")}"
   },
   {
     "file": "plugins/genui/ui/components/decisions.tsx",
@@ -1312,12 +1307,12 @@
   {
     "file": "plugins/genui/ui/components/decisions.tsx",
     "rule": "hairline-literal",
-    "source": "const shape = \"inline-flex h-6 max-w-full min-w-0 items-center gap-1 rounded-md bg-surface-recessed px-1.5 font-mono text-[11.5px] leading-4\";"
+    "source": "const shape = \"inline-flex h-6 max-w-full min-w-0 items-center gap-1 rounded-md bg-surface-recessed px-1 font-mono text-[11.5px] leading-4\";"
   },
   {
     "file": "plugins/genui/ui/components/decisions.tsx",
     "rule": "raw-color",
-    "source": "<div aria-hidden className=\"relative mx-1 mt-4 h-2.5 rounded-full bg-[color-mix(in_oklch,var(--color-timeline-accent,var(--primary))_18%,transparent)]\">"
+    "source": "<div aria-hidden className=\"relative mx-1 mt-4 h-2 rounded-full bg-[color-mix(in_oklch,var(--color-timeline-accent,var(--primary))_18%,transparent)]\">"
   },
   {
     "file": "plugins/genui/ui/components/decisions.tsx",
@@ -1372,7 +1367,7 @@
   {
     "file": "plugins/genui/ui/components/environments.tsx",
     "rule": "hairline-literal",
-    "source": "<span className=\"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] leading-5 text-muted-foreground\">"
+    "source": "<span className=\"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] leading-5 text-muted-foreground\">"
   },
   {
     "file": "plugins/genui/ui/components/environments.tsx",
@@ -1387,12 +1382,12 @@
   {
     "file": "plugins/genui/ui/components/environments.tsx",
     "rule": "hairline-literal",
-    "source": "<span title={title} className={cn(\"flex min-h-5 min-w-0 items-start gap-1.5 text-[11.5px] leading-5\", tone === \"neutral\" ? \"text-muted-foreground\" : TONE_TEXT[tone])}>"
+    "source": "<span title={title} className={cn(\"flex min-h-5 min-w-0 items-start gap-1 text-[11.5px] leading-5\", tone === \"neutral\" ? \"text-muted-foreground\" : TONE_TEXT[tone])}>"
   },
   {
     "file": "plugins/genui/ui/components/explain.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"group/row flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-md py-2.5 text-left transition-[background-color,box-shadow] duration-150 hover:bg-state-hover hover:shadow-[-0.5rem_0_0_var(--state-hover),0.5rem_0_0_var(--state-hover)] disabled:cursor-default disabled:opacity-60\","
+    "source": "\"group/row flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-md min-h-10 py-2 text-left transition-[background-color,box-shadow] duration-150 hover:bg-state-hover hover:shadow-[-0.5rem_0_0_var(--state-hover),0.5rem_0_0_var(--state-hover)] disabled:cursor-default disabled:opacity-60\","
   },
   {
     "file": "plugins/genui/ui/components/explain.tsx",
@@ -1402,12 +1397,12 @@
   {
     "file": "plugins/genui/ui/components/explain.tsx",
     "rule": "edge-opacity",
-    "source": "<div key={`${monthKey(month)}:${row}`} role=\"row\" className=\"grid grid-cols-7 gap-0.5 border-t border-border/60 py-0.5\">"
+    "source": "<div key={`${monthKey(month)}:${row}`} role=\"row\" className=\"grid grid-cols-7 gap-1 border-t border-border/60 py-1\">"
   },
   {
     "file": "plugins/genui/ui/components/explain.tsx",
     "rule": "edge-opacity",
-    "source": "<div ref={fade} className=\"flex min-w-0 flex-col gap-1.5 border-t border-border/60 pt-3\">"
+    "source": "<div ref={fade} className=\"flex min-w-0 flex-col gap-1 border-t border-border/60 pt-3\">"
   },
   {
     "file": "plugins/genui/ui/components/explain.tsx",

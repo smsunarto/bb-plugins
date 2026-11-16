@@ -207,7 +207,7 @@ export function Walkthrough({ props }: { props: Props }) {
           {showAll ? `${count} steps` : `Step ${at + 1} of ${count}`}
         </span>
         {count > 1 ? (
-          <Toggle size="sm" pressed={showAll} onPressedChange={setShowAll} className="h-6 min-w-0 shrink-0 px-1.5 text-xs font-normal">
+          <Toggle size="sm" pressed={showAll} onPressedChange={setShowAll} className="h-6 min-w-0 shrink-0 px-1 text-xs font-normal">
             {showAll ? "One at a time" : "Show all"}
           </Toggle>
         ) : null}
@@ -313,7 +313,7 @@ function ListItem({ row, leading, choice }: { row: ListRow; leading: Leading; ch
           ) : null}
         </span>
       )}
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="text-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{row.title}</span>
         {row.detail === null ? null : (
           <span className="text-xs leading-4 text-muted-foreground [overflow-wrap:anywhere]">{row.detail}</span>
@@ -363,7 +363,7 @@ function ListItem({ row, leading, choice }: { row: ListRow; leading: Leading; ch
             }}
             className={cn(
               // The hover wash bleeds past the text column with shadows, which take no layout space.
-              "group/row flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-md py-2.5 text-left transition-[background-color,box-shadow] duration-150 hover:bg-state-hover hover:shadow-[-0.5rem_0_0_var(--state-hover),0.5rem_0_0_var(--state-hover)] disabled:cursor-default disabled:opacity-60",
+              "group/row flex w-full min-w-0 cursor-pointer items-center gap-3 rounded-md min-h-10 py-2 text-left transition-[background-color,box-shadow] duration-150 hover:bg-state-hover hover:shadow-[-0.5rem_0_0_var(--state-hover),0.5rem_0_0_var(--state-hover)] disabled:cursor-default disabled:opacity-60",
               pressed && "bg-state-hover shadow-[-0.5rem_0_0_var(--state-hover),0.5rem_0_0_var(--state-hover)]",
               FOCUS_RING,
             )}
@@ -372,7 +372,7 @@ function ListItem({ row, leading, choice }: { row: ListRow; leading: Leading; ch
           </button>
         </ActionHint>
       ) : (
-        <div className="flex min-w-0 items-center gap-3 py-2.5">{content}</div>
+        <div className="flex min-w-0 items-center gap-3 min-h-10 py-2">{content}</div>
       )}
     </li>
   );
@@ -512,7 +512,7 @@ function DayCell({
       </span>
       {/* Narrow: dots. */}
       {events.length === 0 ? null : (
-        <span aria-hidden className="flex gap-0.5 @lg:hidden">
+        <span aria-hidden className="flex gap-1 @lg:hidden">
           {events.slice(0, DOTS_PER_DAY).map((event, index) => (
             <span key={index} className={cn("size-1 rounded-full", TONE_DOT[event.tone])} />
           ))}
@@ -520,7 +520,7 @@ function DayCell({
       )}
       {/* Wide: short chips. */}
       {events.length === 0 ? null : (
-        <span aria-hidden className="hidden min-w-0 flex-col gap-0.5 @lg:flex">
+        <span aria-hidden className="hidden min-w-0 flex-col gap-1 @lg:flex">
           {events.slice(0, events.length > CHIPS_PER_DAY + 1 ? CHIPS_PER_DAY : CHIPS_PER_DAY + 1).map((event, index) => (
             <Badge key={index} variant={TONE_BADGE[event.tone]} className="block truncate rounded px-1 py-0 font-normal">
               {event.title || "Event"}
@@ -538,14 +538,14 @@ function DayCell({
 function DayEvents({ date, events, heading }: { date: Day; events: readonly CalendarEvent[]; heading: string }) {
   const fade = useEntrance<HTMLDivElement>(FADE);
   return (
-    <div ref={fade} className="flex min-w-0 flex-col gap-1.5 border-t border-border/60 pt-3">
+    <div ref={fade} className="flex min-w-0 flex-col gap-1 border-t border-border/60 pt-3">
       <h4 className="m-0 text-xs font-medium leading-5 text-muted-foreground">{heading}</h4>
       {events.length === 0 ? (
         <p className="m-0 text-sm leading-5 text-muted-foreground">Nothing on this day</p>
       ) : (
         <ul className="m-0 flex min-w-0 list-none flex-col gap-1 p-0" aria-label={`Events on ${heading}`}>
           {events.map((event, index) => (
-            <li key={`${dayKey(date)}:${index}`} className="flex min-w-0 items-start gap-2.5 text-sm leading-5 text-foreground">
+            <li key={`${dayKey(date)}:${index}`} className="flex min-w-0 items-start gap-2 text-sm leading-5 text-foreground">
               <span aria-hidden className={cn("mt-[7px] size-1.5 shrink-0 rounded-full", TONE_DOT[event.tone])} />
               <span className="min-w-0 [overflow-wrap:anywhere]">{event.title || "Untitled event"}</span>
             </li>
@@ -702,7 +702,7 @@ export function Calendar({ props }: { props: Props }) {
               ))}
             </div>
             {weeks.map((week, row) => (
-              <div key={`${monthKey(month)}:${row}`} role="row" className="grid grid-cols-7 gap-0.5 border-t border-border/60 py-0.5">
+              <div key={`${monthKey(month)}:${row}`} role="row" className="grid grid-cols-7 gap-1 border-t border-border/60 py-1">
                 {week.map((day, column) => {
                   if (day === null) return <span key={column} role="gridcell" aria-hidden />;
                   const date = { ...month, day };

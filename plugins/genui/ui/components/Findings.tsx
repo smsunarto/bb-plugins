@@ -164,7 +164,7 @@ function Summary({
         {caption === "" ? null : <span className="text-xs leading-5 text-muted-foreground">{caption}</span>}
       </div>
       {verdict === null ? null : (
-        <div className={cn("flex min-w-0 items-start gap-1.5 text-[13px] font-medium leading-5", TONE_TEXT[verdict.tone])}>
+        <div className={cn("flex min-w-0 items-start gap-1 text-[13px] font-medium leading-5", TONE_TEXT[verdict.tone])}>
           <Icon name={VERDICT_ICON[verdict.tone]} aria-hidden className="mt-[3px] size-3.5 shrink-0" />
           <span className="min-w-0">{verdict.text}</span>
         </div>
@@ -173,15 +173,15 @@ function Summary({
         ref={grow}
         role="img"
         aria-label={present.map((severity) => severityCount(severity, scale, counts[severity])).join(", ")}
-        className="flex h-1.5 w-full origin-left gap-[2px] overflow-hidden rounded-full bg-muted"
+        className="flex h-2 w-full origin-left gap-[2px] overflow-hidden rounded-full bg-muted"
       >
         {present.map((severity) => (
           <div key={severity} className={cn("h-full min-w-[3px]", severityFill(severity, scale))} style={{ flex: `${counts[severity]} 1 0` }} />
         ))}
       </div>
-      <p className="m-0 flex flex-wrap gap-x-4 gap-y-0.5 text-xs leading-5 text-muted-foreground">
+      <p className="m-0 flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5 text-muted-foreground">
         {present.map((severity) => (
-          <span key={severity} className="flex items-center gap-1.5 tabular-nums">
+          <span key={severity} className="flex items-center gap-1 tabular-nums">
             <span aria-hidden className={cn("size-2 rounded-full", severityFill(severity, scale))} />
             <span className={cn("font-medium", SEVERITY_STYLE[severity].ink)}>{formatNumber(counts[severity])}</span>
             {severityCount(severity, scale, counts[severity]).replace(/^\d+ /, "")}
@@ -189,9 +189,9 @@ function Summary({
         ))}
       </p>
       {statuses.length === 0 ? null : (
-        <p className="m-0 flex flex-wrap gap-x-3 gap-y-0.5 text-xs leading-5 text-muted-foreground" aria-label={`By status: ${statuses.map((entry) => entry.text).join(", ")}`}>
+        <p className="m-0 flex flex-wrap gap-x-3 gap-y-1 text-xs leading-5 text-muted-foreground" aria-label={`By status: ${statuses.map((entry) => entry.text).join(", ")}`}>
           {statuses.map((entry) => (
-            <span key={entry.status} className="flex items-center gap-1.5 tabular-nums">
+            <span key={entry.status} className="flex items-center gap-1 tabular-nums">
               <span aria-hidden className={cn("size-1.5 rounded-full", TONE_DOT[STATUS_STYLE[entry.status].tone])} />
               {entry.text}
             </span>
@@ -227,7 +227,7 @@ function SendButton({ message, label, icon, primary = false }: { message: string
         onClick={() => void stage(question, pressed ? null : { text: message, selection: true })}
         {...keepTyping}
         className={cn(
-          "h-7 w-fit max-w-full gap-1.5 px-2.5 text-xs",
+          "h-7 w-fit max-w-full gap-1 px-2 text-xs",
           (!primary || pressed) && "bg-background text-foreground",
           pressed && "border-transparent bg-surface-recessed ring-2 ring-[var(--color-timeline-accent,var(--primary))] ring-offset-1 ring-offset-background",
         )}
@@ -248,7 +248,7 @@ function FixView({ finding, path, file }: { finding: Finding; path: string; file
   if (fix === null) return null;
   if (fix.kind === "proposal") {
     return (
-      <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex min-w-0 flex-col gap-1">
         <span className="text-xs font-medium leading-5 text-foreground">Proposed fix</span>
         <Markdown content={fix.text} className={PROSE} />
       </div>
@@ -264,8 +264,8 @@ function FixView({ finding, path, file }: { finding: Finding; path: string; file
   }
   if (body === null && finding.fixNote === null) return null;
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <span className="flex min-w-0 items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+    <div className="flex min-w-0 flex-col gap-1">
+      <span className="flex min-w-0 items-center gap-1 text-xs leading-5 text-muted-foreground">
         <Icon name="EditFile" aria-hidden className="size-3.5 shrink-0" />
         <span className="font-medium text-foreground">Fix</span>
         {finding.fixNote === null ? null : (
@@ -290,9 +290,9 @@ function FindingBody({ finding, scale }: { finding: Finding; scale: SeverityScal
     void run([{ kind: "action", type: "copy", text: `${location === null ? "" : `${location} `}${severityLabel(finding.severity, scale)}: ${finding.title}${rule}` }]);
   };
   return (
-    <div className="flex min-w-0 flex-col gap-2.5 pb-2 pl-[22px] pt-1.5">
+    <div className="flex min-w-0 flex-col gap-3 pb-2 pl-[22px] pt-2">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5 text-muted-foreground">
+        <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5 text-muted-foreground">
           <span className={cn("font-medium", SEVERITY_STYLE[finding.severity].ink)}>{severityLabel(finding.severity, scale)}</span>
           {finding.id === null ? null : <span className="font-mono text-[11px]">{finding.id}</span>}
           {finding.rule === null ? null : finding.url === null ? (
@@ -325,7 +325,7 @@ function FindingBody({ finding, scale }: { finding: Finding; scale: SeverityScal
       )}
       {finding.status === null ? null : <LifecycleView finding={finding} />}
       {finding.evidence === null ? null : (
-        <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex min-w-0 flex-col gap-1">
           <span className="text-xs font-medium leading-5 text-foreground">Evidence</span>
           <Markdown content={finding.evidence} className={PROSE} />
         </div>
@@ -358,13 +358,13 @@ function LifecycleView({ finding }: { finding: Finding }) {
   const status = finding.status ?? "open";
   const style = STATUS_STYLE[status];
   return (
-    <div className="flex min-w-0 flex-col gap-0.5 rounded-md bg-surface-recessed px-2.5 py-1.5">
-      <span className="flex min-w-0 items-start gap-1.5 text-xs font-medium leading-5 text-foreground">
+    <div className="flex min-w-0 flex-col gap-1 rounded-md bg-surface-recessed px-3 py-2">
+      <span className="flex min-w-0 items-start gap-1 text-xs font-medium leading-5 text-foreground">
         <span aria-hidden className={cn("mt-[7px] size-1.5 shrink-0 rounded-full", TONE_DOT[style.tone])} />
         <span className="min-w-0 [overflow-wrap:anywhere]">{statusSentence(finding)}</span>
       </span>
       {finding.note === null ? null : (
-        <p className="m-0 pl-3 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+        <p className="m-0 pl-2.5 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere]">
           <span className="font-medium text-foreground">{status === "rejected" ? "Counter-evidence: " : "Note: "}</span>
           <ToolText text={finding.note} />
         </p>
@@ -376,7 +376,7 @@ function LifecycleView({ finding }: { finding: Finding }) {
 function StatusPill({ status }: { status: FindingStatus }) {
   const style = STATUS_STYLE[status];
   return (
-    <Badge variant={TONE_BADGE[style.tone]} className="mt-0.5 px-1.5 py-0 font-medium">
+    <Badge variant={TONE_BADGE[style.tone]} className="h-5 px-1 py-0 font-medium">
       {style.label}
     </Badge>
   );
@@ -430,7 +430,7 @@ function FindingRow({
             </span>
             {finding.rule === null || mode === "area" ? null : (
               <span
-                className="mt-0.5 hidden max-w-[11rem] shrink-0 truncate rounded-sm bg-surface-recessed px-1.5 font-mono text-[10.5px] leading-4 text-muted-foreground sm:inline"
+                className="mt-0.5 hidden max-w-[11rem] shrink-0 truncate rounded-sm bg-surface-recessed px-1 font-mono text-[10.5px] leading-4 text-muted-foreground sm:inline"
                 title={finding.rule}
               >
                 {/* A plugin's rules read by name here (`no-unused-vars`); the body names the plugin. */}
@@ -528,7 +528,7 @@ function ReviewEvidence({ review, open, onToggle }: { review: Review; open: bool
     review.artifacts.length === 0 ? null : `${formatNumber(review.artifacts.length)} ${review.artifacts.length === 1 ? "artifact" : "artifacts"}`,
   ].filter((part) => part !== null);
   return (
-    <section aria-label="Review evidence" className="min-w-0 border-t border-border/60 pt-1.5">
+    <section aria-label="Review evidence" className="min-w-0 border-t border-border/60 pt-2">
       <Disclosure
         open={open}
         onToggle={onToggle}
@@ -543,7 +543,7 @@ function ReviewEvidence({ review, open, onToggle }: { review: Review; open: bool
         {() => (
           <div className="flex min-w-0 flex-col gap-2 pb-1 pl-[22px] pt-1">
             {review.evidence.length === 0 ? null : (
-              <ul className="m-0 flex min-w-0 list-disc flex-col gap-0.5 pl-4 text-xs leading-5 text-muted-foreground marker:text-muted-foreground/60">
+              <ul className="m-0 flex min-w-0 list-disc flex-col gap-1 pl-4 text-xs leading-5 text-muted-foreground marker:text-muted-foreground/60">
                 {review.evidence.map((entry, index) => (
                   <li key={index} className="[overflow-wrap:anywhere]">
                     <ToolText text={entry} />
@@ -636,7 +636,7 @@ export function Findings({ props }: { props: Props }) {
         <CardDepthContext value={depth + 1}>
           <div className="flex min-w-0 flex-col gap-1">
             <h3 className="m-0 text-[15px] font-semibold leading-6 text-foreground">{title ?? subjectHeading ?? "No findings"}</h3>
-            <p className="m-0 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+            <p className="m-0 flex items-center gap-1 text-xs leading-5 text-muted-foreground">
               <Icon name="CircleCheck" aria-hidden className="size-3.5 text-success" />
               {verdict !== null ? `${verdict.text.replace(/: nothing open$/, "")}: no findings.` : tool === null ? "Nothing to fix." : `${tool} reported nothing.`}
             </p>
@@ -709,7 +709,7 @@ export function Findings({ props }: { props: Props }) {
             </div>
             <div className="flex min-w-0 flex-col gap-2">
               {listed.length === 0 ? (
-                <p className="m-0 flex items-center gap-1.5 border-t border-border/60 pt-2 text-xs leading-5 text-muted-foreground">
+                <p className="m-0 flex items-center gap-1 border-t border-border/60 pt-2 text-xs leading-5 text-muted-foreground">
                   <Icon name="CircleCheck" aria-hidden className="size-3.5 text-success" />
                   Every finding is confirmed, rejected or won't be fixed.
                 </p>
@@ -718,7 +718,7 @@ export function Findings({ props }: { props: Props }) {
                 <section
                   key={group.key}
                   aria-label={group.file ?? group.area ?? group.severity ?? (groupMode === "area" ? "No area" : "No file")}
-                  className="flex min-w-0 flex-col border-t border-border/60 pt-1.5"
+                  className="flex min-w-0 flex-col border-t border-border/60 pt-2"
                 >
                   <GroupHeader group={groups.find((full) => full.key === group.key) ?? group} scale={scale} mode={groupMode} />
                   <ul className="m-0 flex min-w-0 list-none flex-col p-0">

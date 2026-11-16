@@ -149,7 +149,7 @@ export function ScatterChart({ labels, series, unit }: { labels: string[]; serie
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-2.5">
+    <div className="flex min-w-0 flex-col gap-3">
       <SeriesLegend series={series} swatch="dot" />
       <div
         ref={frame}
@@ -334,7 +334,7 @@ export function RadarChart({ labels, series, unit }: { labels: string[]; series:
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-2.5">
+    <div className="flex min-w-0 flex-col gap-3">
       <SeriesLegend series={series} />
       <div
         ref={frame}
@@ -547,7 +547,7 @@ export function FunnelChart({ labels, values, unit }: { labels: string[]; values
             <div className="flex h-7 min-w-0 justify-center">
               <FunnelBar width={stage.width} color={color(index)} index={index} />
             </div>
-            <span className="flex items-baseline justify-end gap-1.5 text-xs leading-5 tabular-nums">
+            <span className="flex items-baseline justify-end gap-1 text-xs leading-5 tabular-nums">
               <span className="font-medium text-foreground">{formatValue(stage.value, unit)}</span>
               {index === 0 || stage.ofFirst === null ? null : (
                 <span className="text-muted-foreground">{formatShare(stage.ofFirst)}</span>
@@ -847,7 +847,7 @@ export function HistogramChart({ labels, series, unit }: { labels: string[]; ser
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-2.5">
+    <div className="flex min-w-0 flex-col gap-3">
       <SeriesLegend series={series} />
       <div
         ref={frame}
@@ -1024,7 +1024,7 @@ export function BoxChart({ labels, series, unit }: { labels: string[]; series: S
   };
 
   return (
-    <div className="flex min-w-0 flex-col gap-2.5">
+    <div className="flex min-w-0 flex-col gap-3">
       <div
         ref={frame}
         tabIndex={0}

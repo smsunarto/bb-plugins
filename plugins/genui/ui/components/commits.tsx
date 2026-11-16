@@ -47,7 +47,7 @@ function CommitsPanel({ threadId, blockKey, limit }: { threadId: string; blockKe
       label="Commits"
       header={
         <>
-          <span className="flex min-w-0 max-w-full items-center gap-1.5">
+          <span className="flex min-w-0 max-w-full items-center gap-1">
             <Icon name="GitBranch" aria-hidden className="size-3.5 shrink-0" />
             {view === null ? (
               <span className="font-medium text-foreground">Commits</span>
@@ -78,7 +78,7 @@ function CommitsPanel({ threadId, blockKey, limit }: { threadId: string; blockKe
 /** "3 ahead · 12 behind main": where the branch stands against the default branch. */
 function Divergence({ view }: { view: CommitsView }) {
   return (
-    <span className="flex min-w-0 items-center gap-1.5 tabular-nums" title={`Against ${view.base}`}>
+    <span className="flex min-w-0 items-center gap-1 tabular-nums" title={`Against ${view.base}`}>
       <span className="shrink-0 whitespace-nowrap">
         <span className="font-medium text-foreground">{formatNumber(view.ahead ?? 0)}</span> ahead
       </span>
@@ -101,7 +101,7 @@ function emptySentence(view: CommitsView): string {
 function CommitList({ threadId, view, limit, now }: { threadId: string; view: CommitsView; limit: number | null; now: number }) {
   const [expanded, setExpanded] = useState(false);
   const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
-  if (view.commits.length === 0) return <QuietLine className="px-3 py-2.5">{emptySentence(view)}</QuietLine>;
+  if (view.commits.length === 0) return <QuietLine className="px-3 min-h-10 items-center py-2">{emptySentence(view)}</QuietLine>;
   const allowed = limit === null ? view.commits : view.commits.slice(0, limit);
   const collapsed = limit === null && !expanded && allowed.length >= COLLAPSE_FROM;
   const shown = collapsed ? allowed.slice(0, COLLAPSED_COMMITS) : allowed;
@@ -152,7 +152,7 @@ function CommitRow({ threadId, commit, now }: { threadId: string; commit: Commit
             open && "rotate-90",
           )}
         />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
+        <span className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-baseline sm:gap-3">
           <span className="min-w-0 flex-1 text-[13px] leading-5 text-foreground [overflow-wrap:anywhere] sm:truncate" title={commit.subject}>
             {commit.subject}
           </span>

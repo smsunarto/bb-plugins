@@ -71,7 +71,7 @@ const CHANGED_CSS = `rgb(${CHANGED_RGB.join(" ")})`;
 
 /** The chip laid over a pane's corner: readable over any image. */
 const PANE_TAG =
-  "pointer-events-none absolute z-10 max-w-[calc(50%-0.75rem)] truncate rounded-[5px] bg-background/85 px-1.5 text-[10.5px] font-medium leading-[18px] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.12)]";
+  "pointer-events-none absolute z-10 max-w-[calc(50%-0.75rem)] truncate rounded-[5px] bg-background/85 px-1 text-[10.5px] font-medium leading-[18px] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.12)]";
 
 export function Compare({ props }: { props: Props }) {
   const read = useMemo(() => readCompare(props.images), [props.images]);
@@ -358,7 +358,7 @@ function CompareView({ images, ignored }: { images: readonly CompareImage[]; ign
       {warnings.length === 0 ? null : (
         <ul className="m-0 flex min-w-0 list-none flex-col gap-1 p-0">
           {warnings.map((warning) => (
-            <li key={warning.text} className={cn("flex min-w-0 items-start gap-1.5 text-xs leading-5", warning.tone === "bad" ? "text-destructive" : "text-warning-text")}>
+            <li key={warning.text} className={cn("flex min-w-0 items-start gap-1 text-xs leading-5", warning.tone === "bad" ? "text-destructive" : "text-warning-text")}>
               <Icon name={warning.tone === "bad" ? "AlertCircle" : "AlertTriangle"} aria-hidden className="mt-0.5 size-3.5 shrink-0" />
               <span className="min-w-0 break-words">{warning.text}</span>
             </li>
@@ -408,7 +408,7 @@ function CandidatePicker({ images, index, onPick }: { images: readonly CompareIm
         <Segmented label={`Compare ${images[0]!.label} with`} value={String(index)} options={candidates} onChange={(value) => onPick(Number(value))} />
       ) : (
         <Select value={String(index)} onValueChange={(value) => onPick(Number(value))}>
-          <SelectTrigger aria-label={`Compare ${images[0]!.label} with`} className="h-7 w-auto max-w-full gap-1.5 px-2 text-xs">
+          <SelectTrigger aria-label={`Compare ${images[0]!.label} with`} className="h-7 w-auto max-w-full gap-1 px-2 text-xs">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -441,9 +441,9 @@ function Identity({ role, image, size, differing }: { role: string; image: Compa
         : null;
   const showLabel = !(role === "Reference" && !image.named);
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-lg bg-surface-recessed/60 px-2.5 py-1.5">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <Badge variant="secondary" className="px-1.5 py-0 font-medium">
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg bg-surface-recessed/60 px-3 py-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <Badge variant="secondary" className="h-5 px-1 py-0 font-medium">
           {role}
         </Badge>
         {showLabel ? (
@@ -469,7 +469,7 @@ function Identity({ role, image, size, differing }: { role: string; image: Compa
                 key={metaName}
                 variant={differs ? "warning" : "outline"}
                 title={differs ? `${metaName} differs between the two` : undefined}
-                className="block max-w-full truncate px-1.5 py-0 font-normal"
+                className="block max-w-full truncate h-5 px-1 leading-[18px] py-0 font-normal"
               >
                 <span className="opacity-75">{metaName}</span> {value}
               </Badge>
@@ -831,7 +831,7 @@ function Stage(props: StageProps) {
           );
         }) ?? null}
         {paneState(referenceImage.status !== "ready" ? referenceImage : candidateImage, referenceImage.status !== "ready" ? reference.label : candidateLabel)}
-        <span className={cn(PANE_TAG, "left-2 top-2 inline-flex items-center gap-1.5")}>
+        <span className={cn(PANE_TAG, "left-2 top-2 inline-flex items-center gap-1")}>
           <span aria-hidden className="size-2 rounded-[2px]" style={{ background: CHANGED_CSS }} />
           {diff.status === "ready" ? `Changed in ${candidateLabel}` : diff.status === "failed" ? "Difference unavailable" : "Computing the difference…"}
         </span>
@@ -842,9 +842,9 @@ function Stage(props: StageProps) {
   const zoomed = shown.zoom > 1.001;
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <Segmented label="View" value={mode} options={MODES} onChange={props.onMode} />
-        <div role="group" aria-label="Zoom" className="flex items-center gap-0.5">
+        <div role="group" aria-label="Zoom" className="flex items-center gap-1">
           <IconButton label="Zoom out" tooltip="Zoom out (−)" disabled={!zoomed} onClick={() => zoomBy(1 / ZOOM_STEP)}>
             <Icon name="ZoomOut" aria-hidden className="size-3.5" />
           </IconButton>
@@ -960,7 +960,7 @@ function ModeControls(props: StageProps & { pane: Size; image: Size }) {
           size="sm"
           pressed={props.blinking}
           onPressedChange={props.setBlinking}
-          className="h-7 shrink-0 px-2.5 text-xs font-normal"
+          className="h-7 shrink-0 px-2 text-xs font-normal"
         >
           Blink
         </Toggle>
@@ -970,7 +970,7 @@ function ModeControls(props: StageProps & { pane: Size; image: Size }) {
   if (mode === "difference") {
     const ready = diff.status === "ready" ? diff : null;
     return (
-      <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-col gap-2">
         <div className="flex min-h-7 min-w-0 items-center gap-2 text-xs font-normal leading-5 text-muted-foreground">
           <span className="shrink-0">Tolerance</span>
           <Slider
@@ -988,7 +988,7 @@ function ModeControls(props: StageProps & { pane: Size; image: Size }) {
           <span className="shrink-0 tabular-nums text-foreground">±{props.tolerance}</span>
           <span className="hidden shrink-0 @md:inline">of 255 per channel</span>
         </div>
-        <div className="flex h-6 min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+        <div className="flex h-6 min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none]">
           {ready === null ? (
             <span className="text-xs leading-5 text-muted-foreground">{diff.status === "failed" ? `No difference: ${diff.error}` : "Finding changed regions…"}</span>
           ) : ready.regions.length === 0 ? (
@@ -1002,7 +1002,7 @@ function ModeControls(props: StageProps & { pane: Size; image: Size }) {
                 value={props.selected === null ? "" : String(props.selected)}
                 // Each press zooms to its region (onClick), the chosen one again included; the group only shows which.
                 onValueChange={() => {}}
-                className="shrink-0 justify-start gap-1.5"
+                className="shrink-0 justify-start gap-2"
               >
                 {ready.regions.map((region, position) => (
                   <ToggleGroupItem
@@ -1013,7 +1013,7 @@ function ModeControls(props: StageProps & { pane: Size; image: Size }) {
                       props.setSelected(position);
                       props.setView(viewOfRegion(region, props.pane, props.image));
                     }}
-                    className="h-6 min-w-0 shrink-0 whitespace-nowrap px-1.5 text-[11px] font-normal tabular-nums"
+                    className="h-6 min-w-0 shrink-0 whitespace-nowrap px-1 text-[11px] font-normal tabular-nums"
                   >
                     <span className="font-semibold">{position + 1}</span> · {Math.round(region.width)}×{Math.round(region.height)}
                   </ToggleGroupItem>

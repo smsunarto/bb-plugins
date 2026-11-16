@@ -132,7 +132,7 @@ export function Stepper({ props }: { props: PropsOf<"Stepper"> }) {
   };
   return (
     // Caption above the control, like the other fields, so a Row of fields lines up.
-    <div className="flex min-w-0 flex-col items-start gap-1.5">
+    <div className="flex min-w-0 flex-col items-start gap-1">
       {label === null ? null : (
         <span id={labelId} className={CAPTION}>
           {label}
@@ -161,7 +161,7 @@ export function Stepper({ props }: { props: PropsOf<"Stepper"> }) {
           aria-valuemax={range.max ?? undefined}
           aria-labelledby={label === null ? undefined : labelId}
           aria-label={label === null ? binding.name : undefined}
-          className="flex min-w-10 items-center justify-center px-1.5 text-sm font-medium tabular-nums text-foreground focus-visible:outline-none"
+          className="flex min-w-10 items-center justify-center px-1 text-sm font-medium tabular-nums text-foreground focus-visible:outline-none"
         >
           {new Intl.NumberFormat("en-US", { maximumFractionDigits: stepPrecision(current, range) }).format(current)}
         </span>
@@ -190,7 +190,7 @@ export function Radio({ props }: { props: PropsOf<"Radio"> }) {
   const options = radioOptions(props.options);
   const selected = options.findIndex((option) => option.value === binding.value);
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
         <span id={labelId} className={CAPTION}>
           {label}
@@ -203,7 +203,7 @@ export function Radio({ props }: { props: PropsOf<"Radio"> }) {
         // Options are positional: the same value may repeat, and any scalar round-trips.
         value={selected < 0 ? "" : String(selected)}
         onValueChange={(next) => setValue(binding.name, options[Number(next)]?.value ?? null)}
-        className="-mx-1.5 flex min-w-0 flex-col gap-0"
+        className="-mx-1 flex min-w-0 flex-col gap-0"
       >
         {options.map((option, index) => {
           const id = `${labelId}-${index}`;
@@ -211,10 +211,10 @@ export function Radio({ props }: { props: PropsOf<"Radio"> }) {
             <div
               // Options are positional; the same value may repeat.
               key={index}
-              className="flex w-full min-w-0 items-start gap-2.5 rounded-md px-1.5 py-1.5 transition-colors duration-150 hover:bg-surface-recessed"
+              className="flex w-full min-w-0 items-start gap-2 rounded-md px-1 py-1 [@media(pointer:coarse)]:py-2 transition-colors duration-150 hover:bg-surface-recessed"
             >
               <RadioGroupItem id={id} value={String(index)} {...keepTyping} className="mt-0.5 shrink-0" />
-              <Label htmlFor={id} {...keepTyping} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-0.5 text-sm font-normal leading-5 text-foreground">
+              <Label htmlFor={id} {...keepTyping} className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 text-sm font-normal leading-5 text-foreground">
                 <span className="[overflow-wrap:anywhere]">{itemText(option.value)}</span>
                 {option.detail === null ? null : (
                   <span className="text-xs leading-4 text-muted-foreground [overflow-wrap:anywhere]">
@@ -264,7 +264,7 @@ export function ListEditor({ props }: { props: PropsOf<"ListEditor"> }) {
     setEditing(null);
   };
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
         <Label htmlFor={id} className={cn(CAPTION, "font-normal")}>
           {label}
@@ -301,7 +301,7 @@ export function ListEditor({ props }: { props: PropsOf<"ListEditor"> }) {
             event.preventDefault();
             add();
           }}
-          className="h-8 px-2.5 text-[13px] placeholder:text-subtle-foreground"
+          className="h-8 px-2 text-[13px] placeholder:text-subtle-foreground"
         />
         <BaseButton
           type="button"
@@ -365,7 +365,7 @@ function ListEditorRow({
             refocus.current = true;
             event.currentTarget.blur();
           }}
-          className="h-7 flex-1 px-1.5"
+          className="h-7 flex-1 px-1"
         />
       ) : (
         <button
@@ -374,7 +374,7 @@ function ListEditorRow({
           onClick={onEdit}
           aria-label={`${shown}, edit`}
           className={cn(
-            "min-w-0 flex-1 cursor-text rounded-md px-1.5 py-1 text-left text-sm leading-5 text-foreground transition-colors duration-150 [overflow-wrap:anywhere] hover:bg-surface-recessed",
+            "min-w-0 flex-1 cursor-text rounded-md px-1 py-1 text-left text-sm leading-5 text-foreground transition-colors duration-150 [overflow-wrap:anywhere] hover:bg-surface-recessed",
             FOCUS_RING,
           )}
         >
@@ -436,7 +436,7 @@ export function TextArea({ props }: { props: PropsOf<"TextArea"> }) {
   const label = props.label ?? null;
   const placeholder = props.placeholder ?? null;
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
         <Label htmlFor={id} className={cn(CAPTION, "font-normal")}>
           {label}
@@ -450,7 +450,7 @@ export function TextArea({ props }: { props: PropsOf<"TextArea"> }) {
         placeholder={placeholder ?? undefined}
         aria-label={label === null ? (placeholder ?? binding.name) : undefined}
         onChange={(event) => setValue(binding.name, event.currentTarget.value)}
-        className="block h-auto min-h-0 resize-none overflow-y-hidden px-2.5 py-1.5 text-[13px] leading-5 [scrollbar-width:thin] placeholder:text-subtle-foreground"
+        className="block h-auto min-h-8 resize-none overflow-y-hidden px-2 py-1 text-[13px] leading-5 [scrollbar-width:thin] placeholder:text-subtle-foreground"
       />
     </div>
   );
@@ -465,7 +465,7 @@ export function DateInput({ props }: { props: PropsOf<"DateInput"> }) {
   const label = props.label ?? null;
   const date = isoDate(binding.value);
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
         <Label htmlFor={id} className={cn(CAPTION, "font-normal")}>
           {label}
@@ -479,7 +479,7 @@ export function DateInput({ props }: { props: PropsOf<"DateInput"> }) {
         aria-label={label === null ? binding.name : undefined}
         onChange={(event) => setValue(binding.name, isoDate(event.currentTarget.value))}
         className={cn(
-          "h-8 max-w-52 px-2.5 text-[13px] tabular-nums [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-date-and-time-value]:text-left",
+          "h-8 max-w-52 px-2 text-[13px] tabular-nums [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-60 [&::-webkit-date-and-time-value]:text-left",
           date === null && "text-muted-foreground",
         )}
       />

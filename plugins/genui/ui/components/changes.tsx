@@ -141,7 +141,7 @@ export function CommitChanges({ threadId, sha }: { threadId: string; sha: string
   if (!answer.ok) return <FailureLine failure={answer} />;
   return (
     <div className="min-w-0">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 px-3 pb-1 pt-0.5 text-xs leading-5 text-muted-foreground">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 px-3 pb-1 pt-1 text-xs leading-5 text-muted-foreground">
         <Totals view={answer} />
       </div>
       <FileList threadId={threadId} target={target} view={answer} />
@@ -159,7 +159,7 @@ function Branch({ name }: { name: string }) {
 
 function TargetHeading({ target }: { target: ChangesTarget }) {
   return (
-    <span className="flex min-w-0 items-center gap-1.5">
+    <span className="flex min-w-0 items-center gap-1">
       <Icon name="FileDiff" aria-hidden className="size-3.5 shrink-0" />
       <span className="font-medium text-foreground">
         {target.kind === "uncommitted" ? "Uncommitted changes" : target.kind === "commit" ? `Commit ${target.sha.slice(0, 7)}` : "Changes"}
@@ -217,7 +217,7 @@ function ScopeHeading({ scope }: { scope: ChangesScope }) {
       break;
   }
   return (
-    <span className="flex min-w-0 max-w-full items-center gap-1.5">
+    <span className="flex min-w-0 max-w-full items-center gap-1">
       <Icon name={scope.kind === "commit" ? "FileDiff" : "GitBranch"} aria-hidden className="size-3.5 shrink-0" />
       {body}
     </span>
@@ -229,7 +229,7 @@ function Totals({ view }: { view: ChangesView }) {
   // An empty list says so in its body; "0 files +0 −0" would only repeat it.
   if (totals.files === 0) return null;
   return (
-    <span className="flex shrink-0 items-center gap-1.5 tabular-nums">
+    <span className="flex shrink-0 items-center gap-1 tabular-nums">
       <span>
         {formatNumber(totals.files)} file{totals.files === 1 ? "" : "s"}
         {view.filter === null ? "" : ` of ${formatNumber(view.totalFiles)}`}
@@ -255,7 +255,7 @@ function emptySentence(view: ChangesView): string {
 function FileList({ threadId, target, view }: { threadId: string; target: ChangesTarget; view: ChangesView }) {
   const [expanded, setExpanded] = useState(false);
   const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
-  if (view.files.length === 0) return <QuietLine className="px-3 py-2.5">{emptySentence(view)}</QuietLine>;
+  if (view.files.length === 0) return <QuietLine className="px-3 min-h-10 items-center py-2">{emptySentence(view)}</QuietLine>;
   const collapsed = !expanded && view.files.length >= COLLAPSE_FROM;
   const shown = collapsed ? view.files.slice(0, COLLAPSED_FILES) : view.files;
   const patches = new Map(view.patches.map((patch) => [patch.path, patch]));
@@ -263,7 +263,7 @@ function FileList({ threadId, target, view }: { threadId: string; target: Change
     <div ref={outer} className={cn("min-w-0", SMOOTH_HEIGHT_CLASS)}>
       <div ref={inner} className="min-w-0">
         {view.filter === null ? null : (
-          <QuietLine icon="Filter" className="border-b border-border/60 px-3 py-1.5">
+          <QuietLine icon="Filter" className="border-b border-border/60 px-3 min-h-8 items-center py-1">
             Only {view.filter.join(", ")}
           </QuietLine>
         )}
@@ -343,14 +343,14 @@ function FileRow({
   const counted = file.diff !== "binary";
   return (
     <li ref={rise} className="min-w-0 border-b border-border/60 last:border-b-0">
-      <div className="group/file flex min-w-0 items-center pr-1.5 transition-colors duration-150 hover:bg-state-hover">
+      <div className="group/file flex min-w-0 items-center pr-2 transition-colors duration-150 hover:bg-state-hover">
         <button
           type="button"
           aria-expanded={open}
           aria-controls={`${id}-diff`}
           aria-label={`${file.path}${file.previousPath === null ? "" : ` (from ${file.previousPath})`}, ${CHANGE_LABEL[file.kind].toLowerCase()}${file.untracked ? ", untracked" : ""}, ${counted ? `${file.additions} added, ${file.deletions} removed` : "binary"}`}
           onClick={() => setOpen((value) => !value)}
-          className={cn("flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-1.5 pl-2 pr-1 text-left", FOCUS_RING)}
+          className={cn("flex min-w-0 flex-1 cursor-pointer items-center gap-2 min-h-8 py-1 pl-2 pr-1 text-left", FOCUS_RING)}
         >
           <Icon
             name="ChevronRight"
@@ -375,7 +375,7 @@ function FileRow({
             )}
           </span>
           {counted ? (
-            <span className="flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums">
+            <span className="flex shrink-0 items-center gap-1 text-[11px] tabular-nums">
               <span className={file.additions === 0 ? "text-muted-foreground/70" : "text-success"}>+{formatNumber(file.additions)}</span>
               <span className={file.deletions === 0 ? "text-muted-foreground/70" : "text-destructive"}>−{formatNumber(file.deletions)}</span>
               <RatioBar additions={file.additions} deletions={file.deletions} />

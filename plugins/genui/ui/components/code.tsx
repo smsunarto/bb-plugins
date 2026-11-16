@@ -58,7 +58,7 @@ function CodeFrame({ caption, actions, lines, children }: { caption: ReactNode; 
   useCodeHeight(body, lines ?? null);
   return (
     <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-background">
-      <div className="flex h-8 items-center justify-between gap-3 border-b border-border bg-surface-recessed pl-3 pr-1.5 text-[11px] text-muted-foreground">
+      <div className="flex h-8 items-center justify-between gap-3 border-b border-border bg-surface-recessed pl-3 pr-1 text-[11px] text-muted-foreground">
         <span className="flex min-w-0 items-center gap-2 font-mono">{caption}</span>
         {actions}
       </div>
@@ -182,7 +182,7 @@ export function Snippet({ props }: { props: PropsOf<"Snippet"> }) {
       break;
     case "error":
       body = (
-        <div className="px-3 py-2.5">
+        <div className="px-3 py-3">
           <ErrorLine message={`Couldn't show ${label}: ${shown.error}`} />
         </div>
       );
@@ -200,7 +200,7 @@ export function Snippet({ props }: { props: PropsOf<"Snippet"> }) {
         </>
       }
       actions={
-        <span className="flex shrink-0 items-center gap-0.5">
+        <span className="flex shrink-0 items-center gap-1">
           {openFile === null ? null : (
             <IconButton
               label={`Open ${path}`}
@@ -465,7 +465,7 @@ export function Diagram({ props }: { props: Props }) {
     </div>
   );
   return (
-    <div ref={host} className="flex min-w-0 flex-col gap-1.5">
+    <div ref={host} className="flex min-w-0 flex-col gap-2">
       <style href="genui-drawing" precedence="default">
         {DRAWING_CSS}
       </style>

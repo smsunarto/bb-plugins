@@ -43,7 +43,7 @@ export function Callout({ props }: { props: Props }) {
       ref={ref}
       role="note"
       className={cn(
-        "grid min-w-0 grid-cols-[1rem_minmax(0,1fr)] gap-x-2.5 rounded-lg px-3.5 py-3 text-sm leading-5 text-foreground",
+        "grid min-w-0 grid-cols-[1rem_minmax(0,1fr)] gap-x-2 rounded-lg px-4 py-3 text-sm leading-5 text-foreground",
         CALLOUT[toneName].surface,
       )}
     >
@@ -53,7 +53,7 @@ export function Callout({ props }: { props: Props }) {
         aria-hidden
         className={cn("mt-0.5 size-4 shrink-0", TONE_TEXT[toneName] || "text-muted-foreground")}
       />
-      <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex min-w-0 flex-col gap-1">
         {title ? <p className="m-0 font-medium text-foreground">{title}</p> : null}
         {body === "" ? null : (
           <Markdown content={body} className="min-w-0 text-sm [&>:first-child]:mt-0 [&>:last-child]:mb-0" />
@@ -84,7 +84,7 @@ function PairValue({ value }: { value: Value }): ReactNode {
   if (value === null) return <span className="text-muted-foreground">—</span>;
   if (Array.isArray(value)) {
     return (
-      <span className="flex flex-wrap items-center gap-1.5">
+      <span className="flex flex-wrap items-center gap-2">
         {value.map((item: Value, index) => (
           <PairValue key={isNode(item) ? item.key : index} value={item} />
         ))}
@@ -113,7 +113,7 @@ export function KeyValue({ props }: { props: Props }) {
         {pairs.map(([label, value], index) => (
           <div
             key={index}
-            className="col-span-full grid grid-cols-subgrid gap-y-0.5 border-b border-border/60 py-2 first:pt-0 last:border-b-0 last:pb-0"
+            className="col-span-full grid grid-cols-subgrid gap-y-1 border-b border-border/60 py-2 first:pt-0 last:border-b-0 last:pb-0"
           >
             <dt className="min-w-0 text-xs leading-5 text-muted-foreground [overflow-wrap:anywhere] @sm:text-sm">
               {label}
@@ -140,9 +140,9 @@ function TimelineItem({ entry, last, timed }: { entry: TimelineEntry; last: bool
       ) : null}
       <div aria-hidden className="flex flex-col items-center">
         <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", TONE_DOT[entry.tone])} />
-        {last ? null : <span className="mt-1.5 w-px flex-1 bg-border" />}
+        {last ? null : <span className="mt-1 w-px flex-1 bg-border" />}
       </div>
-      <div className={cn("flex min-w-0 flex-col gap-0.5", !last && "pb-4")}>
+      <div className={cn("flex min-w-0 flex-col gap-1", !last && "pb-4")}>
         {entry.time === null ? null : (
           <span className="text-xs leading-4 text-muted-foreground tabular-nums @sm:hidden">{entry.time}</span>
         )}
@@ -308,7 +308,7 @@ export function Tree({ props }: { props: Props }) {
               onClick={() => void activate(row)}
               onKeyDown={(event) => onKeyDown(event, index)}
               className={cn(
-                "relative flex h-7 min-w-0 shrink-0 select-none items-center gap-1.5 rounded-md pr-1.5 text-[13px] leading-5 text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                "relative flex h-7 min-w-0 shrink-0 select-none items-center gap-1 rounded-md pr-1 text-[13px] leading-5 text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                 interactive && "cursor-pointer hover:bg-muted/60",
               )}
               style={{ paddingLeft: row.depth * INDENT + ROW_PAD }}

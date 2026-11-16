@@ -220,9 +220,9 @@ function Heading({ report, verdict }: { report: AcceptanceReport; verdict: Verdi
         {verdict.headline === "No criteria" ? null : <span>: {verdict.proven}</span>}
       </h3>
       {verdict.parts.length > 0 ? (
-        <p className="m-0 flex flex-wrap gap-x-3.5 gap-y-0.5 text-xs leading-5 text-muted-foreground">
+        <p className="m-0 flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5 text-muted-foreground">
           {STATUS_ORDER.filter((status) => status !== "passed" && verdict.counts[status] > 0).map((status) => (
-            <span key={status} className="flex items-center gap-1.5 tabular-nums">
+            <span key={status} className="flex items-center gap-1 tabular-nums">
               <StatusMark check={{ status, notApplicable: false }} className="size-3" />
               <span>
                 <span className={cn("font-medium", STATUS_INK[status])}>{formatNumber(verdict.counts[status])}</span> {COUNT_WORD[status]}
@@ -232,7 +232,7 @@ function Heading({ report, verdict }: { report: AcceptanceReport; verdict: Verdi
         </p>
       ) : null}
       {contradiction === null ? null : (
-        <p className="m-0 flex items-start gap-1.5 text-xs leading-5 text-warning-text">
+        <p className="m-0 flex items-start gap-1 text-xs leading-5 text-warning-text">
           <Icon name="AlertTriangle" aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           {contradiction}
         </p>
@@ -248,7 +248,7 @@ function StatusBar({ counts, label }: { counts: Readonly<Record<AcceptanceStatus
   const present = [...STATUS_ORDER].reverse().filter((status) => counts[status] > 0);
   if (present.length === 0) return null;
   return (
-    <div ref={grow} role="img" aria-label={label} className="flex h-1.5 w-full origin-left gap-[2px] overflow-hidden rounded-full bg-muted">
+    <div ref={grow} role="img" aria-label={label} className="flex h-2 w-full origin-left gap-[2px] overflow-hidden rounded-full bg-muted">
       {present.map((status) => (
         <div
           key={status}
@@ -264,7 +264,7 @@ function NeedsYouBox({ items }: { items: readonly NeedsYou[] }) {
   if (items.length === 0) return null;
   return (
     <div role="note" aria-label="Needs you" className="flex min-w-0 flex-col gap-1 rounded-lg bg-warning/10 px-3 py-2">
-      <p className="m-0 flex items-center gap-1.5 text-xs font-medium leading-5 text-warning-text">
+      <p className="m-0 flex items-center gap-1 text-xs font-medium leading-5 text-warning-text">
         <Icon name="UserRound" aria-hidden className="size-3.5 shrink-0" />
         Needs you
       </p>
@@ -285,9 +285,9 @@ function NeedsYouBox({ items }: { items: readonly NeedsYou[] }) {
 function Limitations({ items }: { items: readonly string[] }) {
   if (items.length === 0) return null;
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className="flex min-w-0 flex-col gap-1">
       <span className={CAPTION}>Limitations the owner stated</span>
-      <ul className="m-0 flex min-w-0 list-disc flex-col gap-0.5 pl-4 text-xs leading-[18px] text-foreground marker:text-muted-foreground">
+      <ul className="m-0 flex min-w-0 list-disc flex-col gap-1 pl-4 text-xs leading-[18px] text-foreground marker:text-muted-foreground">
         {items.map((item, index) => (
           <li key={index} className="[overflow-wrap:anywhere]">
             {item}
@@ -308,7 +308,7 @@ function Legend({ report }: { report: AcceptanceReport }) {
     }
   }
   return (
-    <ul aria-label="Legend" className="m-0 flex min-w-0 list-none flex-wrap items-center gap-x-3 gap-y-0.5 p-0 text-[11px] leading-5 text-muted-foreground">
+    <ul aria-label="Legend" className="m-0 flex min-w-0 list-none flex-wrap items-center gap-x-3 gap-y-1 p-0 text-[11px] leading-5 text-muted-foreground">
       {[...STATUS_ORDER].reverse().filter((status) => present.has(status)).map((status) => (
         <li key={status} className="flex items-center gap-1">
           <StatusMark check={{ status, notApplicable: false }} className="size-3" />
@@ -357,7 +357,7 @@ function EvidenceFile({ item, tone }: { item: Extract<Evidence, { kind: "file" }
       </span>
     </>
   );
-  const box = "flex w-full min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1 text-left";
+  const box = "flex w-full min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2 py-1 text-left";
   if (opener === null) {
     return (
       <div title={item.path} className={box}>
@@ -386,7 +386,7 @@ function EvidenceLink({ item }: { item: Extract<Evidence, { kind: "url" }> }) {
     <UrlLink
       href={item.url}
       title={item.url}
-      className={cn("group/link flex min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1 no-underline hover:bg-state-hover", FOCUS_RING)}
+      className={cn("group/link flex min-w-0 items-center gap-2 rounded-md border border-border bg-background px-2 py-1 no-underline hover:bg-state-hover", FOCUS_RING)}
     >
       <Icon name="Globe" aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
       <span className="flex min-w-0 flex-1 flex-col">
@@ -405,7 +405,7 @@ function EvidenceImage({ item, order }: { item: Extract<Evidence, { kind: "image
   return (
     <figure className="m-0 flex min-w-0 flex-col gap-1">
       {image.status === "failed" ? (
-        <p className="m-0 flex min-w-0 items-start gap-1.5 text-xs leading-5 text-muted-foreground">
+        <p className="m-0 flex min-w-0 items-start gap-1 text-xs leading-5 text-muted-foreground">
           <Icon name="FileQuestion" aria-hidden className="mt-0.5 size-3.5 shrink-0" />
           <span className="min-w-0 [overflow-wrap:anywhere]">
             Couldn't show {item.src}: {image.error}
@@ -441,7 +441,7 @@ function EvidenceText({ item }: { item: Extract<Evidence, { kind: "text" }> }) {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {item.label === null ? null : <span className={CAPTION}>{item.label}</span>}
-      <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background px-2.5 py-1.5 font-mono text-[11.5px] leading-5 text-foreground [overflow-wrap:anywhere]">
+      <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-background px-3 py-2 font-mono text-[11.5px] leading-5 text-foreground [overflow-wrap:anywhere]">
         {item.text}
       </pre>
     </div>
@@ -480,7 +480,7 @@ function Facts({ check, rowLevel }: { check: Check; rowLevel: boolean }) {
   if (check.at !== null) rows.push(["When", <time dateTime={check.at}>{formatAt(check.at)}</time>]);
   if (rows.length === 0) return null;
   return (
-    <dl className="m-0 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs leading-5">
+    <dl className="m-0 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs leading-5">
       {rows.map(([label, value]) => (
         <div key={label} className="contents">
           <dt className="text-muted-foreground">{label}</dt>
@@ -505,7 +505,7 @@ function EvidencePanel({ criterion, column, check, onClose, id }: { criterion: C
     }
   };
   return (
-    <div id={id} role="region" aria-label={`${criterion.name}${column === null ? "" : ` · ${column}`}: evidence`} onKeyDown={onKeyDown} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-background px-3 py-2.5">
+    <div id={id} role="region" aria-label={`${criterion.name}${column === null ? "" : ` · ${column}`}: evidence`} onKeyDown={onKeyDown} className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-background px-3 py-3">
       <div className="flex min-w-0 items-start gap-2">
         <StatusMark check={check} className="mt-[3px]" />
         <div className="flex min-w-0 flex-1 flex-col">
@@ -545,7 +545,7 @@ function EvidencePanel({ criterion, column, check, onClose, id }: { criterion: C
       <Facts check={check} rowLevel={rowLevel} />
       {check.evidence.length > 0 ? (
         <ViewerGroup>
-          <div className="flex min-w-0 flex-col gap-1.5">
+          <div className="flex min-w-0 flex-col gap-2">
             <span className={CAPTION}>Evidence</span>
             {check.evidence.map((item, index) => (
               <EvidenceItem key={index} item={item} tone={MARK_TONE[check.status]} order={index} />
@@ -583,7 +583,7 @@ function Cell({ criterion, column, check, open, controls, onToggle, wide }: { cr
       onClick={onToggle}
       className={cn(
         "relative flex min-w-0 cursor-pointer items-center rounded-md text-left transition-[box-shadow,filter] duration-150 hover:brightness-[0.97] dark:hover:brightness-110",
-        wide ? "h-7 w-full justify-center" : "min-h-7 w-full justify-start gap-1.5 px-2 py-1",
+        wide ? "h-7 w-full justify-center" : "min-h-7 w-full justify-start gap-1 px-2 py-1",
         check.notApplicable ? "" : CELL_STYLE[check.status],
         open && "ring-2 ring-ring ring-offset-1 ring-offset-background",
         FOCUS_RING,
@@ -592,7 +592,7 @@ function Cell({ criterion, column, check, open, controls, onToggle, wide }: { cr
     >
       <StatusMark check={check} />
       {wide ? null : <span className="min-w-0 text-xs leading-4 text-foreground [overflow-wrap:anywhere]">{column}</span>}
-      {check.evidence.length > 0 ? <span aria-hidden className={cn("absolute right-1 top-1 size-1 rounded-full bg-foreground/45", wide ? "" : "static ml-0.5 shrink-0")} /> : null}
+      {check.evidence.length > 0 ? <span aria-hidden className={cn("absolute right-1 top-1 size-1 rounded-full bg-foreground/45", wide ? "" : "static ml-1 shrink-0")} /> : null}
     </button>
     </WithTooltip>
   );
@@ -600,12 +600,12 @@ function Cell({ criterion, column, check, open, controls, onToggle, wide }: { cr
 
 function RowName({ criterion, open, onToggle, controls }: { criterion: Criterion; open: boolean; onToggle: (() => void) | null; controls: string }) {
   const name = (
-    <span className="flex min-w-0 items-start gap-1.5">
+    <span className="flex min-w-0 items-start gap-1">
       <StatusMark check={criterion.own} className="mt-[3px]" />
       <span className="flex min-w-0 flex-col">
         <span className={cn("text-[13px] leading-5 text-foreground underline-offset-2 [overflow-wrap:anywhere]", onToggle !== null && "decoration-muted-foreground/60 group-hover/name:underline", open && "font-medium")}>
           {criterion.name}
-          {criterion.required ? null : <span className="ml-1.5 rounded-sm bg-surface-recessed px-1 text-[10.5px] font-normal text-muted-foreground">optional</span>}
+          {criterion.required ? null : <span className="ml-1 rounded-sm bg-surface-recessed px-1 text-[10.5px] font-normal text-muted-foreground">optional</span>}
         </span>
         {criterion.detail === null ? null : <span className="text-xs leading-4 text-muted-foreground [overflow-wrap:anywhere]">{criterion.detail}</span>}
         {criterion.stated === null ? null : (
@@ -652,11 +652,11 @@ function MatrixRow({
   return (
     <>
       <TableRow ref={rise} className="border-b-0 border-t border-border">
-        <TableHead scope="row" className="sticky left-0 z-[1] h-auto min-w-[11rem] max-w-[18rem] bg-background py-1.5 pl-0 pr-3 font-normal text-foreground">
+        <TableHead scope="row" className="sticky left-0 z-[1] h-auto min-w-[11rem] max-w-[18rem] bg-background py-2 pl-0 pr-3 font-normal text-foreground">
           <RowName criterion={criterion} open={rowOpen} onToggle={hasOwnDetail(criterion) ? () => toggle(rowKey) : null} controls={controls} />
         </TableHead>
         {report.columns.map((column, position) => (
-          <TableCell key={column} className="w-[4.75rem] px-[3px] py-1">
+          <TableCell key={column} className="w-[4.75rem] px-1 py-1">
             <Cell
               criterion={criterion}
               column={column}
@@ -671,7 +671,7 @@ function MatrixRow({
       </TableRow>
       {rowOpen || openColumn !== null ? (
         <TableRow className="border-b-0 hover:bg-transparent">
-          <TableCell colSpan={report.columns.length + 1} className="px-0 pb-2 pt-0.5">
+          <TableCell colSpan={report.columns.length + 1} className="px-0 pb-2 pt-1">
             <div className="sticky left-0 max-w-[min(100%,40rem)]">
               <EvidencePanel
                 id={controls}
@@ -694,11 +694,11 @@ function MatrixTable({ report, criteria, opened, toggle, drawerId }: { report: A
       <Table className="border-collapse">
         <TableHeader className="[&_tr]:border-b-0">
           <TableRow className="hover:bg-transparent">
-            <TableHead scope="col" className="sticky left-0 z-[1] h-auto bg-background pb-1.5 pl-0 pr-3 align-bottom text-xs font-normal">
+            <TableHead scope="col" className="sticky left-0 z-[1] h-auto bg-background pb-2 pl-0 pr-3 align-bottom text-xs font-normal">
               Criterion
             </TableHead>
             {report.columns.map((column) => (
-              <TableHead key={column} scope="col" className="h-auto w-[4.75rem] px-[3px] pb-1.5 text-center align-bottom text-xs leading-4 text-foreground [overflow-wrap:anywhere]">
+              <TableHead key={column} scope="col" className="h-auto w-[4.75rem] px-1 pb-2 text-center align-bottom text-xs leading-4 text-foreground [overflow-wrap:anywhere]">
                 {column}
               </TableHead>
             ))}
@@ -722,7 +722,7 @@ function CriterionCard({ report, criterion, opened, toggle, drawerId }: { report
   const rowOpen = opened === rowKey;
   const controls = `${drawerId}-n${criterion.index}`;
   return (
-    <li ref={rise} className="flex min-w-0 flex-col gap-2 rounded-lg bg-surface-recessed/70 px-3 py-2.5">
+    <li ref={rise} className="flex min-w-0 flex-col gap-2 rounded-lg bg-surface-recessed/70 px-3 py-3">
       <div className="flex min-w-0 items-start gap-2">
         <div className="min-w-0 flex-1">
           <RowName criterion={criterion} open={rowOpen} onToggle={hasOwnDetail(criterion) ? () => toggle(rowKey) : null} controls={controls} />
@@ -771,12 +771,12 @@ function CheckRow({ criterion, open, onToggle }: { criterion: Criterion; open: b
         onToggle={onToggle}
         label={`${criterion.name}: ${checkLabel(check)}`}
         header={
-          <span className="flex w-full min-w-0 items-start gap-2 py-1.5">
+          <span className="flex w-full min-w-0 items-start gap-2 py-2">
             <StatusMark check={check} className="mt-[3px]" />
             <span className="flex min-w-0 flex-1 flex-col">
               <span className={cn("text-[13px] leading-5 text-foreground [overflow-wrap:anywhere]", !open && "line-clamp-2")}>
                 {criterion.name}
-                {criterion.required ? null : <span className="ml-1.5 rounded-sm bg-surface-recessed px-1 text-[10.5px] text-muted-foreground">optional</span>}
+                {criterion.required ? null : <span className="ml-1 rounded-sm bg-surface-recessed px-1 text-[10.5px] text-muted-foreground">optional</span>}
               </span>
               {check.needs !== null ? (
                 <span className="text-xs leading-4 text-warning-text [overflow-wrap:anywhere]">Needs you: {check.needs || (check.note ?? "your input")}</span>
@@ -848,9 +848,9 @@ export function Acceptance({ props }: { props: Props }) {
   if (data.criteria.length === 0) {
     return (
       <Frame label={label}>
-        <div className="flex min-w-0 flex-col gap-0.5">
+        <div className="flex min-w-0 flex-col gap-1">
           <p className={cn(CAPTION, "m-0")}>{label}</p>
-          <p className="m-0 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+          <p className="m-0 flex items-center gap-1 text-xs leading-5 text-muted-foreground">
             <Icon name="ListTodo" aria-hidden className="size-3.5 shrink-0" />
             {data.unnamed > 0 ? "No criterion has a name yet." : "No criteria yet."}
           </p>
@@ -880,7 +880,7 @@ export function Acceptance({ props }: { props: Props }) {
         </div>
         <NeedsYouBox items={verdict.needsYou} />
         <Limitations items={data.limitations} />
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2">
           {gaps.length > 0 && gaps.length < data.criteria.length ? (
             <Segmented
               label="Show criteria"

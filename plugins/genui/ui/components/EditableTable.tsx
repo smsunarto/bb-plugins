@@ -78,7 +78,7 @@ export function EditableTable({ props }: { props: PropsOf<"EditableTable"> }) {
   };
 
   return (
-    <div ref={root} className="@container flex min-w-0 flex-col gap-1.5">
+    <div ref={root} className="@container flex min-w-0 flex-col gap-2">
       {label === null ? null : (
         <span id={`${id}-label`} className={CAPTION}>
           {label}
@@ -104,7 +104,7 @@ export function EditableTable({ props }: { props: PropsOf<"EditableTable"> }) {
               <span
                 key={column.key}
                 role="columnheader"
-                className={cn("truncate px-0.5 text-xs font-medium text-muted-foreground", ALIGN[column.type])}
+                className={cn("truncate text-xs font-medium text-muted-foreground", ALIGN[column.type])}
               >
                 {column.label}
               </span>
@@ -134,7 +134,7 @@ export function EditableTable({ props }: { props: PropsOf<"EditableTable"> }) {
         variant="ghost"
         data-add=""
         onClick={add}
-        className="-ml-2 w-fit gap-1.5 text-[13px] text-muted-foreground hover:text-foreground"
+        className="-ml-2 w-fit gap-1 text-[13px] text-muted-foreground hover:text-foreground"
       >
         <Icon name="Plus" aria-hidden className="size-3.5" />
         Add row
@@ -166,7 +166,7 @@ function EditableRow({
       ref={rise}
       role="row"
       data-row={index}
-      className="relative grid min-w-0 grid-cols-1 gap-2 rounded-lg bg-surface-recessed py-3 pl-3 pr-10 @lg:items-center @lg:rounded-none @lg:border-b @lg:border-border/60 @lg:bg-transparent @lg:px-0 @lg:py-1.5 @lg:[grid-template-columns:var(--cols)] @lg:last:border-b-0"
+      className="relative grid min-w-0 grid-cols-1 gap-2 rounded-lg bg-surface-recessed py-3 pl-3 pr-10 @lg:items-center @lg:rounded-none @lg:border-b @lg:border-border/60 @lg:bg-transparent @lg:px-0 @lg:py-1 @lg:[grid-template-columns:var(--cols)] @lg:last:border-b-0"
     >
       {columns.map((column, position) => {
         const field = `${id}-${position}`;
@@ -190,7 +190,7 @@ function EditableRow({
           </div>
         );
       })}
-      <div role="cell" className="absolute right-2 top-2.5 @lg:static @lg:flex @lg:justify-center">
+      <div role="cell" className="absolute right-2 top-3 @lg:static @lg:flex @lg:justify-center">
         <BaseButton
           type="button"
           variant="ghost"
@@ -225,7 +225,7 @@ function CellField({
     const checked = value === true;
     return (
       // Narrow, the box lines up with the fields' left edge; in the table it is centered.
-      <span className="-ml-1.5 flex h-8 items-center @lg:ml-0 @lg:justify-center">
+      <span className="-ml-1 flex h-8 items-center @lg:ml-0 @lg:justify-center">
         <Checkbox id={id} data-field="" checked={checked} aria-label={name} onCheckedChange={(next) => onChange(next === true)} />
       </span>
     );

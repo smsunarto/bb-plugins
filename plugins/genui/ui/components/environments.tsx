@@ -151,13 +151,13 @@ function EnvironmentsPanel({ threadId, stateId }: { threadId: string; stateId: s
         label="Environments"
         header={
           <>
-            <span className="flex min-w-0 items-center gap-1.5">
+            <span className="flex min-w-0 items-center gap-1">
               <Icon name="FolderGit" aria-hidden className="size-3.5 shrink-0" />
               <span className="font-medium text-foreground">Environments</span>
               {view === null ? null : <span className="tabular-nums">{formatNumber(view.environments.length)}</span>}
             </span>
             {running > 0 ? (
-              <span className="flex items-center gap-1.5 tabular-nums">
+              <span className="flex items-center gap-1 tabular-nums">
                 <LiveDot tone="info" live />
                 {running} running
               </span>
@@ -286,7 +286,7 @@ function EnvironmentList({ view, details, now, stateId }: { view: EnvironmentsVi
   const [state, setState] = usePersistedState<ViewState>(stateId, { all: false, pages: 1 }, acceptView);
   const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
   if (view.environments.length === 0) {
-    return <QuietLine className="px-3 py-2.5">This project has no environments.</QuietLine>;
+    return <QuietLine className="px-3 min-h-10 items-center py-2">This project has no environments.</QuietLine>;
   }
   const shown = shownEnvironments(view.environments, state.all, state.pages);
   return (
@@ -361,18 +361,18 @@ function EnvironmentRow({
   const heading = (
     <>
       <Icon name={KIND_ICON[environment.kind]} aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className={cn("min-w-0 max-w-full truncate text-[13px] font-medium leading-5 text-foreground", environment.branch !== null && "font-mono text-[12.5px]")}>
           {title}
         </span>
         <span className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground">{kindLabel(environment)}</span>
         {environment.current ? (
-          <Badge variant="info" className="px-1.5 py-px font-medium">
+          <Badge variant="info" className="h-5 px-1 py-0 font-medium">
             this thread
           </Badge>
         ) : null}
         {life === null ? null : (
-          <Badge variant={TONE_BADGE[LIFE_TONE[environment.life]]} className="px-1.5 py-px font-medium">
+          <Badge variant={TONE_BADGE[LIFE_TONE[environment.life]]} className="h-5 px-1 py-0 font-medium">
             {life}
           </Badge>
         )}
@@ -391,7 +391,7 @@ function EnvironmentRow({
   return (
     <li ref={setRef} className="min-w-0 border-b border-border/60 last:border-b-0">
       {opening === null ? (
-        <div className="flex min-w-0 items-center gap-2.5 px-3 pt-2" title={environment.path ?? undefined}>
+        <div className="flex min-w-0 items-center gap-2 px-3 pt-2" title={environment.path ?? undefined}>
           {heading}
           <span aria-hidden className="size-3.5 shrink-0" />
         </div>
@@ -402,7 +402,7 @@ function EnvironmentRow({
           title={`Open “${opening.title}”${environment.path === null ? "" : `\n${environment.path}`}`}
           aria-label={`${title}, ${kindLabel(environment)}: open its newest thread, ${opening.title}`}
           className={cn(
-            "group/row flex w-full min-w-0 cursor-pointer items-center gap-2.5 px-3 pt-2 text-left transition-colors duration-150 hover:bg-state-hover",
+            "group/row flex w-full min-w-0 cursor-pointer items-center gap-2 px-3 pt-2 text-left transition-colors duration-150 hover:bg-state-hover",
             FOCUS_RING,
           )}
         >
@@ -414,17 +414,17 @@ function EnvironmentRow({
           />
         </button>
       )}
-      <div className="flex min-w-0 flex-col gap-1 pb-2 pl-[2.375rem] pr-3 pt-1">
+      <div className="flex min-w-0 flex-col gap-1 pb-2 pl-9 pr-3 pt-1">
         <Facts environment={environment} detail={detail} />
         {lines.length === 0 ? (
           <span className="text-[11.5px] leading-5 text-muted-foreground">No threads</span>
         ) : (
-          <ul className="-ml-1.5 mb-0 mr-0 mt-0 flex min-w-0 list-none flex-col p-0" aria-label={`Threads on ${title}: ${threadSummary(environment)}`}>
+          <ul className="-ml-1 mb-0 mr-0 mt-0 flex min-w-0 list-none flex-col p-0" aria-label={`Threads on ${title}: ${threadSummary(environment)}`}>
             {lines.map((thread) => (
               <ThreadLine key={thread.id} thread={thread} />
             ))}
             {unlisted > 0 ? (
-              <li className="pl-1.5 text-[11px] leading-5 text-muted-foreground">
+              <li className="pl-1 text-[11px] leading-5 text-muted-foreground">
                 +{formatNumber(unlisted)} more ({threadSummary(environment)})
               </li>
             ) : null}
@@ -445,7 +445,7 @@ function ThreadLine({ thread }: { thread: EnvironmentThread }) {
         onClick={() => navigate.toThread(thread.id)}
         title={`Open “${thread.title}”`}
         className={cn(
-          "group/thread flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1.5 text-left text-[12px] leading-5 transition-colors duration-150 hover:bg-state-hover",
+          "group/thread flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-1 text-left text-[12px] leading-5 transition-colors duration-150 hover:bg-state-hover",
           FOCUS_RING,
         )}
       >
@@ -465,8 +465,8 @@ function Facts({ environment, detail }: { environment: EnvironmentInfo; detail: 
   if (detail === null) {
     return (
       <span role="status" aria-label="Reading git status" className="flex h-5 items-center gap-2">
-        <Skeleton className="h-2.5 w-24 rounded-sm motion-reduce:animate-none" />
-        <Skeleton className="h-2.5 w-16 rounded-sm motion-reduce:animate-none" />
+        <Skeleton className="h-2 w-24 rounded-sm motion-reduce:animate-none" />
+        <Skeleton className="h-2 w-16 rounded-sm motion-reduce:animate-none" />
       </span>
     );
   }
@@ -482,7 +482,7 @@ function Facts({ environment, detail }: { environment: EnvironmentInfo; detail: 
     );
   }
   return (
-    <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-[11.5px] leading-5 text-muted-foreground">
+    <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] leading-5 text-muted-foreground">
       <Uncommitted status={checkout} />
       <Position status={checkout} environment={environment} />
       {detail.pull === null ? null : <PullFact pull={detail.pull} />}
@@ -492,7 +492,7 @@ function Facts({ environment, detail }: { environment: EnvironmentInfo; detail: 
 
 function FactLine({ icon, tone = "neutral", title, children }: { icon: string; tone?: Tone; title?: string; children: ReactNode }) {
   return (
-    <span title={title} className={cn("flex min-h-5 min-w-0 items-start gap-1.5 text-[11.5px] leading-5", tone === "neutral" ? "text-muted-foreground" : TONE_TEXT[tone])}>
+    <span title={title} className={cn("flex min-h-5 min-w-0 items-start gap-1 text-[11.5px] leading-5", tone === "neutral" ? "text-muted-foreground" : TONE_TEXT[tone])}>
       <Icon name={icon} aria-hidden className="mt-[3px] size-3.5 shrink-0" />
       <span className="min-w-0 [overflow-wrap:anywhere]">{children}</span>
     </span>
@@ -521,7 +521,7 @@ function Position({ status, environment }: { status: CheckoutStatus; environment
   // The branch BB recorded may lag the checkout: say what is checked out when it differs.
   const moved = status.branch !== null && status.branch !== environment.branch;
   return (
-    <span className="flex min-w-0 items-center gap-1.5 tabular-nums" title={aheadBehindLabel(status)}>
+    <span className="flex min-w-0 items-center gap-1 tabular-nums" title={aheadBehindLabel(status)}>
       <span className={cn("flex items-center", status.ahead > 0 && "text-foreground")}>
         <Icon name="ArrowUp" aria-hidden className="size-3" />
         {formatNumber(status.ahead)}

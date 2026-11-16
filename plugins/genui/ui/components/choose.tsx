@@ -96,7 +96,7 @@ function SelectionMark({ checked, multiple, onImage }: { checked: boolean; multi
     <span
       aria-hidden
       className={cn(
-        "flex size-[18px] shrink-0 items-center justify-center border transition-colors duration-150 motion-reduce:transition-none",
+        "flex size-4 shrink-0 items-center justify-center border transition-colors duration-150 motion-reduce:transition-none",
         multiple ? "rounded-[5px]" : "rounded-full",
         checked ? "border-transparent bg-primary text-primary-foreground" : "border-border bg-background",
         onImage && "absolute right-2 top-2 shadow-[0_1px_3px_rgb(0_0_0/0.25)]",
@@ -153,13 +153,13 @@ function OptionCard({
         )}
       >
         {option.image === null ? null : <OptionPicture src={option.image} picture={picture} />}
-        <span className="flex min-w-0 flex-1 items-start gap-2.5 px-3 py-2.5">
+        <span className="flex min-w-0 flex-1 items-start gap-2 px-3 py-3">
           {icon === null ? null : (
             <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-recessed text-foreground">
               <Icon name={icon} aria-hidden className="size-4" />
             </span>
           )}
-          <span className={cn("flex min-w-0 flex-1 flex-col gap-0.5", icon !== null && "self-center")}>
+          <span className={cn("flex min-w-0 flex-1 flex-col gap-1", icon !== null && "self-center")}>
             <span className="text-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{option.title}</span>
             {option.detail === null ? null : (
               <span className="text-xs leading-4 text-muted-foreground [overflow-wrap:anywhere]">{option.detail}</span>
@@ -202,7 +202,7 @@ export function OptionCards({ props }: { props: PropsOf<"OptionCards"> }) {
       : "repeat(auto-fit,minmax(min(12.5rem,100%),1fr))",
   };
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
         <span id={labelId} className={CAPTION}>
           {label}
@@ -268,7 +268,7 @@ export function Swatches({ props }: { props: PropsOf<"Swatches"> }) {
     );
   if (colors.length === 0) return invalid;
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
         <span id={labelId} className={CAPTION}>
           {label}
@@ -339,7 +339,7 @@ function SwatchChip({
       onClick={onClick}
       {...keepTyping}
       className={cn(
-        "group/swatch flex min-w-0 cursor-pointer touch-manipulation items-center gap-2.5 rounded-lg border bg-background p-1.5 pr-2.5 text-left transition-[border-color,box-shadow,background-color] duration-150 motion-reduce:transition-none",
+        "group/swatch flex min-w-0 cursor-pointer touch-manipulation items-center gap-2 rounded-lg border bg-background p-1 pr-2 min-h-13 text-left transition-[border-color,box-shadow,background-color] duration-150 motion-reduce:transition-none",
         TILE_FOCUS,
         checked
           ? "border-primary shadow-[0_0_0_1px_var(--primary)]"

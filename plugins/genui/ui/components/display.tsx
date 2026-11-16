@@ -39,7 +39,7 @@ export function Text({ props }: { props: Props }) {
 export function Metric({ props }: { props: Props }) {
   const note = optionalText(props.note);
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className="flex min-w-0 flex-col gap-1">
       <span className="truncate text-xs text-muted-foreground">{text(props.label)}</span>
       <span
         className={cn(
@@ -96,7 +96,7 @@ export function File({ props }: { props: Props }) {
   );
   if (openFile === null) {
     return (
-      <span className="inline-flex w-fit max-w-full items-center gap-1.5 self-start font-mono text-xs text-muted-foreground">
+      <span className="inline-flex w-fit max-w-full items-center gap-1 self-start font-mono text-xs text-muted-foreground">
         {content}
       </span>
     );
@@ -108,7 +108,7 @@ export function File({ props }: { props: Props }) {
         onClick={async () => {
           if (!(await openFile(path))) toast.error(`Couldn't open ${path}`);
         }}
-        className="inline-flex w-fit max-w-full cursor-pointer items-center gap-1.5 self-start rounded-sm font-mono text-xs text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="inline-flex w-fit max-w-full cursor-pointer items-center gap-1 self-start rounded-sm font-mono text-xs text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       >
         {content}
       </button>
@@ -133,7 +133,7 @@ export function Progress({ props }: { props: Props }) {
   const readout =
     explicitMax === null ? `${Math.round(ratio * 100)}%` : `${formatNumber(value)}/${formatNumber(explicitMax)}`;
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline justify-between gap-3 text-xs leading-4">
         <span className="truncate text-muted-foreground">{label}</span>
         <span className="shrink-0 font-medium tabular-nums text-foreground">{readout}</span>
@@ -206,7 +206,7 @@ function Step({
           <span aria-hidden className={cn("my-1 w-px flex-1", status === "done" ? "bg-success/40" : "bg-border")} />
         )}
       </div>
-      <div className={cn("flex min-w-0 flex-col gap-0.5", !last && "pb-3")}>
+      <div className={cn("flex min-w-0 flex-col gap-1", !last && "pb-3")}>
         <span
           className={cn(
             "text-sm leading-5",

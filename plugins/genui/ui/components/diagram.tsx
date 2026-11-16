@@ -221,7 +221,7 @@ export function DiagramDetails({ details, children }: { details: readonly Diagra
   const title = detail === null ? "" : (labels[detail.key] ?? detail.key);
 
   return (
-    <div ref={interactionScope} className="flex min-w-0 flex-col gap-1.5">
+    <div ref={interactionScope} className="flex min-w-0 flex-col gap-2">
       <style href="genui-diagram-details" precedence="default">
         {NODE_CSS}
       </style>
@@ -232,7 +232,7 @@ export function DiagramDetails({ details, children }: { details: readonly Diagra
       <div ref={outer} className={cn("min-w-0 border-t border-border", SMOOTH_HEIGHT_CLASS)}>
         <div ref={inner} className="flex min-w-0 flex-col">
           {unmatched.length === 0 ? null : (
-            <div className="flex min-w-0 flex-wrap gap-1.5 pt-2.5">
+            <div className="flex min-w-0 flex-wrap gap-2 pt-3">
               {unmatched.map((candidate) => (
                 <button
                   key={candidate.key}
@@ -241,7 +241,7 @@ export function DiagramDetails({ details, children }: { details: readonly Diagra
                   aria-controls={panelId}
                   onClick={() => toggle(candidate.key)}
                   className={cn(
-                    "max-w-full cursor-pointer truncate rounded-full px-2.5 py-0.5 text-xs transition-colors duration-150",
+                    "max-w-full cursor-pointer truncate rounded-full h-5 px-2 text-xs transition-colors duration-150",
                     FOCUS_RING,
                     candidate.key === selected
                       ? "bg-foreground text-background"
@@ -258,7 +258,7 @@ export function DiagramDetails({ details, children }: { details: readonly Diagra
           </span>
           <div id={panelId} role="region" aria-label={detail === null ? "Details" : title} className="min-w-0">
             {detail === null ? (
-              <p className="m-0 pt-2.5 text-xs leading-5 text-muted-foreground">
+              <p className="m-0 pt-3 text-xs leading-5 text-muted-foreground">
                 {drawn && unmatched.length < details.length
                   ? "Select a highlighted part to see its details."
                   : "Select a part to see its details."}
@@ -371,13 +371,13 @@ export function DiagramViewer({
             aria-label={title}
             className="absolute inset-x-3 bottom-16 z-20 mx-auto flex max-h-[min(50dvh,30rem)] max-w-md flex-col overflow-hidden rounded-xl border border-border bg-background text-foreground shadow-[0_8px_30px_rgb(0_0_0/0.18)] sm:left-auto sm:right-4 sm:mx-0 sm:w-96"
           >
-            <div className="flex min-w-0 shrink-0 items-center gap-1 py-1.5 pl-1.5 pr-1.5">
+            <div className="flex min-w-0 shrink-0 items-center gap-1 py-1 pl-1 pr-1">
               <button
                 type="button"
                 aria-expanded={!folded}
                 aria-controls={`${popupId}-body`}
                 onClick={() => setFolded((value) => !value)}
-                className={cn("flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-left hover:bg-state-hover", FOCUS_RING)}
+                className={cn("flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md px-1 py-1 text-left hover:bg-state-hover", FOCUS_RING)}
               >
                 <Icon name="ChevronDown" aria-hidden className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-150 motion-reduce:transition-none", folded && "-rotate-90")} />
                 <h4 className="m-0 min-w-0 truncate text-sm font-medium leading-5">{title}</h4>

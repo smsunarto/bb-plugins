@@ -97,7 +97,7 @@ function Chevron({ open }: { open: boolean }) {
 
 function Chip({ children, tone = "neutral", title }: { children: ReactNode; tone?: Tone; title?: string }) {
   return (
-    <Badge variant={TONE_BADGE[tone]} title={title} className="px-1.5 py-0 font-medium">
+    <Badge variant={TONE_BADGE[tone]} title={title} className="h-5 px-1 py-0 font-medium">
       {children}
     </Badge>
   );
@@ -107,7 +107,7 @@ function SeverityPill({ severity }: { severity: Severity }) {
   return (
     <Badge
       variant={severity === "critical" ? "destructive" : TONE_BADGE[SEVERITY_TONE[severity]]}
-      className="w-[68px] justify-center px-1.5 py-0 uppercase tracking-[0.03em]"
+      className="w-[68px] justify-center h-5 px-1 py-0 uppercase tracking-[0.03em]"
     >
       {severity}
     </Badge>
@@ -149,15 +149,15 @@ function Strip({ label, parts }: { label: string; parts: readonly { key: string;
   const grow = useEntrance<HTMLDivElement>(GROW_X);
   const shown = parts.filter((part) => part.count > 0);
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <div ref={grow} role="img" aria-label={label} className="flex h-1.5 w-full origin-left gap-[2px] overflow-hidden rounded-full bg-muted">
+    <div className="flex min-w-0 flex-col gap-1">
+      <div ref={grow} role="img" aria-label={label} className="flex h-2 w-full origin-left gap-[2px] overflow-hidden rounded-full bg-muted">
         {shown.map((part) => (
           <div key={part.key} className={cn("h-full min-w-[3px]", part.fill)} style={{ flex: `${part.count} 1 0` }} />
         ))}
       </div>
-      <p aria-hidden className="m-0 flex flex-wrap gap-x-3.5 gap-y-0.5 text-xs leading-5 text-muted-foreground">
+      <p aria-hidden className="m-0 flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5 text-muted-foreground">
         {shown.map((part) => (
-          <span key={part.key} className="flex items-center gap-1.5 tabular-nums">
+          <span key={part.key} className="flex items-center gap-1 tabular-nums">
             <span className={cn("size-2 rounded-full", part.fill)} />
             <span className={cn("font-medium", part.ink || "text-foreground")}>{formatNumber(part.count)}</span>
             {part.word}
@@ -205,7 +205,7 @@ function VulnerableRow({ item }: { item: VulnerablePackage }) {
   const expandable = item.advisories.length > 0;
   const header = (
     <>
-      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="flex min-w-0 flex-1 basis-[220px] items-center gap-2">
           {expandable ? <Chevron open={open} /> : <span aria-hidden className="w-3.5 shrink-0" />}
           <SeverityPill severity={item.severity} />
@@ -252,7 +252,7 @@ function VulnerableRow({ item }: { item: VulnerablePackage }) {
             <div className="flex min-w-0 flex-col py-1">{header}</div>
           )}
           {open ? (
-            <ul id={`${id}-advisories`} aria-labelledby={`${id}-row`} className="m-0 flex min-w-0 list-none flex-col gap-1 pb-1.5 pl-[22px] pt-0.5">
+            <ul id={`${id}-advisories`} aria-labelledby={`${id}-row`} className="m-0 flex min-w-0 list-none flex-col gap-1 pb-2 pl-[22px] pt-1">
               {item.advisories.map((advisory, index) => (
                 <li key={index} className="flex min-w-0 items-start gap-2 text-xs leading-5">
                   <span aria-hidden className={cn("mt-[7px] size-1.5 shrink-0 rounded-full", TONE_DOT[SEVERITY_TONE[advisory.severity ?? item.severity]])} />
@@ -326,8 +326,8 @@ function OutdatedRow({ item, tone }: { item: OutdatedPackage; tone: Tone }) {
   // wanted earns its place only between current and latest.
   const wanted = item.wanted !== null && item.wanted !== item.current && item.wanted !== item.latest ? item.wanted : null;
   return (
-    <li ref={rise} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 py-1 pl-[22px]">
-      <span className="flex min-w-0 items-center gap-1.5">
+    <li ref={rise} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 py-1 pl-[22px]">
+      <span className="flex min-w-0 items-center gap-1">
         <PackageName name={item.name} url={item.url} />
         {type === null ? null : <Chip>{type}</Chip>}
         {item.dependent === null ? null : <Chip title="Depended on by">{item.dependent}</Chip>}
@@ -339,7 +339,7 @@ function OutdatedRow({ item, tone }: { item: OutdatedPackage; tone: Tone }) {
         ) : null}
         {item.severity === null ? null : <Chip tone={SEVERITY_TONE[item.severity]}>{item.severity}</Chip>}
       </span>
-      <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs leading-5">
+      <span className="ml-auto flex shrink-0 items-center gap-1 text-xs leading-5">
         {item.current === null ? (
           <>
             <span className="font-medium text-warning-text">not installed</span>
@@ -459,7 +459,7 @@ function Outdated({ report }: { report: DependencyReport }) {
           word: GROUP_LABEL[group.key].toLowerCase(),
         }))}
       />
-      <p aria-hidden className="m-0 flex items-center justify-end gap-1.5 text-[11px] leading-4 text-muted-foreground/80">
+      <p aria-hidden className="m-0 flex items-center justify-end gap-1 text-[11px] leading-4 text-muted-foreground/80">
         current <Arrow /> <span className="border-b border-dotted border-muted-foreground/60">wanted</span> <Arrow /> latest
       </p>
       <div className="flex min-w-0 flex-col gap-1">
@@ -501,7 +501,7 @@ export function Dependencies({ props }: { props: Props }) {
         vulnerable ? (
           <Vulnerabilities report={report} />
         ) : (
-          <p className="m-0 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+          <p className="m-0 flex items-center gap-1 text-xs leading-5 text-muted-foreground">
             <Icon name="CircleCheck" aria-hidden className="size-3.5 text-success" />
             {report.auditSource} found no vulnerabilities{report.scanned === null ? "" : ` in ${formatNumber(report.scanned)} dependencies`}.
           </p>
@@ -515,7 +515,7 @@ export function Dependencies({ props }: { props: Props }) {
       {empty && !audited ? (
         <div className="flex min-w-0 flex-col gap-1">
           <h3 className="m-0 text-[15px] font-semibold leading-6 text-foreground">Dependencies</h3>
-          <p className="m-0 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+          <p className="m-0 flex items-center gap-1 text-xs leading-5 text-muted-foreground">
             <Icon name="CircleCheck" aria-hidden className="size-3.5 text-success" />
             Every dependency is on its latest version.
           </p>
