@@ -312,9 +312,10 @@ function matches(row: NavRow, filter: Filter): boolean {
 }
 
 /**
- * Every source's rows as the nav shows them: one row per ChangeKey, grouped
- * by repository and stack, closest to shipping first. A stack keeps its own
- * order, bottom (merges first) at the bottom, and sorts by its most urgent row.
+ * Every source's rows as the nav shows them: one row per ChangeKey, merged
+ * and closed ones left out, grouped by repository and stack, closest to shipping first.
+ * A stack keeps its own order, bottom (merges first) at the bottom, and
+ * sorts by its most urgent row.
  */
 /**
  * The tint of a row's one status line on the phone (board D): problems are
@@ -361,7 +362,10 @@ export function mergeChanges(
         seen ? combine(seen, row) : { ...row, hosts: row.hostId === null ? [] : [row.hostId] },
       );
     }
-  const all = [...byKey.values()].map(withAsked);
+  // A merged or closed pull request has nothing left to review; its page still opens by link.
+  const all = [...byKey.values()]
+    .filter((row) => row.state !== "merged" && row.state !== "closed")
+    .map(withAsked);
   const counts: Record<Filter, number> = {
     all: all.length,
     mine: all.filter((row) => row.mine).length,
