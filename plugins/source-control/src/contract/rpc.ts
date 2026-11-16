@@ -567,7 +567,7 @@ export const sourceControlContract = defineRpcContract({
     input: z.object({ threadId: threadIdSchema }).strict(),
     output: askResultSchema,
   },
-  /** Writes the guide again for the Change's current head: "Rewrite guide" and "Try again". */
+  /** Writes the guide again for the Change's current head: "Regenerate guide" and "Try again". */
   rewriteGuide: {
     experimental_description:
       "Start a new guide run for the Change's current head, replacing the stored guide when it lands. Returns the run already writing when there is one.",

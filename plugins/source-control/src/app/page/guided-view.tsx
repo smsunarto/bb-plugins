@@ -40,6 +40,7 @@ import type { ChangeFile, ReviewRevision } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { FileRowsSkeleton, PatchesProblem } from "../file-cards.tsx";
 import { Button } from "../components/ui/button.tsx";
+import { surface } from "../components/ui/surface.ts";
 import { cx, plural } from "../format.ts";
 import { useGuide, useRewriteGuide, type GuideRead, type Rewrite } from "../guide-data.ts";
 import { useChangeReview } from "../review-data.ts";
@@ -171,6 +172,8 @@ type Status = {
   action: "refetch" | "rewrite" | null;
   label: string;
   warning: boolean;
+  /** Drawn as a callout with this heading instead of a one-line note. */
+  title?: string;
 };
 
 const UNTIL = " Files are in path order until then.";
@@ -179,7 +182,7 @@ const UNTIL = " Files are in path order until then.";
 function statusOf(
   view: GuideView | undefined,
   error: string | null,
-  source: ResolvedGuide["source"],
+  resolved: ResolvedGuide,
 ): Status | null {
   if (!view)
     return error
@@ -221,11 +224,14 @@ function statusOf(
           }
         : null;
     case "done":
-      return source === "carried"
+      return resolved.source === "carried"
         ? {
-            text: "The guide was written for an earlier commit.",
+            title: "This guide is out of date",
+            text: resolved.groups.some((group) => group.id === CHANGED_GROUP)
+              ? "It was written for an earlier commit. Files changed since then are listed at the end, without notes."
+              : "It was written for an earlier commit.",
             action: "rewrite",
-            label: "Rewrite guide",
+            label: "Regenerate guide",
             warning: false,
           }
         : null;
@@ -234,16 +240,49 @@ function statusOf(
 
 function GuideStatus({
   read,
-  source,
+  resolved,
   rewrite,
 }: {
   read: GuideRead;
-  source: ResolvedGuide["source"];
+  resolved: ResolvedGuide;
   rewrite: Rewrite;
 }) {
-  const status = statusOf(read.view, read.error, source);
+  const status = statusOf(read.view, read.error, resolved);
   if (!status) return null;
   const run = status.action === "refetch" ? read.refetch : rewrite.rewrite;
+  if (status.title)
+    return (
+      <section
+        aria-label={status.title}
+        className={cx(
+          surface.edge,
+          "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-surface-recessed p-3",
+        )}
+        data-testid="sc-guide-status"
+        data-phase={read.view?.phase ?? "unread"}
+      >
+        <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
+        <div className="flex min-w-0 grow basis-48 flex-col gap-0.5">
+          <h2 className="m-0 text-[13px] leading-5 font-medium text-foreground">{status.title}</h2>
+          <p className="m-0 text-[12px] leading-4 text-muted-foreground">{status.text}</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          disabled={rewrite.pending}
+          data-testid="sc-guide-action"
+          onClick={run}
+        >
+          {rewrite.pending ? "Starting…" : status.label}
+        </Button>
+        {rewrite.error ? (
+          <span role="alert" className="min-w-0 basis-full text-[12px] leading-4 text-warning">
+            {rewrite.error}
+          </span>
+        ) : null}
+      </section>
+    );
   return (
     <div
       className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1"
@@ -963,7 +1002,7 @@ export function GuidedView({
               )}
             >
               {lead}
-              <GuideStatus read={read} source={resolved.source} rewrite={rewrite} />
+              <GuideStatus read={read} resolved={resolved} rewrite={rewrite} />
               {resolved.summary ? <SummaryCard summary={resolved.summary} /> : null}
               <ViewerContext.Provider value={viewer}>{body}</ViewerContext.Provider>
             </div>

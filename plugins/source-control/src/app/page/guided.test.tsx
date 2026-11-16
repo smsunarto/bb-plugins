@@ -386,7 +386,7 @@ test("on a phone a failed guide names why and Try again asks for a rewrite", asy
   );
 });
 
-test("on a phone a guide for an earlier head shows what changed since and offers Rewrite guide", async () => {
+test("on a phone a guide for an earlier head shows what changed since and offers Regenerate guide", async () => {
   phone();
   const state = server({
     files: [file("src/a.ts", 1), file("src/b.ts", 9), file("src/c.ts", 3)],
@@ -400,7 +400,8 @@ test("on a phone a guide for an earlier head shows what changed since and offers
   });
   const slot = render(state);
   const status = await slot.findByTestId("sc-guide-status");
-  expect(status.textContent).toContain("The guide was written for an earlier commit.");
+  expect(within(status).getByRole("heading").textContent).toBe("This guide is out of date");
+  expect(within(status).getByTestId("sc-guide-action").textContent).toBe("Regenerate guide");
   const groups = slot.getAllByTestId("sc-guide-group");
   expect(groups.map((group) => group.getAttribute("data-group"))).toEqual([
     "client",
@@ -409,8 +410,33 @@ test("on a phone a guide for an earlier head shows what changed since and offers
   ]);
   expect(groups[0]!.textContent).toContain("1 of 3 · read this first");
   expect(groups[2]!.textContent).toContain("Changed since the guide");
+  expect(status.textContent).toContain("Files changed since then are listed at the end");
   fireEvent.click(within(status).getByTestId("sc-guide-action"));
   await waitFor(() =>
     expect(slot.inspection.rpcCalls.some((call) => call.method === "rewriteGuide")).toBe(true),
   );
+});
+
+test("a guide for an earlier head whose files are all unchanged still offers Regenerate guide, without pointing at changed files", async () => {
+  const state = server({
+    files: FILES,
+    guide: {
+      ...EMPTY_GUIDE_VIEW,
+      state: "done",
+      phase: "done",
+      revision: "0dd0dd",
+      guide: guideFor("0dd0dd"),
+    },
+  });
+  const slot = render(state);
+  const status = await slot.findByTestId("sc-guide-status");
+  await waitFor(() =>
+    expect(
+      slot.getAllByTestId("sc-guide-group").map((group) => group.getAttribute("data-group")),
+    ).toEqual(["client", "rest"]),
+  );
+  expect(within(status).getByRole("heading").textContent).toBe("This guide is out of date");
+  expect(status.textContent).toContain("It was written for an earlier commit.");
+  expect(status.textContent).not.toContain("listed at the end");
+  expect(within(status).getByTestId("sc-guide-action").textContent).toBe("Regenerate guide");
 });

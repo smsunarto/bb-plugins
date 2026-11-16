@@ -161,7 +161,7 @@ export type Rewrite = {
   error: string | null;
 };
 
-/** "Rewrite guide" and "Try again": a new run for the Change's current head. */
+/** "Regenerate guide" and "Try again": a new run for the Change's current head. */
 export function useRewriteGuide(key: ChangeKey): Rewrite {
   const mutation = useRpcMutation({ contract: sourceControlContract, method: "rewriteGuide" });
   const mutate = useRef(mutation.mutate);

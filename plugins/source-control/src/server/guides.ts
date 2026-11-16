@@ -439,7 +439,7 @@ export function createGuides(deps: {
     },
     /** The review page opened: the Change's one run, if it has none yet. */
     open: (key: ChangeKey) => claim(key, false),
-    /** "Rewrite guide" and "Try again": a new run for the current head, unless one is running. */
+    /** "Regenerate guide" and "Try again": a new run for the current head, unless one is running. */
     rewrite: (key: ChangeKey) => claim(key, true),
     setViewed(key: ChangeKey, path: string, blob: string, viewed: boolean): void {
       if (store.setViewed(key, path, blob, viewed)) changed(key);
