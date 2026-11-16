@@ -46,8 +46,9 @@ const CommitRow = memo(function CommitRow({
         onClick={() => onSelect(commit.id)}
         title={commit.subject || "No commit message"}
         className={cx(
-          "group relative flex w-full min-w-0 cursor-pointer items-stretch border-0 bg-transparent text-start text-[13px] leading-5 hover:bg-surface-raised focus-visible:-outline-offset-2",
-          selected && "bg-surface-raised",
+          "group relative flex w-full min-w-0 cursor-pointer items-stretch border-0 text-start text-[13px] leading-5 focus-visible:-outline-offset-2",
+          // The theme's selection fill: the recessed card's raised hover alone barely shows the pick.
+          selected ? "bg-state-active" : "bg-transparent hover:bg-surface-raised",
         )}
       >
         {selected ? (
@@ -65,13 +66,19 @@ const CommitRow = memo(function CommitRow({
         >
           <span
             className={cx(
-              "min-w-0 flex-1 truncate font-medium text-foreground",
+              "min-w-0 flex-1 truncate text-foreground",
+              selected ? "font-semibold" : "font-medium",
               !commit.subject && "font-normal text-muted-foreground italic",
             )}
           >
             {commit.subject || "No commit message"}
           </span>
-          <span className="shrink-0 font-mono text-[11px] text-(--tertiary-foreground)">
+          <span
+            className={cx(
+              "shrink-0 font-mono text-[11px]",
+              selected ? "text-muted-foreground" : "text-(--tertiary-foreground)",
+            )}
+          >
             {shortId(commit.id)}
           </span>
           {age ? (
