@@ -136,7 +136,7 @@ function SourceControls({
   const checkoutId = useId();
   return (
     <div className="flex flex-wrap gap-3 border-b border-border p-4">
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         <Label htmlFor={projectId} className="text-xs font-normal text-muted-foreground">
           {projectLabel}
         </Label>
@@ -163,7 +163,7 @@ function SourceControls({
         </Select>
       </div>
       {project && (
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
           <Label htmlFor={checkoutId} className="text-xs font-normal text-muted-foreground">
             Checkout / machine
           </Label>
@@ -404,7 +404,7 @@ function GlobalApply({ file, disabled }: { file: DocumentFile; disabled: boolean
               type="button"
               variant="ghost"
               size="sm"
-              className="group h-auto gap-1 px-1 py-0.5 text-xs text-muted-foreground"
+              className="group h-5 gap-1 px-1 py-0 text-xs text-muted-foreground"
             >
               <Icon
                 name="ChevronRight"

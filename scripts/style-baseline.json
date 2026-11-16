@@ -32,17 +32,7 @@
   {
     "file": "plugins/agent-instructions/src/app/rules.tsx",
     "rule": "universal-bucket",
-    "source": "<div className=\"space-y-2.5 rounded-md bg-muted/40 p-3\">"
-  },
-  {
-    "file": "plugins/agent-instructions/src/app/rules.tsx",
-    "rule": "universal-bucket",
     "source": "<div className=\"space-y-3\">"
-  },
-  {
-    "file": "plugins/agent-instructions/src/app/rules.tsx",
-    "rule": "universal-bucket",
-    "source": "className={`space-y-2.5 rounded-lg border p-3 ${selected ? \"border-primary\" : \"border-border\"} ${rule.enabled ? \"\" : \"opacity-60\"}`}"
   },
   {
     "file": "plugins/agent-instructions/src/documents/app.tsx",
@@ -53,16 +43,6 @@
     "file": "plugins/agent-instructions/src/prompts/app/prompt-editor.css",
     "rule": "hairline-literal",
     "source": "font-size: 10.5px;"
-  },
-  {
-    "file": "plugins/agent-instructions/src/prompts/app/prompt-editor.css",
-    "rule": "hairline-literal",
-    "source": "font-size: 10.5px;"
-  },
-  {
-    "file": "plugins/agent-instructions/src/prompts/app/prompt-editor.css",
-    "rule": "hairline-literal",
-    "source": "font-size: 11.5px;"
   },
   {
     "file": "plugins/agent-instructions/src/prompts/app/prompt-editor.css",

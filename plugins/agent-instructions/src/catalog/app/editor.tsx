@@ -161,7 +161,7 @@ function EditorPlaceholder() {
   return (
     <div className="pe-editor" aria-busy="true">
       <Skeleton className="h-3 w-[30%]" />
-      <Skeleton className="h-[18px] w-1/2" />
+      <Skeleton className="h-5 w-1/2" />
       <Skeleton className="min-h-60 flex-1" />
     </div>
   );
@@ -236,7 +236,7 @@ function EditorHeader(props: {
         )}
       </div>
       <div className="pe-actions pe-wrap-actions">
-        <Label className="inline-flex cursor-pointer items-center gap-1.5 font-normal">
+        <Label className="inline-flex cursor-pointer items-center gap-2 font-normal">
           <Switch
             checked={f.enabled}
             disabled={busy}
@@ -745,7 +745,7 @@ function CatalogPageBody({ subPath }: { subPath: string }) {
         ) : (
           <div className="pe-editor" aria-busy="true">
             <Skeleton className="h-3 w-[30%]" />
-            <Skeleton className="h-[18px] w-1/2" />
+            <Skeleton className="h-5 w-1/2" />
             <Skeleton className="min-h-60 flex-1" />
           </div>
         )}

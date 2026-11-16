@@ -37,7 +37,7 @@
   padding: 8px 8px 16px;
 }
 .pe-group + .pe-group {
-  margin-top: 2px;
+  margin-top: 4px;
 }
 .pe-plugin,
 .pe-row {
@@ -45,7 +45,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   width: 100%;
   border: 0;
   border-radius: 6px;
@@ -57,7 +57,8 @@
 }
 .pe-plugin {
   justify-content: space-between;
-  padding: 7px 8px;
+  min-height: 32px;
+  padding: 4px 8px;
 }
 .pe-plugin[aria-expanded="true"] .pe-plugin-name {
   font-weight: 600;
@@ -90,7 +91,7 @@
   white-space: nowrap;
 }
 .pe-files {
-  padding: 2px 0 8px 8px;
+  padding: 4px 0 8px 8px;
 }
 .pe-label {
   color: var(--subtle-foreground, var(--muted-foreground));
@@ -100,7 +101,7 @@
   text-transform: uppercase;
 }
 .pe-files .pe-label {
-  padding: 10px 8px 4px;
+  padding: 12px 8px 4px;
 }
 .pe-meta {
   color: var(--muted-foreground);
@@ -122,7 +123,7 @@
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   min-height: 0;
   padding: 16px 20px;
@@ -140,7 +141,6 @@
   gap: 16px;
 }
 .pe-editor-head h2 {
-  margin-top: 2px;
   font-size: 14px;
   font-weight: 600;
   overflow-wrap: anywhere;
@@ -151,7 +151,7 @@
   gap: 8px;
 }
 .pe-notice {
-  padding: 8px 10px;
+  padding: 8px 12px;
   border: 1px solid var(--pe-hairline);
   border-radius: 6px;
   background: var(--pe-recessed);
@@ -219,14 +219,14 @@
 }
 .pe-skill-summary .pe-dot {
   display: inline-block;
-  margin-left: 6px;
+  margin-left: 4px;
 }
 
 /* Catalog editor (Global tab). */
 .pe-summary-line {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   width: calc(100% - 16px);
   vertical-align: middle;
 }
@@ -237,7 +237,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 16px 6px;
+  padding: 12px 16px 8px;
 }
 .pe-status-row,
 .pe-notice-row,
@@ -245,7 +245,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 10px;
+  gap: 8px;
 }
 .pe-notice-row > span {
   flex: 1 1 200px;
@@ -270,7 +270,7 @@
   color: var(--pe-warn);
 }
 .pe-filter {
-  padding: 2px 8px 0;
+  padding: 4px 8px 0;
 }
 .pe-actions form,
 form.pe-actions {
@@ -286,7 +286,7 @@ form.pe-actions {
   padding-top: 4px;
 }
 .pe-hint {
-  padding: 2px 8px;
+  padding: 4px 8px;
   white-space: normal;
 }
 .pe-add {
@@ -295,7 +295,7 @@ form.pe-actions {
 .pe-inline-form {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   margin: 4px 0;
   padding: 8px;
   border: 1px solid var(--pe-hairline);
@@ -305,10 +305,16 @@ form.pe-actions {
   justify-content: flex-end;
 }
 .pe-deleted {
-  padding: 3px 8px;
+  padding: 4px 8px;
 }
 .pe-deleted .pe-row-label {
   color: var(--muted-foreground);
+}
+/* A plugin row is a finger target at every width. */
+@media (pointer: coarse) {
+  .pe-plugin {
+    min-height: 36px;
+  }
 }
 /* A finger needs a 36px target, and iOS zooms into a field under 16px. */
 @media (max-width: 767px) and (pointer: coarse) {
@@ -326,7 +332,7 @@ form.pe-actions {
   position: sticky;
   top: var(--ai-nav-height, 0px);
   z-index: 5;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   /* The phone home sets --ai-surface, since there the list sits on the page, not the sidebar. */
   background: var(--ai-surface, var(--sidebar, var(--background)));
 }

@@ -365,7 +365,7 @@ function CatalogNav(props: { listing: CatalogListing; subPath: string; filterTex
         <h3 className="pe-label">
           Global instructions
           {agentsTrouble && (
-            <Badge variant="danger" className="ml-1.5 py-0 normal-case tracking-normal">
+            <Badge variant="danger" className="ml-1 py-0 normal-case tracking-normal">
               clash
             </Badge>
           )}

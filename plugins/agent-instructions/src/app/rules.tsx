@@ -82,14 +82,14 @@ function ScopeEditor({
   if (parseModels(models).join(",") !== when.models.join(",")) setModels(when.models.join(", "));
   const modelsId = useId();
   return (
-    <div className="flex flex-col gap-2.5 rounded-md bg-muted/40 p-3">
+    <div className="flex flex-col gap-3 rounded-md bg-muted/40 p-3">
       {SCOPES.map(({ key, label, any }) => {
         // Show saved ids bb no longer lists, so they can still be removed.
         const stale = when[key]
           .filter((id) => !targets[key].some((target) => target.id === id))
           .map((id) => ({ id, name: id }));
         return (
-          <div key={key} className="flex flex-wrap items-center gap-1.5">
+          <div key={key} className="flex flex-wrap items-center gap-1">
             <span className="w-16 shrink-0 text-xs text-muted-foreground">{label}</span>
             <Toggle
               size="sm"
@@ -105,7 +105,7 @@ function ScopeEditor({
               aria-label={label}
               value={when[key]}
               onValueChange={(ids) => onChange({ ...when, [key]: ids })}
-              className="flex-wrap justify-start gap-1.5"
+              className="flex-wrap justify-start gap-1"
             >
               {[...targets[key], ...stale].map((target) => (
                 <ToggleGroupItem
@@ -120,7 +120,7 @@ function ScopeEditor({
           </div>
         );
       })}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1">
         <Label
           htmlFor={modelsId}
           className="w-16 shrink-0 text-xs font-normal text-muted-foreground"
@@ -169,7 +169,7 @@ export function RuleCard({
       ref={card}
       data-rule={rule.id}
       aria-current={selected || undefined}
-      className={`space-y-2.5 rounded-lg border p-3 ${selected ? "border-primary" : "border-border"} ${rule.enabled ? "" : "opacity-60"}`}
+      className={`flex flex-col gap-3 rounded-lg border p-3 ${selected ? "border-primary" : "border-border"} ${rule.enabled ? "" : "opacity-60"}`}
     >
       <div className="flex items-center gap-2">
         <Switch
@@ -182,7 +182,7 @@ export function RuleCard({
           maxLength={80}
           aria-label="Rule name"
           placeholder="Untitled rule"
-          className="h-7 min-w-0 flex-1 border-transparent bg-transparent px-1.5 text-sm font-medium shadow-none hover:border-input"
+          className="h-7 min-w-0 flex-1 border-transparent bg-transparent px-1 text-sm font-medium shadow-none hover:border-input"
           onChange={(event) => onChange({ ...rule, name: event.target.value })}
         />
         <Button
@@ -317,7 +317,7 @@ function RulesEditor({
       {conflict !== null && (
         <div
           role="alert"
-          className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 p-2.5 text-xs"
+          className="flex flex-wrap items-center gap-2 rounded-md border border-destructive/40 p-3 text-xs"
         >
           <span className="flex-1">Rules changed elsewhere since this page loaded.</span>
           <Button size="sm" variant="outline" onClick={takeTheirs}>
@@ -329,7 +329,7 @@ function RulesEditor({
         </div>
       )}
       <div className="flex min-h-8 items-center justify-between gap-4">
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={addRule}>
+        <Button size="sm" variant="outline" className="gap-1" onClick={addRule}>
           <Icon name="Plus" className="size-3.5" aria-hidden />
           Add rule
         </Button>
