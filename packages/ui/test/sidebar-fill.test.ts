@@ -65,7 +65,7 @@ function setup() {
   return { observers, frames, style, column, block, root, resize, flush };
 }
 
-test("the root takes the column's height less what bb draws around it, in one frame", () => {
+test("the root takes the column's height less what bb draws around it, at once on mount", () => {
   const s = setup();
   mountSidebarColumnFill(s.root as unknown as HTMLElement);
   expect(s.observers[0]!.observed).toEqual([s.column, s.root, s.block]);
@@ -75,10 +75,9 @@ test("the root takes the column's height less what bb draws around it, in one fr
     [s.block, 130],
     [s.root, 100],
   ]);
-  expect(s.style.get("height")).toBeUndefined();
-  expect(s.frames.size).toBe(1);
-  s.flush();
+  // The first size is written in the observer callback, before the frame paints.
   expect(s.style.get("height")).toBe("1002px");
+  expect(s.frames.size).toBe(0);
   // The write's own resize asks for the same height and writes nothing more.
   s.resize([
     [s.block, 1032],
@@ -86,7 +85,10 @@ test("the root takes the column's height less what bb draws around it, in one fr
   ]);
   s.flush();
   expect(s.style.get("height")).toBe("1002px");
+  // Later resizes wait for one animation frame.
   s.resize([[s.column, 400.6]]);
+  expect(s.style.get("height")).toBe("1002px");
+  expect(s.frames.size).toBe(1);
   s.flush();
   expect(s.style.get("height")).toBe("370px");
 });

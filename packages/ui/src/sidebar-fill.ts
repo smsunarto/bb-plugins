@@ -10,8 +10,9 @@ import { useEffect, type RefObject } from "react";
  * untouched: root height = column height − (the column's child block − root),
  * which keeps anything bb draws above or below the root (a title, padding).
  *
- * Sizes come only from ResizeObserver entries; the one style write happens in
- * an animation frame, so a resize never re-enters the observer in the same pass.
+ * Sizes come only from ResizeObserver entries. The first write happens in the
+ * observer callback so the first painted frame is already filled; later writes
+ * are batched into one animation frame.
  */
 export function mountSidebarColumnFill(root: HTMLElement): () => void {
   const view = root.ownerDocument.defaultView;
@@ -44,6 +45,14 @@ export function mountSidebarColumnFill(root: HTMLElement): () => void {
           ? entry.contentRect.height
           : (entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height),
       );
+    }
+    if (written < 0) {
+      // The first size goes on before this frame paints, from the entries alone. The write's own
+      // resize is deeper than the column, so the observer delivers it in the same pass, and it
+      // asks for the same height.
+      if (frame) view.cancelAnimationFrame(frame);
+      apply();
+      if (written >= 0) return;
     }
     if (!frame) frame = view.requestAnimationFrame(apply);
   });
