@@ -986,7 +986,11 @@
     conic-gradient(from 270deg at 2px 2px, {{shell.halftone40}} 25%, transparent 0);
   background-size: 12px 12px;
   mask-composite: intersect;
-  mask-size: 100% 100%;
+  /* Size the masks to bb's @container that holds the page and the right
+   * panel, anchored top-left. Its width stays put when the panel opens,
+   * closes, or resizes, so the blobs hold still while the panel covers them;
+   * at 100% they stretched with the narrowing page. */
+  mask-size: 100cqw 100%;
 }
 
 .dark #root-compose-main-panel::before {
