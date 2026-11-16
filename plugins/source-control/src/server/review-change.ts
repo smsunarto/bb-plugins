@@ -29,7 +29,7 @@ import {
   type ReviewRevision,
 } from "../core/review.ts";
 import { changeState, shipPath, type ChangeSummary } from "../core/status.ts";
-import { forgeInterval, FORGE_ACTIVE_MS } from "./forge-read.ts";
+import { forgeInterval, FORGE_ACTIVE_MS, knownOpen } from "./forge-read.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import { rowsOf } from "./review-sources.ts";
 import type { Share } from "./shared.ts";
@@ -239,7 +239,7 @@ export function createReviewChange(deps: {
         const own = localMatch(store, key)?.placement;
         const placements = own ? [own, ...store.checkouts()] : store.checkouts();
         const answer = yield* deps.sites
-          .pullRequestVia({ repo, headOwner, branch }, placements)
+          .pullRequestVia({ repo, headOwner, branch, ...knownOpen(store.forge(key)) }, placements)
           .pipe(Effect.result);
         const at = deps.now();
         const ok = answer._tag === "Success";

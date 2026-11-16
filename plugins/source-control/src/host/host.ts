@@ -278,10 +278,10 @@ export default experimental_defineHostEntry({
     },
     async forgeCall(operation, { signal }) {
       try {
-        const { repo, headOwner, branch, account } = operation;
+        const { op: _op, account, ...query } = operation;
         return {
           ok: true as const,
-          value: await readPullRequest(ghFor(account), { repo, headOwner, branch }, signal),
+          value: await readPullRequest(ghFor(account), query, signal),
         };
       } catch (error) {
         if (signal.aborted) throw error;

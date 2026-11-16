@@ -113,7 +113,14 @@ const pullRequestQuery = {
 };
 
 export const forgeOperationSchema = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("pr.read"), ...pullRequestQuery }).strict(),
+  z
+    .object({
+      op: z.literal("pr.read"),
+      ...pullRequestQuery,
+      /** The branch's open pull request as last read: read by number, skipping the branch lookup. */
+      open: z.number().int().positive().optional(),
+    })
+    .strict(),
 ]);
 export type ForgeOperation = z.infer<typeof forgeOperationSchema>;
 

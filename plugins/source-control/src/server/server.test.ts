@@ -400,10 +400,23 @@ function serverGh(world: World): Exec {
     }
     const body = JSON.parse(String(options?.stdin ?? "{}")) as {
       query?: string;
-      variables?: { branch?: string };
+      variables?: { branch?: string; number?: number };
     };
     if (body.query?.includes("mine: search")) return fakeInbox(world, login);
-    const head = body.variables?.branch ?? "";
+    // A pull request read in full, by number: after the branch lookup, or by its known number.
+    const branchOf = Object.entries(world.pullRequests).find(([, prs]) =>
+      (prs as { number: number }[]).some((pr) => pr.number === body.variables?.number),
+    );
+    const byNumber =
+      body.query?.includes("pullRequest(number:") && branchOf
+        ? {
+            ...(branchOf[1] as { number: number }[]).find(
+              (pr) => pr.number === body.variables?.number,
+            ),
+            headRefName: branchOf[0],
+          }
+        : undefined;
+    const head = byNumber?.headRefName ?? body.variables?.branch ?? "";
     world.ghCalls.push(head);
     (world.readAs ??= []).push(login);
     if (world.cannotSee?.includes(login))
@@ -413,6 +426,12 @@ function serverGh(world: World): Exec {
           data: { repository: null },
           errors: [{ type: "NOT_FOUND", message: "Could not resolve to a Repository" }],
         }),
+        stderr: "",
+      };
+    if (body.query?.includes("pullRequest(number:"))
+      return {
+        code: 0,
+        stdout: JSON.stringify({ data: { repository: { pullRequest: byNumber ?? null } } }),
         stderr: "",
       };
     return {
@@ -969,10 +988,11 @@ describe("accounts", () => {
     const world = twoAccounts();
     const { harness, checkout } = await start(world);
     await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
-    expect(world.readAs).toEqual(["smsunarto", "sms-yui"]);
+    // The branch lookup as each account, then the full read as the one that sees it.
+    expect(world.readAs).toEqual(["smsunarto", "sms-yui", "sms-yui"]);
     expect((await checkout("thread-a")).forge.read?.value).toMatchObject({ number: 482 });
     await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
-    expect(world.readAs).toEqual(["smsunarto", "sms-yui", "sms-yui"]);
+    expect(world.readAs).toEqual(["smsunarto", "sms-yui", "sms-yui", "sms-yui"]);
   });
 
   test("Mark ready runs as the account that read the pull request, and never falls back to another", async () => {
@@ -1247,7 +1267,7 @@ describe("checks", () => {
     ];
     const { harness, checkout, invalidations } = await start(world);
     await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
-    expect(world.ghCalls).toHaveLength(1);
+    expect(world.ghCalls).toHaveLength(2); // the branch lookup, then one read with the checks
     const row = await checkout("thread-a");
     expect(row.forge.read?.value).toMatchObject({ checks: { passed: 0, failed: 1, pending: 1 } });
     const checks = (await harness.behavior.callRpc("checksForChange", {
@@ -1289,7 +1309,7 @@ describe("status for other surfaces", () => {
     await vi.advanceTimersByTimeAsync(4 * 60_000);
     stop();
     expect(hostCalls("workspace")).toHaveLength(1);
-    expect(world.ghCalls).toHaveLength(1);
+    expect(world.ghCalls).toHaveLength(2); // the branch lookup, then the full read
     const rows = (await harness.behavior.callRpc("statusForThread", {
       keys: ["thread-a"],
     })) as Record<string, unknown>;
@@ -1729,8 +1749,8 @@ describe("review items and drafts", () => {
       anchor: { path: "src/a.ts", line: 12, head: "c0ffee" },
       replies: [{ id: "C2", author: "smsunarto" }],
     });
-    // One GitHub call brought the pull request, its checks and its threads.
-    expect(world.ghCalls).toEqual(["scott/route-gh"]);
+    // After the branch lookup, one GitHub call brought the pull request, its checks and its threads.
+    expect(world.ghCalls).toEqual(["scott/route-gh", "scott/route-gh"]);
   });
 
   test("a draft saved twice with one client id is one draft, on a local Change with no pull request", async () => {

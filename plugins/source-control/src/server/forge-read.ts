@@ -28,6 +28,12 @@ export const FORGE_SETTLED_MS = 60_000;
 /** After GitHub refused or nobody can read it: a retry asks sooner. */
 export const FORGE_BACKOFF_MS = 5 * 60_000;
 
+/** `open` for a pull request query while the last read found the pull request open; else nothing, as RPC carries no undefined. */
+export function knownOpen(facet: Facet<ForgeValue>): { open?: number } {
+  const pr = facet.read?.value;
+  return pr?.state === "open" ? { open: pr.number } : {};
+}
+
 /** How long after a read attempt the pull request is due again. */
 export function forgeInterval(facet: Facet<ForgeValue>): number {
   const kind = facet.problem?.kind;
@@ -58,12 +64,14 @@ export function createForgeReads(deps: {
     const workspace = store.local(placement.hostId, placement.path).read?.value;
     const branch = workspace ? findBranch(workspace, store.branch(threadId)) : null;
     if (!workspace || !branch || !workspace.github) return null;
+    const key = changeKeyForBranch(placement.hostId, workspace, branch);
     return {
-      key: changeKeyForBranch(placement.hostId, workspace, branch),
+      key,
       query: {
         repo: workspace.github.repo,
         headOwner: workspace.github.headOwner,
         branch: remoteBranchName(branch),
+        ...knownOpen(store.forge(key)),
       },
     };
   }

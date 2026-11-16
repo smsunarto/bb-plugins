@@ -10,8 +10,7 @@ import { z } from "zod";
 import type { ForgeResult } from "../core/change.ts";
 import type { Repo } from "../core/ids.ts";
 import { mergeIssue, type MergeMethod, type MergePolicy } from "../core/merge.ts";
-import { classifyFailure, GhError, type Exec } from "./github.ts";
-import { graphql } from "./review.ts";
+import { classifyFailure, GhError, graphql, type Exec } from "./github.ts";
 
 const POLICY_QUERY = `query MergePolicy($owner: String!, $name: String!, $number: Int!) {
   repository(owner: $owner, name: $name) {

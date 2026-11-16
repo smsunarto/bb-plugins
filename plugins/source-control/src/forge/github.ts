@@ -111,30 +111,43 @@ const CHECK_LIMIT = 100;
 const THREAD_LIMIT = 100;
 const THREAD_COMMENT_LIMIT = 30;
 
+/**
+ * The pull requests of a head branch, newest first: only enough to choose
+ * one. GitHub prices a query by every connection it could return, so the
+ * full read below runs for the chosen one alone (1 point here and about 2
+ * there, against 21 for this list with every field).
+ */
 const PULL_REQUESTS = `query($owner: String!, $name: String!, $branch: String!) {
   repository(owner: $owner, name: $name) {
     pullRequests(headRefName: $branch, first: 20, orderBy: { field: UPDATED_AT, direction: DESC }) {
-      nodes {
-        number url title state isDraft headRefOid baseRefName reviewDecision
-        mergeable additions deletions changedFiles commitCount: commits { totalCount }
-        headRepositoryOwner { login }
-        latestOpinionatedReviews(first: 50) { nodes { state } }
-        reviewThreads(first: ${THREAD_LIMIT}) { nodes {
-          id path line startLine originalLine diffSide isResolved isOutdated
-          comments(first: ${THREAD_COMMENT_LIMIT}) { nodes { id body createdAt url author { __typename login } } }
-        } }
-        commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: ${CHECK_LIMIT}) {
-          pageInfo { hasNextPage }
-          nodes {
-            __typename
-            ... on CheckRun {
-              name status conclusion detailsUrl startedAt completedAt
-              checkSuite { workflowRun { workflow { name } } }
-            }
-            ... on StatusContext { context state targetUrl createdAt }
+      nodes { number state headRepositoryOwner { login } }
+    }
+  }
+}`;
+
+/** One pull request with its reviews, review threads and checks. */
+const PULL_REQUEST = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      number url title state isDraft headRefName headRefOid baseRefName reviewDecision
+      mergeable additions deletions changedFiles commitCount: commits { totalCount }
+      headRepositoryOwner { login }
+      latestOpinionatedReviews(first: 50) { nodes { state } }
+      reviewThreads(first: ${THREAD_LIMIT}) { nodes {
+        id path line startLine originalLine diffSide isResolved isOutdated
+        comments(first: ${THREAD_COMMENT_LIMIT}) { nodes { id body createdAt url author { __typename login } } }
+      } }
+      commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: ${CHECK_LIMIT}) {
+        pageInfo { hasNextPage }
+        nodes {
+          __typename
+          ... on CheckRun {
+            name status conclusion detailsUrl startedAt completedAt
+            checkSuite { workflowRun { workflow { name } } }
           }
-        } } } } }
-      }
+          ... on StatusContext { context state targetUrl createdAt }
+        }
+      } } } } }
     }
   }
 }`;
@@ -178,6 +191,7 @@ type PullRequestNode = {
   title: string;
   state: "OPEN" | "CLOSED" | "MERGED";
   isDraft: boolean;
+  headRefName?: string;
   headRefOid: string;
   baseRefName: string;
   reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
@@ -336,15 +350,26 @@ function toRead(node: PullRequestNode): ForgeRead {
  * else the most recently updated. Null when the branch has none, which is an
  * answer, not a failure.
  */
-export function pickPullRequest(nodes: readonly PullRequestNode[], headOwner: string): ForgeRead {
+type PullRequestHead = Pick<PullRequestNode, "number" | "state" | "headRepositoryOwner">;
+
+/** The branch's own pull request from `headOwner`'s repository: the open one, else the newest. */
+export function pickPullRequest(
+  nodes: readonly PullRequestHead[],
+  headOwner: string,
+): PullRequestHead | null {
   const own = nodes.filter(
     (node) => node.headRepositoryOwner?.login.toLowerCase() === headOwner.toLowerCase(),
   );
-  const chosen = own.find((node) => node.state === "OPEN") ?? own[0];
-  return chosen ? toRead(chosen) : { pullRequest: null, checks: null, threads: null };
+  return own.find((node) => node.state === "OPEN") ?? own[0] ?? null;
 }
 
-export type PullRequestQuery = { repo: Repo; headOwner: string; branch: string };
+export type PullRequestQuery = {
+  repo: Repo;
+  headOwner: string;
+  branch: string;
+  /** The branch's open pull request as last read: read by number, skipping the branch lookup. */
+  open?: number;
+};
 
 /** A GraphQL `errors` entry as a `GhError`, by GitHub's error type. */
 export function graphqlError(error: { message?: string; type?: string }): GhError {
@@ -360,22 +385,18 @@ export function graphqlError(error: { message?: string; type?: string }): GhErro
   return new GhError(code, error.message ?? "GitHub GraphQL request failed.");
 }
 
-export async function readPullRequest(
+/** Runs one GraphQL query; throws a `GhError` when GitHub refuses or the answer has no data. */
+export async function graphql<T>(
   exec: Exec,
-  query: PullRequestQuery,
+  query: string,
+  variables: object,
   signal?: AbortSignal,
-): Promise<ForgeRead> {
-  const body = JSON.stringify({
-    query: PULL_REQUESTS,
-    variables: { owner: query.repo.owner, name: query.repo.name, branch: query.branch },
+) {
+  const result = await exec(["api", "graphql", "--input", "-"], {
+    stdin: JSON.stringify({ query, variables }),
+    signal,
   });
-  const result = await exec(["api", "graphql", "--input", "-"], { stdin: body, signal });
-  let parsed:
-    | {
-        data?: { repository?: { pullRequests?: { nodes?: (PullRequestNode | null)[] } } | null };
-        errors?: { message?: string; type?: string }[];
-      }
-    | undefined;
+  let parsed: { data?: T; errors?: { message?: string; type?: string }[] } | undefined;
   try {
     parsed = result.stdout.trim() === "" ? undefined : JSON.parse(result.stdout);
   } catch {
@@ -384,10 +405,53 @@ export async function readPullRequest(
   const error = parsed?.errors?.[0];
   if (error) throw graphqlError(error);
   if (result.code !== 0 || !parsed?.data) throw classifyFailure(result);
-  const nodes = (parsed.data.repository?.pullRequests?.nodes ?? []).filter(
-    (node): node is PullRequestNode => node !== null,
+  return parsed.data;
+}
+
+/** One pull request in full, by number; null when GitHub no longer finds it. */
+async function readOnePullRequest(exec: Exec, repo: Repo, number: number, signal?: AbortSignal) {
+  const data = await graphql<{ repository?: { pullRequest?: PullRequestNode | null } | null }>(
+    exec,
+    PULL_REQUEST,
+    { owner: repo.owner, name: repo.name, number },
+    signal,
   );
-  return pickPullRequest(nodes, query.headOwner);
+  return data.repository?.pullRequest ?? null;
+}
+
+const NO_PULL_REQUEST: ForgeRead = { pullRequest: null, checks: null, threads: null };
+
+/**
+ * The branch's pull request with its checks and review threads. A known
+ * open one is read by number in one call; while it is still open on this
+ * branch, nothing else can be the branch's own. Otherwise the branch's
+ * pull requests are listed to choose one, then that one is read.
+ */
+export async function readPullRequest(
+  exec: Exec,
+  query: PullRequestQuery,
+  signal?: AbortSignal,
+): Promise<ForgeRead> {
+  const { repo, headOwner, branch } = query;
+  if (query.open !== undefined) {
+    const known = await readOnePullRequest(exec, repo, query.open, signal);
+    if (
+      known?.state === "OPEN" &&
+      known.headRefName === branch &&
+      known.headRepositoryOwner?.login.toLowerCase() === headOwner.toLowerCase()
+    )
+      return toRead(known);
+  }
+  const list = await graphql<{
+    repository?: { pullRequests?: { nodes?: (PullRequestHead | null)[] } } | null;
+  }>(exec, PULL_REQUESTS, { owner: repo.owner, name: repo.name, branch }, signal);
+  const nodes = (list.repository?.pullRequests?.nodes ?? []).filter(
+    (node): node is PullRequestHead => node !== null,
+  );
+  const chosen = pickPullRequest(nodes, headOwner);
+  if (!chosen) return NO_PULL_REQUEST;
+  const node = await readOnePullRequest(exec, repo, chosen.number, signal);
+  return node ? toRead(node) : NO_PULL_REQUEST;
 }
 
 /** Marks the pull request draft, or ready for review. Throws a `GhError` when GitHub refuses. */

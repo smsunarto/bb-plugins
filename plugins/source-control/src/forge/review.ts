@@ -8,7 +8,7 @@ import type { Repo } from "../core/ids.ts";
 import type { Conversation } from "../core/items.ts";
 import type { MergePolicy } from "../core/merge.ts";
 import type { ChangeFile, ForgeFile, InboxEntry } from "../core/review.ts";
-import { classifyFailure, GhError, graphqlError, type Exec } from "./github.ts";
+import { classifyFailure, GhError, graphql, type Exec } from "./github.ts";
 import { readJobLogs, type JobLog } from "./job-logs.ts";
 import { readMergePolicy } from "./merge.ts";
 import { readTimeline } from "./timeline.ts";
@@ -153,28 +153,6 @@ function entryOf(node: InboxNode, list: "mine" | "asked" | "pinned"): InboxEntry
     ...(list === "pinned" ? { pinned: true } : {}),
     pullRequest: pullRequestOf(node as CompleteNode),
   };
-}
-
-export async function graphql<T>(
-  exec: Exec,
-  query: string,
-  variables: object,
-  signal?: AbortSignal,
-) {
-  const result = await exec(["api", "graphql", "--input", "-"], {
-    stdin: JSON.stringify({ query, variables }),
-    signal,
-  });
-  let parsed: { data?: T; errors?: { message?: string; type?: string }[] } | undefined;
-  try {
-    parsed = result.stdout.trim() === "" ? undefined : JSON.parse(result.stdout);
-  } catch {
-    parsed = undefined;
-  }
-  const error = parsed?.errors?.[0];
-  if (error) throw graphqlError(error);
-  if (result.code !== 0 || !parsed?.data) throw classifyFailure(result);
-  return parsed.data;
 }
 
 /**

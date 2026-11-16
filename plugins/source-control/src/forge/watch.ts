@@ -12,8 +12,7 @@ import type {
   WatchCheck,
   WatchRead,
 } from "../core/watch.ts";
-import { classifyFailure, GhError, type Exec } from "./github.ts";
-import { graphql } from "./review.ts";
+import { classifyFailure, GhError, graphql, type Exec } from "./github.ts";
 
 /** Below this many GraphQL points left, watches wait for the hourly reset. */
 const LOW_RATE_LIMIT = 250;
