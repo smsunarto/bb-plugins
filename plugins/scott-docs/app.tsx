@@ -7,6 +7,7 @@ import "./editor.css";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -1647,12 +1648,16 @@ function Tree({
   }, [notesByPath, orderedEntries, query]);
   const directoryPaths = useMemo(() => treePaths.filter((path) => path.endsWith("/")), [treePaths]);
   const treeInput = useMemo(() => preparePresortedFileTreeInput(treePaths), [treePaths]);
+  // The tree keeps the callbacks it was created with; these refs hand them the
+  // latest props once each render commits.
   const selectedPathRef = useRef(selectedPath);
-  selectedPathRef.current = selectedPath;
   const onOpenRef = useRef(onOpen);
-  onOpenRef.current = onOpen;
   const onMoveFileRef = useRef(onMoveFile);
-  onMoveFileRef.current = onMoveFile;
+  useLayoutEffect(() => {
+    selectedPathRef.current = selectedPath;
+    onOpenRef.current = onOpen;
+    onMoveFileRef.current = onMoveFile;
+  });
 
   // Docs orders siblings itself (folders first, then entry order). Pierre's `presorted` flag
   // re-checks against its own sort, so hand over prepared input it trusts as-is.
@@ -1952,10 +1957,12 @@ function NotesWorkspace({
   const activeVaultId = data?.vault.id ?? route.vaultId;
   const filePath = route.filePath;
   const currentVaultIdRef = useRef(activeVaultId);
-  currentVaultIdRef.current = activeVaultId;
+  useLayoutEffect(() => {
+    currentVaultIdRef.current = activeVaultId;
+  });
   const isCurrentVault = useCallback(
     (vaultId: string) => currentVaultIdRef.current === vaultId,
-    [],
+    [currentVaultIdRef],
   );
 
   const sdk = useSdk();

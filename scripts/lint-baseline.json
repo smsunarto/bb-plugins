@@ -51,12 +51,6 @@
     "filename": "plugins/scott-docs/app.tsx",
     "code": "react(preserve-manual-memoization)",
     "message": "Existing memoization could not be preserved",
-    "source": "[],"
-  },
-  {
-    "filename": "plugins/scott-docs/app.tsx",
-    "code": "react(preserve-manual-memoization)",
-    "message": "Existing memoization could not be preserved",
     "source": "[activeVaultId, isCurrentVault, navigate, navigateTo, vault],"
   },
   {
@@ -64,30 +58,6 @@
     "code": "react(preserve-manual-memoization)",
     "message": "Existing memoization could not be preserved",
     "source": "const open = useCallback("
-  },
-  {
-    "filename": "plugins/scott-docs/app.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "currentVaultIdRef.current = activeVaultId;"
-  },
-  {
-    "filename": "plugins/scott-docs/app.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "onMoveFileRef.current = onMoveFile;"
-  },
-  {
-    "filename": "plugins/scott-docs/app.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "onOpenRef.current = onOpen;"
-  },
-  {
-    "filename": "plugins/scott-docs/app.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "selectedPathRef.current = selectedPath;"
   },
   {
     "filename": "plugins/scott-tasks/components/staged-attachments.tsx",
