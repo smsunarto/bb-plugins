@@ -858,6 +858,174 @@
   }
 }
 
+/* Thumb-sized action row on touch screens. Each control is 48px tall to touch, while
+   transparent top and bottom borders keep its painted pill or circle 40px tall. The row stays on one
+   line: the model name truncates before anything wraps. */
+@media (pointer: coarse) {
+  [data-t3-composer][data-promptbox] [data-t3-composer-actions-menu],
+  [data-t3-composer][data-promptbox] [data-promptbox-standard-actions] [data-t3-composer-voice],
+  [data-t3-composer][data-promptbox] [data-t3-composer-save-draft],
+  [data-t3-composer][data-promptbox] [data-promptbox-submit-action],
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls] button,
+  [data-t3-composer][data-promptbox] [data-t3-permission] button,
+  [data-t3-composer][data-promptbox] [data-plugin-composer-action] button {
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    background-clip: padding-box;
+  }
+
+  [data-t3-composer][data-promptbox] [data-t3-composer-actions-menu],
+  [data-t3-composer][data-promptbox] [data-promptbox-standard-actions] [data-t3-composer-voice],
+  [data-t3-composer][data-promptbox] [data-t3-composer-save-draft],
+  [data-t3-composer][data-promptbox] [data-promptbox-submit-action] {
+    flex-shrink: 0;
+    width: 44px;
+    min-width: 44px;
+    max-width: 44px;
+    padding-right: 0;
+    padding-left: 0;
+    /* Transparent 2px sides, also over Stop's outlined border, leave a 40px square to
+       paint, which this radius rounds into a circle inside the 44 by 48 box. */
+    border-right: 2px solid transparent;
+    border-left: 2px solid transparent;
+    border-radius: 22px / 24px;
+  }
+
+  /* Labelled buttons keep their width: New thread's submit and other plugins' actions. */
+  [data-t3-composer][data-promptbox] [data-t3-composer-submit-kind="MessageSquarePlus"] {
+    width: auto;
+    max-width: none;
+    padding-right: 12px;
+    padding-left: 12px;
+    /* BB's button is square on touch screens, which clipped the label. */
+    aspect-ratio: auto;
+    border-radius: 9999px;
+  }
+
+  [data-t3-composer][data-promptbox] [data-plugin-composer-action] button {
+    min-width: 40px;
+  }
+
+  [data-t3-composer][data-promptbox] [data-plugin-composer-action] {
+    height: 48px;
+    min-height: 48px;
+    max-height: 48px;
+  }
+
+  /* The model, effort and permission pills. Each is at least a 44px target, and its 8px
+     padding puts 16px between neighbouring labels, with no gap, so the shortest labels
+     ("Full", "Low") centre in 44px within 2px of that spacing. Effort and permission fit
+     their longest labels ("Extra High" with both glyphs, "Approve for me") and never shrink;
+     the model name takes what is left and truncates only once the row is full. */
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls] button,
+  [data-t3-composer][data-promptbox] [data-t3-permission] button {
+    min-width: 44px;
+    max-width: 128px;
+    flex-shrink: 0;
+    justify-content: center;
+    padding-right: 8px;
+    padding-left: 8px;
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  [data-t3-composer][data-promptbox]
+    [data-t3-composer-controls]
+    button[data-t3-model-picker-trigger] {
+    min-width: 64px;
+    max-width: 200px;
+    flex-shrink: 1;
+  }
+
+  /* The pills' padding separates them, and + from the model, as the circles' 2px inset
+     in their 44px boxes separates the circles. */
+  [data-t3-composer][data-promptbox] [data-t3-composer-controls],
+  [data-t3-composer][data-promptbox]
+    [data-promptbox-expanded-only][data-promptbox-standard-actions],
+  [data-t3-composer][data-promptbox]
+    [data-promptbox-action-row]
+    > [data-promptbox-standard-actions]:not([data-promptbox-expanded-only]) {
+    flex-wrap: nowrap;
+    column-gap: 0;
+  }
+
+  [data-t3-composer][data-promptbox] [data-promptbox-action-row] {
+    column-gap: 0;
+  }
+
+  /* BB's own picker, shown for models this composer cannot set: its muted detail after
+     the model name gives way before the name does. */
+  [data-t3-composer][data-promptbox]
+    [data-t3-composer-controls]
+    button[aria-keyshortcuts]
+    > span
+    > span
+    + span
+    + span {
+    flex-shrink: 100000;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Narrow composers spend the pills' padding before the model name: 8px between labels.
+     The container is the action row's width, 392px on a 440px phone, which keeps 8px. */
+  @container t3-composer (max-width: 384px) {
+    [data-t3-composer][data-promptbox] [data-t3-composer-controls] button,
+    [data-t3-composer][data-promptbox] [data-t3-permission] button {
+      padding-right: 4px;
+      padding-left: 4px;
+    }
+  }
+
+  /* The effort pill's Fast and Daybreak glyphs give way before the model name does: the
+     longest name, GPT-5.6-Terra, beside "Extra High" with both glyphs needs a 437px row,
+     with one a 417px one. The effort panel still shows both settings. */
+  @container t3-composer (max-width: 440px) {
+    [data-t3-composer][data-promptbox] [data-t3-traits-speed] + [data-t3-traits-agent-switch] {
+      display: none;
+    }
+  }
+
+  /* New thread's labelled submit is 122px wide; on a phone's row it is a circle like Send,
+     with BB's icon and its accessible name, or the row overflows. */
+  @container t3-composer (max-width: 440px) {
+    [data-t3-composer][data-promptbox] [data-t3-composer-submit-kind="MessageSquarePlus"] {
+      width: 44px;
+      max-width: 44px;
+      padding-right: 0;
+      padding-left: 0;
+      border-radius: 22px / 24px;
+    }
+
+    [data-t3-composer][data-promptbox]
+      [data-t3-composer-submit-kind="MessageSquarePlus"]
+      [data-promptbox-submit-label] {
+      display: none;
+    }
+  }
+
+  @container t3-composer (max-width: 420px) {
+    [data-t3-composer][data-promptbox] [data-t3-traits-trigger] > [data-t3-traits-speed],
+    [data-t3-composer][data-promptbox] [data-t3-traits-trigger] > [data-t3-traits-agent-switch] {
+      display: none;
+    }
+  }
+
+  @container t3-composer (max-width: 340px) {
+    [data-t3-composer][data-promptbox]
+      [data-t3-composer-controls]
+      button[data-t3-model-picker-trigger] {
+      min-width: 48px;
+    }
+  }
+}
+
 /* BB's project and machine menus, styled like ChatGPT's: a rounded sheet with
    quiet headings and rounded rows. They portal out of the composer, so this
    applies wherever BB shows them. */
