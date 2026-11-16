@@ -581,6 +581,7 @@ const OutlineRow = memo(function OutlineRow({
         type="button"
         aria-current={current ? "location" : undefined}
         aria-expanded={expanded}
+        title={title}
         data-testid="sc-outline-row"
         data-group={id}
         onClick={() => (expanded ? onCollapse() : onExpand(id))}
@@ -601,7 +602,7 @@ const OutlineRow = memo(function OutlineRow({
         </span>
         <span
           className={cx(
-            "min-w-0 flex-1 text-[13px] leading-5",
+            "min-w-0 flex-1 truncate text-[13px] leading-5",
             current
               ? "font-semibold text-foreground"
               : done
