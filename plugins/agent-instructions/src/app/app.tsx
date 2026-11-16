@@ -11,6 +11,7 @@ import type { Plugin } from "../prompts/shared/schema.ts";
 import type { RulesState } from "../shared/rules.ts";
 import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
+import { useSidebarColumnFill } from "@bb-plugins/ui/sidebar-fill";
 import { Button } from "../../components/ui/button.tsx";
 import { useIsCompactViewport } from "../../components/ui/hooks/use-compact-viewport.tsx";
 import {
@@ -158,8 +159,12 @@ function EditorSwitcher({ section, className }: { section: Section; className: s
 /** The page's left sidebar: the editor switcher, then the current editor's file or plugin list. */
 function AgentInstructionsSidebar({ subPath }: PluginNavPanelProps) {
   const { section } = locate(subPath);
+  const root = useRef<HTMLDivElement>(null);
+  // workaround:scott-docs/sidebar-fill (manual removal; see workarounds.json)
+  // Only the projects file tree needs a fixed height; the other lists scroll with the sidebar.
+  useSidebarColumnFill(root, section === "projects");
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col">
+    <div ref={root} className="flex h-full min-h-0 min-w-0 flex-col">
       <EditorSwitcher section={section} className="bg-sidebar" />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <SectionList subPath={subPath} section={section} />
