@@ -300,6 +300,31 @@ const SETTLE_BUTTON_SELECTOR = 'button[aria-label="Settle"]';
 // `overflow-y-auto` div with no data attribute, found by walking up from here.
 const CONVERSATION_LIST_SELECTOR = '[data-timeline-row-list="top-level"]';
 
+// workaround:vimium/palette-search-shortcuts begin
+// The Quick palette and Search threads are one bb dialog with one search field.
+const PALETTE_SEARCH_SELECTOR =
+  '[role="dialog"] input[aria-label="Search commands"], [role="dialog"] input[aria-label="Search threads"]';
+
+/**
+ * True for a character typed into bb's palette search. Its dialog runs any
+ * command whose shortcut the keydown matches, without the editable-focus or
+ * isAvailable checks, so a bare `h` would go Home. The caller stops only its
+ * propagation; the character still lands in the field.
+ */
+function isPaletteSearchTyping(event: KeyboardEvent, target: Element | null): boolean {
+  return (
+    target?.matches(PALETTE_SEARCH_SELECTOR) === true &&
+    isTypingKey({
+      key: event.key,
+      ctrlKey: event.ctrlKey,
+      metaKey: event.metaKey,
+      altKey: event.altKey,
+      editableTarget: true,
+    })
+  );
+}
+// workaround:vimium/palette-search-shortcuts end
+
 const COMPOSER_SELECTOR = "[data-app-composer]";
 const COMPOSER_TEXTBOX_SELECTOR = '[data-app-composer] [role="textbox"]';
 
@@ -878,6 +903,12 @@ export function mountLinkHints(context: PluginContentScriptContext): PluginConte
   function onKeydown(event: KeyboardEvent): void {
     const originalTarget = event.composedPath()[0] ?? event.target;
     const target = originalTarget instanceof Element ? originalTarget : document.activeElement;
+    // workaround:vimium/palette-search-shortcuts begin
+    if (isPaletteSearchTyping(event, target)) {
+      event.stopPropagation();
+      return;
+    }
+    // workaround:vimium/palette-search-shortcuts end
     const acceptsSequence =
       !target?.closest(".xterm") &&
       (!isEditableEvent(event) || target?.closest(COMPOSER_SELECTOR) !== null);

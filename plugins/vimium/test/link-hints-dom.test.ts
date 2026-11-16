@@ -267,6 +267,43 @@ describe("mountLinkHints", () => {
     controller.abort();
   });
 
+  // workaround:vimium/palette-search-shortcuts begin
+  test("bare keys typed into bb's palette search never reach its shortcut handler", () => {
+    const controller = newController();
+    const dispose = mountLinkHints(contextWith(controller.signal));
+
+    document.body.innerHTML =
+      '<div role="dialog" id="palette"><input aria-label="Search commands"></div>' +
+      '<div role="dialog" id="threads"><input aria-label="Search threads"></div>' +
+      '<div role="dialog" id="other"><input aria-label="Name"></div>';
+    const reached: string[] = [];
+    for (const dialog of document.querySelectorAll('[role="dialog"]')) {
+      dialog.addEventListener("keydown", (event) => {
+        reached.push(`${dialog.id}:${(event as KeyboardEvent).key}`);
+      });
+    }
+    const input = (id: string) => document.querySelector(`#${id} input`) as HTMLElement;
+
+    // Not default-prevented, so the character still lands in the field.
+    expect(pressKey("h", input("palette"))).toBe(true);
+    expect(pressKey("n", input("threads"))).toBe(true);
+    expect(reached).toEqual([]);
+
+    // Chords, keys that type nothing, and other dialogs' fields still propagate.
+    pressKey("k", input("palette"), { ctrlKey: true });
+    pressKey("F8", input("palette"));
+    pressKey("ArrowDown", input("threads"));
+    pressKey("h", input("other"));
+    expect(reached).toEqual(["palette:k", "palette:F8", "threads:ArrowDown", "other:h"]);
+
+    void dispose();
+    controller.abort();
+    reached.length = 0;
+    pressKey("h", input("palette"));
+    expect(reached).toEqual(["palette:h"]);
+  });
+  // workaround:vimium/palette-search-shortcuts end
+
   test("keys typed into a field inside a shadow root stay with the field", () => {
     const controller = newController();
     const dispose = mountLinkHints(contextWith(controller.signal));
