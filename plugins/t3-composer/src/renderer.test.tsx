@@ -429,6 +429,13 @@ const MODELS: Record<string, object[]> = {
     catalogModel("gpt-5.6-luna", "GPT-5.6-Luna", {
       sessionOptions: [{ id: "daybreak", label: "Daybreak", type: "boolean", value: false }],
     }),
+    // Described levels, as live, for the phone effort sheet.
+    catalogModel("gpt-6-astra", "GPT-6-Astra", {
+      supportedReasoningEfforts: [
+        { reasoningEffort: "low", description: "Fast responses with lighter reasoning" },
+        { reasoningEffort: "high", description: "Greater reasoning depth for complex problems" },
+      ],
+    }),
   ],
   devin: [
     catalogModel("acp-default", "Agent default", {
@@ -767,6 +774,36 @@ describe("T3 Code model picker", () => {
       expect(document.activeElement).toBe(slider);
     } finally {
       slot.lifecycle.unmount();
+    }
+  });
+
+  it("shows no effort description under the slider on a phone", async () => {
+    window.PointerEvent ??= class extends MouseEvent {} as typeof PointerEvent;
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      matches: query === "(max-width: 767px)",
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+    })) as unknown as typeof window.matchMedia;
+    const { slot } = await mountComposer(
+      {},
+      undefined,
+      pickerOptions({ providerId: "codex", model: "gpt-6-astra", reasoningLevel: "high" }),
+    );
+    try {
+      const traits = await slot.findByRole("button", { name: "Effort: high" });
+      await waitFor(() =>
+        expect(document.activeElement?.getAttribute("contenteditable")).toBe("true"),
+      );
+      fireEvent.pointerDown(traits, { button: 0, ctrlKey: false, pointerType: "touch" });
+      fireEvent.click(traits);
+      const sheet = await slot.findByRole("dialog", { name: "Effort" });
+      await slot.findByRole("slider", { name: "Effort" });
+      expect(sheet.textContent).not.toContain("Greater reasoning depth");
+    } finally {
+      slot.lifecycle.unmount();
+      window.matchMedia = original;
     }
   });
 

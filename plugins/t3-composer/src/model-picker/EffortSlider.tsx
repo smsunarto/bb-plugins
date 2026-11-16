@@ -207,11 +207,6 @@ export function EffortSlider(props: {
           )}
         </div>
       </div>
-      {large && active?.description ? (
-        <p className="min-h-8 max-w-full text-pretty text-center text-xs text-muted-foreground">
-          {active.description}
-        </p>
-      ) : null}
     </div>
   );
 }
