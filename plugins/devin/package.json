@@ -79,7 +79,7 @@
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-devin.tsbuildinfo",
     "test": "node --test --import tsx 'src/**/*.test.ts' && bun test src/app --timeout=30000",
     "clean": "rm -rf dist"
   },

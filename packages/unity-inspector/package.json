@@ -27,7 +27,7 @@
   },
   "scripts": {
     "test": "bun test src test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/packages-unity-inspector.tsbuildinfo",
     "lint": "oxlint"
   }
 }

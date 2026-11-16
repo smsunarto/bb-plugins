@@ -123,7 +123,7 @@
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-dotfiles.tsbuildinfo",
     "test": "bun test --conditions=development --timeout=30000",
     "verify": "oxlint && tsc --noEmit && bun test --timeout=30000 && bun run build",
     "clean": "rm -rf dist"

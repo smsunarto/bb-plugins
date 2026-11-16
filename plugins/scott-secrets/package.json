@@ -63,7 +63,7 @@
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-scott-secrets.tsbuildinfo",
     "test": "bun test test",
     "clean": "rm -rf dist"
   }

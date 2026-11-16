@@ -56,7 +56,7 @@
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-usage-bar.tsbuildinfo",
     "test": "bun test --timeout=30000",
     "clean": "rm -rf dist"
   }

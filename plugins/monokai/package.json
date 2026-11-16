@@ -93,7 +93,7 @@
     "check:theme": "bun run scripts/generate-theme.ts --check",
     "check": "bun run typecheck && bun run check:theme",
     "build": "bun run check && bb plugin build .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-monokai.tsbuildinfo",
     "test": "bun test test/*.test.ts",
     "clean": "rm -rf dist"
   },

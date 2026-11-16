@@ -37,7 +37,7 @@
   "scripts": {
     "build": "bb plugin build",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-at-plugin.tsbuildinfo"
   },
   "dependencies": {
     "@bb-plugins/instructions": "workspace:*"

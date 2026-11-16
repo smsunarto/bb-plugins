@@ -19,7 +19,7 @@
   },
   "scripts": {
     "test": "vitest run --config vitest.config.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/packages-codex-inference.tsbuildinfo",
     "lint": "oxlint"
   }
 }

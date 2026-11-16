@@ -12,7 +12,7 @@
     "typescript": "^6.0.0"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/packages-instructions.tsbuildinfo",
     "test": "node --test src/*.test.ts",
     "lint": "oxlint"
   }

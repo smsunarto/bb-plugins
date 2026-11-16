@@ -22,7 +22,7 @@
   },
   "scripts": {
     "test": "bun test test",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/packages-bb-kit-icons.tsbuildinfo",
     "lint": "oxlint"
   }
 }

@@ -95,7 +95,7 @@
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-source-control.tsbuildinfo",
     "test": "vitest run --config vitest.config.ts",
     "clean": "rm -rf dist"
   }

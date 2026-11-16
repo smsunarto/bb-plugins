@@ -89,7 +89,7 @@
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-kitchen-sink.tsbuildinfo",
     "test": "bun test --isolate --preload ./test/sqlite-preload.js src test --timeout=30000",
     "clean": "rm -rf dist"
   }

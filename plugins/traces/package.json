@@ -80,7 +80,7 @@
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
     "lint": "oxlint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-traces.tsbuildinfo",
     "test": "node --import ./test/preload-require.mjs --import tsx --test src/shared/providers/*.test.ts src/app/*.test.ts src/host/*.test.ts test/*.test.ts && bun test src/app/app.test.tsx",
     "clean": "rm -rf dist"
   },

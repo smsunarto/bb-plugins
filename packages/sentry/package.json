@@ -17,7 +17,7 @@
     "./telemetry": "./src/telemetry.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/packages-sentry.tsbuildinfo",
     "test": "node --test src/*.test.ts",
     "lint": "oxlint"
   },

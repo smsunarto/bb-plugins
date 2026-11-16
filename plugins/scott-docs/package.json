@@ -79,7 +79,7 @@
   "scripts": {
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-scott-docs.tsbuildinfo",
     "test": "vitest run --config vitest.config.ts"
   },
   "devDependencies": {

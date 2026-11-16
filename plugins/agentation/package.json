@@ -109,7 +109,7 @@
   "scripts": {
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-agentation.tsbuildinfo",
     "test": "bun test --timeout=30000 --preload ../../scripts/agentation-sqlite-preload.ts test/*.test.ts",
     "clean": "rm -rf dist"
   },

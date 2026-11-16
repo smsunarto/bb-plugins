@@ -84,7 +84,7 @@
   "scripts": {
     "dev": "bb plugin dev .",
     "build": "bb plugin build .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-slopcop.tsbuildinfo",
     "test": "vitest run"
   },
   "files": [
