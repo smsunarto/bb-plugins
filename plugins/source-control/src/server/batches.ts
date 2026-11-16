@@ -318,6 +318,9 @@ export function createBatches(deps: {
         if (batch.target.kind === "thread" || batch.threadId) {
           const threadId = batch.threadId ?? (batch.target as { threadId: string }).threadId;
           if (await alreadyIn(threadId, marker)) return { threadId };
+          // bb refuses messages to an archived thread; sending to it is asking it back.
+          const thread = await bb.sdk.threads.get({ threadId });
+          if (thread.archivedAt != null) await bb.sdk.threads.unarchive({ threadId });
           await bb.sdk.threads.send({
             threadId,
             mode: "queue-if-active",

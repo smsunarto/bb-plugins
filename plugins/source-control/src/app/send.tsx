@@ -190,8 +190,11 @@ function useBatchCommands(send: SendActions, batch: BatchView | null): BatchComm
 }
 
 function problemText(batch: BatchView): string {
+  // A failed send carries bb's answer; describeProblem would call it a failed read.
   return batch.problem
-    ? describeProblem(batch.problem)
+    ? batch.problem.kind === "failed"
+      ? `Couldn't send. ${batch.problem.detail}`
+      : describeProblem(batch.problem)
     : batch.phase === "queued"
       ? "Waiting for its destination to answer."
       : "It was not sent.";

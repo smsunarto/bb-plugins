@@ -508,7 +508,7 @@ test("a failed batch says why and Retry sends it again under the same id", async
   const server = reviewServer([finding(1, 2)], { batches: [failedBatch()] });
   const slot = render(server.handlers);
   const banner = await slot.findByTestId("sc-batch-banner");
-  expect(banner.textContent).toContain("Reading from bb failed.");
+  expect(banner.textContent).toContain("Couldn't send. The thread refused it.");
   fireEvent.click(within(banner).getByTestId("sc-batch-retry"));
   await waitFor(() => expect(server.sent).toHaveLength(1));
   const { id, head, itemIds, draftIds, destination, target } = failedBatch();

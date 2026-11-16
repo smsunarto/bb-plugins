@@ -177,6 +177,8 @@ type World = {
   projects?: unknown[];
   /** Threads bb reports idle: stopped since the plugin last heard. */
   idle?: string[];
+  /** Archived threads, which refuse messages until unarchived. */
+  archived?: string[];
   /** Messages each thread received, in order. */
   messages?: Record<string, string[]>;
   /** Each thread's completed items, oldest first, as bb's event log serves them. */
@@ -495,6 +497,8 @@ function fakeSdk(world: World) {
     },
     threads: {
       get: (async ({ threadId }: { threadId: string }) => {
+        if (world.archived?.includes(threadId))
+          return makeThreadResponse({ id: threadId, status: "idle", archivedAt: 1 } as never);
         if (world.idle?.includes(threadId))
           return makeThreadResponse({ id: threadId, status: "idle" } as never);
         const where = world.threads[threadId];
@@ -515,6 +519,7 @@ function fakeSdk(world: World) {
         return makeThreadResponse({ id, status: "active" } as never);
       }) as never,
       send: (async ({ threadId, input }: { threadId: string; input: { text: string }[] }) => {
+        if (world.archived?.includes(threadId)) throw new Error("HTTP 409: Thread is archived");
         const how = world.sendAs?.shift() ?? "ok";
         if (how === "refuse") throw new Error("Thread is not reachable");
         // Another call can run while this one waits, as on a real server.
@@ -558,6 +563,10 @@ function fakeSdk(world: World) {
       queuedMessages: {
         list: (async () => ({ messages: [] })) as never,
       },
+      unarchive: (async ({ threadId }: { threadId: string }) => {
+        world.archived = world.archived?.filter((id) => id !== threadId);
+        return makeThreadResponse({ id: threadId } as never);
+      }) as never,
       stop: (async ({ threadId }: { threadId: string }) => {
         (world.stopped ??= []).push(threadId);
         return { ok: true };
@@ -2115,6 +2124,17 @@ describe("review items and drafts", () => {
       });
       expect(world.messages?.["thread-a"]).toBeUndefined();
       expect(await send(harness, toAgent("b-4"))).toMatchObject({ state: "sent" });
+      expect(world.messages!["thread-a"]).toHaveLength(1);
+    });
+
+    test("a send to an archived thread unarchives it and reaches the agent", async () => {
+      const { world, harness } = await reviewed();
+      world.archived = ["thread-a"];
+      expect(await send(harness, toAgent("b-arch"))).toMatchObject({
+        state: "sent",
+        threadId: "thread-a",
+      });
+      expect(world.archived).toEqual([]);
       expect(world.messages!["thread-a"]).toHaveLength(1);
     });
 
