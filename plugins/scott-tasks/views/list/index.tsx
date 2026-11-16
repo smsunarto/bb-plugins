@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Label, Task } from "../../shared/contract.js";
+import type { Label, Project, Task } from "../../shared/contract.js";
 import { errorMessage } from "../../shared/errors.js";
 import { editTask, type TaskEdit } from "../../shell/collections.js";
-import { useActiveThreads, useLabels, useProjects } from "../../shell/data.js";
+import { useActiveThreads, useLabels, useProjects, useTasksRpc } from "../../shell/data.js";
 import { useTasksNavigation } from "../../shell/routes.js";
 import { useTasksUi } from "../../shell/ui-store.js";
 import { DetailToasts, useDetailToasts } from "../detail/toast.js";
@@ -34,6 +34,7 @@ import { rowWindows, useRowWindowViewport } from "./row-window.js";
 
 const NO_LABELS: readonly Label[] = [];
 const NO_TASKS: readonly Task[] = [];
+const NO_PROJECTS: readonly Project[] = [];
 
 /** A row with an optimistic edit the server has not confirmed yet. */
 function hasPendingWrites(task: Task): boolean {
@@ -141,9 +142,29 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
     }
     return map;
   }, [labels]);
+  const rpc = useTasksRpc();
+  const rpcRef = useRef(rpc);
+  useEffect(() => {
+    rpcRef.current = rpc;
+  });
+  // Stable so memoized rows skip re-rendering; the moved task's new key arrives through sync.
+  const moveToProject = useCallback(
+    (task: Task, targetProjectId: string) => {
+      rpcRef.current
+        .call("moveTaskToProject", { taskId: task.id, projectId: targetProjectId })
+        .then(
+          (result) => {
+            if (!result.ok) push(result.error.message);
+          },
+          (error: unknown) => push(errorMessage(error)),
+        );
+    },
+    [push],
+  );
+  const projectList = projects.data ?? NO_PROJECTS;
   const projectsById = useMemo(
-    () => new Map((projects.data ?? []).map((project) => [project.id, project])),
-    [projects.data],
+    () => new Map(projectList.map((project) => [project.id, project])),
+    [projectList],
   );
 
   const tasks = tasksQuery.phase === "ready" ? tasksQuery.tasks : NO_TASKS;
@@ -251,6 +272,8 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
               showProject={showProject}
               labelsById={labelsById}
               projectLabels={labelsByProject.get(task.projectId) ?? NO_LABELS}
+              projects={projectList}
+              onMoveToProject={moveToProject}
               onEdit={onEdit}
               onOpen={openTask}
               pending={hasPendingWrites(task)}

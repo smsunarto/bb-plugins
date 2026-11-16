@@ -51,9 +51,11 @@ export interface TaskPropertyUpdate {
 interface TaskPropertiesProps {
   task: Task;
   project: Project | undefined;
+  projects: Project[] | undefined;
   labels: Label[] | undefined;
   threads: TaskThread[];
   onUpdate: (update: TaskPropertyUpdate) => void;
+  onMoveToProject: (projectId: string) => void;
 }
 
 /** How a property menu's trigger looks: a full-width rail row or an inline chip. */
@@ -297,6 +299,75 @@ function LabelsMenu({
   );
 }
 
+function ProjectSwatch({ project }: { project: Project | undefined }) {
+  return (
+    <span
+      aria-hidden
+      className="size-3 shrink-0 rounded-sm"
+      style={{ backgroundColor: project?.color }}
+    />
+  );
+}
+
+/** Moves the task, with its sub-tasks, to another project. The task gets a new key there. */
+function ProjectMenu({
+  task,
+  project,
+  projects,
+  onMoveToProject,
+  trigger,
+}: {
+  task: Task;
+  project: Project | undefined;
+  projects: Project[] | undefined;
+  onMoveToProject: (projectId: string) => void;
+  trigger: PropertyTrigger;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant={trigger.variant}
+          aria-label="Move to project"
+          className={cn("gap-2", trigger.className)}
+        >
+          <ProjectSwatch project={project} />
+          <span className="truncate">{project?.name ?? "…"}</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Move to project…" />
+          <CommandList>
+            <CommandEmpty>No matching projects.</CommandEmpty>
+            <CommandGroup>
+              {(projects ?? []).map((candidate) => (
+                <CommandItem
+                  key={candidate.id}
+                  value={`${candidate.name} ${candidate.prefix}`}
+                  onSelect={() => {
+                    setOpen(false);
+                    if (candidate.id !== task.projectId) onMoveToProject(candidate.id);
+                  }}
+                >
+                  <ProjectSwatch project={candidate} />
+                  <span className="flex-1 truncate">{candidate.name}</span>
+                  {candidate.id === task.projectId ? (
+                    <Icon name="Check" className="size-3.5" />
+                  ) : (
+                    <span className="text-2xs text-muted-foreground">{candidate.prefix}</span>
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function DispatchTargetMenu({
   project,
   bbProjects,
@@ -385,10 +456,12 @@ function DispatchTargetMenu({
 export function PropertiesRail({
   task,
   project,
+  projects,
   labels,
   threads,
   presets,
   onUpdate,
+  onMoveToProject,
   onError,
   className,
 }: TaskPropertiesProps & {
@@ -424,14 +497,13 @@ export function PropertiesRail({
       </div>
 
       <div className="mb-1 mt-3 text-2xs font-semibold text-muted-foreground">Project</div>
-      <div className="flex h-6 items-center gap-2 text-sm">
-        <span
-          aria-hidden
-          className="size-3 shrink-0 rounded-sm"
-          style={{ backgroundColor: project?.color }}
-        />
-        <span className="truncate">{project?.name ?? "…"}</span>
-      </div>
+      <ProjectMenu
+        task={task}
+        project={project}
+        projects={projects}
+        onMoveToProject={onMoveToProject}
+        trigger={RAIL_TRIGGER}
+      />
 
       <div className="mb-1 mt-3 text-2xs font-semibold text-muted-foreground">Dispatch target</div>
       {project !== undefined ? (
@@ -479,12 +551,15 @@ export function PropertiesRail({
 
 export function InlineProperties({
   task,
+  project,
+  projects,
   labels,
   presets,
   onUpdate,
+  onMoveToProject,
   onError,
   className,
-}: Omit<TaskPropertiesProps, "project" | "threads"> & {
+}: Omit<TaskPropertiesProps, "threads"> & {
   presets: Preset[] | undefined;
   onError: (message: string) => void;
   className?: string;
@@ -495,6 +570,13 @@ export function InlineProperties({
       <StatusMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
       <PriorityMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
       <DueDateMenu task={task} onUpdate={onUpdate} trigger={CHIP_TRIGGER} />
+      <ProjectMenu
+        task={task}
+        project={project}
+        projects={projects}
+        onMoveToProject={onMoveToProject}
+        trigger={CHIP_TRIGGER}
+      />
       {taskLabels.map((label) => (
         <LabelChip key={label.id} label={label} />
       ))}

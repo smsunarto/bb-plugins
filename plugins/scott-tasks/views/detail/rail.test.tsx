@@ -18,6 +18,18 @@ if (!window.matchMedia) {
   });
 }
 
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 installTestPluginRuntime();
 const { PropertiesRail } = await import("./rail");
 const { TasksDataRoot } = await import("../../shell/data-root");
@@ -57,10 +69,24 @@ const task = makeTask({
   position: 1,
 });
 
-function railProps(linkedBbProjectId: string | null) {
+const HOME_PROJECT = {
+  ...projectRow(null),
+  id: "01HZZZZZZZZZZZZZZZZZZZZZP2",
+  name: "Home",
+  prefix: "HOME",
+  color: "purple",
+};
+
+function railProps(
+  linkedBbProjectId: string | null,
+  onMoveToProject: (projectId: string) => void = () => {},
+) {
+  const project = projectRow(linkedBbProjectId);
   return {
     task,
-    project: projectRow(linkedBbProjectId),
+    project,
+    projects: [project, HOME_PROJECT],
+    onMoveToProject,
     labels: [],
     threads: [],
     presets: [],
@@ -129,5 +155,23 @@ describe("dispatch target rail control", () => {
       projectId: PROJECT_ID,
       linkedBbProjectId: null,
     });
+  });
+});
+
+describe("project rail control", () => {
+  it("moves the task only when a different project is picked", async () => {
+    const moves: string[] = [];
+    const slot = renderSlot(
+      { component: RailHarness },
+      railProps(null, (projectId) => moves.push(projectId)),
+      { rpc: { listBbProjects: () => ({ bbProjects: [] }) } },
+    );
+    fireEvent.click(slot.getByRole("button", { name: "Move to project" }));
+    fireEvent.click(await slot.findByRole("option", { name: /Tasks Plugin/ }));
+    expect(moves).toEqual([]);
+
+    fireEvent.click(slot.getByRole("button", { name: "Move to project" }));
+    fireEvent.click(await slot.findByRole("option", { name: /Home/ }));
+    expect(moves).toEqual([HOME_PROJECT.id]);
   });
 });

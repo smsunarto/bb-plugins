@@ -269,6 +269,22 @@ function TaskDetail({ task }: { task: Task }) {
     editTask(task.id, input).catch((error: unknown) => push(errorMessage(error)));
   };
 
+  // A move gives the task a new key, so the page follows it there.
+  const moveToProject = async (projectId: string) => {
+    saverRef.current?.flush(task.id);
+    try {
+      const result = await rpc.call("moveTaskToProject", { taskId: task.id, projectId });
+      if (!result.ok) {
+        push(result.error.message);
+        return;
+      }
+      await writeServerTask(result.task);
+      navigation.go({ kind: "task", taskKey: result.task.key }, { replace: true });
+    } catch (error) {
+      push(errorMessage(error));
+    }
+  };
+
   const onDescriptionChange = (markdown: string) => {
     setDraft({ taskId: task.id, markdown });
     saverRef.current?.onChange(task.id, markdown);
@@ -356,9 +372,12 @@ function TaskDetail({ task }: { task: Task }) {
 
           <InlineProperties
             task={task}
+            project={project}
+            projects={projects.data}
             labels={labels}
             presets={presets.data}
             onUpdate={updateTask}
+            onMoveToProject={(projectId) => void moveToProject(projectId)}
             onError={(message) => push(message)}
             className="mb-4 @[45rem]:hidden"
           />
@@ -460,10 +479,12 @@ function TaskDetail({ task }: { task: Task }) {
         <PropertiesRail
           task={task}
           project={project}
+          projects={projects.data}
           labels={labels}
           threads={threads.data ?? []}
           presets={presets.data}
           onUpdate={updateTask}
+          onMoveToProject={(projectId) => void moveToProject(projectId)}
           onError={(message) => push(message)}
           className="hidden @[45rem]:block"
         />
@@ -492,13 +513,36 @@ export function DetailView({ taskKey }: DetailViewProps) {
       <DetailSkeleton />
     );
   }
-  if (query.data === undefined) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
-        <Icon name="FileQuestion" className="size-5" />
-        Task {taskKey} was not found.
-      </div>
-    );
-  }
+  if (query.data === undefined) return <MovedTaskRedirect taskKey={key} />;
   return <TaskDetail task={query.data} />;
+}
+
+/**
+ * The local collection only knows live keys. A key a task had before it moved projects still
+ * resolves on the server, so ask it once and follow the task to its current key.
+ */
+function MovedTaskRedirect({ taskKey }: { taskKey: string }) {
+  const rpc = useTasksRpc();
+  const navigation = useTasksNavigation();
+  const lookup = useQuery({
+    queryKey: ["tasks", "task-key-alias", taskKey],
+    queryFn: async () => (await rpc.call("getTaskByKey", { taskKey })).task,
+    staleTime: Infinity,
+  });
+  const currentKey = lookup.data?.key;
+  useEffect(() => {
+    if (currentKey !== undefined && currentKey !== taskKey) {
+      navigation.go({ kind: "task", taskKey: currentKey }, { replace: true });
+    }
+  }, [currentKey, taskKey, navigation]);
+
+  if (lookup.isPending || (currentKey !== undefined && currentKey !== taskKey)) {
+    return <DetailSkeleton />;
+  }
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
+      <Icon name="FileQuestion" className="size-5" />
+      Task {taskKey} was not found.
+    </div>
+  );
 }
