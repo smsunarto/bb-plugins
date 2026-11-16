@@ -420,6 +420,10 @@ function listen(
     moved.threadGone(thread.id);
   });
   bb.events.on("thread.deleted", ({ thread }) => moved.threadGone(thread.id));
+  // A removed machine's checkouts and reads go with it; an offline one keeps them.
+  bb.events.on("experimental_host.deleted", ({ host }) => {
+    changes.review.forgetHost(host.id);
+  });
 }
 
 const shareTargetSchema = z.union([

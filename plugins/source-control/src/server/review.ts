@@ -42,7 +42,12 @@ export function createReview(deps: {
   threadsOnChange: (key: ChangeKey) => string[];
   worktreeHost: WorktreeHost;
 }) {
-  const sources = createReviewSources(deps);
+  const sources = createReviewSources({
+    ...deps,
+    knownHosts: Effect.tryPromise(() => deps.bb.sdk.hosts.list()).pipe(
+      Effect.map((hosts) => hosts.map((host) => host.id)),
+    ),
+  });
   // Bound below: a pull request read may move the Change's head.
   let headMayHaveMoved = (_key: ChangeKey) => {};
   const change = createReviewChange({
@@ -109,6 +114,7 @@ export function createReview(deps: {
     hostChanges: sources.hostChanges,
     checkoutHosts: sources.checkoutHosts,
     watchHost: sources.watchHost,
+    forgetHost: sources.forgetHost,
     detail: change.detail,
     /**
      * Read the Change's checkout and pull request now, so a run starts at the

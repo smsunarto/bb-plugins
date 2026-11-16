@@ -5,7 +5,7 @@
  */
 import { Effect, Semaphore } from "effect";
 import type { Placement } from "../core/change.ts";
-import { accountTag, PAGE_SOURCES_TAG } from "../core/ids.ts";
+import { accountTag, hostTag, PAGE_SOURCES_TAG, threadTag } from "../core/ids.ts";
 import {
   inboxRow,
   workspaceRows,
@@ -24,6 +24,8 @@ export const INBOX_MS = 60_000;
 export const INBOX_BACKOFF_MS = 5 * 60_000;
 /** A watched host's checkouts are read again this often; its signals cover the time between. */
 export const HOST_LIST_MS = 60_000;
+/** How often the hosts with stored checkouts are checked against bb's machines. */
+export const HOST_PRUNE_MS = 5 * 60_000;
 /** Hosts read at once while the page is open. */
 export const HOST_CONCURRENCY = 3;
 
@@ -74,6 +76,8 @@ export function createReviewSources(deps: {
   share: Share;
   invalidate: (tags: readonly string[]) => void;
   now: () => number;
+  /** The ids of every machine bb has, connected or not. */
+  knownHosts: Effect.Effect<readonly string[], unknown>;
 }) {
   const { store } = deps;
   const hosts = Semaphore.makeUnsafe(HOST_CONCURRENCY);
@@ -103,6 +107,33 @@ export function createReviewSources(deps: {
         yield* Effect.sleep(Math.max(1_000, inboxWait(store.inbox(login), deps.now())));
       }
     });
+
+  /** Forgets a machine bb removed, so it is no longer listed or asked. */
+  const forgetHost = (hostId: string) => {
+    const { threads, rows } = store.forgetHost(hostId, deps.now());
+    if (rows > 0) deps.invalidate([PAGE_SOURCES_TAG, hostTag(hostId), ...threads.map(threadTag)]);
+    return rows;
+  };
+
+  let pruneAttemptAt = Number.NEGATIVE_INFINITY;
+  /**
+   * Forgets every stored host bb no longer lists. A failed call or an empty
+   * list says nothing about the machines, so then nothing is forgotten; an
+   * offline machine is still listed, so it stays.
+   */
+  const pruneRemovedHosts = deps.share(
+    "prune-hosts",
+    Effect.gen(function* () {
+      pruneAttemptAt = deps.now();
+      const known = yield* deps.knownHosts.pipe(Effect.orElseSucceed(() => []));
+      if (known.length === 0) return 0;
+      const live = new Set(known);
+      let rows = 0;
+      for (const hostId of store.hostIds()) if (!live.has(hostId)) rows += forgetHost(hostId);
+      if (rows > 0) yield* Effect.logInfo(`Forgot ${rows} stored rows of machines bb removed.`);
+      return rows;
+    }),
+  );
 
   /** While someone watches a host's list: read its checkouts now, then once a minute, holding one of three permits. */
   const watchHost = (hostId: string) =>
@@ -140,6 +171,8 @@ export function createReviewSources(deps: {
             ),
           ),
         );
+        if (deps.now() - pruneAttemptAt >= HOST_PRUNE_MS)
+          yield* Effect.forkDetach(pruneRemovedHosts);
         const names = new Map<string, string>();
         for (const each of checkouts) names.set(each.hostId, each.hostName);
         return {
@@ -178,6 +211,8 @@ export function createReviewSources(deps: {
       return Object.fromEntries(keys.map((hostId) => [hostId, hostRows(store, hostId)]));
     },
     watchHost,
+    forgetHost,
+    pruneRemovedHosts,
     /** The pull request row any asked-for inbox holds for the Change. */
     inboxRow(key: string): ChangeRow | null {
       for (const login of logins)

@@ -57,6 +57,9 @@ const threadsFacetSchema = facetSchema(z.array(forgeThreadSchema));
 
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
+/** Why a thread on a machine bb removed has no checkout. */
+export const HOST_REMOVED = "This thread's machine was removed from bb.";
+
 /** Numbered and never edited once landed: append only. */
 export const MIGRATIONS = [
   `CREATE TABLE thread_placement (thread_id TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
@@ -529,6 +532,15 @@ export function openStore(bb: BbPluginApi) {
   const threadsAt = db.prepare<[string, string], { thread_id: string }>(
     `SELECT thread_id FROM thread_checkout WHERE host_id = ? AND path = ?`,
   );
+  const storedHosts = db.prepare<[], { host_id: string }>(
+    `SELECT host_id FROM thread_checkout UNION SELECT host_id FROM local_facet
+     UNION SELECT host_id FROM checkout_read_as`,
+  );
+  const threadsOnHost = db.prepare<[string], { thread_id: string }>(
+    `SELECT thread_id FROM thread_checkout WHERE host_id = ?`,
+  );
+  const dropLocalOn = db.prepare(`DELETE FROM local_facet WHERE host_id = ?`);
+  const dropReadAsOn = db.prepare(`DELETE FROM checkout_read_as WHERE host_id = ?`);
   const getLocal = db.prepare<[string, string], { json: string }>(
     `SELECT json FROM local_facet WHERE host_id = ? AND path = ?`,
   );
@@ -637,6 +649,26 @@ export function openStore(bb: BbPluginApi) {
       else dropCheckout.run(threadId);
       return changed;
     },
+    /** Every host a checkout, a read or a setting is stored for. */
+    hostIds: (): string[] => storedHosts.all().map((row) => row.host_id),
+    /**
+     * Forgets a machine bb removed: its threads have no checkout, and its
+     * reads and settings go. Returns those threads and how many rows went.
+     */
+    forgetHost: db.transaction((hostId: string, now: number) => {
+      const threads = threadsOnHost.all(hostId).map((row) => row.thread_id);
+      const none = JSON.stringify({
+        state: "none",
+        reason: HOST_REMOVED,
+      } satisfies ThreadPlacement);
+      for (const threadId of threads) {
+        putPlacement.run(threadId, none, now);
+        dropCheckout.run(threadId);
+      }
+      const reads = dropLocalOn.run(hostId).changes;
+      const settings = dropReadAsOn.run(hostId).changes;
+      return { threads, rows: threads.length * 2 + reads + settings };
+    }),
     /** Every thread last seen on this checkout. */
     threadsAt(hostId: string, path: string): string[] {
       return threadsAt.all(hostId, path).map((row) => row.thread_id);
