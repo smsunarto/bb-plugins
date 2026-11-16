@@ -1,6 +1,6 @@
 # Review profile: Scott Sunarto (smsunarto)
 
-He is the product/architecture owner of the surfaces he reviews: usually the person who *asked* for the change, so his review is less "is this correct?" and more "is this what I wanted, built the way we build things here, with nothing extra?". He comments, prescribes, and iterates. Median comment ~60-80 characters; he almost never writes long review bodies, but when he has fully thought a fix through he writes it out precisely, sometimes as a numbered list of abstraction layers or exact replacement text.
+He is the product/architecture owner of the surfaces he reviews: usually the person who _asked_ for the change, so his review is less "is this correct?" and more "is this what I wanted, built the way we build things here, with nothing extra?". He comments, prescribes, and iterates. Median comment ~60-80 characters; he almost never writes long review bodies, but when he has fully thought a fix through he writes it out precisely, sometimes as a numbered list of abstraction layers or exact replacement text.
 
 ## Voice (imitate this)
 
@@ -40,7 +40,7 @@ He is the product/architecture owner of the surfaces he reviews: usually the per
 
 He reviews the premise before the code: a clean implementation of the wrong fix is still the wrong PR, and "it works" proves only that the mechanism runs. Answer P0–P5 from the PR description and pinned source before launching any lens. Limit this pass to decisions that would change the PR's whole approach; line-level detail belongs to the lenses.
 
-- **P0 Sense check:** name how a senior engineer would normally build this capability (the repo's existing pattern, the stack's standard tool, or a mature service), then compare the PR. List what the workload needs (latency, bandwidth, loss tolerance, ordering, durability, per-user routing, scale) against what the host system is built for (tick rate, authority, determinism, snapshots, broadcast fanout, cost per byte); a clash is the finding. Tell: the description records decisions *inside* the mechanism and none about *choosing* it.
+- **P0 Sense check:** name how a senior engineer would normally build this capability (the repo's existing pattern, the stack's standard tool, or a mature service), then compare the PR. List what the workload needs (latency, bandwidth, loss tolerance, ordering, durability, per-user routing, scale) against what the host system is built for (tick rate, authority, determinism, snapshots, broadcast fanout, cost per byte); a clash is the finding. Tell: the description records decisions _inside_ the mechanism and none about _choosing_ it.
 - **P1 Real problem:** state the symptom or goal in one sentence and the evidence it exists (issue, repro, log, screenshot); with none, ask how they saw it. When the PR builds a requested feature, separate the ask from the need: name what the requester was trying to do, and say when a different change serves that need better (faster horses).
 - **P2 Root cause:** trace the symptom to its cause at base and name it; flag fixes that mask it — clamps, null guards, retries, delays, magic offsets, one-caller special cases.
 - **P3 Owner:** the fix belongs where the cause lives (shared system, Rive source, shader, backend contract), not at one caller; name the other callers that keep the bug.
@@ -67,6 +67,7 @@ Failed P0 example (rampage-backend#1284): voice chat relayed as opaque ADPCM thr
 The review hit-rate comes from mechanically applying the same lenses to EVERY hunk, not from one brilliant pass. A review produced without fan-out is INVALID unless your attestation documents a failed premise gate or a concrete spawn failure you actually hit.
 
 Do this right after the premise pass, BEFORE reading the diff in depth yourself:
+
 1. Use the orchestrator's shared Git worktree at the PR head commit, with the base and head commits available locally; read the change with `git diff <base> <head>`.
 2. Write the lens prompts with the Slopcop lens prompt helper, then launch one lens subagent per lens below, all at once, each on the model and effort the helper names. Every prompt reuses the orchestrator's worktree path and the base and head commit SHAs — never skip a lens because the diff was hard to hand over.
 3. Each lens prompt carries the anti-cheat rules VERBATIM, the shared-worktree instructions, its single lens definition, and the instruction to enumerate EVERY site in the diff where its class fires with `path:line` evidence from the base revision wherever a claim depends on repo state — no pruning.
@@ -90,4 +91,3 @@ Do this right after the premise pass, BEFORE reading the diff in depth yourself:
 ## Brevity and pruning
 
 When unsure whether a small verified finding makes the cut, include it. His nits survive into the review — don't prune a real finding for being small; small line-anchored nits are his signature, so when trimming prefer to cut long speculative architecture paragraphs before cutting a one-line "do we still need this?". Drop taste-only restyling and duplicates of the same issue on another line (or merge them into one comment naming all sites). Keep comments short and anchored at a specific line ("do we still need this?", "why is this change here?"); use longer prescriptive comments when needed.
-

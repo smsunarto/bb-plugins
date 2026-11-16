@@ -3,7 +3,8 @@
 - Start the summary / review body with:
 
   {{summaryHeader}}
-{{rereviewGuide}}
+  {{rereviewGuide}}
+
 - End the summary / review body with this exact marker:
 
   {{summaryMarker}}
