@@ -8,6 +8,7 @@ import {
   DEFAULT_TRAY,
   groupItems,
   itemGroup,
+  sentCommentId,
   type Anchor,
   type BatchView,
   type ChangeReview,
@@ -74,12 +75,14 @@ function sameSet(old: ReadonlySet<string>, next: Set<string>): ReadonlySet<strin
   return next.size === old.size && [...next].every((id) => old.has(id)) ? old : next;
 }
 
-/** The ids of the items in agent batches still sending or being fixed. */
+/** The ids of the items in agent batches still sending or being fixed, a sent comment's included. */
 export function fixingIds(batches: readonly BatchView[]): Set<string> {
   const ids = new Set<string>();
   for (const batch of batches)
-    if (batch.destination === "agent" && (batch.phase === "fixing" || batch.phase === "sending"))
+    if (batch.destination === "agent" && (batch.phase === "fixing" || batch.phase === "sending")) {
       for (const id of batch.itemIds) ids.add(id);
+      for (const id of batch.draftIds) ids.add(sentCommentId(id));
+    }
   return ids;
 }
 
@@ -119,7 +122,7 @@ export function latestBatch(batches: readonly BatchView[]): BatchView | null {
   return batches[0] ?? null;
 }
 
-/** "Agent fixing 2", "Verify 2", ... for a batch's phase. Never "done". */
+/** "Agent working on 2", "Verify 2", ... for a batch's phase. Never "done". */
 export function batchLabel(batch: BatchView): string {
   const count = batch.itemIds.length + batch.draftIds.length;
   switch (batch.phase) {
@@ -130,11 +133,12 @@ export function batchLabel(batch: BatchView): string {
     case "failed":
       return `Couldn't send ${count}`;
     case "fixing":
-      return `Agent fixing ${count}`;
+      return `Agent working on ${count}`;
     case "verify":
       return `Verify ${count}`;
     case "stopped":
-      return "Agent stopped, no new commit";
+      // A batch of questions ends here too: the agent answered without committing.
+      return batch.agent === "idle" ? "Agent replied" : "Agent stopped, no new commit";
     case "posted":
       return "Posted to GitHub";
   }
@@ -165,7 +169,9 @@ export function itemTitle(item: ReviewItem): string {
 
 /** Who wrote an item, as a line says it. */
 export function itemAuthor(item: ReviewItem): string {
-  return item.origin.kind === "bb" ? "bb" : item.origin.author;
+  const { origin } = item;
+  if (origin.kind === "bb") return "bb";
+  return origin.author ?? "You";
 }
 
 /** "4 findings · 2 comments". */
@@ -243,7 +249,9 @@ export class FileReviewInterner {
       items.forEach((item, index) =>
         label.set(
           item.id,
-          group.kind === "person" ? "" : `${group.label} · ${index + 1} of ${items.length}`,
+          group.kind === "person" || group.kind === "you"
+            ? ""
+            : `${group.label} · ${index + 1} of ${items.length}`,
         ),
       );
     const byPath = new Map<string, Entry[]>();

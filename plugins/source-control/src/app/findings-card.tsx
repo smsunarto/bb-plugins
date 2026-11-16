@@ -50,7 +50,7 @@ const FindingRow = memo(function FindingRow({
       data-item={item.id}
     >
       {fixing ? (
-        <Hint label="Agent fixing">
+        <Hint label="Agent working">
           <span className="flex">
             <FixingMark />
           </span>

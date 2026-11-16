@@ -31,6 +31,7 @@ import {
   GitHubAvatar,
   PriorityChip,
   RunGlyph,
+  YouMark,
 } from "../review-ui.tsx";
 import { BatchBanner } from "../send.tsx";
 import { SLOPCOP_PLUGIN_ID, slopCopContract, slopCopInput } from "../slopcop-contract.ts";
@@ -251,7 +252,13 @@ function GroupHeader({
       data-testid="sc-review-group"
       data-group={group.id}
     >
-      {group.kind === "person" ? <GitHubAvatar login={group.label} /> : <BotMark />}
+      {group.kind === "person" ? (
+        <GitHubAvatar login={group.label} />
+      ) : group.kind === "you" ? (
+        <YouMark />
+      ) : (
+        <BotMark />
+      )}
       <span className="shrink-0 text-[12px] leading-4 font-semibold whitespace-pre text-muted-foreground">
         {group.label}
       </span>
@@ -315,7 +322,7 @@ const ItemRow = memo(function ItemRow({
               className="shrink-0 text-[12px] leading-4 text-warning"
               data-testid="sc-review-fixing"
             >
-              Agent fixing
+              Agent working
             </span>
           ) : item.priority !== null ? (
             <PriorityChip priority={item.priority} />

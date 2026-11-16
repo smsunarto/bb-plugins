@@ -1637,6 +1637,7 @@ describe("review items and drafts", () => {
       state: string;
       anchor: { path: string; line: number | null; head: string };
       origin: { kind: string; slopcop?: boolean };
+      replies: { body: string; threadId: string | null }[];
     }[];
     drafts: {
       id: string;
@@ -1829,10 +1830,12 @@ describe("review items and drafts", () => {
     expect(await tools({ kind: "review", changeKey: KEY })).toEqual([
       "source_control_report_findings",
       "source_control_share_change",
+      "source_control_reply",
     ]);
     // An author thread, once code-review is gone, also watches and lands its pull requests.
     expect(await tools({})).toEqual([
       "source_control_share_change",
+      "source_control_reply",
       "source_control_watch_pr",
       "source_control_share_landed",
     ]);
@@ -1959,6 +1962,79 @@ describe("review items and drafts", () => {
       expect(await send(after, toAgent("b-3"))).toMatchObject({ state: "sent" });
       expect(world.messages!["thread-a"]).toHaveLength(1);
     }, 15_000);
+
+    describe("answers to sent comments", () => {
+      test("a sent comment becomes an item the agent answers under, once per answer, and only from its thread", async () => {
+        const { world, harness } = await reviewed();
+        await draft(harness, "d-q");
+        expect(await send(harness, toAgent("b-q", [], ["d-q"]))).toMatchObject({ state: "sent" });
+        // The message names the item the comment becomes, so the agent can answer it.
+        expect(world.messages!["thread-a"]![0]).toContain(
+          "src/a.ts:12 (id `you:d-q`): Use the helper here.",
+        );
+        const sent = await reviewOf(harness, KEY);
+        expect(sent.drafts).toEqual([]);
+        expect(sent.items.find((item) => item.id === "you:d-q")).toMatchObject({
+          origin: { kind: "reader", threadId: "thread-a" },
+          body: "Use the helper here.",
+          anchor: anchor("src/a.ts", 12),
+          replies: [],
+        });
+
+        const reply = (threadId: string, itemId: string, body: string) =>
+          harness.behavior.callAgentTool("source_control_reply", { itemId, body }, { threadId });
+        expect(await reply("thread-a", "you:d-q", "Done: it uses `helper()` now.")).toMatch(
+          /a\.ts:12/,
+        );
+        // The same answer again, as a retried call would send it, is one reply.
+        await reply("thread-a", "you:d-q", "Done: it uses `helper()` now.");
+        const answered = (await reviewOf(harness, KEY)).items.find(
+          (item) => item.id === "you:d-q",
+        )!;
+        expect(answered.replies).toEqual([
+          expect.objectContaining({ body: "Done: it uses `helper()` now.", threadId: "thread-a" }),
+        ]);
+        // A GitHub thread, and a thread the batch did not go to, are refused with what to do instead.
+        await expect(reply("thread-a", "gh:T1", "Yes.")).rejects.toThrow(/GitHub thread/);
+        await expect(reply("thread-b", "you:d-q", "Yes.")).rejects.toThrow(/sent to this thread/);
+      });
+
+      test("a reply to a sent comment, sent again, joins its thread before the agent's next answer", async () => {
+        const { world, harness } = await reviewed();
+        await draft(harness, "d-q");
+        await send(harness, toAgent("b-q", [], ["d-q"]));
+        await harness.behavior.callAgentTool(
+          "source_control_reply",
+          { itemId: "you:d-q", body: "It is the shared one." },
+          { threadId: "thread-a" },
+        );
+        await harness.behavior.callRpc("saveDraft", {
+          key: KEY,
+          draft: {
+            id: "d-f",
+            anchor: anchor("src/a.ts", 12),
+            body: "Which file?",
+            replyTo: "you:d-q",
+          },
+        });
+        await send(harness, toAgent("b-f", [], ["d-f"]));
+        expect(world.messages!["thread-a"]![1]).toContain("(on `you:d-q`): Which file?");
+        const item = (await reviewOf(harness, KEY)).items.find((each) => each.id === "you:d-q")!;
+        expect(item.replies.map((each) => [each.body, each.threadId])).toEqual([
+          ["It is the shared one.", "thread-a"],
+          ["Which file?", null],
+        ]);
+      });
+
+      test("comments posted to GitHub leave no item behind", async () => {
+        const { harness } = await reviewed();
+        await draft(harness, "d-g");
+        expect(await send(harness, toGitHub("b-g", ["d-g"]))).toMatchObject({ state: "sent" });
+        expect((await reviewOf(harness, KEY)).items.map((item) => item.id)).not.toContain(
+          "you:d-g",
+        );
+      });
+    });
 
     test("a refused send stays queued with its problem until an explicit retry sends it", async () => {
       const { world, harness } = await reviewed();
@@ -2586,6 +2662,7 @@ describe("guided diff", () => {
     expect(await tools({ kind: "guide", changeKey: keyOf(1) })).toEqual([
       "source_control_write_guide",
       "source_control_share_change",
+      "source_control_reply",
     ]);
     expect(await tools({ kind: "review", changeKey: keyOf(1) })).not.toContain(
       "source_control_write_guide",
@@ -2593,6 +2670,7 @@ describe("guided diff", () => {
     // An author thread, once code-review is gone, also watches and lands its pull requests.
     expect(await tools({})).toEqual([
       "source_control_share_change",
+      "source_control_reply",
       "source_control_watch_pr",
       "source_control_share_landed",
     ]);

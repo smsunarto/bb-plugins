@@ -466,7 +466,7 @@ test("the tray lists what was checked in the rail, an annotation and the thread 
   // Sent: the pill says what the agent is doing, and the rail rows show progress.
   await slot.experimental_invalidateRpc([reviewTag(KEY)]);
   await waitFor(() =>
-    expect(slot.getByTestId("sc-batch-pill").textContent).toContain("Agent fixing 2"),
+    expect(slot.getByTestId("sc-batch-pill").textContent).toContain("Agent working on 2"),
   );
   expect(within(rail).getAllByTestId("sc-review-fixing")).toHaveLength(2);
 });
@@ -787,4 +787,36 @@ test("a comment the server refuses leaves the page and says why; the earlier one
   const annotation = await page.reply(1, "Refused.");
   expect(await within(annotation).findByRole("alert")).toBeTruthy();
   expect(page.shown()).toEqual(["First."]);
+});
+
+test("a sent comment shows the agent's answer under it, and can be answered back or dismissed", async () => {
+  const sent: ReviewItem = {
+    ...finding(1, 2),
+    id: "you:d-1",
+    origin: { kind: "reader", author: null, threadId: "thread-a" },
+    priority: null,
+    title: null,
+    body: "What is worldState?",
+    replies: [
+      {
+        id: "agent:thread-a:1",
+        author: "Agent",
+        body: "The store every system reads.",
+        createdAt: new Date().toISOString(),
+        url: null,
+        threadId: "thread-a",
+      },
+    ],
+  };
+  const server = reviewServer([sent]);
+  const slot = render(server.handlers);
+  const annotation = await slot.findByTestId("sc-annotation");
+  expect(annotation.textContent).toContain("What is worldState?");
+  const answer = within(annotation).getByTestId("sc-reply-row");
+  expect(answer.hasAttribute("data-agent")).toBe(true);
+  expect(answer.textContent).toContain("The store every system reads.");
+  expect(within(annotation).getByTestId("sc-reply")).toBeTruthy();
+  expect(within(annotation).getByTestId("sc-dismiss")).toBeTruthy();
+  // The rail lists it under the reader's own group.
+  expect(slot.getByText("Your comments")).toBeTruthy();
 });

@@ -7,20 +7,24 @@
  * reached leaves the batch queued, a refusal leaves it failed, both with the
  * problem, until an explicit Retry sends the same id again.
  */
-import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import type { BbPluginApi, PluginAgentToolContext } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
 import { Effect } from "effect";
+import { z } from "zod";
 import type { Problem } from "../core/change.ts";
 import { reviewTag, type ChangeKey } from "../core/ids.ts";
 import {
+  MAX_REPLIES,
   batchMarker,
   batchPhase,
+  sentCommentId,
   type AgentStatus,
   type AgentTarget,
   type Batch,
   type BatchInput,
   type BatchView,
   type Draft,
+  type ItemReply,
   type ReviewItem,
 } from "../core/items.ts";
 import { parseChangeKey, type ChangeDetail } from "../core/review.ts";
@@ -68,10 +72,13 @@ const place = (anchor: ReviewItem["anchor"]) =>
 const indent = (text: string) => text.trim().replaceAll("\n", "\n  ");
 
 function itemLine(item: ReviewItem): string {
+  const { origin } = item;
   const who =
-    item.origin.kind === "bb"
+    origin.kind === "bb"
       ? `[P${item.priority ?? 2}] ${item.title ?? "Finding"}`
-      : `@${item.origin.author}${item.priority !== null ? ` [P${item.priority}]` : ""}`;
+      : origin.kind === "reader"
+        ? "The reviewer"
+        : `@${origin.author}${item.priority !== null ? ` [P${item.priority}]` : ""}`;
   return `- ${who} — ${place(item.anchor)} (id \`${item.id}\`)\n  ${indent(item.body)}`;
 }
 
@@ -91,9 +98,10 @@ function agentText(input: {
   drafts: Draft[];
   marker: string;
 }): string {
+  // A new comment names the item it becomes; a reply names the item it answers.
   const replies = input.drafts.map(
     (draft) =>
-      `- ${place(draft.anchor)}${draft.replyTo ? ` (on \`${draft.replyTo}\`)` : ""}: ${indent(draft.body)}`,
+      `- ${place(draft.anchor)} (${draft.replyTo ? "on" : "id"} \`${draft.replyTo ?? sentCommentId(draft.id)}\`): ${indent(draft.body)}`,
   );
   return files.read("fix-batch", {
     branch: `\`${input.branch}\``,
@@ -171,6 +179,8 @@ export function createBatches(deps: {
   placementsFor: (key: ChangeKey) => ReturnType<Store["checkouts"]>;
   /** Threads whose branch is this Change's. */
   threadsOnChange: (key: ChangeKey) => string[];
+  /** The reader's GitHub login on the Change's repository, when known. */
+  viewer: (key: ChangeKey) => string | null;
   invalidate: (tags: readonly string[]) => void;
   fork: (work: Effect.Effect<void>) => void;
   now: () => number;
@@ -254,6 +264,50 @@ export function createBatches(deps: {
     return JSON.stringify(history).includes(marker) || JSON.stringify(queued).includes(marker);
   };
 
+  /**
+   * What an agent batch leaves on the Change once sent: each new comment as
+   * an item the agent answers under, and each reply appended to the item it
+   * answers. A reply to a GitHub thread has nowhere here to stay.
+   */
+  const sentItems = (key: ChangeKey, batch: Batch): ReviewItem[] => {
+    if (batch.destination !== "agent" || !batch.threadId) return [];
+    const wanted = new Set(batch.draftIds);
+    const drafts = store.drafts(key).filter((draft) => wanted.has(draft.id));
+    const author = deps.viewer(key);
+    const sentAt = new Date(deps.now()).toISOString();
+    const items = new Map(store.findings(key).map((item) => [item.id, item]));
+    const out = new Map<string, ReviewItem>();
+    for (const draft of drafts) {
+      if (draft.replyTo === null) {
+        out.set(sentCommentId(draft.id), {
+          id: sentCommentId(draft.id),
+          origin: { kind: "reader", author, threadId: batch.threadId },
+          priority: null,
+          title: null,
+          body: draft.body,
+          anchor: draft.anchor,
+          state: draft.state === "outdated" ? "outdated" : "open",
+          url: null,
+          createdAt: new Date(draft.createdAt).toISOString(),
+          replies: [],
+        });
+        continue;
+      }
+      const on = out.get(draft.replyTo) ?? items.get(draft.replyTo);
+      if (!on || on.replies.length >= MAX_REPLIES) continue;
+      const reply: ItemReply = {
+        id: sentCommentId(draft.id),
+        author: author ?? "You",
+        body: draft.body,
+        createdAt: sentAt,
+        url: null,
+        threadId: null,
+      };
+      out.set(on.id, { ...on, replies: [...on.replies, reply] });
+    }
+    return [...out.values()];
+  };
+
   /** Into the thread, or a new thread in the Change's project; the message is the payload's. */
   const toAgent = (key: ChangeKey, batch: Batch, text: string) =>
     Effect.tryPromise({
@@ -278,7 +332,7 @@ export function createBatches(deps: {
           projectId: home.projectId,
           environment: home.environment,
           visibility: "visible",
-          title: `Fix review items on ${detail.state === "change" ? detail.row.branch : key}`,
+          title: `Review comments on ${detail.state === "change" ? detail.row.branch : key}`,
           pluginMetadata: { kind: "fix", changeKey: key, batchId: batch.id },
           prompt: text,
         });
@@ -328,7 +382,7 @@ export function createBatches(deps: {
       ).pipe(Effect.result);
       if (sent._tag === "Success") {
         const done: Batch = { ...sending, ...sent.success, state: "sent", sentAt: deps.now() };
-        store.settleSent(key, done);
+        store.settleSent(key, done, sentItems(key, done));
         deps.invalidate([reviewTag(key)]);
         return done;
       }
@@ -382,8 +436,44 @@ export function createBatches(deps: {
       }),
     );
 
+  /**
+   * An agent's answer under an item of a Change a batch went to its thread:
+   * a sent comment, a reply thread on one, or a bb finding. The same answer
+   * twice from one thread is one reply.
+   */
+  const reply = (threadId: string, itemId: string, body: string): string => {
+    for (const key of store.changesSentTo(threadId)) {
+      const item = store.findings(key).find((each) => each.id === itemId);
+      if (!item) continue;
+      const where = place(item.anchor);
+      if (item.replies.some((each) => each.threadId === threadId && each.body === body))
+        return `Already replied on ${where}.`;
+      if (item.replies.length >= MAX_REPLIES)
+        throw new Error(
+          `${where} already has ${MAX_REPLIES} replies. Give this answer in your reply instead.`,
+        );
+      const answer: ItemReply = {
+        id: `agent:${threadId}:${item.replies.length + 1}`,
+        author: "Agent",
+        body,
+        createdAt: new Date(deps.now()).toISOString(),
+        url: null,
+        threadId,
+      };
+      store.putFindings(key, [{ ...item, replies: [...item.replies, answer] }]);
+      deps.invalidate([reviewTag(key)]);
+      return `Replied on ${where}.`;
+    }
+    throw new Error(
+      itemId.startsWith("gh:")
+        ? `${itemId} is a GitHub thread, which this tool cannot answer. Give this answer in your reply instead.`
+        : `No comment or finding ${itemId} was sent to this thread. Use an id from the review message.`,
+    );
+  };
+
   return {
     send,
+    reply,
     /** The Change's batches, each with its agent's status and what it shows. */
     batches(key: ChangeKey): BatchView[] {
       const head = headOf(key);
@@ -426,3 +516,30 @@ export function createBatches(deps: {
 }
 
 export type Batches = ReturnType<typeof createBatches>;
+
+// ── The reply tool ─────────────────────────────────────────────────────
+
+export const REPLY = "source_control_reply";
+
+const replyParameters = z.strictObject({
+  itemId: z.string().min(1).max(512),
+  body: z.string().min(1).max(65_536),
+});
+
+/** Answers under a comment or finding a review batch sent to the calling thread. */
+export function replyTool(batches: Batches) {
+  return {
+    name: REPLY,
+    ...files.tool(REPLY),
+    presentation: {
+      label: { pending: "Replying to a review comment", completed: "Replied to a review comment" },
+    },
+    parameters: replyParameters,
+    execute(
+      { itemId, body }: z.output<typeof replyParameters>,
+      { threadId }: PluginAgentToolContext,
+    ) {
+      return batches.reply(threadId, itemId, body);
+    },
+  };
+}

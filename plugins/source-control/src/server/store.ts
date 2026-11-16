@@ -128,6 +128,7 @@ function parsed<T>(schema: z.ZodType<T>, json: string): T | null {
 function sendingTables(
   db: Database,
   rows: <T>(schema: z.ZodType<T>, list: { json: string }[]) => T[],
+  putItems: (key: ChangeKey, items: readonly ReviewItem[]) => void,
 ) {
   const dismissedOf = db.prepare<[string], { item_id: string }>(
     `SELECT item_id FROM dismissed WHERE change_key = ?`,
@@ -185,11 +186,16 @@ function sendingTables(
     putBatch(batch: Batch): void {
       updateBatch.run(JSON.stringify(batch), batch.id);
     },
-    /** A sent batch: its items leave the selection and its drafts are gone, in one step. */
-    settleSent: db.transaction((key: ChangeKey, batch: Batch) => {
+    /**
+     * A sent batch, in one step: its items leave the selection, and its drafts
+     * are gone, replaced by `items` (an agent batch's comments as items, and
+     * the items its replies answered).
+     */
+    settleSent: db.transaction((key: ChangeKey, batch: Batch, items: readonly ReviewItem[]) => {
       updateBatch.run(JSON.stringify(batch), batch.id);
       for (const id of batch.itemIds) unselect.run(key, id);
       for (const id of batch.draftIds) dropDraft.run(key, id);
+      putItems(key, items);
     }),
     batches: (key: ChangeKey): Batch[] => rows(batchSchema, batchesOf.all(key)),
     /** Changes with a batch sent to this thread. */
@@ -462,7 +468,14 @@ function reviewTables(db: Database) {
     return row ? parsed(draftSchema, row.json) : null;
   };
 
-  const sending = sendingTables(db, rows);
+  /** Findings keep their review thread, so its next report replaces them; other items keep none. */
+  const putItems = (key: ChangeKey, items: readonly ReviewItem[]) => {
+    for (const item of items) {
+      const threadId = item.origin.kind === "bb" ? item.origin.threadId : "";
+      putFinding.run(key, item.id, threadId, JSON.stringify(item));
+    }
+  };
+  const sending = sendingTables(db, rows, putItems);
   return {
     ...sending,
     /** GitHub's review threads on the Change's pull request. */
@@ -488,12 +501,7 @@ function reviewTables(db: Database) {
       dropFindings.run(key, threadId);
       for (const item of items) putFinding.run(key, item.id, threadId, JSON.stringify(item));
     }),
-    putFindings: db.transaction((key: ChangeKey, items: ReviewItem[]) => {
-      for (const item of items) {
-        const threadId = item.origin.kind === "bb" ? item.origin.threadId : "";
-        putFinding.run(key, item.id, threadId, JSON.stringify(item));
-      }
-    }),
+    putFindings: db.transaction(putItems),
     drafts: (key: ChangeKey): Draft[] => rows(draftSchema, draftsOf.all(key)),
     draft,
     putDraft(key: ChangeKey, value: Draft): boolean {

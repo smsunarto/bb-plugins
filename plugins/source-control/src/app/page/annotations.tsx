@@ -5,9 +5,9 @@
  * writes one. Text being typed lives in its composer alone, so a keystroke
  * redraws that composer and nothing else.
  */
-import { Markdown } from "@get-bb/plugin-sdk/app";
+import { Markdown, ThreadTitle } from "@get-bb/plugin-sdk/app";
 import { memo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import type { Anchor, Draft } from "../../core/items.ts";
+import { isReaderReply, type Anchor, type Draft, type ItemReply } from "../../core/items.ts";
 import { Button } from "../components/ui/button.tsx";
 import { Textarea } from "../components/ui/textarea.tsx";
 import { useEscapeLayer } from "../escape.ts";
@@ -24,6 +24,7 @@ import {
   GitHubAvatar,
   PriorityChip,
   StatePill,
+  YouMark,
 } from "../review-ui.tsx";
 
 /** A new comment being written on a line. */
@@ -232,12 +233,31 @@ const DraftBody = memo(function DraftBody({
 
 // ── Items ──────────────────────────────────────────────────────────────
 
-function Reply({ author, body }: { author: string; body: string }) {
+/** A later comment in an item's thread: a person's, or an agent thread's answer named by its title. */
+function Reply({ reply }: { reply: ItemReply }) {
+  const { author, body, threadId } = reply;
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <div className="flex items-center gap-2">
-        <GitHubAvatar login={author} className="size-3.5" />
-        <span className="text-[12px] leading-4 font-semibold text-foreground">{author}</span>
+    <div
+      className="flex min-w-0 flex-col gap-1"
+      data-testid="sc-reply-row"
+      data-agent={threadId ? "" : undefined}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        {isReaderReply(reply) ? (
+          <Me />
+        ) : (
+          <>
+            {threadId ? <BotMark /> : <GitHubAvatar login={author} className="size-3.5" />}
+            <span className="shrink-0 text-[12px] leading-4 font-semibold text-foreground">
+              {author}
+            </span>
+          </>
+        )}
+        {threadId ? (
+          <span className="min-w-0 truncate text-[12px] leading-4 text-(--tertiary-foreground)">
+            <ThreadTitle threadId={threadId} />
+          </span>
+        ) : null}
       </div>
       <Markdown
         content={body}
@@ -249,12 +269,19 @@ function Reply({ author, body }: { author: string; body: string }) {
 
 function ItemMark({ item }: { item: ItemEntry["item"] }) {
   if (item.priority !== null) return <PriorityChip priority={item.priority} />;
-  if (item.origin.kind === "forge" && !item.origin.bot)
-    return <GitHubAvatar login={item.origin.author} className="size-3.5" />;
+  const { origin } = item;
+  if (origin.kind === "forge" && !origin.bot)
+    return <GitHubAvatar login={origin.author} className="size-3.5" />;
+  if (origin.kind === "reader")
+    return origin.author ? (
+      <GitHubAvatar login={origin.author} className="size-3.5" />
+    ) : (
+      <YouMark />
+    );
   return <BotMark />;
 }
 
-/** "Ask agent to fix", or "Agent fixing" once a batch took it. */
+/** "Ask agent to fix", or "Agent working" once a batch took it. */
 function FixToggle({ entry, actions }: { entry: ItemEntry; actions: ReviewActions }) {
   const { item, checked } = entry;
   if (entry.fixing)
@@ -265,7 +292,7 @@ function FixToggle({ entry, actions }: { entry: ItemEntry; actions: ReviewAction
       >
         <FixingMark />
         <span className="text-[12px] leading-4 font-medium whitespace-pre text-warning">
-          Agent fixing
+          Agent working
         </span>
       </span>
     );
@@ -289,7 +316,11 @@ function FixToggle({ entry, actions }: { entry: ItemEntry; actions: ReviewAction
   );
 }
 
-/** Dismiss for a bb finding, which has no thread to answer; Reply for a GitHub thread. */
+/**
+ * Reply for a thread that takes one (a GitHub thread, or the reader's own
+ * comment the agent answered); Dismiss for what bb keeps (a finding, or the
+ * reader's comment once settled).
+ */
 function ItemAction({
   item,
   actions,
@@ -303,8 +334,8 @@ function ItemAction({
 }) {
   const [dismissing, setDismissing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  if (item.origin.kind !== "bb")
-    return (
+  const reply =
+    item.origin.kind === "bb" ? null : (
       <Button
         variant="link"
         size="sm"
@@ -316,6 +347,7 @@ function ItemAction({
         Reply
       </Button>
     );
+  if (item.origin.kind === "forge") return reply;
   const onDismiss = async () => {
     setDismissing(true);
     setError(null);
@@ -328,6 +360,7 @@ function ItemAction({
   };
   return (
     <>
+      {reply}
       <Button
         variant="link"
         size="sm"
@@ -396,7 +429,7 @@ const ItemBlock = memo(function ItemBlock({
           <span aria-hidden className="w-0.5 shrink-0 rounded-full bg-border" />
           <div className="flex min-w-0 flex-1 flex-col gap-2">
             {item.replies.map((reply) => (
-              <Reply key={reply.id} author={reply.author} body={reply.body} />
+              <Reply key={reply.id} reply={reply} />
             ))}
             {entry.replies.map((draft) => (
               <DraftBody key={draft.id} draft={draft} actions={context.actions} />

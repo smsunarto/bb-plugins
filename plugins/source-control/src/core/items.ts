@@ -1,10 +1,12 @@
 /**
  * Review items: every finding or comment on a Change, with one id the diff
- * annotation, the rail row and the thread tab's card all use. Two sources
+ * annotation, the rail row and the thread tab's card all use. Three sources
  * feed them: GitHub review threads, classified by author (SlopCop's are its
- * bot's), and the findings a bb review thread reports. Drafts are the
- * reader's own line comments, kept by bb rather than in a pending GitHub
- * review, so they work on a Change with no pull request.
+ * bot's), the findings a bb review thread reports, and the reader's own
+ * comments once sent to an agent, where the agent's answers land as replies.
+ * Drafts are the reader's line comments before they are sent, kept by bb
+ * rather than in a pending GitHub review, so they work on a Change with no
+ * pull request.
  *
  * Items and drafts are anchored at the head their lines are numbered on. A
  * new head moves an anchor past the hunks above it, or marks it outdated when
@@ -47,6 +49,15 @@ export const itemOriginSchema = z.discriminatedUnion("kind", [
       slopcop: z.boolean(),
     })
     .strict(),
+  /** The reader's comment, sent to an agent thread, which answers it with replies. */
+  z
+    .object({
+      kind: z.literal("reader"),
+      /** The reader's GitHub login, when known. */
+      author: z.string().nullable(),
+      threadId: z.string().min(1),
+    })
+    .strict(),
 ]);
 export type ItemOrigin = z.infer<typeof itemOriginSchema>;
 
@@ -60,9 +71,14 @@ export const itemReplySchema = z
     body: z.string(),
     createdAt: z.string(),
     url: z.string().nullable(),
+    /** The agent thread that wrote it; null for a person. */
+    threadId: z.string().nullable(),
   })
   .strict();
 export type ItemReply = z.infer<typeof itemReplySchema>;
+
+/** The most replies an item keeps; a write past it is refused, never truncated. */
+export const MAX_REPLIES = 100;
 
 export const reviewItemSchema = z
   .object({
@@ -78,8 +94,8 @@ export const reviewItemSchema = z
     state: itemStateSchema,
     url: z.string().nullable(),
     createdAt: z.string(),
-    /** Later comments in the GitHub thread, oldest first. */
-    replies: z.array(itemReplySchema).max(100),
+    /** Later comments in the thread, oldest first. */
+    replies: z.array(itemReplySchema).max(MAX_REPLIES),
   })
   .strict();
 export type ReviewItem = z.infer<typeof reviewItemSchema>;
@@ -101,6 +117,19 @@ export const draftSchema = z
   })
   .strict();
 export type Draft = z.infer<typeof draftSchema>;
+
+/**
+ * The item a sent comment becomes, or the reply a sent follow-up becomes: its
+ * id is known before the send, so the message can name it.
+ */
+export function sentCommentId(draftId: string): string {
+  return `you:${draftId}`;
+}
+
+/** Whether the reader wrote this reply, as a follow-up sent to an agent. */
+export function isReaderReply(reply: { id: string }): boolean {
+  return reply.id.startsWith("you:");
+}
 
 /** What a client sends to save a draft: the server keeps its times and state. */
 export const draftInputSchema = draftSchema.pick({
@@ -319,18 +348,24 @@ export function forgeItem(thread: ForgeThread, head: string): ReviewItem | null 
       body,
       createdAt,
       url,
+      threadId: null,
     })),
   };
 }
 
 // ── Groups ─────────────────────────────────────────────────────────────
 
-export type ItemGroup = { id: string; label: string; kind: "bb" | "slopcop" | "person" | "bot" };
+export type ItemGroup = {
+  id: string;
+  label: string;
+  kind: "bb" | "you" | "slopcop" | "person" | "bot";
+};
 
 /** The rail's author group: bb's findings, SlopCop's, then each person or bot by login. */
 export function itemGroup(item: Pick<ReviewItem, "origin">): ItemGroup {
   const { origin } = item;
   if (origin.kind === "bb") return { id: "bb", label: "bb review", kind: "bb" };
+  if (origin.kind === "reader") return { id: "you", label: "Your comments", kind: "you" };
   if (origin.slopcop) return { id: "slopcop", label: "SlopCop", kind: "slopcop" };
   return {
     id: `@${origin.author.toLowerCase()}`,
@@ -339,7 +374,7 @@ export function itemGroup(item: Pick<ReviewItem, "origin">): ItemGroup {
   };
 }
 
-const GROUP_ORDER = { bb: 0, slopcop: 1, person: 2, bot: 3 } as const;
+const GROUP_ORDER = { bb: 0, you: 1, slopcop: 2, person: 3, bot: 4 } as const;
 
 /** Items by group, in rail order: groups bb, SlopCop, people, bots; items by priority, then file and line. */
 export function groupItems(

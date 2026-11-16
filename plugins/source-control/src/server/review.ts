@@ -9,6 +9,7 @@
 import { changeTag, hostTag, type ChangeKey } from "../core/ids.ts";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { Effect } from "effect";
+import type { Viewer } from "../core/items.ts";
 import { parseChangeKey } from "../core/review.ts";
 import { createBatches } from "./batches.ts";
 import type { ForgeSites } from "./forge-sites.ts";
@@ -47,6 +48,17 @@ export function createReview(deps: {
     forgeRead: (key) => headMayHaveMoved(key),
   });
   const revision = createRevisionReads(deps);
+  // Stored with the repository once learned, so "You" survives a restart before GitHub is asked again.
+  const viewer = (key: ChangeKey): Viewer | null => {
+    const parsed = parseChangeKey(key);
+    if (parsed?.kind !== "gh") return null;
+    const repo = `${parsed.repo.owner}/${parsed.repo.name}`;
+    const stored = deps.store.viewer(repo);
+    const known = deps.sites.viewerOf(parsed.repo);
+    if (known && known !== stored) deps.store.setViewer(repo, known);
+    const login = known ?? stored;
+    return login ? { login, avatarUrl: `https://github.com/${login}.png?size=48` } : null;
+  };
   const items = createReviewItems({
     store: deps.store,
     sites: deps.sites,
@@ -58,17 +70,7 @@ export function createReview(deps: {
     fork: deps.fork,
     now: deps.now,
     batches: (key) => batches.batches(key),
-    // Stored with the repository once learned, so "You" survives a restart before GitHub is asked again.
-    viewer: (key) => {
-      const parsed = parseChangeKey(key);
-      if (parsed?.kind !== "gh") return null;
-      const repo = `${parsed.repo.owner}/${parsed.repo.name}`;
-      const stored = deps.store.viewer(repo);
-      const known = deps.sites.viewerOf(parsed.repo);
-      if (known && known !== stored) deps.store.setViewer(repo, known);
-      const login = known ?? stored;
-      return login ? { login, avatarUrl: `https://github.com/${login}.png?size=48` } : null;
-    },
+    viewer,
   });
   const batches = createBatches({
     bb: deps.bb,
@@ -79,6 +81,7 @@ export function createReview(deps: {
     items: items.items,
     placementsFor: revision.placementsFor,
     threadsOnChange: deps.threadsOnChange,
+    viewer: (key) => viewer(key)?.login ?? null,
     invalidate: deps.invalidate,
     fork: deps.fork,
     now: deps.now,

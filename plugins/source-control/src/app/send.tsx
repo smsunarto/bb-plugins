@@ -192,7 +192,7 @@ function problemText(batch: BatchView): string {
       : "It was not sent.";
 }
 
-/** The header's pill once a batch is sent (board A4): "Agent fixing 2 · Open thread". */
+/** The header's pill once a batch is sent (board A4): "Agent working on 2 · Open thread". */
 function BatchPill({ batch, commands }: { batch: BatchView; commands: BatchCommands }) {
   let action: ReactNode = null;
   if (batch.phase === "posted")
@@ -276,7 +276,11 @@ function bannerText(batch: BatchView, thread: ReactNode): ReactNode {
     case "verify":
       return <>The agent made a new commit. Verify the {plural(count, "fix", "fixes")}.</>;
     case "stopped":
-      return <>The agent stopped without a new commit.</>;
+      return batch.agent === "idle" ? (
+        <>The agent replied without a new commit.</>
+      ) : (
+        <>The agent stopped without a new commit.</>
+      );
     case "posted":
       return <>Posted {plural(count, "comment")} to GitHub</>;
     case "queued":
@@ -722,7 +726,7 @@ function trayNote(facts: {
   if (!facts.agent) return `Posted as one review on #${facts.number}, on the head you read.`;
   const where = facts.target?.kind === "new-thread" ? "a new thread" : "that thread";
   const draft = facts.isDraft && facts.number !== null ? ` #${facts.number} stays a draft.` : "";
-  return `The agent fixes these in ${where}.${draft}`;
+  return `The agent answers or fixes each in ${where}, replying under it.${draft}`;
 }
 
 /** "Going to <thread> · Change thread", and the picker it opens. */

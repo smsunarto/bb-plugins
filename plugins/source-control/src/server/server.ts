@@ -19,6 +19,7 @@ import { parsePrReference, prKey } from "../core/watch.ts";
 import { groupDirective, MAX_GROUP, shareDirective, type GroupEntry } from "../core/directive.ts";
 import { execGh } from "../forge/exec-gh.ts";
 import type { Exec } from "../forge/github.ts";
+import { REPLY, replyTool } from "./batches.ts";
 import { createAsk, type Ask } from "./ask.ts";
 import { createPublish, type Publish } from "./publish.ts";
 import { createFixChecks, type FixChecks } from "./fix-checks.ts";
@@ -469,7 +470,11 @@ function shareChangeTool(runtime: Runtime, changes: Changes, moved: Moved) {
   };
 }
 
-/** Review threads get the findings tool, guide runs the guide tool; every thread can share its Change. */
+/**
+ * Review threads get the findings tool, guide runs the guide tool. Every
+ * thread can share its Change and answer review comments: a batch can reach
+ * a running thread, whose session keeps the tools it started with.
+ */
 function registerAgents(
   bb: BbPluginApi,
   runtime: Runtime,
@@ -480,6 +485,7 @@ function registerAgents(
   bb.agents.registerTool(reportFindingsTool(changes.review.items));
   bb.agents.registerTool(writeGuideTool(guides));
   bb.agents.registerTool(shareChangeTool(runtime, changes, moved));
+  bb.agents.registerTool(replyTool(changes.review.batches));
   moved.register();
   bb.agents.configure((session) => {
     const authors = moved.configure(session);
@@ -488,6 +494,7 @@ function registerAgents(
         ...(reportFindingsEnabled(session) ? [REPORT_FINDINGS] : []),
         ...(writeGuideEnabled(session) ? [WRITE_GUIDE] : []),
         SHARE_CHANGE,
+        REPLY,
         ...authors.tools,
       ],
       skills: authors.skills,
