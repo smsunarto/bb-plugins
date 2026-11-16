@@ -723,6 +723,34 @@ test("two comments one after another both stay, before and after the server answ
   await waitFor(() => expect(page.shown()).toEqual(["Second."]));
 });
 
+test("two dismissals one after another both stay gone, before and after the server answers", async () => {
+  const server = reviewServer([finding(1, 2), finding(2, 3), finding(3, 4)]);
+  const { dismissItem } = server.handlers as Required<Handlers>;
+  let pushed: Promise<void> = Promise.resolve();
+  const slot = render({
+    ...server.handlers,
+    dismissItem: (input) => {
+      const answer = dismissItem(input);
+      pushed = slot.experimental_invalidateRpc([reviewTag(KEY)]);
+      return answer;
+    },
+  });
+  const dismissFirst = async () => {
+    const [first] = await slot.findAllByTestId("sc-dismiss");
+    fireEvent.click(first!);
+  };
+  await dismissFirst();
+  await waitFor(() => expect(server.state.items).toHaveLength(2));
+  await pushed;
+  await dismissFirst();
+  await waitFor(() => expect(server.state.items).toHaveLength(1));
+  await pushed;
+  await waitFor(() => expect(slot.getAllByTestId("sc-annotation")).toHaveLength(1));
+  // Still one once every read has answered.
+  await slot.experimental_invalidateRpc([reviewTag(KEY)]);
+  expect(slot.getAllByTestId("sc-annotation")).toHaveLength(1);
+});
+
 test("an edit or a delete followed by a new comment keeps both writes", async () => {
   const page = pushingServer([comment(1, 2), comment(2, 4)]);
   await page.closed(await page.reply(0, "First."));

@@ -1,9 +1,9 @@
 /**
  * One Change's review, read through the keyed `reviewForChange` query that
  * the rail, the diff's annotations and the thread tab's card all share, and
- * the writes that change it. Writes predict the shared entry at once, so a
- * checkbox ticked anywhere is ticked everywhere; the server's next read is
- * the truth and replaces the prediction.
+ * the writes that change it. Writes show at once, so a checkbox ticked
+ * anywhere is ticked everywhere; the server's next read is the truth and
+ * replaces the prediction.
  */
 import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
@@ -24,114 +24,145 @@ import { ReviewInterner, type StableReview } from "./review-model.ts";
 
 const NO_KEYS: readonly string[] = [];
 
+// ── Pending writes ─────────────────────────────────────────────────────
+
 /**
- * Checks the reader made that the server has not shown back yet, by Change.
- * bb's shared keyed prediction drops an earlier accepted check when a later
- * one is predicted on the same Change, so the selection keeps its own: each
- * box shows the reader's choice from the click until a read agrees, the
- * write fails, or a few seconds pass, when the server's read is the truth.
+ * Writes the reader made that the server has not shown back yet. bb's keyed
+ * prediction loses an earlier accepted write when a later one is predicted on
+ * the same Change, so a second check unticked the first and a second comment
+ * replaced the first until a reload. The review keeps its own predictions
+ * instead: each shows from the click until a read agrees, the write fails, or
+ * a few seconds after it succeeds, when the server's read is the truth.
  * workaround:source-control/keyed-prediction-drop
  */
 const PENDING_MS = 5_000;
-const pendingChecks = new Map<ChangeKey, ReadonlyMap<string, boolean>>();
-const pendingListeners = new Set<() => void>();
-
-function setPending(key: ChangeKey, ids: readonly string[], selected: boolean | null): void {
-  const next = new Map(pendingChecks.get(key));
-  for (const id of ids) {
-    if (selected === null) next.delete(id);
-    else next.set(id, selected);
-  }
-  if (next.size === 0) pendingChecks.delete(key);
-  else pendingChecks.set(key, next);
-  for (const listener of pendingListeners) listener();
-}
-
-/** Drops the pending checks for `ids` that still say `selected`; a later click owns the rest. */
-function clearPending(key: ChangeKey, ids: readonly string[], selected: boolean): void {
-  const current = pendingChecks.get(key);
-  const done = ids.filter((id) => current?.get(id) === selected);
-  if (done.length > 0) setPending(key, done, null);
-}
+const listeners = new Set<() => void>();
 
 function subscribePending(listener: () => void): () => void {
-  pendingListeners.add(listener);
-  return () => pendingListeners.delete(listener);
+  listeners.add(listener);
+  return () => listeners.delete(listener);
 }
 
-/** The server's review with the reader's unconfirmed checks applied. */
-function withPending(
-  review: ChangeReview | undefined,
-  pending: ReadonlyMap<string, boolean> | undefined,
-): ChangeReview | undefined {
-  if (!review || !pending) return review;
-  const selected = new Set(review.selected);
-  for (const [id, checked] of pending) {
-    if (checked) selected.add(id);
-    else selected.delete(id);
+/** One kind of write: how it shows on a read, and when a read shows it done. */
+type PendingKind<V> = {
+  apply(review: ChangeReview, pending: ReadonlyMap<string, V>): ChangeReview;
+  agrees(read: ChangeReview, id: string, value: V): boolean;
+};
+
+/** A kind's pending writes, by Change and id. */
+class PendingWrites<V> {
+  private byKey = new Map<ChangeKey, ReadonlyMap<string, V>>();
+  readonly kind: PendingKind<V>;
+  constructor(kind: PendingKind<V>) {
+    this.kind = kind;
   }
-  return selected.size === review.selected.length && review.selected.every((id) => selected.has(id))
-    ? review
-    : { ...review, selected: [...selected] };
-}
 
-/**
- * Drafts the reader saved (a draft input) or deleted (null) that the server
- * has not shown back yet, by Change and draft id. bb's keyed prediction loses
- * an earlier accepted draft the same way it loses a check, so a second
- * comment replaced the first on screen until a reload. Each entry shows from
- * the click until a read agrees, the write fails, or a few seconds after the
- * write succeeds, when the server's read is the truth.
- * workaround:source-control/keyed-prediction-drop
- */
-const pendingDrafts = new Map<ChangeKey, ReadonlyMap<string, DraftInput | null>>();
+  get(key: ChangeKey): ReadonlyMap<string, V> | undefined {
+    return this.byKey.get(key);
+  }
 
-function setPendingDraft(key: ChangeKey, id: string, value: DraftInput | null | undefined): void {
-  const next = new Map(pendingDrafts.get(key));
-  if (value === undefined) next.delete(id);
-  else next.set(id, value);
-  if (next.size === 0) pendingDrafts.delete(key);
-  else pendingDrafts.set(key, next);
-  for (const listener of pendingListeners) listener();
-}
+  /** Shows `value` for `id`; undefined drops it. */
+  set(key: ChangeKey, id: string, value: V | undefined): void {
+    const next = new Map(this.byKey.get(key));
+    if (value === undefined) next.delete(id);
+    else next.set(id, value);
+    if (next.size === 0) this.byKey.delete(key);
+    else this.byKey.set(key, next);
+    for (const listener of listeners) listener();
+  }
 
-/** Drops a pending draft that is still `value`; a later save or delete of it owns the entry. */
-function clearPendingDraft(key: ChangeKey, id: string, value: DraftInput | null): void {
-  if (pendingDrafts.get(key)?.get(id) === value) setPendingDraft(key, id, undefined);
-}
+  /** Drops `id` while it still shows `value`; a later write of it owns the entry. */
+  clear(key: ChangeKey, id: string, value: V): void {
+    if (this.byKey.has(key) && this.byKey.get(key)!.get(id) === value) this.set(key, id, undefined);
+  }
 
-/** Whether the read shows the pending save or delete as the reader left it. */
-function draftAgrees(read: ChangeReview, id: string, value: DraftInput | null): boolean {
-  const shown = read.drafts.find((draft) => draft.id === id);
-  if (value === null) return shown === undefined;
-  return shown !== undefined && shown.body === value.body && shown.replyTo === value.replyTo;
-}
-
-/** The server's review with the reader's unconfirmed drafts applied. */
-function withPendingDrafts(
-  review: ChangeReview | undefined,
-  pending: ReadonlyMap<string, DraftInput | null> | undefined,
-): ChangeReview | undefined {
-  if (!review || !pending) return review;
-  const drafts: Draft[] = [];
-  for (const draft of review.drafts) {
-    if (!pending.has(draft.id)) drafts.push(draft);
-    else {
-      const input = pending.get(draft.id);
-      // Times are the server's; an edit keeps them.
-      if (input) drafts.push({ ...draft, ...input, state: "pending" });
+  /** Shows a write at once; a failed one drops it, a done one hands over to the reads. */
+  async write(key: ChangeKey, id: string, value: V, send: () => Promise<unknown>): Promise<void> {
+    this.set(key, id, value);
+    try {
+      await send();
+    } catch (error) {
+      this.clear(key, id, value);
+      throw error;
     }
+    setTimeout(() => this.clear(key, id, value), PENDING_MS);
   }
-  for (const [id, input] of pending)
-    if (input && !review.drafts.some((draft) => draft.id === id))
-      drafts.push({ ...input, state: "pending", createdAt: 0, updatedAt: 0 });
-  return { ...review, drafts };
+
+  /** Drops what `read` already shows. */
+  confirm(key: ChangeKey, read: ChangeReview): void {
+    for (const [id, value] of this.byKey.get(key) ?? [])
+      if (this.kind.agrees(read, id, value)) this.clear(key, id, value);
+  }
+
+  reset(): void {
+    this.byKey.clear();
+  }
 }
 
-/** For tests: forget every pending check and draft. */
+/** A box the reader checked (true) or unchecked (false). */
+const checks = new PendingWrites<boolean>({
+  apply(review, pending) {
+    const selected = new Set(review.selected);
+    for (const [id, checked] of pending) {
+      if (checked) selected.add(id);
+      else selected.delete(id);
+    }
+    return selected.size === review.selected.length &&
+      review.selected.every((id) => selected.has(id))
+      ? review
+      : { ...review, selected: [...selected] };
+  },
+  agrees: (read, id, checked) => read.selected.includes(id) === checked,
+});
+
+/** A draft the reader saved (its input) or deleted (null). */
+const drafts = new PendingWrites<DraftInput | null>({
+  apply(review, pending) {
+    const next: Draft[] = [];
+    for (const draft of review.drafts) {
+      if (!pending.has(draft.id)) next.push(draft);
+      else {
+        const input = pending.get(draft.id);
+        // Times are the server's; an edit keeps them.
+        if (input) next.push({ ...draft, ...input, state: "pending" });
+      }
+    }
+    for (const [id, input] of pending)
+      if (input && !review.drafts.some((draft) => draft.id === id))
+        next.push({ ...input, state: "pending", createdAt: 0, updatedAt: 0 });
+    return { ...review, drafts: next };
+  },
+  agrees(read, id, value) {
+    const shown = read.drafts.find((draft) => draft.id === id);
+    if (value === null) return shown === undefined;
+    return shown !== undefined && shown.body === value.body && shown.replyTo === value.replyTo;
+  },
+});
+
+/** An item the reader dismissed: gone from the items and the selection. */
+const dismissals = new PendingWrites<true>({
+  apply: (review, pending) => ({
+    ...review,
+    items: review.items.filter((item) => !pending.has(item.id)),
+    selected: review.selected.filter((id) => !pending.has(id)),
+  }),
+  agrees: (read, id) => !read.items.some((item) => item.id === id),
+});
+
+/** For tests: forget every pending write. */
 export function resetPendingWrites(): void {
-  pendingChecks.clear();
-  pendingDrafts.clear();
+  checks.reset();
+  drafts.reset();
+  dismissals.reset();
+}
+
+/** The server's review with one kind's pending writes applied. */
+function withPending<V>(
+  review: ChangeReview | undefined,
+  writes: PendingWrites<V>,
+  pending: ReadonlyMap<string, V> | undefined,
+): ChangeReview | undefined {
+  return review && pending ? writes.kind.apply(review, pending) : review;
 }
 
 export type ReviewRead = {
@@ -151,33 +182,26 @@ export function useChangeReview(key: ChangeKey | null, enabled = true): ReviewRe
     enabled: enabled && key !== null,
   });
   const read = key ? query.data?.[key] : undefined;
-  const pending = useSyncExternalStore(subscribePending, () =>
-    key ? pendingChecks.get(key) : undefined,
+  const checked = useSyncExternalStore(subscribePending, () => (key ? checks.get(key) : undefined));
+  const saved = useSyncExternalStore(subscribePending, () => (key ? drafts.get(key) : undefined));
+  const dismissed = useSyncExternalStore(subscribePending, () =>
+    key ? dismissals.get(key) : undefined,
   );
-  const drafts = useSyncExternalStore(subscribePending, () =>
-    key ? pendingDrafts.get(key) : undefined,
-  );
-  // A read that shows a pending check as the reader left it confirms it.
+  // A read that shows a pending write as the reader left it confirms it.
   useLayoutEffect(() => {
-    if (!key || !read || !pending) return;
-    const shown = new Set(read.selected);
-    const agreed = [...pending].filter(([id, checked]) => shown.has(id) === checked);
-    for (const checked of [true, false])
-      clearPending(
-        key,
-        agreed.filter(([, value]) => value === checked).map(([id]) => id),
-        checked,
-      );
-  }, [key, read, pending]);
-  // A read that shows a pending draft as the reader left it confirms it.
-  useLayoutEffect(() => {
-    if (!key || !read || !drafts) return;
-    for (const [id, value] of drafts)
-      if (draftAgrees(read, id, value)) clearPendingDraft(key, id, value);
-  }, [key, read, drafts]);
+    if (!key || !read || !(checked || saved || dismissed)) return;
+    checks.confirm(key, read);
+    drafts.confirm(key, read);
+    dismissals.confirm(key, read);
+  }, [key, read, checked, saved, dismissed]);
   const review = useMemo(
-    () => withPendingDrafts(withPending(read, pending), drafts),
-    [read, pending, drafts],
+    () =>
+      withPending(
+        withPending(withPending(read, checks, checked), drafts, saved),
+        dismissals,
+        dismissed,
+      ),
+    [read, checked, saved, dismissed],
   );
   const [interner] = useState(() => new ReviewInterner());
   const stable = useMemo(() => interner.stable(review), [interner, review]);
@@ -196,7 +220,7 @@ export function useChangeReview(key: ChangeKey | null, enabled = true): ReviewRe
 
 export type ReviewActions = {
   setSelected(ids: readonly string[], selected: boolean): void;
-  /** Removes a bb finding from the items, their counts and the selection at once. */
+  /** Removes a finding or a sent comment from the items, their counts and the selection at once. */
   dismissItem(id: string): Promise<void>;
   setTray(tray: Tray): void;
   /** Resolves once the server has the draft; rejects with what went wrong. */
@@ -204,44 +228,14 @@ export type ReviewActions = {
   deleteDraft(id: string): Promise<void>;
 };
 
-/** Shows a draft write at once; a failed one drops it, a done one hands over to the reads. */
-async function writeDraft(
-  key: ChangeKey,
-  id: string,
-  value: DraftInput | null,
-  write: () => Promise<unknown>,
-): Promise<void> {
-  setPendingDraft(key, id, value);
-  try {
-    await write();
-  } catch (error) {
-    clearPendingDraft(key, id, value);
-    throw error;
-  }
-  setTimeout(() => clearPendingDraft(key, id, value), PENDING_MS);
-}
-
 /** The review's writes for one Change, as one object that never changes. */
 export function useReviewActions(key: ChangeKey): ReviewActions {
-  // Predicted by the pending checks above, not by bb's keyed prediction.
+  // Checks, drafts and dismissals are predicted by the pending writes above, not by bb's.
   const select = useRpcMutation({ contract: sourceControlContract, method: "setSelected" });
-  // Predicted by the pending drafts above, not by bb's keyed prediction.
   const save = useRpcMutation({ contract: sourceControlContract, method: "saveDraft" });
   const remove = useRpcMutation({ contract: sourceControlContract, method: "deleteDraft" });
-  const dismiss = useRpcMutation({
-    contract: sourceControlContract,
-    method: "dismissItem",
-    optimistic: (input, cache) =>
-      cache.updateKey("reviewForChange", input.key, (current) =>
-        current
-          ? {
-              ...current,
-              items: current.items.filter((item) => item.id !== input.id),
-              selected: current.selected.filter((id) => id !== input.id),
-            }
-          : current,
-      ),
-  });
+  const dismiss = useRpcMutation({ contract: sourceControlContract, method: "dismissItem" });
+  // One value, so the last prediction is the right one.
   const tray = useRpcMutation({
     contract: sourceControlContract,
     method: "setTray",
@@ -264,24 +258,25 @@ export function useReviewActions(key: ChangeKey): ReviewActions {
   return useMemo<ReviewActions>(
     () => ({
       setSelected(ids, selected) {
-        if (ids.length === 0) return;
         const list = [...ids];
-        setPending(key, list, selected);
+        if (list.length === 0) return;
+        for (const id of list) checks.set(key, id, selected);
         // A failed write drops its prediction at once; the box shows what the server has.
         void latest.current.select({ key, ids: list, selected }).then(
-          () => setTimeout(() => clearPending(key, list, selected), PENDING_MS),
-          () => clearPending(key, list, selected),
+          () =>
+            setTimeout(() => {
+              for (const id of list) checks.clear(key, id, selected);
+            }, PENDING_MS),
+          () => {
+            for (const id of list) checks.clear(key, id, selected);
+          },
         );
       },
-      async saveDraft(draft) {
-        await writeDraft(key, draft.id, draft, () => latest.current.save({ key, draft }));
-      },
-      async deleteDraft(id) {
-        await writeDraft(key, id, null, () => latest.current.remove({ key, id }));
-      },
-      async dismissItem(id) {
-        await latest.current.dismiss({ key, id });
-      },
+      saveDraft: (draft) =>
+        drafts.write(key, draft.id, draft, () => latest.current.save({ key, draft })),
+      deleteDraft: (id) => drafts.write(key, id, null, () => latest.current.remove({ key, id })),
+      dismissItem: (id) =>
+        dismissals.write(key, id, true, () => latest.current.dismiss({ key, id })),
       setTray(next) {
         void latest.current.tray({ key, tray: next }).catch(() => undefined);
       },

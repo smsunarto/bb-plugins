@@ -34,9 +34,9 @@
     },
     {
       "id": "source-control/keyed-prediction-drop",
-      "defect": "bb's keyed RPC prediction (cache.updateKey) loses an earlier accepted write to a key when a later write to the same key is predicted while the server's pushed invalidation read is in flight: the first check is unticked and the first new review comment disappears until a reload, though the server stored both.",
+      "defect": "bb's keyed RPC prediction (cache.updateKey) loses an earlier accepted write to a key when a later write to the same key is predicted while the server's pushed invalidation read is in flight: the first check is unticked, the first new review comment disappears and the first dismissed finding comes back until a reload, though the server stored both.",
       "verifiedOn": "0.49.0",
-      "manual": "In plugins/source-control/src/app/review-data.ts, delete pendingChecks, pendingDrafts and their helpers, and predict setSelected, saveDraft and deleteDraft with cache.updateKey on reviewForChange again.",
+      "manual": "In plugins/source-control/src/app/review-data.ts, delete PendingWrites and its checks, drafts and dismissals, and predict setSelected, saveDraft, deleteDraft and dismissItem with cache.updateKey on reviewForChange again.",
       "probe": {
         "needed": null,
         "fixed": null
@@ -44,7 +44,7 @@
       "afterRemoval": [
         "cd plugins/source-control && bun run typecheck && bunx vitest run src/app/page/review-items.test.tsx"
       ],
-      "verify": "On a pull request's Files tab, add comments on three lines one after another: all three stay on screen without a reload. Then tick two findings one after another: both stay ticked."
+      "verify": "On a pull request's Files tab, add comments on three lines one after another: all three stay on screen without a reload. Tick two findings one after another: both stay ticked. Dismiss two findings one after another: neither comes back."
     },
     {
       "id": "genui/source-view-remount",
