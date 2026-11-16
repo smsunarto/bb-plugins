@@ -26,7 +26,17 @@ import {
   type EnvironmentThread,
   type EnvironmentsView,
 } from "../../core/environments";
-import { checkCounts, CHECKS_LABEL, PR_STATE_LABEL, relativeTime, RUNNING, threadStatusLabel, type EnvironmentsResult } from "../../core/project";
+import {
+  checkCounts,
+  CHECKS_LABEL,
+  PR_STATE_LABEL,
+  relativeTime,
+  RUNNING,
+  threadStatusLabel,
+  type ChecksState,
+  type EnvironmentsResult,
+  type PullRequestState,
+} from "../../core/project";
 import type { rpcContract } from "../../server";
 import { useUiRuntime } from "../runtime";
 import { propsKey, usePersistedState } from "../usePersistedState";
@@ -47,7 +57,6 @@ import {
   useProjectQuery,
   useVisible,
 } from "./projectKit";
-import { CHECKS_TONE, STATE_ICON, STATE_TEXT } from "./pullRequest";
 import { LiveDot, statusTone } from "./threads";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +64,23 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 /** Thread lines a row lists; the rest are counted. */
 const THREAD_LINES = 3;
+
+// A pull request's state wears Source Control's colours (its PR_LOOK and state icons), so a
+// pull request looks the same in both plugins. Merged is the theme's --pr-merged purple.
+// Class strings stay literal so Tailwind finds them.
+const STATE_TEXT: Record<PullRequestState, string> = {
+  open: "text-success",
+  draft: "text-[var(--tertiary-foreground)]",
+  merged: "text-[var(--pr-merged,var(--color-timeline-accent,var(--primary)))]",
+  closed: "text-destructive",
+};
+const STATE_ICON: Record<PullRequestState, string> = {
+  open: "GitPullRequest",
+  draft: "GitPullRequestDraft",
+  merged: "GitMerge",
+  closed: "GitPullRequestClosed",
+};
+const CHECKS_TONE: Record<ChecksState, Tone> = { passing: "good", failing: "bad", pending: "warn", no_checks: "neutral", unknown: "neutral" };
 
 const KIND_ICON: Record<EnvironmentKind, string> = {
   checkout: "FolderGit",

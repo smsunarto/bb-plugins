@@ -85,33 +85,6 @@ describe("toMarkdown: project components", () => {
 _… and 1 more commit_`);
   });
 
-  it("renders PullRequest as one line with its link, and a missing one plainly", () => {
-    const pr = {
-      number: 367,
-      title: "World sheets",
-      url: "https://github.com/o/r/pull/367",
-      state: "draft",
-      baseRef: "main",
-      headRef: "feat/x",
-      checks: { state: "failing", passed: 3, failed: 2, pending: 0, total: 5 },
-      review: { state: "none", requests: 0 },
-      mergeability: "conflicts",
-      attention: "conflicts",
-      autoMerge: false,
-      inMergeQueue: false,
-      updatedAt: NOW,
-    } as const;
-    expect(markdown(`PullRequest()`, () => ({ ok: true, branch: "feat/x", pullRequest: pr, fetchedAt: NOW }))).toBe(
-      "**Pull request** [#367 World sheets](https://github.com/o/r/pull/367) · Draft · main ← feat/x · Checks failing (2 failed · 3 passed) · No reviews · Conflicts · needs: Has merge conflicts",
-    );
-    expect(markdown(`PullRequest()`, () => ({ ok: true, branch: "feat/x", pullRequest: null, fetchedAt: NOW }))).toBe(
-      "**Pull request** · none for feat/x",
-    );
-    expect(markdown(`PullRequest()`, () => ({ ok: false, reason: "not-git", message: "This thread's environment isn't a git checkout" }))).toBe(
-      "**Pull request** · _This thread's environment isn't a git checkout_",
-    );
-  });
-
   it("renders Threads as a list with status, agent and activity; ids it can't see say so", () => {
     const text = markdown(`Threads(["thr_aaaa1", "thr_other"])`, () => ({
       ok: true,

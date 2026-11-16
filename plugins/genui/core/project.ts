@@ -1,5 +1,5 @@
-// What the BB-backed Project components (Changes, Commits, PullRequest,
-// Threads, Environments) show: the shapes the backend (project/) answers
+// What the BB-backed Project components (Changes, Commits, Threads,
+// Environments) show: the shapes the backend (project/) answers
 // with, which the renderer and the markdown fallback both read, and the pure
 // helpers they share. Nothing here talks to BB; project/source.ts does.
 // Environments' own shapes are in environments.ts, Plugins' in plugins.ts.
@@ -90,74 +90,10 @@ export function parseThreadIds(value: unknown): Parsed<readonly string[] | null>
   return { ok: true, value: ids };
 }
 
-/** A GitHub pull request an answer names: `owner/repo#N` or its github.com URL. */
-export interface PullRequestRef {
-  readonly owner: string;
-  readonly repo: string;
-  readonly number: number;
-}
-
-/** Most pull requests a PullRequest list may name. */
-export const MAX_PULL_REQUEST_REFS = 50;
-
-/** Pull requests a list reads and shows; the rest are counted ("+3 more"). */
-export const PULL_REQUESTS_SHOWN = 20;
-
-const GITHUB_NAME = "[A-Za-z0-9_.-]+";
-const PR_SHORTHAND = new RegExp(`^(${GITHUB_NAME})/(${GITHUB_NAME})#(\\d+)$`);
-const PR_URL = new RegExp(`^https?://(?:www\\.)?github\\.com/(${GITHUB_NAME})/(${GITHUB_NAME})/pull/(\\d+)(?:[/?#].*)?$`, "i");
-
-/** `owner/repo#N`, as the pull request is named in text and keyed. */
-export function pullRequestRefKey(ref: PullRequestRef): string {
-  return `${ref.owner}/${ref.repo}#${ref.number}`;
-}
-
-/** The repository a ref is in, folded to lower case as GitHub compares it. */
-export function pullRequestRepoKey(ref: PullRequestRef): string {
-  return `${ref.owner}/${ref.repo}`.toLowerCase();
-}
-
-/** One ref as written, or null when it names no GitHub pull request. */
-export function parsePullRequestRef(value: string): PullRequestRef | null {
-  const written = value.trim();
-  const match = PR_SHORTHAND.exec(written) ?? PR_URL.exec(written);
-  if (match === null) return null;
-  const number = Number(match[3]);
-  if (!Number.isSafeInteger(number) || number < 1) return null;
-  return { owner: match[1]!, repo: match[2]!.replace(/\.git$/i, ""), number };
-}
-
-/** `refs` as written: null (this branch's pull request) or the pull requests named, repeats dropped. */
-export function parsePullRequestRefs(value: unknown): Parsed<readonly PullRequestRef[] | null> {
-  if (value === undefined || value === null) return { ok: true, value: null };
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    return { ok: false, error: 'PullRequest refs must be a list of pull requests: "owner/repo#123" or https://github.com/owner/repo/pull/123' };
-  }
-  const refs: PullRequestRef[] = [];
-  const seen = new Set<string>();
-  for (const item of value as string[]) {
-    const ref = parsePullRequestRef(item);
-    if (ref === null) {
-      return { ok: false, error: `PullRequest refs: ${JSON.stringify(item)} is not "owner/repo#123" or a github.com pull request URL` };
-    }
-    const key = pullRequestRefKey(ref).toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      refs.push(ref);
-    }
-  }
-  if (refs.length === 0) return { ok: false, error: "PullRequest refs must name at least one pull request; omit refs for this branch's" };
-  if (refs.length > MAX_PULL_REQUEST_REFS) return { ok: false, error: `PullRequest takes at most ${MAX_PULL_REQUEST_REFS} refs` };
-  return { ok: true, value: refs };
-}
-
 /** One read of BB state a rendered reply needs, as the markdown fallback collects them. */
 export type ProjectRequest =
   | { readonly kind: "changes"; readonly target: ChangesTarget; readonly paths: readonly string[] | null }
   | { readonly kind: "commits" }
-  | { readonly kind: "pullRequest" }
-  /** Pull requests by reference, at most PULL_REQUESTS_SHOWN. */
-  | { readonly kind: "pullRequests"; readonly refs: readonly PullRequestRef[] }
   | { readonly kind: "threads"; readonly ids: readonly string[] | null }
   | { readonly kind: "environments" }
   /** BB's state of the plugins named, by id. */
@@ -304,36 +240,6 @@ export interface PullRequestInfo {
   readonly updatedAt: number | null;
 }
 
-export interface PullRequestView {
-  readonly ok: true;
-  readonly branch: string | null;
-  /** Null: the branch has no pull request. */
-  readonly pullRequest: PullRequestInfo | null;
-  readonly fetchedAt: number;
-}
-
-/** What one named pull request answered: it, or why it can't be shown. */
-export type PullRequestRead =
-  | {
-      readonly ok: true;
-      readonly pullRequest: PullRequestInfo;
-      /** GitHub is still working something out (checks running, mergeability computing, the queue): worth reading again. */
-      readonly settling: boolean;
-    }
-  | { readonly ok: false; readonly reason: "not-found" | "unavailable"; readonly message: string };
-
-export interface PullRequestRow {
-  readonly ref: PullRequestRef;
-  readonly read: PullRequestRead;
-}
-
-/** Pull requests named by reference, in the order asked for. */
-export interface PullRequestsView {
-  readonly ok: true;
-  readonly rows: readonly PullRequestRow[];
-  readonly fetchedAt: number;
-}
-
 export type ThreadDisplayStatus =
   | "active"
   | "error"
@@ -387,16 +293,12 @@ export type PatchesResult =
   | { readonly ok: true; readonly patches: readonly FilePatch[] }
   | ProjectFailure;
 export type CommitsResult = CommitsView | ProjectFailure;
-export type PullRequestResult = PullRequestView | ProjectFailure;
-export type PullRequestsResult = PullRequestsView | ProjectFailure;
 export type ThreadsResult = ThreadsView | ProjectFailure;
 export type EnvironmentsResult = EnvironmentsView | ProjectFailure;
 export type PluginsResult = PluginsView | ProjectFailure;
 export type ProjectResult =
   | ChangesResult
   | CommitsResult
-  | PullRequestResult
-  | PullRequestsResult
   | ThreadsResult
   | EnvironmentsResult
   | PluginsResult;
@@ -501,38 +403,6 @@ export const CHECKS_LABEL: Record<ChecksState, string> = {
   unknown: "Checks unknown",
 };
 
-export const REVIEW_LABEL: Record<ReviewState, string> = {
-  approved: "Approved",
-  changes_requested: "Changes requested",
-  review_requested: "Review requested",
-  review_required: "Review required",
-  none: "No reviews",
-};
-
-export const MERGEABILITY_LABEL: Record<MergeabilityState, string> = {
-  mergeable: "Mergeable",
-  conflicts: "Conflicts",
-  blocked: "Blocked",
-  draft: "Draft",
-  unknown: "Mergeability unknown",
-};
-
-/** BB's attention reason: what the pull request waits for now. Null when nothing does. */
-export const ATTENTION_LABEL: Record<PullRequestAttention, string | null> = {
-  blocked: "Blocked by branch rules",
-  changes_requested: "Changes requested",
-  checks_failed: "Checks failed",
-  checks_pending: "Waiting for checks",
-  closed: null,
-  conflicts: "Has merge conflicts",
-  draft: "Draft: not ready for review",
-  merged: null,
-  none: null,
-  queued: "In the merge queue",
-  ready_to_merge: "Ready to merge",
-  review_requested: "Waiting for review",
-};
-
 /** "2 failed · 5 passed · 1 running", only the counts that aren't zero. */
 export function checkCounts(checks: PullRequestInfo["checks"]): string {
   return [
@@ -542,34 +412,6 @@ export function checkCounts(checks: PullRequestInfo["checks"]): string {
   ]
     .filter((part) => part !== "")
     .join(" · ");
-}
-
-/**
- * What the pull request waits for now, by the precedence bb's GitHub PR
- * status plugin uses, so a pull request reads the same through either source.
- * An unknown mergeability says nothing: no "Ready to merge" or "Blocked" from it.
- */
-export function pullRequestAttention(
-  pr: Pick<PullRequestInfo, "state" | "checks" | "review" | "mergeability" | "inMergeQueue">,
-): PullRequestAttention {
-  if (pr.state === "merged") return "merged";
-  if (pr.state === "closed") return "closed";
-  if (pr.mergeability === "conflicts") return "conflicts";
-  if (pr.checks.state === "failing") return "checks_failed";
-  if (pr.review.state === "changes_requested") return "changes_requested";
-  if (pr.state === "draft") return "draft";
-  if (pr.inMergeQueue) return "queued";
-  if (pr.review.state === "review_requested" || pr.review.state === "review_required") return "review_requested";
-  if (pr.checks.state === "pending") return "checks_pending";
-  if (pr.mergeability === "blocked") return "blocked";
-  if (pr.mergeability === "mergeable" && pr.checks.state === "passing") return "ready_to_merge";
-  return "none";
-}
-
-/** Something on the pull request will change without anyone acting: checks running, mergeability being computed, the queue. */
-export function pullRequestSettling(pullRequest: PullRequestInfo): boolean {
-  if (pullRequest.state === "merged" || pullRequest.state === "closed") return false;
-  return pullRequest.checks.state === "pending" || pullRequest.mergeability === "unknown" || pullRequest.inMergeQueue;
 }
 
 const MINUTE = 60_000;

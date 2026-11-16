@@ -65,23 +65,16 @@ import {
   round,
 } from "./decisions";
 import {
-  ATTENTION_LABEL,
   CHANGE_LABEL,
   changeTotals,
   CHECKS_LABEL,
-  checkCounts,
-  MERGEABILITY_LABEL,
   parseChangesTarget,
   parseCommitLimit,
   parsePathFilter,
-  parsePullRequestRefs,
   parseThreadIds,
   PR_STATE_LABEL,
-  pullRequestRefKey,
-  PULL_REQUESTS_SHOWN,
   projectRequestKey,
   relativeTime,
-  REVIEW_LABEL,
   scopeLabel,
   threadStatusLabel,
   type ChangesView,
@@ -89,9 +82,6 @@ import {
   type Parsed,
   type ProjectRequest,
   type ProjectResult,
-  type PullRequestInfo,
-  type PullRequestsView,
-  type PullRequestView,
   type ThreadsView,
 } from "./project";
 import { previewText, threadActivityLabel } from "./thread-activity";
@@ -914,7 +904,6 @@ function blockBody(node: UiNode): string {
       return eventCalendarMarkdown(list(props.events), inline(props.month));
     case "Changes":
     case "Commits":
-    case "PullRequest":
     case "Threads":
       return projectMarkdown(node);
     case "Tests":
@@ -1290,7 +1279,7 @@ function eventCalendarMarkdown(items: readonly Value[], month: string): string {
   return paragraphs(months);
 }
 
-// ── Project components that read BB (Changes, Commits, PullRequest, Threads) ──
+// ── Project components that read BB (Changes, Commits, Threads) ──
 
 /**
  * What BB answered for the rendering in progress, by request key. block() is
@@ -1311,13 +1300,6 @@ function projectRequest(node: UiNode): Parsed<ProjectRequest> | null {
     }
     case "Commits":
       return { ok: true, value: { kind: "commits" } };
-    case "PullRequest": {
-      const refs = parsePullRequestRefs(props.refs);
-      if (!refs.ok) return refs;
-      return refs.value === null
-        ? { ok: true, value: { kind: "pullRequest" } }
-        : { ok: true, value: { kind: "pullRequests", refs: refs.value.slice(0, PULL_REQUESTS_SHOWN) } };
-    }
     case "Threads": {
       const ids = parseThreadIds(props.ids);
       return ids.ok ? { ok: true, value: { kind: "threads", ids: ids.value } } : ids;
@@ -1352,7 +1334,7 @@ export function projectProblems(roots: readonly UiNode[]): string[] {
   return problems;
 }
 
-/** The BB reads the evaluated nodes need (Changes, Commits, PullRequest, Threads), in order, without repeats. */
+/** The BB reads the evaluated nodes need (Changes, Commits, Threads, Environments, Plugins), in order, without repeats. */
 export function projectRequests(roots: readonly UiNode[]): ProjectRequest[] {
   const requests = new Map<string, ProjectRequest>();
   const visit = (value: Value | undefined): void => {
@@ -1371,7 +1353,7 @@ export function projectRequests(roots: readonly UiNode[]): ProjectRequest[] {
   return [...requests.values()];
 }
 
-/** toMarkdownWithImages with Changes, Commits, PullRequest and Threads shown as what BB answered (`answers`, by `projectRequestKey`). */
+/** toMarkdownWithImages with Changes, Commits and Threads shown as what BB answered (`answers`, by `projectRequestKey`). */
 export function toMarkdownWithProject(
   roots: readonly UiNode[],
   images: ReadonlyMap<string, SearchedImage | null>,
@@ -1390,8 +1372,6 @@ export function toMarkdownWithProject(
 const PROJECT_TEXT: Record<string, { readonly title: string; readonly unanswered: string }> = {
   Changes: { title: "Changes", unanswered: "_The changes in this thread's checkout: open the reply in BB to see them._" },
   Commits: { title: "Commits", unanswered: "_This branch's commits: open the reply in BB to see them._" },
-  PullRequest: { title: "Pull request", unanswered: "_This branch's pull request: open the reply in BB to see it._" },
-  PullRequests: { title: "Pull requests", unanswered: "_Pull request status: open the reply in BB to see it._" },
   Threads: { title: "Threads", unanswered: "_Thread status: open the reply in BB to see it._" },
 };
 
@@ -1409,7 +1389,7 @@ function projectMarkdown(node: UiNode): string {
   const request = projectRequest(node);
   if (request === null) return "";
   if (!request.ok) return `_(error: ${request.error})_`;
-  const text = PROJECT_TEXT[request.value.kind === "pullRequests" ? "PullRequests" : node.type];
+  const text = PROJECT_TEXT[node.type];
   if (text === undefined) return "";
   const answer = projectAnswers.get(projectRequestKey(request.value));
   if (answer === undefined) return text.unanswered;
@@ -1418,11 +1398,6 @@ function projectMarkdown(node: UiNode): string {
   if ("commits" in answer) {
     const limit = parseCommitLimit(props.limit);
     return commitsMarkdown(answer, limit.ok ? limit.value : null);
-  }
-  if ("pullRequest" in answer) return pullRequestMarkdown(answer);
-  if ("rows" in answer) {
-    const refs = parsePullRequestRefs(props.refs);
-    return pullRequestsMarkdown(answer, refs.ok && refs.value !== null ? refs.value.length : answer.rows.length);
   }
   // Environments and Plugins render through their own cases in block().
   if ("environments" in answer || "plugins" in answer) return "";
@@ -1463,45 +1438,6 @@ function commitsMarkdown(view: CommitsView, limit: number | null): string {
     (commit) => `- \`${commit.shortSha}\` ${commit.subject} — ${commit.author}, ${relativeTime(commit.authoredAt, view.takenAt)}`,
   );
   return paragraphs([header, lines.join("\n"), moreLine(shown.length, view.commits.length, "commit")]);
-}
-
-function pullRequestMarkdown(view: PullRequestView): string {
-  const pr = view.pullRequest;
-  if (pr === null) return `**Pull request** · ${view.branch === null ? "none" : `none for ${view.branch}`}`;
-  return `**Pull request** ${pullRequestFacts(pr, `#${pr.number} ${pr.title}`, true)}`;
-}
-
-/**
- * The pull request's link, then its state, refs, checks, review, mergeability
- * and what it waits for. A list leaves out mergeability once a pull request
- * is merged or closed (`alwaysMergeability` keeps this branch's line as it was).
- */
-function pullRequestFacts(pr: PullRequestInfo, label: string, alwaysMergeability = false): string {
-  const url = webUrl(pr.url, ["https:"]);
-  const counts = checkCounts(pr.checks);
-  const attention = ATTENTION_LABEL[pr.attention];
-  const open = pr.state === "open" || pr.state === "draft";
-  return [
-    url === null ? `**${label}**` : link(label, url),
-    PR_STATE_LABEL[pr.state],
-    `${pr.baseRef} ← ${pr.headRef}`,
-    `${CHECKS_LABEL[pr.checks.state]}${counts === "" ? "" : ` (${counts})`}`,
-    REVIEW_LABEL[pr.review.state],
-    open || alwaysMergeability ? MERGEABILITY_LABEL[pr.mergeability] : "",
-    attention === null ? "" : `needs: ${attention}`,
-  ]
-    .filter((part) => part !== "")
-    .join(" · ");
-}
-
-/** One line per pull request named, in order; `named` counts the ones left out past PULL_REQUESTS_SHOWN. */
-function pullRequestsMarkdown(view: PullRequestsView, named: number): string {
-  const lines = view.rows.map(({ ref, read }) => {
-    const key = pullRequestRefKey(ref);
-    if (!read.ok) return `- ${key} — _${read.message}_`;
-    return `- ${pullRequestFacts(read.pullRequest, `${key} ${read.pullRequest.title}`)}`;
-  });
-  return paragraphs([`**Pull requests** (${named})`, lines.join("\n"), moreLine(view.rows.length, named, "pull request")]);
 }
 
 function threadsMarkdown(view: ThreadsView): string {

@@ -5,10 +5,8 @@ import {
   parseCommitLimit,
   parsePathFilter,
   parseThreadIds,
-  pullRequestSettling,
   relativeTime,
   scopeLabel,
-  type PullRequestInfo,
 } from "./project";
 
 describe("Changes target", () => {
@@ -67,32 +65,6 @@ describe("scope labels", () => {
     );
     expect(scopeLabel({ kind: "commit", sha: "a1b2c3d4e5f6", subject: null })).toBe("commit a1b2c3d");
     expect(scopeLabel({ kind: "uncommitted", branch: "main", unborn: true })).toBe("uncommitted, no commits yet");
-  });
-});
-
-describe("pull request polling", () => {
-  const base: PullRequestInfo = {
-    number: 1,
-    title: "t",
-    url: "https://github.com/o/r/pull/1",
-    state: "open",
-    baseRef: "main",
-    headRef: "feat",
-    checks: { state: "passing", passed: 3, failed: 0, pending: 0, total: 3 },
-    review: { state: "none", requests: 0 },
-    mergeability: "mergeable",
-    attention: "none",
-    autoMerge: false,
-    inMergeQueue: false,
-    updatedAt: 0,
-  };
-
-  it("settles only while checks run, mergeability is computed or the queue holds it, and never once merged", () => {
-    expect(pullRequestSettling(base)).toBe(false);
-    expect(pullRequestSettling({ ...base, checks: { ...base.checks, state: "pending" } })).toBe(true);
-    expect(pullRequestSettling({ ...base, mergeability: "unknown" })).toBe(true);
-    expect(pullRequestSettling({ ...base, inMergeQueue: true })).toBe(true);
-    expect(pullRequestSettling({ ...base, state: "merged", mergeability: "unknown" })).toBe(false);
   });
 });
 

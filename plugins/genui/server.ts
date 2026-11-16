@@ -16,9 +16,8 @@ import { instructionFiles } from "@bb-plugins/instructions";
 // - does the plugin's only web lookups (web/lookups.ts), behind the
 //   `webLookups` setting: photo search, geocoding, map tiles, https images,
 // - reads the reply's own thread's state from BB (project/source.ts) for
-//   Changes, Commits, PullRequest (the branch's, or named ones through
-//   Source Control) and Threads, and keeps what Changes and
-//   Commits first showed per reply block; and its project's environments
+//   Changes, Commits and Threads, and keeps what Changes and Commits first
+//   showed per reply block; and its project's environments
 //   (project/environments.ts) for Environments,
 // - declares the `animations` setting, which only the page reads.
 import {
@@ -55,9 +54,6 @@ import {
   type CommitsResult,
   type PatchesResult,
   type ProjectFailure,
-  PULL_REQUESTS_SHOWN,
-  type PullRequestResult,
-  type PullRequestsResult,
   type ThreadsResult,
   type EnvironmentsResult,
   type PluginsResult,
@@ -257,28 +253,6 @@ export const rpcContract = defineRpcContract({
     input: z.object({ threadId: projectThread, blockKey, refresh: z.boolean() }),
     output: z.custom<CommitsResult>(),
   },
-  project_pull_request: {
-    input: z.object({ threadId: projectThread }),
-    output: z.custom<PullRequestResult>(),
-  },
-  // PullRequest(refs): pull requests by reference, routed through the reply's thread's environment.
-  project_pull_requests: {
-    input: z.object({
-      threadId: projectThread,
-      refs: z
-        .array(
-          z.object({
-            owner: z.string().regex(/^[A-Za-z0-9_.-]{1,100}$/),
-            repo: z.string().regex(/^[A-Za-z0-9_.-]{1,100}$/),
-            number: z.number().int().positive(),
-          }),
-        )
-        .min(1)
-        .max(PULL_REQUESTS_SHOWN),
-      refresh: z.boolean(),
-    }),
-    output: z.custom<PullRequestsResult>(),
-  },
   project_threads: {
     input: z.object({
       threadId: projectThread,
@@ -463,9 +437,6 @@ export default async function plugin(bb: BbPluginApi) {
     },
     project_commits: ({ threadId, blockKey: block, refresh }) =>
       project.commits(threadId, block === null ? null : { blockKey: block, refresh }),
-    project_pull_request: ({ threadId }) => project.pullRequest(threadId),
-    project_pull_requests: ({ threadId, refs, refresh }) =>
-      project.pullRequests(threadId, refs, refresh),
     project_threads: ({ threadId, ids }) => project.threads(threadId, ids),
     project_environments: ({ threadId }) => environments.environments(threadId, false),
     project_environment: ({ threadId, environmentId }) =>

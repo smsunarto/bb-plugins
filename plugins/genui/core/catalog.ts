@@ -491,7 +491,7 @@ export const COMPONENTS = {
     params: [{ name: "steps", kind: "list" }],
     summary: "{title, body, code?, language?} one step at a time",
   },
-  // Project: the first four read BB's own state for the reply's thread, so the
+  // Project: the first three read BB's own state for the reply's thread, so the
   // model writes no data at all; Tests and Json take Load() of a report.
   Changes: {
     group: "Project",
@@ -506,11 +506,6 @@ export const COMPONENTS = {
     group: "Project",
     params: [{ name: "limit", kind: "number", optional: true }],
     summary: "this branch's commits since the default branch, each opening its changes",
-  },
-  PullRequest: {
-    group: "Project",
-    params: [{ name: "refs", kind: "list", optional: true }],
-    summary: 'PR state, checks, review; refs: ["o/r#1", url]',
   },
   Threads: {
     group: "Project",

@@ -1,5 +1,5 @@
 // Shared by the components that read the reply's thread's state from BB
-// (Changes, Commits, PullRequest, Threads): the RPC query with its cache,
+// (Changes, Commits, Threads, Environments): the RPC query with its cache,
 // snapshot refresh and visible-only polling, the panel frame, the freshness
 // line and the one-line states.
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";

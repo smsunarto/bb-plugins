@@ -111,10 +111,9 @@ The internals behind [the README](../README.md): how agents learn the language, 
      pictures decode, however long a remote BB takes (a picture the browser
      can't decode isn't kept for the page, so the next mount reads it
      again); a component waiting for a `Load` is a quiet
-     placeholder, never an error line. PullRequest's placeholder has its
-     body's layout; list-shaped Project components (Changes, Commits,
-     Threads, Environments) can't know their length before BB answers, so
-     on a first view they grow once. An Image is laid out at the natural
+     placeholder, never an error line. List-shaped Project components
+     (Changes, Commits, Threads, Environments) can't know their length
+     before BB answers, so on a first view they grow once. An Image is laid out at the natural
      size its picture last decoded at (kept in `localStorage`; not for SVGs,
      which lay themselves out) before the picture arrives, and a reply seen
      answered folds its choices on the first frame instead of when BB's
@@ -381,18 +380,16 @@ the instructions list it.
   secondary or red destructive; an optional BB icon in front, resolved
   against `ui/icons.ts`, and its action's glyph at its end), Form
 - Widgets: Timer, Quiz, Flashcards, Walkthrough
-- Project: Changes, Commits, PullRequest and Threads read the reply's
-  thread's own state from BB (its checkout's diff, its branch's commits and
-  pull request, its subthreads), so the model writes `Changes()` and no data;
-  Changes and Commits keep a snapshot per reply (plugin storage), so an old
-  reply keeps showing what it showed, with a Refresh. Threads also shows each
-  thread's latest message, the question or approval it waits on, its model
-  and reasoning level, and "Waiting on N running workers" for an idle
-  parent. PullRequest(refs) reads the pull requests named instead, through
-  Source Control's `pullRequestsByRef` (one read per repository, as the bb
-  server's GitHub account and then the thread's host's), each row answering
-  for itself. Tests renders a list, a vitest/jest JSON report or a JUnit XML
-  report (`Load` reads `.xml` as JUnit), Json any value as a collapsible tree.
+- Project: Changes, Commits and Threads read the reply's thread's own state
+  from BB (its checkout's diff, its branch's commits, its subthreads), so the
+  model writes `Changes()` and no data; Changes and Commits keep a snapshot
+  per reply (plugin storage), so an old reply keeps showing what it showed,
+  with a Refresh. Threads also shows each thread's latest message, the
+  question or approval it waits on, its model and reasoning level, and
+  "Waiting on N running workers" for an idle parent. Pull requests are left
+  to Source Control's `::source-control{pr="owner/repo#123"}` card. Tests
+  renders a list, a vitest/jest JSON report or a JUnit XML report (`Load`
+  reads `.xml` as JUnit), Json any value as a collapsible tree.
 - Dev: the agent saves what a tool printed to `$BB_THREAD_STORAGE` and
   Loads it; each component knows that tool's exact format.
   - Logs: a log or command output (ANSI, levels from any common format,

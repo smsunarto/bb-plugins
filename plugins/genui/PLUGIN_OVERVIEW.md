@@ -4,13 +4,13 @@
 - Inputs that work in place: drag a slider, tick a box or edit a table and the result recomputes in the page, with no extra model call.
 - Answers that go back: buttons, choices, forms and plan approvals put your answers in your message, beside what you type, and reach the agent when you send it.
 - Tool output as components: test reports, logs, stack traces, lint and type errors, coverage, dependency audits, CI runs and benchmarks, read from the files the agent saved instead of pasted into the reply.
-- Your project, read live from BB: the thread's changes, commits, pull request, worker threads and worktrees.
+- Your project, read live from BB: the thread's changes, commits, worker threads and worktrees.
 - Evidence you can check: acceptance grids that say what was verified and by whom, image comparisons with a pixel difference, and transcripts aligned word by word.
 - Small sandboxed apps for what the components can't express, such as a game or a simulation, with no network access. They keep their saved state with the reply and can put an answer in your message from a click.
 
 ## How it works
 
-Once the plugin is on, agents in the threads you read learn the components and pick them on their own. A reply carries a short `ui` block that BB draws while the reply streams. The Gen-UI Gallery page in the sidebar shows all 86 components with more than 170 examples. `bb genui render` prints any reply with its UI as plain markdown.
+Once the plugin is on, agents in the threads you read learn the components and pick them on their own. A reply carries a short `ui` block that BB draws while the reply streams. The Gen-UI Gallery page in the sidebar shows all 85 components with more than 170 examples. `bb genui render` prints any reply with its UI as plain markdown.
 
 ## Requirements and costs
 
