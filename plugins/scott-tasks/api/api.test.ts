@@ -188,8 +188,8 @@ describe("Tasks RPC domain API", () => {
       }),
     );
 
-    expect(result.comment.notifiedCount).toBe(1);
-    expect(store.tasks.getComment(result.comment.id)?.notifiedCount).toBe(1);
+    expect(result.comment.notifiedCount).toBe(0);
+    await expect.poll(() => store.tasks.getComment(result.comment.id)?.notifiedCount).toBe(1);
     expect(harness.sdk.callsTo("threads.send")).toEqual([
       [expect.objectContaining({ threadId: "thr_two" })],
     ]);
@@ -199,6 +199,82 @@ describe("Tasks RPC domain API", () => {
     });
     await harness.dispose();
   });
+
+  it.each(["get", "send"] as const)(
+    "returns and publishes a saved comment while notification %s is blocked",
+    async (blockedOperation) => {
+      let releaseDelivery = () => {};
+      const deliveryGate = new Promise<void>((resolve) => {
+        releaseDelivery = resolve;
+      });
+      const { bb, harness } = createFakePluginHost({
+        pluginId: "tasks",
+        sdk: {
+          threads: {
+            get: async ({ threadId }) => {
+              if (blockedOperation === "get") await deliveryGate;
+              return makeThreadResponse({ id: threadId, status: "active" });
+            },
+            send: async () => {
+              if (blockedOperation === "send") await deliveryGate;
+            },
+          },
+        },
+      });
+      const store = createStore(bb);
+      registerTasksApi(bb, store);
+      const project = store.tasks.createProject({
+        name: "Delivery gate",
+        prefix: "GATE",
+        color: "blue",
+      });
+      const task = store.tasks.createTask({
+        projectId: project.id,
+        title: "Persist before delivery",
+      });
+      store.tasks.upsertTaskThread({
+        taskId: task.id,
+        threadId: "thr_delivery_gate",
+        presetName: "Default",
+        title: "thr_delivery_gate",
+        liveStatus: "working",
+      });
+      store.tasks.createComment({
+        taskId: task.id,
+        source: { kind: "agent", threadId: "thr_delivery_gate" },
+        authorName: "Worker",
+        body: "Prior reply",
+      });
+      const signalsBefore = harness.realtimeSignals.length;
+      let responseReturned = false;
+      const response = harness
+        .callRpc("createComment", { taskId: task.id, body: "New context", notify: true })
+        .then((result) => {
+          responseReturned = true;
+          return tasksRpcContract.createComment.output.parse(result);
+        });
+      try {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(store.tasks.listComments(task.id)).toHaveLength(2);
+        expect(responseReturned).toBe(true);
+        const { comment } = await response;
+        expect(comment.notifiedCount).toBe(0);
+        expect(harness.realtimeSignals.slice(signalsBefore)).toEqual([
+          { channel: "comments:changed", payload: { taskId: task.id } },
+        ]);
+        releaseDelivery();
+        await expect.poll(() => store.tasks.getComment(comment.id)?.notifiedCount).toBe(1);
+        expect(harness.realtimeSignals.slice(signalsBefore)).toEqual([
+          { channel: "comments:changed", payload: { taskId: task.id } },
+          { channel: "comments:changed", payload: { taskId: task.id } },
+        ]);
+      } finally {
+        releaseDelivery();
+        await response;
+        await harness.dispose();
+      }
+    },
+  );
 
   it("resolves the live thread title for agent comments and falls back otherwise", async () => {
     const { bb, harness } = createFakePluginHost({
@@ -593,6 +669,7 @@ describe("Tasks RPC domain API", () => {
       authorName: "Worker",
       body: "Reporting progress.",
       notify: true,
+      awaitDelivery: true,
     });
 
     expect(quietResult.comment.notifiedCount).toBe(0);
@@ -707,6 +784,7 @@ describe("Tasks RPC domain API", () => {
     );
 
     expect(result.comment.notifiedCount).toBe(0);
+    await expect.poll(() => harness.sdk.callsTo("threads.send").length).toBe(1);
     expect(store.tasks.getComment(result.comment.id)).toMatchObject({
       body: "This comment must survive delivery failures.",
       notifiedCount: 0,

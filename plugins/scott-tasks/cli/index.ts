@@ -1684,6 +1684,7 @@ export function registerTasksCli(
                 authorName: input.options.author ?? taskAuthor(ctx),
                 body,
                 notify: input.options.notify,
+                awaitDelivery: true,
               });
               return input.options.json
                 ? JSON.stringify({ comment })
