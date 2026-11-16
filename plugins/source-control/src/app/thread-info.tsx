@@ -145,7 +145,7 @@ export function PullRequestInfoRow({ threadId, environment }: ExperimentalThread
         >
           <GitHubMark />
           <span className="shrink-0 text-muted-foreground">#{pr.number}</span>
-          <span className="inline-flex h-5 shrink-0 items-center gap-1.5 rounded-full border border-border bg-background px-1.5 text-muted-foreground">
+          <span className="inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-border bg-background px-1 text-muted-foreground">
             <StateIcon state={state} size={12} />
             <span>{PR_LABEL[state]}</span>
           </span>

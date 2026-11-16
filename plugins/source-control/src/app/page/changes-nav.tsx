@@ -186,7 +186,7 @@ const ChangeRowView = memo(function ChangeRowView({
       aria-current={selected ? "page" : undefined}
       onClick={() => onSelect(row.key)}
       className={cx(
-        "flex w-full min-w-0 cursor-pointer flex-col gap-1 rounded-lg border-0 bg-transparent px-2 py-1.5 text-start transition-colors duration-150 hover:bg-border-hairline focus-visible:-outline-offset-2 motion-reduce:transition-none",
+        "flex w-full min-w-0 cursor-pointer flex-col justify-center gap-1 rounded-lg border-0 bg-transparent px-2 py-1 text-start transition-colors duration-150 hover:bg-border-hairline focus-visible:-outline-offset-2 motion-reduce:transition-none",
         selected && "bg-border-hairline",
         phone ? "h-[76px]" : "h-14",
       )}
@@ -209,7 +209,7 @@ const ChangeRowView = memo(function ChangeRowView({
           <span className="shrink-0 text-[12px] leading-5 text-(--tertiary-foreground)">{age}</span>
         ) : null}
       </span>
-      {/* Two 20px lines and the gap fill the 56px row exactly (three on a phone, 76px): a squeezed line would clip its chips' borders. */}
+      {/* Two 20px lines and the gap (three on a phone) sit centred in the 56px row (76px on a phone), 4px short of filling it: a squeezed line would clip its chips' borders. */}
       <span className="flex h-5 w-full min-w-0 shrink-0 items-center gap-2 overflow-hidden ps-6">
         {phone ? (
           <>
@@ -523,14 +523,14 @@ function SourcesFooter({
 function LoadingRows() {
   return (
     <div aria-busy="true" aria-label="Reading changes" className="flex flex-col gap-1 px-2 pt-2">
-      <Skeleton className="mx-2 my-2 h-2.5 w-32" />
+      <Skeleton className="mx-2 my-2 h-3 w-32" />
       {[0, 1, 2, 3].map((index) => (
         <div key={index} className="flex h-14 flex-col gap-2 p-2">
           <div className="flex items-center gap-2">
             <Skeleton className="size-3.5" />
             <Skeleton className={cx("h-3 max-w-full", ["w-48", "w-36", "w-52", "w-40"][index]!)} />
           </div>
-          <Skeleton className="ms-6 h-2.5 w-28" />
+          <Skeleton className="ms-6 h-3 w-28" />
         </div>
       ))}
     </div>

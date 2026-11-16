@@ -139,13 +139,13 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
   const note = mergeNote(watch);
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded} className="flex min-w-0 flex-col">
-      <div className="flex min-h-7 min-w-0 items-center gap-0.5">
+      <div className="flex min-h-7 min-w-0 items-center gap-1">
         <CollapsibleTrigger
           {...KEEP_COMPOSER_FOCUS}
           aria-label={`${key} ${watch.title}: ${summary}. ${expanded ? "Hide" : "Show"} checks`}
           title={`${key} ${watch.title}: ${summary}`}
           className={cx(
-            "flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-[4px] border-0 bg-transparent px-2 py-1 text-start hover:bg-surface-raised focus-visible:outline-1",
+            "flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-[4px] border-0 bg-transparent px-2 py-1 text-start hover:bg-surface-raised focus-visible:outline-1",
             expanded ? "text-foreground" : "text-muted-foreground",
           )}
         >
@@ -185,7 +185,7 @@ function WatchedPullRequest({ threadId, watch }: { threadId: string; watch: PrWa
             type="button"
             size="sm"
             variant="ghost"
-            className="h-6 px-1.5 text-muted-foreground"
+            className="h-6 px-1 text-muted-foreground max-md:pointer-coarse:px-2"
             aria-label={`Unwatch ${key}`}
             {...KEEP_COMPOSER_FOCUS}
             disabled={stop.isPending}
@@ -242,7 +242,7 @@ function WatchDetails({ watch }: { watch: PrWatchView }) {
             <li
               key={check.id}
               className={cx(
-                "flex min-w-0 items-center gap-1.5 rounded-[4px] px-2 py-0.5",
+                "flex min-h-6 min-w-0 items-center gap-1 rounded-[4px] px-2",
                 check.state === "failure" &&
                   "bg-[color-mix(in_oklab,var(--destructive)_10%,transparent)]",
               )}

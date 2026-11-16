@@ -91,7 +91,7 @@ const TreeRow = memo(function TreeRow({
         title={node.path}
         style={indent}
         onClick={() => onFolder(node.path)}
-        className="flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 border-0 bg-transparent pe-2 text-start text-[12px] leading-4 text-muted-foreground hover:bg-surface-raised"
+        className="flex h-7 w-full min-w-0 cursor-pointer items-center gap-1 border-0 bg-transparent pe-2 text-start text-[12px] leading-4 text-muted-foreground hover:bg-surface-raised"
       >
         <Chevron
           className={cx(
@@ -114,7 +114,7 @@ const TreeRow = memo(function TreeRow({
       data-testid="sc-tree-file"
       onClick={() => onFile(file.path)}
       className={cx(
-        "flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 border-0 bg-transparent pe-2 text-start text-[12px] leading-4 hover:bg-surface-raised aria-selected:bg-border-hairline",
+        "flex h-7 w-full min-w-0 cursor-pointer items-center gap-1 border-0 bg-transparent pe-2 text-start text-[12px] leading-4 hover:bg-surface-raised aria-selected:bg-border-hairline",
         generated ? "text-muted-foreground" : "text-foreground",
       )}
     >

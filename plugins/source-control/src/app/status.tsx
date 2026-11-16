@@ -110,7 +110,7 @@ export const ShipPath = memo(function ShipPath({ steps }: { steps: readonly Ship
     <ol
       data-testid="sc-ship-path"
       aria-label="Ship path"
-      className="m-0 flex min-w-0 list-none flex-wrap items-center gap-x-3 gap-y-1.5 p-0 text-[12px] leading-4 @4xl:gap-x-2"
+      className="m-0 flex min-w-0 list-none flex-wrap items-center gap-x-3 gap-y-2 p-0 text-[12px] leading-4 @4xl:gap-x-2"
     >
       {steps.map((step, index) => (
         <li key={step.id} className="flex items-center gap-2" data-state={step.state}>

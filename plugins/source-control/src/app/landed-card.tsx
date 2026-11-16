@@ -121,12 +121,8 @@ function LandedCard({ target, threadId }: { target: LandedListed; threadId: stri
       aria-label="Landed work"
       className="my-3 w-full max-w-[576px] overflow-hidden rounded-[8px] border border-solid border-border bg-background text-[12px] leading-4 text-foreground"
     >
-      <div className="flex items-start gap-2.5 p-3 pb-1.5">
-        <Icon
-          name="CircleCheck"
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-          aria-hidden
-        />
+      <div className="flex items-start gap-2 p-3 pb-2">
+        <Icon name="CircleCheck" className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span>Source Control</span>
@@ -141,7 +137,7 @@ function LandedCard({ target, threadId }: { target: LandedListed; threadId: stri
           </h3>
         </div>
       </div>
-      <ul className="m-0 list-none px-3 py-1.5">
+      <ul className="m-0 list-none px-3 py-2">
         {target.prs.map((ref) => (
           <PrRow
             key={prKey(ref)}
@@ -280,7 +276,7 @@ function SettleButton({ threadId }: { threadId: string }) {
     <Button
       size="sm"
       variant="outline"
-      className="h-7 w-full gap-1.5 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
+      className="h-7 w-full gap-1 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
       disabled
     >
       {settled ? "Settled" : "Settle thread"}
@@ -303,7 +299,7 @@ function ArchiveButton({
       size="sm"
       variant="default"
       data-testid="sc-landed-settle"
-      className="h-7 w-full gap-1.5 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
+      className="h-7 w-full gap-1 text-[12px] max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-[14px]"
       disabled={!entry || entry.action.disabled === true || running}
       onClick={() => {
         if (!entry) return;

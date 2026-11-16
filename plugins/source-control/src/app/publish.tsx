@@ -93,7 +93,7 @@ export function CreatePullRequest({
         // `output` is the native polite live region, so the hand-off is announced.
         <output
           data-testid="sc-create-pr-status"
-          className="flex min-w-0 basis-full items-center gap-1.5 text-[12px] leading-4 text-muted-foreground"
+          className="flex min-w-0 basis-full items-center gap-2 text-[12px] leading-4 text-muted-foreground"
         >
           <span className="me-auto min-w-0">
             {current.running

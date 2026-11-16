@@ -128,7 +128,7 @@ function Composer({
             variant="link"
             size="sm"
             data-testid="sc-ask-line"
-            className={cx(TEXT_LINK, "me-auto flex items-center gap-1.5 px-2")}
+            className={cx(TEXT_LINK, "me-auto flex items-center gap-1 px-2")}
             disabled={!body || saving}
             onClick={(event) => {
               askAgent({
@@ -542,7 +542,7 @@ export function AddCommentButton({ onClick }: { onClick: () => void }) {
         aria-label="Comment on this line"
         data-testid="sc-add-comment"
         onClick={onClick}
-        className="mr-[calc(1ch-18px)] size-[18px] rounded-sm bg-(--primary) p-0 text-primary-foreground hover:bg-(--primary) [&_svg]:size-2.5"
+        className="mr-[calc(1ch-16px)] size-4 rounded-sm bg-(--primary) p-0 text-primary-foreground hover:bg-(--primary) [&_svg]:size-2.5"
       >
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
           <path

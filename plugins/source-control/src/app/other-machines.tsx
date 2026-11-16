@@ -55,7 +55,7 @@ function BranchRow({ row, mine }: { row: ChangeRow; mine: boolean }) {
     <li className="flex min-w-0 border-t border-border-hairline first:border-t-0">
       <button
         type="button"
-        className="flex min-h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1.5 text-start hover:bg-surface-raised"
+        className="flex min-h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1 text-start hover:bg-surface-raised"
         title={row.title}
         onClick={() =>
           navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key: row.key }) })
@@ -115,11 +115,11 @@ function CheckoutActions({ hostId, checkout }: { hostId: string; checkout: Check
   };
   return (
     <li
-      className="flex min-w-0 flex-col gap-1 border-t border-border-hairline px-3 py-1.5"
+      className="flex min-w-0 flex-col gap-1 border-t border-border-hairline px-3 py-2"
       data-testid="sc-other-checkout"
     >
       <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <span className="flex min-w-0 flex-[1_1_8rem] items-center gap-1.5" title={checkout.path}>
+        <span className="flex min-w-0 flex-[1_1_8rem] items-center gap-1" title={checkout.path}>
           <Icon name="Folder" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
           <code
             className="min-w-0 truncate font-mono text-[11px] leading-4 text-muted-foreground"
@@ -192,7 +192,7 @@ function HostSection({
       aria-label={`On ${host.name}`}
       data-testid="sc-other-host"
     >
-      <header className="flex min-h-8 min-w-0 items-center gap-2 px-3 py-1.5">
+      <header className="flex min-h-8 min-w-0 items-center gap-2 px-3 py-1">
         <Icon name="Laptop" className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
         <span className="min-w-0 truncate text-[12px] leading-4 font-medium text-foreground">
           {host.name}

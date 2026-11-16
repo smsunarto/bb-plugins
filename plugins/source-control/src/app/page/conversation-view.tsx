@@ -70,7 +70,7 @@ const REVIEW_LOOK: Readonly<Record<ReviewState, Look>> = {
 function ReviewStateBadge({ state }: { state: ReviewState }) {
   const look = REVIEW_LOOK[state];
   return (
-    <Badge variant={look.variant} className="h-4.5 gap-1 rounded-full px-1.5 py-0 font-medium">
+    <Badge variant={look.variant} className="h-5 gap-1 rounded-full px-1 py-0 font-medium">
       <Icon name={look.icon} className="size-3" aria-hidden />
       {look.label}
     </Badge>
@@ -114,7 +114,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
     case "comment":
       return (
         <article className="rounded-lg border border-solid border-border bg-card">
-          <header className="flex flex-wrap items-center gap-1.5 border-b border-solid border-border-hairline px-3 py-1.5 text-muted-foreground">
+          <header className="flex min-h-8 flex-wrap items-center gap-1 border-b border-solid border-border-hairline px-3 py-1 text-muted-foreground">
             <Who {...(item.author ?? GHOST)} />
             commented
             <span className="ms-auto">
@@ -133,7 +133,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
         <article className="rounded-lg border border-solid border-border bg-card">
           <header
             className={cx(
-              "flex flex-wrap items-center gap-1.5 px-3 py-1.5 text-muted-foreground",
+              "flex min-h-8 flex-wrap items-center gap-1 px-3 py-1 text-muted-foreground",
               body && "border-b border-solid border-border-hairline",
             )}
           >
@@ -144,7 +144,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
                 · {plural(item.commentCount, "comment")}
               </span>
             ) : null}
-            <span className="ms-auto flex items-center gap-1.5">
+            <span className="ms-auto flex items-center gap-1">
               <ReviewStateBadge state={item.state} />
               <When at={item.createdAt} href={item.url} />
             </span>
@@ -169,7 +169,7 @@ function TimelineEntry({ item }: { item: TimelineItem }) {
       );
     case "event":
       return (
-        <p className="m-0 flex min-w-0 flex-wrap items-center gap-1.5 px-1 text-muted-foreground">
+        <p className="m-0 flex min-w-0 flex-wrap items-center gap-1 px-1 text-muted-foreground">
           <Icon name="Circle" className="size-3 shrink-0 text-subtle-foreground" aria-hidden />
           {item.actor ? (
             <span className="font-medium text-foreground">{item.actor.login}</span>
@@ -196,7 +196,7 @@ export function CommitLine({
   createdAt: string;
 }) {
   return (
-    <p className="m-0 flex min-w-0 items-center gap-1.5 px-1 text-muted-foreground">
+    <p className="m-0 flex min-w-0 items-center gap-1 px-1 text-muted-foreground">
       <Icon name="GitBranch" className="size-3 shrink-0 text-subtle-foreground" aria-hidden />
       <code className="shrink-0 font-mono text-[11px] text-subtle-foreground" translate="no">
         {shortId(oid)}
@@ -277,14 +277,14 @@ const DESCRIPTION_TYPOGRAPHY = [
   "text-[13px] leading-5.5",
   "[&_p]:mb-3",
   "[&_h1]:mt-5 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:tracking-tight [&_h1]:text-balance",
-  "[&_h2]:mt-5 [&_h2]:border-b [&_h2]:border-solid [&_h2]:border-border-hairline [&_h2]:pb-1.5 [&_h2]:text-base [&_h2]:tracking-tight",
+  "[&_h2]:mt-5 [&_h2]:border-b [&_h2]:border-solid [&_h2]:border-border-hairline [&_h2]:pb-2 [&_h2]:text-base [&_h2]:tracking-tight",
   "[&_h3]:mt-4 [&_h3]:tracking-tight",
   "[&_h4]:text-[13px] [&_h4]:font-semibold",
-  "[&_ul]:mb-3 [&_ol]:mb-3 [&_li]:mb-1.5",
+  "[&_ul]:mb-3 [&_ol]:mb-3 [&_li]:mb-2",
   "[&_blockquote]:my-3 [&_blockquote]:pl-4 [&_blockquote]:italic",
   "[&_a]:font-medium [&_a]:underline-offset-4",
   // Inline code only: a fenced block's code sits inside its <pre>.
-  "[&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-[0.3rem] [&_:not(pre)>code]:font-semibold",
+  "[&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-1 [&_:not(pre)>code]:font-semibold",
   "[&_th]:font-semibold [&_tbody_tr]:even:bg-muted/50",
 ].join(" ");
 
@@ -303,7 +303,7 @@ function DescriptionCard({ description }: { description: Description }) {
     >
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 pt-3">
         <h2 className={SECTION_LABEL}>Description</h2>
-        <span className="ms-auto flex min-w-0 items-center gap-1.5 text-muted-foreground">
+        <span className="ms-auto flex min-w-0 items-center gap-1 text-muted-foreground">
           <GitHubAvatar login={author.login} url={author.avatarUrl} className="size-4" />
           <span className="truncate font-medium text-foreground">{author.login}</span>
           <span aria-hidden>·</span>
@@ -331,7 +331,7 @@ function DescriptionCard({ description }: { description: Description }) {
             ) : null}
           </div>
           {long ? (
-            <div className="border-t border-solid border-border-hairline px-1.5 py-1">
+            <div className="border-t border-solid border-border-hairline px-1 py-1">
               <Button
                 variant="ghost"
                 size="sm"

@@ -36,7 +36,7 @@ function useHistoryWindow(from: string) {
 function CommitRow({ commit, now }: { commit: BaseCommit; now: number }) {
   return (
     <li
-      className="flex min-w-0 items-center gap-2 border-t border-border-hairline px-3 py-1.5 first:border-t-0"
+      className="flex min-w-0 items-center gap-2 border-t border-border-hairline px-3 py-1 min-h-7 first:border-t-0"
       data-testid="sc-base-commit"
     >
       <span
@@ -99,9 +99,9 @@ function History({ threadId, from, now }: { threadId: string; from: string; now:
       </div>
     ) : (
       <div className="flex flex-col gap-2 px-3 py-2" aria-busy="true" aria-label="Loading history">
-        <Skeleton className="h-3.5 w-64 max-w-full" />
-        <Skeleton className="h-3.5 w-56 max-w-full" />
-        <Skeleton className="h-3.5 w-60 max-w-full" />
+        <Skeleton className="h-3 w-64 max-w-full" />
+        <Skeleton className="h-3 w-56 max-w-full" />
+        <Skeleton className="h-3 w-60 max-w-full" />
       </div>
     );
   const more = answer?.ok === true && answer.value.hasMore && limit < BASE_HISTORY_MAX;

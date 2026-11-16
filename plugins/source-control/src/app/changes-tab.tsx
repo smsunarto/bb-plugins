@@ -219,7 +219,7 @@ function Header({
   readOnly: boolean;
 }) {
   return (
-    <header className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-hairline px-3 @md:px-4 py-2.5">
+    <header className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-hairline px-3 @md:px-4 py-2 min-h-12">
       <div className="flex min-w-0 flex-[1_1_8rem] items-baseline gap-2">
         <h1 className="m-0 shrink-0 text-[13px] leading-5 font-semibold text-foreground">
           Workspace
@@ -264,7 +264,7 @@ function BaseFooter({ target }: { target: Target }) {
   if (!target.base) return null;
   return (
     <footer
-      className="flex min-w-0 shrink-0 flex-wrap items-baseline gap-x-1.5 border-t border-border-hairline px-3 @md:px-4 py-2 text-[12px] leading-4 text-muted-foreground"
+      className="flex min-w-0 shrink-0 flex-wrap items-baseline gap-x-1 border-t border-border-hairline px-3 @md:px-4 py-2 text-[12px] leading-4 text-muted-foreground"
       data-testid="sc-base"
     >
       <span>Stack is based on</span>
@@ -406,23 +406,23 @@ function LoadingBody() {
       className="flex flex-col gap-4 p-3 @md:p-4"
     >
       <div className="flex flex-col gap-3">
-        <Skeleton className="h-2.5 w-18" />
+        <Skeleton className="h-3 w-18" />
         <div className="flex items-center gap-2">
           <Skeleton className="h-6 w-16 rounded-full" />
-          <Skeleton className="h-5 w-57.5 max-w-full" />
+          <Skeleton className="h-5 w-58 max-w-full" />
         </div>
-        <Skeleton className="h-2.5 w-50 max-w-full" />
+        <Skeleton className="h-3 w-50 max-w-full" />
       </div>
       <Skeleton className="h-10 w-full rounded-[8px]" />
       <div className="flex flex-col gap-3 rounded-[8px] border border-border-hairline p-3">
-        <Skeleton className="h-2.5 w-30" />
+        <Skeleton className="h-3 w-30" />
         <div className="flex items-center gap-2">
           <Skeleton className="size-4" />
-          <Skeleton className="h-2.5 w-52.5 max-w-full" />
+          <Skeleton className="h-3 w-52 max-w-full" />
         </div>
         <div className="flex items-center gap-2">
           <Skeleton className="size-4" />
-          <Skeleton className="h-2.5 w-42.5 max-w-full" />
+          <Skeleton className="h-3 w-42 max-w-full" />
         </div>
       </div>
     </div>
@@ -560,7 +560,7 @@ function FailedBody({
           {detail}
         </p>
       ) : null}
-      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+      <div className="flex flex-wrap items-center gap-2 pt-1">
         {problem.kind === "tool-missing" ? <AskToFix threadId={threadId} /> : null}
         <Button size="sm" className="h-7" variant="outline" onClick={onRetry} disabled={retrying}>
           {retrying ? "Trying…" : "Try again"}

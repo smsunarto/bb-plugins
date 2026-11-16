@@ -203,7 +203,7 @@ export function Confirm({
       ref={root}
       className={cx(
         "flex flex-wrap items-center gap-2 text-[12px]",
-        look && `rounded-[6px] border px-2.5 py-2 ${look.box}`,
+        look && `rounded-[6px] border px-3 py-2 ${look.box}`,
       )}
     >
       <p
@@ -221,7 +221,7 @@ export function Confirm({
       </p>
       {children}
       {/* One unit, so a long prompt never wraps Cancel apart from its answer. */}
-      <div className="ms-auto flex shrink-0 gap-1.5">
+      <div className="ms-auto flex shrink-0 gap-2">
         <Button
           size="sm"
           className="h-7"
@@ -805,7 +805,7 @@ function ActionRow({
   const pushLabel = force ? "Force push" : "Push";
   return (
     // A disabled button takes no hover, so the row says why its buttons are off.
-    <ReasonHint reason={blocked} className="flex min-w-0 flex-wrap items-center gap-1.5">
+    <ReasonHint reason={blocked} className="flex min-w-0 flex-wrap items-center gap-2">
       {available.push === "none" ? null : (
         <Button
           size="sm"

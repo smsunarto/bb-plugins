@@ -66,7 +66,7 @@ function FixComposer({ target, onClose }: { target: FixTarget; onClose: () => vo
       </div>
     ) : (
       <output className="flex flex-col gap-2 text-[12px] leading-4" aria-busy="true">
-        <span className="flex items-center gap-1.5 text-muted-foreground">
+        <span className="flex items-center gap-1 text-muted-foreground">
           <Spinner className="size-3" />
           Fetching the failing logs…
         </span>

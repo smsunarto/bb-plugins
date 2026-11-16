@@ -2032,7 +2032,7 @@
   {
     "file": "plugins/source-control/src/app/branch-actions.tsx",
     "rule": "arbitrary-edge",
-    "source": "look && `rounded-[6px] border px-2.5 py-2 ${look.box}`,"
+    "source": "look && `rounded-[6px] border px-3 py-2 ${look.box}`,"
   },
   {
     "file": "plugins/source-control/src/app/branch-actions.tsx",
@@ -2132,11 +2132,6 @@
   {
     "file": "plugins/source-control/src/app/page/changes-nav.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"flex h-14 w-full min-w-0 cursor-pointer flex-col gap-1 rounded-[8px] border-0 bg-transparent px-2 py-1.5 text-start transition-colors duration-150 hover:bg-border-hairline focus-visible:-outline-offset-2 motion-reduce:transition-none\","
-  },
-  {
-    "file": "plugins/source-control/src/app/page/changes-nav.tsx",
-    "rule": "arbitrary-edge",
     "source": "className=\"-ms-1 size-3.5 border-[1.5px] border-solid border-popover first:ms-0\""
   },
   {
@@ -2153,11 +2148,6 @@
     "file": "plugins/source-control/src/app/page/files-view.tsx",
     "rule": "arbitrary-edge",
     "source": "\"min-w-0 overflow-hidden rounded-[8px] border border-solid border-border-hairline bg-background\";"
-  },
-  {
-    "file": "plugins/source-control/src/app/page/guided-view.tsx",
-    "rule": "arbitrary-edge",
-    "source": "<div className=\"flex h-11 shrink-0 items-center rounded-[10px] border border-solid border-border\">"
   },
   {
     "file": "plugins/source-control/src/app/page/guided-view.tsx",
@@ -2187,12 +2177,12 @@
   {
     "file": "plugins/source-control/src/app/pr-watch-banner.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-[4px] border-0 bg-transparent px-2 py-1 text-start hover:bg-surface-raised focus-visible:outline-1\","
+    "source": "\"flex min-h-6 min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-[4px] border-0 bg-transparent px-2 py-1 text-start hover:bg-surface-raised focus-visible:outline-1\","
   },
   {
     "file": "plugins/source-control/src/app/pr-watch-banner.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"flex min-w-0 items-center gap-1.5 rounded-[4px] px-2 py-0.5\","
+    "source": "\"flex min-h-6 min-w-0 items-center gap-1 rounded-[4px] px-2\","
   },
   {
     "file": "plugins/source-control/src/app/pr-watch-banner.tsx",
@@ -2242,12 +2232,12 @@
   {
     "file": "plugins/source-control/src/app/workspace-lane.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"min-w-0 overflow-hidden rounded-[8px] border border-border-hairline bg-surface-recessed\";"
+    "source": "\"flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-current\","
   },
   {
     "file": "plugins/source-control/src/app/workspace-lane.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"ms-0.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-current\","
+    "source": "\"min-w-0 overflow-hidden rounded-[8px] border border-border-hairline bg-surface-recessed\";"
   },
   {
     "file": "plugins/source-control/src/app/workspace-lane.tsx",

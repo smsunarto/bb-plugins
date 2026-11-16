@@ -115,7 +115,7 @@ function StackSection({ detail, go }: { detail: Ready; go: Go }) {
         <StackIcon />
         <h2 className={RAIL_LABEL}>Stack</h2>
       </div>
-      <ol className="m-0 flex list-none flex-col gap-0.5 p-0">
+      <ol className="m-0 flex list-none flex-col gap-1 p-0">
         {detail.stack.map((entry) => (
           <StackRow key={entry.key} entry={entry} onOpen={onOpen} />
         ))}

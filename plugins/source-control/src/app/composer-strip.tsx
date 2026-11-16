@@ -104,12 +104,12 @@ export function stripParts(summary: ChangeSummary, countUncommitted: boolean): P
  * so a branch name reads in full instead of truncating beside the lead.
  */
 const STACKED =
-  "@max-[34rem]/promptbox-shell:flex-col @max-[34rem]/promptbox-shell:items-start @max-[34rem]/promptbox-shell:gap-0 @max-[34rem]/promptbox-shell:py-0.5";
+  "@max-[34rem]/promptbox-shell:flex-col @max-[34rem]/promptbox-shell:items-start @max-[34rem]/promptbox-shell:gap-0 @max-[34rem]/promptbox-shell:py-1";
 /** Under a finger on a phone, the lead reads at the composer's size. */
 const LEAD_TOUCH = "max-md:pointer-coarse:text-[13px] max-md:pointer-coarse:leading-[18px]";
 /** A strip button: 36px under a finger on a phone, as bb's own controls are. */
 const STRIP_BUTTON =
-  "h-6 px-3 font-semibold max-md:pointer-coarse:h-9 max-md:pointer-coarse:px-3.5 max-md:pointer-coarse:text-[13px]";
+  "h-6 px-3 font-semibold max-md:pointer-coarse:h-9 max-md:pointer-coarse:px-4 max-md:pointer-coarse:text-[13px]";
 
 export function StripSummary({
   threadId,

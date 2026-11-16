@@ -267,7 +267,9 @@ function PageMerge({ detail, compact }: { detail: Ready; compact?: boolean }) {
       submit={submit}
       target={target}
       className={
-        compact ? "h-7 px-2.5 text-[12px] font-semibold" : "h-8 px-3 text-[13px] font-semibold"
+        compact
+          ? "h-7 px-2 text-[12px] font-semibold max-md:pointer-coarse:px-3"
+          : "h-8 px-3 text-[13px] font-semibold"
       }
       label="Merge"
     />
@@ -463,9 +465,14 @@ function HeaderSkeleton() {
         </div>
       </div>
       <div className={cx("pb-4", PAD)}>
-        <Skeleton className="h-3.5 w-[36rem] max-w-full" />
+        <Skeleton className="h-4 w-[36rem] max-w-full" />
       </div>
-      <div className={cx("flex gap-6 border-b border-solid border-border-hairline py-2.5", PAD)}>
+      <div
+        className={cx(
+          "flex h-10 items-center gap-6 border-b border-solid border-border-hairline",
+          PAD,
+        )}
+      >
         <Skeleton className="h-4 w-12" />
         <Skeleton className="h-4 w-16" />
       </div>
@@ -511,7 +518,7 @@ function PhoneHeader({ detail, now }: { detail: Ready; now: number }) {
   ).length;
   const checks = detail.ship.find((step) => step.id === "checks");
   return (
-    <header className="flex shrink-0 flex-col gap-2.5 pt-2 pb-3" data-testid="sc-phone-header">
+    <header className="flex shrink-0 flex-col gap-3 pt-2 pb-3" data-testid="sc-phone-header">
       <div className="flex min-w-0 items-center gap-3 px-4">
         <Button
           variant="ghost"
@@ -529,7 +536,7 @@ function PhoneHeader({ detail, now }: { detail: Ready; now: number }) {
         >
           {row.title}
         </h1>
-        <span className="flex shrink-0 items-center gap-1.5">
+        <span className="flex shrink-0 items-center gap-2">
           <PageMerge detail={detail} compact />
           {row.url ? (
             <OpenOnGitHub
@@ -543,7 +550,7 @@ function PhoneHeader({ detail, now }: { detail: Ready; now: number }) {
         </span>
       </div>
       {/* One line: the checks give way first, so state, number and progress always show. */}
-      <div className="flex min-w-0 items-center gap-2.5 px-4 text-[13px] leading-5">
+      <div className="flex min-w-0 items-center gap-2 px-4 text-[13px] leading-5">
         <StatusMenu detail={detail} draft={draft} />
         {row.number !== null ? (
           <span className="shrink-0 font-mono text-(--tertiary-foreground)">#{row.number}</span>

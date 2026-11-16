@@ -54,7 +54,7 @@ const CommitRow = memo(function CommitRow({
         {selected ? (
           <span
             aria-hidden
-            className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-(--info)"
+            className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-(--info)"
           />
         ) : null}
         <Rail tone={commit.conflicted ? "conflicted" : "remote"} diamond={false} />

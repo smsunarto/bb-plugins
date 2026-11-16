@@ -264,7 +264,7 @@ function GuideStatus({
         data-phase={read.view?.phase ?? "unread"}
       >
         <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
-        <div className="flex min-w-0 grow basis-48 flex-col gap-0.5">
+        <div className="flex min-w-0 grow basis-48 flex-col gap-1">
           <h2 className="m-0 text-[13px] leading-5 font-medium text-foreground">{status.title}</h2>
           <p className="m-0 text-[12px] leading-4 text-muted-foreground">{status.text}</p>
         </div>
@@ -406,7 +406,7 @@ const GroupIntro = memo(function GroupIntro({
       {intro ? (
         <p
           className={cx(
-            "m-0 max-w-176.75 text-muted-foreground",
+            "m-0 max-w-177 text-muted-foreground",
             phone ? "text-[15px] leading-6" : "text-[13px] leading-5",
           )}
         >
@@ -466,14 +466,14 @@ const OutlineFile = memo(function OutlineFile({
       data-path={file.path}
       onClick={() => onFile(file.path)}
       className={cx(
-        "flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md border-0 ps-8 pe-2 text-start text-[12px] leading-4 hover:bg-surface-raised",
+        "flex h-7 w-full min-w-0 cursor-pointer items-center gap-1 rounded-md border-0 ps-8 pe-2 text-start text-[12px] leading-4 hover:bg-surface-raised",
         current ? "bg-border-hairline" : "bg-transparent",
         viewed ? "opacity-60" : undefined,
       )}
     >
       <FileStatus kind={file.kind} />
       {/* The name stays whole; its directory trails and truncates, so repeated names like `index.ts` stay apart. */}
-      <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+      <span className="flex min-w-0 flex-1 items-baseline gap-1">
         <span
           className={cx(
             "max-w-full shrink-0 truncate",
@@ -853,7 +853,7 @@ export function ReviewBar({
       // bb's shell already pads the page above the home indicator and clips the panel, so the bar
       // takes the shell's colour to run on into that padding. Where bb gives no inset (Android, an
       // open keyboard) it keeps 1.5rem below the buttons, clear of the screen's rounded corners.
-      className="flex shrink-0 items-center gap-2 border-t border-solid border-border-hairline bg-background px-4 pt-2.5 pb-[max(0.625rem,calc(1.5rem-var(--bb-content-bottom-inset,0px)))]"
+      className="flex shrink-0 items-center gap-2 border-t border-solid border-border-hairline bg-background px-4 pt-3 pb-[max(0.75rem,calc(1.5rem-var(--bb-content-bottom-inset,0px)))]"
     >
       {items.length > 0 ? (
         <div className="flex h-10 shrink-0 items-center rounded-md border border-solid border-border">

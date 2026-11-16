@@ -121,9 +121,9 @@ export function CardSkeleton() {
         <Skeleton className="h-5 w-80 max-w-full" />
       </div>
       <div className="flex flex-col gap-3 border-t border-solid border-border px-3 py-3">
-        <Skeleton className="h-3.5 w-64 max-w-full" />
-        <Skeleton className="h-3.5 w-72 max-w-full" />
-        <Skeleton className="h-3.5 w-52 max-w-full" />
+        <Skeleton className="h-3 w-64 max-w-full" />
+        <Skeleton className="h-3 w-72 max-w-full" />
+        <Skeleton className="h-3 w-52 max-w-full" />
       </div>
       <div className="flex gap-2 px-3 pt-1 pb-3">
         <Skeleton className="h-7 flex-1" />

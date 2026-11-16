@@ -513,7 +513,7 @@ const SEGMENT = "min-w-0 rounded-sm data-[state=on]:font-semibold";
 /** Desktop's tab row, or the phone's bottom bar, whose controls are finger-sized. */
 const SEGMENT_SIZE = {
   row: "h-6 px-3 text-[12px] leading-4",
-  bar: "h-8 px-3.5 text-[13px] leading-5",
+  bar: "h-8 px-3 text-[13px] leading-5 max-md:pointer-coarse:px-4",
 } as const;
 type ControlSize = keyof typeof SEGMENT_SIZE;
 

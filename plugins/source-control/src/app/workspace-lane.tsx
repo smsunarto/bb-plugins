@@ -46,7 +46,7 @@ export const CARD =
   "min-w-0 overflow-hidden rounded-[8px] border border-border-hairline bg-surface-recessed";
 // Inside a card: a divider and a muted label, as GitButler heads a sub-list.
 const CARD_LABEL =
-  "m-0 flex items-center gap-1.5 border-t border-border-hairline px-3 py-2 text-[11px] leading-4 font-medium text-muted-foreground";
+  "m-0 flex items-center gap-1 border-t border-border-hairline px-3 py-2 text-[11px] leading-4 font-medium text-muted-foreground";
 
 /*
  * GitButler's commit states, in the theme's palette. Text colour, not
@@ -100,10 +100,7 @@ export function Rail({
   bottom?: Segment;
 }) {
   return (
-    <span
-      className={cx("flex w-10 shrink-0 flex-col items-center gap-[3px]", TONE[tone])}
-      aria-hidden
-    >
+    <span className={cx("flex w-10 shrink-0 flex-col items-center gap-1", TONE[tone])} aria-hidden>
       <span className="w-0.5 flex-1 bg-current" />
       <span
         className={cx(
@@ -135,7 +132,7 @@ function ReviewJump({
 }) {
   const navigate = useBbNavigate();
   return (
-    <div className="flex justify-end border-t border-border-hairline px-3.5 py-1">
+    <div className="flex justify-end border-t border-border-hairline px-3 py-1">
       <Button
         size="sm"
         variant="ghost"
@@ -145,7 +142,7 @@ function ReviewJump({
             subPath: reviewPath({ key: changeKey, tab: "commits", commit: commitId, path }),
           })
         }
-        className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
+        className="h-6 gap-1 px-1 text-[11px] text-muted-foreground max-md:pointer-coarse:px-2"
       >
         Open in Review
         <Icon name="ArrowUpRight" fallback="ExternalLink" className="size-3" aria-hidden />
@@ -189,7 +186,7 @@ function CommitFiles({
     );
   if (changes.length === 0)
     return (
-      <p className="m-0 px-3.5 py-2 text-[12px] leading-4 text-muted-foreground">
+      <p className="m-0 px-3 py-2 text-[12px] leading-4 text-muted-foreground">
         This commit records no file contents. Merges and empty commits look like this.
       </p>
     );
@@ -258,7 +255,7 @@ const CommitRow = memo(function CommitRow({
         {/* GitButler's marker for the open commit, on the card's edge. */}
         {open ? (
           <span
-            className="absolute inset-y-1.5 left-0 w-[3px] rounded-r-full bg-(--info)"
+            className="absolute inset-y-2 left-0 w-[3px] rounded-r-full bg-(--info)"
             aria-hidden
           />
         ) : null}
@@ -334,7 +331,7 @@ function OpenCommit({
 }) {
   return (
     <>
-      <div className="relative px-3 pt-0.5 pb-3">
+      <div className="relative px-3 pt-1 pb-3">
         {/* The rail runs on behind the files, so the graph reads unbroken. */}
         <span
           className={cx(
@@ -466,7 +463,7 @@ export function UncommittedCard({
 }
 
 /** A status pill's shape beside the branch name, so status costs no row of its own. */
-const PILL = "h-5 gap-1 rounded-full px-1.5 py-0 leading-none";
+const PILL = "h-5 gap-1 rounded-full px-1 py-0 leading-none";
 
 const PR_LOOK = {
   open: { label: "Open", variant: "success" },
@@ -556,7 +553,7 @@ function CardHeader({
         {/* The square's centre sits on the commit rail's axis below it. */}
         <span
           className={cx(
-            "ms-0.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-current",
+            "flex size-4 shrink-0 items-center justify-center rounded-[4px] bg-current",
             TONE[tone],
           )}
           aria-hidden

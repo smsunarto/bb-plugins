@@ -76,7 +76,7 @@ export function FileName({ path }: { path: string }) {
        * it reorders leading punctuation, so `.bb/` renders as `bb./`.
        */}
       {separator > 0 ? (
-        <span className="me-px min-w-0 shrink truncate text-muted-foreground">
+        <span className="min-w-0 shrink truncate text-muted-foreground">
           {path.slice(0, separator)}/
         </span>
       ) : null}
@@ -88,7 +88,7 @@ export function FileName({ path }: { path: string }) {
 }
 
 const ROW =
-  "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 ps-3.5 pe-3 text-start text-[12px] leading-4 -outline-offset-2 transition-colors duration-150 hover:bg-surface-raised aria-expanded:bg-surface-raised motion-reduce:transition-none";
+  "flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 ps-3 pe-3 text-start text-[12px] leading-4 -outline-offset-2 transition-colors duration-150 hover:bg-surface-raised aria-expanded:bg-surface-raised motion-reduce:transition-none";
 
 /** One file. Memoized on its change object, so opening one row redraws only two. */
 const FileRow = memo(function FileRow({
@@ -147,7 +147,7 @@ export function FileRows({
         </li>
       ))}
       {more > 0 ? (
-        <li className="border-t border-border-hairline ps-3.5 pe-3 py-2 text-[12px] leading-4 text-muted-foreground">
+        <li className="border-t border-border-hairline ps-3 pe-3 py-2 text-[12px] leading-4 text-muted-foreground">
           {more} more {more === 1 ? "file" : "files"} not listed
         </li>
       ) : null}
@@ -198,7 +198,7 @@ export const FileDiffCard = memo(function FileDiffCard({ file }: { file: FilePat
   );
   if (!parsed) {
     return (
-      <p className="m-0 border-t border-border-hairline bg-surface-recessed px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
+      <p className="m-0 border-t border-border-hairline bg-surface-recessed px-3 py-2 text-[11px] leading-4 text-muted-foreground">
         {file.truncated
           ? tooLarge(false)
           : file.kind === "renamed" && file.previousPath
@@ -210,7 +210,7 @@ export const FileDiffCard = memo(function FileDiffCard({ file }: { file: FilePat
   return (
     <div className="min-w-0 border-t border-border-hairline [--diffs-font-family:var(--font-mono,ui-monospace,monospace)] [--diffs-font-size:11px] [--diffs-line-height:20px]">
       {file.truncated ? (
-        <p className="m-0 border-b border-border-hairline px-3.5 py-1 text-[11px] leading-4 text-warning">
+        <p className="m-0 border-b border-border-hairline px-3 py-1 text-[11px] leading-4 text-warning">
           {tooLarge(true)}
         </p>
       ) : null}
@@ -238,8 +238,8 @@ export function FileRowsSkeleton({ rows = 3, label }: { rows?: number; label: st
   return (
     <div aria-busy="true" aria-label={label} className="flex flex-col">
       {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="flex h-8 items-center gap-2 ps-3.5 pe-3">
-          <Skeleton className={cx("h-2.5", ["w-3/4", "w-1/2", "w-2/3"][index % 3]!)} />
+        <div key={index} className="flex h-8 items-center gap-2 ps-3 pe-3">
+          <Skeleton className={cx("h-3", ["w-3/4", "w-1/2", "w-2/3"][index % 3]!)} />
           <Skeleton className="ms-auto size-3.5" />
         </div>
       ))}
@@ -250,7 +250,7 @@ export function FileRowsSkeleton({ rows = 3, label }: { rows?: number; label: st
 /** What a patches read that did not succeed says, with a way to read again. */
 export function PatchesProblem({ text, onRetry }: { text: string; onRetry: () => void }) {
   return (
-    <div role="alert" className="flex flex-wrap items-center gap-2 px-3.5 py-2">
+    <div role="alert" className="flex flex-wrap items-center gap-2 px-3 py-2">
       <span className="min-w-0 grow basis-40 text-[12px] leading-4 text-muted-foreground">
         {text}
       </span>
@@ -279,7 +279,7 @@ export function UncommittedDiff({ threadId, path }: { threadId: string; path: st
     );
   if (!file)
     return (
-      <p className="m-0 border-t border-border-hairline px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
+      <p className="m-0 border-t border-border-hairline px-3 py-2 text-[11px] leading-4 text-muted-foreground">
         This file has no uncommitted change now. It was committed or discarded.
       </p>
     );

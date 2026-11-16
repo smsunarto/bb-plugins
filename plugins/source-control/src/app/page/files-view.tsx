@@ -514,7 +514,7 @@ function PatchBody({
         {notes.loose}
         <p
           data-testid="sc-patch-empty"
-          className="m-0 border-t border-solid border-border-hairline bg-surface-recessed px-3.5 py-2 text-[11px] leading-4 text-muted-foreground"
+          className="m-0 border-t border-solid border-border-hairline bg-surface-recessed px-3 py-2 text-[11px] leading-4 text-muted-foreground"
         >
           {emptyText(patch, file)}
         </p>
@@ -527,7 +527,7 @@ function PatchBody({
     >
       {notes.loose}
       {patch.truncated ? (
-        <p className="m-0 border-b border-solid border-border-hairline px-3.5 py-1 text-[11px] leading-4 text-warning">
+        <p className="m-0 border-b border-solid border-border-hairline px-3 py-1 text-[11px] leading-4 text-warning">
           This diff is too large to show in full.
         </p>
       ) : null}
@@ -619,7 +619,7 @@ export const FileCard = memo(function FileCard({
           title={file.path}
           onClick={() => onToggle(file.path)}
           // In a narrow column the note drops to its own line rather than truncating to a word.
-          className="flex min-h-9 min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-2 border-0 bg-transparent ps-2.5 pe-3 text-start text-[12px] leading-4 @max-lg:gap-y-1 @max-lg:py-2"
+          className="flex min-h-9 min-w-0 flex-1 cursor-pointer flex-wrap items-center gap-x-2 border-0 bg-transparent ps-2 pe-3 text-start text-[12px] leading-4 @max-lg:gap-y-1 @max-lg:py-2"
         >
           <Chevron
             className={cx(
