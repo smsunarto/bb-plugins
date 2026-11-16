@@ -143,7 +143,7 @@ const ChangesView = memo(function ChangesView({
       <div
         data-bb-plugin="source-control"
         data-testid="sc-changes"
-        className="@container flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground"
+        className="@container flex h-full min-h-0 min-w-0 flex-col text-foreground"
       >
         <Header
           repo={checkout ? repoName(checkout) : null}
