@@ -93,7 +93,7 @@ export function PromptMentionPillNodeView({ node, decorations }: NodeViewProps) 
       onClick={handleClick}
       onKeyDown={handleKeyDown}
     >
-      <PromptMentionIcon mention={mention} className="-ml-px size-4 shrink-0 self-center" />
+      <PromptMentionIcon mention={mention} className="size-4 shrink-0 self-center" />
       <span className={cn("truncate", activate && "group-hover:underline")}>{mention.label}</span>
     </NodeViewWrapper>
   );

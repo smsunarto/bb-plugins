@@ -44,9 +44,9 @@ const JUMP_KEY_COUNT = 9;
 // between rows, and the search box plus list padding and border.
 const ONE_LINE_ROW_UNITS = 8;
 const TWO_LINE_ROW_UNITS = 12;
-const ROW_SEPARATOR_UNITS = 0.5;
-const LIST_CHROME_UNITS = 15.5;
-const MAX_HEIGHT_UNITS = 86.5;
+const ROW_SEPARATOR_UNITS = 1;
+const LIST_CHROME_UNITS = 12;
+const MAX_HEIGHT_UNITS = 86;
 
 function isMacPlatform() {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
@@ -109,7 +109,7 @@ export function ModelPicker(props: {
       data-t3-model-picker-trigger=""
       className="min-w-0 max-w-48 shrink justify-between whitespace-nowrap sm:max-w-56"
     >
-      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+      <span className="flex min-w-0 flex-1 items-center gap-1">
         {activeProvider ? (
           <ProviderIcon
             providerKind="agent"
@@ -340,7 +340,7 @@ function ModelPickerContent(props: {
         className={cn(
           "relative flex flex-row overflow-hidden",
           // A fixed height, so switching tabs never resizes the sheet under the thumb.
-          sheet ? "h-[min(28rem,70dvh)] w-full" : "max-h-[346px] w-screen max-w-[360px]",
+          sheet ? "h-[min(28rem,70dvh)] w-full" : "max-h-[344px] w-screen max-w-[360px]",
         )}
         style={sheet ? undefined : { minHeight: `calc(${minHeightUnits} * 4px + 1px)` }}
       >
@@ -367,12 +367,12 @@ function ModelPickerContent(props: {
           )}
         >
           {sheet ? null : (
-            <div className="min-w-0 shrink-0 px-3 pt-2.5">
-              <div className="relative -translate-y-px border-b border-border/70 pb-1.5 transition-colors focus-within:border-ring">
+            <div className="min-w-0 shrink-0 px-3 pt-3">
+              <div className="relative border-b border-border/70 pb-1 transition-colors focus-within:border-ring">
                 <Icon
                   name="Search"
                   aria-hidden
-                  className="pointer-events-none absolute left-0 top-1.5 size-4 shrink-0 text-muted-foreground/55"
+                  className="pointer-events-none absolute left-0 top-1 size-4 shrink-0 text-muted-foreground/55"
                 />
                 <input
                   ref={searchRef}
@@ -394,7 +394,7 @@ function ModelPickerContent(props: {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   onKeyDown={onSearchKeyDown}
-                  className="h-[26px] w-full bg-transparent ps-5 font-sans text-sm leading-[26px] text-foreground outline-none placeholder:text-muted-foreground/70"
+                  className="h-6 w-full bg-transparent ps-5 font-sans text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground/70"
                 />
                 <span id={hintId} className="sr-only">
                   Up and Down to move, Enter to choose, {isMacPlatform() ? "Command" : "Control"}+D
@@ -411,12 +411,12 @@ function ModelPickerContent(props: {
             role="listbox"
             aria-label="Models"
             className={cn(
-              "min-h-0 overflow-y-auto overscroll-y-contain py-1.5 pl-2 pr-px [scrollbar-gutter:stable]",
+              "min-h-0 overflow-y-auto overscroll-y-contain py-1 pl-2 [scrollbar-gutter:stable]",
               sheet && "pb-3",
               visibleItems.length > 0 ? "flex-1" : "h-0",
             )}
           >
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-1">
               {visibleItems.map((item, index) => (
                 <ModelRow
                   key={item.key}
@@ -540,7 +540,7 @@ function ModelRow(props: {
       className={cn(
         "group relative flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-sm",
         props.large
-          ? "min-h-11 py-1.5 outline-none focus-visible:ring-1 focus-visible:ring-ring active:bg-foreground/[0.09]"
+          ? "min-h-11 py-1 outline-none focus-visible:ring-1 focus-visible:ring-ring active:bg-foreground/[0.09]"
           : "min-h-7 py-1",
         props.selected && "bg-foreground/[0.06] text-foreground",
         props.highlighted && "bg-foreground/[0.09] text-accent-foreground",
@@ -551,7 +551,7 @@ function ModelRow(props: {
           {item.model.displayName}
         </div>
         {props.showProvider ? (
-          <div className="mt-1 flex items-center gap-1.5">
+          <div className="mt-1 flex items-center gap-1">
             <ProviderIcon
               providerKind="agent"
               provider={item.provider}
@@ -565,7 +565,7 @@ function ModelRow(props: {
         ) : null}
         {item.isFavorite ? <span className="sr-only">, favorite</span> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-1.5">
+      <div className="flex shrink-0 items-center gap-1">
         {props.jumpLabel ? (
           <kbd
             aria-hidden

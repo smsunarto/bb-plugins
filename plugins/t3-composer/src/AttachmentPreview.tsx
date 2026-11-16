@@ -44,7 +44,7 @@ function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void
         event.currentTarget.blur();
         onRemove();
       }}
-      className="group/attachment-remove absolute right-1.5 top-1.5 z-10 size-5 rounded-full hover:bg-transparent max-md:pointer-coarse:size-7"
+      className="group/attachment-remove absolute right-1 top-1 z-10 size-5 rounded-full hover:bg-transparent max-md:pointer-coarse:size-7"
       aria-label={label}
     >
       <span className="inline-flex size-5 items-center justify-center rounded-full bg-black/60 text-white transition-colors group-hover/attachment-remove:bg-black/80">
@@ -132,7 +132,7 @@ function FileTile({
       <span className="flex min-h-0 flex-1 items-center justify-center text-muted-foreground">
         <Icon name="File" className="size-6" />
       </span>
-      <span className="flex h-9 min-w-0 shrink-0 items-center gap-1.5 bg-[color-mix(in_srgb,var(--foreground)_6%,transparent)] px-2.5 text-[13px] text-foreground">
+      <span className="flex h-9 min-w-0 shrink-0 items-center gap-1 bg-[color-mix(in_srgb,var(--foreground)_6%,transparent)] px-2 text-[13px] text-foreground">
         <Icon name="File" className="size-4 shrink-0" />
         {footer}
       </span>
@@ -160,7 +160,7 @@ function FileUploadPreview({ file }: { file: File }) {
   );
 }
 
-const CONTEXT_CHIP_LABEL_CLASS = "h-full gap-1.5 rounded-lg pl-2.5 pr-1 text-[13px] font-normal";
+const CONTEXT_CHIP_LABEL_CLASS = "h-full gap-1 rounded-lg pl-2 pr-1 text-[13px] font-normal";
 
 function ContextMentionChip({ group }: { group: ContextMentionGroup }) {
   const composer = useComposerHandle();
@@ -288,7 +288,7 @@ export function AttachmentPreview({
           ]
             .filter(Boolean)
             .join(", ")}
-          className="ml-3 inline-flex h-7 shrink-0 items-center gap-0.5 rounded-md bg-surface-recessed px-1.5 text-xs text-muted-foreground"
+          className="ml-3 inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-surface-recessed px-1 text-xs text-muted-foreground"
         >
           <Icon name="Paperclip" className="size-3.5" />
           <span aria-hidden="true">{attachmentCount + uploadingCount}</span>
@@ -297,7 +297,7 @@ export function AttachmentPreview({
           ) : null}
         </span>
       ) : (
-        <div data-t3-attachments="" className="flex flex-wrap items-end gap-2 px-1 pb-1 pt-0.5">
+        <div data-t3-attachments="" className="flex flex-wrap items-end gap-2 p-1">
           {nonImageAttachments.map((attachment) => (
             <FileTile
               key={attachment.path}

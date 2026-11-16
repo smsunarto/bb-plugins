@@ -357,7 +357,7 @@ function PromptSubmitButton({
         }
         onClick(event);
       }}
-      className={cn(className, label !== undefined && !isCompact && "size-auto h-8 gap-1.5 px-2.5")}
+      className={cn(className, label !== undefined && !isCompact && "size-auto h-8 gap-1 px-2")}
     >
       {isBusy ? (
         <Icon name="Loading" className="size-4 animate-spin motion-reduce:animate-none" />
@@ -3110,7 +3110,7 @@ export function PromptBoxInternal({
         <div
           ref={handoffBannerRef}
           inert={showVoiceActionGroup ? true : undefined}
-          className="px-3 pt-1.5"
+          className="px-3 pt-1"
           onMouseDown={keepEditorFocusOnButtonPress}
         >
           {handoff}
@@ -3121,7 +3121,7 @@ export function PromptBoxInternal({
         <div className="contents" onMouseDown={keepEditorFocusOnButtonPress}>
           <FailedVoiceRecordings
             recordings={failedVoiceRecordings}
-            className="px-1.5 pt-1.5"
+            className="px-1 pt-1"
             retryDisabled={false}
             onRetry={voice.retry}
             onDownload={voice.download}
@@ -3196,7 +3196,7 @@ export function PromptBoxInternal({
                     data-promptbox-expanded-only=""
                     data-promptbox-standard-actions=""
                     inert={showVoiceActionGroup ? true : undefined}
-                    className="absolute right-[13px] top-2 z-20 flex items-center"
+                    className="absolute right-3 top-2 z-20 flex items-center"
                   >
                     <Button
                       type="button"
@@ -3268,7 +3268,7 @@ export function PromptBoxInternal({
             <div
               data-promptbox-action-row=""
               className={cn(
-                "relative flex shrink-0 select-none flex-row flex-wrap items-center gap-3 pb-2 pl-3.5 pr-[13px] pt-1.5",
+                "relative flex shrink-0 select-none flex-row flex-wrap items-center gap-3 px-3 pb-2 pt-1",
                 showCompactLayout && "flex-nowrap gap-0 p-0 pr-2",
                 showCompactLayout && showVoiceActionGroup && "absolute inset-0",
               )}

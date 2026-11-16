@@ -191,12 +191,12 @@ function SuggestionRow({
         onApply();
       }}
       className={cn(
-        "w-full scroll-mt-7 rounded px-2 py-1.5 text-left text-xs",
+        "grid min-h-7 w-full scroll-mt-7 content-center rounded px-2 py-1 text-left text-xs",
         isSelected ? "bg-state-active text-foreground" : "hover:bg-state-hover",
       )}
       title={title}
     >
-      <div className="flex min-w-0 items-center gap-1.5">
+      <div className="flex min-w-0 items-center gap-1">
         {icon}
         {typeof primary === "string" ? (
           <span className="truncate text-foreground">{primary}</span>
@@ -283,10 +283,10 @@ function MenuSectionHeader({
         "sticky top-0 z-10 bg-background text-xs text-muted-foreground",
         onDismiss
           ? "flex h-11 items-center justify-between pl-3 pr-1"
-          : "flex items-center px-3 pb-1 pt-1.5",
+          : "flex items-center px-3 pb-1 pt-2",
       )}
     >
-      <span className="flex min-w-0 items-center gap-1.5">
+      <span className="flex min-w-0 items-center gap-1">
         <span>{label}</span>
         <span
           role="status"
@@ -335,7 +335,7 @@ function MentionResults({
               refreshing={groupIndex === 0 && refreshing}
               onDismiss={groupIndex === 0 ? onDismiss : undefined}
             />
-            <div className="flex flex-col gap-px px-1">
+            <div className="flex flex-col px-1">
               {group.suggestions.map((item, itemIndex) => {
                 const index = startIndex + itemIndex;
                 let primary = item.mention.label;
@@ -422,7 +422,7 @@ function CommandResults({
               refreshing={groupIndex === 0 && refreshing}
               onDismiss={groupIndex === 0 ? onDismiss : undefined}
             />
-            <div className="flex flex-col gap-px px-1">
+            <div className="flex flex-col px-1">
               {group.suggestions.map((item, itemIndex) => (
                 <SuggestionRow
                   key={typeaheadSuggestionKey(item)}

@@ -29,13 +29,13 @@
 [data-t3-composer][data-promptbox] [data-promptbox-editor-scroll] {
   border-radius: 11px 11px 0 0;
   background: transparent;
-  padding: 6px 4px 4px;
+  padding: 4px;
   font-size: 14px;
   line-height: 20px;
 }
 
 [data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-scroll] {
-  min-height: 54px !important;
+  min-height: 52px !important;
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-editor-content] .ProseMirror {
@@ -128,8 +128,8 @@
   min-height: 28px;
   min-width: 0;
   max-width: 100%;
-  gap: 6px;
-  padding: 0 10px;
+  gap: 4px;
+  padding: 0 8px;
   border: 0;
   border-radius: 9999px;
   background: transparent;
@@ -244,7 +244,7 @@
 }
 
 [data-t3-composer][data-promptbox][data-promptbox-compact] [data-promptbox-editor-scroll] {
-  padding: 0 8px 0 18px;
+  padding: 0 8px 0 16px;
 }
 
 [data-t3-composer][data-promptbox][data-promptbox-compact] [data-promptbox-action-row] {
@@ -264,7 +264,7 @@
   }
 
   [data-t3-composer][data-promptbox] [data-t3-composer-controls] button {
-    padding: 0 6px;
+    padding: 0 4px;
     font-size: 13px;
   }
 
@@ -298,7 +298,7 @@
 
 [data-t3-composer][data-promptbox] [data-t3-composer-submit-kind="MessageSquarePlus"] {
   width: auto;
-  gap: 6px;
+  gap: 4px;
   padding: 0 12px;
 }
 
@@ -313,8 +313,8 @@
 [data-t3-composer][data-promptbox] [data-t3-permission] button {
   height: 28px;
   min-height: 28px;
-  gap: 6px;
-  padding: 0 10px;
+  gap: 4px;
+  padding: 0 8px;
   border: 0;
   border-radius: 9999px;
   background: transparent;
@@ -376,10 +376,11 @@
   order: 1;
   min-width: 0;
   margin: 0 0 calc(-1 * var(--t3-tray-overlap));
-  /* 2px on the left puts the first pill's icon, after its 10px padding, at the
+  /* 4px on the left puts the first pill's icon, after its 8px padding, at the
      card's 12px text inset, over the editor text and the + glyph. On the right,
-     6px centers the context ring over the send button. */
-  padding: 4px 6px calc(4px + var(--t3-tray-overlap)) 2px;
+     6px centers BB's 32px context window button over the send button: the
+     card's 8px inset plus half the 28px button, less half of BB's. */
+  padding: 4px 6px calc(4px + var(--t3-tray-overlap)) 4px;
   border-radius: 12px 12px 0 0;
   background: color-mix(in srgb, var(--foreground) 5%, var(--background));
   box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));
@@ -451,11 +452,11 @@
   align-items: center;
   height: 28px;
   min-height: 28px;
-  gap: 6px;
+  gap: 4px;
   /* BB's negative margins offset its own padding; on touch the context window
      button's -12px right margin pushed its ring to the tray edge. */
   margin: 0;
-  padding: 0 10px;
+  padding: 0 8px;
   border: 0;
   border-radius: 9999px;
   background: transparent;
@@ -499,7 +500,7 @@
     [data-app-composer][data-t3-composer-host][data-t3-composer-host]
     > [data-new-thread-footer] {
     min-height: 0;
-    margin: 0 0 6px;
+    margin: 0 0 8px;
     padding: 0;
     border-radius: 0;
     background: transparent;
@@ -652,7 +653,7 @@
 [data-t3-composer][data-promptbox] [data-plugin-composer-action] button {
   min-width: 28px;
   min-height: 28px;
-  padding: 0 6px;
+  padding: 0 4px;
   border-radius: 9999px;
 }
 
@@ -675,11 +676,11 @@
   [data-t3-composer][data-promptbox]
     [data-t3-composer-controls]
     button[data-t3-model-picker-trigger] {
-    min-width: calc(3.5rem + 32px);
+    min-width: calc(3.5rem + 28px);
   }
 
   [data-t3-composer][data-promptbox] [data-t3-permission] button {
-    padding: 0 6px;
+    padding: 0 4px;
   }
 }
 
@@ -741,7 +742,7 @@
 [data-t3-composer-menu] [role="menuitem"] {
   min-height: 28px;
   border-radius: 9999px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   gap: 8px;
   font-size: 14px;
 }
@@ -756,7 +757,7 @@
   [data-t3-composer][data-promptbox]:not([data-promptbox-compact])
   [data-promptbox-input-region]
   [data-promptbox-editor-scroll] {
-  min-height: 54px !important;
+  min-height: 52px !important;
   max-height: min(50dvh, var(--composer-editor-available-height, 100dvh)) !important;
 }
 
@@ -847,6 +848,14 @@
   [data-t3-composer-menu] [role="menuitem"] {
     min-height: 36px;
   }
+
+  /* BB's icon-only New thread pill keeps its 36px-wide target under the 8px
+     pill padding. The context window button is a fixed 32px and keeps it. */
+  :is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
+    > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+    button[aria-label="New thread in this environment"] {
+    min-width: 36px;
+  }
 }
 
 /* BB's project and machine menus, styled like ChatGPT's: a rounded sheet with
@@ -874,7 +883,7 @@
 :is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay]
   [cmdk-input-wrapper] {
   margin: 0 4px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-color: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
@@ -890,7 +899,7 @@
 
 :is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay]
   [cmdk-group-heading] {
-  padding: 4px 10px;
+  padding: 4px 8px;
   color: color-mix(in srgb, var(--foreground) 50%, transparent);
   font-size: 12px;
   font-weight: 400;
@@ -899,7 +908,7 @@
 :is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-item] {
   min-height: 28px;
   gap: 8px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   border-radius: 10px;
   font-size: 13px;
 }
@@ -910,7 +919,7 @@
 }
 
 :is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-separator] {
-  margin: 0 10px;
+  margin: 0 8px;
   background: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
@@ -976,7 +985,7 @@
 
 [data-t3-model-picker-popover] [role="option"] {
   min-height: 28px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   border-radius: 8px;
   font-size: 13px;
 }

@@ -144,7 +144,7 @@ export function EffortSlider(props: {
       ) : (
         // Equal side columns keep the name centred whatever each side holds.
         <div className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1">
-          <span className="flex min-w-0 items-center gap-0.5">{props.leading}</span>
+          <span className="flex min-w-0 items-center gap-1">{props.leading}</span>
           {label}
           <span className="flex min-w-0 justify-end">{props.trailing}</span>
         </div>
@@ -231,13 +231,13 @@ const SHEET = {
   dot: "size-2.5",
 };
 const MENU = {
-  root: "flex w-64 flex-col gap-3 px-1.5 pb-2 pt-1",
+  root: "flex w-64 flex-col gap-3 px-2 pb-2 pt-1",
   label: "text-base",
   frame: "w-full",
   groove: "bg-foreground/10",
-  thumb: 30,
-  bar: 26,
-  knob: 30,
+  thumb: 32,
+  bar: 28,
+  knob: 32,
   dot: "size-1.5",
 };
 

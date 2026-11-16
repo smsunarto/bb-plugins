@@ -341,7 +341,7 @@ function Section(props: { title: string; children: ReactNode }) {
       <h3 id={id} className="px-3 pb-1 pt-2 text-xs font-medium text-muted-foreground">
         {props.title}
       </h3>
-      <ul className="flex flex-col gap-0.5">{props.children}</ul>
+      <ul className="flex flex-col gap-1">{props.children}</ul>
     </section>
   );
 }
@@ -361,7 +361,7 @@ function MachineRow(props: {
         icon={<Icon name="Laptop" aria-hidden className="size-5" />}
         title={host.name}
         detail={
-          <span className="flex min-w-0 items-center gap-1.5">
+          <span className="flex min-w-0 items-center gap-1">
             <span
               aria-hidden
               className={cn(
@@ -475,7 +475,7 @@ function RowPlaceholders(props: { count: number }) {
   return Array.from({ length: props.count }, (_, index) => (
     <li key={index} aria-hidden className="flex min-h-14 items-center gap-3 px-3 py-2">
       <Skeleton className="size-8 shrink-0" />
-      <span className="flex flex-1 flex-col gap-1.5">
+      <span className="flex flex-1 flex-col gap-1">
         <Skeleton className="h-4 w-32" />
         <Skeleton className="h-3 w-20" />
       </span>

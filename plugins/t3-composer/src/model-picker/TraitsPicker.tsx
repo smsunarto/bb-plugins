@@ -229,7 +229,7 @@ export function TraitsPicker(props: {
                 })}
           />
         ) : (
-          <div className="flex items-center gap-0.5">{leading}</div>
+          <div className="flex items-center gap-1">{leading}</div>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
