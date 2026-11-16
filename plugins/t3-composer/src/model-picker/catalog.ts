@@ -6,6 +6,7 @@ import {
   type PluginBrowserBbSdk,
   type PluginComposerApi,
 } from "@get-bb/plugin-sdk/app";
+import type { PermissionMode } from "../permission-modes";
 
 type ModelsResult = Awaited<ReturnType<PluginBrowserBbSdk["providers"]["models"]>>;
 export type CatalogModel = ModelsResult["models"][number];
@@ -45,6 +46,17 @@ function retryAt(failedAt: number, failures: number) {
  * provider, so two composers on the same machine share one request per provider.
  */
 const catalogs = new Map<string, ProviderCatalog>();
+/**
+ * What the machine allows a provider, from the same reads as its models: BB's own picker
+ * reads it from that response too. Kept apart from the models, since a provider that cannot
+ * list models still answers with its permission modes.
+ */
+export interface PermissionInfo {
+  ceiling: PermissionMode;
+  /** Null when the machine does not offer the provider. */
+  provider: { name: string; modes: readonly PermissionMode[] } | null;
+}
+const permissions = new Map<string, PermissionInfo>();
 /** Each provider's most recently listed models, from any routing. */
 const lastListed = new Map<string, readonly CatalogModel[]>();
 const inFlight = new Set<string>();
@@ -154,6 +166,16 @@ function load(
       }),
     )
     .then((result) => {
+      const provider = result.providers.find((entry) => entry.id === providerId);
+      permissions.set(key, {
+        ceiling: result.permissionCeiling,
+        provider: provider
+          ? {
+              name: provider.displayName,
+              modes: provider.capabilities.permissionModes,
+            }
+          : null,
+      });
       const message = errorMessage(result);
       if (message && result.models.length === 0) return failed(message);
       lastListed.set(providerId, result.models);
@@ -334,6 +356,22 @@ export function useModelCatalog(composer: PluginComposerApi, enabled: boolean): 
       }
     },
   };
+}
+
+/**
+ * The routed machine's permission ceiling and the provider's modes, loading them when
+ * missing. Undefined until the machine answers, so a picker shows its value read-only.
+ */
+export function usePermissionInfo(
+  routing: CatalogRouting | null,
+  providerId: string | null,
+): PermissionInfo | undefined {
+  const sdk = useSdk();
+  useSyncExternalStore(subscribe, () => version);
+  useEffect(() => {
+    if (routing && providerId) load(sdk, routing, providerId);
+  }, [sdk, routing, providerId]);
+  return routing && providerId ? permissions.get(catalogKey(routing, providerId)) : undefined;
 }
 
 /** A model's display name from its provider's most recent list, once BB has listed it. */
