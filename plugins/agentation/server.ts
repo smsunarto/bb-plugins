@@ -91,6 +91,7 @@ import {
   turnAssignmentPhase,
 } from "./lib/delivery.ts";
 import { instructionFiles } from "@bb-plugins/instructions";
+import { wireLocalServer } from "./lib/local-server-wiring.ts";
 
 // Agent-facing text, editable in Agent Instructions → Plugin prompts.
 const files = instructionFiles(import.meta.url);
@@ -281,7 +282,15 @@ export default async function plugin(bb: BbPluginApi) {
       label: "Days to keep resolved annotations",
       default: "7",
     },
+    localServer: {
+      type: "boolean",
+      label: "Run the shared Agentation server on each machine",
+      description:
+        "Keeps agentation-mcp serving localhost:4747 on every connected machine, for Agentation toolbars outside bb and the stdio agentation MCP entry. Needs agentation-mcp on the machine's PATH; leaves the port alone when another process already serves it.",
+      default: false,
+    },
   });
+  const localServer = wireLocalServer(bb, async () => (await settings.get()).localServer);
 
   const db = bb.storage.database();
   bb.storage.migrate(db, migrations);
@@ -1516,10 +1525,12 @@ export default async function plugin(bb: BbPluginApi) {
 
   settings.onChange(() => {
     broadcast({ type: "config", sessionId: null });
+    void localServer.sync();
   });
 
   bb.onDispose(() => {
     disposed = true;
+    localServer.dispose();
     for (const timer of heartbeats.values()) clearInterval(timer);
     heartbeats.clear();
     for (const controller of streams) {
