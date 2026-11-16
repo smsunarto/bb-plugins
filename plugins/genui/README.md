@@ -122,7 +122,7 @@ For anything the components can't express, such as a small game or a simulation,
 bb plugin install https://github.com/ComicBit/bb-plugin-genui.git
 ```
 
-Requires BB 0.45 or later. Agent sessions started after the install pick up the components. To update later, run `bb plugin update genui`; what changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+Requires BB 0.45 or later. Agent sessions started after the install pick up the components. To update later, run `bb plugin update genui`.
 
 To try it, ask an agent something with a shape: _"Compare Postgres, SQLite and DuckDB for a local analytics tool"_, _"Plan a two-day trip to Lisbon"_, _"Run the tests and show me what failed"_. Or let the plugin open a subthread for you:
 
