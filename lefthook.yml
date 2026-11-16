@@ -19,4 +19,7 @@ pre-push:
     - name: check repository
       # A linked worktree's hook exports GIT_DIR and friends; tests that `git init` a scratch
       # repo would otherwise re-init the shared repository and set core.bare=true.
-      run: unset $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); bun run typecheck && bun run test
+      # git's pre-push stdin names the pushed range; scripts/pre-push.ts checks only the
+      # packages it changes and their dependents, or everything when the range is unknown.
+      use_stdin: true
+      run: unset $(env | sed -n 's/^\(GIT_[A-Za-z0-9_]*\)=.*/\1/p'); bun scripts/pre-push.ts
