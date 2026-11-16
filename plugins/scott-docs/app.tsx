@@ -860,7 +860,7 @@ function InlineDocument({
             : "my-2 min-w-0 overflow-hidden rounded-lg border border-border bg-background"
         }
       >
-        <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
+        <header className="flex min-h-8 shrink-0 items-center gap-2 border-b border-border px-3 py-1 text-xs text-muted-foreground">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <span className="shrink-0 font-semibold">Docs</span>
             <span className="truncate opacity-70">{title}</span>
@@ -872,7 +872,7 @@ function InlineDocument({
             </output>
           )}
           <div
-            className="flex shrink-0 items-center gap-0.5"
+            className="flex shrink-0 items-center gap-1"
             role="toolbar"
             aria-label="Document actions"
           >
@@ -1147,7 +1147,7 @@ function DocumentPanel({ params }: ExperimentalThreadActionTabProps) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <TooltipProvider delayDuration={200}>
-        <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
+        <header className="flex min-h-8 shrink-0 items-center gap-2 border-b border-border px-3 py-1 text-xs text-muted-foreground">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <span className="shrink-0 font-semibold">Docs</span>
             <span className="truncate opacity-70">{document.title}</span>
@@ -1414,7 +1414,7 @@ function DocsFileOpener({ path: filePath, source }: PluginFileOpenerProps) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       {liveFileTarget === null ? null : (
-        <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs">
+        <div className="flex min-h-10 items-center gap-2 border-b border-border px-3 py-1 text-xs">
           <FileLink className="min-w-0 flex-1 truncate" target={liveFileTarget}>
             {filePath}
           </FileLink>
@@ -1508,7 +1508,7 @@ function NotesSidebarNavigation(props: NotesSidebarNavigationProps) {
           <div className="relative min-w-0 flex-1">
             <Icon
               name="Search"
-              className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             />
             <Input
               className="h-8 pl-8"
@@ -1766,7 +1766,7 @@ function Tree({
                 role="menu"
               >
                 <button
-                  className="flex w-full select-none items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs text-destructive outline-none hover:bg-destructive/15 focus:bg-destructive/15 focus:text-destructive"
+                  className="flex w-full select-none items-center gap-2 min-h-7 rounded-sm px-2 py-1 text-left text-xs text-destructive outline-none hover:bg-destructive/15 focus:bg-destructive/15 focus:text-destructive"
                   onClick={() => {
                     context.close({ restoreFocus: false });
                     onDeleteFile(item.path);
@@ -1802,7 +1802,7 @@ function Tree({
           <div className="p-2 text-xs text-muted-foreground">Tree truncated at 5,000 entries.</div>
         ) : null}
       </nav>
-      <div className="grid gap-1.5 border-t border-border p-2">
+      <div className="grid gap-2 border-t border-border p-2">
         <div className="flex items-center gap-1">
           <Select value={data.vault.id} onValueChange={onVaultChange}>
             <SelectTrigger
@@ -1830,7 +1830,7 @@ function Tree({
           </Button>
         </div>
         {hostUnavailable ? (
-          <output className="flex items-center gap-1.5 px-1 text-xs text-destructive">
+          <output className="flex items-center gap-1 px-1 text-xs text-destructive">
             <Icon name="AlertCircle" className="size-4 shrink-0" />
             <span className="truncate">Host unavailable</span>
           </output>
@@ -2186,7 +2186,7 @@ function NotesWorkspace({
                   Create it {selectedFolder ? `inside ${selectedFolder}` : "at the vault root"}.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-1.5">
+              <div className="grid gap-1">
                 <Label htmlFor="docs-folder-name">Folder name</Label>
                 <Input
                   id="docs-folder-name"
@@ -2224,7 +2224,7 @@ function NotesWorkspace({
                   Open a notes folder on one of your connected machines.
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-1.5">
+              <div className="grid gap-1">
                 <Label htmlFor="docs-vault-name">Name</Label>
                 <Input
                   id="docs-vault-name"
@@ -2233,7 +2233,7 @@ function NotesWorkspace({
                   placeholder="Personal"
                 />
               </div>
-              <div className="grid gap-1.5">
+              <div className="grid gap-1">
                 <Label htmlFor="docs-vault-path">Folder path</Label>
                 <Input
                   id="docs-vault-path"
@@ -2242,7 +2242,7 @@ function NotesWorkspace({
                   placeholder="Absolute path on that machine"
                 />
               </div>
-              <div className="grid gap-1.5">
+              <div className="grid gap-1">
                 <Label htmlFor="docs-vault-host">Machine</Label>
                 <Select value={vaultHostId} onValueChange={setVaultHostId}>
                   <SelectTrigger id="docs-vault-host" aria-label="Vault host">

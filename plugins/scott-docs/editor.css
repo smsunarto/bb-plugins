@@ -76,8 +76,8 @@
 }
 .bb-simple-notes-editor .tiptap ul[data-type="taskList"] input[type="checkbox"] {
   display: block;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   accent-color: var(--primary);
   cursor: pointer;
   margin: 0;
@@ -102,7 +102,7 @@
 .simple-html-embed-header {
   border-bottom: 1px solid var(--border);
   background: var(--secondary);
-  padding: 0.45rem 0.7rem;
+  padding: 0.5rem 0.75rem;
   color: var(--muted-foreground);
   font: 11px var(--font-mono, monospace);
 }
