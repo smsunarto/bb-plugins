@@ -106,7 +106,7 @@ export function ThreadDetails({
               .join(" · ")}
           </div>
           {relation ? <div className="mt-1 text-muted-foreground">{relation}</div> : null}
-          <div className="mt-1.5 flex items-center gap-1.5 text-muted-foreground">
+          <div className="mt-2 flex items-center gap-1 text-muted-foreground">
             <ProviderGlyph providerId={thread.providerId} provider={provider} />
             {provider?.displayName ?? thread.providerId}
           </div>

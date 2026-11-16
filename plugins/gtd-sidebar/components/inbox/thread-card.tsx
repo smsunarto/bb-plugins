@@ -260,7 +260,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
       ) : null}
       <div
         className={cn(
-          "pointer-events-none relative flex items-center gap-1.5",
+          "pointer-events-none relative flex items-center gap-1",
           isCompactViewport ? "h-10" : "gtd-summary h-8",
         )}
       >
@@ -327,7 +327,7 @@ function threadCardPresentation({
       ...(isCompactViewport ? { paddingLeft: compactRowPaddingLeft(depth, childCount) } : {}),
     } as CSSProperties,
     className: cn(
-      "group/card relative rounded-xl px-2.5",
+      "group/card relative rounded-xl px-2",
       !isCompactViewport && "gtd-thread-row",
       touchRowClass(isCompactViewport, isEditing),
       LIST_HOVER_TRANSITION,
@@ -376,7 +376,7 @@ export function rowMenuFill(
 export function compactRowPaddingLeft(depth: number, childCount: number): string {
   return depth > 0 || childCount > 0
     ? `calc(${MOBILE_DISCLOSURE_WIDTH + 8 + depth * DEPTH_STEP}px + var(--gtd-group-indent, 0px))`
-    : "calc(22px + var(--gtd-leaf-group-indent, 0px))";
+    : "calc(24px + var(--gtd-leaf-group-indent, 0px))";
 }
 
 function ThreadTitle({
@@ -456,7 +456,7 @@ function MobileThreadSummary({
     <>
       {title}
       {metadata}
-      <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
+      <span className="gtd-rest-signals flex shrink-0 items-center gap-1">
         <ActivityCounts activity={activity} isCompactViewport />
         <span id={statusId} className={STATUS_SLOT_CLASS}>
           <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} isCompactViewport />
@@ -682,7 +682,7 @@ function DesktopThreadSummary({
     <>
       {title}
       {metadata}
-      <span className="gtd-rest-signals flex shrink-0 items-center gap-1.5">
+      <span className="gtd-rest-signals flex shrink-0 items-center gap-1">
         <ActivityCounts activity={activity} isCompactViewport={false} />
         <span id={statusId} className={STATUS_SLOT_CLASS}>
           <StatusOrTime thread={thread} isUnread={isUnread} shortcut={shortcut} />

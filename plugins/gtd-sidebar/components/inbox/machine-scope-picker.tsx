@@ -32,7 +32,7 @@ export function scopeItemClassName(isCompactViewport: boolean) {
  */
 function scopeTriggerClassName(isCompactViewport: boolean, className?: string) {
   return cn(
-    "h-6 w-auto gap-1 border-0 border-transparent px-1.5 py-1 text-xs text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[pointer-focus]:focus-visible:ring-0 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-foreground",
+    "h-6 w-auto gap-1 border-0 border-transparent px-2 py-1 text-xs text-muted-foreground shadow-none hover:bg-sidebar-accent focus:ring-0 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[pointer-focus]:focus-visible:ring-0 data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-foreground",
     isCompactViewport && "min-h-10",
     className,
   );

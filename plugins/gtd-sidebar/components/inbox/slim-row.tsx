@@ -235,7 +235,7 @@ function slimRowPresentation({
       ...(isCompactViewport ? { paddingLeft: compactRowPaddingLeft(depth, childCount) } : {}),
     } as CSSProperties,
     rowClassName: cn(
-      "group/slim relative flex items-center gap-1.5 rounded-xl px-2.5 text-xs",
+      "group/slim relative flex items-center gap-1 rounded-xl px-2 text-xs",
       !isCompactViewport && "gtd-thread-row gtd-parked-row",
       touchRowClass(isCompactViewport, isEditing),
       LIST_HOVER_TRANSITION,

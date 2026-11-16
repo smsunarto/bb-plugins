@@ -186,8 +186,8 @@ export function pinnedRowIndexes(
  * components); a mounted item is measured and its real height replaces this.
  */
 export function estimateInboxItemSize(item: InboxWindowItem, isCompactViewport: boolean): number {
-  // Rows and project headers sit 2px below whatever precedes them.
-  const gap = 2;
+  // Rows and project headers sit 4px below whatever precedes them.
+  const gap = 4;
   switch (item.kind) {
     case "shelf":
       return isCompactViewport ? 40 : 24;

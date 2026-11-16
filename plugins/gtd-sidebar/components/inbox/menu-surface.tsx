@@ -71,7 +71,7 @@ export function MenuSeparator() {
 
 const MENU_SEPARATOR_STYLE = {
   height: 0,
-  margin: "6px 0",
+  margin: "4px 0",
   background: "none",
   borderTop: "0.5px solid var(--border)",
 } as const;
@@ -89,7 +89,7 @@ const MENU_CONTENT_RESET_STYLE = {
   transition: "none",
 } as const;
 export const MENU_MATERIAL_CLASS = cn(
-  "rounded-[15px] p-[5px]",
+  "rounded-[15px] p-1",
   // Translucent on purpose: the blurred sidebar shows through. A one-item
   // menu is too short for the blur to hide the rows behind it, so the ground
   // stays mostly opaque.

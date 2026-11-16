@@ -1777,7 +1777,7 @@
   {
     "file": "plugins/gtd-sidebar/components/inbox/menu-surface.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"rounded-[15px] p-[5px]\","
+    "source": "\"rounded-[15px] p-1\","
   },
   {
     "file": "plugins/gtd-sidebar/components/inbox/menu-surface.tsx",
@@ -1797,12 +1797,12 @@
   {
     "file": "plugins/gtd-sidebar/components/inbox/thread-menu-actions.tsx",
     "rule": "arbitrary-edge",
-    "source": "const SHEET_SEPARATOR_CLASS = \"my-1.5 h-0 border-0 border-t-[0.5px] border-solid border-border\";"
+    "source": "const SHEET_SEPARATOR_CLASS = \"my-1 h-0 border-0 border-t-[0.5px] border-solid border-border\";"
   },
   {
     "file": "plugins/gtd-sidebar/components/inbox/thread-menu-actions.tsx",
     "rule": "hairline-literal",
-    "source": "const SHEET_SEPARATOR_CLASS = \"my-1.5 h-0 border-0 border-t-[0.5px] border-solid border-border\";"
+    "source": "const SHEET_SEPARATOR_CLASS = \"my-1 h-0 border-0 border-t-[0.5px] border-solid border-border\";"
   },
   {
     "file": "plugins/gtd-sidebar/components/nav/capy-navigation.tsx",

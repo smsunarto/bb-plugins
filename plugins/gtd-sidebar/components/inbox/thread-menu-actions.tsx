@@ -114,7 +114,7 @@ function hasDetailLine(row: MenuRow): boolean {
 function RowLabel({ row }: { row: MenuRow }) {
   if (!hasDetailLine(row)) return <span className="min-w-0 truncate">{row.label}</span>;
   return (
-    <span className="flex min-w-0 flex-col gap-0.5">
+    <span className="flex min-w-0 flex-col gap-1">
       <span className="truncate">{row.label}</span>
       <span className="truncate text-2xs text-muted-foreground">{row.detail}</span>
     </span>
@@ -219,10 +219,10 @@ export function ThreadContextMenuItems({
 // Touch: the long-press sheet's items.
 
 const SHEET_ITEM_CLASS =
-  "relative flex min-h-[44px] cursor-default select-none items-center gap-3.5 px-4 text-[16px] font-normal leading-none tracking-[-0.01em] outline-none focus-visible:bg-state-hover active:bg-state-active aria-disabled:pointer-events-none aria-disabled:opacity-50";
+  "relative flex min-h-[44px] cursor-default select-none items-center gap-3 px-4 text-[16px] font-normal leading-none tracking-[-0.01em] outline-none focus-visible:bg-state-hover active:bg-state-active aria-disabled:pointer-events-none aria-disabled:opacity-50";
 // A hairline across the sheet, edge to edge like an item's pressed fill.
 // Only a choice list's hint sits under one; the actions run as one list.
-const SHEET_SEPARATOR_CLASS = "my-1.5 h-0 border-0 border-t-[0.5px] border-solid border-border";
+const SHEET_SEPARATOR_CLASS = "my-1 h-0 border-0 border-t-[0.5px] border-solid border-border";
 const SHEET_ICON_CLASS = "flex size-[20px] shrink-0 items-center justify-center";
 
 /**

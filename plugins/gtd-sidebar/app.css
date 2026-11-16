@@ -76,7 +76,7 @@
   display: flex;
   flex: none;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   min-height: 0;
   max-height: 100%;
 }
@@ -163,7 +163,7 @@
      which sits centred in its 24px hit area. Each nesting level steps in by
      --gtd-depth-step; thread-card.tsx mirrors the value for the tree guides. */
   --gtd-depth-step: 16px;
-  padding: 0 10px 0
+  padding: 0 8px 0
     calc(28px + var(--gtd-group-indent, 0px) + var(--gtd-depth, 0) * var(--gtd-depth-step, 16px));
 }
 /* Other plugins' row badges on a card's title line, after the title; a row
@@ -173,11 +173,7 @@
 }
 /* After a badge, the status slot shrinks to its glyph, which keeps its right
    edge; its 28px box would otherwise leave ~14px of air left of a 14px glyph.
-   The badge then pulls 1px into the line's 6px gap, so it sits 5px from the
-   glyph. */
-.gtd-row-metadata:has([data-has-items]) {
-  margin-right: -1px;
-}
+   The badge then sits the line's 4px gap from the glyph. */
 .gtd-row-metadata:has([data-has-items]) + .gtd-rest-signals > :last-child {
   width: auto;
 }
@@ -195,7 +191,7 @@
   align-items: center;
   border: 0.5px solid var(--border);
   border-radius: 9999px;
-  padding: 0 6px;
+  padding: 0 4px;
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
   line-height: 1;
@@ -220,14 +216,13 @@
   mask-image: linear-gradient(to right, black calc(100% - 20px), transparent);
 }
 /* The row's leading globe, drawn only on remote threads; local titles start
-   straight after the disclosure column. The title follows 4px later, not the
-   row's 6px flex gap: a 12px glyph reads detached at 6px. */
+   straight after the disclosure column, and the title follows the row's 4px
+   flex gap. */
 .gtd-host-lead {
   display: inline-flex;
   flex: 0 0 12px;
   width: 12px;
   height: 12px;
-  margin-right: -2px;
   align-items: center;
   justify-content: center;
 }
@@ -254,11 +249,11 @@
 }
 .gtd-project-group-header {
   /* Positioned so the absolute new-thread button anchors to it. Match the
-     2px gap between thread rows. */
+     4px gap between thread rows. */
   position: relative;
   display: flex;
   align-items: center;
-  margin-top: 2px;
+  margin-top: 4px;
   border-radius: 6px;
 }
 /* Gated, because a touch screen keeps :hover on the last tapped header and
@@ -274,7 +269,7 @@
   flex: 1;
   min-width: 0;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   height: 32px;
   padding: 0 8px 0 28px;
   border: 0;
@@ -337,13 +332,13 @@
 .gtd-project-group-new {
   position: absolute;
   top: 50%;
-  right: 2px;
+  right: 4px;
   transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: 0;
   border-radius: 4px;
   background: transparent;
@@ -380,6 +375,10 @@
     flex: 0 0 auto;
     width: 32px;
     height: 32px;
+    /* The plus's stroke stops 2.5px inside its 16px box and the rows'
+       status dot 0.5px inside its own, so -2px puts the plus on the
+       status column. */
+    margin-right: -2px;
     border-radius: 6px;
     opacity: 1;
   }
@@ -411,13 +410,13 @@
   height: 16px;
 }
 /* Move thread content, disclosures, and tree guides together inside groups.
-   The 2px under the header is the first row's own top margin. */
+   The 4px under the header is the first row's own top margin. */
 .gtd-project-group-rows {
   /* Root threads share the header's glyph and name columns, so a group adds
-     no indent. Touch leaf rows have no disclosure slot: the extra 18px moves
-     their titles from 22px to the header name's 40px. */
+     no indent. Touch leaf rows have no disclosure slot: the extra 16px moves
+     their titles from 24px to the header name's 40px. */
   --gtd-group-indent: 0px;
-  --gtd-leaf-group-indent: 18px;
+  --gtd-leaf-group-indent: 16px;
 }
 .gtd-disclosure {
   position: absolute;
@@ -456,11 +455,11 @@
 .gtd-trailing-actions {
   position: absolute;
   z-index: 2;
-  right: -5px;
+  right: -4px;
   top: 50%;
   transform: translateY(-50%);
   display: flex;
-  gap: 2px;
+  gap: 4px;
   opacity: 0;
   pointer-events: none;
 }
@@ -480,7 +479,7 @@
     display: none;
   }
   .gtd-thread-row[data-action-count="2"]:hover .gtd-summary {
-    padding-right: 51px;
+    padding-right: 52px;
   }
 }
 .gtd-thread-row[data-action-count="2"]
@@ -500,7 +499,7 @@
 }
 .gtd-thread-row[data-action-count="2"] > a[data-sidebar-thread-id]:focus-visible ~ .gtd-summary,
 .gtd-thread-row[data-action-count="2"] > .gtd-summary:focus-within {
-  padding-right: 51px;
+  padding-right: 52px;
 }
 .gtd-tree-guides {
   position: absolute;
@@ -510,7 +509,7 @@
 }
 .gtd-tree-line {
   position: absolute;
-  top: -2px;
+  top: -4px;
   bottom: 0;
   width: 1px;
   background: color-mix(in srgb, var(--sidebar-foreground) 9%, transparent);
@@ -556,7 +555,7 @@
   display: flex;
   align-items: center;
   height: 32px;
-  padding: 0 10px;
+  padding: 0 8px;
   border-radius: 6px;
   background: var(--sidebar-accent);
   outline: 1px solid var(--ring);

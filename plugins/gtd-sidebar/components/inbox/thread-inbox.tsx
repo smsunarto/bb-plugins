@@ -521,7 +521,7 @@ function InboxList({
             }
           }}
         >
-          <div className="flex shrink-0 items-center gap-1 px-2 pb-0.5">
+          <div className="flex shrink-0 items-center gap-1 px-2">
             <Select value={scope} onValueChange={setScope}>
               {/* It sizes to its label, so the chevron sits beside it. The
                 machine picker takes the slack. */}
@@ -565,7 +565,7 @@ function InboxList({
             isCompactViewport={isCompactViewport}
             ref={scrollRef}
             className={cn(
-              "min-h-0 flex-1 overflow-y-auto px-1.5",
+              "min-h-0 flex-1 overflow-y-auto px-2",
               isCompactViewport ? "pb-8" : "pb-2",
             )}
             // bb's compact footer overlays the list edge. Fade content into that
@@ -748,7 +748,7 @@ function windowedRows(
               data-gtd-row={threadId}
               // The gap lives on the row, not the list, so a measured row
               // carries it and a placeholder can stand in for it exactly.
-              className={cn("list-none", (gapFirst || segment.offset > 0) && "mt-0.5")}
+              className={cn("list-none", (gapFirst || segment.offset > 0) && "mt-1")}
             >
               {renderRow(row)}
             </li>
@@ -1251,8 +1251,8 @@ function ShelfHeader({
         ref={measureRef}
         data-index={measureIndex}
         className={cn(
-          "gtd-shelf-header flex items-center gap-2 pr-2.5",
-          isCompactViewport ? "min-h-10" : "pb-0.5 pt-2",
+          "gtd-shelf-header flex items-center gap-2 pr-2",
+          isCompactViewport ? "min-h-10" : "h-6 pt-2",
         )}
       >
         {title}
@@ -1274,8 +1274,8 @@ function ShelfHeader({
         // `cursor-pointer` is explicit because Tailwind v4's preflight gives a button `cursor: default`,
         // and the whole header is the hit target for collapsing the shelf.
         className={cn(
-          "flex cursor-pointer items-center gap-2 pr-2.5 text-left",
-          isCompactViewport ? "min-h-10" : "pb-0.5 pt-2",
+          "flex cursor-pointer items-center gap-2 pr-2 text-left",
+          isCompactViewport ? "min-h-10" : "h-6 pt-2",
         )}
       >
         {title}

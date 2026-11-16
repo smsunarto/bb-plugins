@@ -1356,8 +1356,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
           return [element.classList.contains("gtd-touch-row"), element.style.paddingLeft];
         });
       assert.deepEqual(touchRows(), [
-        [true, "calc(22px + var(--gtd-leaf-group-indent, 0px))"],
-        [true, "calc(22px + var(--gtd-leaf-group-indent, 0px))"],
+        [true, "calc(24px + var(--gtd-leaf-group-indent, 0px))"],
+        [true, "calc(24px + var(--gtd-leaf-group-indent, 0px))"],
       ]);
     });
 
@@ -1396,7 +1396,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         [
           [true, "calc(40px + var(--gtd-group-indent, 0px))", ["ChevronDown"], picture],
           [true, "calc(56px + var(--gtd-group-indent, 0px))", [], picture],
-          [true, "calc(22px + var(--gtd-leaf-group-indent, 0px))", ["AlarmClock"], picture],
+          [true, "calc(24px + var(--gtd-leaf-group-indent, 0px))", ["AlarmClock"], picture],
         ],
       );
     });
@@ -3388,8 +3388,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const placeholder = view.slot.container.querySelector<HTMLElement>(
         "[data-sidebar-windowed-nav]",
       )!;
-      // Unmounted rows stand in at their estimated 32px plus the 2px gap.
-      assert.equal(placeholder.style.height, `${(40 - mounted.length) * 34}px`);
+      // Unmounted rows stand in at their estimated 32px plus the 4px gap.
+      assert.equal(placeholder.style.height, `${(40 - mounted.length) * 36}px`);
       assert.equal(placeholder.getAttribute("aria-hidden"), "true");
       assert.ok(
         placeholder

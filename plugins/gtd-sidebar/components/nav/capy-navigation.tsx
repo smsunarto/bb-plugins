@@ -59,7 +59,7 @@ export function CapyNavigation(_props: ExperimentalSidebarNavigationProps) {
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <nav aria-label="Navigation" className="flex shrink-0 flex-col gap-px px-2 py-1">
+        <nav aria-label="Navigation" className="flex shrink-0 flex-col px-2 py-1">
           {items.map((item) =>
             item.isVisible && item.id !== SEARCH_ID ? (
               <NavigationRow
