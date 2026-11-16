@@ -97,6 +97,9 @@ const SETTLE_MS = 600;
 
 export const ColumnContext = createContext<Column | null>(null);
 
+/** Whether diffs wrap long lines: on a phone, where scrolling sideways hides the end of each line. */
+export const WrapContext = createContext(false);
+
 /** Cards drawn before the observer reports: about a screen of them. */
 export const EAGER_CARDS = 8;
 
@@ -470,6 +473,7 @@ function PatchBody({
   const entry = useKeptPatch(store, file.path);
   const { mode, name } = useCodeTheme();
   const commenting = actions !== null;
+  const wrap = useContext(WrapContext);
   const options = useMemo(
     () => ({
       disableFileHeader: true,
@@ -478,8 +482,9 @@ function PatchBody({
       theme: name,
       themeType: mode,
       enableGutterUtility: commenting,
+      overflow: wrap ? ("wrap" as const) : ("scroll" as const),
     }),
-    [mode, name, commenting],
+    [mode, name, commenting, wrap],
   );
   const patch = entry?.state === "ready" ? entry.file : null;
   const parsed = useMemo(() => (patch ? parsePatch(patch.patch) : null), [patch]);

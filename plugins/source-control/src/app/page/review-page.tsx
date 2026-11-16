@@ -44,7 +44,7 @@ import { Hint, OpenOnGitHub, Pending } from "../ui.tsx";
 import { ChangesList } from "./changes-nav.tsx";
 import { CommitsView } from "./commits-view.tsx";
 import { ConversationView } from "./conversation-view.tsx";
-import { FilesView } from "./files-view.tsx";
+import { FilesView, WrapContext } from "./files-view.tsx";
 import { GuidedView, ViewedProgress } from "./guided-view.tsx";
 import { PANEL_PATH, PHONE, WIDE, useGo, useNow, useWidth, type Go } from "./hooks.ts";
 import { AskHost, BotIcon, useAskAgent } from "./ask-panel.tsx";
@@ -725,40 +725,42 @@ function ReviewReady({
   ) : null;
   return (
     <FocusContext.Provider value={focus}>
-      {phoneGuided ? (
-        <PhoneHeader detail={detail} />
-      ) : (
-        <>
-          <Header detail={detail} now={now} />
-          <div className={cx("shrink-0 pb-4", PAD)}>
-            <ShipPath steps={detail.ship} />
-          </div>
-        </>
-      )}
-      <ReviewTabs location={location} files={detail.files} go={go}>
-        <TabControls location={location} detail={detail} send={send} phoneGuided={phoneGuided} />
-      </ReviewTabs>
-      <div className="flex min-h-0 min-w-0 flex-1">
-        <TabBody
-          location={location}
-          detail={detail}
-          lead={lead}
-          wide={wide}
-          phone={phone}
-          now={now}
-          bar={barSend}
-          onPath={onPath}
-          onCommit={onCommit}
-        />
-        {wide ? (
-          <aside
-            aria-label="Stack, checks and review"
-            className="flex w-84 shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain border-s border-solid border-border-hairline py-4 ps-5 pe-8"
-          >
-            {rail}
-          </aside>
-        ) : null}
-      </div>
+      <WrapContext.Provider value={phone}>
+        {phoneGuided ? (
+          <PhoneHeader detail={detail} />
+        ) : (
+          <>
+            <Header detail={detail} now={now} />
+            <div className={cx("shrink-0 pb-4", PAD)}>
+              <ShipPath steps={detail.ship} />
+            </div>
+          </>
+        )}
+        <ReviewTabs location={location} files={detail.files} go={go}>
+          <TabControls location={location} detail={detail} send={send} phoneGuided={phoneGuided} />
+        </ReviewTabs>
+        <div className="flex min-h-0 min-w-0 flex-1">
+          <TabBody
+            location={location}
+            detail={detail}
+            lead={lead}
+            wide={wide}
+            phone={phone}
+            now={now}
+            bar={barSend}
+            onPath={onPath}
+            onCommit={onCommit}
+          />
+          {wide ? (
+            <aside
+              aria-label="Stack, checks and review"
+              className="flex w-84 shrink-0 flex-col gap-4 overflow-y-auto overscroll-contain border-s border-solid border-border-hairline py-4 ps-5 pe-8"
+            >
+              {rail}
+            </aside>
+          ) : null}
+        </div>
+      </WrapContext.Provider>
     </FocusContext.Provider>
   );
 }
