@@ -39,7 +39,7 @@ import type { ChangeKey } from "../../core/ids.ts";
 import type { ReviewItem } from "../../core/items.ts";
 import type { ChangeFile, ReviewRevision } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
-import { FileRowsSkeleton, PatchesProblem } from "../file-cards.tsx";
+import { FileRowsSkeleton, FileStatus, PatchesProblem } from "../file-cards.tsx";
 import { Button } from "../components/ui/button.tsx";
 import { surface } from "../components/ui/surface.ts";
 import { cx, plural } from "../format.ts";
@@ -64,6 +64,7 @@ import {
 import { Chevron } from "./icons.tsx";
 import { usePatchStore } from "./patches.ts";
 import { FocusContext } from "./review-focus.ts";
+import { useListWindow } from "./use-window.ts";
 
 const LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
@@ -441,6 +442,113 @@ function findingsByGroup(
 
 const DOT = ["bg-destructive", "bg-warning"] as const;
 
+/** Every file row is `h-7`, so a long group windows without measuring. */
+const FILE_ROW_HEIGHT = 28;
+
+const OutlineFile = memo(function OutlineFile({
+  file,
+  current,
+  viewed,
+  onFile,
+}: {
+  file: ResolvedFile;
+  current: boolean;
+  viewed: boolean;
+  onFile: (path: string) => void;
+}) {
+  const separator = file.path.lastIndexOf("/");
+  return (
+    <button
+      type="button"
+      title={file.path}
+      aria-current={current ? "location" : undefined}
+      data-testid="sc-outline-file"
+      data-path={file.path}
+      onClick={() => onFile(file.path)}
+      className={cx(
+        "flex h-7 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-md border-0 ps-8 pe-2 text-start text-[12px] leading-4 hover:bg-surface-raised",
+        current ? "bg-border-hairline" : "bg-transparent",
+        viewed ? "opacity-60" : undefined,
+      )}
+    >
+      <FileStatus kind={file.kind} />
+      {/* The name stays whole; its directory trails and truncates, so repeated names like `index.ts` stay apart. */}
+      <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
+        <span
+          className={cx(
+            "max-w-full shrink-0 truncate",
+            current ? "font-medium text-foreground" : "text-muted-foreground",
+          )}
+        >
+          {file.path.slice(separator + 1)}
+        </span>
+        {separator > 0 ? (
+          <span className="min-w-0 shrink truncate text-[11px] text-(--tertiary-foreground)">
+            {file.path.slice(0, separator)}
+          </span>
+        ) : null}
+      </span>
+      {viewed ? <span className="sr-only">Viewed</span> : null}
+    </button>
+  );
+});
+
+/** An open group's files under its outline row; only the file being read in this group follows the scroll. */
+const OutlineFiles = memo(function OutlineFiles({
+  group,
+  files,
+  viewed,
+  groupOf,
+  reading,
+  onFile,
+}: {
+  group: string;
+  files: readonly ResolvedFile[];
+  viewed: ReadonlySet<string>;
+  groupOf: ReadonlyMap<string, string>;
+  reading: Reading;
+  onFile: (path: string) => void;
+}) {
+  const current = useSyncExternalStore(reading.subscribe, () => {
+    const path = reading.get();
+    return path !== null && groupOf.get(path) === group ? path : null;
+  });
+  const [list, setList] = useState<HTMLUListElement | null>(null);
+  const sizeOf = useCallback(() => FILE_ROW_HEIGHT, []);
+  const keyOf = useCallback((index: number) => files[index]!.path, [files]);
+  // The derived "Files" group can hold every file of a large change; past 50 only those in view mount.
+  const win = useListWindow({ count: files.length, sizeOf, keyOf, list });
+  const row = (file: ResolvedFile) => (
+    <OutlineFile
+      file={file}
+      current={file.path === current}
+      viewed={viewed.has(file.path)}
+      onFile={onFile}
+    />
+  );
+  return (
+    <ul
+      ref={setList}
+      aria-label="Files in this section"
+      data-testid="sc-outline-files"
+      className={cx("m-0 list-none p-0", win.items ? "relative" : "flex flex-col")}
+      style={win.items ? { height: win.total } : undefined}
+    >
+      {win.items
+        ? win.items.map((virtual) => (
+            <li
+              key={virtual.key as string}
+              className="absolute inset-x-0 top-0"
+              style={{ transform: `translateY(${virtual.start - win.margin}px)` }}
+            >
+              {row(files[virtual.index]!)}
+            </li>
+          ))
+        : files.map((file) => <li key={file.path}>{row(file)}</li>)}
+    </ul>
+  );
+});
+
 const OutlineRow = memo(function OutlineRow({
   id,
   index,
@@ -449,7 +557,10 @@ const OutlineRow = memo(function OutlineRow({
   done,
   current,
   findings,
-  onPick,
+  expanded,
+  onExpand,
+  onCollapse,
+  children,
 }: {
   id: string;
   index: number;
@@ -458,16 +569,21 @@ const OutlineRow = memo(function OutlineRow({
   done: boolean;
   current: boolean;
   findings: Findings | undefined;
-  onPick: (id: string) => void;
+  expanded: boolean;
+  onExpand: (id: string) => void;
+  onCollapse: () => void;
+  /** The group's files, while it is expanded. */
+  children?: ReactNode;
 }) {
   return (
     <li>
       <button
         type="button"
         aria-current={current ? "location" : undefined}
+        aria-expanded={expanded}
         data-testid="sc-outline-row"
         data-group={id}
-        onClick={() => onPick(id)}
+        onClick={() => (expanded ? onCollapse() : onExpand(id))}
         className={cx(
           "flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-[6px] border-0 p-2 text-start hover:bg-surface-raised",
           current ? "bg-border-hairline" : "bg-transparent",
@@ -522,11 +638,17 @@ const OutlineRow = memo(function OutlineRow({
           </span>
         )}
       </button>
+      {children}
     </li>
   );
 });
 
-/** "Read in this order" (board A): one row per group; only the current group's row follows the scroll. */
+/**
+ * "Read in this order" (board A): one row per group; only the current group's
+ * row follows the scroll. Pressing a row scrolls to the group and lists its
+ * files under it, one group at a time; pressing it again folds them away
+ * without moving the column.
+ */
 const Outline = memo(function Outline({
   resolved,
   viewed,
@@ -534,6 +656,7 @@ const Outline = memo(function Outline({
   reading,
   findings,
   onPick,
+  onFile,
 }: {
   resolved: ResolvedGuide;
   viewed: ReadonlySet<string>;
@@ -541,11 +664,23 @@ const Outline = memo(function Outline({
   reading: Reading;
   findings: ReadonlyMap<string, Findings>;
   onPick: (id: string) => void;
+  onFile: (path: string) => void;
 }) {
   const current = useSyncExternalStore(reading.subscribe, () => {
     const path = reading.get();
     return path === null ? null : (groupOf.get(path) ?? null);
   });
+  const [open, setOpen] = useState<string | null>(null);
+  // A regroup (the guide landing, a new head) can drop the open group; then none is open.
+  const expanded = resolved.groups.find((group) => group.id === open) ?? null;
+  const onExpand = useCallback(
+    (id: string) => {
+      setOpen(id);
+      onPick(id);
+    },
+    [onPick],
+  );
+  const onCollapse = useCallback(() => setOpen(null), []);
   return (
     <nav
       aria-label="Read in this order"
@@ -564,8 +699,21 @@ const Outline = memo(function Outline({
             done={group.files.every((file) => viewed.has(file.path))}
             current={group.id === current}
             findings={findings.get(group.id)}
-            onPick={onPick}
-          />
+            expanded={group === expanded}
+            onExpand={onExpand}
+            onCollapse={onCollapse}
+          >
+            {group === expanded ? (
+              <OutlineFiles
+                group={group.id}
+                files={group.files}
+                viewed={viewed}
+                groupOf={groupOf}
+                reading={reading}
+                onFile={onFile}
+              />
+            ) : null}
+          </OutlineRow>
         ))}
       </ol>
     </nav>
@@ -996,6 +1144,7 @@ export function GuidedView({
               reading={reading}
               findings={findings}
               onPick={onPickGroup}
+              onFile={pick}
             />
           ) : null}
           <DiffColumn scroller={scroller}>

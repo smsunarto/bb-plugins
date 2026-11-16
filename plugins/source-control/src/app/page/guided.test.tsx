@@ -26,6 +26,8 @@ globalThis.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver;
+// jsdom has no scrolling; an outline pick scrolls the column.
+Element.prototype.scrollTo ??= () => {};
 
 type Handlers = PluginRpcTestHandlers<typeof sourceControlContract>;
 
@@ -479,4 +481,56 @@ test("a guide for an earlier head whose files are all unchanged still offers Reg
   expect(status.textContent).toContain("It was written for an earlier commit.");
   expect(status.textContent).not.toContain("listed at the end");
   expect(within(status).getByTestId("sc-guide-action").textContent).toBe("Regenerate guide");
+});
+
+test("pressing an outline section lists its files under it, and a file there opens it in the column", async () => {
+  const state = server({
+    guide: {
+      ...EMPTY_GUIDE_VIEW,
+      state: "done",
+      phase: "done",
+      revision: HEAD,
+      guide: guideFor(HEAD),
+    },
+  });
+  const slot = render(state);
+  const outline = await slot.findByTestId("sc-guide-outline");
+  const row = async (id: string) =>
+    await waitFor(() => {
+      const found = within(outline)
+        .getAllByTestId("sc-outline-row")
+        .find((element) => element.getAttribute("data-group") === id);
+      expect(found).toBeDefined();
+      return found!;
+    });
+  const listed = () =>
+    within(outline)
+      .queryAllByTestId("sc-outline-file")
+      .map((element) => element.getAttribute("data-path"));
+
+  const client = await row("client");
+  expect(client.getAttribute("aria-expanded")).toBe("false");
+  expect(listed()).toEqual([]);
+
+  fireEvent.click(client);
+  expect(client.getAttribute("aria-expanded")).toBe("true");
+  expect(listed()).toEqual(["src/c.ts", "src/b.ts"]);
+
+  const b = within(outline)
+    .getAllByTestId("sc-outline-file")
+    .find((element) => element.getAttribute("data-path") === "src/b.ts")!;
+  fireEvent.click(b);
+  await waitFor(() => expect(b.getAttribute("aria-current")).toBe("location"));
+  expect(card(slot.getByTestId("sc-guided-cards"), "src/b.ts").getAttribute("data-open")).toBe(
+    "true",
+  );
+
+  // One section at a time.
+  fireEvent.click(await row("rest"));
+  expect(listed()).toEqual(["src/a.ts"]);
+  expect(client.getAttribute("aria-expanded")).toBe("false");
+
+  // Pressing the open section folds its files away.
+  fireEvent.click(await row("rest"));
+  expect(listed()).toEqual([]);
 });
