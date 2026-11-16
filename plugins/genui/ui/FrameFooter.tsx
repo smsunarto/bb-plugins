@@ -116,10 +116,10 @@ export function GalleryFooter({
           open && "bg-surface-recessed",
         )}
       >
-        <div className="flex min-w-0 flex-col gap-0.5 @lg:flex-row @lg:items-baseline @lg:gap-3">
+        <div className="flex min-w-0 flex-col gap-1 @lg:flex-row @lg:items-baseline @lg:gap-3">
           <p className="m-0 truncate text-xs leading-4 text-foreground">
             <span className="font-medium">{example.component}</span>
-            <span aria-hidden className="px-1.5 text-subtle-foreground">
+            <span aria-hidden className="px-1 text-subtle-foreground">
               ·
             </span>
             <span className="sr-only">, </span>
@@ -127,7 +127,7 @@ export function GalleryFooter({
           </p>
           <span className="truncate font-mono text-[11px] leading-4 text-subtle-foreground">{example.file}</span>
         </div>
-        <div className="flex shrink-0 items-center gap-0.5">
+        <div className="flex shrink-0 items-center gap-1">
           <WithTooltip tip={open ? "Hide the source" : "Show the source"}>
             <CompactButton
               variant="ghost"
@@ -196,7 +196,7 @@ function SourceBody({
         <SourceView content={source} path={viewerPath(viewerName, source)} />
       </div>
       {files.length === 0 && diagnostics.length === 0 ? null : (
-        <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2.5 border-t border-border px-3 py-2.5 text-[11px] leading-4">
+        <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 border-t border-border px-3 py-3 text-[11px] leading-4">
           {files.length === 0 ? null : (
             <>
               <dt className="text-muted-foreground">Files</dt>
@@ -233,7 +233,7 @@ function SourceBody({
 
 export function DiagnosticList({ diagnostics }: { diagnostics: readonly Diagnostic[] }): ReactNode {
   return (
-    <ul className="m-0 flex list-none flex-col gap-0.5 p-0 font-mono text-xs text-muted-foreground">
+    <ul className="m-0 flex list-none flex-col gap-1 p-0 font-mono text-xs text-muted-foreground">
       {diagnostics.map((diagnostic, index) => (
         <li key={index}>
           <span className="tabular-nums">

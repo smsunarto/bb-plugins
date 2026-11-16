@@ -382,7 +382,7 @@ function Disclosure({
 function Detail({ detail }: { detail: string | null }) {
   if (detail === null) return null;
   return (
-    <Badge variant="secondary" className="mt-px px-1.5 py-0 font-medium">
+    <Badge variant="secondary" className="h-5 px-1 py-0 font-medium">
       {detail}
     </Badge>
   );
@@ -405,7 +405,7 @@ function Failure({ test }: { test: TestCase }) {
         label={`${test.name}, failed`}
         header={(open) => (
           <>
-            <span className="mt-[3px] flex items-center gap-1.5">
+            <span className="mt-[3px] flex items-center gap-1">
               <Chevron open={open} />
               <StatusMark status="failed" />
             </span>
@@ -414,15 +414,15 @@ function Failure({ test }: { test: TestCase }) {
             </span>
             <Detail detail={test.detail} />
             {test.ms === null ? null : (
-              <span className="mt-px shrink-0 text-xs leading-5 tabular-nums text-muted-foreground">{formatDuration(test.ms)}</span>
+              <span className="shrink-0 text-xs leading-5 tabular-nums text-muted-foreground">{formatDuration(test.ms)}</span>
             )}
           </>
         )}
       >
         {() => (
-          <div className="flex min-w-0 flex-col gap-2 pb-1 pl-[42px] pt-1.5">
+          <div className="flex min-w-0 flex-col gap-2 pb-1 pl-10 pt-1">
             <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
-              <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-5">
+              <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-5">
                 {suite === null ? null : <span className="min-w-0 truncate">{suite}</span>}
                 {test.file === null ? null : <FileLink path={test.file} line={test.line} />}
               </span>
@@ -448,7 +448,7 @@ function Failure({ test }: { test: TestCase }) {
                 )}
               >
                 {() => (
-                  <div className="pt-1.5">
+                  <div className="pt-1">
                     <Message text={test.output!} />
                   </div>
                 )}
@@ -477,7 +477,7 @@ function Failures({ failures }: { failures: readonly TestCase[] }) {
           variant="link"
           size="sm"
           onClick={() => setShown((count) => count + FAILURE_PAGE)}
-          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground pl-[42px]"
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground pl-10"
         >
           Show {formatNumber(Math.min(rest, FAILURE_PAGE))} more of {formatNumber(rest)} failures
         </Button>
@@ -491,7 +491,7 @@ function Failures({ failures }: { failures: readonly TestCase[] }) {
 
 function TestRow({ test }: { test: TestCase }) {
   return (
-    <li className="flex min-w-0 items-start gap-2 py-[3px] text-xs leading-5">
+    <li className="flex min-w-0 items-start gap-2 py-1 text-xs leading-5">
       <StatusMark status={test.status} className="mt-[3px] size-3" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className={cn("[overflow-wrap:anywhere]", test.status === "skipped" ? "text-muted-foreground" : "text-foreground")}>
@@ -513,7 +513,7 @@ function GroupTests({ tests }: { tests: readonly TestCase[] }) {
   const [shown, setShown] = useState(TEST_PAGE);
   const rest = tests.length - shown;
   return (
-    <div className="flex min-w-0 flex-col pb-1.5 pl-[22px] pt-0.5">
+    <div className="flex min-w-0 flex-col pb-2 pl-[22px]">
       <ul className="m-0 min-w-0 list-none p-0">
         {tests.slice(0, shown).map((test, index) => (
           <TestRow key={index} test={test} />
@@ -546,7 +546,7 @@ function Group({ group }: { group: TestGroup }) {
         defaultOpen={false}
         label={`${label}: ${summary}`}
         header={(open) => (
-          <span className="flex w-full min-w-0 items-center gap-2 py-1.5">
+          <span className="flex w-full min-w-0 items-center gap-2 min-h-8 py-1">
             <Chevron open={open} />
             <StatusMark status={status} />
             <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground" title={group.file ?? group.label}>
@@ -633,7 +633,7 @@ function Summary({ run, title }: { run: TestRun; title: string | null }) {
         ref={grow}
         role="img"
         aria-label={countsText(run.counts)}
-        className="flex h-1.5 w-full origin-left gap-[2px] overflow-hidden rounded-full bg-muted"
+        className="flex h-2 w-full origin-left gap-[2px] overflow-hidden rounded-full bg-muted"
       >
         {parts.map((part) =>
           part.count > 0 ? (
@@ -641,10 +641,10 @@ function Summary({ run, title }: { run: TestRun; title: string | null }) {
           ) : null,
         )}
       </div>
-      <p className="m-0 flex flex-wrap gap-x-4 gap-y-0.5 text-xs leading-5 text-muted-foreground">
+      <p className="m-0 flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5 text-muted-foreground">
         {parts.map((part) =>
           part.count > 0 || part.status !== "skipped" ? (
-            <span key={part.status} className="flex items-center gap-1.5 tabular-nums">
+            <span key={part.status} className="flex items-center gap-1 tabular-nums">
               <span aria-hidden className={cn("size-2 rounded-full", part.count > 0 ? part.fill : "bg-muted")} />
               <span className={cn("font-medium", part.count > 0 ? part.ink : "text-muted-foreground")}>{formatNumber(part.count)}</span>
               {part.label}

@@ -133,7 +133,7 @@ function Owners({ names }: { names: readonly string[] }) {
         <Avatar key={name} name={name} />
       ))}
       {names.length > shown.length ? (
-        <span className="inline-flex h-5 items-center pl-1.5 text-[10.5px] tabular-nums text-muted-foreground">+{names.length - shown.length}</span>
+        <span className="inline-flex h-5 items-center pl-1 text-[10.5px] tabular-nums text-muted-foreground">+{names.length - shown.length}</span>
       ) : null}
     </span>
   );
@@ -256,7 +256,7 @@ function StatusGlyph({ status }: { status: string }) {
 /** A label as a quiet chip, with its GitHub colour as a dot when it has one. */
 function LabelChip({ name, color }: { name: string; color: string | null }) {
   return (
-    <span className="inline-flex min-w-0 max-w-[11rem] items-center gap-1 rounded-full border border-border px-1.5 text-[10.5px] leading-[18px] text-muted-foreground">
+    <span className="inline-flex min-w-0 max-w-[11rem] items-center gap-1 rounded-full border border-border px-1 text-[10.5px] leading-[18px] text-muted-foreground">
       {color === null ? null : <span aria-hidden className="size-1.5 shrink-0 rounded-full" style={{ background: color }} />}
       <span className="truncate">{name}</span>
     </span>
@@ -311,7 +311,7 @@ function Card({ card, today, open, onToggle }: { card: BoardCard; today: number;
   }
   const body = (
     <>
-      <span className="flex min-w-0 items-center gap-1.5">
+      <span className="flex min-w-0 items-center gap-1">
         <PriorityMark priority={card.priority} />
         {card.key === null ? null : <span className="truncate font-mono text-[11px] leading-4 text-muted-foreground">{card.key}</span>}
         {card.url === null ? null : <Icon name="ExternalLink" aria-hidden className="size-3 shrink-0 text-muted-foreground" />}
@@ -336,7 +336,7 @@ function Card({ card, today, open, onToggle }: { card: BoardCard; today: number;
     </>
   );
   const surface = cn(
-    "flex w-full min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-background px-2.5 py-2 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)]",
+    "flex w-full min-w-0 flex-col gap-2 rounded-lg border border-border bg-background px-3 py-2 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)]",
     late && "border-destructive/40",
   );
   const interactive = cn(surface, "cursor-pointer transition-colors duration-150 hover:border-foreground/20 hover:bg-state-hover", FOCUS_RING);
@@ -359,7 +359,7 @@ function Card({ card, today, open, onToggle }: { card: BoardCard; today: number;
         {open ? (
           <div
             id={detailId}
-            className="max-h-60 min-w-0 overflow-y-auto rounded-b-lg border border-t-0 border-border bg-surface-recessed px-2.5 py-2 text-xs"
+            className="max-h-60 min-w-0 overflow-y-auto rounded-b-lg border border-t-0 border-border bg-surface-recessed px-3 py-2 text-xs"
           >
             <Markdown content={card.detail} className={SMALL_PROSE} />
           </div>
@@ -405,11 +405,11 @@ function Column({
       role="tabpanel"
       aria-labelledby={tabId}
       className={cn(
-        "min-w-0 flex-col gap-2 rounded-xl bg-surface-recessed p-1.5 @xl:flex @xl:min-w-[13rem] @xl:flex-1 @xl:snap-start",
+        "min-w-0 flex-col gap-2 rounded-xl bg-surface-recessed p-2 @xl:flex @xl:min-w-[13rem] @xl:flex-1 @xl:snap-start",
         hidden ? "hidden" : "flex",
       )}
     >
-      <div className="hidden min-w-0 items-center gap-1.5 px-1 pt-0.5 text-xs leading-5 @xl:flex">
+      <div className="hidden min-w-0 items-center gap-1 px-1 text-xs leading-5 @xl:flex">
         <StatusGlyph status={column.status} />
         <span className="truncate font-medium text-foreground">{column.label}</span>
         <span className="tabular-nums text-muted-foreground">{formatNumber(column.cards.length)}</span>
@@ -417,7 +417,7 @@ function Column({
       {column.cards.length === 0 ? (
         <p className="m-0 px-1 pb-1 text-xs leading-5 text-muted-foreground">Nothing here</p>
       ) : (
-        <ul className="m-0 flex min-w-0 list-none flex-col gap-1.5 p-0">
+        <ul className="m-0 flex min-w-0 list-none flex-col gap-2 p-0">
           {cards.map((card) => (
             <Card key={card.id} card={card} today={today} open={open === card.id} onToggle={() => onToggle(card.id)} />
           ))}
@@ -429,7 +429,7 @@ function Column({
           variant="link"
           size="sm"
           onClick={onMore}
-          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground self-center px-1 pb-0.5"
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground self-center px-1"
         >
           {formatNumber(rest)} more
         </Button>
@@ -531,7 +531,7 @@ export function Board({ props }: { props: Props }) {
         role="tablist"
         aria-label="Columns"
         onKeyDown={onKeyDown}
-        className="flex min-w-0 gap-1 overflow-x-auto rounded-lg bg-surface-recessed p-0.5 [scrollbar-width:none] @xl:hidden"
+        className="flex min-w-0 gap-1 overflow-x-auto rounded-lg bg-surface-recessed p-1 [scrollbar-width:none] @xl:hidden"
       >
         {board.columns.map((column, index) => (
           <button
@@ -547,7 +547,7 @@ export function Board({ props }: { props: Props }) {
             tabIndex={index === active ? 0 : -1}
             onClick={() => select(index)}
             className={cn(
-              "flex shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1 text-xs leading-5 transition-colors duration-150",
+              "flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md px-2 h-6 py-0 text-xs [@media(pointer:coarse)]:h-7 leading-5 transition-colors duration-150",
               FOCUS_RING,
               index === active ? "bg-background font-medium text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.08)]" : "text-muted-foreground hover:text-foreground",
             )}
@@ -603,8 +603,8 @@ const ROADMAP_TONE: Record<RoadmapStatus, Tone> = {
   "at-risk": "warn",
 };
 
-const ROW_H = 30;
-const LANE_H = 26;
+const ROW_H = 32;
+const LANE_H = 28;
 
 /** Row layout shared by the label column, the bars and the dependency lines. */
 interface RoadmapRow {
@@ -702,7 +702,7 @@ function ItemDetail({ item, roadmap, onClose }: { item: RoadmapItem; roadmap: Ro
     );
   }
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-surface-recessed px-3 py-2.5">
+    <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface-recessed px-3 py-3">
       <div className="flex min-w-0 items-start gap-2">
         <span className="min-w-0 flex-1 text-[13px] font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{item.title}</span>
         <Pill tone={ROADMAP_TONE[item.status]}>{item.milestone ? "Milestone" : ROADMAP_STATUS_LABEL[item.status]}</Pill>
@@ -712,7 +712,7 @@ function ItemDetail({ item, roadmap, onClose }: { item: RoadmapItem; roadmap: Ro
           </IconButton>
         )}
       </div>
-      <p className="m-0 flex flex-wrap gap-x-1.5 text-xs leading-5 text-muted-foreground">
+      <p className="m-0 flex flex-wrap gap-x-1 text-xs leading-5 text-muted-foreground">
         {facts.flatMap((fact, index) => (index === 0 ? [fact] : [<span key={`dot${index}`}>·</span>, fact]))}
       </p>
       {item.after !== null ? (
@@ -801,21 +801,21 @@ function Legend({ roadmap }: { roadmap: RoadmapData }) {
   const milestones = roadmap.items.some((item) => item.milestone);
   const todayShown = roadmap.today >= roadmap.from && roadmap.today < roadmap.to;
   return (
-    <p className="m-0 flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[11px] leading-4 text-muted-foreground" aria-hidden>
+    <p className="m-0 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] leading-4 text-muted-foreground" aria-hidden>
       {statuses.map((status) => (
-        <span key={status} className="inline-flex items-center gap-1.5">
+        <span key={status} className="inline-flex items-center gap-1">
           <span className="block h-2 w-3 rounded-[3px]" style={{ background: ROADMAP_COLOR[status] }} />
           {ROADMAP_STATUS_LABEL[status]}
         </span>
       ))}
       {milestones ? (
-        <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1">
           <Diamond color="var(--muted-foreground)" className="size-2" />
           Milestone
         </span>
       ) : null}
       {todayShown ? (
-        <span className="inline-flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1">
           <span className={cn("block h-3 w-px", ACCENT_BG)} />
           Today
         </span>
@@ -854,7 +854,7 @@ function RoadmapList({
                 const color = ROADMAP_COLOR[item.status];
                 const progress = item.progress ?? (item.status === "done" ? 100 : 0);
                 return (
-                  <li key={item.index} className="min-w-0 py-1.5">
+                  <li key={item.index} className="min-w-0 py-2">
                     <button
                       type="button"
                       aria-expanded={open}
@@ -872,7 +872,7 @@ function RoadmapList({
                         <span className="w-[6.75rem] shrink-0 truncate tabular-nums">
                           {item.milestone ? formatDay(item.start, roadmap.today) : formatRange(item.start, item.end, roadmap.today)}
                         </span>
-                        <span aria-hidden className="relative h-1.5 min-w-0 flex-1 rounded-full bg-muted">
+                        <span aria-hidden className="relative h-2 min-w-0 flex-1 rounded-full bg-muted">
                           {item.milestone ? (
                             <span
                               className="absolute top-1/2 block size-1.5 -translate-x-1/2 -translate-y-1/2 rotate-45"
@@ -898,7 +898,7 @@ function RoadmapList({
                       </span>
                     </button>
                     {open ? (
-                      <div id={`${detailId}-${item.index}`} className="pt-1.5">
+                      <div id={`${detailId}-${item.index}`} className="pt-2">
                         <ItemDetail item={item} roadmap={roadmap} />
                       </div>
                     ) : null}
@@ -931,13 +931,13 @@ function Gantt({
   const todayLeft = axisShare(roadmap.today + 0.5, roadmap) * 100;
   const chosen = selected === null ? null : (roadmap.items.find((item) => item.index === selected) ?? null);
   return (
-    <div className="hidden min-w-0 flex-col gap-2.5 @xl:flex">
+    <div className="hidden min-w-0 flex-col gap-3 @xl:flex">
       <div className="flex min-w-0">
         <div className="w-[clamp(8rem,28%,13rem)] shrink-0 pr-3">
           <div className="h-6 border-b border-border" />
           {rows.map((row) =>
             row.kind === "lane" ? (
-              <div key={`lane-${row.lane}`} className="flex items-end pb-0.5 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground" style={{ height: LANE_H }}>
+              <div key={`lane-${row.lane}`} className="flex items-end pb-1 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground" style={{ height: LANE_H }}>
                 <span className="truncate">{row.lane || "Other"}</span>
               </div>
             ) : (
@@ -948,7 +948,7 @@ function Gantt({
                 onClick={() => onSelect(row.item!.index)}
                 title={row.item!.title}
                 className={cn(
-                  "flex w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-sm text-left text-[13px] leading-5 text-foreground hover:text-foreground/80",
+                  "flex w-full min-w-0 cursor-pointer items-center gap-1 rounded-sm text-left text-[13px] leading-5 text-foreground hover:text-foreground/80",
                   FOCUS_RING,
                   selected === row.item!.index && "font-medium",
                 )}
@@ -991,7 +991,7 @@ function Gantt({
               <span aria-hidden className={cn("pointer-events-none absolute inset-y-0 w-px", ACCENT_BG)} style={{ left: `${todayLeft}%` }} />
               <span
                 aria-hidden
-                className={cn("pointer-events-none absolute top-0.5 -translate-x-1/2 whitespace-nowrap rounded-full px-1.5 text-[10px] font-medium leading-4 text-background", ACCENT_BG)}
+                className={cn("pointer-events-none absolute top-1 -translate-x-1/2 whitespace-nowrap rounded-full px-1 text-[10px] font-medium leading-4 text-background", ACCENT_BG)}
                 style={{ left: `${todayLeft}%` }}
               >
                 {formatDay(roadmap.today, roadmap.today)}
@@ -1105,21 +1105,21 @@ function HealthRow({ item, today }: { item: HealthItem; today: number }) {
   return (
     <li
       ref={rise}
-      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-1.5 py-2.5 @xl:grid-cols-[minmax(0,1fr)_6.5rem_7.5rem_minmax(0,7.5rem)_6rem]"
+      className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 gap-y-2 min-h-10 py-2 @xl:grid-cols-[minmax(0,1fr)_6.5rem_7.5rem_minmax(0,7.5rem)_6rem]"
     >
-      <div className="col-start-1 row-start-1 flex min-w-0 flex-col gap-0.5">
+      <div className="col-start-1 row-start-1 flex min-w-0 flex-col gap-1">
         <span className="text-[13px] font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{item.name}</span>
         {item.note === null ? null : <Markdown content={item.note} className={cn(SMALL_PROSE, "text-muted-foreground")} />}
       </div>
-      <Pill tone={tone} className="col-start-2 row-start-1 mt-0.5 justify-self-end @xl:justify-self-start">
+      <Pill tone={tone} className="col-start-2 row-start-1 justify-self-end @xl:justify-self-start">
         <span aria-hidden className={cn("size-1.5 rounded-full", TONE_DOT[tone])} />
         {label}
       </Pill>
-      <div className={cn("col-span-2 min-w-0 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1 @xl:mt-0.5", item.progress === null && "hidden @xl:block")}>
+      <div className={cn("col-span-2 min-w-0 @xl:col-span-1 @xl:col-start-3 @xl:row-start-1", item.progress === null && "hidden @xl:block")}>
         <HealthBar item={item} />
       </div>
       <div className="col-span-2 flex min-w-0 items-center gap-3 text-xs leading-5 text-muted-foreground @xl:contents">
-        <span className="flex min-w-0 items-center gap-1.5 @xl:col-start-4 @xl:row-start-1 @xl:mt-0.5">
+        <span className="flex min-w-0 items-center gap-1 @xl:col-start-4 @xl:row-start-1">
           {item.owner === null ? null : (
             <>
               <Avatar name={item.owner} />
@@ -1130,7 +1130,7 @@ function HealthRow({ item, today }: { item: HealthItem; today: number }) {
         <span
           title={item.due === null ? undefined : `Due ${fullDay(item.due)}`}
           className={cn(
-            "ml-auto whitespace-nowrap tabular-nums @xl:col-start-5 @xl:row-start-1 @xl:ml-0 @xl:mt-0.5 @xl:text-right",
+            "ml-auto whitespace-nowrap tabular-nums @xl:col-start-5 @xl:row-start-1 @xl:ml-0 @xl:text-right",
             item.late && "font-medium text-destructive",
           )}
         >
@@ -1188,7 +1188,7 @@ export function Status({ props }: { props: Props }) {
             </>
           }
         />
-        <div role="img" aria-label={healthSummary(report)} className="flex h-1.5 w-full gap-[2px] overflow-hidden rounded-full bg-muted">
+        <div role="img" aria-label={healthSummary(report)} className="flex h-2 w-full gap-[2px] overflow-hidden rounded-full bg-muted">
           {segments.map((segment) => (
             <span key={segment.status} className={cn("h-full min-w-[3px]", STRIP_FILL[segment.status])} style={{ flex: `${segment.count} 1 0` }} />
           ))}
@@ -1196,7 +1196,7 @@ export function Status({ props }: { props: Props }) {
         </div>
       </div>
       <div className="flex min-w-0 flex-col">
-        <div className="hidden min-w-0 grid-cols-[minmax(0,1fr)_6.5rem_7.5rem_minmax(0,7.5rem)_6rem] gap-x-4 border-b border-border pb-1.5 text-[11px] leading-4 text-muted-foreground @xl:grid">
+        <div className="hidden min-w-0 grid-cols-[minmax(0,1fr)_6.5rem_7.5rem_minmax(0,7.5rem)_6rem] gap-x-4 border-b border-border pb-2 text-[11px] leading-4 text-muted-foreground @xl:grid">
           <span>{worst.status === "done" ? "Project" : "Project · worst first"}</span>
           <span>Status</span>
           <span>Progress</span>

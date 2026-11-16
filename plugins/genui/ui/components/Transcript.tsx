@@ -549,13 +549,13 @@ function Legend({ analysis }: { analysis: Analysis }) {
   return (
     <div aria-hidden className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-4 text-muted-foreground">
       {present.map((kind) => (
-        <span key={kind} className="inline-flex items-center gap-1.5">
+        <span key={kind} className="inline-flex items-center gap-1">
           <Swatch kind={kind} />
           {ERROR_LABEL[kind]}
         </span>
       ))}
       {[...colors.entries()].map(([speaker, color]) => (
-        <span key={speaker} className="inline-flex min-w-0 items-center gap-1.5">
+        <span key={speaker} className="inline-flex min-w-0 items-center gap-1">
           <span className="h-[3px] w-4 shrink-0 rounded-full" style={{ background: color }} />
           <span className="max-w-[10rem] truncate">{speaker}</span>
         </span>
@@ -633,7 +633,7 @@ function Controls({
           )}
         </div>
       )}
-      <div className="flex shrink-0 items-center gap-0.5" role="group" aria-label="Errors">
+      <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Errors">
         <IconButton label="Previous error" onClick={() => onStep(-1)} disabled={regions.length === 0}>
           <Icon name="ChevronLeft" aria-hidden className="size-3.5" />
         </IconButton>
@@ -879,7 +879,7 @@ function Timeline({
     >
       <div className="relative" style={{ width: contentWidth }}>
         <Ruler ticks={ticks} step={step} pps={pps} span={span} player={player} />
-        <div className="flex flex-col gap-1.5 pt-1">
+        <div className="flex flex-col gap-2 pt-1">
           {lanes.map((lane, position) => (
             <LaneRow
               key={lane.index}
@@ -1026,7 +1026,7 @@ const LaneRow = memo(function LaneRow({
       <div className="h-[18px]">
         <span
           id={labelId}
-          className="sticky left-0 z-[4] inline-flex max-w-full items-baseline gap-1.5 whitespace-nowrap bg-background pr-2 text-[11px] leading-[18px]"
+          className="sticky left-0 z-[4] inline-flex max-w-full items-baseline gap-1 whitespace-nowrap bg-background pr-2 text-[11px] leading-[18px]"
           style={{ left: 0, maxWidth: Math.max(160, viewWidth - 8) }}
         >
           <span className="truncate font-medium text-foreground">{track.name}</span>
@@ -1202,7 +1202,7 @@ function WordBox({
       {truncated ? (
         <span
           aria-hidden
-          className="pointer-events-none absolute bottom-full left-0 mb-0.5 hidden whitespace-nowrap rounded-md border border-border bg-background px-1.5 text-[11.5px] leading-[18px] text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)] group-focus-within/word:block group-hover/word:block"
+          className="pointer-events-none absolute bottom-full left-0 mb-1 hidden whitespace-nowrap rounded-md border border-border bg-background px-1 text-[11.5px] leading-[18px] text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)] group-focus-within/word:block group-hover/word:block"
         >
           {text}
         </span>
@@ -1281,12 +1281,12 @@ function AlignedText({
           Each column: {names.map((name, index) => `${index === 0 ? "" : index === names.length - 1 ? " then " : ", "}${name}`).join("")}, top to bottom.
         </p>
       ) : null}
-      <div ref={container} className="flex min-w-0 flex-wrap gap-x-1 gap-y-2.5" aria-label="Aligned transcripts">
+      <div ref={container} className="flex min-w-0 flex-wrap gap-x-1 gap-y-3" aria-label="Aligned transcripts">
         {cols.slice(from, to).map((column, offset) => (
           <div
             key={from + offset}
             data-column={from + offset}
-            className={cn("flex flex-col rounded-[4px] px-0.5", regionColumns.has(from + offset) && "bg-surface-recessed ring-1 ring-foreground/40")}
+            className={cn("flex flex-col rounded-[4px]", regionColumns.has(from + offset) && "bg-surface-recessed ring-1 ring-foreground/40")}
           >
             <TextWord
               text={column.ref === null ? null : analysis.reference.words[column.ref].text}
@@ -1302,7 +1302,7 @@ function AlignedText({
                 return (
                   <span
                     key={slot}
-                    className={cn("whitespace-nowrap rounded-[3px] px-[3px] text-[12.5px] leading-5", missing ? "text-destructive/80 line-through decoration-destructive/60" : "text-transparent")}
+                    className={cn("whitespace-nowrap rounded-[3px] px-1 text-[12.5px] leading-5", missing ? "text-destructive/80 line-through decoration-destructive/60" : "text-transparent")}
                     style={missing ? MISSING_STYLE : undefined}
                     aria-label={missing ? `${track.name} is missing ${analysis.reference.words[column.ref!].text}` : undefined}
                   >
@@ -1350,7 +1350,7 @@ function AlignedText({
 }
 
 function TextWord({ text, style, active, onPress }: { text: string | null; style: CSSProperties | null; active: boolean; onPress: (() => void) | null }) {
-  const className = cn("whitespace-nowrap rounded-[3px] px-[3px] text-left text-[12.5px] leading-5 text-foreground", active && "bg-foreground/10 ring-1 ring-foreground/50");
+  const className = cn("whitespace-nowrap rounded-[3px] px-1 text-left text-[12.5px] leading-5 text-foreground", active && "bg-foreground/10 ring-1 ring-foreground/50");
   if (text === null) return <span className={cn(className, "text-muted-foreground/60")} aria-hidden>·</span>;
   if (onPress === null) return <span className={className} style={style ?? undefined}>{text}</span>;
   return (

@@ -42,7 +42,7 @@ export function Card({ props }: { props: Props }) {
   if (depth > 0) {
     return (
       <CardDepthContext value={depth + 1}>
-        <section className="flex min-w-0 flex-1 flex-col gap-2.5 rounded-lg bg-surface-recessed px-3.5 py-3 text-sm text-foreground [&>[data-button-group]:last-child]:mt-auto">
+        <section className="flex min-w-0 flex-1 flex-col gap-3 rounded-lg bg-surface-recessed px-4 py-3 text-sm text-foreground [&>[data-button-group]:last-child]:mt-auto">
           <CardTitle title={title} nested />
           {children}
         </section>
@@ -191,7 +191,7 @@ export function Details({ props }: { props: Props }) {
       <div ref={inner} className="flex min-w-0 flex-col">
         <CollapsibleTrigger
           id={`${id}-summary`}
-          className="group flex w-full min-w-0 cursor-pointer items-start gap-1.5 rounded-sm text-left text-sm font-medium leading-5 text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          className="group flex w-full min-w-0 cursor-pointer items-start gap-1 rounded-sm text-left text-sm font-medium leading-5 text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <Icon
             name="ChevronRight"
@@ -208,7 +208,7 @@ export function Details({ props }: { props: Props }) {
           forceMount
           role="region"
           aria-labelledby={`${id}-summary`}
-          className={cn("min-w-0 flex-col gap-3 pl-5 pt-3", open ? "flex" : "hidden")}
+          className={cn("min-w-0 flex-col gap-3 pl-[18px] pt-3", open ? "flex" : "hidden")}
         >
           {mounted ? <RenderNodes nodes={nodes(props.children)} /> : null}
         </CollapsibleContent>

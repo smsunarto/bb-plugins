@@ -95,13 +95,13 @@ function ThreadsPanel({ threadId, ids }: { threadId: string; ids: readonly strin
         label={ids === null ? "Subthreads" : "Threads"}
         header={
           <>
-            <span className="flex min-w-0 items-center gap-1.5">
+            <span className="flex min-w-0 items-center gap-1">
               <Icon name="Workflow" aria-hidden className="size-3.5 shrink-0" />
               <span className="font-medium text-foreground">{ids === null ? "Subthreads" : "Threads"}</span>
               {view === null ? null : <span className="tabular-nums">{formatNumber(view.threads.length)}{view.truncated ? "+" : ""}</span>}
             </span>
             {running > 0 ? (
-              <span className="flex items-center gap-1.5 tabular-nums">
+              <span className="flex items-center gap-1 tabular-nums">
                 <LiveDot tone="info" live />
                 {running} running
               </span>
@@ -144,7 +144,7 @@ function ThreadList({ view, now }: { view: ThreadsView; now: number }) {
   const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
   if (view.threads.length === 0) {
     return (
-      <QuietLine className="px-3 py-2.5">
+      <QuietLine className="px-3 min-h-10 items-center py-2">
         {view.mode === "subthreads" ? "This thread has no subthreads." : "No threads named."}
       </QuietLine>
     );
@@ -200,14 +200,14 @@ function ThreadRow({ thread, now }: { thread: ThreadInfo; now: number }) {
         onClick={open}
         title={`Open “${thread.title}”`}
         className={cn(
-          "group/row flex w-full min-w-0 cursor-pointer items-center gap-2.5 px-3 py-2 text-left transition-colors duration-150 hover:bg-state-hover",
+          "group/row flex w-full min-w-0 cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors duration-150 hover:bg-state-hover",
           FOCUS_RING,
         )}
       >
         <LiveDot tone={tone} live={RUNNING[thread.status] || waiting} />
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="truncate text-[13px] font-medium leading-5 text-foreground">{thread.title}</span>
-          <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-[11px] leading-4 text-muted-foreground">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-1 text-[11px] leading-4 text-muted-foreground">
             <span className={cn("shrink-0 font-medium", TONE_TEXT[tone])}>{threadActivityLabel(thread)}</span>
             <span aria-hidden>·</span>
             <span className="flex min-w-0 items-center gap-1">
@@ -243,8 +243,8 @@ function ThreadRow({ thread, now }: { thread: ThreadInfo; now: number }) {
         />
       </button>
       {thread.pending === null && thread.lastMessage === null ? null : (
-        // Indented to the title: the dot (8 px) and its gap (10 px) after the row's padding (12 px).
-        <div className="flex min-w-0 flex-col gap-1.5 pb-2.5 pl-[30px] pr-3">
+        // Indented to the title: the dot (8 px) and its gap (8 px) after the row's padding (12 px).
+        <div className="flex min-w-0 flex-col gap-2 pb-2 pl-7 pr-3">
           {thread.pending === null ? null : <PendingCard pending={thread.pending} now={now} onOpen={open} />}
           {thread.lastMessage === null ? null : <LatestMessage threadId={thread.id} message={thread.lastMessage} onOpen={open} />}
         </div>
@@ -259,8 +259,8 @@ function PendingCard({ pending, now, onOpen }: { pending: PendingAsk; now: numbe
     .filter((part) => part !== "")
     .join(" · ");
   return (
-    <div role="group" aria-label="Waiting for you" className="min-w-0 rounded-md bg-warning/10 px-2.5 py-1.5 text-xs leading-5">
-      <div className="flex min-w-0 items-start gap-1.5">
+    <div role="group" aria-label="Waiting for you" className="min-w-0 rounded-md bg-warning/10 px-3 py-2 text-xs leading-5">
+      <div className="flex min-w-0 items-start gap-1">
         <Icon name={PENDING_ICON[pending.kind]} fallback="Info" aria-hidden className="mt-[3px] size-3.5 shrink-0 text-warning-text" />
         <span className="min-w-0 flex-1">
           <span className="font-medium text-warning-text">{pending.action}</span>
@@ -271,23 +271,23 @@ function PendingCard({ pending, now, onOpen }: { pending: PendingAsk; now: numbe
           variant="ghost"
           size="sm"
           onClick={onOpen}
-          className="-my-0.5 h-auto shrink-0 gap-0.5 rounded px-1.5 py-0.5 text-xs leading-5 text-foreground [&_[data-icon-root]]:size-3"
+          className="-my-0.5 shrink-0 gap-1 rounded px-1 h-6 py-0 text-xs leading-5 text-foreground [&_[data-icon-root]]:size-3"
         >
           {PENDING_VERB[pending.kind]}
           <Icon name="ChevronRight" aria-hidden />
         </Button>
       </div>
       {pending.text === null ? null : pending.code ? (
-        <code title={pending.text} className="mt-1 line-clamp-3 min-w-0 rounded bg-background/70 px-1.5 py-0.5 font-mono text-[11px] leading-4 text-foreground [overflow-wrap:anywhere]">
+        <code title={pending.text} className="mt-1 line-clamp-3 min-w-0 rounded bg-background/70 px-1 py-1 font-mono text-[11px] leading-4 text-foreground [overflow-wrap:anywhere]">
           {pending.text}
         </code>
       ) : (
-        <p className="m-0 mt-0.5 line-clamp-3 text-foreground [overflow-wrap:anywhere]">{pending.text}</p>
+        <p className="m-0 mt-1 line-clamp-3 text-foreground [overflow-wrap:anywhere]">{pending.text}</p>
       )}
       {pending.options.length === 0 ? null : (
         <ul aria-label="Options" className="m-0 mt-1 flex min-w-0 list-none flex-wrap gap-1 p-0">
           {pending.options.map((option, index) => (
-            <li key={index} className="max-w-full truncate rounded border border-border bg-background px-1.5 text-[11px] leading-[18px] text-muted-foreground">
+            <li key={index} className="max-w-full truncate rounded border border-border bg-background px-1 text-[11px] leading-[18px] text-muted-foreground">
               {option}
             </li>
           ))}
@@ -302,10 +302,10 @@ function LatestMessage({ threadId, message, onOpen }: { threadId: string; messag
   const [expanded, setExpanded] = usePersistedState(`threads:message:${threadId}`, false, (stored) => (typeof stored === "boolean" ? stored : null));
   const { outer, inner } = useSmoothHeight<HTMLDivElement, HTMLDivElement>();
   const preview = useMemo(() => previewText(message.text), [message.text]);
-  const link = "h-auto gap-0.5 p-0 text-[11px] font-normal leading-4 text-muted-foreground hover:text-foreground [&_[data-icon-root]]:size-3";
+  const link = "h-auto gap-1 p-0 text-[11px] font-normal leading-4 text-muted-foreground hover:text-foreground [&_[data-icon-root]]:size-3";
   return (
     <div ref={outer} className={cn("min-w-0", SMOOTH_HEIGHT_CLASS)}>
-      <div ref={inner} className="min-w-0 border-l-2 border-border pl-2.5">
+      <div ref={inner} className="min-w-0 border-l-2 border-border pl-2">
         {expanded ? (
           <>
             <Markdown
@@ -348,9 +348,9 @@ function LatestMessage({ threadId, message, onOpen }: { threadId: string; messag
 
 function MissingRow({ id }: { id: string }) {
   return (
-    <li className="flex min-w-0 items-center gap-2.5 border-b border-border/60 px-3 py-2 last:border-b-0">
+    <li className="flex min-w-0 items-center gap-2 border-b border-border/60 px-3 py-2 last:border-b-0">
       <span aria-hidden className="size-2 shrink-0 rounded-full border border-muted-foreground/50" />
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
         <span className="truncate font-mono text-xs leading-5 text-muted-foreground">{id}</span>
         <span className="text-[11px] leading-4 text-muted-foreground">Not found in this project</span>
       </span>

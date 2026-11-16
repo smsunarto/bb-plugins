@@ -121,7 +121,7 @@ function WaterfallView({ data }: { data: WaterfallData }) {
                 size="sm"
                 pressed={critical}
                 onPressedChange={setCritical}
-                className="mt-0.5 h-6 shrink-0 gap-1.5 px-2 text-xs font-normal tabular-nums"
+                className="h-6 shrink-0 gap-1 px-2 text-xs font-normal tabular-nums"
               >
                 <Icon name="Workflow" aria-hidden className="size-3.5" />
                 Critical path · {formatMs(data.criticalMs)}
@@ -133,13 +133,13 @@ function WaterfallView({ data }: { data: WaterfallData }) {
       {phasesUsed.length > 0 || data.markers.length > 0 ? (
         <div aria-hidden className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] leading-4 text-muted-foreground">
           {phasesUsed.map((name) => (
-            <span key={name} className="inline-flex items-center gap-1.5">
+            <span key={name} className="inline-flex items-center gap-1">
               <span className="size-2 rounded-[2px]" style={{ background: PHASE_COLOR[name] }} />
               {PHASE_LABEL[name]}
             </span>
           ))}
           {data.markers.map((marker) => (
-            <span key={marker.label} className="inline-flex items-center gap-1.5">
+            <span key={marker.label} className="inline-flex items-center gap-1">
               <span className="h-2.5 w-0 border-l border-dashed" style={{ borderColor: MARKER_COLOR[marker.label] ?? ACCENT }} />
               {marker.label}
             </span>
@@ -184,7 +184,7 @@ function WaterfallView({ data }: { data: WaterfallData }) {
 function Axis({ ticks }: { ticks: readonly number[] }) {
   const end = ticks[ticks.length - 1];
   return (
-    <div aria-hidden className={cn(ROW_GRID, "border-b border-border pb-0.5")}>
+    <div aria-hidden className={cn(ROW_GRID, "border-b border-border pb-1")}>
       <span className="hidden @md:block" />
       <span className="relative block h-4">
         {ticks.map((tick, index) => (
@@ -259,7 +259,7 @@ function Row({
           onPointerEnter={(event) => event.pointerType === "mouse" && setHovered(true)}
           onPointerLeave={() => setHovered(false)}
         >
-          <div className="flex h-5 min-w-0 items-center gap-1 @md:h-[26px]" style={{ paddingLeft: indent }}>
+          <div className="flex h-5 min-w-0 items-center gap-1 @md:h-7" style={{ paddingLeft: indent }}>
             {span.children.length > 0 ? (
               <button
                 type="button"
@@ -279,7 +279,7 @@ function Row({
               aria-controls={`${id}-detail`}
               aria-label={label}
               onClick={onSelect}
-              className={cn("flex min-w-0 flex-1 cursor-pointer items-baseline gap-1.5 rounded-sm text-left", FOCUS_RING)}
+              className={cn("flex min-w-0 flex-1 cursor-pointer items-baseline gap-1 rounded-sm text-left", FOCUS_RING)}
             >
               <span
                 className={cn(
@@ -300,7 +300,7 @@ function Row({
           <div
             aria-hidden
             onClick={onSelect}
-            className="relative h-4 min-w-0 cursor-pointer @md:h-[26px]"
+            className="relative h-4 min-w-0 cursor-pointer @md:h-7"
             style={{ backgroundImage: gridLines(step, domain) }}
           >
             {data.markers.map((marker) => (
@@ -322,7 +322,7 @@ function Row({
             </span>
             {hovered ? (
               <span
-                className="pointer-events-none absolute bottom-full z-10 mb-0.5 whitespace-nowrap rounded-md border border-border bg-background px-1.5 text-[10.5px] leading-[18px] tabular-nums text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)]"
+                className="pointer-events-none absolute bottom-full z-10 mb-1 whitespace-nowrap rounded-md border border-border bg-background px-1 text-[10.5px] leading-[18px] tabular-nums text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)]"
                 style={left < 60 ? { left: `${left}%` } : { right: `${100 - end}%` }}
               >
                 {formatMs(span.start)} → {formatMs(span.end)} · {duration}
@@ -374,7 +374,7 @@ function Bar({ span, left, width }: { span: Span; left: number; width: number })
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex min-w-0 items-baseline gap-1.5">
+    <div className="flex min-w-0 items-baseline gap-1">
       <dt className="shrink-0 text-muted-foreground">{label}</dt>
       <dd className="m-0 min-w-0 truncate tabular-nums text-foreground">{children}</dd>
     </div>
@@ -388,7 +388,7 @@ function Detail({ data, span }: { data: WaterfallData; span: Span }) {
   const request = span.request;
   const duration = span.end - span.start;
   return (
-    <div className="flex min-w-0 flex-col gap-2 px-2 pb-2.5 pt-1.5 text-xs leading-5" style={{ paddingLeft: Math.min(span.depth, MAX_INDENT_LEVELS) * INDENT_PX + 28 }}>
+    <div className="flex min-w-0 flex-col gap-2 px-2 pb-3 pt-2 text-xs leading-5" style={{ paddingLeft: Math.min(span.depth, MAX_INDENT_LEVELS) * INDENT_PX + 28 }}>
       {request === null ? null : (
         <div className="flex min-w-0 items-start gap-2">
           <span className="shrink-0 font-mono text-[11px] font-medium text-muted-foreground">{request.method}</span>
@@ -409,7 +409,7 @@ function Detail({ data, span }: { data: WaterfallData; span: Span }) {
           ) : null}
         </div>
       )}
-      <dl className="m-0 grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-x-4 gap-y-0.5">
+      <dl className="m-0 grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-x-4 gap-y-1">
         <Fact label="Start">{formatMs(span.start)}</Fact>
         <Fact label="Duration">{formatMs(duration)}</Fact>
         <Fact label="End">{formatMs(span.end)}</Fact>
@@ -428,9 +428,9 @@ function Detail({ data, span }: { data: WaterfallData; span: Span }) {
         )}
       </dl>
       {span.phases.length > 0 && !span.failed ? (
-        <dl className="m-0 grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-x-4 gap-y-0.5">
+        <dl className="m-0 grid grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-x-4 gap-y-1">
           {span.phases.map((phase) => (
-            <div key={phase.name} className="flex min-w-0 items-center gap-1.5">
+            <div key={phase.name} className="flex min-w-0 items-center gap-1">
               <span aria-hidden className="size-2 shrink-0 rounded-[2px]" style={{ background: PHASE_COLOR[phase.name] }} />
               <dt className="text-muted-foreground">{PHASE_LABEL[phase.name]}</dt>
               <dd className="m-0 tabular-nums text-foreground">{formatMs(phase.duration)}</dd>

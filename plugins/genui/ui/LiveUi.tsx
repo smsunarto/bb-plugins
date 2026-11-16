@@ -366,7 +366,7 @@ export function Frame({
       data-bb-image-preview-ignore=""
       role="group"
       aria-label={exampleTitle(gallery)}
-      className="group/genui not-prose my-3 flex flex-col gap-1.5"
+      className="group/genui not-prose my-3 flex flex-col gap-2"
     >
       {children}
       <GalleryFooter
@@ -394,9 +394,9 @@ export function RenderFailure({
     <Frame source={source} diagnostics={diagnostics} gallery={gallery}>
       <div
         role="alert"
-        className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs"
+        className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 text-xs"
       >
-        <p className="mb-1.5 font-medium text-destructive">This UI couldn't be rendered</p>
+        <p className="mb-1 font-medium text-destructive">This UI couldn't be rendered</p>
         <DiagnosticList diagnostics={diagnostics} />
       </div>
     </Frame>

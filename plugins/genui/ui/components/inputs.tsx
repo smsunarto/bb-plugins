@@ -70,7 +70,7 @@ export function Slider({ props }: { props: PropsOf<"Slider"> }) {
         onValueChange={([next]) => {
           if (next !== undefined) setValue(binding.name, next);
         }}
-        className="my-1.5"
+        className="my-1"
       />
     </div>
   );
@@ -125,10 +125,10 @@ export function Choice({ props }: { props: PropsOf<"Choice"> }) {
           // A press on the chosen option would clear it; a choice keeps one.
           if (next !== "") setValue(binding.name, scalars[Number(next)] ?? null);
         }}
-        className="w-fit max-w-full flex-wrap justify-start gap-0.5 rounded-lg bg-surface-recessed p-0.5"
+        className="w-fit max-w-full flex-wrap justify-start gap-1 rounded-lg bg-surface-recessed p-1"
       >
         {scalars.map((option, index) => (
-          <ToggleGroupItem key={index} value={String(index)} {...keepTyping} className="h-7 min-w-0 px-3 text-[13px] font-normal data-[state=on]:font-medium">
+          <ToggleGroupItem key={index} value={String(index)} {...keepTyping} className="h-6 min-w-0 px-3 [@media(pointer:coarse)]:h-7 text-[13px] font-normal data-[state=on]:font-medium">
             {option === null ? "None" : String(option)}
           </ToggleGroupItem>
         ))}
@@ -144,7 +144,7 @@ export function Input({ props }: { props: PropsOf<"Input"> }) {
   const label = props.label ?? null;
   const placeholder = props.placeholder ?? null;
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
         <Label htmlFor={id} className={cn(CAPTION, "font-normal")}>
           {label}
@@ -157,7 +157,7 @@ export function Input({ props }: { props: PropsOf<"Input"> }) {
         placeholder={placeholder ?? undefined}
         aria-label={label === null ? (placeholder ?? binding.name) : undefined}
         onChange={(event) => setValue(binding.name, event.currentTarget.value)}
-        className="h-8 px-2.5 text-[13px] placeholder:text-subtle-foreground"
+        className="h-8 px-2 text-[13px] placeholder:text-subtle-foreground"
       />
     </div>
   );
@@ -172,14 +172,14 @@ export function Select({ props }: { props: PropsOf<"Select"> }) {
   const options = props.options.filter(isScalar);
   const selected = options.findIndex((option) => option === binding.value);
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
         <Label htmlFor={id} className={cn(CAPTION, "font-normal")}>
           {label}
         </Label>
       )}
       <SelectRoot value={selected < 0 ? "" : String(selected)} onValueChange={(next) => setValue(binding.name, options[Number(next)] ?? null)}>
-        <SelectTrigger id={id} aria-label={label === null ? binding.name : undefined} className="h-8 min-w-0 pl-2.5 pr-2.5 text-[13px]">
+        <SelectTrigger id={id} aria-label={label === null ? binding.name : undefined} className="h-8 min-w-0 pl-2 pr-2 text-[13px]">
           <SelectValue placeholder="Choose…" />
         </SelectTrigger>
         <SelectContent>
@@ -217,7 +217,7 @@ export function Checklist({ props }: { props: PropsOf<"Checklist"> }) {
           ],
     );
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
         <span id={labelId} className={CAPTION}>
           {label}
@@ -226,7 +226,7 @@ export function Checklist({ props }: { props: PropsOf<"Checklist"> }) {
       <div
         role="group"
         aria-labelledby={label === null ? undefined : labelId}
-        className="-mx-1.5 flex min-w-0 flex-col"
+        className="-mx-1 flex min-w-0 flex-col"
       >
         {options.map((option, index) => {
           const checked = picked.includes(option);
@@ -235,7 +235,7 @@ export function Checklist({ props }: { props: PropsOf<"Checklist"> }) {
             <div
               // Options are positional; the same value may repeat.
               key={index}
-              className="flex w-fit max-w-full items-start gap-2 rounded-md px-1.5 py-1 transition-colors duration-150 hover:bg-surface-recessed"
+              className="flex w-fit max-w-full items-start gap-2 rounded-md px-1 py-1 transition-colors duration-150 hover:bg-surface-recessed"
             >
               <Checkbox id={id} checked={checked} onCheckedChange={() => toggle(option)} {...keepTyping} className="mt-0.5" />
               <Label htmlFor={id} {...keepTyping} className="min-w-0 cursor-pointer text-sm font-normal leading-5 text-foreground [overflow-wrap:anywhere]">
@@ -330,7 +330,7 @@ function ButtonView({ props }: { props: Props }) {
           }
         }}
         className={cn(
-          "w-fit max-w-full gap-1.5 text-[13px]",
+          "w-fit max-w-full gap-1 text-[13px]",
           !filled && "bg-background text-foreground",
           pressed && "ring-2 ring-[var(--color-timeline-accent,var(--primary))] ring-offset-1 ring-offset-background",
           pressed && !filled && "border-transparent bg-surface-recessed",
@@ -412,7 +412,7 @@ export function SentLine({ text }: { text: string | null }) {
       ref={ref}
       role="status"
       title={text ?? undefined}
-      className="m-0 flex min-w-0 items-center gap-1.5 text-[13px] leading-5 text-muted-foreground"
+      className="m-0 flex min-w-0 items-center gap-1 text-[13px] leading-5 text-muted-foreground"
     >
       <Icon name="Check" aria-hidden className="size-3.5 shrink-0" />
       {text === null ? (
@@ -434,7 +434,7 @@ export function SentLine({ text }: { text: string | null }) {
 export function InMessageLine() {
   const { target } = useAnswers();
   return (
-    <p role="status" className="m-0 flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground">
+    <p role="status" className="m-0 flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
       <Icon name="CornerDownRight" aria-hidden className="size-3.5 shrink-0" />
       {target === "gallery" ? "Would go in your message" : "In your message"}
     </p>

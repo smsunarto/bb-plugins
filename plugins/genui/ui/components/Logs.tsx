@@ -186,7 +186,7 @@ function Line({
             onClick={() => onUnfold(row.index)}
             title={`Repeated ${formatNumber(row.count)} times; show each`}
             aria-label={`Repeated ${formatNumber(row.count)} times; show each`}
-            className={cn("ml-2 inline-flex cursor-pointer rounded-full bg-muted px-1.5 align-baseline font-sans text-[10.5px] font-medium leading-4 text-muted-foreground hover:text-foreground", FOCUS_RING)}
+            className={cn("ml-2 inline-flex cursor-pointer rounded-full bg-muted px-1 align-baseline font-sans text-[10.5px] font-medium leading-4 text-muted-foreground hover:text-foreground", FOCUS_RING)}
           >
             × {formatNumber(row.count)}
           </button>
@@ -214,10 +214,10 @@ function Header({ command, exit, output }: { command: string | null; exit: numbe
     output.dropped > 0 ? `first ${formatNumber(output.dropped)} lines left out` : "",
   ].filter((fact) => fact !== "");
   return (
-    <div ref={fade} className="flex min-w-0 flex-col gap-0.5">
+    <div ref={fade} className="flex min-w-0 flex-col gap-1">
       <div className="flex min-w-0 items-start gap-2">
         {command === null ? (
-          <h3 className="m-0 flex min-w-0 flex-1 items-center gap-1.5 text-[13px] font-semibold leading-6 text-foreground">
+          <h3 className="m-0 flex min-w-0 flex-1 items-center gap-1 text-[13px] font-semibold leading-6 text-foreground">
             <Icon name={output.format === "records" ? "FileText" : "Terminal"} aria-hidden className="size-4 shrink-0 text-muted-foreground" />
             {output.format === "records" ? "Log" : "Output"}
           </h3>
@@ -233,7 +233,7 @@ function Header({ command, exit, output }: { command: string | null; exit: numbe
           </div>
         )}
         {exit === null ? null : (
-          <Badge variant={exit === 0 ? "success" : "danger"} className="mt-0.5 gap-1 px-2 font-medium tabular-nums">
+          <Badge variant={exit === 0 ? "success" : "danger"} className="gap-1 px-2 font-medium tabular-nums">
             <Icon name={exit === 0 ? "CircleCheck" : "CircleX"} aria-hidden className="size-3.5" />
             exit {exit}
           </Badge>
@@ -265,7 +265,7 @@ function LevelChips({ output, selected, onToggle }: { output: LogOutput; selecte
           value={level}
           variant="outline"
           aria-label={`${LEVEL_LABEL[level]}, ${formatNumber(output.counts[level])}`}
-          className="h-6 min-w-0 gap-1.5 rounded-full px-2 text-xs font-normal leading-none"
+          className="h-6 min-w-0 gap-1 rounded-full px-2 text-xs font-normal leading-none"
         >
           <span aria-hidden className={cn("size-1.5 rounded-full", LEVEL_BAR[level])} />
           {LEVEL_LABEL[level]}
@@ -424,14 +424,14 @@ function LogView({ output, command, exit, id }: { output: LogOutput; command: st
                 </>
               )}
             </div>
-            <div className="flex shrink-0 items-center gap-0.5">
+            <div className="flex shrink-0 items-center gap-1">
               {firstErrorLine === -1 ? null : (
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={jumpToError}
-                  className="mr-1 h-6 gap-1 px-1.5 font-normal text-destructive hover:text-destructive [&_[data-icon-root]]:size-3.5"
+                  className="mr-1 h-6 gap-1 px-1 font-normal text-destructive hover:text-destructive [&_[data-icon-root]]:size-3.5"
                 >
                   <Icon name="ArrowUp" aria-hidden />
                   First error
@@ -461,7 +461,7 @@ function LogView({ output, command, exit, id }: { output: LogOutput; command: st
             ref={viewer}
             role="log"
             aria-label={command === null ? "Output" : `Output of ${command}`}
-            className="relative max-h-[28rem] min-w-0 overflow-auto rounded-md bg-surface-recessed py-1.5 font-mono text-[11.5px] leading-[18px] text-foreground"
+            className="relative max-h-[28rem] min-w-0 overflow-auto rounded-md bg-surface-recessed py-2 font-mono text-[11.5px] leading-[18px] text-foreground"
           >
             {earlier > 0 ? (
               <Button

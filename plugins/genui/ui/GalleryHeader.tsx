@@ -35,7 +35,7 @@ const FOCUS = "focus-visible:outline-none focus-visible:ring-1 focus-visible:rin
 /** The header's icon buttons: 36px, 44px under a finger, with 16px icons. */
 const ICON_BUTTON = "size-9 [@media(pointer:coarse)]:size-11 [&_[data-icon-root]]:size-4";
 const FIELD = "h-9 rounded-lg border border-border [@media(pointer:coarse)]:h-11";
-const KBD = "rounded border border-border px-1.5 font-mono text-[11px] leading-4 text-muted-foreground [@media(pointer:coarse)]:hidden";
+const KBD = "inline-flex h-5 items-center rounded border border-border px-1 font-mono text-[11px] leading-4 text-muted-foreground [@media(pointer:coarse)]:hidden";
 /** Space kept between the header and a group heading it scrolls to, or the search list and the screen's bottom. */
 const GAP = 12;
 
@@ -223,7 +223,7 @@ export function GalleryHeader({
           {open ? (
             <>
               <div className="relative min-w-0 flex-1">
-                <Icon name="Search" aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Icon name="Search" aria-hidden className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <input
                   // Opened by a tap: focusing in the same task lets an iPhone raise its keyboard.
                   autoFocus
@@ -255,7 +255,7 @@ export function GalleryHeader({
                 variant="ghost"
                 size="sm"
                 onClick={() => close(true)}
-                className="h-9 shrink-0 px-2.5 text-sm font-normal text-muted-foreground [@media(pointer:coarse)]:h-11"
+                className="h-9 shrink-0 px-2 text-sm font-normal text-muted-foreground [@media(pointer:coarse)]:h-11"
               >
                 Cancel
               </Button>
@@ -269,7 +269,7 @@ export function GalleryHeader({
                 variant="outline"
                 onClick={openSearch}
                 aria-haspopup="listbox"
-                className={cn(FIELD, "min-w-0 flex-1 justify-start gap-2 px-2.5 text-left font-normal text-muted-foreground")}
+                className={cn(FIELD, "min-w-0 flex-1 justify-start gap-2 px-2 text-left font-normal text-muted-foreground")}
               >
                 <Icon name="Search" aria-hidden className="size-4 shrink-0" />
                 <span className="min-w-0 flex-1 truncate">Search {GALLERY_ORDER.length} components</span>
@@ -300,7 +300,7 @@ export function GalleryHeader({
                 aria-label="Search components"
                 className={cn(
                   ICON_BUTTON,
-                  "shrink-0 font-normal text-muted-foreground @xl:h-8 @xl:w-48 @xl:justify-start @xl:gap-2 @xl:rounded-lg @xl:border @xl:border-border @xl:px-2.5",
+                  "shrink-0 font-normal text-muted-foreground @xl:h-8 @xl:w-48 @xl:justify-start @xl:gap-2 @xl:rounded-lg @xl:border @xl:border-border @xl:px-2",
                 )}
               >
                 <Icon name="Search" aria-hidden className="shrink-0" />
@@ -360,7 +360,7 @@ function Trail({ selection, name, onGo }: { selection: GallerySelection; name: C
   const slash = <BreadcrumbSeparator className="shrink-0 text-subtle-foreground">/</BreadcrumbSeparator>;
   return (
     <Breadcrumb aria-label="Breadcrumb" className="min-w-0 flex-1">
-      <BreadcrumbList className="m-0 min-w-0 flex-nowrap gap-1.5 p-0 text-sm sm:gap-1.5">
+      <BreadcrumbList className="m-0 min-w-0 flex-nowrap gap-2 p-0 text-sm sm:gap-2">
         <BreadcrumbItem className="hidden shrink-0 @lg:inline-flex">{COMPONENTS[name].group}</BreadcrumbItem>
         <BreadcrumbSeparator className="hidden shrink-0 text-subtle-foreground @lg:block">/</BreadcrumbSeparator>
         <BreadcrumbItem className="min-w-0 shrink-0">
@@ -425,7 +425,7 @@ function ChipRow({ label, chips, activeKey }: { label: string | null; chips: rea
       aria-label={label === null ? "Groups" : `${label} components`}
       className="relative -mx-5 flex h-10 items-center gap-1 overflow-x-auto px-5 [mask-image:linear-gradient(to_right,transparent,#000_1.25rem,#000_calc(100%-1.25rem),transparent)] [scrollbar-width:none] [@media(pointer:coarse)]:h-12 [&::-webkit-scrollbar]:hidden"
     >
-      {label === null ? null : <span className="shrink-0 pr-1.5 text-xs text-subtle-foreground @lg:hidden">{label}</span>}
+      {label === null ? null : <span className="shrink-0 pr-1 text-xs text-subtle-foreground @lg:hidden">{label}</span>}
       {chips.map((chip) => (
         <Button
           key={chip.key}
@@ -589,7 +589,7 @@ function Signature({ name, count }: { name: ComponentName; count: number | null 
   return (
     <div className="mt-4 flex flex-col gap-1">
       {spec.summary === undefined ? null : <p className="m-0 max-w-[62ch] text-sm leading-6 text-muted-foreground">{summaryOf(name)}</p>}
-      <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+      <p className="m-0 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <code className="min-w-0 break-words font-mono text-xs leading-5 text-foreground">{withBreaks(callSignature(name, spec))}</code>
         {count === null ? null : <span className="text-xs text-subtle-foreground">{count === 1 ? "1 example" : `${count} examples`}</span>}
       </p>

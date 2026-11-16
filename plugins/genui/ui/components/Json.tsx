@@ -24,9 +24,9 @@ import { FADE, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight } from "./motio
 import { IconButton } from "./iconButton";
 
 /** Per tree level, in px. */
-const INDENT = 14;
+const INDENT = 16;
 /** Row padding before the chevron, in px. */
-const ROW_PAD = 6;
+const ROW_PAD = 8;
 /** Half the 14px chevron slot: where a level's guide line runs. */
 const GUIDE_OFFSET = ROW_PAD + 7;
 
@@ -41,7 +41,7 @@ const SCALAR_CLASS: Record<JsonKind, string> = {
 };
 
 const ROW_ACTION = cn(
-  "inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 font-sans text-[10.5px] text-muted-foreground transition-colors duration-150 hover:bg-background hover:text-foreground",
+  "inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded px-1 font-sans text-[10.5px] text-muted-foreground transition-colors duration-150 hover:bg-background hover:text-foreground",
   FOCUS_RING,
 );
 
@@ -85,7 +85,7 @@ function ContainerSummary({ value, kind, open }: { value: Value; kind: JsonKind;
   return (
     <span className="text-muted-foreground">
       {empty ? `${brackets[0]}${brackets[1]}` : open ? brackets[0] : `${brackets[0]}…${brackets[1]}`}
-      <span className="ml-1.5 font-sans text-[11px]">{empty ? "empty" : size}</span>
+      <span className="ml-1 font-sans text-[11px]">{empty ? "empty" : size}</span>
     </span>
   );
 }
@@ -189,7 +189,7 @@ export function Json({ props }: { props: Props }) {
   const caption = isContainer(rootKind) ? `${rootKind} · ${sizeText(value)}` : rootKind;
   return (
     <div ref={fade} className="min-w-0 overflow-hidden rounded-lg border border-border bg-background">
-      <div className="flex h-8 items-center justify-between gap-3 border-b border-border bg-surface-recessed pl-3 pr-1.5 text-[11px] text-muted-foreground">
+      <div className="flex h-8 items-center justify-between gap-3 border-b border-border bg-surface-recessed pl-3 pr-1 text-[11px] text-muted-foreground">
         <span className="flex min-w-0 items-center gap-2">
           <span className="truncate font-mono text-foreground">{label ?? "JSON"}</span>
           <span className="shrink-0 tabular-nums">{caption}</span>
@@ -206,7 +206,7 @@ export function Json({ props }: { props: Props }) {
           className="flex min-w-0 flex-col py-1 font-mono text-[12px] leading-5"
         >
           {rows.length === 0 ? (
-            <p className="m-0 px-3 py-1.5 font-sans text-xs text-muted-foreground">{rootKind === "array" ? "An empty list." : "An empty object."}</p>
+            <p className="m-0 px-3 py-2 font-sans text-xs text-muted-foreground">{rootKind === "array" ? "An empty list." : "An empty object."}</p>
           ) : null}
           {rows.map((row, index) => {
             const container = row.type === "value" && row.children > 0;
@@ -237,7 +237,7 @@ export function Json({ props }: { props: Props }) {
                 onClick={onClick}
                 onKeyDown={(event) => onKeyDown(event, index)}
                 className={cn(
-                  "group relative flex min-h-6 min-w-0 shrink-0 cursor-pointer items-start gap-1 pr-1.5 hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
+                  "group relative flex min-h-6 min-w-0 shrink-0 cursor-pointer items-start gap-1 pr-1 hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring",
                 )}
                 style={{ paddingLeft: row.depth * INDENT + ROW_PAD }}
               >
@@ -266,11 +266,11 @@ export function Json({ props }: { props: Props }) {
                   <>
                     <span className="min-w-0 flex-1 py-0.5 [overflow-wrap:anywhere]">
                       {row.key === null ? null : typeof row.key === "number" ? (
-                        <span className="mr-1.5 text-muted-foreground">{row.key}</span>
+                        <span className="mr-1 text-muted-foreground">{row.key}</span>
                       ) : (
                         <span className="text-foreground">
                           {row.key}
-                          <span className="mr-1.5 text-muted-foreground">:</span>
+                          <span className="mr-1 text-muted-foreground">:</span>
                         </span>
                       )}
                       {isContainer(row.kind) ? (
@@ -281,7 +281,7 @@ export function Json({ props }: { props: Props }) {
                     </span>
                     <span
                       className={cn(
-                        "flex h-6 shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 [@media(hover:none)]:group-focus:opacity-100",
+                        "flex h-6 shrink-0 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100 [@media(hover:none)]:group-focus:opacity-100",
                         row.id === focused && "[@media(hover:none)]:opacity-100",
                       )}
                     >

@@ -23,7 +23,7 @@ function Cell({ value }: { value: Value }): ReactNode {
   if (value === null) return <span className="text-subtle-foreground">—</span>;
   if (Array.isArray(value)) {
     return (
-      <span className="flex flex-wrap items-center gap-1.5">
+      <span className="flex flex-wrap items-center gap-2">
         {value.map((item: Value, index) => (
           <Cell key={isNode(item) ? item.key : index} value={item} />
         ))}

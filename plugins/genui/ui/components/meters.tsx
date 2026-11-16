@@ -124,12 +124,12 @@ export function SegmentedBar({ props }: { props: Props }) {
   const share = (index: number) => (shares[index] === 0 && parts[index]!.value > 0 ? "<1%" : `${shares[index]}%`);
   const summary = parts.map((part, index) => `${part.label} ${formatValue(part.value, unit)} (${share(index)})`).join(", ");
   return (
-    <div className="flex min-w-0 flex-col gap-2.5" onPointerLeave={mouseLeave(() => setHover(null))}>
+    <div className="flex min-w-0 flex-col gap-3" onPointerLeave={mouseLeave(() => setHover(null))}>
       <div
         ref={grow}
         role="img"
         aria-label={summary}
-        className="flex h-2.5 w-full origin-left gap-[2px] overflow-hidden rounded-full bg-muted"
+        className="flex h-2 w-full origin-left gap-[2px] overflow-hidden rounded-full bg-muted"
       >
         {parts.map((part, index) =>
           part.value > 0 ? (

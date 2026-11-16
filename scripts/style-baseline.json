@@ -657,7 +657,7 @@
   {
     "file": "plugins/genui/ui/components/Json.tsx",
     "rule": "hairline-literal",
-    "source": "\"inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 font-sans text-[10.5px] text-muted-foreground transition-colors duration-150 hover:bg-background hover:text-foreground\","
+    "source": "\"inline-flex h-5 shrink-0 cursor-pointer items-center gap-1 rounded px-1 font-sans text-[10.5px] text-muted-foreground transition-colors duration-150 hover:bg-background hover:text-foreground\","
   },
   {
     "file": "plugins/genui/ui/components/Logs.tsx",
@@ -677,12 +677,12 @@
   {
     "file": "plugins/genui/ui/components/Logs.tsx",
     "rule": "hairline-literal",
-    "source": "className=\"relative max-h-[28rem] min-w-0 overflow-auto rounded-md bg-surface-recessed py-1.5 font-mono text-[11.5px] leading-[18px] text-foreground\""
+    "source": "className=\"relative max-h-[28rem] min-w-0 overflow-auto rounded-md bg-surface-recessed py-2 font-mono text-[11.5px] leading-[18px] text-foreground\""
   },
   {
     "file": "plugins/genui/ui/components/Logs.tsx",
     "rule": "hairline-literal",
-    "source": "className={cn(\"ml-2 inline-flex cursor-pointer rounded-full bg-muted px-1.5 align-baseline font-sans text-[10.5px] font-medium leading-4 text-muted-foreground hover:text-foreground\", FOCUS_RING)}"
+    "source": "className={cn(\"ml-2 inline-flex cursor-pointer rounded-full bg-muted px-1 align-baseline font-sans text-[10.5px] font-medium leading-4 text-muted-foreground hover:text-foreground\", FOCUS_RING)}"
   },
   {
     "file": "plugins/genui/ui/components/Logs.tsx",
@@ -722,7 +722,7 @@
   {
     "file": "plugins/genui/ui/components/Pipeline.tsx",
     "rule": "edge-opacity",
-    "source": "<section key={id} aria-label={`${job.name}, steps`} className=\"flex min-w-0 flex-col gap-0.5 border-t border-border/60 pt-2\">"
+    "source": "<section key={id} aria-label={`${job.name}, steps`} className=\"flex min-w-0 flex-col gap-1 border-t border-border/60 pt-2\">"
   },
   {
     "file": "plugins/genui/ui/components/Provenance.tsx",
@@ -742,7 +742,7 @@
   {
     "file": "plugins/genui/ui/components/Provenance.tsx",
     "rule": "hairline-literal",
-    "source": "row && \"@2xl:bottom-auto @2xl:left-[26px] @2xl:right-[6px] @2xl:top-[8.5px] @2xl:border-l-0 @2xl:border-t\","
+    "source": "row && \"@2xl:bottom-auto @2xl:left-[26px] @2xl:right-2 @2xl:top-[8.5px] @2xl:border-l-0 @2xl:border-t\","
   },
   {
     "file": "plugins/genui/ui/components/Provenance.tsx",
@@ -822,22 +822,22 @@
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
     "rule": "arbitrary-edge",
-    "source": "className=\"pointer-events-none absolute bottom-full left-0 mb-0.5 hidden whitespace-nowrap rounded-md border border-border bg-background px-1.5 text-[11.5px] leading-[18px] text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)] group-focus-within/word:block group-hover/word:block\""
+    "source": "className=\"pointer-events-none absolute bottom-full left-0 mb-1 hidden whitespace-nowrap rounded-md border border-border bg-background px-1 text-[11.5px] leading-[18px] text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)] group-focus-within/word:block group-hover/word:block\""
   },
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
     "rule": "arbitrary-edge",
-    "source": "className={cn(\"flex flex-col rounded-[4px] px-0.5\", regionColumns.has(from + offset) && \"bg-surface-recessed ring-1 ring-foreground/40\")}"
+    "source": "className={cn(\"flex flex-col rounded-[4px]\", regionColumns.has(from + offset) && \"bg-surface-recessed ring-1 ring-foreground/40\")}"
   },
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
     "rule": "arbitrary-edge",
-    "source": "className={cn(\"whitespace-nowrap rounded-[3px] px-[3px] text-[12.5px] leading-5\", missing ? \"text-destructive/80 line-through decoration-destructive/60\" : \"text-transparent\")}"
+    "source": "className={cn(\"whitespace-nowrap rounded-[3px] px-1 text-[12.5px] leading-5\", missing ? \"text-destructive/80 line-through decoration-destructive/60\" : \"text-transparent\")}"
   },
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
     "rule": "arbitrary-edge",
-    "source": "const className = cn(\"whitespace-nowrap rounded-[3px] px-[3px] text-left text-[12.5px] leading-5 text-foreground\", active && \"bg-foreground/10 ring-1 ring-foreground/50\");"
+    "source": "const className = cn(\"whitespace-nowrap rounded-[3px] px-1 text-left text-[12.5px] leading-5 text-foreground\", active && \"bg-foreground/10 ring-1 ring-foreground/50\");"
   },
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
@@ -867,12 +867,12 @@
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
     "rule": "hairline-literal",
-    "source": "className=\"pointer-events-none absolute bottom-full left-0 mb-0.5 hidden whitespace-nowrap rounded-md border border-border bg-background px-1.5 text-[11.5px] leading-[18px] text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)] group-focus-within/word:block group-hover/word:block\""
+    "source": "className=\"pointer-events-none absolute bottom-full left-0 mb-1 hidden whitespace-nowrap rounded-md border border-border bg-background px-1 text-[11.5px] leading-[18px] text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)] group-focus-within/word:block group-hover/word:block\""
   },
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
     "rule": "hairline-literal",
-    "source": "className={cn(\"whitespace-nowrap rounded-[3px] px-[3px] text-[12.5px] leading-5\", missing ? \"text-destructive/80 line-through decoration-destructive/60\" : \"text-transparent\")}"
+    "source": "className={cn(\"whitespace-nowrap rounded-[3px] px-1 text-[12.5px] leading-5\", missing ? \"text-destructive/80 line-through decoration-destructive/60\" : \"text-transparent\")}"
   },
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
@@ -882,7 +882,7 @@
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
     "rule": "hairline-literal",
-    "source": "const className = cn(\"whitespace-nowrap rounded-[3px] px-[3px] text-left text-[12.5px] leading-5 text-foreground\", active && \"bg-foreground/10 ring-1 ring-foreground/50\");"
+    "source": "const className = cn(\"whitespace-nowrap rounded-[3px] px-1 text-left text-[12.5px] leading-5 text-foreground\", active && \"bg-foreground/10 ring-1 ring-foreground/50\");"
   },
   {
     "file": "plugins/genui/ui/components/Transcript.tsx",
@@ -947,12 +947,12 @@
   {
     "file": "plugins/genui/ui/components/Treemap.tsx",
     "rule": "edge-opacity",
-    "source": "<li key={child.path} className=\"flex min-w-0 flex-col gap-0.5 border-b border-border/50 py-1.5 last:border-b-0\">"
+    "source": "<li key={child.path} className=\"flex min-w-0 flex-col gap-1 border-b border-border/50 py-2 last:border-b-0\">"
   },
   {
     "file": "plugins/genui/ui/components/Treemap.tsx",
     "rule": "hairline-literal",
-    "source": "{child.package ? <span className=\"ml-1.5 text-[10.5px] text-muted-foreground\">package</span> : null}"
+    "source": "{child.package ? <span className=\"ml-1 text-[10.5px] text-muted-foreground\">package</span> : null}"
   },
   {
     "file": "plugins/genui/ui/components/Treemap.tsx",
@@ -992,7 +992,7 @@
   {
     "file": "plugins/genui/ui/components/Waterfall.tsx",
     "rule": "arbitrary-edge",
-    "source": "className=\"pointer-events-none absolute bottom-full z-10 mb-0.5 whitespace-nowrap rounded-md border border-border bg-background px-1.5 text-[10.5px] leading-[18px] tabular-nums text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)]\""
+    "source": "className=\"pointer-events-none absolute bottom-full z-10 mb-1 whitespace-nowrap rounded-md border border-border bg-background px-1 text-[10.5px] leading-[18px] tabular-nums text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)]\""
   },
   {
     "file": "plugins/genui/ui/components/Waterfall.tsx",
@@ -1022,7 +1022,7 @@
   {
     "file": "plugins/genui/ui/components/Waterfall.tsx",
     "rule": "hairline-literal",
-    "source": "className=\"pointer-events-none absolute bottom-full z-10 mb-0.5 whitespace-nowrap rounded-md border border-border bg-background px-1.5 text-[10.5px] leading-[18px] tabular-nums text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)]\""
+    "source": "className=\"pointer-events-none absolute bottom-full z-10 mb-1 whitespace-nowrap rounded-md border border-border bg-background px-1 text-[10.5px] leading-[18px] tabular-nums text-foreground shadow-[0_4px_12px_rgb(0_0_0/0.08)]\""
   },
   {
     "file": "plugins/genui/ui/components/Waterfall.tsx",
@@ -1422,16 +1422,6 @@
   {
     "file": "plugins/genui/ui/components/inputs.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-border [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)] [&::-webkit-slider-thumb]:transition-transform active:[&::-webkit-slider-thumb]:scale-110 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-border [&::-moz-range-thumb]:bg-background [&::-moz-range-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)]\";"
-  },
-  {
-    "file": "plugins/genui/ui/components/inputs.tsx",
-    "rule": "arbitrary-edge",
-    "source": "\"[&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border [&::-webkit-slider-thumb]:border-border [&::-webkit-slider-thumb]:bg-background [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)] [&::-webkit-slider-thumb]:transition-transform active:[&::-webkit-slider-thumb]:scale-110 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border [&::-moz-range-thumb]:border-border [&::-moz-range-thumb]:bg-background [&::-moz-range-thumb]:shadow-[0_1px_3px_rgb(0_0_0/0.18)]\";"
-  },
-  {
-    "file": "plugins/genui/ui/components/inputs.tsx",
-    "rule": "arbitrary-edge",
     "source": "\"h-8 w-full min-w-0 rounded-md border border-border bg-background text-[13px] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.04)] transition-shadow duration-150\","
   },
   {
@@ -1462,42 +1452,7 @@
   {
     "file": "plugins/genui/ui/components/plugins.tsx",
     "rule": "edge-opacity",
-    "source": "className=\"flex min-w-0 items-start gap-2.5 border-b border-border/60 px-3 py-2 last:border-b-0\""
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "edge-opacity",
-    "source": "<QuietLine className=\"border-t border-border/60 px-3 py-2\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "edge-opacity",
-    "source": "<li className=\"flex min-w-0 flex-col gap-1 border-t border-border/60 px-3 py-2 first:border-t-0\" aria-busy=\"true\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "edge-opacity",
-    "source": "<li className=\"flex min-w-0 flex-col gap-1 border-t border-border/60 px-3 py-2 first:border-t-0\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "edge-opacity",
-    "source": "<li className=\"flex min-w-0 flex-col gap-1 border-t border-border/60 px-3 py-2 first:border-t-0\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "hairline-literal",
-    "source": "<span className=\"flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11.5px] leading-5 text-muted-foreground\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "hairline-literal",
-    "source": "<span className=\"flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 pl-[22px] text-[11.5px] leading-5 text-muted-foreground\">"
-  },
-  {
-    "file": "plugins/genui/ui/components/pullRequest.tsx",
-    "rule": "hairline-literal",
-    "source": "<span className=\"min-w-0 pl-[22px] text-[11.5px] leading-5 text-muted-foreground [overflow-wrap:anywhere]\">{read.message}</span>"
+    "source": "className=\"flex min-w-0 items-start gap-2 border-b border-border/60 px-3 py-2 last:border-b-0\""
   },
   {
     "file": "plugins/genui/ui/components/references.tsx",
@@ -1527,7 +1482,7 @@
   {
     "file": "plugins/genui/ui/components/threads.tsx",
     "rule": "edge-opacity",
-    "source": "<li className=\"flex min-w-0 items-center gap-2.5 border-b border-border/60 px-3 py-2 last:border-b-0\">"
+    "source": "<li className=\"flex min-w-0 items-center gap-2 border-b border-border/60 px-3 py-2 last:border-b-0\">"
   },
   {
     "file": "plugins/genui/ui/components/threads.tsx",
@@ -1552,7 +1507,7 @@
   {
     "file": "plugins/genui/ui/components/tracking.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"flex w-full min-w-0 flex-col gap-1.5 rounded-lg border border-border bg-background px-2.5 py-2 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)]\","
+    "source": "\"flex w-full min-w-0 flex-col gap-2 rounded-lg border border-border bg-background px-3 py-2 text-left shadow-[0_1px_2px_rgb(0_0_0/0.04)]\","
   },
   {
     "file": "plugins/genui/ui/components/tracking.tsx",
@@ -1582,12 +1537,12 @@
   {
     "file": "plugins/genui/ui/components/tracking.tsx",
     "rule": "hairline-literal",
-    "source": "<span className=\"inline-flex h-5 items-center pl-1.5 text-[10.5px] tabular-nums text-muted-foreground\">+{names.length - shown.length}</span>"
+    "source": "<span className=\"inline-flex h-5 items-center pl-1 text-[10.5px] tabular-nums text-muted-foreground\">+{names.length - shown.length}</span>"
   },
   {
     "file": "plugins/genui/ui/components/tracking.tsx",
     "rule": "hairline-literal",
-    "source": "<span className=\"inline-flex min-w-0 max-w-[11rem] items-center gap-1 rounded-full border border-border px-1.5 text-[10.5px] leading-[18px] text-muted-foreground\">"
+    "source": "<span className=\"inline-flex min-w-0 max-w-[11rem] items-center gap-1 rounded-full border border-border px-1 text-[10.5px] leading-[18px] text-muted-foreground\">"
   },
   {
     "file": "plugins/genui/ui/components/tracking.tsx",

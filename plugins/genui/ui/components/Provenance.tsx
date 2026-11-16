@@ -104,7 +104,7 @@ function FactChip({ fact, requested, quiet }: { fact: Fact; requested: boolean; 
       aria-label={`Copy ${fact.label} ${fact.value}${other === null ? "" : `, ${other}`}`}
       onClick={() => void run([{ kind: "action", type: "copy", text: fact.value }])}
       className={cn(
-        "flex min-w-0 max-w-full cursor-pointer flex-col items-start rounded-md px-1.5 py-px text-left text-[11px] leading-[18px] transition-colors duration-150",
+        "flex min-w-0 max-w-full cursor-pointer flex-col items-start rounded-md px-1 min-h-5 justify-center text-left text-[11px] leading-[18px] transition-colors duration-150",
         FOCUS_RING,
         wrong
           ? "bg-destructive/10 text-destructive hover:bg-destructive/15"
@@ -169,7 +169,7 @@ function StageItem({
     <div
       role="listitem"
       style={{ "--order": index * 2 } as CSSProperties}
-      className={cn("relative flex min-w-0 gap-2.5 [order:var(--order)]", next === null ? "pb-0" : "pb-4", row && "@2xl:flex-1 @2xl:basis-0 @2xl:flex-col @2xl:gap-1.5 @2xl:pb-0 @2xl:pr-4")}
+      className={cn("relative flex min-w-0 gap-2 [order:var(--order)]", next === null ? "pb-0" : "pb-4", row && "@2xl:flex-1 @2xl:basis-0 @2xl:flex-col @2xl:gap-2 @2xl:pb-0 @2xl:pr-4")}
     >
       {next === null ? null : (
         // The link to the next stage: dashed into a stage without a receipt.
@@ -177,7 +177,7 @@ function StageItem({
           aria-hidden
           className={cn(
             "absolute bottom-0 left-[8.5px] top-[22px] border-l",
-            row && "@2xl:bottom-auto @2xl:left-[26px] @2xl:right-[6px] @2xl:top-[8.5px] @2xl:border-l-0 @2xl:border-t",
+            row && "@2xl:bottom-auto @2xl:left-[26px] @2xl:right-2 @2xl:top-[8.5px] @2xl:border-l-0 @2xl:border-t",
             next.receipt !== "receipt" ? "border-dashed border-muted-foreground/40" : "border-border",
           )}
         />
@@ -212,7 +212,7 @@ function StageItem({
           )}
         </button>
         {stage.last ? (
-          <Badge variant="secondary" className="w-fit px-1.5 py-0 font-medium">
+          <Badge variant="secondary" className="h-5 w-fit px-1 py-0 font-medium">
             Last receipt
           </Badge>
         ) : null}
@@ -266,7 +266,7 @@ function FileEvidence({ evidence }: { evidence: Extract<Evidence, { kind: "file"
     <div className="min-w-0 overflow-hidden rounded-lg border border-border bg-background">
       {/* CodeExcerpt's header, as for a file with a line: the open button is the file's icon. Where BB can't open it, a plain icon leads. */}
       <div className="flex h-7 items-center justify-between gap-3 border-b border-border bg-surface-recessed pl-3 pr-1 text-[11px] text-muted-foreground">
-        <span className="flex min-w-0 items-center gap-1.5">
+        <span className="flex min-w-0 items-center gap-1">
           {opener === null ? <Icon name="FileText" aria-hidden className="size-3 shrink-0" /> : null}
           <span className="truncate font-mono text-foreground" title={evidence.path}>
             {evidence.label ?? evidence.path}
@@ -275,7 +275,7 @@ function FileEvidence({ evidence }: { evidence: Extract<Evidence, { kind: "file"
         <OpenFileButton path={evidence.path} line={null} />
       </div>
       {file === null ? (
-        <div role="status" aria-label={`Reading ${evidence.path}`} className="flex flex-col gap-2 px-3 py-2.5">
+        <div role="status" aria-label={`Reading ${evidence.path}`} className="flex flex-col gap-2 px-3 py-3">
           {[70, 52, 84, 40].map((width, index) => (
             <Skeleton key={index} className="h-3 rounded-sm motion-reduce:animate-none" style={{ width: `${width}%` }} />
           ))}
@@ -332,7 +332,7 @@ function EvidenceItem({ evidence, order }: { evidence: Evidence; order: number }
     return (
       <UrlLink
         href={evidence.url}
-        className={cn("flex w-fit min-w-0 max-w-full items-center gap-1.5 rounded-sm text-xs leading-5 text-foreground no-underline hover:underline", FOCUS_RING)}
+        className={cn("flex w-fit min-w-0 max-w-full items-center gap-1 rounded-sm text-xs leading-5 text-foreground no-underline hover:underline", FOCUS_RING)}
       >
         <Icon name="Globe" aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate">{evidence.label ?? evidence.url.replace(/^https?:\/\//, "")}</span>
@@ -341,7 +341,7 @@ function EvidenceItem({ evidence, order }: { evidence: Evidence; order: number }
     );
   }
   return (
-    <div className="min-w-0 rounded-md bg-surface-recessed px-2.5 py-1.5">
+    <div className="min-w-0 rounded-md bg-surface-recessed px-3 py-2">
       {evidence.label === null ? null : <p className="m-0 text-[11px] leading-4 text-muted-foreground">{evidence.label}</p>}
       <p className="m-0 whitespace-pre-wrap font-mono text-[11px] leading-[17px] text-foreground [overflow-wrap:anywhere]">{evidence.text}</p>
     </div>
@@ -360,8 +360,8 @@ function FactRow({ fact, requested }: { fact: Fact; requested: boolean }) {
         : { text: `was ${fact.check.previous}`, tone: "text-destructive" };
   return (
     <div className="contents">
-      <dt className="py-0.5 text-[11px] leading-5 text-muted-foreground">{fact.label}</dt>
-      <dd className="m-0 flex min-w-0 flex-col py-0.5">
+      <dt className="py-1 text-[11px] leading-5 text-muted-foreground">{fact.label}</dt>
+      <dd className="m-0 flex min-w-0 flex-col py-1">
         <span className={cn("text-xs leading-5 [overflow-wrap:anywhere]", MONO_KEYS[fact.key] === true && "font-mono text-[11.5px]", fact.check !== null && "font-medium text-destructive")}>
           {fact.value}
         </span>
@@ -386,7 +386,7 @@ function StageDetail({ stage, id, requested, onClose }: { stage: Stage; id: stri
     stage.ms === null ? null : formatElapsed(stage.ms),
   ].filter((part): part is string => part !== null);
   return (
-    <div ref={fade} id={id} role="region" aria-label={`${stage.name}: detail and evidence`} className="flex min-w-0 flex-col gap-2.5 rounded-lg bg-surface-recessed/60 px-3 py-2.5">
+    <div ref={fade} id={id} role="region" aria-label={`${stage.name}: detail and evidence`} className="flex min-w-0 flex-col gap-3 rounded-lg bg-surface-recessed/60 px-3 py-3">
       <div className="flex min-w-0 items-start gap-2">
         <StageMark stage={stage} wrong={wrong} />
         <div className="flex min-w-0 flex-1 flex-col">
@@ -437,7 +437,7 @@ function Header({ chain }: { chain: Chain }) {
         <h3 className="m-0 min-w-0 flex-1 text-balance text-[15px] font-semibold leading-6 tracking-[-0.01em] text-foreground [overflow-wrap:anywhere]">{verdict.title}</h3>
       </div>
       {verdict.lines.length === 0 ? null : (
-        <ul className="m-0 flex min-w-0 list-none flex-col gap-0.5 p-0 pl-6">
+        <ul className="m-0 flex min-w-0 list-none flex-col gap-1 p-0 pl-6">
           {verdict.lines.map((line, index) => (
             <li key={index} className={cn("flex min-w-0 items-start gap-2 text-xs leading-5", line.tone === "bad" ? "text-destructive" : "text-muted-foreground")}>
               <span aria-hidden className={cn("mt-[7px] size-1.5 shrink-0 rounded-full", TONE_DOT[line.tone])} />
@@ -446,7 +446,7 @@ function Header({ chain }: { chain: Chain }) {
           ))}
         </ul>
       )}
-      <p className="m-0 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1 pl-6 pt-0.5 text-xs leading-5 text-muted-foreground">
+      <p className="m-0 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pl-6 text-xs leading-5 text-muted-foreground">
         <span className="tabular-nums">{chainSummary(chain)}</span>
         {chain.expected.length === 0 ? null : (
           <span className="flex min-w-0 flex-wrap items-center gap-1">
@@ -459,7 +459,7 @@ function Header({ chain }: { chain: Chain }) {
                   key={fact.key}
                   title={`${fact.label} ${fact.value}: ${state}`}
                   className={cn(
-                    "flex min-w-0 items-center gap-1 rounded-md px-1.5 text-[11px] leading-[18px]",
+                    "flex min-w-0 items-center gap-1 rounded-md px-1 text-[11px] leading-[18px]",
                     wrong ? "bg-destructive/10 text-destructive" : fact.confirmed ? "bg-success/10 text-foreground" : "border border-dashed border-border",
                   )}
                 >
@@ -530,7 +530,7 @@ export function Provenance({ props }: { props: Props }) {
               <div
                 style={{ "--order": shown * 2 + 1 } as CSSProperties}
                 className={cn(
-                  "min-w-0 pl-7 [order:var(--order)]",
+                  "min-w-0 pl-[26px] [order:var(--order)]",
                   shown === stages.length - 1 ? "pt-3" : "pb-4",
                   row && "@2xl:basis-full @2xl:pb-0 @2xl:pl-0 @2xl:pt-0 @2xl:[order:9999]",
                 )}

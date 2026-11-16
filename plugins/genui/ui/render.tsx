@@ -184,7 +184,7 @@ function renderComponent<N extends ComponentName>(node: ComponentNode<N>, captio
     // Wrapped with or without a caption, so a `source:` arriving as the reply streams never remounts the component.
     const caption = captioned ? sourceCaption(node.props) : null;
     return (
-      <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-col gap-2">
         {element}
         {caption === null ? null : <SourceLine caption={caption} />}
       </div>

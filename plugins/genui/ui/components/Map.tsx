@@ -294,14 +294,14 @@ function PlacePhoto({ title, name, onOff }: { title: string; name: string; onOff
   useEffect(() => {
     if (off) onOff();
   }, [off, onOff]);
-  if (found === null) return <Skeleton aria-hidden className={cn("ml-[38px] mr-2 mb-1.5 block aspect-[16/9] rounded-md", SKELETON)} />;
+  if (found === null) return <Skeleton aria-hidden className={cn("ml-9 mr-2 mb-2 block aspect-[16/9] rounded-md", SKELETON)} />;
   if (photo === null || off) return null;
   const url = image.status === "ready" ? image.url : null;
   if (image.status === "failed" || (url !== null && broken === url)) {
-    return <p className="mb-1.5 ml-[38px] mr-2 text-[11px] leading-4 text-muted-foreground">Couldn't load the photo.</p>;
+    return <p className="mb-2 ml-9 mr-2 text-[11px] leading-4 text-muted-foreground">Couldn't load the photo.</p>;
   }
   return (
-    <figure className="mb-1.5 ml-[38px] mr-2 flex min-w-0 flex-col gap-1">
+    <figure className="mb-2 ml-9 mr-2 flex min-w-0 flex-col gap-1">
       <div className="relative aspect-[16/9] overflow-hidden rounded-md border border-border bg-surface-recessed">
         {url === null ? <Skeleton aria-hidden className={cn("absolute inset-0 rounded-none", SKELETON)} /> : <Fill url={url} alt={name} onFailed={() => setBroken(url)} />}
       </div>
@@ -586,7 +586,7 @@ export function MapView({ props }: { props: Props }) {
             <WebOffLine what="Map" />
           </div>
         ) : (
-          <div className="flex min-w-0 flex-col gap-1.5 @xl:flex-1">
+          <div className="flex min-w-0 flex-col gap-2 @xl:flex-1">
             <div
               ref={viewport}
               role="region"
@@ -687,7 +687,7 @@ export function MapView({ props }: { props: Props }) {
                   </Button>
                 </div>
               ) : null}
-              <p className="absolute bottom-0 right-0 m-0 rounded-tl-md bg-background/85 px-1.5 py-0.5 text-[10px] leading-4 text-muted-foreground">
+              <p className="absolute bottom-0 right-0 m-0 rounded-tl-md bg-background/85 px-1 py-0.5 text-[10px] leading-4 text-muted-foreground">
                 ©{" "}
                 <UrlLink href="https://www.openstreetmap.org/copyright" className="underline-offset-2 hover:text-foreground hover:underline">
                   OpenStreetMap
@@ -696,12 +696,12 @@ export function MapView({ props }: { props: Props }) {
               </p>
             </div>
             {days || routes.length > 0 ? (
-              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-0.5 text-[11px] leading-4 text-muted-foreground">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-4 text-muted-foreground">
                 {days ? (
                   <ul aria-label="Days" className="m-0 flex list-none flex-wrap items-center gap-x-3 gap-y-1 p-0">
                     {groups.map((group, at) =>
                       group.label === null ? null : (
-                        <li key={at} className="flex items-center gap-1.5">
+                        <li key={at} className="flex items-center gap-1">
                           <span aria-hidden className="size-2 rounded-full" style={{ background: dayColor(at) }} />
                           {group.label}
                         </li>
@@ -718,14 +718,14 @@ export function MapView({ props }: { props: Props }) {
         )}
         <div ref={listRef} className={cn("flex min-w-0 flex-col gap-2", !off && "@xl:max-h-[22rem] @xl:w-60 @xl:shrink-0 @xl:overflow-y-auto")}>
           {groups.map((group, at) => (
-            <section key={at} aria-label={group.label ?? undefined} className="flex min-w-0 flex-col gap-0.5">
+            <section key={at} aria-label={group.label ?? undefined} className="flex min-w-0 flex-col gap-1">
               {group.label === null ? null : (
-                <h4 className="m-0 flex items-center gap-1.5 px-2 pt-0.5 text-[11px] font-medium uppercase leading-4 tracking-wide text-muted-foreground">
+                <h4 className="m-0 flex items-center gap-1 px-2 text-[11px] font-medium uppercase leading-4 tracking-wide text-muted-foreground">
                   <span aria-hidden className="size-2 rounded-full" style={{ background: dayColor(at) }} />
                   {group.label}
                 </h4>
               )}
-              <ol start={number(group.places[0])} className="m-0 flex min-w-0 list-none flex-col gap-0.5 p-0">
+              <ol start={number(group.places[0])} className="m-0 flex min-w-0 list-none flex-col gap-1 p-0">
                 {group.places.map((index) => {
                   const place = places[index]!;
                   const result = place.given === null ? lookups.get(lookupKey(place.name)) : undefined;
@@ -754,17 +754,17 @@ export function MapView({ props }: { props: Props }) {
                         onFocus={() => setHovered(index)}
                         onBlur={() => setHovered(null)}
                         className={cn(
-                          "flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                          "flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-md px-2 py-2 text-left transition-colors duration-150 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
                           on ? "bg-surface-recessed" : "hover:bg-surface-recessed",
                         )}
                       >
                         <span
-                          className={cn(MARKER, "mt-px size-5 text-[10px] transition-opacity", (points[index] === null || !dropped(index)) && "opacity-45")}
+                          className={cn(MARKER, "size-5 text-[10px] transition-opacity", (points[index] === null || !dropped(index)) && "opacity-45")}
                           style={{ background: color(index) }}
                         >
                           {number(index)}
                         </span>
-                        <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="flex min-w-0 flex-col gap-1">
                           <span className="text-sm font-medium leading-5 text-foreground [overflow-wrap:anywhere]">{place.name}</span>
                           {place.note === null ? null : <span className="text-xs leading-4 text-muted-foreground">{place.note}</span>}
                           {status === null ? null : (

@@ -82,19 +82,19 @@ function FrameRow({ frame, selected, first, onSelect }: { frame: TraceFrame; sel
   return (
     <li
       className={cn(
-        "flex min-w-0 items-start gap-1 border-l-2 pl-2 pr-0.5",
+        "flex min-w-0 items-start gap-1 border-l-2 pl-2 pr-1",
         selected ? "border-destructive bg-destructive/[0.06]" : first ? "border-destructive/40" : "border-transparent",
       )}
     >
       {onSelect === null ? (
-        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 py-0.5">{body}</span>
+        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2 min-h-6 content-center">{body}</span>
       ) : (
         <button
           type="button"
           aria-pressed={selected}
           aria-label={`Show the code of ${name ?? "anonymous"} at ${where}`}
           onClick={onSelect}
-          className={cn("flex min-w-0 flex-1 cursor-pointer flex-wrap items-baseline gap-x-2 rounded-sm py-0.5 text-left hover:bg-state-hover", FOCUS_RING)}
+          className={cn("flex min-w-0 flex-1 cursor-pointer flex-wrap items-baseline gap-x-2 rounded-sm min-h-6 content-center text-left hover:bg-state-hover", FOCUS_RING)}
         >
           {body}
         </button>
@@ -176,7 +176,7 @@ function Message({ text, large }: { text: string; large: boolean }) {
   const lines = text.split("\n");
   const cut = !all && lines.length > MESSAGE_LINES;
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className="flex min-w-0 flex-col gap-1">
       <p
         className={cn(
           "m-0 whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]",
@@ -221,16 +221,16 @@ function Section({
     <section
       ref={rise}
       aria-label={`${label ? `${label}: ` : ""}${heading ?? ""}${section.message === "" ? "" : ` ${section.message.split("\n", 1)[0]}`}`}
-      className={cn("flex min-w-0 flex-col gap-2.5", section.depth > 0 && "border-l border-border pl-3")}
+      className={cn("flex min-w-0 flex-col gap-3", section.depth > 0 && "border-l border-border pl-3")}
       style={section.depth > 1 ? { marginLeft: `${(section.depth - 1) * 12}px` } : undefined}
     >
       {label === "" ? null : (
-        <p className="m-0 flex items-center gap-1.5 text-xs font-medium leading-5 text-muted-foreground">
+        <p className="m-0 flex items-center gap-1 text-xs font-medium leading-5 text-muted-foreground">
           <Icon name="CornerDownRight" aria-hidden className="size-3.5" />
           {label}
         </p>
       )}
-      <div className="flex min-w-0 flex-col gap-0.5">
+      <div className="flex min-w-0 flex-col gap-1">
         {heading === null ? null : (
           <h3
             className={cn(
@@ -245,7 +245,7 @@ function Section({
         {section.fields.length === 0 ? null : (
           <dl className="m-0 mt-1 flex min-w-0 flex-wrap gap-1">
             {section.fields.map(([key, value], index) => (
-              <div key={index} className="flex min-w-0 items-baseline gap-1 rounded-md bg-muted px-1.5 font-mono text-[11px] leading-5">
+              <div key={index} className="flex min-w-0 items-baseline gap-1 rounded-md bg-muted px-1 font-mono text-[11px] leading-5">
                 <dt className="text-muted-foreground">{key}</dt>
                 <dd className="m-0 min-w-0 text-foreground [overflow-wrap:anywhere]">{value}</dd>
               </div>

@@ -129,7 +129,7 @@ export function ImageSearch({ props }: { props: Props }) {
 
   return (
     // data-bb-image-preview-ignore: these pictures have their own viewer; image-preview plugins must leave them alone.
-    <figure data-bb-image-preview-ignore="" className={cn("m-0 flex min-w-0 flex-col gap-1.5", aspect.width)}>
+    <figure data-bb-image-preview-ignore="" className={cn("m-0 flex min-w-0 flex-col gap-2", aspect.width)}>
       <div className={cn(FRAME, aspect.box)}>
         {url === null || credit === null ? (
           <Skeleton role="status" aria-label={`Finding a photo of ${query}`} className={cn("absolute inset-0 rounded-none", SKELETON)} />
@@ -241,7 +241,7 @@ function Tile({
   // A strip or grid keeps uniform 4:3 thumbnails; the only column takes its picture's shape.
   const box = layout === "single" ? singleBox(size) : null;
   return (
-    <figure ref={rise} className="m-0 flex w-full min-w-0 flex-col gap-1.5" style={box === null ? undefined : { maxWidth: box.maxWidth }}>
+    <figure ref={rise} className="m-0 flex w-full min-w-0 flex-col gap-2" style={box === null ? undefined : { maxWidth: box.maxWidth }}>
       <div className={cn(FRAME, box === null && "aspect-[4/3]")} style={box === null ? undefined : { aspectRatio: box.aspectRatio }}>
         {url !== null ? (
           <button
@@ -261,7 +261,7 @@ function Tile({
         )}
       </div>
       {caption === null && credit === null ? null : (
-        <figcaption className="flex min-w-0 flex-col gap-0.5">
+        <figcaption className="flex min-w-0 flex-col gap-1">
           {caption === null ? null : <span className="line-clamp-2 text-xs leading-4 text-foreground">{caption}</span>}
           {credit === null ? null : <Credit image={credit} compact />}
         </figcaption>
@@ -326,7 +326,7 @@ export function Gallery({ props }: { props: Props }) {
         aria-label="Gallery"
         className={
           strip
-            ? "flex min-w-0 snap-x snap-mandatory gap-2 overflow-x-auto pb-1.5 [scrollbar-width:thin]"
+            ? "flex min-w-0 snap-x snap-mandatory gap-2 overflow-x-auto pb-2 [scrollbar-width:thin]"
             : "grid min-w-0 gap-2"
         }
         style={strip ? undefined : { gridTemplateColumns: template }}

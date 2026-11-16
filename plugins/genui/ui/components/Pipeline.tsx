@@ -114,7 +114,7 @@ function Chevron({ open }: { open: boolean }) {
 function DetailChip({ detail }: { detail: string | null }) {
   if (detail === null) return null;
   return (
-    <Badge variant="secondary" className="px-1.5 py-0 font-medium">
+    <Badge variant="secondary" className="h-5 px-1 py-0 font-medium">
       {detail}
     </Badge>
   );
@@ -163,8 +163,8 @@ function jobTime(job: PipelineJob): string | null {
 function StepRow({ step, failing }: { step: PipelineStep; failing: boolean }) {
   const quiet = step.status === "skipped" || (step.status === "queued" && !failing);
   return (
-    <li className={cn("flex min-w-0 flex-col rounded-md px-1.5 py-0.5", failing && "bg-destructive/8")}>
-      <div className="flex min-w-0 items-center gap-2 text-xs leading-5">
+    <li className={cn("flex min-w-0 flex-col rounded-md px-1", failing && "bg-destructive/8")}>
+      <div className="flex min-h-6 min-w-0 items-center gap-2 text-xs leading-5">
         <span className="w-5 shrink-0 text-right tabular-nums text-muted-foreground/70">{step.number ?? ""}</span>
         <StatusMark status={step.status} className="size-3" />
         <span
@@ -186,7 +186,7 @@ function StepRow({ step, failing }: { step: PipelineStep; failing: boolean }) {
         )}
       </div>
       {step.message === null ? null : (
-        <pre className="m-0 ml-[38px] whitespace-pre-wrap font-mono text-[11px] leading-4 text-muted-foreground [overflow-wrap:anywhere]">{step.message}</pre>
+        <pre className="m-0 ml-10 whitespace-pre-wrap font-mono text-[11px] leading-4 text-muted-foreground [overflow-wrap:anywhere]">{step.message}</pre>
       )}
     </li>
   );
@@ -198,7 +198,7 @@ function JobDetail({ job }: { job: PipelineJob }) {
   const [shown, setShown] = useState(STEP_PAGE);
   const rest = job.steps.length - shown;
   return (
-    <div ref={fade} className="flex min-w-0 flex-col gap-1.5 pb-1 pt-1">
+    <div ref={fade} className="flex min-w-0 flex-col gap-2 pb-1 pt-1">
       {job.message === null ? null : (
         <pre className="m-0 whitespace-pre-wrap rounded-md bg-destructive/8 px-2 py-1 font-mono text-[11px] leading-4 text-destructive [overflow-wrap:anywhere]">
           {job.message}
@@ -217,7 +217,7 @@ function JobDetail({ job }: { job: PipelineJob }) {
           variant="link"
           size="sm"
           onClick={() => setShown((count) => count + STEP_PAGE)}
-          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground pl-[34px]"
+          className="h-auto w-fit p-0 font-normal text-muted-foreground hover:text-foreground pl-8"
         >
           Show {formatNumber(rest)} more {rest === 1 ? "step" : "steps"}
         </BaseButton>
@@ -225,7 +225,7 @@ function JobDetail({ job }: { job: PipelineJob }) {
       {job.url === null ? null : (
         <UrlLink
           href={job.url}
-          className={cn("ml-[34px] flex w-fit items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground no-underline hover:text-foreground", FOCUS_RING)}
+          className={cn("ml-8 flex w-fit items-center gap-1 rounded-sm text-xs leading-5 text-muted-foreground no-underline hover:text-foreground", FOCUS_RING)}
         >
           {job.status === "failure" ? "Open the log" : "Open the job"}
           <Icon name="ExternalLink" aria-hidden className="size-3" />
@@ -254,8 +254,8 @@ function JobRow({ job, label, openId, span, opened, inline }: { job: PipelineJob
   const time = jobTime(job);
   const body = (
     <>
-      <span className="flex min-w-0 items-start gap-1.5">
-        <span className="flex h-5 shrink-0 items-center gap-1.5">
+      <span className="flex min-w-0 items-start gap-1">
+        <span className="flex h-5 shrink-0 items-center gap-1">
           {expandable ? <Chevron open={open} /> : <span aria-hidden className="w-3.5 shrink-0" />}
           <StatusMark status={job.status} />
         </span>
@@ -270,7 +270,7 @@ function JobRow({ job, label, openId, span, opened, inline }: { job: PipelineJob
         {time === null || !inline ? null : <span className="shrink-0 text-xs leading-5 tabular-nums text-muted-foreground">{time}</span>}
       </span>
       {/* In a column the name takes the whole width; the time sits by the bar. */}
-      <span className="flex min-w-0 items-center gap-2 pl-[42px]">
+      <span className="flex min-w-0 items-center gap-2 pl-9">
         <span className="min-w-0 flex-1">
           <DurationBar job={job} span={span} />
         </span>
@@ -324,7 +324,7 @@ function JobList({ jobs, stage, cut, span, opened, inline }: { jobs: readonly Pi
   const rest = jobs.length - shown;
   return (
     <>
-      <ul className="m-0 flex min-w-0 list-none flex-col gap-0.5 p-0">
+      <ul className="m-0 flex min-w-0 list-none flex-col gap-1 p-0">
         {jobs.slice(0, shown).map((job, index) => (
           <JobRow key={index} job={job} label={job.name.slice(cut)} openId={jobId(stage, index)} span={span} opened={opened} inline={inline} />
         ))}
@@ -358,7 +358,7 @@ function stageHeading(stage: PipelineStage, index: number, total: number): { lab
 function StageHeader({ stage, label }: { stage: PipelineStage; label: string }) {
   const count = `${formatNumber(stage.jobs.length)} ${stage.jobs.length === 1 ? "job" : "jobs"}`;
   return (
-    <div className="flex min-w-0 items-center gap-1.5 text-xs leading-5 text-muted-foreground">
+    <div className="flex min-w-0 items-center gap-1 text-xs leading-5 text-muted-foreground">
       <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[TONE[stage.status]])} />
       <span className="min-w-0 truncate font-medium text-foreground">{label}</span>
       <span className="sr-only">, {STATUS_LABEL[stage.status]}</span>
@@ -399,7 +399,7 @@ function Stages({ run, opened }: { run: PipelineRun; opened: Opened }) {
             {index === 0 ? null : (
               <Icon name="ChevronRight" aria-hidden className="mx-1 mt-1 size-3.5 shrink-0 text-muted-foreground/60" />
             )}
-            <section aria-label={headings[index]?.label ?? stage.jobs[0]?.name} className="flex min-w-0 flex-1 flex-col gap-1 rounded-lg bg-surface-recessed/60 px-2 py-1.5">
+            <section aria-label={headings[index]?.label ?? stage.jobs[0]?.name} className="flex min-w-0 flex-1 flex-col gap-1 rounded-lg bg-surface-recessed/60 px-2 py-2">
               {headings[index] === null ? null : <StageHeader stage={stage} label={headings[index].label} />}
               <JobList jobs={stage.jobs} stage={index} cut={headings[index]?.cut ?? 0} span={run.span} opened={opened} inline={false} />
             </section>
@@ -409,8 +409,8 @@ function Stages({ run, opened }: { run: PipelineRun; opened: Opened }) {
       {open.length === 0 ? null : (
         <div className="hidden min-w-0 flex-col gap-3 @2xl:flex">
           {open.map(({ job, id }) => (
-            <section key={id} aria-label={`${job.name}, steps`} className="flex min-w-0 flex-col gap-0.5 border-t border-border/60 pt-2">
-              <div className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium leading-5 text-foreground">
+            <section key={id} aria-label={`${job.name}, steps`} className="flex min-w-0 flex-col gap-1 border-t border-border/60 pt-2">
+              <div className="flex min-w-0 items-center gap-1 text-[13px] font-medium leading-5 text-foreground">
                 <StatusMark status={job.status} />
                 <span className="min-w-0 flex-1 truncate">{job.name}</span>
                 {job.ms === null ? null : <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">{jobTime(job)}</span>}
@@ -445,7 +445,7 @@ function Group({ stage, index, span, opened }: { stage: PipelineStage; index: nu
   const { outer, inner } = useSmoothHeight<HTMLElement, HTMLDivElement>();
   return (
     <section ref={outer} aria-label={stage.name ?? "Checks"} className={cn("min-w-0", SMOOTH_HEIGHT_CLASS)}>
-      <div ref={inner} className="flex min-w-0 flex-col gap-0.5">
+      <div ref={inner} className="flex min-w-0 flex-col gap-1">
         <div className="flex min-w-0 items-center gap-1">
           <button
             type="button"
@@ -454,7 +454,7 @@ function Group({ stage, index, span, opened }: { stage: PipelineStage; index: nu
             aria-controls={`${id}-checks`}
             aria-label={`${stage.name}, ${STATUS_LABEL[stage.status].toLowerCase()}, ${groupCounts(stage)}`}
             onClick={() => setOpen((value) => !value)}
-            className={cn("group flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-xs leading-5", FOCUS_RING)}
+            className={cn("group flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded-md min-h-6 text-left text-xs leading-5", FOCUS_RING)}
           >
             <Chevron open={open} />
             <StatusMark status={stage.status} />
@@ -520,7 +520,7 @@ function Header({ run }: { run: PipelineRun }) {
       <span key="branch" className="flex min-w-0 items-center gap-1" title={run.branch}>
         <Icon name="GitBranch" aria-hidden className="size-3 shrink-0" />
         <span className="sr-only">Branch </span>
-        <span className="min-w-0 truncate rounded-sm bg-surface-recessed px-1.5 font-mono text-[11px]">{run.branch}</span>
+        <span className="min-w-0 truncate rounded-sm bg-surface-recessed px-1 font-mono text-[11px]">{run.branch}</span>
       </span>,
     );
   }
@@ -542,7 +542,7 @@ function Header({ run }: { run: PipelineRun }) {
         </h3>
         {run.url === null ? null : <OutLink url={run.url} label="Open the run" />}
       </div>
-      <p className="m-0 flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-0.5 pl-6 text-xs leading-5 text-muted-foreground">{facts}</p>
+      <p className="m-0 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pl-6 text-xs leading-5 text-muted-foreground">{facts}</p>
       <Counts run={run} />
     </div>
   );
@@ -551,13 +551,13 @@ function Header({ run }: { run: PipelineRun }) {
 function Counts({ run }: { run: PipelineRun }) {
   const noun = run.source === "checks" ? "checks" : "jobs";
   return (
-    <p className="m-0 flex min-w-0 flex-wrap gap-x-3 gap-y-0.5 pl-6 text-xs leading-5 text-muted-foreground">
+    <p className="m-0 flex min-w-0 flex-wrap gap-x-3 gap-y-1 pl-6 text-xs leading-5 text-muted-foreground">
       <span className="tabular-nums">
         {formatNumber(run.jobCount)} {run.jobCount === 1 ? noun.slice(0, -1) : noun}:
       </span>
       {STATUS_ORDER.map((status) =>
         run.counts[status] > 0 ? (
-          <span key={status} className="flex items-center gap-1.5 tabular-nums">
+          <span key={status} className="flex items-center gap-1 tabular-nums">
             <span aria-hidden className={cn("size-2 rounded-full", TONE_DOT[TONE[status]])} />
             <span className={cn("font-medium", TONE_TEXT[TONE[status]] || "text-foreground")}>{formatNumber(run.counts[status])}</span>
             {COUNT_WORD[status]}

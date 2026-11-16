@@ -199,7 +199,7 @@ function QuizOption({
         onPick(index);
       }}
       className={cn(
-        "flex w-full min-w-0 items-start gap-2.5 rounded-lg border px-3 py-2 text-left text-sm leading-5 transition-colors duration-150",
+        "flex w-full min-w-0 items-start gap-2 rounded-lg border px-3 py-2 text-left text-sm leading-5 transition-colors duration-150",
         "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         !locked && "cursor-pointer border-border bg-background text-foreground hover:bg-state-hover",
         correct && "border-success/40 bg-success/10 text-foreground",
@@ -256,7 +256,7 @@ export function Quiz({ props }: { props: Props }) {
             {score} of {count} correct
           </p>
         </div>
-        <ol aria-label="Results" className="m-0 flex list-none flex-wrap gap-1.5 p-0">
+        <ol aria-label="Results" className="m-0 flex list-none flex-wrap gap-2 p-0">
           {questions.map((question, index) => {
             const right = picks[index] === question.answer;
             return (
@@ -305,7 +305,7 @@ export function Quiz({ props }: { props: Props }) {
         {at + 1} of {count}
       </span>
       <Markdown content={question.q} className={cn(INLINE_MD, "text-sm font-medium text-foreground")} />
-      <div role="radiogroup" aria-label="Options" className="flex min-w-0 flex-col gap-1.5">
+      <div role="radiogroup" aria-label="Options" className="flex min-w-0 flex-col gap-2">
         {question.options.map((option, index) => (
           <QuizOption
             // Options are positional; the same text may repeat.
@@ -331,12 +331,12 @@ export function Quiz({ props }: { props: Props }) {
       {pick === null ? null : (
         <div className="flex min-w-0 flex-col gap-1">
           {pick === question.answer ? (
-            <span className="flex items-center gap-1.5 text-sm font-medium text-success">
+            <span className="flex items-center gap-1 text-sm font-medium text-success">
               <CheckMark className="size-4 shrink-0" />
               Correct
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 text-sm font-medium text-destructive">
+            <span className="flex items-center gap-1 text-sm font-medium text-destructive">
               <XMark className="size-4 shrink-0" />
               Incorrect
             </span>

@@ -238,7 +238,7 @@ function TileView({
       }}
     >
       {showName ? (
-        <div className={cn("flex min-w-0 flex-col px-1.5", holder ? "h-[18px] justify-center" : "pt-1")} style={holder ? { height: GROUP_HEADER } : undefined}>
+        <div className={cn("flex min-w-0 flex-col px-1", holder ? "h-[18px] justify-center" : "pt-1")} style={holder ? { height: GROUP_HEADER } : undefined}>
           <span className={cn("truncate text-[11px] leading-4 text-foreground", (level === 1 || zoomable) && "font-medium", folded > 0 && "text-muted-foreground")}>
             {node.name}
             {holder ? <span className="font-normal text-muted-foreground"> · {size}</span> : null}
@@ -263,11 +263,11 @@ function ListView({ node, unit, onZoom }: { node: TreeNode; unit: string | null;
           const name = (
             <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground" title={child.path}>
               {child.name}
-              {child.package ? <span className="ml-1.5 text-[10.5px] text-muted-foreground">package</span> : null}
+              {child.package ? <span className="ml-1 text-[10.5px] text-muted-foreground">package</span> : null}
             </span>
           );
           return (
-            <li key={child.path} className="flex min-w-0 flex-col gap-0.5 border-b border-border/50 py-1.5 last:border-b-0">
+            <li key={child.path} className="flex min-w-0 flex-col gap-1 border-b border-border/50 py-2 last:border-b-0">
               <div className="flex min-w-0 items-center gap-2">
                 <span aria-hidden className="size-2 shrink-0 rounded-[2px]" style={{ background: tint(index, 70) }} />
                 {child.children.length > 0 ? (

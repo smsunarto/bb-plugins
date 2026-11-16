@@ -29,7 +29,7 @@ export function Frame({ label, children }: { label: string; children: ReactNode 
 /** A title with a quiet line under it; `aside` (a switch, a toggle) sits at the right, or under the title when the frame is narrow. */
 export function Heading({ title, meta, aside }: { title: ReactNode; meta?: ReactNode; aside?: ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
+    <div className="flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-2">
       <div className="flex min-w-[min(100%,15rem)] flex-1 flex-col">
         <h3 className="m-0 text-balance text-[15px] font-semibold leading-6 tracking-[-0.01em] text-foreground">{title}</h3>
         {meta === undefined || meta === null ? null : <p className="m-0 text-xs leading-5 text-muted-foreground">{meta}</p>}
@@ -66,7 +66,7 @@ export function Segmented<T extends string>({
       onValueChange={(next) => {
         if (next !== "") onChange(next as T);
       }}
-      className="shrink-0 gap-0 rounded-md bg-surface-recessed p-0.5"
+      className="shrink-0 gap-0 rounded-md bg-surface-recessed p-1"
     >
       {options.map((option) => (
         <ToggleGroupItem key={option.value} value={option.value} className="h-5 min-w-0 px-2 text-xs leading-5">

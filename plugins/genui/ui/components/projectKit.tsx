@@ -169,7 +169,7 @@ export function Freshness({
   const sameDay = new Date(at).toDateString() === new Date(now).toDateString();
   const label = stored ? `as of ${(sameDay ? CLOCK : DAY_CLOCK).format(at)}` : `updated ${relativeTime(at, now)}`;
   return (
-    <span className="ml-auto flex shrink-0 items-center gap-0.5 text-[11px] leading-4 text-muted-foreground">
+    <span className="ml-auto flex shrink-0 items-center gap-1 text-[11px] leading-4 text-muted-foreground">
       <time dateTime={new Date(at).toISOString()} title={`${stored ? "Saved with this reply" : "Read from BB"} ${EXACT_TIME.format(at)}`} className="tabular-nums">
         {label}
       </time>
@@ -190,7 +190,7 @@ export function Panel({ label, header, children }: { label: string; header: Reac
   const rise = useEntrance<HTMLElement>(FRAME_RISE);
   return (
     <section ref={rise} aria-label={label} className="min-w-0 overflow-hidden rounded-lg border border-border bg-background text-sm text-foreground">
-      <header className="flex min-h-9 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface-recessed py-1.5 pl-3 pr-1.5 text-xs leading-5 text-muted-foreground">
+      <header className="flex min-h-9 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface-recessed py-1 pl-3 pr-1 text-xs leading-5 text-muted-foreground">
         {header}
       </header>
       {children}
@@ -211,7 +211,7 @@ export function QuietLine({ icon, children, className }: { icon?: string; childr
 /** A Project component outside any thread (the gallery without `?thread=`): what it would show. */
 export function NeedsThread({ icon, children }: { icon: string; children: ReactNode }) {
   return (
-    <div className="min-w-0 rounded-lg border border-dashed border-border px-3 py-2.5">
+    <div className="min-w-0 rounded-lg border border-dashed border-border px-3 py-3">
       <QuietLine icon={icon}>{children}</QuietLine>
     </div>
   );
@@ -220,7 +220,7 @@ export function NeedsThread({ icon, children }: { icon: string; children: ReactN
 /** Placeholder rows while BB answers. */
 export function LoadingRows({ label, rows = 3 }: { label: string; rows?: number }) {
   return (
-    <div role="status" aria-label={label} className="flex flex-col gap-2.5 px-3 py-3">
+    <div role="status" aria-label={label} className="flex flex-col gap-3 px-3 py-3">
       {Array.from({ length: rows }, (_, index) => (
         <div key={index} className="flex items-center gap-2">
           <Skeleton className="size-4 shrink-0 rounded-sm motion-reduce:animate-none" />
@@ -250,7 +250,7 @@ export function ShowAll({ count, noun, onClick }: { count: number; noun: string;
 /** A failure BB reported, in the panel body. */
 export function FailureLine({ failure }: { failure: ProjectFailure }) {
   return (
-    <QuietLine icon={failure.reason === "not-git" || failure.reason === "no-environment" ? "FolderUnknown" : "AlertCircle"} className="px-3 py-2.5">
+    <QuietLine icon={failure.reason === "not-git" || failure.reason === "no-environment" ? "FolderUnknown" : "AlertCircle"} className="px-3 min-h-10 py-2">
       {failure.message}
     </QuietLine>
   );

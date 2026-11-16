@@ -415,7 +415,7 @@ function AppFrame({
         )}
         <div
           className={cn(
-            "absolute right-2 top-2 z-10 flex items-center gap-0.5 rounded-lg border border-border bg-background/90 p-0.5 shadow-sm transition-opacity duration-150",
+            "absolute right-2 top-2 z-10 flex items-center gap-1 rounded-lg border border-border bg-background/90 p-1 shadow-sm transition-opacity duration-150",
             full ? "opacity-100" : "opacity-0 focus-within:opacity-100 group-hover/app:opacity-100 [@media(hover:none)]:opacity-100",
           )}
         >

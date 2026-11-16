@@ -66,7 +66,7 @@ function PluginsPanel({ claims }: { claims: readonly PluginClaim[] }) {
         label="Plugins"
         header={
           <>
-            <span className="flex min-w-0 items-center gap-1.5">
+            <span className="flex min-w-0 items-center gap-1">
               <Icon name="Puzzle" aria-hidden className="size-3.5 shrink-0" />
               <span className="font-medium text-foreground">Plugins</span>
               <span className="tabular-nums">{formatNumber(claims.length)}</span>
@@ -111,7 +111,7 @@ function PluginLine({ row }: { row: PluginRow }) {
   return (
     <li
       ref={rise}
-      className="flex min-w-0 items-start gap-2.5 border-b border-border/60 px-3 py-2 last:border-b-0"
+      className="flex min-w-0 items-start gap-2 border-b border-border/60 px-3 py-2 last:border-b-0"
     >
       {state.found ? (
         <PluginIcon
@@ -126,7 +126,7 @@ function PluginLine({ row }: { row: PluginRow }) {
           className="mt-0.5 size-4 shrink-0 text-muted-foreground/60"
         />
       )}
-      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <span
             className={cn(
@@ -153,10 +153,8 @@ function PluginLine({ row }: { row: PluginRow }) {
             {PLUGIN_ACTION_LABEL[claim.action]}
           </Badge>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-[11px] leading-4 text-muted-foreground">
-          <span
-            className={cn("flex shrink-0 items-center gap-1.5 font-medium", TONE_TEXT[row.tone])}
-          >
+        <div className="flex min-w-0 flex-wrap items-center gap-x-1 text-[11px] leading-4 text-muted-foreground">
+          <span className={cn("flex shrink-0 items-center gap-1 font-medium", TONE_TEXT[row.tone])}>
             <LiveDot tone={row.tone} live={pluginSettling(state)} />
             {row.stateLabel}
           </span>
