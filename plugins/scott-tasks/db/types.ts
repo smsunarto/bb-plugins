@@ -158,6 +158,11 @@ export interface CreateTaskInput {
   parentTaskId?: string | null;
 }
 
+export interface MoveTaskToProjectResult {
+  task: Task;
+  moved: Array<{ previousKey: string; task: Task }>;
+}
+
 export interface UpdateTaskInput {
   title?: string;
   description?: string;

@@ -734,6 +734,26 @@ export function registerHandlers(
         throw error;
       }
     },
+    moveTaskToProject(input) {
+      const current = store.tasks.getTask(input.taskId);
+      if (!current) throw new Error(`Task not found: ${input.taskId}`);
+      const result = store.transaction(() => {
+        const outcome = store.tasks.moveTaskToProject(current.id, input.projectId);
+        for (const { previousKey, task } of outcome.moved) {
+          writeSystemComments(store, task.id, input.authorName, [
+            `Moved from ${previousKey} to ${task.key} by ${input.authorName}`,
+          ]);
+        }
+        return { task: apiTask(store, outcome.task), moved: outcome.moved };
+      });
+      for (const { task } of result.moved) {
+        publishTasksChanged(bb, task.id, current.projectId);
+        publishTasksChanged(bb, task.id, task.projectId);
+        publishCommentsChanged(bb, task.id);
+      }
+      if (result.moved.length > 0) publishProjectsChanged(bb, result.task.projectId);
+      return { ok: true, task: result.task };
+    },
     async deleteTask(input) {
       const task = store.tasks.getTask(input.taskId);
       const subtasks = task ? store.tasks.listSubtasks(task.id) : [];

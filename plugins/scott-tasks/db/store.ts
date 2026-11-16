@@ -32,6 +32,7 @@ import type {
   Label,
   ListTasksFilters,
   ListTasksPage,
+  MoveTaskToProjectResult,
   Preset,
   PresetEnvironmentKind,
   Project,
@@ -708,12 +709,20 @@ export function createTasksStore(db: PluginDatabase) {
     `${taskSelect} WHERE p.prefix = ? COLLATE NOCASE AND t.number = ?`,
   );
 
+  // A moved task keeps answering to its old keys. A live key always wins over an alias.
+  const getTaskByAliasRow = db.prepare<[string, number], TaskRow>(
+    `${taskSelect}
+     JOIN task_key_aliases a ON a.task_id = t.id
+     WHERE a.prefix = ? AND a.number = ?`,
+  );
+
   function getTaskByKey(key: string): Task | undefined {
     const match = /^([A-Za-z][A-Za-z0-9]{0,9})-(\d+)$/.exec(key.trim());
     if (!match) return undefined;
     const [, prefix, number] = match;
     if (prefix === undefined || number === undefined) return undefined;
-    const row = getTaskByKeyRow.get(prefix, Number(number));
+    const row =
+      getTaskByKeyRow.get(prefix, Number(number)) ?? getTaskByAliasRow.get(prefix, Number(number));
     return row ? taskFromRow(row) : undefined;
   }
 
@@ -1122,6 +1131,83 @@ export function createTasksStore(db: PluginDatabase) {
 
   function updateTask(id: string, input: UpdateTaskInput): Task {
     return updateTaskTransaction(id, input);
+  }
+
+  // Moves a task and its sub-tasks to another project. Each gets a fresh number there, lands at
+  // the end of its status column, keeps its old key as an alias, and has its labels remapped by
+  // name, creating any the target project lacks. A sub-task moved on its own leaves its parent,
+  // because a sub-task must share its parent's project.
+  const allocateTaskNumbers = db.prepare<[number, string, number]>(
+    `UPDATE projects SET next_task_number = next_task_number + ?
+     WHERE id = ? AND next_task_number = ?`,
+  );
+  const nextColumnPosition = db.prepare<[string, Task["status"]], { position: number }>(
+    `SELECT COALESCE(MAX(position), 0) + ${POSITION_STEP} AS position
+     FROM tasks WHERE project_id = ? AND status = ?`,
+  );
+  const recordKeyAlias = db.prepare<[string, number, string]>(
+    `INSERT INTO task_key_aliases (prefix, number, task_id) VALUES (?, ?, ?)
+     ON CONFLICT (prefix, number) DO UPDATE SET task_id = excluded.task_id`,
+  );
+  const dropKeyAlias = db.prepare<[string, number]>(
+    "DELETE FROM task_key_aliases WHERE prefix = ? AND number = ?",
+  );
+  const moveTaskRow = db.prepare<[string, number, number, string | null, string, string]>(
+    `UPDATE tasks SET project_id = ?, number = ?, position = ?, parent_task_id = ?, updated_at = ?
+     WHERE id = ?`,
+  );
+  const labelByProjectAndName = db.prepare<[string, string], LabelRow>(
+    "SELECT * FROM labels WHERE project_id = ? AND name = ? COLLATE NOCASE",
+  );
+  const clearTaskLabels = db.prepare<[string]>("DELETE FROM task_labels WHERE task_id = ?");
+  const linkTaskLabel = db.prepare<[string, string]>(
+    `INSERT INTO task_labels (task_id, label_id) VALUES (?, ?)
+     ON CONFLICT (task_id, label_id) DO NOTHING`,
+  );
+
+  const moveTaskToProjectTransaction = db.transaction(
+    (id: string, projectId: string): MoveTaskToProjectResult => {
+      const root = requireTask(id);
+      const target = requireProject(projectId);
+      if (root.projectId === target.id) return { task: root, moved: [] };
+      const source = requireProject(root.projectId);
+      const moving = [root, ...listSubtasks(root.id)];
+
+      const allocated = allocateTaskNumbers.run(moving.length, target.id, target.nextTaskNumber);
+      if (allocated.changes !== 1) {
+        throw new Error(`Could not allocate task numbers for ${target.id}`);
+      }
+
+      const updatedAt = nowIso();
+      const moved = moving.map((task, index) => {
+        const number = target.nextTaskNumber + index;
+        const sourceLabels = listLabelsForTask(task.id);
+        recordKeyAlias.run(source.prefix, task.number, task.id);
+        dropKeyAlias.run(target.prefix, number);
+        moveTaskRow.run(
+          target.id,
+          number,
+          nextColumnPosition.get(target.id, task.status)?.position ?? POSITION_STEP,
+          task.id === root.id ? null : root.id,
+          updatedAt,
+          task.id,
+        );
+        clearTaskLabels.run(task.id);
+        for (const label of sourceLabels) {
+          const row = labelByProjectAndName.get(target.id, label.name);
+          const targetLabel = row
+            ? labelFromRow(row)
+            : createLabel({ projectId: target.id, name: label.name, color: label.color });
+          linkTaskLabel.run(task.id, targetLabel.id);
+        }
+        return { previousKey: task.key, task: requireTask(task.id) };
+      });
+      return { task: requireTask(root.id), moved };
+    },
+  );
+
+  function moveTaskToProject(id: string, projectId: string): MoveTaskToProjectResult {
+    return moveTaskToProjectTransaction(id, projectId);
   }
 
   function renormalizeColumn(
@@ -1785,6 +1871,7 @@ export function createTasksStore(db: PluginDatabase) {
     listTasks,
     listSubtasks,
     updateTask,
+    moveTaskToProject,
     updatePosition,
     deleteTask,
     createLabel,

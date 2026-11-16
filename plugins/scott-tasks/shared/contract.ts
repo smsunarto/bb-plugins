@@ -489,6 +489,16 @@ export const tasksRpcContract = defineRpcContract({
     input: updateTaskInputSchema,
     output: taskMutationResultSchema,
   },
+  moveTaskToProject: {
+    input: z
+      .object({
+        taskId: idSchema,
+        projectId: idSchema,
+        authorName: nonBlankStringSchema.default("You"),
+      })
+      .strict(),
+    output: taskMutationResultSchema,
+  },
   deleteTask: {
     input: z.object({ taskId: idSchema }).strict(),
     output: z.object({ deleted: z.boolean() }).strict(),
