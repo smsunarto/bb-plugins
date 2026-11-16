@@ -258,12 +258,6 @@
     "source": "setName(\"\");"
   },
   {
-    "filename": "plugins/slopcop/server.ts",
-    "code": "unicorn(no-useless-fallback-in-spread)",
-    "message": "Empty fallbacks in spreads are unnecessary",
-    "source": "...((execution.executionInputSources as Record<string, string>) ?? {}),"
-  },
-  {
     "filename": "plugins/t3-composer/components/ui/compact-long-press-menu.tsx",
     "code": "react(set-state-in-effect)",
     "message": "Calling setState synchronously within an effect can trigger cascading renders",

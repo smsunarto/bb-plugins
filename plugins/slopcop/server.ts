@@ -500,7 +500,7 @@ function createServices(
       // project's instead — which then rejected the (valid) model as unknown.
       // Anything we actually send is by definition an explicit choice.
       const sources: Record<string, string> = {
-        ...((execution.executionInputSources as Record<string, string>) ?? {}),
+        ...(execution.executionInputSources as Record<string, string> | undefined),
       };
       for (const field of [
         "providerId",
