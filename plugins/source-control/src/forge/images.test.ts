@@ -129,7 +129,7 @@ test("a file on a branch with a slash resolves: the pull request's branch is tri
           stdout: "https://raw.githubusercontent.com/o/r/x/docs/a.png?token=T",
           stderr: "",
         }
-      : { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" };
+      : { code: 1, stdout: "", stderr: "gh: No commit found for the ref scott (HTTP 404)" };
   };
   const image = parseGitHubImage(
     "https://github.com/o/r/blob/scott/sc-pr-images/docs/a.png?raw=true",
@@ -143,9 +143,38 @@ test("a file on a branch with a slash resolves: the pull request's branch is tri
   endpoints.length = 0;
   expect(await resolveImage(exec, image)).toContain("token=T");
   expect(endpoints).toEqual([
+    // GitHub has no ref "scott": the next split, with no other call.
     "repos/o/r/contents/sc-pr-images/docs/a.png?ref=scott",
     "repos/o/r/contents/docs/a.png?ref=scott%2Fsc-pr-images",
   ]);
+});
+
+test("a dead link in a repository the account reads is gone at the first existing ref, not passed to the next account", async () => {
+  const endpoints: string[] = [];
+  const exec: Exec = async (args) => {
+    endpoints.push(args[1]!);
+    return args[1] === "repos/o/r"
+      ? { code: 0, stdout: "1\n", stderr: "" }
+      : { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" };
+  };
+  const read = {
+    kind: "image" as const,
+    repo: { owner: "o", name: "r" },
+    src: "https://github.com/o/r/raw/main/docs/gone.png",
+    refs: ["topic", "main"],
+  };
+  expect(await runReviewRead(exec, read)).toEqual({ kind: "image", location: null, gone: true });
+  // "main" exists and has no such file: one more call to tell a dead link from a hidden one, no more splits.
+  expect(endpoints).toEqual(["repos/o/r/contents/docs/gone.png?ref=main", "repos/o/r"]);
+
+  // An account that cannot see the repository stops at its first miss and says only that.
+  endpoints.length = 0;
+  const outsider: Exec = async (args) => {
+    endpoints.push(args[1]!);
+    return { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" };
+  };
+  expect(await runReviewRead(outsider, read)).toEqual({ kind: "image", location: null });
+  expect(endpoints).toEqual(["repos/o/r/contents/docs/gone.png?ref=main", "repos/o/r"]);
 });
 
 test("a Git LFS file's download host is accepted", async () => {

@@ -1,16 +1,18 @@
 import { Deferred, Effect, ManagedRuntime } from "effect";
 import { expect, test } from "vitest";
 import type { ChangeKey } from "../core/ids.ts";
+import { reviewAnswerSchema, reviewReadSchema } from "../contract/host.ts";
 import type { ReviewRead } from "../forge/review.ts";
 import { ForgeUnavailable, type ForgeSites } from "./forge-sites.ts";
 import { SharedWork } from "./shared.ts";
 import {
   createPrImages,
-  FAILED_KEPT_MS,
+  fromAnotherSite,
+  GONE_KEPT_MS,
   imageProblem,
   imageResponse,
-  REDIRECT_MAX_AGE_S,
-  SIGNED_KEPT_MS,
+  signedUntil,
+  UNSEEN_KEPT_MS,
   type ImageAnswer,
   type Visibility,
 } from "./pr-images.ts";
@@ -20,11 +22,15 @@ const UPLOAD = "https://github.com/user-attachments/assets/0993b262-b0ae-4631-b4
 const SIGNED = "https://github-production-user-asset-6210df.s3.amazonaws.com/1/2.png?sig=1";
 
 type ImageRead = Extract<ReviewRead, { kind: "image" }>;
+type Found = { location: string | null; gone: boolean };
+const signed = (location = SIGNED): Found => ({ location, gone: false });
+const UNSEEN: Found = { location: null, gone: false };
+const GONE: Found = { location: null, gone: true };
 
 function world(
   options: {
     visibility?: Visibility;
-    answer?: (read: ImageRead) => Effect.Effect<string | null, ForgeUnavailable>;
+    answer?: (read: ImageRead) => Effect.Effect<Found, ForgeUnavailable>;
     read?: (key: ChangeKey) => boolean;
   } = {},
 ) {
@@ -34,7 +40,7 @@ function world(
   const sites = {
     imageRead: (read: ImageRead) => {
       reads.push(read);
-      return options.answer?.(read) ?? Effect.succeed(SIGNED);
+      return options.answer?.(read) ?? Effect.succeed(signed());
     },
   } as unknown as ForgeSites;
   const images = createPrImages({
@@ -103,7 +109,9 @@ test("a private image redirects to the signed URL, read with the pull request's 
   const response = imageResponse(await image(KEY, UPLOAD));
   expect(response.status).toBe(302);
   expect(response.headers.get("location")).toBe(SIGNED);
-  expect(response.headers.get("cache-control")).toBe(`private, max-age=${REDIRECT_MAX_AGE_S}`);
+  // GitHub states no life in this URL: handed out for 180 s at most, browser cache included.
+  expect(response.headers.get("cache-control")).toBe("private, max-age=180");
+  expect(response.headers.get("vary")).toBe("Sec-Fetch-Site");
   expect(reads).toEqual([
     {
       kind: "image",
@@ -121,17 +129,39 @@ test("a committed file of the head's fork is read from the fork", async () => {
   expect(reads[0]).toMatchObject({ repo: { owner: "fork", name: "r" } });
 });
 
-test("a signed URL is kept briefly and never handed out past GitHub's 300 s", async () => {
-  const { reads, image, tick } = world();
-  await image(KEY, UPLOAD);
-  tick(SIGNED_KEPT_MS - 30_000);
-  const late = await image(KEY, UPLOAD);
+test("a signed URL is handed out until shortly before GitHub stops honouring it, never after", async () => {
+  // Signed by GitHub at 1_000 s on our clock, for 300 s.
+  const s3 = `https://github-production-user-asset-6210df.s3.amazonaws.com/1/2.png?X-Amz-Date=19700101T001640Z&X-Amz-Expires=300&X-Amz-Signature=x`;
+  const { reads, image, tick } = world({ answer: () => Effect.succeed(signed(s3)) });
+  expect(await image(KEY, UPLOAD)).toMatchObject({ kind: "redirect", maxAgeS: 270 });
+  tick(200_000);
+  // Kept: the browser may replay it 70 s more, which ends 30 s before GitHub's 300 s.
+  expect(await image(KEY, UPLOAD)).toMatchObject({ kind: "redirect", location: s3, maxAgeS: 70 });
   expect(reads).toHaveLength(1);
-  // Kept for 120 s here, then at most 30 s by the browser: well inside 300 s.
-  expect(late).toMatchObject({ kind: "redirect", maxAgeS: 30 });
-  tick(30_000);
+  tick(60_000);
+  // Too little life left to hand out: signed again.
   await image(KEY, UPLOAD);
   expect(reads).toHaveLength(2);
+});
+
+test("a signed URL's life is read from GitHub's own stamp and ours, whichever ends first", () => {
+  const at = Date.UTC(2026, 10, 15, 12, 0, 0);
+  const s3 = (date: string) =>
+    `https://x.s3.amazonaws.com/a.png?X-Amz-Date=${date}&X-Amz-Expires=300&X-Amz-Signature=s`;
+  expect(signedUntil(s3("20261115T120000Z"), at)).toBe(at + 270_000);
+  // GitHub's clock behind ours: its stamp ends first.
+  expect(signedUntil(s3("20261115T115900Z"), at)).toBe(at + 210_000);
+  // GitHub's clock ahead: ours does.
+  expect(signedUntil(s3("20261115T121000Z"), at)).toBe(at + 270_000);
+  const jwt = (claims: object) =>
+    `https://private-user-images.githubusercontent.com/1/a.png?jwt=h.${btoa(JSON.stringify(claims)).replaceAll("=", "")}.s`;
+  const nbf = at / 1000;
+  expect(signedUntil(jwt({ nbf, exp: nbf + 300 }), at)).toBe(at + 270_000);
+  expect(signedUntil(jwt({ nbf: nbf - 100, exp: nbf + 200 }), at)).toBe(at + 170_000);
+  // No stated life, or one that cannot be read: 180 s, as before.
+  expect(signedUntil("https://raw.githubusercontent.com/o/r/a.png?token=T", at)).toBe(at + 180_000);
+  expect(signedUntil(jwt({ exp: "soon" }), at)).toBe(at + 180_000);
+  expect(signedUntil(`${s3("20261115T120000Z")}&X-Amz-Expires=x`, at)).toBe(at + 270_000);
 });
 
 test("one image is cached once, whatever query or fragment its URL carries", async () => {
@@ -159,7 +189,7 @@ test("an unreachable site answers the failed state as an image, not a redirect",
 });
 
 test("an image never shown to be private goes to its own URL when no account can sign it", async () => {
-  const { image } = world({ visibility: "unknown", answer: () => Effect.succeed(null) });
+  const { image } = world({ visibility: "unknown", answer: () => Effect.succeed(UNSEEN) });
   expect(await image(KEY, UPLOAD)).toMatchObject({
     kind: "redirect",
     location: UPLOAD,
@@ -168,7 +198,7 @@ test("an image never shown to be private goes to its own URL when no account can
 });
 
 test("an image no account sees is the failed state, kept briefly so loads do not re-ask every account", async () => {
-  const { reads, image, tick } = world({ answer: () => Effect.succeed(null) });
+  const { reads, image, tick } = world({ answer: () => Effect.succeed(UNSEEN) });
   const first = await image(KEY, UPLOAD);
   expect(first).toMatchObject({ kind: "failed" });
   expect(imageProblem((first as Extract<ImageAnswer, { kind: "failed" }>).problem)).toBe(
@@ -176,9 +206,47 @@ test("an image no account sees is the failed state, kept briefly so loads do not
   );
   await image(KEY, UPLOAD);
   expect(reads).toHaveLength(1);
-  tick(FAILED_KEPT_MS);
+  tick(UNSEEN_KEPT_MS);
   await image(KEY, UPLOAD);
   expect(reads).toHaveLength(2);
+});
+
+test("a dead link in a repository an account reads is kept longer", async () => {
+  const { reads, image, tick } = world({ answer: () => Effect.succeed(GONE) });
+  const first = await image(KEY, "https://github.com/argus-labs/rampage-client/raw/main/gone.png");
+  expect(imageProblem((first as Extract<ImageAnswer, { kind: "failed" }>).problem)).toBe(
+    "The pull request's repository has no such image.",
+  );
+  tick(GONE_KEPT_MS - 1);
+  await image(KEY, "https://github.com/argus-labs/rampage-client/raw/main/gone.png");
+  expect(reads).toHaveLength(1);
+  tick(1);
+  await image(KEY, "https://github.com/argus-labs/rampage-client/raw/main/gone.png");
+  expect(reads).toHaveLength(2);
+});
+
+test("a transient failure is not kept: the next load asks again", async () => {
+  let offline = true;
+  const { reads, image } = world({
+    answer: () =>
+      offline
+        ? Effect.fail(new ForgeUnavailable({ problem: { kind: "host-offline", host: "laptop" } }))
+        : Effect.succeed(signed()),
+  });
+  expect(imageResponse(await image(KEY, UPLOAD)).headers.get("cache-control")).toBe("no-store");
+  offline = false;
+  expect(await image(KEY, UPLOAD)).toMatchObject({ kind: "redirect", location: SIGNED });
+  expect(reads).toHaveLength(2);
+});
+
+test("only a request from another site's page is refused", () => {
+  const site = (value?: string) =>
+    fromAnotherSite(new Headers(value ? { "sec-fetch-site": value } : {}));
+  expect(site("cross-site")).toBe(true);
+  expect(site("Cross-Site")).toBe(true);
+  for (const value of [undefined, "same-origin", "same-site", "none"])
+    expect(site(value)).toBe(false);
+  expect(imageResponse({ kind: "rejected", reason: "x", status: 403 }).status).toBe(403);
 });
 
 test("an image no signed-in account can see says so, not that gh is signed out", () => {
@@ -213,7 +281,7 @@ async function gated(waitMs?: number) {
         most.set(repo, Math.max(most.get(repo) ?? 0, running.get(repo)!));
         yield* Deferred.await(gate(repo));
         running.set(repo, running.get(repo)! - 1);
-        return SIGNED;
+        return signed();
       }),
   } as unknown as ForgeSites;
   const images = createPrImages({
@@ -264,8 +332,24 @@ test("a request waits a bounded time, answers the failed state, and the next loa
   expect(imageProblem((first as Extract<ImageAnswer, { kind: "failed" }>).problem)).toBe(
     "GitHub is taking too long for this image.",
   );
+  // The page loads it again on the next render, so the browser must not keep this answer.
+  expect(imageResponse(first).headers.get("cache-control")).toBe("no-store");
   await open("argus-labs/rampage-client");
   await new Promise((resolve) => setTimeout(resolve, 10));
   expect(await ask(KEY, upload(1))).toMatchObject({ kind: "redirect", location: SIGNED });
   await runtime.dispose();
+});
+
+test("the host contract carries an image read's ref hints and its gone answer, bounded", () => {
+  const read = { kind: "image", repo: { owner: "o", name: "r" }, src: UPLOAD };
+  expect(reviewReadSchema.parse({ ...read, refs: ["topic", "main"] })).toMatchObject({
+    refs: ["topic", "main"],
+  });
+  expect(reviewReadSchema.safeParse({ ...read, refs: ["a", "b", "c"] }).success).toBe(false);
+  expect(reviewReadSchema.safeParse({ ...read, refs: ["x".repeat(256)] }).success).toBe(false);
+  expect(reviewAnswerSchema.parse({ kind: "image", location: null, gone: true })).toEqual({
+    kind: "image",
+    location: null,
+    gone: true,
+  });
 });

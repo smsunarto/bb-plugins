@@ -10,7 +10,7 @@ import type { MergePolicy } from "../core/merge.ts";
 import type { ChangeFile, ForgeFile, InboxEntry } from "../core/review.ts";
 import { classifyFailure, GhError, graphql, type Exec } from "./github.ts";
 import { parseGitHubImage } from "../core/pr-images.ts";
-import { resolveImage } from "./images.ts";
+import { ImageGone, resolveImage } from "./images.ts";
 import { readJobLogs, type JobLog } from "./job-logs.ts";
 import { readMergePolicy } from "./merge.ts";
 import { readTimeline } from "./timeline.ts";
@@ -398,7 +398,7 @@ export type ReviewAnswer =
   | { kind: "prHead"; head: PrHead }
   | { kind: "mergePolicy"; policy: MergePolicy }
   | { kind: "jobLogs"; logs: JobLog[] }
-  | { kind: "image"; location: string | null };
+  | { kind: "image"; location: string | null; gone?: true };
 
 export async function runReviewRead(
   exec: Exec,
@@ -436,27 +436,30 @@ export async function runReviewRead(
     case "jobLogs":
       return { kind: "jobLogs", logs: await readJobLogs(exec, read.repo, read.jobIds, signal) };
     case "image":
-      return { kind: "image", location: await readImage(exec, read, signal) };
+      return { kind: "image", ...(await readImage(exec, read, signal)) };
   }
 }
 
 /**
- * Where this account finds a pull request's image, or null when it cannot see
- * it: an answer, not a failure, so the server moves on to its next account.
+ * Where this account finds a pull request's image. A null location when it
+ * cannot see it is an answer, not a failure, so the server moves on to its
+ * next account; `gone` when it reads the repository and the file is not there,
+ * so no other account is asked.
  */
 async function readImage(
   exec: Exec,
   read: Extract<ReviewRead, { kind: "image" }>,
   signal?: AbortSignal,
-): Promise<string | null> {
+): Promise<{ location: string | null; gone?: true }> {
   // Checked again where the token is: only GitHub's own image URLs are asked for.
   const image = parseGitHubImage(read.src);
   if (!image) throw new GhError("not-found", "Not a GitHub image.");
   try {
-    return await resolveImage(exec, image, signal, fetch, read.refs ?? []);
+    return { location: await resolveImage(exec, image, signal, fetch, read.refs ?? []) };
   } catch (error) {
+    if (error instanceof ImageGone) return { location: null, gone: true };
     if (error instanceof GhError && (error.code === "not-found" || error.code === "forbidden"))
-      return null;
+      return { location: null };
     throw error;
   }
 }

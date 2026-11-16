@@ -16,6 +16,7 @@ import { resolveGuide, viewedAtHead, type GuideView } from "../core/guide.ts";
 import type { ChangeFile, ReviewRevision } from "../core/review.ts";
 import { readPullRequest, type Exec } from "../forge/github.ts";
 import { runReviewRead } from "../forge/review.ts";
+import { reviewAnswerSchema, reviewReadSchema } from "../contract/host.ts";
 import { createSourceControl } from "./server.ts";
 import { groupDirective } from "../core/directive.ts";
 import { changeKeySchema } from "../core/ids.ts";
@@ -144,8 +145,12 @@ type World = {
   ghRuns?: number[];
   /** Server accounts GitHub answers "not found" for this repository. */
   cannotSee?: string[];
-  /** The only logins the contents API serves a committed file to, when set. */
+  /** The only logins that can read the repository's files, when set. */
   fileReaders?: string[];
+  /** Committed files the repository has under no ref, by the end of their path. */
+  goneFiles?: string[];
+  /** The ref hints each host image read carried across the host contract. */
+  hostImageRefs?: (string[] | undefined)[];
   /** The account each pull request read on the server ran as. */
   readAs?: string[];
   /** Each `gh pr ready` or `gh pr close` on the server, with the account it ran as. */
@@ -277,9 +282,17 @@ async function fakeWorkspace(world: World, host: Host, path?: string) {
 /** A host running GitHub reads itself, against the world's fake GitHub. */
 async function liveHostForge(world: World, hostId: string, method: string, input: unknown) {
   if (method === "forgeReview") {
-    const { read } = input as { read: Parameters<typeof runReviewRead>[1] };
+    // Through the host contract, as the host daemon receives it.
+    const read = reviewReadSchema.parse((input as { read: unknown }).read) as Parameters<
+      typeof runReviewRead
+    >[1];
     (world.hostForge ??= []).push(`${hostId}:${read.kind}`);
-    return { ok: true, value: await runReviewRead(hostGh(world, hostId), read) };
+    if (read.kind === "image") (world.hostImageRefs ??= []).push(read.refs);
+    const { account } = input as { account?: { login?: string } };
+    const answer = reviewAnswerSchema.parse(
+      await runReviewRead(hostGh(world, hostId, account?.login), read),
+    );
+    return { ok: true, value: answer };
   }
   (world.hostForge ??= []).push(`${hostId}:pr`);
   const query = input as Parameters<typeof readPullRequest>[1];
@@ -287,12 +300,17 @@ async function liveHostForge(world: World, hostId: string, method: string, input
 }
 
 /** A host's `gh`: the same fake GitHub, its inbox searches recorded by host. */
-function hostGh(world: World, hostId: string): Exec {
+function hostGh(world: World, hostId: string, login?: string): Exec {
   const github = serverGh(world);
   return async (args, options) => {
     const body = JSON.parse(String(options?.stdin ?? "{}")) as { query?: string };
     if (body.query?.includes("mine: search")) return fakeInbox(world, hostId);
-    return github(args, options);
+    // GitHub answers the host's account, not the server's.
+    const env =
+      login && !options?.env?.GH_TOKEN
+        ? { ...options?.env, GH_TOKEN: `tok-${login}` }
+        : options?.env;
+    return github(args, env ? { ...options, env } : options);
   };
 }
 
@@ -379,13 +397,21 @@ function fakeApi(world: World, args: readonly string[], options: Parameters<Exec
   const merge = fakeMerge(world, args, options);
   if (merge) return merge;
   if (args[0] !== "api") return null;
+  const token = options?.env?.GH_TOKEN;
+  const login = token ? token.replace(/^tok-/, "") : world.serverAccounts[0]!;
+  const hidden = world.fileReaders !== undefined && !world.fileReaders.includes(login);
+  // Whether the account reads the repository at all.
+  if (/^repos\/[^/]+\/[^/]+$/.test(args[1] ?? "") && args[2] === "--jq")
+    return hidden
+      ? { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" }
+      : { code: 0, stdout: "1\n", stderr: "" };
   // A committed file's download URL, as the contents API gives it to a signed-in reader.
   const contents = /^repos\/([^/]+)\/([^/]+)\/contents\/([^?]+)\?ref=(.+)$/.exec(args[1] ?? "");
   if (contents) {
     const [, owner, name, path, ref] = contents;
-    const token = options?.env?.GH_TOKEN;
-    const login = token ? token.replace(/^tok-/, "") : world.serverAccounts[0]!;
-    if (world.fileReaders && !world.fileReaders.includes(login))
+    (world.restReads ??= []).push(`${login}:${args[1]}`);
+    const where = decodeURIComponent(`${ref}/${path}`);
+    if (hidden || world.goneFiles?.some((gone) => where.endsWith(gone)))
       return { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" };
     return {
       code: 0,
@@ -1577,12 +1603,99 @@ describe("review page", () => {
         "https://raw.githubusercontent.com/smsunarto/bb-plugins/abc123/docs/a.png?token=SIGNED",
       );
       expect(world.hostForge).toContain("host-a:image");
+      // The pull request's branches cross the host contract as ref hints.
+      expect(world.hostImageRefs).toEqual([["scott/route-gh", PR.baseRefName]]);
       const elsewhere = await harness.behavior.fetchHttp(
         "GET",
         `/pr-image?${new URLSearchParams({ change: key, src: "https://evil.example/a.png" })}`,
       );
       expect(elsewhere.status).toBe(400);
     } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("an image page from another site is refused; bb's page, same-site pages and curl are not", async () => {
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [PR];
+    vi.stubGlobal("fetch", async () => new Response(null, { status: 404 }));
+    try {
+      const { harness } = await start(world);
+      await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+      const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+      const src = "https://github.com/smsunarto/bb-plugins/blob/abc123/docs/a.png?raw=true";
+      const path = `/pr-image?${new URLSearchParams({ change: key, src })}`;
+      const status = async (site?: string) =>
+        (
+          await harness.behavior.fetchHttp(
+            "GET",
+            path,
+            site ? { headers: { "sec-fetch-site": site } } : undefined,
+          )
+        ).status;
+      expect(await status("cross-site")).toBe(403);
+      expect(world.restReads ?? []).toEqual([]);
+      for (const site of [undefined, "same-origin", "same-site", "none"])
+        expect(await status(site), site).toBe(302);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("a dead committed image is asked of one account that reads the repository, then remembered", async () => {
+    const world = twoHosts();
+    world.serverAccounts = ["smsunarto", "bob"];
+    world.pullRequests["scott/route-gh"] = [PR];
+    world.goneFiles = ["docs/gone.png"];
+    vi.stubGlobal("fetch", async () => new Response(null, { status: 404 }));
+    try {
+      const { harness } = await start(world);
+      await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+      const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+      const src = "https://github.com/smsunarto/bb-plugins/blob/abc123/docs/gone.png?raw=true";
+      const ask = () =>
+        harness.behavior.fetchHttp("GET", `/pr-image?${new URLSearchParams({ change: key, src })}`);
+      const first = await ask();
+      expect(first.status).toBe(200);
+      expect(await first.text()).toContain("no such image");
+      const reads = world.restReads!.filter((read) => read.includes("/contents/"));
+      expect(reads.every((read) => read.startsWith("smsunarto:"))).toBe(true);
+      await ask();
+      expect(world.restReads!.filter((read) => read.includes("/contents/"))).toEqual(reads);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("an image only an offline host's account could see is not remembered as unseen", async () => {
+    const world = twoHosts();
+    world.serverAccounts = ["smsunarto"];
+    world.fileReaders = ["alice"];
+    world.hosts["host-a"]!.ghAccounts = ["alice"];
+    world.hosts["host-a"]!.forgeLive = true;
+    world.pullRequests["scott/route-gh"] = [PR];
+    vi.stubGlobal("fetch", async () => new Response(null, { status: 404 }));
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { harness } = await start(world);
+      await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+      // The host drops off, and what it last said about its accounts goes stale.
+      world.hosts["host-a"]!.online = false;
+      vi.setSystemTime(Date.now() + 10 * 60_000);
+      const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+      const src = "https://github.com/smsunarto/bb-plugins/blob/abc123/docs/a.png?raw=true";
+      const ask = () =>
+        harness.behavior.fetchHttp("GET", `/pr-image?${new URLSearchParams({ change: key, src })}`);
+      const offline = await ask();
+      expect(offline.status).toBe(200);
+      expect(offline.headers.get("cache-control")).toBe("no-store");
+      expect(await offline.text()).toContain("is not answering");
+      world.hosts["host-a"]!.online = true;
+      const back = await ask();
+      expect(back.status).toBe(302);
+      expect(world.hostForge).toContain("host-a:image");
+    } finally {
+      vi.useRealTimers();
       vi.unstubAllGlobals();
     }
   });

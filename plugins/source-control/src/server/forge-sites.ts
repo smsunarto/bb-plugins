@@ -115,6 +115,19 @@ const refusedProblem = (refused: SiteRefused) =>
   forgeProblem(refused.site, refused.code as HostFailure["code"], refused.message);
 const invisible = (code: string) => code === "not-found" || code === "forbidden";
 
+/** Why no account signed the image: gone, refused, unreached, or unseen by all. */
+function noImage(
+  outcome: { gone: boolean; refusal: Problem | null; unreached: string | null; tried: number },
+  placements: readonly Placement[],
+): Effect.Effect<{ location: null; gone: boolean }, ForgeUnavailable> {
+  if (outcome.gone) return Effect.succeed({ location: null, gone: true });
+  if (outcome.refusal) return unavailable(outcome.refusal);
+  if (outcome.unreached) return unavailable({ kind: "host-offline", host: outcome.unreached });
+  if (outcome.tried === 0)
+    return unavailable({ kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME });
+  return Effect.succeed({ location: null, gone: false });
+}
+
 /** Where a call runs and as whom. `hostId` null: the bb server. */
 type Access = { hostId: string | null; site: string; account: { login: string; active: boolean } };
 type Probe = { accounts: string[]; at: number };
@@ -366,6 +379,8 @@ function createAccountProbes(deps: { serverExec: Exec; host: HostForge; now: () 
     hostAccesses,
     knownAccounts,
     probeHosts,
+    /** Whether the host answered its account probe lately; an unreachable one has not. */
+    answered: (hostId: string) => fresh(hosts.get(hostId)),
     /** Forget every probe, as an explicit retry does. */
     reset() {
       server = null;
@@ -500,7 +515,8 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
    * Where a signed-in reader finds a pull request's image: the account that
    * read `alsoRepo` (the pull request's repository) or the image's own
    * repository first, then every other account, until one answers with a
-   * location. Null when every account answered and none sees it. Never
+   * location. No location when every account answered and none sees it, or
+   * (`gone`) when one that reads the repository found no such file. Never
    * changes which account bb remembers for a repository: an image read is
    * not a repository read, and a fork's file may be visible to another account.
    */
@@ -513,12 +529,16 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
       Effect.gen(function* () {
         const tried: Access[] = [];
         let refusal: Problem | null = null;
+        let gone = false;
         const attempt = Effect.fnUntraced(function* (access: Access) {
-          if (tried.some((done) => sameAccess(done, access))) return null;
+          if (gone || tried.some((done) => sameAccess(done, access))) return null;
           tried.push(access);
           const answer = yield* reviewAt(access, read).pipe(Effect.result);
-          if (answer._tag === "Success")
-            return answer.success.kind === "image" ? answer.success.location : null;
+          if (answer._tag === "Success") {
+            if (answer.success.kind !== "image") return null;
+            if (answer.success.gone) gone = true;
+            return answer.success.location;
+          }
           if (!invisible(answer.failure.code)) refusal ??= refusedProblem(answer.failure);
           return null;
         });
@@ -526,22 +546,22 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
           const access = repo ? seen.get(repoName({ repo })) : undefined;
           return access ? [access] : [];
         });
-        for (const access of remembered) {
-          const location = yield* attempt(access);
-          if (location) return location;
-        }
-        for (const source of [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)])
-          for (const access of yield* source) {
+        let unreached: string | null = null;
+        // The accounts that read the repository first, then the server's, then each host's.
+        for (const source of [remembered, null, ...uniqueHosts(placements)]) {
+          if (gone) break;
+          const accesses = Array.isArray(source)
+            ? source
+            : yield* source ? hostAccesses(source) : serverAccesses;
+          // A host that did not answer may hold the account that sees the image: not an answer.
+          if (source && "hostId" in source && !probes.answered(source.hostId))
+            unreached ??= source.hostName;
+          for (const access of accesses) {
             const location = yield* attempt(access);
-            if (location) return location;
+            if (location) return { location, gone: false };
           }
-        if (refusal) return yield* unavailable(refusal);
-        if (tried.length === 0)
-          return yield* unavailable({
-            kind: "no-site",
-            host: placements[0]?.hostName ?? SERVER_SITE_NAME,
-          });
-        return null;
+        }
+        return yield* noImage({ gone, refusal, unreached, tried: tried.length }, placements);
       }),
     );
 

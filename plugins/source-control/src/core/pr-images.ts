@@ -68,7 +68,8 @@ export function parseGitHubImage(src: string): GitHubImage | null {
 
 /** `src` as a plain https URL: no credentials, no port. */
 function httpsUrl(src: string): URL | null {
-  if (src.length > MAX_IMAGE_URL) return null;
+  // The URL parser reads "\\" as "/": a backslash left in a source names another path.
+  if (src.length > MAX_IMAGE_URL || src.includes("\\")) return null;
   try {
     const url = new URL(src.trim());
     const plain = url.protocol === "https:" && !url.username && !url.password && !url.port;
@@ -93,7 +94,9 @@ function onGitHub(url: URL, segments: readonly string[]): GitHubImage | null {
   if (!repoNamed(first, second)) return null;
   if (third === "assets")
     return /^\d+$/.test(fourth) && assetId(fifth) && rest.length === 0 ? upload(fifth) : null;
-  const committed = third === "raw" || (third === "blob" && url.searchParams.get("raw") === "true");
+  const committed =
+    third === "raw" ||
+    (third === "blob" && ["true", "1"].includes(url.searchParams.get("raw") ?? ""));
   return committed && fourth && fifth
     ? file(url.href, first, second, [fourth, fifth, ...rest])
     : null;
@@ -199,9 +202,10 @@ export function routeGitHubImages(
   while (scan.at < body.length && scan.steps <= body.length * STEPS_PER_CHAR + 1_024) {
     const found = scan.next();
     if (!found) continue;
-    const image = parseGitHubImage(found.html ? decodeEntities(found.src) : found.src);
+    const src = found.html ? decodeEntities(found.src) : unescapeMarkdown(found.src);
+    const image = parseGitHubImage(src);
     if (image && serves(image)) {
-      const routed = route(found.html ? decodeEntities(found.src) : found.src);
+      const routed = route(src);
       out.push(
         body.slice(copied, found.srcStart),
         found.html ? `"${routed.replaceAll('"', "&quot;")}"` : routed,
@@ -233,7 +237,8 @@ class Scan {
     const start = this.at;
     this.steps += 1;
     const char = body[start];
-    if ((start === 0 || body[start - 1] === "\n") && this.skipFence()) return null;
+    if ((start === 0 || body[start - 1] === "\n") && (this.skipFence() || this.skipIndented()))
+      return null;
     if (char === "\\") {
       this.at = start + 2;
       return null;
@@ -248,6 +253,10 @@ class Scan {
       this.steps += this.at - start;
       return null;
     }
+    if (char === "<" && /^<(?:pre|code)[\s>]/i.test(body.slice(start, start + 6))) {
+      this.skipHtmlCode();
+      return null;
+    }
     if (char === "!" && body[start + 1] === "[") return this.markdownImage();
     if (char === "<" && /^<img[\s/>]/i.test(body.slice(start, start + 5))) return this.htmlImage();
     this.at = start + 1;
@@ -257,8 +266,12 @@ class Scan {
   /** A fenced block opening on this line: skipped to its closing fence, or to the end. */
   private skipFence(): boolean {
     const { body } = this;
-    const open = /^ {0,3}(`{3,}|~{3,})/.exec(body.slice(this.at, this.at + 64));
-    if (!open) return false;
+    const lineEnd = body.indexOf("\n", this.at);
+    const first = body.slice(this.at, lineEnd < 0 ? body.length : lineEnd);
+    const open = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(first);
+    // A backtick fence's info string holds no backtick: "```x```" is a code span.
+    if (!open || (open[1]![0] === "`" && open[2]!.includes("`"))) return false;
+    this.steps += first.length;
     const fence = open[1]!;
     let line = body.indexOf("\n", this.at);
     while (line >= 0) {
@@ -274,6 +287,71 @@ class Scan {
     }
     this.at = body.length;
     return true;
+  }
+
+  /**
+   * An indented code block starting on this line: four spaces or a tab after
+   * a blank line that does not follow a list item, whose continuation may be
+   * indented the same way. Skipped to the next line that is not indented.
+   */
+  private skipIndented(): boolean {
+    const { body } = this;
+    if (!/^(?: {4}|\t)/.test(body.slice(this.at, this.at + 4))) return false;
+    if (!this.afterParagraphBreak()) return false;
+    let line = this.at;
+    while (line < body.length) {
+      const end = body.indexOf("\n", line);
+      const next = end < 0 ? body.length : end + 1;
+      const text = body.slice(line, next);
+      this.steps += text.length;
+      if (text.trim() !== "" && !/^(?: {4}|\t)/.test(text)) break;
+      line = next;
+    }
+    this.at = line;
+    return true;
+  }
+
+  /** Whether the line at `this.at` follows a blank line whose paragraph above is not a list item. */
+  private afterParagraphBreak(): boolean {
+    const { body } = this;
+    if (this.at === 0) return true;
+    const blankEnd = this.at - 1;
+    const blankStart = body.lastIndexOf("\n", blankEnd - 1) + 1;
+    if (body.slice(blankStart, blankEnd).trim() !== "") return false;
+    if (blankStart === 0) return true;
+    const aboveStart = body.lastIndexOf("\n", blankStart - 2) + 1;
+    const above = body.slice(aboveStart, blankStart - 1);
+    this.steps += above.length;
+    return !/^\s*(?:[-*+]|\d+[.)])\s/.test(above) && !/^(?: {4}|\t)/.test(above);
+  }
+
+  /** Positions from which no closing tag follows, by tag name. */
+  private readonly unclosedTags = new Map<string, number>();
+
+  /** `<pre>` or `<code>` HTML: skipped to its closing tag, else just the opening one. */
+  private skipHtmlCode() {
+    const { body } = this;
+    const name = /^<(pre|code)/i.exec(body.slice(this.at, this.at + 5))![1]!.toLowerCase();
+    const from = this.at + name.length + 1;
+    const unclosedFrom = this.unclosedTags.get(name);
+    const close =
+      unclosedFrom !== undefined && unclosedFrom <= from
+        ? -1
+        : this.lower().indexOf(`</${name}`, from);
+    if (close < 0) {
+      this.unclosedTags.set(name, from);
+      this.at = from;
+      return;
+    }
+    this.steps += close - this.at;
+    const end = body.indexOf(">", close);
+    this.at = end < 0 ? body.length : end + 1;
+  }
+
+  private lowered: string | null = null;
+  private lower(): string {
+    this.lowered ??= this.body.toLowerCase();
+    return this.lowered;
   }
 
   /** A code span: skipped to the run of as many backticks that closes it, else just the run. */
@@ -378,14 +456,24 @@ class Scan {
     this.at = start + 1;
     if (close < 0 || body[close] !== ">") return null;
     const tag = body.slice(start, close);
-    const src = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i.exec(tag);
     this.at = close + 1;
-    if (!src) return null;
-    const value = src[1] ?? src[2] ?? src[3] ?? "";
-    const quoted = src[3] === undefined ? 2 : 0;
-    const srcEnd = start + src.index + src[0].length;
-    const srcStart = srcEnd - value.length - quoted;
-    return { srcStart, srcEnd, src: value, end: close + 1, html: true };
+    this.steps += tag.length;
+    // Attribute by attribute, so a quoted value such as alt="x src=…" is never taken for one.
+    for (const attribute of tag.slice(4).matchAll(HTML_ATTRIBUTE)) {
+      if (attribute[1]!.toLowerCase() !== "src") continue;
+      const value = attribute[2] ?? attribute[3] ?? attribute[4];
+      if (value === undefined) return null;
+      const quoted = attribute[4] === undefined ? 2 : 0;
+      const srcEnd = start + 4 + attribute.index + attribute[0].length;
+      return {
+        srcStart: srcEnd - value.length - quoted,
+        srcEnd,
+        src: value,
+        end: close + 1,
+        html: true,
+      };
+    }
+    return null;
   }
 
   /** The first position from `from` where `stop` holds, within `MAX_TAG`; -1 past it or the end. */
@@ -397,6 +485,14 @@ class Scan {
     }
     return -1;
   }
+}
+
+/** One HTML attribute: its name, and its value quoted either way or bare. */
+const HTML_ATTRIBUTE = /\s+([^\s=/>"']+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+
+/** A Markdown destination as the renderer reads it: `\(` is `(`. */
+function unescapeMarkdown(value: string): string {
+  return value.replace(/\\([!-/:-@[-`{-~])/g, "$1");
 }
 
 /** The entities GitHub writes in an attribute's URL. */

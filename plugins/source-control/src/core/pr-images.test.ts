@@ -153,7 +153,19 @@ test("image syntax in code, comments and escapes stays as written; parentheses b
 });
 
 test("hostile text is scanned in linear work, and stops being rewritten rather than blocking", () => {
-  for (const unit of ["![", "<img ", "`", "![a](", "[", "<!-", "``` "]) {
+  for (const unit of [
+    "![",
+    "<img ",
+    "`",
+    "![a](",
+    "[",
+    "<!-",
+    "``` ",
+    "<pre ",
+    "<code>",
+    "\n\n    x",
+    '<img alt="x" ',
+  ]) {
     const body = unit.repeat(Math.ceil(65_536 / unit.length));
     const work = { steps: 0 };
     routeGitHubImages(body, () => "ROUTE", undefined, work);
@@ -164,4 +176,45 @@ test("hostile text is scanned in linear work, and stops being rewritten rather t
   expect(routeGitHubImages(normal, () => "R", undefined, work)).toBe(
     "text ![a](R) more\n".repeat(1_000),
   );
+});
+
+test("an escaped destination is routed as the renderer reads it, and a stray backslash is refused", () => {
+  const seen: string[] = [];
+  const route = (src: string) => {
+    seen.push(src);
+    return "ROUTE";
+  };
+  expect(routeGitHubImages("![a](https://github.com/o/r/raw/main/shot_\\(1\\).png)", route)).toBe(
+    "![a](ROUTE)",
+  );
+  expect(seen).toEqual(["https://github.com/o/r/raw/main/shot_(1).png"]);
+  expect(parseGitHubImage("https://github.com/o/r/raw/main/a\\b.png")).toBeNull();
+});
+
+test("?raw=1 is a committed image too", () => {
+  expect(parseGitHubImage("https://github.com/o/r/blob/main/a.png?raw=1")).toMatchObject({
+    kind: "file",
+  });
+});
+
+test("only an img tag's own src attribute is rewritten, never text inside another attribute", () => {
+  const body = `<img alt="x src=${UPLOAD}" src="${UPLOAD}">`;
+  expect(routeGitHubImages(body, () => "ROUTE")).toBe(`<img alt="x src=${UPLOAD}" src="ROUTE">`);
+  expect(routeGitHubImages(`<img alt="no source here">`, () => "ROUTE")).toBe(
+    `<img alt="no source here">`,
+  );
+});
+
+test("indented code, <pre> and <code> stay as written; a list's indented image is still routed", () => {
+  const route = () => "ROUTE";
+  const upload = `![a](${UPLOAD})`;
+  const cases: [string, string][] = [
+    [`text\n\n    ${upload}\n\n${upload}`, `text\n\n    ${upload}\n\n![a](ROUTE)`],
+    [`<pre>\n${upload}\n</pre>\n${upload}`, `<pre>\n${upload}\n</pre>\n![a](ROUTE)`],
+    [`<code>${upload}</code> ${upload}`, `<code>${upload}</code> ![a](ROUTE)`],
+    [`<pre unclosed ${upload}`, `<pre unclosed ![a](ROUTE)`],
+    [`- item\n\n    ${upload}`, `- item\n\n    ![a](ROUTE)`],
+    ["```x``` " + upload, "```x``` ![a](ROUTE)"],
+  ];
+  for (const [body, expected] of cases) expect(routeGitHubImages(body, route), body).toBe(expected);
 });

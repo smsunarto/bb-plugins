@@ -23,15 +23,20 @@ import type { ForgeSites } from "./forge-sites.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
 
-/** GitHub signs a URL for 300 s: kept here for 120 s, then by the browser for at most 60 s more. */
-export const SIGNED_KEPT_MS = 120_000;
-export const REDIRECT_MAX_AGE_S = 60;
+/** A signed URL is handed out until this long before GitHub stops honouring it. */
+const SIGNED_MARGIN_MS = 30_000;
+/** A signed URL whose life GitHub does not state (a raw file's token) is used for this long. */
+const UNSTATED_LIFE_MS = 180_000;
+/** Below this much life left, a signed URL is signed again rather than handed out. */
+const SIGNED_MIN_LEFT_MS = 15_000;
 /** Whether an image is public changes rarely. */
 const PUBLIC_KEPT_MS = 10 * 60_000;
 /** The anonymous check is one HEAD request, given little time. */
 const PROBE_DEADLINE_MS = 3_000;
-/** A failed or missing image is not asked about again for this long. */
-export const FAILED_KEPT_MS = 30_000;
+/** No signed-in account sees the image: asked again after this long. */
+export const UNSEEN_KEPT_MS = 60_000;
+/** An account that reads the repository found no such file: a dead link, asked again after this long. */
+export const GONE_KEPT_MS = 5 * 60_000;
 /**
  * How long one image request waits before answering the failed state. The
  * resolution goes on and is kept for the next load; the browser's few
@@ -61,33 +66,75 @@ export const anonymousProbe: Probe = async (url, signal) => {
   }
 };
 
+/**
+ * When a signed URL received at `receivedAt` must stop being handed out: the
+ * life GitHub states in it (S3's `X-Amz-Date` + `X-Amz-Expires`, or a JWT's
+ * `nbf`/`exp`), counted from both its own clock and ours and taking the
+ * earlier, less a margin. A URL that states none is used for 180 s.
+ */
+export function signedUntil(location: string, receivedAt: number): number {
+  let url: URL;
+  try {
+    url = new URL(location);
+  } catch {
+    return receivedAt;
+  }
+  const expires = Number(url.searchParams.get("X-Amz-Expires"));
+  if (Number.isFinite(expires) && expires > 0) {
+    const stamp = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/.exec(
+      url.searchParams.get("X-Amz-Date") ?? "",
+    );
+    const signed = stamp
+      ? Date.UTC(+stamp[1]!, +stamp[2]! - 1, +stamp[3]!, +stamp[4]!, +stamp[5]!, +stamp[6]!)
+      : receivedAt;
+    return Math.min(receivedAt, signed) + expires * 1000 - SIGNED_MARGIN_MS;
+  }
+  const jwt = jwtLife(url.searchParams.get("jwt"));
+  if (jwt) return Math.min(receivedAt + jwt.life, jwt.exp) - SIGNED_MARGIN_MS;
+  return receivedAt + UNSTATED_LIFE_MS;
+}
+
+function jwtLife(token: string | null): { life: number; exp: number } | null {
+  const payload = token?.split(".")[1];
+  if (!payload) return null;
+  try {
+    const claims = JSON.parse(atob(payload.replaceAll("-", "+").replaceAll("_", "/"))) as {
+      exp?: number;
+      nbf?: number;
+    };
+    if (typeof claims.exp !== "number" || typeof claims.nbf !== "number") return null;
+    return { life: (claims.exp - claims.nbf) * 1000, exp: claims.exp * 1000 };
+  } catch {
+    return null;
+  }
+}
+
 export type ImageAnswer =
   | { kind: "redirect"; location: string; maxAgeS: number }
-  | { kind: "rejected"; reason: string }
+  | { kind: "rejected"; reason: string; status?: 400 | 403 }
   | { kind: "failed"; problem: Problem };
 
 /**
- * What one resolution found. A failure is kept too, so a missing image does
- * not ask every account on each load. `original`: no account could sign it
- * and GitHub never said it is private, so the browser tries it as written.
+ * A definitive answer, kept so loads do not ask GitHub again: public, signed
+ * (until shortly before its signature ends), or missing. Transient failures,
+ * a slow read, an offline host, are never kept, so the next load asks again.
  */
 type Kept =
-  | { at: number; kind: "public" | "signed" | "original"; location: string }
-  | { at: number; kind: "failed"; problem: Problem };
+  | { at: number; kind: "public"; location: string }
+  | { at: number; kind: "signed"; location: string; until: number }
+  | { at: number; kind: "missing"; problem: Problem; keepMs: number };
 
-const KEPT_MS: Record<Kept["kind"], number> = {
-  public: PUBLIC_KEPT_MS,
-  signed: SIGNED_KEPT_MS,
-  original: FAILED_KEPT_MS,
-  failed: FAILED_KEPT_MS,
-};
+/** What one resolution found: kept, or a transient answer for this request only. */
+type Resolved = { keep: true; entry: Kept } | { keep: false; answer: ImageAnswer };
 
 /** No account here sees the image: GitHub answered the site, but not with an image. */
-const MISSING: Problem = {
+const UNSEEN: Problem = {
   kind: "auth",
   site: "GitHub",
   detail: "No signed-in GitHub account can see this image.",
 };
+const GONE_DETAIL = "The pull request's repository has no such image.";
+const GONE: Problem = { kind: "failed", site: "GitHub", detail: GONE_DETAIL };
 
 const SLOW_DETAIL = "GitHub is taking too long for this image.";
 const SLOW: Problem = { kind: "failed", site: "GitHub", detail: SLOW_DETAIL };
@@ -117,10 +164,13 @@ export function createPrImages(deps: {
     kept.set(id, entry);
     if (kept.size > KEPT) kept.delete(kept.keys().next().value!);
   };
-  const fresh = (id: string) => {
+  const fresh = (id: string): Kept | null => {
     const entry = kept.get(id);
+    const now = deps.now();
     if (!entry) return null;
-    return deps.now() - entry.at < KEPT_MS[entry.kind] ? entry : null;
+    if (entry.kind === "signed") return entry.until - now >= SIGNED_MIN_LEFT_MS ? entry : null;
+    const life = entry.kind === "public" ? PUBLIC_KEPT_MS : entry.keepMs;
+    return now - entry.at < life ? entry : null;
   };
 
   const resolve = (
@@ -133,10 +183,11 @@ export function createPrImages(deps: {
       const visibility = yield* Effect.tryPromise((signal) => probe(image.url, signal)).pipe(
         Effect.orElseSucceed((): Visibility => "unknown"),
       );
+      const at = deps.now();
       if (visibility === "public")
-        return { at: deps.now(), kind: "public", location: image.url } satisfies Kept;
+        return { keep: true, entry: { at, kind: "public", location: image.url } } as Resolved;
       const parsed = parseChangeKey(key);
-      const location = yield* deps.sites
+      const read = yield* deps.sites
         .imageRead(
           { kind: "image", repo, src: image.url, refs },
           deps.placementsFor(key),
@@ -145,18 +196,34 @@ export function createPrImages(deps: {
         .pipe(
           // Only the signed read waits its turn, and only behind its own repository's.
           permitsFor(`${repo.owner}/${repo.name}`).withPermit,
-          Effect.map((found): Kept | null =>
-            found ? { at: deps.now(), kind: "signed", location: found } : null,
-          ),
-          Effect.catchTag("ForgeUnavailable", (error) =>
-            Effect.succeed<Kept>({ at: deps.now(), kind: "failed", problem: error.problem }),
-          ),
+          Effect.result,
         );
-      if (location?.kind === "signed") return location;
+      const now = deps.now();
+      if (read._tag === "Success" && read.success.location) {
+        const { location } = read.success;
+        const entry: Kept = {
+          at: now,
+          kind: "signed",
+          location,
+          until: signedUntil(location, now),
+        };
+        return { keep: true, entry } as Resolved;
+      }
       // Never shown to be private: let the browser try it, as it did before bb routed it.
       if (visibility === "unknown")
-        return { at: deps.now(), kind: "original", location: image.url } satisfies Kept;
-      return location ?? ({ at: deps.now(), kind: "failed", problem: MISSING } satisfies Kept);
+        return {
+          keep: false,
+          answer: { kind: "redirect", location: image.url, maxAgeS: 0 },
+        } as Resolved;
+      if (read._tag === "Failure")
+        return {
+          keep: false,
+          answer: { kind: "failed", problem: read.failure.problem },
+        } as Resolved;
+      const entry: Kept = read.success.gone
+        ? { at: now, kind: "missing", problem: GONE, keepMs: GONE_KEPT_MS }
+        : { at: now, kind: "missing", problem: UNSEEN, keepMs: UNSEEN_KEPT_MS };
+      return { keep: true, entry } as Resolved;
     });
 
   return {
@@ -187,31 +254,51 @@ export function createPrImages(deps: {
         if (known) return answerOf(known, deps.now());
         const refs = [parsed.branch, pr.baseRef].filter(Boolean);
         const work = resolve(key.data, image, repo, refs).pipe(
-          Effect.tap((entry) => Effect.sync(() => keep(id, entry))),
+          Effect.tap((resolved) =>
+            Effect.sync(() => {
+              if (resolved.keep) keep(id, resolved.entry);
+            }),
+          ),
         );
         // The resolution is shared and outlives this request; this request waits a bounded time.
-        const entry = yield* deps.share(`pr-image:${id}`, work).pipe(
+        const resolved = yield* deps.share(`pr-image:${id}`, work).pipe(
           Effect.timeoutOrElse({
             duration: deps.waitMs ?? WAIT_MS,
-            orElse: () => Effect.succeed<Kept>({ at: deps.now(), kind: "failed", problem: SLOW }),
+            orElse: () =>
+              Effect.succeed<Resolved>({
+                keep: false,
+                answer: { kind: "failed", problem: SLOW },
+              }),
           }),
         );
-        return answerOf(entry, deps.now());
+        return resolved.keep ? answerOf(resolved.entry, deps.now()) : resolved.answer;
       }),
   };
 }
 
 function answerOf(entry: Kept, now: number): ImageAnswer {
-  if (entry.kind === "failed") return { kind: "failed", problem: entry.problem };
-  if (entry.kind === "public")
-    return { kind: "redirect", location: entry.location, maxAgeS: PUBLIC_KEPT_MS / 1000 };
-  if (entry.kind === "original") return { kind: "redirect", location: entry.location, maxAgeS: 0 };
-  const left = Math.floor((SIGNED_KEPT_MS - (now - entry.at)) / 1000);
-  return {
-    kind: "redirect",
-    location: entry.location,
-    maxAgeS: Math.max(0, Math.min(REDIRECT_MAX_AGE_S, left)),
-  };
+  switch (entry.kind) {
+    case "missing":
+      return { kind: "failed", problem: entry.problem };
+    case "public":
+      return { kind: "redirect", location: entry.location, maxAgeS: PUBLIC_KEPT_MS / 1000 };
+    case "signed":
+      // The browser may replay this redirect until `until`, never past it.
+      return {
+        kind: "redirect",
+        location: entry.location,
+        maxAgeS: Math.max(0, Math.floor((entry.until - now) / 1000)),
+      };
+  }
+}
+
+/**
+ * Whether a request comes from another site's page: a foreign page that
+ * embeds the route would otherwise show a private repository's images and
+ * learn their sizes. bb's own page is same-origin; curl and the CLI send none.
+ */
+export function fromAnotherSite(headers: Headers): boolean {
+  return headers.get("sec-fetch-site")?.toLowerCase() === "cross-site";
 }
 
 /** The route's answer as an HTTP response. */
@@ -224,12 +311,14 @@ export function imageResponse(answer: ImageAnswer): Response {
           location: answer.location,
           "cache-control":
             answer.maxAgeS > 0 ? `private, max-age=${answer.maxAgeS}` : "private, no-store",
+          // A kept redirect must not answer another site's page, which is refused.
+          vary: "Sec-Fetch-Site",
           "referrer-policy": "no-referrer",
         },
       });
     case "rejected":
       return new Response(answer.reason, {
-        status: 400,
+        status: answer.status ?? 400,
         headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
       });
     case "failed":
@@ -245,7 +334,8 @@ export function imageResponse(answer: ImageAnswer): Response {
 export function imageProblem(problem: Problem): string {
   if (problem.kind === "auth" && problem.detail.startsWith("No signed-in GitHub account can see"))
     return "No signed-in GitHub account can see this image.";
-  if (problem.kind === "failed" && problem.detail === SLOW_DETAIL) return SLOW_DETAIL;
+  if (problem.kind === "failed" && [SLOW_DETAIL, GONE_DETAIL].includes(problem.detail))
+    return problem.detail;
   return describeProblem(problem);
 }
 

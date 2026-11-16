@@ -93,7 +93,6 @@ async function resolveFile(
   // Checked again where the token is: each part names one step inside the repository.
   if (image.segments.some((part) => !part || part === "." || part === ".." || /[/\\]/.test(part)))
     throw new GhError("failed", "Not a file in the repository.");
-  let missing: GhError | null = null;
   for (const { ref, path } of refSplits(image.segments, refs)) {
     const endpoint = `repos/${image.repo.owner}/${image.repo.name}/contents/${path
       .split("/")
@@ -102,14 +101,43 @@ async function resolveFile(
     const result = await exec(["api", endpoint, "--jq", ".download_url"], signal ? { signal } : {});
     if (result.code !== 0 || result.failure) {
       const error = classifyFailure(result);
-      // Another split of the ref may name the file; any other failure is the answer.
       if (error.code !== "not-found") throw error;
-      missing = error;
-      continue;
+      // No such ref: this account reads the repository, and another split may name the file.
+      if (NO_REF.test(result.stderr)) continue;
+      // The ref exists and has no such file, or this account cannot see the repository: ask which.
+      if (await seesRepo(exec, image.repo, signal)) throw new ImageGone();
+      throw error;
     }
     const location = allowedLocation(result.stdout.trim(), FILE_HOSTS);
     if (!location) throw new GhError("failed", "GitHub gave no download for the image.");
     return location;
   }
-  throw missing ?? new GhError("not-found", "GitHub has no such image here.");
+  // This account reads the repository and none of the refs exists: no other account will find it.
+  throw new ImageGone();
+}
+
+/** What GitHub answers this account for a ref the repository does not have. */
+const NO_REF = /No commit found for the ref/i;
+
+/** Whether this account can read `repo` at all. */
+async function seesRepo(
+  exec: Exec,
+  repo: { owner: string; name: string },
+  signal: AbortSignal | undefined,
+): Promise<boolean> {
+  const result = await exec(
+    ["api", `repos/${repo.owner}/${repo.name}`, "--jq", ".id"],
+    signal ? { signal } : {},
+  );
+  if (result.code === 0 && !result.failure) return true;
+  const error = classifyFailure(result);
+  if (error.code === "not-found" || error.code === "forbidden") return false;
+  throw error;
+}
+
+/** A committed image an account that reads its repository does not find: a dead link, not a hidden one. */
+export class ImageGone extends GhError {
+  constructor() {
+    super("not-found", "The repository has no such image.");
+  }
 }

@@ -215,7 +215,12 @@ export const reviewAnswerSchema = z.discriminatedUnion("kind", [
     .strict(),
   /** GitHub's short-lived URL for the image: never stored or logged. */
   z
-    .object({ kind: z.literal("image"), location: z.string().max(MAX_SIGNED_URL).nullable() })
+    .object({
+      kind: z.literal("image"),
+      location: z.string().max(MAX_SIGNED_URL).nullable(),
+      /** The account reads the repository and the file is not there: no other account will find it. */
+      gone: z.literal(true).optional(),
+    })
     .strict(),
 ]);
 

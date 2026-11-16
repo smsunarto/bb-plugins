@@ -52,7 +52,7 @@ import { worktreeHostSetting } from "./worktree-host.ts";
 import { createMoved, type Moved } from "./moved.ts";
 import { createCheckoutReads, type CheckoutReads } from "./checkout-reads.ts";
 import { createPlacements } from "./placement.ts";
-import { imageResponse } from "./pr-images.ts";
+import { fromAnotherSite, imageResponse } from "./pr-images.ts";
 import { PR_IMAGE_PATH } from "../core/pr-images.ts";
 
 export type SourceControlDeps = {
@@ -361,6 +361,12 @@ function registerRpc(
  */
 function registerImageRoute(bb: BbPluginApi, runtime: Runtime, changes: Changes) {
   bb.http.route("GET", PR_IMAGE_PATH, async (context) => {
+    if (fromAnotherSite(context.req.raw.headers))
+      return imageResponse({
+        kind: "rejected",
+        reason: "Images are served to bb's own page.",
+        status: 403,
+      });
     const url = new URL(context.req.url);
     const answer = await runtime.run(
       changes.review.images.image(
