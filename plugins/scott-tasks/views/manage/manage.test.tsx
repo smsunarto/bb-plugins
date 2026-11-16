@@ -306,6 +306,76 @@ describe("NewTaskDialog", () => {
   });
 });
 
+describe("NewTaskDialog drafts", () => {
+  afterEach(() => window.localStorage.clear());
+
+  function renderTasks(createCalls: Array<Record<string, unknown>> = []) {
+    return renderSlot(
+      app.navPanels[0]!,
+      { subPath: PROJECT_ID },
+      {
+        rpc: {
+          listProjects: () => ({ projects: [project] }),
+          listFolders: () => ({ folders: [] }),
+          listPresets: () => ({ presets: [] }),
+          sidebarSummary: () => ({ projects: [] }),
+          listTasks: () => ({ tasks: [] }),
+          listLabels: () => ({ labels: [] }),
+          createTask: (raw: unknown) => {
+            const input = rpcInput(raw);
+            createCalls.push(input);
+            return { ok: true, task: createdTask(input) };
+          },
+        },
+      },
+    );
+  }
+
+  async function reopen(slot: ReturnType<typeof renderTasks>) {
+    fireEvent.keyDown(slot.getByLabelText("Task title"), { key: "Escape" });
+    await waitFor(() => expect(slot.queryByLabelText("Task title")).toBeNull());
+    fireEvent.click((await slot.findAllByRole("button", { name: /New task/ }))[0]!);
+    return (await slot.findByLabelText("Task title")) as HTMLInputElement;
+  }
+
+  it("keeps what was typed after the dialog is dismissed", async () => {
+    const slot = renderTasks();
+    fireEvent.click((await slot.findAllByRole("button", { name: /New task/ }))[0]!);
+    fireEvent.change(await slot.findByLabelText("Task title"), {
+      target: { value: "Long task I haven't submitted" },
+    });
+    const title = await reopen(slot);
+    expect(title.value).toBe("Long task I haven't submitted");
+  });
+
+  it("forgets the draft once the task is created", async () => {
+    const createCalls: Array<Record<string, unknown>> = [];
+    const slot = renderTasks(createCalls);
+    fireEvent.click((await slot.findAllByRole("button", { name: /New task/ }))[0]!);
+    fireEvent.change(await slot.findByLabelText("Task title"), {
+      target: { value: "Created" },
+    });
+    fireEvent.click(slot.getByRole("button", { name: "Create task" }));
+    await waitFor(() => expect(createCalls).toHaveLength(1));
+    await waitFor(() => expect(slot.queryByLabelText("Task title")).toBeNull());
+    fireEvent.click((await slot.findAllByRole("button", { name: /New task/ }))[0]!);
+    expect(((await slot.findByLabelText("Task title")) as HTMLInputElement).value).toBe("");
+  });
+
+  it("discards a draft on request", async () => {
+    const slot = renderTasks();
+    fireEvent.click((await slot.findAllByRole("button", { name: /New task/ }))[0]!);
+    fireEvent.change(await slot.findByLabelText("Task title"), {
+      target: { value: "Throw me away" },
+    });
+    fireEvent.click(slot.getByRole("button", { name: "Discard draft" }));
+    expect((slot.getByLabelText("Task title") as HTMLInputElement).value).toBe("");
+    expect(slot.queryByRole("button", { name: "Discard draft" })).toBeNull();
+    const title = await reopen(slot);
+    expect(title.value).toBe("");
+  });
+});
+
 describe("NewTaskDialog attachments", () => {
   const fetchCalls: string[] = [];
   const failFileNames = new Set<string>();
