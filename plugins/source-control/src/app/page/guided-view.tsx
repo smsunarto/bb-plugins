@@ -586,7 +586,8 @@ const OutlineRow = memo(function OutlineRow({
         onClick={() => (expanded ? onCollapse() : onExpand(id))}
         className={cx(
           "flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-[6px] border-0 p-2 text-start hover:bg-surface-raised",
-          current ? "bg-border-hairline" : "bg-transparent",
+          // Expanded, the current file under it carries the fill; two filled rows would merge.
+          current && !expanded ? "bg-border-hairline" : "bg-transparent",
         )}
       >
         <span
