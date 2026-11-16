@@ -477,6 +477,18 @@
   height: 16px;
 }
 
+/* BB sets the context window's percentage in its own type, 14px on phones and 12px on
+   desktop at a lighter weight; it takes the project, machine and branch labels' 13px
+   medium type and their line height, so the two share a baseline. */
+:is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
+  > :is([data-follow-up-composer-footer], [data-new-thread-footer])
+  button[aria-label^="Context window"]
+  > span {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
 :is([data-follow-up-composer], [data-app-composer])[data-t3-composer-host][data-t3-composer-host]
   > :is([data-follow-up-composer-footer], [data-new-thread-footer])
   svg[data-icon="ChevronDown"] {
