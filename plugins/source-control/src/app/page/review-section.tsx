@@ -12,12 +12,19 @@ import {
 import { memo, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { describeProblem } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
-import { groupItems, type ItemGroup, type ReviewItem, type ReviewRun } from "../../core/items.ts";
+import {
+  groupItems,
+  type Draft,
+  type ItemGroup,
+  type ReviewItem,
+  type ReviewRun,
+} from "../../core/items.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { cx, plural, shortAge } from "../format.ts";
 import { useChangeReview, useReviewActions } from "../review-data.ts";
 import {
   countLabel,
+  draftSpot,
   itemTitle,
   latestBatch,
   placeLabel,
@@ -39,7 +46,7 @@ import { Button } from "../components/ui/button.tsx";
 import { ReasonHint, TEXT_LINK } from "../ui.tsx";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 import { useNow } from "./hooks.ts";
-import { FocusContext, useIsFocused } from "./review-focus.ts";
+import { FocusContext, useIsFocused, type Spot } from "./review-focus.ts";
 
 const RAIL_LABEL =
   "m-0 text-[11px] leading-4 font-normal tracking-[0.06em] text-(--tertiary-foreground) uppercase";
@@ -341,6 +348,86 @@ const ItemRow = memo(function ItemRow({
   );
 });
 
+/** A pending or outdated draft: its first line and place; a pick scrolls the diff to it. */
+const DraftRow = memo(function DraftRow({
+  draft,
+  spot,
+  onOpen,
+}: {
+  draft: Draft;
+  spot: Spot;
+  onOpen: (spot: Spot) => void;
+}) {
+  const focused = useIsFocused(spot.id);
+  const title =
+    draft.body
+      .split("\n")
+      .find((line) => line.trim() !== "")
+      ?.trim() || "Comment";
+  return (
+    <li
+      className={cx("flex min-w-0 gap-2 rounded-md px-2 py-1", focused && "bg-border-hairline")}
+      data-testid="sc-review-draft"
+      data-draft={draft.id}
+    >
+      <button
+        type="button"
+        aria-current={focused || undefined}
+        onClick={() => onOpen(spot)}
+        className="flex min-w-0 flex-1 cursor-pointer flex-col gap-1 border-0 bg-transparent p-0 text-start"
+      >
+        <span
+          className={cx(
+            "w-full min-w-0 truncate text-[13px] leading-4 text-foreground",
+            focused && "font-semibold",
+          )}
+        >
+          {title}
+        </span>
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-(--tertiary-foreground)">
+            {placeLabel(draft.anchor)}
+          </span>
+          <span
+            className={cx(
+              "shrink-0 text-[11px] leading-4",
+              draft.state === "outdated" ? "text-(--tertiary-foreground)" : "text-warning",
+            )}
+          >
+            {draft.state === "outdated" ? "Outdated" : "Pending"}
+          </span>
+        </span>
+      </button>
+    </li>
+  );
+});
+
+const DRAFTS_GROUP: ItemGroup = { id: "drafts", label: "Your replies", kind: "you" };
+
+/** The reader's unsent comments and replies, so each can be found on the diff. */
+function DraftGroup({
+  drafts,
+  items,
+  onOpen,
+}: {
+  drafts: readonly Draft[];
+  items: readonly ReviewItem[];
+  onOpen: (spot: Spot) => void;
+}) {
+  const byId = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+  if (drafts.length === 0) return null;
+  return (
+    <div className="flex min-w-0 flex-col" data-testid="sc-review-drafts">
+      <GroupHeader group={DRAFTS_GROUP} count={drafts.length} />
+      <ul className="m-0 flex list-none flex-col p-0">
+        {drafts.map((draft) => (
+          <DraftRow key={draft.id} draft={draft} spot={draftSpot(draft, byId)} onOpen={onOpen} />
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 const BB_GROUP: ItemGroup = { id: "bb", label: "bb review", kind: "bb" };
 const SLOPCOP_GROUP: ItemGroup = { id: "slopcop", label: "SlopCop", kind: "slopcop" };
 
@@ -482,7 +569,7 @@ export const ReviewSection = memo(function ReviewSection({
     (id: string, checked: boolean) => actions.setSelected([id], checked),
     [actions],
   );
-  const onOpen = useCallback((item: ReviewItem) => focus?.reveal(item), [focus]);
+  const onOpen = useCallback((spot: Spot) => focus?.reveal(spot), [focus]);
   const run = review?.runs[0] ?? null;
   // Items being fixed have no checkbox: they count apart, and Select all leaves them.
   const all = stable.items.filter((item) => !stable.fixing.has(item.id));
@@ -519,6 +606,7 @@ export const ReviewSection = memo(function ReviewSection({
           {slopCopStatus}
         </GroupHeader>
       ) : null}
+      <DraftGroup drafts={stable.drafts} items={stable.items} onOpen={onOpen} />
       {review.forge.problem ? (
         <p className={cx(NOTE, "pt-1")}>
           {describeProblem(review.forge.problem)} These are the last GitHub comments bb read.

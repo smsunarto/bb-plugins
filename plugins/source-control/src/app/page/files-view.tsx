@@ -27,7 +27,7 @@ import {
 import { describeProblem, type FilePatch } from "../../core/change.ts";
 import { readingOrder, viewedAtHead, viewedBlob } from "../../core/guide.ts";
 import type { ChangeKey } from "../../core/ids.ts";
-import type { Anchor, ReviewItem } from "../../core/items.ts";
+import type { Anchor } from "../../core/items.ts";
 import { startsCollapsed, type ChangeFile, type ReviewRevision } from "../../core/review.ts";
 import { sourceControlContract } from "../../contract/rpc.ts";
 import {
@@ -61,7 +61,7 @@ import {
 import { FileTree } from "./file-tree.tsx";
 import { Chevron } from "./icons.tsx";
 import { usePatch, usePatchStore, type PatchEntry, type PatchStore } from "./patches.ts";
-import { FocusContext } from "./review-focus.ts";
+import { FocusContext, type Spot } from "./review-focus.ts";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 
 // ── Near the viewport ──────────────────────────────────────────────────
@@ -689,7 +689,7 @@ export const FileCard = memo(function FileCard({
  * reader's action.
  */
 function chaseAnnotation(
-  item: ReviewItem,
+  item: Spot,
   column: Column,
   scroller: RefObject<HTMLElement | null>,
   store: PatchStore,

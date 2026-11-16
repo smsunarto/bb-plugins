@@ -196,6 +196,25 @@ export function sendableDrafts(drafts: readonly Draft[]): Draft[] {
   return drafts.filter((draft) => draft.state === "pending");
 }
 
+/**
+ * Where a draft is drawn on the diff: its own block, or the item it replies
+ * to, whose block holds the reply. `id` is the annotation's `data-sc-anchor`.
+ */
+export function draftSpot(
+  draft: Draft,
+  items: ReadonlyMap<string, ReviewItem>,
+): { id: string; anchor: Anchor } {
+  const answers = draft.replyTo === null ? undefined : items.get(draft.replyTo);
+  return answers
+    ? { id: answers.id, anchor: answers.anchor }
+    : { id: draftAnchorId(draft), anchor: draft.anchor };
+}
+
+/** A standalone draft's annotation id. */
+export function draftAnchorId(draft: Draft): string {
+  return `draft:${draft.id}`;
+}
+
 // ── Per file, for the diff ─────────────────────────────────────────────
 
 export type ItemEntry = {
@@ -281,7 +300,7 @@ export class FileReviewInterner {
     // A reply to an item no longer listed stands on its own line.
     for (const draft of review.drafts)
       if (draft.replyTo === null || !itemIds.has(draft.replyTo))
-        add(draft.anchor.path, { kind: "draft", id: `draft:${draft.id}`, draft });
+        add(draft.anchor.path, { kind: "draft", id: draftAnchorId(draft), draft });
     this.entries = nextEntries;
     const files = new Map<string, FileReview>();
     for (const [path, entries] of byPath) {

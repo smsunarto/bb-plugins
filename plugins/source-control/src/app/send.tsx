@@ -13,7 +13,7 @@ import {
   experimental_useRpcQuery as useRpcQuery,
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
-import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
+import { memo, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { describeProblem, type Problem } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import type {
@@ -30,6 +30,7 @@ import { useChangeReview, useReviewActions, useSend, type SendActions } from "./
 import {
   batchLabel,
   batchThread,
+  draftSpot,
   itemTitle,
   latestBatch,
   placeLabel,
@@ -43,6 +44,7 @@ import { Badge } from "./components/ui/badge.tsx";
 import { Popover, PopoverContent, PopoverTrigger } from "./components/ui/popover.tsx";
 import { ToggleGroup, ToggleGroupItem } from "./components/ui/toggle-group.tsx";
 import { Hint, ReasonHint, TEXT_LINK } from "./ui.tsx";
+import { FocusContext, type Spot } from "./page/review-focus.ts";
 
 /** The review's send actions keep the theme's accent, not the default foreground fill. */
 const PRIMARY =
@@ -567,12 +569,42 @@ type TrayFacts = {
   onClose: () => void;
 };
 
+/** A tray row's text: a button that shows its spot on the diff, or plain text off the review page. */
+function TrayPick({
+  spot,
+  onReveal,
+  className,
+  children,
+}: {
+  spot: Spot;
+  onReveal: ((spot: Spot) => void) | null;
+  className: string;
+  children: ReactNode;
+}) {
+  if (!onReveal) return <span className={className}>{children}</span>;
+  return (
+    <button
+      type="button"
+      data-testid="sc-tray-reveal"
+      onClick={() => onReveal(spot)}
+      className={cx(
+        className,
+        "group/pick cursor-pointer rounded-sm border-0 bg-transparent p-0 text-start",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 const TrayItem = memo(function TrayItem({
   item,
   onRemove,
+  onReveal,
 }: {
   item: ReviewItem;
   onRemove: (id: string) => void;
+  onReveal: ((spot: Spot) => void) | null;
 }) {
   const title = itemTitle(item);
   return (
@@ -582,12 +614,17 @@ const TrayItem = memo(function TrayItem({
       data-item={item.id}
     >
       {item.priority !== null ? <PriorityChip priority={item.priority} /> : null}
-      <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground" title={title}>
-        {title}
-      </span>
-      <span className="shrink-0 text-[12px] leading-4 text-(--tertiary-foreground)">
-        {placeLabel(item.anchor)}
-      </span>
+      <TrayPick spot={item} onReveal={onReveal} className="flex min-w-0 flex-1 items-center gap-2">
+        <span
+          className="min-w-0 flex-1 truncate text-[13px] leading-5 text-foreground group-hover/pick:underline"
+          title={title}
+        >
+          {title}
+        </span>
+        <span className="shrink-0 text-[12px] leading-4 text-(--tertiary-foreground)">
+          {placeLabel(item.anchor)}
+        </span>
+      </TrayPick>
       <Button variant="link" size="sm" className={TEXT_LINK} onClick={() => onRemove(item.id)}>
         Remove
       </Button>
@@ -598,12 +635,16 @@ const TrayItem = memo(function TrayItem({
 const TrayDraft = memo(function TrayDraft({
   draft,
   on,
+  spot,
   onRemove,
+  onReveal,
 }: {
   draft: Draft;
   /** What it answers, or where it sits. */
   on: string;
+  spot: Spot;
   onRemove: (id: string) => void;
+  onReveal: ((spot: Spot) => void) | null;
 }) {
   return (
     <li
@@ -611,12 +652,12 @@ const TrayDraft = memo(function TrayDraft({
       data-testid="sc-tray-draft"
       data-draft={draft.id}
     >
-      <span className="flex min-w-0 flex-1 flex-col gap-1">
-        <span className="line-clamp-2 text-[13px] leading-5 text-foreground [overflow-wrap:anywhere]">
+      <TrayPick spot={spot} onReveal={onReveal} className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="line-clamp-2 text-[13px] leading-5 text-foreground [overflow-wrap:anywhere] group-hover/pick:underline">
           {draft.body}
         </span>
         <span className="truncate text-[12px] leading-4 text-(--tertiary-foreground)">{on}</span>
-      </span>
+      </TrayPick>
       <Button
         variant="link"
         size="sm"
@@ -812,12 +853,15 @@ function TrayLists({
   drafts,
   onRemoveItem,
   onExclude,
+  onReveal,
 }: {
   stable: StableReview;
   items: readonly ReviewItem[];
   drafts: readonly Draft[];
   onRemoveItem: (id: string) => void;
   onExclude: (id: string) => void;
+  /** Closes the tray and scrolls the diff to a row's line; null off the review page. */
+  onReveal: ((spot: Spot) => void) | null;
 }) {
   const byId = useMemo(() => new Map(stable.items.map((item) => [item.id, item])), [stable.items]);
   if (items.length + drafts.length === 0)
@@ -835,7 +879,7 @@ function TrayLists({
           </div>
           <ul className="m-0 flex max-h-64 list-none flex-col overflow-y-auto p-0">
             {items.map((item) => (
-              <TrayItem key={item.id} item={item} onRemove={onRemoveItem} />
+              <TrayItem key={item.id} item={item} onRemove={onRemoveItem} onReveal={onReveal} />
             ))}
           </ul>
         </div>
@@ -858,7 +902,9 @@ function TrayLists({
                   key={draft.id}
                   draft={draft}
                   on={answers ? `On ${itemTitle(answers)}` : `On ${placeLabel(draft.anchor)}`}
+                  spot={draftSpot(draft, byId)}
                   onRemove={onExclude}
+                  onReveal={onReveal}
                 />
               );
             })}
@@ -885,6 +931,18 @@ function Tray(facts: TrayFacts) {
   const prTarget: BatchTarget | null = number !== null ? { kind: "pull-request", number } : null;
   const target = agent ? agentTarget(stable.tray.target, targets) : prTarget;
   const onRemoveItem = useCallback((id: string) => actions.setSelected([id], false), [actions]);
+  const focus = useContext(FocusContext);
+  const { onClose } = facts;
+  const onReveal = useMemo(
+    () =>
+      focus
+        ? (spot: Spot) => {
+            onClose();
+            focus.reveal(spot);
+          }
+        : null,
+    [focus, onClose],
+  );
   const count = items.length + drafts.length;
   const canSend = count > 0 && target !== null && head !== null && !send.pending;
   const onSend = async () => {
@@ -921,6 +979,7 @@ function Tray(facts: TrayFacts) {
         drafts={drafts}
         onRemoveItem={onRemoveItem}
         onExclude={facts.onExclude}
+        onReveal={onReveal}
       />
       <div className="flex min-w-0 items-center gap-3 border-t border-solid border-border-hairline bg-surface-recessed px-4 py-3">
         <span
@@ -1013,6 +1072,7 @@ export const SendControls = memo(function SendControls({
   const actions = useReviewActions(changeKey);
   const send = useSend(changeKey);
   const [open, setOpen] = useState(false);
+  const onClose = useCallback(() => setOpen(false), []);
   const blocked = githubBlocked(number, review?.forge.problem ?? null);
   const destination: Destination =
     stable.tray.destination === "github" && blocked === null ? "github" : "agent";
@@ -1083,7 +1143,7 @@ export const SendControls = memo(function SendControls({
                 setOpen(false);
                 reset();
               }}
-              onClose={() => setOpen(false)}
+              onClose={onClose}
             />
           </PopoverContent>
         </Popover>

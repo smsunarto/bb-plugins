@@ -1,19 +1,22 @@
 /**
- * Which review item the reader last picked, and the way to show it: the rail
- * asks, the Files tab's diff column answers by scrolling to the item's
- * annotation. One per Change; a request made while no diff column is
- * mounted waits for the next one.
+ * Which review item or draft the reader last picked, and the way to show it:
+ * the rail or the send tray asks, the Files tab's diff column answers by
+ * scrolling to its annotation. One per Change; a request made while no diff
+ * column is mounted waits for the next one.
  */
 import { createContext, useCallback, useContext, useSyncExternalStore } from "react";
-import type { ReviewItem } from "../../core/items.ts";
+import type { Anchor } from "../../core/items.ts";
 
-type Revealer = (item: ReviewItem) => void;
+/** Something drawn on the diff: `id` is its annotation's `data-sc-anchor`. A review item is one. */
+export type Spot = { id: string; anchor: Anchor };
+
+type Revealer = (spot: Spot) => void;
 
 export class ReviewFocus {
   private focused: string | null = null;
   private readonly listeners = new Set<() => void>();
   private revealer: Revealer | null = null;
-  private pending: ReviewItem | null = null;
+  private pending: Spot | null = null;
   private whenDetached: Revealer | null = null;
 
   getFocused = (): string | null => this.focused;
@@ -23,20 +26,20 @@ export class ReviewFocus {
     return () => this.listeners.delete(listener);
   };
 
-  /** Mark the item as the reader's, and scroll the diff to it. */
-  reveal = (item: ReviewItem): void => {
-    if (this.focused !== item.id) {
-      this.focused = item.id;
+  /** Mark the spot as the reader's, and scroll the diff to it. */
+  reveal = (spot: Spot): void => {
+    if (this.focused !== spot.id) {
+      this.focused = spot.id;
       for (const listener of this.listeners) listener();
     }
-    if (this.revealer) this.revealer(item);
+    if (this.revealer) this.revealer(spot);
     else {
-      this.pending = item;
-      this.whenDetached?.(item);
+      this.pending = spot;
+      this.whenDetached?.(spot);
     }
   };
 
-  /** Told when an item is picked with no diff column mounted, to bring one. */
+  /** Told when a spot is picked with no diff column mounted, to bring one. */
   onDetached(handler: Revealer): () => void {
     this.whenDetached = handler;
     return () => {
@@ -58,7 +61,7 @@ export class ReviewFocus {
 
 export const FocusContext = createContext<ReviewFocus | null>(null);
 
-/** Whether this item is the reader's last pick; redraws only the rows that change. */
+/** Whether this spot is the reader's last pick; redraws only the rows that change. */
 export function useIsFocused(id: string): boolean {
   const focus = useContext(FocusContext);
   const subscribe = useCallback(

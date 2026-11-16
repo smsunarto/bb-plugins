@@ -15,7 +15,7 @@ import { cx } from "../format.ts";
 import { Hint, TEXT_LINK } from "../ui.tsx";
 import { newDraftId, type ReviewActions } from "../review-data.ts";
 import { useAskAgent } from "./ask-panel.tsx";
-import { itemAuthor, type Entry, type ItemEntry } from "../review-model.ts";
+import { draftAnchorId, itemAuthor, type Entry, type ItemEntry } from "../review-model.ts";
 import {
   BotMark,
   Checkbox,
@@ -463,7 +463,7 @@ const DraftBlock = memo(function DraftBlock({
   context: AnnotationContext;
 }) {
   return (
-    <div className={blockClass(inset)} data-sc-anchor={`draft:${draft.id}`}>
+    <div className={blockClass(inset)} data-sc-anchor={draftAnchorId(draft)}>
       <DraftBody draft={draft} actions={context.actions} />
     </div>
   );

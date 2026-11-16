@@ -31,6 +31,8 @@ globalThis.ResizeObserver ??= class {
   unobserve() {}
   disconnect() {}
 } as unknown as typeof ResizeObserver;
+// A pick scrolls the diff column; jsdom lays nothing out and has no element scrolling.
+Element.prototype.scrollTo ??= () => {};
 
 const KEY: ChangeKey = changeKeySchema.parse("local:host-a:/work/.git:scott/local");
 const HEAD = "c0ffee1";
@@ -616,6 +618,47 @@ test("the chat card says when the change moved past the revision it was shared a
 test("the chat card refuses a key it cannot read", () => {
   const slot = renderCard({}, { key: "%E0%A4%A" });
   expect(slot.getByTestId("sc-card-invalid")).toBeTruthy();
+});
+
+test("the rail and the tray list the reader's drafts, and a pick shows each on the diff", async () => {
+  const draft = (id: string, line: number, replyTo: string | null): Draft => ({
+    id,
+    anchor: { path: PATH, line, startLine: null, side: "RIGHT", head: HEAD },
+    body: `Draft ${id}.`,
+    replyTo,
+    state: "pending",
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  const server = reviewServer([comment(1, 2)], {
+    drafts: [draft("d-line", 3, null), draft("d-reply", 2, comment(1, 2).id)],
+  });
+  const slot = render(server.handlers);
+  const rail = await slot.findByTestId("sc-rail-review");
+  const rows = await within(rail).findAllByTestId("sc-review-draft");
+  expect(rows.map((row) => row.dataset.draft)).toEqual(["d-line", "d-reply"]);
+  expect(rows[0]!.textContent).toContain("a.ts:3");
+  // Both are drawn on the diff: one on its line, the reply under the comment it answers.
+  await waitFor(() => expect(slot.getAllByTestId("sc-draft")).toHaveLength(2));
+  expect(slot.container.querySelector('[data-sc-anchor="draft:d-line"]')).not.toBeNull();
+
+  fireEvent.click(within(rows[0]!).getByRole("button"));
+  expect(within(rows[0]!).getByRole("button").getAttribute("aria-current")).toBe("true");
+
+  // A pick in the tray closes it and shows the draft; a reply shows the comment it answers.
+  fireEvent.click(slot.getByTestId("sc-send"));
+  const tray = await slot.findByTestId("sc-tray");
+  const reply = within(tray)
+    .getAllByTestId("sc-tray-draft")
+    .find((row) => row.dataset.draft === "d-reply")!;
+  fireEvent.click(within(reply).getByTestId("sc-tray-reveal"));
+  await waitFor(() => expect(slot.queryByTestId("sc-tray")).toBeNull());
+  expect(within(rows[1]!).getByRole("button").getAttribute("aria-current")).toBe("true");
+  expect(within(rows[0]!).getByRole("button").getAttribute("aria-current")).toBeNull();
+  const item = within(rail)
+    .getAllByTestId("sc-review-row")
+    .find((row) => row.dataset.item === comment(1, 2).id)!;
+  expect(item.className).toContain("bg-border-hairline");
 });
 
 test("Escape with the tray open closes the tray and goes no further", async () => {
