@@ -72,8 +72,6 @@
     "better-sqlite3": "12.11.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "cron-parser": "^5.5.0",
-    "hono": "4.11.9",
     "jsdom": "^29.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
