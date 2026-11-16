@@ -205,7 +205,7 @@ function LabelsSection() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="size-6 text-muted-foreground opacity-0 group-hover:opacity-100"
+                  className="size-6 text-muted-foreground opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                   aria-label={`Edit label ${label.name}`}
                   onClick={() => setEditingId(label.id)}
                 >
@@ -214,7 +214,7 @@ function LabelsSection() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="size-6 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
+                  className="size-6 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100 [@media(hover:none)]:opacity-100"
                   aria-label={`Delete label ${label.name}`}
                   onClick={() => void askDelete(label)}
                 >
@@ -346,7 +346,7 @@ function PresetsSection() {
                   {preset.instructions === "" ? "—" : preset.instructions}
                 </TableCell>
                 <TableCell className="px-3 py-2">
-                  <span className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100">
+                  <span className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100">
                     <Button
                       size="icon"
                       variant="ghost"
