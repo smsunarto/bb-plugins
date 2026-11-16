@@ -863,3 +863,35 @@ test("a sent comment shows the agent's answer under it, and can be answered back
   // The rail lists it under the reader's own group.
   expect(slot.getByText("Your comments")).toBeTruthy();
 });
+
+test("the rail lists the reader's drafts and sent comments in one group, marked Pending and Sent", async () => {
+  const sent: ReviewItem = {
+    ...finding(1, 2),
+    id: "you:d-1",
+    origin: { kind: "reader", author: null, threadId: "thread-a" },
+    priority: null,
+    title: null,
+    body: "What is worldState?",
+  };
+  const draft: Draft = {
+    id: "d-2",
+    anchor: { path: PATH, line: 3, startLine: null, side: "RIGHT", head: HEAD },
+    body: "Not sent yet.",
+    replyTo: null,
+    state: "pending",
+    createdAt: 1,
+    updatedAt: 1,
+  };
+  const server = reviewServer([sent], { drafts: [draft] });
+  const slot = render(server.handlers);
+  const rail = await slot.findByTestId("sc-rail-review");
+  const group = await within(rail).findByTestId("sc-review-drafts");
+  const headers = within(rail)
+    .getAllByTestId("sc-review-group")
+    .filter((header) => header.dataset.group === "you");
+  expect(headers).toHaveLength(1);
+  expect(headers[0]!.textContent).toContain("Your comments2");
+  expect(within(group).getByTestId("sc-review-draft").textContent).toContain("Pending");
+  expect(within(group).getByTestId("sc-review-row").dataset.item).toBe("you:d-1");
+  expect(within(group).getByTestId("sc-review-sent").textContent).toBe("Sent");
+});

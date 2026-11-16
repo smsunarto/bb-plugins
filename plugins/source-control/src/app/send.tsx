@@ -846,7 +846,7 @@ function TrayRecipient({
   );
 }
 
-/** "Findings to fix · n" and "Your replies · n", each row with Remove. */
+/** "Findings to fix · n" and "Your comments · n" (unsent drafts), each row with Remove. */
 function TrayLists({
   stable,
   items,
@@ -892,7 +892,7 @@ function TrayLists({
           )}
         >
           <div className="pb-1">
-            <h3 className={SECTION_LABEL}>Your replies · {drafts.length}</h3>
+            <h3 className={SECTION_LABEL}>Your comments · {drafts.length}</h3>
           </div>
           <ul className="m-0 flex max-h-56 list-none flex-col overflow-y-auto p-0">
             {drafts.map((draft) => {

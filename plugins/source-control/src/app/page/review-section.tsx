@@ -14,6 +14,7 @@ import { describeProblem } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import {
   groupItems,
+  YOU_GROUP,
   type Draft,
   type ItemGroup,
   type ReviewItem,
@@ -337,6 +338,14 @@ const ItemRow = memo(function ItemRow({
           <span className="min-w-0 truncate font-mono text-[12px] leading-4 text-(--tertiary-foreground)">
             {placeLabel(item.anchor)}
           </span>
+          {item.origin.kind === "reader" ? (
+            <span
+              className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)"
+              data-testid="sc-review-sent"
+            >
+              Sent
+            </span>
+          ) : null}
           {item.state !== "open" ? (
             <span className="shrink-0 text-[11px] leading-4 text-(--tertiary-foreground)">
               {item.state === "outdated" ? "Outdated" : "Resolved"}
@@ -402,34 +411,22 @@ const DraftRow = memo(function DraftRow({
   );
 });
 
-const DRAFTS_GROUP: ItemGroup = { id: "drafts", label: "Your replies", kind: "you" };
-
-/** The reader's unsent comments and replies, so each can be found on the diff. */
-function DraftGroup({
-  drafts,
-  items,
-  onOpen,
-}: {
-  drafts: readonly Draft[];
-  items: readonly ReviewItem[];
-  onOpen: (spot: Spot) => void;
-}) {
-  const byId = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
-  if (drafts.length === 0) return null;
-  return (
-    <div className="flex min-w-0 flex-col" data-testid="sc-review-drafts">
-      <GroupHeader group={DRAFTS_GROUP} count={drafts.length} />
-      <ul className="m-0 flex list-none flex-col p-0">
-        {drafts.map((draft) => (
-          <DraftRow key={draft.id} draft={draft} spot={draftSpot(draft, byId)} onOpen={onOpen} />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 const BB_GROUP: ItemGroup = { id: "bb", label: "bb review", kind: "bb" };
 const SLOPCOP_GROUP: ItemGroup = { id: "slopcop", label: "SlopCop", kind: "slopcop" };
+
+/**
+ * The rail's groups. The reader's drafts (Pending) list with its sent
+ * comments (Sent), so that group shows whenever either exists.
+ */
+function railGroups(
+  items: readonly ReviewItem[],
+  drafts: readonly Draft[],
+): ReturnType<typeof groupItems> {
+  const groups = groupItems(items);
+  if (drafts.length === 0 || groups.some((entry) => entry.group.id === YOU_GROUP.id)) return groups;
+  const at = groups[0]?.group.id === BB_GROUP.id ? 1 : 0;
+  return groups.toSpliced(at, 0, { group: YOU_GROUP, items: [] });
+}
 
 function ItemGroups({
   groups,
@@ -442,27 +439,38 @@ function ItemGroups({
   stable: StableReview;
   runState: Record<string, ReactNode>;
   onToggle: (id: string, checked: boolean) => void;
-  onOpen: (item: ReviewItem) => void;
+  onOpen: (spot: Spot) => void;
 }) {
-  return groups.map(({ group, items }) => (
-    <div key={group.id} className="flex min-w-0 flex-col">
-      <GroupHeader group={group} count={items.length}>
-        {runState[group.id]}
-      </GroupHeader>
-      <ul className="m-0 flex list-none flex-col p-0">
-        {items.map((item) => (
-          <ItemRow
-            key={item.id}
-            item={item}
-            checked={stable.selected.has(item.id)}
-            fixing={stable.fixing.has(item.id)}
-            onToggle={onToggle}
-            onOpen={onOpen}
-          />
-        ))}
-      </ul>
-    </div>
-  ));
+  const byId = useMemo(() => new Map(stable.items.map((item) => [item.id, item])), [stable.items]);
+  return groups.map(({ group, items }) => {
+    const drafts = group.id === YOU_GROUP.id ? stable.drafts : [];
+    return (
+      <div
+        key={group.id}
+        className="flex min-w-0 flex-col"
+        data-testid={drafts.length > 0 ? "sc-review-drafts" : undefined}
+      >
+        <GroupHeader group={group} count={items.length + drafts.length}>
+          {runState[group.id]}
+        </GroupHeader>
+        <ul className="m-0 flex list-none flex-col p-0">
+          {drafts.map((draft) => (
+            <DraftRow key={draft.id} draft={draft} spot={draftSpot(draft, byId)} onOpen={onOpen} />
+          ))}
+          {items.map((item) => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              checked={stable.selected.has(item.id)}
+              fixing={stable.fixing.has(item.id)}
+              onToggle={onToggle}
+              onOpen={onOpen}
+            />
+          ))}
+        </ul>
+      </div>
+    );
+  });
 }
 
 /** "2 being fixed · 2 findings · 2 comments" (board A4): items being fixed count apart. */
@@ -562,7 +570,10 @@ export const ReviewSection = memo(function ReviewSection({
   const { review, stable, error, refetch } = useChangeReview(changeKey);
   const actions = useReviewActions(changeKey);
   const focus = useContext(FocusContext);
-  const groups = useMemo(() => groupItems(stable.items), [stable.items]);
+  const groups = useMemo(
+    () => railGroups(stable.items, stable.drafts),
+    [stable.items, stable.drafts],
+  );
   const slopCopIn = useMemo(() => slopCopInput(repo, number), [repo, number]);
   const slopCop = useSlopCop(slopCopIn);
   const onToggle = useCallback(
@@ -606,7 +617,6 @@ export const ReviewSection = memo(function ReviewSection({
           {slopCopStatus}
         </GroupHeader>
       ) : null}
-      <DraftGroup drafts={stable.drafts} items={stable.items} onOpen={onOpen} />
       {review.forge.problem ? (
         <p className={cx(NOTE, "pt-1")}>
           {describeProblem(review.forge.problem)} These are the last GitHub comments bb read.

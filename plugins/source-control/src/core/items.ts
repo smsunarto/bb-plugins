@@ -361,11 +361,14 @@ export type ItemGroup = {
   kind: "bb" | "you" | "slopcop" | "person" | "bot";
 };
 
+/** The reader's group: comments sent to an agent, and the drafts not sent yet. */
+export const YOU_GROUP: ItemGroup = { id: "you", label: "Your comments", kind: "you" };
+
 /** The rail's author group: bb's findings, SlopCop's, then each person or bot by login. */
 export function itemGroup(item: Pick<ReviewItem, "origin">): ItemGroup {
   const { origin } = item;
   if (origin.kind === "bb") return { id: "bb", label: "bb review", kind: "bb" };
-  if (origin.kind === "reader") return { id: "you", label: "Your comments", kind: "you" };
+  if (origin.kind === "reader") return YOU_GROUP;
   if (origin.slopcop) return { id: "slopcop", label: "SlopCop", kind: "slopcop" };
   return {
     id: `@${origin.author.toLowerCase()}`,
