@@ -3,9 +3,8 @@
  * now. An agent writes it by hand, with no tool call, so it has no Change or
  * head of its own; the card takes both from the thread's row. A thread whose
  * branch has commits or a pull request shows that Change's card, with Ship
- * it while the branch has work to ship. One with no commits of its own shows
- * the checkout's uncommitted files instead. In a checkout several threads
- * share those may be another thread's, so they are counted only there.
+ * it while the branch has work to ship. One with no commits of its own and
+ * only uncommitted files shows nothing: there is no Change to review yet.
  */
 import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
@@ -17,9 +16,8 @@ import { describeProblem } from "../core/change.ts";
 import { canShip, hasWork, summarize } from "../core/status.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { CARD, CardNote, CardSkeleton, ChangeCard, useSeen } from "./chat-card.tsx";
-import { cx, plural } from "./format.ts";
-import { StateBadge } from "./page/rail.tsx";
+import { CardNote, CardSkeleton, ChangeCard, useSeen } from "./chat-card.tsx";
+import { cx } from "./format.ts";
 import { Button } from "./components/ui/button.tsx";
 import { CARD_ACTION_CLASS, Pending } from "./ui.tsx";
 
@@ -51,9 +49,6 @@ export type ThreadShip = {
   sent: string | null;
 };
 
-const uncommittedLine = (count: number, where: string) =>
-  `${plural(count, "uncommitted file")} in ${where}`;
-
 export function ShipButton({ ship }: { ship: ReturnType<typeof useShipThread> }) {
   return (
     <Button
@@ -75,37 +70,6 @@ export function Quiet({ children, testId }: { children: ReactNode; testId: strin
     <span data-testid={testId} className="text-[12px] leading-4 text-muted-foreground">
       {children}
     </span>
-  );
-}
-
-/** Uncommitted files and no branch of the thread's own yet: nothing to review, only to ship. */
-export function UncommittedCard({
-  count,
-  ship,
-  where = "this checkout",
-}: {
-  count: number;
-  ship: ReturnType<typeof useShipThread>;
-  /** The checkout as the line names it. */
-  where?: string;
-}) {
-  return (
-    <div className={CARD} data-testid="sc-card-uncommitted">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 p-3">
-        <StateBadge state="local" label="Uncommitted" className="h-4 leading-3" />
-        <span className="min-w-0 text-[13px] leading-5 font-semibold break-words text-foreground">
-          {uncommittedLine(count, where)}
-        </span>
-      </div>
-      <div className="flex min-w-0 flex-wrap gap-2 px-3 pb-3">
-        <ShipButton ship={ship} />
-      </div>
-      {ship.sent ? (
-        <output className="px-3 pb-3 text-[12px] leading-4 text-muted-foreground">
-          {ship.sent}
-        </output>
-      ) : null}
-    </div>
   );
 }
 
@@ -189,8 +153,9 @@ export function ThreadCard({ threadId }: { threadId: string }) {
         />
       </div>
     );
+  // Only uncommitted files: no Change to show yet. The root stays to keep the read live.
   else if (summary && summary.uncommitted > 0)
-    body = <UncommittedCard count={summary.uncommitted} ship={ship} />;
+    return <div ref={root} data-bb-plugin="source-control" data-testid="sc-card-hidden" />;
   else if (summary)
     body = (
       <Quiet testId="sc-card-clean">

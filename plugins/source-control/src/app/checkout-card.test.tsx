@@ -104,15 +104,14 @@ test("a checkout named by path shows its unpushed branch, where it is, and ships
   expect(await slot.findByText("Asked the agent to ship it.")).toBeTruthy();
 });
 
-test("a named checkout with only uncommitted files, or nothing, says so", async () => {
+test("a named checkout with only uncommitted files shows no card; with nothing, says so", async () => {
   const none = branch({ commits: [], status: "pushed", push: "none", ahead: 0 });
   const dirty = render(
     { path: PATH, branch: BRANCH },
     work(none, { uncommitted: [{ path: ".zshrc", kind: "modified" }] }),
   );
-  expect((await dirty.slot.findByTestId("sc-card-uncommitted")).textContent).toContain(
-    `1 uncommitted file in dev-pc:${PATH}`,
-  );
+  expect((await dirty.slot.findByTestId("sc-card-hidden")).textContent).toBe("");
+  expect(dirty.slot.queryByTestId("sc-card-ship")).toBeNull();
   expect(dirty.asked).toContain(
     checkoutWorkKey({ threadId: "thread-a", path: PATH, branch: BRANCH }),
   );

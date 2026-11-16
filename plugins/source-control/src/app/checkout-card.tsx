@@ -24,7 +24,7 @@ import {
   useSeen,
 } from "./chat-card.tsx";
 import { plural } from "./format.ts";
-import { Quiet, ShipButton, threadShip, UncommittedCard, useShipThread } from "./thread-card.tsx";
+import { Quiet, ShipButton, threadShip, useShipThread } from "./thread-card.tsx";
 import { Button } from "./components/ui/button.tsx";
 import { StateBadge } from "./page/rail.tsx";
 
@@ -115,7 +115,7 @@ function Unread({
   return <CardSkeleton />;
 }
 
-/** Work only this checkout knows: its branch, else its uncommitted files, else nothing to ship. */
+/** Work only this checkout knows: its branch, else nothing to ship. */
 function LocalWork({
   summary,
   where,
@@ -131,8 +131,6 @@ function LocalWork({
   let body: ReactNode;
   if (summary.branch && hasWork(summary))
     body = <BranchCard summary={summary} where={where} ship={ship} />;
-  else if (summary.uncommitted > 0)
-    body = <UncommittedCard count={summary.uncommitted} ship={ship} where={where} />;
   else
     body = (
       <Quiet testId="sc-card-clean">
@@ -188,6 +186,9 @@ export function CheckoutCard({
     );
   const checkout = row?.state === "checkout" ? row : undefined;
   const problem = checkout?.local.problem ?? null;
+  // Only uncommitted files: no Change to show yet. The root stays to keep the read live.
+  if (summary && checkout && !(summary.branch && hasWork(summary)) && summary.uncommitted > 0)
+    return <div ref={root} data-bb-plugin="source-control" data-testid="sc-card-hidden" />;
   let body: ReactNode;
   if (row?.state === "none") body = <Quiet testId="sc-card-none">{row.reason}</Quiet>;
   else if (summary && checkout)

@@ -164,16 +164,15 @@ test("a hand-written directive shows the thread's own Change and ships its unpus
   expect(await slot.findByText("Asked the agent to ship it.")).toBeTruthy();
 });
 
-test("uncommitted work with no branch of the thread's own still gets a card that ships it", async () => {
-  const { slot, shipped } = renderThread(row(workspace({ uncommitted: files(1) }), false));
-  const card = await slot.findByTestId("sc-card-uncommitted");
-  expect(card.textContent).toContain("1 uncommitted file in this checkout");
+test("uncommitted work with no branch of the thread's own shows no card", async () => {
+  const { slot } = renderThread(row(workspace({ uncommitted: files(1) }), false));
+  const hidden = await slot.findByTestId("sc-card-hidden");
+  expect(hidden.textContent).toBe("");
   expect(slot.queryByTestId("sc-card")).toBeNull();
-  slot.getByTestId("sc-card-ship").click();
-  await waitFor(() => expect(shipped).toHaveLength(1));
+  expect(slot.queryByTestId("sc-card-ship")).toBeNull();
 });
 
-test("a checked-out branch with no commits of its own, such as main, shows only the files to ship", async () => {
+test("a checked-out branch with no commits of its own, such as main, shows no card", async () => {
   const main = branch({ name: BRANCH, commits: [], status: "pushed", push: "none", ahead: 0 });
   const thread = row(
     workspace({
@@ -184,9 +183,7 @@ test("a checked-out branch with no commits of its own, such as main, shows only 
     }),
   );
   const { slot } = renderThread(thread);
-  expect((await slot.findByTestId("sc-card-uncommitted")).textContent).toContain(
-    "2 uncommitted files in this checkout",
-  );
+  expect((await slot.findByTestId("sc-card-hidden")).textContent).toBe("");
   expect(slot.queryByTestId("sc-card")).toBeNull();
 });
 

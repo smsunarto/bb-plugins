@@ -2,7 +2,7 @@ Show the human a Source Control card for branches or pull requests you name: whe
 
 CHOOSING BETWEEN A HAND-WRITTEN DIRECTIVE AND THIS TOOL
 
-- This thread's own work, committed or not: write `::source-control` on its own line in your reply and call nothing. That card follows the thread's branch and pull request as they change, or its uncommitted files while it has no commits.
+- This thread's own work, committed or not: write `::source-control` on its own line in your reply and call nothing. That card follows the thread's branch and pull request as they change; with only uncommitted files it shows nothing.
 - Work in another checkout on this machine, such as another repository or a worktree, or on another branch of this thread's checkout: write `::source-control{path="/absolute/checkout" branch="name"}` and call nothing. Omit `path` for this thread's checkout; omit `branch` for the branch that checkout has checked out.
 - One pull request, in any repository or checkout: write `::source-control{pr="owner/repo#123"}` on its own line and call nothing.
 - Call this tool to show several Changes as one card, as when this session committed to more than one branch, or to pin a card to the head you are handing off.
