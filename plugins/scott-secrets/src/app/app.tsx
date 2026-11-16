@@ -170,17 +170,17 @@ function SecretRequestForm({ interaction, submit, cancel }: PluginPendingInterac
         ) : null}
         <p className="min-w-0 text-xs text-muted-foreground">
           Secrets will be written directly to{" "}
-          <code className="break-all rounded bg-surface-raised px-1.5 py-0.5 font-mono text-foreground">
+          <code className="break-all rounded bg-surface-raised px-1 font-mono text-foreground">
             {request.destination.path}
           </code>
         </p>
       </div>
-      <div className="flex flex-col gap-3.5">
+      <div className="flex flex-col gap-4">
         {request.fields.map((field) => {
           const id = `secret-${interaction.id}-${field.name}`;
           return (
-            <div key={field.name} className="flex min-w-0 flex-col gap-1.5">
-              <div className="flex flex-col gap-0.5">
+            <div key={field.name} className="flex min-w-0 flex-col gap-1">
+              <div className="flex flex-col gap-1">
                 <Label
                   htmlFor={id}
                   className="font-mono text-xs font-semibold leading-normal"
@@ -263,19 +263,19 @@ function SudoRequestForm({ interaction, submit, cancel }: PluginPendingInteracti
         {request.purpose ? (
           <p className="text-pretty text-sm leading-relaxed text-foreground">{request.purpose}</p>
         ) : null}
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-surface-raised px-2 py-1.5 font-mono text-xs text-foreground">
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-md bg-surface-raised p-2 font-mono text-xs text-foreground">
           <span className="select-none text-muted-foreground"># </span>
           {command}
         </pre>
         <p className="min-w-0 text-xs text-muted-foreground">
           Runs as root in{" "}
-          <code className="break-all rounded bg-surface-raised px-1.5 py-0.5 font-mono text-foreground">
+          <code className="break-all rounded bg-surface-raised px-1 font-mono text-foreground">
             {request.cwd}
           </code>{" "}
           on <span className="font-medium text-foreground">{request.host}</span>.
         </p>
       </div>
-      <div className="flex min-w-0 flex-col gap-1.5">
+      <div className="flex min-w-0 flex-col gap-1">
         <Label htmlFor={passwordId} className="text-xs font-semibold leading-normal">
           sudo password
         </Label>
