@@ -57,6 +57,8 @@ export function useFileEditor(hostId: string, path: RepoPath): FileEditor {
   const conflictRef = useRef(false);
 
   const [content, setContentState] = useState<string | null>(null);
+  // `savedRef` answers async saves; this copy is what render compares against.
+  const [saved, setSaved] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [conflict, setConflict] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -69,6 +71,7 @@ export function useFileEditor(hostId: string, path: RepoPath): FileEditor {
       savedRef.current = data.content;
       shaRef.current = data.sha256;
       setContentState(data.content);
+      setSaved(data.content);
       return;
     }
     if (data.sha256 === shaRef.current) return;
@@ -77,6 +80,7 @@ export function useFileEditor(hostId: string, path: RepoPath): FileEditor {
       savedRef.current = data.content;
       shaRef.current = data.sha256;
       setContentState(data.content);
+      setSaved(data.content);
     } else {
       conflictRef.current = true;
       setConflict(true);
@@ -109,6 +113,7 @@ export function useFileEditor(hostId: string, path: RepoPath): FileEditor {
             return;
           }
           savedRef.current = submitted;
+          setSaved(submitted);
           shaRef.current = result.sha256;
           conflictRef.current = false;
           setConflict(false);
@@ -164,7 +169,7 @@ export function useFileEditor(hostId: string, path: RepoPath): FileEditor {
       setContentState(next);
     },
     headContent: file.data?.headContent ?? null,
-    dirty: draftRef.current !== savedRef.current,
+    dirty: content !== saved,
     saving,
     conflict,
     saveError,

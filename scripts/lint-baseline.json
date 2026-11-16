@@ -36,18 +36,6 @@
     "source": ".flatMap((item) => [{ provider: ANNOTATION_MENTION_PROVIDER, ...item }, \" \"]);"
   },
   {
-    "filename": "plugins/dotfiles/src/app/use-file-editor.ts",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "dirty: draftRef.current !== savedRef.current,"
-  },
-  {
-    "filename": "plugins/dotfiles/src/app/use-file-editor.ts",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "dirty: draftRef.current !== savedRef.current,"
-  },
-  {
     "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
     "code": "react(refs)",
     "message": "Cannot access refs during render",
