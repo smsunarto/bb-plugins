@@ -254,6 +254,26 @@ describe("list filter/sort preference persistence", () => {
     expect(backToA.getByRole("button", { name: /Sort/ }).textContent).not.toContain("Due date");
   });
 
+  it("reads the next scope's preference when the panel switches projects in place", async () => {
+    const registration = app.navPanels[0]!;
+    const Panel = registration.component;
+    const slot = renderSlot(registration, { subPath: PROJECT_A }, { rpc: baseRpc() });
+    await slot.findByText("ALP-1");
+    await selectSort(slot, "Priority");
+    await waitFor(() =>
+      expect(slot.getByRole("button", { name: /Sort/ }).textContent).toContain("Priority"),
+    );
+
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_B} />);
+    await slot.findByText("BET-1");
+    expect(slot.getByRole("button", { name: /Sort/ }).textContent).not.toContain("Priority");
+
+    slot.lifecycle.rerender(<Panel subPath={PROJECT_A} />);
+    await slot.findByText("ALP-1");
+    expect(slot.getByRole("button", { name: /Sort/ }).textContent).toContain("Priority");
+    slot.lifecycle.unmount();
+  });
+
   it("remembers an explicit clear across remount", async () => {
     const registration = app.navPanels[0]!;
     window.localStorage.setItem(

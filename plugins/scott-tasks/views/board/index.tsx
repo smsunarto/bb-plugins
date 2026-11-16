@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -239,8 +240,12 @@ export function BoardView({ projectId }: BoardViewProps) {
   const openNewTask = useTasksUi((state) => state.openNewTask);
   const board = useBoardData(projectId);
   const columns = board.data?.columns;
+  // Drag handlers outlive the render that started the drag; they read the
+  // columns as last committed.
   const columnsRef = useRef(columns);
-  columnsRef.current = columns;
+  useLayoutEffect(() => {
+    columnsRef.current = columns;
+  });
 
   const [drag, setDrag] = useState<DragState | null>(null);
   const boardRef = useRef<HTMLDivElement | null>(null);

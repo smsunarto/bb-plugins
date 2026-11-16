@@ -975,6 +975,21 @@ describe("NewProjectDialog", () => {
     );
   });
 
+  it("starts each opening from a blank form", async () => {
+    const slot = renderEmptyState();
+    fireEvent.click(await slot.findByRole("button", { name: /New project/ }));
+    fireEvent.change(await slot.findByPlaceholderText("e.g. Tasks Plugin"), {
+      target: { value: "Home Lab" },
+    });
+    fireEvent.click(slot.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(slot.queryByPlaceholderText("e.g. Tasks Plugin")).toBeNull());
+
+    fireEvent.click(await slot.findByRole("button", { name: /New project/ }));
+    const name = (await slot.findByPlaceholderText("e.g. Tasks Plugin")) as HTMLInputElement;
+    expect(name.value).toBe("");
+    expect((slot.getByPlaceholderText("TSK") as HTMLInputElement).value).toBe("");
+  });
+
   it("flags malformed prefixes before submit", async () => {
     const slot = renderEmptyState();
     fireEvent.click(await slot.findByRole("button", { name: /New project/ }));

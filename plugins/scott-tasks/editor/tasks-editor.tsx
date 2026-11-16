@@ -3,7 +3,7 @@ import {
   sourceModeReason,
   type MarkdownSession,
 } from "@bb-plugins/markdown-editor/engine";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Editor, isNodeSelection, type EditorOptions, type ChainedCommands } from "@tiptap/core";
 import { BubbleMenuPlugin } from "@tiptap/extension-bubble-menu";
 import type { IconSvgElement } from "@hugeicons/react";
@@ -137,6 +137,8 @@ interface BubbleAction {
   run(chain: ChainedCommands): ChainedCommands;
 }
 
+const NO_ACTIVE_ACTIONS: ReadonlySet<string> = new Set();
+
 const BUBBLE_ACTIONS: BubbleAction[] = [
   {
     id: "bold",
@@ -242,43 +244,47 @@ export function TasksEditor({
   const editorRef = useRef<Editor | null>(null);
   const markdownRef = useRef<MarkdownSession | null>(null);
   const presentation = useRef({ source, reason });
-  useLayoutEffect(() => {
-    presentation.current = { source, reason };
-    if (source || reason) editorRef.current?.commands.blur();
-  }, [source, reason]);
   const lastMarkdownRef = useRef(value);
+  // The editor is built once per mode and keeps the handlers it was given;
+  // these refs hand them the latest props once each render commits.
   const changeRef = useRef(onChange);
-  changeRef.current = onChange;
   const placeholderRef = useRef(placeholder);
-  placeholderRef.current = placeholder;
   const uploadRef = useRef(onUploadImage);
-  uploadRef.current = onUploadImage;
   const attachFilesRef = useRef(onAttachFiles);
-  attachFilesRef.current = onAttachFiles;
   const mentionItemsRef = useRef(mentionItems);
-  mentionItemsRef.current = mentionItems;
   const openThreadRef = useRef(onOpenThread);
-  openThreadRef.current = onOpenThread;
   const onSubmitRef = useRef(onSubmit);
-  onSubmitRef.current = onSubmit;
   const readyRef = useRef(onEditorReady);
-  readyRef.current = onEditorReady;
   const initialValueRef = useRef(value);
   const isPointerCoarse = usePointerCoarse();
   const canSubmitWithEnterKey = Boolean(onSubmit) && !isPointerCoarse;
   const canSubmitWithEnterRef = useRef(canSubmitWithEnterKey);
-  canSubmitWithEnterRef.current = canSubmitWithEnterKey;
+  useLayoutEffect(() => {
+    changeRef.current = onChange;
+    placeholderRef.current = placeholder;
+    uploadRef.current = onUploadImage;
+    attachFilesRef.current = onAttachFiles;
+    mentionItemsRef.current = mentionItems;
+    openThreadRef.current = onOpenThread;
+    onSubmitRef.current = onSubmit;
+    readyRef.current = onEditorReady;
+    canSubmitWithEnterRef.current = canSubmitWithEnterKey;
+  });
+  useLayoutEffect(() => {
+    presentation.current = { source, reason };
+    if (source || reason) editorRef.current?.commands.blur();
+  }, [source, reason]);
   const editorEnterKeyHint = onSubmit ? (isPointerCoarse ? "enter" : "send") : undefined;
 
-  const [, setRevision] = useState(0);
+  // Which formatting actions apply at the selection, re-read on every
+  // transaction (each one re-renders, as the mention popover's position needs).
+  const [activeActions, setActiveActions] = useState<ReadonlySet<string>>(NO_ACTIVE_ACTIONS);
   const [mention, setMentionState] = useState<MentionPopoverState | null>(null);
   const mentionRef = useRef<MentionPopoverState | null>(null);
-  const setMention = (next: MentionPopoverState | null) => {
+  const setMention = useCallback((next: MentionPopoverState | null) => {
     mentionRef.current = next;
     setMentionState(next);
-  };
-  const setMentionRef = useRef(setMention);
-  setMentionRef.current = setMention;
+  }, []);
 
   useEffect(() => {
     ensureEditorStyles();
@@ -295,7 +301,7 @@ export function TasksEditor({
       getItems: (query) => mentionItemsRef.current?.(query) ?? Promise.resolve([]),
       onChange: (props: SuggestionProps<MentionItem, MentionItem>) => {
         const previous = mentionRef.current;
-        setMentionRef.current({
+        setMention({
           items: props.items,
           clientRect: props.clientRect ?? null,
           command: props.command,
@@ -305,19 +311,19 @@ export function TasksEditor({
           ),
         });
       },
-      onExit: () => setMentionRef.current(null),
+      onExit: () => setMention(null),
       onKeyDown: (event) => {
         const state = mentionRef.current;
         if (!state || state.items.length === 0) return false;
         if (event.key === "ArrowDown") {
-          setMentionRef.current({
+          setMention({
             ...state,
             selectedIndex: (state.selectedIndex + 1) % state.items.length,
           });
           return true;
         }
         if (event.key === "ArrowUp") {
-          setMentionRef.current({
+          setMention({
             ...state,
             selectedIndex: (state.selectedIndex - 1 + state.items.length) % state.items.length,
           });
@@ -329,7 +335,7 @@ export function TasksEditor({
           return true;
         }
         if (event.key === "Escape") {
-          setMentionRef.current(null);
+          setMention(null);
           return true;
         }
         return false;
@@ -447,7 +453,14 @@ export function TasksEditor({
       if (isDocument) setInspected({ value: markdown, reason: null });
       changeRef.current(markdown);
     });
-    editor.on("transaction", () => setRevision((current) => current + 1));
+    editor.on("transaction", () =>
+      setActiveActions(
+        // Only an editable document draws the toolbar; a fresh set still re-renders.
+        variant === "doc" && !readOnly
+          ? new Set(BUBBLE_ACTIONS.filter((action) => action.isActive(editor)).map(({ id }) => id))
+          : new Set(),
+      ),
+    );
     readyRef.current?.(editor);
     const root = rootRef.current;
     const onClick = (event: MouseEvent) => {
@@ -463,10 +476,11 @@ export function TasksEditor({
     return () => {
       root.removeEventListener("click", onClick);
       editorRef.current = null;
-      setMentionRef.current(null);
+      setMention(null);
+      setActiveActions(NO_ACTIVE_ACTIONS);
       editor.destroy();
     };
-  }, [readOnly, variant, isDocument]);
+  }, [readOnly, variant, isDocument, setMention]);
 
   useEffect(() => {
     initialValueRef.current = value;
@@ -488,7 +502,6 @@ export function TasksEditor({
     }
   }, [editorEnterKeyHint]);
 
-  const editor = editorRef.current;
   const mentionRect = mention?.clientRect?.() ?? null;
   const taskItems = (mention?.items ?? [])
     .map((item, index) => ({ item, index }))
@@ -590,7 +603,7 @@ export function TasksEditor({
                 key={action.id}
                 size="sm"
                 aria-label={action.label}
-                pressed={editor ? action.isActive(editor) : false}
+                pressed={activeActions.has(action.id)}
                 className="size-7 min-w-0 p-0"
                 onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {

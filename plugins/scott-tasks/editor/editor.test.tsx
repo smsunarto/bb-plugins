@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Editor } from "@tiptap/core";
 import { POINTER_COARSE_QUERY } from "@/components/ui/hooks/use-pointer-coarse";
 import { createEditorExtensions } from "./extensions.js";
@@ -635,6 +635,45 @@ describe("TasksEditor submit-on-Enter", () => {
       expect(screen.container.querySelector('[data-task-mention="TSK-1"]')).toBeTruthy(),
     );
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+describe("formatting toolbar", () => {
+  // The bubble menu positions itself from the selection's rects, which jsdom lacks.
+  const range = Range.prototype as Partial<Range>;
+  const { getClientRects, getBoundingClientRect } = range;
+  beforeEach(() => {
+    range.getClientRects = () => [] as unknown as DOMRectList;
+    range.getBoundingClientRect = () => new DOMRect();
+  });
+  afterEach(() => {
+    cleanup();
+    range.getClientRects = getClientRects;
+    range.getBoundingClientRect = getBoundingClientRect;
+  });
+
+  it("presses the actions that apply at the selection as it moves", async () => {
+    let editor: Editor | null = null;
+    const screen = render(
+      <TasksEditor
+        value={"**bold** plain"}
+        variant="doc"
+        onChange={() => {}}
+        onEditorReady={(ready) => {
+          editor = ready;
+        }}
+      />,
+    );
+    // The bubble menu mounts its toolbar once a selection settles.
+    const bold = () => screen.findByRole("button", { name: "Bold", hidden: true });
+    act(() => {
+      editor!.commands.setTextSelection({ from: 2, to: 4 });
+    });
+    expect((await bold()).getAttribute("aria-pressed")).toBe("true");
+    act(() => {
+      editor!.commands.setTextSelection({ from: 7, to: 10 });
+    });
+    await waitFor(async () => expect((await bold()).getAttribute("aria-pressed")).toBe("false"));
   });
 });
 

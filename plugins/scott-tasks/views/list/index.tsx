@@ -72,14 +72,18 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
   const projects = useProjects();
   const { toasts, push, dismiss } = useDetailToasts();
   const preferenceScope = listPreferenceScope(projectId, activeOnly);
-  const [preference, setPreference] = useState<ListPreference>(() =>
-    loadListPreference(preferenceScope),
-  );
-  useEffect(() => {
-    setPreference(loadListPreference(preferenceScope));
-  }, [preferenceScope]);
-  const filters = preference.filters;
-  const sort = preference.sort;
+  // Each scope keeps its own saved preference, read again when the scope changes.
+  const [stored, setStored] = useState(() => ({
+    scope: preferenceScope,
+    preference: loadListPreference(preferenceScope),
+  }));
+  if (stored.scope !== preferenceScope) {
+    setStored({ scope: preferenceScope, preference: loadListPreference(preferenceScope) });
+  }
+  const setPreference = (update: (current: ListPreference) => ListPreference) => {
+    setStored((current) => ({ scope: current.scope, preference: update(current.preference) }));
+  };
+  const { filters, sort } = stored.preference;
   const setFilters = (next: ListFilterState) => {
     setPreference((current) => {
       const updated: ListPreference = { filters: next, sort: current.sort };

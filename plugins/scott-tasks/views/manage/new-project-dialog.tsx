@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useFolders, useProjects, useTasksRpc } from "../../shell/data.js";
 import { bbProjectsQuery } from "../../shell/query.js";
@@ -64,18 +64,22 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
   const bbProjects = useQuery(bbProjectsQuery);
   const bbProjectList = bbProjects.data ?? [];
 
-  useEffect(() => {
-    if (!open) return;
-    setName("");
-    setPrefix("");
-    setPrefixTouched(false);
-    setColor(DEFAULT_COLOR);
-    setFolderId(null);
-    setNewFolderMode(false);
-    setNewFolderName("");
-    setLinkedBbProjectId(null);
-    setError(null);
-  }, [open]);
+  // Each opening starts from a blank form.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setName("");
+      setPrefix("");
+      setPrefixTouched(false);
+      setColor(DEFAULT_COLOR);
+      setFolderId(null);
+      setNewFolderMode(false);
+      setNewFolderName("");
+      setLinkedBbProjectId(null);
+      setError(null);
+    }
+  }
 
   const prefixError = useMemo(() => {
     if (prefix === "") return null;

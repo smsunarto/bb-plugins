@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { eq } from "@tanstack/react-db";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -206,9 +206,11 @@ function TaskDetail({ task }: { task: Task }) {
 
   const [draft, setDraft] = useState<{ taskId: string; markdown: string }>();
   const rpcRef = useRef(rpc);
-  rpcRef.current = rpc;
   const pushRef = useRef(push);
-  pushRef.current = push;
+  useLayoutEffect(() => {
+    rpcRef.current = rpc;
+    pushRef.current = push;
+  });
   const saverRef = useRef<DescriptionSaver | null>(null);
   saverRef.current ??= createDescriptionSaver({
     save: async (taskId, markdown) => {
