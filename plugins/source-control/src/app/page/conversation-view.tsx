@@ -248,6 +248,28 @@ function useConversation(changeKey: ChangeKey) {
 /** Past this many characters a description starts clipped, so the guide stays in view. */
 const LONG_DESCRIPTION = 800;
 
+/**
+ * shadcn's typography recipe (ui.shadcn.com/docs/components/typography),
+ * scaled from its 16px page to this card. bb's Markdown takes only a
+ * className and gives each element its own utilities, so these descendant
+ * rules out-rank them; its `first:mt-0` and `last:mb-0` still win, which
+ * keeps the card's padding even.
+ */
+const DESCRIPTION_TYPOGRAPHY = [
+  "text-[13px] leading-5.5",
+  "[&_p]:mb-3",
+  "[&_h1]:mt-5 [&_h1]:text-lg [&_h1]:font-bold [&_h1]:tracking-tight [&_h1]:text-balance",
+  "[&_h2]:mt-5 [&_h2]:border-b [&_h2]:border-solid [&_h2]:border-border-hairline [&_h2]:pb-1.5 [&_h2]:text-base [&_h2]:tracking-tight",
+  "[&_h3]:mt-4 [&_h3]:tracking-tight",
+  "[&_h4]:text-[13px] [&_h4]:font-semibold",
+  "[&_ul]:mb-3 [&_ol]:mb-3 [&_li]:mb-1.5",
+  "[&_blockquote]:my-3 [&_blockquote]:pl-4 [&_blockquote]:italic",
+  "[&_a]:font-medium [&_a]:underline-offset-4",
+  // Inline code only: a fenced block's code sits inside its <pre>.
+  "[&_:not(pre)>code]:bg-muted [&_:not(pre)>code]:px-[0.3rem] [&_:not(pre)>code]:font-semibold",
+  "[&_th]:font-semibold [&_tbody_tr]:even:bg-muted/50",
+].join(" ");
+
 /** The pull request's description as GitHub's opening post: its author, when, and the body. */
 function DescriptionCard({ description }: { description: Description }) {
   const body = description.body.trim();
@@ -269,10 +291,10 @@ function DescriptionCard({ description }: { description: Description }) {
       </header>
       {body ? (
         <>
-          <div className={cx("relative", clipped && "max-h-48 overflow-hidden")}>
+          <div className={cx("relative", clipped && "max-h-64 overflow-hidden")}>
             <Markdown
               content={body}
-              className="min-w-0 px-3 py-2 text-xs [overflow-wrap:anywhere]"
+              className={cx("min-w-0 px-3 py-2.5 [overflow-wrap:anywhere]", DESCRIPTION_TYPOGRAPHY)}
             />
             {clipped ? (
               <div
