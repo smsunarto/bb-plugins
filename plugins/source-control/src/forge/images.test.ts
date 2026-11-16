@@ -99,3 +99,22 @@ test("an image this account cannot see is answered as missing, so the repository
     }),
   ).rejects.toMatchObject({ code: "not-found" });
 });
+
+test("a committed file's path is checked again where the token is", async () => {
+  const calls: string[][] = [];
+  const exec: Exec = async (args) => {
+    calls.push([...args]);
+    return { code: 0, stdout: "https://raw.githubusercontent.com/o/r/a.png", stderr: "" };
+  };
+  for (const path of ["x/../../other/repo/a.png", "./a.png", "a\\b.png", "a//b.png"])
+    await expect(
+      resolveImage(exec, {
+        kind: "file",
+        url: "",
+        repo: { owner: "o", name: "r" },
+        ref: "main",
+        path,
+      }),
+    ).rejects.toMatchObject({ code: "failed" });
+  expect(calls).toEqual([]);
+});

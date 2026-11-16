@@ -80,7 +80,11 @@ async function resolveFile(
   image: Extract<GitHubImage, { kind: "file" }>,
   signal: AbortSignal | undefined,
 ): Promise<string> {
-  const path = image.path.split("/").map(encodeURIComponent).join("/");
+  const parts = image.path.split("/");
+  // Checked again where the token is: each part names one step inside the repository.
+  if (parts.some((part) => part === "" || part === "." || part === ".." || part.includes("\\")))
+    throw new GhError("failed", "Not a file in the repository.");
+  const path = parts.map(encodeURIComponent).join("/");
   const endpoint = `repos/${image.repo.owner}/${image.repo.name}/contents/${path}?ref=${encodeURIComponent(image.ref)}`;
   const result = await exec(["api", endpoint, "--jq", ".download_url"], signal ? { signal } : {});
   if (result.code !== 0 || result.failure) throw classifyFailure(result);

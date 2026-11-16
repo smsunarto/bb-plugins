@@ -19,7 +19,11 @@ const UPLOAD = "https://github.com/user-attachments/assets/0993b262-b0ae-4631-b4
 const SIGNED = "https://github-production-user-asset-6210df.s3.amazonaws.com/1/2.png?sig=1";
 
 function world(
-  options: { open?: boolean; answer?: () => Effect.Effect<unknown, ForgeUnavailable> } = {},
+  options: {
+    open?: boolean;
+    answer?: () => Effect.Effect<unknown, ForgeUnavailable>;
+    known?: (key: ChangeKey) => boolean;
+  } = {},
 ) {
   const reads: ReviewRead[] = [];
   const probes: string[] = [];
@@ -34,6 +38,7 @@ function world(
     sites,
     share: (_key, work) => work,
     placementsFor: () => [],
+    known: options.known ?? (() => true),
     now: () => now,
     probe: async (url) => {
       probes.push(url);
@@ -151,6 +156,7 @@ test("concurrent requests for one image resolve once, and at most four images re
     sites,
     share,
     placementsFor: () => [],
+    known: () => true,
     now: () => 0,
     probe: async () => false,
   });
@@ -185,4 +191,24 @@ test("an image no account sees is the failed state, kept briefly so loads do not
   tick(FAILED_KEPT_MS);
   await image(KEY, UPLOAD);
   expect(reads).toHaveLength(2);
+});
+
+test("a Change bb has not read gets no image, before any network call", async () => {
+  const { reads, probes, image } = world({ known: (key) => key !== KEY });
+  expect(await image(KEY, UPLOAD)).toMatchObject({ kind: "rejected" });
+  expect(probes).toEqual([]);
+  expect(reads).toEqual([]);
+});
+
+test("an encoded path that climbs out of the repository, or a file that is not an image, is refused", async () => {
+  const { reads, probes, image } = world();
+  for (const src of [
+    "https://github.com/argus-labs/rampage-client/raw/trunk/x%2F..%2F..%2F..%2F..%2Fcli%2Fcli%2Fcontents%2FREADME.md",
+    "https://github.com/argus-labs/rampage-client/raw/trunk/x%2F..%2F..%2Fa.png",
+    "https://github.com/argus-labs/rampage-client/raw/main/README.md",
+    "https://github.com/argus-labs/rampage-client/raw/main/.env",
+  ])
+    expect((await image(KEY, src)).kind, src).toBe("rejected");
+  expect(probes).toEqual([]);
+  expect(reads).toEqual([]);
 });

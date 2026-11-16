@@ -75,6 +75,8 @@ export function createPrImages(deps: {
   sites: ForgeSites;
   share: Share;
   placementsFor: (key: ChangeKey) => ReturnType<Store["checkouts"]>;
+  /** Whether bb has read this Change's pull request: images are served for those only. */
+  known: (key: ChangeKey) => boolean;
   now: () => number;
   probe?: Probe;
 }) {
@@ -122,6 +124,11 @@ export function createPrImages(deps: {
         const parsed = key.success ? parseChangeKey(key.data) : null;
         if (!key.success || parsed?.kind !== "gh")
           return { kind: "rejected", reason: "Not a GitHub Change." } satisfies ImageAnswer;
+        if (!deps.known(key.data))
+          return {
+            kind: "rejected",
+            reason: "bb has not read this pull request.",
+          } satisfies ImageAnswer;
         const image = src ? parseGitHubImage(src) : null;
         if (!image)
           return { kind: "rejected", reason: "Not a GitHub image." } satisfies ImageAnswer;

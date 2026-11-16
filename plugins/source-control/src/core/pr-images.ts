@@ -25,9 +25,21 @@ export type GitHubImage =
 const ASSET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NAME = /^[A-Za-z0-9_.-]+$/;
 
+/** An image file's name: only these are asked of GitHub, so the route never hands out other files. */
+const IMAGE_FILE = /\.(?:png|jpe?g|gif|webp|avif|svg|bmp|ico|tiff?|heic)$/i;
+
+/**
+ * The path's segments, decoded, or null when one is unreadable or, once
+ * decoded, holds a separator or is `.`/`..`: an encoded `%2F..%2F` would
+ * otherwise climb out of the repository when the path is joined again.
+ */
 function decoded(segments: readonly string[]): string[] | null {
   try {
-    return segments.map((segment) => decodeURIComponent(segment));
+    const parts = segments.map((segment) => decodeURIComponent(segment));
+    const unsafe = parts.some(
+      (part) => part === "." || part === ".." || part.includes("/") || part.includes("\\"),
+    );
+    return unsafe ? null : parts;
   } catch {
     return null;
   }
@@ -89,6 +101,7 @@ function file(
   path: readonly string[],
 ): GitHubImage | null {
   if (path.some((part) => part === "." || part === "..")) return null;
+  if (!IMAGE_FILE.test(path.at(-1) ?? "")) return null;
   return {
     kind: "file",
     url,
