@@ -17,7 +17,6 @@ import {
   experimental_useComposerContributions as useComposerContributions,
   experimental_useComposerMentionSearch as useComposerMentionSearch,
   experimental_useComposerRenderer as useComposerRenderer,
-  useComposer,
   experimental_readPromptMentionClipboard as readPromptMentionClipboard,
   experimental_VoiceInputButton as VoiceInputButton,
   experimental_VoiceRecordingBar as VoiceRecordingBar,
@@ -74,6 +73,7 @@ import { Icon } from "@/components/ui/icon";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ComposerPopupHost } from "./ComposerPopupHost";
 import { markComposerHost } from "./composer-host";
+import { useComposerHandle } from "./composer-handle";
 import { NewThreadMachineSheet } from "./machine-picker/MachineSheet";
 import {
   COARSE_POINTER_PROMPT_ACTION_BUTTON_CLASS,
@@ -990,7 +990,7 @@ export function PromptBoxInternal({
   const renderer = useComposerRenderer();
   const rendererRef = useRef(renderer);
   rendererRef.current = renderer;
-  const composer = useComposer();
+  const composer = useComposerHandle();
   const composerDraft = composer.draft;
   const value = composerDraft.text;
   const mentionRanges = composerDraft.mentions;

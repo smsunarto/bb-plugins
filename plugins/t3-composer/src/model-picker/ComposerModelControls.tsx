@@ -1,9 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
-import {
-  useComposer,
-  type ComposerSelection,
-  type PluginComposerApi,
-} from "@get-bb/plugin-sdk/app";
+import { type ComposerSelection, type PluginComposerApi } from "@get-bb/plugin-sdk/app";
+import { usePickerComposer } from "../composer-handle";
 import { isAnchorInteractive } from "@/components/ui/overlay-anchor";
 import { applySelection } from "../composer-settings/apply-selection";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -59,7 +56,7 @@ export function ComposerModelControls(props: {
   fallback: ReactNode;
   handoffRef?: { current: (() => Promise<boolean>) | null };
 }) {
-  const composer = useComposer();
+  const composer = usePickerComposer();
   const editable = hasEditablePickers(composer);
   const catalog = useModelCatalog(composer, editable && props.fallback != null);
   const [pending, setPending] = useState(false);

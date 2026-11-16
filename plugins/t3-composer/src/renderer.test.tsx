@@ -13,6 +13,7 @@ import type {
   ExperimentalFailedVoiceRecordingsProps,
   PluginComposerScope,
 } from "@get-bb/plugin-sdk/app";
+import { ComposerHandleProvider } from "./composer-handle";
 import { SaveDraftAction } from "./SaveDraftAction";
 import {
   changeStarredModels,
@@ -67,6 +68,15 @@ function starServer(initial: readonly StarredModel[] = []) {
       },
     },
   };
+}
+
+/** The save action as the composer mounts it: under the one reader of bb's composer. */
+function SaveDraft({ available }: { available: boolean }) {
+  return (
+    <ComposerHandleProvider>
+      <SaveDraftAction available={available} />
+    </ComposerHandleProvider>
+  );
 }
 
 /** Starts a test from a device that has never starred a model. */
@@ -1058,7 +1068,7 @@ describe("Save draft SDK action", () => {
     async (layout) => {
       const { slot: editor, run, renderer, scope } = await mountComposer();
       const slot = renderSlot(
-        { component: () => <SaveDraftAction available /> },
+        { component: () => <SaveDraft available /> },
         {},
         {
           composer: { scope, text: "A draft", layout },
@@ -1097,7 +1107,7 @@ describe("Save draft SDK action", () => {
       },
     );
     const slot = renderSlot(
-      { component: () => <SaveDraftAction available /> },
+      { component: () => <SaveDraft available /> },
       {},
       {
         composer: { scope, text: "A draft" },
@@ -1115,7 +1125,7 @@ describe("Save draft SDK action", () => {
   it("does not register a global action group or render without the Drafts contribution", async () => {
     const { slot: editor, app, renderer, scope } = await mountComposer();
     const slot = renderSlot(
-      { component: () => <SaveDraftAction available={false} /> },
+      { component: () => <SaveDraft available={false} /> },
       {},
       {
         composer: { scope, text: "A draft" },
@@ -1144,7 +1154,7 @@ describe("Save draft SDK action", () => {
       },
     );
     const slot = renderSlot(
-      { component: () => <SaveDraftAction available /> },
+      { component: () => <SaveDraft available /> },
       {},
       {
         composer: { scope, text: "A draft" },

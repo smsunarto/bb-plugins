@@ -2,9 +2,9 @@ import { useEffect, useRef } from "react";
 import {
   experimental_useComposerRenderer as useComposerRenderer,
   experimental_useProviders as useProviders,
-  useComposer,
   type PluginComposerApi,
 } from "@get-bb/plugin-sdk/app";
+import { useComposerHandle } from "../composer-handle";
 import { listedModelName } from "../model-picker/catalog";
 import type { StarredModel } from "../starred-models/contract";
 import { useStarredModels } from "../starred-models/useStarredModels";
@@ -23,7 +23,7 @@ type Providers = ReturnType<typeof useProviders>["providers"];
  * space, the keyword is removed and its setting goes to the pickers through `setSelection`.
  */
 export function useSettingKeywords() {
-  const composer = useComposer();
+  const composer = useComposerHandle();
   const { showError } = useComposerRenderer();
   const { providers } = useProviders();
   // Settings apply in the order they were typed, each after the one before has settled.

@@ -1,13 +1,13 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import {
   experimental_PermissionModePicker as PermissionModePicker,
-  useComposer,
   type ComposerSelection,
 } from "@get-bb/plugin-sdk/app";
 import { isAnchorInteractive } from "@/components/ui/overlay-anchor";
 import { applySelection } from "./composer-settings/apply-selection";
 import { useCatalogRouting, type CatalogRouting } from "./model-picker/catalog";
 import { markComposerHost } from "./composer-host";
+import { usePickerComposer } from "./composer-handle";
 import { hasEditablePickers } from "./model-picker/ComposerModelControls";
 
 type PermissionMode = NonNullable<ComposerSelection["permissionMode"]>;
@@ -32,7 +32,7 @@ function pickerRouting(routing: CatalogRouting): PickerRouting | undefined {
  * then BB's copy shows the effective mode and this one is hidden.
  */
 export function ComposerPermissionControl() {
-  const composer = useComposer();
+  const composer = usePickerComposer();
   const editable = hasEditablePickers(composer);
   const routing = useCatalogRouting(composer, editable);
   const [error, setError] = useState<string | null>(null);

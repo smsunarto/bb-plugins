@@ -3,12 +3,12 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   experimental_ImageLightbox as ImageLightbox,
   experimental_useComposerRenderer as useComposerRenderer,
-  useComposer,
   type ComposerAttachment,
   type ExperimentalComposerPendingUpload as PendingAttachmentUpload,
   type ExperimentalComposerRendererApi,
 } from "@get-bb/plugin-sdk/app";
 import { isImageAttachment, isVideoAttachment, wrappedIndex } from "./attachments";
+import { useComposerHandle } from "./composer-handle";
 import {
   groupContextMentions,
   withoutMentions,
@@ -163,7 +163,7 @@ function FileUploadPreview({ file }: { file: File }) {
 const CONTEXT_CHIP_LABEL_CLASS = "h-full gap-1.5 rounded-lg pl-2.5 pr-1 text-[13px] font-normal";
 
 function ContextMentionChip({ group }: { group: ContextMentionGroup }) {
-  const composer = useComposer();
+  const composer = useComposerHandle();
   const resolveMentionLink = useComposerRenderer().input.resolveMentionLink;
   const first = group.mentions[0]!;
   const open = resolveMentionLink({
@@ -240,7 +240,7 @@ export function AttachmentPreview({
   onRemoveAttachment,
 }: AttachmentPreviewProps) {
   const renderer = useComposerRenderer();
-  const contextGroups = groupContextMentions(useComposer().draft.mentions);
+  const contextGroups = groupContextMentions(useComposerHandle().draft.mentions);
   const imageAttachments = attachments.filter(
     (attachment) => isImageAttachment(attachment) || isVideoAttachment(attachment),
   );

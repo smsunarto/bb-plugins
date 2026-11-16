@@ -3,11 +3,7 @@
 // `setSelection`, the path BB's picker takes; what the SDK cannot set (reusing an environment,
 // setting up a machine, a machine an environment creates) stays in BB's picker, one tap away.
 import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
-import {
-  experimental_ProviderIcon as ProviderIcon,
-  useComposer,
-  useSdk,
-} from "@get-bb/plugin-sdk/app";
+import { experimental_ProviderIcon as ProviderIcon, useSdk } from "@get-bb/plugin-sdk/app";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useIsCompactViewport } from "@/components/ui/hooks/use-compact-viewport";
@@ -16,6 +12,7 @@ import { ResponsiveDrawerShell } from "@/components/ui/responsive-overlay";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { usePickerComposer } from "../composer-handle";
 import { applySelection } from "../composer-settings/apply-selection";
 import { hasEditablePickers } from "../model-picker/ComposerModelControls";
 import { retryMachineData, useMachineData, type MachineData } from "./machine-data";
@@ -39,7 +36,7 @@ const BB_TRIGGER =
  * sees it, so only this composer's row is taken over.
  */
 export function NewThreadMachineSheet(props: { anchor: RefObject<HTMLElement | null> }) {
-  const composer = useComposer();
+  const composer = usePickerComposer();
   const isSheet = useIsCompactViewport();
   const enabled = isSheet && hasEditablePickers(composer) && composer.selection?.projectId != null;
   const [open, setOpen] = useState(false);
@@ -127,7 +124,7 @@ function MachineSheetContent(props: {
   onDone(): void;
   onMoreOptions(): void;
 }) {
-  const composer = useComposer();
+  const composer = usePickerComposer();
   const projectId = composer.selection?.projectId;
   const data = useMachineData(projectId, props.open);
   const placement = placementOf(composer.selection?.environment);
@@ -214,7 +211,7 @@ function MachineSheetContent(props: {
  * an earlier one still in flight. `pending` names the row waiting on BB.
  */
 function usePlacementPicker() {
-  const composer = useComposer();
+  const composer = usePickerComposer();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const latestPick = useRef(0);
