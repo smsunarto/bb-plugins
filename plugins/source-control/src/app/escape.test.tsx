@@ -2,7 +2,12 @@
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
 import { useRef, useState } from "react";
 import { afterEach, expect, test } from "vitest";
-import { resetEscapeLayers, useEscapeLayer, useFocusContainment } from "./escape.ts";
+import {
+  resetEscapeLayers,
+  useEscapeLayer,
+  useFocusContainment,
+  useKeepPageOnEscape,
+} from "./escape.ts";
 
 afterEach(() => {
   cleanup();
@@ -257,4 +262,44 @@ test("a layer that wraps its own trigger leaves focus on the trigger", async () 
   expect(escape()).toBe(false);
   await act(async () => {});
   expect(document.activeElement).toBe(send);
+});
+
+function Page() {
+  useKeepPageOnEscape();
+  return (
+    <div data-bb-plugin="source-control">
+      <button type="button">On the page</button>
+    </div>
+  );
+}
+
+test("the open page keeps an unclaimed Escape from its own focus or none, and leaves bb's elsewhere", () => {
+  // bb's Back to app listens on window; Agentation's toolbar on document, possibly added later.
+  const left: EventTarget[] = [];
+  const back = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && !event.defaultPrevented) left.push(event.target!);
+  };
+  window.addEventListener("keydown", back);
+  const outside = document.createElement("button");
+  document.body.append(outside);
+  const view = render(<Page />);
+  const toolbar: boolean[] = [];
+  const onToolbar = (event: KeyboardEvent) => void toolbar.push(event.defaultPrevented);
+  document.addEventListener("keydown", onToolbar);
+
+  view.getByText("On the page").focus();
+  escape();
+  (document.activeElement as HTMLElement).blur();
+  escape();
+  expect(left).toEqual([]);
+  expect(toolbar).toEqual([false, false]);
+
+  outside.focus();
+  escape();
+  expect(left).toEqual([outside]);
+  view.unmount();
+  fireEvent.keyDown(document.body, { key: "Escape" });
+  expect(left).toEqual([outside, document.body]);
+  window.removeEventListener("keydown", back);
+  document.removeEventListener("keydown", onToolbar);
 });

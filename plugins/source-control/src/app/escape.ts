@@ -78,6 +78,39 @@ function install() {
   document.addEventListener("focusin", onFocusIn, true);
 }
 
+let pages = 0;
+
+/**
+ * Bubble phase on document: after every handler inside the page and every
+ * Radix overlay (they handle Escape at document capture and mark it). It
+ * stops the key short of window, where bb's Back to app (`app.back`)
+ * listens, without marking it: other document listeners, such as
+ * Agentation's toolbar, skip a marked key and may be added after this one.
+ */
+function keepPage(event: KeyboardEvent) {
+  if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+  const target = event.target;
+  const onPage =
+    target === document.body ||
+    target === document.documentElement ||
+    (target instanceof Element && target.closest(ROOT) !== null);
+  if (onPage) event.stopPropagation();
+}
+
+/**
+ * While the Source Control page is open, an Escape nothing else claimed
+ * stays on it rather than going back to the app, when focus is on the page,
+ * its sidebar, or nowhere. Back to app stays a click away in bb's sidebar.
+ */
+export function useKeepPageOnEscape() {
+  useEffect(() => {
+    if (pages++ === 0) document.addEventListener("keydown", keepPage);
+    return () => {
+      if (--pages === 0) document.removeEventListener("keydown", keepPage);
+    };
+  }, []);
+}
+
 /** Test-only: forget every layer and the listeners' state. */
 export function resetEscapeLayers() {
   layers.length = 0;

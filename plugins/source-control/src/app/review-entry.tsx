@@ -11,13 +11,15 @@ import { useMemo } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import { parseReviewPath } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+import { useKeepPageOnEscape } from "./escape.ts";
 import { ChangesList } from "./page/changes-nav.tsx";
 import { ReviewPage } from "./page/review-page.tsx";
 
 type PanelProps = { subPath: string };
 
-/** The nav panel's page: the selected Change's review. */
+/** The nav panel's page: the selected Change's review. Escape never leaves it. */
 export function ReviewPanel({ subPath }: PanelProps) {
+  useKeepPageOnEscape();
   return <ReviewPage subPath={subPath} />;
 }
 
