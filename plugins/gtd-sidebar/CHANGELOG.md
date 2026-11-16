@@ -37,7 +37,7 @@
 - A title the auto-namer is still writing uses bb's own working sweep, which
   the browser animates off the main thread. The old shimmer repainted on the
   main thread every frame and stalled whenever bb was busy, such as during a
-  thread switch.
+  thread switch. With reduced motion on, the title dims instead of sweeping.
 
 ### Minor Changes
 

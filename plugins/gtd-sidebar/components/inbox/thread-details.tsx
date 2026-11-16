@@ -28,9 +28,10 @@ function observeOverflow(element: HTMLElement) {
  * A title the auto-namer is still writing wears bb's working sweep, an
  * animated mask the compositor advances. The `background-position` keyframe it
  * replaces repainted on the main thread every frame and froze whenever that
- * thread was busy.
+ * thread was busy. bb drops the sweep under reduced motion, so the title dims
+ * there instead, as bb's own pending rename does.
  */
-export const NAMING_TITLE_CLASS = "animate-shine";
+export const NAMING_TITLE_CLASS = "animate-shine motion-reduce:opacity-60";
 
 export function FadingText({ text, className }: { text: string; className?: string }) {
   const ref = useRef<HTMLSpanElement>(null);
