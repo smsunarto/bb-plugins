@@ -20,6 +20,9 @@ import {
   type PatchSource,
 } from "../core/change.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+// workaround:source-control/shadow-code-sidebar-swipe begin
+import { guardCodeSwipe } from "./code-swipe.ts";
+// workaround:source-control/shadow-code-sidebar-swipe end
 import { cx } from "./format.ts";
 import { Button } from "./components/ui/button.tsx";
 import { Skeleton } from "./components/ui/skeleton.tsx";
@@ -208,7 +211,12 @@ export const FileDiffCard = memo(function FileDiffCard({ file }: { file: FilePat
     );
   }
   return (
-    <div className="min-w-0 border-t border-border-hairline [--diffs-font-family:var(--font-mono,ui-monospace,monospace)] [--diffs-font-size:11px] [--diffs-line-height:20px]">
+    <div
+      // workaround:source-control/shadow-code-sidebar-swipe begin
+      ref={guardCodeSwipe}
+      // workaround:source-control/shadow-code-sidebar-swipe end
+      className="min-w-0 border-t border-border-hairline [--diffs-font-family:var(--font-mono,ui-monospace,monospace)] [--diffs-font-size:11px] [--diffs-line-height:20px]"
+    >
       {file.truncated ? (
         <p className="m-0 border-b border-border-hairline px-3 py-1 text-[11px] leading-4 text-warning">
           {tooLarge(true)}

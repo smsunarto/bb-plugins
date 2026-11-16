@@ -98,6 +98,21 @@
       ],
       "verify": "Open Docs, then Agent instructions → Projects with a project chosen, in the left sidebar at viewport heights 400 and 1080: each file tree fills the space above its footer or the sidebar bottom, and the outer sidebar does not scroll.",
       "manual": "Remove the useSidebarColumnFill calls and their root refs in plugins/scott-docs/app.tsx (NotesNavigationPanel) and plugins/agent-instructions/src/app/app.tsx (AgentInstructionsSidebar), then the ./sidebar-fill export in packages/ui/package.json."
+    },
+    {
+      "id": "source-control/shadow-code-sidebar-swipe",
+      "defect": "bb's mobile swipe-to-open-sidebar skips a touch that starts in a horizontally scrollable element by walking parentElement from the event target, which is retargeted to a shadow host. Code scrolling inside a diff's shadow root (@pierre/diffs) is invisible to it, so the gesture takes the swipe: the code cannot scroll sideways and a right swipe opens the sidebar.",
+      "verifiedOn": "0.49.0",
+      "files": [
+        "plugins/source-control/src/app/code-swipe.ts",
+        "plugins/source-control/src/app/code-swipe.test.ts"
+      ],
+      "probe": {
+        "needed": null,
+        "fixed": null
+      },
+      "afterRemoval": ["cd plugins/source-control && bun run typecheck && bun run test"],
+      "verify": "On a phone (bun scripts/phone-shot.ts start iphone-17-pro), open a pull request's Files tab with lines wider than the screen: a left then right swipe on the code scrolls it and leaves the sidebar closed; a right swipe on the header still opens the sidebar."
     }
   ]
 }

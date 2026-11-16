@@ -24,6 +24,9 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+// workaround:source-control/shadow-code-sidebar-swipe begin
+import { guardCodeSwipe } from "../code-swipe.ts";
+// workaround:source-control/shadow-code-sidebar-swipe end
 import { describeProblem, type FilePatch } from "../../core/change.ts";
 import { readingOrder, viewedAtHead, viewedBlob } from "../../core/guide.ts";
 import type { ChangeKey } from "../../core/ids.ts";
@@ -522,6 +525,9 @@ function PatchBody({
     );
   return (
     <div
+      // workaround:source-control/shadow-code-sidebar-swipe begin
+      ref={guardCodeSwipe}
+      // workaround:source-control/shadow-code-sidebar-swipe end
       data-testid="sc-patch"
       className="min-w-0 border-t border-solid border-border-hairline [--diffs-font-family:var(--font-mono,ui-monospace,monospace)] [--diffs-font-size:12px] [--diffs-line-height:20px]"
     >
