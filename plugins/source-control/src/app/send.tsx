@@ -307,9 +307,9 @@ export const BatchBanner = memo(function BatchBanner({
   if (batch.phase === "fixing")
     action = (
       <Button
-        variant="link"
+        variant="outline"
         size="sm"
-        className={cx(TEXT_LINK, "font-medium")}
+        className="h-7 shrink-0"
         disabled={commands.busy}
         onClick={commands.stop}
         data-testid="sc-batch-stop"
@@ -320,9 +320,9 @@ export const BatchBanner = memo(function BatchBanner({
   else if (batch.phase === "queued" || batch.phase === "failed")
     action = (
       <Button
-        variant="link"
+        variant="outline"
         size="sm"
-        className={cx(TEXT_LINK, "font-medium")}
+        className="h-7 shrink-0"
         disabled={commands.busy}
         onClick={commands.retry}
         data-testid="sc-batch-retry"
@@ -332,7 +332,7 @@ export const BatchBanner = memo(function BatchBanner({
     );
   else if (batch.phase === "posted" && batch.url)
     action = (
-      <Button variant="link" size="sm" className={cx(TEXT_LINK, "font-medium")} asChild>
+      <Button variant="outline" size="sm" className="h-7 shrink-0" asChild>
         <a href={batch.url} target="_blank" rel="noreferrer">
           View
         </a>
@@ -340,16 +340,12 @@ export const BatchBanner = memo(function BatchBanner({
     );
   else if ((batch.phase === "verify" || batch.phase === "stopped") && commands.openThread)
     action = (
-      <Button
-        variant="link"
-        size="sm"
-        className={cx(TEXT_LINK, "font-medium")}
-        onClick={commands.openThread}
-      >
+      <Button variant="outline" size="sm" className="h-7 shrink-0" onClick={commands.openThread}>
         Open thread
       </Button>
     );
   const bad = batch.phase === "queued" || batch.phase === "failed";
+  const oneLine = batch.phase === "sending" || batch.phase === "fixing";
   return (
     <div
       className="flex min-w-0 flex-col gap-1 rounded-[8px] border border-solid border-border-hairline bg-surface-recessed p-3"
@@ -364,7 +360,9 @@ export const BatchBanner = memo(function BatchBanner({
         )}
         <span
           className={cx(
-            "min-w-0 flex-1 text-[13px] leading-5 [overflow-wrap:anywhere]",
+            "min-w-0 flex-1 text-[13px] leading-5",
+            // "Sent N to <thread>" stays on one line; the thread title truncates.
+            oneLine ? "flex items-baseline whitespace-pre" : "[overflow-wrap:anywhere]",
             bad ? "text-warning" : "text-foreground",
           )}
         >
