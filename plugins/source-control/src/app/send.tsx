@@ -133,7 +133,10 @@ export function ThreadName({
   if (title) return <>{title}</>;
   if (!threadId) return <>a new agent thread</>;
   return (
-    <span className="empty:before:content-['the_agent_thread']">
+    // bb renders the title as `whitespace-pre truncate` segments meant for a flex row:
+    // an inline flex box lets them shrink to the line instead of overflowing it. The
+    // mention-pill rule mirrors bb's own `.bb-thread-title .prompt-mention-pill`.
+    <span className="inline-flex max-w-full min-w-0 items-baseline overflow-hidden empty:before:content-['the_agent_thread'] [&_.prompt-mention-pill]:min-w-10 [&_.prompt-mention-pill]:flex-[1_1_0%] [&_.prompt-mention-pill]:max-w-max">
       <ThreadTitle threadId={threadId} />
     </span>
   );
