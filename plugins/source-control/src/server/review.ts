@@ -21,6 +21,7 @@ import { createRevisionReads } from "./review-revision.ts";
 import { checkoutsOn, createReviewSources, rowsOf } from "./review-sources.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
+import type { WorktreeHost } from "./worktree-host.ts";
 
 export function createReview(deps: {
   bb: BbPluginApi;
@@ -38,6 +39,7 @@ export function createReview(deps: {
   deadlineMs: number;
   /** Threads working on the Change's branch. */
   threadsOnChange: (key: ChangeKey) => string[];
+  worktreeHost: WorktreeHost;
 }) {
   const sources = createReviewSources(deps);
   // Bound below: a pull request read may move the Change's head.
@@ -81,6 +83,7 @@ export function createReview(deps: {
     items: items.items,
     placementsFor: revision.placementsFor,
     threadsOnChange: deps.threadsOnChange,
+    worktreeHost: deps.worktreeHost,
     viewer: (key) => viewer(key)?.login ?? null,
     invalidate: deps.invalidate,
     fork: deps.fork,

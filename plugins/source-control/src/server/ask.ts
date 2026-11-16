@@ -5,6 +5,7 @@ import type { ChangeDetail, ReviewRevision } from "../core/review.ts";
 import { guideDiff } from "./guides.ts";
 import { message } from "./host-calls.ts";
 import { changeHome, fenced, inlineCode } from "./review-start.ts";
+import type { WorktreeHost } from "./worktree-host.ts";
 import type { Store } from "./store.ts";
 
 const files = instructionFiles(import.meta.url);
@@ -75,6 +76,7 @@ export function createAsk(deps: {
   owners: (key: ChangeKey) => string[];
   invalidate: (tags: readonly string[]) => void;
   now: () => number;
+  worktreeHost: WorktreeHost;
 }) {
   const { bb, store } = deps;
   /** First questions in flight, by Change: a second one waits for the same fork. */
@@ -120,7 +122,7 @@ export function createAsk(deps: {
       return thread.id;
     }
     // No owning thread (a pull request only) or several: a hidden thread in the Change's project.
-    const home = await changeHome(bb, store, key, revision);
+    const home = await changeHome(bb, store, key, revision, deps.worktreeHost);
     if (typeof home === "string") throw new Error(home);
     const thread = await bb.sdk.threads.spawn({
       projectId: home.projectId,

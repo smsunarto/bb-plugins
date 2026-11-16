@@ -20,6 +20,7 @@ import type { ForgeSites } from "./forge-sites.ts";
 import { localMatch } from "./review-change.ts";
 import { fenced, inlineCode, projectFor, quote } from "./review-start.ts";
 import type { Store } from "./store.ts";
+import { worktreeSource, type WorktreeHost } from "./worktree-host.ts";
 
 const files = instructionFiles(import.meta.url);
 
@@ -90,7 +91,12 @@ function logOf(
   return log.text !== null ? { text: log.text } : { missing: log.missing ?? "GitHub sent no log." };
 }
 
-export function createFixChecks(deps: { bb: BbPluginApi; store: Store; sites: ForgeSites }) {
+export function createFixChecks(deps: {
+  bb: BbPluginApi;
+  store: Store;
+  sites: ForgeSites;
+  worktreeHost: WorktreeHost;
+}) {
   const { bb, store } = deps;
 
   /** The pull request and checks bb last read, if they are still on `head`. */
@@ -135,7 +141,9 @@ export function createFixChecks(deps: { bb: BbPluginApi; store: Store; sites: Fo
         const project = yield* Effect.tryPromise(() =>
           projectFor(bb, now.parsed.repo.owner, now.parsed.repo.name),
         ).pipe(Effect.orElseSucceed(() => null));
-        const source = project?.sources.find((each) => each.isDefault) ?? project?.sources[0];
+        const source = project
+          ? yield* Effect.promise(() => worktreeSource(bb, project, deps.worktreeHost))
+          : undefined;
         return {
           ok: true,
           prompt: fixChecksPrompt(

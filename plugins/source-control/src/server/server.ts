@@ -48,6 +48,7 @@ import {
 import { openStore, type Store } from "./store.ts";
 import { createThreadBranches } from "./thread-branches.ts";
 import { createThreadChanges } from "./thread-changes.ts";
+import { worktreeHostSetting } from "./worktree-host.ts";
 import { createMoved, type Moved } from "./moved.ts";
 import { createCheckoutReads, type CheckoutReads } from "./checkout-reads.ts";
 import { createPlacements } from "./placement.ts";
@@ -537,6 +538,7 @@ export function createSourceControl(deps: SourceControlDeps) {
     const host = hostClient(bb);
     const store: Store = openStore(bb);
     const share = await runtime.run(SharedWork);
+    const worktreeHost = worktreeHostSetting(bb);
     const sites = createForgeSites({
       serverExec: deps.serverExec,
       now: deps.now,
@@ -554,6 +556,7 @@ export function createSourceControl(deps: SourceControlDeps) {
       fork: (work) => {
         if (!disposed) runtime.fork(work);
       },
+      worktreeHost,
       ...(deps.hostDeadlineMs === undefined ? {} : { hostDeadlineMs: deps.hostDeadlineMs }),
       // A branch a background recheck changed reaches the thread's watchers.
       branches: createThreadBranches(bb, (threadId) =>
@@ -570,6 +573,7 @@ export function createSourceControl(deps: SourceControlDeps) {
       },
       now: deps.now,
       instructions: () => moved.instructions.get(),
+      worktreeHost,
     });
     const invalidate = (tags: readonly string[]) => {
       if (!disposed) bb.rpc.experimental_invalidate(tags);
@@ -586,6 +590,7 @@ export function createSourceControl(deps: SourceControlDeps) {
       },
       now: deps.now,
       model: guideSettings(bb),
+      worktreeHost,
     });
     // Once active: waiting runs start, and running ones a restart left are asked about.
     bb.background.service("guides", {
@@ -601,6 +606,7 @@ export function createSourceControl(deps: SourceControlDeps) {
       owners: changes.owners,
       invalidate,
       now: deps.now,
+      worktreeHost,
     });
     const moved = createMoved({
       bb,
@@ -622,7 +628,7 @@ export function createSourceControl(deps: SourceControlDeps) {
       ask,
       moved,
       createPublish({ bb, store }),
-      createFixChecks({ bb, store, sites }),
+      createFixChecks({ bb, store, sites, worktreeHost }),
       createCheckoutChat({ bb, store }),
       createCheckoutReads({
         host: checkoutCalls(host),

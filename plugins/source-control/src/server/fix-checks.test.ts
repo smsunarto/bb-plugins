@@ -37,7 +37,11 @@ const failed = (name: string, job: number | null): CheckRow => ({
   completedAt: null,
 });
 
-function setup(rows: CheckRow[], logs: (ids: number[]) => JobLog[]) {
+function setup(
+  rows: CheckRow[],
+  logs: (ids: number[]) => JobLog[],
+  options: { projects?: unknown[]; worktreeHost?: string } = {},
+) {
   const asked: number[][] = [];
   const spawned: Record<string, unknown>[] = [];
   const store = {
@@ -56,7 +60,7 @@ function setup(rows: CheckRow[], logs: (ids: number[]) => JobLog[]) {
   } as unknown as ForgeSites;
   const bb = {
     sdk: {
-      projects: { list: async () => [] },
+      projects: { list: async () => options.projects ?? [] },
       threads: {
         spawn: async (args: Record<string, unknown>) => {
           spawned.push(args);
@@ -65,7 +69,16 @@ function setup(rows: CheckRow[], logs: (ids: number[]) => JobLog[]) {
       },
     },
   } as never;
-  return { fix: createFixChecks({ bb, store, sites }), asked, spawned };
+  return {
+    fix: createFixChecks({
+      bb,
+      store,
+      sites,
+      worktreeHost: async () => options.worktreeHost ?? "",
+    }),
+    asked,
+    spawned,
+  };
 }
 
 test("the prompt reads at most three logs and says why each other one is missing", async () => {
@@ -101,5 +114,31 @@ test("a head the checks are not on reads nothing and starts nothing", async () =
   expect(spawned[0]).toMatchObject({
     title: "Fix checks on smsunarto/bb-plugins#7",
     pluginMetadata: { kind: "fix", changeKey: key, head },
+  });
+});
+
+test("the new worktree goes on the machine set for new worktrees", async () => {
+  const project = {
+    id: "proj_plugins",
+    gitRemoteUrl: "https://github.com/smsunarto/bb-plugins.git",
+    sources: [
+      { hostId: "host_grok", isDefault: true },
+      { hostId: "host_dev", isDefault: false },
+    ],
+  };
+  const prompt = (worktreeHost: string) =>
+    Effect.runPromise(
+      setup([failed("a", null)], () => [], { projects: [project], worktreeHost }).fix.prompt(
+        key,
+        head,
+        ["CI:a"],
+      ),
+    );
+  expect(await prompt("")).toMatchObject({
+    projectId: "proj_plugins",
+    environment: { type: "host", hostId: "host_grok" },
+  });
+  expect(await prompt("host_dev")).toMatchObject({
+    environment: { type: "host", hostId: "host_dev" },
   });
 });

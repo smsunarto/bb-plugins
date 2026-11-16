@@ -28,6 +28,7 @@ import {
   type ReviewRevision,
 } from "../core/review.ts";
 import { changeHome, fenced, inlineCode, quote } from "./review-start.ts";
+import type { WorktreeHost } from "./worktree-host.ts";
 import type { GuideRow, Store } from "./store.ts";
 
 const files = instructionFiles(import.meta.url);
@@ -250,6 +251,7 @@ export function createGuides(deps: {
   fork: (work: Effect.Effect<void>) => void;
   now: () => number;
   model: () => Promise<GuideModel>;
+  worktreeHost: WorktreeHost;
 }) {
   const { bb, store } = deps;
   /** Threads this server saw running since it started; any other is asked about once. */
@@ -271,7 +273,7 @@ export function createGuides(deps: {
     revision: ReviewRevision,
     listed: readonly ChangeFile[],
   ): Promise<{ threadId: string } | { problem: Problem }> => {
-    const home = await changeHome(bb, store, key, revision);
+    const home = await changeHome(bb, store, key, revision, deps.worktreeHost);
     if (typeof home === "string") return { problem: moved(home) };
     const pr = store.forge(key).read?.value ?? null;
     const open = pr && pr.state === "open" ? pr : null;

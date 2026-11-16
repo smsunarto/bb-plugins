@@ -19,6 +19,7 @@ import { parseChangeKey, type ChangeDetail, type ReviewRevision } from "../core/
 import type { Placement } from "../core/change.ts";
 import type { ReviewItems } from "./review-items.ts";
 import type { Store } from "./store.ts";
+import { worktreeSource, type WorktreeHost } from "./worktree-host.ts";
 
 const files = instructionFiles(import.meta.url);
 
@@ -170,6 +171,7 @@ export async function changeHome(
   store: Store,
   key: ChangeKey,
   revision: ReviewRevision,
+  worktreeHost: WorktreeHost,
 ): Promise<
   { projectId: string; environment: SpawnArgs["environment"]; placement: Placement | null } | string
 > {
@@ -190,7 +192,7 @@ export async function changeHome(
   if (parsed?.kind !== "gh") return "This Change has no checkout or pull request.";
   const project = await projectFor(bb, parsed.repo.owner, parsed.repo.name);
   if (!project) return `Add ${parsed.repo.owner}/${parsed.repo.name} as a bb project first.`;
-  const sourceRow = project.sources.find((each) => each.isDefault) ?? project.sources[0];
+  const sourceRow = await worktreeSource(bb, project, worktreeHost);
   return {
     projectId: project.id,
     // A new worktree, so the agent never moves anyone's checkout.
@@ -210,8 +212,9 @@ async function reviewTarget(
   key: ChangeKey,
   detail: Extract<ChangeDetail, { state: "change" }>,
   revision: ReviewRevision,
+  worktreeHost: WorktreeHost,
 ): Promise<{ projectId: string; environment: SpawnArgs["environment"]; prompt: string } | string> {
-  const home = await changeHome(bb, store, key, revision);
+  const home = await changeHome(bb, store, key, revision, worktreeHost);
   if (typeof home === "string") return home;
   const pr = store.forge(key).read?.value ?? null;
   if (home.placement)
@@ -251,6 +254,7 @@ export function createReviewStart(deps: {
   detail: (key: ChangeKey) => ChangeDetail;
   invalidate: (tags: readonly string[]) => void;
   now: () => number;
+  worktreeHost: WorktreeHost;
   /** The reviewer's standing instructions, from the plugin's settings. */
   instructions?: () => Promise<string>;
 }) {
@@ -278,7 +282,7 @@ export function createReviewStart(deps: {
     const { revision } = detail;
     const reused = await running(key, revision.head);
     if (reused) return { ok: true, threadId: reused, reused: true };
-    const target = await reviewTarget(bb, store, key, detail, revision);
+    const target = await reviewTarget(bb, store, key, detail, revision, deps.worktreeHost);
     if (typeof target === "string") return { ok: false, message: target };
     const standing = (await deps.instructions?.().catch(() => ""))?.trim() ?? "";
     const prompt = standing

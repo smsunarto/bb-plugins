@@ -31,6 +31,7 @@ import { createReview } from "./review.ts";
 import { localMatch } from "./review-change.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
+import type { WorktreeHost } from "./worktree-host.ts";
 import { createWatch } from "./watch.ts";
 
 /** A row read from another surface is read again once it is this old. */
@@ -51,6 +52,8 @@ export type ThreadChangesDeps = {
   hostDeadlineMs?: number;
   /** Runs work no caller waits for. */
   fork: (work: Effect.Effect<void>) => void;
+  /** Where a new worktree goes when no checkout has the Change. */
+  worktreeHost: WorktreeHost;
 };
 
 /** Threads on the Change's branch: those read showing it, and those at its checkout on it. */
@@ -201,6 +204,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     now,
     deadlineMs: hostDeadlineMs,
     threadsOnChange: owners,
+    worktreeHost: deps.worktreeHost,
   });
   checkoutRead = review.checkoutRead;
 

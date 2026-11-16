@@ -31,6 +31,7 @@ import { parseChangeKey, type ChangeDetail } from "../core/review.ts";
 import type { ReviewComment } from "../forge/github.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import { changeHome } from "./review-start.ts";
+import type { WorktreeHost } from "./worktree-host.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
 
@@ -179,6 +180,7 @@ export function createBatches(deps: {
   placementsFor: (key: ChangeKey) => ReturnType<Store["checkouts"]>;
   /** Threads whose branch is this Change's. */
   threadsOnChange: (key: ChangeKey) => string[];
+  worktreeHost: WorktreeHost;
   /** The reader's GitHub login on the Change's repository, when known. */
   viewer: (key: ChangeKey) => string | null;
   invalidate: (tags: readonly string[]) => void;
@@ -326,7 +328,7 @@ export function createBatches(deps: {
         const detail = deps.detail(key);
         const revision = detail.state === "change" ? detail.revision : null;
         if (!revision) throw new Error("This Change has no revision an agent can work on.");
-        const home = await changeHome(bb, store, key, revision);
+        const home = await changeHome(bb, store, key, revision, deps.worktreeHost);
         if (typeof home === "string") throw new Error(home);
         const thread = await bb.sdk.threads.spawn({
           projectId: home.projectId,
