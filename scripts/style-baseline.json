@@ -2742,7 +2742,7 @@
   {
     "file": "plugins/vimium/src/app/cheatsheet-page.tsx",
     "rule": "arbitrary-edge",
-    "source": "<kbd className=\"inline-flex min-w-6 items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground shadow-[0_1px_0] shadow-border\">"
+    "source": "<kbd className=\"inline-flex h-6 min-w-6 items-center justify-center rounded border border-border bg-muted px-1 font-mono text-xs text-foreground shadow-[0_1px_0] shadow-border\">"
   },
   {
     "file": "plugins/whiteboard/src/app/bridge/diff-view.tsx",

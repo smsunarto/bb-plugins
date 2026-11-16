@@ -46,7 +46,7 @@ interface ResolvedEntry {
 
 function Key({ label }: { label: string }): ReactElement {
   return (
-    <kbd className="inline-flex min-w-6 items-center justify-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground shadow-[0_1px_0] shadow-border">
+    <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded border border-border bg-muted px-1 font-mono text-xs text-foreground shadow-[0_1px_0] shadow-border">
       {label}
     </kbd>
   );
