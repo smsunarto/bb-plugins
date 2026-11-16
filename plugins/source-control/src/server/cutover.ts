@@ -12,7 +12,7 @@ import { z } from "zod";
 import type { ImportCount, ImportKind, ImportReport } from "../core/cutover.ts";
 import type { Placement } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
-import { commitRefSchema, loginSchema, prKey, prRefSchema } from "../core/watch.ts";
+import { commitRefSchema, loginSchema, prRefSchema } from "../core/watch.ts";
 import type { HostCalls } from "./host-calls.ts";
 import type { LandedWork } from "./landed.ts";
 import { watchRecordSchema, type PrWatcher, type WatchRecord } from "./pr-watch.ts";
@@ -21,7 +21,6 @@ import type { Store } from "./store.ts";
 
 const codeReviewExportSchema = z.object({
   version: z.literal(1),
-  pins: z.unknown(),
   instructions: z.unknown(),
   reviewed: z.array(z.object({ branchId: z.string(), value: z.unknown(), location: z.unknown() })),
   watches: z.array(z.object({ key: z.string(), value: z.unknown() })),
@@ -35,7 +34,6 @@ const gitbutlerExportSchema = z.object({
   records: z.array(z.object({ kind: z.string(), key: z.string(), value: z.unknown() })),
 });
 
-const oldPinSchema = prRefSchema.extend({ account: loginSchema.optional() }).strip();
 const oldRevisionSchema = z.object({
   base: z.string().regex(/^[0-9a-f]{4,64}$/i),
   head: z.string().regex(/^[0-9a-f]{4,64}$/i),
@@ -119,21 +117,6 @@ export function createCutover(deps: {
       };
     } catch (error) {
       return { ok: false as const, reason: error instanceof Error ? error.message : String(error) };
-    }
-  }
-
-  function pins(data: CodeReviewExport, count: Counter) {
-    const list = Array.isArray(data.pins) ? data.pins : [];
-    count.read("pins", list.length);
-    for (const item of list) {
-      const pin = oldPinSchema.safeParse(item);
-      if (!pin.success) {
-        count.skip("pins", "not a pull request reference");
-        continue;
-      }
-      if (store.putPin(prKey(pin.data), JSON.stringify(pin.data), deps.now()))
-        count.imported("pins");
-      else count.present("pins");
     }
   }
 
@@ -284,7 +267,6 @@ export function createCutover(deps: {
       const review = await exported("code-review", codeReviewExportSchema);
       if (review.ok) {
         const data = review.value;
-        pins(data, count);
         await instructions(data, count);
         await viewed(data, count);
         watches(data, count);

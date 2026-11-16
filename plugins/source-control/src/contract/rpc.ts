@@ -428,7 +428,7 @@ export const sourceControlContract = defineRpcContract({
    */
   importFromOldPlugins: {
     experimental_description:
-      "Import pins, review instructions, viewed marks, pull request watches and landed records from the old code-review and gitbutler plugins. Idempotent; reports counts per kind.",
+      "Import review instructions, viewed marks, pull request watches and landed records from the old code-review and gitbutler plugins. Idempotent; reports counts per kind.",
     input: z.object({}).strict(),
     output: importReportSchema,
   },
@@ -463,15 +463,6 @@ export const sourceControlContract = defineRpcContract({
       z.object({ ok: z.literal(true), landed: landedSchema }).strict(),
       z.object({ ok: z.literal(false), message: z.string(), away: z.boolean() }).strict(),
     ]),
-  },
-  /** Pull requests pinned to the Changes list, newest first. */
-  pins: {
-    input: z.object({}).strict(),
-    output: z.object({ pins: z.array(prRefSchema) }).strict(),
-  },
-  setPinned: {
-    input: z.object({ ref: prRefSchema, pinned: z.boolean() }).strict(),
-    output: z.object({ ok: z.literal(true) }).strict(),
   },
   /**
    * Create PR on a branch of the thread's checkout, at the head the reader

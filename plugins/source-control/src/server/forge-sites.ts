@@ -14,7 +14,6 @@ import { problemSchema, type ForgeRead, type ForgeResult, type Problem } from ".
 import type { ForgeAccount, HostFailure } from "../contract/host.ts";
 import { runReviewRead, type ReviewAnswer, type ReviewRead } from "../forge/review.ts";
 import type { Repo } from "../core/ids.ts";
-import type { PrRef } from "../core/watch.ts";
 import type { MergePolicy } from "../core/merge.ts";
 import { mergeAt, type MergeWrite } from "../forge/merge.ts";
 import {
@@ -566,7 +565,7 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     );
 
   /** One account's inbox, on the site it is signed in on. */
-  const inbox = (login: string, placements: readonly Placement[], pins: readonly PrRef[] = []) =>
+  const inbox = (login: string, placements: readonly Placement[]) =>
     withinDeadline(
       Effect.gen(function* () {
         const access = (yield* knownAccounts(placements)).find(
@@ -578,10 +577,9 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
             site: SERVER_SITE_NAME,
             detail: `${login} is not signed in to gh on the bb server or a checkout's host.`,
           });
-        const answer = yield* reviewAt(access, {
-          kind: "inbox",
-          ...(pins.length ? { pins: [...pins] } : {}),
-        }).pipe(Effect.mapError((refused) => unavailable(refusedProblem(refused))));
+        const answer = yield* reviewAt(access, { kind: "inbox" }).pipe(
+          Effect.mapError((refused) => unavailable(refusedProblem(refused))),
+        );
         return answer.kind === "inbox" ? answer.entries : [];
       }),
     );

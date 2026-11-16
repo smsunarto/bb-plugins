@@ -13,6 +13,7 @@ import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from
 import type { Problem } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import {
+  filterOf,
   mergeChanges,
   type ChangeRow,
   type Filter,
@@ -87,7 +88,8 @@ export function useStoppedHosts(): ReadonlySet<string> {
 }
 
 const filterChoice = store<Filter>("all");
-export const chooseFilter = (filter: Filter) => filterChoice.set(filter);
+/** Chooses the list filter by id; an id the list no longer has chooses All. */
+export const chooseFilter = (id: string) => filterChoice.set(filterOf(id));
 export function useFilter(): Filter {
   return useSyncExternalStore(filterChoice.subscribe, filterChoice.get, filterChoice.get);
 }

@@ -642,7 +642,6 @@ export function createSourceControl(deps: SourceControlDeps) {
       read: sites.backgroundRead,
       run: (effect) => runtime.run(effect),
       invalidate,
-      pinsChanged: () => runtime.fork(changes.review.refreshInboxes()),
       now: deps.now,
     });
     const placements = createPlacements({ bb, store, now: deps.now });

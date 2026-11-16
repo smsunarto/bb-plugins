@@ -1,6 +1,6 @@
 /**
  * What moved from code-review at the cutover: pull request watches, landed
- * work, the `bb review` command, the babysit and review skills, pins and the
+ * work, the `bb review` command, the babysit and review skills, and the
  * reviewer's standing instructions; plus the import that carries the old
  * plugins' data across and the lookups that draw their old cards.
  *
@@ -38,7 +38,7 @@ import type { HostCalls } from "./host-calls.ts";
 import { createLanded, SHARE_LANDED } from "./landed.ts";
 import { createLegacy, LEGACY_PLUGIN } from "./legacy.ts";
 import { createPrWatcher, WATCH_PR } from "./pr-watch.ts";
-import { pinsOf, rowsOf } from "./review-sources.ts";
+import { rowsOf } from "./review-sources.ts";
 import { playbook, prompt } from "./review-cli.ts";
 import type { Store } from "./store.ts";
 
@@ -127,8 +127,6 @@ export function createMoved(deps: {
   read: BackgroundRead;
   run: <A>(effect: Effect.Effect<A>) => Promise<A>;
   invalidate: (tags: readonly string[]) => void;
-  /** A pin changed: the inboxes read again, so the list shows it. */
-  pinsChanged: () => void;
   now: () => number;
 }) {
   const { bb, store } = deps;
@@ -308,14 +306,6 @@ export function createMoved(deps: {
       };
     },
     ...watchHandlers(watcher),
-    pins: () => ({ pins: pinsOf(store) }),
-    setPinned: ({ ref, pinned }) => {
-      const changed = pinned
-        ? store.putPin(prKey(ref), JSON.stringify(ref), deps.now())
-        : store.dropPin(prKey(ref));
-      if (changed) deps.pinsChanged();
-      return { ok: true as const };
-    },
   } satisfies Partial<ExperimentalPluginRpcHandlersWithContext<typeof sourceControlContract>>;
 
   const importCommand = cliCommand({

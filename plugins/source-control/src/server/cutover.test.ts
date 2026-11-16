@@ -119,12 +119,8 @@ test("the import reads each kind once, is idempotent by natural key, and never w
   });
   const first = await world.cutover.run();
   expect(first.unavailable).toEqual([]);
-  expect(first.counts.pins).toEqual({
-    read: 3,
-    imported: 2,
-    present: 0,
-    skipped: { "not a pull request reference": 1 },
-  });
+  // The old export still carries pins; Source Control no longer keeps them.
+  expect(first.counts).not.toHaveProperty("pins");
   expect(first.counts.reviewInstructions).toEqual({
     read: 1,
     imported: 1,
@@ -153,7 +149,6 @@ test("the import reads each kind once, is idempotent by natural key, and never w
   });
 
   const second = await world.cutover.run();
-  expect(second.counts.pins).toMatchObject({ imported: 0, present: 2 });
   expect(second.counts.reviewInstructions).toMatchObject({ imported: 0, present: 1 });
   expect(second.counts.prWatches).toMatchObject({ imported: 0, present: 1 });
   expect(second.counts.landed).toMatchObject({ imported: 0, present: 1 });
@@ -165,7 +160,7 @@ test("an old plugin that is not running is reported, and the other one still imp
   const world = setup({ "code-review": exported() });
   const report = await world.cutover.run();
   expect(report.unavailable).toEqual([{ plugin: "gitbutler", reason: "gitbutler is not running" }]);
-  expect(report.counts.pins?.imported).toBe(2);
+  expect(report.counts.reviewInstructions?.imported).toBe(1);
 });
 
 test("instructions Source Control already has are kept, and the old ones are skipped with the reason", async () => {

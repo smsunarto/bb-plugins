@@ -127,7 +127,13 @@ export type ForgeOperation = z.infer<typeof forgeOperationSchema>;
 
 /** The review page's GitHub reads a host runs as one of its accounts. */
 export const reviewReadSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("inbox"), pins: z.array(prRefSchema).max(50).optional() }).strict(),
+  z
+    .object({
+      kind: z.literal("inbox"),
+      // A server from before pins were removed still sends them; accepted and ignored.
+      pins: z.array(prRefSchema).max(50).optional(),
+    })
+    .strict(),
   z
     .object({ kind: z.literal("files"), repo: repoSchema, number: z.number().int().positive() })
     .strict(),

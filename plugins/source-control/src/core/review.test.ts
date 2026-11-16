@@ -83,7 +83,7 @@ describe("mergeChanges", () => {
       hosts: ["h1"],
       stack: stack(2),
     });
-    expect(merged.counts).toEqual({ all: 4, mine: 3, asked: 1, pinned: 0 });
+    expect(merged.counts).toEqual({ all: 4, mine: 3, asked: 1 });
   });
 
   test("shelves by repository, closest to shipping first; a stack keeps bottom last", () => {
@@ -99,21 +99,18 @@ describe("mergeChanges", () => {
     "a %s pull request is left out, even when a checkout still has its branch",
     (state) => {
       const merged = mergeChanges(
-        [
-          [row({ key: C, hostId: "h2" })],
-          [row({ key: C, number: 9, state, sort: 9, pinned: true })],
-        ],
+        [[row({ key: C, hostId: "h2" })], [row({ key: C, number: 9, state, sort: 9 })]],
         "all",
       );
       expect(merged.order).toEqual([]);
-      expect(merged.counts).toEqual({ all: 0, mine: 0, asked: 0, pinned: 0 });
+      expect(merged.counts).toEqual({ all: 0, mine: 0, asked: 0 });
     },
   );
 
   test("filters keep their counts", () => {
     const asked = mergeChanges([host, inbox], "asked");
     expect(asked.order.map((each) => each.key)).toEqual([X]);
-    expect(asked.counts).toEqual({ all: 4, mine: 3, asked: 1, pinned: 0 });
+    expect(asked.counts).toEqual({ all: 4, mine: 3, asked: 1 });
   });
 
   const failed = { id: "failed", label: "1 Failed", tone: "error", icon: "cross" } as const;

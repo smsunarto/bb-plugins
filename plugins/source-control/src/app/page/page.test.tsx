@@ -21,7 +21,7 @@ import {
 import { sourceControlContract } from "../../contract/rpc.ts";
 import { shipPath } from "../../core/status.ts";
 import { ReviewPanel as ReviewPage, ReviewSidebar as ChangesSidebar } from "../review-entry.tsx";
-import { resetNavStores } from "./sources.ts";
+import { chooseFilter, resetNavStores } from "./sources.ts";
 import { resetPatchStores } from "./patches.ts";
 import { OVERSCAN } from "./use-window.ts";
 
@@ -414,8 +414,13 @@ test("filters count every source's rows once and show only their own", async () 
   expect(slot.getByTestId("sc-filter-all").textContent).toBe("All 3");
   expect(slot.getByTestId("sc-filter-mine").textContent).toBe("Mine 1");
   expect(slot.getByTestId("sc-filter-asked").textContent).toBe("Asked 1");
+  expect(slot.queryByTestId("sc-filter-pinned")).toBeNull();
   fireEvent.click(slot.getByTestId("sc-filter-asked"));
   await waitFor(() => expect(navRows(slot)).toEqual([key("mira/asked")]));
+  // A filter the list no longer has, such as the retired Pinned, chooses All.
+  act(() => chooseFilter("pinned"));
+  await waitFor(() => expect(navRows(slot)).toHaveLength(3));
+  expect(slot.getByTestId("sc-filter-all").getAttribute("data-state")).toBe("on");
 });
 
 test("a stack groups its branches top first under one header", async () => {

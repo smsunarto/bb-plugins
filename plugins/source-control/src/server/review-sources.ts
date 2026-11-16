@@ -16,21 +16,7 @@ import {
 import type { ForgeSites } from "./forge-sites.ts";
 import type { LocalReads } from "./local-read.ts";
 import type { Share } from "./shared.ts";
-import { prRefSchema, type PrRef } from "../core/watch.ts";
 import type { Store } from "./store.ts";
-
-/** The reader's pinned pull requests, as the store keeps them. */
-export function pinsOf(store: Store): PrRef[] {
-  return store.pinRows().flatMap((json) => {
-    try {
-      const { owner, repo, number } = JSON.parse(json) as PrRef;
-      const parsed = prRefSchema.safeParse({ owner, repo, number });
-      return parsed.success ? [parsed.data] : [];
-    } catch {
-      return [];
-    }
-  });
-}
 
 /** An inbox is read once a minute while watched: the list's budget is 2.5 calls a minute. */
 export const INBOX_MS = 60_000;
@@ -99,9 +85,7 @@ export function createReviewSources(deps: {
     deps.share(
       `inbox:${login}`,
       Effect.gen(function* () {
-        const answer = yield* deps.sites
-          .inbox(login, store.checkouts(), pinsOf(store))
-          .pipe(Effect.result);
+        const answer = yield* deps.sites.inbox(login, store.checkouts()).pipe(Effect.result);
         const next: SourceRows =
           answer._tag === "Success"
             ? { read: { rows: answer.success.map(inboxRow), at: deps.now() }, problem: null }
@@ -194,12 +178,6 @@ export function createReviewSources(deps: {
       return Object.fromEntries(keys.map((hostId) => [hostId, hostRows(store, hostId)]));
     },
     watchHost,
-    /** Reads every inbox asked for again now: a pin changed what they list. */
-    refreshInboxes: () =>
-      Effect.forEach([...logins], (login) => readInboxNow(login), {
-        concurrency: "unbounded",
-        discard: true,
-      }),
     /** The pull request row any asked-for inbox holds for the Change. */
     inboxRow(key: string): ChangeRow | null {
       for (const login of logins)

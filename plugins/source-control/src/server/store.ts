@@ -58,7 +58,7 @@ const threadsFacetSchema = facetSchema(z.array(forgeThreadSchema));
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
 
 /** Numbered and never edited once landed: append only. */
-const MIGRATIONS = [
+export const MIGRATIONS = [
   `CREATE TABLE thread_placement (thread_id TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
   `CREATE TABLE local_facet (host_id TEXT NOT NULL, path TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY (host_id, path))`,
   `CREATE TABLE forge_facet (change_key TEXT PRIMARY KEY, json TEXT NOT NULL)`,
@@ -102,6 +102,10 @@ const MIGRATIONS = [
   `CREATE TABLE pin (pr_key TEXT PRIMARY KEY, json TEXT NOT NULL, created_at INTEGER NOT NULL)`,
   // An old `::code-review{branch=…}` card names a GitButler branch id; this is its Change.
   `CREATE TABLE legacy_branch (branch_id TEXT PRIMARY KEY, change_key TEXT NOT NULL)`,
+  // Pins left the Changes list: drop them, and the mark they left on cached inbox rows,
+  // which no longer parse with it. JSON escapes quotes inside strings, so only the key matches.
+  `DROP TABLE IF EXISTS pin`,
+  `UPDATE inbox_facet SET json = replace(json, ',"pinned":true', '') WHERE instr(json, ',"pinned":true') > 0`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -331,7 +335,7 @@ function askTables(db: Database) {
   };
 }
 
-/** Pull request watches, landed work, pins and old branch ids: rows the cutover imports into. */
+/** Pull request watches, landed work and old branch ids: rows the cutover imports into. */
 function cutoverTables(db: Database) {
   const watchesOf = db.prepare<[string], { pr_key: string; json: string }>(
     `SELECT pr_key, json FROM pr_watch WHERE thread_id = ?`,
@@ -360,13 +364,6 @@ function cutoverTables(db: Database) {
      ON CONFLICT (thread_id) DO UPDATE SET json = excluded.json`,
   );
   const dropLanded = db.prepare(`DELETE FROM landed_track WHERE thread_id = ?`);
-  const allPins = db.prepare<[], { json: string }>(
-    `SELECT json FROM pin ORDER BY created_at DESC, pr_key LIMIT 50`,
-  );
-  const putPin = db.prepare(
-    `INSERT INTO pin (pr_key, json, created_at) VALUES (?, ?, ?) ON CONFLICT (pr_key) DO NOTHING`,
-  );
-  const dropPin = db.prepare(`DELETE FROM pin WHERE pr_key = ?`);
   const getLegacy = db.prepare<[string], { change_key: string }>(
     `SELECT change_key FROM legacy_branch WHERE branch_id = ?`,
   );
@@ -396,11 +393,6 @@ function cutoverTables(db: Database) {
     dropLanded(threadId: string): void {
       dropLanded.run(threadId);
     },
-    pinRows: () => allPins.all().map((row) => row.json),
-    /** True when the pin is new. */
-    putPin: (prKey: string, json: string, now: number): boolean =>
-      putPin.run(prKey.toLowerCase(), json, now).changes > 0,
-    dropPin: (prKey: string): boolean => dropPin.run(prKey.toLowerCase()).changes > 0,
     legacyBranch: (branchId: string): ChangeKey | null =>
       (getLegacy.get(branchId)?.change_key as ChangeKey | undefined) ?? null,
     /** True when the mapping is new. */

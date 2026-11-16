@@ -5,7 +5,6 @@
 import { z } from "zod";
 
 export const IMPORT_KINDS = [
-  "pins",
   "reviewInstructions",
   "viewedMarks",
   "branchIds",

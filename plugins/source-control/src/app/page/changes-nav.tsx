@@ -358,7 +358,6 @@ const FILTERS: readonly { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "mine", label: "Mine" },
   { id: "asked", label: "Asked" },
-  { id: "pinned", label: "Pinned" },
 ];
 
 function Filters({ counts, variant }: { counts: Record<Filter, number>; variant: Variant }) {
@@ -371,7 +370,7 @@ function Filters({ counts, variant }: { counts: Record<Filter, number>; variant:
       value={filter}
       // A single group reports "" when its pressed item is pressed again: one filter stays chosen.
       onValueChange={(next) => {
-        if (next) chooseFilter(next as Filter);
+        if (next) chooseFilter(next);
       }}
       className={cx(
         "flex min-w-0 gap-0 bg-surface-raised p-1",
@@ -379,8 +378,6 @@ function Filters({ counts, variant }: { counts: Record<Filter, number>; variant:
       )}
     >
       {FILTERS.map((option) => {
-        // Pinned shows only for a reader who pins, or while it is the chosen filter.
-        if (option.id === "pinned" && counts.pinned === 0 && option.id !== filter) return null;
         return (
           <ToggleGroupItem
             key={option.id}
@@ -545,7 +542,6 @@ const FILTER_EMPTY: Record<Filter, string> = {
   all: "No changes. Open pull requests and checkout branches appear here.",
   mine: "None of these changes are yours.",
   asked: "No one has asked you to review a change.",
-  pinned: "No pinned pull requests.",
 };
 
 /** What the list says instead of rows, or null when it has rows to show. */
