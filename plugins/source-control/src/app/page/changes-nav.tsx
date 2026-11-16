@@ -54,13 +54,17 @@ export type Item =
   | { kind: "stack"; key: string; size: number }
   | { kind: "row"; key: ChangeKey; row: NavRow; place: "single" | "stacked" | "stackEnd" };
 
+/** A phone row's extra title line: titles wrap to two lines there instead of one. */
+const PHONE_TITLE_LINE = 20;
+
 /** Each kind's height in px, gaps included, so a window never measures. */
-export function itemSize(item: Item): number {
+export function itemSize(item: Item, phone = false): number {
   if (item.kind === "shelf") return item.first ? 28 : 36;
   if (item.kind === "stack") return 33;
-  if (item.place === "stacked") return 56;
-  if (item.place === "stackEnd") return 65;
-  return 60;
+  const extra = phone ? PHONE_TITLE_LINE : 0;
+  if (item.place === "stacked") return 56 + extra;
+  if (item.place === "stackEnd") return 65 + extra;
+  return 60 + extra;
 }
 
 export function flatten(shelves: readonly RepoShelf[]): Item[] {
@@ -128,6 +132,16 @@ function HostChip({ name, phone }: { name: string; phone: boolean }) {
   );
 }
 
+/** The pull request's number, if it has one. */
+function RowNumber({ number, className }: { number: number | null; className: string }) {
+  if (number === null) return null;
+  return (
+    <span className={cx("shrink-0 text-[12px] text-(--tertiary-foreground)", className)}>
+      #{number}
+    </span>
+  );
+}
+
 /** One Change. Memoized on its row object, which keeps its identity while it is unchanged. */
 const ChangeRowView = memo(function ChangeRowView({
   row,
@@ -172,30 +186,34 @@ const ChangeRowView = memo(function ChangeRowView({
       aria-current={selected ? "page" : undefined}
       onClick={() => onSelect(row.key)}
       className={cx(
-        "flex h-14 w-full min-w-0 cursor-pointer flex-col gap-1 rounded-[8px] border-0 bg-transparent px-2 py-1.5 text-start transition-colors duration-150 hover:bg-border-hairline focus-visible:-outline-offset-2 motion-reduce:transition-none",
+        "flex w-full min-w-0 cursor-pointer flex-col gap-1 rounded-lg border-0 bg-transparent px-2 py-1.5 text-start transition-colors duration-150 hover:bg-border-hairline focus-visible:-outline-offset-2 motion-reduce:transition-none",
         selected && "bg-border-hairline",
+        phone ? "h-[76px]" : "h-14",
       )}
     >
       <span className="flex w-full min-w-0 shrink-0 items-start gap-2">
         <span className="flex h-5 w-4 shrink-0 items-center justify-center">
           <StateIcon state={row.state} phone={phone} />
         </span>
-        {row.number !== null ? (
-          <span className="shrink-0 text-[12px] leading-5 text-(--tertiary-foreground)">
-            #{row.number}
-          </span>
-        ) : null}
-        <span className="min-w-0 flex-1 truncate text-[13px] leading-5 font-semibold text-foreground">
+        {/* A phone gives the title two lines and the whole width; its number moves to the line below. */}
+        {phone ? null : <RowNumber number={row.number} className="leading-5" />}
+        <span
+          className={cx(
+            "min-w-0 flex-1 text-[13px] leading-5 font-semibold text-foreground",
+            phone ? "line-clamp-2 h-10 break-words" : "truncate",
+          )}
+        >
           {row.title}
         </span>
         {age ? (
           <span className="shrink-0 text-[12px] leading-5 text-(--tertiary-foreground)">{age}</span>
         ) : null}
       </span>
-      {/* Two 20px lines and the gap fill the 56px row exactly: a squeezed line would clip its chips' borders. */}
+      {/* Two 20px lines and the gap fill the 56px row exactly (three on a phone, 76px): a squeezed line would clip its chips' borders. */}
       <span className="flex h-5 w-full min-w-0 shrink-0 items-center gap-2 overflow-hidden ps-6">
         {phone ? (
           <>
+            <RowNumber number={row.number} className="leading-4" />
             <span className={cx("min-w-0 shrink truncate text-[12px] leading-4", LINE_TONE[tone])}>
               {row.line}
             </span>
@@ -553,17 +571,19 @@ function notListing(sources: ChangeSources, count: number, filter: Filter) {
 function ListItems({
   items,
   win,
+  phone,
   render,
 }: {
   items: readonly Item[];
   win: ReturnType<typeof useListWindow>;
+  phone: boolean;
   render: (item: Item) => ReactNode;
 }) {
   if (!win.items)
     return (
       <div className="px-2">
         {items.map((item) => (
-          <div key={item.key} style={{ height: itemSize(item) }}>
+          <div key={item.key} style={{ height: itemSize(item, phone) }}>
             {render(item)}
           </div>
         ))}
@@ -607,10 +627,10 @@ export function ChangesList({ subPath, variant }: { subPath: string; variant: Va
   const go = useGo();
   const onSelect = useCallback((key: ChangeKey) => go({ key }), [go]);
   const [list, setList] = useState<HTMLDivElement | null>(null);
-  const sizeOf = useCallback((index: number) => itemSize(items[index]!), [items]);
+  const phone = variant === "phone";
+  const sizeOf = useCallback((index: number) => itemSize(items[index]!, phone), [items, phone]);
   const keyOf = useCallback((index: number) => items[index]!.key, [items]);
   const win = useListWindow({ count: items.length, sizeOf, keyOf, list });
-  const phone = variant === "phone";
 
   const render = (item: Item) => (
     <ItemView
@@ -625,7 +645,7 @@ export function ChangesList({ subPath, variant }: { subPath: string; variant: Va
   );
 
   const body = notListing(sources, items.length, filter) ?? (
-    <ListItems items={items} win={win} render={render} />
+    <ListItems items={items} win={win} phone={phone} render={render} />
   );
 
   return (
