@@ -30,12 +30,6 @@
     "source": "void refresh();"
   },
   {
-    "filename": "plugins/agentation/components/staged-annotations-action.tsx",
-    "code": "unicorn(prefer-array-flat-map)",
-    "message": "Prefer a single `.flatMap(\u2026)` over `.filter(\u2026).flatMap(\u2026)`.",
-    "source": ".flatMap((item) => [{ provider: ANNOTATION_MENTION_PROVIDER, ...item }, \" \"]);"
-  },
-  {
     "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
     "code": "react(refs)",
     "message": "Cannot access refs during render",

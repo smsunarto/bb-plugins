@@ -117,8 +117,9 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
     const present = annotationMentionIds(mentions, pluginId);
     const parts = items
       .map((item) => ({ ...item, id: annotationMentionItemId(item.id, threadId) }))
-      .filter((item) => !present.has(item.id))
-      .flatMap((item) => [{ provider: ANNOTATION_MENTION_PROVIDER, ...item }, " "]);
+      .flatMap((item) =>
+        present.has(item.id) ? [] : [{ provider: ANNOTATION_MENTION_PROVIDER, ...item }, " "],
+      );
     if (parts.length > 0) {
       const separator = text.length === 0 || /\s$/u.test(text) ? "" : " ";
       composer.insert([separator, ...parts], { at: "end" });
