@@ -49,7 +49,7 @@ test("an upload that redirects anywhere but GitHub's image hosts is refused", as
   }
 });
 
-test("an upload this account cannot see is not-found, so the next account is tried", async () => {
+test("an upload this account cannot see is not-found", async () => {
   const { fetchImpl } = answering(404, null);
   await expect(
     resolveImage(token, parseGitHubImage(UPLOAD)!, undefined, fetchImpl),
@@ -82,7 +82,7 @@ test("a committed file resolves through the contents API's download URL", async 
   await expect(resolveImage(elsewhere, image)).rejects.toMatchObject({ code: "failed" });
 });
 
-test("an image this account cannot see is answered as missing, so the repository's account is kept", async () => {
+test("an image this account cannot see is an answer (missing), so the server moves to the next account", async () => {
   const exec: Exec = async () => ({ code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" });
   expect(
     await runReviewRead(exec, {
@@ -106,15 +106,55 @@ test("a committed file's path is checked again where the token is", async () => 
     calls.push([...args]);
     return { code: 0, stdout: "https://raw.githubusercontent.com/o/r/a.png", stderr: "" };
   };
-  for (const path of ["x/../../other/repo/a.png", "./a.png", "a\\b.png", "a//b.png"])
+  for (const segments of [
+    ["x", "..", "..", "other", "a.png"],
+    [".", "a.png"],
+    ["main", "a\\b.png"],
+    ["main", "", "b.png"],
+    ["main", "x/../a.png"],
+  ])
     await expect(
-      resolveImage(exec, {
-        kind: "file",
-        url: "",
-        repo: { owner: "o", name: "r" },
-        ref: "main",
-        path,
-      }),
+      resolveImage(exec, { kind: "file", url: "", repo: { owner: "o", name: "r" }, segments }),
     ).rejects.toMatchObject({ code: "failed" });
   expect(calls).toEqual([]);
+});
+
+test("a file on a branch with a slash resolves: the pull request's branch is tried as the ref first", async () => {
+  const endpoints: string[] = [];
+  const exec: Exec = async (args) => {
+    endpoints.push(args[1]!);
+    return args[1]!.endsWith("?ref=scott%2Fsc-pr-images")
+      ? {
+          code: 0,
+          stdout: "https://raw.githubusercontent.com/o/r/x/docs/a.png?token=T",
+          stderr: "",
+        }
+      : { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" };
+  };
+  const image = parseGitHubImage(
+    "https://github.com/o/r/blob/scott/sc-pr-images/docs/a.png?raw=true",
+  )!;
+  expect(await resolveImage(exec, image, undefined, fetch, ["scott/sc-pr-images"])).toContain(
+    "token=T",
+  );
+  expect(endpoints).toEqual(["repos/o/r/contents/docs/a.png?ref=scott%2Fsc-pr-images"]);
+
+  // Without the hint, shorter refs are tried first, then the longer ones, at most four.
+  endpoints.length = 0;
+  expect(await resolveImage(exec, image)).toContain("token=T");
+  expect(endpoints).toEqual([
+    "repos/o/r/contents/sc-pr-images/docs/a.png?ref=scott",
+    "repos/o/r/contents/docs/a.png?ref=scott%2Fsc-pr-images",
+  ]);
+});
+
+test("a Git LFS file's download host is accepted", async () => {
+  const exec: Exec = async () => ({
+    code: 0,
+    stdout: "https://media.githubusercontent.com/media/o/r/main/a.jpg?token=T\n",
+    stderr: "",
+  });
+  expect(await resolveImage(exec, parseGitHubImage("https://github.com/o/r/raw/main/a.jpg")!)).toBe(
+    "https://media.githubusercontent.com/media/o/r/main/a.jpg?token=T",
+  );
 });

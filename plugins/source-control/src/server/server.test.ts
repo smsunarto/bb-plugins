@@ -144,6 +144,8 @@ type World = {
   ghRuns?: number[];
   /** Server accounts GitHub answers "not found" for this repository. */
   cannotSee?: string[];
+  /** The only logins the contents API serves a committed file to, when set. */
+  fileReaders?: string[];
   /** The account each pull request read on the server ran as. */
   readAs?: string[];
   /** Each `gh pr ready` or `gh pr close` on the server, with the account it ran as. */
@@ -381,6 +383,10 @@ function fakeApi(world: World, args: readonly string[], options: Parameters<Exec
   const contents = /^repos\/([^/]+)\/([^/]+)\/contents\/([^?]+)\?ref=(.+)$/.exec(args[1] ?? "");
   if (contents) {
     const [, owner, name, path, ref] = contents;
+    const token = options?.env?.GH_TOKEN;
+    const login = token ? token.replace(/^tok-/, "") : world.serverAccounts[0]!;
+    if (world.fileReaders && !world.fileReaders.includes(login))
+      return { code: 1, stdout: "", stderr: "gh: Not Found (HTTP 404)" };
     return {
       code: 0,
       stdout: `https://raw.githubusercontent.com/${owner}/${name}/${ref}/${path}?token=SIGNED\n`,
@@ -1576,6 +1582,33 @@ describe("review page", () => {
         `/pr-image?${new URLSearchParams({ change: key, src: "https://evil.example/a.png" })}`,
       );
       expect(elsewhere.status).toBe(400);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  test("an image only a second account sees is read as that account, and the repository's reader stays", async () => {
+    const world = twoHosts();
+    world.serverAccounts = ["smsunarto", "bob"];
+    world.pullRequests["scott/route-gh"] = [PR];
+    world.fileReaders = ["bob"];
+    vi.stubGlobal("fetch", async () => new Response(null, { status: 404 }));
+    try {
+      const { harness } = await start(world);
+      await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+      expect(world.readAs?.at(-1)).toBe("smsunarto");
+      const key = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+      const src = "https://github.com/smsunarto/bb-plugins/blob/abc123/docs/a.png?raw=true";
+      const response = await harness.behavior.fetchHttp(
+        "GET",
+        `/pr-image?${new URLSearchParams({ change: key, src })}`,
+      );
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toContain("raw.githubusercontent.com");
+      // The repository is still read as the account that read it, not as the image's.
+      world.readAs = [];
+      await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+      expect(world.readAs[0]).toBe("smsunarto");
     } finally {
       vi.unstubAllGlobals();
     }

@@ -1,12 +1,22 @@
 import { expect, test } from "vitest";
-import { parseGitHubImage, routeGitHubImages, servesImage } from "./pr-images.ts";
+import {
+  imageIdentity,
+  parseGitHubImage,
+  refSplits,
+  routeGitHubImages,
+  servesImage,
+} from "./pr-images.ts";
 
 const UPLOAD = "https://github.com/user-attachments/assets/0993b262-b0ae-4631-b40a-65c93ae1420c";
 const FILE =
   "https://github.com/Argus-Labs/rampage-client/blob/054abe656d5af7fc1c87f819bb1dd2d0b06223bc/docs/shot.png?raw=true";
 
 test("parseGitHubImage takes GitHub's uploads and committed files only", () => {
-  expect(parseGitHubImage(UPLOAD)).toEqual({ kind: "attachment", url: UPLOAD });
+  expect(parseGitHubImage(UPLOAD)).toEqual({
+    kind: "attachment",
+    url: UPLOAD,
+    id: "0993b262-b0ae-4631-b40a-65c93ae1420c",
+  });
   expect(
     parseGitHubImage("https://github.com/o/r/assets/4402697/0993b262-b0ae-4631-b40a-65c93ae1420c"),
   ).toMatchObject({ kind: "attachment" });
@@ -14,13 +24,11 @@ test("parseGitHubImage takes GitHub's uploads and committed files only", () => {
     kind: "file",
     url: FILE,
     repo: { owner: "argus-labs", name: "rampage-client" },
-    ref: "054abe656d5af7fc1c87f819bb1dd2d0b06223bc",
-    path: "docs/shot.png",
+    segments: ["054abe656d5af7fc1c87f819bb1dd2d0b06223bc", "docs", "shot.png"],
   });
   expect(parseGitHubImage("https://github.com/o/r/raw/main/a%20b.png")).toMatchObject({
     kind: "file",
-    ref: "main",
-    path: "a b.png",
+    segments: ["main", "a b.png"],
   });
   expect(parseGitHubImage("https://raw.githubusercontent.com/o/r/main/a.png")).toMatchObject({
     kind: "file",
@@ -90,4 +98,70 @@ test("only the pull request's own repository or head fork has its committed file
       (image) => servesImage(image, repo, "someone"),
     ),
   ).toBe("![a](/route) ![b](https://github.com/get-bb/bb/blob/main/a.png?raw=true)");
+});
+
+test("one image is one identity, however its URL is spelled", () => {
+  const id = (src: string) => imageIdentity(parseGitHubImage(src)!);
+  expect(id(`${UPLOAD}?v=1`)).toBe(id(`${UPLOAD}?v=2#a`));
+  expect(
+    id(
+      UPLOAD.toUpperCase().replace(
+        "HTTPS://GITHUB.COM/USER-ATTACHMENTS/ASSETS",
+        "https://github.com/user-attachments/assets",
+      ),
+    ),
+  ).toBe(id(UPLOAD));
+  expect(id("https://github.com/O/R/raw/main/a.png")).toBe(
+    id("https://raw.githubusercontent.com/o/r/main/a.png"),
+  );
+});
+
+test("refSplits tries the pull request's branches first, then short refs, bounded", () => {
+  const segments = ["scott", "sc-pr-images", "docs", "a.png"];
+  expect(refSplits(segments, ["scott/sc-pr-images", "main"]).map((split) => split.ref)).toEqual([
+    "scott/sc-pr-images",
+    "scott",
+    "scott/sc-pr-images/docs",
+  ]);
+  expect(refSplits(segments, ["scott/sc-pr-images"])[0]).toEqual({
+    ref: "scott/sc-pr-images",
+    path: "docs/a.png",
+  });
+  expect(refSplits(["refs", "heads", "main", "a.png"])).toEqual([{ ref: "main", path: "a.png" }]);
+  expect(refSplits(Array.from({ length: 30 }, (_, n) => `s${n}`).concat("a.png"))).toHaveLength(4);
+});
+
+test("image syntax in code, comments and escapes stays as written; parentheses balance", () => {
+  const route = () => "ROUTE";
+  const upload = `![a](${UPLOAD})`;
+  const cases: [string, string][] = [
+    ["```\n" + upload + "\n```", "```\n" + upload + "\n```"],
+    [
+      "```suggestion\n" + upload + "\n```\n" + upload,
+      "```suggestion\n" + upload + "\n```\n![a](ROUTE)",
+    ],
+    ["~~~~md\n" + upload + "\n~~~\n~~~~", "~~~~md\n" + upload + "\n~~~\n~~~~"],
+    ["`" + upload + "` " + upload, "`" + upload + "` ![a](ROUTE)"],
+    ["``a ` " + upload + "``", "``a ` " + upload + "``"],
+    ["<!-- " + upload + " --> " + upload, "<!-- " + upload + " --> ![a](ROUTE)"],
+    ["\\" + upload, "\\" + upload],
+    ["`unclosed " + upload, "`unclosed ![a](ROUTE)"],
+    ["![a](https://github.com/o/r/raw/main/docs/Screenshot_(1).png) after", "![a](ROUTE) after"],
+    ["![a [b] c](" + UPLOAD + ")", "![a [b] c](ROUTE)"],
+  ];
+  for (const [body, expected] of cases) expect(routeGitHubImages(body, route), body).toBe(expected);
+});
+
+test("hostile text is scanned in linear work, and stops being rewritten rather than blocking", () => {
+  for (const unit of ["![", "<img ", "`", "![a](", "[", "<!-", "``` "]) {
+    const body = unit.repeat(Math.ceil(65_536 / unit.length));
+    const work = { steps: 0 };
+    routeGitHubImages(body, () => "ROUTE", undefined, work);
+    expect(work.steps, unit).toBeLessThanOrEqual(body.length * 8 + 1_024 + 8_192);
+  }
+  const work = { steps: 0 };
+  const normal = `text ![a](${UPLOAD}) more\n`.repeat(1_000);
+  expect(routeGitHubImages(normal, () => "R", undefined, work)).toBe(
+    "text ![a](R) more\n".repeat(1_000),
+  );
 });

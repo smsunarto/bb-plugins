@@ -12,6 +12,8 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, Effect a
       /^@testing-library\//,
       // Parses the built stylesheet in css.test.ts.
       /^lightningcss$/,
+      // Renders the rewritten pull request text as Markdown in guided.test.tsx.
+      /^markdown-it$/,
       /^react(\/jsx-runtime)?$/,
       // The vendored responsive overlay flushes a sync render; bb provides react-dom.
       /^react-dom$/,

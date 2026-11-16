@@ -18,9 +18,14 @@ export const MAX_SIGNED_URL = 8_192;
 
 export type GitHubImage =
   /** An upload: `github.com/user-attachments/assets/<id>` or `github.com/<owner>/<repo>/assets/<n>/<id>`. */
-  | { kind: "attachment"; url: string }
-  /** A committed file: `github.com/<owner>/<repo>/(blob|raw)/<ref>/<path>` or `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`. */
-  | { kind: "file"; url: string; repo: Repo; ref: string; path: string };
+  | { kind: "attachment"; url: string; id: string }
+  /**
+   * A committed file: `github.com/<owner>/<repo>/(blob|raw)/<ref>/<path>` or
+   * `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`. `segments` is the
+   * ref and the path together: a branch name may hold slashes, so where one
+   * ends is found by asking GitHub (`refSplits`).
+   */
+  | { kind: "file"; url: string; repo: Repo; segments: string[] };
 
 const ASSET_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const NAME = /^[A-Za-z0-9_.-]+$/;
@@ -46,9 +51,8 @@ function decoded(segments: readonly string[]): string[] | null {
 }
 
 /**
- * The GitHub image a URL names, or null for any other URL. A committed file's
- * ref is the first segment after `blob/` or `raw/`: a commit, tag or branch
- * without a slash, as permalinks and GitHub's own drag-and-drop write it.
+ * The GitHub image a URL names, or null for any other URL, including a
+ * committed file whose name is not an image's.
  */
 export function parseGitHubImage(src: string): GitHubImage | null {
   const url = httpsUrl(src);
@@ -56,10 +60,8 @@ export function parseGitHubImage(src: string): GitHubImage | null {
   if (!url || !segments) return null;
   if (url.hostname === "github.com") return onGitHub(url, segments);
   if (url.hostname === "raw.githubusercontent.com") {
-    const [owner = "", name = "", ref = "", ...path] = segments;
-    return repoNamed(owner, name) && ref && path.length > 0
-      ? file(url.href, owner, name, ref, path)
-      : null;
+    const [owner = "", name = "", ...rest] = segments;
+    return repoNamed(owner, name) ? file(url.href, owner, name, rest) : null;
   }
   return null;
 }
@@ -81,15 +83,19 @@ const assetId = (id: string | undefined) => id !== undefined && ASSET_ID.test(id
 
 function onGitHub(url: URL, segments: readonly string[]): GitHubImage | null {
   const [first = "", second = "", third, fourth = "", fifth, ...rest] = segments;
-  const upload = { kind: "attachment" as const, url: url.href };
+  const upload = (id: string | undefined) => ({
+    kind: "attachment" as const,
+    url: url.href,
+    id: (id ?? "").toLowerCase(),
+  });
   if (first === "user-attachments" && second === "assets")
-    return segments.length === 3 && assetId(third) ? upload : null;
+    return segments.length === 3 && assetId(third) ? upload(third) : null;
   if (!repoNamed(first, second)) return null;
   if (third === "assets")
-    return /^\d+$/.test(fourth) && assetId(fifth) && rest.length === 0 ? upload : null;
+    return /^\d+$/.test(fourth) && assetId(fifth) && rest.length === 0 ? upload(fifth) : null;
   const committed = third === "raw" || (third === "blob" && url.searchParams.get("raw") === "true");
   return committed && fourth && fifth
-    ? file(url.href, first, second, fourth, [fifth, ...rest])
+    ? file(url.href, first, second, [fourth, fifth, ...rest])
     : null;
 }
 
@@ -97,18 +103,54 @@ function file(
   url: string,
   owner: string,
   name: string,
-  ref: string,
-  path: readonly string[],
+  segments: readonly string[],
 ): GitHubImage | null {
-  if (path.some((part) => part === "." || part === "..")) return null;
-  if (!IMAGE_FILE.test(path.at(-1) ?? "")) return null;
+  // A ref and at least one path segment, ending in an image file's name.
+  if (segments.length < 2 || !IMAGE_FILE.test(segments.at(-1) ?? "")) return null;
   return {
     kind: "file",
     url,
     repo: { owner: owner.toLowerCase(), name: name.toLowerCase() },
-    ref,
-    path: path.join("/"),
+    segments: [...segments],
   };
+}
+
+/** One image however its URL is spelled: query, fragment and case aside. */
+export function imageIdentity(image: GitHubImage): string {
+  return image.kind === "attachment"
+    ? `upload:${image.id}`
+    : `file:${image.repo.owner}/${image.repo.name}:${image.segments.join("/")}`;
+}
+
+/** At most this many ways to split a committed file's ref from its path are asked of GitHub. */
+export const MAX_REF_SPLITS = 4;
+
+/**
+ * Where a committed file's ref may end, most likely first: at a branch in
+ * `hints` (the pull request's head and base), then after one, two, three
+ * segments. A `refs/heads/` or `refs/tags/` prefix is dropped.
+ */
+export function refSplits(
+  segments: readonly string[],
+  hints: readonly string[] = [],
+): { ref: string; path: string }[] {
+  const parts =
+    segments[0] === "refs" && (segments[1] === "heads" || segments[1] === "tags")
+      ? segments.slice(2)
+      : segments;
+  const splits: { ref: string; path: string }[] = [];
+  const add = (at: number) => {
+    if (at < 1 || at >= parts.length) return;
+    const ref = parts.slice(0, at).join("/");
+    if (!splits.some((split) => split.ref === ref))
+      splits.push({ ref, path: parts.slice(at).join("/") });
+  };
+  for (const hint of hints) {
+    const named = hint.split("/").filter(Boolean);
+    if (named.length > 0 && named.every((part, index) => parts[index] === part)) add(named.length);
+  }
+  for (let at = 1; at < parts.length; at++) add(at);
+  return splits.slice(0, MAX_REF_SPLITS);
 }
 
 /**
@@ -125,34 +167,236 @@ export function servesImage(image: GitHubImage, repo: Repo, headOwner: string): 
   );
 }
 
-/** `![alt](url` and `![alt](<url>`, up to the URL. */
-const MARKDOWN_IMAGE = /(!\[(?:[^\]\\]|\\.)*\]\(\s*<?)(https:\/\/[^\s)<>]+)/g;
-/** An HTML `<img>` tag's `src`, quoted either way or bare. */
-const HTML_IMAGE = /(<img\b[^>]*?\ssrc\s*=\s*)(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/gi;
+/** Longest alt text, HTML tag and destination the scan follows before giving up on one. */
+const MAX_ALT = 1_000;
+const MAX_TAG = 4_096;
+const MAX_PAREN_DEPTH = 32;
+
+/** How much scanning one body may take, per character: hostile text stops being rewritten, not the page. */
+const STEPS_PER_CHAR = 8;
+
+type Found = { srcStart: number; srcEnd: number; src: string; end: number; html: boolean };
 
 /**
- * `body` with the source of each GitHub image in it, written as Markdown or as
- * an HTML `<img>`, replaced by `route(src)`. Links and other images stay.
+ * `body` with the source of each GitHub image in it, written as Markdown
+ * (`![alt](url)`, `![alt](<url>)`) or as an HTML `<img src>`, replaced by
+ * `route(src)` when `serves` accepts it. Links, other images, and anything in
+ * a fenced block, a code span or an HTML comment stay as written.
+ *
+ * One pass, bounded by `STEPS_PER_CHAR` steps a character: GitHub lets anyone
+ * who can comment post 65,536 characters, and this runs during render.
+ * `work`, when given, receives the steps taken.
  */
 export function routeGitHubImages(
   body: string,
   route: (src: string) => string,
   serves: (image: GitHubImage) => boolean = () => true,
+  work?: { steps: number },
 ): string {
-  const swap = (src: string) => {
-    const image = parseGitHubImage(decodeEntities(src));
-    return image && serves(image) ? route(src) : null;
-  };
-  return body
-    .replace(MARKDOWN_IMAGE, (match, head: string, src: string) => {
-      const routed = swap(src);
-      return routed === null ? match : `${head}${routed}`;
-    })
-    .replace(HTML_IMAGE, (match, head: string, double?: string, single?: string, bare?: string) => {
-      const src = double ?? single ?? bare ?? "";
-      const routed = swap(decodeEntities(src));
-      return routed === null ? match : `${head}"${routed.replaceAll('"', "&quot;")}"`;
-    });
+  const scan = new Scan(body);
+  const out: string[] = [];
+  let copied = 0;
+  while (scan.at < body.length && scan.steps <= body.length * STEPS_PER_CHAR + 1_024) {
+    const found = scan.next();
+    if (!found) continue;
+    const image = parseGitHubImage(found.html ? decodeEntities(found.src) : found.src);
+    if (image && serves(image)) {
+      const routed = route(found.html ? decodeEntities(found.src) : found.src);
+      out.push(
+        body.slice(copied, found.srcStart),
+        found.html ? `"${routed.replaceAll('"', "&quot;")}"` : routed,
+      );
+      copied = found.srcEnd;
+    }
+  }
+  out.push(body.slice(copied));
+  if (work) work.steps = scan.steps;
+  return out.join("");
+}
+
+/** A cursor over a body that steps past code and comments and stops at each image. */
+class Scan {
+  at = 0;
+  steps = 0;
+  /** For each backtick run length, a position from which no closing run follows. */
+  private readonly unclosed = new Map<number, number>();
+
+  private readonly body: string;
+
+  constructor(body: string) {
+    this.body = body;
+  }
+
+  /** Moves past one construct; the image found there, if any. */
+  next(): Found | null {
+    const { body } = this;
+    const start = this.at;
+    this.steps += 1;
+    const char = body[start];
+    if ((start === 0 || body[start - 1] === "\n") && this.skipFence()) return null;
+    if (char === "\\") {
+      this.at = start + 2;
+      return null;
+    }
+    if (char === "`") {
+      this.skipCode();
+      return null;
+    }
+    if (char === "<" && body.startsWith("<!--", start)) {
+      const end = body.indexOf("-->", start + 4);
+      this.at = end < 0 ? body.length : end + 3;
+      this.steps += this.at - start;
+      return null;
+    }
+    if (char === "!" && body[start + 1] === "[") return this.markdownImage();
+    if (char === "<" && /^<img[\s/>]/i.test(body.slice(start, start + 5))) return this.htmlImage();
+    this.at = start + 1;
+    return null;
+  }
+
+  /** A fenced block opening on this line: skipped to its closing fence, or to the end. */
+  private skipFence(): boolean {
+    const { body } = this;
+    const open = /^ {0,3}(`{3,}|~{3,})/.exec(body.slice(this.at, this.at + 64));
+    if (!open) return false;
+    const fence = open[1]!;
+    let line = body.indexOf("\n", this.at);
+    while (line >= 0) {
+      const next = body.indexOf("\n", line + 1);
+      const text = body.slice(line + 1, next < 0 ? body.length : next);
+      this.steps += text.length + 1;
+      const close = /^ {0,3}(`+|~+)\s*$/.exec(text);
+      if (close && close[1]![0] === fence[0] && close[1]!.length >= fence.length) {
+        this.at = next < 0 ? body.length : next + 1;
+        return true;
+      }
+      line = next;
+    }
+    this.at = body.length;
+    return true;
+  }
+
+  /** A code span: skipped to the run of as many backticks that closes it, else just the run. */
+  private skipCode() {
+    const { body } = this;
+    let end = this.at;
+    while (body[end] === "`") end += 1;
+    const length = end - this.at;
+    this.steps += length;
+    const unclosedFrom = this.unclosed.get(length);
+    if (unclosedFrom !== undefined && unclosedFrom <= end) {
+      this.at = end;
+      return;
+    }
+    let cursor = end;
+    while (cursor < body.length) {
+      this.steps += 1;
+      if (body[cursor] !== "`") {
+        cursor += 1;
+        continue;
+      }
+      let run = cursor;
+      while (body[run] === "`") run += 1;
+      this.steps += run - cursor;
+      if (run - cursor === length) {
+        this.at = run;
+        return;
+      }
+      cursor = run;
+    }
+    this.unclosed.set(length, end);
+    this.at = end;
+  }
+
+  /** `![alt](destination`: the destination, with balanced parentheses, or `<…>`. */
+  private markdownImage(): Found | null {
+    const start = this.at;
+    this.at = start + 2;
+    const close = this.altEnd(start + 2);
+    if (close < 0 || this.body[close + 1] !== "(") return null;
+    let cursor = close + 2;
+    while (this.body[cursor] === " " || this.body[cursor] === "\t") cursor += 1;
+    const found =
+      this.body[cursor] === "<" ? this.angledDestination(cursor) : this.bareDestination(cursor);
+    if (found) this.at = found.end;
+    return found;
+  }
+
+  /** The `]` that closes an image's alt text from `from`, nested brackets counted; -1 if none near. */
+  private altEnd(from: number): number {
+    const { body } = this;
+    let depth = 1;
+    for (let cursor = from; cursor < body.length && cursor - from <= MAX_ALT; cursor++) {
+      this.steps += 1;
+      const char = body[cursor];
+      if (char === "\\") cursor += 1;
+      else if (char === "[") depth += 1;
+      else if (char === "]") depth -= 1;
+      else if (char === "\n" && body[cursor + 1] === "\n") return -1;
+      if (depth === 0) return cursor;
+    }
+    return -1;
+  }
+
+  /** `<destination>` from the `<` at `open`. */
+  private angledDestination(open: number): Found | null {
+    const close = this.until(open + 1, (char) => char === ">" || char === "<" || char === "\n");
+    if (close < 0 || this.body[close] !== ">") return null;
+    const src = this.body.slice(open + 1, close);
+    return { srcStart: open + 1, srcEnd: close, src, end: close + 1, html: false };
+  }
+
+  /** A bare destination from `start`: up to space or the `)` its parentheses leave unbalanced. */
+  private bareDestination(start: number): Found | null {
+    const { body } = this;
+    let cursor = start;
+    let parens = 0;
+    for (; cursor < body.length && cursor - start <= MAX_IMAGE_URL; cursor++) {
+      this.steps += 1;
+      const char = body[cursor]!;
+      if (char <= " " || (char === ")" && parens === 0)) break;
+      if (char === "\\") cursor += 1;
+      else if (char === "(") parens += 1;
+      else if (char === ")") parens -= 1;
+      if (parens > MAX_PAREN_DEPTH) return null;
+    }
+    if (cursor === start || parens !== 0) return null;
+    return {
+      srcStart: start,
+      srcEnd: cursor,
+      src: body.slice(start, cursor),
+      end: cursor,
+      html: false,
+    };
+  }
+
+  /** `<img … src=…>`: its `src` value, quotes included in the span replaced. */
+  private htmlImage(): Found | null {
+    const { body } = this;
+    const start = this.at;
+    const close = this.until(start + 1, (char) => char === ">" || char === "<");
+    this.at = start + 1;
+    if (close < 0 || body[close] !== ">") return null;
+    const tag = body.slice(start, close);
+    const src = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i.exec(tag);
+    this.at = close + 1;
+    if (!src) return null;
+    const value = src[1] ?? src[2] ?? src[3] ?? "";
+    const quoted = src[3] === undefined ? 2 : 0;
+    const srcEnd = start + src.index + src[0].length;
+    const srcStart = srcEnd - value.length - quoted;
+    return { srcStart, srcEnd, src: value, end: close + 1, html: true };
+  }
+
+  /** The first position from `from` where `stop` holds, within `MAX_TAG`; -1 past it or the end. */
+  private until(from: number, stop: (char: string) => boolean): number {
+    const { body } = this;
+    for (let cursor = from; cursor < body.length && cursor - from <= MAX_TAG; cursor++) {
+      this.steps += 1;
+      if (stop(body[cursor]!)) return cursor;
+    }
+    return -1;
+  }
 }
 
 /** The entities GitHub writes in an attribute's URL. */

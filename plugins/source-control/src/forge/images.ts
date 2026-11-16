@@ -5,7 +5,7 @@
  * a header, and the redirect it earns is read, not followed. No image bytes
  * are fetched.
  */
-import type { GitHubImage } from "../core/pr-images.ts";
+import { refSplits, type GitHubImage } from "../core/pr-images.ts";
 import { classifyFailure, GhError, type Exec } from "./github.ts";
 
 /** How long GitHub may take to answer before the image counts as unavailable. */
@@ -28,16 +28,21 @@ export function allowedLocation(location: string | null, allowed: RegExp): strin
 
 export type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
-/** The signed URL for `image`, as the account `exec` runs as. Throws a `GhError`. */
+/**
+ * The signed URL for `image`, as the account `exec` runs as. `refs` are
+ * branches a committed file's ref is likely to be: the pull request's head and
+ * base. Throws a `GhError`.
+ */
 export async function resolveImage(
   exec: Exec,
   image: GitHubImage,
   signal?: AbortSignal,
   fetchImpl: Fetch = fetch,
+  refs: readonly string[] = [],
 ): Promise<string> {
   return image.kind === "attachment"
     ? resolveAttachment(exec, image.url, signal, fetchImpl)
-    : resolveFile(exec, image, signal);
+    : resolveFile(exec, image, refs, signal);
 }
 
 async function resolveAttachment(
@@ -75,20 +80,36 @@ async function resolveAttachment(
   return location;
 }
 
+/** Where the contents API sends a reader: the raw host, or the LFS media host for a file in Git LFS. */
+const FILE_HOSTS = /^(?:raw|media)\.githubusercontent\.com$/;
+
+/** A committed file's download URL, trying each way its ref may end until GitHub knows one. */
 async function resolveFile(
   exec: Exec,
   image: Extract<GitHubImage, { kind: "file" }>,
+  refs: readonly string[],
   signal: AbortSignal | undefined,
 ): Promise<string> {
-  const parts = image.path.split("/");
   // Checked again where the token is: each part names one step inside the repository.
-  if (parts.some((part) => part === "" || part === "." || part === ".." || part.includes("\\")))
+  if (image.segments.some((part) => !part || part === "." || part === ".." || /[/\\]/.test(part)))
     throw new GhError("failed", "Not a file in the repository.");
-  const path = parts.map(encodeURIComponent).join("/");
-  const endpoint = `repos/${image.repo.owner}/${image.repo.name}/contents/${path}?ref=${encodeURIComponent(image.ref)}`;
-  const result = await exec(["api", endpoint, "--jq", ".download_url"], signal ? { signal } : {});
-  if (result.code !== 0 || result.failure) throw classifyFailure(result);
-  const location = allowedLocation(result.stdout.trim(), /^raw\.githubusercontent\.com$/);
-  if (!location) throw new GhError("failed", "GitHub gave no download for the image.");
-  return location;
+  let missing: GhError | null = null;
+  for (const { ref, path } of refSplits(image.segments, refs)) {
+    const endpoint = `repos/${image.repo.owner}/${image.repo.name}/contents/${path
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/")}?ref=${encodeURIComponent(ref)}`;
+    const result = await exec(["api", endpoint, "--jq", ".download_url"], signal ? { signal } : {});
+    if (result.code !== 0 || result.failure) {
+      const error = classifyFailure(result);
+      // Another split of the ref may name the file; any other failure is the answer.
+      if (error.code !== "not-found") throw error;
+      missing = error;
+      continue;
+    }
+    const location = allowedLocation(result.stdout.trim(), FILE_HOSTS);
+    if (!location) throw new GhError("failed", "GitHub gave no download for the image.");
+    return location;
+  }
+  throw missing ?? new GhError("not-found", "GitHub has no such image here.");
 }

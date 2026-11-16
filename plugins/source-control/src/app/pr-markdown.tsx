@@ -8,7 +8,6 @@ import { createContext, useContext, useMemo } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import { PR_IMAGE_PATH, routeGitHubImages, servesImage } from "../core/pr-images.ts";
 import { parseChangeKey } from "../core/review.ts";
-import { cx } from "./format.ts";
 
 /** The Change whose pull request the Markdown below comes from. */
 export const PrImagesContext = createContext<ChangeKey | null>(null);
@@ -21,13 +20,6 @@ export function prImageUrl(pluginId: string, key: ChangeKey, src: string, origin
     .replaceAll("(", "%28")
     .replaceAll(")", "%29");
 }
-
-/**
- * A routed image keeps a quiet box until it loads; bb's image has no size of
- * its own. The selectors end in an attribute, per AGENTS.md.
- */
-const ROUTED_IMAGE =
-  "[&_img[src*='/http/pr-image?']]:min-h-16 [&_img[src*='/http/pr-image?']]:min-w-48 [&_img[src*='/http/pr-image?']]:rounded-md [&_img[src*='/http/pr-image?']]:bg-muted/40";
 
 export function PrMarkdown({
   content,
@@ -55,5 +47,5 @@ export function PrMarkdown({
       (image) => servesImage(image, change.repo, change.headOwner),
     );
   }, [content, key, pluginId]);
-  return <Markdown content={routed} className={cx(className, key !== null && ROUTED_IMAGE)} />;
+  return <Markdown content={routed} className={className} />;
 }

@@ -12,37 +12,40 @@ import {
   REDIRECT_MAX_AGE_S,
   SIGNED_KEPT_MS,
   type ImageAnswer,
+  type Visibility,
 } from "./pr-images.ts";
 
 const KEY = "gh:argus-labs/rampage-client:argus-labs:scott/scene-router" as ChangeKey;
 const UPLOAD = "https://github.com/user-attachments/assets/0993b262-b0ae-4631-b40a-65c93ae1420c";
 const SIGNED = "https://github-production-user-asset-6210df.s3.amazonaws.com/1/2.png?sig=1";
 
+type ImageRead = Extract<ReviewRead, { kind: "image" }>;
+
 function world(
   options: {
-    open?: boolean;
-    answer?: () => Effect.Effect<unknown, ForgeUnavailable>;
-    known?: (key: ChangeKey) => boolean;
+    visibility?: Visibility;
+    answer?: (read: ImageRead) => Effect.Effect<string | null, ForgeUnavailable>;
+    read?: (key: ChangeKey) => boolean;
   } = {},
 ) {
-  const reads: ReviewRead[] = [];
+  const reads: ImageRead[] = [];
   const probes: string[] = [];
   let now = 1_000_000;
   const sites = {
-    repoRead: (read: ReviewRead) => {
+    imageRead: (read: ImageRead) => {
       reads.push(read);
-      return (options.answer?.() ?? Effect.succeed({ kind: "image", location: SIGNED })) as never;
+      return options.answer?.(read) ?? Effect.succeed(SIGNED);
     },
   } as unknown as ForgeSites;
   const images = createPrImages({
     sites,
     share: (_key, work) => work,
     placementsFor: () => [],
-    known: options.known ?? (() => true),
+    pullRequest: (key) => ((options.read ?? (() => true))(key) ? { baseRef: "main" } : null),
     now: () => now,
     probe: async (url) => {
       probes.push(url);
-      return options.open ?? false;
+      return options.visibility ?? "private";
     },
   });
   const image = (key: string | undefined, src: string | undefined) =>
@@ -69,21 +72,45 @@ test("anything but a GitHub image of a GitHub Change is a 400, before any networ
   expect(reads).toEqual([]);
 });
 
-test("a public image redirects to its own URL without asking a site", async () => {
-  const { reads, image } = world({ open: true });
-  const answer = await image(KEY, UPLOAD);
-  expect(answer).toMatchObject({ kind: "redirect", location: UPLOAD });
+test("a Change bb has not read gets no image, before any network call", async () => {
+  const { reads, probes, image } = world({ read: (key) => key !== KEY });
+  expect(await image(KEY, UPLOAD)).toMatchObject({ kind: "rejected" });
+  expect(probes).toEqual([]);
   expect(reads).toEqual([]);
 });
 
-test("a private image redirects to the signed URL its repository's site resolves", async () => {
+test("an encoded path that climbs out of the repository, or a file that is not an image, is refused", async () => {
+  const { reads, probes, image } = world();
+  for (const src of [
+    "https://github.com/argus-labs/rampage-client/raw/trunk/x%2F..%2F..%2F..%2F..%2Fcli%2Fcli%2Fcontents%2FREADME.md",
+    "https://github.com/argus-labs/rampage-client/raw/trunk/x%2F..%2F..%2Fa.png",
+    "https://github.com/argus-labs/rampage-client/raw/main/README.md",
+    "https://github.com/argus-labs/rampage-client/raw/main/.env",
+  ])
+    expect((await image(KEY, src)).kind, src).toBe("rejected");
+  expect(probes).toEqual([]);
+  expect(reads).toEqual([]);
+});
+
+test("a public image redirects to its own URL without asking a site", async () => {
+  const { reads, image } = world({ visibility: "public" });
+  expect(await image(KEY, UPLOAD)).toMatchObject({ kind: "redirect", location: UPLOAD });
+  expect(reads).toEqual([]);
+});
+
+test("a private image redirects to the signed URL, read with the pull request's branches as ref hints", async () => {
   const { reads, image } = world();
   const response = imageResponse(await image(KEY, UPLOAD));
   expect(response.status).toBe(302);
   expect(response.headers.get("location")).toBe(SIGNED);
   expect(response.headers.get("cache-control")).toBe(`private, max-age=${REDIRECT_MAX_AGE_S}`);
   expect(reads).toEqual([
-    { kind: "image", repo: { owner: "argus-labs", name: "rampage-client" }, src: UPLOAD },
+    {
+      kind: "image",
+      repo: { owner: "argus-labs", name: "rampage-client" },
+      src: UPLOAD,
+      refs: ["scott/scene-router", "main"],
+    },
   ]);
 });
 
@@ -107,6 +134,13 @@ test("a signed URL is kept briefly and never handed out past GitHub's 300 s", as
   expect(reads).toHaveLength(2);
 });
 
+test("one image is cached once, whatever query or fragment its URL carries", async () => {
+  const { reads, image } = world();
+  for (const src of [UPLOAD, `${UPLOAD}?v=1`, `${UPLOAD}?v=2`, `${UPLOAD}#a`])
+    await image(KEY, src);
+  expect(reads).toHaveLength(1);
+});
+
 test("an unreachable site answers the failed state as an image, not a redirect", async () => {
   const { image } = world({
     answer: () =>
@@ -124,63 +158,17 @@ test("an unreachable site answers the failed state as an image, not a redirect",
   expect(svg).toContain("laptop is not answering.");
 });
 
-test("an image no signed-in account can see says so, not that gh is signed out", () => {
-  expect(
-    imageProblem({
-      kind: "auth",
-      site: "dev-pc",
-      detail: "No signed-in GitHub account can see o/r.",
-    }),
-  ).toBe("No signed-in GitHub account can see this image.");
-});
-
-test("concurrent requests for one image resolve once, and at most four images resolve at a time", async () => {
-  const runtime = ManagedRuntime.make(SharedWork.layer);
-  const share = await runtime.runPromise(Effect.service(SharedWork));
-  const gate = await Effect.runPromise(Deferred.make<void>());
-  let running = 0;
-  let most = 0;
-  const reads: string[] = [];
-  const sites = {
-    repoRead: (read: Extract<ReviewRead, { kind: "image" }>) =>
-      Effect.gen(function* () {
-        reads.push(read.src);
-        running += 1;
-        most = Math.max(most, running);
-        yield* Deferred.await(gate);
-        running -= 1;
-        return { kind: "image", location: SIGNED };
-      }),
-  } as unknown as ForgeSites;
-  const images = createPrImages({
-    sites,
-    share,
-    placementsFor: () => [],
-    known: () => true,
-    now: () => 0,
-    probe: async () => false,
+test("an image never shown to be private goes to its own URL when no account can sign it", async () => {
+  const { image } = world({ visibility: "unknown", answer: () => Effect.succeed(null) });
+  expect(await image(KEY, UPLOAD)).toMatchObject({
+    kind: "redirect",
+    location: UPLOAD,
+    maxAgeS: 0,
   });
-  const ids = Array.from({ length: 6 }, (_, n) => `0993b262-b0ae-4631-b40a-65c93ae1420${n}`);
-  const asked = [
-    UPLOAD,
-    UPLOAD,
-    UPLOAD,
-    ...ids.map((id) => `https://github.com/user-attachments/assets/${id}`),
-  ];
-  const answers = Promise.all(asked.map((src) => runtime.runPromise(images.image(KEY, src))));
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  expect(most).toBe(4);
-  await Effect.runPromise(Deferred.succeed(gate, undefined));
-  expect((await answers).every((answer) => answer.kind === "redirect")).toBe(true);
-  expect(reads.filter((src) => src === UPLOAD)).toHaveLength(1);
-  expect(reads).toHaveLength(7);
-  await runtime.dispose();
 });
 
 test("an image no account sees is the failed state, kept briefly so loads do not re-ask every account", async () => {
-  const { reads, image, tick } = world({
-    answer: () => Effect.succeed({ kind: "image", location: null }) as never,
-  });
+  const { reads, image, tick } = world({ answer: () => Effect.succeed(null) });
   const first = await image(KEY, UPLOAD);
   expect(first).toMatchObject({ kind: "failed" });
   expect(imageProblem((first as Extract<ImageAnswer, { kind: "failed" }>).problem)).toBe(
@@ -193,22 +181,91 @@ test("an image no account sees is the failed state, kept briefly so loads do not
   expect(reads).toHaveLength(2);
 });
 
-test("a Change bb has not read gets no image, before any network call", async () => {
-  const { reads, probes, image } = world({ known: (key) => key !== KEY });
-  expect(await image(KEY, UPLOAD)).toMatchObject({ kind: "rejected" });
-  expect(probes).toEqual([]);
-  expect(reads).toEqual([]);
+test("an image no signed-in account can see says so, not that gh is signed out", () => {
+  expect(
+    imageProblem({
+      kind: "auth",
+      site: "dev-pc",
+      detail: "No signed-in GitHub account can see o/r.",
+    }),
+  ).toBe("No signed-in GitHub account can see this image.");
 });
 
-test("an encoded path that climbs out of the repository, or a file that is not an image, is refused", async () => {
-  const { reads, probes, image } = world();
-  for (const src of [
-    "https://github.com/argus-labs/rampage-client/raw/trunk/x%2F..%2F..%2F..%2F..%2Fcli%2Fcli%2Fcontents%2FREADME.md",
-    "https://github.com/argus-labs/rampage-client/raw/trunk/x%2F..%2F..%2Fa.png",
-    "https://github.com/argus-labs/rampage-client/raw/main/README.md",
-    "https://github.com/argus-labs/rampage-client/raw/main/.env",
-  ])
-    expect((await image(KEY, src)).kind, src).toBe("rejected");
-  expect(probes).toEqual([]);
-  expect(reads).toEqual([]);
+/** A server with real shared work, whose signed reads wait on a gate per repository. */
+async function gated(waitMs?: number) {
+  const runtime = ManagedRuntime.make(SharedWork.layer);
+  const share = await runtime.runPromise(Effect.service(SharedWork));
+  const gates = new Map<string, Deferred.Deferred<void>>();
+  const gate = (repo: string) => {
+    let deferred = gates.get(repo);
+    if (!deferred) gates.set(repo, (deferred = Effect.runSync(Deferred.make<void>())));
+    return deferred;
+  };
+  const running = new Map<string, number>();
+  const most = new Map<string, number>();
+  const reads: string[] = [];
+  const sites = {
+    imageRead: (read: ImageRead) =>
+      Effect.gen(function* () {
+        const repo = `${read.repo.owner}/${read.repo.name}`;
+        reads.push(read.src);
+        running.set(repo, (running.get(repo) ?? 0) + 1);
+        most.set(repo, Math.max(most.get(repo) ?? 0, running.get(repo)!));
+        yield* Deferred.await(gate(repo));
+        running.set(repo, running.get(repo)! - 1);
+        return SIGNED;
+      }),
+  } as unknown as ForgeSites;
+  const images = createPrImages({
+    sites,
+    share,
+    placementsFor: () => [],
+    pullRequest: () => ({ baseRef: "main" }),
+    now: () => 0,
+    probe: async () => "private",
+    ...(waitMs === undefined ? {} : { waitMs }),
+  });
+  const open = (repo: string) => Effect.runPromise(Deferred.succeed(gate(repo), undefined));
+  const ask = (key: string, src: string) => runtime.runPromise(images.image(key, src));
+  return { runtime, reads, most, open, ask };
+}
+
+const upload = (n: number) =>
+  `https://github.com/user-attachments/assets/0993b262-b0ae-4631-b40a-65c93ae142${String(n).padStart(2, "0")}`;
+
+test("requests for one image resolve once, and each repository signs at most four at a time", async () => {
+  const { runtime, reads, most, open, ask } = await gated();
+  const asked = [upload(0), upload(0), upload(0), ...[1, 2, 3, 4, 5, 6].map(upload)];
+  const answers = Promise.all(asked.map((src) => ask(KEY, src)));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(most.get("argus-labs/rampage-client")).toBe(4);
+  await open("argus-labs/rampage-client");
+  expect((await answers).every((answer) => answer.kind === "redirect")).toBe(true);
+  expect(reads.filter((src) => src === upload(0))).toHaveLength(1);
+  expect(reads).toHaveLength(7);
+  await runtime.dispose();
+});
+
+test("a slow repository does not hold up another repository's images", async () => {
+  const { runtime, open, ask } = await gated();
+  const slow = Promise.all([1, 2, 3, 4, 5, 6, 7, 8].map((n) => ask(KEY, upload(n))));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  await open("o/other");
+  expect(await ask("gh:o/other:o:topic", upload(50))).toMatchObject({ kind: "redirect" });
+  await open("argus-labs/rampage-client");
+  await slow;
+  await runtime.dispose();
+});
+
+test("a request waits a bounded time, answers the failed state, and the next load gets the result", async () => {
+  const { runtime, open, ask } = await gated(30);
+  const first = await ask(KEY, upload(1));
+  expect(first).toMatchObject({ kind: "failed" });
+  expect(imageProblem((first as Extract<ImageAnswer, { kind: "failed" }>).problem)).toBe(
+    "GitHub is taking too long for this image.",
+  );
+  await open("argus-labs/rampage-client");
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(await ask(KEY, upload(1))).toMatchObject({ kind: "redirect", location: SIGNED });
+  await runtime.dispose();
 });

@@ -387,7 +387,7 @@ export type ReviewRead =
   | { kind: "landed"; prs: PrRef[]; commits: CommitRef[] }
   | { kind: "mergePolicy"; repo: Repo; number: number }
   | { kind: "jobLogs"; repo: Repo; jobIds: number[] }
-  | { kind: "image"; repo: Repo; src: string };
+  | { kind: "image"; repo: Repo; src: string; refs?: string[] };
 export type ReviewAnswer =
   | { kind: "inbox"; entries: InboxEntry[] }
   | { kind: "files"; files: ForgeFile[] }
@@ -435,19 +435,28 @@ export async function runReviewRead(
       return { kind: "mergePolicy", policy: await readMergePolicy(exec, read, signal) };
     case "jobLogs":
       return { kind: "jobLogs", logs: await readJobLogs(exec, read.repo, read.jobIds, signal) };
-    case "image": {
-      // Checked again where the token is: only GitHub's own image URLs are asked for.
-      const image = parseGitHubImage(read.src);
-      if (!image) throw new GhError("not-found", "Not a GitHub image.");
-      // An image this account cannot see is an answer, not a failure: a failure would make
-      // the server forget which account reads the repository, for every other read too.
-      try {
-        return { kind: "image", location: await resolveImage(exec, image, signal) };
-      } catch (error) {
-        if (error instanceof GhError && (error.code === "not-found" || error.code === "forbidden"))
-          return { kind: "image", location: null };
-        throw error;
-      }
-    }
+    case "image":
+      return { kind: "image", location: await readImage(exec, read, signal) };
+  }
+}
+
+/**
+ * Where this account finds a pull request's image, or null when it cannot see
+ * it: an answer, not a failure, so the server moves on to its next account.
+ */
+async function readImage(
+  exec: Exec,
+  read: Extract<ReviewRead, { kind: "image" }>,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  // Checked again where the token is: only GitHub's own image URLs are asked for.
+  const image = parseGitHubImage(read.src);
+  if (!image) throw new GhError("not-found", "Not a GitHub image.");
+  try {
+    return await resolveImage(exec, image, signal, fetch, read.refs ?? []);
+  } catch (error) {
+    if (error instanceof GhError && (error.code === "not-found" || error.code === "forbidden"))
+      return null;
+    throw error;
   }
 }

@@ -95,7 +95,7 @@ export function createReview(deps: {
     sites: deps.sites,
     share: deps.share,
     placementsFor: revision.placementsFor,
-    known: (key) => deps.store.forge(key).read?.value != null,
+    pullRequest: (key) => deps.store.forge(key).read?.value ?? null,
     now: deps.now,
   });
   return {

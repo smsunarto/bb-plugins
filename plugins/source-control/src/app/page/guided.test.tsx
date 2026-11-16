@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
+import MarkdownIt from "markdown-it";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { renderSlot, type PluginRpcTestHandlers } from "@get-bb/plugin-sdk/testing/app";
 import { EMPTY_GUIDE_VIEW, type Guide, type GuideView } from "../../core/guide.ts";
@@ -295,18 +296,41 @@ test("a long description starts clipped and opens in full", async () => {
 test("the description's GitHub images load through the plugin's image route; others keep their URL", async () => {
   const github = changeKeySchema.parse("gh:o/r:o:scott/guided");
   const upload = "https://github.com/user-attachments/assets/0993b262-b0ae-4631-b40a-65c93ae1420c";
+  const committed = "https://github.com/o/r/blob/scott/guided/docs/Screenshot_(1).png?raw=true";
   const badge = "https://img.shields.io/badge/x-y-green";
   const slot = render(
     server({
-      description: `![shot](${upload})\n\n<img width="300" alt="html" src="${upload}">\n\n![badge](${badge})`,
+      description: [
+        `![shot](${upload})`,
+        `<img width="300" alt="html" src="${upload}">`,
+        `![committed](${committed})`,
+        `![badge](${badge})`,
+        "```md",
+        `![in code](${upload})`,
+        "```",
+      ].join("\n\n"),
     }),
     () => <ReviewPanel subPath={reviewPath({ key: github, tab: "overview" })} />,
   );
   const description = await slot.findByTestId("sc-description");
-  const route = `${window.location.origin}/api/v1/plugins/source-control/http/pr-image?${new URLSearchParams({ change: github, src: upload })}`;
-  expect(within(description).getByTestId("bb-markdown").textContent).toBe(
-    `![shot](${route})\n\n<img width="300" alt="html" src="${route}">\n\n![badge](${badge})`,
+  // bb's test Markdown prints its content; render it as Markdown to see the images a reader gets.
+  const page = document.createElement("div");
+  page.innerHTML = new MarkdownIt({ html: true }).render(
+    within(description).getByTestId("bb-markdown").textContent ?? "",
   );
+  const images = [...page.querySelectorAll("img")].map((image) => {
+    const url = new URL(image.getAttribute("src")!);
+    return url.pathname === "/api/v1/plugins/source-control/http/pr-image"
+      ? { routed: url.searchParams.get("src"), change: url.searchParams.get("change") }
+      : { direct: url.href };
+  });
+  expect(images).toEqual([
+    { routed: upload, change: github },
+    { routed: upload, change: github },
+    { routed: committed, change: github },
+    { direct: badge },
+  ]);
+  expect(page.querySelector("code")?.textContent).toContain(`![in code](${upload})`);
 });
 
 test("an empty description says so", async () => {

@@ -175,7 +175,13 @@ export const reviewReadSchema = z.discriminatedUnion("kind", [
     .strict(),
   /** Where a signed-in reader finds an image in the repository's pull request text. */
   z
-    .object({ kind: z.literal("image"), repo: repoSchema, src: z.string().max(MAX_IMAGE_URL) })
+    .object({
+      kind: z.literal("image"),
+      repo: repoSchema,
+      src: z.string().max(MAX_IMAGE_URL),
+      /** Branches a committed file's ref is likely to be: the pull request's head and base. */
+      refs: z.array(z.string().max(255)).max(2).optional(),
+    })
     .strict(),
 ]);
 

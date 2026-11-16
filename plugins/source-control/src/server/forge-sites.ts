@@ -496,6 +496,55 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
       ),
     );
 
+  /**
+   * Where a signed-in reader finds a pull request's image: the account that
+   * read `alsoRepo` (the pull request's repository) or the image's own
+   * repository first, then every other account, until one answers with a
+   * location. Null when every account answered and none sees it. Never
+   * changes which account bb remembers for a repository: an image read is
+   * not a repository read, and a fork's file may be visible to another account.
+   */
+  const imageRead = (
+    read: Extract<ReviewRead, { kind: "image" }>,
+    placements: readonly Placement[],
+    alsoRepo?: { owner: string; name: string },
+  ) =>
+    withinDeadline(
+      Effect.gen(function* () {
+        const tried: Access[] = [];
+        let refusal: Problem | null = null;
+        const attempt = Effect.fnUntraced(function* (access: Access) {
+          if (tried.some((done) => sameAccess(done, access))) return null;
+          tried.push(access);
+          const answer = yield* reviewAt(access, read).pipe(Effect.result);
+          if (answer._tag === "Success")
+            return answer.success.kind === "image" ? answer.success.location : null;
+          if (!invisible(answer.failure.code)) refusal ??= refusedProblem(answer.failure);
+          return null;
+        });
+        const remembered = [alsoRepo, read.repo].flatMap((repo) => {
+          const access = repo ? seen.get(repoName({ repo })) : undefined;
+          return access ? [access] : [];
+        });
+        for (const access of remembered) {
+          const location = yield* attempt(access);
+          if (location) return location;
+        }
+        for (const source of [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)])
+          for (const access of yield* source) {
+            const location = yield* attempt(access);
+            if (location) return location;
+          }
+        if (refusal) return yield* unavailable(refusal);
+        if (tried.length === 0)
+          return yield* unavailable({
+            kind: "no-site",
+            host: placements[0]?.hostName ?? SERVER_SITE_NAME,
+          });
+        return null;
+      }),
+    );
+
   /** One account's inbox, on the site it is signed in on. */
   const inbox = (login: string, placements: readonly Placement[], pins: readonly PrRef[] = []) =>
     withinDeadline(
@@ -625,6 +674,7 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     probeHosts,
     inbox,
     repoRead,
+    imageRead,
     backgroundRead,
     /** Forget every probe, as an explicit retry does. */
     reprobe: probes.reset,
