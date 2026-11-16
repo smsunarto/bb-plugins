@@ -5,7 +5,7 @@
  * there instead.
  */
 import { experimental_useRpcQuery as useRpcQuery } from "@get-bb/plugin-sdk/app";
-import { memo, useMemo, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { describeProblem, type Commit } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import type { ReviewRevision } from "../../core/review.ts";
@@ -219,6 +219,13 @@ export function CommitsView({
     </div>
   );
   const elsewhere = selected && !at ? <OnGitHub url={url} commit={selected} /> : null;
+  // A narrow column puts the picked commit's files (or its GitHub link) under the whole list, out
+  // of sight on a phone: bring them up once the reader picks one. Reads layout only on that pick.
+  const detail = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!wide && selected) detail.current?.scrollIntoView({ block: "start" });
+  }, [wide, selected]);
+  const marker = wide ? null : <div ref={detail} aria-hidden className="scroll-mt-2" />;
 
   if (at)
     return (
@@ -243,6 +250,7 @@ export function CommitsView({
               <>
                 {lead}
                 {card}
+                {marker}
               </>
             )
           }
@@ -254,6 +262,7 @@ export function CommitsView({
       <div className="flex max-w-3xl min-w-0 flex-col gap-4 px-4 py-4 @3xl:px-6">
         {lead}
         {card}
+        {marker}
         {elsewhere}
       </div>
     </div>
