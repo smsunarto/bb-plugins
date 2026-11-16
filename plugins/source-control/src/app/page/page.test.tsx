@@ -394,6 +394,32 @@ test("late patches for A never draw in B's pane", async () => {
   expect(patchCalls.map((call) => (call.input as { key: string }).key)).toEqual([a.key, b.key]);
 });
 
+test("a row's title is one line that ends in an ellipsis, in the nav and on a phone", async () => {
+  const title =
+    "fix(cli/docker): absolutize projectDir in NewClientConfig to stop relative world_path resolving";
+  // A phone-wide page: with no Change chosen, it is the Changes list.
+  const width = window.innerWidth;
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: 402 });
+  try {
+    const slot = render({
+      inbox: () => ({ smsunarto: read([row("scott/long", { title })]) }),
+    });
+    // The sidebar's nav and the phone page's list.
+    await waitFor(() => expect(navRows(slot)).toHaveLength(2));
+    for (const each of slot.getAllByTestId("sc-nav-row")) {
+      const span = each.querySelector(`[title="${title}"]`);
+      expect(span?.textContent).toBe(title);
+      expect(span?.className).toContain("truncate");
+      expect(span?.className).not.toContain("line-clamp");
+    }
+    expect(
+      slot.getByTestId("sc-review-page").querySelector("[data-testid=sc-nav-row]"),
+    ).not.toBeNull();
+  } finally {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+  }
+});
+
 test("filters count every source's rows once and show only their own", async () => {
   const both = row("scott/both", { asked: false, mine: true });
   const slot = render({
