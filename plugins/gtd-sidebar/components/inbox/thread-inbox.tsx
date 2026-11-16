@@ -982,10 +982,9 @@ function useRowCommands({
         pendingAdvanceRef.current = { settledThreadId: threadId, nextThreadId, awaitsArchive };
         // A parent waits on bb's confirmation, so only the effect above
         // advances, once the archive lands. A cancel leaves the user in place.
-        if (!awaitsArchive) {
-          openThread(nextThreadId);
-          onNavigate();
-        }
+        // The advance opens the neighbour behind the list without closing a
+        // phone's drawer, so triage can carry on down the shelf.
+        if (!awaitsArchive) openThread(nextThreadId);
       }
     }
     archiveIfActive(threads, threadId, archive);

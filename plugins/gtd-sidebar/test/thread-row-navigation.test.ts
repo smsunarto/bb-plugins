@@ -2647,7 +2647,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(currentPointer.mock.calls.length, 1);
     });
 
-    it("settles against the current selection and scoped shelf, then repairs the compose route", () => {
+    it("settles against the current selection and scoped shelf, then repairs the compose route, leaving the sidebar open", () => {
       const currentActions = actions();
       const host = {
         ...hostState([
@@ -2678,11 +2678,11 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         currentActions.open.mock.invocationCallOrder[0]! <
           currentActions.archive.mock.invocationCallOrder[1]!,
       );
-      assert.equal(navigate.mock.calls.length, 1);
+      assert.equal(navigate.mock.calls.length, 0);
       assert.equal(oldNavigate.mock.calls.length, 0);
       view.updateInbox({ activeThreadId: null });
       assert.deepEqual(currentActions.open.mock.calls, [["c"], ["c"]]);
-      assert.equal(navigate.mock.calls.length, 1);
+      assert.equal(navigate.mock.calls.length, 0);
     });
 
     it("advances inside the settled row's own shelf, never across into the next one", () => {
