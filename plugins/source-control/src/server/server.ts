@@ -51,7 +51,6 @@ import { createThreadChanges } from "./thread-changes.ts";
 import { createMoved, type Moved } from "./moved.ts";
 import { createCheckoutReads, type CheckoutReads } from "./checkout-reads.ts";
 import { createPlacements } from "./placement.ts";
-import { createPrReads, type PrReads } from "./pr-reads.ts";
 
 export type SourceControlDeps = {
   serverExec: Exec;
@@ -257,7 +256,6 @@ function registerRpc(
   fix: FixChecks,
   checkoutChat: CheckoutChat,
   reads: CheckoutReads,
-  prStatuses: PrReads,
 ) {
   const afterRegistration = activation(bb);
   const items = changes.review.items;
@@ -278,8 +276,6 @@ function registerRpc(
         runtime.run(reads.files(environmentId, target), context.experimental_signal),
       checkoutPatches: ({ environmentId, target, files }, context) =>
         runtime.run(reads.patches(environmentId, target, files), context.experimental_signal),
-      pullRequestsByRef: ({ environmentId, refs }, context) =>
-        runtime.run(prStatuses(environmentId, refs), context.experimental_signal),
       ...historyHandlers(runtime, changes),
       ...fixHandlers(runtime, fix),
       checkoutChat: (input) => checkoutChat(input),
@@ -631,7 +627,6 @@ export function createSourceControl(deps: SourceControlDeps) {
         placements,
         hostDeadlineMs: deps.hostDeadlineMs ?? HOST_DEADLINE_MS,
       }),
-      createPrReads({ sites, placements }),
     );
     registerAgents(bb, runtime, changes, guides, moved);
     listen(bb, runtime, host, changes, guides, moved);
