@@ -2,7 +2,7 @@
 // place of BB's picker, as the model row opens the model sheet. Picks go through
 // `setSelection`, the path BB's picker takes; what the SDK cannot set (reusing an environment,
 // setting up a machine, a machine an environment creates) stays in BB's picker, one tap away.
-import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
+import { memo, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { experimental_ProviderIcon as ProviderIcon, useSdk } from "@get-bb/plugin-sdk/app";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,9 @@ const BB_TRIGGER =
  * inside this composer; the press is caught on BB's wrapper around it, before BB's button
  * sees it, so only this composer's row is taken over.
  */
-export function NewThreadMachineSheet(props: { anchor: RefObject<HTMLElement | null> }) {
+export const NewThreadMachineSheet = memo(function NewThreadMachineSheet(props: {
+  anchor: RefObject<HTMLElement | null>;
+}) {
   const composer = usePickerComposer();
   const isSheet = useIsCompactViewport();
   const enabled = isSheet && hasEditablePickers(composer) && composer.selection?.projectId != null;
@@ -78,7 +80,7 @@ export function NewThreadMachineSheet(props: { anchor: RefObject<HTMLElement | n
   };
 
   return <MachineSheet open={open} onOpenChange={setOpen} onMoreOptions={openBbPicker} />;
-}
+});
 
 function MachineSheet(props: {
   open: boolean;

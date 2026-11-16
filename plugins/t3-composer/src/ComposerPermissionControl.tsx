@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { memo, useCallback, useLayoutEffect, useRef, useState } from "react";
 import {
   experimental_PermissionModePicker as PermissionModePicker,
   type ComposerSelection,
@@ -31,7 +31,7 @@ function pickerRouting(routing: CatalogRouting): PickerRouting | undefined {
  * disables its copy (plan mode, a permission snapshot, a pending question):
  * then BB's copy shows the effective mode and this one is hidden.
  */
-export function ComposerPermissionControl() {
+export const ComposerPermissionControl = memo(function ComposerPermissionControl() {
   const composer = usePickerComposer();
   const editable = hasEditablePickers(composer);
   const routing = useCatalogRouting(composer, editable);
@@ -86,4 +86,4 @@ export function ComposerPermissionControl() {
       ) : null}
     </span>
   );
-}
+});

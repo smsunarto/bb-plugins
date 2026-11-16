@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { type ComposerSelection, type PluginComposerApi } from "@get-bb/plugin-sdk/app";
 import { usePickerComposer } from "../composer-handle";
 import { isAnchorInteractive } from "@/components/ui/overlay-anchor";
@@ -56,15 +66,42 @@ export function ComposerModelControls(props: {
   fallback: ReactNode;
   handoffRef?: { current: (() => Promise<boolean>) | null };
 }) {
+  const hasFallback = Boolean(props.fallback);
+  const { handoffRef } = props;
+  // The same element until an input changes, so typing skips the pickers. Not `memo()`:
+  // React 19.2 keeps a `useEffectEvent` callback at its first render inside a memo component.
+  const controls = useMemo(
+    () => <ModelControls hasFallback={hasFallback} handoffRef={handoffRef} />,
+    [hasFallback, handoffRef],
+  );
+  return (
+    <HostControlContext.Provider value={props.fallback}>{controls}</HostControlContext.Provider>
+  );
+}
+
+/**
+ * BB's own control, read from context instead of a prop: the host hands over a new node on
+ * every render, and as a prop it would re-render the pickers on every keystroke.
+ */
+const HostControlContext = createContext<ReactNode>(null);
+
+function HostControl() {
+  return useContext(HostControlContext);
+}
+
+function ModelControls(props: {
+  hasFallback: boolean;
+  handoffRef?: { current: (() => Promise<boolean>) | null };
+}) {
   const composer = usePickerComposer();
   const editable = hasEditablePickers(composer);
-  const catalog = useModelCatalog(composer, editable && props.fallback != null);
+  const catalog = useModelCatalog(composer, editable && props.hasFallback);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const latestPick = useRef(0);
   const controlsRef = useRef<HTMLDivElement>(null);
   const selection = composer.selection;
-  const providerId = props.fallback && editable ? selection?.providerId : undefined;
+  const providerId = props.hasFallback && editable ? selection?.providerId : undefined;
   const provider = catalog.providers.find((candidate) => candidate.id === providerId);
   const models = providerId ? catalog.catalogFor(providerId).models : [];
   const model = findCatalogModel(models, selection?.model);
@@ -167,7 +204,7 @@ export function ComposerModelControls(props: {
     return (
       <>
         <span ref={attachHandoffHost} className="contents">
-          {props.fallback}
+          <HostControl />
         </span>
         {errorNote}
       </>
@@ -193,7 +230,7 @@ export function ComposerModelControls(props: {
           effort={traits.effort}
           speed={traits.speed}
           daybreak={traits.daybreak}
-          bbPicker={traits.daybreak ? props.fallback : null}
+          bbPicker={traits.daybreak ? <HostControl /> : null}
           switchKey={`${composer.key}|${selection.providerId}|${selection.model ?? ""}`}
           onEffortChange={(reasoningLevel) => apply({ reasoningLevel })}
           onSpeedChange={(serviceTier) => void apply({ serviceTier })}
@@ -202,7 +239,7 @@ export function ComposerModelControls(props: {
         {/* Out of sight and inert, only while a handoff drives it; see bb-picker-driver.ts. */}
         {handoffDriving ? (
           <span ref={attachHandoffHost} data-t3-bb-picker-host="" aria-hidden inert>
-            {props.fallback}
+            <HostControl />
           </span>
         ) : null}
         {errorNote}
