@@ -4,8 +4,6 @@ import { machineColors } from "../lib/machine-colors";
 const rosterOf = (size: number, seed: number) =>
   Array.from({ length: size }, (_, index) => `host_${(seed * 7919 + index * 104729).toString(36)}`);
 
-const fixtureRoster = rosterOf(6, 42);
-
 describe("machine colors", () => {
   test("keeps every ID stable when machines join or leave, including colliding IDs", () => {
     for (let seed = 0; seed < 200; seed++) {

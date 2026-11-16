@@ -30,30 +30,6 @@
     "source": "void refresh();"
   },
   {
-    "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "previous.current = retainUnchangedThreads(previous.current, threads);"
-  },
-  {
-    "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "previous.current = retainUnchangedThreads(previous.current, threads);"
-  },
-  {
-    "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "return previous.current;"
-  },
-  {
-    "filename": "plugins/gtd-sidebar/components/inbox/thread-inbox.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "useEffect(() => setProjectOrderOverride(null), [projectOrder]);"
-  },
-  {
     "filename": "plugins/gtd-sidebar/hooks/use-inbox-window.ts",
     "code": "react(incompatible-library)",
     "message": "Use of incompatible library",
@@ -64,12 +40,6 @@
     "code": "react(set-state-in-effect)",
     "message": "Calling setState synchronously within an effect can trigger cascading renders",
     "source": "setNow(armedAt);"
-  },
-  {
-    "filename": "plugins/gtd-sidebar/test/machine-colors.test.ts",
-    "code": "eslint(no-unused-vars)",
-    "message": "Variable 'fixtureRoster' is declared but never used. Unused variables should start with a '_'.",
-    "source": "const fixtureRoster = rosterOf(6, 42);"
   },
   {
     "filename": "plugins/gtd-sidebar/test/use-lifecycle.test.ts",

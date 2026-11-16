@@ -64,13 +64,15 @@ import {
   groupStartsCollapsed,
   projectDropReorderArgs,
   projectReorderArgs,
-  settleProjectOrderOverride,
+  overriddenProjectOrder,
+  settleProjectOrderDrop,
   shouldGroupByProject,
   type ProjectGroup as ProjectGroupRows,
+  type ProjectOrderOverride,
 } from "../../lib/project-groups";
 import { ProjectGroup, SortableProjectGroup } from "./project-group";
 import { isShelvedThread } from "../../lib/settled-threads";
-import { retainUnchangedThreads } from "../../lib/stable-threads";
+import { useStableThreads } from "../../hooks/use-stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { useRetained } from "../../hooks/use-retained";
 import { resolveSidebarBranchLabel } from "../../lib/gitbutler";
@@ -199,9 +201,10 @@ function InboxList({
   // A dropped group draws in its new slot before bb's write lands: the order
   // the drop predicts stands in for bb's until project-order-changed
   // republishes `projects`, when the real order replaces it.
-  const [projectOrderOverride, setProjectOrderOverride] = useState<readonly string[] | null>(null);
-  useEffect(() => setProjectOrderOverride(null), [projectOrder]);
-  const orderedProjectIds = projectOrderOverride ?? projectOrder;
+  const [projectOrderOverride, setProjectOrderOverride] = useState<ProjectOrderOverride | null>(
+    null,
+  );
+  const orderedProjectIds = overriddenProjectOrder(projectOrderOverride, projectOrder);
   const groupedShelves = useMemo(() => {
     const groupsFor = (shelf: InboxShelf): ProjectGroupRows[] =>
       groupRowsByProject(shelves[shelf], orderedProjectIds, (projectId) =>
@@ -286,7 +289,8 @@ function InboxList({
       const args = projectDropReorderArgs(projectId, overProjectId, edge, orderedProjectIds);
       if (args === null) return;
       const optimistic = applyProjectMove(orderedProjectIds, projectId, args);
-      setProjectOrderOverride(optimistic);
+      const base = projectOrder;
+      setProjectOrderOverride({ base, order: optimistic });
       // Settle from bb's canonical order too: it returns its current list for
       // an unchanged reorder but emits no project-order-changed event. bb
       // refuses to move the personal project; a group header never sends it,
@@ -294,7 +298,7 @@ function InboxList({
       // the shelf keeps bb's last order.
       const settle = (order: readonly string[] | null) => {
         setProjectOrderOverride((current) =>
-          settleProjectOrderOverride(current, optimistic, order),
+          settleProjectOrderDrop(current, base, optimistic, order),
         );
       };
       void sdk.projects.reorder({ projectId, ...args }).then(
@@ -1079,14 +1083,6 @@ function useCollapsedGroups() {
     [toggled],
   );
   return { isGroupCollapsed, toggleGroup };
-}
-
-function useStableThreads(threads: readonly PluginSidebarThread[]): readonly PluginSidebarThread[] {
-  const previous = useRef<readonly PluginSidebarThread[]>([]);
-  return useMemo(() => {
-    previous.current = retainUnchangedThreads(previous.current, threads);
-    return previous.current;
-  }, [threads]);
 }
 
 const NO_LABELS: ReadonlyMap<string, string> = new Map();

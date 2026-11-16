@@ -8,9 +8,11 @@ import {
   groupRowsByProject,
   groupStartsCollapsed,
   needsUser,
+  overriddenProjectOrder,
   projectDropEdge,
   projectDropReorderArgs,
   projectReorderArgs,
+  settleProjectOrderDrop,
   settleProjectOrderOverride,
   shouldGroupByProject,
 } from "../lib/project-groups.ts";
@@ -396,5 +398,40 @@ describe("settleProjectOrderOverride", () => {
     const second = ["gamma", "beta", "alpha"];
 
     assert.equal(settleProjectOrderOverride(second, first, ["alpha", "beta", "gamma"]), second);
+  });
+});
+
+describe("project order override", () => {
+  const base = ["alpha", "beta", "gamma"];
+  const optimistic = ["beta", "alpha", "gamma"];
+
+  it("draws a drop's prediction while bb's order is the one it was made against", () => {
+    assert.equal(overriddenProjectOrder({ base, order: optimistic }, base), optimistic);
+    assert.equal(overriddenProjectOrder(null, base), base);
+  });
+
+  it("lapses once bb republishes its order, even with the same contents", () => {
+    const republished = [...optimistic];
+    assert.equal(overriddenProjectOrder({ base, order: optimistic }, republished), republished);
+  });
+
+  it("settles a drop to bb's answer, or drops it when bb refuses", () => {
+    const canonical = ["beta", "alpha", "gamma"];
+    assert.deepEqual(
+      settleProjectOrderDrop({ base, order: optimistic }, base, optimistic, canonical),
+      {
+        base,
+        order: canonical,
+      },
+    );
+    assert.equal(settleProjectOrderDrop({ base, order: optimistic }, base, optimistic, null), null);
+  });
+
+  it("leaves a newer drop, or one made against another order, alone", () => {
+    const newer = { base, order: ["gamma", "beta", "alpha"] };
+    assert.equal(settleProjectOrderDrop(newer, base, optimistic, base), newer);
+    const later = { base: [...base], order: optimistic };
+    assert.equal(settleProjectOrderDrop(later, base, optimistic, base), later);
+    assert.equal(settleProjectOrderDrop(null, base, optimistic, base), null);
   });
 });
