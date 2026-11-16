@@ -131,12 +131,21 @@ export function ReasonHint({
 }
 
 /** The pull request on GitHub: an outlined icon button, opened through bb's link handling. */
-export function OpenOnGitHub({ href, label }: { href: string; label: string }) {
+export function OpenOnGitHub({
+  href,
+  label,
+  compact = false,
+}: {
+  href: string;
+  label: string;
+  /** The phone header's 28px icon rather than the page header's 32px. */
+  compact?: boolean;
+}) {
   return (
     <Hint label="Open in GitHub">
       {/* UrlLink takes no ref: the tooltip anchors on this span. */}
       <span className="inline-flex shrink-0">
-        <Button variant="outline" size="icon" className="size-8" asChild>
+        <Button variant="outline" size="icon" className={compact ? "size-7" : "size-8"} asChild>
           <UrlLink href={href} aria-label={label}>
             <GitHubMark />
           </UrlLink>

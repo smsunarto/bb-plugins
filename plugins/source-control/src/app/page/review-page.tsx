@@ -45,7 +45,7 @@ import { ChangesList } from "./changes-nav.tsx";
 import { CommitsView } from "./commits-view.tsx";
 import { ConversationView } from "./conversation-view.tsx";
 import { FilesView, WrapContext } from "./files-view.tsx";
-import { GuidedView, ViewedProgress } from "./guided-view.tsx";
+import { GuidedView, ReviewBar, ViewedProgress } from "./guided-view.tsx";
 import { PANEL_PATH, PHONE, WIDE, useGo, useNow, useWidth, type Go } from "./hooks.ts";
 import { AskHost, BotIcon, useAskAgent } from "./ask-panel.tsx";
 import { ArrowRight, Chevron, StackIcon, StateIcon } from "./icons.tsx";
@@ -246,7 +246,7 @@ function PinButton({ row, compact }: { row: Ready["row"]; compact?: boolean }) {
 }
 
 /** Merge for an open pull request, at the head and base the header shows. */
-function PageMerge({ detail }: { detail: Ready }) {
+function PageMerge({ detail, compact }: { detail: Ready; compact?: boolean }) {
   const submit = useChangeMerge();
   const target = mergeTarget(detail);
   if (!target) return null;
@@ -254,7 +254,9 @@ function PageMerge({ detail }: { detail: Ready }) {
     <MergeButton
       submit={submit}
       target={target}
-      className="h-8 px-3 text-[13px] font-semibold"
+      className={
+        compact ? "h-7 px-2.5 text-[12px] font-semibold" : "h-8 px-3 text-[13px] font-semibold"
+      }
       label="Merge"
     />
   );
@@ -481,12 +483,14 @@ function Missing({ problem }: { problem: Extract<ChangeDetail, { state: "missing
 // ── Phone header (board E) ─────────────────────────────────────────────
 
 /**
- * Board E's compact head: back to the list and the title, then one line of
- * state, number, findings, checks and viewed progress, so the guide starts
- * three rows sooner than under the full header.
+ * Board E's compact head, on every tab of a phone: back to the list, the
+ * title and the page's actions, then one line of state, number, findings,
+ * checks and viewed progress, and a line for a conflict or a stale read.
+ * The full header and ship path would take half the screen before any file.
  */
-function PhoneHeader({ detail }: { detail: Ready }) {
+function PhoneHeader({ detail, now }: { detail: Ready; now: number }) {
   const { row } = detail;
+  const conflict = conflictText(row);
   const navigate = useBbNavigate();
   const draft = useDraftToggle(detail);
   const { stable } = useChangeReview(row.key);
@@ -513,8 +517,18 @@ function PhoneHeader({ detail }: { detail: Ready }) {
         >
           {row.title}
         </h1>
-        <PinButton row={detail.row} compact />
-        <AskButton compact />
+        <span className="flex shrink-0 items-center gap-1.5">
+          <PageMerge detail={detail} compact />
+          {row.url ? (
+            <OpenOnGitHub
+              href={row.url}
+              label={row.number !== null ? `Open #${row.number} in GitHub` : "Open in GitHub"}
+              compact
+            />
+          ) : null}
+          <PinButton row={detail.row} compact />
+          <AskButton compact />
+        </span>
       </div>
       {/* One line: the checks give way first, so state, number and progress always show. */}
       <div className="flex min-w-0 items-center gap-2.5 px-4 text-[13px] leading-5">
@@ -542,8 +556,24 @@ function PhoneHeader({ detail }: { detail: Ready }) {
           <ViewedProgress changeKey={row.key} revision={detail.revision} compact />
         ) : null}
       </div>
+      {conflict ? (
+        <span
+          data-testid="sc-review-conflicts"
+          className="px-4 text-[12px] leading-4 font-medium text-destructive-text"
+        >
+          {conflict}
+        </span>
+      ) : null}
       {draft.message ? (
         <output className="px-4 text-[12px] leading-4 text-warning">{draft.message}</output>
+      ) : null}
+      {detail.problem ? (
+        <span
+          className="px-4 text-[12px] leading-4 text-muted-foreground"
+          data-testid="sc-review-stale"
+        >
+          {describeProblem(detail.problem)} This is what bb last read. {readAgo(detail.at, now)}.
+        </span>
       ) : null}
     </header>
   );
@@ -644,30 +674,78 @@ function TabBody({
   );
 }
 
-/** The tab row's end: viewed progress on the file tabs, then the send controls unless the phone's bar has them. */
+/** The tab row's end: viewed progress on the file tabs, then the send controls. A phone has both elsewhere. */
 function TabControls({
   location,
   detail,
   send,
-  phoneGuided,
 }: {
   location: Here;
   detail: Ready;
   send: ReactNode;
-  phoneGuided: boolean;
 }) {
   const { revision } = detail;
   const progress =
-    revision && !phoneGuided && (location.tab === "guided" || location.tab === "files") ? (
+    revision && (location.tab === "guided" || location.tab === "files") ? (
       <ViewedProgress changeKey={location.key} revision={revision} />
     ) : null;
-  if (phoneGuided) return null;
   return (
     <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-3">
       {progress}
       {progress ? <span aria-hidden className="h-4 w-px shrink-0 bg-border" /> : null}
       {send}
     </div>
+  );
+}
+
+const NO_ORDER: ReadonlyMap<string, number> = new Map();
+
+/** The phone's review bar off the guide: items step in the Files tab's order once a revision is known. */
+function PhoneBar({
+  changeKey,
+  revision,
+  children,
+}: {
+  changeKey: ChangeKey;
+  revision: Ready["revision"];
+  children: ReactNode;
+}) {
+  if (!revision)
+    return (
+      <ReviewBar changeKey={changeKey} order={NO_ORDER}>
+        {children}
+      </ReviewBar>
+    );
+  return (
+    <OrderedBar changeKey={changeKey} revision={revision}>
+      {children}
+    </OrderedBar>
+  );
+}
+
+function OrderedBar({
+  changeKey,
+  revision,
+  children,
+}: {
+  changeKey: ChangeKey;
+  revision: NonNullable<Ready["revision"]>;
+  children: ReactNode;
+}) {
+  const query = useRpcQuery({
+    contract: sourceControlContract,
+    method: "changeFiles",
+    input: { key: changeKey, revision },
+  });
+  const files = query.data?.ok ? query.data.files : null;
+  const order = useMemo(
+    () => (files ? new Map(files.map((file, index) => [file.path, index])) : NO_ORDER),
+    [files],
+  );
+  return (
+    <ReviewBar changeKey={changeKey} order={order}>
+      {children}
+    </ReviewBar>
   );
 }
 
@@ -712,9 +790,8 @@ function ReviewReady({
       head={detail.head}
     />
   );
-  // On a phone the guided screen carries the send controls in its bottom bar (board E).
-  const phoneGuided = phone && location.tab === "guided";
-  const barSend = phoneGuided ? (
+  // On a phone every tab carries the send controls in a bottom bar (board E); the guide draws its own.
+  const barSend = phone ? (
     <SendControls
       changeKey={key}
       number={detail.row.number}
@@ -726,8 +803,8 @@ function ReviewReady({
   return (
     <FocusContext.Provider value={focus}>
       <WrapContext.Provider value={phone}>
-        {phoneGuided ? (
-          <PhoneHeader detail={detail} />
+        {phone ? (
+          <PhoneHeader detail={detail} now={now} />
         ) : (
           <>
             <Header detail={detail} now={now} />
@@ -737,7 +814,7 @@ function ReviewReady({
           </>
         )}
         <ReviewTabs location={location} files={detail.files} go={go}>
-          <TabControls location={location} detail={detail} send={send} phoneGuided={phoneGuided} />
+          {phone ? null : <TabControls location={location} detail={detail} send={send} />}
         </ReviewTabs>
         <div className="flex min-h-0 min-w-0 flex-1">
           <TabBody
@@ -760,6 +837,11 @@ function ReviewReady({
             </aside>
           ) : null}
         </div>
+        {phone && location.tab !== "guided" ? (
+          <PhoneBar changeKey={key} revision={detail.revision}>
+            {barSend}
+          </PhoneBar>
+        ) : null}
       </WrapContext.Provider>
     </FocusContext.Provider>
   );
