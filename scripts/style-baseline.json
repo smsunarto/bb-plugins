@@ -52,22 +52,22 @@
   {
     "file": "plugins/agentation/components/staged-annotations-action.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"h-8 shrink-0 gap-1.5 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2.5 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]\";"
+    "source": "\"h-8 shrink-0 gap-1 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]\";"
   },
   {
     "file": "plugins/agentation/components/staged-annotations-action.tsx",
     "rule": "arbitrary-edge",
-    "source": "\"h-8 shrink-0 gap-1.5 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2.5 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]\";"
+    "source": "\"h-8 shrink-0 gap-1 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]\";"
   },
   {
     "file": "plugins/agentation/components/staged-annotations-action.tsx",
     "rule": "raw-color",
-    "source": "\"h-8 shrink-0 gap-1.5 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2.5 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]\";"
+    "source": "\"h-8 shrink-0 gap-1 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]\";"
   },
   {
     "file": "plugins/agentation/components/staged-annotations-action.tsx",
     "rule": "raw-color",
-    "source": "\"h-8 shrink-0 gap-1.5 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2.5 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]\";"
+    "source": "\"h-8 shrink-0 gap-1 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]\";"
   },
   {
     "file": "plugins/agentation/components/ui/card.tsx",

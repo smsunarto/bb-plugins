@@ -199,7 +199,7 @@ function AnnotationCard({
 
   return (
     <div className={cn("rounded-lg border border-border bg-card p-3", isClosed && "opacity-60")}>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-xs text-foreground">{annotation.element}</span>
         <Pill className={statusTone[annotation.status]}>{annotation.status}</Pill>
         {routing ? (
@@ -215,7 +215,7 @@ function AnnotationCard({
 
       <p className="mt-2 text-sm text-foreground">{annotation.comment}</p>
 
-      <dl className="mt-2 flex flex-col gap-0.5 text-[11px] text-muted-foreground">
+      <dl className="mt-2 flex flex-col gap-1 text-[11px] text-muted-foreground">
         <div className="truncate">
           <dt className="inline font-medium">Selector: </dt>
           <dd className="inline font-mono">{annotation.elementPath}</dd>
@@ -264,7 +264,7 @@ function AnnotationCard({
         </p>
       ) : null}
 
-      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {!isClosed ? (
           <>
             <Button
@@ -331,7 +331,7 @@ function AnnotationCard({
       </div>
 
       <form
-        className="mt-2 flex items-center gap-1.5"
+        className="mt-2 flex items-center gap-2"
         onSubmit={(event) => {
           event.preventDefault();
           const message = reply.trim();

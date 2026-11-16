@@ -269,7 +269,7 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
       asChip={asChip}
       count={rows.length}
       renderHeader={(dismiss) => (
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-2.5 py-1.5">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 min-h-10 px-3 py-1">
           <p className="truncate text-xs font-medium text-muted-foreground">
             {annotationCountLabel(rows.length)}
           </p>
@@ -383,7 +383,7 @@ const ACTION_BUTTON_CLASS = "mx-px h-8 shrink-0 px-2";
 
 // Matches the composer's attachment chips: a 32px pill with a hairline edge.
 const CHIP_CLASS =
-  "h-8 shrink-0 gap-1.5 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2.5 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]";
+  "h-8 shrink-0 gap-1 rounded-[10px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background px-2 text-[13px] font-normal text-foreground hover:bg-[color-mix(in_srgb,var(--foreground)_6%,var(--background))]";
 
 function annotationCountLabel(count: number): string {
   return `${count} annotation${count === 1 ? "" : "s"}`;
@@ -566,15 +566,15 @@ function AnnotationRow({
 }) {
   const action = "size-7 shrink-0 text-muted-foreground hover:text-foreground";
   return (
-    <li className="flex min-w-0 items-start gap-2 px-2.5 py-2">
+    <li className="flex min-w-0 items-start gap-2 px-3 py-2">
       <span id={descriptionId} className="sr-only">
         {label}
       </span>
-      <span className="shrink-0 pt-0.5 text-muted-foreground" aria-hidden="true">
+      <span className="shrink-0 pt-1 text-muted-foreground" aria-hidden="true">
         {number}.
       </span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5 pt-0.5" aria-hidden="true">
-        <div className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground">
+      <div className="flex min-w-0 flex-1 flex-col gap-1 pt-1" aria-hidden="true">
+        <div className="flex min-w-0 items-center gap-2 text-xs leading-4 text-muted-foreground">
           <Badge variant="secondary" className="min-w-0 max-w-[60%] shrink-0 font-mono">
             <span className="truncate">{parts.target}</span>
           </Badge>
