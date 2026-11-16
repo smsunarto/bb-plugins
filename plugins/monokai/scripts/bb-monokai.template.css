@@ -1672,6 +1672,21 @@ diffs-container {
   margin-bottom: 8px;
 }
 
+/* The command palette (thread search) fills its input band and results with
+ * the page ground, a dialog's look on desktop. In the drawer that left the
+ * card's popover showing only above and below it, as lighter strips. Let the
+ * card show through, as bb's pickers and the composer's model sheet do. */
+.dark [data-persistent-drawer-content] [data-palette-input-band],
+.dark [data-persistent-drawer-content] [data-palette-results-clip] {
+  background: transparent;
+}
+
+/* Its dialog shadow drew a gray line across the drawer near the bottom in
+ * Light, where bb's shadow tokens are visible. */
+[data-persistent-drawer-content] > [data-testid="command-palette"] {
+  box-shadow: none;
+}
+
 /* bb's notification history is a first-class themed surface, separate from
  * the native browser and operating-system banners delivered by the push
  * notification plugin. The host owns responsive placement: a popover on
