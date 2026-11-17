@@ -13,6 +13,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type Reac
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { callSignature, COMPONENTS, type CatalogComponentSpec, type ComponentGroup, type ComponentName } from "../core/catalog";
 import { variantName } from "./FrameFooter";
@@ -31,10 +32,10 @@ export type GallerySelection =
 /** Where each index section starts, for the group chips to jump to. */
 export const groupAnchor = (group: ComponentGroup) => `genui-gallery-group-${group}`;
 
-const FOCUS = "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
 /** The header's icon buttons: 36px, 44px under a finger, with 16px icons. */
 const ICON_BUTTON = "size-9 [@media(pointer:coarse)]:size-11 [&_[data-icon-root]]:size-4";
-const FIELD = "h-9 rounded-lg border border-border [@media(pointer:coarse)]:h-11";
+/** The closed search trigger, drawn like the shadcn Input it opens into. */
+const FIELD = "h-9 rounded-md border border-input [@media(pointer:coarse)]:h-11";
 const KBD = "inline-flex h-5 items-center rounded border border-border px-1 font-mono text-[11px] leading-4 text-muted-foreground [@media(pointer:coarse)]:hidden";
 /** Space kept between the header and a group heading it scrolls to, or the search list and the screen's bottom. */
 const GAP = 12;
@@ -224,7 +225,7 @@ export function GalleryHeader({
             <>
               <div className="relative min-w-0 flex-1">
                 <Icon name="Search" aria-hidden className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                <input
+                <Input
                   // Opened by a tap: focusing in the same task lets an iPhone raise its keyboard.
                   autoFocus
                   type="search"
@@ -243,11 +244,7 @@ export function GalleryHeader({
                   onKeyDown={onKeyDown}
                   autoComplete="off"
                   spellCheck={false}
-                  className={cn(
-                    FIELD,
-                    "w-full appearance-none bg-background pl-8 pr-3 text-sm text-foreground caret-foreground placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden [@media(pointer:coarse)]:text-base",
-                    FOCUS,
-                  )}
+                  className="pl-8 pointer-coarse:h-11 [&::-webkit-search-cancel-button]:hidden"
                 />
               </div>
               <Button
