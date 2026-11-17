@@ -27,6 +27,14 @@ import { queryClient } from "./query.ts";
 import { queryKey } from "./rpc.ts";
 import { parseRulesRoute, RulesPage } from "./rules.tsx";
 
+/**
+ * The page root's height and bottom edge. Under a theme that publishes
+ * `--plugin-page-bottom-inset` (bb Monokai on a phone), the page runs under the
+ * home indicator and pads its scroll end by it; elsewhere the inset is 0.
+ */
+const PAGE_BLEED =
+  "h-[calc(100%+var(--plugin-page-bottom-inset,0px))] mb-[calc(-1*var(--plugin-page-bottom-inset,0px))] pb-[var(--plugin-page-bottom-inset,0px)]";
+
 function AgentInstructionsPage({ subPath }: PluginNavPanelProps) {
   const compact = useIsCompactViewport();
   const { section, item } = locate(subPath);
@@ -38,7 +46,7 @@ function AgentInstructionsPage({ subPath }: PluginNavPanelProps) {
     // A phone scrolls the whole page here, since bb's pane clips, so the back bar stays
     // stuck above an editor that grows with its text.
     <div
-      className={`flex h-full min-h-0 min-w-0 flex-col ${compact ? "overflow-y-auto overscroll-contain" : ""}`}
+      className={`flex min-h-0 min-w-0 flex-col ${PAGE_BLEED} ${compact ? "overflow-y-auto overscroll-contain" : ""}`}
     >
       {compact && <PhoneBar subPath={subPath} />}
       <div className={`flex min-w-0 flex-col ${compact ? "flex-none" : "min-h-0 flex-1"}`}>
@@ -95,7 +103,9 @@ function PhoneBar({ subPath }: { subPath: string }) {
 /** A phone's editor root: the switcher, then the list the desktop sidebar shows. */
 function PhoneHome({ subPath, section }: { subPath: string; section: Section }) {
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [--ai-surface:var(--background)]">
+    <div
+      className={`flex min-h-0 min-w-0 flex-col overflow-y-auto overscroll-contain [--ai-surface:var(--background)] ${PAGE_BLEED}`}
+    >
       <EditorSwitcher section={section} className="bg-background" />
       <SectionList subPath={subPath} section={section} home />
     </div>

@@ -118,7 +118,8 @@ export function CheatsheetPage(): ReactElement {
     };
   };
   return (
-    <div className="@container h-full overflow-y-auto p-4 md:p-5">
+    // Under bb Monokai on a phone the page runs under the home indicator and pads its end by it.
+    <div className="@container h-[calc(100%+var(--plugin-page-bottom-inset,0px))] mb-[calc(-1*var(--plugin-page-bottom-inset,0px))] overflow-y-auto p-4 pb-[calc(1rem+var(--plugin-page-bottom-inset,0px))] md:p-5 md:pb-[calc(1.25rem+var(--plugin-page-bottom-inset,0px))]">
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
         <p className="text-sm text-muted-foreground">
           Single keys work anywhere outside a text field. Inside one, every key is typing; press

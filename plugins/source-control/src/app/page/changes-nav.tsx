@@ -681,7 +681,10 @@ export function ChangesList({ subPath, variant }: { subPath: string; variant: Va
           itself. The window follows `list`'s nearest scrolling ancestor, so the ref sits inside. */}
       <div
         data-testid="sc-nav-scroll"
-        className={cx("min-h-0 flex-1", phone && "overflow-y-auto overscroll-contain")}
+        className={cx(
+          "min-h-0 flex-1",
+          phone && "overflow-y-auto overscroll-contain pb-[var(--plugin-page-bottom-inset,0px)]",
+        )}
       >
         <div ref={setList} className="pb-2">
           {body}
