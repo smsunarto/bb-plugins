@@ -1513,7 +1513,7 @@ function NotesSidebarNavigation(props: NotesSidebarNavigationProps) {
               className="pointer-events-none absolute left-2 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             />
             <Input
-              className="h-8 pl-8"
+              className="pl-8 pointer-coarse:h-11"
               value={props.query}
               onChange={(event) => props.onQueryChange(event.target.value)}
               onKeyDown={(event) => {
