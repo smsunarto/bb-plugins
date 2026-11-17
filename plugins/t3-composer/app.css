@@ -34,8 +34,9 @@
   line-height: 20px;
 }
 
+/* One line of text: a 20px line plus 4px padding above and below. */
 [data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-scroll] {
-  min-height: 52px !important;
+  min-height: 28px !important;
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-editor-content] .ProseMirror {
@@ -769,7 +770,7 @@
   [data-t3-composer][data-promptbox]:not([data-promptbox-compact])
   [data-promptbox-input-region]
   [data-promptbox-editor-scroll] {
-  min-height: 52px !important;
+  min-height: 28px !important;
   max-height: min(50dvh, var(--composer-editor-available-height, 100dvh)) !important;
 }
 
@@ -811,6 +812,15 @@
 
   [data-t3-composer][data-promptbox] [data-promptbox-editor-content] .ProseMirror {
     line-height: 24px;
+  }
+
+  /* One 24px line plus the editor's 4px padding above and below. */
+  [data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-scroll],
+  [data-follow-up-composer]
+    [data-t3-composer][data-promptbox]:not([data-promptbox-compact])
+    [data-promptbox-input-region]
+    [data-promptbox-editor-scroll] {
+    min-height: 32px !important;
   }
 
   [data-t3-composer][data-promptbox] [data-t3-composer-actions-menu],
