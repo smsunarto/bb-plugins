@@ -19,12 +19,24 @@ export const delegationRpcContract = defineRpcContract({
         parentNotifications: z.enum(PARENT_NOTIFICATIONS).optional(),
         /** Starts a new worktree from this branch instead of the preset's environment. */
         baseBranch: z.string().trim().min(1).optional(),
+        /**
+         * Replaces the seed prompt's built-in report-back contract. Without it, a
+         * `stuck` dispatch gets no contract, since its parent defines how to report.
+         */
+        reportContract: z.string().trim().min(1).optional(),
       })
       .strict(),
     output: z.object({ threadId: threadIdSchema }).strict(),
   },
   taskThreadsAttach: {
-    input: z.object({ taskId: idSchema, threadId: threadIdSchema }).strict(),
+    input: z
+      .object({
+        taskId: idSchema,
+        threadId: threadIdSchema,
+        /** Recorded as the thread's preset; a re-attach without one keeps the current name. */
+        presetName: z.string().trim().min(1).optional(),
+      })
+      .strict(),
     output: z.object({ threadId: threadIdSchema }).strict(),
   },
   taskThreadsDetach: {

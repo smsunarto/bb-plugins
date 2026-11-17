@@ -1420,6 +1420,182 @@ describe("bb tasks CLI", () => {
     await harness.dispose();
   });
 
+  it("attaches comment files before waking the commenting thread's parent", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "bb-tasks-cli-"));
+    const reportPath = join(directory, "report.md");
+    const notesPath = join(directory, "notes.txt");
+    const pngPath = join(directory, "pixel.png");
+    await writeFile(reportPath, "Final: report attached\n\nAll checks pass.\n", "utf8");
+    await writeFile(notesPath, "notes\n", "utf8");
+    await writeFile(pngPath, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        ...localMachineSdk(),
+        threads: {
+          get: async ({ threadId }: { threadId: string }) =>
+            makeThreadResponse(
+              threadId === LOCAL_THREAD.threadId
+                ? { id: threadId, environmentId: "env_local", parentThreadId: "thr_captain" }
+                : { id: threadId, status: "idle" },
+            ),
+          send: async () => undefined,
+        },
+      },
+    });
+    await plugin(bb);
+
+    try {
+      stdout(await harness.runCli(["project", "create", "--name", "Comments", "--prefix", "CMT"]));
+      stdout(await harness.runCli(["create", "--project", "CMT", "--title", "Report back"]));
+
+      const outsideThread = await harness.runCli([
+        "comment",
+        "CMT-1",
+        "--body",
+        "Final: done",
+        "--notify-parent",
+      ]);
+      expect(outsideThread).toMatchObject({ exitCode: 1 });
+      expect(outsideThread.stderr).toContain("--notify-parent needs an invoking bb thread");
+
+      const posted = JSON.parse(
+        stdout(
+          await harness.runCli(
+            [
+              "comment",
+              "cmt-1",
+              "--body-file",
+              reportPath,
+              "--attach",
+              notesPath,
+              "--attach",
+              pngPath,
+              "--notify-parent",
+              "--json",
+            ],
+            LOCAL_THREAD,
+          ),
+        ),
+      );
+      const [notes, pixel] = posted.attachments;
+      expect(posted.attachments).toEqual([
+        expect.objectContaining({
+          owner: { kind: "comment", commentId: posted.comment.id },
+          fileName: "notes.txt",
+        }),
+        expect.objectContaining({
+          owner: { kind: "comment", commentId: posted.comment.id },
+          fileName: "pixel.png",
+          isImage: true,
+        }),
+      ]);
+      expect(posted.parentNotification).toMatchObject({
+        state: "delivered",
+        targetThreadId: "thr_captain",
+      });
+      expect(harness.sdk.callsTo("threads.send")).toEqual([
+        [
+          {
+            threadId: "thr_captain",
+            input: [
+              {
+                type: "text",
+                text: `[tasks] CMT-1 Final: report attached · thr_local_worker · ${notes.id} notes.txt, ${pixel.id} pixel.png`,
+                mentions: [],
+              },
+            ],
+            mode: "steer-if-active",
+          },
+        ],
+      ]);
+      const shown = JSON.parse(stdout(await harness.runCli(["show", "CMT-1", "--json"])));
+      expect(shown.comments).toEqual([
+        expect.objectContaining({
+          body: "Final: report attached\n\nAll checks pass.\n",
+          attachments: [
+            expect.objectContaining({ id: notes.id }),
+            expect.objectContaining({ id: pixel.id }),
+          ],
+        }),
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+      await harness.dispose();
+    }
+  });
+
+  it("still wakes the parent when one comment file fails, and names the failed file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "bb-tasks-cli-"));
+    const okPath = join(directory, "ok.txt");
+    const boomPath = join(directory, "boom.bin");
+    await writeFile(okPath, "fine\n", "utf8");
+    await writeFile(boomPath, "boom\n", "utf8");
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        ...localMachineSdk(),
+        threads: {
+          get: async ({ threadId }: { threadId: string }) =>
+            makeThreadResponse(
+              threadId === LOCAL_THREAD.threadId
+                ? { id: threadId, environmentId: "env_local", parentThreadId: "thr_captain" }
+                : { id: threadId, status: "idle" },
+            ),
+          send: async () => undefined,
+        },
+      },
+    });
+    await plugin(bb);
+
+    try {
+      stdout(await harness.runCli(["project", "create", "--name", "Partial", "--prefix", "PRT"]));
+      stdout(await harness.runCli(["create", "--project", "PRT", "--title", "Partial report"]));
+
+      const result = await harness.runCli(
+        [
+          "comment",
+          "PRT-1",
+          "--body",
+          "Final: partial",
+          "--attach",
+          okPath,
+          "--attach",
+          boomPath,
+          "--notify-parent",
+        ],
+        LOCAL_THREAD,
+      );
+
+      expect(result.exitCode).toBe(1);
+      const lines = result.stdout.trim().split("\n");
+      const commentId = lines[0]?.split(/\s+/).at(-1);
+      const okId = lines[1]?.split(/\s+/).at(-1);
+      expect(lines).toEqual([
+        `Commented on PRT-1  ${commentId}`,
+        `Attached ok.txt  ${okId}`,
+        `Failed to attach ${boomPath}: simulated blob write failure`,
+        `Retry with: bb tasks attachment add ${commentId} --file ${boomPath}`,
+        "Woke parent thr_captain",
+      ]);
+      expect(result.stderr).toContain("do not re-post the comment");
+      expect(harness.sdk.callsTo("threads.send")).toEqual([
+        [
+          expect.objectContaining({
+            input: [
+              expect.objectContaining({
+                text: `[tasks] PRT-1 Final: partial · thr_local_worker · ${okId} ok.txt`,
+              }),
+            ],
+          }),
+        ],
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+      await harness.dispose();
+    }
+  });
+
   it("adds and downloads an attachment with an exact file round-trip", async () => {
     const directory = await mkdtemp(join(tmpdir(), "bb-tasks-cli-"));
     const inputPath = join(directory, "input.txt");

@@ -35,3 +35,7 @@ bb tasks delegate ABC-12 --preset "Codex high" \
 - `--base-branch <branch>` starts a new worktree from that branch for this
   dispatch only, whatever environment the preset names. The preset is
   unchanged.
+- Under `stuck`, the child's seed prompt has no report-back contract; say how
+  to report in `--instructions`. A child reports with
+  `bb tasks comment ABC-12 --notify-parent [--attach <path>]`, which wakes this
+  thread with one line: `[tasks] ABC-12 <first line> · <thread> <preset> · <attachments>`.

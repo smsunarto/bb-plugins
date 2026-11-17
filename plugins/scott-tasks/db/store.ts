@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { createCrewSnapshotReader } from "./crew-snapshot";
+import { createFieldStore } from "./fields";
+import { createParentNotificationStore } from "./parent-notifications";
 import { initializeTasksSchema } from "./schema";
 import {
   TASKS_PAGE_DEFAULT_LIMIT,
@@ -802,13 +805,14 @@ export function createTasksStore(db: PluginDatabase) {
         number,
         string,
         string,
+        string,
       ]
     >(
       `
       INSERT INTO tasks (
         id, project_id, number, title, description, status, priority, due_date,
-        parent_task_id, position, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        parent_task_id, position, created_at, updated_at, status_changed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     ).run(
       id,
@@ -821,6 +825,7 @@ export function createTasksStore(db: PluginDatabase) {
       validateDueDate(input.dueDate ?? null),
       parentTaskId,
       position,
+      createdAt,
       createdAt,
       createdAt,
     );
@@ -1096,6 +1101,7 @@ export function createTasksStore(db: PluginDatabase) {
           .get(current.projectId, status)?.position ?? POSITION_STEP;
     }
 
+    const updatedAt = nowIso();
     db.prepare<
       [
         string,
@@ -1106,13 +1112,16 @@ export function createTasksStore(db: PluginDatabase) {
         string | null,
         number,
         string,
+        Task["status"],
+        string,
         string,
       ]
     >(
       `
         UPDATE tasks SET
           title = ?, description = ?, status = ?, priority = ?, due_date = ?,
-          parent_task_id = ?, position = ?, updated_at = ?
+          parent_task_id = ?, position = ?, updated_at = ?,
+          status_changed_at = CASE WHEN status <> ? THEN ? ELSE status_changed_at END
         WHERE id = ?
       `,
     ).run(
@@ -1123,7 +1132,9 @@ export function createTasksStore(db: PluginDatabase) {
       input.dueDate === undefined ? current.dueDate : validateDueDate(input.dueDate),
       parentTaskId,
       position,
-      nowIso(),
+      updatedAt,
+      status,
+      updatedAt,
       id,
     );
     return requireTask(id);
@@ -1280,11 +1291,15 @@ export function createTasksStore(db: PluginDatabase) {
             .get(task.projectId, input.status, id)?.position ?? POSITION_STEP;
       }
 
-      db.prepare<[Task["status"], number, string, string]>(
+      const updatedAt = nowIso();
+      db.prepare<[Task["status"], number, string, Task["status"], string, string]>(
         `
-        UPDATE tasks SET status = ?, position = ?, updated_at = ? WHERE id = ?
+        UPDATE tasks SET
+          status = ?, position = ?, updated_at = ?,
+          status_changed_at = CASE WHEN status <> ? THEN ? ELSE status_changed_at END
+        WHERE id = ?
       `,
-      ).run(input.status, position, nowIso(), id);
+      ).run(input.status, position, updatedAt, input.status, updatedAt, id);
       return { task: requireTask(id), renumberedTaskIds };
     },
   );
@@ -1657,14 +1672,21 @@ export function createTasksStore(db: PluginDatabase) {
     requireTask(input.taskId);
     const id = createOrValidateUlid(input.id);
     const timestamp = nowIso();
-    db.prepare<[string, string, string, string, string, TaskThreadLiveStatus, string, string]>(
+    db.prepare<
+      [string, string, string, string, string, TaskThreadLiveStatus, string, string, string]
+    >(
       `
       INSERT INTO task_threads (
-        id, task_id, thread_id, preset_name, title, live_status, attached_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        id, task_id, thread_id, preset_name, title, live_status, live_status_changed_at,
+        attached_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (task_id, thread_id) DO UPDATE SET
         preset_name = excluded.preset_name,
         title = excluded.title,
+        live_status_changed_at = CASE
+          WHEN task_threads.live_status <> excluded.live_status THEN excluded.updated_at
+          ELSE task_threads.live_status_changed_at
+        END,
         live_status = excluded.live_status,
         updated_at = excluded.updated_at
     `,
@@ -1675,6 +1697,7 @@ export function createTasksStore(db: PluginDatabase) {
       requireNonEmpty(input.presetName, "Task thread presetName"),
       requireNonEmpty(input.title, "Task thread title"),
       input.liveStatus,
+      timestamp,
       timestamp,
       timestamp,
     );
@@ -1703,7 +1726,7 @@ export function createTasksStore(db: PluginDatabase) {
         SELECT * FROM task_threads
         WHERE task_id = ?
         ORDER BY
-          CASE WHEN live_status IN ('completed', 'failed') THEN 1 ELSE 0 END,
+          CASE WHEN live_status IN ('completed', 'failed', 'archived') THEN 1 ELSE 0 END,
           attached_at DESC,
           id DESC
       `,
@@ -1713,14 +1736,18 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function updateTaskThreadStatus(id: string, liveStatus: TaskThreadLiveStatus): TaskThread {
-    const current = requireTaskThread(id);
+    requireTaskThread(id);
+    const updatedAt = nowIso();
     db.prepare<[string, string, TaskThreadLiveStatus, string, string]>(
       `
       UPDATE task_threads
-      SET preset_name = ?, title = ?, live_status = ?, updated_at = ?
+      SET
+        live_status_changed_at = CASE WHEN live_status <> ? THEN ? ELSE live_status_changed_at END,
+        live_status = ?,
+        updated_at = ?
       WHERE id = ?
     `,
-    ).run(current.presetName, current.title, liveStatus, nowIso(), id);
+    ).run(liveStatus, updatedAt, liveStatus, updatedAt, id);
     return requireTaskThread(id);
   }
 
@@ -1853,7 +1880,17 @@ export function createTasksStore(db: PluginDatabase) {
     return db.prepare<[string]>("DELETE FROM presets WHERE id = ?").run(id).changes > 0;
   }
 
+  const fields = createFieldStore(db, nowIso);
+  const parentNotifications = createParentNotificationStore(db, nowIso);
+  const crewSnapshot = createCrewSnapshotReader(db, {
+    listTaskFields: fields.listTaskFields,
+    getParentNotification: parentNotifications.getParentNotification,
+  });
+
   return {
+    ...fields,
+    ...parentNotifications,
+    crewSnapshot,
     createFolder,
     getFolder,
     listFolders,

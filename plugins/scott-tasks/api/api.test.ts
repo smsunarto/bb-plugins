@@ -663,7 +663,7 @@ describe("Tasks RPC domain API", () => {
         notify: false,
       }),
     );
-    const agentComment = await createComment(bb, store, {
+    const { comment: agentComment } = await createComment(bb, store, {
       taskId: task.id,
       source: { kind: "agent", threadId: "thr_worker" },
       authorName: "Worker",
@@ -684,6 +684,56 @@ describe("Tasks RPC domain API", () => {
         channel: "comments:changed",
         payload: { taskId: task.id },
       },
+    ]);
+    await harness.dispose();
+  });
+
+  it("stores a plugin caller's comment author and source while client comments stay the user's", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
+    const store = createStore(bb);
+    registerTasksApi(bb, store);
+    const project = store.tasks.createProject({ name: "Authors", prefix: "AUT", color: "blue" });
+    const task = store.tasks.createTask({ projectId: project.id, title: "Ask the user" });
+    const captain = { experimental_caller: { kind: "plugin", pluginId: "captain" } } as const;
+    const post = async (input: Record<string, unknown>, options?: typeof captain) =>
+      tasksRpcContract.createComment.output.parse(
+        await harness.callRpc(
+          "createComment",
+          { taskId: task.id, notify: false, ...input },
+          options,
+        ),
+      ).comment;
+
+    await expect(
+      harness.callRpc("createComment", {
+        taskId: task.id,
+        body: "Asked: pick an account",
+        notify: false,
+        author: "Captain",
+        source: "system",
+      }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+    const fromClient = await post({ body: "Plain note" });
+    const asked = await post(
+      { body: "Asked: pick an account", author: "Captain", source: "system" },
+      captain,
+    );
+    const relayed = await post(
+      { body: "Final: merged", author: "Merge", source: "agent", threadId: "thr_merge" },
+      captain,
+    );
+
+    expect(
+      [fromClient, asked, relayed].map(({ authorName, source }) => ({ authorName, source })),
+    ).toEqual([
+      { authorName: "You", source: { kind: "user" } },
+      { authorName: "Captain", source: { kind: "system", origin: null } },
+      { authorName: "Merge", source: { kind: "agent", threadId: "thr_merge" } },
+    ]);
+    expect(store.tasks.listComments(task.id).map((comment) => comment.source.kind)).toEqual([
+      "user",
+      "system",
+      "agent",
     ]);
     await harness.dispose();
   });

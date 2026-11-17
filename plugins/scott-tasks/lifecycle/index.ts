@@ -2,29 +2,13 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { publishCommentsChanged, type TasksApiStore } from "../api";
 import type { TaskThread, TaskThreadLiveStatus } from "../db";
 import { createSystemComment, publishThreadsChanged } from "../delegate";
-import { errorMessage } from "../shared/errors";
+import { errorMessage, sdkErrorCode } from "../shared/errors";
+import { sleepUnlessAborted } from "../shared/sleep";
+import { liveStatusFromThread } from "./live-status";
 
 const TERMINAL_LIVE_STATUSES = new Set<TaskThreadLiveStatus>(["completed"]);
 export const THREAD_STATUS_RECONCILE_INTERVAL_MS = 5 * 60_000;
 export const THREAD_STATUS_IDLE_INTERVAL_MS = 60_000;
-
-type SdkThread = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["get"]>>;
-
-function liveStatusFromThread(thread: SdkThread): TaskThreadLiveStatus {
-  if (thread.status === "error") return "failed";
-  if (thread.deletedAt !== null) return "completed";
-
-  switch (thread.status) {
-    case "pending":
-    case "starting":
-      return "starting";
-    case "active":
-    case "stopping":
-      return "working";
-    case "idle":
-      return "idle";
-  }
-}
 
 function trackedThreads(store: TasksApiStore): TaskThread[] {
   const tracked: TaskThread[] = [];
@@ -42,13 +26,6 @@ function statusCommentBody(
 ): string {
   const outcome = liveStatus === "completed" ? "completed — final message posted" : "failed";
   return `Thread "${thread.title}" ${outcome} · ${thread.threadId}`;
-}
-
-function sdkErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) {
-    return undefined;
-  }
-  return typeof error.code === "string" ? error.code : undefined;
 }
 
 function transitionThread(
@@ -123,21 +100,6 @@ function hasNonTerminalTrackedThreads(store: TasksApiStore): boolean {
   return trackedThreads(store).some((thread) => !TERMINAL_LIVE_STATUSES.has(thread.liveStatus));
 }
 
-function waitForNextReconciliation(signal: AbortSignal, intervalMs: number): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    const onAbort = () => {
-      clearTimeout(timer);
-      resolve();
-    };
-    const timer = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, intervalMs);
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
 export async function registerLifecycle(bb: BbPluginApi, store: TasksApiStore): Promise<void> {
   bb.events.on("thread.created", ({ thread }) => {
     transitionTrackedThread(bb, store, thread.id, liveStatusFromThread(thread));
@@ -154,15 +116,22 @@ export async function registerLifecycle(bb: BbPluginApi, store: TasksApiStore): 
   bb.events.on("thread.deleted", ({ thread }) => {
     transitionTrackedThread(bb, store, thread.id, "completed");
   });
+  bb.events.on("thread.archived", ({ thread }) => {
+    transitionTrackedThread(bb, store, thread.id, "archived");
+  });
+  // Archived rows stay non-terminal, so the reconcile also repairs a missed unarchive.
+  bb.events.on("thread.unarchived", ({ thread }) => {
+    transitionTrackedThread(bb, store, thread.id, liveStatusFromThread(thread));
+  });
 
   bb.background.service("thread-status-reconcile", {
     async start(signal) {
       while (!signal.aborted) {
         if (!hasNonTerminalTrackedThreads(store)) {
-          await waitForNextReconciliation(signal, THREAD_STATUS_IDLE_INTERVAL_MS);
+          await sleepUnlessAborted(signal, THREAD_STATUS_IDLE_INTERVAL_MS);
           continue;
         }
-        await waitForNextReconciliation(signal, THREAD_STATUS_RECONCILE_INTERVAL_MS);
+        await sleepUnlessAborted(signal, THREAD_STATUS_RECONCILE_INTERVAL_MS);
         if (signal.aborted) break;
         await reconcileTrackedThreads(bb, store);
       }

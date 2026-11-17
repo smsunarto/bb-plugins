@@ -357,6 +357,100 @@ describe("task delegation", () => {
     await harness.dispose();
   });
 
+  it.each([
+    {
+      name: "keeps the built-in report-back contract by default",
+      input: {},
+      contract: "set status when done (bb tasks update CRW-1 --status in_review)",
+    },
+    {
+      name: "replaces the report-back contract with the dispatch's own",
+      input: {
+        parentThreadId: "thr_captain",
+        parentNotifications: "stuck",
+        reportContract:
+          "Report with bb tasks comment CRW-1 --notify-parent; start with Final: or Blocked:.",
+      },
+      contract:
+        "Report with bb tasks comment CRW-1 --notify-parent; start with Final: or Blocked:.",
+    },
+    {
+      name: "omits the report-back contract for a stuck dispatch without one",
+      input: { parentThreadId: "thr_captain", parentNotifications: "stuck" },
+      contract: null,
+    },
+  ])("$name", async ({ input, contract }) => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        threads: {
+          spawn: async () => ({ id: "thr_child" }),
+          get: async () => makeThreadResponse({ id: "thr_child", status: "starting" }),
+        },
+      },
+    });
+    const store = createStore(bb);
+    const project = store.tasks.createProject({
+      name: "Crew",
+      prefix: "CRW",
+      color: "blue",
+      linkedBbProjectId: "proj_demo",
+    });
+    const task = store.tasks.createTask({ projectId: project.id, title: "Crew task" });
+    registerDelegation(bb, store);
+    const preset = createTestPreset(store, {
+      environmentKind: "new-worktree",
+      machineId: "host_a",
+    });
+
+    await harness.callRpc("delegate", {
+      taskId: task.id,
+      presetId: preset.id,
+      extraInstructions: "Follow crew.md.",
+      ...input,
+    });
+
+    const [[spawn]] = harness.sdk.callsTo("threads.spawn") as [[{ prompt: string }]];
+    const sections = spawn.prompt.split(/^## /mu).map((section) => section.trim());
+    const reportSections = sections.filter((section) => section.startsWith("Report-back contract"));
+    expect(reportSections).toEqual(contract === null ? [] : [expect.stringContaining(contract)]);
+    expect(sections.at(-1)).toBe("Additional instructions\n\nFollow crew.md.");
+
+    await harness.dispose();
+  });
+
+  it("records a preset name on attach and keeps it when re-attached without one", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        threads: {
+          get: async () => makeThreadResponse({ id: "thr_adopted", status: "idle" }),
+        },
+      },
+    });
+    const store = createStore(bb);
+    const project = store.tasks.createProject({ name: "Adopt", prefix: "ADP", color: "blue" });
+    const task = store.tasks.createTask({ projectId: project.id, title: "Adopt a thread" });
+    const plain = store.tasks.createTask({ projectId: project.id, title: "Plain attach" });
+    registerDelegation(bb, store);
+
+    await harness.callRpc("taskThreadsAttach", {
+      taskId: task.id,
+      threadId: "thr_adopted",
+      presetName: "Implement",
+    });
+    await harness.callRpc("taskThreadsAttach", { taskId: task.id, threadId: "thr_adopted" });
+    await harness.callRpc("taskThreadsAttach", { taskId: plain.id, threadId: "thr_adopted" });
+
+    expect(store.tasks.listTaskThreads(task.id)).toEqual([
+      expect.objectContaining({ threadId: "thr_adopted", presetName: "Implement" }),
+    ]);
+    expect(store.tasks.listTaskThreads(plain.id)).toEqual([
+      expect.objectContaining({ threadId: "thr_adopted", presetName: "Attached" }),
+    ]);
+    await harness.dispose();
+  });
+
   it("leaves parent fields off the spawn when none are given", async () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",

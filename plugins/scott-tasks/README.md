@@ -87,6 +87,15 @@ When run from a thread, the CLI preserves that agent thread and any explicit
 `--author`; notification still targets the prior latest responder rather than
 the newly recorded agent comment itself.
 
+A child thread reports to its orchestrating parent with
+`bb tasks comment PROD-1 --notify-parent --attach ./report.md --body-file report.txt`.
+Tasks saves the comment and its files, then wakes the commenting thread's parent
+with one line: `[tasks] PROD-1 <first line> · <thread> <preset> · <attachment ids and names>`.
+A failed wake is retried after 1, 2, 5 and 15 minutes, then every 15 minutes, up
+to six attempts in all; the comment is then marked undeliverable. A parent that
+is missing, archived or deleted marks it undeliverable at once. Delivery state
+lives in the database, so retries survive a plugin reload.
+
 ## CLI reference
 
 Run `bb tasks --help` or `bb tasks <command> --help` for exact options; help
@@ -116,7 +125,7 @@ thread's needs absolute paths.
 | `bb tasks show <key-or-id>`                    | Show the complete task record, including comments, attachments, subtasks, and attached threads.                                                               |
 | `bb tasks update <key-or-id>`                  | Update status, priority, title, description, due date, or labels.                                                                                             |
 | `bb tasks move <key-or-id>`                    | Move a task and its sub-tasks to `--project`. Moved tasks get new keys; old keys keep resolving, and labels are matched by name.                              |
-| `bb tasks comment <key-or-id>`                 | Add a Markdown comment from inline text or a file; optionally notify the latest responding task agent.                                                        |
+| `bb tasks comment <key-or-id>`                 | Add a Markdown comment from text or a file, with `--attach` files; `--notify` reaches the latest agent, `--notify-parent` wakes this thread's parent.         |
 | `bb tasks attachment add\|get\|list\|remove`   | Add, fetch, list, or remove attachments. Referenced attachments require `remove --remove-references`.                                                         |
 | `bb tasks preset list\|create\|update\|delete` | Manage reusable agent execution presets.                                                                                                                      |
 | `bb tasks delegate <key>`                      | Start and attach a new agent thread using a preset; `--parent-thread`, `--parent-notifications` and `--base-branch` make it a child thread on its own branch. |
@@ -150,7 +159,16 @@ thread to the task, and advances a `backlog` or `todo` task to `in_progress`.
 The worker receives the task description, subtasks, attachments, recent
 comments, preset instructions, and a report-back contract. Its installed Tasks
 skill tells it to inspect the task, leave substantive milestone comments,
-attach artifacts, and move completed work to `in_review`.
+attach artifacts, and move completed work to `in_review`. An orchestrating
+plugin can pass its own `reportContract` to the `delegate` RPC; a dispatch with
+`parentNotifications: "stuck"` and no contract gets none, because its parent
+defines how to report.
+
+Other plugins can also read and write through Tasks' plugin RPCs: owned fields
+(`defineField`, `setField`, written only by the plugin that defined the field),
+`crewSnapshot` (one read of the tasks, fields, live status and last notifying
+comment of a set of threads), a `presetName` on `taskThreadsAttach`, and an
+`author` and `agent` or `system` source on `createComment`.
 
 If work begins outside the Delegate action, the agent can associate its current
 thread with `bb tasks attach KEY`. The inverse is `bb tasks detach KEY

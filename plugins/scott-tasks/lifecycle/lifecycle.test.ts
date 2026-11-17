@@ -140,6 +140,71 @@ describe("task thread lifecycle", () => {
     await fixture.harness.dispose();
   });
 
+  it("sets archived on thread.archived and restores the run status on thread.unarchived", async () => {
+    const fixture = trackedThreadFixture("idle", "idle");
+    await registerLifecycle(fixture.bb, fixture.store);
+    const status = () => fixture.store.tasks.getTaskThread(fixture.taskThreadId)?.liveStatus;
+
+    await fixture.harness.emitThreadEvent("thread.archived", {
+      thread: makeThreadResponse({ id: "thr_worker", status: "idle", archivedAt: Date.now() }),
+    });
+    expect(status()).toBe("archived");
+
+    await fixture.harness.emitThreadEvent("thread.unarchived", {
+      thread: makeThreadResponse({ id: "thr_worker", status: "idle", archivedAt: null }),
+    });
+    expect(status()).toBe("idle");
+    expect(fixture.store.tasks.listComments(fixture.taskId)).toEqual([]);
+
+    await fixture.harness.dispose();
+  });
+
+  it("keeps reconciling archived rows, so a missed unarchive is repaired", async () => {
+    vi.useFakeTimers();
+    let archivedAt: number | null = Date.now();
+    const host = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        threads: {
+          // An archived thread that had failed still reads as archived.
+          get: async () =>
+            makeThreadResponse({
+              id: "thr_archived",
+              status: archivedAt === null ? "idle" : "error",
+              archivedAt,
+            }),
+        },
+      },
+    });
+    const store = createStore(host.bb);
+    const project = store.tasks.createProject({ name: "Archive", prefix: "ARC", color: "blue" });
+    const task = store.tasks.createTask({ projectId: project.id, title: "Finished crew" });
+    const tracked = store.tasks.upsertTaskThread({
+      taskId: task.id,
+      threadId: "thr_archived",
+      presetName: "Implement",
+      title: "Finished crew",
+      liveStatus: "idle",
+    });
+
+    try {
+      await registerLifecycle(host.bb, store);
+      expect(store.tasks.getTaskThread(tracked.id)?.liveStatus).toBe("archived");
+      const service = host.harness.runService("thread-status-reconcile");
+
+      archivedAt = null;
+      await vi.advanceTimersByTimeAsync(THREAD_STATUS_RECONCILE_INTERVAL_MS);
+      expect(store.tasks.getTaskThread(tracked.id)?.liveStatus).toBe("idle");
+      expect(store.tasks.listComments(task.id)).toEqual([]);
+
+      service.controller.abort();
+      await service.done;
+    } finally {
+      vi.useRealTimers();
+      await host.harness.dispose();
+    }
+  });
+
   it("reconciles a stale non-terminal row on load", async () => {
     const fixture = trackedThreadFixture("starting", "idle");
 
@@ -204,7 +269,8 @@ describe("task thread lifecycle", () => {
       "message.dispatched": 0,
       "turn.failed": 0,
       "message.cancelled": 0,
-      "thread.unarchived": 0,
+      "thread.archived": 1,
+      "thread.unarchived": 1,
     });
     expect(host.harness.sdk.callsTo("threads.get")).toHaveLength(1);
     expect(store.tasks.getTaskThread(tracked.id)?.liveStatus).toBe("starting");

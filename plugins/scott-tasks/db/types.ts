@@ -12,6 +12,12 @@ import type {
 } from "../shared/contract.js";
 
 export type { CommentSource, TaskPriority, TaskStatus };
+export type {
+  CrewSnapshotRow,
+  FieldDefinition,
+  ParentNotification,
+  TaskFieldValue,
+} from "../shared/crew-contract.js";
 
 export type TaskThreadLiveStatus = (typeof TASK_THREAD_LIVE_STATUSES)[number];
 

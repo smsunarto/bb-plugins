@@ -285,6 +285,101 @@ const MIGRATIONS = [
     );
     CREATE INDEX idx_task_key_aliases_task ON task_key_aliases(task_id);
   `,
+  // Owned custom fields: one definition per key, written only by its owner plugin.
+  // A task holds at most one value per field; unset deletes the row.
+  `
+    CREATE TABLE field_definitions (
+      key TEXT PRIMARY KEY,
+      owner_plugin_id TEXT NOT NULL,
+      allowed_values TEXT NOT NULL CHECK (
+        json_valid(allowed_values) AND json_type(allowed_values) = 'array'
+      ),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE task_field_values (
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      field_key TEXT NOT NULL REFERENCES field_definitions(key) ON DELETE CASCADE,
+      value TEXT NOT NULL,
+      head TEXT,
+      written_at TEXT NOT NULL,
+      PRIMARY KEY (task_id, field_key)
+    );
+    CREATE INDEX idx_task_field_values_field ON task_field_values(field_key, value);
+  `,
+  // When a task's status last changed, backfilled from its latest status comment.
+  `
+    ALTER TABLE tasks ADD COLUMN status_changed_at TEXT;
+    UPDATE tasks SET status_changed_at = COALESCE(
+      (
+        SELECT MAX(c.created_at) FROM comments c
+        WHERE c.task_id = tasks.id AND c.kind = 'system' AND c.body LIKE 'Status changed to %'
+      ),
+      created_at
+    );
+  `,
+  // Delivery of a comment's wake line to the commenting thread's parent.
+  `
+    CREATE TABLE comment_parent_notifications (
+      comment_id TEXT PRIMARY KEY REFERENCES comments(id) ON DELETE CASCADE,
+      state TEXT NOT NULL CHECK (state IN ('pending', 'delivered', 'undeliverable')),
+      target_thread_id TEXT CHECK (target_thread_id IS NULL OR target_thread_id GLOB 'thr_*'),
+      attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+      next_attempt_at TEXT,
+      delivered_at TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK ((state = 'pending') = (next_attempt_at IS NOT NULL)),
+      CHECK ((state = 'delivered') = (delivered_at IS NOT NULL)),
+      CHECK (state <> 'delivered' OR target_thread_id IS NOT NULL),
+      CHECK (state <> 'undeliverable' OR last_error IS NOT NULL)
+    );
+    CREATE INDEX idx_comment_parent_notifications_due
+      ON comment_parent_notifications(next_attempt_at) WHERE state = 'pending';
+  `,
+  // Adds the archived live status and the time the live status last changed.
+  `
+    CREATE TABLE task_threads_with_archived (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+      thread_id TEXT NOT NULL,
+      preset_name TEXT NOT NULL,
+      title TEXT NOT NULL,
+      live_status TEXT NOT NULL CHECK (
+        live_status IN ('starting', 'working', 'idle', 'completed', 'failed', 'archived')
+      ),
+      live_status_changed_at TEXT NOT NULL,
+      attached_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (task_id, thread_id),
+      CHECK (thread_id GLOB 'thr_*')
+    );
+    INSERT INTO task_threads_with_archived (
+      id, task_id, thread_id, preset_name, title, live_status, live_status_changed_at,
+      attached_at, updated_at
+    )
+      SELECT id, task_id, thread_id, preset_name, title, live_status, updated_at,
+        attached_at, updated_at
+      FROM task_threads ORDER BY rowid;
+    DROP TABLE task_threads;
+    ALTER TABLE task_threads_with_archived RENAME TO task_threads;
+    CREATE INDEX idx_task_threads_task_status ON task_threads(task_id, live_status);
+    CREATE INDEX idx_task_threads_thread ON task_threads(thread_id);
+
+    CREATE TRIGGER task_list_revision_threads_insert
+    AFTER INSERT ON task_threads BEGIN
+      UPDATE task_list_revision SET revision = revision + 1 WHERE id = 1;
+    END;
+    CREATE TRIGGER task_list_revision_threads_update
+    AFTER UPDATE ON task_threads BEGIN
+      UPDATE task_list_revision SET revision = revision + 1 WHERE id = 1;
+    END;
+    CREATE TRIGGER task_list_revision_threads_delete
+    AFTER DELETE ON task_threads BEGIN
+      UPDATE task_list_revision SET revision = revision + 1 WHERE id = 1;
+    END;
+  `,
 ] as const;
 
 export function initializeTasksSchema(db: PluginDatabase): void {

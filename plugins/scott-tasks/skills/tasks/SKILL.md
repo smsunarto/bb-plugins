@@ -54,6 +54,15 @@ For task dispatch and execution presets, read
    current thread identity and an explicit `--author`, while delivery still
    targets the prior latest responder rather than the new comment itself.
 
+   A child thread that reports to its parent thread adds `--notify-parent` to
+   its report comment, and `--attach <path>` (repeatable) for the report's
+   files. Tasks wakes the parent with the comment's first line and the file ids,
+   and retries a failed wake itself, so post the comment once:
+
+   ```sh
+   bb tasks comment ABC-12 --notify-parent --attach ./report.md --body-file summary.md
+   ```
+
 4. Attach result artifacts that belong with the task, such as reports,
    screenshots, patches, or generated files:
 
