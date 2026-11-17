@@ -1923,8 +1923,10 @@
     visibility: hidden;
   }
 
+  /* 6px inside each end, so the first and last glyphs sit clear of the pill's curve. */
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
     gap: 0;
+    padding-inline: 6px;
   }
 
   .dark [data-split-pane-id] > header [data-thread-header-workflow-actions],
