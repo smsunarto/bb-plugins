@@ -16,8 +16,20 @@ const PROJECT_TITLE_INSTRUCTIONS_PATH = ".agents/GTD_NAMING.md";
 
 export type ThreadNamingResult = { ok: true; title: string } | { ok: false; error: string };
 
+export type ThreadRenameResult =
+  | {
+      ok: true;
+      previousTitle: string | null;
+      title: string;
+      projectId: string;
+      environmentId: string | null;
+    }
+  | { ok: false; error: string };
+
 export interface ThreadNamer {
   nameThread(threadId: string, intent: NamingIntent): Promise<ThreadNamingResult>;
+  /** Sets a title the thread's agent chose, queued behind any naming in flight. */
+  renameThread(threadId: string, title: string): Promise<ThreadRenameResult>;
   listNamingThreads(): string[];
 }
 
@@ -48,6 +60,7 @@ export function createThreadNamer(
   options: {
     automaticallyNameThreads: () => Promise<boolean>;
     inference: ThreadTitleInference;
+    onProjectRules?: (projectId: string, rules: string) => void;
   },
 ): ThreadNamer {
   const inFlight = new Map<string, Promise<void>>();
@@ -61,15 +74,28 @@ export function createThreadNamer(
     automaticRequests.delete(thread.id);
   });
 
+  // One write at a time per thread, in arrival order.
+  const enqueue = async <T>(threadId: string, run: () => Promise<T>): Promise<T> => {
+    const operation = (inFlight.get(threadId) ?? Promise.resolve()).then(run);
+    const tail = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    inFlight.set(threadId, tail);
+    try {
+      return await operation;
+    } finally {
+      if (inFlight.get(threadId) === tail) inFlight.delete(threadId);
+    }
+  };
+
   return {
     listNamingThreads: () => [...naming],
     async nameThread(threadId, intent) {
-      const previous = inFlight.get(threadId);
-      if (previous !== undefined && intent.kind === "forced") {
+      if (inFlight.has(threadId) && intent.kind === "forced") {
         return { ok: false, error: "This thread is already being named." };
       }
-
-      const operation = (previous ?? Promise.resolve()).then(async () => {
+      return enqueue(threadId, async () => {
         try {
           return await performThreadNaming(
             bb,
@@ -85,16 +111,31 @@ export function createThreadNamer(
           }
         }
       });
-      const tail = operation.then(
-        () => undefined,
-        () => undefined,
-      );
-      inFlight.set(threadId, tail);
-      try {
-        return await operation;
-      } finally {
-        if (inFlight.get(threadId) === tail) inFlight.delete(threadId);
+    },
+    renameThread(threadId, requested) {
+      const title = sanitizeGeneratedTitle(requested);
+      if (title === null) {
+        return Promise.resolve({
+          ok: false,
+          error: "The title needs at least one letter or digit after any emoji or [scope] prefix.",
+        });
       }
+      return enqueue(threadId, async () => {
+        try {
+          const thread = await bb.sdk.threads.get({ threadId });
+          const previousTitle = thread.title;
+          if (title !== previousTitle) await bb.sdk.threads.update({ threadId, title });
+          return {
+            ok: true,
+            previousTitle,
+            title,
+            projectId: thread.projectId,
+            environmentId: thread.environmentId,
+          };
+        } catch (error) {
+          return { ok: false, error: describeError(error) };
+        }
+      });
     },
   };
 }
@@ -104,6 +145,7 @@ async function performThreadNaming(
   options: {
     automaticallyNameThreads: () => Promise<boolean>;
     inference: ThreadTitleInference;
+    onProjectRules?: (projectId: string, rules: string) => void;
   },
   threadId: string,
   intent: NamingIntent,
@@ -145,6 +187,10 @@ async function performThreadNaming(
     if (projectInstructions === null) {
       return { ok: false, error: "Automatic naming is waiting for the workspace to be ready." };
     }
+    // Forced naming reads "" for a workspace that is not ready, so only an
+    // automatic read is known to be the project's rules.
+    if (intent.kind === "automatic")
+      options.onProjectRules?.(thread.projectId, projectInstructions);
     plan = planThreadNaming({ ...planInput, projectInstructions });
     if (plan.kind === "skip") {
       return { ok: false, error: describeSkip(plan.reason) };
@@ -175,7 +221,7 @@ async function performThreadNaming(
   }
 }
 
-async function loadProjectTitleInstructions(
+export async function loadProjectTitleInstructions(
   bb: BbPluginApi,
   environmentId: string | null,
   intent: NamingIntent,

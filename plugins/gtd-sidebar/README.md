@@ -196,28 +196,31 @@ Desktop only.
 
 ### Thread names
 
-With **Automatically name threads** enabled, a root thread gets a GTD-generated name on its first user prompt, replacing any
-initial title supplied by BB. First-request inference can only generate a new
-title, never keep BB's title. Later prompts keep the existing title unless you clearly start completely different work. Follow-ups,
-corrections, tests, debugging, screenshots, commits, and shipping for the same
-task keep its title. When the task change is uncertain, the title stays unchanged.
-Queued prompts are checked when dispatched. New threads wait for their workspace
-to be ready so the first title includes project naming rules. Agent replies and turn completion do
-not trigger naming. New titles are plain text with no activity emoji. Prefixes
-and other project formatting come only from your naming rules. Existing titles
-are preserved exactly when the decision is to keep them.
+With **Automatically name threads** enabled, a root thread gets a GTD-generated
+name on its first user prompt, replacing any initial title supplied by BB. New
+threads wait for their workspace to be ready so the first title includes project
+naming rules. New titles are plain text with no activity emoji. Prefixes and
+other project formatting come only from your naming rules.
 
-The plugin sends a tool-free prompt to GPT-6.1-Terra with reasoning disabled and
-reads a plain-text reply: the complete title, or `KEEP`. The prompt lists the
+After that, the thread's agent renames it. Root threads get instructions to run
+`bb gtd-sidebar rename --title "<new title>"` only when the work clearly changes
+direction, never for follow-ups, fixes, tests, or shipping on the same task. The
+instructions carry the title rules and your project naming rules, so a rename is
+one command with no lookups. The command prints the old and new titles. A
+session that started before the project rules loaded gets them in the command's
+output. Sessions already running pick up the instructions when bb next starts
+them.
+
+The first title comes from a tool-free prompt to GPT-6.1-Terra with reasoning
+disabled, which replies with the title in plain text. The prompt lists the
 naming rules and your project naming rules first, then the thread content, each
-section in its own tag and marked as data to name rather than instructions. The first request, an
-untitled thread, and explicit regeneration use a generation prompt that can only
-rename. Later requests use a review prompt that sees the current title and may
-keep it, and a keep decision does not write to the thread. Both prompts carry the
-latest request, the original request, up to three recent requests, and your
-project naming rules. A timeout, rate limit, outage, or unreadable reply retries once with
+section in its own tag and marked as data to name rather than instructions. It
+carries the latest request, the original request, up to three recent requests,
+and their composer context. A timeout, rate limit, outage, or unreadable reply retries once with
 GPT-5.6-Luna, the same models and order as bb's built-in Codex AI service. Each
 attempt has a five-second deadline. Logs record timing, never the prompt.
+`bb gtd-sidebar rename` without `--title` regenerates a title the same way from
+the latest request.
 
 bb also titles a new thread through **Settings → AI services → Thread titles**,
 and that title names a new worktree's branch. GTD naming then replaces the

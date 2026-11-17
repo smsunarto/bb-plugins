@@ -4,6 +4,12 @@
 
 ### Patch Changes
 
+- The thread's agent now renames it when the work clearly changes direction,
+  with one `bb gtd-sidebar rename --title "<new title>"` call. Its instructions
+  carry the title rules and the project's naming rules, so it looks nothing up
+  first. Automatic naming now runs only on a thread's first request; the Codex
+  review of every later prompt, and its `KEEP` reply, are gone.
+
 - Thread naming now follows your project naming rules reliably. The prompt
   used to list them among the thread content it marked as data to ignore; they
   now come first, with the naming rules, and each part of the thread content

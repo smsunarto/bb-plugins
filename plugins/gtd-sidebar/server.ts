@@ -5,14 +5,14 @@
 // Putting them on the thread would mean a schema change, a wire change, and a
 // HOST_DAEMON_PROTOCOL_VERSION bump for something only this sidebar
 // understands. Here, uninstalling the plugin removes this database with it.
-import { cliCommand, defineCli, PluginCliError, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { defineCli, type BbPluginApi } from "@get-bb/plugin-sdk";
 // Relative, not the `@/` alias the frontend uses: bb loads this file directly
 // as a path source, so nothing rewrites tsconfig paths for it.
 import { gtdSidebarHostContract } from "./lib/host-contract.ts";
 import type { ThreadLifecycleRow } from "./lib/lifecycle.ts";
 import { createMachineVisibilityStore } from "./lib/machine-visibility-store.ts";
 import { threadFamilyIds } from "./lib/thread-family.ts";
-import { createThreadNamer, subscribeToThreadNaming } from "./thread-namer.ts";
+import { registerThreadNaming } from "./thread-naming-server.ts";
 import { createThreadTitleInference } from "./thread-title-inference.ts";
 import { RETIRED_PROJECT_MIGRATIONS } from "./lib/retired-project-migrations.ts";
 import { RETIRED_BOT_MIGRATIONS, registerRetiredBotsExport } from "./lib/retired-bots.ts";
@@ -65,7 +65,7 @@ export default async function plugin(bb: BbPluginApi) {
       type: "boolean",
       label: "Automatically name threads",
       description:
-        "Opt in to Codex inference on user prompts. Sends request context and naming rules to generate titles. Manual CLI rename remains available.",
+        "Opt in to Codex inference on a thread's first prompt, and let the thread's agent rename it when the work changes direction. Sends the request and naming rules. Manual CLI rename remains available.",
       default: false,
     },
     mobileHaptics: {
@@ -83,8 +83,8 @@ export default async function plugin(bb: BbPluginApi) {
       default: false,
     },
   });
-  const threadNamer = createThreadNamer(bb, {
-    automaticallyNameThreads: async () => (await settings.get()).automaticallyNameThreads,
+  const { threadNamer, renameCommand } = registerThreadNaming(bb, {
+    settings,
     inference: createThreadTitleInference(bb, host),
   });
 
@@ -289,8 +289,6 @@ export default async function plugin(bb: BbPluginApi) {
     },
   });
 
-  subscribeToThreadNaming(bb, threadNamer);
-
   bb.cli.register(
     defineCli({
       name: "gtd-sidebar",
@@ -298,27 +296,7 @@ export default async function plugin(bb: BbPluginApi) {
       usageErrorExitCode: 2,
       commands: {
         ...preferenceCliCommands(preferences),
-        rename: cliCommand({
-          summary: "Generate a new title for a thread.",
-          positionals: [
-            {
-              name: "threadId",
-              description: "Thread to rename; defaults to the thread this command runs from.",
-            },
-          ],
-          async run({ positionals }, context) {
-            const threadId = positionals.threadId ?? context.threadId;
-            if (threadId === undefined) {
-              throw new PluginCliError("Pass a thread id or run this command from a thread.", {
-                code: "missing_thread",
-                exitCode: 2,
-              });
-            }
-            const result = await threadNamer.nameThread(threadId, { kind: "forced" });
-            if (!result.ok) throw new PluginCliError(result.error, { code: "rename_failed" });
-            return { exitCode: 0, stdout: `${result.title}\n` };
-          },
-        }),
+        rename: renameCommand,
       },
     }),
   );

@@ -82,14 +82,7 @@ export function renderThreadNamingPrompt(
   projectInstructions = "",
   context: ThreadNamingPromptContext = {},
 ): string {
-  const projectRules = normalizeProjectTitleInstructions(projectInstructions)
-    .split("\n")
-    .reduce(
-      (selected, line) =>
-        selected.length + line.length + 1 <= 500 ? `${selected}\n${line}` : selected,
-      "",
-    )
-    .trim();
+  const projectRules = selectProjectTitleRules(projectInstructions);
   // Tag names double as section labels; each tag is the only boundary
   // between one section and the next, so content cannot open or close one.
   const sections: readonly [ThreadNamingSection, string, number][] = [
@@ -164,6 +157,35 @@ const SECTION_TAG =
 /** Thread content that spells one of the section tags reads as text, not a boundary. */
 function neutralizeSectionTags(value: string): string {
   return value.replace(SECTION_TAG, "[$1$2]");
+}
+
+/** Whole lines of the project's rules, up to 500 characters: what a title prompt carries. */
+export function selectProjectTitleRules(projectInstructions: string): string {
+  return normalizeProjectTitleInstructions(projectInstructions)
+    .split("\n")
+    .reduce(
+      (selected, line) =>
+        selected.length + line.length + 1 <= 500 ? `${selected}\n${line}` : selected,
+      "",
+    )
+    .trim();
+}
+
+/**
+ * The thread instructions that let an agent rename its own thread in one call.
+ * `projectRules` is `undefined` when they were not loaded in time.
+ */
+export function renderAgentRenameInstructions(projectRules: string | undefined): string {
+  const selected = projectRules === undefined ? undefined : selectProjectTitleRules(projectRules);
+  return files.read("agent-rename", {
+    titleRules: files.read("thread-title-format"),
+    projectRules:
+      selected === undefined
+        ? files.read("agent-rename-rules-unloaded")
+        : selected === ""
+          ? "This project has no extra title rules."
+          : `Project title rules, from .agents/GTD_NAMING.md:\n${selected}`,
+  });
 }
 
 export function normalizeProjectTitleInstructions(value: string): string {
