@@ -44,6 +44,11 @@
 
 <!-- workaround:monokai/context-card-late-layout end -->
 
+## Panel tab glide
+
+- `app/panel-tab-glide.ts` slides the right panel's active highlight on a pointer switch, under any palette. Keyboard switches, new tabs, closed tabs, reduced motion, and the phone pager stay instant.
+- Private contracts: the `[data-sidebar-split-tab-group]` toolbar, `[data-secondary-panel-tab-scroll-region]`, and `[data-tab-pill] > button[aria-pressed]` flipped in place. `test/panel-tab-glide.test.ts` covers them; recheck in a browser after bb upgrades.
+
 ## Palette-independent files
 
 - `app/ui-font-bridge.ts` writes `--bb-monokai-ui-font` on `<html>`. Only the theme's `--font-sans` reads it, so the UI font setting does nothing under another palette.
