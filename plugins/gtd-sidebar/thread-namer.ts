@@ -159,26 +159,10 @@ async function performThreadNaming(
     const output = await options.inference.complete({
       environmentId: thread.environmentId,
       prompt: plan.prompt,
-      allowKeep: plan.allowKeep,
     });
-    if (output === null) {
-      if (plan.allowKeep && thread.title?.trim()) {
-        return { ok: true, title: thread.title };
-      }
-      return { ok: false, error: "The naming agent kept the title when a new name was requested." };
-    }
     const title = sanitizeGeneratedTitle(output);
     if (title === null) {
       return { ok: false, error: "The naming agent returned no usable task title." };
-    }
-
-    // A hand rename during the inference window wins. Runs are serialized per
-    // thread, so a newer prompt simply gets its own review of this result next.
-    if (plan.writeGuard.kind === "title-unchanged") {
-      const current = await bb.sdk.threads.get({ threadId });
-      if (current.title !== plan.writeGuard.expectedTitle) {
-        return { ok: false, error: "The thread title changed while naming was in progress." };
-      }
     }
 
     await requireNamingEnabled(intent, options.automaticallyNameThreads);
@@ -278,6 +262,8 @@ function describeSkip(reason: ThreadNamingSkipReason): string {
       return "Automatic naming only runs for an original user prompt.";
     case "missing-user-prompt":
       return "This thread has no initial user prompt to name.";
+    case "titled-thread":
+      return "Automatic naming only titles a thread's first request; its agent renames it later.";
   }
 }
 

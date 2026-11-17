@@ -9,11 +9,11 @@ export type ThreadNamingSkipReason =
   | "deleted-thread"
   | "hidden-thread"
   | "latest-turn-not-user"
-  | "missing-user-prompt";
+  | "missing-user-prompt"
+  | "titled-thread";
 
 export type ThreadNamingWriteGuard =
-  | { kind: "initial-title"; expectedRequestSeq: number }
-  | { kind: "title-unchanged"; expectedTitle: string | null; expectedRequestSeq: number }
+  | { kind: "automatic"; expectedRequestSeq: number }
   | { kind: "replace-title" };
 
 export type ThreadNamingPlan =
@@ -21,7 +21,6 @@ export type ThreadNamingPlan =
   | {
       kind: "run";
       prompt: string;
-      allowKeep: boolean;
       writeGuard: ThreadNamingWriteGuard;
     };
 
@@ -76,8 +75,6 @@ export interface ThreadNamingPromptContext {
   currentRequestContext?: string;
   initialRequestContext?: string;
   recentRequestContexts?: readonly string[];
-  currentTitle?: string | null;
-  allowKeep?: boolean;
 }
 
 export function renderThreadNamingPrompt(
@@ -96,7 +93,6 @@ export function renderThreadNamingPrompt(
   // Tag names double as section labels; each tag is the only boundary
   // between one section and the next, so content cannot open or close one.
   const sections: readonly [ThreadNamingSection, string, number][] = [
-    ["current_title", context.allowKeep ? (context.currentTitle ?? "") : "", 96],
     ["current_request", userPrompt, 1_000],
     ["current_request_context", context.currentRequestContext ?? "", MAX_REQUEST_CONTEXT_LENGTH],
     [
@@ -145,7 +141,7 @@ export function renderThreadNamingPrompt(
     throw new Error("instructions/thread-title-data.md must include {{threadContent}}.");
   }
   return [
-    files.read(context.allowKeep ? "review-title" : "generate-title"),
+    files.read("generate-title"),
     files.read("thread-title-format"),
     projectRules === "" ? "" : `Project title rules:\n${projectRules}`,
     data,
@@ -155,7 +151,6 @@ export function renderThreadNamingPrompt(
 }
 
 type ThreadNamingSection =
-  | "current_title"
   | "current_request"
   | "current_request_context"
   | "original_request"
@@ -164,7 +159,7 @@ type ThreadNamingSection =
   | "recent_request_context_oldest_first";
 
 const SECTION_TAG =
-  /<(\/?)(current_title|current_request|current_request_context|original_request|original_request_context|recent_requests_oldest_first|recent_request_context_oldest_first)>/giu;
+  /<(\/?)(current_request|current_request_context|original_request|original_request_context|recent_requests_oldest_first|recent_request_context_oldest_first)>/giu;
 
 /** Thread content that spells one of the section tags reads as text, not a boundary. */
 function neutralizeSectionTags(value: string): string {
@@ -271,30 +266,24 @@ export function planThreadNaming({
   const requests = userRequests(events).filter((event) => event.seq <= latestRequest.seq);
   const userPrompts = requests.map(normalizeUserPrompt);
   const requestContexts = requests.map(normalizeRequestContext);
-  const allowKeep =
-    intent.kind === "automatic" && userPrompts.length > 1 && Boolean(thread.title?.trim());
+  // After the first request, the thread's agent renames it when the work
+  // changes direction (see instructions/agent-rename.md).
+  if (intent.kind === "automatic" && userPrompts.length > 1 && thread.title?.trim()) {
+    return { kind: "skip", reason: "titled-thread" };
+  }
 
   return {
     kind: "run",
-    allowKeep,
     prompt: renderThreadNamingPrompt(userPrompt, projectInstructions, {
       initialUserPrompt: userPrompts[0],
       recentUserPrompts: userPrompts.slice(1, -1),
       currentRequestContext: requestContexts.at(-1),
       initialRequestContext: requestContexts[0],
       recentRequestContexts: requestContexts.slice(1, -1),
-      currentTitle: thread.title,
-      allowKeep,
     }),
     writeGuard:
       intent.kind === "automatic"
-        ? userPrompts.length === 1
-          ? { kind: "initial-title", expectedRequestSeq: latestRequest.seq }
-          : {
-              kind: "title-unchanged",
-              expectedTitle: thread.title,
-              expectedRequestSeq: latestRequest.seq,
-            }
+        ? { kind: "automatic", expectedRequestSeq: latestRequest.seq }
         : { kind: "replace-title" },
   };
 }
@@ -304,20 +293,6 @@ function normalizeGeneratedTitle(value: string): string {
     .replace(/^(?:\s*(?:📝|🛠️?|🐛|🧪|📦|⚙️?|♻️?|🔎|🚀|☑️?))+/u, "")
     .trim()
     .replace(/\s+/gu, " ");
-}
-
-// A separator can introduce commentary; another task word cannot.
-const KEEP_TITLE_REPLY =
-  /^keep( (?:the )?(?:(?:current|existing) )?(?:thread )?title)?(?=[.!]?$|[.!:;,]?\s+[(—–-]|[.!:;]\s)/iu;
-
-export function isKeepTitleReply(value: string, allowProse = true): boolean {
-  const normalized = normalizeGeneratedTitle(value);
-  const candidates = [normalized, normalized.replace(/^[^:]+:\s*/u, "")];
-  return candidates.some((candidate) => {
-    const match = KEEP_TITLE_REPLY.exec(candidate.replace(/^(?:\[[^\]]*\]\s*)+/u, ""));
-    // In generation mode, prose can be a literal task name. Bare KEEP is reserved.
-    return match !== null && (allowProse || match[1] === undefined);
-  });
 }
 
 export function sanitizeGeneratedTitle(value: string): string | null {

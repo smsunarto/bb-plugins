@@ -21,7 +21,7 @@ describe("thread title inference", () => {
         calls.push({ method, input, options });
         return { ok: true, text: "Name threads" };
       },
-    }).complete({ environmentId: null, prompt: "Generate a title", allowKeep: false });
+    }).complete({ environmentId: null, prompt: "Generate a title" });
 
     assert.equal(title, "Name threads");
     assert.deepEqual(calls, [
@@ -33,20 +33,6 @@ describe("thread title inference", () => {
     ]);
   });
 
-  test("a KEEP reply keeps the title only when the prompt allowed it", async () => {
-    const inference = createThreadTitleInference(PRIMARY_HOST_BB, {
-      call: async () => ({ ok: true, text: "KEEP" }),
-    });
-    assert.equal(
-      await inference.complete({ environmentId: null, prompt: "Review", allowKeep: true }),
-      null,
-    );
-    await assert.rejects(
-      inference.complete({ environmentId: null, prompt: "Generate", allowKeep: false }),
-      /kept the title when a new name was requested/u,
-    );
-  });
-
   test("replaces bb's AI-services hint in a Cloudflare failure", async () => {
     await assert.rejects(
       createThreadTitleInference(PRIMARY_HOST_BB, {
@@ -56,7 +42,7 @@ describe("thread title inference", () => {
           message:
             "Codex inference request failed with HTTP 403: chatgpt.com answered with a Cloudflare challenge that bb cannot solve. Retry, or choose another service in Settings → AI services.",
         }),
-      }).complete({ environmentId: null, prompt: "Generate", allowKeep: false }),
+      }).complete({ environmentId: null, prompt: "Generate" }),
       {
         message:
           "Codex inference request failed with HTTP 403: chatgpt.com answered with a Cloudflare challenge that bb cannot solve. Retry, or log in to Codex with an OpenAI API key so naming requests go to api.openai.com instead.",
@@ -137,69 +123,25 @@ describe("readTitleReply", () => {
       "[RFC] Retry design",
       "iOS setup",
     ]) {
-      assert.equal(readTitleReply(title, false), title);
+      assert.equal(readTitleReply(title), title);
     }
   });
 
   test("strips labels, wrapping quotes, fences, and trailing lines", () => {
-    assert.equal(readTitleReply('Title: "Fix sorting"', false), "Fix sorting");
-    assert.equal(readTitleReply("```\n**[GTD] Shimmer names**\n```", false), "[GTD] Shimmer names");
-    assert.equal(readTitleReply("\n  “Retry design”  \nBecause the task", false), "Retry design");
+    assert.equal(readTitleReply('Title: "Fix sorting"'), "Fix sorting");
+    assert.equal(readTitleReply("```\n**[GTD] Shimmer names**\n```"), "[GTD] Shimmer names");
+    assert.equal(readTitleReply("\n  “Retry design”  \nBecause the task"), "Retry design");
     assert.equal(
-      readTitleReply("<think>hmm</think>\nKeep “quotes” inside", false),
+      readTitleReply("<think>hmm</think>\nKeep “quotes” inside"),
       "Keep “quotes” inside",
     );
   });
 
-  test("reads KEEP loosely and rejects an empty reply", () => {
-    for (const reply of ["KEEP", "keep", " `KEEP.` ", "Title: KEEP"]) {
-      assert.equal(readTitleReply(reply, true), null, reply);
-    }
-    assert.throws(() => readTitleReply(" \n``` \n", false), /returned no title/u);
+  test("rejects an empty reply", () => {
+    assert.throws(() => readTitleReply(" \n``` \n"), /returned no title/u);
   });
 
-  test("treats a prose keep decision as unchanged, never as a replacement title", () => {
-    for (const reply of [
-      "keep the current title.",
-      "Keep current title",
-      "Keep the current title (though “Continue prior thread work” is too generic).",
-      "Keep the current title — same task.",
-      "Keep the current title: [Accounts] Pool affinity",
-      "Keep the current title. The task is unchanged.",
-      "KEEP (same task)",
-      "KEEP — same task",
-      "GTD Sidebar: KEEP",
-      "GTD Sidebar: [Accounts] KEEP",
-      "[Accounts] Keep the current title.",
-      "🛠️ Keep the current title.",
-      "📝 KEEP",
-      "Keep  the current title.",
-      "Keep the current thread title",
-      "KEEP THE EXISTING TITLE!",
-      'Title: "Keep the current title."',
-      "```\nKeep the current title.\n```",
-      "<think>The task is unchanged.</think>\nKeep the current title.",
-    ]) {
-      assert.equal(readTitleReply(reply, true), null, reply);
-    }
-    assert.equal(
-      readTitleReply("Keep the current title editable", true),
-      "Keep the current title editable",
-    );
-    assert.equal(readTitleReply("Keep connections alive", true), "Keep connections alive");
-    assert.equal(readTitleReply("Keep activity title stable", true), "Keep activity title stable");
-    assert.equal(readTitleReply("Keep-alive timeout fix", true), "Keep-alive timeout fix");
-  });
-
-  test("generation accepts literal keep-title tasks but rejects KEEP control replies", () => {
-    for (const title of ["Keep existing thread title", "Keep existing title (GTD Sidebar)"]) {
-      assert.equal(readTitleReply(title, false), title);
-    }
-    for (const reply of ["KEEP", "KEEP (same task)", "GTD Sidebar: KEEP", "📝 KEEP"]) {
-      assert.throws(
-        () => readTitleReply(reply, false),
-        /kept the title when a new name was requested/u,
-      );
-    }
+  test("reads a title that starts with Keep as a title", () => {
+    assert.equal(readTitleReply("Keep-alive timeout fix"), "Keep-alive timeout fix");
   });
 });

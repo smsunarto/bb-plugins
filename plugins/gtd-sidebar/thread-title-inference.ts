@@ -1,6 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { GtdSidebarCodexResult, GtdSidebarHostClient } from "./lib/host-contract.ts";
-import { isKeepTitleReply } from "./lib/thread-naming.ts";
 
 // The models of bb's own Codex AI service (plugins/provider-codex/src/ai-service.ts).
 export const TITLE_MODELS = ["gpt-6.1-terra", "gpt-5.6-luna"] as const;
@@ -34,19 +33,15 @@ const GTD_SERVICE_HINT =
 
 /**
  * Reads a plain-text reply as bb's `cleanGeneratedLine` does: the first
- * non-empty line, without a label or wrapping quotes. `null` means keep.
+ * non-empty line, without a label or wrapping quotes.
  */
-export function readTitleReply(raw: string, allowKeep: boolean): string | null {
+export function readTitleReply(raw: string): string {
   const line = raw
     .replace(THINK_BLOCK, "")
     .split(/\r?\n/u)
     .map((candidate) => candidate.trim())
     .find((candidate) => candidate !== "" && !CODE_FENCE_LINE.test(candidate));
   const title = unwrap(unwrap(line ?? "").replace(LEADING_LABEL, ""));
-  if (isKeepTitleReply(title, allowKeep)) {
-    if (allowKeep) return null;
-    throw new Error("The inference service kept the title when a new name was requested.");
-  }
   if (title === "") throw new Error("The inference service returned no title.");
   return title;
 }
@@ -66,11 +61,7 @@ function unwrap(value: string): string {
 }
 
 export interface ThreadTitleInference {
-  complete(input: {
-    environmentId: string | null;
-    prompt: string;
-    allowKeep: boolean;
-  }): Promise<string | null>;
+  complete(input: { environmentId: string | null; prompt: string }): Promise<string>;
 }
 
 export interface TitleInferenceAttempt {
@@ -119,7 +110,7 @@ export function createThreadTitleInference(
   host: Pick<GtdSidebarHostClient, "call">,
 ): ThreadTitleInference {
   return {
-    async complete({ environmentId, prompt, allowKeep }) {
+    async complete({ environmentId, prompt }) {
       const config = await bb.sdk.system.config();
       const hostId =
         config.primaryHostId ??
@@ -137,7 +128,7 @@ export function createThreadTitleInference(
             { hostId, timeoutMs: INFERENCE_TIMEOUT_MS + HOST_CALL_GRACE_MS },
           ),
       });
-      return readTitleReply(reply, allowKeep);
+      return readTitleReply(reply);
     },
   };
 }

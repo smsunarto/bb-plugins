@@ -3,7 +3,6 @@ import { describe, expect, mock, test } from "bun:test";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { createThreadNamer, subscribeToThreadNaming } from "../thread-namer.ts";
-import { readTitleReply } from "../thread-title-inference.ts";
 
 const THREAD_ID = "thr_target";
 
@@ -66,9 +65,9 @@ function createHost(
     environmentPath?: string | null;
     environmentId?: () => string | null;
     environmentStatus?: () => "ready" | "provisioning";
-    inferenceComplete?: (input: unknown) => Promise<string | null>;
+    inferenceComplete?: (input: unknown) => Promise<string>;
     inferenceError?: Error;
-    inferenceOutput?: string | null;
+    inferenceOutput?: string;
     projectInstructionEncoding?: "base64" | "utf8";
     projectInstructionError?: Error;
     projectInstructions?: string;
@@ -156,21 +155,20 @@ function createHost(
 }
 
 describe("thread naming progress", () => {
-  for (const outcome of ["rename", "keep", "failure"] as const) {
+  for (const outcome of ["rename", "failure"] as const) {
     test(`reports naming only while inference is running and clears after ${outcome}`, async () => {
       let start!: () => void;
       const started = new Promise<void>((resolve) => {
         start = resolve;
       });
-      let finish!: (value: string | null) => void;
+      let finish!: (value: string) => void;
       let fail!: (error: Error) => void;
-      const result = new Promise<string | null>((resolve, reject) => {
+      const result = new Promise<string>((resolve, reject) => {
         finish = resolve;
         fail = reject;
       });
       const { namer, host } = createHost({
-        title: "Fix login",
-        events: [requested(), requested(3, "Continue", "new-turn")],
+        events: [requested()],
         inferenceComplete: () => {
           start();
           return result;
@@ -181,7 +179,7 @@ describe("thread naming progress", () => {
       await started;
       assert.deepEqual(namer.listNamingThreads(), [THREAD_ID]);
       if (outcome === "failure") fail(new Error("Inference failed"));
-      else finish(outcome === "keep" ? null : "New title");
+      else finish("New title");
       const finished = await operation;
       assert.equal(finished.ok, outcome !== "failure");
       assert.deepEqual(namer.listNamingThreads(), []);
@@ -274,22 +272,34 @@ describe("createThreadNamer", () => {
     assert.deepEqual(fileReads, []);
   });
 
-  test("regenerates an existing title from the latest prompt without a handoff", async () => {
+  test("leaves a titled thread to its agent after the first request", async () => {
+    const { inferenceCalls, namer, updates } = createHost({
+      events: [requested(), completed(), requested(3, "Now fix signup", "new-turn"), completed(4)],
+      title: "Fix the login test",
+    });
+
+    const result = await namer.nameThread(THREAD_ID, { kind: "automatic" });
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(inferenceCalls, []);
+    assert.deepEqual(updates, []);
+  });
+
+  test("regenerates a titled thread from its latest prompt on request", async () => {
     const { inferenceCalls, namer, updates } = createHost({
       events: [requested(), completed(), requested(3, "Now fix signup", "new-turn"), completed(4)],
       inferenceOutput: "Fix the signup test",
       title: "Fix the login test",
     });
 
-    const result = await namer.nameThread(THREAD_ID, {
-      kind: "automatic",
-    });
+    const result = await namer.nameThread(THREAD_ID, { kind: "forced" });
 
     assert.deepEqual(result, { ok: true, title: "Fix the signup test" });
     assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "Fix the signup test" }]);
-    const call = inferenceCalls[0] as { prompt: string };
-    assert.match(call.prompt, /<current_request>\nNow fix signup/u);
-    assert.doesNotMatch(call.prompt, /Latest handoff:/u);
+    assert.match(
+      (inferenceCalls[0] as { prompt: string }).prompt,
+      /<current_request>\nNow fix signup/u,
+    );
   });
 
   test("replaces BB's existing title on the first user request", async () => {
@@ -303,17 +313,7 @@ describe("createThreadNamer", () => {
       title: "GTD task title",
     });
     assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "GTD task title" }]);
-    assert.equal((inferenceCalls[0] as { allowKeep: boolean }).allowKeep, false);
-  });
-
-  test("rejects keep on the first user request even when BB already named it", async () => {
-    const { namer, updates } = createHost({
-      title: "BB internal title",
-      inferenceOutput: null,
-      events: [requested()],
-    });
-    assert.equal((await namer.nameThread(THREAD_ID, { kind: "automatic" })).ok, false);
-    assert.deepEqual(updates, []);
+    assert.equal(inferenceCalls.length, 1);
   });
 
   test("first-request naming replaces a BB title that arrives during inference", async () => {
@@ -327,44 +327,6 @@ describe("createThreadNamer", () => {
       title: "GTD task title",
     });
     assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "GTD task title" }]);
-  });
-
-  test("keeps the exact existing title without a write when inference says keep", async () => {
-    const { namer, updates } = createHost({
-      title: "[Accounts] Pool affinity",
-      inferenceOutput: null,
-      events: [requested(), requested(3, "add test", "new-turn")],
-    });
-    assert.deepEqual(await namer.nameThread(THREAD_ID, { kind: "automatic" }), {
-      ok: true,
-      title: "[Accounts] Pool affinity",
-    });
-    assert.deepEqual(updates, []);
-  });
-
-  test("preserves the existing title when the model replies with a prose keep decision", async () => {
-    const { namer, updates } = createHost({
-      title: "[Accounts] Pool affinity",
-      events: [requested(), requested(3, "add test", "new-turn")],
-      inferenceComplete: async (input) =>
-        readTitleReply("keep the current title.", (input as { allowKeep: boolean }).allowKeep),
-    });
-    assert.deepEqual(await namer.nameThread(THREAD_ID, { kind: "automatic" }), {
-      ok: true,
-      title: "[Accounts] Pool affinity",
-    });
-    assert.deepEqual(updates, []);
-  });
-
-  test("rejects keep for untitled threads and explicit regeneration", async () => {
-    for (const [title, kind] of [
-      [null, "automatic"],
-      ["Existing title", "forced"],
-    ] as const) {
-      const { namer, updates } = createHost({ title, inferenceOutput: null });
-      assert.equal((await namer.nameThread(THREAD_ID, { kind })).ok, false);
-      assert.deepEqual(updates, []);
-    }
   });
 
   test("does not write an identical generated title", async () => {
@@ -455,21 +417,6 @@ describe("createThreadNamer", () => {
     await namer.nameThread(THREAD_ID, intent);
     assert.equal(inferenceCount, 2);
     assert.equal(updates.length, 2);
-  });
-
-  test("keeps a manual title written while automatic naming runs", async () => {
-    const { namer, updates } = createHost({
-      title: "GTD title",
-      rereadTitle: "My title",
-      events: [requested(), requested(3, "Now investigate billing", "new-turn")],
-    });
-
-    const result = await namer.nameThread(THREAD_ID, {
-      kind: "automatic",
-    });
-
-    assert.equal(result.ok, false);
-    assert.equal(updates.length, 0);
   });
 
   test("sends the title prompt through inference without spawning a thread", async () => {
