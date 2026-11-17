@@ -244,7 +244,6 @@ the task has not changed.
 
 ### The rest
 
-- A project scope picker — the one control the plugin adds.
 - Right-click a row for Settle and Snooze first, followed by every action in bb's own
   thread menu: split, copy link, pin, read/unread, section moves, rename, delete, and
   the actions other plugins add, such as per-thread notifications. Settle replaces
@@ -281,7 +280,7 @@ services. The explicit naming command below is a separate user-requested inferen
 | Repository groups       | Group shelves by BB repository, keep repository context under machine filters, toggle groups from plugin settings, fold groups, create a thread from a group, and reorder groups.          |
 | Thread families         | Fold using BB's shared preference. Desktop drag or keyboard drag nests/un-nests threads using BB's parent relation.                                                                        |
 | Thread actions          | Pin, snooze until tomorrow at 09:00, settle/archive with native Undo, restore, delete, and insert a thread reference into the composer.                                                    |
-| Navigation              | Row click, search, repository scope and persistent machine visibility pickers, Cmd/Ctrl-click split-open, and drag-to-split. Preserve BB/Vimium thread shortcut anchors.                   |
+| Navigation              | Row click, search, the persistent machine visibility picker, Cmd/Ctrl-click split-open, and drag-to-split. Preserve BB/Vimium thread shortcut anchors.                                     |
 | Status and details      | Unread titles, activity indicators/counts, time, native branch and PR information, provider tooltips, machine globe/color and host identity. These make thread state and location visible. |
 | Row layout              | Every thread takes one line; project, branch and agent show in its hover details. On mobile, long-press opens the action sheet without requiring haptics.                                  |
 | Explicit naming command | `bb gtd-sidebar rename [<threadId>]` is an explicit request for Codex title inference even with automatic naming off.                                                                      |

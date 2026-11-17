@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PluginSidebarThread } from "@get-bb/plugin-sdk/app";
 import { filterHiddenMachines, machineVisibility, sidebarMachines } from "../lib/machines";
-import { filterByProject } from "../lib/inbox";
 
 const threads = [
   { id: "one", projectId: "repo-a", host: { id: "host-a", name: "Studio" } },
@@ -56,11 +55,11 @@ describe("sidebar machines", () => {
   });
 
   test("hides selected machines while preserving threads without a known host", () => {
-    expect(
-      filterByProject(filterHiddenMachines(threads, new Set(["host-b"])), "repo-a").map(
-        (t) => t.id,
-      ),
-    ).toEqual(["one", "four"]);
+    expect(filterHiddenMachines(threads, new Set(["host-b"])).map((t) => t.id)).toEqual([
+      "one",
+      "two",
+      "four",
+    ]);
     expect(filterHiddenMachines(threads, new Set(["host-a"])).map((t) => t.id)).toEqual([
       "three",
       "four",

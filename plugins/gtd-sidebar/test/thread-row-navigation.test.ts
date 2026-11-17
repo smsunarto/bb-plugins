@@ -2445,7 +2445,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   });
 
   describe("committed row commands", () => {
-    it("matches machine selector and repo globe colors while composing scopes", async () => {
+    it("matches machine selector and repo globe colors", async () => {
       const host = hostState([
         thread("a", { host: { id: "host-a", name: "Studio" } }),
         thread("b", { host: { id: "host-b", name: "Server" } }),
@@ -2477,17 +2477,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         trigger.querySelector<HTMLElement>("[data-machine-id]")?.style.color,
         chipGlobe.style.color,
       );
-      assert.ok(view.slot.getByRole("combobox", { name: "Project scope: All projects" }));
-      view.setGrouping(false);
-      fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Project scope: All projects" }), {
-        key: "ArrowDown",
-      });
-      fireEvent.click(screen.getByRole("option", { name: "One" }));
-      assert.deepEqual(rowIds(view.slot), ["a"]);
-      view.setGrouping(true);
-      assert.ok(view.slot.getByRole("combobox", { name: /Project scope:/ }));
-      assert.ok(view.slot.getByRole("combobox", { name: "Project scope: One" }));
-      assert.deepEqual(rowIds(view.slot), ["a"]);
     });
 
     function globeColors(view: ReturnType<typeof mount>, hostIds: readonly string[]) {
@@ -2602,15 +2591,14 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.deepEqual(rowIds(view.slot), ["studio"]);
       assert.ok(view.slot.getByRole("button", { name: "One project" }));
       assert.equal(view.slot.queryByRole("button", { name: "Hide repository groups" }), null);
-      assert.ok(view.slot.getByRole("combobox", { name: /Project scope:/ }));
+      // The toolbar has no project scope picker; repository groups carry project identity.
+      assert.equal(view.slot.queryByRole("combobox"), null);
 
       view.setGrouping(false);
       assert.equal(view.slot.container.querySelector(".gtd-project-group"), null);
-      assert.ok(view.slot.getByRole("combobox", { name: "Project scope: All projects" }));
 
       view.setGrouping(true);
       assert.ok(view.slot.getByRole("button", { name: "One project" }));
-      assert.ok(view.slot.getByRole("combobox", { name: /Project scope:/ }));
     });
 
     it("opens and drags with current host callbacks without redrawing an unchanged row", () => {
@@ -2647,13 +2635,12 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       assert.equal(currentPointer.mock.calls.length, 1);
     });
 
-    it("settles against the current selection and scoped shelf, then repairs the compose route, leaving the sidebar open", () => {
+    it("settles against the current selection and shelf, then repairs the compose route, leaving the sidebar open", () => {
       const currentActions = actions();
       const host = {
         ...hostState([
           thread("pinned", { isPinned: true }),
           thread("a", { latestAttentionAt: 30 }),
-          thread("b", { projectId: "two", latestAttentionAt: 20 }),
           thread("c", { latestAttentionAt: 10 }),
           thread("waiting", { indicator: "runtime" }),
         ]),
@@ -2664,10 +2651,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       const view = mount(host, { activeThreadId: "c", onNavigate: oldNavigate });
       view.updateInbox({ activeThreadId: "a", onNavigate: navigate });
       view.setGrouping(false);
-      fireEvent.keyDown(view.slot.getByRole("combobox", { name: "Project scope: All projects" }), {
-        key: "ArrowDown",
-      });
-      fireEvent.click(screen.getByRole("option", { name: "One" }));
       assert.deepEqual(rowIds(view.slot), ["pinned", "a", "c", "waiting"]);
       fireEvent.pointerDown(rowButton(view.slot, "c", "Settle"));
       assert.equal(currentActions.open.mock.calls.length, 0);

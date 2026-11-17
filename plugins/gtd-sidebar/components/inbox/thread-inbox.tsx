@@ -16,7 +16,6 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { cn } from "../../lib/utils";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectValue } from "../ui/select";
 import { ThreadCard } from "./thread-card";
 import { SlimRow } from "./slim-row";
 import { rowActionPlan, type ActiveThreadShelf, type RowCommand } from "./thread-actions";
@@ -38,7 +37,7 @@ import { useCommittedEvent } from "../../hooks/use-committed-event";
 import { forgetSidebarActions, publishSidebarActions } from "../../lib/sidebar-actions-bridge";
 import { toThreadActionTarget } from "../../lib/thread-action-target";
 import { usePendingArchives } from "./pending-archives";
-import { archiveAsksFirst, filterByProject, nextThreadIdAfterSettle } from "../../lib/inbox";
+import { archiveAsksFirst, nextThreadIdAfterSettle } from "../../lib/inbox";
 import {
   buildInboxTree,
   createShelfArrivals,
@@ -70,7 +69,7 @@ import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { useRetained } from "../../hooks/use-retained";
 import { resolveSidebarBranchLabel } from "../../lib/gitbutler";
 import { filterHiddenMachines, sidebarMachines } from "../../lib/machines";
-import { MachineVisibilityPicker, ScopeTrigger, scopeItemClassName } from "./machine-scope-picker";
+import { MachineVisibilityPicker } from "./machine-scope-picker";
 import { MachineAppearanceProvider } from "./machine-appearance";
 import { RenameProvider } from "./inline-rename";
 import { CompactViewportOverrideProvider } from "../ui/hooks/use-compact-viewport";
@@ -89,7 +88,6 @@ import {
   type InboxWindowSegment,
 } from "../../lib/inbox-window";
 
-const ALL_PROJECTS = "__all__";
 // The Settled shelf is a view of bb's archive, so the host list is asked for
 // archived threads too; `isShelvedThread` cuts it to the shelf's window.
 const SIDEBAR_LIFECYCLES = ["active", "archived"] as const;
@@ -171,7 +169,6 @@ function InboxList({
     () => new Map(providers.map((provider) => [provider.id, provider])),
     [providers],
   );
-  const [scope, setScope] = useState<string>(ALL_PROJECTS);
   const machines = useMemo(
     () => sidebarMachines(threads, sidebar.experimental_hosts),
     [threads, sidebar.experimental_hosts],
@@ -203,7 +200,6 @@ function InboxList({
   const { tree, shelves, foldingThreads, toggleThread, revealFamily } = useInboxTree(
     threads,
     lifecycle,
-    scope,
     visibility.hiddenMachineIds,
     searchQuery,
   );
@@ -474,9 +470,6 @@ function InboxList({
     );
   };
 
-  const scopeLabel =
-    scope === ALL_PROJECTS ? "All projects" : (projectNameById.get(scope) ?? "All projects");
-
   // The ghost rides the pointer only for a dragged row; a dragged group
   // moves itself through the sortable's transform instead.
   const dragSource = sidebarDrag.drag.source;
@@ -544,36 +537,6 @@ function InboxList({
           }}
         >
           <div className="flex shrink-0 items-center gap-1 px-2">
-            <Select value={scope} onValueChange={setScope}>
-              {/* It sizes to its label, so the chevron sits beside it. The
-                machine picker takes the slack. */}
-              <ScopeTrigger
-                isCompactViewport={isCompactViewport}
-                className="min-w-0 flex-initial justify-start font-medium"
-                aria-label={`Project scope: ${scopeLabel}`}
-              >
-                <SelectValue />
-              </ScopeTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem
-                    value={ALL_PROJECTS}
-                    className={scopeItemClassName(isCompactViewport)}
-                  >
-                    All projects
-                  </SelectItem>
-                  {projects.map((project) => (
-                    <SelectItem
-                      key={project.id}
-                      value={project.id}
-                      className={scopeItemClassName(isCompactViewport)}
-                    >
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
             <MachineVisibilityPicker
               machines={machines}
               visibility={visibility}
@@ -1036,7 +999,6 @@ function archiveIfActive(
 function useInboxTree(
   threads: readonly PluginSidebarThread[],
   lifecycle: LifecycleApi,
-  scope: string,
   hiddenMachineIds: ReadonlySet<string>,
   searchQuery: string,
 ) {
@@ -1059,10 +1021,7 @@ function useInboxTree(
   const tree = useMemo(
     () =>
       buildInboxTree(
-        filterByProject(
-          filterHiddenMachines(threads, hiddenMachineIds),
-          scope === ALL_PROJECTS ? null : scope,
-        ),
+        filterHiddenMachines(threads, hiddenMachineIds),
         (thread) => (lifecycle.shelfFor(thread) === "snoozed" ? "snoozed" : "active"),
         searchQuery,
         {
@@ -1070,7 +1029,7 @@ function useInboxTree(
           snoozedAtFor: lifecycle.snoozedAtFor,
         },
       ),
-    [lifecycle, scope, hiddenMachineIds, searchQuery, threads, arrivals],
+    [lifecycle, hiddenMachineIds, searchQuery, threads, arrivals],
   );
   const shelves = useMemo(() => {
     const rows = (shelf: (typeof tree)[number]["shelf"]) =>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentPropsWithoutRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -12,7 +12,6 @@ import { Icon } from "../ui/icon";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import type { MachineVisibilityChange } from "../../lib/machine-visibility";
 import type { machineVisibility, SidebarMachine } from "../../lib/machines";
-import { SelectTrigger } from "../ui/select";
 import { MachineGlobe } from "./machine-globe";
 import { cn } from "../../lib/utils";
 
@@ -62,20 +61,6 @@ function useFocusRingSource() {
     onFocus: () => setPointerFocus(lastInput.current === "pointer"),
     onKeyDown: () => setPointerFocus(false),
   };
-}
-
-export function ScopeTrigger({
-  isCompactViewport,
-  className,
-  ...props
-}: ComponentPropsWithoutRef<typeof SelectTrigger> & { isCompactViewport: boolean }) {
-  return (
-    <SelectTrigger
-      {...props}
-      {...useFocusRingSource()}
-      className={scopeTriggerClassName(isCompactViewport, className)}
-    />
-  );
 }
 
 export function MachineVisibilityPicker({

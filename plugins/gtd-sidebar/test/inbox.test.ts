@@ -6,7 +6,6 @@ import {
   activeSectionFor,
   archiveAsksFirst,
   childrenOf,
-  filterByProject,
   nextThreadIdAfterSettle,
   parentOf,
 } from "../lib/inbox.ts";
@@ -92,17 +91,6 @@ describe("active sections", () => {
       ),
       "next-action",
     );
-  });
-});
-
-describe("filtering", () => {
-  it("scopes to one project, or to all", () => {
-    const threads = [thread({ id: "a", projectId: "p1" }), thread({ id: "b", projectId: "p2" })];
-    assert.deepEqual(
-      filterByProject(threads, "p1").map((t) => t.id),
-      ["a"],
-    );
-    assert.equal(filterByProject(threads, null).length, 2);
   });
 });
 
