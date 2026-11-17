@@ -221,6 +221,35 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
+  test("draws full-box hairlines as rings WebKit cannot drop at 3x", () => {
+    const rules = styleRules(theme);
+    // WebKit rounds a one-device-pixel border's outer and inner edges apart, so a
+    // side on a half device pixel paints at zero width. Full-box hairlines are
+    // inset rings; only boxes a ring cannot replace keep the border width.
+    const fullBox = rules.filter((rule) => /^\s*border: var\(--hairline-width\)/m.test(rule.body));
+    expect(fullBox.map((rule) => rule.selector).sort()).toEqual([
+      '.dark [data-framed] [data-sidebar="inset-edge"]', // desktop window only
+      '.dark [data-testid="app-layout-root"]:not([data-framed]) [data-app-content-shell]::after', // desktop width only
+      ".dark img[data-markdown-image], .dark button.cursor-zoom-in.border", // an img covers an inset ring
+    ]);
+    expect(theme).not.toMatch(/inset 0 0 0 var\(--hairline-width\)/);
+    expect(theme).toContain("--hairline-ring-width: 1px;");
+    const ringWidths = rules.filter((rule) => rule.body.includes("--hairline-ring-width:"));
+    expect(ringWidths.map((rule) => [rule.atRules.join(" "), rule.body.trim()])).toContainEqual([
+      "@media (min-resolution: 2.5dppx)",
+      "--hairline-ring-width: calc(1px / 3);",
+    ]);
+    const neutral = rules.find(
+      (rule) =>
+        rule.selector.includes(".border:is(") &&
+        rule.atRules.includes("@media (min-resolution: 2.5dppx)"),
+    );
+    expect(neutral?.body).toContain("border-width: 0;");
+    expect(neutral?.body).toContain("inset 0 0 0 var(--hairline-ring-width) var(--monokai-edge)");
+    expect(neutral?.body).toContain("var(--tw-shadow, 0 0 transparent)");
+    expect(neutral?.selector).toContain('[class*=":border-"]');
+  });
+
   test("gives compact drawers shadcn's Maia card without taking over host motion", () => {
     const blocks = Array.from(
       theme
@@ -246,7 +275,9 @@ describe("bb Monokai contract audit", () => {
       block.selector.includes("[data-persistent-drawer-content]::after"),
     );
     expect(ring?.body).toContain("inset: 8px 8px var(--monokai-drawer-bottom);");
-    expect(ring?.body).toContain("border: var(--hairline-width) solid var(--border);");
+    expect(ring?.body).toContain(
+      "box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);",
+    );
     expect(ring?.body).toContain("z-index: 1;");
     expect(declarations).toContain("width: 100px;\n  height: 6px;");
     expect(

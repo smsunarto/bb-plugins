@@ -245,9 +245,12 @@
   /* Every edge is the composer's hairline: 0.5px of opaque 18% ink. Opaque, so
    * edges that meet at a rounded corner do not stack into a bright stub. A
    * 0.5px border draws one device pixel on a 2x or 3x screen and rounds up to
-   * one pixel at 1x. The hairline-edges section below applies the width. */
+   * one pixel at 1x. The hairline-edges section below applies the width.
+   * --hairline-ring-width is the same edge drawn as an inset box-shadow ring:
+   * exactly one device pixel at 1x, 2x, and 3x (see Hairline rings). */
   --border: {{solid.hairline}};
   --hairline-width: 0.5px;
+  --hairline-ring-width: 1px;
   --border-hairline: {{solid.hairline}};
 
   /* ---- Text ladder -----------------------------------------------------
@@ -905,6 +908,83 @@
   }
 }
 
+/* Hairline rings. On a 3x screen WebKit cannot draw a one-device-pixel border
+ * reliably: it stores 1/3px as 21/64px, a little under one device pixel, and
+ * rounds each side's outer and inner edge separately, so a side whose edge
+ * lands on a half device pixel paints at zero width. Which side goes depends
+ * on where the box falls, so cards lost one edge or another as the content
+ * above them moved. An inset box-shadow ring has no inner edge to round: a
+ * sweep of all 64 sub-pixel offsets in WebKit at 3x lost an edge on 1 of 64
+ * boxes with a 0.5px or 1/3px border, and on none with a ring.
+ * --hairline-ring-width is one device pixel at every density.
+ *
+ * At 3x, a full-box neutral border becomes that ring: the bb and plugin
+ * boxes that take the hairline width above with a border-border, input,
+ * sidebar, hairline, or seam colour. The ring joins Tailwind's box-shadow
+ * stack, so shadow, ring, and inset utilities still draw beside it. A box that
+ * opens a side (border-t-0 and the like), takes a dashed, dotted, or wider
+ * border, or changes its border on a state variant keeps its border: a ring
+ * has one width, one colour, and no style. Side-only rules stay borders. A
+ * ring per side is not reliable: offset insets drop edges as borders do. */
+@media (min-resolution: 1.5dppx) {
+  html.dark {
+    --hairline-ring-width: 0.5px;
+  }
+}
+
+@media (min-resolution: 2.5dppx) {
+  html.dark {
+    --hairline-ring-width: calc(1px / 3);
+  }
+
+  @layer utilities {
+    :where(.dark) .border.border-border {
+      --monokai-edge: var(--border);
+    }
+    :where(.dark) .border.border-input {
+      --monokai-edge: var(--input);
+    }
+    :where(.dark) .border.border-sidebar-border {
+      --monokai-edge: var(--sidebar-border);
+    }
+    :where(.dark) .border.border-border-hairline {
+      --monokai-edge: var(--border-hairline);
+    }
+    :where(.dark) .border.border-border-seam {
+      --monokai-edge: var(--border-seam);
+    }
+
+    :where(.dark)
+      .border:is(
+        .border-border,
+        .border-input,
+        .border-sidebar-border,
+        .border-border-hairline,
+        .border-border-seam
+      ):not(
+        .border-t-0,
+        .border-r-0,
+        .border-b-0,
+        .border-l-0,
+        .border-x-0,
+        .border-y-0,
+        .border-s-0,
+        .border-e-0,
+        .border-2,
+        .border-dashed,
+        .border-dotted,
+        [class*=":border-"]
+      ) {
+      border-width: 0;
+      box-shadow:
+        var(--tw-inset-shadow, 0 0 transparent), var(--tw-inset-ring-shadow, 0 0 transparent),
+        inset 0 0 0 var(--hairline-ring-width) var(--monokai-edge),
+        var(--tw-ring-offset-shadow, 0 0 transparent), var(--tw-ring-shadow, 0 0 transparent),
+        var(--tw-shadow, 0 0 transparent);
+    }
+  }
+}
+
 /* Rules drawn as 1px boxes, such as the sidebar's section rules, become a
  * hairline-wide box. --hairline-width keeps a box at one device pixel or more
  * at every density (1px at 1x, 0.5px at 2x, 2/3px at 3x), so it cannot round
@@ -960,7 +1040,7 @@
 .dark [data-sidebar-mobile-backdrop] {
   border-radius: var(--monokai-display-radius);
   background-color: rgb(0 0 0 / 0.3);
-  box-shadow: inset 0 0 0 var(--hairline-width) var(--border);
+  box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
 }
 
 @media (min-width: 768px) {
@@ -1350,8 +1430,12 @@
 .dark button.bg-secondary,
 .dark button[data-bb-control="secondary"] {
   background-color: var(--secondary);
-  background-clip: padding-box;
-  border: var(--hairline-width) solid var(--input);
+  border-width: 0;
+  box-shadow:
+    var(--tw-inset-shadow, 0 0 transparent), var(--tw-inset-ring-shadow, 0 0 transparent),
+    inset 0 0 0 var(--hairline-ring-width) var(--input),
+    var(--tw-ring-offset-shadow, 0 0 transparent), var(--tw-ring-shadow, 0 0 transparent),
+    var(--tw-shadow, 0 0 transparent);
 }
 
 /* Hover fills only where a pointer can hover. bb's own `hover:` utilities sit
@@ -1378,7 +1462,7 @@
  * Radix puts data-side on the content, which a bg-primary button never has. */
 .dark .bg-primary[data-side] {
   background-color: var(--popover);
-  box-shadow: inset 0 0 0 var(--hairline-width) var(--border);
+  box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
   color: var(--foreground);
 }
 
@@ -1421,10 +1505,12 @@
   min-width: 220px;
   max-width: calc(100vw - 16px);
   padding: 5px;
-  border: var(--hairline-width) solid var(--border);
+  border-width: 0;
   border-radius: 15px;
   background-color: var(--popover);
-  box-shadow: var(--shadow-md);
+  box-shadow:
+    inset 0 0 0 var(--hairline-ring-width) var(--border),
+    var(--shadow-md);
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 20px;
@@ -1726,8 +1812,9 @@
 
   .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
-    border: var(--hairline-width) solid var(--border);
+    border-width: 0;
     border-radius: 9999px;
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
     background-color: color-mix(in oklab, var(--popover) 72%, transparent);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
@@ -1945,8 +2032,8 @@ diffs-container {
   position: absolute;
   inset: 8px 8px var(--monokai-drawer-bottom);
   z-index: 1;
-  border: var(--hairline-width) solid var(--border);
   border-radius: calc(var(--radius, 0.5rem) + 16px);
+  box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
   pointer-events: none;
 }
 
@@ -2134,8 +2221,9 @@ diffs-container {
 .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button {
   height: 28px;
   padding: 0 10px;
-  border: var(--hairline-width) solid var(--border);
+  border-width: 0;
   border-radius: var(--radius-md, 0.375rem);
+  box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
   background: var(--secondary);
   background-clip: padding-box;
   color: var(--secondary-foreground);
