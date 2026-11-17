@@ -81,16 +81,27 @@ test("on a thread that is not a Captain, the banner reads only the Captain list 
   expect(calls.map((call) => call.method)).toEqual(["captains"]);
 });
 
-test("one item at a time, in queue order, with its task, age and recommended option", async () => {
+test("one item at a time, in queue order, with its place, task, age and recommended option", async () => {
   const { slot } = render(CAPTAIN, [decision, access]);
   const card = await slot.findByTestId("captain-needs-you");
-  expect(card.textContent).toContain("Needs you · 1 of 2");
   // Access asks come before decisions.
   expect(card.textContent).toContain("Grant the crew a deploy key");
   expect(card.textContent).not.toContain("Pick the cache backend");
+  expect(card.textContent).toContain("1 of 2 · PLUG-8 · 40m");
+  // The first option says it is the recommended one; the others do not.
+  expect(slot.getByRole("button", { name: /Grant read-only/u }).textContent).toContain(
+    "Recommended",
+  );
+  expect(slot.getByRole("button", { name: /Grant read-write/u }).textContent).not.toContain(
+    "Recommended",
+  );
+});
+
+test("a lone item shows no place in the queue", async () => {
+  const { slot } = render(CAPTAIN, [decision]);
+  const card = await slot.findByTestId("captain-needs-you");
   expect(card.textContent).toContain("PLUG-8 · 40m");
-  const recommended = slot.getByRole("button", { name: /Grant read-only/u });
-  expect(recommended.getAttribute("aria-description")).toBe("Recommended");
+  expect(card.textContent).not.toContain("1 of 1");
 });
 
 test("keys: a number answers, S skips, L hides it, Enter on the banner picks the recommended", async () => {
@@ -152,14 +163,71 @@ test("an answer the Captain does not have yet shows Sending… and no answer but
   expect(slot.queryByRole("button", { name: "Later" })).toBeNull();
 });
 
-test("a ship ask offers no Other…, and Why expands the full detail", async () => {
+test("a ship ask offers no Other…, and More expands the full detail", async () => {
   const ship = { ...decision, askKind: "ship", options: ["Merge", "Hold"] } as QueueItem;
   const { slot } = render(CAPTAIN, [ship]);
   await slot.findByTestId("captain-needs-you");
   expect(slot.queryByRole("button", { name: "Other…" })).toBeNull();
-  const why = slot.getByRole("button", { name: "Why" });
-  act(() => why.click());
-  expect(slot.getByRole("button", { name: "Less" }).getAttribute("aria-expanded")).toBe("true");
+  const more = slot.getByRole("button", { name: "More" });
+  expect(more.getAttribute("aria-expanded")).toBe("false");
+  act(() => more.click());
+  const less = slot.getByRole("button", { name: "Less" });
+  expect(less.getAttribute("aria-expanded")).toBe("true");
+  act(() => less.click());
+  expect(slot.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("false");
+});
+
+/** Lay out every element at these heights and report them through ResizeObserver, as a browser would. */
+function layOut(scrollHeight: number, clientHeight: number): () => void {
+  const proto = HTMLElement.prototype;
+  const undo: (() => void)[] = [];
+  for (const [prop, value] of [
+    ["scrollHeight", scrollHeight],
+    ["clientHeight", clientHeight],
+  ] as const) {
+    const own = Object.getOwnPropertyDescriptor(proto, prop);
+    Object.defineProperty(proto, prop, { configurable: true, get: () => value });
+    undo.push(() =>
+      own ? Object.defineProperty(proto, prop, own) : Reflect.deleteProperty(proto, prop),
+    );
+  }
+  const previous = globalThis.ResizeObserver;
+  globalThis.ResizeObserver = class {
+    readonly callback: ResizeObserverCallback;
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+    observe() {
+      this.callback([], this as unknown as ResizeObserver);
+    }
+    unobserve() {}
+    disconnect() {}
+  };
+  undo.push(() => {
+    globalThis.ResizeObserver = previous;
+  });
+  return () => undo.forEach((step) => step());
+}
+
+test("More shows only when two lines cut the detail off", async () => {
+  const fits = layOut(32, 32);
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    await slot.findByText("Pick the cache backend");
+    await waitFor(() => expect(slot.queryByRole("button", { name: "More" })).toBeNull());
+  } finally {
+    fits();
+    cleanup();
+  }
+  const clipped = layOut(64, 32);
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    const more = await slot.findByRole("button", { name: "More" });
+    act(() => more.click());
+    expect(slot.getByRole("button", { name: "Less" }).getAttribute("aria-expanded")).toBe("true");
+  } finally {
+    clipped();
+  }
 });
 
 test("an empty queue shows Since you left; a count opens its tasks and Mark seen advances the cutoff", async () => {
@@ -262,6 +330,9 @@ test("an errored Captain thread's Retry re-submits its failed turn", async () =>
     },
   });
   await slot.findByText("Captain thread errored");
-  act(() => slot.getByRole("button", { name: /Retry/u }).click());
+  const retry = slot.getByRole("button", { name: /Retry/u });
+  // Retry is the only action, not a recommendation among options.
+  expect(retry.textContent).not.toContain("Recommended");
+  act(() => retry.click());
   await waitFor(() => expect(retried).toEqual([{ threadId: CAPTAIN }]));
 });

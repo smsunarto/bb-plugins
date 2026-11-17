@@ -44,6 +44,8 @@ const TICK_MS = 30_000;
 const FAR = Number.MAX_SAFE_INTEGER;
 /** Every control a phone user taps gets a 44px target. */
 const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
+/** Later and Skip: a short pair that sits in the title's first line. */
+const DEFER = "h-6 px-2 text-muted-foreground";
 
 export function NeedsYouBanner() {
   const { scope } = useComposer();
@@ -55,7 +57,7 @@ function CaptainGate({ threadId }: { threadId: string }) {
   return captains.data?.ids.includes(threadId) ? <Banner captainId={threadId} /> : null;
 }
 
-type Action = { label: string; run: () => void; primary?: boolean; hint?: string };
+type Action = { label: string; run: () => void; primary?: boolean; recommended?: boolean };
 
 function Banner({ captainId }: { captainId: string }) {
   const input = useMemo(() => ({ captainId }), [captainId]);
@@ -96,8 +98,135 @@ function Queue({
   const navigate = useBbNavigate();
   const sdk = useSdk();
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
-  // Per-item UI, tagged with its item so a new item starts collapsed with no answer box.
-  const [ui, setUi] = useState<ItemUi>(() => ({ key: "", other: null, why: false, error: null }));
+  const item = items[0] as QueueItem;
+  const sending = isSending(item);
+  const { other, why, error, patchUi } = useItemUi(item.key);
+  const setOther = (value: string | null) => patchUi({ other: value });
+  const { answer, later, skip, fail } = useItemCommands(captainId, item.key, root, (value) =>
+    patchUi({ error: value }),
+  );
+  const actions = sending ? [] : itemActions(item, { answer, navigate, sdk, fail });
+
+  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const run = shortcut(event, actions, sending ? null : { later, skip });
+    if (run === undefined) return;
+    event.preventDefault();
+    run();
+  };
+
+  const detail = item.kind === "blocked" ? null : item.detail;
+  return (
+    // A toolbar: one focus stop whose keys answer, defer and skip the item it shows.
+    <div
+      ref={setRoot}
+      role="toolbar"
+      tabIndex={0}
+      aria-label={`Needs you, ${items.length} item${items.length === 1 ? "" : "s"}`}
+      aria-keyshortcuts="1 2 3 4 5 6 7 8 9 Enter L S"
+      data-bb-plugin="captain"
+      data-testid="captain-needs-you"
+      onKeyDown={onKeyDown}
+      className="group flex min-w-0 flex-col gap-2 px-3 py-2 text-xs outline-none focus-visible:outline-1"
+    >
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <Heading
+          title={title(item)}
+          meta={itemMeta(item, items.length, now)}
+          crewError={crewError}
+          defer={sending ? null : { later, skip }}
+        />
+        {detail ? (
+          <Detail
+            key={item.key}
+            content={detail}
+            open={why}
+            onToggle={() => patchUi({ why: !why })}
+          />
+        ) : null}
+      </div>
+      {other !== null ? (
+        <OtherAnswer
+          value={other}
+          onChange={setOther}
+          onCancel={() => {
+            setOther(null);
+            root?.focus();
+          }}
+          onSubmit={(text) => item.kind === "ask" && answer(item.id, text)}
+        />
+      ) : null}
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        {sending && item.kind === "ask" ? (
+          <output className="text-muted-foreground">
+            Answered {JSON.stringify(item.answer)} · Sending…
+          </output>
+        ) : null}
+        {actions.map((action, index) => (
+          <ActionButton key={action.label} action={action} index={index} />
+        ))}
+        {item.kind === "ask" && item.askKind !== "ship" && !sending && other === null ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className={cn(TAP, "text-muted-foreground")}
+            onClick={() => setOther("")}
+          >
+            Other…
+          </Button>
+        ) : null}
+      </div>
+      {error ? <p className="m-0 min-w-0 break-words text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+/** Per-item UI, tagged with its item so a new item starts collapsed with no answer box. */
+function useItemUi(key: string) {
+  const [ui, setUi] = useState<ItemUi>(NO_UI);
+  const { other, why, error } = ui.key === key ? ui : NO_UI;
+  const patchUi = (patch: Partial<Omit<ItemUi, "key">>) =>
+    setUi((current) => ({ ...(current.key === key ? current : NO_UI), ...patch, key }));
+  return { other, why, error, patchUi };
+}
+
+/**
+ * Answer, Later and Skip for the item on show. Each keeps keyboard focus on
+ * the banner when the clicked button unmounts, and reports a failure inline.
+ */
+function useItemCommands(
+  captainId: string,
+  key: string,
+  root: HTMLElement | null,
+  setError: (value: string | null) => void,
+) {
+  const { resolve, defer } = useQueueMutations(captainId);
+  const keepFocus = () => {
+    if (root?.contains(document.activeElement)) root.focus();
+  };
+  const fail = (failure: unknown) => setError((failure as Error).message);
+  const deliver = async (askId: string, text: string) => {
+    try {
+      const result = await resolve.mutate({ askId, answer: text });
+      if (result.state === "undelivered") setError(result.warnings.join("; "));
+    } catch (failure) {
+      fail(failure);
+    }
+  };
+  const answer = (askId: string, text: string) => {
+    keepFocus();
+    setError(null);
+    void deliver(askId, text);
+  };
+  const deferItem = (action: "later" | "skip") => {
+    keepFocus();
+    void defer.mutate({ captainId, key, action }).catch(fail);
+  };
+  return { answer, later: () => deferItem("later"), skip: () => deferItem("skip"), fail };
+}
+
+/** The answer and defer mutations, each updating the cached queue before the server replies. */
+function useQueueMutations(captainId: string) {
   const resolve = useRpcMutation({
     contract: captainContract,
     method: "resolveAsk",
@@ -120,185 +249,194 @@ function Queue({
       cache.update("crew", { captainId }, (current) => ({ items: apply(current.items) }));
     },
   });
+  return { resolve, defer };
+}
 
-  const item = items[0] as QueueItem;
-  const sending = isSending(item);
-  const { other, why, error } = ui.key === item.key ? ui : NO_UI;
-  const patchUi = (patch: Partial<Omit<ItemUi, "key">>) =>
-    setUi((current) => ({
-      ...(current.key === item.key ? current : NO_UI),
-      ...patch,
-      key: item.key,
-    }));
-  const setOther = (value: string | null) => patchUi({ other: value });
-  const setError = (value: string | null) => patchUi({ error: value });
+/** What a key on the banner runs, if anything; typing in a field is never a shortcut. */
+function shortcut(
+  event: KeyboardEvent<HTMLElement>,
+  actions: Action[],
+  defer: { later: () => void; skip: () => void } | null,
+): (() => void) | undefined {
+  if (event.metaKey || event.ctrlKey || event.altKey) return undefined;
+  const target = event.target as HTMLElement;
+  if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return undefined;
+  const key = event.key.toLowerCase();
+  if (/^[1-9]$/u.test(key)) return actions[Number(key) - 1]?.run;
+  // Enter on a focused button is that button's own click.
+  if (key === "enter") return target === event.currentTarget ? actions[0]?.run : undefined;
+  if (key === "l") return defer?.later;
+  if (key === "s") return defer?.skip;
+  return undefined;
+}
 
-  const keepFocus = () => {
-    if (root?.contains(document.activeElement)) root.focus();
-  };
-  const fail = (failure: unknown) => setError((failure as Error).message);
-  const answer = (askId: string, text: string) => {
-    keepFocus();
-    setError(null);
-    void resolve
-      .mutate({ askId, answer: text })
-      .then((result) => {
-        if (result.state === "undelivered") setError(result.warnings.join("; "));
-      })
-      .catch(fail);
-  };
-  const later = () => {
-    keepFocus();
-    void defer.mutate({ captainId, key: item.key, action: "later" }).catch(fail);
-  };
-  const skip = () => {
-    keepFocus();
-    void defer.mutate({ captainId, key: item.key, action: "skip" }).catch(fail);
-  };
-  const actions = sending ? [] : itemActions(item, { answer, navigate, sdk, fail });
+/** Place in the queue (only when there is more than one), task and age. */
+function itemMeta(item: QueueItem, count: number, now: number): string[] {
+  return [
+    count > 1 ? `1 of ${count}` : null,
+    item.task,
+    item.since === null ? null : age(now, item.since),
+  ].filter((part): part is string => Boolean(part));
+}
 
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const target = event.target as HTMLElement;
-    if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return;
-    const key = event.key.toLowerCase();
-    let run: (() => void) | undefined;
-    if (/^[1-9]$/u.test(key)) run = actions[Number(key) - 1]?.run;
-    // Enter on a focused button is that button's own click.
-    else if (key === "enter" && target === event.currentTarget) run = actions[0]?.run;
-    else if (key === "l" && !sending) run = later;
-    else if (key === "s" && !sending) run = skip;
-    if (run === undefined) return;
-    event.preventDefault();
-    run();
-  };
-
-  const detail = item.kind === "ask" ? item.detail : item.kind === "health" ? item.detail : null;
-  const task = item.task;
+/**
+ * The title, with the item's task and age trailing it so they take no row of
+ * their own, and Later and Skip in the corner: deferring is not answering.
+ */
+function Heading({
+  title: text,
+  meta,
+  crewError,
+  defer,
+}: {
+  title: string;
+  meta: string[];
+  crewError: string | undefined;
+  defer: { later: () => void; skip: () => void } | null;
+}) {
+  const parts = crewError ? [...meta, "crew not read"] : meta;
   return (
-    // A toolbar: one focus stop whose keys answer, defer and skip the item it shows.
-    <div
-      ref={setRoot}
-      role="toolbar"
-      tabIndex={0}
-      aria-label={`Needs you, ${items.length} item${items.length === 1 ? "" : "s"}`}
-      aria-keyshortcuts="1 2 3 4 5 6 7 8 9 Enter L S"
-      data-bb-plugin="captain"
-      data-testid="captain-needs-you"
-      onKeyDown={onKeyDown}
-      className="group flex min-w-0 flex-col gap-1.5 px-3 py-2 text-xs outline-none focus-visible:outline-1"
-    >
-      <header className="flex min-w-0 items-center gap-2 text-muted-foreground">
-        <span className="shrink-0 font-medium">Needs you · 1 of {items.length}</span>
-        {crewError ? (
-          <span className="min-w-0 truncate" title={crewError}>
-            · crew not read
+    <div className="flex min-w-0 items-start gap-2">
+      <p className="m-0 min-w-0 flex-1 py-px text-sm font-medium break-words text-foreground">
+        {text}
+        {parts.length > 0 ? " " : null}
+        {parts.length > 0 ? (
+          <span
+            className="ps-1 text-xs font-normal whitespace-nowrap text-muted-foreground tabular-nums"
+            translate="no"
+          >
+            {meta.join(" · ")}
+            {crewError ? (
+              <span className="text-destructive" title={crewError}>
+                {meta.length > 0 ? " · " : ""}crew not read
+              </span>
+            ) : null}
           </span>
         ) : null}
-        <span className="ms-auto min-w-0 truncate tabular-nums" translate="no">
-          {[task, item.since === null ? null : age(now, item.since)].filter(Boolean).join(" · ")}
-        </span>
-      </header>
-      <p className="m-0 min-w-0 text-sm font-medium break-words text-foreground">{title(item)}</p>
-      {detail ? (
-        why ? (
-          <Markdown content={detail} className="min-w-0 text-xs text-muted-foreground" />
-        ) : (
-          <p className="m-0 line-clamp-2 min-w-0 break-words whitespace-pre-line text-muted-foreground">
-            {detail}
-          </p>
-        )
-      ) : null}
-      {other !== null ? (
-        <OtherAnswer
-          value={other}
-          onChange={setOther}
-          onCancel={() => {
-            setOther(null);
-            root?.focus();
-          }}
-          onSubmit={(text) => item.kind === "ask" && answer(item.id, text)}
-        />
-      ) : null}
-      <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-        {sending && item.kind === "ask" ? (
-          <output className="text-muted-foreground">
-            Answered {JSON.stringify(item.answer)} · Sending…
-          </output>
-        ) : null}
-        {actions.map((action, index) => (
-          <Button
-            key={action.label}
-            type="button"
-            size="sm"
-            variant={action.primary ? "default" : "outline"}
-            className={TAP}
-            aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
-            aria-description={action.hint}
-            onClick={action.run}
-          >
-            <span
-              aria-hidden
-              className="hidden opacity-60 group-focus-within:inline pointer-coarse:hidden"
-            >
-              {index + 1}
-            </span>
-            {action.label}
-          </Button>
-        ))}
-        {item.kind === "ask" && item.askKind !== "ship" && !sending && other === null ? (
+      </p>
+      {defer ? (
+        <span className="-me-1.5 -mt-0.5 flex shrink-0 items-center pointer-coarse:-my-3">
           <Button
             type="button"
             size="sm"
             variant="ghost"
-            className={cn(TAP, "text-muted-foreground")}
-            onClick={() => setOther("")}
+            className={cn(TAP, DEFER)}
+            aria-keyshortcuts="L"
+            aria-description="Hide for an hour"
+            onClick={defer.later}
           >
-            Other…
+            <KeyHint dim={false}>L</KeyHint>
+            Later
           </Button>
-        ) : null}
-        <span className="ms-auto flex items-center gap-1">
-          {detail ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className={cn(TAP, "text-muted-foreground")}
-              aria-expanded={why}
-              onClick={() => patchUi({ why: !why })}
-            >
-              {why ? "Less" : "Why"}
-            </Button>
-          ) : null}
-          {sending ? null : (
-            <>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className={cn(TAP, "text-muted-foreground")}
-                aria-keyshortcuts="L"
-                aria-description="Hide for an hour"
-                onClick={later}
-              >
-                Later
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                className={cn(TAP, "text-muted-foreground")}
-                aria-keyshortcuts="S"
-                aria-description="Move to the back of the queue"
-                onClick={skip}
-              >
-                Skip ›
-              </Button>
-            </>
-          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className={cn(TAP, DEFER)}
+            aria-keyshortcuts="S"
+            aria-description="Move to the back of the queue"
+            onClick={defer.skip}
+          >
+            <KeyHint dim={false}>S</KeyHint>
+            Skip
+          </Button>
         </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** One answer; the recommended one says so. */
+function ActionButton({ action, index }: { action: Action; index: number }) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant={action.primary ? "default" : "outline"}
+      className={TAP}
+      aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
+      onClick={action.run}
+    >
+      <KeyHint>{index + 1}</KeyHint>
+      {action.label}
+      {action.recommended ? <span className="font-normal opacity-70">Recommended</span> : null}
+    </Button>
+  );
+}
+
+/**
+ * A key's shortcut, shown while the banner has keyboard focus. It dims the
+ * button's own colour (at least 4.5:1 on a filled button); on an already muted
+ * button pass `dim={false}`, or it falls under that.
+ */
+function KeyHint({ children, dim = true }: { children: ReactNode; dim?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "hidden font-normal tabular-nums group-focus-within:inline pointer-coarse:hidden",
+        dim && "opacity-70",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Captains' Markdown, quieted to a secondary line: muted at the banner's size,
+ * with bb's thread chips held to the line height so they sit in the text.
+ */
+const DETAIL_TEXT =
+  "min-w-0 text-xs/4 text-muted-foreground [&_p]:text-muted-foreground [&_[data-prompt-mention]]:py-0 [&_[data-prompt-mention]]:leading-3.5";
+
+/**
+ * The detail, two lines until opened. More shows only when the two lines cut
+ * something off, measured by the observer rather than on mount.
+ */
+function Detail({
+  content,
+  open,
+  onToggle,
+}: {
+  content: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const [node, setNode] = useState<HTMLDivElement | null>(null);
+  // Assume cut off until measured, so the toggle is never missing where it is needed.
+  const [clipped, setClipped] = useState(true);
+  useEffect(() => {
+    if (node === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!open) setClipped(node.scrollHeight > node.clientHeight + 1);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [node, open]);
+  return (
+    <div className="flex min-w-0 items-end gap-2">
+      <div
+        ref={setNode}
+        className={cn("min-w-0 flex-1", open ? "max-h-40 overflow-y-auto" : "line-clamp-2")}
+      >
+        <Markdown content={content} className={DETAIL_TEXT} />
       </div>
-      {error ? <p className="m-0 min-w-0 break-words text-destructive">{error}</p> : null}
+      {open || clipped ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className={cn(
+            TAP,
+            "h-auto shrink-0 px-1.5 py-0.5 text-muted-foreground pointer-coarse:-my-1.5",
+          )}
+          aria-expanded={open}
+          onClick={onToggle}
+        >
+          {open ? "Less" : "More"}
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -325,7 +463,8 @@ function itemActions(
         label: option,
         run: () => ctx.answer(item.id, option),
         primary: index === 0,
-        ...(index === 0 ? { hint: "Recommended" } : {}),
+        // A Captain lists its recommendation first.
+        recommended: index === 0,
       }));
     case "blocked":
       return [
