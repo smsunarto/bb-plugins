@@ -13,6 +13,7 @@ import {
   type LegacyThreadHeaderActionSlots,
 } from "./components/header/header-settle";
 import { mountHeaderSettleStyle } from "./components/header/header-settle-style";
+import { mountDrawerOpenHaptic } from "./lib/drawer-open-haptic";
 
 export default definePluginApp((app) => {
   // Versions up to 0.4.x cached the shelves and provider marks in web storage,
@@ -60,5 +61,11 @@ export default definePluginApp((app) => {
     run: ({ threadId }) => {
       if (threadId !== null) archiveThread(threadId);
     },
+  });
+
+  // A light haptic once the phone drawer has fully opened.
+  app.contentScripts.register({
+    id: "drawer-open-haptic",
+    mount: ({ signal }) => mountDrawerOpenHaptic(document, signal),
   });
 });
