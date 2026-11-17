@@ -24,7 +24,7 @@ Pick the lenses the change needs, run one background subagent per lens, and merg
 
 ## Run them
 
-1. Start one background subagent per lens. Give each the lens file's text, the brief, the diff against the task's base, and the worktree path.
+1. Start one background subagent per lens. Give each the lens file's text, the brief, the worktree path, and the diff from the target branch, `git diff <target>...HEAD`.
 2. Keep lenses blind: never pass the implementer's report or another lens's findings.
 3. Wait for every subagent's result before you merge.
 
@@ -33,6 +33,6 @@ Pick the lenses the change needs, run one background subagent per lens, and merg
 - Check each finding against the code yourself. Drop what you cannot confirm.
 - Merge duplicates across lenses into one finding that names every lens that found it.
 - Order findings by severity: `high` breaks behavior or the brief, `medium` is a real defect with a narrow trigger, `low` is a cleanup.
-- Report one batch, as `roles/review` says: the head you reviewed, then each finding with file, line, severity, lens and steps to reproduce.
+- Report one batch, as your Review contract says: the head you reviewed, then each finding with file, line, severity, lens and steps to reproduce.
 
 The review is done when every picked lens has returned and each kept finding is confirmed by your own read.

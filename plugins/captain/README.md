@@ -24,7 +24,7 @@ bb captain ask resolve a7 --answer Studio
 bb captain status [--since <cursor>] [--all]
 ```
 
-Long text goes through a file on the calling machine (`--message-file`, `--detail-file`) or stdin (`--message-stdin`, `--detail-stdin`).
+Long text goes through a file on the calling machine (`--message-file`, `--detail-file`). The stdin flags (`--message-stdin`, `--detail-stdin`) take one line only, as every bb plugin CLI stdin flag does.
 
 Run `bb captain --help` for every option. Every command takes `--json`.
 

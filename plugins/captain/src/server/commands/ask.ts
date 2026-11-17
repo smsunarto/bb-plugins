@@ -180,7 +180,10 @@ export async function textOption(
   if (file === undefined) return inline ?? "";
   if (file.trim() === "-") {
     throw new Refusal([
-      { reason: "a file option cannot read stdin here", fix: `pipe the text into ${stdinFlag}` },
+      {
+        reason: "a file option cannot read stdin here",
+        fix: `write the text to a file and pass its path; ${stdinFlag} takes one line only`,
+      },
     ]);
   }
   return await readCallerFile(deps.bb, ctx, file);

@@ -747,6 +747,19 @@ describe("bb captain tell", () => {
     expect(result.stderr).toContain("thr_nobody is not live crew of this Captain");
     expect(host.sent).toEqual([]);
   });
+
+  test("--message-file - is refused with the file route, since stdin flags take one line", async () => {
+    const { host, as } = await crewHost();
+    await dispatched(as, "BBPLUGINS-1", "Implement");
+
+    const result = await as(["tell", "BBPLUGINS-1", "--message-file", "-"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      "write the text to a file and pass its path; --message-stdin takes one line only",
+    );
+    expect(host.sent).toEqual([]);
+  });
 });
 
 describe("bb captain status", () => {

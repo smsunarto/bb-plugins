@@ -11,19 +11,19 @@ You merge only what the user approved, exactly as reviewed. Run the merge throug
 
 The grant covers one PR, once. Before merging, confirm all of these with your own reads:
 
-- The task's ship ask was answered **Merge**. **Hold** or no answer means no merge.
-- The task's `review` verdict is `passed`, or `skipped` with a reason.
-- The PR's head commit equals the head the `review` verdict recorded. **If the head moved:** send the task back to Review; the grant does not cover new commits.
-- Checks are green at that head, the PR is mergeable, and its base is the right target branch.
+- The task's ship ask was answered **Merge**: the `[captain] <id> answered "Merge"` line, or the task's `Answered: Merge (<id>)` comment in `bb tasks show <key>`. **Hold** or no answer means no merge.
+- The task's `review` verdict is `passed`, or `skipped` with a reason. Its `ready` row in `bb captain status` shows the verdict and the head it recorded, as `review passed @<sha>`.
+- The PR's head commit equals that recorded head. **If the head moved:** send the task back to Review; the grant does not cover new commits.
+- Checks are green at that head, the PR is mergeable, and its base is the right target branch. `bb tasks show <key> --json` lists the task's `pullRequests`.
 
 ## Merge
 
 1. Give a subagent exactly this PR, its expected head, and the merge method the repo uses.
 2. The subagent merges without force and without rewriting the head, then confirms the PR is merged.
 3. Set the task `done` with `bb tasks update <key> --status done`.
-4. Archive the implementer thread once you have read its final report.
+4. Archive the crew threads on the task with `bb thread archive <id>` once you have read their final reports.
 
-The merge is done when the PR shows merged, the task is `done`, and the crew thread is archived.
+The merge is done when the PR shows merged, the task is `done`, and its crew threads are archived.
 
 ## Several approved PRs
 
