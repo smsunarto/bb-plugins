@@ -2239,10 +2239,10 @@
     display: none;
   }
 
-  /* 6px inside each end, so the first and last glyphs sit clear of the pill's curve. */
+  /* No end padding: the first and last 44px buttons sit concentric with the
+   * pill's rounded ends, so a pressed fill keeps an even ring of pill. */
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
     gap: 0;
-    padding-inline: 6px;
   }
 
   .dark [data-split-pane-id] > header [data-thread-header-workflow-actions],
@@ -2345,6 +2345,151 @@
     + div
     button
     [data-icon-root] {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+/* Phone top bars off a thread take the thread header's pills: the New thread
+ * page's two floating toggles, a plugin page's header, and the right panel's
+ * tab bar. Away from a thread bb's sidebar toggle is the visible one, so it
+ * takes the round pill itself. A plugin page header drops its seam, as the
+ * thread header does, and floats its action group on the same pill, without
+ * the Close pane button: a phone shows one pane, and the drawer leaves it. The
+ * right panel's tab pager, its pinned views included, floats on the action
+ * pill across the whole row: the panel's hide toggle goes, since a swipe or a
+ * tap on the page beside it closes the panel. bb measures the tab chip in
+ * script against the pager's free width, so the pager keeps bb's flex sizing
+ * and only the buttons around the chip change size. */
+@media (max-width: 767px) {
+  .dark:not([data-monokai-thread]) [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
+  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label^="Show right panel"] {
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    color: var(--foreground);
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
+  }
+
+  /* bb's wrapper sits 6px down; the 44px circle shares the row's centre. */
+  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label^="Show right panel"] {
+    margin-top: -4px;
+  }
+
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] {
+    padding-left: 52px;
+  }
+
+  .dark :not([data-split-pane-id]) > header {
+    border-bottom-width: 0;
+  }
+
+  /* With Close pane gone the group is often the panel toggle alone, so the
+   * pill keeps no end padding and a lone button draws the thread's circle. */
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div {
+    gap: 0;
+    border-radius: 9999px;
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
+  }
+
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div > div {
+    gap: 0;
+  }
+
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button[aria-label="Close pane"] {
+    display: none;
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"],
+  .dark [data-testid="mobile-panel-tab-pager"] > div {
+    gap: 0;
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"] {
+    border-radius: 9999px;
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
+  }
+
+  .dark [data-testid="thread-secondary-panel-top-chrome"] > div + div > button[aria-label^="Hide right panel"] {
+    display: none;
+  }
+
+  /* bb insets the bar 8px on the left and 16px on the right, plus a gap
+   * before the toggle's now-empty slot; the pill takes 16px at both ends. */
+  .dark [data-testid="thread-secondary-panel-top-chrome"] {
+    gap: 0;
+    padding-inline: 16px;
+    /* 10px between the pill and the tab's content, not bb's 2px. */
+    margin-bottom: 8px;
+  }
+
+  /* A swipe across the tab chip already steps through the tabs, so the
+   * arrows give their room to the chip, as the thread header's history
+   * arrows give theirs to the title. */
+  .dark [data-testid="mobile-panel-tab-pager"] > div > button[aria-label="Previous tab"],
+  .dark [data-testid="mobile-panel-tab-pager"] > div > button[aria-label="Next tab"] {
+    display: none;
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"] [data-tab-pill],
+  .dark [data-testid="mobile-panel-tab-pager"] [data-tab-pill] > button {
+    border-radius: 9999px;
+  }
+
+  /* A round chip's ends curve in, so bb's insets crowd them: the close glyph
+   * moves 4px in from the start, the label follows it, and the label keeps
+   * 14px before the end. The glyph takes the label's colour; bb's 70% muted
+   * grey faded into the active chip's fill. */
+  .dark [data-testid="mobile-panel-tab-viewport"] [data-tab-pill] > button[aria-pressed] {
+    padding-left: 40px;
+    padding-right: 14px;
+  }
+
+  .dark [data-testid="mobile-panel-tab-viewport"] [data-tab-pill] > [data-tab-pill-close] {
+    translate: 4px 0;
+    color: var(--foreground);
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] {
+    box-sizing: border-box;
+    width: 44px;
+    height: 44px;
+  }
+
+  /* A pressed, active, or hovered control inside a pill fills a 36px circle
+   * centred in its 44px target, leaving an even 4px of pill on every side;
+   * a full-size fill met the pill's top and bottom but not its ends. A pinned
+   * view paints its fill on the tab pill around its button, so the pill
+   * takes the inset and the button reaches back out to keep the 44px target. */
+  .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div button,
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button,
+  .dark [data-testid="mobile-panel-tab-pager"] > div > button,
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] {
+    padding: 4px;
+    background-clip: content-box;
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] > button {
+    margin: -4px;
+  }
+
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] > button,
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button,
+  .dark [data-testid="mobile-panel-tab-pager"] > div > button {
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    color: var(--foreground);
+  }
+
+  .dark:not([data-monokai-thread]) [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] [data-icon-root],
+  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label^="Show right panel"] [data-icon-root],
+  .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button [data-icon-root],
+  .dark [data-testid="mobile-panel-tab-pager"] > div > button [data-icon-root],
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] > button [data-icon-root] {
     width: 22px;
     height: 22px;
   }
