@@ -207,8 +207,10 @@ not trigger naming. New titles are plain text with no activity emoji. Prefixes
 and other project formatting come only from your naming rules. Existing titles
 are preserved exactly when the decision is to keep them.
 
-The plugin sends a tool-free prompt to GPT-6-Luna with reasoning disabled and
-reads a plain-text reply: the complete title, or `KEEP`. The first request, an
+The plugin sends a tool-free prompt to GPT-6.1-Terra with reasoning disabled and
+reads a plain-text reply: the complete title, or `KEEP`. The prompt lists the
+naming rules and your project naming rules first, then the thread content, each
+section in its own tag and marked as data to name rather than instructions. The first request, an
 untitled thread, and explicit regeneration use a generation prompt that can only
 rename. Later requests use a review prompt that sees the current title and may
 keep it, and a keep decision does not write to the thread. Both prompts carry the

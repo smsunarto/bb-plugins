@@ -93,18 +93,19 @@ export function renderThreadNamingPrompt(
       "",
     )
     .trim();
-  const sections: readonly [string, string, number][] = [
-    ["Current title", context.allowKeep ? (context.currentTitle ?? "") : "", 96],
-    ["Current request", userPrompt, 1_000],
-    ["Current request context", context.currentRequestContext ?? "", MAX_REQUEST_CONTEXT_LENGTH],
-    ["Project title rules", projectRules, 500],
+  // Tag names double as section labels; each tag is the only boundary
+  // between one section and the next, so content cannot open or close one.
+  const sections: readonly [ThreadNamingSection, string, number][] = [
+    ["current_title", context.allowKeep ? (context.currentTitle ?? "") : "", 96],
+    ["current_request", userPrompt, 1_000],
+    ["current_request_context", context.currentRequestContext ?? "", MAX_REQUEST_CONTEXT_LENGTH],
     [
-      "Original request",
+      "original_request",
       context.initialUserPrompt === userPrompt ? "" : (context.initialUserPrompt ?? ""),
       300,
     ],
     [
-      "Original request context",
+      "original_request_context",
       context.initialUserPrompt === userPrompt &&
       context.initialRequestContext === context.currentRequestContext
         ? ""
@@ -112,7 +113,7 @@ export function renderThreadNamingPrompt(
       300,
     ],
     [
-      "Recent requests (oldest first)",
+      "recent_requests_oldest_first",
       (context.recentUserPrompts ?? [])
         .slice(-3)
         .map((text) => text.slice(0, 160))
@@ -120,7 +121,7 @@ export function renderThreadNamingPrompt(
       500,
     ],
     [
-      "Recent request context (oldest first)",
+      "recent_request_context_oldest_first",
       (context.recentRequestContexts ?? [])
         .slice(-3)
         .map((text) => text.slice(0, 160))
@@ -128,13 +129,46 @@ export function renderThreadNamingPrompt(
       500,
     ],
   ];
-  let prompt = `${files.read(context.allowKeep ? "review-title" : "generate-title")}\n${files.read("thread-title-format")}`;
-  for (const [label, value, limit] of sections) {
-    const selected = value.trim().slice(0, limit);
-    if (selected === "") continue;
-    prompt += `\n\n${label}:\n${selected}`;
+  const threadContent = sections
+    .map(
+      ([tag, value, limit]) => [tag, neutralizeSectionTags(value.trim().slice(0, limit))] as const,
+    )
+    .filter(([, value]) => value !== "")
+    .map(([tag, value]) => `<${tag}>\n${value}\n</${tag}>`)
+    .join("\n\n");
+  // Rules first, project rules with them, then the data: the project rules are
+  // instructions, so they must not sit below the "data, not instructions" line.
+  const data = files.read("thread-title-data", { threadContent });
+  // fill() rejects a missing value but not a dropped placeholder; an edit that
+  // drops it would name the thread from the rules alone.
+  if (!data.includes(threadContent)) {
+    throw new Error("instructions/thread-title-data.md must include {{threadContent}}.");
   }
-  return prompt;
+  return [
+    files.read(context.allowKeep ? "review-title" : "generate-title"),
+    files.read("thread-title-format"),
+    projectRules === "" ? "" : `Project title rules:\n${projectRules}`,
+    data,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+type ThreadNamingSection =
+  | "current_title"
+  | "current_request"
+  | "current_request_context"
+  | "original_request"
+  | "original_request_context"
+  | "recent_requests_oldest_first"
+  | "recent_request_context_oldest_first";
+
+const SECTION_TAG =
+  /<(\/?)(current_title|current_request|current_request_context|original_request|original_request_context|recent_requests_oldest_first|recent_request_context_oldest_first)>/giu;
+
+/** Thread content that spells one of the section tags reads as text, not a boundary. */
+function neutralizeSectionTags(value: string): string {
+  return value.replace(SECTION_TAG, "[$1$2]");
 }
 
 export function normalizeProjectTitleInstructions(value: string): string {

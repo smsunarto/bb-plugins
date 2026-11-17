@@ -4,6 +4,12 @@
 
 ### Patch Changes
 
+- Thread naming now follows your project naming rules reliably. The prompt
+  used to list them among the thread content it marked as data to ignore; they
+  now come first, with the naming rules, and each part of the thread content
+  sits in its own tag. Titles write identifiers and ticket IDs as they appear,
+  put a ticket ID first, and use the language of the request.
+
 - The thread list shares one right-click menu and one touch sheet between its
   rows instead of mounting a menu per row. A row no longer adds a document key
   listener (one per row on desktop, two on a phone), so typing anywhere in bb

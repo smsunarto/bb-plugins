@@ -288,7 +288,7 @@ describe("createThreadNamer", () => {
     assert.deepEqual(result, { ok: true, title: "Fix the signup test" });
     assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "Fix the signup test" }]);
     const call = inferenceCalls[0] as { prompt: string };
-    assert.match(call.prompt, /Current request:\nNow fix signup/u);
+    assert.match(call.prompt, /<current_request>\nNow fix signup/u);
     assert.doesNotMatch(call.prompt, /Latest handoff:/u);
   });
 
@@ -480,7 +480,7 @@ describe("createThreadNamer", () => {
     assert.equal(inferenceCalls.length, 1);
     const call = inferenceCalls[0] as { environmentId: string; prompt: string };
     assert.equal(call.environmentId, "env_1");
-    assert.match(call.prompt, /Current request:\nFix the login test$/u);
+    assert.match(call.prompt, /<current_request>\nFix the login test\n<\/current_request>/u);
   });
 
   test("forced naming replaces an archived hand title", async () => {
