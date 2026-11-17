@@ -1314,7 +1314,9 @@
  * translucent header tint, so the dither starts below it. bb sets
  * --bb-window-frame-top to the title bar's height there and 0px elsewhere. */
 .dark #root-compose-main-panel::before,
-.dark #root-compose-main-panel::after {
+.dark #root-compose-main-panel::after,
+.dark[data-monokai-home] [data-app-content-shell]::before,
+.dark[data-monokai-home] [data-app-content-shell]::after {
   position: absolute;
   inset: var(--bb-window-frame-top, 0px) 0 0;
   z-index: -1;
@@ -1332,7 +1334,8 @@
   mask-size: 100cqw 100%;
 }
 
-.dark #root-compose-main-panel::before {
+.dark #root-compose-main-panel::before,
+.dark[data-monokai-home] [data-app-content-shell]::before {
   background-position:
     0 0,
     6px 6px;
@@ -1341,7 +1344,8 @@
     radial-gradient(120% 75% at 50% 0, black, transparent 80%);
 }
 
-.dark #root-compose-main-panel::after {
+.dark #root-compose-main-panel::after,
+.dark[data-monokai-home] [data-app-content-shell]::after {
   background-image:
     conic-gradient(from 270deg at 2px 2px, #566a9eb3 25%, transparent 0),
     conic-gradient(from 270deg at 2px 2px, #566a9eb3 25%, transparent 0);
@@ -1353,6 +1357,36 @@
     radial-gradient(60% 55% at 100% 0, black, transparent),
     radial-gradient(40% 45% at 0 0, black, transparent);
   mask-composite: intersect, add;
+}
+
+/* On phones bb pads the content shell by the status bar's safe area and clips
+ * the panel below it, so the panel's dither stopped short of the screen's top
+ * edge. Paint it from the shell instead, which spans the safe area; the shell
+ * draws no page outline at this width. Wider layouts keep it on the panel. */
+@media (max-width: 767px) {
+  .dark[data-monokai-home] [data-app-content-shell] {
+    isolation: isolate;
+  }
+
+  .dark[data-monokai-home] [data-app-content-shell]::after {
+    display: block;
+  }
+
+  .dark[data-monokai-home] [data-app-content-shell]::before,
+  .dark[data-monokai-home] [data-app-content-shell]::after {
+    mask-size: 100% 100%;
+  }
+
+  .dark #root-compose-main-panel::before,
+  .dark #root-compose-main-panel::after {
+    display: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .dark[data-monokai-home] [data-app-content-shell]::before {
+    display: none;
+  }
 }
 
 [data-testid="root-compose-compact-composer"] > .bg-background,
