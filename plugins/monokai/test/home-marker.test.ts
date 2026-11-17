@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { markHome } from "../app/home-marker.ts";
+import { markHome, markPage } from "../app/home-marker.ts";
 
 class MemoryElement {
   readonly attributes = new Map<string, string>();
@@ -26,4 +26,18 @@ test("marks the page while any New thread screen is open", () => {
 
   leaveSecond();
   expect(root.attributes.has("data-monokai-home")).toBe(false);
+});
+
+test("counts each page mark separately", () => {
+  const root = new MemoryElement();
+
+  const leaveHome = markHome(root);
+  const leaveThread = markPage(root, "data-monokai-thread");
+
+  leaveHome();
+  expect(root.attributes.has("data-monokai-home")).toBe(false);
+  expect(root.attributes.has("data-monokai-thread")).toBe(true);
+
+  leaveThread();
+  expect(root.attributes.has("data-monokai-thread")).toBe(false);
 });
