@@ -1046,6 +1046,15 @@
   border-radius: var(--monokai-display-radius);
 }
 
+/* The page's rounded corners open onto bb's layout root, which shows the
+ * body's page ground. Paint it the drawer's ground so the corners read as
+ * the drawer behind the page. The page and the drawer paint their own. */
+@media (max-width: 767px) {
+  .dark [data-testid="app-layout-root"] {
+    background-color: var(--sidebar);
+  }
+}
+
 .dark [data-sidebar-mobile-backdrop] {
   border-radius: var(--monokai-display-radius);
   background-color: rgb(0 0 0 / 0.3);
@@ -1835,6 +1844,15 @@
 
   .dark [data-testid="app-sidebar-trigger-overlay"]:not([data-panel-shelf]) {
     visibility: hidden;
+  }
+
+  /* bb keeps a header-row spacer atop the drawer's nav rail for that toggle.
+   * With the toggle gone, drop the spacer so the rail starts at the top. */
+  .dark
+    [data-sidebar="panel"][data-vaul-drawer-direction="left"]
+    [data-testid="sidebar-navigation-rail"]
+    > .h-\(--bb-app-chrome-row-height\) {
+    display: none;
   }
 
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
