@@ -96,7 +96,7 @@ export function TraceToolbar({
         <Input
           ref={sessionSearchRef}
           type="search"
-          className="h-8 min-w-0"
+          className="min-w-0 pointer-coarse:h-11"
           aria-label="Search sessions"
           placeholder="Search sessions…"
           value={sessionSearch}
@@ -137,7 +137,7 @@ export function TraceToolbar({
           <Input
             ref={searchRef}
             type="search"
-            className="h-8 min-w-0"
+            className="min-w-0 pointer-coarse:h-11"
             aria-label="Search events"
             placeholder="Search this session…"
             value={eventSearch}
