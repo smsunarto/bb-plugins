@@ -9,6 +9,7 @@ const TARGET = "data-monokai-tab-glide-target";
 const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
 
 interface FakeAnimation {
+  element: Element;
   keyframes: Keyframe[];
   cancelled: boolean;
   finish: () => void;
@@ -22,6 +23,7 @@ beforeEach(() => {
     let resolve!: () => void;
     const finished = new Promise<void>((r) => (resolve = r));
     const record: FakeAnimation = {
+      element: this,
       keyframes: keyframes as Keyframe[],
       cancelled: false,
       finish: () => resolve(),
@@ -94,7 +96,7 @@ test("slides a highlight to a clicked tab and lands it", async () => {
   select(buttons, 2);
   await frame();
   const ghost = row.querySelector(GLIDE);
-  expect(row.firstElementChild).toBe(ghost);
+  expect(row.lastElementChild).toBe(ghost);
   expect(ghost?.getAttribute("aria-hidden")).toBe("true");
   expect(buttons[2]!.parentElement!.hasAttribute(TARGET)).toBe(true);
   expect(animations).toHaveLength(1);
@@ -152,7 +154,7 @@ test("slides between a pinned view and a strip tab", async () => {
   const { dispose } = mount();
   select(buttons, 2);
   await frame();
-  expect(row.firstElementChild?.hasAttribute("data-monokai-tab-glide")).toBe(true);
+  expect(row.lastElementChild?.hasAttribute("data-monokai-tab-glide")).toBe(true);
   expect(buttons[2]!.parentElement!.hasAttribute(TARGET)).toBe(true);
   dispose();
 });
@@ -182,16 +184,110 @@ test("works on a strip mounted after the script", async () => {
   dispose();
 });
 
-test("ignores the phone pager", async () => {
-  const { row, buttons } = strip(2);
-  const pager = document.createElement("div");
-  pager.setAttribute("data-testid", "mobile-panel-tab-pager");
-  pager.append(...row.children);
-  row.append(pager);
+/**
+ * bb's phone pager: pinned circles, then a viewport sized to the visible chip
+ * whose row bb steps with an inline translateX, hiding the chips outside it.
+ */
+function pager(count: number, active: number) {
+  const root = document.createElement("div");
+  root.setAttribute("data-testid", "mobile-panel-tab-pager");
+  const pinned = document.createElement("div");
+  const navigation = document.createElement("div");
+  const viewport = document.createElement("div");
+  viewport.setAttribute("data-testid", "mobile-panel-tab-viewport");
+  viewport.setAttribute("style", "width: 112px;");
+  const row = document.createElement("div");
+  row.setAttribute("style", "transform: translateX(0px);");
+  viewport.append(row);
+  navigation.append(viewport);
+  root.append(pinned, navigation);
+  const pill = (parent: Element, pressed: boolean) => {
+    const element = document.createElement("div");
+    element.setAttribute("data-tab-pill", "");
+    const button = document.createElement("button");
+    button.setAttribute("aria-pressed", String(pressed));
+    element.append(button);
+    parent.append(element);
+    return button;
+  };
+  const pins = [pill(pinned, active === -1)];
+  const chips = Array.from({ length: count }, (_, index) => {
+    const wrapper = document.createElement("div");
+    wrapper.setAttribute("data-panel-tab-measure", "true");
+    if (index !== active) wrapper.style.visibility = "hidden";
+    row.append(wrapper);
+    return pill(wrapper, index === active);
+  });
+  document.body.append(root);
+  return { root, viewport, row, pins, chips };
+}
+
+test("glides between a pinned circle and the pager's chip", async () => {
+  const { root, pins, chips } = pager(2, 0);
   const { dispose } = mount();
-  select(buttons, 1);
+  chips[0]!.setAttribute("aria-pressed", "false");
+  pins[0]!.setAttribute("aria-pressed", "true");
   await frame();
-  expect(document.querySelector(GLIDE)).toBeNull();
+  expect(root.lastElementChild?.hasAttribute("data-monokai-tab-glide")).toBe(true);
+  expect(pins[0]!.parentElement!.hasAttribute(TARGET)).toBe(true);
+  expect(animations).toHaveLength(1);
+  dispose();
+});
+
+test("a swipe slides the pager's row under the fill", async () => {
+  const { root, viewport, row, chips } = pager(3, 0);
+  const { dispose } = mount();
+  // bb's step: flip the chips, move the row, resize the viewport, hide the chip it left.
+  chips[0]!.setAttribute("aria-pressed", "false");
+  chips[1]!.setAttribute("aria-pressed", "true");
+  row.setAttribute("style", "transform: translateX(-116px);");
+  viewport.setAttribute("style", "width: 140px;");
+  chips[0]!.parentElement!.parentElement!.style.visibility = "hidden";
+  chips[1]!.parentElement!.parentElement!.style.visibility = "";
+  await frame();
+  expect(root.querySelector(GLIDE)).not.toBeNull();
+  const of = (element: Element) => animations.find((animation) => animation.element === element);
+  expect(of(row)?.keyframes.map((keyframe) => keyframe.transform)).toEqual([
+    "translateX(0px)",
+    "translateX(-116px)",
+  ]);
+  expect(of(viewport)?.keyframes.map((keyframe) => keyframe.width)).toEqual(["112px", "140px"]);
+  expect(of(chips[0]!.parentElement!.parentElement!)?.keyframes[0]?.visibility).toBe("visible");
+
+  animations[0]!.finish();
+  await frame();
+  expect(root.querySelector(GLIDE)).toBeNull();
+  expect(animations.every((animation) => animation.cancelled)).toBe(true);
+  dispose();
+});
+
+test("a pager step a frame after the switch joins the flight", async () => {
+  const { root, row, pins, chips } = pager(2, 0);
+  const { dispose } = mount();
+  chips[0]!.setAttribute("aria-pressed", "false");
+  pins[0]!.setAttribute("aria-pressed", "true");
+  await frame();
+  row.setAttribute("style", "transform: translateX(40px);");
+  await frame();
+  expect(root.querySelectorAll(GLIDE)).toHaveLength(1);
+  expect(animations[0]!.cancelled).toBe(true);
+  expect(
+    animations.find((animation) => animation.element === row)?.keyframes.map((k) => k.transform),
+  ).toEqual(["translateX(0px)", "translateX(40px)"]);
+  expect(pins[0]!.parentElement!.hasAttribute(TARGET)).toBe(true);
+  dispose();
+});
+
+test("a pager step without a switch is forgotten by the next switch", async () => {
+  const { row, pins, chips } = pager(2, 0);
+  const { dispose } = mount();
+  row.setAttribute("style", "transform: translateX(-50px);");
+  await frame();
+  await frame();
+  chips[0]!.setAttribute("aria-pressed", "false");
+  pins[0]!.setAttribute("aria-pressed", "true");
+  await frame();
+  expect(animations.some((animation) => animation.element === row)).toBe(false);
   dispose();
 });
 
