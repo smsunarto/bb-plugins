@@ -1,0 +1,64 @@
+{
+  "name": "@smsunarto/bb-plugin-captain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A long-lived bb thread that runs crew threads for you: briefs them, checks their claims, and tells you only what needs you.",
+  "license": "MIT",
+  "author": "Scott Sunarto",
+  "homepage": "https://github.com/smsunarto/bb-plugins/tree/main/plugins/captain",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smsunarto/bb-plugins.git",
+    "directory": "plugins/captain"
+  },
+  "type": "module",
+  "engines": {
+    "bb": ">=0.49.0 <1.0.0",
+    "bbPluginSdk": ">=0.6.132"
+  },
+  "bb": {
+    "name": "Captain",
+    "description": "A long-lived thread that directs crew threads across your repos, with its own rules and Drive.",
+    "branding": {
+      "icon": "./assets/icon.svg",
+      "logo": {
+        "light": "./assets/logo.svg",
+        "dark": "./assets/logo-dark.svg"
+      }
+    },
+    "server": "./src/server/server.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "files": [
+    "dist/server.js",
+    "dist/server.meta.json",
+    "assets/",
+    "instructions/",
+    "skills/",
+    "src/",
+    "!src/**/*.test.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "@bb-plugins/instructions": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.132",
+    "@types/node": "^22.0.0",
+    "better-sqlite3": "^12.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.1"
+  },
+  "scripts": {
+    "dev": "bb plugin dev .",
+    "build": "bb plugin build .",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/plugins-captain.tsbuildinfo",
+    "test": "vitest run --config vitest.config.ts",
+    "clean": "rm -rf dist"
+  }
+}
