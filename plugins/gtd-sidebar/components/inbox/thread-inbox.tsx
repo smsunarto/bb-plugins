@@ -22,7 +22,6 @@ import { rowActionPlan, type ActiveThreadShelf, type RowCommand } from "./thread
 import { RowMenuArea, type RowMenuTarget } from "./row-menu";
 import { gtdSidebarRpcContract } from "../../lib/rpc-contract";
 import { useCollapsedThreads } from "../../hooks/use-collapsed-threads";
-import { useMachineVisibility } from "../../hooks/use-machine-visibility";
 import { useNamingThreads } from "../../hooks/use-naming-threads";
 import {
   useSidebarDrag,
@@ -68,8 +67,6 @@ import { useStableThreads } from "../../hooks/use-stable-threads";
 import { useMinuteClock } from "../../hooks/use-minute-clock";
 import { useRetained } from "../../hooks/use-retained";
 import { resolveSidebarBranchLabel } from "../../lib/gitbutler";
-import { filterHiddenMachines, sidebarMachines } from "../../lib/machines";
-import { MachineVisibilityPicker } from "./machine-scope-picker";
 import { NewThreadFab } from "./new-thread-fab";
 import { NewCaptainDialog, type NewCaptainRequest } from "./new-captain-dialog";
 import { useCaptainAvailable, useNeedsYouCounts } from "../../hooks/use-captain";
@@ -190,11 +187,6 @@ function InboxList({
     () => new Map(providers.map((provider) => [provider.id, provider])),
     [providers],
   );
-  const machines = useMemo(
-    () => sidebarMachines(threads, sidebar.experimental_hosts),
-    [threads, sidebar.experimental_hosts],
-  );
-  const visibility = useMachineVisibility(machines);
   // Optional enhancements stay off until the SDK confirms an explicit opt-in.
   const { values: settingValues, isLoading: settingsLoading } = useSettings();
   const repositoryGroupsEnabled = settingValues?.groupThreadsByProject !== false;
@@ -221,15 +213,11 @@ function InboxList({
   const { tree, shelves, foldingThreads, toggleThread, revealFamily } = useInboxTree(
     threads,
     lifecycle,
-    visibility.hiddenMachineIds,
     searchQuery,
   );
   const shelvedTotal = Object.values(shelves).reduce((total, rows) => total + rows.length, 0);
   const searching = searchQuery.trim().length > 0;
-  // An active machine filter keeps its repository header even when only one
-  // repository remains. The header is the only visible repository identity on
-  // a row, and is useful context when scanning one machine's work.
-  const grouped = repositoryGroupsEnabled && (visibility.active || shouldGroupByProject(shelves));
+  const grouped = repositoryGroupsEnabled && shouldGroupByProject(shelves);
   const { isGroupCollapsed, toggleGroup } = useCollapsedGroups();
   // A dropped group draws in its new slot before bb's write lands: the order
   // the drop predicts stands in for bb's until project-order-changed
@@ -290,15 +278,11 @@ function InboxList({
       isGroupCollapsed,
     ],
   );
-  // A machine scope carries into the composer, which preselects that machine
-  // for the new environment when it can host one.
   const navigate = useBbNavigate();
   const onNewThread = useCommittedEvent((projectId: string | null) => {
-    const hostId = visibility.composerHostId;
     navigate.toCompose({
       ...(projectId === null ? {} : { projectId }),
       focusPrompt: true,
-      ...(hostId === undefined ? {} : { hostId }),
     });
     onNavigate();
   });
@@ -585,15 +569,6 @@ function InboxList({
             }
           }}
         >
-          <div className="flex shrink-0 items-center gap-1 px-2">
-            <MachineVisibilityPicker
-              machines={machines}
-              visibility={visibility}
-              onChange={visibility.change}
-              isCompactViewport={isCompactViewport}
-            />
-          </div>
-
           <RowMenuArea
             resolveTarget={resolveMenuTarget}
             isCompactViewport={isCompactViewport}
@@ -605,13 +580,7 @@ function InboxList({
           >
             <InboxContent
               status={status}
-              // Until the saved machine choice loads, every machine counts as
-              // visible, so painting early would flash hidden machines' rows.
-              ready={
-                lifecycle.shelvesReady &&
-                visibility.ready &&
-                sidebar.experimental_archived?.status !== "loading"
-              }
+              ready={lifecycle.shelvesReady && sidebar.experimental_archived?.status !== "loading"}
               count={shelvedTotal}
               searchQuery={searchQuery}
             >
@@ -1057,7 +1026,6 @@ function archiveIfActive(
 function useInboxTree(
   threads: readonly PluginSidebarThread[],
   lifecycle: LifecycleApi,
-  hiddenMachineIds: ReadonlySet<string>,
   searchQuery: string,
 ) {
   // Folded families are the backend's `expandedThreads` preference, kept
@@ -1079,7 +1047,7 @@ function useInboxTree(
   const tree = useMemo(
     () =>
       buildInboxTree(
-        filterHiddenMachines(threads, hiddenMachineIds),
+        threads,
         (thread) => (lifecycle.shelfFor(thread) === "snoozed" ? "snoozed" : "active"),
         searchQuery,
         {
@@ -1087,7 +1055,7 @@ function useInboxTree(
           snoozedAtFor: lifecycle.snoozedAtFor,
         },
       ),
-    [lifecycle, hiddenMachineIds, searchQuery, threads, arrivals],
+    [lifecycle, searchQuery, threads, arrivals],
   );
   const shelves = useMemo(() => {
     const rows = (shelf: (typeof tree)[number]["shelf"]) =>
