@@ -1845,12 +1845,12 @@
  * only while the window directly follows the header; a plugin header row
  * between them leaves bb's stacked layout alone. The bar fades from the page
  * ground, which also paints the safe-area strip above it, to clear across a
- * tail that ignores taps. The header's action group floats on a translucent
- * pill, and while a thread is open (app/thread-marker.ts) so does bb's
- * app-wide sidebar toggle, drawn on the header (below); other pages keep
- * bb's plain toggle. Only those two
- * small areas blur, so a streaming timeline does not repaint a full-width
- * backdrop each frame. Every button is a 44px touch target with a 22px glyph
+ * tail that ignores taps. The header's action group floats on a pill, and
+ * while a thread is open (app/thread-marker.ts) so does bb's app-wide sidebar
+ * toggle, drawn on the header (below); other pages keep bb's plain toggle.
+ * Both pills sit on the bar's opaque band, so they take the 72% popover tint
+ * pre-mixed over the ground instead of a backdrop blur: iOS Safari flickers a
+ * blurred layer inside the page bb slides with a transform. Every button is a 44px touch target with a 22px glyph
  * in the foreground color, so bb's toggles match gtd-sidebar's New thread and
  * Settle; the thread context button leaves the group. bb keeps the sidebar
  * toggle above its open phone drawer, where it stays as the drawer's close
@@ -1906,9 +1906,7 @@
     border-width: 0;
     border-radius: 9999px;
     box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
-    background-color: color-mix(in oklab, var(--popover) 72%, transparent);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
   }
 
   /* 6px inside each end, so the first and last glyphs sit clear of the pill's curve. */
@@ -1971,9 +1969,7 @@
     height: 44px;
     border-radius: 9999px;
     box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
-    background-color: color-mix(in oklab, var(--popover) 72%, transparent);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
     pointer-events: none;
   }
 
