@@ -1075,6 +1075,22 @@
   .dark [data-testid="app-layout-root"] {
     background-color: var(--sidebar);
   }
+
+  /* The drawer pads its bottom by the home indicator's safe area, so the
+   * Settings list, which has no footer below it, ended in a hard cut above the
+   * home indicator. Run the list to the screen's edge and keep the safe area
+   * as space at its end, where the last row scrolls clear. The thread list
+   * keeps the cut: its footer row covers the safe area. */
+  .dark [data-sidebar="panel"] [data-testid="settings-sidebar-body"] > [data-sidebar="content"] {
+    margin-bottom: calc(-1 * env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* bb clips the drawer body to its box, 6px wider for the edge shadow; let
+   * the Settings list overhang the bottom. Nothing else reaches past it. */
+  .dark [data-sidebar="panel"] [data-testid="nav-rail-sidebar-body"] {
+    clip-path: inset(0 -6px calc(-1 * env(safe-area-inset-bottom)) 0);
+  }
 }
 
 .dark [data-sidebar-mobile-backdrop] {
