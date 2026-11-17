@@ -1071,15 +1071,17 @@
   background: transparent;
 }
 
+/* The search row is a field (Monokai draws it as the shadcn Input), inset 4px
+   from the sheet's edges like the rows below it. */
 :is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay]
   [cmdk-input-wrapper] {
-  margin: 0 4px;
+  height: 36px;
+  margin: 4px 4px 0;
   padding: 0 8px;
-  border-color: color-mix(in srgb, var(--foreground) 8%, transparent);
 }
 
 :is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-input] {
-  height: 36px;
+  height: 100%;
   padding: 0;
   font-size: 13px;
 }
@@ -1117,6 +1119,16 @@
 @media (pointer: coarse) {
   :is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-item] {
     min-height: 40px;
+  }
+
+  :is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay]
+    [cmdk-input-wrapper] {
+    height: 44px;
+  }
+
+  /* 16px so iOS does not zoom the page when the field takes focus. */
+  :is([aria-label="Project"], [aria-label="Environment"])[data-bb-portaled-overlay] [cmdk-input] {
+    font-size: 16px;
   }
 }
 
