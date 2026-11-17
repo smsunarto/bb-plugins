@@ -248,7 +248,7 @@ describe("bb Monokai contract audit", () => {
     const ringWidths = rules.filter((rule) => rule.body.includes("--hairline-ring-width:"));
     expect(ringWidths.map((rule) => [rule.atRules.join(" "), rule.body.trim()])).toContainEqual([
       "@media (min-resolution: 2.5dppx)",
-      "--hairline-ring-width: calc(1px / 3);",
+      "--hairline-ring-width: calc(1px / 3);\n    --hairline-rings: 1;",
     ]);
     const neutral = rules.find(
       (rule) =>
@@ -259,6 +259,18 @@ describe("bb Monokai contract audit", () => {
     expect(neutral?.body).toContain("inset 0 0 0 var(--hairline-ring-width) var(--monokai-edge)");
     expect(neutral?.body).toContain("var(--tw-shadow, 0 0 transparent)");
     expect(neutral?.selector).toContain('[class*=":border-"]');
+    // A radio's primary circle and the shadcn checkbox, whose checked fill
+    // swaps its edge to the foreground, are rings too; @bb-plugins/ui opts in
+    // through --hairline-rings.
+    expect(neutral?.selector).toContain(
+      ':where(.dark) :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border.border-primary.rounded-full:not([class*=":border-"])',
+    );
+    expect(neutral?.selector).toContain(
+      ':where(.dark) :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border.border-input[class~="data-[state=checked]:border-foreground"]',
+    );
+    expect(theme).toMatch(
+      /\[class~="data-\[state=checked\]:border-foreground"\]\[data-state="checked"\] \{\s*--monokai-edge: var\(--foreground\);/,
+    );
   });
 
   test("gives compact drawers shadcn's Maia card without taking over host motion", () => {

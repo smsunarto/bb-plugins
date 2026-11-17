@@ -244,12 +244,13 @@
   /* ---- Borders --------------------------------------------------------- */
   --border-seam: #ebebec0a;
   --border-seam-vertical: var(--border-seam);
-  /* Every edge is the composer's hairline: 0.5px of opaque 18% ink. Opaque, so
-   * edges that meet at a rounded corner do not stack into a bright stub. A
-   * 0.5px border draws one device pixel on a 2x or 3x screen and rounds up to
-   * one pixel at 1x. The hairline-edges section below applies the width.
-   * --hairline-ring-width is the same edge drawn as an inset box-shadow ring:
-   * exactly one device pixel at 1x, 2x, and 3x (see Hairline rings). */
+  /* Every edge is the composer's hairline: opaque 18% ink, the composer's own
+   * edge colour. Opaque, so edges that meet at a rounded corner do not stack
+   * into a bright stub. --hairline-width is 1px at 1x, 0.5px at 2x, and 2/3px
+   * at 3x (see the density rules after the shell rules); the hairline-edges
+   * section applies it to Tailwind's border utilities. --hairline-ring-width is
+   * the same edge drawn as an inset box-shadow ring: exactly one device pixel
+   * at 1x, 2x, and 3x (see Hairline rings). */
   --border: #39393a;
   --hairline-width: 0.5px;
   --hairline-ring-width: 1px;
@@ -913,21 +914,28 @@
 /* Hairline rings. On a 3x screen WebKit cannot draw a one-device-pixel border
  * reliably: it stores 1/3px as 21/64px, a little under one device pixel, and
  * rounds each side's outer and inner edge separately, so a side whose edge
- * lands on a half device pixel paints at zero width. Which side goes depends
- * on where the box falls, so cards lost one edge or another as the content
- * above them moved. An inset box-shadow ring has no inner edge to round: a
- * sweep of all 64 sub-pixel offsets in WebKit at 3x lost an edge on 1 of 64
- * boxes with a 0.5px or 1/3px border, and on none with a ring.
- * --hairline-ring-width is one device pixel at every density.
+ * lands on a half device pixel paints at zero width. An inset box-shadow ring
+ * has no inner edge to round: a sweep of all 64 sub-pixel offsets in WebKit at
+ * 3x lost an edge on 1 of 64 boxes with a 1/3px border, and on none with a
+ * ring. --hairline-ring-width is one device pixel at every density.
  *
- * At 3x, a full-box neutral border becomes that ring: the bb and plugin
- * boxes that take the hairline width above with a border-border, input,
- * sidebar, hairline, or seam colour. The ring joins Tailwind's box-shadow
- * stack, so shadow, ring, and inset utilities still draw beside it. A box that
- * opens a side (border-t-0 and the like), takes a dashed, dotted, or wider
- * border, or changes its border on a state variant keeps its border: a ring
- * has one width, one colour, and no style. Side-only rules stay borders. A
- * ring per side is not reliable: offset insets drop edges as borders do. */
+ * At 3x, a control's full-box neutral border becomes that ring, so small round
+ * and square controls keep four even one-pixel edges: a button, field, radio,
+ * or checkbox with a border-border (or /60), input, sidebar, hairline, or seam
+ * colour, and a round primary one, such as a radio's circle. bb's Input
+ * carries file:border-0, which the variant guard would read as a border
+ * variant, so it is named on its own. Only controls: tables,
+ * code blocks, message bubbles, toasts, and sheets restyle their own edges, and
+ * a ring keyed on a utility class would draw over those rules. Every other
+ * border keeps --hairline-width, two device pixels at 3x. --hairline-rings opts
+ * @bb-plugins/ui's outline button and fields into the same ring. The ring
+ * joins Tailwind's box-shadow stack, so shadow, ring, and inset utilities
+ * still draw beside it. A control that opens a side (border-t-0 and the like),
+ * takes a dashed, dotted, or wider border, or changes its border on a variant
+ * keeps its border: a ring has one width, one colour, and no style. The shadcn
+ * checkbox is the one state variant ringed: its ring takes the checked fill's
+ * foreground. A ring per side is not reliable: offset insets drop edges as
+ * borders do. */
 @media (min-resolution: 1.5dppx) {
   html.dark {
     --hairline-ring-width: 0.5px;
@@ -937,6 +945,7 @@
 @media (min-resolution: 2.5dppx) {
   html.dark {
     --hairline-ring-width: calc(1px / 3);
+    --hairline-rings: 1;
   }
 
   @layer utilities {
@@ -955,14 +964,24 @@
     :where(.dark) .border.border-border-seam {
       --monokai-edge: var(--border-seam);
     }
+    :where(.dark) .border.border-border\/60 {
+      --monokai-edge: color-mix(in oklab, var(--border) 60%, transparent);
+    }
+    :where(.dark) .border.border-primary.rounded-full {
+      --monokai-edge: var(--primary);
+    }
+    :where(.dark) .border.border-input[class~="data-[state=checked]:border-foreground"][data-state="checked"] {
+      --monokai-edge: var(--foreground);
+    }
 
     :where(.dark)
-      .border:is(
+      :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border:is(
         .border-border,
         .border-input,
         .border-sidebar-border,
         .border-border-hairline,
-        .border-border-seam
+        .border-border-seam,
+        .border-border\/60
       ):not(
         .border-t-0,
         .border-r-0,
@@ -976,7 +995,16 @@
         .border-dashed,
         .border-dotted,
         [class*=":border-"]
-      ) {
+      ),
+    :where(.dark)
+      input.border.border-input[class~="file:border-0"]:not(
+        [class*="focus-visible:border-"],
+        [class*="hover:border-"],
+        [class*="invalid:border-"],
+        [class*="]:border-"]
+      ),
+    :where(.dark) :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border.border-primary.rounded-full:not([class*=":border-"]),
+    :where(.dark) :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border.border-input[class~="data-[state=checked]:border-foreground"] {
       border-width: 0;
       box-shadow:
         var(--tw-inset-shadow, 0 0 transparent), var(--tw-inset-ring-shadow, 0 0 transparent),
