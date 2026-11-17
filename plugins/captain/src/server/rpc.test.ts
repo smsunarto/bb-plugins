@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { asksTag, CAPTAINS_TAG, crewTag, sinceTag } from "../contract/rpc.ts";
+import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
+import { asksTag, CAPTAINS_TAG, captainContract, crewTag, sinceTag } from "../contract/rpc.ts";
 import { ANSWER_MAX_ATTEMPTS } from "./asks.ts";
 import { NOTICE } from "./store.ts";
 import { captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
@@ -254,5 +255,104 @@ describe("watching", () => {
     host.updateThread(blocked, { hasPendingInteraction: false });
     await settle();
     expect(invalidations().length).toBe(after);
+  });
+});
+
+describe("the sidebar's Needs you count", () => {
+  test("needsYou counts each live Captain's banner items in one call, and 0 for other threads", async () => {
+    const { host, captainId, as, rpc } = await bannerHost();
+    const quiet = await newCaptain(host, ["--name", "Rampage", "--repo", "rampage"]);
+    const blocked = await dispatched(as, "BBPLUGINS-2");
+    host.updateThread(blocked, { status: "idle", hasPendingInteraction: true });
+    host.interactions.set(blocked, [
+      {
+        id: "int_2",
+        threadId: blocked,
+        status: "pending",
+        createdAt: 1_000,
+        payload: { kind: "plugin", title: "Approve", data: null },
+      },
+    ]);
+    // One open ask and one crew thread paused on an interaction: the banner's "1 of 2".
+    expect(await rpc("needsYou", { keys: [captainId, quiet, blocked, "thr_other"] })).toEqual({
+      [captainId]: 2,
+      [quiet]: 0,
+      [blocked]: 0,
+      thr_other: 0,
+    });
+    await rpc("resolveAsk", { askId: "a1", answer: "SQLite" });
+    expect(await rpc("needsYou", { keys: [captainId] })).toEqual({ [captainId]: 1 });
+  });
+
+  test("an answer still sending counts, as the banner keeps it in the queue", async () => {
+    const { host, captainId, rpc } = await bannerHost();
+    host.sendFails.add(captainId);
+    await rpc("resolveAsk", { askId: "a1", answer: "SQLite" });
+    expect(await rpc("needsYou", { keys: [captainId] })).toEqual({ [captainId]: 1 });
+  });
+
+  test("a health row counts, and the count holds while Tasks is down", async () => {
+    const { host, captainId, rpc } = await bannerHost();
+    host.updateThread(captainId, { status: "error", updatedAt: 7_000 });
+    expect(await rpc("needsYou", { keys: [captainId] })).toEqual({ [captainId]: 2 });
+    host.tasks.down = true;
+    // Tasks only names the crew rows' tasks; the health row still reads from bb.
+    expect(await rpc("needsYou", { keys: [captainId] })).toEqual({ [captainId]: 2 });
+  });
+
+  test("each row refreshes with its Captain's banner reads", () => {
+    expect(captainContract.needsYou.keyTags?.("thr_c1", 0)).toEqual([
+      asksTag("thr_c1"),
+      crewTag("thr_c1"),
+    ]);
+  });
+
+  test("a crew thread's new interaction refreshes its Captain's crew read", async () => {
+    const { host, captainId, as, invalidations } = await bannerHost();
+    const blocked = await dispatched(as, "BBPLUGINS-2");
+    const before = invalidations().length;
+    await host.harness.behavior.emitThreadEvent("interaction.pending", {
+      thread: makeThreadResponse({ id: blocked, parentThreadId: captainId }),
+      interaction: {} as never,
+    });
+    expect(invalidations().slice(before)).toContain(crewTag(captainId));
+  });
+});
+
+describe("New Captain from the app", () => {
+  test("newCaptain starts a Captain as `bb captain new` does and lists it", async () => {
+    const host = await captainHost();
+    const rpc = (method: string, input: unknown) => host.harness.behavior.callRpc(method, input);
+    const started = (await rpc("newCaptain", { name: " Plugins ", repos: ["proj_plugins"] })) as {
+      ok: true;
+      threadId: string;
+      state: string;
+    };
+    expect(started).toMatchObject({ ok: true, state: "started", warnings: [] });
+    expect(await rpc("captains", {})).toEqual({ ids: [started.threadId] });
+    expect(host.threads.get(started.threadId)?.title).toBe("Plugins Captain");
+    // The same name converges on the live Captain rather than starting a second.
+    expect(await rpc("newCaptain", { name: "plugins", repos: ["rampage"] })).toMatchObject({
+      ok: true,
+      threadId: started.threadId,
+      state: "exists",
+    });
+  });
+
+  test("a refusal names every blocker and starts nothing", async () => {
+    const host = await captainHost();
+    const rpc = (method: string, input: unknown) => host.harness.behavior.callRpc(method, input);
+    expect(await rpc("newCaptain", { name: "  ", repos: [] })).toEqual({
+      ok: false,
+      blockers: [
+        expect.objectContaining({ reason: "a Captain name is one line of 1 to 80 characters" }),
+        expect.objectContaining({ reason: "a Captain directs at least one repo" }),
+      ],
+    });
+    expect(await rpc("newCaptain", { name: "Plugins", repos: ["proj_gone"] })).toEqual({
+      ok: false,
+      blockers: [expect.objectContaining({ reason: 'no bb project is "proj_gone"' })],
+    });
+    expect(await rpc("captains", {})).toEqual({ ids: [] });
   });
 });

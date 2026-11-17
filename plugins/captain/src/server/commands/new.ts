@@ -1,10 +1,11 @@
-import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
+import { cliCommand } from "@get-bb/plugin-sdk";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { CAPTAINS_TAG } from "../../contract/rpc.ts";
+import { CAPTAIN_NAME_MAX, CAPTAINS_TAG } from "../../contract/rpc.ts";
 import { readCallerFile } from "../caller.ts";
 import { DRIVE_FILES } from "../drive.ts";
-import { guard, refuse, Refusal, render, type Blocker } from "../output.ts";
+import { guard, refuse, Refusal, render, type Blocker, type Item } from "../output.ts";
+import type { Repo } from "../store.ts";
 import {
   applyLink,
   isBlocker,
@@ -19,6 +20,40 @@ import { TasksError, type TasksPreset, type TasksProject } from "../tasks-client
 import { ensureStorageRoot, JSON_OPTION, type CommandDeps } from "./deps.ts";
 
 export const CAPTAINS_PROJECT_NAME = "Captains";
+
+/** What starting a Captain asks for; without `promptFile` the first message is `first-turn`. */
+export type CaptainRequest = {
+  name: string;
+  repos: readonly string[];
+  promptFile?: { path: string; read: () => Promise<string> };
+};
+
+/** A started or converged Captain. Steps after the spawn warn rather than fail. */
+export type StartedCaptain = {
+  threadId: string;
+  state: "started" | "exists";
+  name: string;
+  homeProjectId: string;
+  repos: Repo[];
+  presetsCreated: string[];
+  warnings: string[];
+  /** Links and presets made, and the warnings, as `new` prints them. */
+  notes: string[];
+};
+
+/**
+ * Start a Captain, or converge the live one with this name: the one path the
+ * CLI's `new` and the app's New Captain take. A refusal names every blocker
+ * and changes nothing.
+ */
+export async function startCaptain(
+  deps: CommandDeps,
+  request: CaptainRequest,
+): Promise<{ ok: true; captain: StartedCaptain } | { ok: false; blockers: Blocker[] }> {
+  const planned = await plan(deps, request);
+  if ("blockers" in planned) return { ok: false, blockers: planned.blockers };
+  return { ok: true, captain: await apply(deps, planned) };
+}
 
 type Plan = {
   name: string;
@@ -59,14 +94,30 @@ export function newCommand(deps: CommandDeps) {
     run(input, ctx) {
       const json = input.options.json;
       return guard("captain new", json, async () => {
-        const planned = await plan(deps, ctx, {
+        const path = input.options["prompt-file"];
+        const started = await startCaptain(deps, {
           name: input.options.name,
           repos: input.options.repo,
-          promptFile: input.options["prompt-file"],
+          ...(path === undefined
+            ? {}
+            : { promptFile: { path, read: () => readCallerFile(deps.bb, ctx, path) } }),
         });
-        if ("blockers" in planned) return refuse("captain new", planned.blockers, json);
-        const [items, notes] = await apply(deps, planned);
-        return render(items, json, notes);
+        if (!started.ok) return refuse("captain new", started.blockers, json);
+        const { notes, ...captain } = started.captain;
+        const item: Item = {
+          id: captain.threadId,
+          ok: true,
+          state: captain.state,
+          detail: captain.name,
+          data: {
+            name: captain.name,
+            homeProjectId: captain.homeProjectId,
+            repos: captain.repos,
+            presetsCreated: captain.presetsCreated,
+            warnings: captain.warnings,
+          },
+        };
+        return render([item], json, notes);
       });
     },
   });
@@ -75,14 +126,13 @@ export function newCommand(deps: CommandDeps) {
 /** Read and check everything before changing anything; collect every blocker. */
 async function plan(
   deps: CommandDeps,
-  ctx: PluginCliContext,
-  args: { name: string; repos: string[]; promptFile: string | undefined },
+  args: CaptainRequest,
 ): Promise<Plan | { blockers: Blocker[] }> {
   const blockers: Blocker[] = [];
   const name = args.name.trim();
-  if (name === "" || name.length > 80 || /[\r\n]/u.test(name)) {
+  if (name === "" || name.length > CAPTAIN_NAME_MAX || /[\r\n]/u.test(name)) {
     blockers.push({
-      reason: "a Captain name is one line of 1 to 80 characters",
+      reason: `a Captain name is one line of 1 to ${CAPTAIN_NAME_MAX} characters`,
       fix: "pass --name <name>",
     });
   }
@@ -106,14 +156,14 @@ async function plan(
     prompt =
       args.promptFile === undefined
         ? deps.files.read("first-turn", { name })
-        : await readCallerFile(deps.bb, ctx, args.promptFile);
+        : await args.promptFile.read();
   } catch (error) {
     if (!(error instanceof Refusal)) throw error;
     blockers.push(...error.blockers);
   }
   if (prompt.trim() === "" && args.promptFile !== undefined) {
     blockers.push({
-      reason: `${args.promptFile} is empty`,
+      reason: `${args.promptFile.path} is empty`,
       fix: "write the Captain's purpose into it",
     });
   }
@@ -165,7 +215,7 @@ async function planLinks(
  * Drive, push level and presets. Steps after the spawn warn rather than fail,
  * and each converges on a rerun.
  */
-async function apply(deps: CommandDeps, plan: Plan) {
+async function apply(deps: CommandDeps, plan: Plan): Promise<StartedCaptain> {
   const { bb, registry } = deps;
   const notes: string[] = [];
   const warnings: string[] = [];
@@ -200,20 +250,16 @@ async function apply(deps: CommandDeps, plan: Plan) {
   if (presets.created.length > 0) notes.push(`created presets ${presets.created.join(", ")}`);
   notes.push(...warnings.map((warning) => `warning: ${warning}`));
 
-  const item = {
-    id: threadId,
-    ok: true,
+  return {
+    threadId,
     state: existing === null ? "started" : "exists",
-    detail: plan.name,
-    data: {
-      name: plan.name,
-      homeProjectId: home.id,
-      repos: [...repos.values()],
-      presetsCreated: presets.created,
-      warnings,
-    },
+    name: plan.name,
+    homeProjectId: home.id,
+    repos: [...repos.values()],
+    presetsCreated: presets.created,
+    warnings,
+    notes,
   };
-  return [[item], notes] as const;
 }
 
 async function spawnCaptain(deps: CommandDeps, plan: Plan, projectId: string): Promise<string> {

@@ -80,6 +80,12 @@ export const CAPTAINS_TAG = "captains";
 /** Later and Skip may write only these `notices` keys; the check's own keys stay its own. */
 export const DEFERRABLE_KEY = /^(ask|blocked|health):[A-Za-z0-9_:.-]{1,200}$/u;
 
+/** A Captain's name: one line of at most this many characters. */
+export const CAPTAIN_NAME_MAX = 80;
+
+/** Why `new` refused, and the command or step that clears it. */
+const blocker = z.object({ reason: z.string(), fix: z.string() }).strict();
+
 export const captainContract = defineRpcContract({
   /** Every live Captain's thread id: one shared read that tells the banner where to render. */
   captains: {
@@ -146,6 +152,40 @@ export const captainContract = defineRpcContract({
   markSeen: {
     input: z.object({ captainId: threadId, client: z.string().min(1).max(64) }).strict(),
     output: z.object({ at: z.number() }).strict(),
+  },
+  /**
+   * How many items each Captain's Needs you banner holds, for a thread list's
+   * rows: one batched read over every row's thread id; 0 for a thread that is
+   * not a live Captain. Each row refreshes with its Captain's banner reads.
+   */
+  needsYou: {
+    experimental_description:
+      "Count the Needs you items for each thread id that is a live Captain, as its banner counts them; 0 for any other thread.",
+    input: z.object({ keys: z.array(z.string().min(1).max(200)).max(500) }).strict(),
+    output: z.record(z.string(), z.number().int().nonnegative()),
+    keyTags: (captainId) => [asksTag(captainId), crewTag(captainId)],
+  },
+  /** Start a Captain as `bb captain new` does, with its first message from `first-turn`. */
+  newCaptain: {
+    experimental_description:
+      "Start a Captain thread directing the given bb projects, as `bb captain new --name --repo` does; a live name converges that Captain. Refusals list every blocker and change nothing.",
+    input: z
+      .object({
+        name: z.string().max(200),
+        repos: z.array(z.string().min(1).max(200)).max(50),
+      })
+      .strict(),
+    output: z.discriminatedUnion("ok", [
+      z
+        .object({
+          ok: z.literal(true),
+          threadId,
+          state: z.enum(["started", "exists"]),
+          warnings: z.array(z.string()),
+        })
+        .strict(),
+      z.object({ ok: z.literal(false), blockers: z.array(blocker) }).strict(),
+    ]),
   },
 });
 

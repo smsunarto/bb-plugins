@@ -1,4 +1,10 @@
-import { LATER_MS, type AskItem, type BlockedItem, type HealthItem } from "../contract/queue.ts";
+import {
+  LATER_MS,
+  orderQueue,
+  type AskItem,
+  type BlockedItem,
+  type HealthItem,
+} from "../contract/queue.ts";
 import { asksTag, crewTag, sinceTag, type ChangeRef } from "../contract/rpc.ts";
 import { ANSWER_MAX_ATTEMPTS } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
@@ -149,6 +155,21 @@ export async function crewItems(
     }
   }
   return items;
+}
+
+/**
+ * How many items a Captain's banner holds: its `1 of N`, from the same reads
+ * and order. 0 for a thread that is not a live Captain. When the crew read
+ * fails, the asks alone, as the banner shows them then.
+ */
+export async function needsYouCount(deps: QueueDeps, captainId: string): Promise<number> {
+  if (deps.registry.get(captainId) === null) return 0;
+  const asks = askItems(deps, captainId);
+  const crew = await crewItems(deps, captainId).catch((error: unknown) => {
+    deps.bb.log.warn(`needs-you count for ${captainId} without crew: ${(error as Error).message}`);
+    return [];
+  });
+  return orderQueue([...asks, ...crew], deps.now()).length;
 }
 
 export type SinceYouLeft = {

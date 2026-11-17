@@ -3,7 +3,8 @@ import { resolveAsk } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { listChildren } from "./crew.ts";
 import { Refusal } from "./output.ts";
-import { askItems, crewItems, deferItem, markSeen, sinceYouLeft } from "./queue.ts";
+import { startCaptain } from "./commands/new.ts";
+import { askItems, crewItems, deferItem, markSeen, needsYouCount, sinceYouLeft } from "./queue.ts";
 
 /** How often a watched banner rechecks the crew for a new or answered interaction. */
 export const CREW_POLL_MS = 10_000;
@@ -46,6 +47,22 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
       live(captainId);
       return markSeen(deps, captainId, client);
     },
+    needsYou: async ({ keys }) => {
+      const ids = [...new Set(keys)];
+      const counts = await Promise.all(ids.map((id) => needsYouCount(deps, id)));
+      return Object.fromEntries(ids.map((id, index) => [id, counts[index] ?? 0]));
+    },
+    newCaptain: async ({ name, repos }) => {
+      try {
+        const started = await startCaptain(deps, { name, repos });
+        if (!started.ok) return started;
+        const { threadId, state, warnings } = started.captain;
+        return { ok: true as const, threadId, state, warnings };
+      } catch (error) {
+        if (error instanceof Refusal) return { ok: false as const, blockers: error.blockers };
+        throw error;
+      }
+    },
   });
 
   // A watched banner: bb's thread events cover run states; a new or answered
@@ -74,7 +91,10 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
   registerEvents(deps);
 }
 
-/** Refresh a Captain's crew read when it or one of its children changes run state. */
+/**
+ * Refresh a Captain's crew read when it or one of its children changes run
+ * state, or a child starts waiting on an interaction.
+ */
 function registerEvents(deps: CommandDeps): void {
   const { bb } = deps;
   const captainOf = (thread: { id: string; parentThreadId: string | null }) =>
@@ -91,6 +111,7 @@ function registerEvents(deps: CommandDeps): void {
     "thread.archived",
     "thread.unarchived",
     "experimental_thread.parentChanged",
+    "interaction.pending",
   ] as const) {
     bb.events.on(event, refresh);
   }
