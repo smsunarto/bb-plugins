@@ -785,8 +785,29 @@
   }
 }
 
+/* --hairline-width per density. 1x takes a whole pixel: a 0.5px box, such as
+ * the right panel's divider, drew at half strength or not at all. 2x keeps
+ * 0.5px, one device pixel. 3x takes 2/3px, two device pixels: WebKit computes
+ * a 0.5px or 1/3px border there as one device pixel, stores it a little under
+ * one, and paints a side at zero width when its edge lands on a half device
+ * pixel, so a sidebar rule or a card's edge could vanish. Two device pixels
+ * paint 1 or 2 but never 0 at every sub-pixel offset. Controls whose full-box
+ * edge must stay one device pixel and even become rings at 3x (see Hairline
+ * rings). */
+@media (resolution < 1.5dppx) {
+  html.dark {
+    --hairline-width: 1px;
+  }
+}
+
+@media (min-resolution: 2.5dppx) {
+  html.dark {
+    --hairline-width: calc(2px / 3);
+  }
+}
+
 /* Hairline edges. bb and every plugin draw edges with Tailwind's 1px border
- * utilities; here they take the composer's 0.5px --hairline-width.
+ * utilities; here they take the composer's --hairline-width.
  *
  * The rules join Tailwind's utilities layer, which bb, plugins, and this
  * sheet may load in any order. `:where(.dark)` adds nothing and `:not(z)`

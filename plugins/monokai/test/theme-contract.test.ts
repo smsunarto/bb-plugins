@@ -258,6 +258,19 @@ describe("bb Monokai contract audit", () => {
     ).toEqual([]);
   });
 
+  test("draws hairlines a whole pixel at 1x, one at 2x, and two at 3x", () => {
+    // A 0.5px box draws at half strength or not at all at 1x, and a one-device-
+    // pixel border vanishes on a half device pixel at 3x.
+    const widths = styleRules(theme)
+      .filter((rule) => rule.selector === "html.dark" && rule.body.includes("--hairline-width:"))
+      .map((rule) => [rule.atRules.join(" "), rule.body.trim()]);
+    expect(widths).toEqual([
+      ["@media (resolution < 1.5dppx)", "--hairline-width: 1px;"],
+      ["@media (min-resolution: 2.5dppx)", "--hairline-width: calc(2px / 3);"],
+    ]);
+    expect(theme).toContain("--hairline-width: 0.5px;");
+  });
+
   test("gives the framed macOS window Capy's flat sidebar and inset page", () => {
     const rules = styleRules(theme);
     const body = (selector: string) => rules.find((rule) => rule.selector === selector)?.body;
