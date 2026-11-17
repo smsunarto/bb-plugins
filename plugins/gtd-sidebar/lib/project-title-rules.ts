@@ -17,8 +17,6 @@ export interface ProjectTitleRulesCache {
    * environment when the entry is missing or stale; never waits for it.
    */
   peek(projectId: string, environmentId: string | null): string | undefined;
-  /** Records rules another reader already loaded, such as automatic naming. */
-  remember(projectId: string, rules: string): void;
 }
 
 /**
@@ -69,6 +67,5 @@ export function createProjectTitleRulesCache(
       }
       return entry?.rules;
     },
-    remember,
   };
 }

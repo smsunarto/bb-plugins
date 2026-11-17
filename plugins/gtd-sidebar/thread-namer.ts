@@ -4,7 +4,6 @@ import {
   normalizeProjectTitleInstructions,
   planThreadNaming,
   sanitizeGeneratedTitle,
-  type NamingIntent,
   type ThreadNamingEvent,
   type ThreadNamingSkipReason,
 } from "./lib/thread-naming.ts";
@@ -27,191 +26,83 @@ export type ThreadRenameResult =
   | { ok: false; error: string };
 
 export interface ThreadNamer {
-  nameThread(threadId: string, intent: NamingIntent): Promise<ThreadNamingResult>;
-  /** Sets a title the thread's agent chose, queued behind any naming in flight. */
+  /** Generates a title from the latest user request; `bb gtd-sidebar rename` without --title. */
+  regenerateTitle(threadId: string): Promise<ThreadNamingResult>;
+  /** Sets a title the thread's agent chose. */
   renameThread(threadId: string, title: string): Promise<ThreadRenameResult>;
+  /** Threads whose regeneration is in flight, for the sidebar's naming shimmer. */
   listNamingThreads(): string[];
-}
-
-export function subscribeToThreadNaming(
-  bb: BbPluginApi,
-  threadNamer: Pick<ThreadNamer, "nameThread">,
-): void {
-  bb.onDispose(
-    bb.sdk.subscribe({
-      event: "thread:changed",
-      callback: (event) => {
-        if (
-          event.id !== undefined &&
-          event.changes.includes("events-appended") &&
-          event.metadata?.eventTypes?.some(
-            (type) => type === "client/turn/requested" || type === "system/thread-provisioning",
-          )
-        ) {
-          void threadNamer.nameThread(event.id, { kind: "automatic" });
-        }
-      },
-    }),
-  );
 }
 
 export function createThreadNamer(
   bb: BbPluginApi,
-  options: {
-    automaticallyNameThreads: () => Promise<boolean>;
-    inference: ThreadTitleInference;
-    onProjectRules?: (projectId: string, rules: string) => void;
-  },
+  options: { inference: ThreadTitleInference },
 ): ThreadNamer {
-  const inFlight = new Map<string, Promise<void>>();
   const naming = new Set<string>();
-  const automaticRequests = new Map<string, number>();
   bb.onDispose(() => {
     naming.clear();
     bb.rpc.experimental_invalidate([GTD_TAGS.naming]);
   });
-  bb.events.on("thread.deleted", ({ thread }) => {
-    automaticRequests.delete(thread.id);
-  });
-
-  // One write at a time per thread, in arrival order.
-  const enqueue = async <T>(threadId: string, run: () => Promise<T>): Promise<T> => {
-    const operation = (inFlight.get(threadId) ?? Promise.resolve()).then(run);
-    const tail = operation.then(
-      () => undefined,
-      () => undefined,
-    );
-    inFlight.set(threadId, tail);
-    try {
-      return await operation;
-    } finally {
-      if (inFlight.get(threadId) === tail) inFlight.delete(threadId);
-    }
-  };
 
   return {
     listNamingThreads: () => [...naming],
-    async nameThread(threadId, intent) {
-      if (inFlight.has(threadId) && intent.kind === "forced") {
-        return { ok: false, error: "This thread is already being named." };
+    async regenerateTitle(threadId) {
+      if (naming.has(threadId)) return { ok: false, error: "This thread is already being named." };
+      naming.add(threadId);
+      bb.rpc.experimental_invalidate([GTD_TAGS.naming]);
+      try {
+        return await regenerate(bb, options.inference, threadId);
+      } finally {
+        naming.delete(threadId);
+        bb.rpc.experimental_invalidate([GTD_TAGS.naming]);
       }
-      return enqueue(threadId, async () => {
-        try {
-          return await performThreadNaming(
-            bb,
-            options,
-            threadId,
-            intent,
-            automaticRequests,
-            naming,
-          );
-        } finally {
-          if (naming.delete(threadId)) {
-            bb.rpc.experimental_invalidate([GTD_TAGS.naming]);
-          }
-        }
-      });
     },
-    renameThread(threadId, requested) {
+    async renameThread(threadId, requested) {
       const title = sanitizeGeneratedTitle(requested);
       if (title === null) {
-        return Promise.resolve({
+        return {
           ok: false,
           error: "The title needs at least one letter or digit after any emoji or [scope] prefix.",
-        });
+        };
       }
-      return enqueue(threadId, async () => {
-        try {
-          const thread = await bb.sdk.threads.get({ threadId });
-          const previousTitle = thread.title;
-          if (title !== previousTitle) await bb.sdk.threads.update({ threadId, title });
-          return {
-            ok: true,
-            previousTitle,
-            title,
-            projectId: thread.projectId,
-            environmentId: thread.environmentId,
-          };
-        } catch (error) {
-          return { ok: false, error: describeError(error) };
-        }
-      });
+      try {
+        const thread = await bb.sdk.threads.get({ threadId });
+        const previousTitle = thread.title;
+        if (title !== previousTitle) await bb.sdk.threads.update({ threadId, title });
+        return {
+          ok: true,
+          previousTitle,
+          title,
+          projectId: thread.projectId,
+          environmentId: thread.environmentId,
+        };
+      } catch (error) {
+        return { ok: false, error: describeError(error) };
+      }
     },
   };
 }
 
-async function performThreadNaming(
+async function regenerate(
   bb: BbPluginApi,
-  options: {
-    automaticallyNameThreads: () => Promise<boolean>;
-    inference: ThreadTitleInference;
-    onProjectRules?: (projectId: string, rules: string) => void;
-  },
+  inference: ThreadTitleInference,
   threadId: string,
-  intent: NamingIntent,
-  automaticRequests: Map<string, number>,
-  naming: Set<string>,
 ): Promise<ThreadNamingResult> {
   try {
-    const automaticallyNameThreads =
-      intent.kind === "automatic" ? await options.automaticallyNameThreads() : true;
-    if (!automaticallyNameThreads) return { ok: false, error: "Automatic naming is disabled." };
     const [thread, events] = await Promise.all([
       bb.sdk.threads.get({ threadId }),
       loadNamingEvents(bb, threadId),
     ]);
-    const planInput = {
-      automaticallyNameThreads,
-      events,
-      intent,
-      thread,
-    } as const;
-    let plan = planThreadNaming(planInput);
-    if (plan.kind === "skip") {
-      return { ok: false, error: describeSkip(plan.reason) };
-    }
-
-    if (plan.writeGuard.kind !== "replace-title") {
-      const requestSeq = plan.writeGuard.expectedRequestSeq;
-      // Realtime can repeat a request in a coalesced events-appended notification.
-      if (automaticRequests.get(threadId) === requestSeq) {
-        return { ok: false, error: "This prompt has already triggered automatic naming." };
-      }
-    }
-
-    const projectInstructions = await loadProjectTitleInstructions(
-      bb,
-      thread.environmentId,
-      intent,
+    const projectInstructions =
+      (await loadProjectTitleInstructions(bb, thread.environmentId)) ?? "";
+    const plan = planThreadNaming({ events, projectInstructions, thread });
+    if (plan.kind === "skip") return { ok: false, error: describeSkip(plan.reason) };
+    const title = sanitizeGeneratedTitle(
+      await inference.complete({ environmentId: thread.environmentId, prompt: plan.prompt }),
     );
-    if (projectInstructions === null) {
-      return { ok: false, error: "Automatic naming is waiting for the workspace to be ready." };
-    }
-    // Forced naming reads "" for a workspace that is not ready, so only an
-    // automatic read is known to be the project's rules.
-    if (intent.kind === "automatic")
-      options.onProjectRules?.(thread.projectId, projectInstructions);
-    plan = planThreadNaming({ ...planInput, projectInstructions });
-    if (plan.kind === "skip") {
-      return { ok: false, error: describeSkip(plan.reason) };
-    }
-
-    await requireNamingEnabled(intent, options.automaticallyNameThreads);
-    if (plan.writeGuard.kind !== "replace-title") {
-      automaticRequests.set(threadId, plan.writeGuard.expectedRequestSeq);
-    }
-    naming.add(threadId);
-    bb.rpc.experimental_invalidate([GTD_TAGS.naming]);
-    const output = await options.inference.complete({
-      environmentId: thread.environmentId,
-      prompt: plan.prompt,
-    });
-    const title = sanitizeGeneratedTitle(output);
     if (title === null) {
       return { ok: false, error: "The naming agent returned no usable task title." };
     }
-
-    await requireNamingEnabled(intent, options.automaticallyNameThreads);
     if (title !== thread.title) await bb.sdk.threads.update({ threadId, title });
     return { ok: true, title };
   } catch (error) {
@@ -221,17 +112,19 @@ async function performThreadNaming(
   }
 }
 
+/**
+ * The project's `.agents/GTD_NAMING.md` rules: "" when it has none or the file
+ * is unusable, `null` while the workspace is still provisioning.
+ */
 export async function loadProjectTitleInstructions(
   bb: BbPluginApi,
   environmentId: string | null,
-  intent: NamingIntent,
 ): Promise<string | null> {
-  const unavailable = intent.kind === "automatic" ? null : "";
-  if (environmentId === null) return unavailable;
+  if (environmentId === null) return "";
 
   try {
     const environment = await bb.sdk.environments.get({ environmentId });
-    if (environment.status !== "ready") return unavailable;
+    if (environment.status !== "ready") return null;
     if (environment.path === null) return "";
 
     const file = await bb.sdk.files.read({
@@ -294,31 +187,17 @@ async function loadNamingEvents(bb: BbPluginApi, threadId: string): Promise<Thre
 
 function describeSkip(reason: ThreadNamingSkipReason): string {
   switch (reason) {
-    case "automatic-naming-disabled":
-      return "Automatic thread naming is disabled.";
-    case "archived-thread":
-      return "Automatic naming skips archived threads.";
     case "child-thread":
       return "Child threads are named by their parent.";
     case "deleted-thread":
       return "Deleted threads cannot be named.";
     case "hidden-thread":
       return "Hidden threads cannot be named.";
-    case "latest-turn-not-user":
-      return "Automatic naming only runs for an original user prompt.";
     case "missing-user-prompt":
-      return "This thread has no initial user prompt to name.";
-    case "titled-thread":
-      return "Automatic naming only titles a thread's first request; its agent renames it later.";
+      return "This thread has no user request to name.";
   }
 }
 
 function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function requireNamingEnabled(intent: NamingIntent, enabled: () => Promise<boolean>) {
-  if (intent.kind === "automatic" && !(await enabled())) {
-    throw new Error("Automatic naming was disabled while naming was in progress.");
-  }
 }

@@ -63,9 +63,9 @@ export default async function plugin(bb: BbPluginApi) {
     },
     automaticallyNameThreads: {
       type: "boolean",
-      label: "Automatically name threads",
+      label: "Let agents name threads",
       description:
-        "Opt in to Codex inference on a thread's first prompt, and let the thread's agent rename it when the work changes direction. Sends the request and naming rules. Manual CLI rename remains available.",
+        "Opt in to instructions that have each main thread's agent title it on the first request and rename it when the work changes direction, following your project naming rules.",
       default: false,
     },
     mobileHaptics: {

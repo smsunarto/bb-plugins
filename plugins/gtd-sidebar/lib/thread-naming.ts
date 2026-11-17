@@ -1,31 +1,16 @@
 import { instructionFiles } from "@bb-plugins/instructions";
 
-export type NamingIntent = { kind: "automatic" } | { kind: "forced" };
-
 export type ThreadNamingSkipReason =
-  | "automatic-naming-disabled"
-  | "archived-thread"
   | "child-thread"
   | "deleted-thread"
   | "hidden-thread"
-  | "latest-turn-not-user"
-  | "missing-user-prompt"
-  | "titled-thread";
-
-export type ThreadNamingWriteGuard =
-  | { kind: "automatic"; expectedRequestSeq: number }
-  | { kind: "replace-title" };
+  | "missing-user-prompt";
 
 export type ThreadNamingPlan =
   | { kind: "skip"; reason: ThreadNamingSkipReason }
-  | {
-      kind: "run";
-      prompt: string;
-      writeGuard: ThreadNamingWriteGuard;
-    };
+  | { kind: "run"; prompt: string };
 
 export interface NamingThreadFacts {
-  archivedAt: number | null;
   deletedAt: number | null;
   parentThreadId: string | null;
   title: string | null;
@@ -53,9 +38,7 @@ export type ThreadNamingEvent =
     };
 
 export interface PlanThreadNamingInput {
-  automaticallyNameThreads: boolean;
   events: readonly ThreadNamingEvent[];
-  intent: NamingIntent;
   projectInstructions?: string;
   thread: NamingThreadFacts;
 }
@@ -254,45 +237,23 @@ function userRequests(
   );
 }
 
+/** Plans a title regeneration from the thread's latest original user request. */
 export function planThreadNaming({
-  automaticallyNameThreads,
   events,
-  intent,
   projectInstructions = "",
   thread,
 }: PlanThreadNamingInput): ThreadNamingPlan {
-  if (intent.kind === "automatic" && !automaticallyNameThreads) {
-    return { kind: "skip", reason: "automatic-naming-disabled" };
-  }
   if (thread.deletedAt !== null) return { kind: "skip", reason: "deleted-thread" };
   if (thread.visibility === "hidden") return { kind: "skip", reason: "hidden-thread" };
   if (thread.parentThreadId !== null) return { kind: "skip", reason: "child-thread" };
-  if (intent.kind === "automatic" && thread.archivedAt !== null) {
-    return { kind: "skip", reason: "archived-thread" };
-  }
 
-  const latestRequest =
-    intent.kind === "automatic" ? turnRequests(events).at(-1) : userRequests(events).at(-1);
+  const requests = userRequests(events);
+  const latestRequest = requests.at(-1);
   if (latestRequest === undefined) return { kind: "skip", reason: "missing-user-prompt" };
-  if (intent.kind === "automatic") {
-    if (
-      latestRequest.data.initiator !== "user" ||
-      latestRequest.data.retryOfRequestId !== undefined
-    ) {
-      return { kind: "skip", reason: "latest-turn-not-user" };
-    }
-  }
-
   const userPrompt = normalizeUserPrompt(latestRequest);
   if (userPrompt === "") return { kind: "skip", reason: "missing-user-prompt" };
-  const requests = userRequests(events).filter((event) => event.seq <= latestRequest.seq);
   const userPrompts = requests.map(normalizeUserPrompt);
   const requestContexts = requests.map(normalizeRequestContext);
-  // After the first request, the thread's agent renames it when the work
-  // changes direction (see instructions/agent-rename.md).
-  if (intent.kind === "automatic" && userPrompts.length > 1 && thread.title?.trim()) {
-    return { kind: "skip", reason: "titled-thread" };
-  }
 
   return {
     kind: "run",
@@ -303,10 +264,6 @@ export function planThreadNaming({
       initialRequestContext: requestContexts[0],
       recentRequestContexts: requestContexts.slice(1, -1),
     }),
-    writeGuard:
-      intent.kind === "automatic"
-        ? { kind: "automatic", expectedRequestSeq: latestRequest.seq }
-        : { kind: "replace-title" },
   };
 }
 

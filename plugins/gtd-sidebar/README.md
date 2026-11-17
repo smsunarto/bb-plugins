@@ -61,7 +61,7 @@ reinstall.
 
 - bb 0.47.0+
 - Sidebar organization needs nothing else.
-- Thread naming needs an existing Codex login on bb's primary host.
+- `bb gtd-sidebar rename` without `--title` needs an existing Codex login on bb's primary host.
 
 ## Usage
 
@@ -196,35 +196,29 @@ Desktop only.
 
 ### Thread names
 
-With **Automatically name threads** enabled, a root thread gets a GTD-generated
-name on its first user prompt, replacing any initial title supplied by BB. New
-threads wait for their workspace to be ready so the first title includes project
-naming rules. New titles are plain text with no activity emoji. Prefixes and
-other project formatting come only from your naming rules.
+With **Let agents name threads** enabled, each root thread's agent names the
+thread itself. Its instructions tell it to run
+`bb gtd-sidebar rename --title "<title>"` once it understands the first request,
+and again only when the work clearly changes direction, never for follow-ups,
+fixes, tests, or shipping on the same task. The instructions carry the title
+rules and your project naming rules, so a rename is one command with no lookups.
+The command prints the old and new titles. A session that started before the
+project rules loaded gets them in the command's output. Sessions already
+running pick up the instructions when bb next starts them. GTD makes no model
+call of its own to name a thread.
 
-After that, the thread's agent renames it. Root threads get instructions to run
-`bb gtd-sidebar rename --title "<new title>"` only when the work clearly changes
-direction, never for follow-ups, fixes, tests, or shipping on the same task. The
-instructions carry the title rules and your project naming rules, so a rename is
-one command with no lookups. The command prints the old and new titles. A
-session that started before the project rules loaded gets them in the command's
-output. Sessions already running pick up the instructions when bb next starts
-them.
-
-The first title comes from a tool-free prompt to GPT-6.1-Terra with reasoning
-disabled, which replies with the title in plain text. The prompt lists the
-naming rules and your project naming rules first, then the thread content, each
-section in its own tag and marked as data to name rather than instructions. It
-carries the latest request, the original request, up to three recent requests,
-and their composer context. A timeout, rate limit, outage, or unreadable reply retries once with
-GPT-5.6-Luna, the same models and order as bb's built-in Codex AI service. Each
-attempt has a five-second deadline. Logs record timing, never the prompt.
-`bb gtd-sidebar rename` without `--title` regenerates a title the same way from
-the latest request.
+`bb gtd-sidebar rename` without `--title` regenerates a title from the latest
+request through a tool-free prompt to GPT-6.1-Terra with reasoning disabled. The
+prompt lists the naming rules and your project naming rules first, then the
+thread content, each section in its own tag and marked as data to name rather
+than instructions. A timeout, rate limit, outage, or unreadable reply retries
+once with GPT-5.6-Luna, the same models and order as bb's built-in Codex AI
+service. Each attempt has a five-second deadline. Logs record timing, never the
+prompt.
 
 bb also titles a new thread through **Settings → AI services → Thread titles**,
-and that title names a new worktree's branch. GTD naming then replaces the
-thread's title with one that follows your project rules. Setting bb's thread
+and that title names a new worktree's branch. The thread's agent then replaces
+it with one that follows your project rules. Setting bb's thread
 titles to Off saves that first request, but new branches are then named after
 the start of the prompt.
 
@@ -291,12 +285,12 @@ services. The explicit naming command below is a separate user-requested inferen
 | Row layout              | Every thread takes one line; project, branch and agent show in its hover details. On mobile, long-press opens the action sheet without requiring haptics.                                  |
 | Explicit naming command | `bb gtd-sidebar rename [<threadId>]` is an explicit request for Codex title inference even with automatic naming off.                                                                      |
 
-| Optional setting (key)                                  | Default | Effect when enabled                                                                                                                                                                                            |
-| ------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Group threads by project (`groupThreadsByProject`)      | On      | Organize each shelf into project groups. Turning it off keeps project and machine filters available.                                                                                                           |
-| Enable mobile haptics (`mobileHaptics`)                 | Off     | Attach iOS tactile menu-tap switches. Turning off removes those switches, including from an open menu.                                                                                                         |
-| Show GitButler branches (`gitButlerBranches`)           | Off     | Periodically read GitButler branches on primary checkouts through the host CLI. Off stops refreshes and server host reads, restoring BB's native labels.                                                       |
-| Automatically name threads (`automaticallyNameThreads`) | Off     | Infer titles on user requests through the existing Codex login. Sends request context and naming rules. Off skips automatic context reads/inference and prevents an in-flight result from renaming the thread. |
+| Optional setting (key)                               | Default | Effect when enabled                                                                                                                                                                         |
+| ---------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Group threads by project (`groupThreadsByProject`)   | On      | Organize each shelf into project groups. Turning it off keeps project and machine filters available.                                                                                        |
+| Enable mobile haptics (`mobileHaptics`)              | Off     | Attach iOS tactile menu-tap switches. Turning off removes those switches, including from an open menu.                                                                                      |
+| Show GitButler branches (`gitButlerBranches`)        | Off     | Periodically read GitButler branches on primary checkouts through the host CLI. Off stops refreshes and server host reads, restoring BB's native labels.                                    |
+| Let agents name threads (`automaticallyNameThreads`) | Off     | Give each root thread's agent instructions to title it on the first request and rename it when the work changes direction, with your project naming rules inlined. Off leaves titles to bb. |
 
 | Supporting preference            | Default           | Purpose                                                                                                   |
 | -------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------- |

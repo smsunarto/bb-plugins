@@ -4,11 +4,13 @@
 
 ### Patch Changes
 
-- The thread's agent now renames it when the work clearly changes direction,
-  with one `bb gtd-sidebar rename --title "<new title>"` call. Its instructions
-  carry the title rules and the project's naming rules, so it looks nothing up
-  first. Automatic naming now runs only on a thread's first request; the Codex
-  review of every later prompt, and its `KEEP` reply, are gone.
+- Threads are now named by their own agent. Each root thread's agent sets the
+  title with one `bb gtd-sidebar rename --title "<title>"` call on its first
+  request, and again only when the work clearly changes direction. Its
+  instructions carry the title rules and the project's naming rules, so it
+  looks nothing up first. GTD no longer runs Codex on prompts to name threads,
+  so automatic naming needs no Codex login. The setting is now **Let agents
+  name threads**.
 
 - Thread naming now follows your project naming rules reliably. The prompt
   used to list them among the thread content it marked as data to ignore; they

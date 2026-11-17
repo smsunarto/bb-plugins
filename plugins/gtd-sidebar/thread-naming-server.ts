@@ -4,7 +4,6 @@ import { renderAgentRenameInstructions, selectProjectTitleRules } from "./lib/th
 import {
   createThreadNamer,
   loadProjectTitleInstructions,
-  subscribeToThreadNaming,
   type ThreadNamer,
 } from "./thread-namer.ts";
 import type { ThreadTitleInference } from "./thread-title-inference.ts";
@@ -15,9 +14,10 @@ interface NamingSettings {
 }
 
 /**
- * Thread naming end to end: Codex names a thread's first request, and the
- * thread's agent renames it later through `bb gtd-sidebar rename --title`,
- * guided by instructions this registers for root threads.
+ * Thread naming end to end: the thread's agent titles it on the first request
+ * and renames it when the work changes direction, through
+ * `bb gtd-sidebar rename --title`, guided by instructions this registers for
+ * root threads. Without --title the command regenerates a title through Codex.
  */
 export function registerThreadNaming(
   bb: BbPluginApi,
@@ -25,15 +25,10 @@ export function registerThreadNaming(
 ): { threadNamer: ThreadNamer; renameCommand: ReturnType<typeof cliCommand> } {
   const { settings } = options;
   const projectTitleRules = createProjectTitleRulesCache(
-    (environmentId) => loadProjectTitleInstructions(bb, environmentId, { kind: "automatic" }),
+    (environmentId) => loadProjectTitleInstructions(bb, environmentId),
     { onError: (error) => bb.log.warn(`could not read project title rules: ${String(error)}`) },
   );
-  const threadNamer = createThreadNamer(bb, {
-    automaticallyNameThreads: async () => (await settings.get()).automaticallyNameThreads,
-    inference: options.inference,
-    onProjectRules: projectTitleRules.remember,
-  });
-  subscribeToThreadNaming(bb, threadNamer);
+  const threadNamer = createThreadNamer(bb, { inference: options.inference });
 
   // `configure` is synchronous, so it reads the setting from this copy.
   let namingEnabled = false;
@@ -66,7 +61,8 @@ export function registerThreadNaming(
   });
 
   const renameCommand = cliCommand({
-    summary: "Rename a thread: set --title, or generate a title from its latest request.",
+    summary:
+      "Rename a thread: set --title, or generate a title from its latest request with Codex.",
     options: {
       title: {
         type: "string",
@@ -99,7 +95,7 @@ export function registerThreadNaming(
         });
       }
       if (title === undefined) {
-        const result = await threadNamer.nameThread(threadId, { kind: "forced" });
+        const result = await threadNamer.regenerateTitle(threadId);
         if (!result.ok) throw new PluginCliError(result.error, { code: "rename_failed" });
         return { exitCode: 0, stdout: `${result.title}\n` };
       }
@@ -111,9 +107,7 @@ export function registerThreadNaming(
         projectTitleRules.peek(renamed.projectId, null) ??
         (renamed.environmentId === null
           ? ""
-          : ((await loadProjectTitleInstructions(bb, renamed.environmentId, {
-              kind: "automatic",
-            })) ?? ""));
+          : ((await loadProjectTitleInstructions(bb, renamed.environmentId)) ?? ""));
       const selectedRules = selectProjectTitleRules(rules);
       return {
         exitCode: 0,

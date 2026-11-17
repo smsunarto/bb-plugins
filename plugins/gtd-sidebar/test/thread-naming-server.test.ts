@@ -90,7 +90,11 @@ describe("agent rename instructions", () => {
     await flush();
     const cold = await configure();
     assert.deepEqual(cold.skills, ["configure-gtd-naming"]);
-    assert.match(cold.instructions ?? "", /bb gtd-sidebar rename --title "<new title>"/u);
+    assert.match(cold.instructions ?? "", /bb gtd-sidebar rename --title "<title>"/u);
+    assert.match(
+      cold.instructions ?? "",
+      /First request:\*\* make this command your first tool call/u,
+    );
     assert.match(cold.instructions ?? "", /not loaded when this session started/u);
     await flush();
     const warm = await configure();
@@ -183,7 +187,9 @@ describe("createProjectTitleRulesCache", () => {
     assert.equal(cache.peek("proj_1", "env_c"), "Use [GTD].");
     await flush();
     assert.deepEqual(reads, ["env_a", "env_b", "env_c"]);
-    cache.remember("proj_2", "");
+    answer = "";
+    cache.peek("proj_2", "env_d");
+    await flush();
     assert.equal(cache.peek("proj_2", null), "");
   });
 });

@@ -7,13 +7,11 @@ import {
   planThreadNaming,
   renderThreadNamingPrompt,
   sanitizeGeneratedTitle,
-  type NamingIntent,
   type NamingThreadFacts,
   type ThreadNamingEvent,
 } from "../lib/thread-naming.ts";
 
 const thread: NamingThreadFacts = {
-  archivedAt: null,
   deletedAt: null,
   parentThreadId: null,
   title: null,
@@ -38,20 +36,16 @@ const request = (
 const completed = (seq: number): ThreadNamingEvent => ({ seq, type: "turn/completed" });
 
 function plan(
-  intent: NamingIntent,
   overrides: {
-    automaticallyNameThreads?: boolean;
     events?: readonly ThreadNamingEvent[];
     thread?: Partial<NamingThreadFacts>;
   } = {},
 ) {
   return planThreadNaming({
-    automaticallyNameThreads: overrides.automaticallyNameThreads ?? true,
     events: overrides.events ?? [
       request(1, [{ type: "text", text: "Fix the login test" }]),
       completed(2),
     ],
-    intent,
     thread: { ...thread, ...overrides.thread },
   });
 }
@@ -120,19 +114,16 @@ describe("normalizeProjectTitleInstructions", () => {
 
 describe("planThreadNaming", () => {
   test("normalizes visible text and keeps agent-only context in a separate section", () => {
-    const result = plan(
-      { kind: "automatic" },
-      {
-        events: [
-          request(1, [
-            { type: "text", text: "  Fix\n the " },
-            { type: "image" },
-            { type: "text", text: "private context", visibility: "agent-only" },
-            { type: "text", text: "login\t test " },
-          ]),
-        ],
-      },
-    );
+    const result = plan({
+      events: [
+        request(1, [
+          { type: "text", text: "  Fix\n the " },
+          { type: "image" },
+          { type: "text", text: "private context", visibility: "agent-only" },
+          { type: "text", text: "login\t test " },
+        ]),
+      ],
+    });
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
       assert.match(result.prompt, /<current_request>\nFix the login test/u);
@@ -141,29 +132,26 @@ describe("planThreadNaming", () => {
   });
 
   test("includes chip labels and bounds resolved context independently of the request", () => {
-    const result = plan(
-      { kind: "forced" },
-      {
-        events: [
-          request(1, [
-            {
-              type: "text",
-              text: "Fix it".repeat(500),
-              mentions: [
-                { resource: { kind: "thread", label: "Checkout payment failure" } },
-                { resource: { kind: "path", label: "src/checkout.ts" } },
-              ],
-            },
-            {
-              type: "text",
-              text: "Browser checkout page. ".repeat(1000),
-              visibility: "agent-only",
-            },
-            { type: "text", text: "Payment button is disabled.", visibility: "agent-only" },
-          ]),
-        ],
-      },
-    );
+    const result = plan({
+      events: [
+        request(1, [
+          {
+            type: "text",
+            text: "Fix it".repeat(500),
+            mentions: [
+              { resource: { kind: "thread", label: "Checkout payment failure" } },
+              { resource: { kind: "path", label: "src/checkout.ts" } },
+            ],
+          },
+          {
+            type: "text",
+            text: "Browser checkout page. ".repeat(1000),
+            visibility: "agent-only",
+          },
+          { type: "text", text: "Payment button is disabled.", visibility: "agent-only" },
+        ]),
+      ],
+    });
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
       assert.match(
@@ -179,23 +167,20 @@ describe("planThreadNaming", () => {
   });
 
   test("keeps original and recent chip context available for short follow-ups", () => {
-    const result = plan(
-      { kind: "forced" },
-      {
-        thread: { title: "Fix checkout" },
-        events: [
-          request(1, [
-            { type: "text", text: "Fix this @Browser" },
-            { type: "text", text: "Checkout payment failure.", visibility: "agent-only" },
-          ]),
-          request(2, [
-            { type: "text", text: "Check this too" },
-            { type: "text", text: "Safari checkout failure.", visibility: "agent-only" },
-          ]),
-          request(3, [{ type: "text", text: "add tests" }]),
-        ],
-      },
-    );
+    const result = plan({
+      thread: { title: "Fix checkout" },
+      events: [
+        request(1, [
+          { type: "text", text: "Fix this @Browser" },
+          { type: "text", text: "Checkout payment failure.", visibility: "agent-only" },
+        ]),
+        request(2, [
+          { type: "text", text: "Check this too" },
+          { type: "text", text: "Safari checkout failure.", visibility: "agent-only" },
+        ]),
+        request(3, [{ type: "text", text: "add tests" }]),
+      ],
+    });
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
       assert.match(result.prompt, /<current_request>\nadd tests/u);
@@ -236,101 +221,28 @@ describe("planThreadNaming", () => {
       },
     } as StoredAnnotation;
     const resolved = `Context for @button (resolved by plugin "agentation"):\n\n${renderAnnotationMentionContext(annotation, null)}`;
-    for (const kind of ["automatic", "forced"] as const) {
-      const result = plan(
-        { kind },
-        {
-          events: [
-            request(1, [
-              {
-                type: "text",
-                text: "Fix this @button",
-                mentions: [{ resource: { kind: "plugin", label: "button" } }],
-              },
-              { type: "text", text: resolved, visibility: "agent-only" },
-            ]),
-          ],
-        },
-      );
+    {
+      const result = plan({
+        events: [
+          request(1, [
+            {
+              type: "text",
+              text: "Fix this @button",
+              mentions: [{ resource: { kind: "plugin", label: "button" } }],
+            },
+            { type: "text", text: resolved, visibility: "agent-only" },
+          ]),
+        ],
+      });
       assert.equal(result.kind, "run");
       if (result.kind === "run") assert.match(result.prompt, /The label wraps at 320px/u);
     }
   });
 
-  test("runs automatic naming on the first prompt and leaves titled follow-ups to the agent", () => {
-    const firstTurn = plan({ kind: "automatic" });
-    assert.equal(firstTurn.kind, "run");
-    if (firstTurn.kind === "run") {
-      assert.doesNotMatch(firstTurn.prompt, /Latest handoff:/u);
-    }
-    assert.deepEqual(plan({ kind: "automatic" }, { events: [] }), {
-      kind: "skip",
-      reason: "missing-user-prompt",
-    });
-    assert.equal(
-      plan(
-        { kind: "automatic" },
-        {
-          events: [request(1, [{ type: "text", text: "Fix it" }])],
-        },
-      ).kind,
-      "run",
-    );
-
-    const followUp = plan(
-      { kind: "automatic" },
-      {
-        events: [
-          request(1, [{ type: "text", text: "Fix login" }]),
-          completed(2),
-          request(3, [{ type: "text", text: "Now fix signup" }], {
-            target: { kind: "new-turn" },
-          }),
-        ],
-        thread: { title: "Fix login" },
-      },
-    );
-    assert.deepEqual(followUp, { kind: "skip", reason: "titled-thread" });
-  });
-
-  test("ignores an existing BB title on the first request", () => {
-    const result = plan({ kind: "automatic" }, { thread: { title: "Previous title" } });
-
-    assert.equal(result.kind, "run");
-    if (result.kind === "run") {
-      assert.deepEqual(result.writeGuard, {
-        kind: "automatic",
-        expectedRequestSeq: 1,
-      });
-    }
-  });
-
-  test("first user request replaces BB's title, later requests leave it to the agent", () => {
-    const first = plan({ kind: "automatic" }, { thread: { title: "BB internal title" } });
-    assert.equal(first.kind, "run");
-    if (first.kind === "run") {
-      assert.match(first.prompt, /^Generate a thread title/u);
-      assert.doesNotMatch(first.prompt, /BB internal title|<current_title>/u);
-    }
-    const followup = plan(
-      { kind: "automatic" },
-      {
-        thread: { title: "GTD title" },
-        events: [
-          request(1, [{ type: "text", text: "Build CSV export" }]),
-          request(2, [{ type: "text", text: "add test" }]),
-        ],
-      },
-    );
-    assert.deepEqual(followup, { kind: "skip", reason: "titled-thread" });
-  });
-
-  test("adds project instructions to automatic and forced naming", () => {
-    for (const intent of [{ kind: "automatic" } as const, { kind: "forced" } as const]) {
+  test("adds project instructions", () => {
+    {
       const result = planThreadNaming({
-        automaticallyNameThreads: true,
         events: [request(1, [{ type: "text", text: "Fix it" }]), completed(2)],
-        intent,
         projectInstructions: "Prefix titles with WEB:",
         thread,
       });
@@ -343,19 +255,16 @@ describe("planThreadNaming", () => {
   });
 
   test("anchors continuation to the latest substantive request", () => {
-    const result = plan(
-      { kind: "forced" },
-      {
-        events: [
-          request(1, [{ type: "text", text: "Fix login" }]),
-          request(3, [{ type: "text", text: "Now fix signup validation" }]),
-          request(5, [{ type: "text", text: "continue" }]),
-          request(7, [{ type: "text", text: "do it" }]),
-          completed(8),
-        ],
-        thread: { title: "🐛 [Auth] Signup validation" },
-      },
-    );
+    const result = plan({
+      events: [
+        request(1, [{ type: "text", text: "Fix login" }]),
+        request(3, [{ type: "text", text: "Now fix signup validation" }]),
+        request(5, [{ type: "text", text: "continue" }]),
+        request(7, [{ type: "text", text: "do it" }]),
+        completed(8),
+      ],
+      thread: { title: "🐛 [Auth] Signup validation" },
+    });
 
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
@@ -369,18 +278,13 @@ describe("planThreadNaming", () => {
   });
 
   test("short followups retain their substantive subject without exact continuation wording", () => {
-    const result = plan(
-      {
-        kind: "automatic",
-      },
-      {
-        events: [
-          request(1, [{ type: "text", text: "Explain the agent roles in Ember" }]),
-          request(3, [{ type: "text", text: "Give me a short summary of each role" }]),
-          completed(4),
-        ],
-      },
-    );
+    const result = plan({
+      events: [
+        request(1, [{ type: "text", text: "Explain the agent roles in Ember" }]),
+        request(3, [{ type: "text", text: "Give me a short summary of each role" }]),
+        completed(4),
+      ],
+    });
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
       assert.match(result.prompt, /<current_request>\nGive me a short summary of each role/u);
@@ -389,17 +293,14 @@ describe("planThreadNaming", () => {
   });
 
   test("new explicit requests take priority over older context", () => {
-    const result = plan(
-      { kind: "forced" },
-      {
-        events: [
-          request(1, [{ type: "text", text: "Fix login" }]),
-          request(3, [{ type: "text", text: "Can Monaco use TextMate?" }]),
-          completed(4),
-        ],
-        thread: { title: "🐛 [Auth] Login" },
-      },
-    );
+    const result = plan({
+      events: [
+        request(1, [{ type: "text", text: "Fix login" }]),
+        request(3, [{ type: "text", text: "Can Monaco use TextMate?" }]),
+        completed(4),
+      ],
+      thread: { title: "🐛 [Auth] Login" },
+    });
 
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
@@ -412,17 +313,14 @@ describe("planThreadNaming", () => {
   });
 
   test("forced naming uses the latest original user request without a handoff", () => {
-    const result = plan(
-      { kind: "forced" },
-      {
-        events: [
-          request(1, [{ type: "text", text: "Configure Cloudflare" }]),
-          request(3, [{ type: "text", text: "Evaluate title accuracy vs cost" }]),
-          request(4, [{ type: "text", text: "Retry this" }], { retryOfRequestId: "req_3" }),
-          request(5, [{ type: "text", text: "Agent continuation" }], { initiator: "agent" }),
-        ],
-      },
-    );
+    const result = plan({
+      events: [
+        request(1, [{ type: "text", text: "Configure Cloudflare" }]),
+        request(3, [{ type: "text", text: "Evaluate title accuracy vs cost" }]),
+        request(4, [{ type: "text", text: "Retry this" }], { retryOfRequestId: "req_3" }),
+        request(5, [{ type: "text", text: "Agent continuation" }], { initiator: "agent" }),
+      ],
+    });
 
     assert.equal(result.kind, "run");
     if (result.kind === "run") {
@@ -440,66 +338,20 @@ describe("planThreadNaming", () => {
       "ship it",
       "More details ".repeat(20),
     ]) {
-      const result = plan(
-        { kind: "forced" },
-        {
-          events: [
-            request(1, [{ type: "text", text: "Index Pokémon" }]),
-            request(2, [{ type: "text", text: "git init" }]),
-            request(3, [{ type: "text", text }]),
-          ],
-          thread: { title: "Pokémon indexing" },
-        },
-      );
+      const result = plan({
+        events: [
+          request(1, [{ type: "text", text: "Index Pokémon" }]),
+          request(2, [{ type: "text", text: "git init" }]),
+          request(3, [{ type: "text", text }]),
+        ],
+        thread: { title: "Pokémon indexing" },
+      });
       assert.equal(result.kind, "run");
       if (result.kind === "run") {
         assert.match(result.prompt, /<original_request>\nIndex Pokémon/u);
         assert.match(result.prompt, /<recent_requests_oldest_first>\ngit init/u);
       }
     }
-  });
-
-  test("skips agent continuations and retries", () => {
-    const cases: ThreadNamingEvent[][] = [
-      [
-        request(1, [{ type: "text", text: "Fix it" }]),
-        completed(2),
-        request(3, [{ type: "text", text: "Continue" }], {
-          initiator: "agent",
-          target: { kind: "new-turn" },
-        }),
-        completed(4),
-      ],
-      [
-        request(1, [{ type: "text", text: "Fix it" }]),
-        completed(2),
-        request(3, [{ type: "text", text: "Fix it again" }], {
-          retryOfRequestId: "req_1",
-          target: { kind: "auto" },
-        }),
-        completed(4),
-      ],
-    ];
-
-    for (const events of cases) {
-      assert.deepEqual(plan({ kind: "automatic" }, { events }), {
-        kind: "skip",
-        reason: "latest-turn-not-user",
-      });
-    }
-  });
-
-  test("lets forced naming replace an archived hand title", () => {
-    const result = plan(
-      { kind: "forced" },
-      {
-        thread: { archivedAt: 1, title: "Hand title" },
-        events: [request(1, [{ type: "text", text: "Fix it" }])],
-      },
-    );
-
-    assert.equal(result.kind, "run");
-    if (result.kind === "run") assert.deepEqual(result.writeGuard, { kind: "replace-title" });
   });
 
   test("refuses hidden, child, and deleted threads", () => {
@@ -510,7 +362,7 @@ describe("planThreadNaming", () => {
     ];
 
     for (const [facts, reason] of cases) {
-      assert.deepEqual(plan({ kind: "forced" }, { thread: facts }), { kind: "skip", reason });
+      assert.deepEqual(plan({ thread: facts }), { kind: "skip", reason });
     }
   });
 });
