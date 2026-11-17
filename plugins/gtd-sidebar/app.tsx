@@ -6,6 +6,7 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import { ThreadInbox } from "./components/inbox/thread-inbox";
+import { mountNewThreadFabStyle } from "./components/inbox/new-thread-fab-style";
 import { CapyNavigation } from "./components/nav/capy-navigation";
 import { archiveThread, canSettleThread } from "./lib/sidebar-actions-bridge";
 import {
@@ -52,6 +53,13 @@ export default definePluginApp((app) => {
   app.contentScripts.register({
     id: "header-settle-style",
     mount: ({ signal }) => mountHeaderSettleStyle(document, signal),
+  });
+
+  // On a phone the thread list floats a New thread pill in place of bb's
+  // header row.
+  app.contentScripts.register({
+    id: "new-thread-fab-style",
+    mount: ({ signal }) => mountNewThreadFabStyle(document, signal),
   });
 
   app.slots.commandPaletteAction({

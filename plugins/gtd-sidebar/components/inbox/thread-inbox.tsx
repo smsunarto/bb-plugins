@@ -70,6 +70,7 @@ import { useRetained } from "../../hooks/use-retained";
 import { resolveSidebarBranchLabel } from "../../lib/gitbutler";
 import { filterHiddenMachines, sidebarMachines } from "../../lib/machines";
 import { MachineVisibilityPicker } from "./machine-scope-picker";
+import { NewThreadFab } from "./new-thread-fab";
 import { MachineAppearanceProvider } from "./machine-appearance";
 import { RenameProvider } from "./inline-rename";
 import { CompactViewportOverrideProvider } from "../ui/hooks/use-compact-viewport";
@@ -145,6 +146,7 @@ function observeThreadScrollFade(end: HTMLDivElement | null) {
 
 function InboxList({
   activeThreadId,
+  activeProjectId,
   isCompactViewport,
   onNavigate,
   searchQuery,
@@ -272,15 +274,17 @@ function InboxList({
   // A machine scope carries into the composer, which preselects that machine
   // for the new environment when it can host one.
   const navigate = useBbNavigate();
-  const onNewThread = useCommittedEvent((projectId: string) => {
+  const onNewThread = useCommittedEvent((projectId: string | null) => {
     const hostId = visibility.composerHostId;
     navigate.toCompose({
-      projectId,
+      ...(projectId === null ? {} : { projectId }),
       focusPrompt: true,
       ...(hostId === undefined ? {} : { hostId }),
     });
     onNavigate();
   });
+  // The phone pill starts a thread in the project on screen, if any.
+  const onNewThreadFab = useCommittedEvent(() => onNewThread(activeProjectId));
   const sdk = useSdk();
   // One drag context for both payloads (lib/sidebar-drag): a row onto a row
   // nests, a row onto a project header lifts it back out, and a group header
@@ -527,7 +531,7 @@ function InboxList({
       <DndContext {...sidebarDrag.contextProps}>
         <div
           data-gtd-sidebar-thread-list=""
-          className="flex min-h-0 flex-1 flex-col"
+          className="relative flex min-h-0 flex-1 flex-col"
           onClickCapture={(event) => {
             // A drag's trailing click must not act on what it lands on.
             if (performance.now() - lastDragEndAt.current < 200) {
@@ -588,6 +592,7 @@ function InboxList({
               </div>
             ) : null}
           </RowMenuArea>
+          {isCompactViewport ? <NewThreadFab onPress={onNewThreadFab} /> : null}
         </div>
         {/* The ghost rides the pointer from document.body, clear of the list's
           scroll clip, so the rows themselves never shift under the drag. */}
