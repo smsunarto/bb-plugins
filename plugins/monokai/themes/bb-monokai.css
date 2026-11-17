@@ -1359,6 +1359,13 @@
   }
 }
 
+/* bb pads the compact right panel's bottom by the home indicator's safe area,
+ * so every tab ended in a hard cut above it. Run tab content to the screen's
+ * bottom edge, under the indicator. */
+.dark [data-testid="secondary-panel-shelf"] {
+  padding-bottom: 0;
+}
+
 .dark [data-sidebar="inset"][data-monokai-panel-depth] {
   overflow: clip;
   border-radius: var(--monokai-display-radius);
@@ -2267,29 +2274,28 @@
    * neither ever hides. While the drawer is open or moving, bb's toggle stops
    * taking taps so it cannot cover the rail; a tap on the pushed-aside page
    * lands on bb's backdrop and closes the drawer. The glyph is bb's PanelLeft.
-   * Other pages keep bb's plain toggle and hide it over the open drawer. */
-  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] {
+   * Other pages draw the same copy on the page's content shell (below), so
+   * the toggle behaves the same everywhere. */
+  .dark [data-sidebar="inset"] {
+    --monokai-sidebar-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.31087 2 6.4663 2.81382 5.15877C3.1149 4.67502 3.48891 4.25427 3.91891 3.91554C5.08116 3 6.72077 3 10 3H14C17.2792 3 18.9188 3 20.0811 3.91554C20.5111 4.25427 20.8851 4.67502 21.1862 5.15877C22 6.4663 22 8.31087 22 12C22 15.6891 22 17.5337 21.1862 18.8412C20.8851 19.325 20.5111 19.7457 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7457 3.1149 19.325 2.81382 18.8412C2 17.5337 2 15.6891 2 12Z'/%3E%3Cpath d='M9.5 3L9.5 21' stroke-linejoin='round'/%3E%3Cpath d='M5 7H6M5 10H6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+
+  .dark [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] {
     opacity: 0;
   }
 
-  .dark[data-monokai-thread]
+  .dark
     [data-sidebar="inset"][data-sidebar-shelf="open"]
     ~ [data-testid="app-sidebar-trigger-overlay"]
     > [data-sidebar="trigger"],
-  .dark[data-monokai-thread]
+  .dark
     [data-sidebar="inset"][data-vaul-animate]
     ~ [data-testid="app-sidebar-trigger-overlay"]
     > [data-sidebar="trigger"],
-  .dark[data-monokai-thread]
+  .dark
     [data-testid="app-sidebar-trigger-overlay"]:not([data-panel-shelf])
     > [data-sidebar="trigger"] {
     pointer-events: none;
-  }
-
-  .dark:not([data-monokai-thread]) [data-sidebar="inset"][data-sidebar-shelf="open"] ~ [data-testid="app-sidebar-trigger-overlay"],
-  .dark:not([data-monokai-thread]) [data-sidebar="inset"][data-vaul-animate] ~ [data-testid="app-sidebar-trigger-overlay"],
-  .dark:not([data-monokai-thread]) [data-testid="app-sidebar-trigger-overlay"]:not([data-panel-shelf]) {
-    visibility: hidden;
   }
 
   .dark[data-monokai-thread] [data-split-pane-id] > header::before {
@@ -2314,8 +2320,8 @@
     width: 20px;
     height: 20px;
     background-color: var(--foreground);
-    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.31087 2 6.4663 2.81382 5.15877C3.1149 4.67502 3.48891 4.25427 3.91891 3.91554C5.08116 3 6.72077 3 10 3H14C17.2792 3 18.9188 3 20.0811 3.91554C20.5111 4.25427 20.8851 4.67502 21.1862 5.15877C22 6.4663 22 8.31087 22 12C22 15.6891 22 17.5337 21.1862 18.8412C20.8851 19.325 20.5111 19.7457 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7457 3.1149 19.325 2.81382 18.8412C2 17.5337 2 15.6891 2 12Z'/%3E%3Cpath d='M9.5 3L9.5 21' stroke-linejoin='round'/%3E%3Cpath d='M5 7H6M5 10H6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.31087 2 6.4663 2.81382 5.15877C3.1149 4.67502 3.48891 4.25427 3.91891 3.91554C5.08116 3 6.72077 3 10 3H14C17.2792 3 18.9188 3 20.0811 3.91554C20.5111 4.25427 20.8851 4.67502 21.1862 5.15877C22 6.4663 22 8.31087 22 12C22 15.6891 22 17.5337 21.1862 18.8412C20.8851 19.325 20.5111 19.7457 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7457 3.1149 19.325 2.81382 18.8412C2 17.5337 2 15.6891 2 12Z'/%3E%3Cpath d='M9.5 3L9.5 21' stroke-linejoin='round'/%3E%3Cpath d='M5 7H6M5 10H6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    -webkit-mask: var(--monokai-sidebar-glyph) center / contain no-repeat;
+    mask: var(--monokai-sidebar-glyph) center / contain no-repeat;
     pointer-events: none;
   }
   /* bb insets its toggle 2px more under a coarse pointer. */
@@ -2330,7 +2336,7 @@
   }
 
 
-  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
+  .dark [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div button {
     width: 44px;
     height: 44px;
@@ -2338,7 +2344,7 @@
     color: var(--foreground);
   }
 
-  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] [data-icon-root],
+  .dark [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] [data-icon-root],
   .dark
     [data-split-pane-id]
     > header
@@ -2354,8 +2360,8 @@
 
 /* Phone top bars off a thread take the thread header's pills: the New thread
  * page's two floating toggles, a plugin page's header, and the right panel's
- * tab bar. Away from a thread bb's sidebar toggle is the visible one, so it
- * takes the round pill itself. A plugin page header drops its seam, as the
+ * tab bar. Away from a thread the sidebar toggle's copy rides on the page's
+ * content shell instead of a header. A plugin page header drops its seam, as the
  * thread header does, and floats its action group on the same pill, without
  * the Close pane button: a phone shows one pane, and the drawer leaves it. The
  * right panel's tab pager, its pinned views included, floats on the action
@@ -2364,19 +2370,61 @@
  * script against the pager's free width, so the pager keeps bb's flex sizing
  * and only the buttons around the chip change size. */
 @media (max-width: 767px) {
-  .dark:not([data-monokai-thread]) [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
-  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label^="Show right panel"] {
+  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label*="right panel"] {
     width: 44px;
     height: 44px;
     border-radius: 9999px;
     color: var(--foreground);
     box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
     background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
+    /* bb hides the toggle's wrapper while the right panel is open; like the
+     * thread header's toggle it stays on the page, which the panel pushes aside. */
+    visibility: visible;
   }
 
   /* bb's wrapper sits 6px down; the 44px circle shares the row's centre. */
-  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label^="Show right panel"] {
+  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label*="right panel"] {
     margin-top: -4px;
+  }
+
+  /* The sidebar toggle's copy off a thread, at bb's toggle spot: the shell
+   * starts at the top of the screen, under the status bar. */
+  .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::before,
+  .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::after {
+    content: "";
+    position: absolute;
+    z-index: 30;
+    pointer-events: none;
+  }
+
+  .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::before {
+    top: calc(env(safe-area-inset-top) + 2px);
+    left: calc(env(safe-area-inset-left) + var(--bb-sidebar-rail-padding) - 2px);
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
+  }
+
+  .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::after {
+    top: calc(env(safe-area-inset-top) + 14px);
+    left: calc(env(safe-area-inset-left) + var(--bb-sidebar-rail-padding) - 2px + 12px);
+    width: 20px;
+    height: 20px;
+    background-color: var(--foreground);
+    -webkit-mask: var(--monokai-sidebar-glyph) center / contain no-repeat;
+    mask: var(--monokai-sidebar-glyph) center / contain no-repeat;
+  }
+
+  @media (pointer: coarse) {
+    .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::before {
+      left: calc(env(safe-area-inset-left) + var(--bb-sidebar-rail-padding));
+    }
+
+    .dark:not([data-monokai-thread]) [data-sidebar="inset"] > [data-testid="app-layout-content-shell"]::after {
+      left: calc(env(safe-area-inset-left) + var(--bb-sidebar-rail-padding) + 12px);
+    }
   }
 
   .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] {
@@ -2402,6 +2450,18 @@
 
   .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button[aria-label="Close pane"] {
     display: none;
+  }
+
+  /* While the right panel is open bb moves a plugin page's panel toggle into
+   * the panel and empties its header slot. A drawn copy of bb's PanelRight
+   * holds the slot, so the pill neither collapses nor pops back as the panel
+   * closes, as the thread header's toggle stays put. */
+  .dark :not([data-split-pane-id]) > header [data-plugin-right-panel-toggle-portal]:empty {
+    width: 44px;
+    height: 44px;
+    background-color: var(--foreground);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.3109 2 6.46633 2.81382 5.1588C3.1149 4.67505 3.48891 4.2543 3.91891 3.91557C5.08116 3.00003 6.72077 3.00003 10 3.00003H14C17.2792 3.00003 18.9188 3.00003 20.0811 3.91557C20.5111 4.2543 20.8851 4.67505 21.1862 5.1588C22 6.46633 22 8.3109 22 12C22 15.6892 22 17.5337 21.1862 18.8413C20.8851 19.325 20.5111 19.7458 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7458 3.1149 19.325 2.81382 18.8413C2 17.5337 2 15.6892 2 12Z'/%3E%3Cpath d='M14.5 3.00003L14.5 21' stroke-linejoin='round'/%3E%3Cpath d='M18 7.00006H19M18 10.0001H19' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.3109 2 6.46633 2.81382 5.1588C3.1149 4.67505 3.48891 4.2543 3.91891 3.91557C5.08116 3.00003 6.72077 3.00003 10 3.00003H14C17.2792 3.00003 18.9188 3.00003 20.0811 3.91557C20.5111 4.2543 20.8851 4.67505 21.1862 5.1588C22 6.46633 22 8.3109 22 12C22 15.6892 22 17.5337 21.1862 18.8413C20.8851 19.325 20.5111 19.7458 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7458 3.1149 19.325 2.81382 18.8413C2 17.5337 2 15.6892 2 12Z'/%3E%3Cpath d='M14.5 3.00003L14.5 21' stroke-linejoin='round'/%3E%3Cpath d='M18 7.00006H19M18 10.0001H19' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / 20px 20px no-repeat;
   }
 
   .dark [data-testid="mobile-panel-tab-pager"],
@@ -2487,8 +2547,7 @@
     color: var(--foreground);
   }
 
-  .dark:not([data-monokai-thread]) [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] [data-icon-root],
-  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label^="Show right panel"] [data-icon-root],
+  .dark[data-monokai-home] [data-testid="app-layout-content-shell"] button[aria-label*="right panel"] [data-icon-root],
   .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button [data-icon-root],
   .dark [data-testid="mobile-panel-tab-pager"] > div > button [data-icon-root],
   .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] > button [data-icon-root] {
