@@ -1897,6 +1897,28 @@
     margin-top: var(--bb-app-chrome-row-height);
   }
 
+  /* A title too long for the row fades out over its last 20px, as the
+   * sidebar's rows do, instead of ending in an ellipsis. The sidebar measures
+   * each row in script; here a scroll timeline stands in for the measurement:
+   * bb's title span clips its overflow, which makes it a scroll container,
+   * and its timeline is active, applying the fade, only while the text
+   * overflows. Browsers without scroll timelines keep bb's ellipsis. */
+  @supports (animation-timeline: scroll()) {
+    .dark [data-split-pane-id] > header .bb-thread-title > span {
+      text-overflow: clip;
+      animation: monokai-title-fade linear both;
+      animation-timeline: scroll(self inline);
+    }
+  }
+
+  @keyframes monokai-title-fade {
+    from,
+    to {
+      -webkit-mask-image: linear-gradient(to right, black calc(100% - 20px), transparent);
+      mask-image: linear-gradient(to right, black calc(100% - 20px), transparent);
+    }
+  }
+
   /* The 44px toggle sits 12px in from the edge; the title starts 12px after it. */
   .dark[data-monokai-thread] [data-split-pane-id] > header [data-testid="app-page-header-content-row"] {
     padding-left: 52px;
