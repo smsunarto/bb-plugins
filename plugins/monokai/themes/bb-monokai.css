@@ -1933,6 +1933,13 @@
     background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
   }
 
+  /* History back and forward have the phone's own back gesture; the drawer's
+   * top row, in the app sidebar and in Settings, keeps only its first action. */
+  .dark [data-testid$="sidebar-top-reserve-row"] button[aria-label="Go back"],
+  .dark [data-testid$="sidebar-top-reserve-row"] button[aria-label="Go forward"] {
+    display: none;
+  }
+
   /* 6px inside each end, so the first and last glyphs sit clear of the pill's curve. */
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
     gap: 0;
