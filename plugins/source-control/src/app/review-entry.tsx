@@ -7,10 +7,12 @@ import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
   experimental_useRpcQuery as useRpcQuery,
 } from "@get-bb/plugin-sdk/app";
-import { useMemo } from "react";
+import { useSidebarColumnFill } from "@bb-plugins/ui/sidebar-fill";
+import { useMemo, useRef } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import { parseReviewPath } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+import { useIsCompactViewport } from "./components/ui/hooks/use-compact-viewport.tsx";
 import { useKeepPageOnEscape } from "./escape.ts";
 import { ChangesList } from "./page/changes-nav.tsx";
 import { ReviewPage } from "./page/review-page.tsx";
@@ -23,9 +25,20 @@ export function ReviewPanel({ subPath }: PanelProps) {
   return <ReviewPage subPath={subPath} />;
 }
 
-/** The nav panel's sidebar: the Changes nav. */
+/**
+ * The nav panel's sidebar: the Changes nav. In a phone drawer it fills the column and scrolls its
+ * own list, so its footer sits at the screen's edge rather than above the home indicator's strip.
+ */
 export function ReviewSidebar({ subPath }: PanelProps) {
-  return <ChangesList subPath={subPath} variant="nav" />;
+  const compact = useIsCompactViewport();
+  const root = useRef<HTMLDivElement>(null);
+  // workaround:scott-docs/sidebar-fill (manual removal; see workarounds.json)
+  useSidebarColumnFill(root, compact);
+  return (
+    <div ref={root} className="flex min-h-0 min-w-0 flex-col">
+      <ChangesList subPath={subPath} variant="nav" drawer={compact} />
+    </div>
+  );
 }
 
 const NO_KEYS: readonly string[] = [];
