@@ -165,7 +165,7 @@ const ChangesView = memo(function ChangesView({
         <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
           {view.kind === "loading" ? <LoadingBody /> : null}
           {view.kind === "none" ? (
-            <p className="m-0 px-3 @md:px-4 py-8 text-[13px] leading-5 text-muted-foreground">
+            <p className="m-0 px-3 max-md:px-4 @md:px-4 py-8 text-[13px] leading-5 text-muted-foreground">
               {view.reason}
             </p>
           ) : null}
@@ -219,7 +219,7 @@ function Header({
   readOnly: boolean;
 }) {
   return (
-    <header className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-hairline px-3 @md:px-4 py-2 min-h-12">
+    <header className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border-hairline px-3 max-md:px-4 @md:px-4 py-2 min-h-12">
       <div className="flex min-w-0 flex-[1_1_8rem] items-baseline gap-2">
         <h1 className="m-0 shrink-0 text-[13px] leading-5 font-semibold text-foreground">
           Workspace
@@ -264,7 +264,7 @@ function BaseFooter({ target }: { target: Target }) {
   if (!target.base) return null;
   return (
     <footer
-      className="flex min-w-0 shrink-0 flex-wrap items-baseline gap-x-1 border-t border-border-hairline px-3 @md:px-4 py-2 text-[12px] leading-4 text-muted-foreground"
+      className="flex min-w-0 shrink-0 flex-wrap items-baseline gap-x-1 border-t border-border-hairline px-3 max-md:px-4 @md:px-4 py-2 text-[12px] leading-4 text-muted-foreground"
       data-testid="sc-base"
     >
       <span>Stack is based on</span>
@@ -306,7 +306,7 @@ function ReadyBody({
   );
   return (
     <>
-      <div className="flex min-w-0 flex-col gap-4 p-3 @md:p-4">
+      <div className="flex min-w-0 flex-col gap-4 p-3 max-md:p-4 @md:p-4">
         <ThisThread
           threadId={threadId}
           row={row}
@@ -404,7 +404,7 @@ function LoadingBody() {
       data-testid="sc-loading"
       aria-busy="true"
       aria-label="Reading this checkout"
-      className="flex flex-col gap-4 p-3 @md:p-4"
+      className="flex flex-col gap-4 p-3 max-md:p-4 @md:p-4"
     >
       <div className="flex flex-col gap-3">
         <Skeleton className="h-3 w-18" />
@@ -447,7 +447,7 @@ function StaleBanner({
   return (
     <output
       data-testid="sc-stale"
-      className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-hairline bg-surface-recessed px-3 @md:px-4 py-2"
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-hairline bg-surface-recessed px-3 max-md:px-4 @md:px-4 py-2"
     >
       <span className="size-1.5 shrink-0 rounded-full bg-warning" aria-hidden />
       <span className="min-w-0 grow basis-40 text-[12px] leading-4 text-muted-foreground">
@@ -481,7 +481,7 @@ function ReadAsGitNote({ onRestore, switching }: { onRestore(): void; switching:
   return (
     <div
       data-testid="sc-read-as-git"
-      className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-hairline px-3 @md:px-4 py-2"
+      className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border-hairline px-3 max-md:px-4 @md:px-4 py-2"
     >
       <span className="min-w-0 grow basis-40 text-[12px] leading-4 text-muted-foreground">
         This GitButler workspace is read as plain git.
@@ -548,7 +548,11 @@ function FailedBody({
   const detail = "detail" in problem ? problem.detail : null;
   const noBut = problem.kind === "tool-missing" && problem.tool === "but";
   return (
-    <div data-testid="sc-failed" role="alert" className="flex flex-col gap-3 px-3 @md:px-4 py-8">
+    <div
+      data-testid="sc-failed"
+      role="alert"
+      className="flex flex-col gap-3 px-3 max-md:px-4 @md:px-4 py-8"
+    >
       <div className="flex items-center gap-2">
         <span className="size-2 shrink-0 rounded-full bg-destructive" aria-hidden />
         <span className="text-[14px] leading-5 font-semibold text-foreground">
