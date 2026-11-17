@@ -161,6 +161,8 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     onSplitPointerDown: (threadId: string, event: PointerEvent<HTMLElement>) => void;
     /** Hold the shelves until the saved machine choice loads, as bb does. */
     awaitMachineVisibility?: boolean;
+    /** bb's plugin list; unset lists none, as a bb without Captain does. */
+    plugins?: readonly { id: string; enabled: boolean; status: string }[];
   }
 
   const HostContext = createContext<HostState | null>(null);
@@ -175,7 +177,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     // bb's client is stable for the plugin's lifetime; effects keyed on it
     // must not refire on every render here either.
     useSdk: () => {
-      const { unarchive, primaryHostId, actions, listHosts } = useHost();
+      const { unarchive, primaryHostId, actions, listHosts, plugins } = useHost();
       const rename = useRef(actions.rename);
       rename.current = actions.rename;
       return useMemo(
@@ -191,6 +193,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
               listHosts ?? (async () => [{ id: "host-boat", machineProviderId: "boat-sandbox" }]),
           },
           subscribe: () => () => {},
+          plugins: { list: async () => ({ plugins: plugins ?? [] }) },
           system: {
             config: () =>
               primaryHostId === undefined
@@ -198,7 +201,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
                 : Promise.resolve({ primaryHostId }),
           },
         }),
-        [unarchive, primaryHostId, listHosts],
+        [unarchive, primaryHostId, listHosts, plugins],
       );
     },
     useBbNavigate: () => {
@@ -3627,6 +3630,160 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       }
       assert.ok(!mounted.includes(all[12]!));
       assert.deepEqual(navigationOrder(view.slot), all);
+    });
+  });
+
+  describe("Captain entry points", () => {
+    const CAPTAIN_RUNNING = [{ id: "captain", enabled: true, status: "running" }];
+
+    function captainThreads() {
+      return [
+        thread("thr_c1", { title: "Plugins Captain", isPinned: true, pinnedAt: 1 }),
+        thread("thr_c2", { title: "Rampage Captain", isPinned: true, pinnedAt: 2 }),
+        thread("thr_plain", { title: "Plain thread", projectId: "two" }),
+      ];
+    }
+
+    function countOf(slot: RenderedSlot, id: string): string | null {
+      const container = row(slot, id).parentElement!;
+      return container.querySelector("[data-gtd-needs-you]")?.textContent ?? null;
+    }
+
+    const captainCalls = (slot: RenderedSlot) =>
+      slot.inspection.rpcCalls.filter((call) =>
+        ["captains", "needsYou", "newCaptain"].includes(call.method),
+      );
+
+    it("with Captain absent, shows no New Captain button and no counts, and asks Captain nothing", async () => {
+      const view = mount(hostState(captainThreads()));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      assert.equal(view.slot.queryAllByRole("button", { name: /^New Captain/ }).length, 0);
+      assert.ok(view.slot.getAllByRole("button", { name: /^New thread in / }).length > 0);
+      assert.equal(view.slot.container.querySelectorAll("[data-gtd-needs-you]").length, 0);
+      assert.deepEqual(captainCalls(view.slot), []);
+    });
+
+    it("with Captain disabled, behaves as if it were absent", async () => {
+      const host = {
+        ...hostState(captainThreads()),
+        plugins: [{ ...CAPTAIN_RUNNING[0]!, enabled: false, status: "disabled" }],
+      };
+      const view = mount(host);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      });
+      assert.equal(view.slot.queryAllByRole("button", { name: /^New Captain/ }).length, 0);
+      assert.deepEqual(captainCalls(view.slot), []);
+    });
+
+    it("reads every Captain row's count in one batch, shows it, and hides it at 0", async () => {
+      const counts: Record<string, number> = { thr_c1: 2, thr_c2: 0 };
+      const host = { ...hostState(captainThreads()), plugins: CAPTAIN_RUNNING };
+      const view = mount(host, {}, "", {
+        rpc: {
+          captains: async () => ({ ids: ["thr_c1", "thr_c2", "thr_elsewhere"] }),
+          needsYou: async ({ keys }: { keys: string[] }) =>
+            Object.fromEntries(keys.map((key) => [key, counts[key] ?? 0])),
+        } as never,
+      });
+      await waitFor(() => assert.equal(countOf(view.slot, "thr_c1"), "2"));
+      assert.equal(countOf(view.slot, "thr_c2"), null);
+      assert.equal(countOf(view.slot, "thr_plain"), null);
+      const reads = view.slot.inspection.rpcCalls.filter((call) => call.method === "needsYou");
+      // Only the listed Captain rows, together in one call.
+      assert.equal(reads.length, 1);
+      assert.deepEqual([...(reads[0]!.input as { keys: string[] }).keys].sort(), [
+        "thr_c1",
+        "thr_c2",
+      ]);
+      // Answering in the banner refreshes that Captain's asks: its row re-reads alone.
+      counts.thr_c1 = 1;
+      await view.slot.behavior.experimental_invalidateRpc(["asks:thr_c1"], "captain");
+      await waitFor(() => assert.equal(countOf(view.slot, "thr_c1"), "1"));
+      const after = view.slot.inspection.rpcCalls.filter((call) => call.method === "needsYou");
+      assert.deepEqual((after.at(-1)!.input as { keys: string[] }).keys, ["thr_c1"]);
+    });
+
+    async function openNewCaptain(newCaptain: (input: unknown) => unknown) {
+      const host = {
+        ...hostState([thread("t1"), thread("t2", { projectId: "two" })]),
+        plugins: CAPTAIN_RUNNING,
+      };
+      const view = mount(host, {}, "", {
+        rpc: {
+          captains: async () => ({ ids: [] }),
+          needsYou: async () => ({}),
+          newCaptain: async (input: unknown) => newCaptain(input),
+        } as never,
+      });
+      const button = await view.slot.findByRole("button", { name: "New Captain directing Two" });
+      fireEvent.click(button);
+      const dialog = await screen.findByRole("dialog", { name: "New Captain" });
+      return { view, host, dialog: within(dialog) };
+    }
+
+    it("New Captain opens with its project picked and checks the form before sending", async () => {
+      const sent: unknown[] = [];
+      const { view, dialog } = await openNewCaptain((input) => {
+        sent.push(input);
+        return { ok: true, threadId: "thr_new", state: "started", warnings: [] };
+      });
+      assert.equal(
+        dialog.getByRole("checkbox", { name: "Two" }).getAttribute("aria-checked"),
+        "true",
+      );
+      assert.equal(
+        dialog.getByRole("checkbox", { name: "One" }).getAttribute("aria-checked"),
+        "false",
+      );
+      fireEvent.click(dialog.getByRole("checkbox", { name: "Two" }));
+      fireEvent.click(dialog.getByRole("button", { name: "Start Captain" }));
+      await dialog.findByText("Name the Captain.");
+      dialog.getByText("Pick at least one repo.");
+      fireEvent.change(dialog.getByRole("textbox", { name: "Name" }), {
+        target: { value: "x".repeat(81) },
+      });
+      dialog.getByText("Keep the name to 80 characters.");
+      assert.deepEqual(sent, []);
+      assert.ok(!captainCalls(view.slot).some((call) => call.method === "newCaptain"));
+    });
+
+    it("New Captain sends the name and repos, then opens the started Captain", async () => {
+      const sent: unknown[] = [];
+      const { host, dialog } = await openNewCaptain((input) => {
+        sent.push(input);
+        return { ok: true, threadId: "thr_new", state: "started", warnings: [] };
+      });
+      fireEvent.change(dialog.getByRole("textbox", { name: "Name" }), {
+        target: { value: "  Plugins  " },
+      });
+      fireEvent.click(dialog.getByRole("checkbox", { name: "One" }));
+      fireEvent.click(dialog.getByRole("button", { name: "Start Captain" }));
+      await waitFor(() => assert.equal(host.actions.open.mock.calls.length, 1));
+      assert.deepEqual(sent, [{ name: "Plugins", repos: ["two", "one"] }]);
+      assert.deepEqual(host.actions.open.mock.calls[0]![0], "thr_new");
+      await waitFor(() =>
+        assert.equal(screen.queryByRole("dialog", { name: "New Captain" }), null),
+      );
+    });
+
+    it("New Captain shows Captain's refusal and stays open", async () => {
+      const { host, dialog } = await openNewCaptain(() => ({
+        ok: false,
+        blockers: [
+          { reason: "the bb server's machine has no thread storage yet", fix: "bb host list" },
+        ],
+      }));
+      fireEvent.change(dialog.getByRole("textbox", { name: "Name" }), {
+        target: { value: "Plugins" },
+      });
+      fireEvent.click(dialog.getByRole("button", { name: "Start Captain" }));
+      const alert = await dialog.findByRole("alert");
+      assert.match(alert.textContent ?? "", /no thread storage yet; bb host list/);
+      assert.equal(host.actions.open.mock.calls.length, 0);
+      assert.ok(screen.getByRole("dialog", { name: "New Captain" }));
     });
   });
 }

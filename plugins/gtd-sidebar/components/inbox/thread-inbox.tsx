@@ -71,6 +71,9 @@ import { resolveSidebarBranchLabel } from "../../lib/gitbutler";
 import { filterHiddenMachines, sidebarMachines } from "../../lib/machines";
 import { MachineVisibilityPicker } from "./machine-scope-picker";
 import { NewThreadFab } from "./new-thread-fab";
+import { NewCaptainDialog, type NewCaptainRequest } from "./new-captain-dialog";
+import { useCaptainAvailable, useNeedsYouCounts } from "../../hooks/use-captain";
+import { repoChoices } from "../../lib/new-captain";
 import { MachineAppearanceProvider } from "./machine-appearance";
 import { RenameProvider } from "./inline-rename";
 import { CompactViewportOverrideProvider } from "../ui/hooks/use-compact-viewport";
@@ -301,6 +304,31 @@ function InboxList({
   });
   // The phone pill starts a thread in the project on screen, if any.
   const onNewThreadFab = useCommittedEvent(() => onNewThread(activeProjectId));
+  // Captain's entry points: New Captain beside each project's new-thread
+  // button, and each Captain row's Needs you count. Both stay out of the list
+  // until bb reports the Captain plugin running.
+  const captainAvailable = useCaptainAvailable();
+  const needsYou = useNeedsYouCounts(captainAvailable, threads);
+  const [newCaptain, setNewCaptain] = useState<NewCaptainRequest | null>(null);
+  const newCaptainSeq = useRef(0);
+  const onNewCaptain = useCommittedEvent((projectId: string) => {
+    newCaptainSeq.current += 1;
+    setNewCaptain({ seq: newCaptainSeq.current, projectId });
+  });
+  const closeNewCaptain = useCommittedEvent(() => setNewCaptain(null));
+  const onCaptainStarted = useCommittedEvent((threadId: string) => {
+    setNewCaptain(null);
+    navigate.toThread(threadId);
+    onNavigate();
+  });
+  const captainRepos = useMemo(() => {
+    if (newCaptain === null) return [];
+    // A Captain's own project holds Captains, not code.
+    const captainProjects = new Set(
+      threads.filter((thread) => thread.id in needsYou).map((thread) => thread.projectId),
+    );
+    return repoChoices(projects, captainProjects);
+  }, [newCaptain, threads, needsYou, projects]);
   const sdk = useSdk();
   // One drag context for both payloads (lib/sidebar-drag): a row onto a row
   // nests, a row onto a project header lifts it back out, and a group header
@@ -419,6 +447,7 @@ function InboxList({
         command={command}
         drag={drag}
         dropAllowed={threadDropAllowed(drag, tree, thread.id)}
+        needsYou={needsYou[thread.id] ?? 0}
       />
     );
   };
@@ -456,6 +485,7 @@ function InboxList({
           expanded={searching || !isGroupCollapsed(key)}
           onToggle={() => toggleGroup(key)}
           onNewThread={onNewThread}
+          onNewCaptain={captainAvailable ? onNewCaptain : undefined}
           {...projectMoveProps(
             group.projectId,
             groupIds,
@@ -609,6 +639,14 @@ function InboxList({
           </RowMenuArea>
           {isCompactViewport ? <NewThreadFab onPress={onNewThreadFab} /> : null}
         </div>
+        {captainAvailable ? (
+          <NewCaptainDialog
+            request={newCaptain}
+            repos={captainRepos}
+            onClose={closeNewCaptain}
+            onStarted={onCaptainStarted}
+          />
+        ) : null}
         {/* The ghost rides the pointer from document.body, clear of the list's
           scroll clip, so the rows themselves never shift under the drag. */}
         {createPortal(
