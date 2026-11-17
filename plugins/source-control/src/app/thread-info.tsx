@@ -205,7 +205,9 @@ export function BranchesInfoSection({ threadId, environment }: ExperimentalThrea
         getKey={({ branch }) => branch.name}
         renderItem={({ branch, base }) => (
           <InfoListRow
-            leading={<Icon name="GitBranch" className="size-3" aria-hidden />}
+            leading={
+              <Icon name="GitBranch" className="size-3 text-subtle-foreground" aria-hidden />
+            }
             name={branch.name}
             title={branch.name}
             {...(base ? { context: `on ${base}` } : {})}
