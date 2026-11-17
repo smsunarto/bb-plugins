@@ -1,0 +1,81 @@
+/* bb's search fields drawn as the shadcn Input from @bb-plugins/ui
+ * (packages/ui/src/controls.css): 36px, a hairline --input edge, --radius-md
+ * corners, the theme's --control-background fill (shadcn's dark bg-input/30),
+ * --text-sm, and a 1px --ring on keyboard focus.
+ * Phones get 44px, the repo's touch minimum, and 16px text so iOS does not
+ * zoom. Applies under every palette.
+ *
+ * bb's DOM (private contract; recheck after bb upgrades):
+ * - input[aria-label^="Search"]: bb's Input in the New tab, settings, thread
+ *   storage, and model picker. The repo's own Input carries data-bb-control and
+ *   already looks like this, so it is skipped.
+ * - [cmdk-input-wrapper]: the picker search row (Command). shadcn draws it as
+ *   a bottom-bordered row; here the row becomes the field, inset in its popover,
+ *   and the cmdk input inside stays bare.
+ * - [data-palette-input-frame]: the command palette and thread search. The
+ *   frame becomes the field; its input stays bare.
+ * - label > input[aria-label^="Search"]: a search row that wraps its icon and
+ *   input in a label, such as Settings' sidebar search. The label becomes the
+ *   field (a child-only :has(), checked against the label alone). */
+input[aria-label^="Search"]:not([data-bb-control], [cmdk-input]),
+label:has(> input[aria-label^="Search"]:not([data-bb-control])),
+[cmdk-input-wrapper],
+[data-palette-input-frame] {
+  height: 2.25rem;
+  border: var(--hairline-width, 1px) solid var(--input);
+  border-radius: var(--radius-md, 0.375rem);
+  background: var(--control-background, transparent);
+  font-size: var(--text-sm, 0.8125rem);
+}
+input[aria-label^="Search"]:not([data-bb-control], [cmdk-input]):focus-visible,
+label:has(> input[aria-label^="Search"]:not([data-bb-control])):focus-within,
+[cmdk-input-wrapper]:focus-within,
+[data-palette-input-frame]:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 1px var(--ring);
+}
+[cmdk-input-wrapper] {
+  margin: 0.5rem 0.5rem 0.25rem;
+  padding-inline: 0.75rem;
+}
+label:has(> input[aria-label^="Search"]:not([data-bb-control])),
+[data-palette-input-frame] {
+  padding-inline: 0.75rem;
+}
+/* The theme's phone thread-search rule draws this frame as a filled 12px
+ * pill. The doubled attribute outranks it whatever order the theme and this
+ * sheet load in, so the frame stays the shadcn field. */
+.dark
+  [data-persistent-drawer-content]
+  > [data-testid="command-palette"]
+  [data-palette-input-frame][data-palette-input-frame] {
+  border-radius: var(--radius-md, 0.375rem);
+  background: var(--control-background, transparent);
+}
+[data-palette-input-band] {
+  border-bottom-color: transparent;
+  padding-block: 0.5rem;
+}
+/* As specific as the field rules, and later, so the bare inner inputs win. */
+[cmdk-input-wrapper] > input,
+label > input[aria-label^="Search"]:not([data-bb-control], [cmdk-input]),
+label > input[aria-label^="Search"]:not([data-bb-control], [cmdk-input]):focus-visible,
+[data-palette-input-frame] input:not([data-bb-control], [cmdk-input]),
+[data-palette-input-frame] input:not([data-bb-control], [cmdk-input]):focus-visible,
+[data-palette-input-frame] input[cmdk-input] {
+  height: 100%;
+  padding-block: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: inherit;
+}
+@media (width < 48rem) and (pointer: coarse) {
+  input[aria-label^="Search"]:not([data-bb-control], [cmdk-input]),
+  label:has(> input[aria-label^="Search"]:not([data-bb-control])),
+  [cmdk-input-wrapper],
+  [data-palette-input-frame] {
+    height: 2.75rem;
+    font-size: var(--text-base, 1rem);
+  }
+}

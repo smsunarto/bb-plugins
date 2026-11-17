@@ -4,6 +4,7 @@ import "./app/monaco-syntax-tokens.css";
 import "./app/diff-header.css";
 import "./app/project-control.css";
 import "./app/new-tab-launcher.css";
+import "./app/search-fields.css";
 import { mountArchiveToast } from "./app/archive-toast.ts";
 import { mountPanelToggleIntent } from "./app/panel-new-tab.ts";
 import { mountProjectControl } from "./app/project-control.ts";
