@@ -1013,6 +1013,163 @@
   overscroll-behavior-x: none;
 }
 
+/* Scroll areas fade at an edge with more content past it instead of cutting
+ * rows off. Each edge's fade is a length a scroll timeline drives: 0 at that
+ * edge, growing to 24px over the first 24px scrolled away from it. A box that
+ * does not overflow has no active timeline, so it gets no mask at all: the
+ * gate is a space toggle, guaranteed-invalid (so mask-image computes to none)
+ * until a timeline's keyframe empties it. The mask must sit in the rule
+ * rather than the keyframes: Chrome resolves var() in keyframes before other
+ * animations apply, so a keyframe mask never sees the animated lengths. The
+ * lengths do not inherit, so nested scroll areas fade on their own, and each
+ * scroll area resets the gate. Browsers without scroll timelines keep the
+ * hard edge. */
+@property --monokai-fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --monokai-fade-bottom {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --monokai-fade-left {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --monokai-fade-right {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+/* Rows that a sticky header covers start fading at its lower edge. */
+@property --monokai-fade-top-inset {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+
+@supports (animation-timeline: scroll()) {
+  .dark .overflow-auto,
+  .dark .overflow-scroll,
+  .dark .overflow-y-auto,
+  .dark .overflow-y-scroll,
+  .dark .overflow-x-auto,
+  .dark .overflow-x-scroll,
+  .dark [data-radix-scroll-area-viewport] {
+    --monokai-fade-gate: initial;
+    mask-image:
+      var(--monokai-fade-gate)
+      linear-gradient(
+        to bottom,
+        black var(--monokai-fade-top-inset),
+        transparent var(--monokai-fade-top-inset),
+        black calc(var(--monokai-fade-top-inset) + var(--monokai-fade-top)),
+        black calc(100% - var(--monokai-fade-bottom)),
+        transparent
+      ),
+      linear-gradient(
+        to right,
+        transparent,
+        black var(--monokai-fade-left),
+        black calc(100% - var(--monokai-fade-right)),
+        transparent
+      );
+    mask-composite: intersect;
+    animation-name:
+      monokai-fade-gate, monokai-fade-gate, monokai-fade-top, monokai-fade-bottom, monokai-fade-left,
+      monokai-fade-right;
+    animation-duration: auto;
+    animation-timing-function: linear;
+    animation-fill-mode: both;
+    animation-timeline:
+      scroll(self block), scroll(self inline), scroll(self block), scroll(self block), scroll(self inline),
+      scroll(self inline);
+    animation-range:
+      normal,
+      normal,
+      0 24px,
+      calc(100% - 24px) 100%,
+      0 24px,
+      calc(100% - 24px) 100%;
+  }
+
+  /* A Radix popover or dialog whose own box scrolls, such as the model
+   * picker's More models menu, keeps its open and close animations from
+   * Tailwind's layer, so it keeps a hard edge. */
+  .dark [data-side].overflow-auto,
+  .dark [data-side].overflow-y-auto,
+  .dark [data-side].overflow-scroll,
+  .dark [data-side].overflow-y-scroll,
+  .dark [role="dialog"].overflow-auto,
+  .dark [role="dialog"].overflow-y-auto,
+  .dark [role="dialog"].overflow-scroll,
+  .dark [role="dialog"].overflow-y-scroll {
+    animation: revert-layer;
+  }
+
+  /* gtd-sidebar's shelf header pins over the top 24px of its list. */
+  .dark [data-gtd-sidebar-thread-list] > .overflow-y-auto {
+    --monokai-fade-top-inset: 24px;
+  }
+
+  /* bb's composer is sticky at the bottom of the thread, so rows already
+   * pass under it there; a bottom fade would fade the composer. */
+  .dark .thread-scrollbar {
+    animation-name:
+      monokai-fade-gate, monokai-fade-gate, monokai-fade-top, none, monokai-fade-left, monokai-fade-right;
+  }
+
+  @keyframes monokai-fade-gate {
+    from,
+    to {
+      --monokai-fade-gate: ;
+    }
+  }
+
+  @keyframes monokai-fade-top {
+    from {
+      --monokai-fade-top: 0px;
+    }
+    to {
+      --monokai-fade-top: 24px;
+    }
+  }
+
+  @keyframes monokai-fade-bottom {
+    from {
+      --monokai-fade-bottom: 24px;
+    }
+    to {
+      --monokai-fade-bottom: 0px;
+    }
+  }
+
+  @keyframes monokai-fade-left {
+    from {
+      --monokai-fade-left: 0px;
+    }
+    to {
+      --monokai-fade-left: 24px;
+    }
+  }
+
+  @keyframes monokai-fade-right {
+    from {
+      --monokai-fade-right: 24px;
+    }
+    to {
+      --monokai-fade-right: 0px;
+    }
+  }
+}
+
 /* Rules drawn as 1px boxes, such as the sidebar's section rules, become a
  * hairline-wide box. --hairline-width keeps a box at one device pixel or more
  * at every density (1px at 1x, 0.5px at 2x, 2/3px at 3x), so it cannot round
