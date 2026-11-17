@@ -26,11 +26,19 @@ import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
  *   keeps mounted behind the page's left edge.
  * - **Tap to close:** a tap on the wash closes the panel through bb's own
  *   Escape handling, as a tap on the left drawer's backdrop closes the drawer.
+ * - **Swipe to close:** the wash sits inside bb's page, where a left-to-right
+ *   swipe opens the left drawer. The wash opts out of that swipe with bb's
+ *   `data-no-sidebar-swipe`, and a left-to-right swipe across it closes the
+ *   panel the way a tap does.
  */
 const INSET = '[data-sidebar="inset"]';
 const PANEL_SHELF = "data-panel-shelf";
 const DEPTH = "data-monokai-panel-depth";
 const WASH = "data-monokai-panel-wash";
+/** bb's opt-out from its left drawer's swipe, read from the touch's target. */
+const NO_SIDEBAR_SWIPE = "data-no-sidebar-swipe";
+/** bb's own horizontal swipe threshold for panel tabs. */
+const SWIPE_MIN_PX = 30;
 /** The theme's panel width: 90vw. */
 const panelWidth = (view: Window) => view.innerWidth * 0.9;
 /** bb's settle is 220ms; this covers a missed transitionend. */
@@ -47,6 +55,7 @@ export function mountPanelDepth({
   let inset: HTMLElement | null = null;
   let wash: HTMLElement | null = null;
   let settleTimer: number | undefined;
+  let swipe: { id: number; x: number; y: number } | null = null;
 
   /** The page's wash element, added as its last child when missing. */
   function washOf(page: HTMLElement): HTMLElement {
@@ -55,6 +64,7 @@ export function mountPanelDepth({
       wash = doc.createElement("div");
       wash.setAttribute(WASH, "");
       wash.setAttribute("aria-hidden", "true");
+      wash.setAttribute(NO_SIDEBAR_SWIPE, "");
       wash.style.opacity = "0";
     }
     if (page.lastElementChild !== wash) page.append(wash);
@@ -111,11 +121,7 @@ export function mountPanelDepth({
     if (settleTimer !== undefined && inset.getAttribute(PANEL_SHELF) !== "full") clear(inset);
   };
 
-  const onClick = (event: MouseEvent) => {
-    if (wash === null || event.target !== wash) return;
-    if (inset?.getAttribute(PANEL_SHELF) !== "full") return;
-    event.preventDefault();
-    event.stopPropagation();
+  const closePanel = () => {
     doc.dispatchEvent(
       new KeyboardEvent("keydown", {
         key: "Escape",
@@ -124,6 +130,38 @@ export function mountPanelDepth({
         cancelable: true,
       }),
     );
+  };
+
+  const openOnWash = (target: EventTarget | null) =>
+    wash !== null && target === wash && inset?.getAttribute(PANEL_SHELF) === "full";
+
+  const onClick = (event: MouseEvent) => {
+    if (!openOnWash(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closePanel();
+  };
+
+  const onTouchStart = (event: TouchEvent) => {
+    const touch = event.touches.length === 1 ? event.touches.item(0) : null;
+    swipe =
+      touch !== null && openOnWash(event.target)
+        ? { id: touch.identifier, x: touch.clientX, y: touch.clientY }
+        : null;
+  };
+
+  const onTouchEnd = (event: TouchEvent) => {
+    if (swipe === null) return;
+    const start = swipe;
+    swipe = null;
+    const touch = Array.from(event.changedTouches).find((t) => t.identifier === start.id);
+    if (touch === undefined || inset?.getAttribute(PANEL_SHELF) !== "full") return;
+    const dx = touch.clientX - start.x;
+    if (dx >= SWIPE_MIN_PX && dx > Math.abs(touch.clientY - start.y)) closePanel();
+  };
+
+  const onTouchCancel = () => {
+    swipe = null;
   };
 
   const observer = new MutationObserver((records) => {
@@ -144,6 +182,9 @@ export function mountPanelDepth({
   });
   doc.addEventListener("transitionend", onTransitionEnd, true);
   doc.addEventListener("click", onClick, true);
+  doc.addEventListener("touchstart", onTouchStart, { capture: true, passive: true });
+  doc.addEventListener("touchend", onTouchEnd, { capture: true, passive: true });
+  doc.addEventListener("touchcancel", onTouchCancel, { capture: true, passive: true });
 
   // One initial query; later work reads only mutation targets.
   const initial = doc.querySelector(INSET);
@@ -156,6 +197,9 @@ export function mountPanelDepth({
     observer.disconnect();
     doc.removeEventListener("transitionend", onTransitionEnd, true);
     doc.removeEventListener("click", onClick, true);
+    doc.removeEventListener("touchstart", onTouchStart, true);
+    doc.removeEventListener("touchend", onTouchEnd, true);
+    doc.removeEventListener("touchcancel", onTouchCancel, true);
     if (inset !== null) clear(inset);
   };
   signal.addEventListener("abort", dispose, { once: true });
