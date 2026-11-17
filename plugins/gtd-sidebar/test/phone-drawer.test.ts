@@ -36,6 +36,15 @@ afterEach(() => {
 });
 
 const startSlide = () => inset.setAttribute("data-vaul-animate", "false");
+// bb's inline styles: a finger drag, then a settle toward open (the drawer's width) or closed.
+const drag = (px: number) => {
+  inset.style.translate = `${px}px`;
+  inset.style.transition = "none";
+};
+const settle = (px: number) => {
+  inset.style.translate = `${px}px`;
+  inset.style.transition = "translate 220ms ease";
+};
 const endSlide = () => inset.removeAttribute("data-vaul-animate");
 const shelf = (state: "open" | "closed") => inset.setAttribute("data-sidebar-shelf", state);
 
@@ -142,4 +151,45 @@ it("leaves a field outside the page focused", async () => {
   assert.equal(document.activeElement, search);
   search.remove();
   own.abort();
+});
+
+it("plays as a tapped open starts settling, not when it lands", async () => {
+  await task(() => {
+    startSlide();
+    settle(300);
+  });
+  assert.deepEqual([openings, plays], [1, 1]);
+  await task(() => {
+    shelf("open");
+    endSlide();
+  });
+  assert.deepEqual([openings, plays], [1, 1]);
+});
+
+it("plays when a swipe is released toward open, not while it drags", async () => {
+  await task(() => {
+    shelf("open");
+    startSlide();
+    drag(40);
+  });
+  await task(() => drag(180));
+  assert.equal(plays, 0);
+  await task(() => settle(300));
+  assert.equal(plays, 1);
+  await task(endSlide);
+  assert.equal(plays, 1);
+});
+
+it("stays silent for a swipe released back toward closed", async () => {
+  await task(() => {
+    shelf("open");
+    startSlide();
+    drag(60);
+  });
+  await task(() => settle(0));
+  await task(() => {
+    shelf("closed");
+    endSlide();
+  });
+  assert.equal(plays, 0);
 });
