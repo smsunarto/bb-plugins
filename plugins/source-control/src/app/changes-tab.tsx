@@ -33,7 +33,7 @@ import { sourceControlContract } from "../contract/rpc.ts";
 import { PullButton, PullStatus, WORKSPACE, useVcsActions } from "./branch-actions.tsx";
 import { FindingsCard } from "./findings-card.tsx";
 import { HostGate, NO_CHECKOUT, offlineReason } from "./host-gate.ts";
-import { plural, shortId, shortRef } from "./format.ts";
+import { plural, shortRef } from "./format.ts";
 import { readSnapshot, writeSnapshot } from "./snapshot.ts";
 import { BotIcon } from "./page/ask-panel.tsx";
 import { Badge } from "./components/ui/badge.tsx";
@@ -197,7 +197,6 @@ const ChangesView = memo(function ChangesView({
             </>
           ) : null}
         </div>
-        {target ? <BaseFooter target={target} /> : null}
       </div>
     </HostGate>
   );
@@ -256,23 +255,6 @@ function Header({
         ) : null}
       </div>
     </header>
-  );
-}
-
-/** "Stack is based on origin/main a41c9e2". */
-function BaseFooter({ target }: { target: Target }) {
-  if (!target.base) return null;
-  return (
-    <footer
-      className="flex min-w-0 shrink-0 flex-wrap items-baseline gap-x-1 border-t border-border-hairline px-3 max-md:px-4 @md:px-4 py-2 text-[12px] leading-4 text-muted-foreground"
-      data-testid="sc-base"
-    >
-      <span>Stack is based on</span>
-      <span className="min-w-0 truncate font-semibold text-foreground">{target.ref}</span>
-      <span className="shrink-0 font-mono text-(--tertiary-foreground)" title={target.base.subject}>
-        {shortId(target.base.id)}
-      </span>
-    </footer>
   );
 }
 
