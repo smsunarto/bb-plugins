@@ -96,6 +96,8 @@ export type FakeOptions = {
   pushDown?: boolean;
   /** Captain's Tasks deadline; short, so a hung call fails fast. */
   tasksDeadlineMs?: number;
+  /** How often a watched banner rechecks the crew. */
+  crewPollMs?: number;
 };
 
 export async function captainHost(options: FakeOptions = {}) {
@@ -457,6 +459,7 @@ export async function captainHost(options: FakeOptions = {}) {
     captainsDir,
     now: () => clock,
     tasksDeadlineMs: options.tasksDeadlineMs ?? 500,
+    crewPollMs: options.crewPollMs ?? 20,
   };
   let server = await start(host.bb, startOptions);
   await server.ready;

@@ -1,13 +1,15 @@
-import { cliCommand, type BbPluginApi } from "@get-bb/plugin-sdk";
+import { cliCommand } from "@get-bb/plugin-sdk";
 import { callerCaptain } from "../caller.ts";
-import { joinCrew, listChildren, tasksOrRefuse, type CrewThread } from "../crew.ts";
+import {
+  joinCrew,
+  listChildren,
+  readInteractions,
+  tasksOrRefuse,
+  type CrewThread,
+} from "../crew.ts";
 import { guard, Refusal } from "../output.ts";
 import { countsLine, decodeCursor, deriveStatus, rowLine } from "../status.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
-
-type Interaction = Awaited<
-  ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>
->[number];
 
 export function statusCommand(deps: CommandDeps) {
   return cliCommand({
@@ -87,49 +89,4 @@ export function statusCommand(deps: CommandDeps) {
       });
     },
   });
-}
-
-type Pending = { note: string; createdAt: number };
-
-/** Pending interactions of the blocked threads, one call each, in parallel. */
-async function readInteractions(
-  deps: CommandDeps,
-  threadIds: readonly string[],
-): Promise<Map<string, Pending[]>> {
-  const entries = await Promise.all(
-    threadIds.map(async (threadId): Promise<[string, Pending[]]> => {
-      try {
-        const list = await deps.bb.sdk.threads.interactions.list({ threadId });
-        return [
-          threadId,
-          list
-            .filter((interaction) => interaction.status === "pending")
-            .map((interaction) => ({
-              note: describeInteraction(interaction),
-              createdAt: interaction.createdAt,
-            })),
-        ];
-      } catch (error) {
-        return [
-          threadId,
-          [{ note: `interactions unreadable: ${(error as Error).message}`, createdAt: deps.now() }],
-        ];
-      }
-    }),
-  );
-  return new Map(entries);
-}
-
-/** One short line for a pending interaction, such as `approval: command` or a form's title. */
-export function describeInteraction(interaction: Interaction): string {
-  const payload = interaction.payload as {
-    kind: string;
-    title?: unknown;
-    subject?: { kind?: unknown };
-  };
-  if (payload.kind === "approval" && typeof payload.subject?.kind === "string") {
-    return `approval: ${payload.subject.kind.replace(/_/gu, " ")}`;
-  }
-  if (typeof payload.title === "string" && payload.title.trim() !== "") return payload.title.trim();
-  return payload.kind.replace(/_/gu, " ");
 }

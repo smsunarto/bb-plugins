@@ -1,4 +1,5 @@
 import { cliCommand } from "@get-bb/plugin-sdk";
+import { CAPTAINS_TAG } from "../../contract/rpc.ts";
 import { callerCaptain } from "../caller.ts";
 import { guard, render, type Item } from "../output.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
@@ -36,6 +37,7 @@ export function archiveCommand(deps: CommandDeps) {
         if (thread.archivedAt === null)
           await deps.bb.sdk.threads.archive({ threadId: captain.threadId });
         deps.registry.archive(captain.threadId, deps.now());
+        deps.bb.rpc.experimental_invalidate([CAPTAINS_TAG]);
         items.push({ id: captain.threadId, ok: true, state: "archived", detail: captain.name });
         return render(items, json);
       });

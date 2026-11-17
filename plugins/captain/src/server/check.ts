@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { sinceTag } from "../contract/rpc.ts";
 import { ANSWER_MAX_ATTEMPTS, deliverAnswer } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { joinCrew, listChildren, steer, type ListedThread } from "./crew.ts";
@@ -132,7 +133,11 @@ async function checkCaptain(
   const now = deps.now();
   const threads = await listChildren(deps.bb, captain.threadId, false, signal);
   for (const thread of threads) {
-    if (thread.status === "error") deps.store.noticeFirstSeen(NOTICE.failed(thread.id), now);
+    if (thread.status !== "error") continue;
+    // A failure first seen now is a Since you left transition.
+    if (deps.store.noticeFirstSeen(NOTICE.failed(thread.id), now) === now) {
+      deps.bb.rpc.experimental_invalidate([sinceTag(captain.threadId)]);
+    }
   }
   // Only an idle thread can stall, and only a thread with no role row needs one backfilled.
   const needRows = threads.filter(

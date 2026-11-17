@@ -9,6 +9,7 @@ import { configure } from "./configure.ts";
 import { createDrive } from "./drive.ts";
 import { createFields } from "./fields.ts";
 import { createRegistry } from "./registry.ts";
+import { registerRpc } from "./rpc.ts";
 import { openStore } from "./store.ts";
 import { createTasksClient } from "./tasks-client.ts";
 
@@ -17,6 +18,8 @@ export type StartOptions = {
   now?: () => number;
   /** How long a Tasks call may take; tests shorten it. */
   tasksDeadlineMs?: number;
+  /** How often a watched banner rechecks the crew; tests shorten it. */
+  crewPollMs?: number;
 };
 
 /** Wires the plugin; holds no logic of its own. Returns the parts tests drive. */
@@ -50,6 +53,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     }
   });
   bb.cli.register(captainCli(deps));
+  registerRpc(deps, options.crewPollMs);
   check.register(bb);
 
   // `configure` is synchronous, so the Drive root is read once here and cached.

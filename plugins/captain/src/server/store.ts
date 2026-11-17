@@ -1,4 +1,5 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { ASK_KINDS, type AskKind } from "../contract/queue.ts";
 import { parseRole, type Role } from "./roles.ts";
 
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -78,7 +79,15 @@ export const NOTICE = {
   askPush: (askId: string) => `push:ask:${askId}`,
   answerPush: (askId: string) => `push:answer:${askId}`,
   undeliverablePush: (commentId: string) => `push:undeliverable:${commentId}`,
+  /** Later and Skip on a banner row that has no ask: the row's own key. */
+  blocked: (interactionId: string) => `blocked:${interactionId}`,
+  captainHealth: (captainId: string, since: number) => `health:${captainId}:${since}`,
+  reportHealth: (commentId: string) => `health:report:${commentId}`,
+  answerHealth: (askId: string) => `health:answer:${askId}`,
 } as const;
+
+/** Later and Skip on a banner row. */
+export type Defer = { snoozedUntil: number | null; skipOrder: number | null };
 
 export type Repo = { bbProjectId: string; tasksProjectKey: string };
 
@@ -99,8 +108,7 @@ export type CrewRole = {
   contractSent: boolean;
 };
 
-export const ASK_KINDS = ["decision", "ship", "access", "improve"] as const;
-export type AskKind = (typeof ASK_KINDS)[number];
+export { ASK_KINDS, type AskKind };
 
 /** An open decision waiting on the user: the one piece of work-facing state Captain owns. */
 export type Ask = {
@@ -119,7 +127,7 @@ export type Ask = {
   /** Sends of the answer tried so far; the background check stops at `ANSWER_MAX_ATTEMPTS`. */
   deliveryAttempts: number;
   nextDeliveryAt: number | null;
-};
+} & Defer;
 
 type AskRecord = {
   id: string;
@@ -135,6 +143,8 @@ type AskRecord = {
   answer_delivered_at: number | null;
   delivery_attempts: number;
   next_delivery_at: number | null;
+  snoozed_until: number | null;
+  skip_order: number | null;
 };
 
 type CaptainRecord = {
@@ -205,6 +215,8 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     answerDeliveredAt: row.answer_delivered_at,
     deliveryAttempts: row.delivery_attempts,
     nextDeliveryAt: row.next_delivery_at,
+    snoozedUntil: row.snoozed_until,
+    skipOrder: row.skip_order,
   });
 
   return {
@@ -332,7 +344,13 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     openAsk(
       ask: Omit<
         Ask,
-        "id" | "answer" | "answeredAt" | "answerDeliveredAt" | "deliveryAttempts" | "nextDeliveryAt"
+        | "id"
+        | "answer"
+        | "answeredAt"
+        | "answerDeliveredAt"
+        | "deliveryAttempts"
+        | "nextDeliveryAt"
+        | keyof Defer
       >,
     ): Ask {
       return db.transaction(() => {
@@ -451,6 +469,47 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
       db.prepare("UPDATE notices SET sent_at = NULL WHERE key = ? AND sent_at = ?").run(
         key,
         claimedAt,
+      );
+    },
+    /** Later or Skip on an ask. */
+    deferAsk(id: string, defer: Partial<Defer>): void {
+      db.prepare(
+        `UPDATE asks SET snoozed_until = COALESCE(?, snoozed_until),
+           skip_order = COALESCE(?, skip_order) WHERE id = ?`,
+      ).run(defer.snoozedUntil ?? null, defer.skipOrder ?? null, id);
+    },
+    /** Later or Skip on a banner row with no ask, kept in `notices` under the row's key. */
+    deferNotice(key: string, at: number, defer: Partial<Defer>): void {
+      db.prepare(
+        `INSERT INTO notices (key, first_seen, snoozed_until, skip_order) VALUES (?, ?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET
+           snoozed_until = COALESCE(excluded.snoozed_until, notices.snoozed_until),
+           skip_order = COALESCE(excluded.skip_order, notices.skip_order)`,
+      ).run(key, at, defer.snoozedUntil ?? null, defer.skipOrder ?? null);
+    },
+    noticeDefer(key: string): Defer {
+      const row = db
+        .prepare<[string], { snoozed_until: number | null; skip_order: number | null }>(
+          "SELECT snoozed_until, skip_order FROM notices WHERE key = ?",
+        )
+        .get(key);
+      return { snoozedUntil: row?.snoozed_until ?? null, skipOrder: row?.skip_order ?? null };
+    },
+    /** Record that a client last had this Captain open at `at`. */
+    setLastSeen(captainId: string, client: string, at: number): void {
+      db.prepare(
+        `INSERT INTO last_seen (captain_id, client, at) VALUES (?, ?, ?)
+         ON CONFLICT (captain_id, client) DO UPDATE SET at = MAX(last_seen.at, excluded.at)`,
+      ).run(captainId, client, at);
+    },
+    /** The newest time any client last had this Captain open, or null before the first. */
+    lastSeen(captainId: string): number | null {
+      return (
+        db
+          .prepare<[string], { at: number | null }>(
+            "SELECT MAX(at) AS at FROM last_seen WHERE captain_id = ?",
+          )
+          .get(captainId)?.at ?? null
       );
     },
     /** Forget an unsent notice, so its clock starts again the next time its condition is seen. */

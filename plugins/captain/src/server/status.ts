@@ -1,3 +1,4 @@
+import { age } from "../contract/queue.ts";
 import { ANSWER_MAX_ATTEMPTS } from "./asks.ts";
 import type { CrewThread, ListedThread } from "./crew.ts";
 import { ROLE_SPECS, SHIP_READY_REVIEWS } from "./roles.ts";
@@ -303,15 +304,7 @@ function threadRow(
   };
 }
 
-/** `2h`, `40m`: the age the text rows end with. */
-export function age(now: number, since: number): string {
-  const seconds = Math.max(0, Math.floor((now - since) / 1000));
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  return hours < 48 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
-}
+export { age };
 
 export function encodeCursor(at: number): string {
   return `c_${Math.max(0, Math.floor(at)).toString(36)}`;

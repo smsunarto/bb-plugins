@@ -1,6 +1,7 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { CAPTAINS_TAG } from "../../contract/rpc.ts";
 import { readCallerFile } from "../caller.ts";
 import { DRIVE_FILES } from "../drive.ts";
 import { guard, refuse, Refusal, render, type Blocker } from "../output.ts";
@@ -191,6 +192,7 @@ async function apply(deps: CommandDeps, plan: Plan) {
     createdAt: existing?.createdAt ?? deps.now(),
     repos: [...repos.values()],
   });
+  bb.rpc.experimental_invalidate([CAPTAINS_TAG]);
   const pushWarning = await setPushLevel(bb, threadId);
   if (pushWarning !== null) warnings.push(pushWarning);
   const presets = await createMissingPresets(deps, plan.presets);

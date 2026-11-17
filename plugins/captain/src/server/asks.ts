@@ -1,6 +1,7 @@
+import { asksTag } from "../contract/rpc.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { steer } from "./crew.ts";
-import type { Blocker, Item } from "./output.ts";
+import { Refusal, type Blocker, type Item } from "./output.ts";
 import { sendPush } from "./push.ts";
 import type { Captain } from "./registry.ts";
 import { SHIP_READY_REVIEWS } from "./roles.ts";
@@ -140,6 +141,7 @@ export async function openAsk(
     const warning = await captainComment(deps, captain, draft.task.id, body);
     if (warning !== null) notes.push(`warning: ${warning}`);
   }
+  if (existing === null) deps.bb.rpc.experimental_invalidate([asksTag(captain.threadId)]);
   const pushKey = NOTICE.askPush(ask.id);
   if (deps.store.noticeSentAt(pushKey) === null) {
     const warning = await sendPush(deps.bb, {
@@ -217,6 +219,8 @@ export async function deliverAnswer(
   ) {
     return "answer not delivered to the Captain: another send of it is in flight";
   }
+  // The attempt count decides when an answer turns into a health row.
+  const changed = () => deps.bb.rpc.experimental_invalidate([asksTag(ask.captainId)]);
   const subject = ask.taskKey === null ? ask.text : `${ask.taskKey} ${ask.text}`;
   try {
     await steer(
@@ -225,10 +229,71 @@ export async function deliverAnswer(
       deps.files.read("answer", { id: ask.id, answer: ask.answer, subject }),
     );
     deps.store.markAnswerDelivered(ask.id, deps.now());
+    changed();
     return null;
   } catch (error) {
+    changed();
     // The background check owns the retry; wake it in case it is idle.
     deps.wakeCheck();
     return `answer not delivered to the Captain: ${(error as Error).message}`;
   }
+}
+
+export type Resolved = { ask: Ask; state: "answered" | "undelivered"; notes: string[] };
+
+/**
+ * Answer an ask: record the answer once, post it on the task, and send it to
+ * the Captain. `bb captain ask resolve` and the banner both run this; a rerun
+ * with the same answer only retries an undelivered send. Throws a `Refusal`.
+ */
+export async function resolveAsk(
+  deps: CommandDeps,
+  address: string,
+  rawAnswer: string,
+): Promise<Resolved> {
+  // The user's shell has no thread, so the ask itself names its Captain.
+  const id = address.trim().toLowerCase();
+  const answer = rawAnswer.trim();
+  const ask = deps.store.ask(id);
+  if (ask === null) throw new Refusal([{ reason: `no ask ${id}`, fix: "bb captain status" }]);
+  const captain = deps.registry.get(ask.captainId);
+  const blockers: Blocker[] = [];
+  if (captain === null) {
+    blockers.push({ reason: `${id}'s Captain is archived`, fix: "nothing to answer" });
+  }
+  if (answer === "" || /[\r\n]/u.test(answer)) {
+    blockers.push({ reason: "an answer is one line of words", fix: '--answer "Merge"' });
+  }
+  if (ask.answer !== null && ask.answer !== answer) {
+    blockers.push({
+      reason: `${id} was already answered ${JSON.stringify(ask.answer)}`,
+      fix: "open a new ask with bb captain ask",
+    });
+  }
+  if (blockers.length > 0 || captain === null) throw new Refusal(blockers);
+
+  const notes: string[] = [];
+  if (ask.answer === null) {
+    deps.store.answerAsk(id, answer, deps.now());
+    deps.bb.rpc.experimental_invalidate([asksTag(ask.captainId)]);
+    if (ask.taskKey !== null) {
+      const task = await deps.tasks.getTaskByKey(ask.taskKey).catch(() => null);
+      const warning =
+        task === null
+          ? `comment not posted: task ${ask.taskKey} not read`
+          : await captainComment(deps, captain, task.id, `Answered: ${answer} (${id})`);
+      if (warning !== null) notes.push(`warning: ${warning}`);
+    }
+  }
+  const answered = deps.store.ask(id);
+  if (answered === null || answered.answer === null) throw new Error(`${id} lost its answer`);
+  let state: Resolved["state"] = "answered";
+  if (answered.answerDeliveredAt === null) {
+    const warning = await deliverAnswer(deps, { ...answered, answer: answered.answer });
+    if (warning !== null) {
+      state = "undelivered";
+      notes.push(`warning: ${warning}; rerun this command to retry`);
+    }
+  }
+  return { ask: deps.store.ask(id) ?? answered, state, notes };
 }

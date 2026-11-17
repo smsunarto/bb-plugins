@@ -1,16 +1,9 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
-import {
-  askBlockers,
-  askItem,
-  captainComment,
-  deliverAnswer,
-  openAsk,
-  shipBlockers,
-} from "../asks.ts";
+import { askBlockers, askItem, openAsk, resolveAsk, shipBlockers } from "../asks.ts";
 import { callerCaptain, readCallerFile } from "../caller.ts";
 import { resolveTask, taskFields, tasksOrRefuse } from "../crew.ts";
 import { guard, Refusal, render, type Blocker } from "../output.ts";
-import { ASK_KINDS, type AskKind } from "../store.ts";
+import { ASK_KINDS, type AskKind } from "../../contract/queue.ts";
 import type { TasksTask } from "../tasks-client.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
 
@@ -120,50 +113,12 @@ export function askResolveCommand(deps: CommandDeps) {
     run(input) {
       const json = input.options.json;
       return guard("captain ask resolve", json, async () => {
-        // The user's shell has no thread, so the ask itself names its Captain.
-        const id = input.positionals.id.trim().toLowerCase();
-        const answer = input.options.answer.trim();
-        const ask = deps.store.ask(id);
-        if (ask === null) throw new Refusal([{ reason: `no ask ${id}`, fix: "bb captain status" }]);
-        const captain = deps.registry.get(ask.captainId);
-        const blockers: Blocker[] = [];
-        if (captain === null) {
-          blockers.push({ reason: `${id}'s Captain is archived`, fix: "nothing to answer" });
-        }
-        if (answer === "" || /[\r\n]/u.test(answer)) {
-          blockers.push({ reason: "an answer is one line of words", fix: '--answer "Merge"' });
-        }
-        if (ask.answer !== null && ask.answer !== answer) {
-          blockers.push({
-            reason: `${id} was already answered ${JSON.stringify(ask.answer)}`,
-            fix: "open a new ask with bb captain ask",
-          });
-        }
-        if (blockers.length > 0 || captain === null) throw new Refusal(blockers);
-
-        const notes: string[] = [];
-        if (ask.answer === null) {
-          deps.store.answerAsk(id, answer, deps.now());
-          if (ask.taskKey !== null) {
-            const task = await deps.tasks.getTaskByKey(ask.taskKey).catch(() => null);
-            const warning =
-              task === null
-                ? `comment not posted: task ${ask.taskKey} not read`
-                : await captainComment(deps, captain, task.id, `Answered: ${answer} (${id})`);
-            if (warning !== null) notes.push(`warning: ${warning}`);
-          }
-        }
-        const answered = deps.store.ask(id);
-        if (answered === null || answered.answer === null) throw new Error(`${id} lost its answer`);
-        let state = "answered";
-        if (answered.answerDeliveredAt === null) {
-          const warning = await deliverAnswer(deps, { ...answered, answer: answered.answer });
-          if (warning !== null) {
-            state = "undelivered";
-            notes.push(`warning: ${warning}; rerun this command to retry`);
-          }
-        }
-        return render([askItem(deps.store.ask(id) ?? answered, state)], json, notes);
+        const { ask, state, notes } = await resolveAsk(
+          deps,
+          input.positionals.id,
+          input.options.answer,
+        );
+        return render([askItem(ask, state)], json, notes);
       });
     },
   });

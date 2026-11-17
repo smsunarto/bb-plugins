@@ -1,10 +1,13 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: { tsconfigPaths: true },
+  // As `bb plugin build` defines it.
+  define: { __BB_PLUGIN_ID__: JSON.stringify("captain") },
   test: {
     silent: "passed-only",
     name: "bb-plugin-captain",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
     exclude: ["node_modules/**"],
   },
 });

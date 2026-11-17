@@ -202,3 +202,62 @@ export function isActive(status: string): boolean {
     status === "active" || status === "starting" || status === "pending" || status === "stopping"
   );
 }
+
+type Interaction = Awaited<
+  ReturnType<BbPluginApi["sdk"]["threads"]["interactions"]["list"]>
+>[number];
+
+/** One pending interaction of a blocked thread, as status and the banner show it. */
+export type Pending = { id: string; kind: string; note: string; createdAt: number };
+
+/** Pending interactions of the blocked threads, one call each, in parallel. */
+export async function readInteractions(
+  deps: Pick<CommandDeps, "bb" | "now">,
+  threadIds: readonly string[],
+): Promise<Map<string, Pending[]>> {
+  const entries = await Promise.all(
+    threadIds.map(async (threadId): Promise<[string, Pending[]]> => {
+      try {
+        const list = await deps.bb.sdk.threads.interactions.list({ threadId });
+        return [
+          threadId,
+          list
+            .filter((interaction) => interaction.status === "pending")
+            .map((interaction) => ({
+              id: interaction.id,
+              kind: (interaction.payload as { kind: string }).kind,
+              note: describeInteraction(interaction),
+              createdAt: interaction.createdAt,
+            })),
+        ];
+      } catch (error) {
+        return [
+          threadId,
+          [
+            {
+              id: threadId,
+              kind: "unknown",
+              note: `interactions unreadable: ${(error as Error).message}`,
+              createdAt: deps.now(),
+            },
+          ],
+        ];
+      }
+    }),
+  );
+  return new Map(entries);
+}
+
+/** One short line for a pending interaction, such as `approval: command` or a form's title. */
+export function describeInteraction(interaction: Interaction): string {
+  const payload = interaction.payload as {
+    kind: string;
+    title?: unknown;
+    subject?: { kind?: unknown };
+  };
+  if (payload.kind === "approval" && typeof payload.subject?.kind === "string") {
+    return `approval: ${payload.subject.kind.replace(/_/gu, " ")}`;
+  }
+  if (typeof payload.title === "string" && payload.title.trim() !== "") return payload.title.trim();
+  return payload.kind.replace(/_/gu, " ");
+}
