@@ -47,6 +47,8 @@
 ## Palette-independent files
 
 - `app/ui-font-bridge.ts` writes `--bb-monokai-ui-font` on `<html>`. Only the theme's `--font-sans` reads it, so the UI font setting does nothing under another palette.
+- `app/panel-new-tab.ts`, run from the thread marker, makes a toggle-open of a thread's right panel land on a new tab, as bb's New thread screen does. Its `panel-toggle-intent` content script records clicks on bb's `button[aria-label^="Show right panel"]` and presses of the shortcut in its `aria-keyshortcuts`; only an open right after one is redirected, so controls that open a specific tab keep it. The hook selects an open new tab through the SDK, or presses bb's `[id^="thread-detail-secondary-panel"] button[data-panel-new-tab]`. Both selectors are private contracts. `test/panel-new-tab.test.ts` covers the transitions and the shortcut matcher.
+- `app/new-tab-launcher.css` centres the new tab's Actions as hairline cards and hides its Actions header, reorder handles, and Recent list. Its header comment maps the private bb DOM it selects; recheck it in a browser after bb upgrades.
 
 <!-- workaround:monokai/secondary-swipe-width-property begin -->
 

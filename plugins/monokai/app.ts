@@ -3,7 +3,9 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app/monaco-syntax-tokens.css";
 import "./app/diff-header.css";
 import "./app/project-control.css";
+import "./app/new-tab-launcher.css";
 import { mountArchiveToast } from "./app/archive-toast.ts";
+import { mountPanelToggleIntent } from "./app/panel-new-tab.ts";
 import { mountProjectControl } from "./app/project-control.ts";
 // workaround:monokai/secondary-swipe-width-property begin
 import "./app/secondary-panel-resize.css";
@@ -27,6 +29,8 @@ import {
 
 export default definePluginApp((app) => {
   app.contentScripts.register({ id: "archive-toast", mount: mountArchiveToast });
+  // Marks presses of the right panel's toggle; the thread marker opens those on a new tab.
+  app.contentScripts.register({ id: "panel-toggle-intent", mount: mountPanelToggleIntent });
   app.contentScripts.register({ id: "diff-header", mount: mountDiffHeader });
   app.contentScripts.register({ id: "project-control", mount: mountProjectControl });
   // workaround:monokai/context-card-late-layout begin
