@@ -34,9 +34,10 @@
   line-height: 20px;
 }
 
-/* One line of text: a 20px line plus 4px padding above and below. */
+/* Two lines of text on desktop: 20px lines plus 4px padding above and below.
+   Touch screens drop to one line (below). */
 [data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-scroll] {
-  min-height: 28px !important;
+  min-height: 48px !important;
 }
 
 [data-t3-composer][data-promptbox] [data-promptbox-editor-content] .ProseMirror {
@@ -770,7 +771,7 @@
   [data-t3-composer][data-promptbox]:not([data-promptbox-compact])
   [data-promptbox-input-region]
   [data-promptbox-editor-scroll] {
-  min-height: 28px !important;
+  min-height: 48px !important;
   max-height: min(50dvh, var(--composer-editor-available-height, 100dvh)) !important;
 }
 
