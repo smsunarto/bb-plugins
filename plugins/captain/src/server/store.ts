@@ -63,6 +63,19 @@ export const MIGRATIONS: readonly string[] = [
   // Answer delivery retries: attempts made and when the next is due.
   "ALTER TABLE asks ADD COLUMN delivery_attempts INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE asks ADD COLUMN next_delivery_at INTEGER",
+  // `bb captain tell --rule`, in order; CREW.md holds the same text for people.
+  `CREATE TABLE crew_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    captain_id TEXT NOT NULL,
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE (captain_id, text)
+  )`,
+  // The newest crew rule each thread has received; no row means none.
+  `CREATE TABLE crew_rule_marks (
+    thread_id TEXT PRIMARY KEY CHECK (thread_id GLOB 'thr_*'),
+    rule_id INTEGER NOT NULL
+  )`,
 ];
 
 /**
@@ -107,6 +120,9 @@ export type CrewRole = {
   reportDueSince: number | null;
   contractSent: boolean;
 };
+
+/** A rule `bb captain tell --rule` added to CREW.md; ids grow in the order rules were added. */
+export type CrewRule = { id: number; text: string };
 
 export { ASK_KINDS, type AskKind };
 
@@ -310,6 +326,54 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         crew.reportDueSince,
         crew.contractSent ? 1 : 0,
       );
+    },
+    /** Record a crew rule once: a rerun with the same text returns the first. */
+    addRule(captainId: string, text: string, at: number): CrewRule {
+      db.prepare(
+        `INSERT INTO crew_rules (captain_id, text, created_at) VALUES (?, ?, ?)
+         ON CONFLICT (captain_id, text) DO NOTHING`,
+      ).run(captainId, text, at);
+      return db
+        .prepare<[string, string], CrewRule>(
+          "SELECT id, text FROM crew_rules WHERE captain_id = ? AND text = ?",
+        )
+        .get(captainId, text) as CrewRule;
+    },
+    /** The newest rule's id, or 0 before the first. */
+    latestRuleId(captainId: string): number {
+      return (
+        db
+          .prepare<[string], { id: number | null }>(
+            "SELECT MAX(id) AS id FROM crew_rules WHERE captain_id = ?",
+          )
+          .get(captainId)?.id ?? 0
+      );
+    },
+    /** The Captain's rules this thread has not received, oldest first. */
+    unseenRules(captainId: string, threadId: string): CrewRule[] {
+      return db
+        .prepare<[string, string], CrewRule>(
+          `SELECT id, text FROM crew_rules WHERE captain_id = ? AND id > COALESCE(
+             (SELECT rule_id FROM crew_rule_marks WHERE thread_id = ?), 0) ORDER BY id`,
+        )
+        .all(captainId, threadId);
+    },
+    /** Whether the thread has received this rule. */
+    ruleSeen(threadId: string, ruleId: number): boolean {
+      const row = db
+        .prepare<[string], { rule_id: number }>(
+          "SELECT rule_id FROM crew_rule_marks WHERE thread_id = ?",
+        )
+        .get(threadId);
+      return row !== undefined && row.rule_id >= ruleId;
+    },
+    /** Move the thread's mark up to `ruleId`; never back, so a late write loses nothing. */
+    markRulesSeen(threadId: string, ruleId: number): void {
+      if (ruleId <= 0) return;
+      db.prepare(
+        `INSERT INTO crew_rule_marks (thread_id, rule_id) VALUES (?, ?)
+         ON CONFLICT (thread_id) DO UPDATE SET rule_id = MAX(crew_rule_marks.rule_id, excluded.rule_id)`,
+      ).run(threadId, ruleId);
     },
     ask(id: string): Ask | null {
       const row = selectAsk.get(id.trim().toLowerCase());

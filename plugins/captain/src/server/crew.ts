@@ -3,7 +3,7 @@ import type { CommandDeps } from "./commands/deps.ts";
 import { Refusal, type Blocker } from "./output.ts";
 import type { Captain } from "./registry.ts";
 import { roleOfPreset, type Role } from "./roles.ts";
-import { NOTICE, type CrewRole } from "./store.ts";
+import { NOTICE, type CrewRole, type CrewRule } from "./store.ts";
 import { TasksError, type CrewRow, type TasksTask } from "./tasks-client.ts";
 
 /**
@@ -159,26 +159,14 @@ export async function resolveTask(
   return { task };
 }
 
-/**
- * The task's owned-field values, read through `crewSnapshot` over every thread
- * this Captain ever ran, because `getTask` carries no fields and an archived
- * Review thread still holds the task's verdict.
- */
+/** The task's owned-field values, read from the task itself, with or without crew. */
 export async function taskFields(
-  deps: Pick<CommandDeps, "bb" | "store" | "tasks">,
-  captainId: string,
-  taskKey: string,
+  deps: Pick<CommandDeps, "tasks">,
+  task: Pick<TasksTask, "id">,
 ): Promise<Map<string, { value: string; head: string | null }>> {
-  const live = await listChildren(deps.bb, captainId, false);
-  const ids = new Set([
-    ...live.map((thread) => thread.id),
-    ...deps.store.crewRolesOf(captainId).map((crew) => crew.threadId),
-  ]);
-  const rows = await deps.tasks.crewSnapshot([...ids]);
   const fields = new Map<string, { value: string; head: string | null }>();
-  for (const row of rows) {
-    if (row.task.key !== taskKey) continue;
-    for (const field of row.fields) fields.set(field.key, { value: field.value, head: field.head });
+  for (const field of await deps.tasks.taskFields(task.id)) {
+    fields.set(field.key, { value: field.value, head: field.head });
   }
   return fields;
 }
@@ -194,6 +182,41 @@ export async function steer(
     input: [{ type: "text", text, mentions: [] }],
     mode: "steer-if-active",
   });
+}
+
+/** A rule as one CREW.md list item; later lines indent under the dash. */
+export function ruleLine(text: string): string {
+  return `- ${text.replace(/\n/gu, "\n  ")}`;
+}
+
+/**
+ * Send a crew thread one message topped with every CREW.md rule it has not
+ * received: a running session keeps the instructions it started with, so a
+ * rule added since reaches it only this way. The rules are marked received
+ * only after the send succeeds. `told` is a rule the body itself carries, so
+ * the top block leaves it out. Resolves to how many rules the block carried.
+ */
+export async function steerCrew(
+  deps: Pick<CommandDeps, "bb" | "store" | "files">,
+  captain: Pick<Captain, "threadId" | "name">,
+  threadId: string,
+  body: string,
+  told?: CrewRule,
+): Promise<number> {
+  const unseen = deps.store
+    .unseenRules(captain.threadId, threadId)
+    .filter((rule) => rule.id !== told?.id);
+  const text =
+    unseen.length === 0
+      ? body
+      : `${deps.files.read("rules-unseen", {
+          captain: JSON.stringify(captain.name),
+          rules: unseen.map((rule) => ruleLine(rule.text)).join("\n"),
+        })}\n\n---\n\n${body}`;
+  await steer(deps.bb, threadId, text);
+  // The highest id this send carried, not the newest now: a rule added meanwhile stays unseen.
+  deps.store.markRulesSeen(threadId, Math.max(told?.id ?? 0, ...unseen.map((rule) => rule.id)));
+  return unseen.length;
 }
 
 /** bb statuses of a thread with a turn running or about to run. */

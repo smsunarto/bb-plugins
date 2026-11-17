@@ -182,6 +182,17 @@ export function createTasksClient(
     }): Promise<string> {
       return (await call("delegate", input, z.object({ threadId: z.string() }))).threadId;
     },
+    /** One task's owned-field values; empty when the task has none or no longer exists. */
+    async taskFields(taskId: string): Promise<TaskFieldValue[]> {
+      const { tasks } = await call(
+        "taskFields",
+        { taskIds: [taskId] },
+        z.object({
+          tasks: z.array(z.object({ taskId: z.string(), fields: z.array(fieldValueSchema) })),
+        }),
+      );
+      return tasks.find((row) => row.taskId === taskId)?.fields ?? [];
+    },
     async attachThread(input: {
       taskId: string;
       threadId: string;

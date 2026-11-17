@@ -581,6 +581,25 @@ describe("bb captain ask", () => {
     expect(unreviewed.stderr).toContain("BBPLUGINS-1 has no review verdict");
   });
 
+  test("a ship ask on a task no thread was ever attached to reads the review verdict on the task", async () => {
+    const { as } = await crewHost();
+    await as(["verdict", "BBPLUGINS-2", "review", "passed", "--head", "abc123"]);
+
+    const result = await as([
+      "ask",
+      "Merge BBPLUGINS-2",
+      "--kind",
+      "ship",
+      "--task",
+      "BBPLUGINS-2",
+      "--detail",
+      "Reviewed by the Captain.",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe("a1  open  ship  BBPLUGINS-2  Merge BBPLUGINS-2\n");
+  });
+
   test("opens once: an Asked: comment as the Captain and one push; a rerun reports exists", async () => {
     const { host, captainId, as } = await crewHost();
     const argv = [
@@ -689,7 +708,7 @@ describe("bb captain tell", () => {
     expect(host.server.store.crewRole(reviewer)?.reportDueSince).toBe(1_000);
   });
 
-  test("--rule appends to CREW.md once, steers only active crew, and owes no report", async () => {
+  test("--rule appends to CREW.md once, steers only active crew, queues it for idle crew, and owes no report", async () => {
     const { host, captainId, as } = await crewHost();
     const active = await dispatched(as, "BBPLUGINS-1", "Plan");
     const idle = await dispatched(as, "BBPLUGINS-2", "Plan");
@@ -700,24 +719,101 @@ describe("bb captain tell", () => {
     host.setNow(8_000);
 
     const first = await as(["tell", "--all", "--rule", "--message", "Never push to main."]);
-    await as(["tell", "--all", "--rule", "--message", "Never push to main."]);
+    const again = await as(["tell", "--all", "--rule", "--message", "Never push to main."]);
 
     expect(first.stdout).toBe(
       [
         "CREW.md  appended  Never push to main.",
         `${active}  told  BBPLUGINS-1  Plan`,
-        `${idle}  skipped  BBPLUGINS-2  Plan  idle; CREW.md applies from its next session`,
+        `${idle}  queued  BBPLUGINS-2  Plan  idle; gets it with its next message`,
+        "",
+      ].join("\n"),
+    );
+    // A rerun sends nothing new: the active thread has the rule, the idle one still waits.
+    expect(again.stdout).toBe(
+      [
+        "CREW.md  kept  rule already there",
+        `${active}  kept  BBPLUGINS-1  Plan  already has this rule`,
+        `${idle}  queued  BBPLUGINS-2  Plan  idle; gets it with its next message`,
         "",
       ].join("\n"),
     );
     expect(readFileSync(crewFile, "utf8")).toBe(
       "- Run the linter before reporting.\n- Never push to main.\n",
     );
-    expect(host.sent.map((message) => message.threadId)).toEqual([active, active]);
+    expect(host.sent.map((message) => message.threadId)).toEqual([active]);
     expect(host.sent[0]?.text).toContain("This message owes no report.");
     expect(host.sent[0]?.text).toMatch(/Never push to main\.$/u);
     for (const threadId of [active, idle])
       expect(host.server.store.crewRole(threadId)?.reportDueSince).toBe(1_000);
+  });
+
+  test("a rule told while a thread is idle tops its next tell once; a thread dispatched after it gets none", async () => {
+    const { host, as } = await crewHost();
+    const idle = await dispatched(as, "BBPLUGINS-1", "Implement");
+    host.updateThread(idle, { status: "idle" });
+    await as(["tell", "--all", "--rule", "--message", "Never push to main."]);
+    await as(["tell", "--all", "--rule", "--message", "Run the linter\nbefore reporting."]);
+    const later = await dispatched(as, "BBPLUGINS-2", "Implement");
+    host.updateThread(later, { status: "idle" });
+
+    const told = await as(["tell", "BBPLUGINS-1", "BBPLUGINS-2", "--message", "Rebase on main."]);
+    await as(["tell", "BBPLUGINS-1", "--message", "Push the branch."]);
+
+    expect(told.stdout).toBe(
+      [
+        `${idle}  told  BBPLUGINS-1  Implement  with 2 unseen rules`,
+        `${later}  told  BBPLUGINS-2  Implement`,
+        "",
+      ].join("\n"),
+    );
+    const toIdle = host.sent.filter((message) => message.threadId === idle).map((m) => m.text);
+    expect(toIdle).toHaveLength(2);
+    expect(toIdle[0]).toMatch(/^Rules from the "Plugins" Captain that you have not received yet/u);
+    expect(toIdle[0]).toContain(
+      "- Never push to main.\n- Run the linter\n  before reporting.\n\n---\n\nRebase on main.",
+    );
+    expect(toIdle[0]?.split("Never push to main.")).toHaveLength(2);
+    expect(toIdle[1]).toBe("Push the branch.");
+    expect(host.sent.filter((message) => message.threadId === later).map((m) => m.text)).toEqual([
+      "Rebase on main.",
+    ]);
+  });
+
+  test("a failed send leaves the rule unseen, so the next send that succeeds carries it", async () => {
+    const { host, as } = await crewHost();
+    const idle = await dispatched(as, "BBPLUGINS-1", "Implement");
+    host.updateThread(idle, { status: "idle" });
+    await as(["tell", "--all", "--rule", "--message", "Never push to main."]);
+    host.sendFails.add(idle);
+
+    const failed = await as(["tell", "BBPLUGINS-1", "--message", "Rebase on main."]);
+    host.sendFails.delete(idle);
+    await as(["tell", "BBPLUGINS-1", "--message", "Rebase on main."]);
+
+    expect(failed.stdout).toBe(`${idle}  failed  BBPLUGINS-1  Implement  thread ${idle} is busy\n`);
+    expect(host.sent).toHaveLength(1);
+    expect(host.sent[0]?.text).toContain("- Never push to main.\n\n---\n\nRebase on main.");
+  });
+
+  test("an adopted idle thread gets rules told after its adoption above its contract", async () => {
+    const { host, as } = await crewHost();
+    await as(["tell", "--all", "--rule", "--message", "Older rule, already in CREW.md."]);
+    host.addThread({ id: "thr_old", status: "idle" });
+    await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--thread", "thr_old"]);
+
+    const rule = await as(["tell", "--all", "--rule", "--message", "Never push to main."]);
+    await as(["tell", "BBPLUGINS-1", "--message", "Start with the tests."]);
+
+    expect(rule.stdout).toContain("thr_old  queued  BBPLUGINS-1  Implement");
+    const [text] = host.sent.map((message) => message.text);
+    expect(host.sent).toHaveLength(1);
+    expect(text).not.toContain("Older rule");
+    expect(text).toMatch(/^Rules from the "Plugins" Captain/u);
+    expect(text?.indexOf("- Never push to main.")).toBeLessThan(
+      text?.indexOf("You are now crew") ?? -1,
+    );
+    expect(text).toMatch(/Start with the tests\.$/u);
   });
 
   test("a send that fails is that target's failure alone: exit 3, and its report-due mark stays", async () => {

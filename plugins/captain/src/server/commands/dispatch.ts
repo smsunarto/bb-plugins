@@ -5,7 +5,7 @@ import {
   isActive,
   readCrew,
   resolveTask,
-  steer,
+  steerCrew,
   tasksBlocker,
   type CrewThread,
 } from "../crew.ts";
@@ -362,6 +362,8 @@ async function dispatchUnit(
   }
 
   const known = new Set(crew.map((member) => member.thread.id));
+  // Read before the spawn: the new session's CREW.md holds at least these rules.
+  const rulesInCrewMd = deps.store.latestRuleId(captain.threadId);
   deps.registry.setPending(captain.threadId, unit.task.key, unit.role);
   try {
     let threadId: string;
@@ -407,6 +409,7 @@ async function dispatchUnit(
       reportDueSince: deps.now(),
       contractSent: true,
     });
+    deps.store.markRulesSeen(threadId, rulesInCrewMd);
     const warning = await setPushLevel(deps.bb, threadId);
     if (warning !== null) notes.push(`warning: ${warning}`);
     return { item: unitItem(unit, "started", { thread: threadId }), notes };
@@ -571,12 +574,21 @@ async function adopt(
       reportDueSince: null,
       contractSent: false,
     });
+    // New to this Captain: only rules from now on top its messages, and CREW.md
+    // reaches it at its next session. A role change keeps rules already queued.
+    if (prior?.captainId !== captain.threadId)
+      deps.store.markRulesSeen(threadId, deps.store.latestRuleId(captain.threadId));
   }
   const notes: string[] = [];
   let contract = deps.store.crewRole(threadId)?.contractSent === true ? "sent" : "on first tell";
   if (contract !== "sent" && isActive(thread.status)) {
     try {
-      await steer(deps.bb, threadId, adoptionContract(deps, captain, unit.role, unit.task.key));
+      await steerCrew(
+        deps,
+        captain,
+        threadId,
+        adoptionContract(deps, captain, unit.role, unit.task.key),
+      );
       deps.store.setContractSent(threadId);
       deps.store.setReportDue(threadId, deps.now());
       contract = "sent";

@@ -69,7 +69,7 @@ A wake line reads `[tasks] <key> <first line> · <thread> <role> · <attachment 
 ## Memory
 
 - "From now on" from the user goes to `CAPTAIN.md`.
-- A rule for every crew thread goes to `CREW.md` through `bb captain tell --all --rule --message-file <path>`, which also tells the running crew.
+- A rule for every crew thread goes to `CREW.md` through `bb captain tell --all --rule --message-file <path>`, which also tells the running crew. Idle crew show `queued`: the rule tops the next message Captain sends them.
 - A procedure goes to `skills/` in the Drive; a plan change goes to `NOTES.md`.
 - After a compaction, reread `NOTES.md` and run `bb captain status --all` before acting.
 

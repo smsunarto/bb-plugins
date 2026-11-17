@@ -80,7 +80,7 @@ export function askCommand(deps: CommandDeps) {
           else task = resolved.task;
         }
         if (kind === "ship" && task !== null) {
-          const fields = await tasksOrRefuse(() => taskFields(deps, captain.threadId, task.key));
+          const fields = await tasksOrRefuse(() => taskFields(deps, task));
           blockers.push(...shipBlockers(task.key, fields.get("review")?.value ?? null));
         }
         if (blockers.length > 0) throw new Refusal(blockers);

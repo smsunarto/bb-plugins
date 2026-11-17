@@ -2,10 +2,19 @@ import { cliCommand } from "@get-bb/plugin-sdk";
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { callerCaptain } from "../caller.ts";
-import { crewOnTask, isActive, readCrew, steer, tasksOrRefuse, type CrewThread } from "../crew.ts";
+import {
+  crewOnTask,
+  isActive,
+  readCrew,
+  ruleLine,
+  steerCrew,
+  tasksOrRefuse,
+  type CrewThread,
+} from "../crew.ts";
 import { guard, Refusal, render, type Blocker, type Item } from "../output.ts";
 import { parseRole, ROLE_SPECS, type Role } from "../roles.ts";
 import { crewState } from "../status.ts";
+import type { CrewRule } from "../store.ts";
 import { adoptionContract } from "./dispatch.ts";
 import { textOption } from "./ask.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
@@ -37,7 +46,7 @@ export function tellCommand(deps: CommandDeps) {
       rule: {
         type: "boolean",
         description:
-          "Append the message to CREW.md as a rule for every crew thread; owes no report",
+          "Append the message to CREW.md as a rule for every crew thread; idle crew get it atop their next message; owes no report",
       },
       message: {
         type: "string",
@@ -102,7 +111,12 @@ export function tellCommand(deps: CommandDeps) {
         if (blockers.length > 0) throw new Refusal(blockers);
 
         const items: Item[] = [];
-        if (input.options.rule && driveDir !== null) items.push(appendRule(driveDir, message));
+        let rule: CrewRule | null = null;
+        if (input.options.rule && driveDir !== null) {
+          items.push(appendRule(driveDir, message));
+          // After CREW.md, so a rerun after a crash between the two converges.
+          rule = deps.store.addRule(captain.threadId, message, deps.now());
+        }
         const text = input.options.rule
           ? deps.files.read("rule-tell", { captain: JSON.stringify(captain.name), rule: message })
           : message;
@@ -113,15 +127,25 @@ export function tellCommand(deps: CommandDeps) {
             chosen.map(async (member): Promise<Item> => {
               const taskKey = member.rows[0]?.task.key ?? "-";
               const label = member.role === null ? "-" : ROLE_SPECS[member.role].label;
-              // A rule reaches an idle thread through CREW.md at its next session;
-              // steering it now would start a turn in every idle child.
-              if (input.options.rule && !isActive(member.thread.status)) {
+              const data = { task: taskKey, role: label };
+              if (rule !== null && deps.store.ruleSeen(member.thread.id, rule.id)) {
                 return {
                   id: member.thread.id,
                   ok: true,
-                  state: "skipped",
-                  detail: `${taskKey}  ${label}  idle; CREW.md applies from its next session`,
-                  data: { task: taskKey, role: label },
+                  state: "kept",
+                  detail: `${taskKey}  ${label}  already has this rule`,
+                  data,
+                };
+              }
+              // Steering an idle thread would start a turn in every idle child;
+              // the rule tops the next message Captain sends it instead.
+              if (rule !== null && !isActive(member.thread.status)) {
+                return {
+                  id: member.thread.id,
+                  ok: true,
+                  state: "queued",
+                  detail: `${taskKey}  ${label}  idle; gets it with its next message`,
+                  data,
                 };
               }
               const owed =
@@ -130,8 +154,9 @@ export function tellCommand(deps: CommandDeps) {
                 owed && member.role !== null
                   ? `${adoptionContract(deps, captain, member.role, taskKey)}\n\n---\n\n${text}`
                   : text;
+              let rules: number;
               try {
-                await steer(deps.bb, member.thread.id, body);
+                rules = await steerCrew(deps, captain, member.thread.id, body, rule ?? undefined);
               } catch (error) {
                 return {
                   id: member.thread.id,
@@ -142,13 +167,17 @@ export function tellCommand(deps: CommandDeps) {
               }
               if (owed) deps.store.setContractSent(member.thread.id);
               // A rule broadcast owes no report; any other tell does, from now.
-              if (!input.options.rule) markReportDue(deps, captain.threadId, member);
+              if (rule === null) markReportDue(deps, captain.threadId, member);
+              const extras = [
+                owed ? "with contract" : null,
+                rules === 0 ? null : `with ${rules} unseen rule${rules === 1 ? "" : "s"}`,
+              ].filter((part) => part !== null);
               return {
                 id: member.thread.id,
                 ok: true,
                 state: "told",
-                detail: `${taskKey}  ${label}${owed ? "  with contract" : ""}`,
-                data: { task: taskKey, role: label, contractSent: owed },
+                detail: [`${taskKey}  ${label}`, ...extras].join("  "),
+                data: { ...data, contractSent: owed, rulesSent: rules },
               };
             }),
           )),
@@ -232,7 +261,7 @@ function appendRule(driveDir: string, rule: string): Item {
   const path = join(driveDir, "CREW.md");
   // Read the disk, not the Drive cache: this read decides a write.
   const current = readFileSync(path, { encoding: "utf8", flag: "a+" });
-  const line = `- ${rule.replace(/\n/gu, "\n  ")}`;
+  const line = ruleLine(rule);
   if (current.includes(line))
     return { id: "CREW.md", ok: true, state: "kept", detail: "rule already there" };
   const separator = current === "" || current.endsWith("\n") ? "" : "\n";

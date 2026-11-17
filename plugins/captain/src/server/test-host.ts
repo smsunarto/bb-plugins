@@ -272,6 +272,22 @@ export async function captainHost(options: FakeOptions = {}) {
       }
       case "delegate":
         return await delegate(input, signal);
+      case "taskFields": {
+        const ids = input["taskIds"] as string[];
+        return {
+          tasks: tasks.tasks
+            .filter((task) => ids.includes(task.id))
+            .map((task) => ({
+              taskId: task.id,
+              fields: [...task.fields].map(([key, { value, head, writtenAt }]) => ({
+                key,
+                value,
+                head,
+                writtenAt,
+              })),
+            })),
+        };
+      }
       case "taskThreadsAttach":
         attach(
           taskById(input["taskId"]).id,
