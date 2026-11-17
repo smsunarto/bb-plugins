@@ -987,6 +987,15 @@
   }
 }
 
+/* A sideways scroller, such as a code block, stops bouncing sideways. Only the
+ * x axis: overscroll-behavior on a box with nothing to scroll still ends scroll
+ * chaining, so a vertical rule on every overflow-auto box stopped the wheel
+ * from scrolling the thread over the composer. */
+.dark .overflow-x-auto,
+.dark .overflow-x-scroll {
+  overscroll-behavior-x: none;
+}
+
 /* Rules drawn as 1px boxes, such as the sidebar's section rules, become a
  * hairline-wide box. --hairline-width keeps a box at one device pixel or more
  * at every density (1px at 1x, 0.5px at 2x, 2/3px at 3x), so it cannot round
