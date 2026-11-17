@@ -112,7 +112,7 @@
         "fixed": null
       },
       "afterRemoval": ["cd plugins/source-control && bun run typecheck && bun run test"],
-      "verify": "On a phone (bun scripts/phone-shot.ts start iphone-17-pro), open a pull request's Files tab with lines wider than the screen: a left then right swipe on the code scrolls it and leaves the sidebar closed; a right swipe on the header still opens the sidebar."
+      "verify": "On a phone (bun scripts/phone-shot.ts start iphone-17-pro), open a thread's Source Control tab and expand a file with a line wider than the screen: a left then right swipe on the code scrolls it and leaves the panel and sidebar where they were; a right swipe on a file whose code fits still closes the panel. At a 700px touch viewport, open a local change's Files tab on a long file whose only wide line is far down, scroll to it, and swipe left: the code scrolls and the right panel stays shut."
     }
   ]
 }

@@ -25,7 +25,7 @@ import {
   type RefObject,
 } from "react";
 // workaround:source-control/shadow-code-sidebar-swipe begin
-import { guardCodeSwipe } from "../code-swipe.ts";
+import { guardCodeSwipe, recheckCodeSwipe } from "../code-swipe.ts";
 // workaround:source-control/shadow-code-sidebar-swipe end
 import { describeProblem, type FilePatch } from "../../core/change.ts";
 import { readingOrder, viewedAtHead, viewedBlob } from "../../core/guide.ts";
@@ -486,6 +486,9 @@ function PatchBody({
       themeType: mode,
       enableGutterUtility: commenting,
       overflow: wrap ? ("wrap" as const) : ("scroll" as const),
+      // workaround:source-control/shadow-code-sidebar-swipe begin
+      onPostRender: recheckCodeSwipe,
+      // workaround:source-control/shadow-code-sidebar-swipe end
     }),
     [mode, name, commenting, wrap],
   );

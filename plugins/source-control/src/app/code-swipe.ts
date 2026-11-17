@@ -29,11 +29,21 @@ function mark(wrapper: Element): void {
   wrapper.toggleAttribute(NO_SIDEBAR_SWIPE, codeOverflows(wrapper));
 }
 
+/** The wrapper each observed element answers for: the wrapper itself, or a diff's code inside it. */
+const owners = new WeakMap<Element, Element>();
+/** The code elements observed for each wrapper, let go with it. */
+const codes = new WeakMap<Element, Set<Element>>();
+
 let shared: ResizeObserver | null = null;
 /** One observer for every diff: it calls back after layout, so reading widths there forces none. */
 function observer(): ResizeObserver {
   shared ??= new ResizeObserver((entries) => {
-    for (const entry of entries) mark(entry.target);
+    const wrappers = new Set<Element>();
+    for (const entry of entries) {
+      const wrapper = owners.get(entry.target);
+      if (wrapper) wrappers.add(wrapper);
+    }
+    for (const wrapper of wrappers) mark(wrapper);
   });
   return shared;
 }
@@ -44,9 +54,39 @@ function observer(): ResizeObserver {
  */
 export function guardCodeSwipe(wrapper: HTMLElement | null): (() => void) | undefined {
   if (!wrapper || typeof ResizeObserver === "undefined") return undefined;
+  owners.set(wrapper, wrapper);
   observer().observe(wrapper);
   return () => {
     observer().unobserve(wrapper);
+    for (const code of codes.get(wrapper) ?? []) observer().unobserve(code);
+    codes.delete(wrapper);
+    owners.delete(wrapper);
     wrapper.removeAttribute(NO_SIDEBAR_SWIPE);
   };
+}
+
+/**
+ * A diff's `onPostRender`. A virtualized diff keeps its full height while it
+ * renders other rows, so a wide line scrolled into view resizes nothing the
+ * wrapper's observer sees. Observing the code afresh delivers one callback
+ * after the next layout, which reads the new width there.
+ */
+export function recheckCodeSwipe(host: HTMLElement, _diff?: unknown, phase?: string): void {
+  if (phase === "unmount" || typeof ResizeObserver === "undefined") return;
+  let wrapper: Element | null = host.parentElement;
+  while (wrapper && owners.get(wrapper) !== wrapper) wrapper = wrapper.parentElement;
+  if (!wrapper) return;
+  let seen = codes.get(wrapper);
+  if (!seen) codes.set(wrapper, (seen = new Set()));
+  for (const code of seen)
+    if (!code.isConnected) {
+      observer().unobserve(code);
+      seen.delete(code);
+    }
+  for (const code of host.shadowRoot?.querySelectorAll("code[data-code]") ?? []) {
+    owners.set(code, wrapper);
+    seen.add(code);
+    observer().unobserve(code);
+    observer().observe(code);
+  }
 }

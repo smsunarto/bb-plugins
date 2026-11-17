@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { codeOverflows, guardCodeSwipe, NO_SIDEBAR_SWIPE, overflowsX } from "./code-swipe.ts";
+import {
+  codeOverflows,
+  guardCodeSwipe,
+  NO_SIDEBAR_SWIPE,
+  overflowsX,
+  recheckCodeSwipe,
+} from "./code-swipe.ts";
 
 /** A wrapper around a diff whose shadow root holds one code scroller of the given widths. */
 function diff(scrollWidth: number, clientWidth = 368) {
@@ -14,7 +20,7 @@ function diff(scrollWidth: number, clientWidth = 368) {
   Object.defineProperty(code, "scrollWidth", { get: () => widths.scrollWidth });
   Object.defineProperty(code, "clientWidth", { get: () => widths.clientWidth });
   document.body.append(wrapper);
-  return { wrapper, widths };
+  return { wrapper, host, code, widths };
 }
 
 let observed: Element[] = [];
@@ -75,4 +81,35 @@ test("code that fits never blocks the sidebar swipe", () => {
   guardCodeSwipe(wrapper);
   resized([wrapper]);
   expect(wrapper.hasAttribute(NO_SIDEBAR_SWIPE)).toBe(false);
+});
+
+test("a wide line a virtualized diff renders later marks it, though the wrapper keeps its size", () => {
+  // The Files view reserves the file's full height, so rendering line 1201 resizes nothing.
+  const { wrapper, host, code, widths } = diff(666, 666);
+  guardCodeSwipe(wrapper);
+  resized([wrapper]);
+  expect(wrapper.hasAttribute(NO_SIDEBAR_SWIPE)).toBe(false);
+  widths.scrollWidth = 4474;
+  recheckCodeSwipe(host, undefined, "update");
+  expect(observed).toContain(code);
+  resized([code]);
+  expect(wrapper.hasAttribute(NO_SIDEBAR_SWIPE)).toBe(true);
+  // Scrolled back to narrow rows: a swipe on the code opens the sidebar again.
+  widths.scrollWidth = 600;
+  recheckCodeSwipe(host, undefined, "update");
+  resized([code]);
+  expect(wrapper.hasAttribute(NO_SIDEBAR_SWIPE)).toBe(false);
+});
+
+test("a render of a diff outside a guarded wrapper, or its unmount, observes nothing", () => {
+  const { wrapper, host, code } = diff(4474);
+  recheckCodeSwipe(host, undefined, "update");
+  expect(observed).not.toContain(code);
+  const cleanup = guardCodeSwipe(wrapper);
+  recheckCodeSwipe(host, undefined, "unmount");
+  expect(observed).not.toContain(code);
+  recheckCodeSwipe(host, undefined, "mount");
+  expect(observed).toContain(code);
+  cleanup?.();
+  expect(observed).toEqual([]);
 });
