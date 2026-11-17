@@ -3,7 +3,7 @@ import { afterEach, beforeEach, it } from "bun:test";
 import { installDom } from "@bb-plugins/testing";
 
 installDom();
-const { mountDrawerOpenHaptic } = await import("../lib/drawer-open-haptic.ts");
+const { mountPhoneDrawer } = await import("../lib/phone-drawer.ts");
 
 // Each step is one task of bb's sidebar code; the observer sees its batch after.
 const task = (mutate: () => void) => {
@@ -12,6 +12,7 @@ const task = (mutate: () => void) => {
 };
 
 let inset: HTMLElement;
+let openings: number;
 let plays: number;
 let controller: AbortController;
 
@@ -20,9 +21,13 @@ beforeEach(() => {
   inset.setAttribute("data-sidebar", "inset");
   inset.setAttribute("data-sidebar-shelf", "closed");
   document.body.append(inset);
+  openings = 0;
   plays = 0;
   controller = new AbortController();
-  mountDrawerOpenHaptic(document, controller.signal, () => plays++);
+  mountPhoneDrawer(document, controller.signal, {
+    opening: () => openings++,
+    opened: () => plays++,
+  });
 });
 
 afterEach(() => {
@@ -34,24 +39,24 @@ const startSlide = () => inset.setAttribute("data-vaul-animate", "false");
 const endSlide = () => inset.removeAttribute("data-vaul-animate");
 const shelf = (state: "open" | "closed") => inset.setAttribute("data-sidebar-shelf", state);
 
-it("plays once when a tapped open finishes sliding", async () => {
+it("starts opening when a tapped open starts sliding, and plays once it finishes", async () => {
   await task(startSlide);
-  assert.equal(plays, 0);
+  assert.deepEqual([openings, plays], [1, 0]);
   await task(() => {
     shelf("open");
     endSlide();
   });
-  assert.equal(plays, 1);
+  assert.deepEqual([openings, plays], [1, 1]);
 });
 
-it("plays when a swipe settles open, not when the drag starts", async () => {
+it("starts opening when a swipe starts, and plays when it settles open", async () => {
   await task(() => {
     shelf("open");
     startSlide();
   });
-  assert.equal(plays, 0);
+  assert.deepEqual([openings, plays], [1, 0]);
   await task(endSlide);
-  assert.equal(plays, 1);
+  assert.deepEqual([openings, plays], [1, 1]);
 });
 
 it("stays silent for a swipe that settles back closed", async () => {
@@ -66,7 +71,7 @@ it("stays silent for a swipe that settles back closed", async () => {
   assert.equal(plays, 0);
 });
 
-it("stays silent when the open drawer is dragged and springs back", async () => {
+it("does nothing more when the open drawer is dragged and springs back", async () => {
   await task(startSlide);
   await task(() => {
     shelf("open");
@@ -74,13 +79,11 @@ it("stays silent when the open drawer is dragged and springs back", async () => 
   });
   await task(startSlide);
   await task(endSlide);
-  assert.equal(plays, 1);
+  assert.deepEqual([openings, plays], [1, 1]);
 });
 
-it("plays again on the next open after a close", async () => {
-  await task(() => {
-    shelf("open");
-  });
+it("runs again on the next open after a close", async () => {
+  await task(() => shelf("open"));
   await task(startSlide);
   await task(() => {
     shelf("closed");
@@ -91,13 +94,13 @@ it("plays again on the next open after a close", async () => {
     shelf("open");
     endSlide();
   });
-  assert.equal(plays, 2);
+  assert.deepEqual([openings, plays], [2, 2]);
 });
 
 it("stops observing once disposed", async () => {
   controller.abort();
   await task(() => shelf("open"));
-  assert.equal(plays, 0);
+  assert.deepEqual([openings, plays], [0, 0]);
 });
 
 it("follows a page that mounts after the script", async () => {
@@ -113,4 +116,30 @@ it("follows a page that mounts after the script", async () => {
   });
   assert.equal(plays, 1);
   late.remove();
+});
+
+it("dismisses the keyboard of a field on the page as the drawer opens", async () => {
+  controller.abort();
+  const own = new AbortController();
+  mountPhoneDrawer(document, own.signal);
+  const composer = document.createElement("textarea");
+  inset.append(composer);
+  composer.focus();
+  assert.equal(document.activeElement, composer);
+  await task(startSlide);
+  assert.notEqual(document.activeElement, composer);
+  own.abort();
+});
+
+it("leaves a field outside the page focused", async () => {
+  controller.abort();
+  const own = new AbortController();
+  mountPhoneDrawer(document, own.signal);
+  const search = document.createElement("input");
+  document.body.append(search);
+  search.focus();
+  await task(startSlide);
+  assert.equal(document.activeElement, search);
+  search.remove();
+  own.abort();
 });

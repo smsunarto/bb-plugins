@@ -13,7 +13,7 @@ import {
   type LegacyThreadHeaderActionSlots,
 } from "./components/header/header-settle";
 import { mountHeaderSettleStyle } from "./components/header/header-settle-style";
-import { mountDrawerOpenHaptic } from "./lib/drawer-open-haptic";
+import { mountPhoneDrawer } from "./lib/phone-drawer";
 
 export default definePluginApp((app) => {
   // Versions up to 0.4.x cached the shelves and provider marks in web storage,
@@ -63,9 +63,10 @@ export default definePluginApp((app) => {
     },
   });
 
-  // A light haptic once the phone drawer has fully opened.
+  // The phone drawer dismisses the keyboard as it opens and plays a light
+  // haptic once fully open.
   app.contentScripts.register({
-    id: "drawer-open-haptic",
-    mount: ({ signal }) => mountDrawerOpenHaptic(document, signal),
+    id: "phone-drawer",
+    mount: ({ signal }) => mountPhoneDrawer(document, signal),
   });
 });
