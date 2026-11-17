@@ -1078,7 +1078,7 @@
    * Settings list, which has no footer below it, ended in a hard cut above the
    * home indicator. Run the list to the screen's edge and keep the safe area
    * as space at its end, where the last row scrolls clear. The thread list
-   * keeps the cut: its footer row covers the safe area. */
+   * keeps the cut: its scroll area clips there and fades out above it. */
   .dark [data-sidebar="panel"] [data-testid="settings-sidebar-body"] > [data-sidebar="content"] {
     margin-bottom: calc(-1 * env(safe-area-inset-bottom));
     padding-bottom: env(safe-area-inset-bottom);
@@ -1088,6 +1088,68 @@
    * the Settings list overhang the bottom. Nothing else reaches past it. */
   .dark [data-sidebar="panel"] [data-testid="nav-rail-sidebar-body"] {
     clip-path: inset(0 -6px calc(-1 * env(safe-area-inset-bottom)) 0);
+  }
+
+  /* Phone drawer, Rail navigation: the footer's icons stack in the rail above
+   * Settings, as a column, and the list beside them runs to the bottom. bb's
+   * sidebar grid is rail | body over Settings | footer; the footer takes a new
+   * row between the rail and Settings, and the body spans all three.
+   * bb sizes the footer to its row, showing floor((row + gap) / (More + gap)) - 1
+   * items and folding the rest into More. A column is one icon wide, so the
+   * inner row keeps a wide padded box that bb measures and taps pass through,
+   * while its icons stack in the rail. `contain` keeps that box from
+   * widening the rail. The Settings list has no footer and leaves row 2 empty. */
+  .dark [data-sidebar="panel"] [data-testid="nav-rail-sidebar-body"] {
+    grid-row: 1 / span 3;
+  }
+
+  .dark [data-sidebar="panel"] [data-testid="nav-rail-sidebar-body"] + div {
+    grid-row: 3;
+    grid-column: 1;
+  }
+
+  .dark [data-sidebar="panel"] [data-testid="sidebar-footer-body"] {
+    grid-row: 2;
+    grid-column: 1;
+    contain: inline-size;
+    background-color: var(--surface-recessed);
+  }
+
+  .dark [data-testid="sidebar-footer-body"] [data-sidebar="footer"] {
+    padding: 0 0 6px;
+  }
+
+  .dark [data-testid="sidebar-footer-body"] [data-sidebar="menu"] {
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dark [data-testid="sidebar-footer-body"] [data-sidebar="menu-item"] {
+    flex: none;
+    min-width: 0;
+  }
+
+  .dark
+    [data-testid="sidebar-footer-body"]
+    [data-sidebar="footer"]
+    > [data-sidebar="menu"]
+    > [data-sidebar="menu-item"]:first-child {
+    align-self: stretch;
+    pointer-events: none;
+  }
+
+  .dark [data-testid="sidebar-footer-body"] [data-sidebar="menu-item"] > [data-sidebar="menu"] {
+    box-sizing: content-box;
+    padding-inline-end: 400px;
+  }
+
+  .dark
+    [data-testid="sidebar-footer-body"]
+    [data-sidebar="menu-item"]
+    > [data-sidebar="menu"]
+    > [data-sidebar="menu-item"] {
+    pointer-events: auto;
   }
 }
 
