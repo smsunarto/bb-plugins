@@ -2151,7 +2151,7 @@
  * toggle, drawn on the header (below); other pages keep bb's plain toggle.
  * Both pills sit on the bar's opaque band, so they take the 72% popover tint
  * pre-mixed over the ground instead of a backdrop blur: iOS Safari flickers a
- * blurred layer inside the page bb slides with a transform. Every button is a 44px touch target with a 22px glyph
+ * blurred layer inside the page bb slides with a transform. Every button is a 44px touch target with a 20px glyph
  * in the foreground color, so bb's toggles match gtd-sidebar's New thread and
  * Settle; the thread context button leaves the group. bb keeps the sidebar
  * toggle above its open phone drawer, where it stays as the drawer's close
@@ -2306,11 +2306,11 @@
   .dark[data-monokai-thread] [data-split-pane-id] > header [data-testid="app-page-header-content-row"]::before {
     content: "";
     position: absolute;
-    top: 13px;
+    top: 14px;
     /* The glyph centers in the circle; the row starts 16px in. */
-    left: calc(var(--bb-sidebar-rail-padding) - 2px + 11px - 16px);
-    width: 22px;
-    height: 22px;
+    left: calc(var(--bb-sidebar-rail-padding) - 2px + 12px - 16px);
+    width: 20px;
+    height: 20px;
     background-color: var(--foreground);
     -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.31087 2 6.4663 2.81382 5.15877C3.1149 4.67502 3.48891 4.25427 3.91891 3.91554C5.08116 3 6.72077 3 10 3H14C17.2792 3 18.9188 3 20.0811 3.91554C20.5111 4.25427 20.8851 4.67502 21.1862 5.15877C22 6.4663 22 8.31087 22 12C22 15.6891 22 17.5337 21.1862 18.8412C20.8851 19.325 20.5111 19.7457 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7457 3.1149 19.325 2.81382 18.8412C2 17.5337 2 15.6891 2 12Z'/%3E%3Cpath d='M9.5 3L9.5 21' stroke-linejoin='round'/%3E%3Cpath d='M5 7H6M5 10H6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.31087 2 6.4663 2.81382 5.15877C3.1149 4.67502 3.48891 4.25427 3.91891 3.91554C5.08116 3 6.72077 3 10 3H14C17.2792 3 18.9188 3 20.0811 3.91554C20.5111 4.25427 20.8851 4.67502 21.1862 5.15877C22 6.4663 22 8.31087 22 12C22 15.6891 22 17.5337 21.1862 18.8412C20.8851 19.325 20.5111 19.7457 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7457 3.1149 19.325 2.81382 18.8412C2 17.5337 2 15.6891 2 12Z'/%3E%3Cpath d='M9.5 3L9.5 21' stroke-linejoin='round'/%3E%3Cpath d='M5 7H6M5 10H6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -2323,7 +2323,7 @@
     }
 
     .dark[data-monokai-thread] [data-split-pane-id] > header [data-testid="app-page-header-content-row"]::before {
-      left: calc(var(--bb-sidebar-rail-padding) + 11px - 16px);
+      left: calc(var(--bb-sidebar-rail-padding) + 12px - 16px);
     }
   }
 
@@ -2345,8 +2345,8 @@
     + div
     button
     [data-icon-root] {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
   }
 }
 
@@ -2490,8 +2490,8 @@
   .dark :not([data-split-pane-id]) > header > [data-testid="app-page-header-content-row"] > div + div button [data-icon-root],
   .dark [data-testid="mobile-panel-tab-pager"] > div > button [data-icon-root],
   .dark [data-testid="mobile-panel-tab-pager"] > div:first-child > [data-tab-pill] > button [data-icon-root] {
-    width: 22px;
-    height: 22px;
+    width: 20px;
+    height: 20px;
   }
 }
 
