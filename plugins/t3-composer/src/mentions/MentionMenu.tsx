@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import {
   experimental_PluginIcon as PluginIcon,
   experimental_PromptMentionIcon as PromptMentionIcon,
@@ -37,7 +37,7 @@ interface MentionResultsProps {
   selectedIndex: number;
   onApply: (item: TypeaheadSuggestion) => void;
   onDismiss?: () => void;
-  itemRefs: React.MutableRefObject<Array<HTMLButtonElement | null>>;
+  registerItem: (index: number, element: HTMLButtonElement | null) => void;
 }
 
 interface CommandResultsProps {
@@ -47,7 +47,7 @@ interface CommandResultsProps {
   selectedIndex: number;
   onApply: (item: TypeaheadSuggestion) => void;
   onDismiss?: () => void;
-  itemRefs: React.MutableRefObject<Array<HTMLButtonElement | null>>;
+  registerItem: (index: number, element: HTMLButtonElement | null) => void;
 }
 
 type PathMentionSuggestion = Extract<MenuMentionSuggestion, { kind: "path" }>;
@@ -165,7 +165,7 @@ interface SuggestionRowProps {
   badge?: ReactNode;
   title: string;
   onApply: () => void;
-  itemRefs: React.MutableRefObject<Array<HTMLButtonElement | null>>;
+  registerItem: (index: number, element: HTMLButtonElement | null) => void;
 }
 
 function SuggestionRow({
@@ -177,13 +177,13 @@ function SuggestionRow({
   badge,
   title,
   onApply,
-  itemRefs,
+  registerItem,
 }: SuggestionRowProps) {
   const isSelected = index === selectedIndex;
   return (
     <button
       ref={(element) => {
-        itemRefs.current[index] = element;
+        registerItem(index, element);
       }}
       type="button"
       onMouseDown={(event) => {
@@ -288,13 +288,12 @@ function MenuSectionHeader({
     >
       <span className="flex min-w-0 items-center gap-1">
         <span>{label}</span>
-        <span
-          role="status"
+        <output
           aria-label={refreshing ? "Updating results" : undefined}
           className={cn("flex", !refreshing && "invisible")}
         >
           <Icon name="Spinner" className="size-3 animate-spin" aria-hidden />
-        </span>
+        </output>
       </span>
       {onDismiss ? <CloseSuggestionsButton onDismiss={onDismiss} /> : null}
     </div>
@@ -313,7 +312,7 @@ function MentionResults({
   selectedIndex,
   onApply,
   onDismiss,
-  itemRefs,
+  registerItem,
 }: MentionResultsProps) {
   if (groups.length === 0) {
     return (
@@ -366,7 +365,7 @@ function MentionResults({
                       <MutedTrailing>{secondaryContext}</MutedTrailing>
                     ),
                   onApply: () => onApply(item),
-                  itemRefs,
+                  registerItem,
                 };
 
                 return item.kind === "thread" ? (
@@ -404,7 +403,7 @@ function CommandResults({
   selectedIndex,
   onApply,
   onDismiss,
-  itemRefs,
+  registerItem,
 }: CommandResultsProps) {
   if (groups.length === 0) {
     return null;
@@ -442,7 +441,7 @@ function CommandResults({
                   }
                   title={item.description ?? item.name}
                   onApply={() => onApply(item)}
-                  itemRefs={itemRefs}
+                  registerItem={registerItem}
                 />
               ))}
             </div>
@@ -461,6 +460,9 @@ function typeaheadResultsLength(state: TypeaheadMenuState): number {
 
 export function MentionMenu({ state, selectedIndex, onApply, onDismiss }: MentionMenuProps) {
   const itemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const registerItem = useCallback((index: number, element: HTMLButtonElement | null) => {
+    itemRefs.current[index] = element;
+  }, []);
 
   const innerState = state.state;
   const resultsLength = typeaheadResultsLength(state);
@@ -510,7 +512,7 @@ export function MentionMenu({ state, selectedIndex, onApply, onDismiss }: Mentio
               trigger={state.char}
               selectedIndex={selectedIndex}
               onApply={onApply}
-              itemRefs={itemRefs}
+              registerItem={registerItem}
               onDismiss={onDismiss}
             />
           ) : null
@@ -520,7 +522,7 @@ export function MentionMenu({ state, selectedIndex, onApply, onDismiss }: Mentio
             refreshing={state.state.refreshing}
             selectedIndex={selectedIndex}
             onApply={onApply}
-            itemRefs={itemRefs}
+            registerItem={registerItem}
             onDismiss={onDismiss}
           />
         ) : null}

@@ -41,7 +41,10 @@ export const ComposerPermissionControl = memo(function ComposerPermissionControl
   const controlRef = useRef<HTMLSpanElement>(null);
   const latestPick = useRef(0);
   const composerRef = useRef(composer);
-  composerRef.current = composer;
+  // `apply` runs from the picker's selection or the clamp effect below, both after this sync.
+  useLayoutEffect(() => {
+    composerRef.current = composer;
+  });
   const refused = useRef<PermissionMode | null>(null);
   // Stable, because BB's picker re-runs its clamp effect whenever `onChange` changes.
   const apply = useCallback((permissionMode: PermissionMode) => {

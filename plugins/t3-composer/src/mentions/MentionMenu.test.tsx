@@ -44,13 +44,13 @@ describe("MentionMenu", () => {
       );
 
     const idle = renderMenu(false);
-    const idleStatus = idle.container.querySelector("[role='status']");
+    const idleStatus = idle.getByRole("status");
     expect(idleStatus?.classList.contains("invisible")).toBe(true);
     expect(screen.queryByLabelText("Updating results")).toBeNull();
     idle.unmount();
 
     const refreshing = renderMenu(true);
-    const refreshingStatus = refreshing.container.querySelector("[role='status']");
+    const refreshingStatus = refreshing.getByRole("status");
     expect(refreshingStatus?.classList.contains("invisible")).toBe(false);
     expect(screen.getByLabelText("Updating results")).toBe(refreshingStatus);
     expect(screen.getByText("index.ts")).not.toBeNull();

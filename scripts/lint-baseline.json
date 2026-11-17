@@ -72,28 +72,10 @@
     "source": "const scopeChanged = settledScope.current !== scopeKey;"
   },
   {
-    "filename": "plugins/t3-composer/components/ui/compact-long-press-menu.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "if (open) handleOpenChange(false);"
-  },
-  {
     "filename": "plugins/t3-composer/components/ui/video.tsx",
     "code": "jsx-a11y(media-has-caption)",
     "message": "Missing `<track>` element with captions inside `<audio>` or `<video>` element",
     "source": "return <video {...props} ref={ref} />;"
-  },
-  {
-    "filename": "plugins/t3-composer/src/AttachmentPreview.tsx",
-    "code": "jsx-a11y(prefer-tag-over-role)",
-    "message": "Prefer `output` over `role` attribute `status`.",
-    "source": "<div role=\"status\" aria-label={`Uploading ${file.name}`} className={IMAGE_TILE_CLASS}>"
-  },
-  {
-    "filename": "plugins/t3-composer/src/AttachmentPreview.tsx",
-    "code": "react(no-object-type-as-default-prop)",
-    "message": "Do not use an array literal as default prop value. Use a stable reference instead.",
-    "source": "pendingUploads = [],"
   },
   {
     "filename": "plugins/t3-composer/src/AttachmentPreview.tsx",
@@ -102,58 +84,10 @@
     "source": "setPreviewUrl(url);"
   },
   {
-    "filename": "plugins/t3-composer/src/ComposerPermissionControl.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "composerRef.current = composer;"
-  },
-  {
-    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
-    "code": "eslint(no-unused-vars)",
-    "message": "Identifier 'useContext' is imported but never used.",
-    "source": "useContext,"
-  },
-  {
-    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
-    "code": "eslint(no-unused-vars)",
-    "message": "Type 'ReactNode' is imported but never used.",
-    "source": "type ReactNode,"
-  },
-  {
-    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
-    "code": "eslint(no-unused-vars)",
-    "message": "Type 'Ref' is imported but never used.",
-    "source": "type Ref,"
-  },
-  {
     "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
     "code": "jsx-a11y(no-noninteractive-element-interactions)",
     "message": "Non-interactive elements should not be assigned mouse or keyboard event listeners.",
     "source": "<form"
-  },
-  {
-    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
-    "code": "react(no-object-type-as-default-prop)",
-    "message": "Do not use an object literal as default prop value. Use a stable reference instead.",
-    "source": "attachments: attachmentConfig = {},"
-  },
-  {
-    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "return ref.current;"
-  },
-  {
-    "filename": "plugins/t3-composer/src/mentions/MentionMenu.tsx",
-    "code": "jsx-a11y(prefer-tag-over-role)",
-    "message": "Prefer `output` over `role` attribute `status`.",
-    "source": "role=\"status\""
-  },
-  {
-    "filename": "plugins/t3-composer/src/mentions/MentionMenu.tsx",
-    "code": "react(immutability)",
-    "message": "This value cannot be modified",
-    "source": "itemRefs.current[index] = element;"
   },
   {
     "filename": "plugins/t3-composer/src/renderer.test.tsx",

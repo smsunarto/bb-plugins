@@ -31,6 +31,7 @@ function resolveAttachmentPreviewSrc(
 const TILE_CLASS =
   "relative flex h-[120px] shrink-0 flex-col overflow-hidden rounded-[12px] border border-[color-mix(in_srgb,var(--foreground)_10%,transparent)] bg-background";
 const IMAGE_TILE_CLASS = `${TILE_CLASS} w-[120px]`;
+const NO_PENDING_UPLOADS: readonly PendingAttachmentUpload[] = [];
 const FILE_TILE_CLASS = `${TILE_CLASS} w-[160px]`;
 function RemoveButton({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
@@ -80,7 +81,7 @@ function ImageUploadPreview({ file }: { file: File }) {
   }, [file]);
 
   return (
-    <div role="status" aria-label={`Uploading ${file.name}`} className={IMAGE_TILE_CLASS}>
+    <output aria-label={`Uploading ${file.name}`} className={IMAGE_TILE_CLASS}>
       <span className="block size-full">
         {previewUrl ? (
           isVideoAttachment({ path: file.name, mimeType: file.type }) ? (
@@ -94,7 +95,7 @@ function ImageUploadPreview({ file }: { file: File }) {
         <Icon name="Loading" className="size-3 animate-spin motion-reduce:animate-none" />
         Uploading
       </span>
-    </div>
+    </output>
   );
 }
 
@@ -232,7 +233,7 @@ function ContextMentionChip({ group }: { group: ContextMentionGroup }) {
 
 export function AttachmentPreview({
   attachments,
-  pendingUploads = [],
+  pendingUploads = NO_PENDING_UPLOADS,
   compact = false,
   attachmentProjectId,
   expandedImageIndex,
