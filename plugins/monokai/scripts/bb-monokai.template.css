@@ -728,6 +728,42 @@
   background-color: var(--sidebar-border);
 }
 
+/* Info tab text: names and values in foreground, labels and icons muted, and
+ * the faint tier only for "where" text and the "N more" toggles. bb's
+ * thread-storage folder rows fade the name itself, so a folder read fainter
+ * than the files inside it. The name span sits inside the row's
+ * text-foreground primary button; only folders pass a faded span there. */
+.dark [data-info-section] .text-foreground > span.text-subtle-foreground {
+  color: inherit;
+}
+
+/* bb draws the tab's icons in the faint tier: 30% beside a muted label read
+ * as missing. File icons and folder carets carry the class on the icon, and
+ * detail-row label icons on the icon or its wrapper. Related-thread glyphs
+ * inherit it from a wrapper in the row's leading slot. Icon buttons (open
+ * file, search, new environment) carry it on the button and climb to
+ * foreground on hover as bb intends. The "N more" toggles are the
+ * expanded-state buttons and stay faint. The scope is the tab's root, named
+ * by its section-divider variant. */
+.dark .\[\&_\[data-info-section\]\]\:border-t [data-icon-root].text-subtle-foreground,
+.dark .\[\&_\[data-info-section\]\]\:border-t dt .text-subtle-foreground,
+.dark [data-info-section] .justify-center.size-3 > span.text-subtle-foreground,
+.dark .\[\&_\[data-info-section\]\]\:border-t button.text-subtle-foreground:not([aria-expanded]) {
+  color: var(--muted-foreground);
+}
+.dark
+  .\[\&_\[data-info-section\]\]\:border-t
+  button.text-subtle-foreground:not([aria-expanded]):focus-visible {
+  color: var(--foreground);
+}
+@media (hover: hover) {
+  .dark
+    .\[\&_\[data-info-section\]\]\:border-t
+    button.text-subtle-foreground:not([aria-expanded]):hover {
+    color: var(--foreground);
+  }
+}
+
 /* bb paints the active settings and plugins row with the same 8%
  * --sidebar-accent as hover, but keeps 74% text, so a hovered row would
  * outrank the selection. Selection takes the 14% layer and primary text. The
@@ -897,6 +933,23 @@
     :where(.dark) .\@2xl\:border-l-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
       border-left-width: 0;
     }
+  }
+
+  /* The Info tab draws its rules through arbitrary variants on the wrapper:
+   * a border-t on each [data-info-section], and a border-b under the detail
+   * rows when no section follows. The second sits behind :has(), which this
+   * sheet cannot ship, so its width is a hairline whenever the class is
+   * present and its style is none at zero weight; bb's conditional style
+   * outranks that whenever its :has() matches. */
+  :where(.dark) .\[\&_\[data-info-section\]\]\:border-t [data-info-section]:not(z) {
+    border-top-width: var(--hairline-width);
+  }
+  :where(.dark)
+    .\[\:not\(\:has\(\[data-info-section\]\)\)\>\&\]\:border-b.\[\:not\(\:has\(\[data-info-section\]\)\)\>\&\]\:border-b:not(z) {
+    border-bottom-width: var(--hairline-width);
+  }
+  :where(.dark .\[\:not\(\:has\(\[data-info-section\]\)\)\>\&\]\:border-b) {
+    border-bottom-style: none;
   }
 }
 
