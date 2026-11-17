@@ -221,6 +221,17 @@ describe("bb Monokai contract audit", () => {
     );
   });
 
+  test("leaves bb's scroll floor container unpadded", () => {
+    // bb sizes the timeline's scroll floor to its container's full height, so
+    // block padding there adds scroll past the stream and lifts the composer.
+    const floorContainer = styleRules(theme).filter(
+      (rule) =>
+        rule.selector.endsWith(" .thread-scrollbar > div") &&
+        /padding(-top|-bottom|-block)?:|border(-top|-bottom|-block)?(-width)?:/.test(rule.body),
+    );
+    expect(floorContainer).toEqual([]);
+  });
+
   test("draws full-box hairlines as rings WebKit cannot drop at 3x", () => {
     const rules = styleRules(theme);
     // WebKit rounds a one-device-pixel border's outer and inner edges apart, so a

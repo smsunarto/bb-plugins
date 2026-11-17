@@ -1803,8 +1803,12 @@
     scroll-padding-top: calc(var(--bb-app-chrome-row-height) + 1rem);
   }
 
-  .dark [data-split-pane-id] > header + [data-thread-window] .thread-scrollbar > div {
-    padding-top: var(--bb-app-chrome-row-height);
+  /* The clearance goes on the page content, after bb's scroll floor, not on
+   * the floor's container: bb sizes the floor to that container's full height,
+   * so padding there pushed the floor past the end, added a row of scroll
+   * below the stream, and lifted the sticky composer at the very bottom. */
+  .dark [data-split-pane-id] > header + [data-thread-window] .thread-scrollbar > div > [aria-hidden="true"] + div {
+    margin-top: var(--bb-app-chrome-row-height);
   }
 
   /* The 44px toggle sits 12px in from the edge; the title starts 12px after it. */
