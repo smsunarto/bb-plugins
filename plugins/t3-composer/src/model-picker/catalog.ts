@@ -64,6 +64,8 @@ const permissions = new Map<string, PermissionInfo>();
 /** Each provider's most recently listed models, from any routing. */
 const lastListed = new Map<string, readonly CatalogModel[]>();
 const inFlight = new Set<string>();
+/** The limit each refusal's clamp replaced, until a read confirms or undoes the clamp. */
+const clamps = new Map<string, PermissionMode>();
 /** A read asked for while the same one was under way, run once that one ends. */
 const rerun = new Map<string, LoadOptions>();
 const listeners = new Set<() => void>();
@@ -161,11 +163,13 @@ function load(
     return;
   }
   const cached = catalogs.get(key);
+  // A re-read behind a list already shown: whatever goes wrong, the list stays as it is.
+  const background = Boolean(
+    options.revalidate && !options.force && cached && cached.status !== "loading",
+  );
   // A stale model list is due a full read anyway, which reads the limit too.
   const staleModels = cached?.status === "ready" && Date.now() - cached.fetchedAt >= STALE_AFTER_MS;
-  const permissionsOnly = Boolean(
-    options.revalidate && !options.force && cached && cached.status !== "loading" && !staleModels,
-  );
+  const permissionsOnly = background && !staleModels;
   if (!options.force && !options.revalidate && cached) {
     if (cached.status === "loading") return;
     if (cached.status === "error" && !options.retryErrors) return;
@@ -184,38 +188,52 @@ function load(
       failures: (previous?.status === "error" ? previous.failures : 0) + 1,
     });
   };
+  const signal = AbortSignal.timeout(REQUEST_DEADLINE_MS);
   Promise.resolve()
     .then(() =>
       sdk.providers.models({
         ...routingArgs(routing),
         providerId,
         ...(permissionsOnly ? { preferCached: true } : {}),
-        signal: AbortSignal.timeout(REQUEST_DEADLINE_MS),
+        signal,
       }),
     )
-    .then((result) => {
+    .then(async (result) => {
       const provider = result.providers.find((entry) => entry.id === providerId);
-      // A read queued behind this one has the newer limit.
-      if (!rerun.has(key)) {
-        permissions.set(key, {
-          ceiling: result.permissionCeiling,
+      const ceiling = await answeredCeiling(sdk, routing, key, result, signal);
+      // A read queued behind this one has the newer limit, unless there is none to keep.
+      const current = !rerun.has(key) || !permissions.has(key);
+      if (current) clamps.delete(key);
+      const changed =
+        current &&
+        storePermissions(key, {
+          ceiling,
           provider: provider
-            ? {
-                name: provider.displayName,
-                modes: provider.capabilities.permissionModes,
-              }
+            ? { name: provider.displayName, modes: provider.capabilities.permissionModes }
             : null,
         });
-      }
-      if (permissionsOnly) return notify();
       const message = errorMessage(result);
+      if (permissionsOnly || (background && message && result.models.length === 0)) {
+        if (changed) notify();
+        return;
+      }
       if (message && result.models.length === 0) return failed(message);
       lastListed.set(providerId, result.models);
       return publish(key, { status: "ready", models: result.models, fetchedAt: Date.now() });
     })
     .catch((error: unknown) => {
-      if (permissionsOnly) return;
-      failed(error instanceof Error ? error.message : "Could not load models.");
+      if (!background) {
+        failed(error instanceof Error ? error.message : "Could not load models.");
+        return;
+      }
+      // The re-read that was to confirm a refusal's clamp failed: take the clamp back.
+      const before = clamps.get(key);
+      const info = permissions.get(key);
+      if (before && info && !rerun.has(key)) {
+        clamps.delete(key);
+        permissions.set(key, { ...info, ceiling: before });
+        notify();
+      }
     })
     .finally(() => {
       inFlight.delete(key);
@@ -224,6 +242,47 @@ function load(
       rerun.delete(key);
       load(sdk, routing, providerId, next);
     });
+}
+
+/**
+ * The limit from a machine's answer. BB answers for a machine it cannot reach with a model
+ * load error and Full Access, whatever its limit, so an answer with a load error that would
+ * raise the limit is checked against the machine's own record. Without that record, a known
+ * limit stays.
+ */
+async function answeredCeiling(
+  sdk: PluginBrowserBbSdk,
+  routing: CatalogRouting,
+  key: string,
+  result: ModelsResult,
+  signal: AbortSignal,
+): Promise<PermissionMode> {
+  const known = permissions.get(key)?.ceiling;
+  const answered = result.permissionCeiling;
+  if (!result.modelLoadError || (known && !isPermissionModeAbove(answered, known))) {
+    return answered;
+  }
+  const hostId = routingHostId(routing);
+  if (hostId) {
+    try {
+      return (await sdk.hosts.get({ hostId, signal })).maxPermissionMode;
+    } catch {
+      // Fall through to what is known.
+    }
+  }
+  return known ?? answered;
+}
+
+/** Stores a machine's answer; false when it matches what is stored, so nothing re-renders. */
+function storePermissions(key: string, info: PermissionInfo): boolean {
+  const stored = permissions.get(key);
+  const same =
+    stored?.ceiling === info.ceiling &&
+    stored.provider?.name === info.provider?.name &&
+    stored.provider?.modes.join() === info.provider?.modes.join();
+  if (same) return false;
+  permissions.set(key, info);
+  return true;
 }
 
 /**
@@ -242,8 +301,40 @@ function routingHostId(routing: CatalogRouting): string | null {
     case "environment":
       return environmentHosts.get(routing.environmentId) ?? null;
     case "primary":
-      return null;
+      return primaryHost.hostId;
   }
+}
+
+/** BB's primary machine, which a routing without a machine or environment reads. */
+const primaryHost = { hostId: null as string | null, pending: false };
+const pendingEnvironments = new Set<string>();
+
+/**
+ * Learns the machine a routing reads, once, so only that machine's changes re-read it. Until
+ * it is known, or if the lookup fails, every machine's change does.
+ */
+function resolveRoutingHost(sdk: PluginBrowserBbSdk, routing: CatalogRouting) {
+  if (routingHostId(routing) !== null) return;
+  const signal = AbortSignal.timeout(REQUEST_DEADLINE_MS);
+  if (routing.kind === "primary") {
+    if (primaryHost.pending) return;
+    primaryHost.pending = true;
+    Promise.resolve()
+      .then(() => sdk.system.config({ signal }))
+      .then((config) => (primaryHost.hostId = config.primaryHostId))
+      .catch(() => undefined)
+      .finally(() => (primaryHost.pending = false));
+    return;
+  }
+  if (routing.kind !== "environment") return;
+  const { environmentId } = routing;
+  if (pendingEnvironments.has(environmentId)) return;
+  pendingEnvironments.add(environmentId);
+  Promise.resolve()
+    .then(() => sdk.environments.get({ environmentId, signal }))
+    .then((environment) => environmentHosts.set(environmentId, environment.hostId))
+    .catch(() => undefined)
+    .finally(() => pendingEnvironments.delete(environmentId));
 }
 
 function watchChanges(sdk: PluginBrowserBbSdk) {
@@ -298,7 +389,10 @@ function watchPermissions(
   if (entry) entry.count += 1;
   else {
     watched.set(key, { routing, providerId, count: 1 });
-    load(sdk, routing, providerId, permissions.has(key) ? { revalidate: true } : {});
+    // A settled read may have missed a change; one under way or none at all loads as usual.
+    const settled = permissions.has(key) || (catalogs.get(key)?.status ?? "loading") !== "loading";
+    load(sdk, routing, providerId, settled ? { revalidate: true } : {});
+    resolveRoutingHost(sdk, routing);
   }
   watchChanges(sdk);
   return () => {
@@ -336,6 +430,7 @@ export function notePermissionRefused(
     isPermissionModeAbove(requested, applied) &&
     !isPermissionModeAbove(requested, info.ceiling)
   ) {
+    if (!clamps.has(key)) clamps.set(key, info.ceiling);
     permissions.set(key, { ...info, ceiling: below });
     notify();
   }
@@ -560,6 +655,10 @@ export function forgetCatalogs(): void {
   rerun.clear();
   threadLookups.clear();
   environmentHosts.clear();
+  pendingEnvironments.clear();
+  primaryHost.hostId = null;
+  primaryHost.pending = false;
+  clamps.clear();
   watched.clear();
   stopWatchingChanges?.();
   stopWatchingChanges = null;
