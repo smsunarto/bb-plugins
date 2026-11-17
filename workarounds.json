@@ -113,6 +113,21 @@
       },
       "afterRemoval": ["cd plugins/source-control && bun run typecheck && bun run test"],
       "verify": "On a phone (bun scripts/phone-shot.ts start iphone-17-pro), open a thread's Source Control tab and expand a file with a line wider than the screen: a left then right swipe on the code scrolls it and leaves the panel and sidebar where they were; a right swipe on a file whose code fits still closes the panel. At a 700px touch viewport, open a local change's Files tab on a long file whose only wide line is far down, scroll to it, and swipe left: the code scrolls and the right panel stays shut."
+    },
+    {
+      "id": "t3-composer/thread-permission-reset",
+      "defect": "bb keeps a thread composer's permission mode in component-local state reset to the thread's last sent mode whenever the thread opens again (useThreadCreationOptions with resetKey: thread.id), and threads.update has no permissionMode, so a mode chosen on a thread but not yet sent is lost on a thread switch.",
+      "verifiedOn": "0.49.0",
+      "files": [
+        "plugins/t3-composer/src/thread-permission-picks.ts",
+        "plugins/t3-composer/src/thread-permission-picks.test.tsx"
+      ],
+      "probe": {
+        "needed": "scope:`component-local`,resetKey:\\w+\\.id",
+        "fixed": null
+      },
+      "afterRemoval": ["cd plugins/t3-composer && bun run typecheck && bun run test"],
+      "verify": "With t3-composer enabled, pick Full Access on thread A, open thread B, then open A again: A must show Full Access without the workaround."
     }
   ]
 }
