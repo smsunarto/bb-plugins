@@ -41,7 +41,7 @@ export const ROLE_SPECS: Readonly<Record<Role, RoleSpec>> = {
     preset: {
       name: "Plan",
       providerId: CLAUDE_CODE,
-      modelId: "claude-fable-5",
+      modelId: "claude-fable-5-2",
       reasoningLevel: "xhigh",
       permissionMode: "full",
       environmentKind: "project-default",
@@ -68,7 +68,7 @@ export const ROLE_SPECS: Readonly<Record<Role, RoleSpec>> = {
     preset: {
       name: "Review",
       providerId: CLAUDE_CODE,
-      modelId: "claude-fable-5",
+      modelId: "claude-fable-5-2",
       reasoningLevel: "high",
       permissionMode: "full",
       environmentKind: "new-worktree",
