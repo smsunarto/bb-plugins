@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { createCheck } from "./check.ts";
 import { captainCli } from "./cli.ts";
 import { ensureStorageRoot, type CommandDeps } from "./commands/deps.ts";
 import { configure } from "./configure.ts";
@@ -36,7 +37,9 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     files,
     now: options.now ?? Date.now,
     captainsDir: options.captainsDir ?? join(homedir(), CAPTAINS_FOLDER),
+    wakeCheck: () => check.poke(),
   };
+  const check = createCheck(deps);
 
   bb.agents.configure((context) => {
     try {
@@ -47,6 +50,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     }
   });
   bb.cli.register(captainCli(deps));
+  check.register(bb);
 
   // `configure` is synchronous, so the Drive root is read once here and cached.
   const ready = ensureStorageRoot(deps).then(
@@ -59,7 +63,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     () => undefined,
     (error: unknown) => bb.log.warn(`verdict fields not defined yet: ${(error as Error).message}`),
   );
-  return { store, registry, drive, ready, fieldsReady };
+  return { store, registry, drive, check, ready, fieldsReady };
 }
 
 const CAPTAINS_FOLDER = "Captains";

@@ -42,16 +42,22 @@ export function statusCommand(deps: CommandDeps) {
           }
         }
         const all = input.options.all;
-        // Step 1, and step 4's archived children only for --all.
-        const [live, archived] = await Promise.all([
+        // Step 1, the Captain's own thread for its health row, and step 4's
+        // archived children only for --all.
+        const [live, archived, own] = await Promise.all([
           listChildren(deps.bb, captain.threadId, false),
           all ? listChildren(deps.bb, captain.threadId, true) : Promise.resolve([]),
+          deps.bb.sdk.threads.get({ threadId: captain.threadId }).catch(() => null),
+        ]);
+        // Every thread this Captain ever ran, so a ready task outlives its archived crew.
+        const ids = new Set([
+          ...live.map((thread) => thread.id),
+          ...archived.map((thread) => thread.id),
+          ...deps.store.crewRolesOf(captain.threadId).map((crew) => crew.threadId),
         ]);
         // Steps 2 and 3 in parallel: one crewSnapshot, interactions only for blocked crew.
         const [rows, interactions] = await Promise.all([
-          tasksOrRefuse(() =>
-            deps.tasks.crewSnapshot([...live, ...archived].map((thread) => thread.id)),
-          ),
+          tasksOrRefuse(() => deps.tasks.crewSnapshot([...ids])),
           readInteractions(
             deps,
             live.filter((thread) => thread.hasPendingInteraction).map((thread) => thread.id),
@@ -60,10 +66,12 @@ export function statusCommand(deps: CommandDeps) {
         const crew: CrewThread[] = joinCrew(deps, live, rows);
         const status = deriveStatus({
           now: deps.now(),
+          captain: own,
           crew,
           archived: joinCrew(deps, archived, rows),
           interactions,
           asks: deps.store.asksOf(captain.threadId),
+          taskRows: rows,
           since,
           all,
         });

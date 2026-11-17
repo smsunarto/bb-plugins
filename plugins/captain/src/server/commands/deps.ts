@@ -18,6 +18,8 @@ export type CommandDeps = {
   now: () => number;
   /** The shared Captains project's folder on the server's machine. */
   captainsDir: string;
+  /** Run the background check soon, such as after a failed answer send; never waits for it. */
+  wakeCheck: () => void;
 };
 
 export const JSON_OPTION = {

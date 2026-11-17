@@ -5,6 +5,7 @@ import { callerCaptain } from "../caller.ts";
 import { crewOnTask, isActive, readCrew, steer, tasksOrRefuse, type CrewThread } from "../crew.ts";
 import { guard, Refusal, render, type Blocker, type Item } from "../output.ts";
 import { parseRole, ROLE_SPECS, type Role } from "../roles.ts";
+import { crewState } from "../status.ts";
 import { adoptionContract } from "./dispatch.ts";
 import { textOption } from "./ask.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
@@ -13,7 +14,8 @@ const THREAD_ID = /^thr_[A-Za-z0-9_-]+$/u;
 
 export function tellCommand(deps: CommandDeps) {
   return cliCommand({
-    summary: "Steer crew threads with one message; --rule also adds it to CREW.md",
+    summary:
+      "Steer crew threads with one message: named ones, every stalled one or all; --rule also adds it to CREW.md",
     positionals: [
       {
         name: "target",
@@ -28,6 +30,10 @@ export function tellCommand(deps: CommandDeps) {
         description: "Only the thread with this role on each task, such as Implement",
       },
       all: { type: "boolean", description: "Every live crew thread" },
+      stalled: {
+        type: "boolean",
+        description: "Every stalled crew thread: idle, owing a report, with none since it fell due",
+      },
       rule: {
         type: "boolean",
         description:
@@ -67,15 +73,8 @@ export function tellCommand(deps: CommandDeps) {
         const blockers: Blocker[] = [];
         if (message === "")
           blockers.push({ reason: "the message is empty", fix: "pass --message <text>" });
-        if (targets.length === 0 && !input.options.all) {
-          blockers.push({ reason: "no crew named", fix: "pass task keys or thread ids, or --all" });
-        }
-        if (targets.length > 0 && input.options.all) {
-          blockers.push({
-            reason: "--all already names every crew thread",
-            fix: "drop the targets or --all",
-          });
-        }
+        const { all, stalled } = input.options;
+        blockers.push(...selectorBlockers(targets.length > 0, all, stalled, input.options.rule));
         let role: Role | null = null;
         if (input.options.role !== undefined) {
           role = parseRole(input.options.role);
@@ -93,7 +92,13 @@ export function tellCommand(deps: CommandDeps) {
         if (blockers.length > 0) throw new Refusal(blockers);
 
         const crew = await tasksOrRefuse(() => readCrew(deps, captain.threadId));
-        const chosen = pick(crew, targets, role, input.options.all, blockers);
+        const chosen = stalled
+          ? crew.filter(
+              (member) =>
+                crewState(member, deps.now()) === "stalled" &&
+                (role === null || member.role === role),
+            )
+          : pick(crew, targets, role, all, blockers);
         if (blockers.length > 0) throw new Refusal(blockers);
 
         const items: Item[] = [];
@@ -101,7 +106,8 @@ export function tellCommand(deps: CommandDeps) {
         const text = input.options.rule
           ? deps.files.read("rule-tell", { captain: JSON.stringify(captain.name), rule: message })
           : message;
-        const notes = chosen.length === 0 ? ["no live crew to tell"] : [];
+        const notes =
+          chosen.length === 0 ? [stalled ? "no stalled crew to tell" : "no live crew to tell"] : [];
         items.push(
           ...(await Promise.all(
             chosen.map(async (member): Promise<Item> => {
@@ -151,6 +157,36 @@ export function tellCommand(deps: CommandDeps) {
       });
     },
   });
+}
+
+/** Exactly one of targets, `--stalled` and `--all` names the crew; a rule is for all of them. */
+function selectorBlockers(
+  targets: boolean,
+  all: boolean,
+  stalled: boolean,
+  rule: boolean,
+): Blocker[] {
+  const blockers: Blocker[] = [];
+  const selectors = [targets, all, stalled].filter(Boolean).length;
+  if (selectors === 0) {
+    blockers.push({
+      reason: "no crew named",
+      fix: "pass task keys or thread ids, --stalled or --all",
+    });
+  }
+  if (selectors > 1) {
+    blockers.push({
+      reason: "targets, --stalled and --all each name the crew",
+      fix: "pass only one of them",
+    });
+  }
+  if (stalled && rule) {
+    blockers.push({
+      reason: "a rule is for every crew thread, not only the stalled ones",
+      fix: "bb captain tell --all --rule",
+    });
+  }
+  return blockers;
 }
 
 /** The crew threads a tell reaches, deduplicated; unresolved targets become blockers. */

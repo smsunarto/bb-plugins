@@ -1,4 +1,5 @@
-import type { CrewThread } from "./crew.ts";
+import { ANSWER_MAX_ATTEMPTS } from "./asks.ts";
+import type { CrewThread, ListedThread } from "./crew.ts";
 import { ROLE_SPECS, SHIP_READY_REVIEWS } from "./roles.ts";
 import type { Ask } from "./store.ts";
 import type { CrewRow } from "./tasks-client.ts";
@@ -10,6 +11,7 @@ import type { CrewRow } from "./tasks-client.ts";
  */
 
 export const ROW_STATES = [
+  "health",
   "ask",
   "undelivered",
   "blocked",
@@ -26,6 +28,7 @@ export type RowState = (typeof ROW_STATES)[number];
 
 /** Rows that need the Captain to act; the default read shows only these. */
 const ACTION: ReadonlySet<RowState> = new Set([
+  "health",
   "ask",
   "undelivered",
   "blocked",
@@ -36,6 +39,7 @@ const ACTION: ReadonlySet<RowState> = new Set([
 ]);
 /** Rows that time passing or an interaction makes: `--since` always returns them. */
 const ALWAYS: ReadonlySet<RowState> = new Set([
+  "health",
   "undelivered",
   "blocked",
   "undeliverable",
@@ -58,15 +62,25 @@ export type StatusRow = {
 
 export type StatusInput = {
   now: number;
+  /** The Captain's own thread, for its health row; null when it was not read. */
+  captain: Pick<ListedThread, "id" | "status" | "updatedAt"> | null;
   crew: readonly CrewThread[];
   /** Archived children, read only for `--all`. */
   archived: readonly CrewThread[];
   /** Pending interaction lines per blocked thread, with when each began. */
   interactions: ReadonlyMap<string, { note: string; createdAt: number }[]>;
   asks: readonly Ask[];
+  /**
+   * Task rows of every thread this Captain ever ran, archived crew included,
+   * so a task's ready row outlives the threads that made it ready.
+   */
+  taskRows: readonly CrewRow[];
   since: number | null;
   all: boolean;
 };
+
+/** How long background commands alone keep a thread that owes a report from reading as stalled. */
+export const COMMAND_ALLOWANCE_MS = 30 * 60_000;
 
 export type Status = { counts: Record<RowState, number>; rows: StatusRow[]; cursor: string };
 
@@ -84,25 +98,27 @@ function rowChangedAt(row: CrewRow): number {
 
 export function deriveStatus(input: StatusInput): Status {
   const rows: StatusRow[] = [];
+  if (input.captain?.status === "error") {
+    rows.push({
+      id: input.captain.id,
+      state: "health",
+      thread: input.captain.id,
+      role: null,
+      task: null,
+      note: "Captain thread errored",
+      since: input.captain.updatedAt,
+      changedAt: null,
+    });
+  }
   for (const ask of input.asks) {
     if (ask.answer !== null && ask.answerDeliveredAt !== null) continue;
-    const undelivered = ask.answer !== null;
-    rows.push({
-      id: ask.id,
-      state: undelivered ? "undelivered" : "ask",
-      thread: null,
-      role: null,
-      task: ask.taskKey,
-      note: undelivered ? `answer "${ask.answer}" not delivered · ${ask.text}` : ask.text,
-      since: undelivered ? ask.answeredAt : ask.askedAt,
-      changedAt: Math.max(ask.askedAt, ask.answeredAt ?? 0),
-    });
+    rows.push(askRow(ask));
   }
 
   // Review running: a working thread with the Review role on the task.
   const reviewing = new Set(
     input.crew
-      .filter((member) => member.role === "review" && threadState(member) === "working")
+      .filter((member) => member.role === "review" && crewState(member, input.now) === "working")
       .flatMap((member) => member.rows.map((row) => row.task.key)),
   );
   for (const member of input.crew) rows.push(threadRow(member, input, reviewing));
@@ -112,12 +128,10 @@ export function deriveStatus(input: StatusInput): Status {
 
   // Ready to ship is a task's state, one row per task whatever its thread count.
   const tasks = new Map<string, CrewRow>();
-  for (const member of [...input.crew, ...input.archived]) {
-    for (const row of member.rows) {
-      const current = tasks.get(row.task.key);
-      if (current === undefined || ms(row.task.updatedAt) > ms(current.task.updatedAt)) {
-        tasks.set(row.task.key, row);
-      }
+  for (const row of input.taskRows) {
+    const current = tasks.get(row.task.key);
+    if (current === undefined || ms(row.task.updatedAt) > ms(current.task.updatedAt)) {
+      tasks.set(row.task.key, row);
     }
   }
   for (const row of tasks.values()) {
@@ -154,8 +168,37 @@ export function deriveStatus(input: StatusInput): Status {
   return { counts, rows: shown, cursor: encodeCursor(latest) };
 }
 
-/** A crew thread's state, by precedence: an interaction pauses it whatever its run state. */
-function threadState(member: CrewThread): RowState {
+function askRow(ask: Ask): StatusRow {
+  const base = { id: ask.id, thread: null, role: null, task: ask.taskKey };
+  const changedAt = Math.max(ask.askedAt, ask.answeredAt ?? 0);
+  if (ask.answer === null) {
+    return { ...base, state: "ask", note: ask.text, since: ask.askedAt, changedAt };
+  }
+  const answer = JSON.stringify(ask.answer);
+  if (ask.deliveryAttempts >= ANSWER_MAX_ATTEMPTS) {
+    return {
+      ...base,
+      state: "health",
+      note: `answer ${answer} not delivered after ${ask.deliveryAttempts} sends; retry: bb captain ask resolve ${ask.id} --answer ${answer}`,
+      since: ask.answeredAt,
+      changedAt,
+    };
+  }
+  return {
+    ...base,
+    state: "undelivered",
+    note: `answer ${answer} not delivered · ${ask.text}`,
+    since: ask.answeredAt,
+    changedAt,
+  };
+}
+
+/**
+ * A crew thread's state, by precedence: an interaction pauses it whatever its
+ * run state. `status`, `tell --stalled` and the background check all read it
+ * here, so they never disagree about which thread is stalled.
+ */
+export function crewState(member: CrewThread, now: number): RowState {
   const { thread, crewRole } = member;
   if (thread.hasPendingInteraction) return "blocked";
   if (thread.status === "error") return "failed";
@@ -164,14 +207,20 @@ function threadState(member: CrewThread): RowState {
   if (thread.status !== "idle") return "working";
   const { activeBackgroundAgentCount, activeWorkflowCount, activeBackgroundCommandCount } =
     thread.activity;
-  // TODO(step 4): a background command exempts a thread for 30 minutes only, counted
-  // from the pass that first saw it idle with the command running (a `notices` row).
-  if (activeBackgroundAgentCount + activeWorkflowCount + activeBackgroundCommandCount > 0) {
+  // Background agents and workflows exempt a thread without limit.
+  if (activeBackgroundAgentCount + activeWorkflowCount > 0) return "waiting";
+  const due = crewRole?.reportDueSince ?? null;
+  const owes = due !== null && !reportedSince(member, due);
+  // A background command only for a while: a dev server left running would
+  // otherwise hide a missing report for good.
+  if (activeBackgroundCommandCount > 0 && !(owes && commandAllowanceSpent(member, now))) {
     return "waiting";
   }
-  const due = crewRole?.reportDueSince ?? null;
-  if (due !== null && !reportedSince(member, due)) return "stalled";
-  return "idle";
+  return owes ? "stalled" : "idle";
+}
+
+function commandAllowanceSpent(member: CrewThread, now: number): boolean {
+  return member.commandSeenAt !== null && now - member.commandSeenAt >= COMMAND_ALLOWANCE_MS;
 }
 
 /** Whether the thread posted a notifying comment at or after the report-due mark. */
@@ -188,7 +237,7 @@ function threadRow(
 ): StatusRow {
   const { thread } = member;
   const row = member.rows[0];
-  const state = threadState(member);
+  const state = crewState(member, input.now);
   const role = member.role === null ? null : ROLE_SPECS[member.role].label;
   const parts: string[] = [];
   let since: number | null = thread.updatedAt;
@@ -226,7 +275,11 @@ function threadRow(
     }
     case "stalled":
       since = member.crewRole?.reportDueSince ?? since;
-      parts.push("idle, no report since it fell due");
+      parts.push(
+        thread.activity.activeBackgroundCommandCount > 0
+          ? "idle with a background command past 30m, no report since it fell due"
+          : "idle, no report since it fell due",
+      );
       break;
     default:
       if (row?.lastNotifyingComment)
@@ -287,7 +340,7 @@ export function rowLine(row: StatusRow, now: number): string {
       ? [row.task ?? "-"]
       : [row.thread ?? "-", row.role ?? "-"];
   const cells =
-    row.state === "ready"
+    row.state === "ready" || row.state === "health"
       ? [row.id, row.state, row.note]
       : [row.id, row.state, ...middle, row.note];
   if (row.since !== null) cells.push(age(now, row.since));

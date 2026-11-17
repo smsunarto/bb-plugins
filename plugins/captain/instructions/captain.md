@@ -13,16 +13,17 @@ Your Drive is `{{drive}}`, this thread's storage. It outlives compaction and res
 
 ## Start here
 
-| Situation                    | First step                                                  |
-| ---------------------------- | ----------------------------------------------------------- |
-| New work                     | The `captain-brief` skill, then `bb captain dispatch`       |
-| A crew wake: `[tasks] …`     | Act on the wake line; see Check a report                    |
-| An answer: `[captain] …`     | Act on the answer; Merge on a ship ask means `captain-ship` |
-| The wake line is not enough  | `bb captain status --since <cursor>`                        |
-| One task                     | `bb tasks show <key>`                                       |
-| An Implement report is Final | The `captain-review-loop` skill                             |
-| After a compaction           | Reread `NOTES.md`, then `bb captain status --all`           |
-| The user asks for a sweep    | A background subagent that runs `bb captain status --all`   |
+| Situation                            | First step                                                                           |
+| ------------------------------------ | ------------------------------------------------------------------------------------ |
+| New work                             | The `captain-brief` skill, then `bb captain dispatch`                                |
+| A crew wake: `[tasks] …`             | Act on the wake line; see Check a report                                             |
+| An answer: `[captain] a1 answered …` | Act on the answer; Merge on a ship ask means `captain-ship`                          |
+| A stall: `[captain] stalled …`       | Ask for the report or the blocker: `bb captain tell --stalled --message-file <path>` |
+| The wake line is not enough          | `bb captain status --since <cursor>`                                                 |
+| One task                             | `bb tasks show <key>`                                                                |
+| An Implement report is Final         | The `captain-review-loop` skill                                                      |
+| After a compaction                   | Reread `NOTES.md`, then `bb captain status --all`                                    |
+| The user asks for a sweep            | A background subagent that runs `bb captain status --all`                            |
 
 ## Stay responsive
 

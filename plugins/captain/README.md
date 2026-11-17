@@ -2,7 +2,7 @@
 
 A Captain is a long-lived bb thread that runs other threads for you. You hand it work in plain words; it briefs crew threads, checks what they report, and tells you only what needs you.
 
-A thread can be a Captain, with its own rules, Drive and repos, and it runs crew on Tasks: dispatch, verdicts, tells, asks and status (build steps 2 and 3a of the Captain spec). The background check and the Needs you banner arrive in later steps.
+A thread can be a Captain, with its own rules, Drive and repos, and it runs crew on Tasks: dispatch, verdicts, tells, asks and status (build steps 2 to 4 of the Captain spec). A background check wakes a Captain once per crew thread that stays stalled for 15 minutes and retries undelivered answers. The Needs you banner arrives in a later step.
 
 ```sh
 bb captain new --name Plugins --repo bb-plugins [--repo rampage] [--prompt-file purpose.md]
@@ -19,6 +19,7 @@ bb captain verdict PLUG-14 review passed --head <sha> [--ship]
 bb captain verdict PLUG-14 review skipped --reason "Docs only"
 bb captain tell PLUG-14 --role Implement --message-file findings.md
 bb captain tell --all --rule --message "Never push to main."
+bb captain tell --stalled --message-file nudge.md
 bb captain ask "Pick the Unity account" --task PLUG-19 --option Studio --option Personal --detail-file why.md
 bb captain ask resolve a7 --answer Studio
 bb captain status [--since <cursor>] [--all]

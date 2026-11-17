@@ -59,7 +59,26 @@ export const MIGRATIONS: readonly string[] = [
     at INTEGER NOT NULL,
     PRIMARY KEY (captain_id, client)
   )`,
+  // Answer delivery retries: attempts made and when the next is due.
+  "ALTER TABLE asks ADD COLUMN delivery_attempts INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE asks ADD COLUMN next_delivery_at INTEGER",
 ];
+
+/**
+ * `notices` keys. Each names one condition once, so a plugin reload neither
+ * repeats a once-only send nor restarts a clock.
+ */
+export const NOTICE = {
+  /** A stall under one report-due mark: first seen by a pass, sent when the Captain was woken. */
+  stall: (threadId: string, dueSince: number) => `stall:${threadId}:${dueSince}`,
+  /** The first pass that saw a crew thread idle with only background commands running. */
+  command: (threadId: string, dueSince: number) => `command:${threadId}:${dueSince}`,
+  /** A crew thread seen in `error`, for Since you left. */
+  failed: (threadId: string) => `failed:${threadId}`,
+  askPush: (askId: string) => `push:ask:${askId}`,
+  answerPush: (askId: string) => `push:answer:${askId}`,
+  undeliverablePush: (commentId: string) => `push:undeliverable:${commentId}`,
+} as const;
 
 export type Repo = { bbProjectId: string; tasksProjectKey: string };
 
@@ -97,6 +116,9 @@ export type Ask = {
   answer: string | null;
   answeredAt: number | null;
   answerDeliveredAt: number | null;
+  /** Sends of the answer tried so far; the background check stops at `ANSWER_MAX_ATTEMPTS`. */
+  deliveryAttempts: number;
+  nextDeliveryAt: number | null;
 };
 
 type AskRecord = {
@@ -111,6 +133,8 @@ type AskRecord = {
   answer: string | null;
   answered_at: number | null;
   answer_delivered_at: number | null;
+  delivery_attempts: number;
+  next_delivery_at: number | null;
 };
 
 type CaptainRecord = {
@@ -179,6 +203,8 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     answer: row.answer,
     answeredAt: row.answered_at,
     answerDeliveredAt: row.answer_delivered_at,
+    deliveryAttempts: row.delivery_attempts,
+    nextDeliveryAt: row.next_delivery_at,
   });
 
   return {
@@ -303,7 +329,12 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
       return row === undefined ? null : toAsk(row);
     },
     /** Insert an ask under the next short id, `a1`, `a2`, …. */
-    openAsk(ask: Omit<Ask, "id" | "answer" | "answeredAt" | "answerDeliveredAt">): Ask {
+    openAsk(
+      ask: Omit<
+        Ask,
+        "id" | "answer" | "answeredAt" | "answerDeliveredAt" | "deliveryAttempts" | "nextDeliveryAt"
+      >,
+    ): Ask {
       return db.transaction(() => {
         const { last } = db
           .prepare<[], { last: number | null }>(
@@ -340,6 +371,35 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         "UPDATE asks SET answer_delivered_at = ? WHERE id = ? AND answer_delivered_at IS NULL",
       ).run(at, id);
     },
+    /**
+     * Claim the next send of an undelivered answer: true for the one caller
+     * whose count still matched, so `ask resolve` and the background check
+     * never send the same attempt twice.
+     */
+    claimAnswerAttempt(id: string, attempts: number, nextAt: number): boolean {
+      return (
+        db
+          .prepare(
+            `UPDATE asks SET delivery_attempts = delivery_attempts + 1, next_delivery_at = ?
+             WHERE id = ? AND delivery_attempts = ? AND answer IS NOT NULL
+               AND answer_delivered_at IS NULL`,
+          )
+          .run(nextAt, id, attempts).changes === 1
+      );
+    },
+    /** Answered, undelivered asks of live Captains: every one, or only those under `maxAttempts`. */
+    undeliveredAnswers(maxAttempts?: number): Ask[] {
+      return db
+        .prepare<[number], AskRecord>(
+          `SELECT asks.* FROM asks JOIN captains ON captains.thread_id = asks.captain_id
+           WHERE captains.archived_at IS NULL AND asks.answer IS NOT NULL
+             AND asks.answer_delivered_at IS NULL AND asks.delivery_attempts < ?
+           ORDER BY asks.answered_at, asks.rowid`,
+        )
+        .all(maxAttempts ?? Number.MAX_SAFE_INTEGER)
+        .map(toAsk);
+    },
+
     /** When a once-only notice was sent, or null when it never was. */
     noticeSentAt(key: string): number | null {
       const row = db
@@ -352,6 +412,50 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         `INSERT INTO notices (key, first_seen, sent_at) VALUES (?, ?, ?)
          ON CONFLICT (key) DO UPDATE SET sent_at = excluded.sent_at`,
       ).run(key, at, at);
+    },
+    /** When a notice's condition was first seen: recorded once, then only read. */
+    noticeFirstSeen(key: string, at: number): number {
+      db.prepare(
+        "INSERT INTO notices (key, first_seen) VALUES (?, ?) ON CONFLICT (key) DO NOTHING",
+      ).run(key, at);
+      return (
+        db
+          .prepare<[string], { first_seen: number }>("SELECT first_seen FROM notices WHERE key = ?")
+          .get(key)?.first_seen ?? at
+      );
+    },
+    /** A notice's first-seen time without recording one. */
+    noticeSeenAt(key: string): number | null {
+      return (
+        db
+          .prepare<[string], { first_seen: number }>("SELECT first_seen FROM notices WHERE key = ?")
+          .get(key)?.first_seen ?? null
+      );
+    },
+    /**
+     * Claim a once-only notice before sending it: true for the one caller that
+     * set `sent_at`. A send that fails gives the claim back with `releaseNotice`.
+     */
+    claimNotice(key: string, at: number): boolean {
+      return (
+        db
+          .prepare(
+            `INSERT INTO notices (key, first_seen, sent_at) VALUES (?, ?, ?)
+             ON CONFLICT (key) DO UPDATE SET sent_at = excluded.sent_at
+             WHERE notices.sent_at IS NULL`,
+          )
+          .run(key, at, at).changes === 1
+      );
+    },
+    releaseNotice(key: string, claimedAt: number): void {
+      db.prepare("UPDATE notices SET sent_at = NULL WHERE key = ? AND sent_at = ?").run(
+        key,
+        claimedAt,
+      );
+    },
+    /** Forget an unsent notice, so its clock starts again the next time its condition is seen. */
+    clearUnsentNotice(key: string): void {
+      db.prepare("DELETE FROM notices WHERE key = ? AND sent_at IS NULL").run(key);
     },
   };
 

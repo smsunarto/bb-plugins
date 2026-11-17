@@ -453,13 +453,26 @@ export async function captainHost(options: FakeOptions = {}) {
       },
     },
   });
-  const server = await start(host.bb, {
+  const startOptions = {
     captainsDir,
     now: () => clock,
     tasksDeadlineMs: options.tasksDeadlineMs ?? 500,
-  });
+  };
+  let server = await start(host.bb, startOptions);
   await server.ready;
   await server.fieldsReady;
+
+  /**
+   * Reload the plugin as `bb plugin reload` does: same data.db, new instance.
+   * The CLI harness stays bound to the first instance, so drive the reloaded
+   * one through `server`.
+   */
+  async function reload(): Promise<void> {
+    await host.harness.lifecycle.reload(async (bb) => {
+      server = await start(bb, startOptions);
+      await server.ready;
+    });
+  }
 
   /** Add a thread to the fake bb, such as a crew child of a Captain. */
   function addThread(overrides: Partial<Thread> & { id: string }): Thread {
@@ -525,7 +538,10 @@ export async function captainHost(options: FakeOptions = {}) {
 
   return {
     ...host,
-    server,
+    get server() {
+      return server;
+    },
+    reload,
     tasks,
     pushes,
     sent,

@@ -4,7 +4,7 @@ import type { Blocker, Item } from "./output.ts";
 import { sendPush } from "./push.ts";
 import type { Captain } from "./registry.ts";
 import { SHIP_READY_REVIEWS } from "./roles.ts";
-import type { Ask, AskKind } from "./store.ts";
+import { NOTICE, type Ask, type AskKind } from "./store.ts";
 import { TasksError, type TasksTask } from "./tasks-client.ts";
 
 /**
@@ -140,7 +140,7 @@ export async function openAsk(
     const warning = await captainComment(deps, captain, draft.task.id, body);
     if (warning !== null) notes.push(`warning: ${warning}`);
   }
-  const pushKey = `push:ask:${ask.id}`;
+  const pushKey = NOTICE.askPush(ask.id);
   if (deps.store.noticeSentAt(pushKey) === null) {
     const warning = await sendPush(deps.bb, {
       title: text,
@@ -191,15 +191,32 @@ export async function captainComment(
   }
 }
 
+/** Sends of an answer before it becomes a health row; the same cap Tasks gives wake lines. */
+export const ANSWER_MAX_ATTEMPTS = 6;
+/** Wait after the nth failed send; the last delay repeats. */
+export const ANSWER_BACKOFF_MS = [1, 2, 5, 15].map((minutes) => minutes * 60_000);
+
+function retryDelayMs(attempt: number): number {
+  return ANSWER_BACKOFF_MS[Math.min(attempt, ANSWER_BACKOFF_MS.length) - 1] ?? 60_000;
+}
+
 /**
- * Send the Captain one line with the answer. `answer delivered at` is set only
- * when the send succeeds; retrying an undelivered answer is the background
- * check's job (build step 4), and a rerun of `ask resolve` retries it too.
+ * Send the Captain one line with the answer. Each send first claims its
+ * attempt, so `ask resolve` and the background check never send one attempt
+ * twice; `answer delivered at` is set only when the send succeeds. The check
+ * retries a failed send with backoff until `ANSWER_MAX_ATTEMPTS`; a rerun of
+ * `ask resolve` tries again past the cap.
  */
 export async function deliverAnswer(
-  deps: CommandDeps,
+  deps: Pick<CommandDeps, "bb" | "store" | "files" | "now" | "wakeCheck">,
   ask: Ask & { answer: string },
 ): Promise<string | null> {
+  const attempt = ask.deliveryAttempts + 1;
+  if (
+    !deps.store.claimAnswerAttempt(ask.id, ask.deliveryAttempts, deps.now() + retryDelayMs(attempt))
+  ) {
+    return "answer not delivered to the Captain: another send of it is in flight";
+  }
   const subject = ask.taskKey === null ? ask.text : `${ask.taskKey} ${ask.text}`;
   try {
     await steer(
@@ -210,6 +227,8 @@ export async function deliverAnswer(
     deps.store.markAnswerDelivered(ask.id, deps.now());
     return null;
   } catch (error) {
+    // The background check owns the retry; wake it in case it is idle.
+    deps.wakeCheck();
     return `answer not delivered to the Captain: ${(error as Error).message}`;
   }
 }

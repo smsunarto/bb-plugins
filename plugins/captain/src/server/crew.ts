@@ -3,7 +3,7 @@ import type { CommandDeps } from "./commands/deps.ts";
 import { Refusal, type Blocker } from "./output.ts";
 import type { Captain } from "./registry.ts";
 import { roleOfPreset, type Role } from "./roles.ts";
-import type { CrewRole } from "./store.ts";
+import { NOTICE, type CrewRole } from "./store.ts";
 import { TasksError, type CrewRow, type TasksTask } from "./tasks-client.ts";
 
 /**
@@ -22,6 +22,12 @@ export type CrewThread = {
   role: Role | null;
   /** The thread's task attachments, latest first. */
   rows: CrewRow[];
+  /**
+   * When a background-check pass first saw the thread idle with background
+   * commands running under its current report-due mark; the 30-minute
+   * command allowance counts from here.
+   */
+  commandSeenAt: number | null;
 };
 
 const PAGE = 200;
@@ -31,6 +37,7 @@ export async function listChildren(
   bb: Pick<BbPluginApi, "sdk">,
   captainId: string,
   archived: boolean,
+  signal?: AbortSignal,
 ): Promise<ListedThread[]> {
   const threads: ListedThread[] = [];
   for (let offset = 0; ; offset += PAGE) {
@@ -40,6 +47,7 @@ export async function listChildren(
       includeHidden: true,
       limit: PAGE,
       offset,
+      ...(signal === undefined ? {} : { signal }),
     });
     threads.push(...page);
     if (page.length < PAGE) return threads;
@@ -64,11 +72,13 @@ export function joinCrew(
     );
     const crewRole = deps.store.crewRole(thread.id);
     const preset = own[0]?.presetName;
+    const due = crewRole?.reportDueSince ?? null;
     return {
       thread,
       crewRole,
       role: crewRole?.role ?? (preset === undefined ? null : roleOfPreset(preset)),
       rows: own,
+      commandSeenAt: due === null ? null : deps.store.noticeSeenAt(NOTICE.command(thread.id, due)),
     };
   });
 }
