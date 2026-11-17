@@ -1847,14 +1847,15 @@
  * ground, which also paints the safe-area strip above it, to clear across a
  * tail that ignores taps. The header's action group floats on a translucent
  * pill, and while a thread is open (app/thread-marker.ts) so does bb's
- * app-wide sidebar toggle; other pages keep bb's plain toggle. Only those two
+ * app-wide sidebar toggle, drawn on the header (below); other pages keep
+ * bb's plain toggle. Only those two
  * small areas blur, so a streaming timeline does not repaint a full-width
  * backdrop each frame. Every button is a 44px touch target with a 22px glyph
  * in the foreground color, so bb's toggles match gtd-sidebar's New thread and
- * Settle; the thread context button leaves the group. bb leaves the sidebar
- * toggle above its open phone drawer and drops `data-panel-shelf` from it
- * then, so the toggle hides while the drawer is open. Gated on bb's compact
- * width (`useIsCompactViewport`). */
+ * Settle; the thread context button leaves the group. bb keeps the sidebar
+ * toggle above its open phone drawer, where it stays as the drawer's close
+ * button, over the spacer bb leaves atop the drawer's rail for it. Gated on
+ * bb's compact width (`useIsCompactViewport`). */
 @media (max-width: 767px) {
   .dark [data-split-pane-id] > header {
     z-index: 20;
@@ -1901,7 +1902,6 @@
     padding-left: 52px;
   }
 
-  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
     border-width: 0;
     border-radius: 9999px;
@@ -1909,18 +1909,6 @@
     background-color: color-mix(in oklab, var(--popover) 72%, transparent);
     -webkit-backdrop-filter: blur(12px);
     backdrop-filter: blur(12px);
-  }
-
-  .dark [data-testid="app-sidebar-trigger-overlay"]:not([data-panel-shelf]) {
-    visibility: hidden;
-  }
-
-  /* bb drops data-panel-shelf only once the drawer has opened. Hide the fixed
-   * toggle while the page is open or moving aside so it does not overlap
-   * the drawer's content. */
-  .dark [data-sidebar="inset"][data-sidebar-shelf="open"] ~ [data-testid="app-sidebar-trigger-overlay"],
-  .dark [data-sidebar="inset"][data-vaul-animate] ~ [data-testid="app-sidebar-trigger-overlay"] {
-    visibility: hidden;
   }
 
   /* 6px inside each end, so the first and last glyphs sit clear of the pill's curve. */
@@ -1938,6 +1926,81 @@
   .dark [data-split-pane-id] > header [data-thread-header-pane-actions] [aria-label="Thread context"] {
     display: none;
   }
+
+  /* The sidebar toggle is fixed to the screen, so it cannot slide aside with
+   * the thread when the drawer opens. On a thread the visible toggle is a
+   * copy drawn on the thread header, which the page carries, at bb's spot:
+   * 2px down in the 48px row and bb's rail padding in (12px under a coarse
+   * pointer, 2px less under a fine one). bb's own toggle stays on top of it,
+   * transparent, and takes the taps. Swapping the two as the drawer moved
+   * flickered on iOS, which can paint a frame with neither blurred layer, so
+   * neither ever hides. While the drawer is open or moving, bb's toggle stops
+   * taking taps so it cannot cover the rail; a tap on the pushed-aside page
+   * lands on bb's backdrop and closes the drawer. The glyph is bb's PanelLeft.
+   * Other pages keep bb's plain toggle and hide it over the open drawer. */
+  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] {
+    opacity: 0;
+  }
+
+  .dark[data-monokai-thread]
+    [data-sidebar="inset"][data-sidebar-shelf="open"]
+    ~ [data-testid="app-sidebar-trigger-overlay"]
+    > [data-sidebar="trigger"],
+  .dark[data-monokai-thread]
+    [data-sidebar="inset"][data-vaul-animate]
+    ~ [data-testid="app-sidebar-trigger-overlay"]
+    > [data-sidebar="trigger"],
+  .dark[data-monokai-thread]
+    [data-testid="app-sidebar-trigger-overlay"]:not([data-panel-shelf])
+    > [data-sidebar="trigger"] {
+    pointer-events: none;
+  }
+
+  .dark:not([data-monokai-thread]) [data-sidebar="inset"][data-sidebar-shelf="open"] ~ [data-testid="app-sidebar-trigger-overlay"],
+  .dark:not([data-monokai-thread]) [data-sidebar="inset"][data-vaul-animate] ~ [data-testid="app-sidebar-trigger-overlay"],
+  .dark:not([data-monokai-thread]) [data-testid="app-sidebar-trigger-overlay"]:not([data-panel-shelf]) {
+    visibility: hidden;
+  }
+
+  .dark[data-monokai-thread] [data-split-pane-id] > header::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: calc(var(--bb-sidebar-rail-padding) - 2px);
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    pointer-events: none;
+  }
+
+  .dark[data-monokai-thread] [data-split-pane-id] > header [data-testid="app-page-header-content-row"]::before {
+    content: "";
+    position: absolute;
+    top: 13px;
+    /* The glyph centers in the circle; the row starts 16px in. */
+    left: calc(var(--bb-sidebar-rail-padding) - 2px + 11px - 16px);
+    width: 22px;
+    height: 22px;
+    background-color: var(--foreground);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.31087 2 6.4663 2.81382 5.15877C3.1149 4.67502 3.48891 4.25427 3.91891 3.91554C5.08116 3 6.72077 3 10 3H14C17.2792 3 18.9188 3 20.0811 3.91554C20.5111 4.25427 20.8851 4.67502 21.1862 5.15877C22 6.4663 22 8.31087 22 12C22 15.6891 22 17.5337 21.1862 18.8412C20.8851 19.325 20.5111 19.7457 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7457 3.1149 19.325 2.81382 18.8412C2 17.5337 2 15.6891 2 12Z'/%3E%3Cpath d='M9.5 3L9.5 21' stroke-linejoin='round'/%3E%3Cpath d='M5 7H6M5 10H6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.5'%3E%3Cpath d='M2 12C2 8.31087 2 6.4663 2.81382 5.15877C3.1149 4.67502 3.48891 4.25427 3.91891 3.91554C5.08116 3 6.72077 3 10 3H14C17.2792 3 18.9188 3 20.0811 3.91554C20.5111 4.25427 20.8851 4.67502 21.1862 5.15877C22 6.4663 22 8.31087 22 12C22 15.6891 22 17.5337 21.1862 18.8412C20.8851 19.325 20.5111 19.7457 20.0811 20.0845C18.9188 21 17.2792 21 14 21H10C6.72077 21 5.08116 21 3.91891 20.0845C3.48891 19.7457 3.1149 19.325 2.81382 18.8412C2 17.5337 2 15.6891 2 12Z'/%3E%3Cpath d='M9.5 3L9.5 21' stroke-linejoin='round'/%3E%3Cpath d='M5 7H6M5 10H6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    pointer-events: none;
+  }
+  /* bb insets its toggle 2px more under a coarse pointer. */
+  @media (pointer: coarse) {
+    .dark[data-monokai-thread] [data-split-pane-id] > header::before {
+      left: var(--bb-sidebar-rail-padding);
+    }
+
+    .dark[data-monokai-thread] [data-split-pane-id] > header [data-testid="app-page-header-content-row"]::before {
+      left: calc(var(--bb-sidebar-rail-padding) + 11px - 16px);
+    }
+  }
+
 
   .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div button {
