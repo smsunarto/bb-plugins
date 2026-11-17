@@ -2475,6 +2475,13 @@
     background-color: color-mix(in oklab, var(--popover) 72%, var(--background));
   }
 
+  /* With no pinned views the tab chip led the pill flush against its start;
+   * the empty pinned-view group holds the 4px the chip keeps above and below,
+   * and the new-tab button keeps at the end. */
+  .dark [data-testid="mobile-panel-tab-pager"] > div:first-child:empty {
+    width: 4px;
+  }
+
   .dark [data-testid="thread-secondary-panel-top-chrome"] > div + div > button[aria-label^="Hide right panel"] {
     display: none;
   }
