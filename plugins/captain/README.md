@@ -2,7 +2,7 @@
 
 A Captain is a long-lived bb thread that runs other threads for you. You hand it work in plain words; it briefs crew threads, checks what they report, and tells you only what needs you.
 
-This is the plugin skeleton (build step 2 of the Captain spec): a thread can be a Captain, with its own rules, Drive and repos. Crew dispatch, verdicts, asks, status and the Needs you banner arrive in later steps.
+A thread can be a Captain, with its own rules, Drive and repos, and it runs crew on Tasks: dispatch, verdicts, tells, asks and status (build steps 2 and 3a of the Captain spec). The background check and the Needs you banner arrive in later steps.
 
 ```sh
 bb captain new --name Plugins --repo bb-plugins [--repo rampage] [--prompt-file purpose.md]
@@ -11,7 +11,20 @@ bb captain repo remove RAMP
 bb captain drive read CREW.md
 bb captain drive write NOTES.md --file ./notes.md
 bb captain archive
+
+bb captain dispatch PLUG-14 PLUG-15 --role Implement [--base-branch <ref>] [--again] [--dry-run]
+bb captain dispatch PLUG-14 --role Review
+bb captain dispatch PLUG-9 --role Implement --thread thr_abc
+bb captain verdict PLUG-14 review passed --head <sha> [--ship]
+bb captain verdict PLUG-14 review skipped --reason "Docs only"
+bb captain tell PLUG-14 --role Implement --message-file findings.md
+bb captain tell --all --rule --message "Never push to main."
+bb captain ask "Pick the Unity account" --task PLUG-19 --option Studio --option Personal --detail-file why.md
+bb captain ask resolve a7 --answer Studio
+bb captain status [--since <cursor>] [--all]
 ```
+
+Long text goes through a file on the calling machine (`--message-file`, `--detail-file`) or stdin (`--message-stdin`, `--detail-stdin`).
 
 Run `bb captain --help` for every option. Every command takes `--json`.
 

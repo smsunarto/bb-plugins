@@ -106,6 +106,7 @@ function crewConfiguration(
   const rules = files.read("crew", {
     captain: JSON.stringify(captain?.name ?? "unknown"),
     drive: dir ?? "(unknown)",
+    report: files.read("report"),
   });
   const contract = role === null ? null : ROLE_SPECS[role].contract;
   const fixed = contract === null ? [rules] : [rules, files.read(contract)];

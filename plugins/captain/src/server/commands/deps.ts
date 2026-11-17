@@ -1,6 +1,7 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { InstructionFiles } from "@bb-plugins/instructions";
 import type { Drive } from "../drive.ts";
+import type { Fields } from "../fields.ts";
 import type { Registry } from "../registry.ts";
 import type { Store } from "../store.ts";
 import type { TasksClient } from "../tasks-client.ts";
@@ -11,6 +12,8 @@ export type CommandDeps = {
   store: Store;
   drive: Drive;
   tasks: TasksClient;
+  /** Captain's owned verdict fields in Tasks, defined once a call succeeds. */
+  fields: Fields;
   files: InstructionFiles;
   now: () => number;
   /** The shared Captains project's folder on the server's machine. */

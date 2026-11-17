@@ -6,11 +6,17 @@ import { captainCli } from "./cli.ts";
 import { ensureStorageRoot, type CommandDeps } from "./commands/deps.ts";
 import { configure } from "./configure.ts";
 import { createDrive } from "./drive.ts";
+import { createFields } from "./fields.ts";
 import { createRegistry } from "./registry.ts";
 import { openStore } from "./store.ts";
 import { createTasksClient } from "./tasks-client.ts";
 
-export type StartOptions = { captainsDir?: string; now?: () => number };
+export type StartOptions = {
+  captainsDir?: string;
+  now?: () => number;
+  /** How long a Tasks call may take; tests shorten it. */
+  tasksDeadlineMs?: number;
+};
 
 /** Wires the plugin; holds no logic of its own. Returns the parts tests drive. */
 export async function start(bb: BbPluginApi, options: StartOptions = {}) {
@@ -18,12 +24,15 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
   const registry = createRegistry(store);
   const drive = createDrive();
   const files = instructionFiles(import.meta.url);
+  const tasks = createTasksClient(bb, options.tasksDeadlineMs);
+  const fields = createFields(tasks);
   const deps: CommandDeps = {
     bb,
     registry,
     store,
     drive,
-    tasks: createTasksClient(bb),
+    tasks,
+    fields,
     files,
     now: options.now ?? Date.now,
     captainsDir: options.captainsDir ?? join(homedir(), CAPTAINS_FOLDER),
@@ -45,7 +54,12 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     (error: unknown) =>
       bb.log.warn(`thread-storage root not read yet: ${(error as Error).message}`),
   );
-  return { store, registry, drive, ready };
+  // Tasks may load after Captain: a failure here is retried by the next `verdict`.
+  const fieldsReady = fields.ensure().then(
+    () => undefined,
+    (error: unknown) => bb.log.warn(`verdict fields not defined yet: ${(error as Error).message}`),
+  );
+  return { store, registry, drive, ready, fieldsReady };
 }
 
 const CAPTAINS_FOLDER = "Captains";

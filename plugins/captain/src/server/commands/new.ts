@@ -1,7 +1,6 @@
 import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { z } from "zod";
 import { readCallerFile } from "../caller.ts";
 import { DRIVE_FILES } from "../drive.ts";
 import { guard, refuse, Refusal, render, type Blocker } from "../output.ts";
@@ -13,13 +12,12 @@ import {
   type BbProject,
   type LinkPlan,
 } from "../repos.ts";
+import { setPushLevel } from "../push.ts";
 import { V1_PRESETS } from "../roles.ts";
 import { TasksError, type TasksPreset, type TasksProject } from "../tasks-client.ts";
 import { ensureStorageRoot, JSON_OPTION, type CommandDeps } from "./deps.ts";
 
 export const CAPTAINS_PROJECT_NAME = "Captains";
-const PUSH_PLUGIN_ID = "push-notifications";
-const PUSH_DEADLINE_MS = 10_000;
 
 type Plan = {
   name: string;
@@ -193,7 +191,8 @@ async function apply(deps: CommandDeps, plan: Plan) {
     createdAt: existing?.createdAt ?? deps.now(),
     repos: [...repos.values()],
   });
-  warnings.push(...(await setPushLevel(deps, threadId)));
+  const pushWarning = await setPushLevel(bb, threadId);
+  if (pushWarning !== null) warnings.push(pushWarning);
   const presets = await createMissingPresets(deps, plan.presets);
   warnings.push(...presets.warnings);
   if (presets.created.length > 0) notes.push(`created presets ${presets.created.join(", ")}`);
@@ -226,6 +225,9 @@ async function spawnCaptain(deps: CommandDeps, plan: Plan, projectId: string): P
       workspace: { type: "unmanaged", path: null },
     },
     providerId: "claude-code",
+    // The user's call: Captains run unattended, and auto mode's classifier
+    // refused their own `bb tasks show`.
+    permissionMode: "full",
     title: `${plan.name} Captain`,
     prompt: plan.prompt,
     pinned: true,
@@ -245,22 +247,6 @@ function createDriveFiles(deps: CommandDeps, dir: string): string[] {
     }
   }
   return warnings;
-}
-
-/** `input-only` pushes interactions and errors, never the silent wakes of every turn end. */
-async function setPushLevel(deps: CommandDeps, threadId: string): Promise<string[]> {
-  try {
-    await deps.bb.sdk.plugins.callRpc({
-      pluginId: PUSH_PLUGIN_ID,
-      method: "threadNotifications.set",
-      input: { threadId, level: "input-only" },
-      outputSchema: z.object({ own: z.string() }),
-      signal: AbortSignal.timeout(PUSH_DEADLINE_MS),
-    });
-    return [];
-  } catch (error) {
-    return [`push level not set to input-only: ${(error as Error).message}`];
-  }
 }
 
 /** Presets are global in Tasks with unique names, matched case-insensitively; existing ones are left alone. */

@@ -80,6 +80,39 @@ export type CrewRole = {
   contractSent: boolean;
 };
 
+export const ASK_KINDS = ["decision", "ship", "access", "improve"] as const;
+export type AskKind = (typeof ASK_KINDS)[number];
+
+/** An open decision waiting on the user: the one piece of work-facing state Captain owns. */
+export type Ask = {
+  id: string;
+  captainId: string;
+  taskKey: string | null;
+  kind: AskKind;
+  text: string;
+  detail: string;
+  /** Rendered as buttons; the first is recommended. */
+  options: string[];
+  askedAt: number;
+  answer: string | null;
+  answeredAt: number | null;
+  answerDeliveredAt: number | null;
+};
+
+type AskRecord = {
+  id: string;
+  captain_id: string;
+  task_key: string | null;
+  kind: AskKind;
+  text: string;
+  detail: string;
+  options: string | null;
+  asked_at: number;
+  answer: string | null;
+  answered_at: number | null;
+  answer_delivered_at: number | null;
+};
+
 type CaptainRecord = {
   thread_id: string;
   name: string;
@@ -122,6 +155,31 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
   const selectCrewRole = db.prepare<[string], CrewRoleRecord>(
     "SELECT * FROM crew_roles WHERE thread_id = ?",
   );
+  const toCrewRole = (row: CrewRoleRecord): CrewRole | null => {
+    const role = parseRole(row.role);
+    if (role === null) return null;
+    return {
+      threadId: row.thread_id,
+      captainId: row.captain_id,
+      role,
+      reportDueSince: row.report_due_since,
+      contractSent: row.contract_sent === 1,
+    };
+  };
+  const selectAsk = db.prepare<[string], AskRecord>("SELECT * FROM asks WHERE id = ?");
+  const toAsk = (row: AskRecord): Ask => ({
+    id: row.id,
+    captainId: row.captain_id,
+    taskKey: row.task_key,
+    kind: row.kind,
+    text: row.text,
+    detail: row.detail,
+    options: row.options === null ? [] : (JSON.parse(row.options) as string[]),
+    askedAt: row.asked_at,
+    answer: row.answer,
+    answeredAt: row.answered_at,
+    answerDeliveredAt: row.answer_delivered_at,
+  });
 
   return {
     /** Every Captain not archived, oldest first. */
@@ -166,15 +224,39 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     /** A synchronous read: `configure` calls it while bb builds a session. */
     crewRole(threadId: string): CrewRole | null {
       const row = selectCrewRole.get(threadId);
-      const role = row === undefined ? null : parseRole(row.role);
-      if (row === undefined || role === null) return null;
-      return {
-        threadId: row.thread_id,
-        captainId: row.captain_id,
-        role,
-        reportDueSince: row.report_due_since,
-        contractSent: row.contract_sent === 1,
-      };
+      return row === undefined ? null : toCrewRole(row);
+    },
+    /** Every crew row this Captain ever recorded, archived crew included. */
+    crewRolesOf(captainId: string): CrewRole[] {
+      return db
+        .prepare<[string], CrewRoleRecord>(
+          "SELECT * FROM crew_roles WHERE captain_id = ? ORDER BY rowid",
+        )
+        .all(captainId)
+        .flatMap((row) => toCrewRole(row) ?? []);
+    },
+    /** Write a row only when the thread has none, as a backfill does. */
+    ensureCrewRole(crew: CrewRole): void {
+      db.prepare(
+        `INSERT INTO crew_roles (thread_id, captain_id, role, report_due_since, contract_sent)
+         VALUES (?, ?, ?, ?, ?) ON CONFLICT (thread_id) DO NOTHING`,
+      ).run(
+        crew.threadId,
+        crew.captainId,
+        crew.role,
+        crew.reportDueSince,
+        crew.contractSent ? 1 : 0,
+      );
+    },
+    /** Move the report-due mark forward; a notifying comment is compared with it, never clears it. */
+    setReportDue(threadId: string, at: number): void {
+      db.prepare("UPDATE crew_roles SET report_due_since = ? WHERE thread_id = ?").run(
+        at,
+        threadId,
+      );
+    },
+    setContractSent(threadId: string): void {
+      db.prepare("UPDATE crew_roles SET contract_sent = 1 WHERE thread_id = ?").run(threadId);
     },
     putCrewRole(crew: CrewRole): void {
       db.prepare(
@@ -190,6 +272,86 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         crew.reportDueSince,
         crew.contractSent ? 1 : 0,
       );
+    },
+    ask(id: string): Ask | null {
+      const row = selectAsk.get(id.trim().toLowerCase());
+      return row === undefined ? null : toAsk(row);
+    },
+    /** This Captain's asks, oldest first; with `open`, only the unanswered ones. */
+    asksOf(captainId: string, filter: { open?: boolean } = {}): Ask[] {
+      const where = filter.open === true ? " AND answer IS NULL" : "";
+      return db
+        .prepare<[string], AskRecord>(
+          `SELECT * FROM asks WHERE captain_id = ?${where} ORDER BY asked_at, rowid`,
+        )
+        .all(captainId)
+        .map(toAsk);
+    },
+    /** The open ask with this kind, task and text, so a rerun of `ask` finds the first. */
+    findOpenAsk(
+      captainId: string,
+      kind: AskKind,
+      taskKey: string | null,
+      text: string,
+    ): Ask | null {
+      const row = db
+        .prepare<[string, AskKind, string | null, string], AskRecord>(
+          `SELECT * FROM asks WHERE captain_id = ? AND kind = ? AND task_key IS ? AND text = ?
+             AND answer IS NULL ORDER BY rowid LIMIT 1`,
+        )
+        .get(captainId, kind, taskKey, text);
+      return row === undefined ? null : toAsk(row);
+    },
+    /** Insert an ask under the next short id, `a1`, `a2`, …. */
+    openAsk(ask: Omit<Ask, "id" | "answer" | "answeredAt" | "answerDeliveredAt">): Ask {
+      return db.transaction(() => {
+        const { last } = db
+          .prepare<[], { last: number | null }>(
+            "SELECT MAX(CAST(substr(id, 2) AS INTEGER)) AS last FROM asks",
+          )
+          .get() ?? { last: null };
+        const id = `a${(last ?? 0) + 1}`;
+        db.prepare(
+          `INSERT INTO asks (id, captain_id, task_key, kind, text, detail, options, asked_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          id,
+          ask.captainId,
+          ask.taskKey,
+          ask.kind,
+          ask.text,
+          ask.detail,
+          ask.options.length === 0 ? null : JSON.stringify(ask.options),
+          ask.askedAt,
+        );
+        return toAsk(selectAsk.get(id) as AskRecord);
+      })();
+    },
+    /** Record an answer once; a second answer leaves the first. */
+    answerAsk(id: string, answer: string, at: number): void {
+      db.prepare("UPDATE asks SET answer = ?, answered_at = ? WHERE id = ? AND answer IS NULL").run(
+        answer,
+        at,
+        id,
+      );
+    },
+    markAnswerDelivered(id: string, at: number): void {
+      db.prepare(
+        "UPDATE asks SET answer_delivered_at = ? WHERE id = ? AND answer_delivered_at IS NULL",
+      ).run(at, id);
+    },
+    /** When a once-only notice was sent, or null when it never was. */
+    noticeSentAt(key: string): number | null {
+      const row = db
+        .prepare<[string], { sent_at: number | null }>("SELECT sent_at FROM notices WHERE key = ?")
+        .get(key);
+      return row?.sent_at ?? null;
+    },
+    markNoticeSent(key: string, at: number): void {
+      db.prepare(
+        `INSERT INTO notices (key, first_seen, sent_at) VALUES (?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET sent_at = excluded.sent_at`,
+      ).run(key, at, at);
     },
   };
 

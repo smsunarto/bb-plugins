@@ -38,6 +38,7 @@ describe("bb captain new", () => {
         workspace: { type: "unmanaged", path: null },
       },
       pinned: true,
+      permissionMode: "full",
       pluginMetadata: { captain: { name: "Plugins" } },
       prompt:
         "Start as the Plugins Captain: read CAPTAIN.md and NOTES.md, then ask me what to start.",
@@ -59,6 +60,10 @@ describe("bb captain new", () => {
       "Plan",
       "Review",
     ]);
+    // Crew run unattended like their Captain, so their presets skip auto mode's classifier.
+    for (const call of created) {
+      expect(call.input).toMatchObject({ permissionMode: "full" });
+    }
     expect(host.tasks.projects).toContainEqual(
       expect.objectContaining({ prefix: "BBPLUGINS", linkedBbProjectId: "proj_plugins" }),
     );
@@ -132,7 +137,7 @@ describe("bb captain new", () => {
     const result = await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stderr).toContain("warning: push level not set to input-only");
+    expect(result.stderr).toMatch(/warning: push level of thr_\w+ not set to input-only/u);
   });
 });
 

@@ -15,7 +15,7 @@ Review checks a change against its brief through blind lens subagents and report
 
 ## Read the batch
 
-- **If Review reports `Final: 0 findings`:** check that it names the head it reviewed, then record `bb captain verdict <task> review passed`.
+- **If Review reports `Final: 0 findings`:** check that it names the head it reviewed, then record `bb captain verdict <task> review passed --head <sha>`.
 - **If Review reports findings:** record `bb captain verdict <task> review findings`, then decide which findings to send.
 - Drop findings you checked and found wrong. Keep "checked by me" apart from "reported by Review".
 

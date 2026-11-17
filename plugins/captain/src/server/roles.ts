@@ -43,7 +43,7 @@ export const ROLE_SPECS: Readonly<Record<Role, RoleSpec>> = {
       providerId: CLAUDE_CODE,
       modelId: "claude-fable-5",
       reasoningLevel: "xhigh",
-      permissionMode: "auto",
+      permissionMode: "full",
       environmentKind: "project-default",
     },
   },
@@ -56,7 +56,7 @@ export const ROLE_SPECS: Readonly<Record<Role, RoleSpec>> = {
       providerId: CLAUDE_CODE,
       modelId: "claude-opus-5-5",
       reasoningLevel: "high",
-      permissionMode: "auto",
+      permissionMode: "full",
       environmentKind: "new-worktree",
     },
   },
@@ -70,7 +70,7 @@ export const ROLE_SPECS: Readonly<Record<Role, RoleSpec>> = {
       providerId: CLAUDE_CODE,
       modelId: "claude-fable-5",
       reasoningLevel: "high",
-      permissionMode: "auto",
+      permissionMode: "full",
       environmentKind: "new-worktree",
     },
   },
@@ -84,6 +84,36 @@ export const CAPTAIN_SKILLS: readonly string[] = [
   "captain-review-loop",
   "captain-ship",
 ];
+
+/** A role Captain starts through Tasks' dispatch: it has a preset. */
+export function isDispatchable(role: Role): boolean {
+  return ROLE_SPECS[role].preset !== null;
+}
+
+/** The role a Tasks preset name stands for, when it is one of the roles' presets. */
+export function roleOfPreset(presetName: string): Role | null {
+  const wanted = presetName.trim().toLowerCase();
+  return ROLES.find((role) => ROLE_SPECS[role].preset?.name.toLowerCase() === wanted) ?? null;
+}
+
+/**
+ * The owned verdict fields Captain defines in Tasks, one per verdict-writing
+ * role. `defineField` at startup and `bb captain verdict` both read this table.
+ * Triage is a field before it is a dispatchable role (Phase 5).
+ */
+export const VERDICT_FIELDS = {
+  review: ["findings", "passed", "skipped"],
+  triage: ["reproduced", "not-reproduced", "needs-info", "duplicate", "skipped"],
+} as const satisfies Record<string, readonly string[]>;
+export type VerdictField = keyof typeof VERDICT_FIELDS;
+
+export function parseVerdictField(value: string): VerdictField | null {
+  const lower = value.trim().toLowerCase();
+  return Object.hasOwn(VERDICT_FIELDS, lower) ? (lower as VerdictField) : null;
+}
+
+/** Review verdicts that make a task ready to ship. */
+export const SHIP_READY_REVIEWS: ReadonlySet<string> = new Set(["passed", "skipped"]);
 
 /** Parse a role name from the CLI or metadata, case-insensitively. */
 export function parseRole(value: unknown): Role | null {

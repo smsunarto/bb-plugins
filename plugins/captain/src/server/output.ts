@@ -10,6 +10,8 @@ export type Item = {
   id: string;
   ok: boolean;
   state: string;
+  /** Columns between `id` and `state`, such as `thr_abc  Implement`. */
+  lead?: string;
   /** The rest of the text line after `id  state`. */
   detail?: string;
   data?: Record<string, Json>;
@@ -44,7 +46,7 @@ export function render(
     };
   }
   const lines = items.flatMap((item) => {
-    const head = [item.id, item.state, item.detail].filter(Boolean).join("  ");
+    const head = [item.id, item.lead, item.state, item.detail].filter(Boolean).join("  ");
     if (item.blockers === undefined || item.blockers.length === 0) return [head];
     return item.blockers.map((blocker) => `${head}  ${blocker.reason}; fix: ${blocker.fix}`);
   });

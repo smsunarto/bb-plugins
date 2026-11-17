@@ -1,0 +1,215 @@
+import type { CommandDeps } from "./commands/deps.ts";
+import { steer } from "./crew.ts";
+import type { Blocker, Item } from "./output.ts";
+import { sendPush } from "./push.ts";
+import type { Captain } from "./registry.ts";
+import { SHIP_READY_REVIEWS } from "./roles.ts";
+import type { Ask, AskKind } from "./store.ts";
+import { TasksError, type TasksTask } from "./tasks-client.ts";
+
+/**
+ * Asks: the open decisions waiting on the user. Rules live here so `ask` and
+ * `verdict --ship` open asks the same way.
+ */
+
+export const ASK_TEXT_MAX = 80;
+export const SHIP_OPTIONS = ["Merge", "Hold"] as const;
+/** The banner picks options with keys 1 to 9. */
+const OPTIONS_MAX = 9;
+
+export type AskDraft = {
+  kind: AskKind;
+  task: TasksTask | null;
+  text: string;
+  detail: string;
+  options: string[];
+};
+
+/** Every rule an ask must meet, checked before anything is written. */
+export function askBlockers(draft: Omit<AskDraft, "task"> & { taskKey: string | null }): Blocker[] {
+  const blockers: Blocker[] = [];
+  const text = draft.text.trim();
+  if (text === "" || text.length > ASK_TEXT_MAX || /[\r\n]/u.test(text)) {
+    blockers.push({
+      reason: `an ask is one imperative line of 1 to ${ASK_TEXT_MAX} characters (this is ${text.length})`,
+      fix: 'shorten it, such as "Pick the Unity account for cloud crew"; put the rest in --detail',
+    });
+  }
+  if (draft.detail.trim() === "") {
+    blockers.push({
+      reason: "an ask needs detail: what is blocked and why you recommend the first option",
+      fix: "pass --detail <text> or --detail-file <path>",
+    });
+  }
+  if ((draft.kind === "decision" || draft.kind === "ship") && draft.taskKey === null) {
+    blockers.push({ reason: `a ${draft.kind} ask needs its task`, fix: "pass --task <key>" });
+  }
+  const options = draft.options.map((option) => option.trim());
+  if (draft.kind === "ship") {
+    if (options.length > 0) {
+      blockers.push({
+        reason: "a ship ask's options are always Merge and Hold",
+        fix: "drop --option",
+      });
+    }
+  } else {
+    if (draft.kind === "decision" && options.length < 2) {
+      blockers.push({
+        reason: "a decision ask needs two or more options, the recommended one first",
+        fix: "pass --option <recommended> --option <other>",
+      });
+    }
+    if (options.length === 1 && draft.kind !== "decision") {
+      blockers.push({
+        reason: "one option is no choice",
+        fix: "pass two or more --option values, or none",
+      });
+    }
+    if (options.length > OPTIONS_MAX) {
+      blockers.push({
+        reason: `an ask takes at most ${OPTIONS_MAX} options`,
+        fix: "keep the options that matter",
+      });
+    }
+    if (options.some((option) => option === "" || option.length > ASK_TEXT_MAX)) {
+      blockers.push({
+        reason: `each option is 1 to ${ASK_TEXT_MAX} characters`,
+        fix: "shorten the option",
+      });
+    }
+    if (new Set(options.map((option) => option.toLowerCase())).size !== options.length) {
+      blockers.push({ reason: "two options are the same", fix: "drop the duplicate --option" });
+    }
+  }
+  return blockers;
+}
+
+/** The ship gate: a ship ask needs a `review` verdict of passed or skipped. */
+export function shipBlockers(taskKey: string, review: string | null): Blocker[] {
+  if (review !== null && SHIP_READY_REVIEWS.has(review)) return [];
+  return [
+    {
+      reason:
+        review === null ? `${taskKey} has no review verdict` : `${taskKey}'s review is ${review}`,
+      fix:
+        review === null
+          ? `bb captain dispatch ${taskKey} --role Review, then bb captain verdict ${taskKey} review passed`
+          : `bb captain verdict ${taskKey} review passed after the fix`,
+    },
+  ];
+}
+
+/**
+ * Open an ask, or return the open one with the same kind, task and text, so a
+ * rerun opens nothing twice. A new ask is posted on its task as an `Asked:`
+ * comment and sends one push; the push is retried on a rerun until it is sent.
+ */
+export async function openAsk(
+  deps: CommandDeps,
+  captain: Captain,
+  draft: AskDraft,
+): Promise<{ item: Item; notes: string[] }> {
+  const notes: string[] = [];
+  const text = draft.text.trim();
+  const taskKey = draft.task?.key ?? null;
+  const options = draft.kind === "ship" ? [...SHIP_OPTIONS] : draft.options.map((o) => o.trim());
+  const existing = deps.store.findOpenAsk(captain.threadId, draft.kind, taskKey, text);
+  const ask =
+    existing ??
+    deps.store.openAsk({
+      captainId: captain.threadId,
+      taskKey,
+      kind: draft.kind,
+      text,
+      detail: draft.detail.trim(),
+      options,
+      askedAt: deps.now(),
+    });
+  if (existing === null && draft.task !== null) {
+    const body = [
+      `Asked: ${text} (${ask.id})`,
+      options.length === 0
+        ? null
+        : options
+            .map((option, i) => `${i + 1}. ${option}${i === 0 ? " (recommended)" : ""}`)
+            .join("\n"),
+      ask.detail,
+    ]
+      .filter((part) => part !== null)
+      .join("\n\n");
+    const warning = await captainComment(deps, captain, draft.task.id, body);
+    if (warning !== null) notes.push(`warning: ${warning}`);
+  }
+  const pushKey = `push:ask:${ask.id}`;
+  if (deps.store.noticeSentAt(pushKey) === null) {
+    const warning = await sendPush(deps.bb, {
+      title: text,
+      body: `${captain.name} Captain${taskKey === null ? "" : ` · ${taskKey}`} · ${ask.kind}`,
+      threadId: captain.threadId,
+    });
+    if (warning === null) deps.store.markNoticeSent(pushKey, deps.now());
+    else notes.push(`warning: ${warning}`);
+  }
+  return { item: askItem(ask, existing === null ? "open" : "exists"), notes };
+}
+
+export function askItem(ask: Ask, state: string): Item {
+  return {
+    id: ask.id,
+    ok: true,
+    state,
+    detail: [ask.kind, ask.taskKey ?? "-", ask.answer ?? ask.text].join("  "),
+    data: {
+      kind: ask.kind,
+      task: ask.taskKey,
+      text: ask.text,
+      options: ask.options,
+      answer: ask.answer,
+      delivered: ask.answerDeliveredAt !== null,
+    },
+  };
+}
+
+/** A task comment that reads as the Captain's: an agent comment from its thread. */
+export async function captainComment(
+  deps: CommandDeps,
+  captain: Captain,
+  taskId: string,
+  body: string,
+): Promise<string | null> {
+  try {
+    await deps.tasks.createComment({
+      taskId,
+      body,
+      author: `${captain.name} Captain`,
+      threadId: captain.threadId,
+    });
+    return null;
+  } catch (error) {
+    if (!(error instanceof TasksError)) throw error;
+    return `comment not posted: ${error.message}`;
+  }
+}
+
+/**
+ * Send the Captain one line with the answer. `answer delivered at` is set only
+ * when the send succeeds; retrying an undelivered answer is the background
+ * check's job (build step 4), and a rerun of `ask resolve` retries it too.
+ */
+export async function deliverAnswer(
+  deps: CommandDeps,
+  ask: Ask & { answer: string },
+): Promise<string | null> {
+  const subject = ask.taskKey === null ? ask.text : `${ask.taskKey} ${ask.text}`;
+  try {
+    await steer(
+      deps.bb,
+      ask.captainId,
+      deps.files.read("answer", { id: ask.id, answer: ask.answer, subject }),
+    );
+    deps.store.markAnswerDelivered(ask.id, deps.now());
+    return null;
+  } catch (error) {
+    return `answer not delivered to the Captain: ${(error as Error).message}`;
+  }
+}
