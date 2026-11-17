@@ -6,7 +6,11 @@ import {
   type PluginBrowserBbSdk,
   type PluginComposerApi,
 } from "@get-bb/plugin-sdk/app";
-import type { PermissionMode } from "../permission-modes";
+import {
+  isPermissionModeAbove,
+  permissionModeBelow,
+  type PermissionMode,
+} from "../permission-modes";
 
 type ModelsResult = Awaited<ReturnType<PluginBrowserBbSdk["providers"]["models"]>>;
 export type CatalogModel = ModelsResult["models"][number];
@@ -60,6 +64,8 @@ const permissions = new Map<string, PermissionInfo>();
 /** Each provider's most recently listed models, from any routing. */
 const lastListed = new Map<string, readonly CatalogModel[]>();
 const inFlight = new Set<string>();
+/** A read asked for while the same one was under way, run once that one ends. */
+const rerun = new Map<string, LoadOptions>();
 const listeners = new Set<() => void>();
 let version = 0;
 
@@ -128,6 +134,11 @@ interface LoadOptions {
   force?: boolean;
   /** Retry a failed load. Only an explicit ask (opening the picker, Retry) does, which bounds retries. */
   retryErrors?: boolean;
+  /**
+   * Re-read what the machine allows after a sign it changed. BB's cached model list will do,
+   * as BB's own picker reads it, and a failure keeps what is shown.
+   */
+  revalidate?: boolean;
 }
 
 function load(
@@ -137,9 +148,25 @@ function load(
   options: LoadOptions = {},
 ) {
   const key = catalogKey(routing, providerId);
-  if (inFlight.has(key)) return;
+  if (inFlight.has(key)) {
+    // The read under way may have started before the change asked about: read again after it.
+    if (options.force || options.revalidate) {
+      const queued = rerun.get(key);
+      rerun.set(key, {
+        force: Boolean(queued?.force || options.force),
+        retryErrors: Boolean(queued?.retryErrors || options.retryErrors),
+        revalidate: Boolean(queued?.revalidate || options.revalidate),
+      });
+    }
+    return;
+  }
   const cached = catalogs.get(key);
-  if (!options.force && cached) {
+  // A stale model list is due a full read anyway, which reads the limit too.
+  const staleModels = cached?.status === "ready" && Date.now() - cached.fetchedAt >= STALE_AFTER_MS;
+  const permissionsOnly = Boolean(
+    options.revalidate && !options.force && cached && cached.status !== "loading" && !staleModels,
+  );
+  if (!options.force && !options.revalidate && cached) {
     if (cached.status === "loading") return;
     if (cached.status === "error" && !options.retryErrors) return;
     if (cached.status === "ready" && Date.now() - cached.fetchedAt < STALE_AFTER_MS) return;
@@ -162,29 +189,157 @@ function load(
       sdk.providers.models({
         ...routingArgs(routing),
         providerId,
+        ...(permissionsOnly ? { preferCached: true } : {}),
         signal: AbortSignal.timeout(REQUEST_DEADLINE_MS),
       }),
     )
     .then((result) => {
       const provider = result.providers.find((entry) => entry.id === providerId);
-      permissions.set(key, {
-        ceiling: result.permissionCeiling,
-        provider: provider
-          ? {
-              name: provider.displayName,
-              modes: provider.capabilities.permissionModes,
-            }
-          : null,
-      });
+      // A read queued behind this one has the newer limit.
+      if (!rerun.has(key)) {
+        permissions.set(key, {
+          ceiling: result.permissionCeiling,
+          provider: provider
+            ? {
+                name: provider.displayName,
+                modes: provider.capabilities.permissionModes,
+              }
+            : null,
+        });
+      }
+      if (permissionsOnly) return notify();
       const message = errorMessage(result);
       if (message && result.models.length === 0) return failed(message);
       lastListed.set(providerId, result.models);
       return publish(key, { status: "ready", models: result.models, fetchedAt: Date.now() });
     })
-    .catch((error: unknown) =>
-      failed(error instanceof Error ? error.message : "Could not load models."),
-    )
-    .finally(() => inFlight.delete(key));
+    .catch((error: unknown) => {
+      if (permissionsOnly) return;
+      failed(error instanceof Error ? error.message : "Could not load models.");
+    })
+    .finally(() => {
+      inFlight.delete(key);
+      const next = rerun.get(key);
+      if (!next) return;
+      rerun.delete(key);
+      load(sdk, routing, providerId, next);
+    });
+}
+
+/**
+ * The permission reads a mounted picker shows. BB reports a machine's changed permission limit
+ * as that machine connecting again, so while any is watched, that event re-reads the ones on
+ * that machine, and a realtime reconnect, which may have missed one, re-reads them all.
+ */
+const watched = new Map<string, { routing: CatalogRouting; providerId: string; count: number }>();
+let stopWatchingChanges: (() => void) | null = null;
+
+/** The machine a routing reads, or null when this page does not know it. */
+function routingHostId(routing: CatalogRouting): string | null {
+  switch (routing.kind) {
+    case "host":
+      return routing.hostId;
+    case "environment":
+      return environmentHosts.get(routing.environmentId) ?? null;
+    case "primary":
+      return null;
+  }
+}
+
+function watchChanges(sdk: PluginBrowserBbSdk) {
+  if (stopWatchingChanges) return;
+  const revalidate = (matches: (routing: CatalogRouting) => boolean) => {
+    for (const entry of watched.values()) {
+      if (matches(entry.routing)) load(sdk, entry.routing, entry.providerId, { revalidate: true });
+    }
+  };
+  const stopHosts = sdk.subscribe({
+    event: "host:changed",
+    callback: (event) => {
+      if (!event.changes.includes("host-connected")) return;
+      revalidate((routing) => {
+        const hostId = routingHostId(routing);
+        return hostId === null || event.id === undefined || hostId === event.id;
+      });
+    },
+  });
+  // BB replays its last connection state to a new listener, so only a drop seen here counts.
+  let dropped = false;
+  const stopConnection = sdk.subscribe({
+    event: "realtime:connection",
+    callback: (event) => {
+      if (event.state !== "connected") {
+        dropped = true;
+        return;
+      }
+      if (!dropped) return;
+      dropped = false;
+      revalidate(() => true);
+    },
+  });
+  stopWatchingChanges = () => {
+    stopHosts();
+    stopConnection();
+  };
+}
+
+/**
+ * Watches one permission read for as long as a picker shows it. A read nobody watched may
+ * have missed a change, such as while Settings → Machines replaced the thread, so it is read
+ * again, showing the cached limit until the machine answers.
+ */
+function watchPermissions(
+  sdk: PluginBrowserBbSdk,
+  routing: CatalogRouting,
+  providerId: string,
+): () => void {
+  const key = catalogKey(routing, providerId);
+  const entry = watched.get(key);
+  if (entry) entry.count += 1;
+  else {
+    watched.set(key, { routing, providerId, count: 1 });
+    load(sdk, routing, providerId, permissions.has(key) ? { revalidate: true } : {});
+  }
+  watchChanges(sdk);
+  return () => {
+    const current = watched.get(key);
+    if (!current) return;
+    current.count -= 1;
+    if (current.count > 0) return;
+    watched.delete(key);
+    if (watched.size > 0) return;
+    stopWatchingChanges?.();
+    stopWatchingChanges = null;
+  };
+}
+
+/**
+ * BB applied `applied`, or nothing, for a pick of `requested`. BB's composer checks the pick
+ * against its own copy of the machine's limit, so a lower mode most likely means the limit
+ * dropped: the refused mode turns disabled at once, and the machine is read again, which
+ * enables it again if something other than the limit refused it.
+ */
+export function notePermissionRefused(
+  sdk: PluginBrowserBbSdk,
+  routing: CatalogRouting,
+  providerId: string,
+  requested: PermissionMode,
+  applied: PermissionMode | null,
+): void {
+  const key = catalogKey(routing, providerId);
+  const info = permissions.get(key);
+  const below = permissionModeBelow(requested);
+  if (
+    info &&
+    below !== null &&
+    applied !== null &&
+    isPermissionModeAbove(requested, applied) &&
+    !isPermissionModeAbove(requested, info.ceiling)
+  ) {
+    permissions.set(key, { ...info, ceiling: below });
+    notify();
+  }
+  load(sdk, routing, providerId, { revalidate: true });
 }
 
 type ThreadLookup =
@@ -194,6 +349,8 @@ type ThreadLookup =
 
 /** Thread → environment. A failed read is retried on the next ask instead of guessing a machine. */
 const threadLookups = new Map<string, ThreadLookup>();
+/** Environment → machine, from the thread lookups, so a machine's change reaches its threads. */
+const environmentHosts = new Map<string, string>();
 
 function resolveThread(
   sdk: PluginBrowserBbSdk,
@@ -207,8 +364,16 @@ function resolveThread(
   const failures = current?.status === "failed" ? current.failures : 0;
   if (current?.status !== "ready") threadLookups.set(threadId, { status: "pending" });
   Promise.resolve()
-    .then(() => sdk.threads.get({ threadId, signal: AbortSignal.timeout(REQUEST_DEADLINE_MS) }))
+    .then(() =>
+      sdk.threads.get({
+        threadId,
+        include: "environment",
+        signal: AbortSignal.timeout(REQUEST_DEADLINE_MS),
+      }),
+    )
     .then((thread) => {
+      const hostId = "environment" in thread ? thread.environment?.hostId : undefined;
+      if (thread.environmentId && hostId) environmentHosts.set(thread.environmentId, hostId);
       threadLookups.set(threadId, { status: "ready", environmentId: thread.environmentId ?? null });
       return notify();
     })
@@ -359,8 +524,9 @@ export function useModelCatalog(composer: PluginComposerApi, enabled: boolean): 
 }
 
 /**
- * The routed machine's permission ceiling and the provider's modes, loading them when
- * missing. Undefined until the machine answers, so a picker shows its value read-only.
+ * The routed machine's permission ceiling and the provider's modes, loading them when missing
+ * and re-reading them when the machine's limit may have changed (see `watchPermissions`).
+ * Undefined until the machine answers, so a picker shows its value read-only.
  */
 export function usePermissionInfo(
   routing: CatalogRouting | null,
@@ -368,9 +534,10 @@ export function usePermissionInfo(
 ): PermissionInfo | undefined {
   const sdk = useSdk();
   useSyncExternalStore(subscribe, () => version);
-  useEffect(() => {
-    if (routing && providerId) load(sdk, routing, providerId);
-  }, [sdk, routing, providerId]);
+  useEffect(
+    () => (routing && providerId ? watchPermissions(sdk, routing, providerId) : undefined),
+    [sdk, routing, providerId],
+  );
   return routing && providerId ? permissions.get(catalogKey(routing, providerId)) : undefined;
 }
 
@@ -382,4 +549,18 @@ export function listedModelName(providerId: string, model: string): string | und
 export function findCatalogModel(models: readonly CatalogModel[], model: string | undefined) {
   if (!model) return undefined;
   return models.find((candidate) => candidate.model === model || candidate.id === model);
+}
+
+/** For tests: forgets every read and lookup. */
+export function forgetCatalogs(): void {
+  catalogs.clear();
+  permissions.clear();
+  lastListed.clear();
+  inFlight.clear();
+  rerun.clear();
+  threadLookups.clear();
+  environmentHosts.clear();
+  watched.clear();
+  stopWatchingChanges?.();
+  stopWatchingChanges = null;
 }

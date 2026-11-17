@@ -104,6 +104,7 @@ export const catalogMock = {
     bb.machineKnown
       ? { ceiling: bb.ceiling, provider: { name: "Claude Code", modes: ALL } }
       : undefined,
+  notePermissionRefused: () => {},
 };
 
 /** `useSdk()` with BB's realtime feed, which tests drive through `bb.deleted` and `bb.turns`. */

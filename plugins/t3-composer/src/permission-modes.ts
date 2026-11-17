@@ -42,6 +42,16 @@ export const CEILING_REASON =
 
 const RANK: Record<PermissionMode, number> = { "accept-edits": 0, auto: 1, full: 2 };
 
+/** The mode just below `mode`, or null for the lowest. */
+export function permissionModeBelow(mode: PermissionMode): PermissionMode | null {
+  const rank = RANK[mode] - 1;
+  return (Object.keys(RANK) as PermissionMode[]).find((other) => RANK[other] === rank) ?? null;
+}
+
+export function isPermissionModeAbove(mode: PermissionMode, other: PermissionMode): boolean {
+  return RANK[mode] > RANK[other];
+}
+
 /** The modes a provider offers that the machine's ceiling allows. */
 export function allowedPermissionModes(
   modes: readonly PermissionMode[],

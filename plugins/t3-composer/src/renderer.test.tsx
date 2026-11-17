@@ -465,6 +465,8 @@ function pickerOptions(selection: ComposerSelection, sdk: Record<string, unknown
     providers: { status: "ready" as const, providers: PROVIDERS as never },
     sdk: {
       system: { config: async () => ({ keybindings: KEYBINDINGS }) },
+      // BB's realtime feed, which the permission picker watches for a machine's changed limit.
+      subscribe: () => () => {},
       ...sdk,
       providers: {
         models: async (args?: { providerId?: string }) => ({

@@ -8,7 +8,7 @@ import {
   useState,
   type RefObject,
 } from "react";
-import type { PluginComposerApi } from "@get-bb/plugin-sdk/app";
+import { useSdk, type PluginComposerApi } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -21,7 +21,12 @@ import { Icon } from "@/components/ui/icon";
 import { isAnchorInteractive } from "@/components/ui/overlay-anchor";
 import { cn } from "@/lib/utils";
 import { applySelection } from "./composer-settings/apply-selection";
-import { usePermissionInfo, useCatalogRouting, type PermissionInfo } from "./model-picker/catalog";
+import {
+  notePermissionRefused,
+  usePermissionInfo,
+  useCatalogRouting,
+  type PermissionInfo,
+} from "./model-picker/catalog";
 import { markComposerHost } from "./composer-host";
 import { usePickerComposer } from "./composer-handle";
 import { hasEditablePickers } from "./model-picker/ComposerModelControls";
@@ -56,7 +61,16 @@ export const ComposerPermissionControl = memo(function ComposerPermissionControl
   const provider = info?.provider ?? null;
   const options = info && provider ? permissionModeOptions(provider.modes, info.ceiling) : null;
   const controlRef = useRef<HTMLSpanElement>(null);
-  const { error, pick } = usePermissionMode(composer, editable ? info : undefined, controlRef);
+  const sdk = useSdk();
+  const onRefused = (requested: PermissionMode, applied: PermissionMode | null) => {
+    if (routing && providerId) notePermissionRefused(sdk, routing, providerId, requested, applied);
+  };
+  const { error, pick } = usePermissionMode(
+    composer,
+    editable ? info : undefined,
+    controlRef,
+    onRefused,
+  );
   // workaround:t3-composer/thread-permission-reset begin
   useKeptPermissionMode(composer, editable, info);
   // workaround:t3-composer/thread-permission-reset end
@@ -110,12 +124,14 @@ interface PickError {
 /**
  * The composer's pick, and why the last one did not apply. A mode the machine's limit does not
  * allow settles as BB's picker settles it, and a mode BB refused, such as on a permission
- * snapshot, is not retried until the mode changes.
+ * snapshot, is not retried until the mode changes. `onRefused` hears each pick BB did not apply,
+ * for the machine the pick was made on.
  */
 function usePermissionMode(
   composer: PluginComposerApi,
   info: PermissionInfo | undefined,
   controlRef: RefObject<HTMLElement | null>,
+  onRefused: (requested: PermissionMode, applied: PermissionMode | null) => void,
 ): { error: PickError | null; pick(mode: PermissionMode): void } {
   const { key } = composer;
   const value = composer.selection?.permissionMode ?? null;
@@ -125,9 +141,11 @@ function usePermissionMode(
   const latestPick = useRef(0);
   const refused = useRef<Refusal | null>(null);
   const composerRef = useRef(composer);
+  const onRefusedRef = useRef(onRefused);
   // `apply` runs from the picker's selection or the effect below, both after this sync.
   useLayoutEffect(() => {
     composerRef.current = composer;
+    onRefusedRef.current = onRefused;
   });
 
   // Stable, so the effect below does not re-run for a new callback.
@@ -137,6 +155,7 @@ function usePermissionMode(
       const pickKey = target.key;
       const current = target.selection?.permissionMode ?? null;
       const pick = ++latestPick.current;
+      const refusedOn = onRefusedRef.current;
       setError(null);
       if (controlRef.current && !isAnchorInteractive(controlRef.current)) {
         setError({ key: pickKey, mode: current, text: "Answer the agent's question first." });
@@ -147,6 +166,7 @@ function usePermissionMode(
         if (applied && appliedMode !== permissionMode) {
           refused.current = { key: pickKey, mode: permissionMode, seen: appliedMode };
         }
+        if (appliedMode !== permissionMode) refusedOn(permissionMode, appliedMode);
         if (error && pick === latestPick.current) {
           setError({ key: pickKey, mode: applied ? appliedMode : current, text: error });
         }
