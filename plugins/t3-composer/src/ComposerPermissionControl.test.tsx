@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CompactViewportOverrideProvider } from "@/components/ui/hooks/use-compact-viewport";
 import { PermissionPicker } from "./ComposerPermissionControl";
-import { permissionModeOptions } from "./permission-modes";
+import { CEILING_REASON, permissionModeOptions } from "./permission-modes";
 
 const ALL = ["accept-edits", "auto", "full"] as const;
 
@@ -43,12 +43,24 @@ describe("PermissionPicker on a phone", () => {
     expect(onChange).toHaveBeenCalledWith("auto");
   });
 
-  it("shows the machine's limit in place of a disabled mode's description", async () => {
+  it("shows each mode by name alone, and why a mode above the machine's limit is off", async () => {
     renderSheet({ value: "auto", options: permissionModeOptions(ALL, "auto") });
     fireEvent.click(screen.getByRole("button", { name: "Permission mode" }));
-    const full = await screen.findByRole("menuitemradio", { name: /Full Access/ });
-    expect(full.hasAttribute("disabled")).toBe(true);
-    expect(full.textContent).toContain("Above the selected machine's permission limit.");
+    const rows = await screen.findAllByRole("menuitemradio");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Accept Edits",
+      "Approve for me",
+      `Full Access${CEILING_REASON}`,
+    ]);
+    expect(rows[2]!.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("names only the mode in the trigger's tooltip", () => {
+    renderSheet({ value: "auto" });
+    const trigger = screen.getByRole("button", { name: "Permission mode" });
+    expect(trigger.querySelector("[title]")?.getAttribute("title")).toBe(
+      "Permission mode: Approve for me",
+    );
   });
 
   it("stays read-only until the machine's modes are known", () => {

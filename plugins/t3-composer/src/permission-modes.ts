@@ -7,7 +7,6 @@ export interface PermissionModeOption {
   label: string;
   /** The trigger's label once the composer is narrow. */
   compactLabel: string;
-  description: string;
   icon: string;
   tone?: "warning";
   disabled?: boolean;
@@ -20,29 +19,24 @@ const OPTIONS: readonly PermissionModeOption[] = [
     value: "accept-edits",
     label: "Accept Edits",
     compactLabel: "Edits",
-    description:
-      "Applies edits inside the workspace automatically. Anything beyond the workspace asks you first.",
     icon: "FolderEdit",
   },
   {
     value: "auto",
     label: "Approve for me",
     compactLabel: "Auto",
-    description:
-      "Same workspace sandbox, with requests reviewed automatically. High-risk actions can still come back to you.",
     icon: "SecurityCheck",
   },
   {
     value: "full",
     label: "Full Access",
     compactLabel: "Full",
-    description: "No sandbox and no approvals — the agent can run anything on your machine.",
     icon: "SquareUnlock02",
     tone: "warning",
   },
 ];
 
-/** BB's reason for a mode above the machine's limit, shown in place of its description. */
+/** BB's reason for a mode above the machine's limit, shown under its label. */
 export const CEILING_REASON =
   "Above the selected machine's permission limit. Change it in Settings → Machines.";
 

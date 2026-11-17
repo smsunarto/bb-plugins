@@ -205,10 +205,7 @@ export function PermissionPicker(props: {
         !interactive && "cursor-default disabled:opacity-100",
       )}
     >
-      <span
-        className="contents"
-        title={current ? `Permission mode: ${label} - ${current.description}` : undefined}
-      >
+      <span className="contents" title={current ? `Permission mode: ${label}` : undefined}>
         <span className="min-w-0 truncate" data-promptbox-full-label="">
           {label}
         </span>
@@ -266,9 +263,9 @@ export function PermissionPicker(props: {
 }
 
 /**
- * One mode: icon, name and what it allows, with a check on the current one. Rows are split
- * by hairlines inset to the text, and the elevated mode keeps BB's warning tone, across the
- * whole row once chosen.
+ * One mode: icon and name, with a check on the current one; a mode above the machine's limit
+ * also says why it is unavailable. Rows are split by hairlines inset to the text, and the
+ * elevated mode keeps BB's warning tone.
  */
 function PermissionRow(props: {
   option: PermissionModeOption;
@@ -309,15 +306,17 @@ function PermissionRow(props: {
           >
             {option.label}
           </span>
-          <span
-            className={cn(
-              "text-pretty",
-              large ? "text-sm leading-5" : "text-xs leading-4",
-              warning && selected ? WARNING_TEXT : "text-muted-foreground",
-            )}
-          >
-            {option.disabled ? CEILING_REASON : option.description}
-          </span>
+          {/* A mode above the machine's limit says why it cannot be picked. */}
+          {option.disabled ? (
+            <span
+              className={cn(
+                "text-pretty text-muted-foreground",
+                large ? "text-sm leading-5" : "text-xs leading-4",
+              )}
+            >
+              {CEILING_REASON}
+            </span>
+          ) : null}
         </span>
         <Icon
           name="Check"
