@@ -1,4 +1,14 @@
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import { useSdk, type PluginComposerApi } from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -11,7 +21,7 @@ import { Icon } from "@/components/ui/icon";
 import { isAnchorInteractive } from "@/components/ui/overlay-anchor";
 import { cn } from "@/lib/utils";
 import { applySelection } from "./composer-settings/apply-selection";
-import { usePermissionInfo, useCatalogRouting } from "./model-picker/catalog";
+import { usePermissionInfo, useCatalogRouting, type PermissionInfo } from "./model-picker/catalog";
 import { markComposerHost } from "./composer-host";
 import { usePickerComposer } from "./composer-handle";
 import { hasEditablePickers } from "./model-picker/ComposerModelControls";
@@ -23,6 +33,11 @@ import {
   type PermissionMode,
   type PermissionModeOption,
 } from "./permission-modes";
+import {
+  forgetPermissionMode,
+  keepPermissionMode,
+  keptPermissionMode,
+} from "./thread-permission-picks";
 
 /**
  * The permission picker inside the card, where ChatGPT shows "Approve for me": a grouped
@@ -37,43 +52,13 @@ export const ComposerPermissionControl = memo(function ComposerPermissionControl
   const composer = usePickerComposer();
   const editable = hasEditablePickers(composer);
   const routing = useCatalogRouting(composer, editable);
-  const [error, setError] = useState<string | null>(null);
-  const controlRef = useRef<HTMLSpanElement>(null);
-  const latestPick = useRef(0);
-  const composerRef = useRef(composer);
-  // `apply` runs from the picker's selection or the clamp effect below, both after this sync.
-  useLayoutEffect(() => {
-    composerRef.current = composer;
-  });
-  const refused = useRef<PermissionMode | null>(null);
-  // Stable, because BB's picker re-runs its clamp effect whenever `onChange` changes.
-  const apply = useCallback((permissionMode: PermissionMode) => {
-    // BB refuses changes on some threads, such as a permission snapshot; never retry one.
-    if (permissionMode === refused.current) return;
-    const pick = ++latestPick.current;
-    if (controlRef.current && !isAnchorInteractive(controlRef.current)) {
-      setError("Answer the agent's question first.");
-      return;
-    }
-    setError(null);
-    void applySelection(composerRef.current, { permissionMode }).then(({ applied, error }) => {
-      if (applied && applied.permissionMode !== permissionMode) refused.current = permissionMode;
-      if (pick === latestPick.current) setError(error);
-      return applied;
-    });
-  }, []);
-  const selection = composer.selection;
-  const providerId = selection?.providerId ?? null;
-  const value = selection?.permissionMode ?? null;
+  const providerId = composer.selection?.providerId ?? null;
+  const value = composer.selection?.permissionMode ?? null;
   const info = usePermissionInfo(editable ? routing : null, providerId);
   const provider = info?.provider ?? null;
   const options = info && provider ? permissionModeOptions(provider.modes, info.ceiling) : null;
-  // Once the machine answers, a value it does not allow settles as BB's picker settles it.
-  const settled =
-    info && provider && value ? resolvePermissionMode(value, provider.modes, info.ceiling) : null;
-  useEffect(() => {
-    if (settled && settled !== value) apply(settled);
-  }, [apply, settled, value]);
+  const controlRef = useRef<HTMLSpanElement>(null);
+  const { error, pick } = usePermissionMode(composer, editable, info, controlRef);
 
   const shown = Boolean(
     editable && routing && providerId && value && (!info || (provider && options?.length)),
@@ -92,20 +77,156 @@ export const ComposerPermissionControl = memo(function ComposerPermissionControl
         providerName={provider?.name ?? null}
         // Read-only until the machine answers, like BB's picker.
         options={options}
-        onChange={apply}
+        onChange={pick}
       />
       {error ? (
         <span
           role="alert"
           className="ml-1 max-w-48 truncate text-xs text-destructive"
-          title={error}
+          title={error.text}
         >
-          {error}
+          {error.text}
         </span>
       ) : null}
     </span>
   );
 });
+
+/** Why the last pick did not apply, for the mode it was raised against in its composer. */
+interface PickError {
+  key: string;
+  mode: PermissionMode | null;
+  text: string;
+}
+
+/**
+ * Where a composer stands on its thread's kept pick: waiting for the machine's limit,
+ * restoring it through BB, or done, when later changes replace the kept pick.
+ */
+interface ThreadSync {
+  key: string;
+  phase: "waiting" | "restoring" | "done";
+  /** The mode last seen once done, so a change made since can be told apart from it. */
+  seen: PermissionMode | null;
+}
+
+/**
+ * The composer's permission mode, kept per thread and settled under the machine's limit.
+ *
+ * BB resets a thread composer's mode to the thread's last sent one whenever the thread opens
+ * again, so a pick made here is kept per thread and put back, settled under the machine's
+ * limit, once that limit is known. Later changes from any picker or shortcut replace the kept
+ * pick. A mode the limit does not allow settles as BB's picker settles it, and a mode BB
+ * refused, such as on a permission snapshot, is not retried until the mode changes.
+ */
+function usePermissionMode(
+  composer: PluginComposerApi,
+  editable: boolean,
+  info: PermissionInfo | undefined,
+  controlRef: RefObject<HTMLElement | null>,
+): { error: PickError | null; pick(mode: PermissionMode): void } {
+  const sdk = useSdk();
+  const { key } = composer;
+  const value = composer.selection?.permissionMode ?? null;
+  // Only a thread's own composer keeps a pick; a new thread starts at BB's default.
+  const threadId = editable && composer.scope.kind === "thread" ? composer.scope.threadId : null;
+  const [error, setError] = useState<PickError | null>(null);
+  // A message speaks for the mode it was raised against, in the composer it was raised in.
+  if (error && (error.key !== key || error.mode !== value)) setError(null);
+  const latestPick = useRef(0);
+  const refused = useRef<{ key: string; mode: PermissionMode } | null>(null);
+  const sync = useRef<ThreadSync | null>(null);
+  const composerRef = useRef(composer);
+  // The callbacks below run from the picker's selection or the effect, both after this sync.
+  useLayoutEffect(() => {
+    composerRef.current = composer;
+  });
+
+  // Stable, so the effect below does not re-run for a new callback.
+  const apply = useCallback(
+    (permissionMode: PermissionMode, source: "pick" | "settle") => {
+      const target = composerRef.current;
+      const pickKey = target.key;
+      const pickThreadId = target.scope.kind === "thread" ? target.scope.threadId : null;
+      const current = target.selection?.permissionMode ?? null;
+      const pick = ++latestPick.current;
+      if (source === "pick" && sync.current?.key === pickKey) sync.current.phase = "done";
+      setError(null);
+      if (controlRef.current && !isAnchorInteractive(controlRef.current)) {
+        setError({ key: pickKey, mode: current, text: "Answer the agent's question first." });
+        return;
+      }
+      // Kept before BB answers, so a thread switch right after the pick keeps it too.
+      const previous = pickThreadId === null ? undefined : keptPermissionMode(pickThreadId);
+      const keeps = source === "pick" && pickThreadId !== null;
+      if (keeps) keepPermissionMode(sdk, pickThreadId, permissionMode);
+      void applySelection(target, { permissionMode }).then(({ applied, error }) => {
+        const appliedMode = applied?.permissionMode ?? null;
+        if (applied && appliedMode !== permissionMode) {
+          refused.current = { key: pickKey, mode: permissionMode };
+        }
+        const undo =
+          keeps &&
+          appliedMode !== permissionMode &&
+          keptPermissionMode(pickThreadId) === permissionMode;
+        if (undo && previous) keepPermissionMode(sdk, pickThreadId, previous);
+        else if (undo) forgetPermissionMode(pickThreadId);
+        if (error && pick === latestPick.current) {
+          setError({ key: pickKey, mode: applied ? appliedMode : current, text: error });
+        }
+        return applied;
+      });
+    },
+    [controlRef, sdk],
+  );
+  // Puts a thread's kept pick back without a message: the user did not ask for anything.
+  const restore = useCallback((permissionMode: PermissionMode) => {
+    const target = composerRef.current;
+    const restoreKey = target.key;
+    sync.current = { key: restoreKey, phase: "restoring", seen: null };
+    void applySelection(target, { permissionMode }).then(({ applied }) => {
+      const appliedMode = applied?.permissionMode ?? null;
+      if (applied && appliedMode !== permissionMode) {
+        refused.current = { key: restoreKey, mode: permissionMode };
+      }
+      if (sync.current?.key === restoreKey && sync.current.phase === "restoring") {
+        // What BB applied, so a change made before the next render still counts as one.
+        sync.current = { key: restoreKey, phase: "done", seen: appliedMode };
+      }
+      return applied;
+    });
+  }, []);
+
+  const provider = info?.provider ?? null;
+  const settled =
+    info && provider && value ? resolvePermissionMode(value, provider.modes, info.ceiling) : null;
+  const kept = threadId === null ? undefined : keptPermissionMode(threadId);
+  const restoreTo =
+    kept && info && provider ? resolvePermissionMode(kept, provider.modes, info.ceiling) : null;
+  useEffect(() => {
+    if (!value) return;
+    if (sync.current?.key !== key) {
+      sync.current = { key, phase: kept ? "waiting" : "done", seen: null };
+      refused.current = null;
+    }
+    const { phase, seen } = sync.current;
+    const changed = seen !== null && seen !== value;
+    if (changed) refused.current = null;
+    if (phase === "waiting") {
+      // Restored even when BB shows the pick already, so a late thread default cannot replace it.
+      if (restoreTo !== null) restore(restoreTo);
+      return;
+    }
+    if (phase === "restoring") return;
+    if (threadId !== null && kept && changed) keepPermissionMode(sdk, threadId, value);
+    sync.current = { key, phase, seen: value };
+    const blocked = refused.current?.key === key && refused.current.mode === settled;
+    if (settled && settled !== value && !blocked) apply(settled, "settle");
+  }, [apply, key, kept, restore, restoreTo, sdk, settled, threadId, value]);
+
+  const pick = useCallback((mode: PermissionMode) => apply(mode, "pick"), [apply]);
+  return { error, pick };
+}
 
 const WARNING_TEXT = "text-warning-text";
 
