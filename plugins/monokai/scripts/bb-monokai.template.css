@@ -920,11 +920,47 @@
   width: var(--hairline-width);
 }
 
-/* Both left sidebars draw their right edge with a data-side variant, which
- * outweighs the utility rules above: the phone drawer on itself, the desktop
- * panel through its wrapper. The framed window's !important zero still wins. */
+/* The desktop left sidebar draws its right edge with a data-side variant on
+ * its wrapper, which outweighs the utility rules above. The framed window's
+ * !important zero still wins. The phone drawer has no edge of its own: the
+ * page it pushes aside carries the edge, below. */
 .dark [data-sidebar="panel"][data-vaul-drawer-direction="left"] {
-  border-right-width: var(--hairline-width);
+  border-right-width: 0;
+}
+
+/* Phone drawer depth, after ChatGPT's iOS drawer: the page bb slides aside
+ * keeps the screen's rounded corners and dims under a hairline-edged scrim, so
+ * the drawer reads as the layer in front. bb slides the page
+ * ([data-sidebar="inset"]) and a transparent backdrop over it by the drawer's
+ * width, and drives the backdrop's opacity with the drag, so the scrim fades
+ * with the gesture. The page is open on data-sidebar-shelf="open" and in
+ * motion while bb marks it data-vaul-animate: a tapped open slides on inline
+ * styles before the shelf flips. Away from the drawer the page stays square:
+ * at rest it fills the screen, where the display's own corners mask it.
+ * The radius is the display's corner on recent iPhones: 55pt, or 62pt on the
+ * 402pt- and 440pt-wide 16 and 17 generation. */
+.dark [data-sidebar="inset"],
+.dark [data-sidebar-mobile-backdrop] {
+  --monokai-display-radius: 55px;
+}
+
+@media (width: 402px), (width: 440px) {
+  .dark [data-sidebar="inset"],
+  .dark [data-sidebar-mobile-backdrop] {
+    --monokai-display-radius: 62px;
+  }
+}
+
+.dark [data-sidebar="inset"][data-sidebar-shelf="open"],
+.dark [data-sidebar="inset"][data-sidebar-shelf][data-vaul-animate] {
+  overflow: clip;
+  border-radius: var(--monokai-display-radius);
+}
+
+.dark [data-sidebar-mobile-backdrop] {
+  border-radius: var(--monokai-display-radius);
+  background-color: rgb(0 0 0 / 0.3);
+  box-shadow: inset 0 0 0 var(--hairline-width) var(--border);
 }
 
 @media (min-width: 768px) {
