@@ -101,6 +101,58 @@ describe("the Captain form as the agent sees it", () => {
   });
 });
 
+describe("config-object field names", () => {
+  const message = (source: string, edit: Record<string, string>) => {
+    const { roots } = render(source, edit);
+    const [form] = find(roots[0], "Form");
+    return formMessage(form as Parameters<typeof formMessage>[0]);
+  };
+
+  it("keeps non-ASCII field names apart", () => {
+    const source =
+      'Card("x", [Form([Input({name: "имя", label: "Name"}), Input({name: "город", label: "City"})])])';
+    const { state } = render(source);
+    expect(Object.keys(state)).toHaveLength(2);
+    const [name, city] = Object.keys(state);
+    expect(message(source, { [name]: "Alice", [city]: "Paris" })).toBe("Name: Alice\nCity: Paris");
+  });
+
+  it("keeps names that normalize alike apart", () => {
+    const source =
+      'Card("x", [Form([Input({name: "x-y", label: "A"}), Input({name: "x y", label: "B"})])])';
+    const { state } = render(source);
+    expect(Object.keys(state)).toEqual(["x_y", "x_y2"]);
+    expect(message(source, { x_y: "1", x_y2: "2" })).toBe("A: 1\nB: 2");
+  });
+
+  it("binds the same field name to the same state", () => {
+    const { state } = render(
+      'Card("x", [Input({name: "work", label: "A"}), TextArea({name: "work", label: "B"})])',
+    );
+    expect(Object.keys(state)).toEqual(["work"]);
+  });
+
+  it("binds a declared state the field name spells", () => {
+    const { state } = render('$work = "draft"\nCard("x", [Input({name: "work", label: "Work"})])');
+    expect(state).toEqual({ work: "draft" });
+  });
+});
+
+describe("options given by name", () => {
+  it("keeps the error for a positional value list beside named options", () => {
+    expect(errors('Card("x", [Checklist(["a"], options: ["a", "b"])])').join("\n")).toMatch(
+      /must be a state variable/,
+    );
+    expect(errors('Card("x", [Checklist(["a"], ["a", "b"])])').join("\n")).toMatch(
+      /must be a state variable/,
+    );
+  });
+
+  it("still binds a fresh state when only the options are given", () => {
+    expect(errors('Card("x", [Checklist(options: ["a", "b"])])')).toEqual([]);
+  });
+});
+
 describe("inputs given a literal value", () => {
   it("starts a TextArea at its literal text", () => {
     const { state, roots } = render(

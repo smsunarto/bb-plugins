@@ -258,6 +258,8 @@ class Validator {
   private readonly named = new Map<string, Decl>();
   /** `$state` declarations in source order, plus states synthesized by coercion. */
   private readonly stateDecls: Decl[] = [];
+  /** Local (bb-plugins): config-object field names (`{name: "…"}`) and the states they bind. */
+  private readonly fieldStates = new Map<string, string>();
 
   constructor(private readonly diagnostics: DiagnosticList) {}
 
@@ -652,6 +654,8 @@ class Validator {
     if (binding === undefined || binding.kind !== "binding" || optionsIndex < 0 || expr.args.length > 1) return;
     const positionalList = slots[0] !== undefined && slots[0].type === "list";
     if (slots[0] !== undefined && !positionalList) return;
+    // Local (bb-plugins): with options given by name, a positional list is the value, not the options; keep its error.
+    if (positionalList && expr.named.some((arg) => arg.name === spec.params[optionsIndex].name)) return;
     const list = slots[optionsIndex] ?? (positionalList ? slots[0] : undefined);
     if (list === undefined || list.type !== "list") return;
     const name = this.synthState(expr.name, binding.holds, expr.pos);
@@ -737,17 +741,23 @@ class Validator {
       (wanted !== undefined && wanted !== "object" && !(landing.optional && obj.entries.every((entry) => entry.value.type === "literal" && entry.value.value === null)));
     if (!missingRequired && !misplaced) return;
     const named: NamedArg[] = [];
+    let field: { readonly param: string; readonly field: string; readonly pos: Pos; readonly at: Pos } | undefined;
     for (const entry of obj.entries) {
       // Local (bb-plugins): `{name: "work"}` names the state an input binds,
       // as in an HTML form field; it becomes `value: $work`.
-      const stateName = this.fieldStateName(spec, entry, obj.entries);
-      if (stateName !== undefined) {
-        named.push({ name: stateName.param, value: { type: "state", name: stateName.name, pos: entry.value.pos }, pos: entry.pos });
+      const fieldName = this.fieldStateName(spec, entry, obj.entries);
+      if (fieldName !== undefined && field === undefined) {
+        field = { ...fieldName, pos: entry.value.pos, at: entry.pos };
         continue;
       }
       const param = spec.params.find((candidate) => candidate.name === entry.key);
       if (param === undefined || slots.some((slot, index) => index > 0 && slot !== undefined && spec.params[index].name === entry.key)) return;
       named.push({ name: entry.key, value: entry.value, pos: entry.pos });
+    }
+    if (field !== undefined) {
+      // Resolved only once the whole object is known to unwrap, so an abandoned rewrite claims no state name.
+      const state = this.fieldState(field.field, expr.name);
+      named.unshift({ name: field.param, value: { type: "state", name: state, pos: field.pos }, pos: field.at });
     }
     slots.fill(undefined);
     for (const arg of named) {
@@ -785,13 +795,36 @@ class Validator {
     spec: ComponentSpec,
     entry: { readonly key: string; readonly value: Expr },
     entries: readonly { readonly key: string }[],
-  ): { param: string; name: string } | undefined {
+  ): { param: string; field: string } | undefined {
     if ((entry.key !== "name" && entry.key !== "id") || spec.params.some((param) => param.name === entry.key)) return undefined;
     const binding = spec.params.find((param) => param.kind === "binding");
     if (binding === undefined || entries.some((other) => other.key === binding.name)) return undefined;
-    if (entry.value.type !== "literal" || typeof entry.value.value !== "string") return undefined;
-    const name = entry.value.value.trim().replace(/[^A-Za-z0-9_]+/g, "_").replace(/^(?=\d)/, "_");
-    return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? { param: binding.name, name } : undefined;
+    if (entry.value.type !== "literal" || typeof entry.value.value !== "string" || entry.value.value.trim() === "") return undefined;
+    return { param: binding.name, field: entry.value.value.trim() };
+  }
+
+  /**
+   * Local (bb-plugins): the state for a config-object field name. The same
+   * field name always gets the same state, and distinct field names never
+   * share one: `x-y` and `x y` both spell `x_y`, so the second becomes
+   * `x_y2`, and a name with no ASCII letters (`имя`) is named after its
+   * component (`input`, `input2`). A field name spelled like a state the
+   * block declares binds that state.
+   */
+  private fieldState(field: string, component: string): string {
+    const known = this.fieldStates.get(field);
+    if (known !== undefined) return known;
+    const slug = field.replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").replace(/^(?=\d)/, "_");
+    const claimed = new Set(this.fieldStates.values());
+    const own = /[A-Za-z0-9]/.test(slug);
+    const base = own ? slug : component.toLowerCase();
+    const taken = (name: string) =>
+      claimed.has(name) || this.named.has(name) || ((!own || name !== slug) && this.states.has(name));
+    let name = base;
+    let n = 1;
+    while (taken(name)) name = `${base}${++n}`;
+    this.fieldStates.set(field, name);
+    return name;
   }
 
   /**
