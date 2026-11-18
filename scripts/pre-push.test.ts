@@ -11,8 +11,8 @@ const workspace = (name: string, dir: string, deps: string[] = []): Workspace =>
 const ui = workspace("@bb-plugins/ui", "packages/ui");
 const editor = workspace("@bb-plugins/markdown-editor", "packages/markdown-editor", [ui.name]);
 const genui = workspace("@smsunarto/bb-plugin-genui", "plugins/genui", [ui.name]);
-const docs = workspace("@smsunarto/bb-plugin-scott-docs", "plugins/scott-docs", [editor.name]);
-const all = [ui, editor, genui, docs];
+const tasks = workspace("@smsunarto/bb-plugin-scott-tasks", "plugins/scott-tasks", [editor.name]);
+const all = [ui, editor, genui, tasks];
 
 test("a plugin change checks that plugin alone", () => {
   expect(affected(["plugins/genui/core/streaming.ts"], all)).toEqual(new Set([genui.name]));
@@ -20,10 +20,10 @@ test("a plugin change checks that plugin alone", () => {
 
 test("a shared package change checks every package that depends on it, transitively", () => {
   expect(affected(["packages/ui/src/button.tsx"], all)).toEqual(
-    new Set([ui.name, editor.name, genui.name, docs.name]),
+    new Set([ui.name, editor.name, genui.name, tasks.name]),
   );
   expect(affected(["packages/markdown-editor/src/index.ts"], all)).toEqual(
-    new Set([editor.name, docs.name]),
+    new Set([editor.name, tasks.name]),
   );
 });
 
