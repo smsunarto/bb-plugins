@@ -1,5 +1,6 @@
-import { isAbsolute, resolve } from "node:path";
 import {
+  experimental_getHostPathBasename as getHostPathBasename,
+  experimental_resolveHostPath as resolveHostPath,
   PluginCliError,
   cliCommand,
   defineCli,
@@ -177,14 +178,20 @@ async function resolveClientMachine(
   );
 }
 
-/** Resolve a CLI path against the caller's cwd on the target machine, never the server's. */
+/**
+ * Resolve a CLI path against the caller's cwd on the target machine, never the
+ * server's, with the target's path rules (POSIX or Windows), not the server's.
+ */
 function clientPath(machine: ClientMachine, path: string): string {
-  if (isAbsolute(path)) return resolve(path);
-  if (machine.cwd !== undefined) return resolve(machine.cwd, path);
-  throw new CliError(`relative path needs a working directory on the target machine: ${path}`, {
-    code: "invalid_path",
-    hint: "pass an absolute path",
-  });
+  const resolved = resolveHostPath({ rootPath: machine.cwd ?? "", path });
+  if (resolved !== null) return resolved;
+  if (machine.cwd === undefined) {
+    throw new CliError(`relative path needs a working directory on the target machine: ${path}`, {
+      code: "invalid_path",
+      hint: "pass an absolute path",
+    });
+  }
+  throw new CliError(`invalid host path: ${path}`, { code: "invalid_path" });
 }
 
 function isMissingClientFileError(error: unknown): boolean {
@@ -237,7 +244,7 @@ async function writeClientFile(
 }
 
 function attachmentFileName(path: string): string {
-  return path.split(/[\\/]/).at(-1) || "attachment";
+  return getHostPathBasename(path) || "attachment";
 }
 
 async function readTextFile(
