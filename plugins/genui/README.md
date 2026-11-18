@@ -24,7 +24,9 @@ number a text input holds. `inline-ui.md` tells agents to run `check_ui` before
 sending a block that needs it, since Claude Code defers the tool and its
 description. When a person's thread goes idle on a reply whose `ui` block
 fails to compile, the server asks the agent once, agent-only, to resend it
-fixed; the _Repair broken UI_ setting turns this off.
+fixed; the _Repair broken UI_ setting turns this off. Environments reads a worktree's pull
+request from Source Control (`changeForThread`, for a thread on that
+environment), not from bb's GitHub PR status plugin.
 Repository integration adds generated icons, a gallery story, and Apache license
 checks. Lint reports inherited upstream diagnostics as warnings; the local
 integration files retain the repository error levels. Formatter baselines retain

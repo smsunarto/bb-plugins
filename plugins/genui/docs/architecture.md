@@ -416,7 +416,8 @@ the instructions list it.
   user approves in one message), Decision (a weighted matrix whose weights
   the user tunes), Estimate (three-point, P50/P80/P90), and Environments,
   which reads the project's checkouts and worktrees from BB: branch,
-  threads, uncommitted changes, ahead/behind and pull request.
+  threads, uncommitted changes, ahead/behind and, from Source Control, the
+  pull request.
 - Evidence, drawn from the user's own BB history (claims without proof,
   visual parity disputes, wrong installed builds, speech errors):
   - Acceptance: criteria × conditions, each cell passed, failed, blocked,

@@ -38,6 +38,7 @@ import {
   type CheckoutHead,
   type CheckoutProblem,
   type CheckoutTarget,
+  type ForgePullRequest,
 } from "./checkout";
 import { createSnapshots, fitChanges, PATCH_BYTES, SNAPSHOT_BYTES, snapshotKey, type SnapshotStorage } from "./snapshots";
 
@@ -141,51 +142,58 @@ export function changedFile(file: CheckoutFile, inline: boolean): ChangedFile {
   };
 }
 
-interface PullRequestEntry {
-  readonly number: number;
-  readonly title: string;
-  readonly url: string;
-  readonly state: PullRequestInfo["state"];
-  readonly baseRefName: string;
-  readonly headRefName: string;
-  readonly checks: {
-    readonly state: PullRequestInfo["checks"]["state"];
-    readonly passedCount: number;
-    readonly failedCount: number;
-    readonly pendingCount: number;
-    readonly totalCount: number;
-  };
-  readonly review: { readonly state: PullRequestInfo["review"]["state"]; readonly reviewRequestCount: number };
-  readonly mergeability: { readonly state: PullRequestInfo["mergeability"] };
-  readonly attention: PullRequestInfo["attention"];
-  readonly autoMerge: boolean;
-  readonly inMergeQueue: boolean | null;
-  readonly updatedAt: string;
-}
-
-export function pullRequestInfo(pr: PullRequestEntry): PullRequestInfo {
-  const updatedAt = Date.parse(pr.updatedAt);
+/**
+ * A pull request as Environments shows it, from Source Control's read of it.
+ * Source Control reports no auto-merge, merge queue, review-request count or
+ * update time, so those read as off, 0 and unknown; `head` is the branch the
+ * checkout is on.
+ */
+export function pullRequestInfo(pr: ForgePullRequest, head: string): PullRequestInfo {
+  const state = pr.state === "open" && pr.isDraft ? "draft" : pr.state;
+  const { passed, failed, pending } = pr.checks;
+  const total = passed + failed + pending;
+  const checks = failed > 0 ? "failing" : pending > 0 ? "pending" : total === 0 ? "no_checks" : "passing";
+  const review =
+    pr.reviewDecision === "approved"
+      ? "approved"
+      : pr.reviewDecision === "changes-requested"
+        ? "changes_requested"
+        : pr.reviewDecision === "review-required"
+          ? "review_required"
+          : "none";
+  const mergeability = state === "draft" ? "draft" : pr.mergeable === "conflicting" ? "conflicts" : pr.mergeable;
   return {
     number: pr.number,
     title: pr.title,
     url: pr.url,
-    state: pr.state,
-    baseRef: pr.baseRefName,
-    headRef: pr.headRefName,
-    checks: {
-      state: pr.checks.state,
-      passed: pr.checks.passedCount,
-      failed: pr.checks.failedCount,
-      pending: pr.checks.pendingCount,
-      total: pr.checks.totalCount,
-    },
-    review: { state: pr.review.state, requests: pr.review.reviewRequestCount },
-    mergeability: pr.mergeability.state,
-    attention: pr.attention,
-    autoMerge: pr.autoMerge,
-    inMergeQueue: pr.inMergeQueue === true,
-    updatedAt: Number.isFinite(updatedAt) ? updatedAt : null,
+    state,
+    baseRef: pr.baseRef,
+    headRef: head,
+    checks: { state: checks, passed, failed, pending, total },
+    review: { state: review, requests: 0 },
+    mergeability,
+    attention: attentionOf(state, checks, review, mergeability),
+    autoMerge: false,
+    inMergeQueue: false,
+    updatedAt: null,
   };
+}
+
+/** What the pull request is waiting on, most urgent first. */
+function attentionOf(
+  state: PullRequestInfo["state"],
+  checks: PullRequestInfo["checks"]["state"],
+  review: PullRequestInfo["review"]["state"],
+  mergeability: PullRequestInfo["mergeability"],
+): PullRequestInfo["attention"] {
+  if (state === "merged" || state === "closed" || state === "draft") return state;
+  if (mergeability === "conflicts") return "conflicts";
+  if (checks === "failing") return "checks_failed";
+  if (review === "changes_requested") return "changes_requested";
+  if (checks === "pending") return "checks_pending";
+  if (review === "review_required") return "review_requested";
+  if (mergeability === "mergeable" && (checks === "passing" || checks === "no_checks")) return "ready_to_merge";
+  return "none";
 }
 
 /** The thread and its environment, or why there is none. */

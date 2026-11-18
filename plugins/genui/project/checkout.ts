@@ -1,16 +1,15 @@
-// A thread environment's checkout and pull request, read through other
-// plugins: the checkout through Source Control's plain-git reads
-// (`checkoutStatus`, `checkoutFiles`, `checkoutPatches`), so bb's bundled Git
-// plugin can stay disabled, and the pull request through bb's GitHub PR
-// status plugin. The schemas copy only the fields this plugin reads; zod
-// drops the rest.
+// A thread environment's checkout and pull request, both read through Source
+// Control: the checkout through its plain-git reads (`checkoutStatus`,
+// `checkoutFiles`, `checkoutPatches`), so bb's bundled Git plugin can stay
+// disabled, and the pull request through `changeForThread`, as Source
+// Control last read it for a thread on that checkout. The schemas copy only
+// the fields this plugin reads; zod drops the rest.
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 type Sdk = BbPluginApi["sdk"];
 
 const SOURCE_CONTROL = "source-control";
-const PULL_REQUESTS = "bb--github-pr-status";
 
 const problemSchema = z.object({
   kind: z.string(),
@@ -93,54 +92,37 @@ const filesSchema = read(
 );
 const patchesSchema = read(z.object({ patches: z.array(patchSchema) }));
 
+/** A pull request as Source Control's forge read stores it. */
 const pullRequestSchema = z.object({
   number: z.number(),
-  title: z.string(),
   url: z.string(),
-  state: z.enum(["open", "draft", "merged", "closed"]),
-  baseRefName: z.string(),
-  headRefName: z.string(),
-  updatedAt: z.string(),
-  autoMerge: z.boolean(),
-  inMergeQueue: z.boolean().nullable(),
-  checks: z.object({
-    state: z.enum(["passing", "failing", "pending", "no_checks", "unknown"]),
-    passedCount: z.number(),
-    failedCount: z.number(),
-    pendingCount: z.number(),
-    totalCount: z.number(),
-  }),
-  review: z.object({
-    state: z.enum(["approved", "changes_requested", "review_requested", "review_required", "none"]),
-    reviewRequestCount: z.number(),
-  }),
-  mergeability: z.object({
-    state: z.enum(["mergeable", "conflicts", "blocked", "draft", "unknown"]),
-  }),
-  attention: z.enum([
-    "checks_failed",
-    "checks_pending",
-    "changes_requested",
-    "review_requested",
-    "conflicts",
-    "blocked",
-    "draft",
-    "queued",
-    "ready_to_merge",
-    "merged",
-    "closed",
-    "none",
-  ]),
+  title: z.string(),
+  state: z.enum(["open", "closed", "merged"]),
+  isDraft: z.boolean(),
+  baseRef: z.string(),
+  reviewDecision: z.enum(["approved", "changes-requested", "review-required"]).nullable(),
+  mergeable: z.enum(["mergeable", "conflicting", "unknown"]),
+  checks: z.object({ passed: z.number(), failed: z.number(), pending: z.number() }),
 });
 
-const pullRequestsSchema = z.record(
-  z.string(),
-  z.discriminatedUnion("outcome", [
-    z.object({ outcome: z.literal("available"), pullRequest: pullRequestSchema }),
-    z.object({ outcome: z.literal("absent") }),
-    z.object({ outcome: z.literal("unavailable"), message: z.string() }),
-  ]),
-);
+/** A pull request as Source Control reports it. */
+export type ForgePullRequest = z.infer<typeof pullRequestSchema>;
+
+const threadChangeSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("pending") }),
+  z.object({ state: z.literal("none"), reason: z.string() }),
+  z.object({
+    state: z.literal("checkout"),
+    branch: z.string().nullable(),
+    forge: z.object({
+      read: z.object({ value: pullRequestSchema.nullable(), at: z.number() }).nullable(),
+      problem: problemSchema.nullable(),
+    }),
+  }),
+]);
+
+/** One thread's Change as Source Control last read it. */
+export type ThreadChange = z.infer<typeof threadChangeSchema>;
 
 /** The checkout measured against `base`; null measures against its default branch. */
 export function checkoutStatus(sdk: Sdk, environmentId: string, base: string | null) {
@@ -182,18 +164,19 @@ export function checkoutPatches(
   });
 }
 
-/** The pull request for the environment's current branch, or why there is none. */
-export async function pullRequest(sdk: Sdk, environmentId: string) {
-  const answer = await sdk.plugins.callRpc({
-    pluginId: PULL_REQUESTS,
-    method: "pullRequests",
-    input: { keys: [environmentId] },
-    outputSchema: pullRequestsSchema,
+/** Most threads asked about per environment; Source Control takes 200. */
+export const MAX_CHANGE_THREADS = 5;
+
+/**
+ * Each thread's Change as Source Control last read it, keyed by thread id.
+ * Source Control serves these from its store, so asking never reads a host
+ * or GitHub; a thread it hasn't read yet is `pending`.
+ */
+export function threadChanges(sdk: Sdk, threadIds: readonly string[]) {
+  return sdk.plugins.callRpc({
+    pluginId: SOURCE_CONTROL,
+    method: "changeForThread",
+    input: { keys: [...threadIds] },
+    outputSchema: z.record(z.string(), threadChangeSchema),
   });
-  return (
-    answer[environmentId] ?? {
-      outcome: "unavailable" as const,
-      message: "BB didn't report a pull request",
-    }
-  );
 }

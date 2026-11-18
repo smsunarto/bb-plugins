@@ -20,7 +20,14 @@ import {
   type EnvironmentThread,
 } from "../core/environments";
 import { RUNNING, THREAD_ID, type EnvironmentsResult, type ProjectFailure, type ThreadDisplayStatus } from "../core/project";
-import { checkoutStatus as readCheckoutStatus, pullRequest, type CheckoutProblem, type CheckoutRead } from "./checkout";
+import {
+  checkoutStatus as readCheckoutStatus,
+  MAX_CHANGE_THREADS,
+  threadChanges,
+  type CheckoutProblem,
+  type CheckoutRead,
+  type ThreadChange,
+} from "./checkout";
 import { branchOf, pullRequestInfo } from "./source";
 
 type Sdk = BbPluginApi["sdk"];
@@ -225,6 +232,35 @@ export function checkoutFailure(problem: CheckoutProblem, path: string | null): 
   }
 }
 
+/**
+ * The branch's pull request from Source Control's rows for the threads on
+ * its checkout: the first row on `branch` whose pull request was read wins.
+ * A read that failed, or none yet, says so rather than "no pull request".
+ */
+export function environmentPull(rows: readonly ThreadChange[], branch: string): EnvironmentPull {
+  const onBranch = rows.flatMap((row) => (row.state === "checkout" && row.branch === branch ? [row] : []));
+  const read = onBranch.find((row) => row.forge.read !== null)?.forge.read;
+  if (read != null) return { ok: true, pullRequest: read.value === null ? null : pullRequestInfo(read.value, branch) };
+  const problem = onBranch.find((row) => row.forge.problem !== null)?.forge.problem;
+  if (problem != null) return { ok: false, message: forgeProblem(problem) };
+  return { ok: false, message: "Source Control hasn't read this branch's pull request yet" };
+}
+
+function forgeProblem(problem: CheckoutProblem): string {
+  switch (problem.kind) {
+    case "host-offline":
+      return `${problem.host ?? "Its machine"} is offline`;
+    case "auth":
+      return "GitHub isn't signed in for Source Control";
+    case "rate-limited":
+      return "GitHub is rate-limiting Source Control";
+    case "no-site":
+      return "No machine with a signed-in gh can read GitHub";
+    default:
+      return problem.detail ?? "Source Control couldn't read the pull request";
+  }
+}
+
 /** workspaceStatus as Environments shows it, measured against `base`. */
 export function checkoutStatus(workspace: WorkspaceEntry, base: string): CheckoutStatus {
   const checkout = workspace.head;
@@ -295,17 +331,23 @@ export function createEnvironmentsSource(sdk: Sdk): EnvironmentsSource {
     if (status.base === null) return { checkout: unread("unavailable", "No default branch to compare with", environment.path), pull: null };
     const checkout = checkoutStatus(status, status.base);
     // Only a branch of its own has a pull request: not the default branch, its base, or a detached HEAD.
-    if (checkout.checkout !== "branch" || checkout.onBase || checkout.branch === checkout.defaultBranch) return { checkout, pull: null };
-    return { checkout, pull: await readPull(environmentId) };
+    if (checkout.checkout !== "branch" || checkout.branch === null || checkout.onBase || checkout.branch === checkout.defaultBranch) return { checkout, pull: null };
+    return { checkout, pull: await readPull(environmentId, checkout.branch) };
   }
 
-  async function readPull(environmentId: string): Promise<EnvironmentPull> {
+  /** The branch's pull request through Source Control, which knows it by the threads on the checkout. */
+  async function readPull(environmentId: string, branch: string): Promise<EnvironmentPull> {
     try {
-      const answer = await pullRequest(sdk, environmentId);
-      if (answer.outcome === "unavailable") return { ok: false, message: answer.message };
-      return { ok: true, pullRequest: answer.outcome === "available" ? pullRequestInfo(answer.pullRequest) : null };
+      const threads = await sdk.threads.list({ environmentId, limit: MAX_CHANGE_THREADS });
+      const ids = threads.filter((thread) => thread.environmentId === environmentId && thread.deletedAt === null).map((thread) => thread.id);
+      if (ids.length === 0) return { ok: false, message: "No thread on this environment, so Source Control has no pull request for it" };
+      const rows = await threadChanges(sdk, ids);
+      return environmentPull(
+        ids.flatMap((id) => (rows[id] === undefined ? [] : [rows[id]])),
+        branch,
+      );
     } catch (cause) {
-      return { ok: false, message: errorMessage(cause) };
+      return { ok: false, message: `Source Control couldn't say: ${errorMessage(cause)}` };
     }
   }
 
