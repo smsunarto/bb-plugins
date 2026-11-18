@@ -28,13 +28,17 @@ function defaultLadder(role: LadderRole, codexReasoning: string): Rung[] {
   ];
 }
 
-/** The Tasks preset a rung dispatches with: the role's own preset for rung 1, `Review · 2` after. */
+/**
+ * The Tasks preset a rung dispatches with, such as `Captain Review · 2`.
+ * Captain owns these and points them at its ladder; the shared `Review` preset
+ * other dispatches use is only read, as the template for permission and
+ * environment.
+ */
 export function rungPresetName(role: LadderRole, rung: number): string {
-  const label = ROLE_SPECS[role].label;
-  return rung === 1 ? label : `${label} · ${rung}`;
+  return `Captain ${ROLE_SPECS[role].label} · ${rung}`;
 }
 
-/** The rung number a preset name carries: 1 for the role's own preset. */
+/** The rung number a preset name carries: 1 for the role's shared preset. */
 export function rungOfPresetName(name: string): number {
   const match = / · (\d+)$/u.exec(name.trim());
   return match === null ? 1 : Number(match[1]);

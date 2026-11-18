@@ -292,6 +292,9 @@ export async function captainHost(options: FakeOptions = {}) {
       case "listPresets":
         return { presets: tasks.presets };
       case "createPreset": {
+        // Tasks' presets.name is unique.
+        if (tasks.presets.some((entry) => entry.name === input["name"]))
+          throw new Error("SqliteError: UNIQUE constraint failed: presets.name");
         const preset = { id: `pr_${++serial}`, ...input } as Preset;
         tasks.presets.push(preset);
         return { preset };

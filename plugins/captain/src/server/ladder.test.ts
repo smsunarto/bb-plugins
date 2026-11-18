@@ -98,7 +98,7 @@ describe("bb captain dispatch on a ladder", () => {
     expect(result.stdout).toContain(
       "started  rung 2 codex gpt-6-astra high; skipped rung 1 claude-code claude-opus-5-5 high: no ready claude account with opus left",
     );
-    const rung2 = presetNamed(host, "Implement · 2");
+    const rung2 = presetNamed(host, "Captain Implement · 2");
     // Rung 2 copies rung 1's preset fields; only the model differs.
     expect(rung2).toMatchObject({
       providerId: "codex",
@@ -127,7 +127,7 @@ describe("bb captain dispatch on a ladder", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(
-      "BBPLUGINS-1  -  Review  planned  rung 2 codex gpt-6-astra high; skipped rung 1 claude-code claude-fable-5-2 high: no ready claude account with fable left · preset Review · 2 · machine the repo's source machine · branch crew/x\n",
+      "BBPLUGINS-1  -  Review  planned  rung 2 codex gpt-6-astra high; skipped rung 1 claude-code claude-fable-5-2 high: no ready claude account with fable left · preset Captain Review · 2 · machine the repo's source machine · branch crew/x\n",
     );
     const writes = host.tasks.calls.filter((call) =>
       ["createPreset", "updatePreset", "delegate"].includes(call.method),
@@ -142,7 +142,7 @@ describe("bb captain dispatch on a ladder", () => {
     expect(forced.exitCode).toBe(0);
     expect(forced.stdout).toContain("started  rung 1 claude-code claude-opus-5-5 high (forced)");
     expect(delegates(host)).toEqual([
-      expect.objectContaining({ presetId: presetNamed(host, "Implement")?.id }),
+      expect.objectContaining({ presetId: presetNamed(host, "Captain Implement · 1")?.id }),
     ]);
 
     const past = await as([
@@ -188,8 +188,9 @@ describe("bb captain dispatch on a ladder", () => {
     expect(delegates(host)).toHaveLength(1);
   });
 
-  test("a ladder saved in settings is what dispatch starts on, and rung 1's preset follows it", async () => {
+  test("a ladder saved in settings is what dispatch starts on, through Captain's own preset; the shared one is untouched", async () => {
     const { host, as } = await ladderHost();
+    const shared = { ...presetNamed(host, "Implement") };
     await host.harness.behavior.callRpc("setLadder", {
       role: "implement",
       rungs: [{ providerId: "claude-code", model: "claude-sonnet-5-5", reasoningLevel: "medium" }],
@@ -205,10 +206,73 @@ describe("bb captain dispatch on a ladder", () => {
     const result = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement"]);
 
     expect(result.stdout).toContain("rung 1 claude-code claude-sonnet-5-5 medium");
-    expect(presetNamed(host, "Implement")).toMatchObject({
+    expect(presetNamed(host, "Captain Implement · 1")).toMatchObject({
       modelId: "claude-sonnet-5-5",
       reasoningLevel: "medium",
     });
+    // Tasks' own Implement preset, which other dispatches use, keeps its model.
+    expect(presetNamed(host, "Implement")).toEqual(shared);
+    expect(host.tasks.calls.filter((call) => call.method === "updatePreset")).toEqual([]);
+
+    // A later ladder change updates Captain's preset, still never the shared one.
+    await host.harness.behavior.callRpc("setLadder", {
+      role: "implement",
+      rungs: [{ providerId: "claude-code", model: "claude-haiku-5-5", reasoningLevel: "low" }],
+    });
+    await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--again"]);
+    expect(presetNamed(host, "Captain Implement · 1")).toMatchObject({
+      modelId: "claude-haiku-5-5",
+    });
+    expect(presetNamed(host, "Implement")).toEqual(shared);
+  });
+
+  test("one dispatch of two tasks onto a rung with no preset yet creates it once and starts both", async () => {
+    const { host, as } = await ladderHost();
+    host.addTask("BBPLUGINS-2", { title: "Fix the sidebar" });
+    expect(presetNamed(host, "Captain Implement · 2")).toBeUndefined();
+
+    const result = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "BBPLUGINS-2",
+      "--role",
+      "Implement",
+      "--rung",
+      "2",
+      "--json",
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(json(result.stdout).results.map((item) => item["state"])).toEqual([
+      "started",
+      "started",
+    ]);
+    const rung2 = presetNamed(host, "Captain Implement · 2");
+    expect(host.tasks.calls.filter((call) => call.method === "createPreset")).toHaveLength(1);
+    expect(delegates(host)).toEqual([
+      expect.objectContaining({ presetId: rung2?.id }),
+      expect.objectContaining({ presetId: rung2?.id }),
+    ]);
+  });
+
+  test("two dispatch commands at once onto a new rung: the one that loses the create uses the winner's preset", async () => {
+    const { host, as } = await ladderHost();
+    host.addTask("BBPLUGINS-2", { title: "Fix the sidebar" });
+
+    const [one, two] = await Promise.all([
+      as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--rung", "2"]),
+      as(["dispatch", "BBPLUGINS-2", "--role", "Implement", "--rung", "2"]),
+    ]);
+
+    expect([one.exitCode, two.exitCode]).toEqual([0, 0]);
+    const rung2 = presetNamed(host, "Captain Implement · 2");
+    expect(
+      host.tasks.presets.filter((preset) => preset.name === "Captain Implement · 2"),
+    ).toHaveLength(1);
+    expect(delegates(host)).toEqual([
+      expect.objectContaining({ presetId: rung2?.id }),
+      expect.objectContaining({ presetId: rung2?.id }),
+    ]);
   });
 });
 
@@ -260,7 +324,7 @@ describe("rate-limit fallback", () => {
 
     await host.server.check.pass();
 
-    const rung2 = presetNamed(host, "Implement · 2");
+    const rung2 = presetNamed(host, "Captain Implement · 2");
     const restarts = delegates(host).slice(1);
     expect(restarts).toEqual([
       expect.objectContaining({

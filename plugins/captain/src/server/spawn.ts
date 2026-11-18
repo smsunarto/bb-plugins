@@ -43,9 +43,11 @@ export function createTaskGuard() {
 }
 
 /**
- * The rung's Tasks preset, created or pointed at the rung's execution. Rung 1
- * is the role's own preset; a later rung copies rung 1's other fields
- * (permission, environment, machine, instructions) so only the model differs.
+ * The rung's Captain-owned Tasks preset, created or pointed at the rung's
+ * execution. A new one copies the role's shared preset's other fields
+ * (permission, environment, machine, instructions) so only the model differs;
+ * the shared preset itself is never changed. When another start created the
+ * same preset first, Tasks refuses the duplicate name and the winner is used.
  */
 export async function ensureRungPreset(
   deps: Pick<CommandDeps, "tasks">,
@@ -55,35 +57,55 @@ export async function ensureRungPreset(
   presets: readonly TasksPreset[],
 ): Promise<TasksPreset> {
   const name = rungPresetName(role, rung);
-  const byName = (wanted: string) =>
-    presets.find((preset) => preset.name.toLowerCase() === wanted.toLowerCase());
   const execution = {
     providerId: spec.providerId,
     modelId: spec.model,
     reasoningLevel: spec.reasoningLevel,
     serviceTier: spec.serviceTier ?? null,
   };
-  const existing = byName(name);
-  if (existing !== undefined) {
-    const same =
-      existing.providerId === execution.providerId &&
-      existing.modelId === execution.modelId &&
-      existing.reasoningLevel === execution.reasoningLevel &&
-      (existing.serviceTier ?? null) === execution.serviceTier;
-    return same ? existing : await deps.tasks.updatePresetExecution(existing.id, execution);
-  }
+  const existing = findPreset(presets, name);
+  if (existing !== undefined) return await pointAt(deps, existing, execution);
   const spec1 = ROLE_SPECS[role].preset;
   if (spec1 === null) throw new Error(`${role} has no preset`);
-  const template = byName(rungPresetName(role, 1));
-  return await deps.tasks.createPreset({
-    name,
-    ...execution,
-    permissionMode: template?.permissionMode ?? spec1.permissionMode,
-    environmentKind: template?.environmentKind ?? spec1.environmentKind,
-    baseBranch: template?.baseBranch ?? null,
-    machineId: template?.machineId ?? null,
-    ...(template?.instructions === undefined ? {} : { instructions: template.instructions }),
-  });
+  const template = findPreset(presets, spec1.name);
+  try {
+    return await deps.tasks.createPreset({
+      name,
+      ...execution,
+      permissionMode: template?.permissionMode ?? spec1.permissionMode,
+      environmentKind: template?.environmentKind ?? spec1.environmentKind,
+      baseBranch: template?.baseBranch ?? null,
+      machineId: template?.machineId ?? null,
+      ...(template?.instructions === undefined ? {} : { instructions: template.instructions }),
+    });
+  } catch (error) {
+    const winner = findPreset(await deps.tasks.listPresets(), name);
+    if (winner === undefined) throw error;
+    return await pointAt(deps, winner, execution);
+  }
+}
+
+function findPreset(presets: readonly TasksPreset[], name: string): TasksPreset | undefined {
+  return presets.find((preset) => preset.name.toLowerCase() === name.toLowerCase());
+}
+
+/** A Captain-owned preset, updated only when its execution differs from the rung's. */
+async function pointAt(
+  deps: Pick<CommandDeps, "tasks">,
+  preset: TasksPreset,
+  execution: {
+    providerId: string;
+    modelId: string;
+    reasoningLevel: string;
+    serviceTier: string | null;
+  },
+): Promise<TasksPreset> {
+  const same =
+    preset.providerId === execution.providerId &&
+    preset.modelId === execution.modelId &&
+    preset.reasoningLevel === execution.reasoningLevel &&
+    (preset.serviceTier ?? null) === execution.serviceTier;
+  return same ? preset : await deps.tasks.updatePresetExecution(preset.id, execution);
 }
 
 /**

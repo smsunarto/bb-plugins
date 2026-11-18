@@ -141,6 +141,9 @@ export function dispatchCommand(deps: CommandDeps) {
           if (unit === undefined) throw new Error("adoption without a unit");
           return render([await adopt(deps, plan, unit, flags.thread, flags)], json);
         }
+        // One preset per role and rung, before the tasks start in parallel: two
+        // starts creating the same preset would collide on Tasks' unique names.
+        const rungPresets = flags.dryRun ? new Map() : await resolveRungPresets(deps, plan);
         const byTask = new Map<string, Unit[]>();
         for (const unit of plan.units) {
           byTask.set(unit.task.key, [...(byTask.get(unit.task.key) ?? []), unit]);
@@ -166,7 +169,7 @@ export function dispatchCommand(deps: CommandDeps) {
               }
               const items: Item[] = [];
               for (const unit of units) {
-                const result = await dispatchUnit(deps, plan, unit, crew, flags);
+                const result = await dispatchUnit(deps, plan, unit, crew, flags, rungPresets);
                 items.push(result.item);
                 notes.push(...result.notes);
               }
@@ -311,6 +314,35 @@ async function validate(
   return { captain, units, crew, presets, poolUnread: readsPool && pool === null };
 }
 
+const rungKey = (role: Role, rung: number) => `${role}:${rung}`;
+
+/** Each role and rung the units start on, its Captain-owned preset resolved once, in turn. */
+async function resolveRungPresets(
+  deps: CommandDeps,
+  plan: Plan,
+): Promise<Map<string, TasksPreset | TasksError>> {
+  const resolved = new Map<string, TasksPreset | TasksError>();
+  for (const unit of plan.units) {
+    const choice = unit.choice;
+    if (choice === null || resolved.has(rungKey(unit.role, choice.rung))) continue;
+    let preset: TasksPreset | TasksError;
+    try {
+      preset = await ensureRungPreset(
+        deps,
+        unit.role as LadderRole,
+        choice.rung,
+        choice.spec,
+        plan.presets,
+      );
+    } catch (error) {
+      if (!(error instanceof TasksError)) throw error;
+      preset = error;
+    }
+    resolved.set(rungKey(unit.role, choice.rung), preset);
+  }
+  return resolved;
+}
+
 const POOL_UNREAD =
   "note: Account Pooler status not read, so rung 1 was taken without an eligibility check";
 
@@ -407,6 +439,7 @@ async function dispatchUnit(
   unit: Unit,
   crew: readonly CrewThread[],
   flags: Flags,
+  rungPresets: ReadonlyMap<string, TasksPreset | TasksError>,
 ): Promise<{ item: Item; notes: string[] }> {
   const { captain } = plan;
   const notes: string[] = [];
@@ -438,18 +471,10 @@ async function dispatchUnit(
   }
 
   const retry = `rerun bb captain dispatch ${unit.task.key} --role ${ROLE_SPECS[unit.role].label}`;
-  let preset: TasksPreset;
-  try {
-    preset = await ensureRungPreset(
-      deps,
-      unit.role as LadderRole,
-      choice.rung,
-      choice.spec,
-      plan.presets,
-    );
-  } catch (error) {
-    if (!(error instanceof TasksError)) throw error;
-    const reason = `preset ${presetName} not set to ${rungLabel(choice.spec)}: ${error.message}`;
+  const preset = rungPresets.get(rungKey(unit.role, choice.rung));
+  if (preset === undefined) throw new Error(`no preset resolved for ${presetName}`);
+  if (preset instanceof TasksError) {
+    const reason = `preset ${presetName} not set to ${rungLabel(choice.spec)}: ${preset.message}`;
     return {
       item: unitItem(unit, "failed", { detail: reason, blockers: [{ reason, fix: retry }] }),
       notes,

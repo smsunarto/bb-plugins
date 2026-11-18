@@ -46,9 +46,8 @@ async function dispatched(
 describe("bb captain dispatch", () => {
   test("spawns through Tasks with the Captain as parent, stuck, the role's preset, report contract and role contract", async () => {
     const { host, captainId, as } = await crewHost();
-    const implement = host.tasks.presets.find((preset) => preset.name === "Implement");
-
     const result = await as(["dispatch", "bbplugins-1", "--role", "Implement"]);
+    const implement = host.tasks.presets.find((preset) => preset.name === "Captain Implement · 1");
 
     expect(result.exitCode).toBe(0);
     const [key, threadId, role, state] = result.stdout.trim().split(/\s{2,}/u);
@@ -302,7 +301,7 @@ describe("bb captain dispatch", () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(
-      "BBPLUGINS-1  -  Implement  planned  rung 1 claude-code claude-opus-5-5 high · preset Implement · machine the repo's source machine · branch the default branch\n",
+      "BBPLUGINS-1  -  Implement  planned  rung 1 claude-code claude-opus-5-5 high · preset Captain Implement · 1 · machine the repo's source machine · branch the default branch\n",
     );
     expect(delegates(host)).toHaveLength(0);
   });
