@@ -3,7 +3,16 @@
  * subPath), how to move, how wide its container is, and the current time.
  */
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type { ChangeKey } from "../../core/ids.ts";
 import { reviewPath, type ReviewLocation } from "../../core/review.ts";
 
@@ -14,8 +23,26 @@ export type Go = (
   options?: { replace?: boolean },
 ) => void;
 
-/** Moves within the review page; one stable function for every row and tab. */
+/**
+ * How the review moves when it is not the page: the side panel's Review tab
+ * keeps its place itself, and has no Changes list to go back to.
+ */
+export type ReviewHost = { go: Go };
+export const ReviewHostContext = createContext<ReviewHost | null>(null);
+
+/** Whether the review is the page, with its route and Changes list. */
+export function useIsPage(): boolean {
+  return useContext(ReviewHostContext) === null;
+}
+
+/** Moves within the review; one stable function for every row and tab. */
 export function useGo(): Go {
+  const host = useContext(ReviewHostContext);
+  const page = usePageGo();
+  return host?.go ?? page;
+}
+
+function usePageGo(): Go {
   const navigate = useBbNavigate();
   const latest = useRef(navigate);
   useLayoutEffect(() => {
@@ -33,11 +60,11 @@ export function useGo(): Go {
 
 /**
  * The element's width from ResizeObserver entries only, so mounting never
- * forces layout. Until the first entry it guesses from the window.
+ * forces layout. Until the first entry it takes `guess`, else the window's width.
  */
-export function useWidth(ref: RefObject<HTMLElement | null>): number {
-  const [width, setWidth] = useState(() =>
-    typeof window === "undefined" ? 1280 : window.innerWidth,
+export function useWidth(ref: RefObject<HTMLElement | null>, guess?: number): number {
+  const [width, setWidth] = useState(
+    () => guess ?? (typeof window === "undefined" ? 1280 : window.innerWidth),
   );
   useEffect(() => {
     const element = ref.current;

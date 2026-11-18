@@ -21,10 +21,10 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { describeProblem, readAgo } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
-import { reviewPath, type ChangeRow, type SourceRows } from "../core/review.ts";
+import type { ChangeRow, SourceRows } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { cx } from "./format.ts";
-import { PANEL_PATH } from "./page/hooks.ts";
+import { useOpenReview } from "./open-review.ts";
 import { StateBadge } from "./page/rail.tsx";
 import { Button } from "./components/ui/button.tsx";
 import {
@@ -50,16 +50,14 @@ export function repositoryRows(
 }
 
 function BranchRow({ row, mine }: { row: ChangeRow; mine: boolean }) {
-  const navigate = useBbNavigate();
+  const openReview = useOpenReview();
   return (
     <li className="flex min-w-0 border-t border-border-hairline first:border-t-0">
       <button
         type="button"
         className="flex min-h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 bg-transparent px-3 py-1 text-start hover:bg-surface-raised"
         title={row.title}
-        onClick={() =>
-          navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key: row.key }) })
-        }
+        onClick={() => openReview({ key: row.key })}
       >
         <StateBadge state={row.state} className="h-4 leading-3" />
         <span className="min-w-0 truncate text-[12px] leading-4 text-foreground" translate="no">

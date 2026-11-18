@@ -46,7 +46,7 @@ import { ConversationView, PullRequestDescription } from "./conversation-view.ts
 import { PrImagesContext } from "../pr-markdown.tsx";
 import { FilesView, WrapContext } from "./files-view.tsx";
 import { GuidedView, ReviewBar, ViewedProgress } from "./guided-view.tsx";
-import { PANEL_PATH, PHONE, WIDE, useGo, useNow, useWidth, type Go } from "./hooks.ts";
+import { PANEL_PATH, PHONE, WIDE, useGo, useIsPage, useNow, useWidth, type Go } from "./hooks.ts";
 import { AskHost, BotIcon, useAskAgent } from "./ask-panel.tsx";
 import { ArrowRight, Chevron, StackIcon, StateIcon } from "./icons.tsx";
 import { revisionId } from "./patches.ts";
@@ -453,6 +453,7 @@ function PhoneHeader({ detail, now }: { detail: Ready; now: number }) {
   const { row } = detail;
   const conflict = conflictText(row);
   const navigate = useBbNavigate();
+  const page = useIsPage();
   const draft = useStateActions(detail);
   const { stable } = useChangeReview(row.key);
   const open = stable.items.filter(
@@ -462,16 +463,19 @@ function PhoneHeader({ detail, now }: { detail: Ready; now: number }) {
   return (
     <header className="flex shrink-0 flex-col gap-3 pt-2 pb-3" data-testid="sc-phone-header">
       <div className="flex min-w-0 items-center gap-3 px-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Back to changes"
-          onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: "" })}
-          // The pseudo-element widens the tap target to 36px without moving the title.
-          className="relative size-5 after:absolute after:-inset-2 [&_svg]:size-3"
-        >
-          <Chevron className="rotate-90" />
-        </Button>
+        {/* The side panel's Review tab has no Changes list to go back to. */}
+        {page ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Back to changes"
+            onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: "" })}
+            // The pseudo-element widens the tap target to 36px without moving the title.
+            className="relative size-5 after:absolute after:-inset-2 [&_svg]:size-3"
+          >
+            <Chevron className="rotate-90" />
+          </Button>
+        ) : null}
         <h1
           className="m-0 line-clamp-2 min-w-0 flex-1 text-[15px] leading-5 font-semibold break-words text-foreground"
           data-testid="sc-review-title"
@@ -717,11 +721,13 @@ function OrderedBar({
 
 function ReviewReady({
   location,
+  visit,
   detail,
   width,
   focus,
 }: {
   location: Here;
+  visit: number;
   detail: Ready;
   width: number;
   focus: ReviewFocus;
@@ -785,6 +791,8 @@ function ReviewReady({
         <div className="flex min-h-0 min-w-0 flex-1">
           <PrImagesContext value={location.key}>
             <TabBody
+              // A new visit lands on its file and line again, even when the location is unchanged.
+              key={visit}
               location={location}
               detail={detail}
               lead={lead}
@@ -815,7 +823,7 @@ function ReviewReady({
   );
 }
 
-function Review({ location, width }: { location: Here; width: number }) {
+function Review({ location, visit, width }: { location: Here; visit: number; width: number }) {
   const { key } = location;
   const query = useRpcKeyedQuery({
     contract: sourceControlContract,
@@ -854,7 +862,9 @@ function Review({ location, width }: { location: Here; width: number }) {
     return <HeaderSkeleton />;
   }
   if (detail.state === "missing") return <Missing problem={detail.problem} />;
-  return <ReviewReady location={location} detail={detail} width={width} focus={focus} />;
+  return (
+    <ReviewReady location={location} visit={visit} detail={detail} width={width} focus={focus} />
+  );
 }
 
 function NoSelection() {
@@ -869,8 +879,28 @@ function NoSelection() {
 
 export function ReviewPage({ subPath }: { subPath: string }) {
   const location = useMemo(() => parseReviewPath(subPath), [subPath]);
+  return <ReviewView location={location} subPath={subPath} visit={0} />;
+}
+
+/**
+ * The review of `location`, as the page draws it and as the side panel's
+ * Review tab does. `guess` is the width to lay out for before the first
+ * measure: the tab is far narrower than the window.
+ */
+export function ReviewView({
+  location,
+  subPath,
+  visit,
+  guess,
+}: {
+  location: ReviewLocation;
+  /** The page's subPath, for the phone's Changes list when no Change is picked. */
+  subPath: string;
+  visit: number;
+  guess?: number;
+}) {
   const root = useRef<HTMLDivElement>(null);
-  const width = useWidth(root);
+  const width = useWidth(root, guess);
   const { key } = location;
   return (
     <div
@@ -881,7 +911,7 @@ export function ReviewPage({ subPath }: { subPath: string }) {
     >
       <AskHost changeKey={key} phone={width < PHONE}>
         {key ? (
-          <Review key={key} location={{ ...location, key }} width={width} />
+          <Review key={key} location={{ ...location, key }} visit={visit} width={width} />
         ) : width < PHONE ? (
           <ChangesList subPath={subPath} variant="phone" />
         ) : (

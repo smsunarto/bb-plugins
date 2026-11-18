@@ -4,7 +4,7 @@
  * colour and dot shape say where each commit lives, and file rows ending in a
  * change-kind glyph. Ported from `plugins/gitbutler/src/app/workspace-lane.tsx`.
  */
-import { experimental_Icon as Icon, UrlLink, useBbNavigate } from "@get-bb/plugin-sdk/app";
+import { experimental_Icon as Icon, UrlLink } from "@get-bb/plugin-sdk/app";
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   describeProblem,
@@ -19,9 +19,9 @@ import {
   type VcsAction,
 } from "../core/change.ts";
 import type { ChangeKey } from "../core/ids.ts";
-import { reviewPath } from "../core/review.ts";
 import { BranchActions, type Dispatch, type Outcome } from "./branch-actions.tsx";
 import { MergeButton, repoOfKey, useThreadMerge } from "./merge.tsx";
+import { useOpenReview } from "./open-review.ts";
 import { CreatePullRequest } from "./publish.tsx";
 import {
   FileDiffCard,
@@ -120,7 +120,7 @@ export function commitKey(where: Where, commitId: string): string {
   return `${where}:${commitId}`;
 }
 
-/** Opens the review page at this commit's file, for a branch that is a Change. */
+/** Opens the review beside the thread at this commit's file, for a branch that is a Change. */
 function ReviewJump({
   changeKey,
   commitId,
@@ -130,18 +130,14 @@ function ReviewJump({
   commitId: string;
   path: string;
 }) {
-  const navigate = useBbNavigate();
+  const openReview = useOpenReview();
   return (
     <div className="flex justify-end border-t border-border-hairline px-3 py-1">
       <Button
         size="sm"
         variant="ghost"
         data-testid="sc-review-jump"
-        onClick={() =>
-          navigate.toPluginPanel("source-control", {
-            subPath: reviewPath({ key: changeKey, tab: "commits", commit: commitId, path }),
-          })
-        }
+        onClick={() => openReview({ key: changeKey, tab: "commits", commit: commitId, path })}
         className="h-6 gap-1 px-1 text-[11px] text-muted-foreground max-md:pointer-coarse:px-2"
       >
         Open in Review
