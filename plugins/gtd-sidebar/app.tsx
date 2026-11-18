@@ -41,10 +41,11 @@ export default definePluginApp((app) => {
     headerComponent: CapyNavigationHeader,
   });
 
-  // On a phone, Settle takes the place of bb's "…" thread menu in the header.
+  // On a phone, New thread and Settle join the header; Settle takes the place
+  // of bb's "…" thread menu.
   (app.slots as unknown as LegacyThreadHeaderActionSlots).experimental_threadHeaderAction({
     id: "header-settle",
-    title: "Settle thread",
+    title: "Thread shortcuts",
     component: HeaderSettle,
   });
   app.contentScripts.register({

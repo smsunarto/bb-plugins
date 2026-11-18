@@ -5,23 +5,30 @@ import { useLayoutEffect } from "react";
 // theme hides the page outlines while the attribute is present.
 const HOME_ATTRIBUTE = "data-monokai-home";
 
-interface AttributeTarget {
+export interface AttributeTarget {
   setAttribute(name: string, value: string): void;
   removeAttribute(name: string): void;
 }
 
-// Split panes can show two New thread screens at once; the mark stays until
-// the last one leaves.
-const counts = new WeakMap<AttributeTarget, number>();
+// Split panes can show two of a screen at once; each mark stays until the
+// last one leaves.
+const counts = new WeakMap<AttributeTarget, Map<string, number>>();
+
+/** Sets `attribute` on `target` until every caller has called its disposer. */
+export function markPage(target: AttributeTarget, attribute: string): () => void {
+  const byName = counts.get(target) ?? new Map<string, number>();
+  counts.set(target, byName);
+  byName.set(attribute, (byName.get(attribute) ?? 0) + 1);
+  target.setAttribute(attribute, "");
+  return () => {
+    const remaining = (byName.get(attribute) ?? 1) - 1;
+    byName.set(attribute, remaining);
+    if (remaining === 0) target.removeAttribute(attribute);
+  };
+}
 
 export function markHome(target: AttributeTarget): () => void {
-  counts.set(target, (counts.get(target) ?? 0) + 1);
-  target.setAttribute(HOME_ATTRIBUTE, "");
-  return () => {
-    const remaining = (counts.get(target) ?? 1) - 1;
-    counts.set(target, remaining);
-    if (remaining === 0) target.removeAttribute(HOME_ATTRIBUTE);
-  };
+  return markPage(target, HOME_ATTRIBUTE);
 }
 
 /** Layout effect: the mark lands before the first paint, so no edge flashes. */
