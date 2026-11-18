@@ -55,8 +55,8 @@ describe("options given without a $state", () => {
     // A value argument that is not a list gets its own errors.
     expect(warnings('Checklist("answer")')).toHaveLength(0);
     expect(errors('Checklist("answer")').length).toBeGreaterThanOrEqual(1);
-    // Slider has no options parameter.
-    expect(warnings("Slider(5)")).toHaveLength(0);
+    // Slider has no options parameter. (Local: its literal 5 still becomes a starting state, so only the options rewrite is ruled out.)
+    expect(warnings("Slider(5)").filter((w) => w.includes("options"))).toHaveLength(0);
     // Required options that are not a list literal are not guessed.
     expect(warnings("Checklist($picked = [])")).toHaveLength(0);
   });

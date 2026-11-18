@@ -397,7 +397,10 @@ export function RenderFailure({
         className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-3 text-xs"
       >
         <p className="mb-1 font-medium text-destructive">This UI couldn't be rendered</p>
-        <DiagnosticList diagnostics={diagnostics} />
+        {/* Local (bb-plugins): bounded so a long failure scrolls inside the card instead of filling a phone screen. */}
+        <div className="max-h-48 overflow-y-auto">
+          <DiagnosticList diagnostics={diagnostics} />
+        </div>
       </div>
     </Frame>
   );

@@ -225,7 +225,10 @@ export async function checkSpec(
   ];
   const tried = probed.tried === 0 ? "" : ` Tried ${probed.tried} interaction${probed.tried === 1 ? "" : "s"}.`;
   const preview = `Text version of what the user will see:\n\n${await rootsMarkdown(roots, find, project)}`;
+  // Local (bb-plugins): a passing block still names what compile corrected, so the agent learns the right form.
+  const warnings = compiled.diagnostics.filter((d) => d.severity === "warning");
+  const corrected = warnings.length === 0 ? "" : ` It renders, with these warnings; write it that way next time:\n${formatDiagnostics(warnings)}\n\n`;
   return problems.length === 0
-    ? { ok: true, report: `No errors.${tried} ${preview}` }
+    ? { ok: true, report: `No errors.${tried}${corrected || " "}${preview}` }
     : { ok: false, report: `Fix before replying:\n${problems.join("\n")}\n\n${preview}` };
 }

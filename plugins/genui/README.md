@@ -7,7 +7,15 @@ The upstream Apache-2.0 license and bundled font license are preserved.
 
 Local changes: workspace package metadata and dependency management, local
 build/test commands, and agent text stored in `instructions/` for Agent Instructions → Plugin prompts.
-The parser, renderer, gallery, and runtime behavior are retained from upstream.
+The renderer, gallery, and runtime behavior are retained from upstream.
+The validator (`core/validate.ts`) carries the input coercions from upstream's
+open pull requests #23, #24, #27 and #28, at `b1aa2eb`, plus local ones marked
+`Local (bb-plugins)`: `name:` in an input's config object names its state, a
+scalar literal is an input's starting value, `TextInput` and wrong-case names
+are renamed, and `Form("Question?", [...])` is wrapped in a Card. Each is a
+warning, and `check_ui` lists warnings on a passing block. Unknown names
+suggest at most three components instead of the whole list, and the failure
+card scrolls past a fixed height.
 Repository integration adds generated icons, a gallery story, and Apache license
 checks. Lint reports inherited upstream diagnostics as warnings; the local
 integration files retain the repository error levels. Formatter baselines retain
