@@ -1150,12 +1150,8 @@ export function GuidedView({
             />
           ) : null}
           <DiffColumn scroller={scroller}>
-            <div
-              className={cx(
-                "flex min-w-0 flex-col gap-4",
-                phone ? "px-5 py-3" : "px-4 py-4 @3xl:px-8 @3xl:py-6",
-              )}
-            >
+            {/* The Files, Commits and Conversation tabs' padding, at every width. */}
+            <div className="flex min-w-0 flex-col gap-4 px-4 py-4 @3xl:px-6">
               {lead}
               {description}
               <GuideStatus read={read} resolved={resolved} rewrite={rewrite} />
