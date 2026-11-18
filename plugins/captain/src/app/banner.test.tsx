@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { QueueItem } from "../contract/queue.ts";
-import { captainContract } from "../contract/rpc.ts";
+import { asksTag, captainContract } from "../contract/rpc.ts";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 const banner = app.composerCustomizations.find((each) => each.id === "needs-you")!.banners![0]!;
@@ -40,7 +40,7 @@ type Calls = { method: string; input: unknown }[];
 
 function render(
   threadId: string,
-  asks: QueueItem[],
+  asks: QueueItem[] | (() => QueueItem[]),
   options: { since?: unknown; crew?: QueueItem[]; crewFails?: boolean; sdk?: unknown } = {},
 ) {
   const calls: Calls = [];
@@ -55,7 +55,7 @@ function render(
     composer: { scope: { kind: "thread", threadId } },
     rpc: {
       captains: log("captains", () => ({ ids: [CAPTAIN] })),
-      asks: log("asks", () => ({ items: asks })),
+      asks: log("asks", () => ({ items: typeof asks === "function" ? asks() : asks })),
       crew: log("crew", () => {
         if (options.crewFails) throw new Error("bb did not answer");
         return { items: options.crew ?? [] };
@@ -267,6 +267,15 @@ function layOut(layout: { lines: number; content: number }) {
       Object.assign(layout, next);
       act(() => observers.forEach(report));
     },
+    /** Report as the browser does, between layout and paint: outside React, with no render after. */
+    measure(next: { lines: number; content: number }) {
+      Object.assign(layout, next);
+      observers.forEach(report);
+    },
+    /** Lay out anew without reporting, as content that leaves the box its size. */
+    resize(next: { lines: number; content: number }) {
+      Object.assign(layout, next);
+    },
     restore() {
       globalThis.ResizeObserver = previous;
       const prototype = HTMLElement.prototype as Partial<
@@ -292,6 +301,99 @@ test("More shows only when the two-line box cuts the detail off, and follows new
     act(() => more.click());
     expect(slot.getByRole("button", { name: "Less" }).getAttribute("aria-expanded")).toBe("true");
     expect(card.textContent).toContain("Redis is shared.");
+  } finally {
+    layout.restore();
+  }
+});
+
+test("More shows in the same paint as the clipped text: the measure itself shows it", async () => {
+  const layout = layOut({ lines: 0, content: 0 });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    await slot.findByTestId("captain-needs-you");
+    expect(slot.queryByRole("button", { name: "More" })).toBeNull();
+    // bb's renderer fills the box after the first commit; the browser measures before it paints.
+    layout.measure({ lines: 2, content: 4 });
+    expect(slot.getByRole("button", { name: "More" })).not.toBeNull();
+  } finally {
+    layout.restore();
+  }
+});
+
+test("with nothing to measure the detail by, More stays hidden", async () => {
+  const { slot } = render(CAPTAIN, [decision]);
+  const card = await slot.findByTestId("captain-needs-you");
+  expect(card.textContent).toContain("Builds re-download deps.");
+  expect(slot.queryByRole("button", { name: /More|Less/u })).toBeNull();
+});
+
+test("a code block, diagram, table or image in two lines that fit still offers More", async () => {
+  /** bb's renderer frames code and diagrams with a header of buttons. */
+  const blocks: Record<string, () => Element> = {
+    framed: () => {
+      const frame = document.createElement("div");
+      frame.innerHTML =
+        "<div><span>sh</span><div><button>Copy code</button></div></div><pre><code>bun test</code></pre>";
+      return frame;
+    },
+    table: () => document.createElement("table"),
+    image: () => document.createElement("img"),
+  };
+  for (const [kind, block] of Object.entries(blocks)) {
+    const layout = layOut({ lines: 2, content: 2 });
+    try {
+      const { slot } = render(CAPTAIN, [decision]);
+      const card = await slot.findByTestId("captain-needs-you");
+      expect(slot.queryByRole("button", { name: "More" }), kind).toBeNull();
+      // The block arrives with bb's renderer, after the first commit; the box takes its size.
+      card.querySelector("[data-detail-box] [data-testid=bb-markdown]")!.append(block());
+      layout.relayout({ lines: 2, content: 2 });
+      expect(slot.queryByRole("button", { name: "More" }), kind).not.toBeNull();
+    } finally {
+      layout.restore();
+      cleanup();
+    }
+  }
+});
+
+test("new detail text under a box that keeps its size is measured afresh", async () => {
+  const layout = layOut({ lines: 2, content: 2 });
+  let detail = decision.detail;
+  try {
+    const { slot } = render(CAPTAIN, () => [{ ...decision, detail } as QueueItem]);
+    const card = await slot.findByTestId("captain-needs-you");
+    expect(slot.queryByRole("button", { name: "More" })).toBeNull();
+    // A refetch brings a longer detail for the same ask; the two-line box stays two lines tall.
+    detail =
+      "Builds re-download deps. Redis is shared. SQLite is per runner, and it needs no network.";
+    layout.resize({ lines: 2, content: 4 });
+    await slot.experimental_invalidateRpc([asksTag(CAPTAIN)]);
+    await waitFor(() => expect(card.textContent).toContain("needs no network"));
+    expect(slot.getByRole("button", { name: "More" })).not.toBeNull();
+  } finally {
+    layout.restore();
+  }
+});
+
+test("scrolling the open detail keeps its place", async () => {
+  const layout = layOut({ lines: 2, content: 12 });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    const card = await slot.findByTestId("captain-needs-you");
+    const box = card.querySelector<HTMLElement>("[data-detail-box]")!;
+    let scrollTop = 0;
+    Object.defineProperty(box, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+      },
+    });
+    act(() => slot.getByRole("button", { name: "More" }).click());
+    scrollTop = 48;
+    fireEvent.scroll(box);
+    expect(scrollTop).toBe(48);
+    expect(slot.getByRole("button", { name: "Less" })).not.toBeNull();
   } finally {
     layout.restore();
   }

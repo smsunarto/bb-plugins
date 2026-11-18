@@ -17,6 +17,7 @@ import {
   Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -403,21 +404,31 @@ function ActionButton({ action, index }: { action: Action; index: number }) {
  * yellow, which outranks a plugin utility. Thread chips keep their own colour
  * and are held to the line height so they sit in the text. The leading is
  * relative, so two lines stay two lines where touch enlarges the text.
+ * Headings are the detail's size open and collapsed, and a leading quote has
+ * no top margin in either, so More moves no line.
  */
 const DETAIL_BOX =
-  "min-w-0 text-xs leading-snug text-muted-foreground [--foreground:var(--muted-foreground)] [&_code]:text-muted-foreground! [&_[data-prompt-mention]]:py-0 [&_[data-prompt-mention]]:leading-3.5";
+  "min-w-0 text-xs leading-snug text-muted-foreground [--foreground:var(--muted-foreground)] [&_code]:text-muted-foreground! [&_[data-prompt-mention]]:py-0 [&_[data-prompt-mention]]:leading-3.5 [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-xs [&_h4]:text-xs [&_h5]:text-xs [&_blockquote:first-child]:mt-0";
 /** bb's renderer defaults to body size; the box's size and leading keep its lines the box's lines. */
 const DETAIL_TEXT = "min-w-0 text-xs leading-snug text-muted-foreground";
 /**
  * Collapsed: two lines ending in an ellipsis, capped at three line heights.
- * Headings drop to the preview's size, so each is one line like the rest.
- * Code blocks and tables (bb wraps each in a `div`) and rules wait for More
- * rather than show a sliver, and a paragraph before one drops its margin, so
- * the box, and More beside it, end on the text.
+ * Every block is lines of text with no margins between, so two blocks of one
+ * line each are the two lines. bb's blocks become text there too, at any
+ * depth, rather than show a sliver. bb frames a code block or a diagram in a
+ * box whose header holds its buttons: the box and header go, and so do the
+ * buttons, so none takes Tab; a code block shows its code, a diagram its
+ * header's label. A table shows its rows with cells parted by a dot, and an
+ * image a thumbnail one line tall. Each is summarised, so More shows (see
+ * SUMMARISED).
  */
 const PREVIEW =
-  "line-clamp-2 max-h-[3lh] [&_[data-markdown-preview]>p:has(+div)]:mb-0 [&_[data-markdown-preview]>p:has(+hr)]:mb-0 [&_[data-markdown-preview]>h1]:text-xs [&_[data-markdown-preview]>h2]:text-xs [&_[data-markdown-preview]>h3]:text-xs [&_[data-markdown-preview]>h4]:text-xs [&_[data-markdown-preview]>h5]:text-xs [&_[data-markdown-preview]>div]:hidden [&_[data-markdown-preview]>hr]:hidden";
-const HIDDEN_BLOCKS = "[data-markdown-preview] > :is(div, hr)";
+  "line-clamp-2 max-h-[3lh] [&_p]:my-0 [&_ul]:my-0 [&_ol]:my-0 [&_li]:my-0 [&_blockquote]:my-0 [&_h1]:my-0 [&_h2]:my-0 [&_h3]:my-0 [&_h4]:my-0 [&_h5]:my-0 [&_h6]:my-0 [&_hr]:my-0 [&_button]:hidden [&_div:has(>div>div>button)]:contents [&_div:has(>div>button)]:contents [&_div:has(>pre)>div]:hidden [&_div:has(>div>div>button)>div~div]:hidden [&_pre]:m-0 [&_pre]:overflow-visible [&_pre]:bg-transparent! [&_pre]:p-0 [&_pre>code]:leading-snug! [&_pre_span]:leading-snug! [&_pre_span]:text-inherit! [&_div:has(>div>table)]:contents [&_div:has(>table)]:contents [&_table]:block [&_table]:border-0 [&_thead]:contents [&_tbody]:contents [&_tr]:block [&_th]:inline [&_th]:border-0 [&_th]:p-0 [&_th]:font-medium [&_td]:inline [&_td]:border-0 [&_td]:p-0 [&_th+th]:before:content-['_·_'] [&_td+td]:before:content-['_·_'] [&_img]:my-0! [&_img]:inline [&_img]:h-[1lh] [&_img]:w-auto [&_img]:align-top!";
+/**
+ * Blocks the preview shows only in summary: a code block or diagram, found by
+ * its frame's buttons (a diagram draws only once visible), a table, an image.
+ */
+const SUMMARISED = "button, table, img";
 
 /**
  * The detail, two lines until opened. More shows only when those two lines
@@ -427,8 +438,7 @@ const HIDDEN_BLOCKS = "[data-markdown-preview] > :is(div, hr)";
 function Detail({ content, onToggleGone }: { content: string; onToggleGone: () => void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const toggle = useRef<HTMLButtonElement>(null);
-  const clipped = useClipped({ box, toggle, onToggleGone, open, content });
+  const toggle = useToggleShown({ box, onToggleGone, open, content });
   return (
     <div className="flex min-w-0 items-end gap-2">
       <div
@@ -459,83 +469,77 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
         <Markdown content={content} className={DETAIL_TEXT} />
       </div>
       <div className="flex w-11 shrink-0 justify-end">
-        {open || clipped ? (
-          <Button
-            ref={toggle}
-            type="button"
-            size="sm"
-            variant="ghost"
-            className={cn(TAP, "h-auto px-1.5 py-0.5 text-muted-foreground pointer-coarse:-my-1.5")}
-            aria-expanded={open}
-            onClick={() => {
-              // The preview starts at its first line, wherever the open detail was scrolled.
-              if (open && box.current !== null) box.current.scrollTop = 0;
-              setOpen(!open);
-            }}
-          >
-            {open ? "Less" : "More"}
-          </Button>
-        ) : null}
+        {/* Always mounted, shown or hidden by useToggleShown. One line tall,
+            so showing it changes no height. */}
+        <Button
+          ref={toggle}
+          type="button"
+          size="sm"
+          variant="ghost"
+          className={cn(
+            TAP,
+            "h-auto px-1.5 py-0 leading-snug text-muted-foreground pointer-coarse:-my-1.5 [&[hidden]]:hidden",
+          )}
+          aria-expanded={open}
+          onClick={() => {
+            // The preview starts at its first line, wherever the open detail was scrolled.
+            if (open && box.current !== null) box.current.scrollTop = 0;
+            setOpen(!open);
+          }}
+        >
+          {open ? "Less" : "More"}
+        </Button>
       </div>
     </div>
   );
 }
 
 /**
- * Whether the collapsed preview leaves something out: lines past the clamp,
- * or blocks it hides. Lines are measured in the ResizeObserver callback, after
- * layout. Hidden blocks change no size (bb's renderer adds them after the
- * first commit, and a box of nothing else stays 0×0), so a mutation observer
- * on the box's and the renderer root's children finds them with a query,
- * never a layout read. Measured only while collapsed: open keeps the last
- * answer, so Less stays mounted (and focused) through the collapse. Should
- * the preview turn out to fit, the toggle goes; if it held focus,
- * `onToggleGone` keeps focus in the banner rather than letting it fall to the
- * page. New content under a box that stays two lines tall changes no size,
- * so it observes afresh.
+ * Shows More only when the collapsed preview leaves something out: lines past
+ * the clamp, or a block it shows in summary. The ResizeObserver callback
+ * measures after layout and, being before paint, sets the toggle's `hidden`
+ * there, so More paints with the text it belongs to; a state update would
+ * paint a frame later. The box's size changes as bb's renderer adds its
+ * content after the first commit, so summarised blocks are found then too.
+ * Measured only while collapsed, so Less stays shown (and focused) through
+ * the collapse until measured. Should the
+ * preview turn out to fit, the toggle goes; if it held focus, `onToggleGone`
+ * first keeps focus in the banner rather than letting it fall to the page.
+ * New content under a box that stays two lines tall changes no size, so it
+ * observes afresh. With no ResizeObserver to measure, the toggle stays hidden.
  */
-function useClipped({
+function useToggleShown({
   box,
-  toggle,
   onToggleGone,
   open,
   content,
 }: {
   box: RefObject<HTMLElement | null>;
-  toggle: RefObject<HTMLElement | null>;
   onToggleGone: () => void;
   open: boolean;
   content: string;
-}): boolean {
-  const [clipped, setClipped] = useState(false);
-  useEffect(() => {
+}): RefObject<HTMLButtonElement | null> {
+  const toggle = useRef<HTMLButtonElement>(null);
+  // A layout effect, so the first measure lands before the first paint; it reads no layout itself.
+  useLayoutEffect(() => {
     const node = box.current;
-    if (open || node === null || typeof ResizeObserver === "undefined") return;
-    const hidden = () => node.querySelector(HIDDEN_BLOCKS) !== null;
+    const button = toggle.current;
+    if (open || node === null || button === null) return;
+    if (typeof ResizeObserver === "undefined") {
+      button.hidden = true;
+      return;
+    }
     const sizes = new ResizeObserver(() => {
-      const next = node.scrollHeight > node.clientHeight + 1 || hidden();
-      if (!next && toggle.current?.contains(document.activeElement)) onToggleGone();
-      setClipped(next);
-    });
-    // Hidden blocks are children of bb's renderer root, which arrives after the
-    // first commit: watch the box's children for the root, and the root's for blocks.
-    const watchRoot = () => {
-      if (node.firstElementChild) blocks.observe(node.firstElementChild, { childList: true });
-    };
-    const blocks = new MutationObserver(() => {
-      watchRoot();
-      if (hidden()) setClipped(true);
+      const clipped =
+        node.scrollHeight > node.clientHeight + 1 || node.querySelector(SUMMARISED) !== null;
+      if (!clipped && button.contains(document.activeElement)) onToggleGone();
+      button.hidden = !clipped;
     });
     sizes.observe(node);
-    blocks.observe(node, { childList: true });
-    watchRoot();
-    return () => {
-      sizes.disconnect();
-      blocks.disconnect();
-    };
+    return () => sizes.disconnect();
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- see above: new content is observed afresh.
-  }, [box, toggle, onToggleGone, open, content]);
-  return clipped;
+  }, [box, onToggleGone, open, content]);
+  return toggle;
 }
 
 function title(item: QueueItem): string {
