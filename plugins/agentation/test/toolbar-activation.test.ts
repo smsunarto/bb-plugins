@@ -63,6 +63,42 @@ test("a host launcher controls feedback mode and Escape hides the floating launc
   await waitFor(() => expect(toolbar()?.style.display).toBe("none"));
 });
 
+test("Escape that exits feedback mode does not reach the page's own Escape handlers", async () => {
+  // bb mounts the toolbar without a portalContainer. The page underneath, such
+  // as a Tasks detail view or bb's own back keybinding, listens on window and
+  // skips an Escape that is already handled.
+  const pageClosed: string[] = [];
+  const pageEscape = (event: KeyboardEvent) => {
+    if (event.key === "Escape" && !event.defaultPrevented) pageClosed.push("closed");
+  };
+  window.addEventListener("keydown", pageEscape);
+  try {
+    function ControlledToolbar() {
+      const [active, setActive] = useState(true);
+      return createElement<AgentationProps>(Agentation, {
+        active,
+        onActiveChange: setActive,
+        hideLauncher: true,
+      });
+    }
+    render(createElement(ControlledToolbar));
+    const toolbar = () =>
+      document
+        .querySelector("agentation-toolbar")
+        ?.shadowRoot?.querySelector<HTMLElement>("[data-agentation-toolbar]");
+    await waitFor(() => expect(toolbar()?.style.display).not.toBe("none"));
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    await waitFor(() => expect(toolbar()?.style.display).toBe("none"));
+    expect(pageClosed).toEqual([]);
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(pageClosed).toEqual(["closed"]);
+  } finally {
+    window.removeEventListener("keydown", pageEscape);
+  }
+});
+
 test("an initially active toolbar focuses its controls after mounting", async () => {
   render(createElement<AgentationProps>(Agentation, { active: true, hideLauncher: true }));
   await waitFor(() =>

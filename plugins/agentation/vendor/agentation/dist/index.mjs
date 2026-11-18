@@ -12009,7 +12009,7 @@ function PageFeedbackToolbarForRoute({
       const target = e.composedPath()[0] || e.target;
       const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
       if (e.key === "Escape") {
-        if (portalContainer && !pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
+        if (!pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
           e.preventDefault();
           e.stopPropagation();
         }

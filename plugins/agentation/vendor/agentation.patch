@@ -65,10 +65,9 @@ diff --git a/dist/index.js b/dist/index.js
      } else if (!isActive && focusLauncherOnCloseRef.current) {
        focusLauncherOnCloseRef.current = false;
 -      launcherRef.current?.focus();
--    }
--  }, [isActive]);
 +      (hideLauncher ? getLauncherElement?.() ?? invokingElementRef.current : launcherRef.current)?.focus();
-+    }
+     }
+-  }, [isActive]);
 +  }, [isActive, mounted, isToolbarHidden, hideLauncher, getLauncherElement]);
    (0, import_react19.useEffect)(() => {
      const stop = (e) => {
@@ -201,6 +200,15 @@ diff --git a/dist/index.js b/dist/index.js
            seenElements.add(el);
            const { name } = identifyElement(el);
            if (!elementNames.includes(name)) {
+@@ -12052,7 +12077,7 @@
+       const target = e.composedPath()[0] || e.target;
+       const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
+       if (e.key === "Escape") {
+-        if (portalContainer && !pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
++        if (!pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
+           e.preventDefault();
+           e.stopPropagation();
+         }
 @@ -12242,7 +12267,7 @@
            "data-feedback-toolbar": true,
            "data-agentation-toolbar": true,
@@ -288,10 +296,9 @@ diff --git a/dist/index.mjs b/dist/index.mjs
      } else if (!isActive && focusLauncherOnCloseRef.current) {
        focusLauncherOnCloseRef.current = false;
 -      launcherRef.current?.focus();
--    }
--  }, [isActive]);
 +      (hideLauncher ? getLauncherElement?.() ?? invokingElementRef.current : launcherRef.current)?.focus();
-+    }
+     }
+-  }, [isActive]);
 +  }, [isActive, mounted, isToolbarHidden, hideLauncher, getLauncherElement]);
    useEffect8(() => {
      const stop = (e) => {
@@ -424,6 +431,15 @@ diff --git a/dist/index.mjs b/dist/index.mjs
            seenElements.add(el);
            const { name } = identifyElement(el);
            if (!elementNames.includes(name)) {
+@@ -11984,7 +12009,7 @@
+       const target = e.composedPath()[0] || e.target;
+       const isTyping = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable;
+       if (e.key === "Escape") {
+-        if (portalContainer && !pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
++        if (!pendingAnnotation && !editingAnnotation && (isActive || showSettings || isDesignMode || isDrawMode || pendingMultiSelectElements.length)) {
+           e.preventDefault();
+           e.stopPropagation();
+         }
 @@ -12174,7 +12199,7 @@
            "data-feedback-toolbar": true,
            "data-agentation-toolbar": true,
