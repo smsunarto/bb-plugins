@@ -7,9 +7,9 @@ An exit animation needs the element to stay mounted until the animation ends. Ea
 The examples use these imports:
 
 ```tsx
-import { AnimatePresence, motion, type Transition } from 'motion/react';
-import { getStrictContext } from '@animate-ui/react/utils/strict-context';
-import { useControlledState } from '@animate-ui/react/utils/use-controlled-state';
+import { AnimatePresence, motion, type Transition } from "motion/react";
+import { getStrictContext } from "@animate-ui/react/utils/strict-context";
+import { useControlledState } from "@animate-ui/react/utils/use-controlled-state";
 import {
   ReducedMotionConfig,
   scale,
@@ -17,7 +17,7 @@ import {
   transition as motionTransition,
   useShouldReduceMotion,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 ```
 
 The snippets pass every token through `useTempoTransition()` so `AnimateUIProvider`'s `tempo` applies (`useMotionTokens()` does the same).
@@ -31,8 +31,7 @@ type PopoverContextType = {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
 };
-const [PopoverProvider, usePopover] =
-  getStrictContext<PopoverContextType>('PopoverContext');
+const [PopoverProvider, usePopover] = getStrictContext<PopoverContextType>("PopoverContext");
 
 function Popover({
   open,
@@ -70,7 +69,7 @@ function Popover({
 ```tsx
 type PopoverContentProps = Omit<
   React.ComponentProps<typeof PopoverPrimitive.Content>,
-  'forceMount' | 'asChild'
+  "forceMount" | "asChild"
 > & {
   transition?: Transition;
 };
@@ -94,7 +93,7 @@ function PopoverContent(props: PopoverContentProps) {
 function PopoverContentMotion({
   className,
   children,
-  align = 'center',
+  align = "center",
   sideOffset = 4,
   transition,
   ...props
@@ -112,7 +111,7 @@ function PopoverContentMotion({
       align={align}
       sideOffset={sideOffset}
       className={cn(
-        'bg-popover text-popover-foreground z-50 w-72 rounded-md border p-4 shadow-md outline-hidden',
+        "bg-popover text-popover-foreground z-50 w-72 rounded-md border p-4 shadow-md outline-hidden",
         className,
       )}
       {...props}
@@ -122,7 +121,7 @@ function PopoverContentMotion({
         animate={{ opacity: 1, scale: 1, transition: pop }}
         exit={{ ...hidden, transition: pop }}
         style={{
-          transformOrigin: 'var(--radix-popover-content-transform-origin)',
+          transformOrigin: "var(--radix-popover-content-transform-origin)",
         }}
       >
         {children}
@@ -161,7 +160,7 @@ function PopoverPopupMotion({ transition, ...props }: PopoverPopupProps) {
           initial={hidden}
           animate={{ opacity: 1, scale: 1, transition: pop }}
           exit={{ ...hidden, transition: pop }}
-          style={{ transformOrigin: 'var(--transform-origin)' }}
+          style={{ transformOrigin: "var(--transform-origin)" }}
         />
       }
     />
@@ -193,7 +192,7 @@ React Aria signals overlays with `isEntering` / `isExiting` render props and `da
 Gate with `AnimatePresence` on your own state: render the element conditionally inside it, never return `null` before it (an early return skips the exit). The component keeps its own focus management and dismissal; animating it doesn't move it onto a library (SKILL.md, C), though the output may say what one would add.
 
 ```tsx
-'use client';
+"use client";
 
 export function Panel({ open }: { open: boolean }) {
   return (
@@ -209,12 +208,12 @@ function PanelBody() {
   const leave = useTempoTransition(motionTransition.dismiss);
   const hidden = {
     opacity: 0,
-    transform: reduce ? 'translateX(0%)' : 'translateX(100%)',
+    transform: reduce ? "translateX(0%)" : "translateX(100%)",
   };
   return (
     <motion.aside
       initial={hidden}
-      animate={{ opacity: 1, transform: 'translateX(0%)', transition: enter }}
+      animate={{ opacity: 1, transform: "translateX(0%)", transition: enter }}
       exit={{ ...hidden, transition: leave }}
     />
   );

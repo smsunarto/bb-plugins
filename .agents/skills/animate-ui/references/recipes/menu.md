@@ -12,7 +12,7 @@ const hidden = { opacity: 0, scale: reduce ? 1 : scale.menu };
   animate={{ opacity: 1, scale: 1, transition: enter }} // transition.menu
   exit={{ ...hidden, transition: leave }}
   style={{
-    transformOrigin: 'var(--radix-dropdown-menu-content-transform-origin)',
+    transformOrigin: "var(--radix-dropdown-menu-content-transform-origin)",
   }}
 />;
 ```

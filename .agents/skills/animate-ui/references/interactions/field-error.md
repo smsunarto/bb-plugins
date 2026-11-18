@@ -5,16 +5,16 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: feedback, this field needs attention. A short shake, the border turning red, the message read out.
 
 ```tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useAnimate } from 'motion/react';
+import * as React from "react";
+import { useAnimate } from "motion/react";
 import {
   shift,
   transition,
   useShouldReduceMotion,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 
 export function useShake<T extends HTMLElement>() {
   const [scope, animate] = useAnimate<T>();
@@ -23,11 +23,7 @@ export function useShake<T extends HTMLElement>() {
   const shake = React.useCallback(() => {
     if (reduce || !scope.current) return;
     const s = shift.shake;
-    animate(
-      scope.current,
-      { x: [0, -s, s, -0.66 * s, 0.66 * s, -0.33 * s, 0.33 * s, 0] },
-      timing,
-    );
+    animate(scope.current, { x: [0, -s, s, -0.66 * s, 0.66 * s, -0.33 * s, 0.33 * s, 0] }, timing);
   }, [reduce, animate, scope, timing]);
   return [scope, shake] as const;
 }

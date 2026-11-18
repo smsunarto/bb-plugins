@@ -196,7 +196,9 @@ test("invalid timestamps and fractional native integers preserve valid quota wit
   const parsed = accountListSchema.parse([
     account({
       provider: "claude",
-      limitWindows: [{ slot: "secondary", windowMinutes: 10080, utilization: 0.25, resetAt: 1e308 }],
+      limitWindows: [
+        { slot: "secondary", windowMinutes: 10080, utilization: 0.25, resetAt: 1e308 },
+      ],
       observedAt: 1e308,
       heldUntil: 1e308,
       inFlight: 1.5,

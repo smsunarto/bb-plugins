@@ -5,16 +5,16 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: continuity, the list stays the same list while it changes. Also for notifications, messages or results shown in the page; toasts fixed to a screen edge are `../recipes/toast.md`. An item the user closes leaves like any removed item, on `transition.fade`.
 
 ```tsx
-'use client';
+"use client";
 
-import type { RefObject } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import type { RefObject } from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   ReducedMotionConfig,
   spring,
   transition,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 
 type Item = { id: string; label: string };
 
@@ -33,13 +33,9 @@ export function AnimatedList({
 
   // A17: the item leaving can't be tabbed to, and hands the focus to a neighbor.
   const leave = (item: HTMLElement) => {
-    const next = (item.nextElementSibling ??
-      item.previousElementSibling) as HTMLElement | null;
+    const next = (item.nextElementSibling ?? item.previousElementSibling) as HTMLElement | null;
     if (item.contains(document.activeElement))
-      (
-        next?.querySelector<HTMLElement>('button, a, input') ??
-        emptyFocus?.current
-      )?.focus();
+      (next?.querySelector<HTMLElement>("button, a, input") ?? emptyFocus?.current)?.focus();
     item.inert = true;
   };
 
@@ -65,7 +61,7 @@ export function AnimatedList({
               <button
                 type="button"
                 onClick={(event) => {
-                  leave(event.currentTarget.closest('li')!);
+                  leave(event.currentTarget.closest("li")!);
                   onRemove(item.id);
                 }}
               >
@@ -91,13 +87,13 @@ export function AnimatedList({
 
 ```vue
 <script setup lang="ts">
-import { AnimatePresence, motion } from 'motion-v';
+import { AnimatePresence, motion } from "motion-v";
 import {
   ReducedMotionConfig,
   spring,
   transition,
   useTempoTransition,
-} from '@animate-ui/vue/utils/motion';
+} from "@animate-ui/vue/utils/motion";
 
 const props = defineProps<{
   items: { id: string; label: string }[];
@@ -110,26 +106,18 @@ const move = useTempoTransition(() => spring.reflow);
 const fade = useTempoTransition(() => transition.fade);
 
 function remove(id: string, event: MouseEvent) {
-  const item = (event.currentTarget as HTMLElement).closest('li')!;
-  const next = (item.nextElementSibling ??
-    item.previousElementSibling) as HTMLElement | null;
+  const item = (event.currentTarget as HTMLElement).closest("li")!;
+  const next = (item.nextElementSibling ?? item.previousElementSibling) as HTMLElement | null;
   if (item.contains(document.activeElement))
-    (
-      next?.querySelector<HTMLElement>('button, a, input') ?? props.emptyFocus
-    )?.focus();
+    (next?.querySelector<HTMLElement>("button, a, input") ?? props.emptyFocus)?.focus();
   item.inert = true;
-  emit('remove', id);
+  emit("remove", id);
 }
 </script>
 
 <template>
   <ReducedMotionConfig>
-    <AnimatePresence
-      as="ul"
-      mode="popLayout"
-      :initial="false"
-      class="flex flex-col gap-2"
-    >
+    <AnimatePresence as="ul" mode="popLayout" :initial="false" class="flex flex-col gap-2">
       <motion.li
         v-for="item in items"
         :key="item.id"

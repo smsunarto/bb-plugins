@@ -10,12 +10,12 @@ const swap = useTempoTransition(motionTransition.swap);
 <span className="relative inline-flex">
   <AnimatePresence mode="popLayout" initial={false}>
     <motion.span
-      key={copied ? 'copied' : 'copy'}
+      key={copied ? "copied" : "copy"}
       initial={{ opacity: 0, scale: scale.icon, filter: blur.icon }}
       animate={{
         opacity: 1,
         scale: 1,
-        filter: 'blur(0px)',
+        filter: "blur(0px)",
         transition: swap,
       }}
       exit={{
@@ -44,13 +44,8 @@ The same swap with Motion for Vue (`references/vue.md`):
 
 ```vue
 <script setup lang="ts">
-import { AnimatePresence, motion } from 'motion-v';
-import {
-  blur,
-  scale,
-  transition,
-  useTempoTransition,
-} from '@animate-ui/vue/utils/motion';
+import { AnimatePresence, motion } from "motion-v";
+import { blur, scale, transition, useTempoTransition } from "@animate-ui/vue/utils/motion";
 
 defineProps<{ copied: boolean }>();
 const swap = useTempoTransition(() => transition.swap);
@@ -90,7 +85,7 @@ const swap = useTempoTransition(() => transition.swap);
 A button or a pill whose label changes (Save → Saved, Follow → Following): the label fades through `blur.icon`, without the scale, and the control keeps its size. Size the label's box from its longest label, never from a guess: every label sits invisible in the same grid cell, so the box is exactly as wide as the widest one in the font, the weight and the language it is set in. A `min-width` in `ch` is a guess: `ch` is the width of a `0`, so it runs short of wide letters (`W`, `M`) and long of narrow ones, and breaks once the label is translated.
 
 ```tsx
-const LABELS = { idle: 'Save', saved: 'Saved' } as const;
+const LABELS = { idle: "Save", saved: "Saved" } as const;
 
 function SaveLabel({ saved }: { saved: boolean }) {
   const swap = useTempoTransition(motionTransition.swap);
@@ -104,10 +99,10 @@ function SaveLabel({ saved }: { saved: boolean }) {
       <span className="[grid-area:1/1]">
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
-            key={saved ? 'saved' : 'idle'}
+            key={saved ? "saved" : "idle"}
             className="inline-block"
             initial={{ opacity: 0, filter: blur.icon }}
-            animate={{ opacity: 1, filter: 'blur(0px)', transition: swap }}
+            animate={{ opacity: 1, filter: "blur(0px)", transition: swap }}
             exit={{ opacity: 0, filter: blur.icon, transition: swap }}
           >
             {saved ? LABELS.saved : LABELS.idle}
@@ -121,14 +116,10 @@ function SaveLabel({ saved }: { saved: boolean }) {
 
 ```vue
 <script setup lang="ts">
-import { AnimatePresence, motion } from 'motion-v';
-import {
-  blur,
-  transition,
-  useTempoTransition,
-} from '@animate-ui/vue/utils/motion';
+import { AnimatePresence, motion } from "motion-v";
+import { blur, transition, useTempoTransition } from "@animate-ui/vue/utils/motion";
 
-const LABELS = { idle: 'Save', saved: 'Saved' } as const;
+const LABELS = { idle: "Save", saved: "Saved" } as const;
 defineProps<{ saved: boolean }>();
 const swap = useTempoTransition(() => transition.swap);
 </script>
@@ -169,26 +160,17 @@ const swap = useTempoTransition(() => transition.swap);
 A word changing on a timer inside a heading or a sentence ("Design. Code. **Ship.**" → "Grow." → "Win."): the line around it never moves, and the word keeps the line's baseline, color and weight. Use Animate UI's Rotating Text, set inline:
 
 ```tsx
-'use client';
+"use client";
 
-import {
-  RotatingText,
-  RotatingTextContainer,
-} from '@animate-ui/react/primitives/texts/rotating';
+import { RotatingText, RotatingTextContainer } from "@animate-ui/react/primitives/texts/rotating";
 
-export function CyclingWord({
-  words,
-  every = 2000,
-}: {
-  words: string[];
-  every?: number;
-}) {
+export function CyclingWord({ words, every = 2000 }: { words: string[]; every?: number }) {
   return (
     <RotatingTextContainer
       text={words}
       duration={every}
       align="start"
-      style={{ display: 'inline-block', overflow: 'clip' }}
+      style={{ display: "inline-block", overflow: "clip" }}
     >
       <RotatingText className="text-blue-600" />
     </RotatingTextContainer>

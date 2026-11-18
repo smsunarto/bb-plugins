@@ -25,12 +25,12 @@ Four shadcn-vue components have no import to swap, and one has a part to add: th
 ## B. Built on reka-ui: swap the import
 
 ```ts
-import { DialogContent, DialogRoot } from 'reka-ui'; // before
-import { DialogContent, DialogRoot } from '@animate-ui/vue/primitives/reka-ui'; // after (re-exports all of reka-ui)
-import { OTPInput } from 'vue-input-otp'; // before
-import { OTPInput } from '@animate-ui/vue/primitives/input-otp'; // after
-import emblaCarouselVue from 'embla-carousel-vue'; // before
-import emblaCarouselVue from '@animate-ui/vue/primitives/carousel'; // after (opts take scale and visible)
+import { DialogContent, DialogRoot } from "reka-ui"; // before
+import { DialogContent, DialogRoot } from "@animate-ui/vue/primitives/reka-ui"; // after (re-exports all of reka-ui)
+import { OTPInput } from "vue-input-otp"; // before
+import { OTPInput } from "@animate-ui/vue/primitives/input-otp"; // after
+import emblaCarouselVue from "embla-carousel-vue"; // before
+import emblaCarouselVue from "@animate-ui/vue/primitives/carousel"; // after (opts take scale and visible)
 ```
 
 The whole import moves; parts Animate UI doesn't animate are re-exported unchanged. Remove the component's CSS animation classes as § B says (tw-animate utilities and the `duration-*` beside them, `animate-accordion-*`, `animate-collapsible-*`); keep everything else. Animated parts that enter and leave take `transition` and `exit-transition`, parts that only move take `transition`. A drag or swipe asked on a hand-built sheet (C, step 4) moves it onto reka-ui's Drawer through `@animate-ui/vue/primitives/reka-ui` (`DrawerRoot` with `swipe-direction`, `DrawerPortal`, `DrawerOverlay`, `DrawerContent`, `DrawerTitle`, `DrawerDescription`); Vaul isn't used in Vue.
@@ -57,7 +57,7 @@ Motion for Vue mirrors Motion's React API in templates:
 
 ```vue
 <script setup lang="ts">
-import { AnimatePresence, motion } from 'motion-v';
+import { AnimatePresence, motion } from "motion-v";
 import {
   blur,
   ReducedMotionConfig,
@@ -66,9 +66,9 @@ import {
   transition,
   useShouldReduceMotion,
   useTempoTransition,
-} from '@animate-ui/vue/utils/motion';
+} from "@animate-ui/vue/utils/motion";
 
-const open = defineModel<boolean>('open');
+const open = defineModel<boolean>("open");
 const reduce = useShouldReduceMotion();
 const enter = useTempoTransition(() => spring.pop);
 const exit = useTempoTransition(() => transition.popOut);

@@ -5,16 +5,16 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: continuity, the card becomes the view: same image, same title, now larger. Also for a gallery opening an image.
 
 ```tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import * as React from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   ReducedMotionConfig,
   spring,
   transition,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 
 type Card = { id: string; title: string; body: string; image: string };
 
@@ -28,10 +28,10 @@ export function ExpandingCards({ cards }: { cards: Card[] }) {
   React.useEffect(() => {
     if (!open) return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(null);
+      if (event.key === "Escape") setOpen(null);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
   return (
@@ -44,11 +44,7 @@ export function ExpandingCards({ cards }: { cards: Card[] }) {
             transition={morph}
             className="overflow-hidden rounded-2xl border bg-white"
           >
-            <button
-              type="button"
-              onClick={() => setOpen(card)}
-              className="w-full text-left"
-            >
+            <button type="button" onClick={() => setOpen(card)} className="w-full text-left">
               <motion.img
                 layoutId={`image-${card.id}`}
                 transition={morph}

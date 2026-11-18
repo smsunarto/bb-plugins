@@ -7,10 +7,10 @@ Purpose: continuity, the content below doesn't jump. This is where `height` anim
 ```tsx
 const collapsed = { height: 0, opacity: 0, filter: blur.disclosure };
 const expanded = {
-  height: 'auto',
+  height: "auto",
   opacity: 1,
-  filter: 'blur(0px)',
-  transitionEnd: { filter: 'none' }, // no filter left at rest
+  filter: "blur(0px)",
+  transitionEnd: { filter: "none" }, // no filter left at rest
 };
 
 <AnimatePresence>
@@ -20,10 +20,8 @@ const expanded = {
         initial={collapsed}
         animate={expanded}
         exit={collapsed}
-        transition={useTempoTransition(
-          transition ?? motionTransition.disclosure,
-        )}
-        style={{ overflow: 'hidden' }}
+        transition={useTempoTransition(transition ?? motionTransition.disclosure)}
+        style={{ overflow: "hidden" }}
       />
     </AccordionPrimitive.Content>
   )}

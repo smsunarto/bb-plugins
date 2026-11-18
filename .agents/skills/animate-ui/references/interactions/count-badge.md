@@ -5,16 +5,12 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: feedback, the number changed. The digits roll with Sliding Number (catalog); the badge bumps when the count grows.
 
 ```tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import { useAnimate } from 'motion/react';
-import { SlidingNumber } from '@animate-ui/react/primitives/texts/sliding-number';
-import {
-  spring,
-  useShouldReduceMotion,
-  useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+import * as React from "react";
+import { useAnimate } from "motion/react";
+import { SlidingNumber } from "@animate-ui/react/primitives/texts/sliding-number";
+import { spring, useShouldReduceMotion, useTempoTransition } from "@animate-ui/react/utils/motion";
 
 export function CountBadge({ count }: { count: number }) {
   const [scope, animate] = useAnimate<HTMLSpanElement>();

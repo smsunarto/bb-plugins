@@ -5,30 +5,19 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: spatial, the row leaves the way it was pushed. The list around it is [list.md](list.md)'s.
 
 ```tsx
-'use client';
+"use client";
 
-import {
-  AnimatePresence,
-  motion,
-  useMotionValue,
-  type PanInfo,
-} from 'motion/react';
+import { AnimatePresence, motion, useMotionValue, type PanInfo } from "motion/react";
 import {
   ReducedMotionConfig,
   spring,
   transition,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 
 type Item = { id: string; label: string };
 
-export function SwipeList({
-  items,
-  onDelete,
-}: {
-  items: Item[];
-  onDelete: (id: string) => void;
-}) {
+export function SwipeList({ items, onDelete }: { items: Item[]; onDelete: (id: string) => void }) {
   const move = useTempoTransition(spring.reflow);
   const away = useTempoTransition(transition.dismiss);
 
@@ -54,13 +43,7 @@ export function SwipeList({
   );
 }
 
-function SwipeRow({
-  label,
-  onDelete,
-}: {
-  label: string;
-  onDelete: () => void;
-}) {
+function SwipeRow({ label, onDelete }: { label: string; onDelete: () => void }) {
   const back = useTempoTransition(spring.slide);
   const away = useTempoTransition(transition.dismiss);
   const x = useMotionValue(0);
@@ -88,15 +71,11 @@ function SwipeRow({
         }}
         onDragEnd={onDragEnd}
         style={{ x }}
-        variants={{ gone: { x: '-100%', transition: away } }}
+        variants={{ gone: { x: "-100%", transition: away } }}
         className="relative flex items-center justify-between border bg-white px-3 py-3"
       >
         {label}
-        <button
-          type="button"
-          onClick={onDelete}
-          className="text-sm text-neutral-500"
-        >
+        <button type="button" onClick={onDelete} className="text-sm text-neutral-500">
           Delete
         </button>
       </motion.div>

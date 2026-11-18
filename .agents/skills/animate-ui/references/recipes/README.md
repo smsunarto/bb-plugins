@@ -5,7 +5,7 @@ Start from the recipe that matches the component kind (see the table in SKILL.md
 Every recipe assumes the base-library wiring from `../base-libraries.md` (presence, mounted content, `ReducedMotionConfig`). Snippets show Radix; swap the mounting mechanism for Base UI or React Aria. Imports, once for all:
 
 ```tsx
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion } from "motion/react";
 import {
   blur,
   ReducedMotionConfig,
@@ -15,7 +15,7 @@ import {
   useMotionTokens,
   useShouldReduceMotion,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 ```
 
 One file per kind; read only the one you need:

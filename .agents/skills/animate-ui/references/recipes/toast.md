@@ -18,7 +18,7 @@ const leave = useTempoTransition(motionTransition.dismiss);
           layout="position"
           initial={{
             opacity: 0,
-            y: '100%',
+            y: "100%",
             scale: scale.toast,
             filter: blur.surface,
           }}
@@ -26,7 +26,7 @@ const leave = useTempoTransition(motionTransition.dismiss);
             opacity: 1,
             y: 0,
             scale: 1,
-            filter: 'blur(0px)',
+            filter: "blur(0px)",
             transition: enter,
           }}
           exit={{
