@@ -144,7 +144,7 @@ function Queue({
       onBlur={() => {
         toggleGone.current = false;
       }}
-      className="group flex min-w-0 flex-col gap-2 px-3 py-2 text-xs outline-none focus-visible:outline-1"
+      className="flex min-w-0 flex-col gap-2 px-3 py-2 text-xs outline-none focus-visible:outline-1"
     >
       {/* On touch, the gap keeps Skip's 44px target, which reaches below its row, clear of More's. */}
       <div className="flex min-w-0 flex-col gap-0.5 pointer-coarse:gap-4">
@@ -350,13 +350,10 @@ function Heading({
             variant="ghost"
             className={cn(TAP, DEFER)}
             aria-keyshortcuts="L"
-            aria-label="Later"
             aria-description="Hide for an hour"
             onClick={defer.later}
           >
-            <span>
-              <Mnemonic>L</Mnemonic>ater
-            </span>
+            Later
           </Button>
           <Button
             type="button"
@@ -364,13 +361,10 @@ function Heading({
             variant="ghost"
             className={cn(TAP, DEFER)}
             aria-keyshortcuts="S"
-            aria-label="Skip"
             aria-description="Move to the back of the queue"
             onClick={defer.skip}
           >
-            <span>
-              <Mnemonic>S</Mnemonic>kip
-            </span>
+            Skip
           </Button>
         </span>
       ) : null}
@@ -388,11 +382,10 @@ function ActionButton({ action, index }: { action: Action; index: number }) {
       type="button"
       size="sm"
       variant={action.primary ? "default" : "outline"}
-      className={cn(TAP, "relative h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal")}
+      className={cn(TAP, "h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal")}
       aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
       onClick={action.run}
     >
-      <KeyHint>{index + 1}</KeyHint>
       <span className="min-w-0 text-start break-words [unicode-bidi:plaintext]">
         {action.label}
       </span>
@@ -400,40 +393,6 @@ function ActionButton({ action, index }: { action: Action; index: number }) {
         <span className="shrink-0 font-normal whitespace-nowrap opacity-70">Recommended</span>
       ) : null}
     </Button>
-  );
-}
-
-/**
- * An answer's key: a small keycap over the button's corner while the banner
- * has focus, never on a coarse (touch) pointer. It lies over the button
- * rather than beside its label, so showing it moves nothing and a mouse press
- * that focuses the banner still lands on the control it began on. The border
- * is the muted text colour, so the keycap stays outlined over the filled
- * recommended button too.
- */
-function KeyHint({ children }: { children: ReactNode }) {
-  return (
-    <span
-      aria-hidden
-      className="pointer-events-none absolute -start-1.5 -top-1.5 hidden rounded-sm border border-muted-foreground bg-surface-raised-solid px-1 text-[0.625rem] leading-3.5 font-normal text-muted-foreground tabular-nums not-pointer-coarse:group-focus-within:block"
-    >
-      {children}
-    </span>
-  );
-}
-
-/**
- * Later's and Skip's key is their first letter, framed as a keycap when
- * KeyHint shows. The outline is drawn inside a pixel of padding, so it never
- * reaches the next glyph, and takes no room: nothing moves under the pointer. The word stays one span, so the button's
- * gap cannot part the letter from it; each button still names itself, as an
- * accessibility tree may read the split word as two.
- */
-function Mnemonic({ children }: { children: ReactNode }) {
-  return (
-    <span className="rounded-sm px-px -outline-offset-1 outline-muted-foreground not-pointer-coarse:group-focus-within:outline">
-      {children}
-    </span>
   );
 }
 
