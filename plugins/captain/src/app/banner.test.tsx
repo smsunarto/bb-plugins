@@ -203,7 +203,7 @@ function layOut(layout: { lines: number; content: number }) {
       {} as ResizeObserver,
     );
   const previous = globalThis.ResizeObserver;
-  // jsdom lays nothing out; these shadow its zero heights on `Element` until `restore`.
+  // jsdom lays nothing out; these stand in for its zero heights on `Element` until `restore`.
   Object.defineProperty(HTMLElement.prototype, "clientHeight", {
     configurable: true,
     get(this: HTMLElement) {
@@ -286,6 +286,37 @@ test("Less keeps focus: the open detail fits its box, yet the toggle stays and r
   }
 });
 
+test("when Less finds the preview now fits, More goes and focus moves to the banner", async () => {
+  const layout = layOut({ lines: 2, content: 4 });
+  try {
+    const { slot, of } = render(CAPTAIN, [decision]);
+    const card = await slot.findByTestId("captain-needs-you");
+    act(() => slot.getByRole("button", { name: "More" }).click());
+    // Wider while open, or shorter after a refetch: two lines now hold it all.
+    layout.relayout({ lines: 4, content: 4 });
+    const less = slot.getByRole("button", { name: "Less" });
+    act(() => less.focus());
+    act(() => less.click());
+    expect(slot.queryByRole("button", { name: /More|Less/u })).toBeNull();
+    expect(document.activeElement).toBe(card);
+    // The next Enter was meant for the toggle: it answers nothing.
+    fireEvent.keyDown(card, { key: "Enter" });
+    await new Promise((settle) => setTimeout(settle, 30));
+    expect(of("resolveAsk")).toEqual([]);
+  } finally {
+    layout.restore();
+  }
+});
+
+test("a held Enter that repeats onto the banner answers nothing", async () => {
+  const { slot, of } = render(CAPTAIN, [decision]);
+  const card = await slot.findByTestId("captain-needs-you");
+  act(() => card.focus());
+  fireEvent.keyDown(card, { key: "Enter", repeat: true });
+  await new Promise((settle) => setTimeout(settle, 30));
+  expect(of("resolveAsk")).toEqual([]);
+});
+
 test("the next item starts collapsed, whatever the last one showed", async () => {
   const layout = layOut({ lines: 2, content: 4 });
   try {
@@ -324,7 +355,7 @@ test("a collapsed detail shows its first lines again, however the open one was s
   }
 });
 
-/** A link past the visible lines of the collapsed detail, focused by `how`. */
+/** A link past the shown lines of the collapsed detail, focused by `how`. */
 function focusHiddenLink(card: HTMLElement, how: "keyboard" | "pointer") {
   const box = card.querySelector<HTMLElement>("[data-detail-box]")!;
   const link = document.createElement("a");

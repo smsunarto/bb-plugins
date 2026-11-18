@@ -47,8 +47,7 @@ const FAR = Number.MAX_SAFE_INTEGER;
 /** Every control a phone user taps gets a 44px target. */
 const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 /** Later and Skip: a short pair that sits in the title's first line. */
-/** Later and Skip keep room for their keycap at the start, so it never covers a neighbour or the card's edge. */
-const DEFER = "relative h-6 ps-2 pe-2 text-muted-foreground not-pointer-coarse:ps-6";
+const DEFER = "h-6 px-2 text-muted-foreground";
 
 export function NeedsYouBanner() {
   const { scope } = useComposer();
@@ -110,7 +109,20 @@ function Queue({
   );
   const actions = sending ? [] : itemActions(item, { answer, navigate, sdk, fail });
 
+  // When More or Less goes while it has focus, focus lands on the banner, where
+  // Enter answers. The Enter that follows was meant for the toggle: it does nothing.
+  const toggleGone = useRef(false);
+  const onToggleGone = useCallback(() => {
+    root?.focus();
+    toggleGone.current = true;
+  }, [root]);
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const swallow = toggleGone.current && event.key === "Enter";
+    toggleGone.current = false;
+    if (swallow) {
+      event.preventDefault();
+      return;
+    }
     const run = shortcut(event, actions, sending ? null : { later, skip });
     if (run === undefined) return;
     event.preventDefault();
@@ -129,6 +141,9 @@ function Queue({
       data-bb-plugin="captain"
       data-testid="captain-needs-you"
       onKeyDown={onKeyDown}
+      onBlur={() => {
+        toggleGone.current = false;
+      }}
       className="group flex min-w-0 flex-col gap-2 px-3 py-2 text-xs outline-none focus-visible:outline-1"
     >
       {/* On touch, the gap keeps Skip's 44px target clear of More's. */}
@@ -139,7 +154,7 @@ function Queue({
           crewError={crewError}
           defer={sending ? null : { later, skip }}
         />
-        {detail ? <Detail key={item.key} content={detail} /> : null}
+        {detail ? <Detail key={item.key} content={detail} onToggleGone={onToggleGone} /> : null}
       </div>
       {other !== null ? (
         <OtherAnswer
@@ -260,8 +275,11 @@ function shortcut(
   if (target.tagName === "INPUT" || target.tagName === "TEXTAREA") return undefined;
   const key = event.key.toLowerCase();
   if (/^[1-9]$/u.test(key)) return actions[Number(key) - 1]?.run;
-  // Enter on a focused button is that button's own click.
-  if (key === "enter") return target === event.currentTarget ? actions[0]?.run : undefined;
+  // Enter on a focused button is that button's own click. A held Enter repeats
+  // onto the banner when the button it pressed goes away; that is no answer.
+  if (key === "enter") {
+    return target === event.currentTarget && !event.repeat ? actions[0]?.run : undefined;
+  }
   if (key === "l") return defer?.later;
   if (key === "s") return defer?.skip;
   return undefined;
@@ -332,11 +350,13 @@ function Heading({
             variant="ghost"
             className={cn(TAP, DEFER)}
             aria-keyshortcuts="L"
+            aria-label="Later"
             aria-description="Hide for an hour"
             onClick={defer.later}
           >
-            <KeyHint place="start">L</KeyHint>
-            Later
+            <span>
+              <Mnemonic>L</Mnemonic>ater
+            </span>
           </Button>
           <Button
             type="button"
@@ -344,11 +364,13 @@ function Heading({
             variant="ghost"
             className={cn(TAP, DEFER)}
             aria-keyshortcuts="S"
+            aria-label="Skip"
             aria-description="Move to the back of the queue"
             onClick={defer.skip}
           >
-            <KeyHint place="start">S</KeyHint>
-            Skip
+            <span>
+              <Mnemonic>S</Mnemonic>kip
+            </span>
           </Button>
         </span>
       ) : null}
@@ -370,7 +392,7 @@ function ActionButton({ action, index }: { action: Action; index: number }) {
       aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
       onClick={action.run}
     >
-      <KeyHint place="corner">{index + 1}</KeyHint>
+      <KeyHint>{index + 1}</KeyHint>
       <span className="min-w-0 text-start break-words [unicode-bidi:plaintext]">
         {action.label}
       </span>
@@ -382,22 +404,34 @@ function ActionButton({ action, index }: { action: Action; index: number }) {
 }
 
 /**
- * A key's shortcut, shown while the banner has keyboard focus and never on a
- * coarse (touch) pointer. Showing it moves nothing, so a mouse press that
- * focuses the banner still lands on the control it began on: an answer's
- * keycap sits over the button's corner, and Later's and Skip's in the start
- * room `DEFER` keeps for it. The border is the muted text colour, so the
- * keycap stays outlined over the filled recommended button too.
+ * An answer's key: a small keycap over the button's corner while the banner
+ * has focus, never on a coarse (touch) pointer. It lies over the button
+ * rather than beside its label, so showing it moves nothing and a mouse press
+ * that focuses the banner still lands on the control it began on. The border
+ * is the muted text colour, so the keycap stays outlined over the filled
+ * recommended button too.
  */
-function KeyHint({ place, children }: { place: "corner" | "start"; children: ReactNode }) {
+function KeyHint({ children }: { children: ReactNode }) {
   return (
     <span
       aria-hidden
-      className={cn(
-        "pointer-events-none absolute hidden rounded-sm border border-muted-foreground bg-surface-raised-solid px-1 text-[0.625rem] leading-3.5 font-normal text-muted-foreground tabular-nums not-pointer-coarse:group-focus-within:block",
-        place === "corner" ? "-start-1.5 -top-1.5" : "start-1 top-1/2 -translate-y-1/2",
-      )}
+      className="pointer-events-none absolute -start-1.5 -top-1.5 hidden rounded-sm border border-muted-foreground bg-surface-raised-solid px-1 text-[0.625rem] leading-3.5 font-normal text-muted-foreground tabular-nums not-pointer-coarse:group-focus-within:block"
     >
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Later's and Skip's key is their first letter, framed as a keycap when
+ * KeyHint shows. An outline takes no room, so the pair keeps its spacing and
+ * nothing moves under the pointer. The word stays one span, so the button's
+ * gap cannot part the letter from it; each button still names itself, as an
+ * accessibility tree may read the split word as two.
+ */
+function Mnemonic({ children }: { children: ReactNode }) {
+  return (
+    <span className="rounded-sm outline-offset-1 outline-muted-foreground not-pointer-coarse:group-focus-within:outline">
       {children}
     </span>
   );
@@ -417,34 +451,38 @@ const DETAIL_BOX =
 const DETAIL_TEXT = "min-w-0 text-xs leading-snug text-muted-foreground";
 /**
  * Collapsed: two lines ending in an ellipsis. Headings drop to the preview's
- * size so each is one line like the rest. Blocks that are not lines (bb wraps
+ * size so each is one line like the rest, and a paragraph before a hidden
+ * block drops its margin so the box, and More, end on its text. Blocks that are not lines (bb wraps
  * code blocks and tables in a `div`; rules) wait for More rather than show a
  * sliver, and a 3-line cap bounds anything else.
  */
 const PREVIEW =
-  "line-clamp-2 max-h-[3lh] [&_[data-markdown-preview]>h1]:text-xs [&_[data-markdown-preview]>h2]:text-xs [&_[data-markdown-preview]>h3]:text-xs [&_[data-markdown-preview]>h4]:text-xs [&_[data-markdown-preview]>h5]:text-xs [&_[data-markdown-preview]>h6]:text-xs [&_[data-markdown-preview]>div]:hidden [&_[data-markdown-preview]>hr]:hidden [&_[data-markdown-preview]>pre]:hidden [&_[data-markdown-preview]>table]:hidden";
+  "line-clamp-2 max-h-[3lh] [&_[data-markdown-preview]>p:has(+div)]:mb-0 [&_[data-markdown-preview]>p:has(+hr)]:mb-0 [&_[data-markdown-preview]>h1]:text-xs [&_[data-markdown-preview]>h2]:text-xs [&_[data-markdown-preview]>h3]:text-xs [&_[data-markdown-preview]>h4]:text-xs [&_[data-markdown-preview]>h5]:text-xs [&_[data-markdown-preview]>h6]:text-xs [&_[data-markdown-preview]>div]:hidden [&_[data-markdown-preview]>hr]:hidden [&_[data-markdown-preview]>pre]:hidden [&_[data-markdown-preview]>table]:hidden";
 const HIDDEN_BLOCKS = "[data-markdown-preview] > :is(div, hr, pre, table)";
 
-/** The detail, two lines until opened. More shows only when those two lines leave something out. */
-function Detail({ content }: { content: string }) {
+/**
+ * The detail, two lines until opened, across the whole row. More shows only
+ * when those two lines leave something out, laid over the end of the last
+ * one on a fade of the card's colour, so it takes no width from the text it
+ * measures. Open, the same button sits on its own line below, so the text
+ * keeps the full row and the button keeps focus.
+ */
+function Detail({ content, onToggleGone }: { content: string; onToggleGone: () => void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const clipped = useClipped(box, open, content);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const clipped = useClipped({ box, toggle, onToggleGone, open, content });
   return (
-    <div className="flex min-w-0 items-end gap-2">
+    <div className="relative flex min-h-[1lh] min-w-0 flex-col text-xs leading-snug">
       <div
         ref={box}
         data-detail-box=""
         data-state={open ? "open" : "closed"}
-        className={cn(
-          "min-w-0 flex-1",
-          DETAIL_BOX,
-          open ? "max-h-[10lh] overflow-y-auto" : PREVIEW,
-        )}
+        className={cn(DETAIL_BOX, open ? "max-h-[10lh] overflow-y-auto" : PREVIEW)}
         onScroll={(event) => {
           if (open) return;
           const active = document.activeElement;
-          // Only keyboard focus on a link past the visible lines scrolls the clipped box
+          // Only keyboard focus on a link past the shown lines scrolls the clipped box
           // without a pointer: show the whole detail so the focused link is in view. Any
           // other scroll (a press on a half-hidden chip, find-in-page) snaps back.
           if (
@@ -460,14 +498,20 @@ function Detail({ content }: { content: string }) {
       >
         <Markdown content={content} className={DETAIL_TEXT} />
       </div>
-      {/* A fixed column, so More appearing never narrows the text it measures. */}
-      <div className="flex w-11 shrink-0 justify-end">
-        {open || clipped ? (
+      {open || clipped ? (
+        <div
+          className={
+            open
+              ? "flex justify-end"
+              : "absolute end-0 bottom-0 flex h-[1lh] items-center bg-linear-to-r from-transparent to-surface-raised-solid to-40% ps-8 rtl:bg-linear-to-l"
+          }
+        >
           <Button
+            ref={toggle}
             type="button"
             size="sm"
             variant="ghost"
-            className={cn(TAP, "h-auto px-1.5 py-0.5 text-muted-foreground pointer-coarse:-my-1.5")}
+            className={cn(TAP, "h-auto px-1.5 py-0 text-muted-foreground pointer-coarse:-my-1.5")}
             aria-expanded={open}
             onClick={() => {
               // The preview starts at its first line, wherever the open detail was scrolled.
@@ -477,8 +521,8 @@ function Detail({ content }: { content: string }) {
           >
             {open ? "Less" : "More"}
           </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -490,17 +534,34 @@ function Detail({ content }: { content: string }) {
  * commit, and a box of nothing else stays 0×0), so a mutation observer on the
  * box finds them with a query, never a layout read. Measured only while
  * collapsed: open keeps the last answer, so Less stays mounted (and focused)
- * through the collapse. New content under a box that stays two lines tall
- * resizes nothing, so it observes afresh.
+ * through the collapse. Should the preview turn out to fit, the toggle goes;
+ * if it held focus, `onToggleGone` keeps focus in the banner rather than
+ * letting it fall to the page.
+ * New content under a box that stays two lines tall changes no size, so it
+ * observes afresh.
  */
-function useClipped(box: RefObject<HTMLElement | null>, open: boolean, content: string): boolean {
+function useClipped({
+  box,
+  toggle,
+  onToggleGone,
+  open,
+  content,
+}: {
+  box: RefObject<HTMLElement | null>;
+  toggle: RefObject<HTMLElement | null>;
+  onToggleGone: () => void;
+  open: boolean;
+  content: string;
+}): boolean {
   const [clipped, setClipped] = useState(false);
   useEffect(() => {
     const node = box.current;
     if (open || node === null || typeof ResizeObserver === "undefined") return;
     const hidden = () => node.querySelector(HIDDEN_BLOCKS) !== null;
     const sizes = new ResizeObserver(() => {
-      setClipped(node.scrollHeight > node.clientHeight + 1 || hidden());
+      const next = node.scrollHeight > node.clientHeight + 1 || hidden();
+      if (!next && toggle.current?.contains(document.activeElement)) onToggleGone();
+      setClipped(next);
     });
     const blocks = new MutationObserver(() => {
       if (hidden()) setClipped(true);
@@ -511,8 +572,8 @@ function useClipped(box: RefObject<HTMLElement | null>, open: boolean, content: 
       sizes.disconnect();
       blocks.disconnect();
     };
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies, react-hooks/exhaustive-deps -- see above: new content is observed afresh.
-  }, [box, open, content]);
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- see above: new content is observed afresh.
+  }, [box, toggle, onToggleGone, open, content]);
   return clipped;
 }
 
