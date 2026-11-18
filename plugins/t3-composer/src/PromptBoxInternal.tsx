@@ -3139,6 +3139,8 @@ export function PromptBoxInternal({
   }, [cancelVoiceInput, showVoiceActionGroup, voice]);
 
   return (
+    // The form delegates keys and presses from the editor and controls inside it.
+    // oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <form
       ref={formRef}
       data-promptbox=""

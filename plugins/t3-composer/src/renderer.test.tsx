@@ -352,6 +352,8 @@ function FakeBbPicker(props: { withSwitch?: boolean }) {
       {open
         ? createPortal(
             <div id="fake-bb-popover">
+              {/* Mirrors BB's picker DOM, which the driver finds by role. */}
+              {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role */}
               <div role="option" aria-selected="true">
                 GPT-6-Luna
               </div>

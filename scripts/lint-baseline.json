@@ -72,30 +72,6 @@
     "source": "const scopeChanged = settledScope.current !== scopeKey;"
   },
   {
-    "filename": "plugins/t3-composer/components/ui/video.tsx",
-    "code": "jsx-a11y(media-has-caption)",
-    "message": "Missing `<track>` element with captions inside `<audio>` or `<video>` element",
-    "source": "return <video {...props} ref={ref} />;"
-  },
-  {
-    "filename": "plugins/t3-composer/src/AttachmentPreview.tsx",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "setPreviewUrl(url);"
-  },
-  {
-    "filename": "plugins/t3-composer/src/PromptBoxInternal.tsx",
-    "code": "jsx-a11y(no-noninteractive-element-interactions)",
-    "message": "Non-interactive elements should not be assigned mouse or keyboard event listeners.",
-    "source": "<form"
-  },
-  {
-    "filename": "plugins/t3-composer/src/renderer.test.tsx",
-    "code": "jsx-a11y(prefer-tag-over-role)",
-    "message": "Prefer `option` over `role` attribute `option`.",
-    "source": "<div role=\"option\" aria-selected=\"true\">"
-  },
-  {
     "filename": "plugins/traces/src/app/app.tsx",
     "code": "react(refs)",
     "message": "Cannot access refs during render",
