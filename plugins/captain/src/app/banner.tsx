@@ -147,8 +147,9 @@ function Queue({
       }}
       className="flex min-w-0 flex-col gap-2 px-3 py-2 text-xs outline-none focus-visible:outline-1"
     >
-      {/* On touch, the gap keeps Skip's 44px target, which reaches below its row, clear of More's. */}
-      <div className="flex min-w-0 flex-col gap-0.5 pointer-coarse:gap-4">
+      {/* On touch, Later's and Skip's targets end with the heading and More's starts with the
+          detail (see Heading and Detail), so this gap need not part them. */}
+      <div className="flex min-w-0 flex-col gap-0.5 pointer-coarse:gap-1.5">
         <Heading
           title={title(item)}
           meta={itemMeta(item, items.length, now)}
@@ -344,7 +345,7 @@ function Heading({
         ) : null}
       </p>
       {defer ? (
-        <span className="-me-1.5 -mt-0.5 flex shrink-0 items-center pointer-coarse:-my-3">
+        <span className="-me-1.5 -mt-0.5 flex shrink-0 items-center pointer-coarse:-mt-3">
           <Button
             type="button"
             size="sm"
@@ -433,7 +434,9 @@ const SUMMARISED = "button, table, img";
 /**
  * The detail, two lines until opened. More shows only when those two lines
  * leave something out; it and Less sit in a fixed column beside the text, so
- * More appearing never narrows the text it measures.
+ * More appearing never narrows the text it measures. On touch, the toggle's
+ * 44px target reaches below its line, never above, so it stays clear of
+ * Skip's above it.
  */
 function Detail({ content, onToggleGone }: { content: string; onToggleGone: () => void }) {
   const [open, setOpen] = useState(false);
@@ -469,16 +472,17 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
         <Markdown content={content} className={DETAIL_TEXT} />
       </div>
       <div className="flex w-11 shrink-0 justify-end">
-        {/* Always mounted, shown or hidden by useToggleShown. One line tall,
-            so showing it changes no height. */}
+        {/* Hidden from its first paint; useToggleShown shows it once measured. One
+            line tall, so showing it changes no height with a mouse. */}
         <Button
           ref={toggle}
           type="button"
           size="sm"
           variant="ghost"
+          hidden
           className={cn(
             TAP,
-            "h-auto px-1.5 py-0 leading-snug text-muted-foreground pointer-coarse:-my-1.5 [&[hidden]]:hidden",
+            "h-auto px-1.5 py-0 leading-snug text-muted-foreground pointer-coarse:-mb-1.5 [&[hidden]]:hidden",
           )}
           aria-expanded={open}
           onClick={() => {
@@ -502,11 +506,11 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
  * paint a frame later. The box's size changes as bb's renderer adds its
  * content after the first commit, so summarised blocks are found then too.
  * Measured only while collapsed, so Less stays shown (and focused) through
- * the collapse until measured. Should the
- * preview turn out to fit, the toggle goes; if it held focus, `onToggleGone`
- * first keeps focus in the banner rather than letting it fall to the page.
- * New content under a box that stays two lines tall changes no size, so it
- * observes afresh. With no ResizeObserver to measure, the toggle stays hidden.
+ * the collapse until measured. Should the preview turn out to fit, the toggle
+ * goes; if it held focus, `onToggleGone` first keeps focus in the banner
+ * rather than letting it fall to the page. New content under a box that stays
+ * two lines tall changes no size, so it observes afresh. React sets `hidden`
+ * only as the toggle mounts, so with nothing to measure it stays hidden.
  */
 function useToggleShown({
   box,
@@ -524,11 +528,7 @@ function useToggleShown({
   useLayoutEffect(() => {
     const node = box.current;
     const button = toggle.current;
-    if (open || node === null || button === null) return;
-    if (typeof ResizeObserver === "undefined") {
-      button.hidden = true;
-      return;
-    }
+    if (open || node === null || button === null || typeof ResizeObserver === "undefined") return;
     const sizes = new ResizeObserver(() => {
       const clipped =
         node.scrollHeight > node.clientHeight + 1 || node.querySelector(SUMMARISED) !== null;
