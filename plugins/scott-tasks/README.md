@@ -11,10 +11,27 @@ it. Both claim the `bb tasks` command, so disable the built-in before enabling
 the fork.
 
 Forked from [`get-bb/bb/plugins/tasks`](https://github.com/get-bb/bb/tree/desktop-v0.44.0/plugins/tasks).
-Last synced with upstream `main` at `80a98370e98c4a1e58ee9eabd49c759eb842a99c` on 2026-09-30, except
-[#4464](https://github.com/get-bb/bb/pull/4464) (lifecycle without polling). That
-change drops the thread-status reconcile loop and relies on host changes newer
-than bb 0.44.0, so the fork keeps the loop until a bb release ships them.
+Last synced with upstream `main` at `48c3a78488667fde6883d13da7ef54f8175b4671`
+on 2026-11-18, whose latest Tasks change is
+[#7613](https://github.com/get-bb/bb/pull/7613). Every upstream Tasks change
+since the previous base (`80a9837`, 2026-09-30) is ported or covered, except
+these, which the fork holds on purpose:
+
+- [#4464](https://github.com/get-bb/bb/pull/4464) (lifecycle without polling):
+  the fork keeps its thread-status reconcile loop. The host fixes #4464
+  relied on shipped in bb 0.45, so porting it is now a choice, not a wait.
+- [#6419](https://github.com/get-bb/bb/pull/6419) (shared live reads) and
+  [#7610](https://github.com/get-bb/bb/pull/7610), which tunes its query hook:
+  the fork reads through its own TanStack Query and DB layer
+  (`shell/collections.ts`, `shell/sync.ts`). That layer already batches card
+  metadata, shares rows between views, and repaints a cached list scope at
+  once. #4600 and #5261's signal scheduler are superseded by the same layer.
+- [#5275](https://github.com/get-bb/bb/pull/5275): confirmations stay on the
+  fork's shadcn `AlertDialog` (`components/confirm-dialog.tsx`) instead of
+  bb's `ConfirmDeleteDialog`.
+- [#4606](https://github.com/get-bb/bb/pull/4606) is ported only in part. Its
+  blanked `is_image` migration already ran here. Fork tests still use
+  `displayWidth` and the description saver's `schedule` option.
 
 The fork also fixes three bugs from upstream's incremental loading
 ([#4442](https://github.com/get-bb/bb/pull/4442)):
@@ -23,12 +40,6 @@ The fork also fixes three bugs from upstream's incremental loading
 - A task signal after a failed initial load triggers a refetch.
 - `boardMove` publishes every card a column renumber touches, so the board
   keeps the server order.
-
-The Plugin SDK 0.6.75 migration also ported three later upstream changes:
-per-model preset reasoning levels and service tiers
-([#4689](https://github.com/get-bb/bb/pull/4689),
-[#5266](https://github.com/get-bb/bb/pull/5266)) and pull request reads through
-GitHub PR Status ([#6125](https://github.com/get-bb/bb/pull/6125)).
 
 ## Install
 
