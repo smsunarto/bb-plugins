@@ -38,3 +38,4 @@ Card("Caching", [Button("Use in memory"), Button("Use Redis")])
 ```
 {{mapExample}}
 Before you send: each table, series, flow, code excerpt, set of dates or places, and choice in the reply is a block; the prose gives the answer and the why.
+Then pass each block with inputs, Load, Snippet, or local images or videos to check_ui, and send it once check_ui reports no errors. If your tools load on demand, load check_ui first.

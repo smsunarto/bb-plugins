@@ -27,6 +27,7 @@ import {
   PluginCliError,
   type BbPluginApi,
 } from "@get-bb/plugin-sdk";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
   listGallery,
@@ -43,7 +44,7 @@ import {
   sketchFontDataUrl,
 } from "./data-source";
 import { checkApp, MAX_APP_CHARS } from "./core/appLint";
-import { checkSpec, renderReplyMarkdown } from "./fallback";
+import { brokenUiBlocks, checkSpec, renderReplyMarkdown } from "./fallback";
 import type { Value } from "./core/types";
 import {
   MAX_PATH_FILTERS,
@@ -92,6 +93,26 @@ export const MOTION_SETTINGS = {
     default: true,
   },
 } as const;
+
+/**
+ * Local (bb-plugins): after a person's thread goes idle on a reply whose
+ * ```ui blocks fail, genui asks the agent once, agent-only, to resend them
+ * fixed. Claude Code defers check_ui, so agents there seldom ran it first.
+ */
+export const UI_REPAIR_SETTINGS = {
+  uiRepair: {
+    type: "boolean",
+    label: "Repair broken UI",
+    description:
+      "When a reply's UI block can't render, asks the agent once, in the background, to send it again fixed. Each repair is one more agent turn.",
+    default: true,
+  },
+} as const;
+
+/** A reply's identity for repair bookkeeping: equal texts are the same reply. */
+function replyKey(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
 
 const storedUiSchema = z.object({ source: z.string() });
 
@@ -375,6 +396,49 @@ export default async function plugin(bb: BbPluginApi) {
   bb.agents.contributeInstructions(({ threadId }) =>
     personThreads.has(threadId) ? CODE_WORK_INSTRUCTIONS : null,
   );
+
+  const repairSettings = bb.settings.define(UI_REPAIR_SETTINGS);
+  // One repair per broken reply, and none for the reply that answers a
+  // repair: `repair:<thread>` holds the key of the reply last repaired.
+  bb.events.on("thread.idle", async ({ thread, lastAssistantText }) => {
+    if (!personThreads.has(thread.id) || lastAssistantText === null) return;
+    const broken = brokenUiBlocks(lastAssistantText);
+    const stateKey = `repair:${thread.id}`;
+    const repaired = await bb.storage.kv.get<string>(stateKey);
+    const reply = replyKey(lastAssistantText);
+    if (repaired === reply) return; // the same idle, delivered again
+    if (repaired !== undefined) await bb.storage.kv.delete(stateKey);
+    if (broken.length === 0 || repaired !== undefined) return;
+    if (!(await repairSettings.get()).uiRepair) return;
+    try {
+      const [latest] = await bb.sdk.threads.events.list({
+        threadId: thread.id,
+        order: "desc",
+        limit: "1",
+        types: ["turn/completed"],
+      });
+      // A stopped or failed turn is the user's call, not a broken reply.
+      if (latest?.type !== "turn/completed" || latest.data.status !== "completed") return;
+      const blocks = broken.map(({ block, errors }) => `Block ${block}:\n${errors}`).join("\n");
+      await bb.storage.kv.set(stateKey, reply);
+      await bb.sdk.threads.send({
+        threadId: thread.id,
+        mode: "start",
+        input: [
+          {
+            type: "text",
+            text: instructionText.read("ui-repair", { blocks }),
+            mentions: [],
+            visibility: "agent-only",
+          },
+        ],
+      });
+    } catch (error) {
+      bb.log.warn(
+        `could not ask ${thread.id} to repair its UI: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  });
 
   bb.http.route("GET", "/video-player.js", (context) => {
     const headers = { etag: VIDEO_PLAYER_ETAG, "cache-control": "no-cache" };

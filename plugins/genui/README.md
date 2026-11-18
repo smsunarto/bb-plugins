@@ -20,7 +20,11 @@ it is dropped, and the retired `PullRequest(refs)` shows its refs as links.
 Each is a warning, and `check_ui` lists warnings on a passing block. Unknown names
 suggest at most three components instead of the whole list, and the failure
 card scrolls past a fixed height. A local `Number(x)` function reads the
-number a text input holds.
+number a text input holds. `inline-ui.md` tells agents to run `check_ui` before
+sending a block that needs it, since Claude Code defers the tool and its
+description. When a person's thread goes idle on a reply whose `ui` block
+fails to compile, the server asks the agent once, agent-only, to resend it
+fixed; the _Repair broken UI_ setting turns this off.
 Repository integration adds generated icons, a gallery story, and Apache license
 checks. Lint reports inherited upstream diagnostics as warnings; the local
 integration files retain the repository error levels. Formatter baselines retain
