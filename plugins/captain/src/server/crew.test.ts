@@ -75,6 +75,20 @@ describe("bb captain dispatch", () => {
     ]);
   });
 
+  test("crew stay agent-facing: neither dispatch nor a reload marks them for GenUI", async () => {
+    const { host, captainId, as } = await crewHost();
+    const crewId = await dispatched(as, "BBPLUGINS-1", "Implement");
+
+    await host.reload();
+
+    expect(host.metadata.has(`${crewId} genui`)).toBe(false);
+    expect(host.metadata.has(`${captainId} genui`)).toBe(true);
+    const marked = host.harness.inspection.sdk
+      .callsTo("threads.updatePluginMetadata")
+      .map(([args]) => (args as { threadId: string }).threadId);
+    expect(marked).not.toContain(crewId);
+  });
+
   test("checks every task before spawning: one bad key starts nothing", async () => {
     const { host, as } = await crewHost({
       tasksProjects: [{ id: "tp_ramp", name: "Rampage", prefix: "RAMP", linkedBbProjectId: null }],

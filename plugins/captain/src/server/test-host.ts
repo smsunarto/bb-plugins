@@ -94,6 +94,14 @@ export type FakeOptions = {
   tasksDown?: boolean;
   /** Push notifications is not loaded. */
   pushDown?: boolean;
+  /** Plugin metadata writes reject, as when bb refuses them. */
+  metadataDown?: boolean;
+  /** Sending a queued message now rejects. */
+  queueSendDown?: boolean;
+  /** Plugin metadata writes resolve this late. */
+  metadataDelayMs?: number;
+  /** Another plugin holds a spawn's first message, as concurrency-limit does at its cap. */
+  pluginHold?: boolean;
   /** Captain's Tasks deadline; short, so a hung call fails fast. */
   tasksDeadlineMs?: number;
   /** How often a watched banner rechecks the crew. */
@@ -130,6 +138,15 @@ export async function captainHost(options: FakeOptions = {}) {
   const sendFails = new Set<string>();
   const interactions = new Map<string, unknown[]>();
   const threads = new Map<string, Thread>();
+  /** Thread metadata by `<threadId> <pluginId>`, as other plugins read it. */
+  const metadata = new Map<string, Record<string, unknown>>();
+  /** Messages held by a spawn's `sendAt`, until sent now. */
+  const queued = new Map<
+    string,
+    { id: string; text: string; waitingOn: { kind: string; pluginId?: string; reason?: string } }[]
+  >();
+  /** Each send-now, with whether the thread was marked and registered by then. */
+  const released: { threadId: string; marked: boolean; registered: boolean }[] = [];
   let serial = 0;
 
   function withListFields(
@@ -400,7 +417,33 @@ export async function captainHost(options: FakeOptions = {}) {
             }),
           );
           threads.set(thread.id, thread);
+          if (args.sendAt !== undefined) {
+            const waitingOn: { kind: string; pluginId?: string; reason?: string } =
+              options.pluginHold === true
+                ? { kind: "plugin", pluginId: "concurrency-limit", reason: "at its cap" }
+                : { kind: "time" };
+            queued.set(thread.id, [{ id: `qm_${++serial}`, text: args.prompt ?? "", waitingOn }]);
+          }
           return thread as never;
+        },
+        queuedMessages: {
+          list: async ({ threadId }) => (queued.get(threadId) ?? []) as never,
+          send: async ({ threadId, queuedMessageId }) => {
+            if (options.queueSendDown === true) throw new Error("queued message is claimed");
+            const rows = queued.get(threadId) ?? [];
+            const row = rows.find((entry) => entry.id === queuedMessageId);
+            if (row === undefined) throw new Error(`queued message ${queuedMessageId} not found`);
+            queued.set(
+              threadId,
+              rows.filter((entry) => entry !== row),
+            );
+            released.push({
+              threadId,
+              marked: metadata.has(`${threadId} genui`),
+              registered: server.registry.get(threadId) !== null,
+            });
+            return { ok: true, delivery: "sent" } as never;
+          },
         },
         get: async ({ threadId }) => {
           const thread = threads.get(threadId);
@@ -432,6 +475,17 @@ export async function captainHost(options: FakeOptions = {}) {
           if (thread === undefined) throw new Error(`thread ${threadId} not found`);
           const next = { ...thread, ...patch } as Thread;
           threads.set(threadId, next);
+          return next as never;
+        },
+        updatePluginMetadata: async ({ threadId, pluginId, set = {} }) => {
+          if (options.metadataDown === true) throw new Error("metadata write refused");
+          if (options.metadataDelayMs !== undefined)
+            await new Promise((resolve) => setTimeout(resolve, options.metadataDelayMs));
+          if (!threads.has(threadId))
+            throw Object.assign(new Error(`thread ${threadId} not found`), { status: 404 });
+          const key = `${threadId} ${pluginId}`;
+          const next = { ...metadata.get(key), ...set };
+          metadata.set(key, next);
           return next as never;
         },
         archive: async ({ threadId }) => {
@@ -480,6 +534,7 @@ export async function captainHost(options: FakeOptions = {}) {
   let server = await start(host.bb, startOptions);
   await server.ready;
   await server.fieldsReady;
+  await server.audienceReady;
 
   /**
    * Reload the plugin as `bb plugin reload` does: same data.db, new instance.
@@ -487,11 +542,16 @@ export async function captainHost(options: FakeOptions = {}) {
    * one through `server`.
    */
   async function reload(): Promise<void> {
-    await host.harness.lifecycle.reload(async (bb) => {
+    current = await current.harness.lifecycle.reload(async (bb) => {
       server = await start(bb, startOptions);
       await server.ready;
+      await server.audienceReady;
     });
   }
+  /** The host a reload made current, whose `bb.log` the reloaded plugin writes to. */
+  let current = host;
+  /** Every `bb.log` line of the current plugin instance. */
+  const logs = () => current.harness.inspection.logEntries;
 
   /** Add a thread to the fake bb, such as a crew child of a Captain. */
   function addThread(overrides: Partial<Thread> & { id: string }): Thread {
@@ -567,6 +627,10 @@ export async function captainHost(options: FakeOptions = {}) {
     sendFails,
     interactions,
     threads,
+    metadata,
+    queued,
+    released,
+    logs,
     addThread,
     updateThread,
     addTask,
