@@ -130,6 +130,8 @@ export async function captainHost(options: FakeOptions = {}) {
   const sendFails = new Set<string>();
   const interactions = new Map<string, unknown[]>();
   const threads = new Map<string, Thread>();
+  /** Thread metadata by `<threadId> <pluginId>`, as other plugins read it. */
+  const metadata = new Map<string, Record<string, unknown>>();
   let serial = 0;
 
   function withListFields(
@@ -434,6 +436,13 @@ export async function captainHost(options: FakeOptions = {}) {
           threads.set(threadId, next);
           return next as never;
         },
+        updatePluginMetadata: async ({ threadId, pluginId, set = {} }) => {
+          if (!threads.has(threadId)) throw new Error(`thread ${threadId} not found`);
+          const key = `${threadId} ${pluginId ?? "captain"}`;
+          const next = { ...metadata.get(key), ...set };
+          metadata.set(key, next);
+          return next as never;
+        },
         archive: async ({ threadId }) => {
           const thread = threads.get(threadId);
           if (thread !== undefined) threads.set(threadId, { ...thread, archivedAt: 5_000 });
@@ -480,6 +489,7 @@ export async function captainHost(options: FakeOptions = {}) {
   let server = await start(host.bb, startOptions);
   await server.ready;
   await server.fieldsReady;
+  await server.audienceReady;
 
   /**
    * Reload the plugin as `bb plugin reload` does: same data.db, new instance.
@@ -490,6 +500,7 @@ export async function captainHost(options: FakeOptions = {}) {
     await host.harness.lifecycle.reload(async (bb) => {
       server = await start(bb, startOptions);
       await server.ready;
+      await server.audienceReady;
     });
   }
 
@@ -567,6 +578,7 @@ export async function captainHost(options: FakeOptions = {}) {
     sendFails,
     interactions,
     threads,
+    metadata,
     addThread,
     updateThread,
     addTask,

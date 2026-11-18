@@ -2,6 +2,7 @@ import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { instructionFiles } from "@bb-plugins/instructions";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { markCaptainsPersonFacing } from "./audience.ts";
 import { createCheck } from "./check.ts";
 import { captainCli } from "./cli.ts";
 import { ensureStorageRoot, type CommandDeps } from "./commands/deps.ts";
@@ -67,7 +68,14 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     () => undefined,
     (error: unknown) => bb.log.warn(`verdict fields not defined yet: ${(error as Error).message}`),
   );
-  return { store, registry, drive, check, ready, fieldsReady };
+  // Captains started before the GenUI mark existed get it here, so a reload
+  // fixes them with no rerun of `new`. Async: `bb.sdk` may bind after start.
+  const audienceReady = (async () => {
+    for (const warning of await markCaptainsPersonFacing(bb, store)) bb.log.warn(warning);
+  })().catch((error: unknown) =>
+    bb.log.warn(`Captains not marked person-facing: ${(error as Error).message}`),
+  );
+  return { store, registry, drive, check, ready, fieldsReady, audienceReady };
 }
 
 const CAPTAINS_FOLDER = "Captains";

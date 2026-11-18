@@ -2,6 +2,7 @@ import { cliCommand } from "@get-bb/plugin-sdk";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { CAPTAIN_NAME_MAX, CAPTAINS_TAG } from "../../contract/rpc.ts";
+import { markPersonFacing } from "../audience.ts";
 import { readCallerFile } from "../caller.ts";
 import { DRIVE_FILES } from "../drive.ts";
 import { guard, refuse, Refusal, render, type Blocker, type Item } from "../output.ts";
@@ -245,6 +246,9 @@ async function apply(deps: CommandDeps, plan: Plan): Promise<StartedCaptain> {
   bb.rpc.experimental_invalidate([CAPTAINS_TAG]);
   const pushWarning = await setPushLevel(bb, threadId);
   if (pushWarning !== null) warnings.push(pushWarning);
+  // Also on a rerun, so `new` converges a Captain started before the mark.
+  const audienceWarning = await markPersonFacing(bb, threadId);
+  if (audienceWarning !== null) warnings.push(audienceWarning);
   const presets = await createMissingPresets(deps, plan.presets);
   warnings.push(...presets.warnings);
   if (presets.created.length > 0) notes.push(`created presets ${presets.created.join(", ")}`);

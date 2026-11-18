@@ -93,6 +93,27 @@ describe("bb captain new", () => {
     );
   });
 
+  test("marks the Captain person-facing in GenUI's namespace, and a rerun converges the mark", async () => {
+    const host = await captainHost();
+    const captainId = await newCaptain(host);
+
+    expect(host.metadata.get(`${captainId} genui`)).toEqual({ audience: "person" });
+    host.metadata.delete(`${captainId} genui`);
+    await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
+    expect(host.metadata.get(`${captainId} genui`)).toEqual({ audience: "person" });
+  });
+
+  test("a reload marks Captains started before the mark, and never their crew", async () => {
+    const host = await captainHost();
+    const captainId = await newCaptain(host);
+    host.addThread({ id: "thr_crew", parentThreadId: captainId });
+    host.metadata.clear();
+
+    await host.reload();
+
+    expect([...host.metadata]).toEqual([[`${captainId} genui`, { audience: "person" }]]);
+  });
+
   test("refuses with every blocker at once and changes nothing", async () => {
     const host = await captainHost({ tasksDown: true });
 
