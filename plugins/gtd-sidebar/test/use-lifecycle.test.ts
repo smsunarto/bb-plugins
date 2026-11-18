@@ -494,6 +494,7 @@ if (process.env.GTD_LIFECYCLE_TEST_CHILD !== "1") {
         ),
         createElement(
           "button",
+          // oxlint-disable-next-line react/purity -- Date.now runs in the click handler, not during render
           { onClick: () => lifecycle.snooze("t", Date.now() + 60_000) },
           "Park",
         ),
