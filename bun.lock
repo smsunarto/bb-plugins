@@ -289,6 +289,31 @@
         "vitest": "4.1.11",
       },
     },
+    "plugins/captain": {
+      "name": "@smsunarto/bb-plugin-captain",
+      "version": "0.1.0",
+      "dependencies": {
+        "@bb-plugins/instructions": "workspace:*",
+        "class-variance-authority": "^0.7.1",
+        "clsx": "^2.1.1",
+        "tailwind-merge": "^3.4.0",
+        "zod": "^4.4.3",
+      },
+      "devDependencies": {
+        "@bb-plugins/ui": "workspace:*",
+        "@get-bb/plugin-sdk": "0.6.132",
+        "@testing-library/react": "16.3.2",
+        "@types/node": "^22.0.0",
+        "@types/react": "^19.0.0",
+        "@types/react-dom": "^19.0.0",
+        "better-sqlite3": "^12.0.0",
+        "jsdom": "25.0.1",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "typescript": "^6.0.0",
+        "vitest": "^4.1.1",
+      },
+    },
     "plugins/devin": {
       "name": "@smsunarto/bb-plugin-devin",
       "version": "0.1.0",
@@ -1606,6 +1631,8 @@
     "@smsunarto/bb-plugin-agentation": ["@smsunarto/bb-plugin-agentation@workspace:plugins/agentation"],
 
     "@smsunarto/bb-plugin-at-plugin": ["@smsunarto/bb-plugin-at-plugin@workspace:plugins/at-plugin"],
+
+    "@smsunarto/bb-plugin-captain": ["@smsunarto/bb-plugin-captain@workspace:plugins/captain"],
 
     "@smsunarto/bb-plugin-devin": ["@smsunarto/bb-plugin-devin@workspace:plugins/devin"],
 
