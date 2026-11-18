@@ -30,24 +30,6 @@
     "source": "void refresh();"
   },
   {
-    "filename": "plugins/gtd-sidebar/hooks/use-inbox-window.ts",
-    "code": "react(incompatible-library)",
-    "message": "Use of incompatible library",
-    "source": "const virtualizer = useVirtualizer<HTMLElement, Element>({"
-  },
-  {
-    "filename": "plugins/gtd-sidebar/hooks/use-lifecycle.ts",
-    "code": "react(set-state-in-effect)",
-    "message": "Calling setState synchronously within an effect can trigger cascading renders",
-    "source": "setNow(armedAt);"
-  },
-  {
-    "filename": "plugins/gtd-sidebar/test/use-lifecycle.test.ts",
-    "code": "react(purity)",
-    "message": "Cannot call impure function during render",
-    "source": "{ onClick: () => lifecycle.snooze(\"t\", Date.now() + 60_000) },"
-  },
-  {
     "filename": "plugins/scott-docs/app.tsx",
     "code": "react(preserve-manual-memoization)",
     "message": "Existing memoization could not be preserved",

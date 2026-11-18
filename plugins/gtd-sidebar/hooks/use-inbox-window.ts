@@ -52,6 +52,7 @@ export function useInboxWindow({
 }): InboxWindow {
   const { items } = layout;
   const pinned = pinnedRowIndexes(items, pinnedThreadIds);
+  // oxlint-disable-next-line react/incompatible-library -- plugin bundles get no React Compiler; the virtualizer re-renders by itself
   const virtualizer = useVirtualizer<HTMLElement, Element>({
     count: items.length,
     getScrollElement: () => scrollRef.current,

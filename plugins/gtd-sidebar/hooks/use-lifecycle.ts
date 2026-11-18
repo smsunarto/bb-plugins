@@ -145,6 +145,7 @@ export function useLifecycle(threads: readonly PluginSidebarThread[]): Lifecycle
     // parked for good. Catch the rendered clock up and let the next pass arm
     // whatever wakes remain.
     if (snoozedUntilValues.some((value) => value > now && value <= armedAt)) {
+      // oxlint-disable-next-line react/set-state-in-effect -- catches the rendered clock up to a wake the timer already passed
       setNow(armedAt);
       return;
     }
