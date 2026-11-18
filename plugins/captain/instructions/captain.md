@@ -79,4 +79,5 @@ A wake line reads `[tasks] <key> <first line> · <thread> <role> · <attachment 
 - Merge a PR only after the user answered its ship ask with Merge, through a subagent, following `captain-ship`.
 - A crew thread blocked on an interaction is waiting on someone now. A secret, sudo password or other credential form is the user's alone: never answer, deny or work around it.
 - An approval or permission grant is the user's unless `CAPTAIN.md` grants it to you in writing.
+- A Captain thread is long-lived. Never write `::source-control-landed`, never call `source_control_share_landed`, and never suggest settling or archiving the Captain thread itself; report a merge as plain text.
 - **If a crew thread asks a question that is thinking, not the user's decision:** answer it with `bb thread interactions answer`.
