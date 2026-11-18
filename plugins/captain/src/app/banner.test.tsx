@@ -165,69 +165,160 @@ test("an answer the Captain does not have yet shows Sending… and no answer but
 
 test("a ship ask offers no Other…, and More expands the full detail", async () => {
   const ship = { ...decision, askKind: "ship", options: ["Merge", "Hold"] } as QueueItem;
-  const { slot } = render(CAPTAIN, [ship]);
-  await slot.findByTestId("captain-needs-you");
-  expect(slot.queryByRole("button", { name: "Other…" })).toBeNull();
-  const more = slot.getByRole("button", { name: "More" });
-  expect(more.getAttribute("aria-expanded")).toBe("false");
-  act(() => more.click());
-  const less = slot.getByRole("button", { name: "Less" });
-  expect(less.getAttribute("aria-expanded")).toBe("true");
-  act(() => less.click());
-  expect(slot.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("false");
+  const layout = layOut({ box: 32, content: 64 });
+  try {
+    const { slot } = render(CAPTAIN, [ship]);
+    const card = await slot.findByTestId("captain-needs-you");
+    expect(slot.queryByRole("button", { name: "Other…" })).toBeNull();
+    expect(card.textContent).toContain("Redis is shared.");
+    const more = slot.getByRole("button", { name: "More" });
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    act(() => more.click());
+    const less = slot.getByRole("button", { name: "Less" });
+    expect(less.getAttribute("aria-expanded")).toBe("true");
+    act(() => less.click());
+    expect(slot.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("false");
+  } finally {
+    layout.restore();
+  }
 });
 
-/** Lay out every element at these heights and report them through ResizeObserver, as a browser would. */
-function layOut(scrollHeight: number, clientHeight: number): () => void {
-  const proto = HTMLElement.prototype;
-  const undo: (() => void)[] = [];
-  for (const [prop, value] of [
-    ["scrollHeight", scrollHeight],
-    ["clientHeight", clientHeight],
-  ] as const) {
-    const own = Object.getOwnPropertyDescriptor(proto, prop);
-    Object.defineProperty(proto, prop, { configurable: true, get: () => value });
-    undo.push(() =>
-      own ? Object.defineProperty(proto, prop, own) : Reflect.deleteProperty(proto, prop),
+/**
+ * A ResizeObserver that reports the detail's clipping box and its content at
+ * the heights set here, as a browser would after layout. Each observed element
+ * gets its own height, so measuring the wrong one gives the wrong answer.
+ */
+function layOut(heights: { box: number; content: number }) {
+  const observers = new Set<{ callback: ResizeObserverCallback; targets: Set<Element> }>();
+  const height = (target: Element) =>
+    target.hasAttribute("data-detail-content") ? heights.content : heights.box;
+  const report = (observer: { callback: ResizeObserverCallback; targets: Set<Element> }) =>
+    observer.callback(
+      [...observer.targets].map(
+        (target) =>
+          ({
+            target,
+            borderBoxSize: [{ blockSize: height(target), inlineSize: 300 }],
+            contentRect: { height: height(target) },
+          }) as unknown as ResizeObserverEntry,
+      ),
+      {} as ResizeObserver,
     );
-  }
   const previous = globalThis.ResizeObserver;
   globalThis.ResizeObserver = class {
-    readonly callback: ResizeObserverCallback;
+    readonly entry: { callback: ResizeObserverCallback; targets: Set<Element> };
     constructor(callback: ResizeObserverCallback) {
-      this.callback = callback;
+      this.entry = { callback, targets: new Set() };
+      observers.add(this.entry);
     }
-    observe() {
-      this.callback([], this as unknown as ResizeObserver);
+    observe(target: Element) {
+      this.entry.targets.add(target);
+      report(this.entry);
     }
     unobserve() {}
-    disconnect() {}
+    disconnect() {
+      observers.delete(this.entry);
+    }
   };
-  undo.push(() => {
-    globalThis.ResizeObserver = previous;
-  });
-  return () => undo.forEach((step) => step());
+  return {
+    /** Change the heights and deliver them, as a resize or new content would. */
+    resize(next: { box: number; content: number }) {
+      Object.assign(heights, next);
+      act(() => observers.forEach(report));
+    },
+    restore() {
+      globalThis.ResizeObserver = previous;
+    },
+  };
 }
 
-test("More shows only when two lines cut the detail off", async () => {
-  const fits = layOut(32, 32);
+test("More shows only when the two-line box cuts the detail off, and follows new content", async () => {
+  const layout = layOut({ box: 32, content: 32 });
   try {
     const { slot } = render(CAPTAIN, [decision]);
-    await slot.findByText("Pick the cache backend");
-    await waitFor(() => expect(slot.queryByRole("button", { name: "More" })).toBeNull());
-  } finally {
-    fits();
-    cleanup();
-  }
-  const clipped = layOut(64, 32);
-  try {
-    const { slot } = render(CAPTAIN, [decision]);
-    const more = await slot.findByRole("button", { name: "More" });
+    const card = await slot.findByTestId("captain-needs-you");
+    // The detail shows collapsed, with nothing to open.
+    expect(card.textContent).toContain("Builds re-download deps.");
+    expect(slot.queryByRole("button", { name: "More" })).toBeNull();
+    // Content grows under a box that stays two lines tall.
+    layout.resize({ box: 32, content: 64 });
+    const more = slot.getByRole("button", { name: "More" });
     act(() => more.click());
     expect(slot.getByRole("button", { name: "Less" }).getAttribute("aria-expanded")).toBe("true");
+    expect(card.textContent).toContain("Redis is shared.");
   } finally {
-    clipped();
+    layout.restore();
   }
+});
+
+test("a collapsed detail shows its first lines again, however the open one was scrolled", async () => {
+  const layout = layOut({ box: 32, content: 200 });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    const card = await slot.findByTestId("captain-needs-you");
+    const box = card.querySelector<HTMLElement>("[data-detail-box]")!;
+    let scrollTop = 0;
+    Object.defineProperty(box, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+      },
+    });
+    act(() => slot.getByRole("button", { name: "More" }).click());
+    scrollTop = 120;
+    act(() => slot.getByRole("button", { name: "Less" }).click());
+    expect(scrollTop).toBe(0);
+    // Focus moving onto a hidden link scrolls the clipped box; it snaps back.
+    scrollTop = 48;
+    fireEvent.scroll(box);
+    expect(scrollTop).toBe(0);
+  } finally {
+    layout.restore();
+  }
+});
+
+test("keyboard focus reaching hidden detail opens it", async () => {
+  const layout = layOut({ box: 32, content: 64 });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    const card = await slot.findByTestId("captain-needs-you");
+    fireEvent.focusIn(card.querySelector("[data-detail-content]")!);
+    expect(slot.getByRole("button", { name: "Less" })).toBeTruthy();
+  } finally {
+    layout.restore();
+  }
+});
+
+test("when Less goes away as the detail collapses, focus stays in the banner", async () => {
+  const layout = layOut({ box: 32, content: 64 });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    const card = await slot.findByTestId("captain-needs-you");
+    act(() => slot.getByRole("button", { name: "More" }).click());
+    // Wider now: two lines would hold it all.
+    layout.resize({ box: 64, content: 64 });
+    const less = slot.getByRole("button", { name: "Less" });
+    act(() => less.focus());
+    act(() => less.click());
+    expect(slot.queryByRole("button", { name: /More|Less/u })).toBeNull();
+    expect(document.activeElement).toBe(card);
+  } finally {
+    layout.restore();
+  }
+});
+
+test("Later and Skip clicks defer the item on show", async () => {
+  const { slot, of } = render(CAPTAIN, [decision]);
+  await slot.findByTestId("captain-needs-you");
+  act(() => slot.getByRole("button", { name: "Skip" }).click());
+  act(() => slot.getByRole("button", { name: "Later" }).click());
+  await waitFor(() =>
+    expect(of("defer").map((call) => call.input)).toEqual([
+      { captainId: CAPTAIN, key: "ask:a1", action: "skip" },
+      { captainId: CAPTAIN, key: "ask:a1", action: "later" },
+    ]),
+  );
 });
 
 test("an empty queue shows Since you left; a count opens its tasks and Mark seen advances the cutoff", async () => {

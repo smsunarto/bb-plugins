@@ -14,14 +14,18 @@ import {
   useSdk,
 } from "@get-bb/plugin-sdk/app";
 import {
+  Fragment,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type KeyboardEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
+import { flushSync } from "react-dom";
 import {
   age,
   isSending,
@@ -36,8 +40,8 @@ import { Input } from "./components/ui/input.tsx";
 import { cn } from "./lib/utils.ts";
 
 const NO_INPUT = {};
-type ItemUi = { key: string; other: string | null; why: boolean; error: string | null };
-const NO_UI: ItemUi = { key: "", other: null, why: false, error: null };
+type ItemUi = { key: string; other: string | null; error: string | null };
+const NO_UI: ItemUi = { key: "", other: null, error: null };
 const NO_ITEMS: QueueItem[] = [];
 /** Ages and Later both read the clock; a minute is fine-grained enough for either. */
 const TICK_MS = 30_000;
@@ -45,7 +49,7 @@ const FAR = Number.MAX_SAFE_INTEGER;
 /** Every control a phone user taps gets a 44px target. */
 const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 /** Later and Skip: a short pair that sits in the title's first line. */
-const DEFER = "h-6 px-2 text-muted-foreground";
+const DEFER = "relative h-6 px-2 text-muted-foreground";
 
 export function NeedsYouBanner() {
   const { scope } = useComposer();
@@ -100,7 +104,7 @@ function Queue({
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const item = items[0] as QueueItem;
   const sending = isSending(item);
-  const { other, why, error, patchUi } = useItemUi(item.key);
+  const { other, error, patchUi } = useItemUi(item.key);
   const setOther = (value: string | null) => patchUi({ other: value });
   const { answer, later, skip, fail } = useItemCommands(captainId, item.key, root, (value) =>
     patchUi({ error: value }),
@@ -128,7 +132,8 @@ function Queue({
       onKeyDown={onKeyDown}
       className="group flex min-w-0 flex-col gap-2 px-3 py-2 text-xs outline-none focus-visible:outline-1"
     >
-      <div className="flex min-w-0 flex-col gap-0.5">
+      {/* On touch, the gap keeps Skip's 44px target clear of More's. */}
+      <div className="flex min-w-0 flex-col gap-0.5 pointer-coarse:gap-2.5">
         <Heading
           title={title(item)}
           meta={itemMeta(item, items.length, now)}
@@ -136,12 +141,7 @@ function Queue({
           defer={sending ? null : { later, skip }}
         />
         {detail ? (
-          <Detail
-            key={item.key}
-            content={detail}
-            open={why}
-            onToggle={() => patchUi({ why: !why })}
-          />
+          <Detail key={item.key} content={detail} onFocusLost={() => root?.focus()} />
         ) : null}
       </div>
       {other !== null ? (
@@ -184,10 +184,10 @@ function Queue({
 /** Per-item UI, tagged with its item so a new item starts collapsed with no answer box. */
 function useItemUi(key: string) {
   const [ui, setUi] = useState<ItemUi>(NO_UI);
-  const { other, why, error } = ui.key === key ? ui : NO_UI;
+  const { other, error } = ui.key === key ? ui : NO_UI;
   const patchUi = (patch: Partial<Omit<ItemUi, "key">>) =>
     setUi((current) => ({ ...(current.key === key ? current : NO_UI), ...patch, key }));
-  return { other, why, error, patchUi };
+  return { other, error, patchUi };
 }
 
 /**
@@ -294,24 +294,32 @@ function Heading({
   crewError: string | undefined;
   defer: { later: () => void; skip: () => void } | null;
 }) {
-  const parts = crewError ? [...meta, "crew not read"] : meta;
+  const parts = meta.map((text) => ({ text, error: null as string | null }));
+  if (crewError) parts.push({ text: "crew not read", error: crewError });
   return (
     <div className="flex min-w-0 items-start gap-2">
       <p className="m-0 min-w-0 flex-1 py-px text-sm font-medium break-words text-foreground">
-        {text}
+        {/* Isolated, so a right-to-left title cannot reorder the meta. The end
+            margin, not a leading pad, spaces them, so a wrapped meta starts flush. */}
+        <bdi className="me-1.5">{text}</bdi>
         {parts.length > 0 ? " " : null}
         {parts.length > 0 ? (
-          <span
-            className="ps-1 text-xs font-normal whitespace-nowrap text-muted-foreground tabular-nums"
-            translate="no"
-          >
-            {meta.join(" · ")}
-            {crewError ? (
-              <span className="text-destructive" title={crewError}>
-                {meta.length > 0 ? " · " : ""}crew not read
-              </span>
-            ) : null}
-          </span>
+          // Each part stays whole and the meta wraps between parts, so it never
+          // overflows a narrow card and keeps the title's baseline.
+          <bdi className="text-xs font-normal text-muted-foreground tabular-nums" translate="no">
+            {parts.map((part, index) => (
+              <Fragment key={part.text}>
+                <span
+                  className={cn("whitespace-nowrap", part.error && "text-destructive")}
+                  title={part.error ?? undefined}
+                >
+                  {part.text}
+                  {index < parts.length - 1 ? " ·" : null}
+                </span>
+                {index < parts.length - 1 ? " " : null}
+              </Fragment>
+            ))}
+          </bdi>
         ) : null}
       </p>
       {defer ? (
@@ -325,7 +333,7 @@ function Heading({
             aria-description="Hide for an hour"
             onClick={defer.later}
           >
-            <KeyHint dim={false}>L</KeyHint>
+            <KeyHint>L</KeyHint>
             Later
           </Button>
           <Button
@@ -337,7 +345,7 @@ function Heading({
             aria-description="Move to the back of the queue"
             onClick={defer.skip}
           >
-            <KeyHint dim={false}>S</KeyHint>
+            <KeyHint>S</KeyHint>
             Skip
           </Button>
         </span>
@@ -346,37 +354,40 @@ function Heading({
   );
 }
 
-/** One answer; the recommended one says so. */
+/**
+ * One answer; the recommended one says so. A long answer wraps inside the
+ * card (the server caps it at 80 characters) and keeps "Recommended" whole.
+ */
 function ActionButton({ action, index }: { action: Action; index: number }) {
   return (
     <Button
       type="button"
       size="sm"
       variant={action.primary ? "default" : "outline"}
-      className={TAP}
+      className={cn(TAP, "relative h-auto min-h-8 max-w-full py-1.5 text-start whitespace-normal")}
       aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
       onClick={action.run}
     >
       <KeyHint>{index + 1}</KeyHint>
-      {action.label}
-      {action.recommended ? <span className="font-normal opacity-70">Recommended</span> : null}
+      <span className="min-w-0 break-words">{action.label}</span>
+      {action.recommended ? (
+        <span className="shrink-0 font-normal whitespace-nowrap opacity-70">Recommended</span>
+      ) : null}
     </Button>
   );
 }
 
 /**
- * A key's shortcut, shown while the banner has keyboard focus. It dims the
- * button's own colour (at least 4.5:1 on a filled button); on an already muted
- * button pass `dim={false}`, or it falls under that.
+ * A key's shortcut: a small keycap over the button's corner while the banner
+ * has keyboard focus. It lies over the button rather than beside its label, so
+ * showing it moves nothing, and a mouse press that focuses the banner still
+ * lands on the control it began on. Never on a coarse (touch) pointer.
  */
-function KeyHint({ children, dim = true }: { children: ReactNode; dim?: boolean }) {
+function KeyHint({ children }: { children: ReactNode }) {
   return (
     <span
       aria-hidden
-      className={cn(
-        "hidden font-normal tabular-nums group-focus-within:inline pointer-coarse:hidden",
-        dim && "opacity-70",
-      )}
+      className="pointer-events-none absolute -start-1.5 -top-1.5 hidden rounded-sm border border-border bg-surface-raised-solid px-1 text-[0.625rem] leading-3.5 font-normal text-muted-foreground tabular-nums not-pointer-coarse:group-focus-within:block"
     >
       {children}
     </span>
@@ -384,45 +395,63 @@ function KeyHint({ children, dim = true }: { children: ReactNode; dim?: boolean 
 }
 
 /**
- * Captains' Markdown, quieted to a secondary line: muted at the banner's size,
- * with bb's thread chips held to the line height so they sit in the text.
+ * Captains' Markdown, quieted to a secondary line. Overriding `--foreground`
+ * mutes every element bb's renderer colours with it (paragraphs, lists, bold,
+ * headings) in one declaration; inline code needs `!` to beat the theme's
+ * yellow, which outranks a plugin utility. Thread chips keep their own colour and
+ * are held to the line height so they sit in the text. The leading is
+ * relative, so two lines stay two lines where touch enlarges the text.
  */
-const DETAIL_TEXT =
-  "min-w-0 text-xs/4 text-muted-foreground [&_p]:text-muted-foreground [&_[data-prompt-mention]]:py-0 [&_[data-prompt-mention]]:leading-3.5";
+const DETAIL_BOX =
+  "min-w-0 text-xs leading-snug text-muted-foreground [--foreground:var(--muted-foreground)] [&_code]:text-muted-foreground! [&_[data-prompt-mention]]:py-0 [&_[data-prompt-mention]]:leading-3.5";
+/** bb's renderer defaults to body size; the same size and leading as the box keep `2lh` two lines. */
+const DETAIL_TEXT = "min-w-0 text-xs leading-snug text-muted-foreground";
 
 /**
- * The detail, two lines until opened. More shows only when the two lines cut
- * something off, measured by the observer rather than on mount.
+ * The detail, two lines until opened, whatever blocks (code, tables) it holds.
+ * More shows only when those two lines cut something off.
  */
-function Detail({
-  content,
-  open,
-  onToggle,
-}: {
-  content: string;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  const [node, setNode] = useState<HTMLDivElement | null>(null);
-  // Assume cut off until measured, so the toggle is never missing where it is needed.
-  const [clipped, setClipped] = useState(true);
-  useEffect(() => {
-    if (node === null || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
-      if (!open) setClipped(node.scrollHeight > node.clientHeight + 1);
-    });
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [node, open]);
+function Detail({ content, onFocusLost }: { content: string; onFocusLost: () => void }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const inner = useRef<HTMLDivElement>(null);
+  const clipped = useClipped(box, inner);
+  const showToggle = open || clipped;
+  // Less had focus when it was pressed; if collapsing removes it, focus stays in the banner.
+  const refocus = useRef(false);
+  useLayoutEffect(() => {
+    // The preview always shows the first two lines, whatever the open state scrolled to.
+    if (!open && box.current !== null) box.current.scrollTop = 0;
+  }, [open]);
+  useLayoutEffect(() => {
+    if (!refocus.current || open) return;
+    refocus.current = false;
+    if (!showToggle) onFocusLost();
+  }, [open, showToggle, onFocusLost]);
   return (
     <div className="flex min-w-0 items-end gap-2">
       <div
-        ref={setNode}
-        className={cn("min-w-0 flex-1", open ? "max-h-40 overflow-y-auto" : "line-clamp-2")}
+        ref={box}
+        data-detail-box=""
+        className={cn(
+          "min-w-0 flex-1",
+          DETAIL_BOX,
+          open ? "max-h-[10lh] overflow-y-auto" : "max-h-[2lh] overflow-hidden",
+        )}
+        // Focus or find-in-page can scroll a clipped preview; it snaps back to its first lines,
+        // and keyboard focus reaching a hidden link opens the detail so the link shows.
+        onScroll={(event) => {
+          if (!open) event.currentTarget.scrollTop = 0;
+        }}
+        onFocus={() => {
+          if (!open && clipped) setOpen(true);
+        }}
       >
-        <Markdown content={content} className={DETAIL_TEXT} />
+        <div ref={inner} data-detail-content="">
+          <Markdown content={content} className={DETAIL_TEXT} />
+        </div>
       </div>
-      {open || clipped ? (
+      {showToggle ? (
         <Button
           type="button"
           size="sm"
@@ -432,13 +461,46 @@ function Detail({
             "h-auto shrink-0 px-1.5 py-0.5 text-muted-foreground pointer-coarse:-my-1.5",
           )}
           aria-expanded={open}
-          onClick={onToggle}
+          onClick={(event) => {
+            refocus.current = open && document.activeElement === event.currentTarget;
+            setOpen(!open);
+          }}
         >
           {open ? "Less" : "More"}
         </Button>
       ) : null}
     </div>
   );
+}
+
+/**
+ * Whether `inner` is taller than the `box` that clips it. Both are observed,
+ * so the answer follows a width change and new content alike. Sizes come from
+ * the observer's entries (no layout read of ours), and the first answer is
+ * committed before the browser paints, so More never flashes.
+ */
+function useClipped(
+  boxRef: RefObject<HTMLElement | null>,
+  innerRef: RefObject<HTMLElement | null>,
+): boolean {
+  const [clipped, setClipped] = useState(false);
+  useLayoutEffect(() => {
+    const box = boxRef.current;
+    const inner = innerRef.current;
+    if (box === null || inner === null || typeof ResizeObserver === "undefined") return;
+    const heights = new Map<Element, number>();
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        heights.set(entry.target, entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height);
+      }
+      const next = (heights.get(inner) ?? 0) > (heights.get(box) ?? 0) + 1;
+      flushSync(() => setClipped(next));
+    });
+    observer.observe(box);
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, [boxRef, innerRef]);
+  return clipped;
 }
 
 function title(item: QueueItem): string {
