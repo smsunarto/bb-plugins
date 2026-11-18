@@ -808,18 +808,22 @@ class Validator {
    * field name always gets the same state, and distinct field names never
    * share one: `x-y` and `x y` both spell `x_y`, so the second becomes
    * `x_y2`, and a name with no ASCII letters (`имя`) is named after its
-   * component (`input`, `input2`). A field name spelled like a state the
-   * block declares binds that state.
+   * component (`input`, `input2`). A field name that is already an
+   * identifier keeps its spelling (`_work`, `work_`), and binds the state the
+   * block declares under that name; a normalized one never does.
    */
   private fieldState(field: string, component: string): string {
     const known = this.fieldStates.get(field);
     if (known !== undefined) return known;
-    const slug = field.replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").replace(/^(?=\d)/, "_");
+    // A field name that is already an identifier (`_work`, `work_`) is the state's name as written.
+    const valid = /^[A-Za-z_][A-Za-z0-9_]*$/.test(field);
+    const slug = valid ? field : field.replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").replace(/^(?=\d)/, "_");
     const claimed = new Set(this.fieldStates.values());
-    const own = /[A-Za-z0-9]/.test(slug);
+    const own = valid || /[A-Za-z0-9]/.test(slug);
     const base = own ? slug : component.toLowerCase();
+    // Only a field spelled exactly like a declared state binds it; a normalized one never lands on one.
     const taken = (name: string) =>
-      claimed.has(name) || this.named.has(name) || ((!own || name !== slug) && this.states.has(name));
+      claimed.has(name) || this.named.has(name) || (!(valid && name === field) && this.states.has(name));
     let name = base;
     let n = 1;
     while (taken(name)) name = `${base}${++n}`;

@@ -132,6 +132,26 @@ describe("config-object field names", () => {
     expect(Object.keys(state)).toEqual(["work"]);
   });
 
+  it("keeps underscores in field names that are already identifiers", () => {
+    for (const name of ["_work", "work_", "_"]) {
+      const source = `$${name} = "draft"\nCard("x", [Form([Input({name: "${name}", label: "Work"})])])`;
+      const { state } = render(source);
+      expect(state).toEqual({ [name]: "draft" });
+      expect(message(source, { [name]: "edited" })).toBe("Work: edited");
+      expect(render(`Card("x", [Input({name: "${name}", label: "Work"})])`).state).toEqual({
+        [name]: "",
+      });
+    }
+  });
+
+  it("never binds a normalized field name to a declared state", () => {
+    const source =
+      '$x_y = "mine"\nCard("x", [Form([Input($x_y, label: "Mine"), Input({name: "x-y", label: "Other"})])])';
+    const { state } = render(source);
+    expect(state).toEqual({ x_y: "mine", x_y2: "" });
+    expect(message(source, { x_y: "1", x_y2: "2" })).toBe("Mine: 1\nOther: 2");
+  });
+
   it("binds a declared state the field name spells", () => {
     const { state } = render('$work = "draft"\nCard("x", [Input({name: "work", label: "Work"})])');
     expect(state).toEqual({ work: "draft" });
