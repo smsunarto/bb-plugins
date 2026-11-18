@@ -772,7 +772,10 @@
   [data-promptbox-input-region]
   [data-promptbox-editor-scroll] {
   min-height: 48px !important;
-  max-height: min(50dvh, var(--composer-editor-available-height, 100dvh)) !important;
+  max-height: min(
+    calc(var(--bb-shell-height, 100dvh) * 0.5),
+    var(--composer-editor-available-height, 100dvh)
+  ) !important;
 }
 
 [data-t3-composer][data-promptbox]:not([data-promptbox-compact]) [data-promptbox-editor-content] {
