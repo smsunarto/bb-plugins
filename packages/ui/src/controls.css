@@ -1,7 +1,7 @@
 /* Shared primitives ship their own styles: BB does not scan hoisted workspace
  * packages for Tailwind candidates. Components stay below caller utilities. */
 @layer components {
-  .bbui-45f15af5994e-button {
+  .bbui-f43e365ca4e2-button {
     display: inline-flex;
     cursor: pointer;
     align-items: center;
@@ -13,21 +13,21 @@
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
     font-weight: 500;
   }
-  .bbui-45f15af5994e-motion {
+  .bbui-f43e365ca4e2-motion {
     transition-property: color, background-color, border-color, outline-color, fill, stroke;
     transition-duration: 150ms;
   }
-  .bbui-45f15af5994e-motion:hover {
+  .bbui-f43e365ca4e2-motion:hover {
     transition-duration: 0ms;
   }
-  .bbui-45f15af5994e-row-motion {
+  .bbui-f43e365ca4e2-row-motion {
     transition: none;
   }
-  .bbui-45f15af5994e-button:disabled {
+  .bbui-f43e365ca4e2-button:disabled {
     pointer-events: none;
     opacity: 0.5;
   }
-  .bbui-45f15af5994e-button:where(:not(.bbui-45f15af5994e-native)):focus-visible {
+  .bbui-f43e365ca4e2-button:where(:not(.bbui-f43e365ca4e2-native)):focus-visible {
     outline: none;
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width, 0px))
       var(--tw-ring-color, var(--ring));
@@ -35,122 +35,122 @@
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
   }
-  .bbui-45f15af5994e-button :where(svg, [data-icon-root]) {
+  .bbui-f43e365ca4e2-button :where(svg, [data-icon-root]) {
     pointer-events: none;
     flex-shrink: 0;
   }
-  .bbui-45f15af5994e-default {
+  .bbui-f43e365ca4e2-default {
     background: var(--foreground);
     color: var(--background);
   }
-  .bbui-45f15af5994e-default:hover {
+  .bbui-f43e365ca4e2-default:hover {
     background: color-mix(in oklab, var(--foreground) 90%, transparent);
   }
-  .bbui-45f15af5994e-destructive {
+  .bbui-f43e365ca4e2-destructive {
     background: var(--destructive);
     color: var(--destructive-foreground);
   }
-  .bbui-45f15af5994e-destructive:hover {
+  .bbui-f43e365ca4e2-destructive:hover {
     background: color-mix(in oklab, var(--destructive) 90%, transparent);
   }
-  .bbui-45f15af5994e-outline {
-    border: 1px solid var(--input);
+  .bbui-f43e365ca4e2-outline {
+    border: var(--hairline-width, 1px) solid var(--input);
     background: transparent;
   }
-  .bbui-45f15af5994e-outline.bbui-45f15af5994e-bordered {
+  .bbui-f43e365ca4e2-outline.bbui-f43e365ca4e2-bordered {
     border-color: var(--border);
   }
-  .bbui-45f15af5994e-outline:hover,
-  .bbui-45f15af5994e-ghost:hover {
+  .bbui-f43e365ca4e2-outline:hover,
+  .bbui-f43e365ca4e2-ghost:hover {
     background: var(--state-hover);
     color: var(--foreground);
   }
-  .bbui-45f15af5994e-secondary {
+  .bbui-f43e365ca4e2-secondary {
     background: var(--secondary);
     color: var(--secondary-foreground);
   }
-  .bbui-45f15af5994e-secondary:hover {
+  .bbui-f43e365ca4e2-secondary:hover {
     background: color-mix(in oklab, var(--secondary) 80%, transparent);
   }
-  .bbui-45f15af5994e-ghost:where([aria-pressed="true"], [data-state="open"]),
-  .bbui-45f15af5994e-ghost:where([aria-pressed="true"], [data-state="open"]):hover {
+  .bbui-f43e365ca4e2-ghost:where([aria-pressed="true"], [data-state="open"]),
+  .bbui-f43e365ca4e2-ghost:where([aria-pressed="true"], [data-state="open"]):hover {
     background: var(--state-active);
     color: var(--foreground);
   }
-  .bbui-45f15af5994e-link {
+  .bbui-f43e365ca4e2-link {
     color: var(--primary);
     text-underline-offset: 4px;
   }
-  .bbui-45f15af5994e-link:hover {
+  .bbui-f43e365ca4e2-link:hover {
     text-decoration-line: underline;
   }
-  .bbui-45f15af5994e-size-default {
+  .bbui-f43e365ca4e2-size-default {
     height: 2.25rem;
     padding: 0.5rem 1rem;
   }
-  .bbui-45f15af5994e-size-sm {
+  .bbui-f43e365ca4e2-size-sm {
     height: 2rem;
     padding: 0 0.75rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-45f15af5994e-size-lg {
+  .bbui-f43e365ca4e2-size-lg {
     height: 2.5rem;
     padding: 0 2rem;
   }
-  .bbui-45f15af5994e-size-icon {
+  .bbui-f43e365ca4e2-size-icon {
     height: 2.25rem;
     width: 2.25rem;
   }
-  .bbui-45f15af5994e-compact {
+  .bbui-f43e365ca4e2-compact {
     gap: 0.375rem;
   }
-  .bbui-45f15af5994e-compact.bbui-45f15af5994e-default {
+  .bbui-f43e365ca4e2-compact.bbui-f43e365ca4e2-default {
     background: var(--primary);
     color: var(--primary-foreground);
   }
-  .bbui-45f15af5994e-compact.bbui-45f15af5994e-default:hover {
+  .bbui-f43e365ca4e2-compact.bbui-f43e365ca4e2-default:hover {
     background: color-mix(in oklab, var(--primary) 90%, transparent);
   }
-  .bbui-45f15af5994e-compact.bbui-45f15af5994e-outline {
+  .bbui-f43e365ca4e2-compact.bbui-f43e365ca4e2-outline {
     border-color: var(--border);
   }
-  .bbui-45f15af5994e-compact.bbui-45f15af5994e-outline:hover {
+  .bbui-f43e365ca4e2-compact.bbui-f43e365ca4e2-outline:hover {
     background: color-mix(in oklab, var(--accent) 60%, transparent);
   }
-  .bbui-45f15af5994e-compact.bbui-45f15af5994e-ghost:hover {
+  .bbui-f43e365ca4e2-compact.bbui-f43e365ca4e2-ghost:hover {
     background: var(--accent);
   }
-  .bbui-45f15af5994e-compact.bbui-45f15af5994e-size-default {
+  .bbui-f43e365ca4e2-compact.bbui-f43e365ca4e2-size-default {
     height: 2rem;
     padding: 0 0.75rem;
     font-size: var(--text-xs, 0.75rem);
     line-height: var(--text-xs--line-height, calc(1 / 0.75));
   }
-  .bbui-45f15af5994e-compact.bbui-45f15af5994e-size-sm {
+  .bbui-f43e365ca4e2-compact.bbui-f43e365ca4e2-size-sm {
     height: 1.75rem;
     padding: 0 0.625rem;
   }
-  .bbui-45f15af5994e-compact.bbui-45f15af5994e-size-xs {
+  .bbui-f43e365ca4e2-compact.bbui-f43e365ca4e2-size-xs {
     height: 1.5rem;
     padding: 0 0.5rem;
     font-size: var(--text-2xs, 0.625rem);
   }
-  .bbui-45f15af5994e-input,
-  .bbui-45f15af5994e-textarea {
+  .bbui-f43e365ca4e2-input,
+  .bbui-f43e365ca4e2-textarea {
     display: flex;
     width: 100%;
-    border: 1px solid var(--input);
+    border: var(--hairline-width, 1px) solid var(--input);
     border-radius: var(--radius-md, 0.375rem);
     background: transparent;
     padding: 0.25rem 0.75rem;
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
   }
-  .bbui-45f15af5994e-input {
+  .bbui-f43e365ca4e2-input {
     height: 2.25rem;
   }
-  .bbui-45f15af5994e-input::file-selector-button {
+  .bbui-f43e365ca4e2-input::file-selector-button {
     border: 0;
     background: transparent;
     font-size: var(--text-sm, 0.8125rem);
@@ -158,20 +158,20 @@
     font-weight: 500;
     color: var(--foreground);
   }
-  .bbui-45f15af5994e-input.bbui-45f15af5994e-bordered {
+  .bbui-f43e365ca4e2-input.bbui-f43e365ca4e2-bordered {
     border-color: var(--border);
     background: var(--background);
   }
-  .bbui-45f15af5994e-textarea {
+  .bbui-f43e365ca4e2-textarea {
     min-height: 60px;
     padding-block: 0.5rem;
   }
-  .bbui-45f15af5994e-input::placeholder,
-  .bbui-45f15af5994e-textarea::placeholder {
+  .bbui-f43e365ca4e2-input::placeholder,
+  .bbui-f43e365ca4e2-textarea::placeholder {
     color: var(--muted-foreground);
   }
-  .bbui-45f15af5994e-input:focus-visible,
-  .bbui-45f15af5994e-textarea:focus-visible {
+  .bbui-f43e365ca4e2-input:focus-visible,
+  .bbui-f43e365ca4e2-textarea:focus-visible {
     outline: none;
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(1px + var(--tw-ring-offset-width, 0px))
       var(--tw-ring-color, var(--ring));
@@ -179,69 +179,73 @@
       var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
       var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000);
   }
-  .bbui-45f15af5994e-input:disabled,
-  .bbui-45f15af5994e-textarea:disabled {
+  .bbui-f43e365ca4e2-input:disabled,
+  .bbui-f43e365ca4e2-textarea:disabled {
     cursor: not-allowed;
     opacity: 0.5;
   }
-  /* Surfaces: one card, edge, divider, and hairline for every plugin. */
-  .bbui-45f15af5994e-card {
-    border: 1px solid var(--border);
+  /* Surfaces: one card, edge, divider, and hairline for every plugin. Edges
+   * take the theme's --hairline-width when it sets one. */
+  .bbui-f43e365ca4e2-card {
+    border: var(--hairline-width, 1px) solid var(--border);
     border-radius: var(--radius-lg, 0.5rem);
     background: var(--card);
     color: var(--card-foreground);
   }
-  .bbui-45f15af5994e-card-header {
+  .bbui-f43e365ca4e2-card-header {
     display: flex;
     flex-direction: column;
     gap: 0.375rem;
     padding: 1.5rem;
   }
-  .bbui-45f15af5994e-card-title {
+  .bbui-f43e365ca4e2-card-title {
     font-weight: 600;
     line-height: 1;
     letter-spacing: -0.025em;
   }
-  .bbui-45f15af5994e-card-description {
+  .bbui-f43e365ca4e2-card-description {
     font-size: var(--text-sm, 0.8125rem);
     line-height: var(--text-sm--line-height, calc(1.25 / 0.875));
     color: var(--muted-foreground);
   }
-  .bbui-45f15af5994e-card-content {
+  .bbui-f43e365ca4e2-card-content {
     padding: 0 1.5rem 1.5rem;
   }
-  .bbui-45f15af5994e-card-footer {
+  .bbui-f43e365ca4e2-card-footer {
     display: flex;
     align-items: center;
     padding: 0 1.5rem 1.5rem;
   }
-  .bbui-45f15af5994e-edge {
-    border: 1px solid var(--border);
+  .bbui-f43e365ca4e2-edge {
+    border: var(--hairline-width, 1px) solid var(--border);
   }
-  .bbui-45f15af5994e-divider {
-    border-top: 1px solid var(--border);
+  .bbui-f43e365ca4e2-divider {
+    border-top: var(--hairline-width, 1px) solid var(--border);
   }
   /* The composer's edge: 0.5px and opaque, so stacked surfaces meet without a
    * bright stub where two translucent edges overlap at a rounded corner. */
-  .bbui-45f15af5994e-hairline {
+  .bbui-f43e365ca4e2-hairline {
     box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 8%, var(--background));
   }
-  .dark .bbui-45f15af5994e-hairline {
+  .dark .bbui-f43e365ca4e2-hairline {
     box-shadow: 0 0 0 0.5px color-mix(in srgb, var(--foreground) 18%, var(--background));
   }
-  .bbui-45f15af5994e-separator {
+  /* Drawn as a border: a box thinner than 1px can round to no pixels. */
+  .bbui-f43e365ca4e2-separator {
     flex-shrink: 0;
-    background: var(--border);
+    border-color: var(--border);
+    border-style: solid;
+    border-width: 0;
   }
-  .bbui-45f15af5994e-separator[data-orientation="horizontal"] {
-    height: 1px;
+  .bbui-f43e365ca4e2-separator[data-orientation="horizontal"] {
+    border-top-width: var(--hairline-width, 1px);
     width: 100%;
   }
-  .bbui-45f15af5994e-separator[data-orientation="vertical"] {
-    width: 1px;
+  .bbui-f43e365ca4e2-separator[data-orientation="vertical"] {
+    border-left-width: var(--hairline-width, 1px);
     align-self: stretch;
   }
-  .bbui-45f15af5994e-badge {
+  .bbui-f43e365ca4e2-badge {
     display: inline-flex;
     flex-shrink: 0;
     align-items: center;
@@ -253,23 +257,23 @@
     font-weight: 600;
     white-space: nowrap;
   }
-  .bbui-45f15af5994e-badge-default {
+  .bbui-f43e365ca4e2-badge-default {
     background: var(--foreground);
     color: var(--background);
   }
-  .bbui-45f15af5994e-badge-secondary {
+  .bbui-f43e365ca4e2-badge-secondary {
     background: var(--surface-raised, var(--secondary));
     color: var(--muted-foreground);
   }
-  .bbui-45f15af5994e-badge-destructive {
+  .bbui-f43e365ca4e2-badge-destructive {
     background: var(--destructive);
     color: var(--destructive-foreground, var(--background));
   }
-  .bbui-45f15af5994e-badge-outline {
+  .bbui-f43e365ca4e2-badge-outline {
     border-color: var(--border);
     color: var(--foreground);
   }
-  .bbui-45f15af5994e-badge-count {
+  .bbui-f43e365ca4e2-badge-count {
     height: 1rem;
     border-radius: 9999px;
     background: var(--surface-raised, var(--secondary));
@@ -279,63 +283,63 @@
     font-variant-numeric: tabular-nums;
   }
   /* Status tones: a tinted pill whose hue carries the meaning, for labels such as live/shadow or pass/fail. */
-  .bbui-45f15af5994e-badge-success {
+  .bbui-f43e365ca4e2-badge-success {
     border-color: color-mix(in srgb, var(--success) 30%, transparent);
     background: color-mix(in srgb, var(--success) 10%, transparent);
     color: var(--success-foreground, var(--success));
   }
-  .bbui-45f15af5994e-badge-warning {
+  .bbui-f43e365ca4e2-badge-warning {
     border-color: color-mix(in srgb, var(--attention, var(--warning)) 40%, transparent);
     background: var(--surface-attention, transparent);
     color: var(--warning-text, var(--warning));
   }
-  .bbui-45f15af5994e-badge-info {
+  .bbui-f43e365ca4e2-badge-info {
     border-color: color-mix(in srgb, var(--timeline-accent, var(--primary)) 30%, transparent);
     color: var(--timeline-accent, var(--primary));
   }
-  .bbui-45f15af5994e-badge-danger {
+  .bbui-f43e365ca4e2-badge-danger {
     border-color: color-mix(in srgb, var(--destructive) 35%, transparent);
     background: color-mix(in srgb, var(--destructive) 10%, transparent);
     color: var(--destructive-text, var(--destructive));
   }
   /* Table: shadcn's table at desktop-v0.49.0, as plain CSS. */
-  .bbui-45f15af5994e-table-wrap {
+  .bbui-f43e365ca4e2-table-wrap {
     position: relative;
     width: 100%;
     overflow: auto;
   }
-  .bbui-45f15af5994e-table {
+  .bbui-f43e365ca4e2-table {
     width: 100%;
     caption-side: bottom;
     font-size: var(--text-sm, 0.8125rem);
   }
-  .bbui-45f15af5994e-table-row {
+  .bbui-f43e365ca4e2-table-row {
     border-bottom: 1px solid var(--border);
     transition: background-color 150ms;
   }
-  .bbui-45f15af5994e-table-body > tr:last-child {
+  .bbui-f43e365ca4e2-table-body > tr:last-child {
     border-bottom-width: 0;
   }
-  .bbui-45f15af5994e-table-body > .bbui-45f15af5994e-table-row:hover {
+  .bbui-f43e365ca4e2-table-body > .bbui-f43e365ca4e2-table-row:hover {
     background: color-mix(in srgb, var(--muted) 50%, transparent);
   }
-  .bbui-45f15af5994e-table-row[data-state="selected"] {
+  .bbui-f43e365ca4e2-table-row[data-state="selected"] {
     background: var(--muted);
   }
-  .bbui-45f15af5994e-table-footer {
+  .bbui-f43e365ca4e2-table-footer {
     border-top: 1px solid var(--border);
     background: color-mix(in srgb, var(--muted) 50%, transparent);
     font-weight: 500;
   }
-  .bbui-45f15af5994e-table-footer > tr:last-child {
+  .bbui-f43e365ca4e2-table-footer > tr:last-child {
     border-bottom-width: 0;
   }
-  .bbui-45f15af5994e-table-caption {
+  .bbui-f43e365ca4e2-table-caption {
     margin-top: 1rem;
     font-size: var(--text-sm, 0.8125rem);
     color: var(--muted-foreground);
   }
-  .bbui-45f15af5994e-table-head {
+  .bbui-f43e365ca4e2-table-head {
     height: 2.5rem;
     padding: 0 0.5rem;
     text-align: left;
@@ -343,7 +347,7 @@
     font-weight: 500;
     color: var(--muted-foreground);
   }
-  .bbui-45f15af5994e-table-cell {
+  .bbui-f43e365ca4e2-table-cell {
     padding: 0.5rem;
     vertical-align: middle;
   }
@@ -351,18 +355,18 @@
 /* Desktop utility overrides must not shrink touch targets. Explicit coarse-
  * pointer utilities remain the caller's escape hatch, as with the old defaults. */
 @layer utilities {
-  :where(.bbui-45f15af5994e-button:not(.bbui-45f15af5994e-native)) :is(svg, [data-icon-root]),
-  .bbui-45f15af5994e-native svg:not([class*="size-"]) {
+  :where(.bbui-f43e365ca4e2-button:not(.bbui-f43e365ca4e2-native)) :is(svg, [data-icon-root]),
+  .bbui-f43e365ca4e2-native svg:not([class*="size-"]) {
     width: 1rem;
     height: 1rem;
   }
 
   @media (width < 48rem) and (pointer: coarse) {
-    .bbui-45f15af5994e-input.bbui-45f15af5994e-input:not([class*="pointer-coarse:h-"]) {
+    .bbui-f43e365ca4e2-input.bbui-f43e365ca4e2-input:not([class*="pointer-coarse:h-"]) {
       height: 2.5rem;
     }
-    .bbui-45f15af5994e-input.bbui-45f15af5994e-input:not([class*="pointer-coarse:text-"]),
-    .bbui-45f15af5994e-textarea.bbui-45f15af5994e-textarea:not([class*="pointer-coarse:text-"]) {
+    .bbui-f43e365ca4e2-input.bbui-f43e365ca4e2-input:not([class*="pointer-coarse:text-"]),
+    .bbui-f43e365ca4e2-textarea.bbui-f43e365ca4e2-textarea:not([class*="pointer-coarse:text-"]) {
       font-size: var(--text-base, 1rem);
     }
   }

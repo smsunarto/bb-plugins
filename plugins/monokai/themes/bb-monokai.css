@@ -210,7 +210,7 @@
   --secondary: #ebebec0f;
   --accent: #ebebec14;
   --muted: #ebebec24;
-  --input: #ebebec1f;
+  --input: #39393a;
   --control-background: #ebebec0a;
   --control-primary: #ebebec24;
   --control-primary-hover: #ebebec33;
@@ -230,7 +230,7 @@
                                            * on phones. */
 
   --agent-surface-background: #ebebec0f;
-  --agent-surface-border: #ebebec14;
+  --agent-surface-border: #39393a;
 
   --state-hover: #ebebec14;
   --state-active: #ebebec33;
@@ -244,8 +244,13 @@
   /* ---- Borders --------------------------------------------------------- */
   --border-seam: #ebebec0a;
   --border-seam-vertical: var(--border-seam);
-  --border: #ebebec1f;
-  --border-hairline: #ebebec14;
+  /* Every edge is the composer's hairline: 0.5px of opaque 18% ink. Opaque, so
+   * edges that meet at a rounded corner do not stack into a bright stub. A
+   * 0.5px border draws one device pixel on a 2x or 3x screen and rounds up to
+   * one pixel at 1x. The hairline-edges section below applies the width. */
+  --border: #39393a;
+  --hairline-width: 0.5px;
+  --border-hairline: #39393a;
 
   /* ---- Text ladder -----------------------------------------------------
    * One white at four alphas, ≥20 alpha points apart.
@@ -312,7 +317,7 @@
   --sidebar-accent: #ebebec14;
   --sidebar-accent-foreground: #ebebec; /* hover text; the selected-row rule
                                          * below reuses it */
-  --sidebar-border: #ebebec1f; /* shared alpha edge; one owner per boundary */
+  --sidebar-border: #39393a; /* the shared hairline; one owner per boundary */
 
   /* ---- Machine identity ------------------------------------------------
    * Categorical, like the chart series: a hue names a remote machine and
@@ -494,7 +499,7 @@
 }
 
 .dark [data-framed] [data-sidebar="inset-edge"] {
-  border: 0.5px solid #ebebec14;
+  border: var(--hairline-width) solid var(--border);
   border-radius: 12px;
   transition: none;
 }
@@ -530,7 +535,7 @@
     z-index: 40;
     content: "";
     pointer-events: none;
-    border: 0.5px solid #ebebec14;
+    border: var(--hairline-width) solid var(--border);
     border-radius: 12px;
   }
 }
@@ -720,14 +725,14 @@
 /* The outer sidebars' edges are the page's own hairline, and neither lights
  * up on hover or drag. The left resize handle's line goes; the right
  * divider keeps its full height through the title bar but takes the page
- * edge's 0.5px 8% ink instead of a 12% line. */
+ * edge's hairline instead of a full 1px line. */
 .dark [data-testid="app-sidebar-resize-handle"]::before {
   display: none;
 }
 
 .dark #thread-detail-secondary-panel-handle > span + span {
-  width: 0.5px;
-  background-color: #ebebec14;
+  width: var(--hairline-width);
+  background-color: var(--sidebar-border);
 }
 
 /* bb paints the active settings and plugins row with the same 8%
@@ -777,6 +782,156 @@
   .dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:hover,
   .dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:hover .text-subtle-foreground {
     color: var(--muted-foreground);
+  }
+}
+
+/* --hairline-width per density. 1x takes a whole pixel: a 0.5px box, such as
+ * the right panel's divider, drew at half strength or not at all. 2x keeps
+ * 0.5px, one device pixel. 3x takes 2/3px, two device pixels: WebKit computes
+ * a 0.5px or 1/3px border there as one device pixel, stores it a little under
+ * one, and paints a side at zero width when its edge lands on a half device
+ * pixel, so a sidebar rule or a card's edge could vanish. Two device pixels
+ * paint 1 or 2 but never 0 at every sub-pixel offset. Controls whose full-box
+ * edge must stay one device pixel and even become rings at 3x (see Hairline
+ * rings). */
+@media (resolution < 1.5dppx) {
+  html.dark {
+    --hairline-width: 1px;
+  }
+}
+
+@media (min-resolution: 2.5dppx) {
+  html.dark {
+    --hairline-width: calc(2px / 3);
+  }
+}
+
+/* Hairline edges. bb and every plugin draw edges with Tailwind's 1px border
+ * utilities; here they take the composer's --hairline-width.
+ *
+ * The rules join Tailwind's utilities layer, which bb, plugins, and this
+ * sheet may load in any order. `:where(.dark)` adds nothing and `:not(z)`
+ * adds one type (no element is <z>), so each rule outranks a plain utility
+ * (0,1,0) whatever the load order, and yields to every state or group
+ * variant (0,2,0), such as `first:border-t-0`. The zero and wider widths are
+ * restated after the hairlines with the same weight, so `border border-t-0`
+ * keeps its open side. They match only a box that also carries a hairline
+ * class, so `border-0 border-t-[0.5px]` keeps its own top edge. Breakpoint and
+ * container variants weigh as much as a plain utility, so the ones bb and the
+ * plugins use are restated in their own queries. The statement keeps Tailwind's layer order if this sheet loads
+ * first. */
+@layer properties, theme, base, components, utilities;
+
+@layer utilities {
+  :where(.dark) .border:not(z) {
+    border-width: var(--hairline-width);
+  }
+  :where(.dark) .border-x:not(z) {
+    border-inline-width: var(--hairline-width);
+  }
+  :where(.dark) .border-y:not(z) {
+    border-block-width: var(--hairline-width);
+  }
+  :where(.dark) .border-s:not(z) {
+    border-inline-start-width: var(--hairline-width);
+  }
+  :where(.dark) .border-e:not(z) {
+    border-inline-end-width: var(--hairline-width);
+  }
+  :where(.dark) .border-t:not(z) {
+    border-top-width: var(--hairline-width);
+  }
+  :where(.dark) .border-r:not(z) {
+    border-right-width: var(--hairline-width);
+  }
+  :where(.dark) .border-b:not(z) {
+    border-bottom-width: var(--hairline-width);
+  }
+  :where(.dark) .border-l:not(z) {
+    border-left-width: var(--hairline-width);
+  }
+
+  :where(.dark) .border-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-width: 0;
+  }
+  :where(.dark) .border-x-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-inline-width: 0;
+  }
+  :where(.dark) .border-y-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-block-width: 0;
+  }
+  :where(.dark) .border-t-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-top-width: 0;
+  }
+  :where(.dark) .border-r-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-right-width: 0;
+  }
+  :where(.dark) .border-b-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-bottom-width: 0;
+  }
+  :where(.dark) .border-l-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-left-width: 0;
+  }
+  :where(.dark) .border-2:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-width: 2px;
+  }
+  :where(.dark) .border-b-2:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-bottom-width: 2px;
+  }
+  :where(.dark) .border-l-2:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-left-width: 2px;
+  }
+
+  @media (width < 48rem) {
+    :where(.dark) .max-md\:border-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+      border-width: 0;
+    }
+  }
+  @media (width < 900px) {
+    :where(.dark) .max-\[900px\]\:border-r-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+      border-right-width: 0;
+    }
+    :where(.dark) .max-\[900px\]\:border-b:not(z) {
+      border-bottom-width: var(--hairline-width);
+    }
+  }
+  @container plugin-detail (width >= 28rem) {
+    :where(.dark) .\@min-\[28rem\]\/plugin-detail\:border-b-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+      border-bottom-width: 0;
+    }
+  }
+  @container (width >= 42rem) {
+    :where(.dark) .\@2xl\:border-l-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+      border-left-width: 0;
+    }
+  }
+}
+
+/* Rules drawn as 1px boxes, such as the sidebar's section rules, become a
+ * hairline-wide box. --hairline-width keeps a box at one device pixel or more
+ * at every density (1px at 1x, 0.5px at 2x, 2/3px at 3x), so it cannot round
+ * away. Only the size changes: the box keeps its own fill, so the hover, drag,
+ * and focus-visible fills of bb's splitters still show. */
+.dark .h-px.bg-border,
+.dark .h-px.bg-sidebar-border {
+  height: var(--hairline-width);
+}
+
+.dark .w-px.bg-border,
+.dark .w-px.bg-sidebar-border {
+  width: var(--hairline-width);
+}
+
+/* Both left sidebars draw their right edge with a data-side variant, which
+ * outweighs the utility rules above: the phone drawer on itself, the desktop
+ * panel through its wrapper. The framed window's !important zero still wins. */
+.dark [data-sidebar="panel"][data-vaul-drawer-direction="left"] {
+  border-right-width: var(--hairline-width);
+}
+
+@media (min-width: 768px) {
+  .dark [data-side="left"] > [data-sidebar="panel"] {
+    border-right-width: var(--hairline-width);
   }
 }
 
@@ -1127,7 +1282,7 @@
  * directly, so the button needs no :has selector. */
 .dark img[data-markdown-image],
 .dark button.cursor-zoom-in.border {
-  border: 1px solid var(--border);
+  border: var(--hairline-width) solid var(--border);
 }
 
 .dark img[data-markdown-image] {
@@ -1162,7 +1317,7 @@
 .dark button[data-bb-control="secondary"] {
   background-color: var(--secondary);
   background-clip: padding-box;
-  border: 1px solid var(--input);
+  border: var(--hairline-width) solid var(--input);
 }
 
 /* Hover fills only where a pointer can hover. bb's own `hover:` utilities sit
@@ -1189,7 +1344,7 @@
  * Radix puts data-side on the content, which a bg-primary button never has. */
 .dark .bg-primary[data-side] {
   background-color: var(--popover);
-  box-shadow: inset 0 0 0 1px var(--border);
+  box-shadow: inset 0 0 0 var(--hairline-width) var(--border);
   color: var(--foreground);
 }
 
@@ -1232,7 +1387,7 @@
   min-width: 220px;
   max-width: calc(100vw - 16px);
   padding: 5px;
-  border: 1px solid var(--border);
+  border: var(--hairline-width) solid var(--border);
   border-radius: 15px;
   background-color: var(--popover);
   box-shadow: var(--shadow-md);
@@ -1276,9 +1431,10 @@
 }
 
 .dark [role="menu"][style*="--radix-context-menu-content"] [role="separator"] {
-  height: 1px;
+  height: 0;
   margin: 6px 8px;
-  background-color: var(--border);
+  border-top: var(--hairline-width) solid var(--border);
+  background-color: transparent;
 }
 
 .dark [role="menu"][style*="--radix-context-menu-content"] [role="menuitem"] > span.ml-auto {
@@ -1648,7 +1804,7 @@ diffs-container {
   position: absolute;
   inset: 8px 8px var(--monokai-drawer-bottom);
   z-index: 1;
-  border: 1px solid var(--border);
+  border: var(--hairline-width) solid var(--border);
   border-radius: calc(var(--radius, 0.5rem) + 16px);
   pointer-events: none;
 }
@@ -1837,7 +1993,7 @@ diffs-container {
 .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button {
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border: var(--hairline-width) solid var(--border);
   border-radius: var(--radius-md, 0.375rem);
   background: var(--secondary);
   background-clip: padding-box;
@@ -2122,7 +2278,7 @@ diffs-container {
 .dark [data-message-column].group\/message [data-markdown-preview] :is(th, td):not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose :is(th, td) {
   border: 0;
-  border-bottom: 1px solid var(--border-hairline);
+  border-bottom: var(--hairline-width) solid var(--border-hairline);
   padding: calc(var(--agent-md-rem) * 0.45) calc(var(--agent-md-rem) * 0.75);
   text-align: start;
   text-wrap: pretty;

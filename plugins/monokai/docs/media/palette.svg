@@ -13,6 +13,8 @@
 <text class="label" x="516" y="113">Popover / recessed</text>
 <rect x="680" y="44" width="148" height="48" rx="6" fill="#1f1f20"/>
 <text class="label" x="680" y="113">Raised solid</text>
+<rect x="844" y="44" width="148" height="48" rx="6" fill="#39393a"/>
+<text class="label" x="844" y="113">Hairline edge</text>
 <text class="heading" x="24" y="154">Relative layers</text>
 <rect x="24" y="168" width="148" height="48" rx="6" fill="#ebebec0a"/>
 <text class="label" x="24" y="237">Card / field 4%</text>

@@ -246,7 +246,7 @@ describe("bb Monokai contract audit", () => {
       block.selector.includes("[data-persistent-drawer-content]::after"),
     );
     expect(ring?.body).toContain("inset: 8px 8px var(--monokai-drawer-bottom);");
-    expect(ring?.body).toContain("border: 1px solid var(--border);");
+    expect(ring?.body).toContain("border: var(--hairline-width) solid var(--border);");
     expect(ring?.body).toContain("z-index: 1;");
     expect(declarations).toContain("width: 100px;\n  height: 6px;");
     expect(
@@ -256,6 +256,19 @@ describe("bb Monokai contract audit", () => {
           (!block.selector.includes("handle") && /^\s*margin/m.test(block.body)),
       ),
     ).toEqual([]);
+  });
+
+  test("draws hairlines a whole pixel at 1x, one at 2x, and two at 3x", () => {
+    // A 0.5px box draws at half strength or not at all at 1x, and a one-device-
+    // pixel border vanishes on a half device pixel at 3x.
+    const widths = styleRules(theme)
+      .filter((rule) => rule.selector === "html.dark" && rule.body.includes("--hairline-width:"))
+      .map((rule) => [rule.atRules.join(" "), rule.body.trim()]);
+    expect(widths).toEqual([
+      ["@media (resolution < 1.5dppx)", "--hairline-width: 1px;"],
+      ["@media (min-resolution: 2.5dppx)", "--hairline-width: calc(2px / 3);"],
+    ]);
+    expect(theme).toContain("--hairline-width: 0.5px;");
   });
 
   test("gives the framed macOS window Capy's flat sidebar and inset page", () => {
@@ -277,7 +290,7 @@ describe("bb Monokai contract audit", () => {
     expect(inset).toContain("mask-position: top, bottom;");
     expect(inset).toContain("clip-path: none;");
     expect(body('.dark [data-framed] [data-sidebar="inset-edge"]')).toBe(
-      "\n  border: 0.5px solid #ebebec14;\n  border-radius: 12px;\n  transition: none;\n",
+      "\n  border: var(--hairline-width) solid var(--border);\n  border-radius: 12px;\n  transition: none;\n",
     );
     expect(body('.dark [data-framed] [data-sidebar="inset"]::after')).toContain("display: none;");
     // Neither sidebar edge glows; the right divider is the page's hairline.
@@ -285,7 +298,7 @@ describe("bb Monokai contract audit", () => {
       "\n  display: none;\n",
     );
     expect(body(".dark #thread-detail-secondary-panel-handle > span + span")).toBe(
-      "\n  width: 0.5px;\n  background-color: #ebebec14;\n",
+      "\n  width: var(--hairline-width);\n  background-color: var(--sidebar-border);\n",
     );
     // The New thread screen drops the framed edge too.
     expect(theme).toContain(
@@ -305,7 +318,9 @@ describe("bb Monokai contract audit", () => {
     expect(theme).toContain(
       "[data-app-content-shell]::after {\n    position: absolute;\n    inset: 0;\n    z-index: 40;",
     );
-    expect(theme).toContain("border: 0.5px solid #ebebec14;\n    border-radius: 12px;");
+    expect(theme).toContain(
+      "border: var(--hairline-width) solid var(--border);\n    border-radius: 12px;",
+    );
     // The New thread screen drops that overlay.
     expect(theme).toContain(".dark[data-monokai-home] [data-app-content-shell]::after,");
     expect(theme).toContain("order: 1;\n  margin-top: auto;\n  margin-bottom: auto;");
