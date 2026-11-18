@@ -13,6 +13,7 @@ import {
   type LegacyThreadHeaderActionSlots,
 } from "./components/header/header-settle";
 import { mountHeaderSettleStyle } from "./components/header/header-settle-style";
+import { mountPhoneDrawer } from "./lib/phone-drawer";
 
 export default definePluginApp((app) => {
   // Versions up to 0.4.x cached the shelves and provider marks in web storage,
@@ -60,5 +61,12 @@ export default definePluginApp((app) => {
     run: ({ threadId }) => {
       if (threadId !== null) archiveThread(threadId);
     },
+  });
+
+  // The phone drawer dismisses the keyboard as it opens and plays a light
+  // haptic once fully open.
+  app.contentScripts.register({
+    id: "phone-drawer",
+    mount: ({ signal }) => mountPhoneDrawer(document, signal),
   });
 });
