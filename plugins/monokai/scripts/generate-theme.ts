@@ -623,6 +623,10 @@ const requiredRules: Array<{
     declarations: { "background-color": "transparent" },
   },
   {
+    selector: ".dark [data-radix-popper-content-wrapper] > [data-side]",
+    declarations: { "transform-origin": "var(--radix-popper-transform-origin)" },
+  },
+  {
     selector: '.dark [data-sidebar="panel"]',
     declarations: { "border-color": "var(--sidebar-border)" },
   },
