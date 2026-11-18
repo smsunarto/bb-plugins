@@ -33,6 +33,8 @@ import {
  * and listener belongs to the content script and ends with its signal.
  */
 const TOGGLE_BUTTON = 'button[aria-label^="Show right panel"]';
+/** The toggle in either state; both carry the shortcut in `aria-keyshortcuts`. */
+const ANY_TOGGLE_BUTTON = `${TOGGLE_BUTTON}, button[aria-label^="Hide right panel"]`;
 /** How long after a toggle press its panel open counts as the toggle's. */
 const INTENT_MS = 500;
 /** The desktop panel, or bb's phone shelf, which hosts the panel under 768px. */
@@ -126,8 +128,8 @@ export function matchesKeyShortcut(
  * listeners on the document, because bb handles the shortcut at the window
  * from anywhere on the page and the button may re-render under the pointer.
  * A modified key press reads the shortcut only while a thread view is mounted,
- * from the toggle button it last found; it looks the button up again only once
- * bb has replaced it.
+ * from the toggle button it last found, shown or hidden state alike; it looks
+ * the button up again only once bb has replaced it.
  */
 export function mountPanelNewTab({
   signal,
@@ -147,7 +149,7 @@ export function mountPanelNewTab({
   const onKeyDown = (event: KeyboardEvent) => {
     // A shortcut needs a modifier, and only a thread view redirects its open.
     if (redirectHooks === 0 || (!event.ctrlKey && !event.metaKey && !event.altKey)) return;
-    if (toggle?.isConnected !== true) toggle = doc.querySelector(TOGGLE_BUTTON);
+    if (toggle?.isConnected !== true) toggle = doc.querySelector(ANY_TOGGLE_BUTTON);
     const shortcut = toggle?.getAttribute("aria-keyshortcuts");
     if (shortcut && matchesKeyShortcut(event, shortcut)) mark();
   };
