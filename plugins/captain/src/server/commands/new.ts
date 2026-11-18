@@ -302,11 +302,15 @@ async function spawnCaptain(deps: CommandDeps, plan: Plan, projectId: string): P
 /** How long a new Captain's first message waits if sending it now fails. */
 const FIRST_TURN_HOLD_MS = 60_000;
 
-/** Send a new Captain's held first message now. Returns a warning instead of failing. */
+/**
+ * Send a new Captain's held first message now. Only the row Captain's own
+ * `sendAt` holds is sent: a row another plugin or bb holds keeps its wait,
+ * since send-now would override it. Returns a warning instead of failing.
+ */
 async function releaseFirstTurn(deps: CommandDeps, threadId: string): Promise<string | null> {
   try {
     const rows = await deps.bb.sdk.threads.queuedMessages.list({ threadId });
-    for (const row of rows) {
+    for (const row of rows.filter((entry) => entry.waitingOn?.kind === "time")) {
       await deps.bb.sdk.threads.queuedMessages.send({
         threadId,
         queuedMessageId: row.id,
@@ -315,8 +319,7 @@ async function releaseFirstTurn(deps: CommandDeps, threadId: string): Promise<st
     }
     return null;
   } catch (error) {
-    const seconds = FIRST_TURN_HOLD_MS / 1000;
-    return `first message of ${threadId} not sent now, so it starts within ${seconds}s: ${(error as Error).message}`;
+    return `first message of ${threadId} not sent now; it starts when bb sends it: ${(error as Error).message}`;
   }
 }
 
