@@ -17,7 +17,6 @@ import {
   Fragment,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -25,7 +24,6 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { flushSync } from "react-dom";
 import {
   age,
   isSending,
@@ -49,7 +47,8 @@ const FAR = Number.MAX_SAFE_INTEGER;
 /** Every control a phone user taps gets a 44px target. */
 const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 /** Later and Skip: a short pair that sits in the title's first line. */
-const DEFER = "relative h-6 px-2 text-muted-foreground";
+/** Later and Skip keep room for their keycap at the start, so it never covers a neighbour or the card's edge. */
+const DEFER = "relative h-6 ps-2 pe-2 text-muted-foreground not-pointer-coarse:ps-6";
 
 export function NeedsYouBanner() {
   const { scope } = useComposer();
@@ -140,9 +139,7 @@ function Queue({
           crewError={crewError}
           defer={sending ? null : { later, skip }}
         />
-        {detail ? (
-          <Detail key={item.key} content={detail} onFocusLost={() => root?.focus()} />
-        ) : null}
+        {detail ? <Detail key={item.key} content={detail} /> : null}
       </div>
       {other !== null ? (
         <OtherAnswer
@@ -299,14 +296,19 @@ function Heading({
   return (
     <div className="flex min-w-0 items-start gap-2">
       <p className="m-0 min-w-0 flex-1 py-px text-sm font-medium break-words text-foreground">
-        {/* Isolated, so a right-to-left title cannot reorder the meta. The end
-            margin, not a leading pad, spaces them, so a wrapped meta starts flush. */}
-        <bdi className="me-1.5">{text}</bdi>
+        {/* Isolated, so a right-to-left title cannot reorder the meta; each takes
+            its base direction from its text, while the margin follows the card's
+            direction. The title's end margin, not a leading pad, spaces them, so
+            a wrapped meta starts flush. */}
+        <span className="me-1.5 [unicode-bidi:plaintext]">{text}</span>
         {parts.length > 0 ? " " : null}
         {parts.length > 0 ? (
           // Each part stays whole and the meta wraps between parts, so it never
           // overflows a narrow card and keeps the title's baseline.
-          <bdi className="text-xs font-normal text-muted-foreground tabular-nums" translate="no">
+          <span
+            className="text-xs font-normal text-muted-foreground tabular-nums [unicode-bidi:plaintext]"
+            translate="no"
+          >
             {parts.map((part, index) => (
               <Fragment key={part.text}>
                 <span
@@ -319,7 +321,7 @@ function Heading({
                 {index < parts.length - 1 ? " " : null}
               </Fragment>
             ))}
-          </bdi>
+          </span>
         ) : null}
       </p>
       {defer ? (
@@ -333,7 +335,7 @@ function Heading({
             aria-description="Hide for an hour"
             onClick={defer.later}
           >
-            <KeyHint>L</KeyHint>
+            <KeyHint place="start">L</KeyHint>
             Later
           </Button>
           <Button
@@ -345,7 +347,7 @@ function Heading({
             aria-description="Move to the back of the queue"
             onClick={defer.skip}
           >
-            <KeyHint>S</KeyHint>
+            <KeyHint place="start">S</KeyHint>
             Skip
           </Button>
         </span>
@@ -368,8 +370,10 @@ function ActionButton({ action, index }: { action: Action; index: number }) {
       aria-keyshortcuts={index < 9 ? String(index + 1) : undefined}
       onClick={action.run}
     >
-      <KeyHint>{index + 1}</KeyHint>
-      <span className="min-w-0 break-words">{action.label}</span>
+      <KeyHint place="corner">{index + 1}</KeyHint>
+      <span className="min-w-0 text-start break-words [unicode-bidi:plaintext]">
+        {action.label}
+      </span>
       {action.recommended ? (
         <span className="shrink-0 font-normal whitespace-nowrap opacity-70">Recommended</span>
       ) : null}
@@ -378,16 +382,21 @@ function ActionButton({ action, index }: { action: Action; index: number }) {
 }
 
 /**
- * A key's shortcut: a small keycap over the button's corner while the banner
- * has keyboard focus. It lies over the button rather than beside its label, so
- * showing it moves nothing, and a mouse press that focuses the banner still
- * lands on the control it began on. Never on a coarse (touch) pointer.
+ * A key's shortcut, shown while the banner has keyboard focus and never on a
+ * coarse (touch) pointer. Showing it moves nothing, so a mouse press that
+ * focuses the banner still lands on the control it began on: an answer's
+ * keycap sits over the button's corner, and Later's and Skip's in the start
+ * room `DEFER` keeps for it. The border is the muted text colour, so the
+ * keycap stays outlined over the filled recommended button too.
  */
-function KeyHint({ children }: { children: ReactNode }) {
+function KeyHint({ place, children }: { place: "corner" | "start"; children: ReactNode }) {
   return (
     <span
       aria-hidden
-      className="pointer-events-none absolute -start-1.5 -top-1.5 hidden rounded-sm border border-border bg-surface-raised-solid px-1 text-[0.625rem] leading-3.5 font-normal text-muted-foreground tabular-nums not-pointer-coarse:group-focus-within:block"
+      className={cn(
+        "pointer-events-none absolute hidden rounded-sm border border-muted-foreground bg-surface-raised-solid px-1 text-[0.625rem] leading-3.5 font-normal text-muted-foreground tabular-nums not-pointer-coarse:group-focus-within:block",
+        place === "corner" ? "-start-1.5 -top-1.5" : "start-1 top-1/2 -translate-y-1/2",
+      )}
     >
       {children}
     </span>
@@ -398,108 +407,112 @@ function KeyHint({ children }: { children: ReactNode }) {
  * Captains' Markdown, quieted to a secondary line. Overriding `--foreground`
  * mutes every element bb's renderer colours with it (paragraphs, lists, bold,
  * headings) in one declaration; inline code needs `!` to beat the theme's
- * yellow, which outranks a plugin utility. Thread chips keep their own colour and
- * are held to the line height so they sit in the text. The leading is
+ * yellow, which outranks a plugin utility. Thread chips keep their own colour
+ * and are held to the line height so they sit in the text. The leading is
  * relative, so two lines stay two lines where touch enlarges the text.
  */
 const DETAIL_BOX =
   "min-w-0 text-xs leading-snug text-muted-foreground [--foreground:var(--muted-foreground)] [&_code]:text-muted-foreground! [&_[data-prompt-mention]]:py-0 [&_[data-prompt-mention]]:leading-3.5";
-/** bb's renderer defaults to body size; the same size and leading as the box keep `2lh` two lines. */
+/** bb's renderer defaults to body size; the box's size and leading keep its lines the box's lines. */
 const DETAIL_TEXT = "min-w-0 text-xs leading-snug text-muted-foreground";
-
 /**
- * The detail, two lines until opened, whatever blocks (code, tables) it holds.
- * More shows only when those two lines cut something off.
+ * Collapsed: two lines ending in an ellipsis. Headings drop to the preview's
+ * size so each is one line like the rest. Blocks that are not lines (bb wraps
+ * code blocks and tables in a `div`; rules) wait for More rather than show a
+ * sliver, and a 3-line cap bounds anything else.
  */
-function Detail({ content, onFocusLost }: { content: string; onFocusLost: () => void }) {
+const PREVIEW =
+  "line-clamp-2 max-h-[3lh] [&_[data-markdown-preview]>h1]:text-xs [&_[data-markdown-preview]>h2]:text-xs [&_[data-markdown-preview]>h3]:text-xs [&_[data-markdown-preview]>h4]:text-xs [&_[data-markdown-preview]>h5]:text-xs [&_[data-markdown-preview]>h6]:text-xs [&_[data-markdown-preview]>div]:hidden [&_[data-markdown-preview]>hr]:hidden [&_[data-markdown-preview]>pre]:hidden [&_[data-markdown-preview]>table]:hidden";
+const HIDDEN_BLOCKS = "[data-markdown-preview] > :is(div, hr, pre, table)";
+
+/** The detail, two lines until opened. More shows only when those two lines leave something out. */
+function Detail({ content }: { content: string }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  const inner = useRef<HTMLDivElement>(null);
-  const clipped = useClipped(box, inner);
-  const showToggle = open || clipped;
-  // Less had focus when it was pressed; if collapsing removes it, focus stays in the banner.
-  const refocus = useRef(false);
-  useLayoutEffect(() => {
-    // The preview always shows the first two lines, whatever the open state scrolled to.
-    if (!open && box.current !== null) box.current.scrollTop = 0;
-  }, [open]);
-  useLayoutEffect(() => {
-    if (!refocus.current || open) return;
-    refocus.current = false;
-    if (!showToggle) onFocusLost();
-  }, [open, showToggle, onFocusLost]);
+  const clipped = useClipped(box, open, content);
   return (
     <div className="flex min-w-0 items-end gap-2">
       <div
         ref={box}
         data-detail-box=""
+        data-state={open ? "open" : "closed"}
         className={cn(
           "min-w-0 flex-1",
           DETAIL_BOX,
-          open ? "max-h-[10lh] overflow-y-auto" : "max-h-[2lh] overflow-hidden",
+          open ? "max-h-[10lh] overflow-y-auto" : PREVIEW,
         )}
-        // Focus or find-in-page can scroll a clipped preview; it snaps back to its first lines,
-        // and keyboard focus reaching a hidden link opens the detail so the link shows.
         onScroll={(event) => {
-          if (!open) event.currentTarget.scrollTop = 0;
-        }}
-        onFocus={() => {
-          if (!open && clipped) setOpen(true);
+          if (open) return;
+          const active = document.activeElement;
+          // Only keyboard focus on a link past the visible lines scrolls the clipped box
+          // without a pointer: show the whole detail so the focused link is in view. Any
+          // other scroll (a press on a half-hidden chip, find-in-page) snaps back.
+          if (
+            active instanceof HTMLElement &&
+            event.currentTarget.contains(active) &&
+            active.matches(":focus-visible")
+          ) {
+            setOpen(true);
+          } else {
+            event.currentTarget.scrollTop = 0;
+          }
         }}
       >
-        <div ref={inner} data-detail-content="">
-          <Markdown content={content} className={DETAIL_TEXT} />
-        </div>
+        <Markdown content={content} className={DETAIL_TEXT} />
       </div>
-      {showToggle ? (
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className={cn(
-            TAP,
-            "h-auto shrink-0 px-1.5 py-0.5 text-muted-foreground pointer-coarse:-my-1.5",
-          )}
-          aria-expanded={open}
-          onClick={(event) => {
-            refocus.current = open && document.activeElement === event.currentTarget;
-            setOpen(!open);
-          }}
-        >
-          {open ? "Less" : "More"}
-        </Button>
-      ) : null}
+      {/* A fixed column, so More appearing never narrows the text it measures. */}
+      <div className="flex w-11 shrink-0 justify-end">
+        {open || clipped ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className={cn(TAP, "h-auto px-1.5 py-0.5 text-muted-foreground pointer-coarse:-my-1.5")}
+            aria-expanded={open}
+            onClick={() => {
+              // The preview starts at its first line, wherever the open detail was scrolled.
+              if (open && box.current !== null) box.current.scrollTop = 0;
+              setOpen(!open);
+            }}
+          >
+            {open ? "Less" : "More"}
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 /**
- * Whether `inner` is taller than the `box` that clips it. Both are observed,
- * so the answer follows a width change and new content alike. Sizes come from
- * the observer's entries (no layout read of ours), and the first answer is
- * committed before the browser paints, so More never flashes.
+ * Whether the collapsed preview leaves something out: lines past the clamp, or
+ * blocks it hides. Lines are measured in the ResizeObserver callback, after
+ * layout. Hidden blocks change no size (bb's renderer adds them after the first
+ * commit, and a box of nothing else stays 0×0), so a mutation observer on the
+ * box finds them with a query, never a layout read. Measured only while
+ * collapsed: open keeps the last answer, so Less stays mounted (and focused)
+ * through the collapse. New content under a box that stays two lines tall
+ * resizes nothing, so it observes afresh.
  */
-function useClipped(
-  boxRef: RefObject<HTMLElement | null>,
-  innerRef: RefObject<HTMLElement | null>,
-): boolean {
+function useClipped(box: RefObject<HTMLElement | null>, open: boolean, content: string): boolean {
   const [clipped, setClipped] = useState(false);
-  useLayoutEffect(() => {
-    const box = boxRef.current;
-    const inner = innerRef.current;
-    if (box === null || inner === null || typeof ResizeObserver === "undefined") return;
-    const heights = new Map<Element, number>();
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        heights.set(entry.target, entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height);
-      }
-      const next = (heights.get(inner) ?? 0) > (heights.get(box) ?? 0) + 1;
-      flushSync(() => setClipped(next));
+  useEffect(() => {
+    const node = box.current;
+    if (open || node === null || typeof ResizeObserver === "undefined") return;
+    const hidden = () => node.querySelector(HIDDEN_BLOCKS) !== null;
+    const sizes = new ResizeObserver(() => {
+      setClipped(node.scrollHeight > node.clientHeight + 1 || hidden());
     });
-    observer.observe(box);
-    observer.observe(inner);
-    return () => observer.disconnect();
-  }, [boxRef, innerRef]);
+    const blocks = new MutationObserver(() => {
+      if (hidden()) setClipped(true);
+    });
+    sizes.observe(node);
+    blocks.observe(node, { childList: true, subtree: true });
+    return () => {
+      sizes.disconnect();
+      blocks.disconnect();
+    };
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies, react-hooks/exhaustive-deps -- see above: new content is observed afresh.
+  }, [box, open, content]);
   return clipped;
 }
 

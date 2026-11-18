@@ -165,7 +165,7 @@ test("an answer the Captain does not have yet shows Sending… and no answer but
 
 test("a ship ask offers no Other…, and More expands the full detail", async () => {
   const ship = { ...decision, askKind: "ship", options: ["Merge", "Hold"] } as QueueItem;
-  const layout = layOut({ box: 32, content: 64 });
+  const layout = layOut({ lines: 2, content: 4 });
   try {
     const { slot } = render(CAPTAIN, [ship]);
     const card = await slot.findByTestId("captain-needs-you");
@@ -184,27 +184,38 @@ test("a ship ask offers no Other…, and More expands the full detail", async ()
 });
 
 /**
- * A ResizeObserver that reports the detail's clipping box and its content at
- * the heights set here, as a browser would after layout. Each observed element
- * gets its own height, so measuring the wrong one gives the wrong answer.
+ * Lays the detail box out as a browser would, in lines of 16px: collapsed it
+ * shows two of the content's lines and scrolls the rest; open it shows them
+ * all, so open it never looks clipped. The ResizeObserver reports after each
+ * layout, as the browser's does.
  */
-function layOut(heights: { box: number; content: number }) {
+function layOut(layout: { lines: number; content: number }) {
   const observers = new Set<{ callback: ResizeObserverCallback; targets: Set<Element> }>();
-  const height = (target: Element) =>
-    target.hasAttribute("data-detail-content") ? heights.content : heights.box;
+  const box = (element: Element) =>
+    element.hasAttribute("data-detail-box")
+      ? element.getAttribute("data-state") === "open"
+        ? layout.content
+        : Math.min(layout.lines, layout.content)
+      : null;
   const report = (observer: { callback: ResizeObserverCallback; targets: Set<Element> }) =>
     observer.callback(
-      [...observer.targets].map(
-        (target) =>
-          ({
-            target,
-            borderBoxSize: [{ blockSize: height(target), inlineSize: 300 }],
-            contentRect: { height: height(target) },
-          }) as unknown as ResizeObserverEntry,
-      ),
+      [...observer.targets].map((target) => ({ target }) as ResizeObserverEntry),
       {} as ResizeObserver,
     );
   const previous = globalThis.ResizeObserver;
+  // jsdom lays nothing out; these shadow its zero heights on `Element` until `restore`.
+  Object.defineProperty(HTMLElement.prototype, "clientHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return (box(this) ?? 0) * 16;
+    },
+  });
+  Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return box(this) === null ? 0 : layout.content * 16;
+    },
+  });
   globalThis.ResizeObserver = class {
     readonly entry: { callback: ResizeObserverCallback; targets: Set<Element> };
     constructor(callback: ResizeObserverCallback) {
@@ -221,19 +232,24 @@ function layOut(heights: { box: number; content: number }) {
     }
   };
   return {
-    /** Change the heights and deliver them, as a resize or new content would. */
-    resize(next: { box: number; content: number }) {
-      Object.assign(heights, next);
+    /** Lay out again at a new width or with new content, and report it. */
+    relayout(next: { lines: number; content: number }) {
+      Object.assign(layout, next);
       act(() => observers.forEach(report));
     },
     restore() {
       globalThis.ResizeObserver = previous;
+      const prototype = HTMLElement.prototype as Partial<
+        Record<"clientHeight" | "scrollHeight", number>
+      >;
+      delete prototype.clientHeight;
+      delete prototype.scrollHeight;
     },
   };
 }
 
 test("More shows only when the two-line box cuts the detail off, and follows new content", async () => {
-  const layout = layOut({ box: 32, content: 32 });
+  const layout = layOut({ lines: 2, content: 2 });
   try {
     const { slot } = render(CAPTAIN, [decision]);
     const card = await slot.findByTestId("captain-needs-you");
@@ -241,7 +257,7 @@ test("More shows only when the two-line box cuts the detail off, and follows new
     expect(card.textContent).toContain("Builds re-download deps.");
     expect(slot.queryByRole("button", { name: "More" })).toBeNull();
     // Content grows under a box that stays two lines tall.
-    layout.resize({ box: 32, content: 64 });
+    layout.relayout({ lines: 2, content: 4 });
     const more = slot.getByRole("button", { name: "More" });
     act(() => more.click());
     expect(slot.getByRole("button", { name: "Less" }).getAttribute("aria-expanded")).toBe("true");
@@ -251,8 +267,42 @@ test("More shows only when the two-line box cuts the detail off, and follows new
   }
 });
 
+test("Less keeps focus: the open detail fits its box, yet the toggle stays and reads More", async () => {
+  const layout = layOut({ lines: 2, content: 4 });
+  try {
+    const { slot } = render(CAPTAIN, [decision]);
+    await slot.findByTestId("captain-needs-you");
+    act(() => slot.getByRole("button", { name: "More" }).click());
+    // Open, the box holds every line, as it does in a browser.
+    layout.relayout({ lines: 2, content: 4 });
+    const less = slot.getByRole("button", { name: "Less" });
+    act(() => less.focus());
+    act(() => less.click());
+    expect(document.activeElement).toBe(less);
+    expect(less.textContent).toBe("More");
+    expect(less.getAttribute("aria-expanded")).toBe("false");
+  } finally {
+    layout.restore();
+  }
+});
+
+test("the next item starts collapsed, whatever the last one showed", async () => {
+  const layout = layOut({ lines: 2, content: 4 });
+  try {
+    const { slot } = render(CAPTAIN, [decision, access]);
+    const card = await slot.findByTestId("captain-needs-you");
+    expect(card.textContent).toContain("Grant the crew a deploy key");
+    act(() => slot.getByRole("button", { name: "More" }).click());
+    act(() => slot.getByRole("button", { name: "Skip" }).click());
+    await waitFor(() => expect(card.textContent).toContain("Pick the cache backend"));
+    expect(slot.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("false");
+  } finally {
+    layout.restore();
+  }
+});
+
 test("a collapsed detail shows its first lines again, however the open one was scrolled", async () => {
-  const layout = layOut({ box: 32, content: 200 });
+  const layout = layOut({ lines: 2, content: 12 });
   try {
     const { slot } = render(CAPTAIN, [decision]);
     const card = await slot.findByTestId("captain-needs-you");
@@ -269,40 +319,65 @@ test("a collapsed detail shows its first lines again, however the open one was s
     scrollTop = 120;
     act(() => slot.getByRole("button", { name: "Less" }).click());
     expect(scrollTop).toBe(0);
-    // Focus moving onto a hidden link scrolls the clipped box; it snaps back.
-    scrollTop = 48;
-    fireEvent.scroll(box);
-    expect(scrollTop).toBe(0);
   } finally {
     layout.restore();
   }
 });
 
-test("keyboard focus reaching hidden detail opens it", async () => {
-  const layout = layOut({ box: 32, content: 64 });
+/** A link past the visible lines of the collapsed detail, focused by `how`. */
+function focusHiddenLink(card: HTMLElement, how: "keyboard" | "pointer") {
+  const box = card.querySelector<HTMLElement>("[data-detail-box]")!;
+  const link = document.createElement("a");
+  link.href = "#thread";
+  link.textContent = "thr_crew";
+  const matches = link.matches.bind(link);
+  Object.defineProperty(link, "matches", {
+    value: (selector: string) =>
+      selector === ":focus-visible" ? how === "keyboard" : matches(selector),
+  });
+  box.append(link);
+  let scrollTop = 0;
+  Object.defineProperty(box, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set: (value: number) => {
+      scrollTop = value;
+    },
+  });
+  act(() => link.focus());
+  // The browser scrolls the clipped box to bring the focused link into view.
+  scrollTop = 32;
+  fireEvent.scroll(box);
+  return { link, scrollTop: () => scrollTop };
+}
+
+test("Tab onto a link hidden in the collapsed detail opens it", async () => {
+  const layout = layOut({ lines: 2, content: 4 });
   try {
     const { slot } = render(CAPTAIN, [decision]);
     const card = await slot.findByTestId("captain-needs-you");
-    fireEvent.focusIn(card.querySelector("[data-detail-content]")!);
-    expect(slot.getByRole("button", { name: "Less" })).toBeTruthy();
+    focusHiddenLink(card, "keyboard");
+    expect(slot.getByRole("button", { name: "Less" }).getAttribute("aria-expanded")).toBe("true");
   } finally {
     layout.restore();
   }
 });
 
-test("when Less goes away as the detail collapses, focus stays in the banner", async () => {
-  const layout = layOut({ box: 32, content: 64 });
+test("a click on a chip in the collapsed detail acts and leaves the detail as it was", async () => {
+  const layout = layOut({ lines: 2, content: 4 });
   try {
     const { slot } = render(CAPTAIN, [decision]);
     const card = await slot.findByTestId("captain-needs-you");
-    act(() => slot.getByRole("button", { name: "More" }).click());
-    // Wider now: two lines would hold it all.
-    layout.resize({ box: 64, content: 64 });
-    const less = slot.getByRole("button", { name: "Less" });
-    act(() => less.focus());
-    act(() => less.click());
-    expect(slot.queryByRole("button", { name: /More|Less/u })).toBeNull();
-    expect(document.activeElement).toBe(card);
+    const { link, scrollTop } = focusHiddenLink(card, "pointer");
+    const clicks: Event[] = [];
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      clicks.push(event);
+    });
+    act(() => link.click());
+    expect(clicks).toHaveLength(1);
+    expect(slot.getByRole("button", { name: "More" }).getAttribute("aria-expanded")).toBe("false");
+    expect(scrollTop()).toBe(0);
   } finally {
     layout.restore();
   }
