@@ -295,8 +295,8 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
         labelOptions={labelOptions}
         taskCount={tasksQuery.phase === "ready" ? tasksQuery.tasks.length : undefined}
       />
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto @container">
-        {body}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+        <div className="@container flex min-h-full flex-col">{body}</div>
       </div>
       <DetailToasts toasts={toasts} onDismiss={dismiss} />
     </div>
