@@ -57,6 +57,22 @@ export function parsePromptEditorMentionAttrs(
   return parsed;
 }
 
+const WORD_CHARACTER_AT_START = /^[\p{L}\p{N}]/u;
+const WORD_CHARACTER_AT_END = /[\p{L}\p{N}]$/u;
+
+function needsMentionSeparator(previous: ProseMirrorNode | null, next: ProseMirrorNode): boolean {
+  if (previous === null) return false;
+  if (next.type.name === "mention") {
+    return (
+      previous.type.name === "mention" ||
+      (previous.isText && WORD_CHARACTER_AT_END.test(previous.text ?? ""))
+    );
+  }
+  return (
+    previous.type.name === "mention" && next.isText && WORD_CHARACTER_AT_START.test(next.text ?? "")
+  );
+}
+
 function splitTextContent(text: string): JSONContent[] {
   if (text.length === 0) {
     return [];
@@ -291,6 +307,7 @@ function serializePromptEditorNode(
   let previousSerializedBlockWasBlockquote: boolean | null = null;
   const mentions: ComposerMention[] = [];
   const offsetMapping: PromptEditorOffsetSegment[] = [];
+  let previousInline: ProseMirrorNode | null = null;
 
   const appendInlineText = (
     value: string,
@@ -311,6 +328,7 @@ function serializePromptEditorNode(
   };
 
   const appendBlockBoundary = (blockIsBlockquote: boolean) => {
+    previousInline = null;
     if (previousSerializedBlockWasBlockquote !== null) {
       text += previousSerializedBlockWasBlockquote && !blockIsBlockquote ? "\n\n" : "\n";
     }
@@ -323,16 +341,25 @@ function serializePromptEditorNode(
       if (value.length === 0) {
         return;
       }
+      if (needsMentionSeparator(previousInline, node)) {
+        text += " ";
+      }
+      previousInline = node;
       appendInlineText(value, nodePosition, nodePosition + node.nodeSize, "text");
       return;
     }
     if (node.type.name === "hardBreak") {
       text += "\n";
+      previousInline = null;
       return;
     }
     if (node.type.name === "mention") {
       const attrs = parsePromptEditorMentionAttrs(node.attrs);
       if (attrs) {
+        if (needsMentionSeparator(previousInline, node)) {
+          text += " ";
+        }
+        previousInline = node;
         const span = appendInlineText(
           attrs.serializedText,
           nodePosition,

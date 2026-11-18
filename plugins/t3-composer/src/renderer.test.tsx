@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { createPortal } from "react-dom";
-import { fireEvent, waitFor } from "@testing-library/react";
+import { act, fireEvent, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
@@ -352,6 +352,8 @@ function FakeBbPicker(props: { withSwitch?: boolean }) {
       {open
         ? createPortal(
             <div id="fake-bb-popover">
+              {/* Mirrors BB's picker DOM, which the driver finds by role. */}
+              {/* oxlint-disable-next-line jsx-a11y/prefer-tag-over-role */}
               <div role="option" aria-selected="true">
                 GPT-6-Luna
               </div>
@@ -1117,6 +1119,32 @@ describe("T3 Code model picker", () => {
     );
     try {
       expect(await slot.findByText("Host model picker")).toBeTruthy();
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+});
+
+describe("/handoff", () => {
+  it("starts no send when its row is clicked, unlike BB's built-in commands", async () => {
+    const { slot, run } = await mountComposer(
+      { surface: "thread" },
+      { kind: "thread", threadId: "t1" },
+      { ...pickerOptions(OPUS_HIGH), text: "" },
+    );
+    try {
+      const element = await waitFor(() => {
+        const found = slot.container.querySelector<HTMLElement>('[contenteditable="true"]');
+        if (!found) throw new Error("editor not mounted");
+        return found;
+      });
+      // Tiptap keeps its editor on the view's DOM node.
+      const editor = (element as HTMLElement & { editor: import("@tiptap/core").Editor }).editor;
+      // With a draft before it, a send would go out with the handoff.
+      act(() => void editor.commands.insertContent("Fix the bug /hand"));
+      fireEvent.mouseDown(await waitFor(() => slot.getByTitle("Hand off to a new thread")));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(run).not.toHaveBeenCalled();
     } finally {
       slot.lifecycle.unmount();
     }

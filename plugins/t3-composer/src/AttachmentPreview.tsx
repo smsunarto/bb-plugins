@@ -76,6 +76,8 @@ function ImageUploadPreview({ file }: { file: File }) {
   const [previewUrl, setPreviewUrl] = useState<string>();
   useEffect(() => {
     const url = URL.createObjectURL(file);
+    // The URL is created and revoked as one effect pair; creating it in render would leak it.
+    // oxlint-disable-next-line react/set-state-in-effect
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);

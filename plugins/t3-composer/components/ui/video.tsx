@@ -11,5 +11,7 @@ export function Video({ src, ...props }: VideoHTMLAttributes<HTMLVideoElement> &
       video.load();
     };
   }, [src]);
+  // Attachment previews play the user's own uploads, which carry no caption track.
+  // oxlint-disable-next-line jsx-a11y/media-has-caption
   return <video {...props} ref={ref} />;
 }

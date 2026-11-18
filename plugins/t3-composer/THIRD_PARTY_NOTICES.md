@@ -1,6 +1,6 @@
 # Third-party notices
 
-Composer implementation and vendored UI: BB, copyright (c) 2026 Michael Yong, MIT. Forked from `plugins/composer` at d4fa9cb1251d8b2a11a5e32b6934a89792a27358. The original MIT license is retained in LICENSE.
+Composer implementation and vendored UI: BB, copyright (c) 2026 Michael Yong, MIT. Forked from `plugins/composer` at d4fa9cb1251d8b2a11a5e32b6934a89792a27358, a commit absent from get-bb/bb's main whose plugin content matches main at 21d5db72c; synced through 2d04779a1. `lib/shared-resize-observer.ts` is copied from `packages/shared-ui` at 2d04779a1. The original MIT license is retained in LICENSE.
 
 Composer styling and send artwork adapted from T3 Code at f6a9315d19284422e2f2718e487c16acda4ba24e (`ComposerSurface.tsx`, `ComposerControl.tsx`, `ChatComposer.tsx`, `ComposerPrimaryActions.tsx`).
 
