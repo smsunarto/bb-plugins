@@ -42,12 +42,6 @@
     "source": "const open = useCallback("
   },
   {
-    "filename": "plugins/scott-tasks/views/list/index.tsx",
-    "code": "react(refs)",
-    "message": "Cannot access refs during render",
-    "source": "const scopeChanged = settledScope.current !== scopeKey;"
-  },
-  {
     "filename": "plugins/traces/src/app/app.tsx",
     "code": "react(refs)",
     "message": "Cannot access refs during render",
