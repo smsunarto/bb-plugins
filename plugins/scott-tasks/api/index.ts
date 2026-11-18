@@ -288,7 +288,6 @@ function writeSystemComments(
       source: { kind: "system", origin: null },
       authorName,
       body,
-      notifiedCount: 0,
     });
   }
 }
@@ -434,7 +433,6 @@ export async function createComment(
       source: input.source,
       authorName: input.authorName,
       body: input.body,
-      notifiedCount: 0,
     }),
   );
   publishCommentsChanged(bb, input.taskId);

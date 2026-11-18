@@ -19,7 +19,6 @@ describe("Tasks RPC domain API", () => {
       source: { kind: "user" },
       authorName: "You",
       body: "See sketch",
-      notifiedCount: 0,
     });
     const attachment = store.tasks.createAttachment({
       owner: { kind: "comment", commentId: comment.id },
@@ -34,7 +33,6 @@ describe("Tasks RPC domain API", () => {
       source: { kind: "user" },
       authorName: "You",
       body: "No files here",
-      notifiedCount: 0,
     });
     const otherTask = store.tasks.createTask({ projectId: project.id, title: "Other task" });
     const otherComment = store.tasks.createComment({
@@ -42,7 +40,6 @@ describe("Tasks RPC domain API", () => {
       source: { kind: "user" },
       authorName: "You",
       body: "Another task's file",
-      notifiedCount: 0,
     });
     store.tasks.createAttachment({
       owner: { kind: "comment", commentId: otherComment.id },
@@ -332,42 +329,36 @@ describe("Tasks RPC domain API", () => {
       source: { kind: "agent", threadId: "thr_titled" },
       authorName: "agent (thr_titled)",
       body: "Titled",
-      notifiedCount: 0,
     });
     store.tasks.createComment({
       taskId: task.id,
       source: { kind: "agent", threadId: "thr_fallback_only" },
       authorName: "agent (thr_fallback_only)",
       body: "Fallback title",
-      notifiedCount: 0,
     });
     store.tasks.createComment({
       taskId: task.id,
       source: { kind: "agent", threadId: "thr_blank_title" },
       authorName: "agent (thr_blank_title)",
       body: "Blank title",
-      notifiedCount: 0,
     });
     store.tasks.createComment({
       taskId: task.id,
       source: { kind: "agent", threadId: "thr_side_chat" },
       authorName: "agent (thr_side_chat)",
       body: "Side chat",
-      notifiedCount: 0,
     });
     store.tasks.createComment({
       taskId: task.id,
       source: { kind: "agent", threadId: "thr_missing" },
       authorName: "agent (thr_missing)",
       body: "Missing thread",
-      notifiedCount: 0,
     });
     store.tasks.createComment({
       taskId: task.id,
       source: { kind: "user" },
       authorName: "You",
       body: "Human note",
-      notifiedCount: 0,
     });
 
     const result = tasksRpcContract.listComments.output.parse(
@@ -454,7 +445,6 @@ describe("Tasks RPC domain API", () => {
         source: { kind: "agent", threadId },
         authorName: `agent (${threadId})`,
         body,
-        notifiedCount: 0,
       });
     };
     agentComment("Codex", "thr_codex");
@@ -467,7 +457,6 @@ describe("Tasks RPC domain API", () => {
       source: { kind: "user" },
       authorName: "You",
       body: "Human note",
-      notifiedCount: 0,
     });
 
     const result = tasksRpcContract.listComments.output.parse(

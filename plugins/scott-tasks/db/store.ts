@@ -16,7 +16,6 @@ import {
   presetPermissionModeSchema,
   presetReasoningLevelSchema,
   presetServiceTierSchema,
-  ULID_PATTERN,
 } from "../shared/contract.js";
 import type {
   AgentComment,
@@ -279,12 +278,6 @@ function createUlid(now = Date.now()): string {
 
 function nowIso(): string {
   return new Date().toISOString();
-}
-
-function createOrValidateUlid(id: string | undefined): string {
-  if (id === undefined) return createUlid();
-  if (!ULID_PATTERN.test(id)) throw new Error(`Invalid ULID: ${id}`);
-  return id;
 }
 
 function requireNonEmpty(value: string, field: string): string {
@@ -567,7 +560,7 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createFolder(input: CreateFolderInput): Folder {
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     const parentFolderId = input.parentFolderId ?? null;
     validateFolderParent(parentFolderId, id);
     db.prepare<[string, string, string | null, string]>(
@@ -633,7 +626,7 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createProject(input: CreateProjectInput): Project {
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     const folderId = input.folderId ?? null;
     if (folderId !== null) requireFolder(folderId);
     db.prepare<[string, string, string, string, string | null, string | null, string]>(
@@ -763,7 +756,7 @@ export function createTasksStore(db: PluginDatabase) {
 
   const createTaskTransaction = db.transaction((input: CreateTaskInput): Task => {
     const project = requireProject(input.projectId);
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     const status = input.status ?? "backlog";
     const parentTaskId = input.parentTaskId ?? null;
     validateTaskParent(project.id, parentTaskId, id);
@@ -1329,7 +1322,7 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createLabel(input: CreateLabelInput): Label {
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     requireProject(input.projectId);
     db.prepare<[string, string, string, string]>(
       `
@@ -1431,27 +1424,17 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createComment(input: CreateCommentInput): Comment {
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     requireTask(input.taskId);
     const columns = commentSourceColumns(input.source);
     db.prepare<
-      [
-        string,
-        string,
-        CommentSource["kind"],
-        string,
-        string | null,
-        string | null,
-        string,
-        number,
-        string,
-      ]
+      [string, string, CommentSource["kind"], string, string | null, string | null, string, string]
     >(
       `
       INSERT INTO comments (
         id, task_id, kind, author_name, preset_name, thread_id, body,
-        notified_count, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
     ).run(
       id,
@@ -1461,7 +1444,6 @@ export function createTasksStore(db: PluginDatabase) {
       columns.presetName,
       validateThreadId(columns.threadId),
       input.body,
-      input.notifiedCount ?? 0,
       nowIso(),
     );
     return requireComment(id);
@@ -1500,12 +1482,11 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function updateComment(id: string, input: UpdateCommentInput): Comment {
-    const current = requireComment(id);
-    db.prepare<[string, number, string]>(
-      `
-      UPDATE comments SET body = ?, notified_count = ? WHERE id = ?
-    `,
-    ).run(input.body ?? current.body, input.notifiedCount ?? current.notifiedCount, id);
+    requireComment(id);
+    db.prepare<[number, string]>("UPDATE comments SET notified_count = ? WHERE id = ?").run(
+      input.notifiedCount,
+      id,
+    );
     return requireComment(id);
   }
 
@@ -1526,7 +1507,7 @@ export function createTasksStore(db: PluginDatabase) {
     else requireComment(owner.commentId);
     const taskId = owner.kind === "task" ? owner.taskId : null;
     const commentId = owner.kind === "comment" ? owner.commentId : null;
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     db.prepare<
       [string, string | null, string | null, string, string, number, string, number, string]
     >(
@@ -1609,21 +1590,9 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function updateAttachment(id: string, input: UpdateAttachmentInput): Attachment {
-    const current = requireAttachment(id);
-    db.prepare<[string, string, number, string, number, string]>(
-      `
-      UPDATE attachments
-      SET file_name = ?, mime = ?, size_bytes = ?, blob_path = ?, is_image = ?
-      WHERE id = ?
-    `,
-    ).run(
-      input.fileName === undefined
-        ? current.fileName
-        : requireNonEmpty(input.fileName, "Attachment fileName"),
-      input.mime === undefined ? current.mime : requireNonEmpty(input.mime, "Attachment mime"),
-      input.sizeBytes ?? current.sizeBytes,
-      input.blobPath === undefined ? current.blobPath : validateBlobPath(input.blobPath),
-      (input.isImage ?? current.isImage) ? 1 : 0,
+    requireAttachment(id);
+    db.prepare<[string, string]>("UPDATE attachments SET blob_path = ? WHERE id = ?").run(
+      validateBlobPath(input.blobPath),
       id,
     );
     return requireAttachment(id);
@@ -1670,7 +1639,7 @@ export function createTasksStore(db: PluginDatabase) {
 
   function upsertTaskThread(input: UpsertTaskThreadInput): TaskThread {
     requireTask(input.taskId);
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     const timestamp = nowIso();
     db.prepare<
       [string, string, string, string, string, TaskThreadLiveStatus, string, string, string]
@@ -1767,7 +1736,7 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createPreset(input: CreatePresetInput): Preset {
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     const environment = validatePresetEnvironment(input);
     db.prepare<
       [

@@ -1007,33 +1007,41 @@ describe("tasks storage", () => {
     try {
       const project = createProject(store, "TIE");
       const task = store.createTask({ projectId: project.id, title: "Task" });
-      const earlier = store.createComment({
-        id: "01H00000000000000000000002",
-        taskId: task.id,
-        source: { kind: "agent", threadId: "thr_earlier" },
-        authorName: "Earlier responder",
-        body: "Earlier reply",
-      });
-      const later = store.createComment({
-        id: "01H00000000000000000000001",
-        taskId: task.id,
-        source: { kind: "agent", threadId: "thr_later" },
-        authorName: "Later responder",
-        body: "Later reply",
-      });
+      // Ids that sort against insertion order, so only rowid can break the tie.
+      const earlierId = "01H00000000000000000000002";
+      const laterId = "01H00000000000000000000001";
+      const setId = db.prepare<[string, string]>("UPDATE comments SET id = ? WHERE id = ?");
+      setId.run(
+        earlierId,
+        store.createComment({
+          taskId: task.id,
+          source: { kind: "agent", threadId: "thr_earlier" },
+          authorName: "Earlier responder",
+          body: "Earlier reply",
+        }).id,
+      );
+      setId.run(
+        laterId,
+        store.createComment({
+          taskId: task.id,
+          source: { kind: "agent", threadId: "thr_later" },
+          authorName: "Later responder",
+          body: "Later reply",
+        }).id,
+      );
       const setCreatedAt = db.prepare<[string, string]>(
         "UPDATE comments SET created_at = ? WHERE id = ?",
       );
       const sharedTime = "2026-07-15T10:00:00.000Z";
-      setCreatedAt.run(sharedTime, earlier.id);
-      setCreatedAt.run(sharedTime, later.id);
+      setCreatedAt.run(sharedTime, earlierId);
+      setCreatedAt.run(sharedTime, laterId);
 
       expect(store.listComments(task.id).map((comment) => comment.id)).toEqual([
-        earlier.id,
-        later.id,
+        earlierId,
+        laterId,
       ]);
       expect(store.getLatestAgentComment(task.id, null)).toMatchObject({
-        id: later.id,
+        id: laterId,
         source: { threadId: "thr_later" },
       });
     } finally {

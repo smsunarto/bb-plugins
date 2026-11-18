@@ -304,7 +304,6 @@ export function createSystemComment(
     },
     authorName: SYSTEM_AUTHOR_NAME,
     body: input.body,
-    notifiedCount: 0,
   });
 }
 
