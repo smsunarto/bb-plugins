@@ -146,8 +146,8 @@ function Queue({
       }}
       className="group flex min-w-0 flex-col gap-2 px-3 py-2 text-xs outline-none focus-visible:outline-1"
     >
-      {/* On touch, the gap keeps Skip's 44px target clear of More's. */}
-      <div className="flex min-w-0 flex-col gap-0.5 pointer-coarse:gap-2.5">
+      {/* On touch, the gap keeps Skip's 44px target, which reaches below its row, clear of More's. */}
+      <div className="flex min-w-0 flex-col gap-0.5 pointer-coarse:gap-4">
         <Heading
           title={title(item)}
           meta={itemMeta(item, items.length, now)}
@@ -424,14 +424,14 @@ function KeyHint({ children }: { children: ReactNode }) {
 
 /**
  * Later's and Skip's key is their first letter, framed as a keycap when
- * KeyHint shows. An outline takes no room, so the pair keeps its spacing and
- * nothing moves under the pointer. The word stays one span, so the button's
+ * KeyHint shows. The outline is drawn inside a pixel of padding, so it never
+ * reaches the next glyph, and takes no room: nothing moves under the pointer. The word stays one span, so the button's
  * gap cannot part the letter from it; each button still names itself, as an
  * accessibility tree may read the split word as two.
  */
 function Mnemonic({ children }: { children: ReactNode }) {
   return (
-    <span className="rounded-sm outline-offset-1 outline-muted-foreground not-pointer-coarse:group-focus-within:outline">
+    <span className="rounded-sm px-px -outline-offset-1 outline-muted-foreground not-pointer-coarse:group-focus-within:outline">
       {children}
     </span>
   );
@@ -450,22 +450,20 @@ const DETAIL_BOX =
 /** bb's renderer defaults to body size; the box's size and leading keep its lines the box's lines. */
 const DETAIL_TEXT = "min-w-0 text-xs leading-snug text-muted-foreground";
 /**
- * Collapsed: two lines ending in an ellipsis. Headings drop to the preview's
- * size so each is one line like the rest, and a paragraph before a hidden
- * block drops its margin so the box, and More, end on its text. Blocks that are not lines (bb wraps
- * code blocks and tables in a `div`; rules) wait for More rather than show a
- * sliver, and a 3-line cap bounds anything else.
+ * Collapsed: two lines ending in an ellipsis, capped at three line heights.
+ * Headings drop to the preview's size, so each is one line like the rest.
+ * Code blocks and tables (bb wraps each in a `div`) and rules wait for More
+ * rather than show a sliver, and a paragraph before one drops its margin, so
+ * the box, and More beside it, end on the text.
  */
 const PREVIEW =
-  "line-clamp-2 max-h-[3lh] [&_[data-markdown-preview]>p:has(+div)]:mb-0 [&_[data-markdown-preview]>p:has(+hr)]:mb-0 [&_[data-markdown-preview]>h1]:text-xs [&_[data-markdown-preview]>h2]:text-xs [&_[data-markdown-preview]>h3]:text-xs [&_[data-markdown-preview]>h4]:text-xs [&_[data-markdown-preview]>h5]:text-xs [&_[data-markdown-preview]>h6]:text-xs [&_[data-markdown-preview]>div]:hidden [&_[data-markdown-preview]>hr]:hidden [&_[data-markdown-preview]>pre]:hidden [&_[data-markdown-preview]>table]:hidden";
-const HIDDEN_BLOCKS = "[data-markdown-preview] > :is(div, hr, pre, table)";
+  "line-clamp-2 max-h-[3lh] [&_[data-markdown-preview]>p:has(+div)]:mb-0 [&_[data-markdown-preview]>p:has(+hr)]:mb-0 [&_[data-markdown-preview]>h1]:text-xs [&_[data-markdown-preview]>h2]:text-xs [&_[data-markdown-preview]>h3]:text-xs [&_[data-markdown-preview]>h4]:text-xs [&_[data-markdown-preview]>h5]:text-xs [&_[data-markdown-preview]>div]:hidden [&_[data-markdown-preview]>hr]:hidden";
+const HIDDEN_BLOCKS = "[data-markdown-preview] > :is(div, hr)";
 
 /**
- * The detail, two lines until opened, across the whole row. More shows only
- * when those two lines leave something out, laid over the end of the last
- * one on a fade of the card's colour, so it takes no width from the text it
- * measures. Open, the same button sits on its own line below, so the text
- * keeps the full row and the button keeps focus.
+ * The detail, two lines until opened. More shows only when those two lines
+ * leave something out; it and Less sit in a fixed column beside the text, so
+ * More appearing never narrows the text it measures.
  */
 function Detail({ content, onToggleGone }: { content: string; onToggleGone: () => void }) {
   const [open, setOpen] = useState(false);
@@ -473,12 +471,15 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
   const toggle = useRef<HTMLButtonElement>(null);
   const clipped = useClipped({ box, toggle, onToggleGone, open, content });
   return (
-    <div className="relative flex min-h-[1lh] min-w-0 flex-col text-xs leading-snug">
+    <div className="flex min-w-0 items-end gap-2">
       <div
         ref={box}
         data-detail-box=""
-        data-state={open ? "open" : "closed"}
-        className={cn(DETAIL_BOX, open ? "max-h-[10lh] overflow-y-auto" : PREVIEW)}
+        className={cn(
+          "min-w-0 flex-1",
+          DETAIL_BOX,
+          open ? "max-h-[10lh] overflow-y-auto" : PREVIEW,
+        )}
         onScroll={(event) => {
           if (open) return;
           const active = document.activeElement;
@@ -498,20 +499,14 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
       >
         <Markdown content={content} className={DETAIL_TEXT} />
       </div>
-      {open || clipped ? (
-        <div
-          className={
-            open
-              ? "flex justify-end"
-              : "absolute end-0 bottom-0 flex h-[1lh] items-center bg-linear-to-r from-transparent to-surface-raised-solid to-40% ps-8 rtl:bg-linear-to-l"
-          }
-        >
+      <div className="flex w-11 shrink-0 justify-end">
+        {open || clipped ? (
           <Button
             ref={toggle}
             type="button"
             size="sm"
             variant="ghost"
-            className={cn(TAP, "h-auto px-1.5 py-0 text-muted-foreground pointer-coarse:-my-1.5")}
+            className={cn(TAP, "h-auto px-1.5 py-0.5 text-muted-foreground pointer-coarse:-my-1.5")}
             aria-expanded={open}
             onClick={() => {
               // The preview starts at its first line, wherever the open detail was scrolled.
@@ -521,24 +516,24 @@ function Detail({ content, onToggleGone }: { content: string; onToggleGone: () =
           >
             {open ? "Less" : "More"}
           </Button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </div>
   );
 }
 
 /**
- * Whether the collapsed preview leaves something out: lines past the clamp, or
- * blocks it hides. Lines are measured in the ResizeObserver callback, after
- * layout. Hidden blocks change no size (bb's renderer adds them after the first
- * commit, and a box of nothing else stays 0×0), so a mutation observer on the
- * box finds them with a query, never a layout read. Measured only while
- * collapsed: open keeps the last answer, so Less stays mounted (and focused)
- * through the collapse. Should the preview turn out to fit, the toggle goes;
- * if it held focus, `onToggleGone` keeps focus in the banner rather than
- * letting it fall to the page.
- * New content under a box that stays two lines tall changes no size, so it
- * observes afresh.
+ * Whether the collapsed preview leaves something out: lines past the clamp,
+ * or blocks it hides. Lines are measured in the ResizeObserver callback, after
+ * layout. Hidden blocks change no size (bb's renderer adds them after the
+ * first commit, and a box of nothing else stays 0×0), so a mutation observer
+ * on the box's and the renderer root's children finds them with a query,
+ * never a layout read. Measured only while collapsed: open keeps the last
+ * answer, so Less stays mounted (and focused) through the collapse. Should
+ * the preview turn out to fit, the toggle goes; if it held focus,
+ * `onToggleGone` keeps focus in the banner rather than letting it fall to the
+ * page. New content under a box that stays two lines tall changes no size,
+ * so it observes afresh.
  */
 function useClipped({
   box,
@@ -563,11 +558,18 @@ function useClipped({
       if (!next && toggle.current?.contains(document.activeElement)) onToggleGone();
       setClipped(next);
     });
+    // Hidden blocks are children of bb's renderer root, which arrives after the
+    // first commit: watch the box's children for the root, and the root's for blocks.
+    const watchRoot = () => {
+      if (node.firstElementChild) blocks.observe(node.firstElementChild, { childList: true });
+    };
     const blocks = new MutationObserver(() => {
+      watchRoot();
       if (hidden()) setClipped(true);
     });
     sizes.observe(node);
-    blocks.observe(node, { childList: true, subtree: true });
+    blocks.observe(node, { childList: true });
+    watchRoot();
     return () => {
       sizes.disconnect();
       blocks.disconnect();

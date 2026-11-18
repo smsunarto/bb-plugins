@@ -193,7 +193,7 @@ function layOut(layout: { lines: number; content: number }) {
   const observers = new Set<{ callback: ResizeObserverCallback; targets: Set<Element> }>();
   const box = (element: Element) =>
     element.hasAttribute("data-detail-box")
-      ? element.getAttribute("data-state") === "open"
+      ? element.parentElement?.querySelector("[aria-expanded=true]")
         ? layout.content
         : Math.min(layout.lines, layout.content)
       : null;
