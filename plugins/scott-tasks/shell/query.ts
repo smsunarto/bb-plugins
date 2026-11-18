@@ -61,7 +61,6 @@ export const tasksKeys = {
   bbProjects: ["bbProjects"],
   attachments: (taskId: string) => ["attachments", taskId],
   comments: (taskId: string) => ["comments", taskId],
-  pullRequests: (taskId: string) => ["pullRequests", taskId],
 } as const satisfies Record<string, QueryKey | ((taskId: string) => QueryKey)>;
 
 function snapshot<T>(name: string, read: () => T | undefined) {
@@ -134,12 +133,5 @@ export function commentsQuery(taskId: string) {
   return queryOptions({
     queryKey: tasksKeys.comments(taskId),
     queryFn: async () => (await tasksRpc().call("listComments", { taskId })).comments,
-  });
-}
-
-export function pullRequestsQuery(taskId: string) {
-  return queryOptions({
-    queryKey: tasksKeys.pullRequests(taskId),
-    queryFn: () => tasksRpc().call("listTaskPullRequests", { taskId }),
   });
 }

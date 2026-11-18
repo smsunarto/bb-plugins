@@ -208,8 +208,6 @@ async function applySignals(signals: readonly Signal[]): Promise<void> {
   if (any("threads:changed")) {
     invalidate(["taskThreads"]);
     invalidate(tasksKeys.sidebarSummary);
-    if (everything("threads:changed")) invalidate(["pullRequests"]);
-    for (const taskId of ids("threads:changed")) invalidate(tasksKeys.pullRequests(taskId));
   }
   await Promise.allSettled([...patches, ...[...stale.values()].map(refresh)]);
 }

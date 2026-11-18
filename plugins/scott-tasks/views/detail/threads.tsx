@@ -1,7 +1,20 @@
-import { useState } from "react";
-import { UrlLink, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  UrlLink,
+  experimental_useRpcKeyedQuery as useRpcKeyedQuery,
+  experimental_useRpcMutation as useRpcMutation,
+  useBbNavigate,
+  useRpc,
+} from "@get-bb/plugin-sdk/app";
 import type { DelegationRpcContract } from "../../delegate/contract.js";
-import type { Preset, TaskPullRequest, TaskThread } from "../../shared/contract.js";
+import type { Preset, TaskThread } from "../../shared/contract.js";
+import {
+  SOURCE_CONTROL_PLUGIN_ID,
+  mayHaveMoved,
+  sourceControlContract,
+  threadPullRequest,
+  type ThreadPullRequest,
+} from "../../shared/source-control.js";
 import { errorMessage } from "../../shared/errors.js";
 import { PR_STATE_META, THREAD_STATUS_META, formatRelativeTime, isActiveThread } from "./meta.js";
 import { PresetDialog, savePresetDraft } from "../manage/preset-dialog.js";
@@ -20,14 +33,9 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 
-function ThreadPullRequestPill({
-  pullRequest,
-  unavailable,
-}: {
-  pullRequest: TaskPullRequest | undefined;
-  unavailable: boolean;
-}) {
-  if (pullRequest) {
+function ThreadPullRequestPill({ status }: { status: ThreadPullRequest }) {
+  if (status.kind === "pullRequest") {
+    const { pullRequest } = status;
     const meta = PR_STATE_META[pullRequest.state];
     return (
       <Hint label={`${pullRequest.title} (${meta.label})`}>
@@ -49,7 +57,7 @@ function ThreadPullRequestPill({
       </Hint>
     );
   }
-  if (unavailable) {
+  if (status.kind === "unavailable") {
     return (
       <Hint label="Couldn't check this thread's pull request">
         <span className="shrink-0 text-xs text-muted-foreground">PR unavailable</span>
@@ -59,16 +67,71 @@ function ThreadPullRequestPill({
   return null;
 }
 
+// Each thread's pull request from Source Control. Watching a thread's row is
+// what makes Source Control read it, and its invalidations keep the pill
+// current. A row the read never returned is unavailable once the read fails,
+// as when Source Control is disabled.
+function useThreadPullRequests(threads: readonly TaskThread[]) {
+  const keysId = threads.map((thread) => thread.threadId).join("\n");
+  const keys = useMemo(() => (keysId === "" ? [] : keysId.split("\n")), [keysId]);
+  const rows = useRpcKeyedQuery({
+    contract: sourceControlContract,
+    pluginId: SOURCE_CONTROL_PLUGIN_ID,
+    method: "statusForThread",
+    keys,
+  });
+  return (threadId: string): ThreadPullRequest => {
+    const row = rows.data?.[threadId];
+    if (row !== undefined) return threadPullRequest(row);
+    return rows.error ? { kind: "unavailable" } : { kind: "pending" };
+  };
+}
+
+const OPEN_PULL_REQUEST_REFRESH_MS = 60_000;
+
+// Source Control reads a watched row once and keeps it live only while the
+// thread's own tab is open, so an open pull request could merge unseen here.
+// While this view is visible, ask it to read those threads again each minute
+// and when the window regains focus; its invalidations update the pills.
+function useRefreshOpenPullRequests(threadIds: readonly string[]) {
+  const refresh = useRpcMutation({
+    contract: sourceControlContract,
+    pluginId: SOURCE_CONTROL_PLUGIN_ID,
+    method: "refreshThread",
+  });
+  const mutate = useRef(refresh.mutate);
+  useEffect(() => {
+    mutate.current = refresh.mutate;
+  });
+  const idsKey = threadIds.join("\n");
+  useEffect(() => {
+    if (idsKey === "") return undefined;
+    const ids = idsKey.split("\n");
+    const run = () => {
+      if (document.hidden) return;
+      for (const threadId of ids) {
+        mutate.current({ threadId }).catch(() => {
+          // The pill keeps its last row; Source Control being away shows on the next read.
+        });
+      }
+    };
+    const timer = window.setInterval(run, OPEN_PULL_REQUEST_REFRESH_MS);
+    window.addEventListener("focus", run);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", run);
+    };
+  }, [idsKey]);
+}
+
 function ThreadCard({
   thread,
   pullRequest,
-  pullRequestUnavailable,
   busy,
   onDetach,
 }: {
   thread: TaskThread;
-  pullRequest: TaskPullRequest | undefined;
-  pullRequestUnavailable: boolean;
+  pullRequest: ThreadPullRequest;
   busy: boolean;
   onDetach: () => void;
 }) {
@@ -88,7 +151,7 @@ function ThreadCard({
           {thread.presetName} · attached {formatRelativeTime(thread.attachedAt)}
         </div>
       </div>
-      <ThreadPullRequestPill pullRequest={pullRequest} unavailable={pullRequestUnavailable} />
+      <ThreadPullRequestPill status={pullRequest} />
       <Button
         variant="link"
         size="sm"
@@ -246,19 +309,11 @@ export function DispatchControl({
 
 interface ThreadsSectionProps {
   threads: TaskThread[];
-  pullRequests: TaskPullRequest[] | undefined;
-  unavailableThreadIds: string[];
   onDetach: (thread: TaskThread) => Promise<void>;
   onError: (message: string) => void;
 }
 
-export function ThreadsSection({
-  threads,
-  pullRequests,
-  unavailableThreadIds,
-  onDetach,
-  onError,
-}: ThreadsSectionProps) {
+export function ThreadsSection({ threads, onDetach, onError }: ThreadsSectionProps) {
   const [confirm, setConfirm] = useState<TaskThread | null>(null);
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
 
@@ -278,13 +333,15 @@ export function ThreadsSection({
   };
 
   const activeCount = threads.filter(isActiveThread).length;
-  const pullRequestByThread = new Map<string, TaskPullRequest>();
-  for (const pullRequest of pullRequests ?? []) {
-    for (const threadId of pullRequest.threadIds) {
-      pullRequestByThread.set(threadId, pullRequest);
-    }
-  }
-  const unavailable = new Set(unavailableThreadIds);
+  const pullRequestOf = useThreadPullRequests(threads);
+  useRefreshOpenPullRequests(
+    threads
+      .map((thread) => thread.threadId)
+      .filter((threadId) => {
+        const status = pullRequestOf(threadId);
+        return status.kind === "pullRequest" && mayHaveMoved(status);
+      }),
+  );
 
   return (
     <section>
@@ -296,8 +353,7 @@ export function ThreadsSection({
         <ThreadCard
           key={thread.id}
           thread={thread}
-          pullRequest={pullRequestByThread.get(thread.threadId)}
-          pullRequestUnavailable={unavailable.has(thread.threadId)}
+          pullRequest={pullRequestOf(thread.threadId)}
           busy={pending.has(thread.id)}
           onDetach={() => setConfirm(thread)}
         />

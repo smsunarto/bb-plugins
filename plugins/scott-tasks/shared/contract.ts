@@ -219,7 +219,6 @@ const taskPullRequestSchema = z
     number: z.number().int().positive(),
     title: z.string(),
     state: z.enum(["open", "draft", "merged", "closed"]),
-    updatedAt: z.string(),
     threadIds: z.array(z.string().startsWith("thr_")).min(1),
   })
   .strict();

@@ -48,6 +48,29 @@ function taskThreadRow(id: string, threadId: string, title: string) {
   };
 }
 
+function statusRows(input: unknown, row: (threadId: string) => unknown) {
+  const { keys } = input as { keys: string[] };
+  return Object.fromEntries(keys.map((key) => [key, row(key)]));
+}
+
+function changeRow(pullRequest: { number: number; title: string; state: string } | null) {
+  return {
+    state: "change",
+    key: "gh:acme/bb:acme:bb/pill",
+    branch: "bb/pill",
+    pullRequest: pullRequest && {
+      ...pullRequest,
+      url: `https://github.com/acme/bb/pull/${pullRequest.number}`,
+    },
+    line: "",
+    source: "checkout",
+    forge: { state: "read", at: 1 },
+    chips: [],
+    tone: "neutral",
+    sort: 0,
+  };
+}
+
 function detailRpc(overrides: Record<string, unknown> = {}) {
   return {
     listProjects: () => ({
@@ -75,10 +98,8 @@ function detailRpc(overrides: Record<string, unknown> = {}) {
     listTaskThreads: () => ({
       taskThreads: [taskThreadRow(THREAD_ROW_ID, "thr_worker000", "Worker")],
     }),
-    listTaskPullRequests: () => ({
-      pullRequests: [],
-      unavailableThreadIds: [],
-    }),
+    // Source Control's keyed read; the test host routes by method name.
+    statusForThread: (input: unknown) => statusRows(input, () => ({ state: "none" })),
     listComments: () => ({ comments: [] }),
     listBbProjects: () => ({ bbProjects: [] }),
     ...overrides,
@@ -93,19 +114,10 @@ describe("task detail pull request pills", () => {
       {
         openUrl: () => true,
         rpc: detailRpc({
-          listTaskPullRequests: () => ({
-            pullRequests: [
-              {
-                url: "https://github.com/acme/bb/pull/12",
-                number: 12,
-                title: "Ship the PR pill",
-                state: "merged",
-                updatedAt: "2026-07-16T10:00:00.000Z",
-                threadIds: ["thr_worker000"],
-              },
-            ],
-            unavailableThreadIds: [],
-          }),
+          statusForThread: (input: unknown) =>
+            statusRows(input, () =>
+              changeRow({ number: 12, title: "Ship the PR pill", state: "merged" }),
+            ),
         }),
       },
     );
@@ -121,7 +133,7 @@ describe("task detail pull request pills", () => {
     expect(slot.navigateCalls).toEqual([]);
   });
 
-  it("marks threads whose PR lookup failed and stays quiet otherwise", async () => {
+  it("marks threads whose PR read failed and stays quiet for threads without one", async () => {
     const slot = renderSlot(
       app.navPanels[0]!,
       { subPath: "task/TSK-5" },
@@ -133,10 +145,16 @@ describe("task detail pull request pills", () => {
               taskThreadRow(OFFLINE_ROW_ID, "thr_offline00", "Offline worker"),
             ],
           }),
-          listTaskPullRequests: () => ({
-            pullRequests: [],
-            unavailableThreadIds: ["thr_offline00"],
-          }),
+          // GitHub couldn't be read for the offline worker; the other has no PR.
+          statusForThread: (input: unknown) =>
+            statusRows(input, (threadId) =>
+              threadId === "thr_offline00"
+                ? {
+                    ...changeRow(null),
+                    forge: { state: "failed", at: null, problem: { kind: "auth" } },
+                  }
+                : changeRow(null),
+            ),
         }),
       },
     );
@@ -220,48 +238,85 @@ describe("task detail pull request pills", () => {
     await waitFor(() => expect(slot.queryByText("Worker")).toBeNull());
   });
 
-  it("revalidates PR state on window focus without a task-thread mutation", async () => {
-    const basePullRequest = {
-      url: "https://github.com/acme/bb/pull/12",
-      number: 12,
-      title: "Ship the PR pill",
-      updatedAt: "2026-07-16T10:00:00.000Z",
-      threadIds: ["thr_worker000"],
-    };
-    let lookupCount = 0;
+  it("marks every thread's PR unavailable when Source Control can't answer", async () => {
     const slot = renderSlot(
       app.navPanels[0]!,
       { subPath: "task/TSK-5" },
       {
         rpc: detailRpc({
-          listTaskPullRequests: () => {
-            lookupCount += 1;
-            return {
-              pullRequests: [
-                {
-                  ...basePullRequest,
-                  state: lookupCount === 1 ? "open" : "merged",
-                },
-              ],
-              unavailableThreadIds: [],
-            };
+          listTaskThreads: () => ({
+            taskThreads: [
+              taskThreadRow(THREAD_ROW_ID, "thr_worker000", "Worker"),
+              taskThreadRow(OFFLINE_ROW_ID, "thr_offline00", "Offline worker"),
+            ],
+          }),
+          statusForThread: () => {
+            throw new Error("Plugin source-control is disabled");
           },
         }),
       },
     );
 
-    await slot.findByRole("link", {
-      name: "Pull request #12: Ship the PR pill (Open)",
-    });
+    await waitFor(() => expect(slot.getAllByText("PR unavailable")).toHaveLength(2));
+    expect(slot.getByText("Offline worker")).toBeDefined();
+  });
 
-    window.dispatchEvent(new Event("focus"));
+  it("updates the pill when Source Control reports the thread changed", async () => {
+    let state = "open";
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "task/TSK-5" },
+      {
+        rpc: detailRpc({
+          statusForThread: (input: unknown) =>
+            statusRows(input, () => changeRow({ number: 12, title: "Ship the PR pill", state })),
+        }),
+      },
+    );
+
+    await slot.findByRole("link", { name: "Pull request #12: Ship the PR pill (Open)" });
+    state = "merged";
+    await slot.experimental_invalidateRpc(["thread:thr_worker000"], "source-control");
 
     await waitFor(() => {
       expect(
-        slot.getByRole("link", {
-          name: "Pull request #12: Ship the PR pill (Merged)",
-        }),
+        slot.getByRole("link", { name: "Pull request #12: Ship the PR pill (Merged)" }),
       ).toBeTruthy();
+    });
+  });
+
+  it("asks Source Control to re-read open pull requests when the window regains focus", async () => {
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "task/TSK-5" },
+      {
+        rpc: detailRpc({
+          listTaskThreads: () => ({
+            taskThreads: [
+              taskThreadRow(THREAD_ROW_ID, "thr_worker000", "Worker"),
+              taskThreadRow(OFFLINE_ROW_ID, "thr_merged000", "Merged worker"),
+            ],
+          }),
+          statusForThread: (input: unknown) =>
+            statusRows(input, (threadId) =>
+              threadId === "thr_worker000"
+                ? changeRow({ number: 12, title: "Ship the PR pill", state: "open" })
+                : changeRow({ number: 9, title: "Done", state: "merged" }),
+            ),
+          refreshThread: () => ({ ok: true }),
+        }),
+      },
+    );
+
+    await slot.findByRole("link", { name: "Pull request #9: Done (Merged)" });
+    await slot.findByRole("link", { name: "Pull request #12: Ship the PR pill (Open)" });
+    expect(slot.rpcCalls.filter((call) => call.method === "refreshThread")).toEqual([]);
+    window.dispatchEvent(new Event("focus"));
+
+    await waitFor(() => {
+      expect(slot.rpcCalls.filter((call) => call.method === "refreshThread")).toEqual([
+        { method: "refreshThread", input: { threadId: "thr_worker000" } },
+      ]);
     });
   });
 });

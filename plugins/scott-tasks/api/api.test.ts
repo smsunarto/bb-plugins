@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { registerAttachments } from "../attachments";
 import { attachmentDownloadUrl } from "../shared/attachments";
 import { tasksRpcContract } from "../shared/contract";
@@ -1376,202 +1376,92 @@ describe("Tasks RPC domain API", () => {
     await harness.dispose();
   });
 
-  it("resolves task pull requests from environment metadata, deduped by URL", async () => {
-    const pullRequestsByEnvironment: Record<string, PullRequestLookup> = {
-      env_shared: {
-        outcome: "available",
-        pullRequest: makePullRequest({
-          number: 12,
-          url: "https://github.com/acme/bb/pull/12",
-          state: "open",
-          updatedAt: "2026-07-15T10:00:00.000Z",
-        }),
+  it("shows each thread's pull request from Source Control, one entry per PR", async () => {
+    const rows: Record<string, unknown> = {
+      thr_writer00: changeRow(prRow({ number: 12, state: "open" })),
+      thr_reviewer0: changeRow(prRow({ number: 12, state: "open" })),
+      thr_drafter00: changeRow(prRow({ number: 14, title: "Still a draft", state: "draft" })),
+      thr_merger000: changeRow(prRow({ number: 9, title: "Older merged work", state: "merged" })),
+      thr_closer000: changeRow(prRow({ number: 7, title: "Abandoned", state: "closed" })),
+      thr_no_pr0000: changeRow(null),
+      thr_no_repo00: { state: "none" },
+      thr_no_remote: changeRow(null, { state: "unsupported" }),
+      // GitHub couldn't be read: unknown, not "no PR".
+      thr_gh_failed: changeRow(null, { state: "failed", at: null, problem: { kind: "auth" } }),
+      // A failed re-read keeps the last good pull request.
+      thr_gh_stale0: changeRow(prRow({ number: 5, title: "Last good read", state: "merged" }), {
+        state: "failed",
+        at: 1,
+        problem: { kind: "timeout" },
+      }),
+      // The worktree is gone; Source Control remembers the thread's Change.
+      thr_gone00000: {
+        ...changeRow(prRow({ number: 6, title: "Landed", state: "merged" })),
+        source: "remembered",
       },
-      env_merged: {
-        outcome: "available",
-        pullRequest: makePullRequest({
-          number: 9,
-          title: "Older merged work",
-          url: "https://github.com/acme/bb/pull/9",
-          state: "merged",
-          updatedAt: "2026-07-16T09:00:00.000Z",
-        }),
-      },
-      env_no_pr: { outcome: "absent" },
-    };
-    const environmentByThread: Record<string, string | null> = {
-      thr_writer00: "env_shared",
-      thr_reviewer0: "env_shared",
-      thr_merger000: "env_merged",
-      thr_no_env000: null,
-      thr_no_pr0000: "env_no_pr",
+      thr_garbled00: { state: "change", pullRequest: { number: "twelve" } },
+      // thr_missing00 has no row.
     };
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
-      sdk: {
-        threads: {
-          get: async ({ threadId }: { threadId: string }) => {
-            if (threadId === "thr_deleted00") {
-              throw new Error("thread_not_found");
-            }
-            return makeThreadResponse({
-              id: threadId,
-              environmentId: environmentByThread[threadId] ?? null,
-            });
-          },
-        },
-        plugins: githubPrStatusRpc((environmentId) => pullRequestsByEnvironment[environmentId]!),
-      },
+      sdk: { plugins: sourceControlRpc({ status: (threadId) => rows[threadId] }) },
     });
     const store = createStore(bb);
     registerTasksApi(bb, store);
-    const project = store.tasks.createProject({
-      name: "PRs",
-      prefix: "PR",
-      color: "blue",
-    });
-    const task = store.tasks.createTask({
-      projectId: project.id,
-      title: "Ship it",
-    });
-    for (const threadId of [...Object.keys(environmentByThread), "thr_deleted00"]) {
-      store.tasks.upsertTaskThread({
-        taskId: task.id,
-        threadId,
-        presetName: "Default",
-        title: threadId,
-        liveStatus: "working",
-      });
-    }
+    const task = taskWithThreads(store, [...Object.keys(rows), "thr_missing00"]);
+    const threadOrder = store.tasks.listTaskThreads(task.id).map((thread) => thread.threadId);
+    const inThreadOrder = (threadIds: string[]) =>
+      [...threadIds].sort((left, right) => threadOrder.indexOf(left) - threadOrder.indexOf(right));
 
     const result = tasksRpcContract.listTaskPullRequests.output.parse(
       await harness.callRpc("listTaskPullRequests", { taskId: task.id }),
     );
 
-    expect(
-      result.pullRequests.map((pullRequest) => ({
-        ...pullRequest,
-        threadIds: [...pullRequest.threadIds].sort(),
-      })),
-    ).toEqual([
-      {
-        url: "https://github.com/acme/bb/pull/9",
-        number: 9,
-        title: "Older merged work",
-        state: "merged",
-        updatedAt: "2026-07-16T09:00:00.000Z",
-        threadIds: ["thr_merger000"],
-      },
-      {
-        url: "https://github.com/acme/bb/pull/12",
-        number: 12,
-        title: "Fix the pill",
-        state: "open",
-        updatedAt: "2026-07-15T10:00:00.000Z",
-        threadIds: ["thr_reviewer0", "thr_writer00"],
-      },
-    ]);
-    expect(result.unavailableThreadIds).toEqual(["thr_deleted00"]);
-    expect(pullRequestKeys(harness)).toEqual([["env_merged", "env_no_pr", "env_shared"]]);
-
-    await harness.dispose();
-  });
-
-  it("separates unavailable lookups (auth failure, asleep machine) from genuine absence", async () => {
-    const { bb, harness } = createFakePluginHost({
-      pluginId: "tasks",
-      sdk: {
-        threads: {
-          get: async ({ threadId }: { threadId: string }) =>
-            makeThreadResponse({
-              id: threadId,
-              environmentId:
-                threadId === "thr_absent000"
-                  ? "env_absent"
-                  : threadId === "thr_crash0000"
-                    ? "env_crash"
-                    : "env_no_auth",
-            }),
-        },
-        plugins: githubPrStatusRpc((environmentId) => {
-          if (environmentId === "env_absent") return { outcome: "absent" };
-          if (environmentId === "env_crash") {
-            return { outcome: "unavailable", message: "Host is suspended" };
-          }
-          return {
-            outcome: "unavailable",
-            message: "gh pr view failed: authentication required",
-          };
-        }),
-      },
+    const byNumber = new Map(result.pullRequests.map((pr) => [pr.number, pr]));
+    expect(byNumber.get(12)).toEqual({
+      url: "https://github.com/acme/bb/pull/12",
+      number: 12,
+      title: "Fix the pill",
+      state: "open",
+      threadIds: inThreadOrder(["thr_writer00", "thr_reviewer0"]),
     });
-    const store = createStore(bb);
-    registerTasksApi(bb, store);
-    const project = store.tasks.createProject({
-      name: "PRs",
-      prefix: "PR",
-      color: "blue",
-    });
-    const task = store.tasks.createTask({
-      projectId: project.id,
-      title: "Ship it",
-    });
-    for (const threadId of ["thr_no_auth00", "thr_no_auth01", "thr_absent000", "thr_crash0000"]) {
-      store.tasks.upsertTaskThread({
-        taskId: task.id,
-        threadId,
-        presetName: "Default",
-        title: threadId,
-        liveStatus: "working",
-      });
-    }
-
-    const result = tasksRpcContract.listTaskPullRequests.output.parse(
-      await harness.callRpc("listTaskPullRequests", { taskId: task.id }),
+    expect(byNumber.get(14)).toMatchObject({ state: "draft", threadIds: ["thr_drafter00"] });
+    expect(byNumber.get(9)).toMatchObject({ state: "merged", threadIds: ["thr_merger000"] });
+    expect(byNumber.get(7)).toMatchObject({ state: "closed", threadIds: ["thr_closer000"] });
+    expect(byNumber.get(5)).toMatchObject({ state: "merged", threadIds: ["thr_gh_stale0"] });
+    expect(byNumber.get(6)).toMatchObject({ state: "merged", threadIds: ["thr_gone00000"] });
+    expect(result.pullRequests).toHaveLength(6);
+    // Pull requests follow the task's thread order, by their first thread.
+    const firstThreadPositions = result.pullRequests.map((pr) =>
+      threadOrder.indexOf(pr.threadIds[0]!),
     );
-    expect(result.pullRequests).toEqual([]);
-    expect([...result.unavailableThreadIds].sort()).toEqual([
-      "thr_crash0000",
-      "thr_no_auth00",
-      "thr_no_auth01",
+    expect(firstThreadPositions).toEqual([...firstThreadPositions].sort((a, b) => a - b));
+    expect(result.unavailableThreadIds).toEqual(
+      inThreadOrder(["thr_garbled00", "thr_gh_failed", "thr_missing00"]),
+    );
+    // Open and draft pull requests are read again before they're reported.
+    expect(statusReads(harness)).toEqual([
+      [...threadOrder].sort(),
+      ["thr_drafter00", "thr_reviewer0", "thr_writer00"],
     ]);
 
     await harness.dispose();
   });
 
-  it("reports every looked-up thread unavailable when GitHub PR Status can't answer", async () => {
+  it("reports every thread's pull request unavailable when Source Control can't answer", async () => {
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
       sdk: {
-        threads: {
-          get: async ({ threadId }: { threadId: string }) =>
-            makeThreadResponse({ id: threadId, environmentId: "env_a" }),
-        },
         plugins: {
           callRpc: async () => {
-            throw new Error("Plugin bb--github-pr-status is disabled");
+            throw new Error("Plugin source-control is disabled");
           },
         },
       },
     });
     const store = createStore(bb);
     registerTasksApi(bb, store);
-    const project = store.tasks.createProject({
-      name: "PRs",
-      prefix: "PR",
-      color: "blue",
-    });
-    const task = store.tasks.createTask({
-      projectId: project.id,
-      title: "Ship it",
-    });
-    store.tasks.upsertTaskThread({
-      taskId: task.id,
-      threadId: "thr_alpha0000",
-      presetName: "Default",
-      title: "thr_alpha0000",
-      liveStatus: "working",
-    });
+    const task = taskWithThreads(store, ["thr_alpha0000"]);
 
     await expect(harness.callRpc("listTaskPullRequests", { taskId: task.id })).resolves.toEqual({
       pullRequests: [],
@@ -1581,151 +1471,88 @@ describe("Tasks RPC domain API", () => {
     await harness.dispose();
   });
 
-  it("reads every environment's pull request in one request", async () => {
-    const resolvers = new Map<string, (lookup: PullRequestLookup) => void>();
-    const { bb, harness } = createFakePluginHost({
-      pluginId: "tasks",
-      sdk: {
-        threads: {
-          get: async ({ threadId }: { threadId: string }) =>
-            makeThreadResponse({
-              id: threadId,
-              environmentId: threadId === "thr_beta00000" ? "env_b" : "env_a",
-            }),
-        },
-        plugins: githubPrStatusRpc(
-          (environmentId) =>
-            new Promise<PullRequestLookup>((resolve) => {
-              resolvers.set(environmentId, resolve);
-            }),
-        ),
-      },
-    });
-    const store = createStore(bb);
-    registerTasksApi(bb, store);
-    const project = store.tasks.createProject({
-      name: "PRs",
-      prefix: "PR",
-      color: "blue",
-    });
-    const task = store.tasks.createTask({
-      projectId: project.id,
-      title: "Ship it",
-    });
-    for (const threadId of ["thr_alpha0000", "thr_alpha0001", "thr_beta00000"]) {
-      store.tasks.upsertTaskThread({
-        taskId: task.id,
-        threadId,
-        presetName: "Default",
-        title: threadId,
-        liveStatus: "working",
-      });
-    }
-
-    const resultPromise = harness.callRpc("listTaskPullRequests", {
-      taskId: task.id,
-    });
-    await vi.waitFor(() => {
-      expect([...resolvers.keys()].sort()).toEqual(["env_a", "env_b"]);
-    });
-    expect(pullRequestKeys(harness)).toEqual([["env_a", "env_b"]]);
-
-    resolvers.get("env_a")!({
-      outcome: "available",
-      pullRequest: makePullRequest({
-        number: 21,
-        url: "https://github.com/acme/bb/pull/21",
-      }),
-    });
-    resolvers.get("env_b")!({ outcome: "absent" });
-
-    const result = tasksRpcContract.listTaskPullRequests.output.parse(await resultPromise);
-    expect(result.pullRequests).toHaveLength(1);
-    expect(result.pullRequests[0]).toMatchObject({ number: 21 });
-    expect([...result.pullRequests[0]!.threadIds].sort()).toEqual([
-      "thr_alpha0000",
-      "thr_alpha0001",
-    ]);
-    expect(pullRequestKeys(harness)).toEqual([["env_a", "env_b"]]);
-
-    await harness.dispose();
-  });
-
-  it("keeps the freshest payload when two environments share a PR URL", async () => {
-    const lookupByEnvironment: Record<string, PullRequestLookup> = {
-      env_stale: {
-        outcome: "available",
-        pullRequest: makePullRequest({
-          number: 30,
-          title: "Before merge",
-          state: "open",
-          url: "https://github.com/acme/bb/pull/30",
-          updatedAt: "2026-07-15T08:00:00.000Z",
-        }),
-      },
-      env_fresh: {
-        outcome: "available",
-        pullRequest: makePullRequest({
-          number: 30,
-          title: "After merge",
-          state: "merged",
-          url: "https://github.com/acme/bb/pull/30",
-          updatedAt: "2026-07-16T12:00:00.000Z",
-        }),
-      },
+  it("asks Source Control to re-read unread threads and open pull requests, once each", async () => {
+    const rows: Record<string, unknown> = {
+      thr_known0000: changeRow(prRow({ number: 1, state: "merged" })),
+      thr_no_pr0000: changeRow(null),
+      thr_opened000: changeRow(prRow({ number: 3, state: "open" })),
+      thr_drafted00: changeRow(prRow({ number: 4, state: "draft" })),
+      thr_unread000: { state: "pending" },
+      thr_asleep000: { state: "pending" },
+      // The checkout is read, its GitHub pull request not yet.
+      thr_no_forge0: changeRow(null, { state: "unread" }),
+      thr_broken000: { state: "pending" },
     };
+    const refreshed: string[] = [];
     const { bb, harness } = createFakePluginHost({
       pluginId: "tasks",
       sdk: {
-        threads: {
-          get: async ({ threadId }: { threadId: string }) =>
-            makeThreadResponse({
-              id: threadId,
-              environmentId: threadId === "thr_stale0000" ? "env_stale" : "env_fresh",
-            }),
-        },
-        plugins: githubPrStatusRpc((environmentId) => lookupByEnvironment[environmentId]!),
+        plugins: sourceControlRpc({
+          status: (threadId) => rows[threadId],
+          refresh: (threadId) => {
+            refreshed.push(threadId);
+            if (threadId === "thr_unread000") rows[threadId] = changeRow(prRow({ number: 2 }));
+            if (threadId === "thr_opened000") {
+              rows[threadId] = changeRow(prRow({ number: 3, state: "merged" }));
+            }
+            if (threadId === "thr_no_forge0") rows[threadId] = changeRow(null);
+            if (threadId === "thr_broken000") throw new Error("host timed out");
+            // thr_asleep000 stays pending: its host never answered.
+          },
+        }),
       },
     });
     const store = createStore(bb);
     registerTasksApi(bb, store);
-    const project = store.tasks.createProject({
-      name: "PRs",
-      prefix: "PR",
-      color: "blue",
-    });
-    const task = store.tasks.createTask({
-      projectId: project.id,
-      title: "Ship it",
-    });
-    for (const threadId of ["thr_stale0000", "thr_fresh0000"]) {
-      store.tasks.upsertTaskThread({
-        taskId: task.id,
-        threadId,
-        presetName: "Default",
-        title: threadId,
-        liveStatus: "working",
-      });
-    }
+    const task = taskWithThreads(store, Object.keys(rows));
 
     const result = tasksRpcContract.listTaskPullRequests.output.parse(
       await harness.callRpc("listTaskPullRequests", { taskId: task.id }),
     );
-    expect(
-      result.pullRequests.map((pullRequest) => ({
-        ...pullRequest,
-        threadIds: [...pullRequest.threadIds].sort(),
-      })),
-    ).toEqual([
-      {
-        url: "https://github.com/acme/bb/pull/30",
-        number: 30,
-        title: "After merge",
-        state: "merged",
-        updatedAt: "2026-07-16T12:00:00.000Z",
-        threadIds: ["thr_fresh0000", "thr_stale0000"],
-      },
-    ]);
+
+    const stale = [
+      "thr_asleep000",
+      "thr_broken000",
+      "thr_drafted00",
+      "thr_no_forge0",
+      "thr_opened000",
+      "thr_unread000",
+    ];
+    expect([...refreshed].sort()).toEqual(stale);
+    expect(result.pullRequests.map((pr) => [pr.number, pr.state, pr.threadIds])).toEqual(
+      expect.arrayContaining([
+        [1, "merged", ["thr_known0000"]],
+        [2, "open", ["thr_unread000"]],
+        [3, "merged", ["thr_opened000"]],
+        [4, "draft", ["thr_drafted00"]],
+      ]),
+    );
+    expect(result.pullRequests).toHaveLength(4);
+    expect([...result.unavailableThreadIds].sort()).toEqual(["thr_asleep000", "thr_broken000"]);
+    expect(statusReads(harness)).toEqual([Object.keys(rows).sort(), stale]);
+
+    await harness.dispose();
+  });
+
+  it("reads Source Control in batches of 200 threads", async () => {
+    const threadIds = Array.from(
+      { length: 201 },
+      (_, index) => `thr_bulk${String(index).padStart(5, "0")}`,
+    );
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: { plugins: sourceControlRpc({ status: () => changeRow(null) }) },
+    });
+    const store = createStore(bb);
+    registerTasksApi(bb, store);
+    const task = taskWithThreads(store, threadIds);
+
+    await expect(harness.callRpc("listTaskPullRequests", { taskId: task.id })).resolves.toEqual({
+      pullRequests: [],
+      unavailableThreadIds: [],
+    });
+    expect(statusReads(harness).map((keys) => keys.length)).toEqual([200, 1]);
+    expect(statusReads(harness).flat().sort()).toEqual(threadIds);
 
     await harness.dispose();
   });
@@ -1917,14 +1744,27 @@ describe("Tasks RPC domain API", () => {
   });
 });
 
-type PullRequestLookup =
-  | { outcome: "available"; pullRequest: ReturnType<typeof makePullRequest> }
-  | { outcome: "absent" }
-  | { outcome: "unavailable"; message: string };
+function taskWithThreads(store: ReturnType<typeof createStore>, threadIds: readonly string[]) {
+  const project = store.tasks.createProject({ name: "PRs", prefix: "PR", color: "blue" });
+  const task = store.tasks.createTask({ projectId: project.id, title: "Ship it" });
+  for (const threadId of threadIds) {
+    store.tasks.upsertTaskThread({
+      taskId: task.id,
+      threadId,
+      presetName: "Default",
+      title: threadId,
+      liveStatus: "working",
+    });
+  }
+  return task;
+}
 
-function githubPrStatusRpc(
-  lookup: (environmentId: string) => PullRequestLookup | Promise<PullRequestLookup>,
-) {
+// Source Control's public `statusForThread` and `refreshThread`, as another
+// plugin reaches them through `bb.sdk.plugins.callRpc`.
+function sourceControlRpc(handlers: {
+  status: (threadId: string) => unknown;
+  refresh?: (threadId: string) => void;
+}) {
   return {
     async callRpc<TOutput>(args: {
       pluginId: string;
@@ -1932,54 +1772,65 @@ function githubPrStatusRpc(
       input?: unknown;
       outputSchema: { parse(value: unknown): TOutput };
     }): Promise<TOutput> {
-      expect([args.pluginId, args.method]).toEqual(["bb--github-pr-status", "pullRequests"]);
+      expect(args.pluginId).toBe("source-control");
+      if (args.method === "refreshThread") {
+        handlers.refresh?.((args.input as { threadId: string }).threadId);
+        return args.outputSchema.parse({ ok: true });
+      }
+      expect(args.method).toBe("statusForThread");
       const { keys } = args.input as { keys: string[] };
       return args.outputSchema.parse(
-        Object.fromEntries(await Promise.all(keys.map(async (key) => [key, await lookup(key)]))),
+        Object.fromEntries(
+          keys.flatMap((key) => {
+            const row = handlers.status(key);
+            return row === undefined ? [] : [[key, row]];
+          }),
+        ),
       );
     },
   };
 }
 
-function pullRequestKeys(harness: { sdk: { callsTo(path: string): unknown[][] } }) {
+function statusReads(harness: { sdk: { callsTo(path: string): unknown[][] } }) {
   return harness.sdk
     .callsTo("plugins.callRpc")
-    .map(([input]) => [...(input as { input: { keys: string[] } }).input.keys].sort());
+    .map(([args]) => args as { method: string; input: { keys: string[] } })
+    .filter((args) => args.method === "statusForThread")
+    .map((args) => [...args.input.keys].sort());
 }
 
-function makePullRequest(
+/** A `statusForThread` row for a thread whose checkout Source Control has read. */
+function changeRow(
+  pullRequest: ReturnType<typeof prRow> | null,
+  forge: Record<string, unknown> = { state: "read", at: 1 },
+) {
+  return {
+    state: "change",
+    key: "gh:acme/bb:acme:bb/fix-the-pill",
+    branch: "bb/fix-the-pill",
+    pullRequest,
+    line: "Ready for review",
+    source: "checkout",
+    forge,
+    chips: [],
+    tone: "neutral",
+    sort: 0,
+  };
+}
+
+function prRow(
   overrides: Partial<{
     number: number;
     title: string;
     state: "open" | "draft" | "merged" | "closed";
-    url: string;
-    updatedAt: string;
   }> = {},
 ) {
+  const number = overrides.number ?? 12;
   return {
-    number: 12,
+    number,
     title: "Fix the pill",
+    url: `https://github.com/acme/bb/pull/${number}`,
     state: "open" as const,
-    url: "https://github.com/acme/bb/pull/12",
-    baseRefName: "main",
-    headRefName: "bb/fix-the-pill",
-    updatedAt: "2026-07-15T10:00:00.000Z",
-    autoMerge: false,
-    inMergeQueue: false,
-    checks: {
-      state: "passing" as const,
-      totalCount: 1,
-      passedCount: 1,
-      failedCount: 0,
-      pendingCount: 0,
-    },
-    review: { state: "none" as const, reviewRequestCount: 0 },
-    mergeability: {
-      state: "mergeable" as const,
-      mergeStateStatus: null,
-      mergeable: null,
-    },
-    attention: "none" as const,
     ...overrides,
   };
 }

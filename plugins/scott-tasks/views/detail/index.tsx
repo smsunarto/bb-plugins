@@ -22,7 +22,7 @@ import {
   useTasksLiveQuery,
   useTasksRpc,
 } from "../../shell/data.js";
-import { attachmentsQuery, pullRequestsQuery, tasksKeys } from "../../shell/query.js";
+import { attachmentsQuery, tasksKeys } from "../../shell/query.js";
 import { useTasksNavigation } from "../../shell/routes.js";
 import { TasksEditor } from "../../editor/tasks-editor.js";
 import { TaskActivity } from "../activity/task-activity.js";
@@ -45,8 +45,6 @@ interface DetailViewProps {
 }
 
 const DESCRIPTION_SAVE_DELAY_MS = 800;
-const ACTIVE_PULL_REQUEST_REFRESH_MS = 60_000;
-
 function SubTaskDonut({ subtasks, onClick }: { subtasks: Task[]; onClick: () => void }) {
   if (subtasks.length === 0) return null;
   const done = subtasks.filter((subtask) => subtask.status === "done").length;
@@ -189,12 +187,6 @@ function DetailSkeleton() {
   );
 }
 
-function hasActivePullRequest(result: { pullRequests: { state: string }[] } | undefined): boolean {
-  return (result?.pullRequests ?? []).some(
-    (pullRequest) => pullRequest.state === "open" || pullRequest.state === "draft",
-  );
-}
-
 function TaskDetail({ task }: { task: Task }) {
   const rpc = useTasksRpc();
   const queryClient = useQueryClient();
@@ -253,13 +245,6 @@ function TaskDetail({ task }: { task: Task }) {
     q.from({ link: taskThreadsCollection }).where(({ link }) => eq(link.taskId, task.id)),
   );
   const presets = usePresets();
-  // An open pull request can change on GitHub without a Tasks signal.
-  const pullRequests = useQuery({
-    ...pullRequestsQuery(task.id),
-    refetchOnWindowFocus: true,
-    refetchInterval: (query) =>
-      hasActivePullRequest(query.state.data) ? ACTIVE_PULL_REQUEST_REFRESH_MS : false,
-  });
   const refreshAttachments = () =>
     queryClient.invalidateQueries({ queryKey: tasksKeys.attachments(task.id) });
 
@@ -454,17 +439,12 @@ function TaskDetail({ task }: { task: Task }) {
             <div className="mt-6">
               <ThreadsSection
                 threads={threads.data ?? []}
-                pullRequests={pullRequests.data?.pullRequests}
-                unavailableThreadIds={pullRequests.data?.unavailableThreadIds ?? []}
                 onDetach={async (thread) => {
                   await delegationRpc.call("taskThreadsDetach", {
                     taskId: task.id,
                     threadId: thread.threadId,
                   });
-                  await Promise.all([
-                    queryClient.invalidateQueries({ queryKey: ["taskThreads"] }),
-                    queryClient.invalidateQueries({ queryKey: tasksKeys.pullRequests(task.id) }),
-                  ]);
+                  await queryClient.invalidateQueries({ queryKey: ["taskThreads"] });
                 }}
                 onError={(message) => push(message)}
               />
