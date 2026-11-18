@@ -104,6 +104,10 @@ export const roleValues = {
   "shell.halftone70": withAlpha(palette.shell.halftone, 0xb3),
   "solid.recessed": flatten(layers.subtle, palette.shell.panel),
   "solid.raised": flatten(layers.control, palette.shell.panel),
+  // The composer's edge: 18% ink flattened on the page, drawn 0.5px wide. Every
+  // border, field, and sidebar edge takes it, so stacked edges meet without a
+  // bright overlap and each line reads as the composer's hairline.
+  "solid.hairline": flatten(withAlpha(palette.shell.ink, 0x2e), palette.shell.panel),
   // Pierre mixes the diff selection target into a line at 25% (40% in the
   // gutter) in lab. These opaque targets land that mix on the 14% selected
   // layer over the content ground.
@@ -195,6 +199,7 @@ export function renderPalettePreview(): string {
         ["Chrome / code", "ground.content"],
         ["Popover / recessed", "solid.recessed"],
         ["Raised solid", "solid.raised"],
+        ["Hairline edge", "solid.hairline"],
       ],
     ],
     [
@@ -489,7 +494,7 @@ const darkExpected = declarationMap({
   "--secondary": roleValues["layer.control"],
   "--accent": roleValues["layer.hover"],
   "--muted": roleValues["layer.selected"],
-  "--input": roleValues["layer.edge"],
+  "--input": roleValues["solid.hairline"],
   "--control-background": roleValues["layer.subtle"],
   "--control-primary": roleValues["layer.selected"],
   "--control-primary-hover": roleValues["layer.active"],
@@ -500,15 +505,17 @@ const darkExpected = declarationMap({
   "--surface-raised-solid": roleValues["solid.raised"],
   "--surface-scrim": roleValues["shell.panelScrim"],
   "--agent-surface-background": roleValues["layer.control"],
-  "--agent-surface-border": roleValues["layer.hover"],
+  "--agent-surface-border": roleValues["solid.hairline"],
   "--state-hover": roleValues["layer.hover"],
   "--state-active": roleValues["layer.active"],
   "--surface-selected": roleValues["layer.selected"],
   "--surface-selected-border": roleValues["layer.active"],
   "--border-seam": roleValues["layer.subtle"],
   "--border-seam-vertical": "var(--border-seam)",
-  "--border": roleValues["layer.edge"],
-  "--border-hairline": roleValues["layer.hover"],
+  "--border": roleValues["solid.hairline"],
+  "--hairline-width": "0.5px",
+  "--hairline-ring-width": "1px",
+  "--border-hairline": roleValues["solid.hairline"],
   "--foreground": palette.shell.ink,
   "--muted-foreground": palette.shell.secondary,
   "--readback-foreground": roleValues["shell.ink55"],
@@ -549,7 +556,7 @@ const darkExpected = declarationMap({
   "--sidebar-foreground": palette.shell.secondary,
   "--sidebar-accent": roleValues["layer.hover"],
   "--sidebar-accent-foreground": palette.shell.ink,
-  "--sidebar-border": roleValues["layer.edge"],
+  "--sidebar-border": roleValues["solid.hairline"],
   "--machine-1": palette.identity.blue,
   "--machine-2": palette.identity.cyan,
   "--machine-3": palette.identity.mint,
@@ -744,7 +751,7 @@ const requiredRules: Array<{
     selector: ".dark button.bg-secondary",
     declarations: {
       "background-color": "var(--secondary)",
-      border: "1px solid var(--input)",
+      "border-width": "0",
     },
   },
   {

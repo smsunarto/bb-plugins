@@ -15,6 +15,7 @@
 - Before adding, composing, or restyling shadcn components, read [shadcn](.agents/skills/shadcn/SKILL.md). Where it differs from the bullet above, such as which registry to add from, this file wins.
 - `scripts/style-contract.test.ts` fails on new style drift (hand-picked edges, raw colors, local primitive copies, CSS selecting bb's DOM by Tailwind class) and names the fix. After removing drift, run `bun scripts/style-contract.ts --update plugins/<id>`.
 - Code diffs, syntax highlighting: https://diffs.com
+- **Touch targets:** give every control a phone user taps (compact `max-md` or `pointer: coarse` layouts) a hit area of at least 44×44 CSS px, Apple's HIG minimum (44 pt is 44 CSS px on iPhone). The glyph may stay smaller when padding brings the target to 44px.
 - Prefer to use an existing color palette from `/plugins/monokai` theme. If a new color is needed, it should be added to the theme before being used. This is so that when we update the theme, the color change is applied to all plugins that use it.
 - Always check whether the SDK provides an API that can be used to achieve the desired functionality before handrolling our own solution.
 - Before adding or changing an agent tool, or reviewing its description, read and follow [tool-descriptions](.agents/skills/tool-descriptions/SKILL.md).

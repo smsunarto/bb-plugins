@@ -28,6 +28,13 @@ const customIcons = new Map<string, { name: string; body: string; solid?: boolea
     { name: "Installed Plugin Mentions", body: '<path d="M4 9h16M4 15h16M10 3L8 21m8-18l-2 18"/>' },
   ],
   [
+    "captain",
+    {
+      name: "Captain",
+      body: '<path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 0 20 0h-3"/><circle cx="12" cy="5" r="3"/>',
+    },
+  ],
+  [
     "devin",
     {
       name: "Devin",

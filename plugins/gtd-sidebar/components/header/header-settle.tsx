@@ -1,7 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react";
 import {
+  experimental_Icon as RegistryIcon,
   experimental_useSidebarThreads as useSidebarThreads,
   experimental_useThreadActions as useThreadActions,
+  useBbNavigate,
   type PluginSidebarThread,
 } from "@get-bb/plugin-sdk/app";
 import { Button } from "../ui/button";
@@ -13,27 +15,56 @@ export const HEADER_SETTLE_ATTRIBUTE = "data-gtd-header-settle";
 
 const ARCHIVE_KEYS = [ARCHIVE_ACTION_KEY];
 
+// 28px with a 16px glyph, as bb's header icon buttons; under a coarse pointer
+// a 44px touch target (AGENTS.md) with a 22px glyph.
+const ICON_BUTTON_CLASS =
+  "size-7 p-0 max-md:pointer-coarse:size-11 [&_[data-icon-root]]:size-4 max-md:pointer-coarse:[&_[data-icon-root]]:size-[22px]";
+
+interface HeaderActionProps {
+  threadId: string;
+  projectId: string;
+  isCompactViewport: boolean;
+}
+
 /** bb still mounts the legacy thread-header slot; SDK 0.6.92 dropped its types. */
 export interface LegacyThreadHeaderActionSlots {
   experimental_threadHeaderAction(registration: {
     id: string;
     title: string;
-    component: (props: { threadId: string; isCompactViewport: boolean }) => ReactNode;
+    component: (props: HeaderActionProps) => ReactNode;
   }): void;
 }
 
 /**
- * Settle in the open thread's header on a phone, where it stands in for bb's
- * "…" thread menu. Desktop headers render nothing and hold no subscriptions.
+ * New thread and Settle in the open thread's header on a phone. Settle stands
+ * in for bb's "…" thread menu. Desktop headers render nothing and hold no
+ * subscriptions.
  */
-export function HeaderSettle({
-  threadId,
-  isCompactViewport,
-}: {
-  threadId: string;
-  isCompactViewport: boolean;
-}) {
-  return isCompactViewport ? <CompactHeaderSettle threadId={threadId} /> : null;
+export function HeaderSettle({ threadId, projectId, isCompactViewport }: HeaderActionProps) {
+  if (!isCompactViewport) return null;
+  return (
+    <>
+      <NewThreadButton projectId={projectId} />
+      <CompactHeaderSettle threadId={threadId} />
+    </>
+  );
+}
+
+/** Opens the New thread screen with the open thread's project selected. */
+function NewThreadButton({ projectId }: { projectId: string }) {
+  const navigate = useBbNavigate();
+  return (
+    <Button
+      data-bb-plugin="gtd-sidebar"
+      variant="ghost"
+      aria-label="New thread"
+      title="New thread"
+      onClick={() => navigate.toCompose({ projectId, focusPrompt: true })}
+      className={ICON_BUTTON_CLASS}
+    >
+      <RegistryIcon name="Edit" aria-hidden />
+    </Button>
+  );
 }
 
 function CompactHeaderSettle({ threadId }: { threadId: string }) {
@@ -67,12 +98,14 @@ function SettleButton({ thread }: { thread: PluginSidebarThread }) {
     <Button
       {...{ [HEADER_SETTLE_ATTRIBUTE]: "" }}
       data-bb-plugin="gtd-sidebar"
-      variant="outline"
+      variant="ghost"
+      aria-label="Settle"
+      title="Settle"
       disabled={running || archive === undefined || archive.action.disabled === true}
       onClick={settle}
-      className="h-7 px-2 text-xs font-normal max-md:pointer-coarse:h-9 max-md:pointer-coarse:text-sm"
+      className={ICON_BUTTON_CLASS}
     >
-      Settle
+      <RegistryIcon name="CircleCheck" aria-hidden />
     </Button>
   );
 }

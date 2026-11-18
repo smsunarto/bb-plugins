@@ -1,0 +1,6 @@
+/* bb wraps each thread-header action in a labelled group. The thread marker
+ * (thread-marker.ts) has nothing to show, so its group stays out of the
+ * header's layout and accessibility tree, under every theme. */
+[data-thread-header-workflow-actions] [role="group"][aria-label="Thread view marker"] {
+  display: none;
+}
