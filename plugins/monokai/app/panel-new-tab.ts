@@ -13,25 +13,30 @@ import {
  *
  * - **Toggle intent:** the panel's tab list cannot tell a toggle from a
  *   control that opens the tab already selected, such as Source Control's
- *   header button or the composer's Info link. A content script records a
- *   click on bb's toggle button (`aria-label` "Show right panel…") or a press
- *   of the shortcut in that button's `aria-keyshortcuts`. Only an open within
- *   {@link INTENT_MS} of one is redirected. The command palette, a phone swipe,
- *   and every other opener keep bb's choice.
+ *   header button or the composer's Info link. The `panel-new-tab` content
+ *   script records a click on bb's toggle button (`aria-label` "Show right
+ *   panel…") or a press of the shortcut in that button's `aria-keyshortcuts`.
+ *   Only an open within {@link INTENT_MS} of one is redirected. The command
+ *   palette, a phone swipe, and every other opener keep bb's choice.
  * - **Transition:** the panel goes from closed to open with the same tab
  *   selected (bb restored it) or nothing selected before (bb fell back to Info).
  * - **Existing new tab:** selected through the SDK. bb keeps one new tab per
  *   panel (a fixed id), so at most one is open.
- * - **No new tab:** the SDK cannot create one, so the hook presses bb's own
- *   `button[data-panel-new-tab]` in the thread's panel (DOM hack; private
- *   contract: the `thread-detail-secondary-panel` id prefix and the button's
- *   `data-panel-new-tab`). When the button is missing or ambiguous, the
- *   restored tab stays.
+ * - **No new tab:** the SDK cannot create one, so the hook asks the content
+ *   script to press bb's own `button[data-panel-new-tab]` in the thread's panel
+ *   (DOM hack; private contract: the button's `data-panel-new-tab`, inside the
+ *   desktop panel's `thread-detail-secondary-panel` id or, under 768px, the
+ *   `secondary-panel-shelf` test id). When the button is missing or ambiguous,
+ *   the restored tab stays.
+ *
+ * The hook only reads and selects tabs through the SDK; every DOM read, press,
+ * and listener belongs to the content script and ends with its signal.
  */
 const TOGGLE_BUTTON = 'button[aria-label^="Show right panel"]';
 /** How long after a toggle press its panel open counts as the toggle's. */
 const INTENT_MS = 500;
-const PANEL = '[id^="thread-detail-secondary-panel"]';
+/** The desktop panel, or bb's phone shelf, which hosts the panel under 768px. */
+const PANEL = ':is([id^="thread-detail-secondary-panel"], [data-testid="secondary-panel-shelf"])';
 const NEW_TAB_BUTTON = `${PANEL} button[data-panel-new-tab]`;
 /** Frames to wait for bb to mount the panel's tab strip after it opens. */
 const BUTTON_WAIT_FRAMES = 6;
@@ -61,20 +66,36 @@ function selectedDetailKind(tabs: ExperimentalPanelTabs) {
   return tabs.tabs.find((tab) => tab.key === tabs.selectedKey)?.detail.kind ?? null;
 }
 
-/** Presses bb's new-tab button once it mounts; gives up when it never appears. */
-function pressNewTabButton(doc: Document, signal: { cancelled: boolean }, frames: number) {
-  if (signal.cancelled) return;
+/**
+ * Presses bb's new-tab button once it mounts, at most {@link BUTTON_WAIT_FRAMES}
+ * frames later; presses nothing when it never appears or more than one does.
+ */
+function pressNewTabButton(doc: Document, stopped: () => boolean, frames: number) {
+  if (stopped()) return;
   const buttons = doc.querySelectorAll<HTMLButtonElement>(NEW_TAB_BUTTON);
   if (buttons.length === 1) {
     buttons[0]!.click();
     return;
   }
   if (buttons.length > 1 || frames <= 0) return;
-  doc.defaultView?.requestAnimationFrame(() => pressNewTabButton(doc, signal, frames - 1));
+  doc.defaultView?.requestAnimationFrame(() => pressNewTabButton(doc, stopped, frames - 1));
 }
 
-/** When bb's panel toggle was last pressed, from {@link mountPanelToggleIntent}. */
+/** When bb's panel toggle was last pressed, from {@link mountPanelNewTab}. */
 let lastToggleAt = Number.NEGATIVE_INFINITY;
+/** Mounted {@link usePanelOpensToNewTab} hooks; no thread view, no shortcut lookups. */
+let redirectHooks = 0;
+/** The mounted content script's press of bb's new-tab button, if any. */
+let pressNewTab: ((cancelled: () => boolean) => void) | null = null;
+
+/**
+ * Asks the mounted {@link mountPanelNewTab} to press bb's new-tab button in the
+ * open panel; does nothing without one. `cancelled` stops a press still waiting
+ * for the button.
+ */
+export function pressPanelNewTab(cancelled: () => boolean): void {
+  pressNewTab?.(cancelled);
+}
 
 /**
  * Whether `event` presses `shortcut`, an `aria-keyshortcuts` value such as
@@ -101,31 +122,46 @@ export function matchesKeyShortcut(
 
 /**
  * Content script: records presses of bb's panel toggle, by pointer or by its
- * shortcut. Capture-phase listeners on the document, because bb handles the
- * shortcut at the window and the button may re-render under the pointer.
+ * shortcut, and presses bb's new-tab button when the hook asks. Capture-phase
+ * listeners on the document, because bb handles the shortcut at the window
+ * from anywhere on the page and the button may re-render under the pointer.
+ * A modified key press reads the shortcut only while a thread view is mounted,
+ * from the toggle button it last found; it looks the button up again only once
+ * bb has replaced it.
  */
-export function mountPanelToggleIntent({
+export function mountPanelNewTab({
   signal,
   document: doc = document,
 }: Pick<PluginContentScriptContext, "signal"> & { document?: Document }) {
   if (signal.aborted) return () => {};
+  let toggle: Element | null = null;
   const mark = () => {
     lastToggleAt = performance.now();
   };
   const onClick = (event: MouseEvent) => {
-    if (event.target instanceof Element && event.target.closest(TOGGLE_BUTTON) !== null) mark();
+    const hit = event.target instanceof Element ? event.target.closest(TOGGLE_BUTTON) : null;
+    if (hit === null) return;
+    toggle = hit;
+    mark();
   };
   const onKeyDown = (event: KeyboardEvent) => {
-    // A shortcut needs a modifier; plain typing never queries the page.
-    if (!event.ctrlKey && !event.metaKey && !event.altKey) return;
-    const shortcut = doc.querySelector(TOGGLE_BUTTON)?.getAttribute("aria-keyshortcuts");
+    // A shortcut needs a modifier, and only a thread view redirects its open.
+    if (redirectHooks === 0 || (!event.ctrlKey && !event.metaKey && !event.altKey)) return;
+    if (toggle?.isConnected !== true) toggle = doc.querySelector(TOGGLE_BUTTON);
+    const shortcut = toggle?.getAttribute("aria-keyshortcuts");
     if (shortcut && matchesKeyShortcut(event, shortcut)) mark();
   };
+  const press = (cancelled: () => boolean) =>
+    pressNewTabButton(doc, () => signal.aborted || cancelled(), BUTTON_WAIT_FRAMES);
   doc.addEventListener("click", onClick, { capture: true, signal });
   doc.addEventListener("keydown", onKeyDown, { capture: true, signal });
+  pressNewTab = press;
   return () => {
     doc.removeEventListener("click", onClick, { capture: true });
     doc.removeEventListener("keydown", onKeyDown, { capture: true });
+    if (pressNewTab === press) pressNewTab = null;
+    lastToggleAt = Number.NEGATIVE_INFINITY;
+    toggle = null;
   };
 }
 
@@ -139,8 +175,10 @@ export function usePanelOpensToNewTab(): void {
   useEffect(() => {
     const signal = { cancelled: false };
     unmounted.current = signal;
+    redirectHooks += 1;
     return () => {
       signal.cancelled = true;
+      redirectHooks -= 1;
     };
   }, []);
 
@@ -153,6 +191,9 @@ export function usePanelOpensToNewTab(): void {
     // One redirect per press, so a later open in the window is bb's.
     lastToggleAt = Number.NEGATIVE_INFINITY;
     if (redirect.kind === "select") panel.selectTab(redirect.key);
-    else pressNewTabButton(document, unmounted.current, BUTTON_WAIT_FRAMES);
+    else {
+      const signal = unmounted.current;
+      pressPanelNewTab(() => signal.cancelled);
+    }
   }, [panel, tabs]);
 }
