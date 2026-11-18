@@ -5,10 +5,10 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: spatial, going forward slides on, going back slides back. (shadcn/ui's Questionnaire: [../recipes/steps.md](../recipes/steps.md).)
 
 ```tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import * as React from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   blur,
   ReducedMotionConfig,
@@ -16,7 +16,7 @@ import {
   transition,
   useShouldReduceMotion,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 
 export function FormSteps({
   step,
@@ -58,8 +58,8 @@ function Steps({
     enter: (dir: number) => away(dir),
     center: {
       opacity: 1,
-      filter: 'blur(0px)',
-      transform: 'translateX(0px)',
+      filter: "blur(0px)",
+      transform: "translateX(0px)",
       transition: enter,
     },
     exit: (dir: number) => ({ ...away(-dir), transition: leave }),
@@ -76,11 +76,9 @@ function Steps({
         exit="exit"
         ref={ref}
         onAnimationComplete={(name) => {
-          if (name !== 'center') return;
+          if (name !== "center") return;
           ref.current
-            ?.querySelector<HTMLElement>(
-              'input, select, textarea, [tabindex="-1"]',
-            )
+            ?.querySelector<HTMLElement>('input, select, textarea, [tabindex="-1"]')
             ?.focus();
         }}
       >

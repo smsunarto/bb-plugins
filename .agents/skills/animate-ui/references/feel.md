@@ -105,13 +105,13 @@ An element toggled with `display: none` animates both ways with `@starting-style
     display 750ms allow-discrete;
 }
 @starting-style {
-  .modal[data-open='true'] {
+  .modal[data-open="true"] {
     opacity: 0;
     transform: var(--dialog-from);
     filter: blur(4px);
   }
 }
-.modal[data-open='false'] {
+.modal[data-open="false"] {
   display: none;
   opacity: 0;
   transform: var(--dialog-from);
@@ -133,11 +133,11 @@ The overlay brings its color in from `transparent` (never its opacity over a bac
     display 400ms allow-discrete;
 }
 @starting-style {
-  .modal-backdrop[data-open='true'] {
+  .modal-backdrop[data-open="true"] {
     background-color: transparent;
   }
 }
-.modal-backdrop[data-open='false'] {
+.modal-backdrop[data-open="false"] {
   display: none;
   background-color: transparent;
 }

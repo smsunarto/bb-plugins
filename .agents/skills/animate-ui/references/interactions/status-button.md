@@ -5,10 +5,10 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: state, the action's progress shows where it was triggered. The label swaps in place through a light blur while the button resizes to it.
 
 ```tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import * as React from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   blur,
   ReducedMotionConfig,
@@ -17,24 +17,18 @@ import {
   transition,
   useShouldReduceMotion,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 
-type Status = 'idle' | 'loading' | 'success' | 'error';
+type Status = "idle" | "loading" | "success" | "error";
 
 const LABELS: Record<Status, string> = {
-  idle: 'Save changes',
-  loading: 'Saving…',
-  success: 'Saved',
-  error: 'Try again',
+  idle: "Save changes",
+  loading: "Saving…",
+  success: "Saved",
+  error: "Try again",
 };
 
-export function StatusButton({
-  status,
-  onClick,
-}: {
-  status: Status;
-  onClick: () => void;
-}) {
+export function StatusButton({ status, onClick }: { status: Status; onClick: () => void }) {
   return (
     <ReducedMotionConfig>
       <StatusButtonMotion status={status} onClick={onClick} />
@@ -42,13 +36,7 @@ export function StatusButton({
   );
 }
 
-function StatusButtonMotion({
-  status,
-  onClick,
-}: {
-  status: Status;
-  onClick: () => void;
-}) {
+function StatusButtonMotion({ status, onClick }: { status: Status; onClick: () => void }) {
   const reduce = useShouldReduceMotion();
   const press = useTempoTransition(spring.press);
   const resize = useTempoTransition(spring.reflow);
@@ -59,10 +47,10 @@ function StatusButtonMotion({
       type="button"
       layout
       onClick={onClick}
-      disabled={status === 'loading'}
+      disabled={status === "loading"}
       aria-live="polite"
-      initial={{ transform: 'scale(1)' }}
-      whileTap={{ transform: reduce ? 'scale(1)' : `scale(${scale.press})` }}
+      initial={{ transform: "scale(1)" }}
+      whileTap={{ transform: reduce ? "scale(1)" : `scale(${scale.press})` }}
       transition={{ ...press, layout: resize }}
       className="inline-flex h-9 items-center gap-2 overflow-hidden rounded-md bg-neutral-900 px-4 text-sm text-white"
     >
@@ -72,7 +60,7 @@ function StatusButtonMotion({
             key={status}
             layout="position"
             initial={{ opacity: 0, filter: blur.icon }}
-            animate={{ opacity: 1, filter: 'blur(0px)' }}
+            animate={{ opacity: 1, filter: "blur(0px)" }}
             exit={{ opacity: 0, filter: blur.icon, transition: swap }}
             transition={{ ...swap, layout: resize }}
           >
@@ -89,20 +77,20 @@ When the button runs the action itself (`onSave: () => Promise<void>`), it owns 
 
 ```tsx
 export function useActionStatus(action: () => Promise<unknown>, hold = 1500) {
-  const [status, setStatus] = React.useState<Status>('idle');
+  const [status, setStatus] = React.useState<Status>("idle");
   const timer = React.useRef<ReturnType<typeof setTimeout>>(undefined);
 
   React.useEffect(() => () => clearTimeout(timer.current), []);
 
   const run = React.useCallback(async () => {
     clearTimeout(timer.current);
-    setStatus('loading');
+    setStatus("loading");
     try {
       await action();
-      setStatus('success');
-      timer.current = setTimeout(() => setStatus('idle'), hold);
+      setStatus("success");
+      timer.current = setTimeout(() => setStatus("idle"), hold);
     } catch (error) {
-      setStatus('error');
+      setStatus("error");
       console.error(error);
     }
   }, [action, hold]);

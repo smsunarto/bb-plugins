@@ -5,24 +5,18 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: state, the content replaces its placeholder in place.
 
 ```tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import * as React from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   blur,
   ReducedMotionConfig,
   transition,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 
-export function Loaded({
-  loading,
-  children,
-}: {
-  loading: boolean;
-  children: React.ReactNode;
-}) {
+export function Loaded({ loading, children }: { loading: boolean; children: React.ReactNode }) {
   const fade = useTempoTransition(transition.fade);
   const reveal = useTempoTransition(transition.reveal);
 
@@ -31,11 +25,7 @@ export function Loaded({
       <div className="relative">
         <AnimatePresence mode="popLayout" initial={false}>
           {loading ? (
-            <motion.div
-              key="skeleton"
-              aria-hidden="true"
-              exit={{ opacity: 0, transition: fade }}
-            >
+            <motion.div key="skeleton" aria-hidden="true" exit={{ opacity: 0, transition: fade }}>
               <div className="flex animate-pulse items-center gap-3 p-4 motion-reduce:animate-none">
                 <div className="size-10 rounded-full bg-neutral-200" />
                 <div className="flex flex-1 flex-col gap-2">
@@ -48,7 +38,7 @@ export function Loaded({
             <motion.div
               key="content"
               initial={{ opacity: 0, filter: blur.surface }}
-              animate={{ opacity: 1, filter: 'blur(0px)', transition: reveal }}
+              animate={{ opacity: 1, filter: "blur(0px)", transition: reveal }}
             >
               {children}
             </motion.div>

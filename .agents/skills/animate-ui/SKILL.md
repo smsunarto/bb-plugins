@@ -61,16 +61,16 @@ On Tailwind 3 it also recenters modals with margins (`inset-0 m-auto h-fit`) ins
 Add the packages (§ Install), then swap:
 
 ```tsx
-import { Dialog, Slot } from 'radix-ui'; // before
-import { Dialog, Slot } from '@animate-ui/react/primitives/radix-ui'; // after (re-exports all of radix-ui)
-import * as DialogPrimitive from '@radix-ui/react-dialog'; // before
-import * as DialogPrimitive from '@animate-ui/react/primitives/radix-ui/dialog'; // after
-import { Dialog } from '@base-ui/react/dialog'; // before
-import { Dialog } from '@animate-ui/react/primitives/base-ui/dialog'; // after
-import { Dialog, Field } from '@base-ui/react'; // before
-import { Dialog, Field } from '@animate-ui/react/primitives/base-ui'; // after (re-exports all of Base UI)
-import { Popover, Button } from 'react-aria-components'; // before
-import { Popover, Button } from '@animate-ui/react/primitives/react-aria'; // after (re-exports all of React Aria)
+import { Dialog, Slot } from "radix-ui"; // before
+import { Dialog, Slot } from "@animate-ui/react/primitives/radix-ui"; // after (re-exports all of radix-ui)
+import * as DialogPrimitive from "@radix-ui/react-dialog"; // before
+import * as DialogPrimitive from "@animate-ui/react/primitives/radix-ui/dialog"; // after
+import { Dialog } from "@base-ui/react/dialog"; // before
+import { Dialog } from "@animate-ui/react/primitives/base-ui/dialog"; // after
+import { Dialog, Field } from "@base-ui/react"; // before
+import { Dialog, Field } from "@animate-ui/react/primitives/base-ui"; // after (re-exports all of Base UI)
+import { Popover, Button } from "react-aria-components"; // before
+import { Popover, Button } from "@animate-ui/react/primitives/react-aria"; // after (re-exports all of React Aria)
 ```
 
 Mirror the library's import style: an umbrella import (`radix-ui`, `@base-ui/react`, `react-aria-components`) keeps its specifiers and only changes source; a per-package or subpath import (`@radix-ui/react-*`, `@base-ui/react/*`, `vaul` → `radix-ui/drawer`, `input-otp`, `embla-carousel-react` → `carousel`, `@shadcn/react/questionnaire` → `@animate-ui/react/primitives/questionnaire`) uses the per-primitive path. The whole import moves, even when only one part was asked for: parts Animate UI doesn't animate are re-exported unchanged. A Base UI subpath Animate UI doesn't animate (`@base-ui/react/field`) stays on Base UI.

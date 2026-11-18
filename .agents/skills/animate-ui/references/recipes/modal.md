@@ -6,7 +6,7 @@ Purpose: state, the page is now in a modal mode. Modals stay centered: no trigge
 
 ```tsx
 const TIPPED = `perspective(500px) rotateX(-20deg) scale(${scale.dialog})`;
-const UPRIGHT = 'perspective(500px) rotateX(0deg) scale(1)';
+const UPRIGHT = "perspective(500px) rotateX(0deg) scale(1)";
 // Its fade: at once, ahead of its tilt and of its overlay.
 const FADE = transition.dialogFade;
 // Dismissed: back the way it came, at once, quicker, speeding away.
@@ -31,17 +31,12 @@ function DialogContentMotion({
   };
 
   return (
-    <DialogPrimitive.Content
-      asChild
-      forceMount
-      data-slot="dialog-content"
-      {...props}
-    >
+    <DialogPrimitive.Content asChild forceMount data-slot="dialog-content" {...props}>
       <motion.div
         initial={hidden}
         animate={{
           opacity: 1,
-          filter: 'blur(0px)',
+          filter: "blur(0px)",
           transform: UPRIGHT,
           transition: enter,
         }}

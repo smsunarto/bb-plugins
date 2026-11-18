@@ -74,4 +74,6 @@ try {
     JSON.stringify(report ?? { error: "Audit did not complete" }, null, 2) + "\n",
   );
 }
-console.log(`${report!.surfaces.length} surface/parent combinations and opaque sticky header passed.`);
+console.log(
+  `${report!.surfaces.length} surface/parent combinations and opaque sticky header passed.`,
+);

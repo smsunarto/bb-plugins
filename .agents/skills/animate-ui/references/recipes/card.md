@@ -9,12 +9,12 @@ Purpose: feedback. A surface the pointer rests on before choosing it.
 function ProductCard({ product }: { product: Product }) {
   const reduce = useShouldReduceMotion();
   const { spring, scale } = useMotionTokens();
-  const pressed = reduce ? 'scale(1)' : `scale(${scale.choice})`;
+  const pressed = reduce ? "scale(1)" : `scale(${scale.choice})`;
 
   return (
     <motion.button
       type="button"
-      initial={{ transform: 'scale(1)' }}
+      initial={{ transform: "scale(1)" }}
       whileTap={{ transform: pressed }}
       transition={spring.press}
       className="group overflow-hidden rounded-2xl border bg-card text-left shadow-sm transition-shadow hover:shadow-md"

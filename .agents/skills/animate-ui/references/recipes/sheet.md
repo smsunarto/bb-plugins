@@ -6,10 +6,10 @@ Purpose: spatial, it comes from its edge.
 
 ```tsx
 const offscreen: Record<Side, string> = {
-  right: 'translateX(100%)',
-  left: 'translateX(-100%)',
-  top: 'translateY(-100%)',
-  bottom: 'translateY(100%)',
+  right: "translateX(100%)",
+  left: "translateX(-100%)",
+  top: "translateY(-100%)",
+  bottom: "translateY(100%)",
 };
 
 // Inside ReducedMotionConfig, like every recipe.
@@ -19,8 +19,7 @@ const leave = useTempoTransition(exitTransition ?? motionTransition.dismiss);
 
 // Same transform function on both ends: Motion can't interpolate
 // `translate(0, 0)` with `translateX(100%)`.
-const shown =
-  side === 'left' || side === 'right' ? 'translateX(0%)' : 'translateY(0%)';
+const shown = side === "left" || side === "right" ? "translateX(0%)" : "translateY(0%)";
 const hidden = { opacity: 0, transform: reduce ? shown : offscreen[side] };
 
 <motion.div

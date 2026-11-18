@@ -5,15 +5,11 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: spatial, the dragged item and the others make room as it moves.
 
 ```tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import { Reorder } from 'motion/react';
-import {
-  ReducedMotionConfig,
-  spring,
-  useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+import * as React from "react";
+import { Reorder } from "motion/react";
+import { ReducedMotionConfig, spring, useTempoTransition } from "@animate-ui/react/utils/motion";
 
 export function ReorderList({
   items,
@@ -23,7 +19,7 @@ export function ReorderList({
   onReorder: (items: string[]) => void;
 }) {
   const move = useTempoTransition(spring.reflow);
-  const [said, setSaid] = React.useState('');
+  const [said, setSaid] = React.useState("");
 
   const place = (from: number, to: number, button: HTMLButtonElement) => {
     if (to < 0 || to >= items.length) return;
@@ -50,7 +46,7 @@ export function ReorderList({
             key={item}
             value={item}
             transition={move}
-            whileDrag={{ boxShadow: '0 8px 24px rgb(0 0 0 / 0.12)', zIndex: 1 }}
+            whileDrag={{ boxShadow: "0 8px 24px rgb(0 0 0 / 0.12)", zIndex: 1 }}
             className="relative flex cursor-grab items-center justify-between rounded-lg border bg-white px-3 py-2 active:cursor-grabbing"
           >
             {item}
@@ -58,18 +54,14 @@ export function ReorderList({
               <button
                 type="button"
                 aria-label={`Move ${item} up`}
-                onClick={(event) =>
-                  place(index, index - 1, event.currentTarget)
-                }
+                onClick={(event) => place(index, index - 1, event.currentTarget)}
               >
                 ↑
               </button>
               <button
                 type="button"
                 aria-label={`Move ${item} down`}
-                onClick={(event) =>
-                  place(index, index + 1, event.currentTarget)
-                }
+                onClick={(event) => place(index, index + 1, event.currentTarget)}
               >
                 ↓
               </button>

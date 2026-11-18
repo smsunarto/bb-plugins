@@ -35,7 +35,7 @@ function PopoverContentMotion({
         animate={{ opacity: 1, scale: 1, transition: enter }}
         exit={{ ...hidden, transition: leave }}
         style={{
-          transformOrigin: 'var(--radix-popover-content-transform-origin)',
+          transformOrigin: "var(--radix-popover-content-transform-origin)",
         }}
       >
         {children}

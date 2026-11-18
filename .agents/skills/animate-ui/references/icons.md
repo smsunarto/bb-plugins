@@ -21,17 +21,17 @@ One file per icon in the project's components folder, under `animate-ui/icons/<n
 The example is the registry's Lucide bell, its pieces renamed.
 
 ```tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import { motion, type Variants } from 'motion/react';
+import * as React from "react";
+import { motion, type Variants } from "motion/react";
 
 import {
   getVariants,
   useAnimateIconContext,
   IconWrapper,
   type IconProps,
-} from '@animate-ui/react/icons';
+} from "@animate-ui/react/icons";
 
 type BellProps = IconProps<keyof typeof animations>;
 
@@ -41,15 +41,15 @@ const animations = {
       initial: { rotate: 0 },
       animate: {
         rotate: [0, 20, -10, 10, -5, 3, 0],
-        transformOrigin: 'top center',
-        transition: { duration: 0.9, ease: 'easeInOut' },
+        transformOrigin: "top center",
+        transition: { duration: 0.9, ease: "easeInOut" },
       },
     },
     clapper: {
       initial: { x: 0 },
       animate: {
         x: [0, -6, 5, -5, 4, -3, 2, 0],
-        transition: { duration: 1.1, ease: 'easeInOut' },
+        transition: { duration: 1.1, ease: "easeInOut" },
       },
     },
     body: {},
@@ -96,13 +96,7 @@ function Bell(props: BellProps) {
   return <IconWrapper icon={IconComponent} {...props} />;
 }
 
-export {
-  animations,
-  Bell,
-  Bell as BellIcon,
-  type BellProps,
-  type BellProps as BellIconProps,
-};
+export { animations, Bell, Bell as BellIcon, type BellProps, type BellProps as BellIconProps };
 ```
 
 - `animations` has a `default`, and named alternates beside it, each `satisfies Record<string, Variants>`, the whole `as const`: `IconProps<keyof typeof animations>` types the `animation` prop from it.

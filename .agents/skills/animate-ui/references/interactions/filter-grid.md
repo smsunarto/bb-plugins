@@ -5,15 +5,15 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: continuity, the items that stay move to their new places.
 
 ```tsx
-'use client';
+"use client";
 
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion } from "motion/react";
 import {
   ReducedMotionConfig,
   spring,
   transition,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 
 type Item = { id: string; name: string };
 

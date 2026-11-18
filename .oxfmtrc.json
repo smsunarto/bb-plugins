@@ -9,6 +9,7 @@
     "**/*.d.ts",
     "**/*.template.css",
     "**/generated/**",
+    "packages/video-player/src/player.ts",
     "plugins/monokai/themes/**",
     "plugins/gtd-sidebar/CHANGELOG.md",
     "plugins/genui/app.tsx",

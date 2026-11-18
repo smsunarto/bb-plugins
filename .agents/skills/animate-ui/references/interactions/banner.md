@@ -5,24 +5,18 @@ Read [README.md](README.md) first: keep the user's markup, use the project's col
 Purpose: state, a message arrives and makes room for itself.
 
 ```tsx
-'use client';
+"use client";
 
-import * as React from 'react';
-import { AnimatePresence, motion } from 'motion/react';
+import * as React from "react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   blur,
   ReducedMotionConfig,
   transition,
   useTempoTransition,
-} from '@animate-ui/react/utils/motion';
+} from "@animate-ui/react/utils/motion";
 
-export function Banner({
-  open,
-  children,
-}: {
-  open: boolean;
-  children: React.ReactNode;
-}) {
+export function Banner({ open, children }: { open: boolean; children: React.ReactNode }) {
   const unfold = useTempoTransition(transition.disclosure);
 
   return (
@@ -33,7 +27,7 @@ export function Banner({
             key="banner"
             role="status"
             initial={{ height: 0, opacity: 0, filter: blur.disclosure }}
-            animate={{ height: 'auto', opacity: 1, filter: 'blur(0px)' }}
+            animate={{ height: "auto", opacity: 1, filter: "blur(0px)" }}
             exit={{ height: 0, opacity: 0, filter: blur.disclosure }}
             transition={unfold}
             className="overflow-hidden"
