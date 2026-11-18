@@ -9,6 +9,7 @@ import { mountProjectControl } from "./app/project-control.ts";
 import "./app/secondary-panel-resize.css";
 // workaround:monokai/secondary-swipe-width-property end
 import "./app/home-marker.css";
+import "./app/thread-marker.css";
 import { mountDiffHeader } from "./app/diff-header.ts";
 // workaround:monokai/context-card-late-layout begin
 import { mountContextCardState } from "./app/context-card-state.ts";
@@ -18,6 +19,11 @@ import { mountTerminalAppearance } from "./app/terminal-appearance.ts";
 import { mountMonacoSyntaxTokens } from "./app/monaco-syntax-tokens.ts";
 import { UiFontBridge } from "./app/ui-font-bridge.ts";
 import { HomeMarker } from "./app/home-marker.ts";
+import {
+  THREAD_MARKER_TITLE,
+  ThreadMarker,
+  type LegacyThreadHeaderActionSlots,
+} from "./app/thread-marker.ts";
 
 export default definePluginApp((app) => {
   app.contentScripts.register({ id: "archive-toast", mount: mountArchiveToast });
@@ -38,6 +44,11 @@ export default definePluginApp((app) => {
     id: "home-marker",
     title: "New thread screen marker",
     component: HomeMarker,
+  });
+  (app.slots as unknown as LegacyThreadHeaderActionSlots).experimental_threadHeaderAction({
+    id: "thread-marker",
+    title: THREAD_MARKER_TITLE,
+    component: ThreadMarker,
   });
   app.contentScripts.register({
     id: "monaco-syntax-tokens",

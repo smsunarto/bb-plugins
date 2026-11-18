@@ -210,7 +210,7 @@
   --secondary: #ebebec0f;
   --accent: #ebebec14;
   --muted: #ebebec24;
-  --input: #ebebec1f;
+  --input: #39393a;
   --control-background: #ebebec0a;
   --control-primary: #ebebec24;
   --control-primary-hover: #ebebec33;
@@ -230,7 +230,7 @@
                                            * on phones. */
 
   --agent-surface-background: #ebebec0f;
-  --agent-surface-border: #ebebec14;
+  --agent-surface-border: #39393a;
 
   --state-hover: #ebebec14;
   --state-active: #ebebec33;
@@ -244,8 +244,17 @@
   /* ---- Borders --------------------------------------------------------- */
   --border-seam: #ebebec0a;
   --border-seam-vertical: var(--border-seam);
-  --border: #ebebec1f;
-  --border-hairline: #ebebec14;
+  /* Every edge is the composer's hairline: opaque 18% ink, the composer's own
+   * edge colour. Opaque, so edges that meet at a rounded corner do not stack
+   * into a bright stub. --hairline-width is 1px at 1x, 0.5px at 2x, and 2/3px
+   * at 3x (see the density rules after the shell rules); the hairline-edges
+   * section applies it to Tailwind's border utilities. --hairline-ring-width is
+   * the same edge drawn as an inset box-shadow ring: exactly one device pixel
+   * at 1x, 2x, and 3x (see Hairline rings). */
+  --border: #39393a;
+  --hairline-width: 0.5px;
+  --hairline-ring-width: 1px;
+  --border-hairline: #39393a;
 
   /* ---- Text ladder -----------------------------------------------------
    * One white at four alphas, ≥20 alpha points apart.
@@ -312,7 +321,7 @@
   --sidebar-accent: #ebebec14;
   --sidebar-accent-foreground: #ebebec; /* hover text; the selected-row rule
                                          * below reuses it */
-  --sidebar-border: #ebebec1f; /* shared alpha edge; one owner per boundary */
+  --sidebar-border: #39393a; /* the shared hairline; one owner per boundary */
 
   /* ---- Machine identity ------------------------------------------------
    * Categorical, like the chart series: a hue names a remote machine and
@@ -494,7 +503,7 @@
 }
 
 .dark [data-framed] [data-sidebar="inset-edge"] {
-  border: 0.5px solid #ebebec14;
+  border: var(--hairline-width) solid var(--border);
   border-radius: 12px;
   transition: none;
 }
@@ -530,7 +539,7 @@
     z-index: 40;
     content: "";
     pointer-events: none;
-    border: 0.5px solid #ebebec14;
+    border: var(--hairline-width) solid var(--border);
     border-radius: 12px;
   }
 }
@@ -720,14 +729,14 @@
 /* The outer sidebars' edges are the page's own hairline, and neither lights
  * up on hover or drag. The left resize handle's line goes; the right
  * divider keeps its full height through the title bar but takes the page
- * edge's 0.5px 8% ink instead of a 12% line. */
+ * edge's hairline instead of a full 1px line. */
 .dark [data-testid="app-sidebar-resize-handle"]::before {
   display: none;
 }
 
 .dark #thread-detail-secondary-panel-handle > span + span {
-  width: 0.5px;
-  background-color: #ebebec14;
+  width: var(--hairline-width);
+  background-color: var(--sidebar-border);
 }
 
 /* bb paints the active settings and plugins row with the same 8%
@@ -777,6 +786,322 @@
   .dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:hover,
   .dark .group\/timeline-row > button[aria-expanded].text-subtle-foreground:hover .text-subtle-foreground {
     color: var(--muted-foreground);
+  }
+}
+
+/* --hairline-width per density. 1x takes a whole pixel: a 0.5px box, such as
+ * the right panel's divider, drew at half strength or not at all. 2x keeps
+ * 0.5px, one device pixel. 3x takes 2/3px, two device pixels: WebKit computes
+ * a 0.5px or 1/3px border there as one device pixel, stores it a little under
+ * one, and paints a side at zero width when its edge lands on a half device
+ * pixel, so a sidebar rule or a card's edge could vanish. Two device pixels
+ * paint 1 or 2 but never 0 at every sub-pixel offset. Controls whose full-box
+ * edge must stay one device pixel and even become rings at 3x (see Hairline
+ * rings). */
+@media (resolution < 1.5dppx) {
+  html.dark {
+    --hairline-width: 1px;
+  }
+}
+
+@media (min-resolution: 2.5dppx) {
+  html.dark {
+    --hairline-width: calc(2px / 3);
+  }
+}
+
+/* Hairline edges. bb and every plugin draw edges with Tailwind's 1px border
+ * utilities; here they take the composer's --hairline-width.
+ *
+ * The rules join Tailwind's utilities layer, which bb, plugins, and this
+ * sheet may load in any order. `:where(.dark)` adds nothing and `:not(z)`
+ * adds one type (no element is <z>), so each rule outranks a plain utility
+ * (0,1,0) whatever the load order, and yields to every state or group
+ * variant (0,2,0), such as `first:border-t-0`. The zero and wider widths are
+ * restated after the hairlines with the same weight, so `border border-t-0`
+ * keeps its open side. They match only a box that also carries a hairline
+ * class, so `border-0 border-t-[0.5px]` keeps its own top edge. Breakpoint and
+ * container variants weigh as much as a plain utility, so the ones bb and the
+ * plugins use are restated in their own queries. The statement keeps Tailwind's layer order if this sheet loads
+ * first. */
+@layer properties, theme, base, components, utilities;
+
+@layer utilities {
+  :where(.dark) .border:not(z) {
+    border-width: var(--hairline-width);
+  }
+  :where(.dark) .border-x:not(z) {
+    border-inline-width: var(--hairline-width);
+  }
+  :where(.dark) .border-y:not(z) {
+    border-block-width: var(--hairline-width);
+  }
+  :where(.dark) .border-s:not(z) {
+    border-inline-start-width: var(--hairline-width);
+  }
+  :where(.dark) .border-e:not(z) {
+    border-inline-end-width: var(--hairline-width);
+  }
+  :where(.dark) .border-t:not(z) {
+    border-top-width: var(--hairline-width);
+  }
+  :where(.dark) .border-r:not(z) {
+    border-right-width: var(--hairline-width);
+  }
+  :where(.dark) .border-b:not(z) {
+    border-bottom-width: var(--hairline-width);
+  }
+  :where(.dark) .border-l:not(z) {
+    border-left-width: var(--hairline-width);
+  }
+
+  :where(.dark) .border-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-width: 0;
+  }
+  :where(.dark) .border-x-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-inline-width: 0;
+  }
+  :where(.dark) .border-y-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-block-width: 0;
+  }
+  :where(.dark) .border-t-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-top-width: 0;
+  }
+  :where(.dark) .border-r-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-right-width: 0;
+  }
+  :where(.dark) .border-b-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-bottom-width: 0;
+  }
+  :where(.dark) .border-l-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-left-width: 0;
+  }
+  :where(.dark) .border-2:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-width: 2px;
+  }
+  :where(.dark) .border-b-2:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-bottom-width: 2px;
+  }
+  :where(.dark) .border-l-2:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+    border-left-width: 2px;
+  }
+
+  @media (width < 48rem) {
+    :where(.dark) .max-md\:border-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+      border-width: 0;
+    }
+  }
+  @media (width < 900px) {
+    :where(.dark) .max-\[900px\]\:border-r-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+      border-right-width: 0;
+    }
+    :where(.dark) .max-\[900px\]\:border-b:not(z) {
+      border-bottom-width: var(--hairline-width);
+    }
+  }
+  @container plugin-detail (width >= 28rem) {
+    :where(.dark) .\@min-\[28rem\]\/plugin-detail\:border-b-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+      border-bottom-width: 0;
+    }
+  }
+  @container (width >= 42rem) {
+    :where(.dark) .\@2xl\:border-l-0:where(.border, .border-x, .border-y, .border-s, .border-e, .border-t, .border-r, .border-b, .border-l):not(z) {
+      border-left-width: 0;
+    }
+  }
+}
+
+/* Hairline rings. On a 3x screen WebKit cannot draw a one-device-pixel border
+ * reliably: it stores 1/3px as 21/64px, a little under one device pixel, and
+ * rounds each side's outer and inner edge separately, so a side whose edge
+ * lands on a half device pixel paints at zero width. An inset box-shadow ring
+ * has no inner edge to round: a sweep of all 64 sub-pixel offsets in WebKit at
+ * 3x lost an edge on 1 of 64 boxes with a 1/3px border, and on none with a
+ * ring. --hairline-ring-width is one device pixel at every density.
+ *
+ * At 3x, a control's full-box neutral border becomes that ring, so small round
+ * and square controls keep four even one-pixel edges: a button, field, radio,
+ * or checkbox with a border-border (or /60), input, sidebar, hairline, or seam
+ * colour, and a round primary one, such as a radio's circle. bb's Input
+ * carries file:border-0, which the variant guard would read as a border
+ * variant, so it is named on its own. Only controls: tables,
+ * code blocks, message bubbles, toasts, and sheets restyle their own edges, and
+ * a ring keyed on a utility class would draw over those rules. Every other
+ * border keeps --hairline-width, two device pixels at 3x. --hairline-rings opts
+ * @bb-plugins/ui's outline button and fields into the same ring. The ring
+ * joins Tailwind's box-shadow stack, so shadow, ring, and inset utilities
+ * still draw beside it. A control that opens a side (border-t-0 and the like),
+ * takes a dashed, dotted, or wider border, or changes its border on a variant
+ * keeps its border: a ring has one width, one colour, and no style. The shadcn
+ * checkbox is the one state variant ringed: its ring takes the checked fill's
+ * foreground. A ring per side is not reliable: offset insets drop edges as
+ * borders do. */
+@media (min-resolution: 1.5dppx) {
+  html.dark {
+    --hairline-ring-width: 0.5px;
+  }
+}
+
+@media (min-resolution: 2.5dppx) {
+  html.dark {
+    --hairline-ring-width: calc(1px / 3);
+    --hairline-rings: 1;
+  }
+
+  @layer utilities {
+    :where(.dark) .border.border-border {
+      --monokai-edge: var(--border);
+    }
+    :where(.dark) .border.border-input {
+      --monokai-edge: var(--input);
+    }
+    :where(.dark) .border.border-sidebar-border {
+      --monokai-edge: var(--sidebar-border);
+    }
+    :where(.dark) .border.border-border-hairline {
+      --monokai-edge: var(--border-hairline);
+    }
+    :where(.dark) .border.border-border-seam {
+      --monokai-edge: var(--border-seam);
+    }
+    :where(.dark) .border.border-border\/60 {
+      --monokai-edge: color-mix(in oklab, var(--border) 60%, transparent);
+    }
+    :where(.dark) .border.border-primary.rounded-full {
+      --monokai-edge: var(--primary);
+    }
+    :where(.dark) .border.border-input[class~="data-[state=checked]:border-foreground"][data-state="checked"] {
+      --monokai-edge: var(--foreground);
+    }
+
+    :where(.dark)
+      :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border:is(
+        .border-border,
+        .border-input,
+        .border-sidebar-border,
+        .border-border-hairline,
+        .border-border-seam,
+        .border-border\/60
+      ):not(
+        .border-t-0,
+        .border-r-0,
+        .border-b-0,
+        .border-l-0,
+        .border-x-0,
+        .border-y-0,
+        .border-s-0,
+        .border-e-0,
+        .border-2,
+        .border-dashed,
+        .border-dotted,
+        [class*=":border-"]
+      ),
+    :where(.dark)
+      input.border.border-input[class~="file:border-0"]:not(
+        [class*="focus-visible:border-"],
+        [class*="hover:border-"],
+        [class*="invalid:border-"],
+        [class*="]:border-"]
+      ),
+    :where(.dark) :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border.border-primary.rounded-full:not([class*=":border-"]),
+    :where(.dark) :where(button, input, textarea, select, [role="radio"], [role="checkbox"]).border.border-input[class~="data-[state=checked]:border-foreground"] {
+      border-width: 0;
+      box-shadow:
+        var(--tw-inset-shadow, 0 0 transparent), var(--tw-inset-ring-shadow, 0 0 transparent),
+        inset 0 0 0 var(--hairline-ring-width) var(--monokai-edge),
+        var(--tw-ring-offset-shadow, 0 0 transparent), var(--tw-ring-shadow, 0 0 transparent),
+        var(--tw-shadow, 0 0 transparent);
+    }
+  }
+}
+
+/* A sideways scroller, such as a code block, stops bouncing sideways. Only the
+ * x axis: overscroll-behavior on a box with nothing to scroll still ends scroll
+ * chaining, so a vertical rule on every overflow-auto box stopped the wheel
+ * from scrolling the thread over the composer. */
+.dark .overflow-x-auto,
+.dark .overflow-x-scroll {
+  overscroll-behavior-x: none;
+}
+
+/* Rules drawn as 1px boxes, such as the sidebar's section rules, become a
+ * hairline-wide box. --hairline-width keeps a box at one device pixel or more
+ * at every density (1px at 1x, 0.5px at 2x, 2/3px at 3x), so it cannot round
+ * away. Only the size changes: the box keeps its own fill, so the hover, drag,
+ * and focus-visible fills of bb's splitters still show. */
+.dark .h-px.bg-border,
+.dark .h-px.bg-sidebar-border {
+  height: var(--hairline-width);
+}
+
+.dark .w-px.bg-border,
+.dark .w-px.bg-sidebar-border {
+  width: var(--hairline-width);
+}
+
+/* The desktop left sidebar draws its right edge with a data-side variant on
+ * its wrapper, which outweighs the utility rules above. The framed window's
+ * !important zero still wins. The phone drawer has no edge of its own: the
+ * page it pushes aside carries the edge, below. */
+.dark [data-sidebar="panel"][data-vaul-drawer-direction="left"] {
+  border-right-width: 0;
+}
+
+/* Phone drawer depth, after ChatGPT's iOS drawer: the page bb slides aside
+ * keeps the screen's rounded corners and washes out under a grey,
+ * hairline-edged scrim, so
+ * the drawer reads as the layer in front. bb slides the page
+ * ([data-sidebar="inset"]) and a transparent backdrop over it by the drawer's
+ * width, and drives the backdrop's opacity with the drag, so the scrim fades
+ * with the gesture. The page is open on data-sidebar-shelf="open" and in
+ * motion while bb marks it data-vaul-animate: a tapped open slides on inline
+ * styles before the shelf flips. Away from the drawer the page stays square:
+ * at rest it fills the screen, where the display's own corners mask it.
+ * The radius is the display's corner on recent iPhones: 55pt, or 62pt on the
+ * 402pt- and 440pt-wide 16 and 17 generation. */
+.dark [data-sidebar="inset"],
+.dark [data-sidebar-mobile-backdrop] {
+  --monokai-display-radius: 55px;
+}
+
+@media (width: 402px), (width: 440px) {
+  .dark [data-sidebar="inset"],
+  .dark [data-sidebar-mobile-backdrop] {
+    --monokai-display-radius: 62px;
+  }
+}
+
+.dark [data-sidebar="inset"][data-sidebar-shelf="open"],
+.dark [data-sidebar="inset"][data-sidebar-shelf][data-vaul-animate] {
+  overflow: clip;
+  border-radius: var(--monokai-display-radius);
+}
+
+/* The page's rounded corners open onto bb's layout root, which shows the
+ * body's page ground. Paint it the drawer's ground so the corners read as
+ * the drawer behind the page. The page and the drawer paint their own. */
+@media (max-width: 767px) {
+  .dark [data-testid="app-layout-root"] {
+    background-color: var(--sidebar);
+  }
+}
+
+.dark [data-sidebar-mobile-backdrop] {
+  border-radius: var(--monokai-display-radius);
+  /* A grey wash, not a dim: half of a 12% ink grey lifts the page's ground
+   * and fades its text toward it, so the page reads as set back while staying
+   * clearly lighter than the drawer. */
+  background-color: color-mix(
+    in oklab,
+    color-mix(in oklab, var(--foreground) 12%, var(--background)) 50%,
+    transparent
+  );
+  box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+}
+
+@media (min-width: 768px) {
+  .dark [data-side="left"] > [data-sidebar="panel"] {
+    border-right-width: var(--hairline-width);
   }
 }
 
@@ -1127,7 +1452,7 @@
  * directly, so the button needs no :has selector. */
 .dark img[data-markdown-image],
 .dark button.cursor-zoom-in.border {
-  border: 1px solid var(--border);
+  border: var(--hairline-width) solid var(--border);
 }
 
 .dark img[data-markdown-image] {
@@ -1161,8 +1486,12 @@
 .dark button.bg-secondary,
 .dark button[data-bb-control="secondary"] {
   background-color: var(--secondary);
-  background-clip: padding-box;
-  border: 1px solid var(--input);
+  border-width: 0;
+  box-shadow:
+    var(--tw-inset-shadow, 0 0 transparent), var(--tw-inset-ring-shadow, 0 0 transparent),
+    inset 0 0 0 var(--hairline-ring-width) var(--input),
+    var(--tw-ring-offset-shadow, 0 0 transparent), var(--tw-ring-shadow, 0 0 transparent),
+    var(--tw-shadow, 0 0 transparent);
 }
 
 /* Hover fills only where a pointer can hover. bb's own `hover:` utilities sit
@@ -1189,7 +1518,7 @@
  * Radix puts data-side on the content, which a bg-primary button never has. */
 .dark .bg-primary[data-side] {
   background-color: var(--popover);
-  box-shadow: inset 0 0 0 1px var(--border);
+  box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
   color: var(--foreground);
 }
 
@@ -1232,10 +1561,12 @@
   min-width: 220px;
   max-width: calc(100vw - 16px);
   padding: 5px;
-  border: 1px solid var(--border);
+  border-width: 0;
   border-radius: 15px;
   background-color: var(--popover);
-  box-shadow: var(--shadow-md);
+  box-shadow:
+    inset 0 0 0 var(--hairline-ring-width) var(--border),
+    var(--shadow-md);
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 20px;
@@ -1276,9 +1607,10 @@
 }
 
 .dark [role="menu"][style*="--radix-context-menu-content"] [role="separator"] {
-  height: 1px;
+  height: 0;
   margin: 6px 8px;
-  background-color: var(--border);
+  border-top: var(--hairline-width) solid var(--border);
+  background-color: transparent;
 }
 
 .dark [role="menu"][style*="--radix-context-menu-content"] [role="menuitem"] > span.ml-auto {
@@ -1476,6 +1808,135 @@
   }
 }
 
+/* Phone thread header: the agent stream runs under a floating bar. bb keeps
+ * the header in flow above the thread window, so the window rises by the row
+ * height and its scroll content drops by the same amount. `header +` matches
+ * only while the window directly follows the header; a plugin header row
+ * between them leaves bb's stacked layout alone. The bar fades from the page
+ * ground, which also paints the safe-area strip above it, to clear across a
+ * tail that ignores taps. The header's action group floats on a translucent
+ * pill, and while a thread is open (app/thread-marker.ts) so does bb's
+ * app-wide sidebar toggle; other pages keep bb's plain toggle. Only those two
+ * small areas blur, so a streaming timeline does not repaint a full-width
+ * backdrop each frame. Every button is a 44px touch target with a 22px glyph
+ * in the foreground color, so bb's toggles match gtd-sidebar's New thread and
+ * Settle; the thread context button leaves the group. bb leaves the sidebar
+ * toggle above its open phone drawer and drops `data-panel-shelf` from it
+ * then, so the toggle hides while the drawer is open. Gated on bb's compact
+ * width (`useIsCompactViewport`). */
+@media (max-width: 767px) {
+  .dark [data-split-pane-id] > header {
+    z-index: 20;
+    border-bottom-width: 0;
+    background: linear-gradient(
+      to bottom,
+      var(--background) 70%,
+      color-mix(in oklab, var(--background) 85%, transparent)
+    );
+  }
+
+  .dark [data-split-pane-id] > header::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    inset-inline: 0;
+    height: 24px;
+    background: linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--background) 85%, transparent),
+      transparent
+    );
+    pointer-events: none;
+  }
+
+  .dark [data-split-pane-id] > header + [data-thread-window] {
+    margin-top: calc(-1 * var(--bb-app-chrome-row-height));
+  }
+
+  .dark [data-split-pane-id] > header + [data-thread-window] .thread-scrollbar {
+    scroll-padding-top: calc(var(--bb-app-chrome-row-height) + 1rem);
+  }
+
+  /* The clearance goes on the page content, after bb's scroll floor, not on
+   * the floor's container: bb sizes the floor to that container's full height,
+   * so padding there pushed the floor past the end, added a row of scroll
+   * below the stream, and lifted the sticky composer at the very bottom. */
+  .dark [data-split-pane-id] > header + [data-thread-window] .thread-scrollbar > div > [aria-hidden="true"] + div {
+    margin-top: var(--bb-app-chrome-row-height);
+  }
+
+  /* The 44px toggle sits 12px in from the edge; the title starts 12px after it. */
+  .dark[data-monokai-thread] [data-split-pane-id] > header [data-testid="app-page-header-content-row"] {
+    padding-left: 52px;
+  }
+
+  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
+  .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
+    border-width: 0;
+    border-radius: 9999px;
+    box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
+    background-color: color-mix(in oklab, var(--popover) 72%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  .dark [data-testid="app-sidebar-trigger-overlay"]:not([data-panel-shelf]) {
+    visibility: hidden;
+  }
+
+  /* bb drops data-panel-shelf only once the drawer has opened. Its toggle is
+   * fixed above the drawer, so during a tapped open's slide it sat over the
+   * rail's first item. Hide it whenever the page is open or moving aside. */
+  .dark [data-sidebar="inset"][data-sidebar-shelf="open"] ~ [data-testid="app-sidebar-trigger-overlay"],
+  .dark [data-sidebar="inset"][data-vaul-animate] ~ [data-testid="app-sidebar-trigger-overlay"] {
+    visibility: hidden;
+  }
+
+  /* bb keeps a header-row spacer atop the drawer's nav rail for that toggle.
+   * With the toggle gone, drop the spacer so the rail starts at the top. */
+  .dark
+    [data-sidebar="panel"][data-vaul-drawer-direction="left"]
+    [data-testid="sidebar-navigation-rail"]
+    > .h-\(--bb-app-chrome-row-height\) {
+    display: none;
+  }
+
+  .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
+    gap: 0;
+  }
+
+  .dark [data-split-pane-id] > header [data-thread-header-workflow-actions],
+  .dark [data-split-pane-id] > header [data-thread-header-pane-actions] {
+    gap: 0;
+    margin-left: 0;
+  }
+
+  .dark [data-split-pane-id] > header [data-thread-header-pane-actions] [aria-label="Thread context"] {
+    display: none;
+  }
+
+  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"],
+  .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div button {
+    width: 44px;
+    height: 44px;
+    border-radius: 9999px;
+    color: var(--foreground);
+  }
+
+  .dark[data-monokai-thread] [data-testid="app-sidebar-trigger-overlay"] > [data-sidebar="trigger"] [data-icon-root],
+  .dark
+    [data-split-pane-id]
+    > header
+    [data-testid="app-page-header-content-row"]
+    > div
+    + div
+    button
+    [data-icon-root] {
+    width: 22px;
+    height: 22px;
+  }
+}
+
 /* Diagram fences describe structure rather than source code, but sugar-high
  * still classifies capitalized labels and connectors as code tokens. Collapse
  * every token to the text color so the diagram stays legible instead of
@@ -1648,8 +2109,8 @@ diffs-container {
   position: absolute;
   inset: 8px 8px var(--monokai-drawer-bottom);
   z-index: 1;
-  border: 1px solid var(--border);
   border-radius: calc(var(--radius, 0.5rem) + 16px);
+  box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
   pointer-events: none;
 }
 
@@ -1837,8 +2298,9 @@ diffs-container {
 .dark [data-sonner-toast].bb-app-toast > div > div > div:nth-child(2) > div:nth-child(2) > .flex-wrap > button {
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--border);
+  border-width: 0;
   border-radius: var(--radius-md, 0.375rem);
+  box-shadow: inset 0 0 0 var(--hairline-ring-width) var(--border);
   background: var(--secondary);
   background-clip: padding-box;
   color: var(--secondary-foreground);
@@ -2122,7 +2584,7 @@ diffs-container {
 .dark [data-message-column].group\/message [data-markdown-preview] :is(th, td):not([data-bb-plugin-root] *),
 .dark .bb-markdown-prose :is(th, td) {
   border: 0;
-  border-bottom: 1px solid var(--border-hairline);
+  border-bottom: var(--hairline-width) solid var(--border-hairline);
   padding: calc(var(--agent-md-rem) * 0.45) calc(var(--agent-md-rem) * 0.75);
   text-align: start;
   text-wrap: pretty;

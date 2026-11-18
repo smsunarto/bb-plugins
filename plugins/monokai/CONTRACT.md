@@ -445,8 +445,12 @@ and composes its surfaces differently, so the adapter maps the shared roles as f
   filled actions and selected rows use 14%, and pressed/strong hover uses 20%.
   Dropdown triggers use the field layer and share its border and hover rules
   across every parent. Ghost buttons stay transparent at rest.
-- `--input` is the 12% ink control edge, not a fill. Dividers use 4% or 8%,
-  ordinary edges use 12%, and strong edges use 20%. Focus keeps the existing
+- `--input`, `--border`, `--sidebar-border`, and `--border-hairline` are the
+  composer's hairline edge: 18% ink flattened opaque on the panel, so edges
+  that meet at a rounded corner do not stack into a bright stub. They draw at
+  `--hairline-width`: 1px at 1x, 0.5px at 2x, and 2/3px at 3x, where small
+  controls draw the same edge as a one-device-pixel inset ring. `--input` is an
+  edge, not a fill. Seams use 4%, and strong edges use 20%. Focus keeps the existing
   neutral 25% ink ring. Apply alpha to colors, never the whole component.
   A translucent control uses `background-clip: padding-box` so its fill does
   not compound under the border. Native select option sheets are opaque.
@@ -463,7 +467,7 @@ and composes its surfaces differently, so the adapter maps the shared roles as f
   another independently tuned palette. Context-specific
   control colors are forbidden. The existing BB selector adapter maps host
   component variants to roles; it must not choose colors by parent surface.
-- Both outer sidebar edges use the shared 12% ink edge. The right resize
+- Both outer sidebar edges use the shared hairline edge. The right resize
   divider owns that edge while active, so a panel border cannot stack beneath
   it and brighten the result.
 - The macOS framed window takes Capy's desktop shell: the sidebar lies flat on
