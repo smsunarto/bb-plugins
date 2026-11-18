@@ -19,14 +19,17 @@
  *   input in a label, such as Settings' sidebar search. The label becomes the
  *   field (a child-only :has(), checked against the label alone).
  *
- * Plugin DOM, inside any `[data-bb-plugin]` root or portal, is left alone:
- * plugins draw their own search fields, such as t3-composer's model search.
+ * The rules reach plugin roots too, since bb's own pickers (its shared model
+ * picker, the branch picker, built-in plugins) render inside them. A plugin
+ * field drawn its own way opts out by marker: t3-composer's model search
+ * (`data-t3-model-search`) keeps its underline row.
  */
-const NOT_PLUGIN = "[data-bb-plugin] *";
-/** bb's search input, not the repo's Input, a cmdk input, or plugin DOM. */
-const BB_SEARCH_INPUT = `input[aria-label^="Search"]:not([data-bb-control], [cmdk-input], ${NOT_PLUGIN})`;
-const LABEL_FIELD = `label:has(> input[aria-label^="Search"]:not([data-bb-control])):not(${NOT_PLUGIN})`;
-const CMDK_FIELD = `[cmdk-input-wrapper]:not(${NOT_PLUGIN})`;
+/** Fields that already look as they should: the repo's Input, t3's model search. */
+const OWN_FIELD = "[data-bb-control], [data-t3-model-search]";
+/** bb's search input, not a field with its own look or a cmdk input. */
+const BB_SEARCH_INPUT = `input[aria-label^="Search"]:not(${OWN_FIELD}, [cmdk-input])`;
+const LABEL_FIELD = `label:has(> input[aria-label^="Search"]:not(${OWN_FIELD}))`;
+const CMDK_FIELD = "[cmdk-input-wrapper]";
 const PALETTE_FIELD = "[data-palette-input-frame]";
 const FIELDS = [BB_SEARCH_INPUT, LABEL_FIELD, CMDK_FIELD, PALETTE_FIELD];
 const list = (selectors: string[]) => selectors.join(",\n");
@@ -59,13 +62,13 @@ ${list([LABEL_FIELD, PALETTE_FIELD])} {
   border-bottom-color: transparent;
   padding-block: 0.5rem;
 }
-/* More specific than the field rules, so the bare inner inputs win. */
+/* At least as specific as the field rules, and later, so the bare inner inputs win. */
 ${list([
   `${CMDK_FIELD} > input`,
   `${LABEL_FIELD} > ${BB_SEARCH_INPUT}`,
   `${LABEL_FIELD} > ${BB_SEARCH_INPUT}:focus-visible`,
-  `${PALETTE_FIELD} input:not([data-bb-control], [cmdk-input])`,
-  `${PALETTE_FIELD} input:not([data-bb-control], [cmdk-input]):focus-visible`,
+  `${PALETTE_FIELD} input:not(${OWN_FIELD}, [cmdk-input])`,
+  `${PALETTE_FIELD} input:not(${OWN_FIELD}, [cmdk-input]):focus-visible`,
   `${PALETTE_FIELD} input[cmdk-input]`,
 ])} {
   height: 100%;
