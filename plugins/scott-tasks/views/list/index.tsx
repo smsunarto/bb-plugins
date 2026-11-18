@@ -175,14 +175,13 @@ export function ListView({ projectId, activeOnly = false }: ListViewProps) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const scopeKey = listScrollScopeKey({ projectId, activeOnly, filters, sort });
-  const settledScope = useRef(scopeKey);
-  const scopeChanged = settledScope.current !== scopeKey;
   // Rows are still arriving while the primary query loads or the closed split trails it.
   const loading =
     tasksQuery.phase === "loading" || (tasksQuery.phase === "ready" && tasksQuery.closedPending);
-  useEffect(() => {
-    if (!loading) settledScope.current = scopeKey;
-  }, [scopeKey, loading, tasks]);
+  // The last scope whose rows finished loading, settled during render like `stored` above.
+  const [settledScope, setSettledScope] = useState(scopeKey);
+  if (!loading && settledScope !== scopeKey) setSettledScope(scopeKey);
+  const scopeChanged = settledScope !== scopeKey;
   useListScrollRestoration(scrollRef, scopeKey, {
     contentReady: tasks.length > 0,
     loading: loading || scopeChanged,
