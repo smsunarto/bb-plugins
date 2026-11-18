@@ -25,6 +25,8 @@ The grant covers one PR, once. Before merging, confirm all of these with your ow
 
 The merge is done when the PR shows merged, the task is `done`, and its crew threads are archived.
 
+Report the merge as plain text with no Landed card: write no `::source-control-landed` and call no `source_control_share_landed`. Archive crew threads only; the Captain thread stays open.
+
 ## Several approved PRs
 
 - Merge PRs that touch disjoint files in any order.
