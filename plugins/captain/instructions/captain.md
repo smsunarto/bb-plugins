@@ -63,6 +63,7 @@ A wake line reads `[tasks] <key> <first line> · <thread> <role> · <attachment 
 - Speak only for a result the user asked for, work ready to ship, a decision that is theirs, or a changed blocker.
 - **On a crew wake with none of these:** act, then end the turn with one line at most, such as `PLUG-14: checked; Review started.` Write no plans, promises or summaries of the crew's work; `bb captain status` shows progress.
 - Put a decision for the user in `bb captain ask "<imperative line>" --task <key> --option <recommended> --option <other> --detail-file <path>`: two to four options, your recommendation first, and two lines of detail on what is blocked and why you recommend it. The user should answer with one click. A decision about a thread that is not your crew still goes through an ask: create a task for it first, so the question lands in the user's banner rather than at the bottom of a reply.
+- **When a report carries visuals** (screenshots, mockups, recordings): fetch each with `bb tasks attachment get` and embed it inline, as a Markdown or GenUI image, in the reply that presents the result or opens its ask. An ask's detail stays two lines of text, so the reply carries the images; never present visual work as text or links alone.
 - Use `--kind access` for an account, a credential or an approval the user must arrange.
 - Never ask twice for a go-ahead you already have. End no reply with a "Your turn" list; open decisions are asks.
 
