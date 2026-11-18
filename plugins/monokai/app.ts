@@ -3,16 +3,14 @@ import { definePluginApp } from "@get-bb/plugin-sdk/app";
 import "./app/monaco-syntax-tokens.css";
 import "./app/diff-header.css";
 import "./app/project-control.css";
-import "./app/new-tab-launcher.css";
-import "./app/search-fields.css";
 import { mountArchiveToast } from "./app/archive-toast.ts";
+import { mountBbDomStyles } from "./app/bb-dom-styles.ts";
 import { mountPanelToggleIntent } from "./app/panel-new-tab.ts";
 import { mountProjectControl } from "./app/project-control.ts";
 // workaround:monokai/secondary-swipe-width-property begin
 import "./app/secondary-panel-resize.css";
 // workaround:monokai/secondary-swipe-width-property end
 import "./app/home-marker.css";
-import "./app/thread-marker.css";
 import { mountDiffHeader } from "./app/diff-header.ts";
 // workaround:monokai/context-card-late-layout begin
 import { mountContextCardState } from "./app/context-card-state.ts";
@@ -30,6 +28,7 @@ import {
 
 export default definePluginApp((app) => {
   app.contentScripts.register({ id: "archive-toast", mount: mountArchiveToast });
+  app.contentScripts.register({ id: "bb-dom-styles", mount: mountBbDomStyles });
   // Marks presses of the right panel's toggle; the thread marker opens those on a new tab.
   app.contentScripts.register({ id: "panel-toggle-intent", mount: mountPanelToggleIntent });
   app.contentScripts.register({ id: "diff-header", mount: mountDiffHeader });

@@ -8,8 +8,19 @@ import { usePanelOpensToNewTab } from "./panel-new-tab.ts";
 // The theme floats the phone sidebar toggle only while the attribute is present.
 const THREAD_ATTRIBUTE = "data-monokai-thread";
 
-/** The slot title bb gives the action's wrapper; thread-marker.css hides it. */
+/** The slot title bb gives the action's wrapper; {@link THREAD_MARKER_CSS} hides it. */
 export const THREAD_MARKER_TITLE = "Thread view marker";
+
+/**
+ * bb wraps each thread-header action in a labelled group. The marker has
+ * nothing to show, so its group stays out of the header's layout and
+ * accessibility tree, under every theme (from the `bb-dom-styles` content script).
+ */
+export const THREAD_MARKER_CSS = `
+[data-thread-header-workflow-actions] [role="group"][aria-label="${THREAD_MARKER_TITLE}"] {
+  display: none;
+}
+`;
 
 /** bb still mounts the legacy thread-header slot; SDK 0.6.92 dropped its types. */
 export interface LegacyThreadHeaderActionSlots {

@@ -1,5 +1,7 @@
-/* The right panel's new tab, under every theme: the search stays at the top,
+/**
+ * The right panel's new tab, under every theme: the search stays at the top,
  * and the Actions sit centred in the panel below it as shadcn outline buttons.
+ * The `bb-dom-styles` content script appends these rules.
  *
  * bb's DOM (private contract; recheck after bb upgrades):
  * [data-panel-new-tab-page] > div            the launcher column
@@ -15,7 +17,9 @@
  *
  * bb renders the Actions only while the query is empty, so the sibling after
  * them is always Recent; search results follow the search directly. Hiding the
- * reorder handle removes drag-to-reorder; a stored order still applies. */
+ * reorder handle removes drag-to-reorder; a stored order still applies.
+ */
+export const NEW_TAB_LAUNCHER_CSS = `
 [data-panel-new-tab-page] > div {
   flex: 1 0 auto;
   width: 100%;
@@ -77,7 +81,7 @@
   line-height: 1;
 }
 /* Drop bb's "Start" prefix. The labels are bb's text, so the original is
- * hidden and the short label drawn in its place; the button's `title` and
+ * hidden and the short label drawn in its place; the button's title and
  * accessible name keep bb's wording. Keyed on bb's action ids. */
 #file-search-result-start-terminal > span:nth-child(2),
 button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2) {
@@ -96,3 +100,4 @@ button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2)::after {
 button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2)::after {
   content: "Side chat";
 }
+`;

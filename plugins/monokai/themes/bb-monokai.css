@@ -1537,7 +1537,7 @@
   background-color: var(--border);
 }
 
-/* The model-search row holds a shadcn search field (app/search-fields.css),
+/* The model-search row holds a shadcn search field (app/search-fields.ts),
  * so it drops its rule. bb gives no other popover row this exact padding pair. */
 .dark .bg-popover > .shrink-0.border-b.px-1\.5.py-1 {
   background-color: transparent;
