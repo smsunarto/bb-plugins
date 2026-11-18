@@ -13,13 +13,14 @@ this one, and neither replaces a licence that travels with a dependency.
 
 ## bb — `get-bb/bb`
 
-Three separate bodies of code arrive from bb, all under the MIT licence:
+Four separate bodies of code arrive from bb, all under the MIT licence:
 
-| What                                                                                                                                         | Where                                       |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| The whole **GTD Sidebar** plugin, forked from `examples/plugins/t3sidebar` at commit `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07) | `plugins/gtd-sidebar/`                      |
-| Provider brand-mark **geometry**, lifted from bb's own icon components                                                                       | `plugins/gtd-sidebar/lib/provider-marks.ts` |
-| shadcn/ui-derived components, vendored through bb's own plugin component registry and marked `/* shadcn/ui-derived */`                       | `plugins/**/components/ui/`                 |
+| What                                                                                                                                                   | Where                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| The whole **GTD Sidebar** plugin, forked from `examples/plugins/t3sidebar` at commit `f13c2d35f96540012b305f3b555839b30e1b6163` (2026-08-07)           | `plugins/gtd-sidebar/`                      |
+| Provider brand-mark **geometry**, lifted from bb's own icon components                                                                                 | `plugins/gtd-sidebar/lib/provider-marks.ts` |
+| shadcn/ui-derived components, vendored through bb's own plugin component registry and marked `/* shadcn/ui-derived */`                                 | `plugins/**/components/ui/`                 |
+| Markdown editing and block preservation, adapted from the built-in **Docs** plugin `plugins/docs` at commit `3bacfac9ed69d42392076e5b3da2815bec822cd8` | `packages/markdown-editor/`                 |
 
 ```
 MIT License
