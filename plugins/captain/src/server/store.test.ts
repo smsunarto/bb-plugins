@@ -13,6 +13,8 @@ test("migrations apply once, a second open changes nothing, and rows survive a r
     role: "implement",
     reportDueSince: 1_500,
     contractSent: false,
+    rung: 2,
+    baseBranch: "crew/x",
   });
 
   openStore(host.bb);
@@ -33,6 +35,8 @@ test("migrations apply once, a second open changes nothing, and rows survive a r
     role: "implement",
     reportDueSince: 1_500,
     contractSent: false,
+    rung: 2,
+    baseBranch: "crew/x",
   });
 
   // The reloaded plugin rebuilt its registry from data.db: the crew still gets its role.

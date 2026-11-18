@@ -8,6 +8,7 @@
  */
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { LADDER_ROLES, ladderSchema, rungSchema } from "./ladder.ts";
 import { ASK_KINDS } from "./queue.ts";
 
 const threadId = z.string().regex(/^thr_[A-Za-z0-9_-]+$/u);
@@ -76,6 +77,7 @@ export const asksTag = (captainId: string) => `asks:${captainId}`;
 export const crewTag = (captainId: string) => `crew:${captainId}`;
 export const sinceTag = (captainId: string) => `since:${captainId}`;
 export const CAPTAINS_TAG = "captains";
+export const LADDERS_TAG = "ladders";
 
 /** Later and Skip may write only these `notices` keys; the check's own keys stay its own. */
 export const DEFERRABLE_KEY = /^(ask|blocked|health):[A-Za-z0-9_:.-]{1,200}$/u;
@@ -86,7 +88,31 @@ export const CAPTAIN_NAME_MAX = 80;
 /** Why `new` refused, and the command or step that clears it. */
 const blocker = z.object({ reason: z.string(), fix: z.string() }).strict();
 
+const roleLadderSchema = z
+  .object({
+    role: z.enum(LADDER_ROLES),
+    label: z.string(),
+    rungs: z.array(rungSchema),
+    /** False while the role runs on the default ladder. */
+    custom: z.boolean(),
+    defaults: z.array(rungSchema),
+  })
+  .strict();
+
 export const captainContract = defineRpcContract({
+  /** Each dispatched role's model ladder, as Captain settings edit it. */
+  ladders: {
+    input: z.object({}).strict(),
+    output: z.object({ roles: z.array(roleLadderSchema) }).strict(),
+    tags: () => [LADDERS_TAG],
+  },
+  /** Save a role's ladder; null goes back to the default. */
+  setLadder: {
+    experimental_description:
+      "Set the ordered provider, model and reasoning rungs a Captain crew role starts on and falls back through; null restores the default.",
+    input: z.object({ role: z.enum(LADDER_ROLES), rungs: ladderSchema.nullable() }).strict(),
+    output: roleLadderSchema,
+  },
   /** Every live Captain's thread id: one shared read that tells the banner where to render. */
   captains: {
     input: z.object({}).strict(),

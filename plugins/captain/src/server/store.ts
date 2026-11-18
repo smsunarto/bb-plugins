@@ -76,6 +76,34 @@ export const MIGRATIONS: readonly string[] = [
     thread_id TEXT PRIMARY KEY CHECK (thread_id GLOB 'thr_*'),
     rule_id INTEGER NOT NULL
   )`,
+  // A role's model ladder from Captain settings, as JSON rungs; no row means the default.
+  `CREATE TABLE role_ladders (
+    role TEXT PRIMARY KEY,
+    rungs TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  // The ladder rung a crew thread started on, and the base branch it was given.
+  "ALTER TABLE crew_roles ADD COLUMN rung INTEGER",
+  "ALTER TABLE crew_roles ADD COLUMN base_branch TEXT",
+  // A crew thread that failed on a rate limit, and how far its restart got.
+  // `to_rung` null: no rung was left, so the Captain is woken as blocked.
+  `CREATE TABLE fallbacks (
+    failed_thread_id TEXT PRIMARY KEY CHECK (failed_thread_id GLOB 'thr_*'),
+    captain_id TEXT NOT NULL,
+    task_id TEXT NOT NULL,
+    task_key TEXT NOT NULL,
+    role TEXT NOT NULL,
+    from_rung INTEGER NOT NULL,
+    from_label TEXT NOT NULL,
+    to_rung INTEGER,
+    to_label TEXT,
+    base_branch TEXT,
+    skipped TEXT NOT NULL,
+    new_thread_id TEXT,
+    archived INTEGER NOT NULL DEFAULT 0 CHECK (archived IN (0, 1)),
+    woke_at INTEGER,
+    created_at INTEGER NOT NULL
+  )`,
 ];
 
 /**
@@ -89,6 +117,10 @@ export const NOTICE = {
   command: (threadId: string, dueSince: number) => `command:${threadId}:${dueSince}`,
   /** A crew thread seen in `error`, for Since you left. */
   failed: (threadId: string) => `failed:${threadId}`,
+  /** The Captain's wake line for one fallback, claimed before it is sent. */
+  fallbackWake: (threadId: string) => `fallback:${threadId}`,
+  /** A crew failure read and judged not to need a fallback, at the thread's last update. */
+  noFallback: (threadId: string, updatedAt: number) => `nofallback:${threadId}:${updatedAt}`,
   askPush: (askId: string) => `push:ask:${askId}`,
   answerPush: (askId: string) => `push:answer:${askId}`,
   undeliverablePush: (commentId: string) => `push:undeliverable:${commentId}`,
@@ -119,6 +151,36 @@ export type CrewRole = {
   role: Role;
   reportDueSince: number | null;
   contractSent: boolean;
+  /** The ladder rung it started on; null for threads brought in or started before ladders. */
+  rung: number | null;
+  /** The base branch dispatch gave it, so a restart starts from the same one. */
+  baseBranch: string | null;
+};
+
+/** A crew row as written: rung and base branch default to none. */
+export type CrewRoleInput = Omit<CrewRole, "rung" | "baseBranch"> &
+  Partial<Pick<CrewRole, "rung" | "baseBranch">>;
+
+/** A rate-limited crew thread's restart, advanced one step per pass until the Captain is woken. */
+export type Fallback = {
+  failedThreadId: string;
+  captainId: string;
+  taskId: string;
+  taskKey: string;
+  role: Role;
+  fromRung: number;
+  /** The rung as it read when the thread failed, such as `claude-code claude-fable-5-2 high`. */
+  fromLabel: string;
+  /** Null when no rung was left. */
+  toRung: number | null;
+  toLabel: string | null;
+  baseBranch: string | null;
+  /** Rungs passed over, each with why. */
+  skipped: string[];
+  newThreadId: string | null;
+  archived: boolean;
+  wokeAt: number | null;
+  createdAt: number;
 };
 
 /** A rule `bb captain tell --rule` added to CREW.md; ids grow in the order rules were added. */
@@ -177,6 +239,25 @@ type CrewRoleRecord = {
   role: string;
   report_due_since: number | null;
   contract_sent: number;
+  rung: number | null;
+  base_branch: string | null;
+};
+type FallbackRecord = {
+  failed_thread_id: string;
+  captain_id: string;
+  task_id: string;
+  task_key: string;
+  role: string;
+  from_rung: number;
+  from_label: string;
+  to_rung: number | null;
+  to_label: string | null;
+  base_branch: string | null;
+  skipped: string;
+  new_thread_id: string | null;
+  archived: number;
+  woke_at: number | null;
+  created_at: number;
 };
 
 export type Store = ReturnType<typeof openStore>;
@@ -214,6 +295,29 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
       role,
       reportDueSince: row.report_due_since,
       contractSent: row.contract_sent === 1,
+      rung: row.rung,
+      baseBranch: row.base_branch,
+    };
+  };
+  const toFallback = (row: FallbackRecord): Fallback | null => {
+    const role = parseRole(row.role);
+    if (role === null) return null;
+    return {
+      failedThreadId: row.failed_thread_id,
+      captainId: row.captain_id,
+      taskId: row.task_id,
+      taskKey: row.task_key,
+      role,
+      fromRung: row.from_rung,
+      fromLabel: row.from_label,
+      toRung: row.to_rung,
+      toLabel: row.to_label,
+      baseBranch: row.base_branch,
+      skipped: JSON.parse(row.skipped) as string[],
+      newThreadId: row.new_thread_id,
+      archived: row.archived === 1,
+      wokeAt: row.woke_at,
+      createdAt: row.created_at,
     };
   };
   const selectAsk = db.prepare<[string], AskRecord>("SELECT * FROM asks WHERE id = ?");
@@ -290,16 +394,19 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         .flatMap((row) => toCrewRole(row) ?? []);
     },
     /** Write a row only when the thread has none, as a backfill does. */
-    ensureCrewRole(crew: CrewRole): void {
+    ensureCrewRole(crew: CrewRoleInput): void {
       db.prepare(
-        `INSERT INTO crew_roles (thread_id, captain_id, role, report_due_since, contract_sent)
-         VALUES (?, ?, ?, ?, ?) ON CONFLICT (thread_id) DO NOTHING`,
+        `INSERT INTO crew_roles
+           (thread_id, captain_id, role, report_due_since, contract_sent, rung, base_branch)
+         VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (thread_id) DO NOTHING`,
       ).run(
         crew.threadId,
         crew.captainId,
         crew.role,
         crew.reportDueSince,
         crew.contractSent ? 1 : 0,
+        crew.rung ?? null,
+        crew.baseBranch ?? null,
       );
     },
     /** Move the report-due mark forward; a notifying comment is compared with it, never clears it. */
@@ -312,19 +419,23 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     setContractSent(threadId: string): void {
       db.prepare("UPDATE crew_roles SET contract_sent = 1 WHERE thread_id = ?").run(threadId);
     },
-    putCrewRole(crew: CrewRole): void {
+    putCrewRole(crew: CrewRoleInput): void {
       db.prepare(
-        `INSERT INTO crew_roles (thread_id, captain_id, role, report_due_since, contract_sent)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO crew_roles
+           (thread_id, captain_id, role, report_due_since, contract_sent, rung, base_branch)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (thread_id) DO UPDATE SET captain_id = excluded.captain_id,
            role = excluded.role, report_due_since = excluded.report_due_since,
-           contract_sent = excluded.contract_sent`,
+           contract_sent = excluded.contract_sent, rung = excluded.rung,
+           base_branch = excluded.base_branch`,
       ).run(
         crew.threadId,
         crew.captainId,
         crew.role,
         crew.reportDueSince,
         crew.contractSent ? 1 : 0,
+        crew.rung ?? null,
+        crew.baseBranch ?? null,
       );
     },
     /** Record a crew rule once: a rerun with the same text returns the first. */
@@ -579,6 +690,82 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     /** Forget an unsent notice, so its clock starts again the next time its condition is seen. */
     clearUnsentNotice(key: string): void {
       db.prepare("DELETE FROM notices WHERE key = ? AND sent_at IS NULL").run(key);
+    },
+    /** A role's saved ladder as stored JSON, or null for the default. */
+    ladderJson(role: string): string | null {
+      return (
+        db
+          .prepare<[string], { rungs: string }>("SELECT rungs FROM role_ladders WHERE role = ?")
+          .get(role)?.rungs ?? null
+      );
+    },
+    /** Save a role's ladder; null goes back to the default. */
+    setLadderJson(role: string, rungs: string | null, at: number): void {
+      if (rungs === null) {
+        db.prepare("DELETE FROM role_ladders WHERE role = ?").run(role);
+        return;
+      }
+      db.prepare(
+        `INSERT INTO role_ladders (role, rungs, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT (role) DO UPDATE SET rungs = excluded.rungs, updated_at = excluded.updated_at`,
+      ).run(role, rungs, at);
+    },
+    fallback(failedThreadId: string): Fallback | null {
+      const row = db
+        .prepare<[string], FallbackRecord>("SELECT * FROM fallbacks WHERE failed_thread_id = ?")
+        .get(failedThreadId);
+      return row === undefined ? null : toFallback(row);
+    },
+    /** Record a fallback once; false when the failed thread already has one. */
+    openFallback(fallback: Omit<Fallback, "newThreadId" | "archived" | "wokeAt">): boolean {
+      const result = db
+        .prepare(
+          `INSERT INTO fallbacks (failed_thread_id, captain_id, task_id, task_key, role,
+             from_rung, from_label, to_rung, to_label, base_branch, skipped, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (failed_thread_id) DO NOTHING`,
+        )
+        .run(
+          fallback.failedThreadId,
+          fallback.captainId,
+          fallback.taskId,
+          fallback.taskKey,
+          fallback.role,
+          fallback.fromRung,
+          fallback.fromLabel,
+          fallback.toRung,
+          fallback.toLabel,
+          fallback.baseBranch,
+          JSON.stringify(fallback.skipped),
+          fallback.createdAt,
+        );
+      return result.changes > 0;
+    },
+    /** A Captain's fallbacks whose wake has not been sent, oldest first. */
+    openFallbacks(captainId: string): Fallback[] {
+      return db
+        .prepare<[string], FallbackRecord>(
+          `SELECT * FROM fallbacks WHERE captain_id = ? AND woke_at IS NULL
+           ORDER BY created_at, failed_thread_id`,
+        )
+        .all(captainId)
+        .flatMap((row) => toFallback(row) ?? []);
+    },
+    setFallbackThread(failedThreadId: string, newThreadId: string): void {
+      db.prepare("UPDATE fallbacks SET new_thread_id = ? WHERE failed_thread_id = ?").run(
+        newThreadId,
+        failedThreadId,
+      );
+    },
+    setFallbackArchived(failedThreadId: string): void {
+      db.prepare("UPDATE fallbacks SET archived = 1 WHERE failed_thread_id = ?").run(
+        failedThreadId,
+      );
+    },
+    setFallbackWoke(failedThreadId: string, at: number): void {
+      db.prepare("UPDATE fallbacks SET woke_at = ? WHERE failed_thread_id = ?").run(
+        at,
+        failedThreadId,
+      );
     },
   };
 

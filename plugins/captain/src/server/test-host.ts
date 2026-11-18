@@ -108,6 +108,17 @@ export type FakeOptions = {
   crewPollMs?: number;
 };
 
+/** The Account Pooler's `status.get` fields Captain reads; null when the pool is not loaded. */
+export type FakePool = {
+  routing: Record<string, boolean>;
+  accounts: {
+    provider: string;
+    enabled: boolean;
+    status: string;
+    familyWeekly?: Record<string, { utilization: number; resetAt: number; status: string } | null>;
+  }[];
+} | null;
+
 export async function captainHost(options: FakeOptions = {}) {
   const root = mkdtempSync(join(tmpdir(), "captain-test-"));
   const storageRoot = join(root, "thread-storage");
@@ -137,6 +148,14 @@ export async function captainHost(options: FakeOptions = {}) {
   /** Threads whose sends fail. */
   const sendFails = new Set<string>();
   const interactions = new Map<string, unknown[]>();
+  /** The Account Pooler as `status.get` reports it; no routing by default, so every rung is eligible. */
+  const pool: { status: FakePool } = { status: { routing: {}, accounts: [] } };
+  /** bb's provider-retry decision per thread; absent reads as no decision. */
+  const retryDecisions = new Map<string, unknown>();
+  /** Thread events per thread, oldest first, as `threads.events.list` serves them. */
+  const events = new Map<string, { type: string; createdAt: number; data: unknown }[]>();
+  /** Threads whose archive fails. */
+  const archiveFails = new Set<string>();
   const threads = new Map<string, Thread>();
   /** Thread metadata by `<threadId> <pluginId>`, as other plugins read it. */
   const metadata = new Map<string, Record<string, unknown>>();
@@ -273,8 +292,18 @@ export async function captainHost(options: FakeOptions = {}) {
       case "listPresets":
         return { presets: tasks.presets };
       case "createPreset": {
+        // Tasks' presets.name is unique.
+        if (tasks.presets.some((entry) => entry.name === input["name"]))
+          throw new Error("SqliteError: UNIQUE constraint failed: presets.name");
         const preset = { id: `pr_${++serial}`, ...input } as Preset;
         tasks.presets.push(preset);
+        return { preset };
+      }
+      case "updatePreset": {
+        const preset = tasks.presets.find((entry) => entry.id === input["presetId"]);
+        if (preset === undefined) throw new Error("preset not found");
+        const { presetId: _id, ...patch } = input;
+        Object.assign(preset, patch);
         return { preset };
       }
       case "getTaskByKey": {
@@ -488,7 +517,26 @@ export async function captainHost(options: FakeOptions = {}) {
           metadata.set(key, next);
           return next as never;
         },
+        events: {
+          list: async ({
+            threadId,
+            types,
+            order,
+          }: {
+            threadId: string;
+            types?: readonly string[];
+            order?: "asc" | "desc";
+          }) => {
+            const rows = (events.get(threadId) ?? [])
+              .filter((event) => types === undefined || types.includes(event.type))
+              .map((event, index) =>
+                Object.assign({ id: `evt_${index}`, threadId, seq: index }, event),
+              );
+            return (order === "desc" ? rows.reverse() : rows) as never;
+          },
+        } as never,
         archive: async ({ threadId }) => {
+          if (archiveFails.has(threadId)) throw new Error(`archive of ${threadId} failed`);
           const thread = threads.get(threadId);
           if (thread !== undefined) threads.set(threadId, { ...thread, archivedAt: 5_000 });
           return { ok: true } as never;
@@ -510,6 +558,12 @@ export async function captainHost(options: FakeOptions = {}) {
           const input = (args.input ?? {}) as Record<string, unknown>;
           if (args.pluginId === "scott-tasks")
             return args.outputSchema.parse(await tasksRpc(args.method, input, args.signal));
+          if (args.pluginId === "account-pool") {
+            if (pool.status === null) throw new Error("plugin account-pool is not loaded");
+            return args.outputSchema.parse({ accepting: true, ...pool.status });
+          }
+          if (args.pluginId === "provider-retry")
+            return args.outputSchema.parse(retryDecisions.get(String(input["threadId"])) ?? null);
           if (args.pluginId === "push-notifications") {
             if (options.pushDown === true)
               throw new Error("plugin push-notifications is not loaded");
@@ -626,6 +680,10 @@ export async function captainHost(options: FakeOptions = {}) {
     sent,
     sendFails,
     interactions,
+    pool,
+    retryDecisions,
+    events,
+    archiveFails,
     threads,
     metadata,
     queued,

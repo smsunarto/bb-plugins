@@ -1,0 +1,1 @@
+[captain] {{task}} {{role}} {{failed}} hit a provider rate limit on rung {{from}} ({{fromLabel}}); restarted on rung {{to}} ({{toLabel}}) as {{thread}} with the same brief, and archived {{failed}}.{{skipped}}

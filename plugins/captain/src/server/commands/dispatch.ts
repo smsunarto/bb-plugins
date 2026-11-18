@@ -10,9 +10,19 @@ import {
   type CrewThread,
 } from "../crew.ts";
 import { guard, refuse, Refusal, render, type Blocker, type Item } from "../output.ts";
+import { rungLabel, type LadderRole } from "../../contract/ladder.ts";
+import {
+  pickRung,
+  readPool,
+  roleLadder,
+  rungPresetName,
+  type PoolView,
+  type RungChoice,
+} from "../ladder.ts";
 import { setPushLevel } from "../push.ts";
 import type { Captain } from "../registry.ts";
 import { isDispatchable, parseRole, ROLE_SPECS, type Role } from "../roles.ts";
+import { ensureRungPreset, roleContract, spawnCrew } from "../spawn.ts";
 import { TasksError, type TasksPreset, type TasksTask } from "../tasks-client.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
 
@@ -20,7 +30,10 @@ import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
 type Unit = {
   task: TasksTask;
   role: Role;
+  /** The role's own preset: the template for later rungs, and what `--thread` attaches. */
   preset: TasksPreset;
+  /** The ladder rung it starts on; null when brought in with `--thread`. */
+  choice: RungChoice | null;
   /** The base branch Tasks starts the worktree from, when one is set. */
   baseBranch: string | undefined;
   blockers: Blocker[];
@@ -31,6 +44,8 @@ type Plan = {
   units: Unit[];
   /** The live crew as read during validation. */
   crew: CrewThread[];
+  /** Every Tasks preset, as read during validation. */
+  presets: TasksPreset[];
 };
 
 type Flags = {
@@ -38,29 +53,11 @@ type Flags = {
   dryRun: boolean;
   baseBranch: string | undefined;
   thread: string | undefined;
+  /** `--rung`: start on this rung, eligible or not; null when it is not a whole number from 1. */
+  rung: number | null | undefined;
 };
 
 export function dispatchCommand(deps: CommandDeps) {
-  /** Per-task guard: two dispatches of one task run one after the other; different tasks run in parallel. */
-  const guards = new Map<string, Promise<void>>();
-
-  async function withTaskGuard<T>(key: string, run: (waited: boolean) => Promise<T>): Promise<T> {
-    const previous = guards.get(key);
-    let release = () => {};
-    const mine = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const chained = (previous ?? Promise.resolve()).then(() => mine);
-    guards.set(key, chained);
-    if (previous !== undefined) await previous;
-    try {
-      return await run(previous !== undefined);
-    } finally {
-      release();
-      if (guards.get(key) === chained) guards.delete(key);
-    }
-  }
-
   return cliCommand({
     summary:
       "Start crew threads on tasks through Tasks' dispatch, with parent, stuck notifications, preset and requires checked",
@@ -93,13 +90,19 @@ export function dispatchCommand(deps: CommandDeps) {
         placeholder: "thread-id",
         description: "Bring this existing thread in as the crew thread instead of spawning one",
       },
+      rung: {
+        type: "string",
+        placeholder: "n",
+        description:
+          "Start on this rung of the role's model ladder, eligible or not; Captain settings list the rungs",
+      },
       again: {
         type: "boolean",
         description: "Start another thread even when a live one has this task and role",
       },
       "dry-run": {
         type: "boolean",
-        description: "Print the resolved preset, machine and branch without spawning",
+        description: "Print the resolved rung, preset, machine and branch without spawning",
       },
       captain: CAPTAIN_OPTION,
       json: JSON_OPTION,
@@ -112,9 +115,11 @@ export function dispatchCommand(deps: CommandDeps) {
           dryRun: input.options["dry-run"],
           baseBranch: input.options["base-branch"]?.trim() || undefined,
           thread: input.options.thread?.trim() || undefined,
+          rung: parseRungFlag(input.options.rung),
         };
         const plan = await validate(deps, ctx, input.positionals.task, input.options, flags);
         if ("blockers" in plan) return refuse("captain dispatch", plan.blockers, json);
+        const notes: string[] = [];
         const refused = plan.units.filter((unit) => unit.blockers.length > 0);
         if (refused.length > 0) {
           // Validate, then act: one refused unit starts nothing.
@@ -127,21 +132,25 @@ export function dispatchCommand(deps: CommandDeps) {
                   }),
             ),
             json,
+            plan.poolUnread ? [POOL_UNREAD] : [],
           );
         }
+        if (plan.poolUnread) notes.push(POOL_UNREAD);
         if (flags.thread !== undefined) {
           const [unit] = plan.units;
           if (unit === undefined) throw new Error("adoption without a unit");
           return render([await adopt(deps, plan, unit, flags.thread, flags)], json);
         }
+        // One preset per role and rung, before the tasks start in parallel: two
+        // starts creating the same preset would collide on Tasks' unique names.
+        const rungPresets = flags.dryRun ? new Map() : await resolveRungPresets(deps, plan);
         const byTask = new Map<string, Unit[]>();
         for (const unit of plan.units) {
           byTask.set(unit.task.key, [...(byTask.get(unit.task.key) ?? []), unit]);
         }
-        const notes: string[] = [];
         const results = await Promise.all(
           [...byTask].map(([key, units]) =>
-            withTaskGuard(key, async (waited) => {
+            deps.taskGuard(key, async (waited) => {
               // A dispatch that waited on another of the same task must see that one's thread.
               let crew = plan.crew;
               if (waited) {
@@ -160,7 +169,7 @@ export function dispatchCommand(deps: CommandDeps) {
               }
               const items: Item[] = [];
               for (const unit of units) {
-                const result = await dispatchUnit(deps, plan.captain, unit, crew, flags);
+                const result = await dispatchUnit(deps, plan, unit, crew, flags, rungPresets);
                 items.push(result.item);
                 notes.push(...result.notes);
               }
@@ -181,9 +190,18 @@ async function validate(
   keys: readonly string[],
   options: { role: string[]; captain?: string | undefined },
   flags: Flags,
-): Promise<Plan | { blockers: Blocker[] }> {
+): Promise<(Plan & { poolUnread: boolean }) | { blockers: Blocker[] }> {
   const captain = await callerCaptain(deps.bb, deps.registry, ctx, { captain: options.captain });
   const blockers: Blocker[] = [];
+  if (flags.rung === null) {
+    blockers.push({ reason: "--rung takes a whole number from 1", fix: "pass --rung 1, 2, ..." });
+  }
+  if (flags.thread !== undefined && flags.rung !== undefined) {
+    blockers.push({
+      reason: "--rung picks a new thread's model; a thread brought in with --thread keeps its own",
+      fix: "drop --rung",
+    });
+  }
   const roles: Role[] = [];
   for (const name of options.role) {
     const role = parseRole(name);
@@ -216,16 +234,30 @@ async function validate(
       fix: "drop --base-branch",
     });
   }
+  const forced = flags.rung ?? undefined;
+  for (const role of roles) {
+    const { rungs } = roleLadder(deps.store, role as LadderRole);
+    if (forced !== undefined && forced > rungs.length) {
+      blockers.push({
+        reason: `${ROLE_SPECS[role].label}'s ladder has ${rungs.length} rung${rungs.length === 1 ? "" : "s"}, not ${forced}`,
+        fix: `pass --rung 1 to ${rungs.length}, or add a rung in Captain settings`,
+      });
+    }
+  }
   if (blockers.length > 0) return { blockers };
 
   let presets: TasksPreset[];
   let crew: CrewThread[];
   let resolved: ({ task: TasksTask } | { blocker: Blocker })[];
+  let pool: PoolView | null = null;
+  // A forced rung and a thread brought in read no eligibility.
+  const readsPool = flags.thread === undefined && forced === undefined;
   try {
-    [presets, crew, resolved] = await Promise.all([
+    [presets, crew, resolved, pool] = await Promise.all([
       deps.tasks.listPresets(),
       readCrew(deps, captain.threadId),
       Promise.all(uniqueKeys.map((key) => resolveTask(deps, captain, key))),
+      readsPool ? readPool(deps.bb) : Promise.resolve(null),
     ]);
   } catch (error) {
     if (error instanceof TasksError) return { blockers: [tasksBlocker(error)] };
@@ -247,20 +279,84 @@ async function validate(
   if (blockers.length > 0 || keyBlockers.length > 0)
     return { blockers: [...blockers, ...keyBlockers] };
 
+  const now = deps.now();
   const units: Unit[] = [];
   for (const entry of resolved) {
     if (!("task" in entry)) continue;
     for (const role of roles) {
       const preset = presetOf.get(role);
       if (preset === undefined) continue;
-      units.push(
-        flags.thread === undefined
-          ? requires(entry.task, role, preset, crew, flags.baseBranch)
-          : { task: entry.task, role, preset, baseBranch: undefined, blockers: [] },
-      );
+      if (flags.thread !== undefined) {
+        units.push({
+          task: entry.task,
+          role,
+          preset,
+          choice: null,
+          baseBranch: undefined,
+          blockers: [],
+        });
+        continue;
+      }
+      const unit = requires(entry.task, role, preset, crew, flags.baseBranch);
+      const ladder = roleLadder(deps.store, role as LadderRole).rungs;
+      const choice = pickRung(ladder, pool, now, { forced });
+      // A live thread on the task and role reports exists; only a start needs a rung.
+      const starts = flags.again || crewOnTask(crew, entry.task.key, role).length === 0;
+      if (choice.rung === null && starts) {
+        unit.blockers.push({
+          reason: `no rung of ${ROLE_SPECS[role].label}'s ladder has an eligible account: ${choice.skipped.join("; ")}`,
+          fix: `bb captain dispatch ${entry.task.key} --role ${ROLE_SPECS[role].label} --rung <n> to start on one anyway; bb pool status shows when accounts reset`,
+        });
+      } else if (choice.rung !== null) unit.choice = choice;
+      units.push(unit);
     }
   }
-  return { captain, units, crew };
+  return { captain, units, crew, presets, poolUnread: readsPool && pool === null };
+}
+
+const rungKey = (role: Role, rung: number) => `${role}:${rung}`;
+
+/** Each role and rung the units start on, its Captain-owned preset resolved once, in turn. */
+async function resolveRungPresets(
+  deps: CommandDeps,
+  plan: Plan,
+): Promise<Map<string, TasksPreset | TasksError>> {
+  const resolved = new Map<string, TasksPreset | TasksError>();
+  for (const unit of plan.units) {
+    const choice = unit.choice;
+    if (choice === null || resolved.has(rungKey(unit.role, choice.rung))) continue;
+    let preset: TasksPreset | TasksError;
+    try {
+      preset = await ensureRungPreset(
+        deps,
+        unit.role as LadderRole,
+        choice.rung,
+        choice.spec,
+        plan.presets,
+      );
+    } catch (error) {
+      if (!(error instanceof TasksError)) throw error;
+      preset = error;
+    }
+    resolved.set(rungKey(unit.role, choice.rung), preset);
+  }
+  return resolved;
+}
+
+const POOL_UNREAD =
+  "note: Account Pooler status not read, so rung 1 was taken without an eligibility check";
+
+/** `--rung`: undefined when absent, null when not a whole number from 1. */
+function parseRungFlag(value: string | undefined): number | null | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  return /^[1-9]\d*$/u.test(trimmed) ? Number(trimmed) : null;
+}
+
+/** `rung 2 codex gpt-6-astra high (forced)`, with the rungs passed over on the way. */
+function rungDetail(choice: RungChoice): string {
+  const head = `rung ${choice.rung} ${rungLabel(choice.spec)}${choice.forced ? " (forced)" : ""}`;
+  return choice.skipped.length === 0 ? head : `${head}; skipped ${choice.skipped.join("; ")}`;
 }
 
 /**
@@ -276,7 +372,7 @@ function requires(
   crew: readonly CrewThread[],
   baseBranch: string | undefined,
 ): Unit {
-  const unit: Unit = { task, role, preset, baseBranch, blockers: [] };
+  const unit: Unit = { task, role, preset, choice: null, baseBranch, blockers: [] };
   if (role !== "review" || baseBranch !== undefined) return unit;
   const [implement] = crewOnTask(crew, task.key, "implement");
   const fix = `bb captain dispatch ${task.key} --role Review --base-branch <task branch>`;
@@ -321,7 +417,15 @@ function unitItem(
     data: {
       thread: extra.thread ?? null,
       role: label,
-      preset: unit.preset.name,
+      preset:
+        unit.choice === null
+          ? unit.preset.name
+          : rungPresetName(unit.role as LadderRole, unit.choice.rung),
+      rung: unit.choice?.rung ?? null,
+      providerId: unit.choice?.spec.providerId ?? null,
+      model: unit.choice?.spec.model ?? null,
+      reasoningLevel: unit.choice?.spec.reasoningLevel ?? null,
+      skipped: unit.choice?.skipped ?? [],
       baseBranch: unit.baseBranch ?? null,
     },
     ...(extra.blockers === undefined ? {} : { blockers: extra.blockers }),
@@ -331,11 +435,13 @@ function unitItem(
 /** Start one unit, or report the live thread that already has it. */
 async function dispatchUnit(
   deps: CommandDeps,
-  captain: Captain,
+  plan: Plan,
   unit: Unit,
   crew: readonly CrewThread[],
   flags: Flags,
+  rungPresets: ReadonlyMap<string, TasksPreset | TasksError>,
 ): Promise<{ item: Item; notes: string[] }> {
+  const { captain } = plan;
   const notes: string[] = [];
   const [existing] = crewOnTask(crew, unit.task.key, unit.role);
   if (existing !== undefined && !flags.again) {
@@ -345,6 +451,9 @@ async function dispatchUnit(
       );
     return { item: unitItem(unit, "exists", { thread: existing.thread.id }), notes };
   }
+  const choice = unit.choice;
+  if (choice === null) throw new Error("a new thread without a rung");
+  const presetName = rungPresetName(unit.role as LadderRole, choice.rung);
   if (flags.dryRun) {
     const machine = unit.preset.machineId ?? "the repo's source machine";
     const branch =
@@ -355,86 +464,53 @@ async function dispatchUnit(
         : "the shared checkout");
     return {
       item: unitItem(unit, "planned", {
-        detail: `preset ${unit.preset.name} · machine ${machine} · branch ${branch}`,
+        detail: `${rungDetail(choice)} · preset ${presetName} · machine ${machine} · branch ${branch}`,
       }),
       notes,
     };
   }
 
-  const known = new Set(crew.map((member) => member.thread.id));
-  // Read before the spawn: the new session's CREW.md holds at least these rules.
-  const rulesInCrewMd = deps.store.latestRuleId(captain.threadId);
-  deps.registry.setPending(captain.threadId, unit.task.key, unit.role);
-  try {
-    let threadId: string;
-    try {
-      threadId = await deps.tasks.delegate({
-        taskId: unit.task.id,
-        presetId: unit.preset.id,
-        parentThreadId: captain.threadId,
-        parentNotifications: "stuck",
-        reportContract: deps.files.read("report"),
-        extraInstructions: roleContract(deps, unit.role),
-        ...(unit.baseBranch === undefined ? {} : { baseBranch: unit.baseBranch }),
-      });
-    } catch (error) {
-      if (!(error instanceof TasksError)) throw error;
-      const late = error.timedOut ? await findLateThread(deps, captain, unit, known) : null;
-      if (late === null) {
-        const reason = error.timedOut
-          ? `${error.message}, and no new thread is on ${unit.task.key} yet`
-          : error.message;
-        return {
-          item: unitItem(unit, "failed", {
-            detail: reason,
-            blockers: [
-              {
-                reason,
-                fix: error.timedOut
-                  ? `rerun bb captain dispatch ${unit.task.key} --role ${ROLE_SPECS[unit.role].label}; a thread that started late reports exists`
-                  : "bb plugin list; check scott-tasks, then rerun",
-              },
-            ],
-          }),
-          notes,
-        };
-      }
-      threadId = late;
-      notes.push(`${unit.task.key}: Tasks did not answer in time; found its new thread ${late}`);
-    }
-    deps.store.putCrewRole({
-      threadId,
-      captainId: captain.threadId,
-      role: unit.role,
-      reportDueSince: deps.now(),
-      contractSent: true,
-    });
-    deps.store.markRulesSeen(threadId, rulesInCrewMd);
-    const warning = await setPushLevel(deps.bb, threadId);
-    if (warning !== null) notes.push(`warning: ${warning}`);
-    return { item: unitItem(unit, "started", { thread: threadId }), notes };
-  } finally {
-    deps.registry.clearPending(captain.threadId, unit.task.key);
+  const retry = `rerun bb captain dispatch ${unit.task.key} --role ${ROLE_SPECS[unit.role].label}`;
+  const preset = rungPresets.get(rungKey(unit.role, choice.rung));
+  if (preset === undefined) throw new Error(`no preset resolved for ${presetName}`);
+  if (preset instanceof TasksError) {
+    const reason = `preset ${presetName} not set to ${rungLabel(choice.spec)}: ${preset.message}`;
+    return {
+      item: unitItem(unit, "failed", { detail: reason, blockers: [{ reason, fix: retry }] }),
+      notes,
+    };
   }
-}
-
-/** After a deadline: a child of the Captain, new since validation, attached to this task. */
-async function findLateThread(
-  deps: CommandDeps,
-  captain: Captain,
-  unit: Unit,
-  known: ReadonlySet<string>,
-): Promise<string | null> {
   try {
-    const crew = await readCrew(deps, captain.threadId);
-    const fresh = crewOnTask(crew, unit.task.key).find(
-      (member) =>
-        !known.has(member.thread.id) && (member.role === null || member.role === unit.role),
-    );
-    return fresh?.thread.id ?? null;
+    const started = await spawnCrew(deps, captain, {
+      taskId: unit.task.id,
+      taskKey: unit.task.key,
+      role: unit.role,
+      preset,
+      rung: choice.rung,
+      baseBranch: unit.baseBranch,
+      known: new Set(crew.map((member) => member.thread.id)),
+    });
+    notes.push(...started.notes);
+    return {
+      item: unitItem(unit, "started", { thread: started.threadId, detail: rungDetail(choice) }),
+      notes,
+    };
   } catch (error) {
-    if (error instanceof TasksError) return null;
-    throw error;
+    if (!(error instanceof TasksError)) throw error;
+    return {
+      item: unitItem(unit, "failed", {
+        detail: error.message,
+        blockers: [
+          {
+            reason: error.message,
+            fix: error.timedOut
+              ? `${retry}; a thread that started late reports exists`
+              : "bb plugin list; check scott-tasks, then rerun",
+          },
+        ],
+      }),
+      notes,
+    };
   }
 }
 
@@ -460,12 +536,6 @@ async function converge(
   });
   const warning = await setPushLevel(deps.bb, threadId);
   return warning === null ? [] : [`warning: ${warning}`];
-}
-
-/** The role's contract, carried into the first prompt whatever the session timing. */
-function roleContract(deps: CommandDeps, role: Role): string {
-  const contract = ROLE_SPECS[role].contract;
-  return contract === null ? "" : deps.files.read(contract);
 }
 
 /** What an adopted thread is told: the report contract and its role contract. */

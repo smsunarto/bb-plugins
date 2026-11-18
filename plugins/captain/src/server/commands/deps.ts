@@ -3,6 +3,7 @@ import type { InstructionFiles } from "@bb-plugins/instructions";
 import type { Drive } from "../drive.ts";
 import type { Fields } from "../fields.ts";
 import type { Registry } from "../registry.ts";
+import type { TaskGuard } from "../spawn.ts";
 import type { Store } from "../store.ts";
 import type { TasksClient } from "../tasks-client.ts";
 
@@ -20,6 +21,8 @@ export type CommandDeps = {
   captainsDir: string;
   /** Run the background check soon, such as after a failed answer send; never waits for it. */
   wakeCheck: () => void;
+  /** Serializes starts on one task across `dispatch` and the rate-limit fallback. */
+  taskGuard: TaskGuard;
 };
 
 export const JSON_OPTION = {

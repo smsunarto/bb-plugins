@@ -25,11 +25,27 @@ export type TasksProject = z.infer<typeof projectSchema>;
 const presetSchema = z.object({
   id: z.string(),
   name: z.string(),
+  providerId: z.string().optional(),
+  modelId: z.string().optional(),
+  reasoningLevel: z.string().optional(),
+  serviceTier: z.string().nullable().optional(),
+  permissionMode: z.string().optional(),
   environmentKind: z.string().optional(),
   baseBranch: z.string().nullable().optional(),
   machineId: z.string().nullable().optional(),
+  instructions: z.string().optional(),
 });
 export type TasksPreset = z.infer<typeof presetSchema>;
+
+/** What `createPreset` takes: a role's spec, or a later rung copied from rung 1's preset. */
+export type PresetInput = Omit<PresetSpec, "permissionMode" | "environmentKind"> & {
+  permissionMode: string;
+  environmentKind: string;
+  serviceTier?: string | null;
+  baseBranch?: string | null;
+  machineId?: string | null;
+  instructions?: string;
+};
 
 const taskSchema = z.object({
   id: z.string(),
@@ -160,8 +176,22 @@ export function createTasksClient(
       return (await call("listPresets", null, z.object({ presets: z.array(presetSchema) })))
         .presets;
     },
-    async createPreset(spec: PresetSpec): Promise<TasksPreset> {
+    async createPreset(spec: PresetInput): Promise<TasksPreset> {
       return (await call("createPreset", { ...spec }, z.object({ preset: presetSchema }))).preset;
+    },
+    /** Point a preset at another provider, model and reasoning; its other fields stay. */
+    async updatePresetExecution(
+      presetId: string,
+      execution: {
+        providerId: string;
+        modelId: string;
+        reasoningLevel: string;
+        serviceTier: string | null;
+      },
+    ): Promise<TasksPreset> {
+      return (
+        await call("updatePreset", { presetId, ...execution }, z.object({ preset: presetSchema }))
+      ).preset;
     },
     async getTaskByKey(taskKey: string): Promise<TasksTask | null> {
       return (await call("getTaskByKey", { taskKey }, z.object({ task: taskSchema.nullable() })))
