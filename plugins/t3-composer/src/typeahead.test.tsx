@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 // The `@` and `/` menus in a mounted composer, with BB's mention and command search stubbed.
-import { act, waitFor } from "@testing-library/react";
+import { act, fireEvent, waitFor } from "@testing-library/react";
 import type { Editor } from "@tiptap/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
+  ExperimentalComposerCommandSuggestion,
   ExperimentalComposerInput,
   ExperimentalComposerMentionSuggestion,
   ExperimentalComposerRendererApi,
@@ -41,6 +42,20 @@ function pathMention(path: string): ExperimentalComposerMentionSuggestion {
     key: path,
     text: path,
     mention: { kind: "path", source: "workspace", entryKind: "file", path, label: path },
+  };
+}
+
+function command(
+  name: string,
+  origin: ExperimentalComposerCommandSuggestion["origin"],
+): ExperimentalComposerCommandSuggestion {
+  return {
+    kind: "command",
+    name,
+    source: origin === "builtin" ? "command" : "skill",
+    origin,
+    description: null,
+    argumentHint: null,
   };
 }
 
@@ -155,6 +170,32 @@ describe("@ mention menu", () => {
       ]);
       deleteBack();
       await waitFor(() => expect(slot.queryByText("src/index.ts")).not.toBeNull());
+    } finally {
+      slot.lifecycle.unmount();
+    }
+  });
+});
+
+describe("/ command menu", () => {
+  it.each([
+    { origin: "builtin" as const, name: "compact", sends: true },
+    { origin: "user" as const, name: "review", sends: false },
+  ])("a click on a $origin command sends it: $sends", async ({ origin, name, sends }) => {
+    search.mention = searchState([]);
+    search.command = searchState([
+      { key: "commands", label: "Commands", suggestions: [command(name, origin)] },
+    ]);
+    const { slot, run, type } = await mountComposer();
+    try {
+      type(`/${name.slice(0, 3)}`);
+      const row = await waitFor(() => slot.getByTitle(name));
+      fireEvent.mouseDown(row);
+      if (sends) {
+        await waitFor(() => expect(run).toHaveBeenCalledOnce());
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(run).not.toHaveBeenCalled();
+      }
     } finally {
       slot.lifecycle.unmount();
     }

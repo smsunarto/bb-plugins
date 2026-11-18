@@ -2874,6 +2874,18 @@ export function PromptBoxInternal({
     submitPrompt();
   }, [pendingCommandSubmit, submitPrompt]);
 
+  // Choosing a built-in command, by Enter or by a click on its row, also sends it, as BB's
+  // composer does. `/handoff` is the plugin's own: applying it starts BB's handoff instead.
+  const chooseSuggestion = useCallback(
+    (item: TypeaheadSuggestion) => {
+      applyTrigger(item);
+      if (item.kind === "command" && item.origin === "builtin" && !isHandoffCommand(item)) {
+        setPendingCommandSubmit(true);
+      }
+    },
+    [applyTrigger],
+  );
+
   const submitModifierPrompt = useCallback(() => {
     if (startTypedHandoff()) return;
     if (!canModifierSubmit || !onModifierSubmit) return;
@@ -2995,14 +3007,10 @@ export function PromptBoxInternal({
           event.preventDefault();
           const selected = activeSuggestions[selectedIndex] ?? activeSuggestions[0];
           if (selected) {
-            applyTrigger(selected);
-            if (
-              event.key === "Enter" &&
-              selected.kind === "command" &&
-              selected.origin === "builtin" &&
-              !isHandoffCommand(selected)
-            ) {
-              setPendingCommandSubmit(true);
+            if (event.key === "Enter") {
+              chooseSuggestion(selected);
+            } else {
+              applyTrigger(selected);
             }
           }
           return true;
@@ -3095,6 +3103,7 @@ export function PromptBoxInternal({
       activeSuggestions,
       applyHistoryDraft,
       applyTrigger,
+      chooseSuggestion,
       dispatchAppCommandKey,
       handleComposerMenuKeyDown,
       history,
@@ -3104,7 +3113,6 @@ export function PromptBoxInternal({
       onModifierSubmit,
       postCompositionKeyDownEvents,
       selectedIndex,
-      setPendingCommandSubmit,
       showTypeaheadMenu,
       submitModifierPrompt,
       submitPrompt,
@@ -3309,7 +3317,7 @@ export function PromptBoxInternal({
                 <MentionMenu
                   state={typeaheadMenuState}
                   selectedIndex={selectedIndex}
-                  onApply={applyTrigger}
+                  onApply={chooseSuggestion}
                   onDismiss={isPointerCoarse ? dismissComposerMenu : undefined}
                 />
               )}
