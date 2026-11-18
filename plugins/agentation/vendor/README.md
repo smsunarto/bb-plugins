@@ -20,6 +20,11 @@ floating launcher is hidden; expanded tools and annotation markers remain.
 `getLauncherElement` resolves the host's current footer button for targeting
 exclusion and keyboard focus restoration.
 
+An Escape the toolbar handles is marked with `preventDefault` and
+`stopPropagation` even without a `portalContainer`. Upstream does this only in
+portal mode, so in bb the same Escape that exited feedback mode also closed the
+page underneath (a Tasks detail view, or bb's `app.back` keybinding).
+
 Bun applies `patchedDependencies` in this workspace only. bb builds a `git:`
 install itself, after an `npm install` that knows nothing about that field — so
 a registry dependency would ship unpatched, and the toolbar would silently lose
