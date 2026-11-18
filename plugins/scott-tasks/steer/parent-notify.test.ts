@@ -299,3 +299,82 @@ describe("parent wake lines", () => {
     await reloaded.harness.dispose();
   });
 });
+
+describe("expired wake attempts", () => {
+  // Review's deterministic repro for BBP-13: the first attempt's thread lookup
+  // stalls past its deadline, a retry delivers, then the stalled lookup resumes.
+  it("does not send after a retry delivered when an expired lookup resumes", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-18T10:00:00Z") });
+    let release!: (thread: unknown) => void;
+    const blocked = new Promise((resolve) => {
+      release = resolve;
+    });
+    let gets = 0;
+    const sends: unknown[] = [];
+    let row = {
+      state: "pending",
+      targetThreadId: null as string | null,
+      attempts: 0,
+      nextAttemptAt: new Date().toISOString(),
+      lastError: null as string | null,
+    };
+    const store = {
+      getParentNotification: () => row,
+      claimParentNotificationAttempt: (_id: string, attempts: number, next: string) => {
+        if (row.attempts !== attempts) return false;
+        row = { ...row, attempts: attempts + 1, nextAttemptAt: next };
+        return true;
+      },
+      getComment: () => ({
+        id: "comment",
+        taskId: "task",
+        source: { kind: "agent", threadId: "thr_crew" },
+        body: "Final: done",
+      }),
+      getTask: () => ({ id: "task", key: "T-1" }),
+      setParentNotificationTarget: (_id: string, target: string) => {
+        row.targetThreadId = target;
+      },
+      getTaskThreadByThreadId: () => ({ presetName: "Crew" }),
+      listAttachmentsForComment: () => [],
+      recordParentNotificationFailure: (_id: string, error: string) =>
+        (row = { ...row, lastError: error }),
+      recordParentNotificationDelivered: (_id: string, target: string) =>
+        (row = { ...row, state: "delivered", targetThreadId: target }),
+    };
+    const bb = {
+      log: { warn: () => {} },
+      sdk: {
+        threads: {
+          get: async () => {
+            gets += 1;
+            if (gets === 1) return blocked;
+            return { parentThreadId: "thr_parent", archivedAt: null, deletedAt: null };
+          },
+          send: async (input: unknown) => {
+            sends.push(input);
+          },
+        },
+      },
+    };
+    const deliver = () =>
+      deliverParentNotification(
+        bb as unknown as Parameters<typeof deliverParentNotification>[0],
+        store as unknown as Parameters<typeof deliverParentNotification>[1],
+        "comment",
+      );
+
+    const first = deliver();
+    await vi.advanceTimersByTimeAsync(30_000);
+    await first;
+    expect(sends).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await deliver();
+    expect(sends).toHaveLength(1);
+    expect(row.state).toBe("delivered");
+
+    release({ parentThreadId: "thr_parent", archivedAt: null, deletedAt: null });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sends).toHaveLength(1);
+  });
+});

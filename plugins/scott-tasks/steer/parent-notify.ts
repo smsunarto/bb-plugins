@@ -43,16 +43,25 @@ export function wakeLine(input: WakeLineInput): string {
   return segments.join(" · ");
 }
 
-async function withDeadline<T>(promise: Promise<T>, label: string): Promise<T> {
+/**
+ * Run one attempt against a deadline. Racing does not stop the attempt, so the
+ * deadline also aborts its signal: an expired attempt whose read resumes later
+ * must not send after a retry has already delivered.
+ */
+async function withDeadline<T>(
+  run: (signal: AbortSignal) => Promise<T>,
+  label: string,
+): Promise<T> {
+  const expired = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ATTEMPT_DEADLINE_MS / 1000}s`)),
-      ATTEMPT_DEADLINE_MS,
-    );
+    timer = setTimeout(() => {
+      expired.abort();
+      reject(new Error(`${label} timed out after ${ATTEMPT_DEADLINE_MS / 1000}s`));
+    }, ATTEMPT_DEADLINE_MS);
   });
   try {
-    return await Promise.race([promise, deadline]);
+    return await Promise.race([run(expired.signal), deadline]);
   } finally {
     clearTimeout(timer);
   }
@@ -63,11 +72,27 @@ type AttemptOutcome =
   | { kind: "undeliverable"; reason: string }
   | { kind: "failed"; error: string };
 
+/** The attempt is still the latest claim on a pending record and has not expired. */
+function ownsAttempt(
+  store: TasksStore,
+  commentId: string,
+  attempt: number,
+  signal: AbortSignal,
+): boolean {
+  if (signal.aborted) return false;
+  const current = store.getParentNotification(commentId);
+  return current?.state === "pending" && current.attempts === attempt;
+}
+
+const SUPERSEDED: AttemptOutcome = { kind: "failed", error: "attempt expired before sending" };
+
 async function attemptDelivery(
   bb: BbPluginApi,
   store: TasksStore,
   commentId: string,
   knownTargetThreadId: string | null,
+  attempt: number,
+  signal: AbortSignal,
 ): Promise<AttemptOutcome> {
   const comment = store.getComment(commentId);
   const task = comment ? store.getTask(comment.taskId) : undefined;
@@ -83,6 +108,7 @@ async function attemptDelivery(
         return { kind: "undeliverable", reason: `thread ${commenter} has no parent thread` };
       }
       target = thread.parentThreadId;
+      if (!ownsAttempt(store, commentId, attempt, signal)) return SUPERSEDED;
       store.setParentNotificationTarget(commentId, target);
     }
     const parent = await bb.sdk.threads.get({ threadId: target });
@@ -99,6 +125,8 @@ async function attemptDelivery(
       presetName: store.getTaskThreadByThreadId(task.id, commenter)?.presetName ?? null,
       attachments: store.listAttachmentsForComment(comment.id),
     });
+    // A read can outlive the deadline; a retry may have claimed or delivered since.
+    if (!ownsAttempt(store, commentId, attempt, signal)) return SUPERSEDED;
     await bb.sdk.threads.send({
       threadId: target,
       input: [{ type: "text", text, mentions: [] }],
@@ -140,7 +168,7 @@ export async function deliverParentNotification(
   }
 
   const outcome = await withDeadline(
-    attemptDelivery(bb, store, commentId, current.targetThreadId),
+    (signal) => attemptDelivery(bb, store, commentId, current.targetThreadId, attempt, signal),
     `wake attempt ${attempt}`,
   ).catch((error: unknown): AttemptOutcome => ({ kind: "failed", error: errorMessage(error) }));
   switch (outcome.kind) {
