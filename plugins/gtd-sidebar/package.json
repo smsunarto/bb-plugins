@@ -64,6 +64,7 @@
     "app.tsx",
     "app.css",
     "thread-namer.ts",
+    "thread-naming-server.ts",
     "thread-title-inference.ts",
     "lib/",
     "shared/",
