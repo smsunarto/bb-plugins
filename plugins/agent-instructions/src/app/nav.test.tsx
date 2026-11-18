@@ -1,9 +1,12 @@
 import { installDom } from "@bb-plugins/testing";
 import { afterEach, expect, test } from "bun:test";
 import type { PluginNavPanelProps } from "@get-bb/plugin-sdk/app";
-import { pageTrail, type Names } from "./nav.ts";
+import type { Names } from "./nav.ts";
 
+// nav.ts reaches the editors' Radix components, which bind their layout effect
+// to a no-op when no DOM exists at load and keep it for every later test file.
 installDom();
+const { pageTrail } = await import("./nav.ts");
 const { fireEvent, render } = await import("@testing-library/react");
 const { loadPluginApp, renderSlot } = await import("@get-bb/plugin-sdk/testing/app");
 const { queryClient } = await import("./query.ts");
