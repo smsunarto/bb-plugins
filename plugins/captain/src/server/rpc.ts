@@ -1,7 +1,10 @@
-import { captainContract, crewTag } from "../contract/rpc.ts";
+import { LADDER_ROLES, type LadderRole } from "../contract/ladder.ts";
+import { captainContract, crewTag, LADDERS_TAG } from "../contract/rpc.ts";
 import { resolveAsk } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { listChildren } from "./crew.ts";
+import { DEFAULT_LADDERS, roleLadder } from "./ladder.ts";
+import { ROLE_SPECS } from "./roles.ts";
 import { Refusal } from "./output.ts";
 import { startCaptain } from "./commands/new.ts";
 import { askItems, crewItems, deferItem, markSeen, needsYouCount, sinceYouLeft } from "./queue.ts";
@@ -19,7 +22,19 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
     if (deps.registry.get(captainId) === null)
       throw new Error(`${captainId} is not a live Captain`);
   };
+  const ladderOf = (role: LadderRole) => ({
+    role,
+    label: ROLE_SPECS[role].label,
+    ...roleLadder(deps.store, role),
+    defaults: [...DEFAULT_LADDERS[role]],
+  });
   bb.rpc.register(captainContract, {
+    ladders: () => ({ roles: LADDER_ROLES.map(ladderOf) }),
+    setLadder: ({ role, rungs }) => {
+      deps.store.setLadderJson(role, rungs === null ? null : JSON.stringify(rungs), deps.now());
+      bb.rpc.experimental_invalidate([LADDERS_TAG]);
+      return ladderOf(role);
+    },
     captains: () => ({ ids: deps.store.liveCaptains().map((captain) => captain.threadId) }),
     asks: ({ captainId }) => ({ items: askItems(deps, captainId) }),
     crew: async ({ captainId }) => {

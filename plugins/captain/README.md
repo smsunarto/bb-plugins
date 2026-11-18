@@ -2,7 +2,9 @@
 
 A Captain is a long-lived bb thread that runs other threads for you. You hand it work in plain words; it briefs crew threads, checks what they report, and tells you only what needs you.
 
-A thread can be a Captain, with its own rules, Drive and repos, and it runs crew on Tasks: dispatch, verdicts, tells, asks and status (build steps 2 to 4 of the Captain spec). A background check wakes a Captain once per crew thread that stays stalled for 15 minutes and retries undelivered answers. The Needs you banner arrives in a later step.
+A thread can be a Captain, with its own rules, Drive and repos, and it runs crew on Tasks: dispatch, verdicts, tells, asks and status (build steps 2 to 4 of the Captain spec). A background check wakes a Captain once per crew thread that stays stalled for 15 minutes and retries undelivered answers.
+
+Each role starts crew on a model ladder set in Captain settings (Crew models): ordered provider, model and reasoning rungs, Codex after the role's own preset by default. Dispatch takes the first rung whose provider has a ready Account Pooler account for that model family, read from the pool's `status.get`. A crew thread that fails on a rate limit bb will not retry, before it reports, is restarted on the next eligible rung and archived, and the Captain gets one wake line. After the last rung the wake says Blocked. Rung n > 1 runs through its own Tasks preset, `Review · 2`. The Needs you banner arrives in a later step.
 
 ```sh
 bb captain new --name Plugins --repo bb-plugins [--repo rampage] [--prompt-file purpose.md]
@@ -12,7 +14,7 @@ bb captain drive read CREW.md
 bb captain drive write NOTES.md --file ./notes.md
 bb captain archive
 
-bb captain dispatch PLUG-14 PLUG-15 --role Implement [--base-branch <ref>] [--again] [--dry-run]
+bb captain dispatch PLUG-14 PLUG-15 --role Implement [--base-branch <ref>] [--rung <n>] [--again] [--dry-run]
 bb captain dispatch PLUG-14 --role Review
 bb captain dispatch PLUG-9 --role Implement --thread thr_abc
 bb captain verdict PLUG-14 review passed --head <sha> [--ship]

@@ -1,0 +1,1 @@
+[captain] Blocked: {{task}} {{role}} {{failed}} hit a provider rate limit on rung {{from}} ({{fromLabel}}), and no later rung has an eligible account.{{skipped}} Once `bb pool status` shows an account ready, run `bb captain dispatch {{task}} --role {{role}} --again`, or add a rung in Captain settings; {{failed}} stays unarchived.

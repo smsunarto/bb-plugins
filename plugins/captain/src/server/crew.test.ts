@@ -69,6 +69,8 @@ describe("bb captain dispatch", () => {
       role: "implement",
       reportDueSince: host.now(),
       contractSent: true,
+      rung: 1,
+      baseBranch: null,
     });
     expect(host.pushes).toEqual([
       { method: "threadNotifications.set", input: { threadId, level: "input-only" } },
@@ -293,14 +295,14 @@ describe("bb captain dispatch", () => {
     expect(stranger.instructions).not.toContain("# Role:");
   });
 
-  test("--dry-run prints the preset, machine and branch and spawns nothing", async () => {
+  test("--dry-run prints the rung, preset, machine and branch and spawns nothing", async () => {
     const { host, as } = await crewHost();
 
     const result = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--dry-run"]);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe(
-      "BBPLUGINS-1  -  Implement  planned  preset Implement · machine the repo's source machine · branch the default branch\n",
+      "BBPLUGINS-1  -  Implement  planned  rung 1 claude-code claude-opus-5-5 high · preset Implement · machine the repo's source machine · branch the default branch\n",
     );
     expect(delegates(host)).toHaveLength(0);
   });

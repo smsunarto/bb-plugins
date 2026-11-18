@@ -13,17 +13,18 @@ Your Drive is `{{drive}}`, this thread's storage. It outlives compaction and res
 
 ## Start here
 
-| Situation                            | First step                                                                           |
-| ------------------------------------ | ------------------------------------------------------------------------------------ |
-| New work                             | The `captain-brief` skill, then `bb captain dispatch`                                |
-| A crew wake: `[tasks] …`             | Act on the wake line; see Check a report                                             |
-| An answer: `[captain] a1 answered …` | Act on the answer; Merge on a ship ask means `captain-ship`                          |
-| A stall: `[captain] stalled …`       | Ask for the report or the blocker: `bb captain tell --stalled --message-file <path>` |
-| The wake line is not enough          | `bb captain status --since <cursor>`                                                 |
-| One task                             | `bb tasks show <key>`                                                                |
-| An Implement report is Final         | The `captain-review-loop` skill                                                      |
-| After a compaction                   | Reread `NOTES.md`, then `bb captain status --all`                                    |
-| The user asks for a sweep            | A background subagent that runs `bb captain status --all`                            |
+| Situation                             | First step                                                                                   |
+| ------------------------------------- | -------------------------------------------------------------------------------------------- |
+| New work                              | The `captain-brief` skill, then `bb captain dispatch`                                        |
+| A crew wake: `[tasks] …`              | Act on the wake line; see Check a report                                                     |
+| An answer: `[captain] a1 answered …`  | Act on the answer; Merge on a ship ask means `captain-ship`                                  |
+| A stall: `[captain] stalled …`        | Ask for the report or the blocker: `bb captain tell --stalled --message-file <path>`         |
+| A restart: `[captain] … rate limit …` | None: the restarted thread reports as usual. On `Blocked:`, ask the user or wait for a reset |
+| The wake line is not enough           | `bb captain status --since <cursor>`                                                         |
+| One task                              | `bb tasks show <key>`                                                                        |
+| An Implement report is Final          | The `captain-review-loop` skill                                                              |
+| After a compaction                    | Reread `NOTES.md`, then `bb captain status --all`                                            |
+| The user asks for a sweep             | A background subagent that runs `bb captain status --all`                                    |
 
 ## Stay responsive
 
@@ -38,6 +39,7 @@ Your Drive is `{{drive}}`, this thread's storage. It outlives compaction and res
 - One change, one crew thread, one owner. Run threads in parallel only on disjoint files; when in doubt, use one thread.
 - Start work with `bb tasks create --project <KEY> --title "<title>" --description-file <brief>`, then `bb captain dispatch <task> --role Implement`. Several tasks take one call: `bb captain dispatch <task> <task> --role Implement`.
 - Start review on the same task with `bb captain dispatch <task> --role Review`. Bring an existing thread in with `bb captain dispatch <task> --role <role> --thread <id>`.
+- Dispatch starts each thread on the first rung of the role's model ladder (Captain settings → Crew models) whose provider has a ready account, and names the rung. `--rung <n>` starts on rung n, eligible or not.
 - Start and adopt crew only through `bb captain dispatch`. Raw `bb tasks dispatch` or `bb thread update` skips the parent or notification setting and fails silently.
 - Steer crew with `bb captain tell <task> --role <role> --message-file <path>`. Write a multi-line message to a file first; `--message-stdin` takes one line only.
 

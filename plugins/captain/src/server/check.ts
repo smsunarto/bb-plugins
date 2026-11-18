@@ -3,6 +3,7 @@ import { sinceTag } from "../contract/rpc.ts";
 import { ANSWER_MAX_ATTEMPTS, deliverAnswer } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { joinCrew, listChildren, steer, type ListedThread } from "./crew.ts";
+import { runFallbacks } from "./fallback.ts";
 import { sendPush } from "./push.ts";
 import type { Captain } from "./registry.ts";
 import { ROLE_SPECS, roleOfPreset } from "./roles.ts";
@@ -19,7 +20,8 @@ import type { CrewRow } from "./tasks-client.ts";
  *
  * Per Captain a pass costs one `threads.list` of its children, plus one
  * `crewSnapshot` over only the idle children and those with no role row; no
- * interactions, archived children or PR reads.
+ * interactions, archived children or PR reads. A failed crew thread adds the
+ * reads `fallback.ts` needs to judge and restart it, once per failure.
  */
 
 export const CHECK_INTERVAL_MS = 60_000;
@@ -33,7 +35,10 @@ const CAPTAIN_CONCURRENCY = 4;
 /** One answer retry's send, so a hung send cannot hold the pass. */
 const SEND_DEADLINE_MS = 20_000;
 
-export type CheckDeps = Pick<CommandDeps, "bb" | "store" | "registry" | "tasks" | "files" | "now">;
+export type CheckDeps = Pick<
+  CommandDeps,
+  "bb" | "store" | "registry" | "tasks" | "files" | "now" | "taskGuard"
+>;
 
 export type PassResult = {
   /** The next pass runs in a minute; otherwise only on a thread event or the idle interval. */
@@ -94,6 +99,8 @@ export function createCheck(deps: CheckDeps) {
         if (deps.registry.get(thread.parentThreadId) !== null) poke();
       };
       bb.events.on("thread.created", nudge);
+      // A crew thread that fails on a rate limit is restarted on the next rung.
+      bb.events.on("thread.failed", nudge);
       bb.events.on("experimental_thread.parentChanged", nudge);
       bb.background.service("check", {
         async start(signal) {
@@ -139,6 +146,7 @@ async function checkCaptain(
       deps.bb.rpc.experimental_invalidate([sinceTag(captain.threadId)]);
     }
   }
+  await runFallbacks(deps, captain, threads, now);
   // Only an idle thread can stall, and only a thread with no role row needs one backfilled.
   const needRows = threads.filter(
     (thread) =>

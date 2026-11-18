@@ -90,9 +90,15 @@ export function isDispatchable(role: Role): boolean {
   return ROLE_SPECS[role].preset !== null;
 }
 
-/** The role a Tasks preset name stands for, when it is one of the roles' presets. */
+/**
+ * The role a Tasks preset name stands for, when it is one of the roles' presets
+ * or a later rung of one, such as `Review · 2`.
+ */
 export function roleOfPreset(presetName: string): Role | null {
-  const wanted = presetName.trim().toLowerCase();
+  const wanted = presetName
+    .trim()
+    .replace(/ · \d+$/u, "")
+    .toLowerCase();
   return ROLES.find((role) => ROLE_SPECS[role].preset?.name.toLowerCase() === wanted) ?? null;
 }
 

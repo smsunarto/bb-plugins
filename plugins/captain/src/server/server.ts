@@ -11,6 +11,7 @@ import { createDrive } from "./drive.ts";
 import { createFields } from "./fields.ts";
 import { createRegistry } from "./registry.ts";
 import { registerRpc } from "./rpc.ts";
+import { createTaskGuard } from "./spawn.ts";
 import { openStore } from "./store.ts";
 import { createTasksClient } from "./tasks-client.ts";
 
@@ -42,6 +43,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     now: options.now ?? Date.now,
     captainsDir: options.captainsDir ?? join(homedir(), CAPTAINS_FOLDER),
     wakeCheck: () => check.poke(),
+    taskGuard: createTaskGuard(),
   };
   const check = createCheck(deps);
 

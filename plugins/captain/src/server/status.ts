@@ -225,7 +225,7 @@ function commandAllowanceSpent(member: CrewThread, now: number): boolean {
 }
 
 /** Whether the thread posted a notifying comment at or after the report-due mark. */
-function reportedSince(member: CrewThread, due: number): boolean {
+export function reportedSince(member: CrewThread, due: number): boolean {
   return member.rows.some(
     (row) => row.lastNotifyingComment !== null && ms(row.lastNotifyingComment.createdAt) >= due,
   );
