@@ -68,12 +68,12 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     () => undefined,
     (error: unknown) => bb.log.warn(`verdict fields not defined yet: ${(error as Error).message}`),
   );
-  // Captains started before the GenUI mark existed get it here, so a reload
-  // fixes them with no rerun of `new`. Async: `bb.sdk` may bind after start.
-  const audienceReady = (async () => {
-    for (const warning of await markCaptainsPersonFacing(bb, store)) bb.log.warn(warning);
-  })().catch((error: unknown) =>
-    bb.log.warn(`Captains not marked person-facing: ${(error as Error).message}`),
+  // Captains started before the GenUI mark existed get it on every start, so a
+  // reload fixes them with no rerun of `new`.
+  const audienceReady = markCaptainsPersonFacing(bb, store).then(
+    (warnings) => void warnings.forEach((warning) => bb.log.warn(warning)),
+    (error: unknown) =>
+      bb.log.warn(`Captains not marked person-facing: ${(error as Error).message}`),
   );
   return { store, registry, drive, check, ready, fieldsReady, audienceReady };
 }

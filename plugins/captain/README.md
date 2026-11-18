@@ -35,6 +35,7 @@ Run `bb captain --help` for every option. Every command takes `--json`.
 - Empty `CAPTAIN.md`, `CREW.md` and `NOTES.md` in its thread storage, the Drive. They are created only when missing, so a rerun never overwrites them.
 - A linked Tasks project for each repo, linking the one already linked to that bb project or creating one.
 - Its push level set to `input-only` through Push notifications.
+- `audience: "person"` in Generative UI's metadata (`genui`), so the Captain gets GenUI's instructions and `check_ui`. It is written before the first message is sent: the thread spawns with that message held, then it is sent. Plugin start re-marks every live Captain. Crew threads are never marked.
 - The Plan, Implement and Review presets in Tasks, when missing.
 
 Rerunning `new` with a live Captain's name converges that Captain instead of starting a second one.

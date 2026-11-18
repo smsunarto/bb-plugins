@@ -94,6 +94,10 @@ export type FakeOptions = {
   tasksDown?: boolean;
   /** Push notifications is not loaded. */
   pushDown?: boolean;
+  /** Plugin metadata writes reject, as when bb refuses them. */
+  metadataDown?: boolean;
+  /** Sending a queued message now rejects. */
+  queueSendDown?: boolean;
   /** Captain's Tasks deadline; short, so a hung call fails fast. */
   tasksDeadlineMs?: number;
   /** How often a watched banner rechecks the crew. */
@@ -132,6 +136,8 @@ export async function captainHost(options: FakeOptions = {}) {
   const threads = new Map<string, Thread>();
   /** Thread metadata by `<threadId> <pluginId>`, as other plugins read it. */
   const metadata = new Map<string, Record<string, unknown>>();
+  /** Messages held by a spawn's `sendAt`, until sent now. */
+  const queued = new Map<string, { id: string; text: string }[]>();
   let serial = 0;
 
   function withListFields(
@@ -402,7 +408,23 @@ export async function captainHost(options: FakeOptions = {}) {
             }),
           );
           threads.set(thread.id, thread);
+          if (args.sendAt !== undefined)
+            queued.set(thread.id, [{ id: `qm_${++serial}`, text: args.prompt ?? "" }]);
           return thread as never;
+        },
+        queuedMessages: {
+          list: async ({ threadId }) => (queued.get(threadId) ?? []) as never,
+          send: async ({ threadId, queuedMessageId }) => {
+            if (options.queueSendDown === true) throw new Error("queued message is claimed");
+            const rows = queued.get(threadId) ?? [];
+            const row = rows.find((entry) => entry.id === queuedMessageId);
+            if (row === undefined) throw new Error(`queued message ${queuedMessageId} not found`);
+            queued.set(
+              threadId,
+              rows.filter((entry) => entry !== row),
+            );
+            return { ok: true, delivery: "sent" } as never;
+          },
         },
         get: async ({ threadId }) => {
           const thread = threads.get(threadId);
@@ -437,8 +459,10 @@ export async function captainHost(options: FakeOptions = {}) {
           return next as never;
         },
         updatePluginMetadata: async ({ threadId, pluginId, set = {} }) => {
-          if (!threads.has(threadId)) throw new Error(`thread ${threadId} not found`);
-          const key = `${threadId} ${pluginId ?? "captain"}`;
+          if (options.metadataDown === true) throw new Error("metadata write refused");
+          if (!threads.has(threadId))
+            throw Object.assign(new Error(`thread ${threadId} not found`), { status: 404 });
+          const key = `${threadId} ${pluginId}`;
           const next = { ...metadata.get(key), ...set };
           metadata.set(key, next);
           return next as never;
@@ -579,6 +603,7 @@ export async function captainHost(options: FakeOptions = {}) {
     interactions,
     threads,
     metadata,
+    queued,
     addThread,
     updateThread,
     addTask,

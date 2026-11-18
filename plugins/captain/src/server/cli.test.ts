@@ -1,7 +1,7 @@
 import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { captainHost, MAC_HOST, newCaptain, SERVER_HOST, type CaptainHost } from "./test-host.ts";
 
 const run = (host: CaptainHost, argv: string[], threadId?: string, cwd?: string) =>
@@ -93,25 +93,64 @@ describe("bb captain new", () => {
     );
   });
 
-  test("marks the Captain person-facing in GenUI's namespace, and a rerun converges the mark", async () => {
+  test("marks the Captain person-facing in GenUI's namespace before its first message is sent", async () => {
     const host = await captainHost();
     const captainId = await newCaptain(host);
 
     expect(host.metadata.get(`${captainId} genui`)).toEqual({ audience: "person" });
-    host.metadata.delete(`${captainId} genui`);
-    await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
-    expect(host.metadata.get(`${captainId} genui`)).toEqual({ audience: "person" });
+    expect(calls(host, "threads.spawn")[0]?.[0]).toMatchObject({ sendAt: host.now() + 60_000 });
+    const order = host.harness.inspection.sdk.calls.map((call) => call.path);
+    const marked = order.indexOf("threads.updatePluginMetadata");
+    const sent = order.indexOf("threads.queuedMessages.send");
+    expect(order.indexOf("threads.spawn")).toBeLessThan(marked);
+    expect(marked).toBeLessThan(sent);
+    expect(host.queued.get(captainId)).toEqual([]);
   });
 
-  test("a reload marks Captains started before the mark, and never their crew", async () => {
+  test("a rerun converges the mark and sends no message", async () => {
     const host = await captainHost();
     const captainId = await newCaptain(host);
-    host.addThread({ id: "thr_crew", parentThreadId: captainId });
+    host.metadata.delete(`${captainId} genui`);
+
+    await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
+
+    expect(host.metadata.get(`${captainId} genui`)).toEqual({ audience: "person" });
+    expect(calls(host, "threads.queuedMessages.send")).toHaveLength(1);
+  });
+
+  test("a reload marks Captains started before the mark, and skips a deleted Captain quietly", async () => {
+    const host = await captainHost();
+    const captainId = await newCaptain(host, ["--name", "Plugins", "--repo", "bb-plugins"]);
+    const goneId = await newCaptain(host, ["--name", "Rampage", "--repo", "rampage"]);
+    host.threads.delete(goneId);
     host.metadata.clear();
+    const warn = vi.spyOn(host.bb.log, "warn");
 
     await host.reload();
 
     expect([...host.metadata]).toEqual([[`${captainId} genui`, { audience: "person" }]]);
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining(goneId));
+  });
+
+  test("a refused GenUI mark is a warning, not a failure, and the first message still goes", async () => {
+    const host = await captainHost({ metadataDown: true });
+
+    const result = await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toMatch(/warning: thr_\w+ not marked person-facing for GenUI/u);
+    expect(calls(host, "threads.queuedMessages.send")).toHaveLength(1);
+  });
+
+  test("a first message that cannot be sent now is a warning: it starts when its hold ends", async () => {
+    const host = await captainHost({ queueSendDown: true });
+
+    const result = await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toMatch(
+      /warning: first message of thr_\w+ not sent now, so it starts within 60s/u,
+    );
   });
 
   test("refuses with every blocker at once and changes nothing", async () => {

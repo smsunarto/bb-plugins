@@ -213,8 +213,13 @@ async function planLinks(
 
 /**
  * Spawn the Captain, or converge the live one with this name, then set up its
- * Drive, push level and presets. Steps after the spawn warn rather than fail,
- * and each converges on a rerun.
+ * Drive, push level, GenUI mark and presets. Steps after the spawn warn rather
+ * than fail, and each converges on a rerun.
+ *
+ * A new Captain spawns with its first message held, and that message is sent
+ * only after the GenUI mark and the registry entry are written: bb resolves a
+ * session's plugin configuration when the turn starts, so a turn started
+ * earlier would run without GenUI and without the Captain's own tools.
  */
 async function apply(deps: CommandDeps, plan: Plan): Promise<StartedCaptain> {
   const { bb, registry } = deps;
@@ -249,6 +254,10 @@ async function apply(deps: CommandDeps, plan: Plan): Promise<StartedCaptain> {
   // Also on a rerun, so `new` converges a Captain started before the mark.
   const audienceWarning = await markPersonFacing(bb, threadId);
   if (audienceWarning !== null) warnings.push(audienceWarning);
+  if (existing === null) {
+    const releaseWarning = await releaseFirstTurn(deps, threadId);
+    if (releaseWarning !== null) warnings.push(releaseWarning);
+  }
   const presets = await createMissingPresets(deps, plan.presets);
   warnings.push(...presets.warnings);
   if (presets.created.length > 0) notes.push(`created presets ${presets.created.join(", ")}`);
@@ -284,8 +293,31 @@ async function spawnCaptain(deps: CommandDeps, plan: Plan, projectId: string): P
     prompt: plan.prompt,
     pinned: true,
     pluginMetadata: { captain: { name: plan.name } },
+    // Held so no turn starts before `apply` marks the thread; `releaseFirstTurn` sends it.
+    sendAt: deps.now() + FIRST_TURN_HOLD_MS,
   });
   return thread.id;
+}
+
+/** How long a new Captain's first message waits if sending it now fails. */
+const FIRST_TURN_HOLD_MS = 60_000;
+
+/** Send a new Captain's held first message now. Returns a warning instead of failing. */
+async function releaseFirstTurn(deps: CommandDeps, threadId: string): Promise<string | null> {
+  try {
+    const rows = await deps.bb.sdk.threads.queuedMessages.list({ threadId });
+    for (const row of rows) {
+      await deps.bb.sdk.threads.queuedMessages.send({
+        threadId,
+        queuedMessageId: row.id,
+        mode: "auto",
+      });
+    }
+    return null;
+  } catch (error) {
+    const seconds = FIRST_TURN_HOLD_MS / 1000;
+    return `first message of ${threadId} not sent now, so it starts within ${seconds}s: ${(error as Error).message}`;
+  }
 }
 
 /** Create-only, so a rerun never clobbers what the Captain's first turn wrote. */
