@@ -130,6 +130,36 @@ test("keys: a number answers, S skips, L hides it, Enter on the banner picks the
   );
 });
 
+test("the keys work without a visible hint: no keycap, number or framed letter renders", async () => {
+  const { slot } = render(CAPTAIN, [decision]);
+  const card = await slot.findByTestId("captain-needs-you");
+  act(() => card.focus());
+  const answers = ["Redis", "SQLite", "No cache"].map((name) =>
+    slot.getByRole("button", { name: new RegExp(name, "u") }),
+  );
+  answers.forEach((button, index) => {
+    expect(button.getAttribute("aria-keyshortcuts")).toBe(String(index + 1));
+    expect(button.textContent).not.toMatch(/\d/u);
+  });
+  const later = slot.getByRole("button", { name: "Later" });
+  const skip = slot.getByRole("button", { name: "Skip" });
+  expect(later.getAttribute("aria-keyshortcuts")).toBe("L");
+  expect(skip.getAttribute("aria-keyshortcuts")).toBe("S");
+  for (const button of [...answers, later, skip]) {
+    expect(button.querySelector("[aria-hidden]")).toBeNull();
+  }
+  // The label reads whole, and no element inside the button frames a part of
+  // it, such as its first letter; a span wrapping the whole word is fine.
+  for (const [button, label] of [
+    [later, "Later"],
+    [skip, "Skip"],
+  ] as const) {
+    expect(button.textContent).toBe(label);
+    const framed = [...button.querySelectorAll("*")].filter((each) => each.textContent !== label);
+    expect(framed.map((each) => each.textContent)).toEqual([]);
+  }
+});
+
 test("Enter picks the recommended option only when the banner itself has focus", async () => {
   const { slot, of } = render(CAPTAIN, [decision]);
   const card = await slot.findByTestId("captain-needs-you");
