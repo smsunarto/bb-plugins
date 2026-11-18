@@ -1,4 +1,4 @@
-import type { CallExpr, Decl, Expr, Program, Statement } from "./ast";
+import type { CallExpr, Decl, Expr, NamedArg, Program, Statement } from "./ast";
 import {
   ACTIONS,
   COMPONENTS,
@@ -150,6 +150,13 @@ function signature(name: string, spec: ComponentSpec): string {
   return `${name}(${params.join(", ")})`;
 }
 
+/** The source text of a synthesized state's initial, as shown in diagnostics. */
+function formatInitial(value: Expr): string {
+  if (value.type === "list") return "[]";
+  if (value.type === "literal") return JSON.stringify(value.value) ?? "null";
+  return "…";
+}
+
 function arityText([min, max]: Arity): string {
   if (max === Infinity) return `at least ${min} argument${min === 1 ? "" : "s"}`;
   if (min === max) return `${min} argument${min === 1 ? "" : "s"}`;
@@ -167,6 +174,53 @@ function editDistance(a: string, b: string): number {
     previous = current;
   }
   return previous[b.length];
+}
+
+/** Local (bb-plugins): names agents reach for that the catalog spells another way. Never taught. */
+const COMPONENT_ALIASES: ReadonlyMap<string, string> = new Map([
+  ["TextInput", "Input"],
+  ["TextField", "Input"],
+]);
+
+/** Local (bb-plugins): the one component or action spelled like `name` but for its case (`Textarea`). */
+function uniqueCaseInsensitive(name: string): string | undefined {
+  const lower = name.toLowerCase();
+  const matches = [...COMPONENT_SPECS.keys(), ...ACTION_SPECS.keys()].filter((candidate) => candidate.toLowerCase() === lower);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/** The lowercase words of a camelCase or snake_case name: `DatePicker` → date, picker. */
+function words(name: string): string[] {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 1);
+}
+
+/**
+ * Local (bb-plugins): " Did you mean `x`?" for a near miss, else up to
+ * three candidates that share a word with `name` (`TextBox` → `TextArea`,
+ * `DatePicker` → `DateInput`), else "".
+ * Keeps an unknown-name error to one line instead of the whole catalog.
+ */
+export function closestNames(name: string, candidates: Iterable<string>, max = 3): string {
+  const pool = [...candidates];
+  // One near miss (`Cards`, `load`) is the answer on its own.
+  const near = didYouMean(name, pool);
+  if (near !== "") return near;
+  const own = new Set(words(name));
+  const ranked: { candidate: string; shared: number; distance: number }[] = [];
+  for (const candidate of pool) {
+    const distance = editDistance(name.toLowerCase(), candidate.toLowerCase());
+    const shared = words(candidate).filter((word) => own.has(word)).length;
+    if (shared > 0) ranked.push({ candidate, shared, distance });
+  }
+  ranked.sort((a, b) => b.shared - a.shared || a.distance - b.distance);
+  const picks = ranked.slice(0, max).map(({ candidate }) => `\`${candidate}\``);
+  if (picks.length === 0) return "";
+  const list = picks.length === 1 ? picks[0] : `${picks.slice(0, -1).join(", ")} or ${picks[picks.length - 1]}`;
+  return ` Did you mean ${list}?`;
 }
 
 /** " Did you mean `x`?" for the closest candidate within edit distance 2, else "". */
@@ -202,11 +256,14 @@ export function validate(statements: readonly Statement[], diagnostics: Diagnost
 class Validator {
   private readonly states = new Map<string, { readonly index: number; readonly decl: Decl }>();
   private readonly named = new Map<string, Decl>();
+  /** `$state` declarations in source order, plus states synthesized by coercion. */
+  private readonly stateDecls: Decl[] = [];
+  /** Local (bb-plugins): config-object field names (`{name: "…"}`) and the states they bind. */
+  private readonly fieldStates = new Map<string, string>();
 
   constructor(private readonly diagnostics: DiagnosticList) {}
 
   run(statements: readonly Statement[]): Program {
-    const stateDecls: Decl[] = [];
     const roots: Expr[] = [];
     for (const statement of statements) {
       if (statement.kind === "root") {
@@ -223,8 +280,8 @@ class Validator {
         const label = isState ? `$${statement.name}` : statement.name;
         this.diagnostics.report(statement.pos, `\`${label}\` is already declared on line ${previous.pos.line}`);
       } else if (isState) {
-        this.states.set(statement.name, { index: stateDecls.length, decl: statement });
-        stateDecls.push(statement);
+        this.states.set(statement.name, { index: this.stateDecls.length, decl: statement });
+        this.stateDecls.push(statement);
       } else {
         this.named.set(statement.name, statement);
       }
@@ -254,7 +311,7 @@ class Validator {
 
     this.checkCycles(namedRefs);
     const statesOf = this.transitiveStates(namedRefs);
-    stateDecls.forEach((decl, index) => {
+    this.stateDecls.forEach((decl, index) => {
       const refs = this.refs(decl.value);
       for (const ref of refs.named) used.add(ref.name);
       for (const ref of refs.states) {
@@ -281,7 +338,7 @@ class Validator {
     for (const [name, decl] of this.named) {
       if (!used.has(name)) this.diagnostics.report(decl.pos, `\`${name}\` is never used`, "warning");
     }
-    return { states: stateDecls, named: this.named, roots };
+    return { states: this.stateDecls, named: this.named, roots };
   }
 
   private refs(expr: Expr): Refs {
@@ -474,6 +531,7 @@ class Validator {
   }
 
   private call(expr: CallExpr, params: readonly string[], refs: Refs): void {
+    this.coerceCallee(expr, params);
     const spec = COMPONENT_SPECS.get(expr.name) ?? ACTION_SPECS.get(expr.name);
     const own = this.named.get(expr.name)?.value;
     if (spec !== undefined) {
@@ -519,10 +577,12 @@ class Validator {
     }
     const isFunctionLike = name[0] === name[0].toLowerCase();
     const candidates = [...COMPONENT_SPECS.keys(), ...ACTION_SPECS.keys(), ...FUNCTION_ARITY.keys()];
+    // Local (bb-plugins): name the closest few, never the whole catalog; the
+    // full list filled a phone screen and the reference already has it.
     const fallback = isFunctionLike
-      ? ` Functions: ${[...FUNCTION_ARITY.keys()].join(", ")}.`
-      : ` Components: ${[...COMPONENT_SPECS.keys()].join(", ")}.`;
-    return `\`${name}\` is not a component, action or function.${didYouMean(name, candidates) || fallback}`;
+      ? " The reference lists the functions."
+      : " The reference lists the components; `ui_examples` shows each in use.";
+    return `\`${name}\` is not a component, action or function.${closestNames(name, candidates) || fallback}`;
   }
 
   /** The host fetches files before evaluating, so the path must be readable from the source alone. */
@@ -564,6 +624,11 @@ class Validator {
         slots[index] = arg.value;
       }
     }
+    this.coerceOptionsFirst(expr, spec, slots, sig);
+    this.coerceTabsItems(expr, spec, slots, sig);
+    this.coerceConfigObject(expr, spec, slots, sig);
+    this.coerceLiteralBindings(expr, spec, slots, sig);
+    this.coerceUndeclaredBindings(expr, spec, slots, sig);
     spec.params.forEach((param, index) => {
       const slot = slots[index];
       if (slot === undefined) {
@@ -572,6 +637,332 @@ class Validator {
         this.checkParam(expr.name, param, slot);
       }
     });
+  }
+
+  /**
+   * The options-as-first-argument slip: `Checklist(["a", "b"])` gives the
+   * choices but leaves out the `$state` the picks bind to. With at most one
+   * positional argument a list literal can only be the options, so the call is
+   * rewritten around a fresh state (`Checklist($checklist, ["a", "b"])`) as a
+   * warning: the block renders, and its Source panel shows the corrected call.
+   * Anything less unambiguous — more positional arguments, a value argument
+   * that is not a list — keeps its own errors.
+   */
+  private coerceOptionsFirst(expr: CallExpr, spec: ComponentSpec, slots: (Expr | undefined)[], sig: string): void {
+    const binding = spec.params[0];
+    const optionsIndex = spec.params.findIndex((param, index) => index === 1 && param.kind === "list" && !param.optional);
+    if (binding === undefined || binding.kind !== "binding" || optionsIndex < 0 || expr.args.length > 1) return;
+    const positionalList = slots[0] !== undefined && slots[0].type === "list";
+    if (slots[0] !== undefined && !positionalList) return;
+    // Local (bb-plugins): with options given by name, a positional list is the value, not the options; keep its error.
+    if (positionalList && expr.named.some((arg) => arg.name === spec.params[optionsIndex].name)) return;
+    const list = slots[optionsIndex] ?? (positionalList ? slots[0] : undefined);
+    if (list === undefined || list.type !== "list") return;
+    const name = this.synthState(expr.name, binding.holds, expr.pos);
+    slots[0] = { type: "state", name, pos: expr.pos };
+    slots[optionsIndex] = list;
+    // validate owns the parsed AST before it becomes the program: rewrite the
+    // positional arguments to the corrected layout (the type-level readonly
+    // guards against accidental writes; this one is deliberate). The options
+    // stay positional when they were positional; a named options argument
+    // keeps its named entry, so only the state goes positional.
+    const args: Expr[] = [slots[0]!];
+    if (positionalList) args.push(list);
+    (expr as unknown as { args: Expr[] }).args = args;
+    this.diagnostics.report(
+      expr.pos,
+      `\`${expr.name}\` got its options without a \`$state\` to store the picks in; bound them to \`$${name}\` (write the state yourself to name it): ${sig}`,
+      "warning",
+    );
+  }
+
+  /**
+   * Tabs as tab cards: `Tabs([{title: "…", children: […]}, …])` — the model
+   * wraps each tab in an object instead of the parallel `labels` and
+   * `children` lists the component takes. When every item is exactly a title
+   * plus a list of children, the call is split into those two lists as a
+   * warning; anything else — extra keys, non-object items, a second argument —
+   * keeps its errors, since the layout would then be a guess.
+   */
+  private coerceTabsItems(expr: CallExpr, spec: ComponentSpec, slots: (Expr | undefined)[], sig: string): void {
+    if (expr.name !== "Tabs" || expr.args.length !== 1 || expr.named.length > 0) return;
+    const labels = spec.params[0];
+    const children = spec.params[1];
+    if (labels?.name !== "labels" || labels.kind !== "list" || children?.kind !== "nodes" || children.optional) return;
+    const items = slots[0];
+    if (items === undefined || items.type !== "list" || slots[1] !== undefined) return;
+    const titles: Expr[] = [];
+    const panels: Expr[] = [];
+    for (const item of items.items) {
+      if (item.type !== "object" || item.entries.length !== 2) return;
+      const title = item.entries.find(
+        (entry) => (entry.key === "title" || entry.key === "label") && (entry.value.type === "literal" || entry.value.type === "template"),
+      );
+      const kids = item.entries.find((entry) => entry.key === "children" && entry.value.type === "list");
+      if (title === undefined || kids === undefined) return;
+      titles.push(title.value);
+      panels.push(kids.value);
+    }
+    const labelsList: Expr = { type: "list", items: titles, pos: items.pos };
+    const childrenList: Expr = { type: "list", items: panels, pos: items.pos };
+    slots[0] = labelsList;
+    slots[1] = childrenList;
+    // validate owns the parsed AST before it becomes the program (readonly is type-level).
+    (expr as unknown as { args: Expr[] }).args = [labelsList, childrenList];
+    this.diagnostics.report(
+      expr.pos,
+      `\`${expr.name}\` got its tabs as one list of {title, children}; split them into parallel labels and children: ${sig}`,
+      "warning",
+    );
+  }
+
+  /**
+   * The config-object slip: `Table({columns: […], rows: […]})` — the model
+   * packs the arguments into one JS-style props object instead of positional
+   * or named arguments. When the call is a single object argument and every
+   * key of that object is a parameter name, the entries become named
+   * arguments (warning). Only fires when the call would otherwise fail — a
+   * required parameter missing or the object landing on a typed parameter it
+   * does not fit — so data-shaped objects (KeyValue's map, Json's value) are
+   * never touched; and any unknown key keeps the block's errors, since the
+   * intent would no longer be clear.
+   */
+  private coerceConfigObject(expr: CallExpr, spec: ComponentSpec, slots: (Expr | undefined)[], sig: string): void {
+    if (expr.args.length !== 1 || expr.named.length > 0) return;
+    const obj = slots[0];
+    if (obj === undefined || obj.type !== "object" || obj.entries.length === 0) return;
+    const landing = spec.params[0];
+    const wanted = landing === undefined ? undefined : LITERAL_KINDS[landing.kind];
+    // A binding parameter always takes a `$state`: an object there is always
+    // the config-object slip, never data.
+    const missingRequired = spec.params.some((param, index) => !param.optional && index > 0 && slots[index] === undefined);
+    const misplaced =
+      (landing !== undefined && landing.kind === "binding") ||
+      (wanted !== undefined && wanted !== "object" && !(landing.optional && obj.entries.every((entry) => entry.value.type === "literal" && entry.value.value === null)));
+    if (!missingRequired && !misplaced) return;
+    const named: NamedArg[] = [];
+    let field: { readonly param: string; readonly field: string; readonly pos: Pos; readonly at: Pos } | undefined;
+    for (const entry of obj.entries) {
+      // Local (bb-plugins): `{name: "work"}` names the state an input binds,
+      // as in an HTML form field; it becomes `value: $work`.
+      const fieldName = this.fieldStateName(spec, entry, obj.entries);
+      if (fieldName !== undefined && field === undefined) {
+        field = { ...fieldName, pos: entry.value.pos, at: entry.pos };
+        continue;
+      }
+      const param = spec.params.find((candidate) => candidate.name === entry.key);
+      if (param === undefined || slots.some((slot, index) => index > 0 && slot !== undefined && spec.params[index].name === entry.key)) return;
+      named.push({ name: entry.key, value: entry.value, pos: entry.pos });
+    }
+    if (field !== undefined) {
+      // Resolved only once the whole object is known to unwrap, so an abandoned rewrite claims no state name.
+      const state = this.fieldState(field.field, expr.name);
+      named.unshift({ name: field.param, value: { type: "state", name: state, pos: field.pos }, pos: field.at });
+    }
+    slots.fill(undefined);
+    for (const arg of named) {
+      const index = spec.params.findIndex((param) => param.name === arg.name);
+      slots[index] = arg.value;
+    }
+    // validate owns the parsed AST before it becomes the program (readonly is type-level).
+    const mutable = expr as unknown as { args: Expr[]; named: NamedArg[] };
+    mutable.args = [];
+    mutable.named = named;
+    this.diagnostics.report(
+      expr.pos,
+      `\`${expr.name}\` got its arguments as one {...} object; the keys became named arguments (write them as \`name: value\` next time): ${sig}`,
+      "warning",
+    );
+  }
+
+  /** A fresh `$state`, unique across the program, for a synthesized binding. */
+  private synthState(component: string, holds: ParamSpec["holds"], pos: Pos, initial?: Expr): string {
+    const base = component.toLowerCase();
+    let name = base;
+    let n = 1;
+    while (this.states.has(name) || this.named.has(name)) name = `${base}${++n}`;
+    this.registerState(name, initial ?? this.initialFor(holds, pos), pos);
+    return name;
+  }
+
+  /**
+   * Local (bb-plugins): the binding param a config object's `name:` or `id:`
+   * key stands for, with that key's text as a state name. Undefined when the
+   * key is something else, the component binds nothing, or the object also
+   * gives the binding (`value:`) itself.
+   */
+  private fieldStateName(
+    spec: ComponentSpec,
+    entry: { readonly key: string; readonly value: Expr },
+    entries: readonly { readonly key: string }[],
+  ): { param: string; field: string } | undefined {
+    if ((entry.key !== "name" && entry.key !== "id") || spec.params.some((param) => param.name === entry.key)) return undefined;
+    const binding = spec.params.find((param) => param.kind === "binding");
+    if (binding === undefined || entries.some((other) => other.key === binding.name)) return undefined;
+    if (entry.value.type !== "literal" || typeof entry.value.value !== "string" || entry.value.value.trim() === "") return undefined;
+    return { param: binding.name, field: entry.value.value.trim() };
+  }
+
+  /**
+   * Local (bb-plugins): the state for a config-object field name. The same
+   * field name always gets the same state, and distinct field names never
+   * share one: `x-y` and `x y` both spell `x_y`, so the second becomes
+   * `x_y2`, and a name with no ASCII letters (`имя`) is named after its
+   * component (`input`, `input2`). A field name that is already an
+   * identifier keeps its spelling (`_work`, `work_`), and binds the state the
+   * block declares under that name; a normalized one never does.
+   */
+  private fieldState(field: string, component: string): string {
+    const known = this.fieldStates.get(field);
+    if (known !== undefined) return known;
+    // A field name that is already an identifier (`_work`, `work_`) is the state's name as written.
+    const valid = /^[A-Za-z_][A-Za-z0-9_]*$/.test(field);
+    const slug = valid ? field : field.replace(/[^A-Za-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").replace(/^(?=\d)/, "_");
+    const claimed = new Set(this.fieldStates.values());
+    const own = valid || /[A-Za-z0-9]/.test(slug);
+    const base = own ? slug : component.toLowerCase();
+    // Only a field spelled exactly like a declared state binds it; a normalized one never lands on one.
+    const taken = (name: string) =>
+      claimed.has(name) || this.named.has(name) || (!(valid && name === field) && this.states.has(name));
+    let name = base;
+    let n = 1;
+    while (taken(name)) name = `${base}${++n}`;
+    this.fieldStates.set(field, name);
+    return name;
+  }
+
+  /**
+   * Local (bb-plugins): an input given its starting value instead of a state,
+   * as in `TextArea("Ring first", label: "Notes")` or `Toggle(true)`. A scalar
+   * the input can hold becomes a fresh state that starts at it (warning); one
+   * it cannot hold, such as text for a Slider, keeps its error.
+   */
+  private coerceLiteralBindings(expr: CallExpr, spec: ComponentSpec, slots: (Expr | undefined)[], sig: string): void {
+    spec.params.forEach((param, index) => {
+      if (param.kind !== "binding") return;
+      const slot = slots[index];
+      if (slot === undefined) return;
+      // Scalars only: a list could as well be the options (`Checklist(["a"], …)`), which stays an error.
+      const kind = slot.type === "literal" ? staticKind(slot) : undefined;
+      if (kind === undefined || kind === "null") return;
+      if (param.holds !== undefined && !STATE_KINDS[param.holds].fits.includes(kind)) return;
+      if (!this.literalIsStartingValue(spec, slots, slot)) return;
+      const name = this.synthState(expr.name, param.holds, slot.pos, slot);
+      const stateExpr: Expr = { type: "state", name, pos: slot.pos };
+      // validate owns the parsed AST before it becomes the program (readonly is type-level).
+      if (expr.args[index] === slot) (expr as unknown as { args: Expr[] }).args[index] = stateExpr;
+      const namedArg = expr.named.find((arg) => arg.value === slot);
+      if (namedArg !== undefined) (namedArg as { value: Expr }).value = stateExpr;
+      slots[index] = stateExpr;
+      this.diagnostics.report(
+        slot.pos,
+        `\`${expr.name}\` ${param.name} must be a \`$state\`; declared \`$${name} = ${formatInitial(slot)}\` for you to start from that value: ${sig}`,
+        "warning",
+      );
+    });
+  }
+
+  /**
+   * Local (bb-plugins): whether a literal in an input's value slot reads as
+   * its starting value rather than a misplaced argument. A pick must be one
+   * of the options given (`Choice("Plan", ["Basic", "Pro"])` is not), and
+   * other text without a `label:` is more likely the label (`Input("Email")`).
+   */
+  private literalIsStartingValue(spec: ComponentSpec, slots: readonly (Expr | undefined)[], slot: Expr): boolean {
+    if (slot.type !== "literal") return false;
+    const optionsIndex = spec.params.findIndex((param) => param.name === "options" || param.name === "colors");
+    if (optionsIndex < 0) {
+      const labelIndex = spec.params.findIndex((param) => param.name === "label");
+      return typeof slot.value !== "string" || labelIndex < 0 || slots[labelIndex] !== undefined;
+    }
+    const options = slots[optionsIndex];
+    if (options === undefined || options.type !== "list") return false;
+    return options.items.some((item) => {
+      const value = item.type === "object" ? item.entries.find((entry) => entry.key === "value")?.value : item;
+      return value?.type === "literal" && value.value === slot.value;
+    });
+  }
+
+  /**
+   * Local (bb-plugins): callee slips that have one clear reading. A name the
+   * catalog spells differently (`TextInput` for `Input`, `Textarea` for
+   * `TextArea`) is renamed, and `Form("Question?", [fields])`, which gives
+   * Form a title it does not take, becomes `Card("Question?", [Form([fields])])`.
+   * Each is a warning; the aliases stay out of the catalog so no prompt
+   * teaches them.
+   */
+  private coerceCallee(expr: CallExpr, params: readonly string[]): void {
+    if (this.named.has(expr.name) || params.includes(expr.name) || FUNCTION_ARITY.has(expr.name)) return;
+    if (!COMPONENT_SPECS.has(expr.name) && !ACTION_SPECS.has(expr.name)) {
+      const target = COMPONENT_ALIASES.get(expr.name) ?? uniqueCaseInsensitive(expr.name);
+      if (target === undefined) return;
+      this.diagnostics.report(expr.pos, `\`${expr.name}\` is written \`${target}\``, "warning");
+      (expr as { name: string }).name = target;
+    }
+    const [title, fields] = expr.args;
+    if (
+      expr.name === "Form" &&
+      expr.args.length === 2 &&
+      expr.named.length === 0 &&
+      (title.type === "template" || (title.type === "literal" && typeof title.value === "string")) &&
+      fields.type === "list"
+    ) {
+      // The inner Form takes the fields list's position, so its node key differs from the Card's.
+      const form: Expr = { type: "call", name: "Form", args: [fields], named: [], pos: fields.pos };
+      const mutable = expr as unknown as { name: string; args: Expr[] };
+      mutable.name = "Card";
+      mutable.args = [title, { type: "list", items: [form], pos: fields.pos }];
+      this.diagnostics.report(
+        expr.pos,
+        "`Form` takes only its fields; put the question in a Card around it, as in `Card(\"Question?\", [Form([...])])`. Wrapped it for you",
+        "warning",
+      );
+    }
+  }
+
+  /**
+   * An input bound to a state that is never declared: `Input($addr, …)` with
+   * no `$addr = …` anywhere, or the bare `Input(addr, …)` spelling. The model
+   * clearly means a state with that name, so declare it with the kind's
+   * neutral initial and say so — the input works instead of the block dying.
+   * A name already taken by a named value keeps its own error (that one is a
+   * genuine mixup between `$state` and `name = value`).
+   */
+  private coerceUndeclaredBindings(expr: CallExpr, spec: ComponentSpec, slots: (Expr | undefined)[], sig: string): void {
+    spec.params.forEach((param, index) => {
+      if (param.kind !== "binding") return;
+      const slot = slots[index];
+      if (slot === undefined) return;
+      const name = slot.type === "state" || slot.type === "ident" ? slot.name : undefined;
+      if (name === undefined || this.states.has(name) || this.named.has(name)) return;
+      const value = this.initialFor(param.holds, slot.pos);
+      this.registerState(name, value, slot.pos);
+      if (slot.type === "ident") {
+        // A bare spelling must become a real `$state` reference everywhere it
+        // appears: positionally, or inside a named argument.
+        const stateExpr: Expr = { type: "state", name, pos: slot.pos };
+        if (expr.args[index] === slot) (expr as unknown as { args: Expr[] }).args[index] = stateExpr;
+        const namedArg = expr.named.find((arg) => arg.value === slot);
+        if (namedArg !== undefined) (namedArg as { value: Expr }).value = stateExpr;
+        slots[index] = stateExpr;
+      }
+      this.diagnostics.report(
+        slot.pos,
+        `\`${expr.name}\` binds \`$${name}\`, which is never declared; declared \`$${name} = ${formatInitial(value)}\` for you (declare states yourself at the top to keep control): ${sig}`,
+        "warning",
+      );
+    });
+  }
+
+  /** The neutral initial for a state kind: `[]` for a list, `""` for text/scalar. */
+  private initialFor(holds: ParamSpec["holds"], pos: Pos): Expr {
+    return holds === "list" ? { type: "list", items: [], pos } : { type: "literal", value: holds === "number" ? 0 : holds === "boolean" ? false : "", pos };
+  }
+
+  private registerState(name: string, value: Expr, pos: Pos): void {
+    const decl: Decl = { name, value, pos };
+    this.states.set(name, { index: this.stateDecls.length, decl });
+    this.stateDecls.push(decl);
   }
 
   private checkParam(owner: string, param: ParamSpec, slot: Expr): void {

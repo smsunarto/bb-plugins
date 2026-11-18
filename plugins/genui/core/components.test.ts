@@ -105,7 +105,9 @@ Card("Deploy", [
 describe("binding checks", () => {
   it("require bindings written as $name", () => {
     expect(errors(`$q = ""\nInput($q + "x")`)[0]).toContain("`Input` value must be a state variable written as `$name`");
-    expect(errors(`Select("a", ["a", "b"])`)[0]).toContain("`Select` value must be a state variable");
+    // Local (bb-plugins): a scalar literal is the starting pick, bound to a fresh state with a warning.
+    expect(nodeOf(render(`Select("a", ["a", "b"])`).roots[0], "Select").props.value).toMatchObject({ value: "a" });
+    expect(errors(`Select(["a"], ["a", "b"])`)[0]).toContain("`Select` value must be a state variable");
     expect(errors(`$picked = []\nChecklist(picked, ["a"])`)).toEqual(["`picked` is not defined. Did you mean `$picked`?"]);
   });
 
