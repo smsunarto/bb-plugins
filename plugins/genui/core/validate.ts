@@ -42,10 +42,14 @@ const FUNCTION_ARITY: ReadonlyMap<string, Arity> = new Map(
     round: [1, 2], fmt: [1, 2], sum: [1, 1], min: [1, Infinity], max: [1, Infinity], abs: [1, 1], Load: [1, 1],
     keys: [1, 1], values: [1, 1], entries: [1, 1], floor: [1, 1], ceil: [1, 1], sqrt: [1, 1], pow: [2, 2],
     sin: [1, 1], cos: [1, 1], tan: [1, 1], asin: [1, 1], acos: [1, 1], atan: [1, 1], atan2: [2, 2],
-    clamp: [3, 3], lerp: [3, 3], range: [2, 3], random: [1, 1],
+    clamp: [3, 3], lerp: [3, 3], range: [2, 3], random: [1, 1], Number: [1, 1],
   } satisfies Record<FunctionName, Arity>),
 );
 
+/** Local (bb-plugins): the components that caption a `source:`, for the warning that drops one elsewhere. */
+const SOURCE_COMPONENTS = ((names: string[]) => `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`)(
+  [...COMPONENT_SPECS].filter(([, spec]) => spec.params.some((param) => param.name === "source")).map(([name]) => name),
+);
 const ACTION_LIST = [...ACTION_SPECS].map(([name, spec]) => signature(name, spec)).join(", ");
 export const ARROW_ONLY =
   "arrow functions can only be declared as a named function (`share = p => ...`), passed to map, filter, find, some or every, or given as a value of a list or object (a Scene's `t => [...]`, a surface's `f`)";
@@ -235,6 +239,43 @@ export function didYouMean(name: string, candidates: Iterable<string>, render = 
     }
   }
   return best === undefined ? "" : ` Did you mean \`${render(best)}\`?`;
+}
+
+/** Local (bb-plugins): text as written, a literal or a template. */
+function isText(expr: Expr | undefined): expr is Extract<Expr, { type: "template" | "literal" }> {
+  return expr !== undefined && (expr.type === "template" || (expr.type === "literal" && typeof expr.value === "string"));
+}
+
+const OPTION_VALUE_KEYS: ReadonlySet<string> = new Set(["label", "title", "name", "value"]);
+const OPTION_DETAIL_KEYS: ReadonlySet<string> = new Set(["description", "detail"]);
+
+/**
+ * Local (bb-plugins): an option of a question written for Decision, as a
+ * Radio option: text as is, `{label, description}` as `{value, detail}`.
+ * Undefined for anything else (scores, pros, a computed item).
+ */
+function radioOption(item: Expr): Expr | undefined {
+  if (isText(item)) return item;
+  if (item.type !== "object") return undefined;
+  if (!item.entries.every((entry) => OPTION_VALUE_KEYS.has(entry.key) || OPTION_DETAIL_KEYS.has(entry.key))) return undefined;
+  const values = item.entries.filter((entry) => OPTION_VALUE_KEYS.has(entry.key));
+  const details = item.entries.filter((entry) => OPTION_DETAIL_KEYS.has(entry.key));
+  const [value] = values;
+  const [detail] = details;
+  if (value === undefined || values.length > 1 || !isText(value.value)) return undefined;
+  if (detail !== undefined && (details.length > 1 || !isText(detail.value))) return undefined;
+  const entries: { key: string; value: Expr; pos: Pos }[] = [{ key: "value", value: value.value, pos: value.pos }];
+  if (detail !== undefined) entries.push({ key: "detail", value: detail.value, pos: detail.pos });
+  return { type: "object", entries, pos: item.pos };
+}
+
+/** Local (bb-plugins): a retired `PullRequest` ref as a markdown link: `owner/repo#1` or a github.com pull URL; other text as is. */
+function pullRequestLink(ref: string): string {
+  const match =
+    /^([\w.-]+)\/([\w.-]+)#(\d+)$/.exec(ref) ?? /^https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)\b/i.exec(ref);
+  if (match === null) return ref.replace(/[\\`*_[\]<>]/g, "\\$&");
+  const [, owner, repo, number] = match;
+  return `[${owner}/${repo}#${number}](https://github.com/${owner}/${repo}/pull/${number})`;
 }
 
 interface Ref {
@@ -609,9 +650,16 @@ class Validator {
     if (expr.args.length > spec.params.length) {
       this.diagnostics.report(expr.args[spec.params.length].pos, `too many arguments: ${sig}`);
     }
+    let sourceDropped = false;
     for (const arg of expr.named) {
       const index = spec.params.findIndex((param) => param.name === arg.name);
       if (index < 0) {
+        // Local (bb-plugins): `source:` where only Table, Chart and Metric caption one; dropped.
+        if (arg.name === "source") {
+          sourceDropped = true;
+          this.diagnostics.report(arg.pos, `\`${expr.name}\` shows no \`source:\`; dropped it. Only ${SOURCE_COMPONENTS} caption a source`, "warning");
+          continue;
+        }
         const hint = didYouMean(arg.name, spec.params.map((param) => param.name));
         const why =
           hint === "" && Object.hasOwn(STYLE_ARGS, arg.name.toLowerCase())
@@ -624,6 +672,11 @@ class Validator {
         slots[index] = arg.value;
       }
     }
+    if (sourceDropped) {
+      // validate owns the parsed AST before it becomes the program (readonly is type-level).
+      (expr as unknown as { named: NamedArg[] }).named = expr.named.filter((arg) => arg.name !== "source");
+    }
+    this.coerceSelectLabel(expr, spec, slots, sig);
     this.coerceOptionsFirst(expr, spec, slots, sig);
     this.coerceTabsItems(expr, spec, slots, sig);
     this.coerceConfigObject(expr, spec, slots, sig);
@@ -893,6 +946,11 @@ class Validator {
    */
   private coerceCallee(expr: CallExpr, params: readonly string[]): void {
     if (this.named.has(expr.name) || params.includes(expr.name) || FUNCTION_ARITY.has(expr.name)) return;
+    if (expr.name === "PullRequest" && !COMPONENT_SPECS.has(expr.name)) {
+      this.coercePullRequest(expr);
+      return;
+    }
+    if (expr.name === "Decision") this.coerceDecisionQuestion(expr);
     if (!COMPONENT_SPECS.has(expr.name) && !ACTION_SPECS.has(expr.name)) {
       const target = COMPONENT_ALIASES.get(expr.name) ?? uniqueCaseInsensitive(expr.name);
       if (target === undefined) return;
@@ -918,6 +976,131 @@ class Validator {
         "warning",
       );
     }
+  }
+
+  /**
+   * Local (bb-plugins): `PullRequest(["owner/repo#1", url])`, retired on
+   * 2026-11-15 in favour of Source Control's card. Replies written before
+   * then still name it; their refs become links in a Text (warning). A list
+   * that is not all literal text keeps its error.
+   */
+  private coercePullRequest(expr: CallExpr): void {
+    const refs = expr.args[0] ?? expr.named.find((arg) => arg.name === "refs")?.value;
+    if (expr.args.length + expr.named.length > 1) return;
+    const texts: string[] = [];
+    if (refs !== undefined) {
+      if (refs.type !== "list" || refs.items.length === 0) return;
+      for (const item of refs.items) {
+        if (item.type !== "literal" || typeof item.value !== "string") return;
+        texts.push(item.value.trim());
+      }
+    }
+    const links = texts.map(pullRequestLink);
+    const markdown =
+      links.length === 0
+        ? "**Pull request:** see this thread's Source Control card"
+        : links.length === 1
+          ? `**Pull request:** ${links[0]}`
+          : `**Pull requests**\n${links.map((link) => `- ${link}`).join("\n")}`;
+    const mutable = expr as unknown as { name: string; args: Expr[]; named: NamedArg[] };
+    mutable.name = "Text";
+    mutable.args = [{ type: "literal", value: markdown, pos: refs?.pos ?? expr.pos }];
+    mutable.named = [];
+    this.diagnostics.report(
+      expr.pos,
+      "`PullRequest` was retired; its pull requests are shown as links. The Source Control card shows a pull request's status",
+      "warning",
+    );
+  }
+
+  /**
+   * Local (bb-plugins): `Decision("Question?", [{label, description}, …])`
+   * or `Decision({question, options})`: a question, not the options-against-
+   * criteria table `Decision(options, criteria)` draws. With no criteria
+   * and every option a text or a {label, description} object, the call
+   * becomes `Card(null, [Form([Radio($decision, [{value, detail}, …],
+   * label: question)])])` (warning), so the pick reaches the user's message
+   * as "Question? answer". Anything else keeps its errors.
+   */
+  private coerceDecisionQuestion(expr: CallExpr): void {
+    if (expr.named.length > 0) return;
+    let question: Expr | undefined;
+    let options: Expr | undefined;
+    const [first, second] = expr.args;
+    if (expr.args.length === 2 && isText(first)) {
+      question = first;
+      options = second;
+    } else if (expr.args.length === 1 && first.type === "object") {
+      if (!first.entries.every((entry) => entry.key === "question" || entry.key === "options")) return;
+      question = first.entries.find((entry) => entry.key === "question")?.value;
+      options = first.entries.find((entry) => entry.key === "options")?.value;
+    }
+    if (question === undefined || !isText(question) || options?.type !== "list" || options.items.length === 0) return;
+    const items: Expr[] = [];
+    for (const item of options.items) {
+      const option = radioOption(item);
+      if (option === undefined) return;
+      items.push(option);
+    }
+    const name = this.synthState("Decision", "scalar", expr.pos);
+    const radio: Expr = {
+      type: "call",
+      name: "Radio",
+      args: [{ type: "state", name, pos: question.pos }, { type: "list", items, pos: options.pos }],
+      named: [{ name: "label", value: question, pos: question.pos }],
+      pos: question.pos,
+    };
+    // Card, Form and Radio each keep a distinct position, so their node keys differ.
+    const form: Expr = { type: "call", name: "Form", args: [{ type: "list", items: [radio], pos: options.pos }], named: [], pos: options.pos };
+    const mutable = expr as unknown as { name: string; args: Expr[] };
+    mutable.name = "Card";
+    mutable.args = [{ type: "literal", value: null, pos: expr.pos }, { type: "list", items: [form], pos: options.pos }];
+    this.diagnostics.report(
+      expr.pos,
+      `\`Decision\` scores options against criteria; with none it is a question, so it became a Radio bound to \`$${name}\`. Write a question as \`Card(null, [Form([Radio($pick, [{value, detail}], label: "Question?")])])\``,
+      "warning",
+    );
+  }
+
+  /**
+   * Local (bb-plugins): `Select("Region", ["eu", "us"])` (text that is not an
+   * option) and `Select("region", "Region", ["eu", "us"])` (a field name, a
+   * label, the options): the label stands where the `$state` goes. Both
+   * become `Select($state, options, label: "Region")` (warning), with the
+   * field name as the state's name when given. Text that is one of the
+   * options stays its starting value (coerceLiteralBindings).
+   */
+  private coerceSelectLabel(expr: CallExpr, spec: ComponentSpec, slots: (Expr | undefined)[], sig: string): void {
+    if (expr.name !== "Select" || expr.named.length > 0) return;
+    const [first, second, third] = expr.args;
+    let state: string;
+    let label: Expr;
+    let options: Expr;
+    if (expr.args.length === 3 && first.type === "literal" && typeof first.value === "string" && first.value.trim() !== "" && isText(second) && third.type === "list") {
+      state = this.fieldState(first.value.trim(), expr.name);
+      if (!this.states.has(state)) this.registerState(state, this.initialFor("scalar", first.pos), first.pos);
+      label = second;
+      options = third;
+    } else if (expr.args.length === 2 && isText(first) && second.type === "list" && !this.literalIsStartingValue(spec, slots, first)) {
+      state = this.synthState(expr.name, "scalar", first.pos);
+      label = first;
+      options = second;
+    } else {
+      return;
+    }
+    const stateExpr: Expr = { type: "state", name: state, pos: first.pos };
+    slots[0] = stateExpr;
+    slots[1] = options;
+    slots[2] = label;
+    // validate owns the parsed AST before it becomes the program (readonly is type-level).
+    const mutable = expr as unknown as { args: Expr[]; named: NamedArg[] };
+    mutable.args = [stateExpr, options];
+    mutable.named = [{ name: "label", value: label, pos: label.pos }];
+    this.diagnostics.report(
+      expr.pos,
+      `\`Select\` got its label where its \`$state\` goes; bound the pick to \`$${state}\` and made the text its label: ${sig}`,
+      "warning",
+    );
   }
 
   /**

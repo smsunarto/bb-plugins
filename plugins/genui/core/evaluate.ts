@@ -119,6 +119,20 @@ function checkLength<T extends readonly Value[]>(list: T, pos: Pos): T {
   return list;
 }
 
+/**
+ * Local (bb-plugins): `Number(x)`. A number stays itself, a boolean is 1 or
+ * 0, and text that spells a number (spaces and thousands commas allowed) is
+ * that number; anything else, empty text included, is null.
+ */
+function toNumber(value: Value): number | null {
+  if (typeof value === "number") return finite(value);
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (typeof value !== "string") return null;
+  const text = value.trim().replace(/(\d),(?=\d{3}\b)/g, "$1");
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(text)) return null;
+  return finite(Number(text));
+}
+
 /** Text for `+`, templates and `join`: null is empty, other scalars use String(). */
 function toText(value: Value, pos: Pos): string {
   if (value === null) return "";
@@ -727,6 +741,9 @@ class Interpreter {
           call.pos,
         );
       }
+      // Local (bb-plugins): a number from what a text input holds.
+      case "Number":
+        return toNumber(args[0]);
       case "Load": {
         const path = this.text(args[0], call.args[0].pos, "Load()");
         const loaded = this.data.get(dataKey({ path, raw: false }));

@@ -749,6 +749,8 @@ export const FUNCTIONS = {
   keys: "keys(object) → list of keys",
   values: "values(object) → list of values",
   entries: "entries(object) → list of [key, value]",
+  // Local (bb-plugins): text inputs hold text; agents reach for JS's Number() to do sums with them.
+  Number: "Number(x) → the number numeric text spells (\"1,250\" → 1250), else null",
   Load: "Load(path): JSON/CSV/TSV/JSONL/text file, workspace-relative or in thread storage",
 } as const;
 
