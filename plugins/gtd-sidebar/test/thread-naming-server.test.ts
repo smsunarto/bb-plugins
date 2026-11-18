@@ -218,27 +218,43 @@ describe("agent rename guard", () => {
     );
   });
 
-  test("lets a rejected title be fixed in the same turn", async () => {
+  test("releases the slot when a title is rejected, so the agent can fix it", async () => {
     const { updates, rename } = setup();
     assert.notEqual((await rename("🛠️ [API]")).exitCode, 0);
     assert.equal((await rename("[API] Add CSV export")).exitCode, 0);
     assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "[API] Add CSV export" }]);
   });
 
-  test("allows one correction when the session started before the project rules loaded", async () => {
+  // BBP-24 review: a cold session's rules printout must not reopen a second rename.
+  test("allows one rename per request even when the session started before the rules loaded", async () => {
     const { configure, updates, rename } = setup({ projectRules: "Prefix titles with [API]." });
     await flush();
     const cold = await configure();
     assert.match(cold.instructions ?? "", /not loaded when this session started/u);
-    const first = await rename("Add CSV export");
+    const first = await rename("[API] Original task title");
     assert.match(first.stdout, /Prefix titles with \[API\]\./u);
-    assert.equal((await rename("[API] Add CSV export")).exitCode, 0);
-    const third = await rename("[API] Add CSV export v2");
-    assert.match(third.stdout, /already renamed/u);
+    const second = await rename("Consolidate agent memories");
+    assert.equal(second.exitCode, 0, second.stderr);
+    assert.match(second.stdout, /already renamed/u);
     assert.deepEqual(
       updates.map((update) => update.title),
-      ["Add CSV export", "[API] Add CSV export"],
+      ["[API] Original task title"],
     );
+  });
+
+  // BBP-24 review: both calls passed the check before either recorded its rename.
+  test("lets only one of two concurrent renames in one request through", async () => {
+    const { updates, rename } = setup();
+    const results = await Promise.all([
+      rename("Original task title"),
+      rename("Consolidate agent memories"),
+    ]);
+    assert.deepEqual(
+      results.map((result) => result.exitCode),
+      [0, 0],
+    );
+    assert.equal(results.filter((result) => /already renamed/u.test(result.stdout)).length, 1);
+    assert.equal(updates.length, 1);
   });
 
   test("guards a rename that names its own thread by id", async () => {

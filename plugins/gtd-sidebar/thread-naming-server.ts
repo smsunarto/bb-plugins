@@ -39,8 +39,6 @@ export function registerThreadNaming(
   settings.onChange((next) => {
     namingEnabled = next.automaticallyNameThreads;
   });
-  // Threads whose latest session started before the project rules loaded.
-  const sessionsWithoutRules = new Set<string>();
   const agentRenames = createAgentRenameGuard(bb);
   // Selecting nothing would drop the manifest skill from every thread.
   const agentSelection = { tools: [], skills: ["configure-gtd-naming"] };
@@ -55,8 +53,6 @@ export function registerThreadNaming(
     }
     try {
       const rules = projectTitleRules.peek(session.project.id, session.environment.id);
-      if (rules === undefined) sessionsWithoutRules.add(session.thread.id);
-      else sessionsWithoutRules.delete(session.thread.id);
       return { ...agentSelection, instructions: renderAgentRenameInstructions(rules) };
     } catch (error) {
       // A throw here would reject the whole selection, skill included.
@@ -116,18 +112,17 @@ export function registerThreadNaming(
 
       // An agent titling its own thread. So is a background agent in the same
       // provider process, such as Codex memory consolidation.
-      const turn = threadId === context.threadId ? await agentRenames.check(threadId) : null;
-      if (turn?.allowed === false) return { exitCode: 0, stdout: `${turn.reason}\n` };
+      const slot = threadId === context.threadId ? await agentRenames.claim(threadId) : null;
+      if (slot?.claimed === false) return { exitCode: 0, stdout: `${slot.reason}\n` };
 
       const renamed = await threadNamer.renameThread(threadId, title);
-      if (!renamed.ok) throw new PluginCliError(renamed.error, { code: "rename_failed" });
+      if (!renamed.ok) {
+        // A rejected title leaves the slot open, so the agent can fix it.
+        slot?.release();
+        throw new PluginCliError(renamed.error, { code: "rename_failed" });
+      }
       // For a session whose instructions were built before the rules loaded.
       const selectedRules = selectProjectTitleRules(await readProjectTitleRules(renamed));
-      // The rules-unloaded instructions ask for one more rename if these rules call for it.
-      if (turn) {
-        const corrections = selectedRules && sessionsWithoutRules.has(threadId) ? 1 : 0;
-        agentRenames.record(threadId, turn.requestSeq, corrections);
-      }
       return {
         exitCode: 0,
         stdout:
@@ -142,24 +137,23 @@ export function registerThreadNaming(
   return { threadNamer, renameCommand };
 }
 
-type AgentRenameCheck =
-  | { allowed: true; requestSeq: number | null }
-  | { allowed: false; reason: string };
+type AgentRenameSlot = { claimed: true; release(): void } | { claimed: false; reason: string };
 
 /**
  * Lets a thread rename itself only while a turn runs, once per user request.
- * The record lives in memory, so a plugin reload forgets earlier renames.
+ * A call claims its request's slot before it writes, so concurrent calls
+ * cannot both rename. The record lives in memory; a plugin reload forgets it.
  */
 function createAgentRenameGuard(bb: BbPluginApi) {
-  // Per thread: the request whose turn renamed it, and the renames it has left.
-  const renames = new Map<string, { requestSeq: number | null; remaining: number }>();
+  // Per thread: the latest user request whose turn claimed a rename.
+  const claims = new Map<string, number | null>();
 
   return {
-    async check(threadId: string): Promise<AgentRenameCheck> {
+    async claim(threadId: string): Promise<AgentRenameSlot> {
       const thread = await bb.sdk.threads.get({ threadId });
       if (thread.status !== "active") {
         return {
-          allowed: false,
+          claimed: false,
           reason: "Not renamed: no turn is running in this thread, so its title stays.",
         };
       }
@@ -170,22 +164,20 @@ function createAgentRenameGuard(bb: BbPluginApi) {
         limit: "1",
       });
       const requestSeq = latestRequest[0]?.seq ?? null;
-      const previous = renames.get(threadId);
-      if (previous?.requestSeq === requestSeq && previous.remaining === 0) {
+      // No await from here on: checking and claiming happen in one step.
+      if (claims.has(threadId) && claims.get(threadId) === requestSeq) {
         return {
-          allowed: false,
+          claimed: false,
           reason: "Not renamed: this thread was already renamed for this request.",
         };
       }
-      return { allowed: true, requestSeq };
-    },
-    record(threadId: string, requestSeq: number | null, corrections: number) {
-      const previous = renames.get(threadId);
-      renames.set(threadId, {
-        requestSeq,
-        remaining:
-          previous?.requestSeq === requestSeq ? Math.max(0, previous.remaining - 1) : corrections,
-      });
+      claims.set(threadId, requestSeq);
+      return {
+        claimed: true,
+        release() {
+          if (claims.get(threadId) === requestSeq) claims.delete(threadId);
+        },
+      };
     },
   };
 }
