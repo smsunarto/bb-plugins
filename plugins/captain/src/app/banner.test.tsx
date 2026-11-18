@@ -148,8 +148,16 @@ test("the keys work without a visible hint: no keycap, number or framed letter r
   for (const button of [...answers, later, skip]) {
     expect(button.querySelector("[aria-hidden]")).toBeNull();
   }
-  expect(later.children).toHaveLength(0);
-  expect(skip.children).toHaveLength(0);
+  // The label reads whole, and no element inside the button frames a part of
+  // it, such as its first letter; a span wrapping the whole word is fine.
+  for (const [button, label] of [
+    [later, "Later"],
+    [skip, "Skip"],
+  ] as const) {
+    expect(button.textContent).toBe(label);
+    const framed = [...button.querySelectorAll("*")].filter((each) => each.textContent !== label);
+    expect(framed.map((each) => each.textContent)).toEqual([]);
+  }
 });
 
 test("Enter picks the recommended option only when the banner itself has focus", async () => {
