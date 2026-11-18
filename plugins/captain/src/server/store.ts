@@ -117,6 +117,8 @@ export const NOTICE = {
   command: (threadId: string, dueSince: number) => `command:${threadId}:${dueSince}`,
   /** A crew thread seen in `error`, for Since you left. */
   failed: (threadId: string) => `failed:${threadId}`,
+  /** The Captain's wake line for one fallback, claimed before it is sent. */
+  fallbackWake: (threadId: string) => `fallback:${threadId}`,
   /** A crew failure read and judged not to need a fallback, at the thread's last update. */
   noFallback: (threadId: string, updatedAt: number) => `nofallback:${threadId}:${updatedAt}`,
   askPush: (askId: string) => `push:ask:${askId}`,

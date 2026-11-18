@@ -146,7 +146,12 @@ async function checkCaptain(
       deps.bb.rpc.experimental_invalidate([sinceTag(captain.threadId)]);
     }
   }
-  await runFallbacks(deps, captain, threads, now);
+  try {
+    await runFallbacks(deps, captain, threads, now);
+  } catch (error) {
+    // A failed fallback read must not cost this pass its stall wakes; the next pass retries it.
+    deps.bb.log.warn(`fallback for ${captain.threadId} skipped: ${(error as Error).message}`);
+  }
   // Only an idle thread can stall, and only a thread with no role row needs one backfilled.
   const needRows = threads.filter(
     (thread) =>

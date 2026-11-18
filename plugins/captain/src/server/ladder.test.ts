@@ -175,6 +175,19 @@ describe("bb captain dispatch on a ladder", () => {
     expect(delegates(host)).toEqual([]);
   });
 
+  test("a rerun with no eligible rung reports the live thread as exists, not refused", async () => {
+    const { host, as } = await ladderHost(ALL_READY);
+    const first = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement"]);
+    expect(first.exitCode).toBe(0);
+    host.pool.status = NONE_READY;
+
+    const rerun = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement"]);
+
+    expect(rerun.exitCode).toBe(0);
+    expect(rerun.stdout).toContain("exists");
+    expect(delegates(host)).toHaveLength(1);
+  });
+
   test("a ladder saved in settings is what dispatch starts on, and rung 1's preset follows it", async () => {
     const { host, as } = await ladderHost();
     await host.harness.behavior.callRpc("setLadder", {
@@ -284,6 +297,28 @@ describe("rate-limit fallback", () => {
     expect(delegates(host)).toHaveLength(2);
     expect(host.threads.get(failed)?.archivedAt).not.toBeNull();
     expect(toCaptain(host, captainId)).toHaveLength(1);
+  });
+
+  test("a thread the Captain already dispatched by hand counts as the restart: no second start", async () => {
+    const { host, as, captainId, failed } = await rateLimited(CLAUDE_CAPPED);
+    const manual = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "--role",
+      "Implement",
+      "--again",
+      "--json",
+    ]);
+    const manualId = String(json(manual.stdout).results[0]?.["thread"]);
+    expect(manualId).not.toBe(failed);
+
+    await host.server.check.pass();
+
+    expect(delegates(host)).toHaveLength(2);
+    expect(host.threads.get(failed)?.archivedAt).not.toBeNull();
+    expect(toCaptain(host, captainId).map((message) => message.text)).toEqual([
+      expect.stringContaining(`as ${manualId} with the same brief`),
+    ]);
   });
 
   test("after the last rung it wakes the Captain as blocked, starts nothing and keeps the failed thread", async () => {

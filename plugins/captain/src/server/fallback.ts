@@ -65,18 +65,23 @@ export async function runFallbacks(
     open(deps, captain, member, pool, now);
   }
 
-  const lines: { failedThreadId: string; line: string }[] = [];
+  const lines: { key: string; failedThreadId: string; line: string }[] = [];
   for (const fallback of deps.store.openFallbacks(captain.threadId)) {
     await deps.taskGuard(fallback.taskKey, () => advance(deps, captain, fallback));
     const after = deps.store.fallback(fallback.failedThreadId);
     const line = after === null ? null : wakeLine(deps, after);
-    if (line !== null) lines.push({ failedThreadId: fallback.failedThreadId, line });
+    const key = NOTICE.fallbackWake(fallback.failedThreadId);
+    // Claimed first, so a pass that overlaps one past its deadline sends no second line.
+    if (line !== null && deps.store.claimNotice(key, now)) {
+      lines.push({ key, failedThreadId: fallback.failedThreadId, line });
+    }
   }
   if (lines.length === 0) return;
   try {
     await steer(deps.bb, captain.threadId, lines.map((entry) => entry.line).join("\n"));
     for (const entry of lines) deps.store.setFallbackWoke(entry.failedThreadId, deps.now());
   } catch (error) {
+    for (const entry of lines) deps.store.releaseNotice(entry.key, now);
     deps.bb.log.warn(`fallback wake for ${captain.threadId} not sent: ${(error as Error).message}`);
   }
 }

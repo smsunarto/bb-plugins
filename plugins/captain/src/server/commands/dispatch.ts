@@ -297,12 +297,14 @@ async function validate(
       const unit = requires(entry.task, role, preset, crew, flags.baseBranch);
       const ladder = roleLadder(deps.store, role as LadderRole).rungs;
       const choice = pickRung(ladder, pool, now, { forced });
-      if (choice.rung === null) {
+      // A live thread on the task and role reports exists; only a start needs a rung.
+      const starts = flags.again || crewOnTask(crew, entry.task.key, role).length === 0;
+      if (choice.rung === null && starts) {
         unit.blockers.push({
           reason: `no rung of ${ROLE_SPECS[role].label}'s ladder has an eligible account: ${choice.skipped.join("; ")}`,
           fix: `bb captain dispatch ${entry.task.key} --role ${ROLE_SPECS[role].label} --rung <n> to start on one anyway; bb pool status shows when accounts reset`,
         });
-      } else unit.choice = choice;
+      } else if (choice.rung !== null) unit.choice = choice;
       units.push(unit);
     }
   }
