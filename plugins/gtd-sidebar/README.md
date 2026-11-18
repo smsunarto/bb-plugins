@@ -203,7 +203,11 @@ and again only when the work clearly changes direction, never for follow-ups,
 fixes, tests, or shipping on the same task. The instructions carry the title
 rules and your project naming rules, so a rename is one command with no lookups.
 The command prints the old and new titles. A session that started before the
-project rules loaded gets them in the command's output. Sessions already
+project rules loaded gets them in the command's output, and may rename once
+more in that turn to follow them. A thread renaming itself with no turn
+running, or a second time for one request, keeps its title: the command exits
+0 with a short note, so a background agent in the same provider process, such
+as Codex memory consolidation, cannot retitle it. Sessions already
 running pick up the instructions when bb next starts them. GTD makes no model
 call of its own to name a thread.
 

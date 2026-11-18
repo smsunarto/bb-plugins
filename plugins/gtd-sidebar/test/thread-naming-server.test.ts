@@ -15,11 +15,14 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 function setup(options: { enabled?: boolean; projectRules?: string; title?: string } = {}) {
   const updates: { threadId: string; title: string }[] = [];
   let fileReads = 0;
+  // The thread's latest user request, as bb records it.
+  let latestRequestSeq = 1;
   const thread = makeThreadResponse({
     id: THREAD_ID,
     projectId: "proj_1",
     environmentId: "env_1",
     title: options.title ?? "Fix login",
+    status: "active",
   });
   const host = createFakePluginHost({
     pluginId: "gtd-sidebar",
@@ -47,7 +50,13 @@ function setup(options: { enabled?: boolean; projectRules?: string; title?: stri
       },
       threads: {
         get: async () => thread,
-        events: { list: async () => [] },
+        events: {
+          list: async (args) => {
+            const { order } = args as { order?: string };
+            if (order !== "desc") return [];
+            return [{ seq: latestRequestSeq, type: "client/turn/requested", data: {} }] as never;
+          },
+        },
         update: async (args) => {
           const { threadId, title } = args as { threadId: string; title: string };
           updates.push({ threadId, title });
@@ -81,7 +90,22 @@ function setup(options: { enabled?: boolean; projectRules?: string; title?: stri
         ...overrides,
       }),
     );
-  return { host, updates, configure, fileReads: () => fileReads };
+  const turn = {
+    /** The user sends a request: a new turn starts running. */
+    start() {
+      latestRequestSeq += 10;
+      thread.status = "active";
+    },
+    /** The turn completes and the thread goes idle. */
+    end() {
+      thread.status = "idle";
+    },
+  };
+  const rename = (title: string, threadId?: string) =>
+    host.harness.runCli(["rename", "--title", title, ...(threadId ? [threadId] : [])], {
+      threadId: THREAD_ID,
+    } as never);
+  return { host, updates, configure, turn, rename, fileReads: () => fileReads };
 }
 
 describe("agent rename instructions", () => {
@@ -93,7 +117,7 @@ describe("agent rename instructions", () => {
     assert.match(cold.instructions ?? "", /bb gtd-sidebar rename --title "<title>"/u);
     assert.match(
       cold.instructions ?? "",
-      /First request:\*\* make this command your first tool call/u,
+      /First request:\*\* if you are the agent answering the user's request in this turn, make this command your first tool call/u,
     );
     assert.match(cold.instructions ?? "", /not loaded when this session started/u);
     await flush();
@@ -159,6 +183,81 @@ describe("bb gtd-sidebar rename --title", () => {
     assert.notEqual(empty.exitCode, 0);
     assert.match(empty.stderr, /at least one letter or digit/u);
     assert.deepEqual(updates, []);
+  });
+});
+
+describe("agent rename guard", () => {
+  // Codex's memory-consolidation agent renamed thr_8w7ry3d5he 46s after its turn completed.
+  test("refuses a rename from a background agent 46s after the turn ended", async () => {
+    const { updates, turn, rename } = setup();
+    const first = await rename("Track match status with Agones");
+    assert.equal(first.exitCode, 0, first.stderr);
+    turn.end();
+    // 46s later, with no turn running.
+    const late = await rename("Consolidate agent memories");
+    assert.equal(late.exitCode, 0, late.stderr);
+    assert.match(late.stdout, /no turn is running/u);
+    assert.deepEqual(
+      updates.map((update) => update.title),
+      ["Track match status with Agones"],
+    );
+  });
+
+  test("refuses a second rename in one user turn and allows one in the next", async () => {
+    const { updates, turn, rename } = setup();
+    assert.equal((await rename("Track match status with Agones")).exitCode, 0);
+    const second = await rename("Can Agones track match status?");
+    assert.equal(second.exitCode, 0, second.stderr);
+    assert.match(second.stdout, /already renamed/u);
+    turn.end();
+    turn.start();
+    assert.equal((await rename("Add Agones health checks")).exitCode, 0);
+    assert.deepEqual(
+      updates.map((update) => update.title),
+      ["Track match status with Agones", "Add Agones health checks"],
+    );
+  });
+
+  test("lets a rejected title be fixed in the same turn", async () => {
+    const { updates, rename } = setup();
+    assert.notEqual((await rename("🛠️ [API]")).exitCode, 0);
+    assert.equal((await rename("[API] Add CSV export")).exitCode, 0);
+    assert.deepEqual(updates, [{ threadId: THREAD_ID, title: "[API] Add CSV export" }]);
+  });
+
+  test("allows one correction when the session started before the project rules loaded", async () => {
+    const { configure, updates, rename } = setup({ projectRules: "Prefix titles with [API]." });
+    await flush();
+    const cold = await configure();
+    assert.match(cold.instructions ?? "", /not loaded when this session started/u);
+    const first = await rename("Add CSV export");
+    assert.match(first.stdout, /Prefix titles with \[API\]\./u);
+    assert.equal((await rename("[API] Add CSV export")).exitCode, 0);
+    const third = await rename("[API] Add CSV export v2");
+    assert.match(third.stdout, /already renamed/u);
+    assert.deepEqual(
+      updates.map((update) => update.title),
+      ["Add CSV export", "[API] Add CSV export"],
+    );
+  });
+
+  test("guards a rename that names its own thread by id", async () => {
+    const { updates, turn, rename } = setup();
+    turn.end();
+    const result = await rename("Consolidate agent memories", THREAD_ID);
+    assert.equal(result.exitCode, 0, result.stderr);
+    assert.match(result.stdout, /no turn is running/u);
+    assert.deepEqual(updates, []);
+  });
+
+  test("leaves renames of another thread and title regeneration unguarded", async () => {
+    const { updates, turn, host, rename } = setup();
+    turn.end();
+    const child = await rename("Add CSV export", "thr_child");
+    assert.equal(child.exitCode, 0, child.stderr);
+    assert.deepEqual(updates, [{ threadId: "thr_child", title: "Add CSV export" }]);
+    const regenerated = await host.harness.runCli(["rename"], { threadId: THREAD_ID } as never);
+    assert.match(regenerated.stderr, /no user request to name/u);
   });
 });
 

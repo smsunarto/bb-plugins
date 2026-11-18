@@ -4,6 +4,12 @@
 
 ### Patch Changes
 
+- Background agents no longer rename threads. Codex's memory-consolidation
+  agent renamed threads to "Consolidate agent memories" after their turn
+  ended. A thread's agent now renames it only while a turn runs, once per
+  request, and the naming instruction addresses only the agent answering the
+  user.
+
 - Threads are now named by their own agent. Each root thread's agent sets the
   title with one `bb gtd-sidebar rename --title "<title>"` call on its first
   request, and again only when the work clearly changes direction. Its
