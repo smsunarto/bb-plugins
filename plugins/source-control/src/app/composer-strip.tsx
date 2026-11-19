@@ -23,6 +23,7 @@ import {
   type ChangeSummary,
 } from "../core/status.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
+import { usePullRequestLinks } from "./pr-links.ts";
 import { cx } from "./format.ts";
 import { KEEP_COMPOSER_FOCUS, Pending } from "./ui.tsx";
 import { usePullRequestActions } from "./status.tsx";
@@ -52,6 +53,8 @@ function stripSummary(row: ThreadChange | undefined): ChangeSummary | null {
 }
 
 export function useStripVisible(input: ExperimentalThreadContextSegmentInput): boolean {
+  // Lend the active pane through this existing visual surface; no routing-only slot.
+  usePullRequestLinks(input);
   return stripSummary(useThreadChange(input.threadId, input.environment !== null)) !== null;
 }
 

@@ -7,8 +7,8 @@
  * pull request's review beside the thread in view.
  *
  * A content script has no side panel, so each thread lends it one:
- * `usePullRequestLinks`, the `useVisible` of a context segment that never
- * shows, runs once per thread pane in bb's context row (with or without a
+ * `usePullRequestLinks`, called by the existing Change strip's `useVisible`,
+ * runs once per thread pane in bb's context row (with or without a
  * composer plugin) and registers the opener of the thread the route shows.
  * With no thread in view (a plugin page, the New thread screen) no opener is
  * lent and the link goes to GitHub as before. Source Control's own roots are
@@ -24,10 +24,9 @@ import { isPlainClick, useOpenPullRequest } from "./open-pull-request.tsx";
 let lent: ((href: string) => boolean) | null = null;
 
 /**
- * A context segment's `useVisible`: lends this thread's opener while the
- * route shows the thread, and never shows the segment.
+ * The Change strip lends this thread's opener while the route shows the thread.
  */
-export function usePullRequestLinks({ threadId }: ExperimentalThreadContextSegmentInput): boolean {
+export function usePullRequestLinks({ threadId }: ExperimentalThreadContextSegmentInput): void {
   const open = useOpenPullRequest(threadId);
   const inView = useBbContext().threadId === threadId;
   useLayoutEffect(() => {
@@ -37,7 +36,6 @@ export function usePullRequestLinks({ threadId }: ExperimentalThreadContextSegme
       if (lent === open) lent = null;
     };
   }, [inView, open]);
-  return false;
 }
 
 const OURS = '[data-bb-plugin="source-control"]';

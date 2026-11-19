@@ -10,7 +10,7 @@ import { rememberChange, rememberMiss, resetKnownPullRequests } from "./open-pul
 // The app's own registrations: the script that takes the click, and the segment that lends it a panel.
 const app = await loadPluginApp(() => import("./app.tsx"));
 const script = app.contentScripts.find((each) => each.id === "pr-links")!;
-const segment = app.threadContextSegments.find((each) => each.id === "pr-links")!;
+const segment = app.threadContextSegments.find((each) => each.id === "change")!;
 
 const PR = "https://github.com/acme/api/pull/12";
 const KEY = changeKeySchema.parse("gh:acme/api:scott:scott/route");
@@ -148,4 +148,8 @@ test("once the script stops, every click reaches bb", () => {
   fireEvent.click(markdownLink(PR));
   expect(reachedBb).toEqual([PR]);
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("routing adds no invisible context segment", () => {
+  expect(app.threadContextSegments.map((item) => item.id)).toEqual(["change"]);
 });
