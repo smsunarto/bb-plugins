@@ -13,7 +13,15 @@ import {
   experimental_useRpcQuery as useRpcQuery,
   useBbNavigate,
 } from "@get-bb/plugin-sdk/app";
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { describeProblem, readAgo, type ForgeAction, type ForgeResult } from "../../core/change.ts";
 import type { ChangeKey } from "../../core/ids.ts";
 import {
@@ -366,8 +374,9 @@ function ReviewTabs({
       <TabsList
         aria-label="Review"
         // The list overlaps the row's border by a pixel so the active underline sits on it. Under
-        // 24rem, where the four tabs no longer fit, it scrolls sideways rather than clipping one.
-        className="-mb-px h-auto max-w-full justify-start gap-6 rounded-none bg-transparent p-0 [scrollbar-width:none] @max-sm:overflow-x-auto"
+        // 24rem, where the four tabs no longer fit, it scrolls sideways rather than clipping one,
+        // and its end fades: over a tab while more lies beyond, over its own padding at the end.
+        className="-mb-px h-auto max-w-full justify-start gap-6 rounded-none bg-transparent p-0 [scrollbar-width:none] @max-sm:overflow-x-auto @max-sm:pe-6 @max-sm:[mask-image:linear-gradient(to_right,currentColor_calc(100%-1.5rem),transparent)] @max-xs:gap-4"
       >
         {tabs.map((tab) => (
           <TabsTrigger
@@ -494,8 +503,8 @@ function PhoneHeader({ detail, now }: { detail: Ready; now: number }) {
           <AskButton compact />
         </span>
       </div>
-      {/* One line: the checks give way first, so state, number and progress always show. */}
-      <div className="flex min-w-0 items-center gap-2 px-4 text-[13px] leading-5">
+      {/* The checks give way first, so state, number and progress show; a narrow panel wraps progress. */}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-4 text-[13px] leading-5">
         <StatusMenu detail={detail} draft={draft} />
         {row.number !== null ? (
           <span className="shrink-0 font-mono text-(--tertiary-foreground)">#{row.number}</span>
@@ -721,13 +730,11 @@ function OrderedBar({
 
 function ReviewReady({
   location,
-  visit,
   detail,
   width,
   focus,
 }: {
   location: Here;
-  visit: number;
   detail: Ready;
   width: number;
   focus: ReviewFocus;
@@ -791,8 +798,6 @@ function ReviewReady({
         <div className="flex min-h-0 min-w-0 flex-1">
           <PrImagesContext value={location.key}>
             <TabBody
-              // A new visit lands on its file and line again, even when the location is unchanged.
-              key={visit}
               location={location}
               detail={detail}
               lead={lead}
@@ -823,7 +828,7 @@ function ReviewReady({
   );
 }
 
-function Review({ location, visit, width }: { location: Here; visit: number; width: number }) {
+function Review({ location, width }: { location: Here; width: number }) {
   const { key } = location;
   const query = useRpcKeyedQuery({
     contract: sourceControlContract,
@@ -862,9 +867,7 @@ function Review({ location, visit, width }: { location: Here; visit: number; wid
     return <HeaderSkeleton />;
   }
   if (detail.state === "missing") return <Missing problem={detail.problem} />;
-  return (
-    <ReviewReady location={location} visit={visit} detail={detail} width={width} focus={focus} />
-  );
+  return <ReviewReady location={location} detail={detail} width={width} focus={focus} />;
 }
 
 function NoSelection() {
@@ -879,28 +882,44 @@ function NoSelection() {
 
 export function ReviewPage({ subPath }: { subPath: string }) {
   const location = useMemo(() => parseReviewPath(subPath), [subPath]);
-  return <ReviewView location={location} subPath={subPath} visit={0} />;
+  return <ReviewView location={location} subPath={subPath} />;
 }
 
-/**
- * The review of `location`, as the page draws it and as the side panel's
- * Review tab does. `guess` is the width to lay out for before the first
- * measure: the tab is far narrower than the window.
- */
+/** The review of `location`, as the page draws it, laid out for the window's width at first. */
 export function ReviewView({
   location,
   subPath,
-  visit,
-  guess,
 }: {
   location: ReviewLocation;
   /** The page's subPath, for the phone's Changes list when no Change is picked. */
   subPath: string;
-  visit: number;
-  guess?: number;
 }) {
   const root = useRef<HTMLDivElement>(null);
-  const width = useWidth(root, guess);
+  return <ReviewFrame root={root} width={useWidth(root)} location={location} subPath={subPath} />;
+}
+
+/**
+ * The review of one Change in a side panel tab. The window says nothing about
+ * the panel's width, so it draws once the panel has been measured, never a
+ * layout for the wrong width.
+ */
+export function PanelReview({ location }: { location: Here }) {
+  const root = useRef<HTMLDivElement>(null);
+  return <ReviewFrame root={root} width={useWidth(root, true)} location={location} subPath="" />;
+}
+
+function ReviewFrame({
+  root,
+  width,
+  location,
+  subPath,
+}: {
+  root: RefObject<HTMLDivElement | null>;
+  /** Null until measured: nothing is drawn yet. */
+  width: number | null;
+  location: ReviewLocation;
+  subPath: string;
+}) {
   const { key } = location;
   return (
     <div
@@ -909,15 +928,17 @@ export function ReviewView({
       data-testid="sc-review-page"
       className="@container relative flex h-full min-h-0 min-w-0 flex-col bg-background text-foreground"
     >
-      <AskHost changeKey={key} phone={width < PHONE}>
-        {key ? (
-          <Review key={key} location={{ ...location, key }} visit={visit} width={width} />
-        ) : width < PHONE ? (
-          <ChangesList subPath={subPath} variant="phone" />
-        ) : (
-          <NoSelection />
-        )}
-      </AskHost>
+      {width === null ? null : (
+        <AskHost changeKey={key} phone={width < PHONE}>
+          {key ? (
+            <Review key={key} location={{ ...location, key }} width={width} />
+          ) : width < PHONE ? (
+            <ChangesList subPath={subPath} variant="phone" />
+          ) : (
+            <NoSelection />
+          )}
+        </AskHost>
+      )}
     </div>
   );
 }

@@ -1,33 +1,39 @@
 /**
  * The thread side panel's Review tab: one Change's review beside the thread,
- * opened by `useOpenReview`. Moving inside it keeps its place in memory
- * rather than in a route, so the thread stays where it is.
+ * opened by `useOpenReview`. Moving inside it keeps its place per thread
+ * rather than in a route, so the thread stays where it is; a link to another
+ * Change, such as a Stack row, opens that Change's own tab.
  */
-import type { ExperimentalThreadActionTabProps } from "@get-bb/plugin-sdk/app";
-import { experimental_useAppPanel as useAppPanel } from "@get-bb/plugin-sdk/app";
+import {
+  experimental_useAppPanel as useAppPanel,
+  type ExperimentalThreadActionTabProps,
+} from "@get-bb/plugin-sdk/app";
+import { useMemo } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import { Button } from "./components/ui/button.tsx";
-import { movePlace, reviewTabParams, useTabPlace } from "./open-review.ts";
-import { PHONE, ReviewHostContext, type ReviewHost } from "./page/hooks.ts";
-import { ReviewView } from "./page/review-page.tsx";
+import { reviewTabParams, setPlace, useOpenReview, useTabPlace } from "./open-review.ts";
+import { ReviewHostContext, type ReviewHost } from "./page/hooks.ts";
+import { PanelReview } from "./page/review-page.tsx";
 import { SOURCE_CONTROL_TAB } from "./thread-info.tsx";
 
-/** A side panel's width before the first measure: under `PHONE`, as panels usually are. */
-const PANEL_GUESS = PHONE - 1;
-
-const HOST: ReviewHost = { go: (target) => movePlace(target) };
-
-export function ReviewTab({ params }: ExperimentalThreadActionTabProps) {
+export function ReviewTab({ threadId, params }: ExperimentalThreadActionTabProps) {
   const parsed = reviewTabParams(params);
   if (!parsed) return <NoChange />;
-  return <ChangeReview changeKey={parsed.key} />;
+  return <ChangeReview threadId={threadId} changeKey={parsed.key} />;
 }
 
-function ChangeReview({ changeKey }: { changeKey: ChangeKey }) {
-  const { location, visit } = useTabPlace(changeKey);
+function ChangeReview({ threadId, changeKey }: { threadId: string; changeKey: ChangeKey }) {
+  const location = useTabPlace(threadId, changeKey);
+  const openReview = useOpenReview(threadId);
+  const host = useMemo<ReviewHost>(
+    () => ({
+      go: (target) => (target.key === changeKey ? setPlace(threadId, target) : openReview(target)),
+    }),
+    [threadId, changeKey, openReview],
+  );
   return (
-    <ReviewHostContext.Provider value={HOST}>
-      <ReviewView location={location} subPath="" visit={visit} guess={PANEL_GUESS} />
+    <ReviewHostContext.Provider value={host}>
+      <PanelReview location={location} />
     </ReviewHostContext.Provider>
   );
 }
@@ -47,6 +53,7 @@ function NoChange() {
       <Button
         size="sm"
         variant="outline"
+        className="pointer-coarse:h-11"
         onClick={() => panel.openTab({ tab: SOURCE_CONTROL_TAB })}
       >
         Open Source Control

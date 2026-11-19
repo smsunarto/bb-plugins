@@ -122,15 +122,17 @@ export function commitKey(where: Where, commitId: string): string {
 
 /** Opens the review beside the thread at this commit's file, for a branch that is a Change. */
 function ReviewJump({
+  threadId,
   changeKey,
   commitId,
   path,
 }: {
+  threadId: string;
   changeKey: ChangeKey;
   commitId: string;
   path: string;
 }) {
-  const openReview = useOpenReview();
+  const openReview = useOpenReview(threadId);
   return (
     <div className="flex justify-end border-t border-border-hairline px-3 py-1">
       <Button
@@ -141,7 +143,6 @@ function ReviewJump({
         className="h-6 gap-1 px-1 text-[11px] text-muted-foreground max-md:pointer-coarse:px-2"
       >
         Open in Review
-        <Icon name="ArrowUpRight" fallback="ExternalLink" className="size-3" aria-hidden />
       </Button>
     </div>
   );
@@ -196,7 +197,12 @@ function CommitFiles({
         open ? (
           <>
             {reviewKey ? (
-              <ReviewJump changeKey={reviewKey} commitId={commitId} path={open.path} />
+              <ReviewJump
+                threadId={threadId}
+                changeKey={reviewKey}
+                commitId={commitId}
+                path={open.path}
+              />
             ) : null}
             <FileDiffCard file={open} />
           </>

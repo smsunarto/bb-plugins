@@ -49,8 +49,17 @@ export function repositoryRows(
   return rows.sort((a, b) => Number(b.key === changeKey) - Number(a.key === changeKey));
 }
 
-function BranchRow({ row, mine }: { row: ChangeRow; mine: boolean }) {
-  const openReview = useOpenReview();
+type OpenReview = ReturnType<typeof useOpenReview>;
+
+function BranchRow({
+  row,
+  mine,
+  openReview,
+}: {
+  row: ChangeRow;
+  mine: boolean;
+  openReview: OpenReview;
+}) {
   return (
     <li className="flex min-w-0 border-t border-border-hairline first:border-t-0">
       <button
@@ -166,12 +175,14 @@ function HostSection({
   repo,
   changeKey,
   now,
+  openReview,
 }: {
   host: Host;
   source: SourceRows | undefined;
   repo: string;
   changeKey: ChangeKey | null;
   now: number;
+  openReview: OpenReview;
 }) {
   const rows = useMemo(() => repositoryRows(source, repo, changeKey), [source, repo, changeKey]);
   const checkouts = useMemo(
@@ -211,7 +222,12 @@ function HostSection({
         rows.length > 0 || checkouts.length > 0 ? (
           <ul className="m-0 list-none p-0">
             {rows.map((row) => (
-              <BranchRow key={row.key} row={row} mine={row.key === changeKey} />
+              <BranchRow
+                key={row.key}
+                row={row}
+                mine={row.key === changeKey}
+                openReview={openReview}
+              />
             ))}
             {checkouts.map((checkout) => (
               <CheckoutActions key={checkout.path} hostId={host.hostId} checkout={checkout} />
@@ -236,11 +252,13 @@ function Hosts({
   repo,
   changeKey,
   now,
+  openReview,
 }: {
   hostId: string;
   repo: string;
   changeKey: ChangeKey | null;
   now: number;
+  openReview: OpenReview;
 }) {
   const list = useRpcQuery({ contract: sourceControlContract, method: "checkoutHosts", input: {} });
   const hosts = useMemo(
@@ -281,6 +299,7 @@ function Hosts({
           repo={repo}
           changeKey={changeKey}
           now={now}
+          openReview={openReview}
         />
       ))}
     </div>
@@ -289,12 +308,15 @@ function Hosts({
 
 /** A folded card at the tab's foot, for a checkout whose repository is on GitHub. */
 export function OtherMachinesCard({
+  threadId,
   hostId,
   repo,
   changeKey,
   now,
   className,
 }: {
+  /** The thread whose side panel a branch's review opens in. */
+  threadId: string;
   hostId: string;
   /** `owner/name` on GitHub: what recognizes the repository on another machine. */
   repo: string;
@@ -303,6 +325,7 @@ export function OtherMachinesCard({
   className: string;
 }) {
   const [open, setOpen] = useState(false);
+  const openReview = useOpenReview(threadId);
   return (
     <Collapsible asChild open={open} onOpenChange={setOpen}>
       <section className={className} aria-label="Other machines" data-testid="sc-other-machines">
@@ -315,7 +338,13 @@ export function OtherMachinesCard({
           </CollapsibleTrigger>
         </header>
         <CollapsibleContent className="border-t border-border-hairline">
-          <Hosts hostId={hostId} repo={repo} changeKey={changeKey} now={now} />
+          <Hosts
+            hostId={hostId}
+            repo={repo}
+            changeKey={changeKey}
+            now={now}
+            openReview={openReview}
+          />
         </CollapsibleContent>
       </section>
     </Collapsible>

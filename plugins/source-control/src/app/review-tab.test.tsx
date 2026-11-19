@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent } from "@testing-library/react";
+import { act, cleanup, fireEvent, within } from "@testing-library/react";
 import type { ComponentType } from "react";
+import type { ChangeKey } from "../core/ids.ts";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import {
   loadPluginApp,
@@ -10,7 +11,7 @@ import {
 import { changeKeySchema } from "../core/ids.ts";
 import type { ChangeDetail, ChangeRow } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { requestPlace, resetPlaces } from "./open-review.ts";
+import { resetPlaces, setPlace, useOpenReview } from "./open-review.ts";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 type ActionTab = {
@@ -20,6 +21,7 @@ type ActionTab = {
 const reviewTab = app.tabs.find((tab) => tab.id === "review") as unknown as ActionTab;
 
 const key = changeKeySchema.parse("gh:smsunarto/bb-plugins:smsunarto:scott/panel");
+const sibling = changeKeySchema.parse("gh:smsunarto/bb-plugins:smsunarto:scott/panel-top");
 const row: ChangeRow = {
   key,
   repo: "smsunarto/bb-plugins",
@@ -47,7 +49,17 @@ const detail: ChangeDetail = {
   additions: 1,
   deletions: 0,
   revision: { head: "c0ffee", base: "base0000", source: { kind: "forge", number: 12 } },
-  stack: null,
+  stack: [
+    {
+      key: sibling,
+      branch: "scott/panel-top",
+      number: 13,
+      state: "open",
+      commits: 1,
+      current: false,
+    },
+    { key, branch: "scott/panel", number: 12, state: "open", commits: 2, current: true },
+  ],
   canMarkReady: false,
   ship: [],
   status: { label: "Open", tone: "open", number: 12, noPullRequest: false },
@@ -57,22 +69,24 @@ const detail: ChangeDetail = {
 
 type Handlers = PluginRpcTestHandlers<typeof sourceControlContract>;
 
-function render(params: unknown) {
+const RPC = {
+  changeDetail: ({ keys }) => Object.fromEntries(keys.map((k) => [k, detail])),
+  checksForChange: ({ keys }) =>
+    Object.fromEntries(keys.map((k) => [k, { read: null, problem: null }])),
+  changeFiles: () => ({ ok: true as const, files: [], more: false }),
+  changePatches: () => ({ ok: true as const, value: { files: [] } }),
+  changeCommits: () => ({ ok: true as const, commits: [], more: false }),
+} as Partial<Handlers> as Handlers;
+
+function render(params: unknown, threadId = "thread-a") {
   return renderSlot(
     reviewTab,
-    { threadId: "thread-a", environment: null, params },
+    { threadId, environment: null, params },
     {
       experimental_rpcContract: sourceControlContract,
       pluginId: "source-control",
       experimental_panel: { openTab: () => true },
-      rpc: {
-        changeDetail: ({ keys }) => Object.fromEntries(keys.map((k) => [k, detail])),
-        checksForChange: ({ keys }) =>
-          Object.fromEntries(keys.map((k) => [k, { read: null, problem: null }])),
-        changeFiles: () => ({ ok: true as const, files: [], more: false }),
-        changePatches: () => ({ ok: true as const, value: { files: [] } }),
-        changeCommits: () => ({ ok: true as const, commits: [], more: false }),
-      } as Partial<Handlers> as Handlers,
+      rpc: RPC,
     },
   );
 }
@@ -80,21 +94,51 @@ function render(params: unknown) {
 const selectedTab = (slot: ReturnType<typeof render>) =>
   slot.getAllByRole("tab").find((tab) => tab.getAttribute("aria-selected") === "true")?.textContent;
 
-beforeEach(resetPlaces);
+beforeEach(() => resetPlaces());
 afterEach(cleanup);
 
-test("Review is a thread action tab, so bb keeps one instance per Change's params", () => {
-  expect(reviewTab.availability).toBe("action");
+function Opener({ targets }: { targets: { label: string; key: ChangeKey; path?: string }[] }) {
+  const openReview = useOpenReview("thread-a");
+  return targets.map((target) => (
+    <button
+      key={target.label}
+      type="button"
+      onClick={() => openReview({ key: target.key, tab: "files", path: target.path })}
+    >
+      {target.label}
+    </button>
+  ));
+}
+
+test("opening one Change twice asks bb for the same tab; another Change gets its own", () => {
+  const slot = renderSlot(
+    { component: Opener },
+    {
+      targets: [
+        { label: "a.ts", key, path: "src/a.ts" },
+        { label: "b.ts", key, path: "src/b.ts" },
+        { label: "sibling", key: sibling },
+      ],
+    },
+    { pluginId: "source-control", experimental_panel: { openTab: () => true } },
+  );
+  for (const label of ["a.ts", "b.ts", "sibling"])
+    fireEvent.click(slot.getByRole("button", { name: label }));
+  // bb focuses an open action tab whose params match, so params alone decide reuse.
+  const params = slot.experimental_panelCalls.map((call) =>
+    call.method === "openTab" ? call.options.params : null,
+  );
+  expect(params).toEqual([{ key }, { key }, { key: sibling }]);
 });
 
 test("the tab lands where an entry point asks, and moves inside without leaving the thread", async () => {
-  requestPlace({ key, tab: "commits" });
+  setPlace("thread-a", { key, tab: "commits" });
   const slot = render({ key });
   expect(await slot.findByText("Review beside the thread")).toBeTruthy();
   expect(selectedTab(slot)).toBe("Commits");
 
-  // A second request for the tab already open moves it there.
-  act(() => requestPlace({ key, tab: "files", path: "src/a.ts", line: 3 }));
+  // A request for the tab already open moves it there.
+  act(() => setPlace("thread-a", { key, tab: "files", path: "src/a.ts", line: 3 }));
   expect(selectedTab(slot)).toMatch(/^Files/);
 
   // Moving inside the tab keeps the thread: no route change.
@@ -105,15 +149,50 @@ test("the tab lands where an entry point asks, and moves inside without leaving 
   expect(slot.queryByRole("button", { name: "Back to changes" })).toBeNull();
 });
 
-test("asking again for the place the tab already shows lands on it again", async () => {
-  requestPlace({ key, tab: "files", path: "src/a.ts", line: 3 });
+test("a new file moves the open Files view without rebuilding it; the same place does nothing", async () => {
+  setPlace("thread-a", { key, tab: "files", path: "src/a.ts" });
   const slot = render({ key });
-  const first = await slot.findByTestId("sc-diff-column");
-  // Same place: the Files view starts over, so it scrolls to the line again.
-  act(() => requestPlace({ key, tab: "files", path: "src/a.ts", line: 3 }));
-  const second = slot.getByTestId("sc-diff-column");
-  expect(second).not.toBe(first);
-  expect(first.isConnected).toBe(false);
+  const column = await slot.findByTestId("sc-diff-column");
+  act(() => setPlace("thread-a", { key, tab: "files", path: "src/a.ts" }));
+  act(() => setPlace("thread-a", { key, tab: "files", path: "src/b.ts", line: 4 }));
+  expect(slot.getByTestId("sc-diff-column")).toBe(column);
+});
+
+test("two threads' tabs for one Change keep their own places", async () => {
+  const a = within(render({ key }, "thread-a").container);
+  const b = within(render({ key }, "thread-b").container);
+  await a.findByText("Review beside the thread");
+  await b.findByText("Review beside the thread");
+  act(() => setPlace("thread-a", { key, tab: "commits" }));
+  const selected = (scope: typeof a) =>
+    scope.getAllByRole("tab").find((tab) => tab.getAttribute("aria-selected") === "true")
+      ?.textContent;
+  expect(selected(a)).toBe("Commits");
+  expect(selected(b)).toBe("Overview");
+});
+
+test("after a reload the tab comes back to its file and line", async () => {
+  setPlace("thread-a", { key, tab: "files", path: "src/a.ts", line: 3 });
+  resetPlaces({ reload: true });
+  const slot = render({ key });
+  await slot.findByText("Review beside the thread");
+  expect(selectedTab(slot)).toMatch(/^Files/);
+});
+
+test("a Stack row opens that Change's own tab beside the thread", async () => {
+  const slot = render({ key });
+  fireEvent.click(await slot.findByRole("button", { name: /scott\/panel-top/ }));
+  expect(slot.experimental_panelCalls).toEqual([
+    {
+      method: "openTab",
+      options: {
+        tab: { id: "review", context: { kind: "thread" }, availability: "action" },
+        params: { key: sibling },
+        title: "Review · scott/panel-top",
+      },
+    },
+  ]);
+  expect(selectedTab(slot)).toBe("Overview");
 });
 
 test("opened from the launcher with no Change, the tab points to Source Control", async () => {

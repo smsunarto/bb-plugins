@@ -857,20 +857,23 @@ export function ReviewBar({
       // open keyboard) it keeps 1.5rem below the buttons, clear of the screen's rounded corners.
       className="flex shrink-0 items-center gap-2 border-t border-solid border-border-hairline bg-background px-4 pt-3 pb-[max(0.75rem,calc(1.5rem-var(--bb-content-bottom-inset,0px)))]"
     >
-      {items.length > 0 ? (
-        <div className="flex h-10 shrink-0 items-center rounded-md border border-solid border-border">
-          <Step direction={-1} label="Previous item" onClick={() => go(-1)} />
-          <span
-            className="px-1 text-[14px] leading-5 whitespace-pre text-foreground"
-            data-testid="sc-review-bar-position"
-          >
-            {at < 0 ? plural(items.length, "item") : `${at + 1} of ${items.length}`}
-          </span>
-          <Step direction={1} label="Next item" onClick={() => go(1)} />
-        </div>
-      ) : null}
-      <span className="min-w-0 flex-1" />
-      {children}
+      {/* A narrow side panel wraps the send controls under the pager rather than overlapping it. */}
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        {items.length > 0 ? (
+          <div className="flex h-10 shrink-0 items-center rounded-md border border-solid border-border">
+            <Step direction={-1} label="Previous item" onClick={() => go(-1)} />
+            <span
+              className="px-1 text-[14px] leading-5 whitespace-pre text-foreground"
+              data-testid="sc-review-bar-position"
+            >
+              {at < 0 ? plural(items.length, "item") : `${at + 1} of ${items.length}`}
+            </span>
+            <Step direction={1} label="Next item" onClick={() => go(1)} />
+          </div>
+        ) : null}
+        <span className="min-w-0 flex-1" />
+        {children}
+      </div>
     </div>
   );
 }

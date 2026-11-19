@@ -58,13 +58,20 @@ function usePageGo(): Go {
   );
 }
 
+const windowWidth = () => (typeof window === "undefined" ? 1280 : window.innerWidth);
+
 /**
  * The element's width from ResizeObserver entries only, so mounting never
- * forces layout. Until the first entry it takes `guess`, else the window's width.
+ * forces layout. Until the first entry it guesses the window's width; with
+ * `measured`, it is null until then, for a container the window says nothing
+ * about, such as a side panel tab.
  */
-export function useWidth(ref: RefObject<HTMLElement | null>, guess?: number): number {
-  const [width, setWidth] = useState(
-    () => guess ?? (typeof window === "undefined" ? 1280 : window.innerWidth),
+export function useWidth(ref: RefObject<HTMLElement | null>): number;
+export function useWidth(ref: RefObject<HTMLElement | null>, measured: true): number | null;
+export function useWidth(ref: RefObject<HTMLElement | null>, measured = false): number | null {
+  // Without ResizeObserver there is no measure to wait for: take the window's width.
+  const [width, setWidth] = useState<number | null>(() =>
+    measured && typeof ResizeObserver !== "undefined" ? null : windowWidth(),
   );
   useEffect(() => {
     const element = ref.current;

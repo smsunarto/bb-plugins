@@ -22,7 +22,7 @@ import { parseDirective, parseGroup } from "../core/directive.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import type { ChangeDetail, RowState } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { FindingList, OpenReviewArrow, fixLabel } from "./findings-card.tsx";
+import { FindingList, fixLabel } from "./findings-card.tsx";
 import { cx, plural, shortId } from "./format.ts";
 import { useNow } from "./page/hooks.ts";
 import { useOpenReview } from "./open-review.ts";
@@ -256,7 +256,7 @@ function ReadyCard({
   thread: ThreadShip | null;
 }) {
   const key = detail.row.key;
-  const openReview = useOpenReview();
+  const openReview = useOpenReview(threadId);
   const { stable } = useChangeReview(key, visible);
   const actions = useReviewActions(key);
   const fix = useFixSelected(key, stable, detail.head, threadId);
@@ -267,6 +267,7 @@ function ReadyCard({
       <CardHeader detail={detail} revision={revision} visible={visible} offline={offline} />
       {hasItems ? (
         <FindingList
+          threadId={threadId}
           changeKey={key}
           stable={stable}
           actions={actions}
@@ -290,7 +291,6 @@ function ReadyCard({
           className={cx(CARD_ACTION_CLASS, "gap-2 px-3")}
         >
           Open review
-          <OpenReviewArrow />
         </Button>
         {thread?.button}
         {!grouped && readyToMerge(detail) ? <CardMerge detail={detail} /> : null}
