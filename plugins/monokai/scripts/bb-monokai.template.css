@@ -469,13 +469,9 @@
  * the title bar: bb's own 8px frame lip keeps it off the window's edges, and
  * all four corners round at 12px under a 0.5px hairline, as on the unframed
  * page. bb's card mask (8px corners, the top-left squared beside an open
- * sidebar), title-bar seam, and the rail's own 4% fill go. */
+ * sidebar) and title-bar seam go. */
 .dark [data-testid="app-layout-root"][data-framed] {
   background-image: none;
-}
-
-.dark [data-framed] [data-testid="sidebar-navigation-rail"] {
-  background-color: transparent;
 }
 
 .dark [data-framed] [data-sidebar="collapsible-body"] {
@@ -1896,15 +1892,6 @@
   .dark [data-sidebar="inset"][data-sidebar-shelf="open"] ~ [data-testid="app-sidebar-trigger-overlay"],
   .dark [data-sidebar="inset"][data-vaul-animate] ~ [data-testid="app-sidebar-trigger-overlay"] {
     visibility: hidden;
-  }
-
-  /* bb keeps a header-row spacer atop the drawer's nav rail for that toggle.
-   * With the toggle gone, drop the spacer so the rail starts at the top. */
-  .dark
-    [data-sidebar="panel"][data-vaul-drawer-direction="left"]
-    [data-testid="sidebar-navigation-rail"]
-    > .h-\(--bb-app-chrome-row-height\) {
-    display: none;
   }
 
   .dark [data-split-pane-id] > header [data-testid="app-page-header-content-row"] > div + div {
