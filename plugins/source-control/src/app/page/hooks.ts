@@ -30,6 +30,12 @@ export type Go = (
 export type ReviewHost = { go: Go };
 export const ReviewHostContext = createContext<ReviewHost | null>(null);
 
+/**
+ * Bumped by each request to show a place, so the views reveal it again even
+ * when it has not changed. The page's route has no such requests: 0.
+ */
+export const RevealRequestContext = createContext(0);
+
 /** Whether the review is the page, with its route and Changes list. */
 export function useIsPage(): boolean {
   return useContext(ReviewHostContext) === null;

@@ -60,7 +60,15 @@ const same = (a: Here, b: Here) =>
 // ── Where each thread's tab for a Change is ────────────────────────────
 
 const STORAGE_PREFIX = "source-control:review-place:";
-const places = new Map<string, Here>();
+
+/**
+ * Where a tab shows, and `request`, which every entry point's ask bumps,
+ * even for the place already shown, so the views reveal it again. Moving
+ * inside the tab leaves it alone.
+ */
+export type TabPlace = { location: Here; request: number };
+
+const places = new Map<string, TabPlace>();
 const listeners = new Set<() => void>();
 
 const slot = (threadId: string, key: ChangeKey) => `${threadId}\n${key}`;
@@ -83,31 +91,50 @@ function stored(id: string, key: ChangeKey): Here | null {
   }
 }
 
-function placeOf(id: string, key: ChangeKey): Here {
+function placeOf(id: string, key: ChangeKey): TabPlace {
   let place = places.get(id);
   if (!place) {
-    place = stored(id, key) ?? here({ key });
+    place = { location: stored(id, key) ?? here({ key }), request: 0 };
     places.set(id, place);
   }
   return place;
 }
 
+function put(id: string, place: TabPlace, moved: boolean) {
+  places.set(id, place);
+  if (moved)
+    try {
+      const { tab, commit, path, line } = place.location;
+      sessionStorage.setItem(STORAGE_PREFIX + id, JSON.stringify({ tab, commit, path, line }));
+    } catch {
+      // Storage full or blocked: the place still holds until the next reload.
+    }
+  for (const listener of listeners) listener();
+}
+
 /**
- * The thread's Review tab for `target.key` shows `target`. Asking for the
- * place it already shows changes nothing.
+ * The reader moved inside the thread's Review tab for `target.key`. Moving to
+ * the place it already shows changes nothing.
  */
 export function setPlace(threadId: string, target: ReviewTarget): void {
   const id = slot(threadId, target.key);
+  const current = placeOf(id, target.key);
   const next = here(target);
-  if (same(placeOf(id, target.key), next)) return;
-  places.set(id, next);
-  try {
-    const { tab, commit, path, line } = next;
-    sessionStorage.setItem(STORAGE_PREFIX + id, JSON.stringify({ tab, commit, path, line }));
-  } catch {
-    // Storage full or blocked: the place still holds until the next reload.
-  }
-  for (const listener of listeners) listener();
+  if (same(current.location, next)) return;
+  put(id, { location: next, request: current.request }, true);
+}
+
+/**
+ * An entry point asks the thread's Review tab for `target`: it moves there,
+ * and reveals it again when it is already there. The location keeps its
+ * identity when unchanged, so only the reveal runs, nothing is rebuilt.
+ */
+export function requestPlace(threadId: string, target: ReviewTarget): void {
+  const id = slot(threadId, target.key);
+  const current = placeOf(id, target.key);
+  const next = here(target);
+  const moved = !same(current.location, next);
+  put(id, { location: moved ? next : current.location, request: current.request + 1 }, moved);
 }
 
 function subscribe(listener: () => void) {
@@ -115,7 +142,7 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-export function useTabPlace(threadId: string, key: ChangeKey): Here {
+export function useTabPlace(threadId: string, key: ChangeKey): TabPlace {
   const id = slot(threadId, key);
   return useSyncExternalStore(subscribe, () => placeOf(id, key));
 }
@@ -142,7 +169,7 @@ export function useOpenReview(threadId: string): (target: ReviewTarget) => void 
   return useMemo(
     () => (target: ReviewTarget) => {
       const { panel, navigate, threadId } = latest.current;
-      setPlace(threadId, target);
+      requestPlace(threadId, target);
       const opened = panel.openTab({
         tab: REVIEW_TAB,
         params: { key: target.key },

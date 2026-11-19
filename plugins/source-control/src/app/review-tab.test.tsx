@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, waitFor, within } from "@testing-library/react";
 import type { ComponentType } from "react";
 import type { ChangeKey } from "../core/ids.ts";
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import {
   loadPluginApp,
   renderSlot,
@@ -11,7 +11,7 @@ import {
 import { changeKeySchema } from "../core/ids.ts";
 import type { ChangeDetail, ChangeRow } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { resetPlaces, setPlace, useOpenReview } from "./open-review.ts";
+import { requestPlace, resetPlaces, setPlace, useOpenReview } from "./open-review.ts";
 
 const app = await loadPluginApp(() => import("./app.tsx"));
 type ActionTab = {
@@ -78,7 +78,7 @@ const RPC = {
   changeCommits: () => ({ ok: true as const, commits: [], more: false }),
 } as Partial<Handlers> as Handlers;
 
-function render(params: unknown, threadId = "thread-a") {
+function render(params: unknown, threadId = "thread-a", rpc: Partial<Handlers> = {}) {
   return renderSlot(
     reviewTab,
     { threadId, environment: null, params },
@@ -86,7 +86,7 @@ function render(params: unknown, threadId = "thread-a") {
       experimental_rpcContract: sourceControlContract,
       pluginId: "source-control",
       experimental_panel: { openTab: () => true },
-      rpc: RPC,
+      rpc: { ...RPC, ...rpc } as Handlers,
     },
   );
 }
@@ -132,13 +132,13 @@ test("opening one Change twice asks bb for the same tab; another Change gets its
 });
 
 test("the tab lands where an entry point asks, and moves inside without leaving the thread", async () => {
-  setPlace("thread-a", { key, tab: "commits" });
+  requestPlace("thread-a", { key, tab: "commits" });
   const slot = render({ key });
   expect(await slot.findByText("Review beside the thread")).toBeTruthy();
   expect(selectedTab(slot)).toBe("Commits");
 
   // A request for the tab already open moves it there.
-  act(() => setPlace("thread-a", { key, tab: "files", path: "src/a.ts", line: 3 }));
+  act(() => requestPlace("thread-a", { key, tab: "files", path: "src/a.ts", line: 3 }));
   expect(selectedTab(slot)).toMatch(/^Files/);
 
   // Moving inside the tab keeps the thread: no route change.
@@ -149,13 +149,38 @@ test("the tab lands where an entry point asks, and moves inside without leaving 
   expect(slot.queryByRole("button", { name: "Back to changes" })).toBeNull();
 });
 
-test("a new file moves the open Files view without rebuilding it; the same place does nothing", async () => {
-  setPlace("thread-a", { key, tab: "files", path: "src/a.ts" });
-  const slot = render({ key });
-  const column = await slot.findByTestId("sc-diff-column");
-  act(() => setPlace("thread-a", { key, tab: "files", path: "src/a.ts" }));
-  act(() => setPlace("thread-a", { key, tab: "files", path: "src/b.ts", line: 4 }));
-  expect(slot.getByTestId("sc-diff-column")).toBe(column);
+test("asking again for a place reveals it again, without rebuilding the views", async () => {
+  const files = ["src/a.ts", "src/b.ts"].map((path) => ({
+    path,
+    kind: "modified" as const,
+    previousPath: null,
+    additions: 1,
+    deletions: 0,
+    binary: false,
+  }));
+  const scrollTo = vi.fn();
+  const original = Element.prototype.scrollTo;
+  Element.prototype.scrollTo = scrollTo;
+  try {
+    requestPlace("thread-a", { key, tab: "files", path: "src/b.ts", line: 4 });
+    const slot = render({ key }, "thread-a", {
+      changeFiles: () => ({ ok: true as const, files, more: false }),
+    });
+    const column = await slot.findByTestId("sc-diff-column");
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(1));
+
+    // The reader scrolls away; the same finding is clicked again: it is revealed again.
+    act(() => requestPlace("thread-a", { key, tab: "files", path: "src/b.ts", line: 4 }));
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledTimes(2));
+    // Moving inside the tab to the place it shows does nothing.
+    act(() => setPlace("thread-a", { key, tab: "files", path: "src/b.ts", line: 4 }));
+    // Nothing was rebuilt: the same diff column throughout.
+    expect(slot.getByTestId("sc-diff-column")).toBe(column);
+    await new Promise((settle) => requestAnimationFrame(settle));
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+  } finally {
+    Element.prototype.scrollTo = original;
+  }
 });
 
 test("two threads' tabs for one Change keep their own places", async () => {

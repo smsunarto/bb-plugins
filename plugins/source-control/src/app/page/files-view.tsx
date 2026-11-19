@@ -64,6 +64,7 @@ import {
 import { FileTree } from "./file-tree.tsx";
 import { Chevron } from "./icons.tsx";
 import { usePatch, usePatchStore, type PatchEntry, type PatchStore } from "./patches.ts";
+import { RevealRequestContext } from "./hooks.ts";
 import { FocusContext, type Spot } from "./review-focus.ts";
 import { Skeleton } from "../components/ui/skeleton.tsx";
 
@@ -843,19 +844,22 @@ export function useRevealFile({
     },
     [column, scroller, setOpen, onCurrent],
   );
-  const revealed = useRef<string | null>(null);
+  // A new request shows the path again, even one already revealed and since scrolled away from.
+  const request = useContext(RevealRequestContext);
+  const revealed = useRef<{ path: string; request: number } | null>(null);
   useEffect(() => {
-    if (!known || !path || revealed.current === path) return;
-    revealed.current = path;
+    if (!known || !path) return;
+    if (revealed.current?.path === path && revealed.current.request === request) return;
+    revealed.current = { path, request };
     reveal(path);
-  }, [known, path, reveal]);
+  }, [known, path, request, reveal]);
   return useCallback(
     (file: string) => {
-      revealed.current = file;
+      revealed.current = { path: file, request };
       reveal(file);
       onPath(file);
     },
-    [onPath, reveal],
+    [onPath, reveal, request],
   );
 }
 

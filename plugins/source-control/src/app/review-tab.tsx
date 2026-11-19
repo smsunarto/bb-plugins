@@ -12,7 +12,7 @@ import { useMemo } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import { Button } from "./components/ui/button.tsx";
 import { reviewTabParams, setPlace, useOpenReview, useTabPlace } from "./open-review.ts";
-import { ReviewHostContext, type ReviewHost } from "./page/hooks.ts";
+import { RevealRequestContext, ReviewHostContext, type ReviewHost } from "./page/hooks.ts";
 import { PanelReview } from "./page/review-page.tsx";
 import { SOURCE_CONTROL_TAB } from "./thread-info.tsx";
 
@@ -23,7 +23,7 @@ export function ReviewTab({ threadId, params }: ExperimentalThreadActionTabProps
 }
 
 function ChangeReview({ threadId, changeKey }: { threadId: string; changeKey: ChangeKey }) {
-  const location = useTabPlace(threadId, changeKey);
+  const { location, request } = useTabPlace(threadId, changeKey);
   const openReview = useOpenReview(threadId);
   const host = useMemo<ReviewHost>(
     () => ({
@@ -33,7 +33,9 @@ function ChangeReview({ threadId, changeKey }: { threadId: string; changeKey: Ch
   );
   return (
     <ReviewHostContext.Provider value={host}>
-      <PanelReview location={location} />
+      <RevealRequestContext.Provider value={request}>
+        <PanelReview location={location} />
+      </RevealRequestContext.Provider>
     </ReviewHostContext.Provider>
   );
 }
