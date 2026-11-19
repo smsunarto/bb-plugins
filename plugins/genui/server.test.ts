@@ -131,7 +131,11 @@ describe("repairing a reply whose UI block fails", () => {
     'Here are the options.\n\n```ui\nCard("Ok", [Text("fine")])\n```\n\n```ui\nCard("Plan", [Choice("Plan", ["Basic", "Pro"])])\n```';
   const FIXED = 'Fixed.\n\n```ui\n$plan = ""\nCard("Plan", [Choice($plan, ["Basic", "Pro"])])\n```';
 
-  async function setup(turnStatus: "completed" | "interrupted" = "completed") {
+  async function setup(
+    turnStatus: "completed" | "interrupted" = "completed",
+    { failSends = 0 }: { failSends?: number } = {},
+  ) {
+    let failures = failSends;
     const host = createFakePluginHost({
       pluginId: "genui",
       sdk: {
@@ -139,7 +143,10 @@ describe("repairing a reply whose UI block fails", () => {
           events: {
             list: async () => [{ type: "turn/completed", data: { status: turnStatus } }],
           },
-          send: async () => ({ ok: true }),
+          send: async () => {
+            if (failures-- > 0) throw new Error("bb is restarting");
+            return { ok: true };
+          },
         },
       },
     });
@@ -148,6 +155,13 @@ describe("repairing a reply whose UI block fails", () => {
       thread: { id: "thr_person", parentThreadId: null },
     });
     await host.harness.resolveAgentConfiguration(person);
+    // A `bb genui ask` trial: a person reads it, but its reply stays as written.
+    await host.harness.resolveAgentConfiguration(
+      makePluginAgentConfigurationContext({
+        thread: { id: "thr_trial", parentThreadId: "thr_person" },
+        pluginMetadata: { audience: "person", trial: true },
+      }),
+    );
     const idle = (text: string | null, id = "thr_person") =>
       host.harness.emitThreadEvent("thread.idle", {
         thread: makeThreadResponse({ id }),
@@ -192,6 +206,40 @@ describe("repairing a reply whose UI block fails", () => {
     }
   });
 
+  it("treats the next reply after a request as its answer, even an empty one, and ignores its idle delivered again", async () => {
+    const LATER = BROKEN.replace("Here are", "Later");
+    const R2 = BROKEN.replace("Here are", "Still");
+    const empty = await setup();
+    try {
+      await empty.idle(BROKEN);
+      await empty.idle(null); // the repair turn ended with no text
+      await empty.idle(LATER);
+      expect(empty.sent()).toHaveLength(2);
+    } finally {
+      await empty.host.harness.lifecycle.dispose();
+    }
+    const again = await setup();
+    try {
+      await again.idle(BROKEN);
+      await again.idle(R2); // the answer, still broken
+      await again.idle(R2); // its idle delivered again
+      expect(again.sent()).toHaveLength(1);
+    } finally {
+      await again.host.harness.lifecycle.dispose();
+    }
+  });
+
+  it("asks about the next broken reply when a request could not be sent", async () => {
+    const { host, idle, sent } = await setup("completed", { failSends: 1 });
+    try {
+      await idle(BROKEN);
+      await idle(BROKEN.replace("Here are", "Next"));
+      expect(sent()).toHaveLength(2);
+    } finally {
+      await host.harness.lifecycle.dispose();
+    }
+  });
+
   it("leaves working replies, other agents' threads, stopped turns and the setting off alone", async () => {
     const { host, idle, sent } = await setup();
     try {
@@ -200,6 +248,7 @@ describe("repairing a reply whose UI block fails", () => {
       await idle(null);
       await idle('Cut off.\n\n```ui\nCard("Plan", [Choice(');
       await idle(BROKEN, "thr_spawned_by_agent");
+      await idle(BROKEN, "thr_trial");
       expect(host.harness.inspection.sdk.calls).toEqual([]);
       await host.harness.behavior.setSettings({ uiRepair: false });
       await idle(BROKEN);
