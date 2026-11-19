@@ -129,7 +129,7 @@ export function toNumber(value: Value): number | null {
   if (typeof value === "boolean") return value ? 1 : 0;
   if (typeof value !== "string") return null;
   const text = value.trim().replace(/(\d),(?=\d{3}\b)/g, "$1");
-  if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(text)) return null;
+  if (!/^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?$/i.test(text)) return null;
   return finite(Number(text));
 }
 

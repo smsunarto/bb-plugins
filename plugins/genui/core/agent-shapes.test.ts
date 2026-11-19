@@ -8,6 +8,7 @@ import {
   initialState,
   toMarkdown,
 } from "./index";
+import { toNumber } from "./evaluate";
 import type { UiNode } from "./types";
 
 // Blocks agents sent in a week of BB threads (BBP-22 audit) that failed to
@@ -301,6 +302,14 @@ describe("Number()", () => {
       name: "name",
       value: "x",
     });
+  });
+
+  it("reads long text that spells no number in linear time", () => {
+    // An Input's text has no length limit; a backtracking pattern took 2.5 s here.
+    const started = performance.now();
+    expect(toNumber(`${"1".repeat(50_000)}x`)).toBeNull();
+    expect(toNumber(`${"1".repeat(50_000)}.5x`)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(100);
   });
 
   it("is null for text that spells no number", () => {
