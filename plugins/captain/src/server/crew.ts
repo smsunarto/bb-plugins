@@ -171,16 +171,25 @@ export async function taskFields(
   return fields;
 }
 
-/** Send one message into a thread, steering a running turn or starting one. */
+/**
+ * Send one message into a thread, steering a running turn or starting one.
+ * `senderThreadId` is the thread the message speaks for: bb then marks it
+ * `[bb message from thread:<id>]` and the timeline attributes it to that
+ * thread, as `bb thread tell` does. `null` sends it as the user's own, for
+ * wakes into the Captain thread itself.
+ */
 export async function steer(
   bb: Pick<BbPluginApi, "sdk">,
   threadId: string,
   text: string,
+  senderThreadId: string | null,
 ): Promise<void> {
   await bb.sdk.threads.send({
     threadId,
     input: [{ type: "text", text, mentions: [] }],
     mode: "steer-if-active",
+    // bb's schema takes a string or no key; it rejects null.
+    ...(senderThreadId === null ? {} : { senderThreadId }),
   });
 }
 
@@ -194,7 +203,8 @@ export function ruleLine(text: string): string {
  * received: a running session keeps the instructions it started with, so a
  * rule added since reaches it only this way. The rules are marked received
  * only after the send succeeds. `told` is a rule the body itself carries, so
- * the top block leaves it out. Resolves to how many rules the block carried.
+ * the top block leaves it out. The message goes out from the Captain thread.
+ * Resolves to how many rules the block carried.
  */
 export async function steerCrew(
   deps: Pick<CommandDeps, "bb" | "store" | "files">,
@@ -213,7 +223,7 @@ export async function steerCrew(
           captain: JSON.stringify(captain.name),
           rules: unseen.map((rule) => ruleLine(rule.text)).join("\n"),
         })}\n\n---\n\n${body}`;
-  await steer(deps.bb, threadId, text);
+  await steer(deps.bb, threadId, text, captain.threadId);
   // The highest id this send carried, not the newest now: a rule added meanwhile stays unseen.
   deps.store.markRulesSeen(threadId, Math.max(told?.id ?? 0, ...unseen.map((rule) => rule.id)));
   return unseen.length;

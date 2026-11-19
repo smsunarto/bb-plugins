@@ -143,8 +143,9 @@ export async function captainHost(options: FakeOptions = {}) {
     down: options.tasksDown === true,
   };
   const pushes: { method: string; input: unknown }[] = [];
-  /** Messages sent into threads, in order. */
-  const sent: { threadId: string; text: string; mode: string }[] = [];
+  /** Messages sent into threads, in order; `senderThreadId` is null when the send names none. */
+  const sent: { threadId: string; text: string; mode: string; senderThreadId: string | null }[] =
+    [];
   /** Threads whose sends fail. */
   const sendFails = new Set<string>();
   const interactions = new Map<string, unknown[]>();
@@ -486,6 +487,7 @@ export async function captainHost(options: FakeOptions = {}) {
             threadId: args.threadId,
             text: part !== undefined && part.type === "text" ? part.text : "",
             mode: args.mode,
+            senderThreadId: args.senderThreadId ?? null,
           });
           return {} as never;
         },

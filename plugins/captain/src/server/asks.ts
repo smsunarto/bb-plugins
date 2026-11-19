@@ -227,6 +227,7 @@ export async function deliverAnswer(
       deps.bb,
       ask.captainId,
       deps.files.read("answer", { id: ask.id, answer: ask.answer, subject }),
+      null,
     );
     deps.store.markAnswerDelivered(ask.id, deps.now());
     changed();

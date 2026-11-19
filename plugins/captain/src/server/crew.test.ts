@@ -423,7 +423,7 @@ describe("bb captain dispatch --thread", () => {
   });
 
   test("an active thread is steered with its contract at once and owes a report", async () => {
-    const { host, as } = await crewHost();
+    const { host, captainId, as } = await crewHost();
     host.addThread({ id: "thr_busy", status: "active" });
 
     const adopted = await as([
@@ -442,6 +442,7 @@ describe("bb captain dispatch --thread", () => {
         threadId: "thr_busy",
         text: expect.stringContaining("# Role: Review"),
         mode: "steer-if-active",
+        senderThreadId: captainId,
       },
     ]);
     expect(host.server.store.crewRole("thr_busy")).toMatchObject({
@@ -691,6 +692,7 @@ describe("bb captain ask", () => {
         threadId: captainId,
         text: '[captain] a1 answered "Studio" · BBPLUGINS-1 Pick an account',
         mode: "steer-if-active",
+        senderThreadId: null,
       },
     ]);
     expect(
@@ -700,8 +702,8 @@ describe("bb captain ask", () => {
 });
 
 describe("bb captain tell", () => {
-  test("reaches only the role named on a task, steers it, and moves its report-due mark", async () => {
-    const { host, as } = await crewHost();
+  test("reaches only the role named on a task, steers it from the Captain, and moves its report-due mark", async () => {
+    const { host, captainId, as } = await crewHost();
     const implementer = await dispatched(as, "BBPLUGINS-1", "Implement");
     const reviewer = await dispatched(as, "BBPLUGINS-1", "Review");
     host.setNow(7_000);
@@ -717,7 +719,12 @@ describe("bb captain tell", () => {
 
     expect(result.stdout).toBe(`${implementer}  told  BBPLUGINS-1  Implement\n`);
     expect(host.sent).toEqual([
-      { threadId: implementer, text: "Fix the null check.", mode: "steer-if-active" },
+      {
+        threadId: implementer,
+        text: "Fix the null check.",
+        mode: "steer-if-active",
+        senderThreadId: captainId,
+      },
     ]);
     expect(host.server.store.crewRole(implementer)?.reportDueSince).toBe(7_000);
     expect(host.server.store.crewRole(reviewer)?.reportDueSince).toBe(1_000);
@@ -757,6 +764,7 @@ describe("bb captain tell", () => {
       "- Run the linter before reporting.\n- Never push to main.\n",
     );
     expect(host.sent.map((message) => message.threadId)).toEqual([active]);
+    expect(host.sent[0]?.senderThreadId).toBe(captainId);
     expect(host.sent[0]?.text).toContain("This message owes no report.");
     expect(host.sent[0]?.text).toMatch(/Never push to main\.$/u);
     for (const threadId of [active, idle])

@@ -338,6 +338,7 @@ describe("rate-limit fallback", () => {
     expect(restarted).not.toBe(failed);
     expect(host.server.store.crewRole(restarted)).toMatchObject({ role: "implement", rung: 2 });
     expect(host.threads.get(failed)?.archivedAt).not.toBeNull();
+    expect(toCaptain(host, captainId).map((message) => message.senderThreadId)).toEqual([null]);
     expect(toCaptain(host, captainId).map((message) => message.text)).toEqual([
       `[captain] BBPLUGINS-1 Implement ${failed} hit a provider rate limit on rung 1 (claude-code claude-opus-5-5 high); restarted on rung 2 (codex gpt-6-astra high) as ${restarted} with the same brief, and archived ${failed}.`,
     ]);

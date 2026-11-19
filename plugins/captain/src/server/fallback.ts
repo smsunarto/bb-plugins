@@ -78,7 +78,7 @@ export async function runFallbacks(
   }
   if (lines.length === 0) return;
   try {
-    await steer(deps.bb, captain.threadId, lines.map((entry) => entry.line).join("\n"));
+    await steer(deps.bb, captain.threadId, lines.map((entry) => entry.line).join("\n"), null);
     for (const entry of lines) deps.store.setFallbackWoke(entry.failedThreadId, deps.now());
   } catch (error) {
     for (const entry of lines) deps.store.releaseNotice(entry.key, now);

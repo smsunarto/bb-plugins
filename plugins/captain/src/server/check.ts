@@ -240,6 +240,7 @@ async function wakeForStalls(
       deps.bb,
       captain.threadId,
       deps.files.read("stall", { stalls: claimed.map((stall) => stall.line).join("; ") }),
+      null,
     );
   } catch (error) {
     for (const stall of claimed) deps.store.releaseNotice(stall.key, now);
