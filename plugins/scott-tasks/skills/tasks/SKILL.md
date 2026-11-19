@@ -21,7 +21,7 @@ For task dispatch and execution presets, read
 
    The detail includes the description, status, priority, labels, subtasks,
    comments, attachments, attached worker threads, and the GitHub pull
-   requests those threads produced (read from bb's GitHub PR Status plugin,
+   requests those threads produced (read from the Source Control plugin,
    with state open/draft/merged/closed). Use
    `bb tasks show ABC-12 --json` when the result will drive commands or code.
    In the JSON, top-level `attachments` holds the task's own files; each

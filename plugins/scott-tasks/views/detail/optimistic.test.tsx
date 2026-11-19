@@ -49,7 +49,6 @@ function mount(update: () => Promise<unknown>) {
         listAttachments: () => ({ attachments: [] }),
         listTaskThreads: () => ({ taskThreads: [] }),
         listPresets: () => ({ presets: [] }),
-        listTaskPullRequests: () => ({ pullRequests: [] }),
         updateTask: update,
       } as never,
     },

@@ -1321,43 +1321,28 @@ describe("bb tasks CLI", () => {
             title: `Worker ${threadId}`,
             titleFallback: null,
             status: "active",
-            environmentId:
-              threadId === "thr_pr_worker"
-                ? "env_pr"
-                : threadId === "thr_absent_pr"
-                  ? "env_absent"
-                  : null,
           }),
         },
-        plugins: githubPrStatusRpc((environmentId) =>
-          environmentId === "env_absent"
-            ? { outcome: "absent" }
-            : {
-                outcome: "available",
+        plugins: sourceControlRpc((threadId) =>
+          threadId === "thr_pr_worker"
+            ? {
+                state: "change",
+                key: "gh:acme/bb:acme:bb/bb-15",
+                branch: "bb/bb-15",
                 pullRequest: {
                   number: 12,
                   title: "BB-15 Show PRs in tasks",
-                  state: "draft",
                   url: "https://github.com/acme/bb/pull/12",
-                  baseRefName: "main",
-                  headRefName: "bb/bb-15",
-                  updatedAt: "2026-07-16T10:00:00.000Z",
-                  checks: {
-                    state: "pending",
-                    totalCount: 1,
-                    passedCount: 0,
-                    failedCount: 0,
-                    pendingCount: 1,
-                  },
-                  review: { state: "none", reviewRequestCount: 0 },
-                  mergeability: {
-                    state: "draft",
-                    mergeStateStatus: null,
-                    mergeable: null,
-                  },
-                  attention: "draft",
+                  state: "draft",
                 },
-              },
+                line: "Draft, waiting on you",
+                chips: [],
+                tone: "neutral",
+                sort: 0,
+              }
+            : threadId === "thr_absent_pr"
+              ? { state: "change", key: null, branch: "bb/no-pr", pullRequest: null }
+              : { state: "none" },
         ),
       },
     });
@@ -1381,7 +1366,7 @@ describe("bb tasks CLI", () => {
         number: 12,
         title: "BB-15 Show PRs in tasks",
         state: "draft",
-        updatedAt: "2026-07-16T10:00:00.000Z",
+        checks: [],
         threadIds: ["thr_pr_worker"],
       },
     ]);
@@ -1400,13 +1385,10 @@ describe("bb tasks CLI", () => {
             title: `Worker ${threadId}`,
             titleFallback: null,
             status: "active",
-            environmentId: "env_down",
           }),
         },
-        plugins: githubPrStatusRpc(() => ({
-          outcome: "unavailable",
-          message: "gh pr view failed: authentication required",
-        })),
+        // Its host never answered, so the row stays unread after a refresh.
+        plugins: sourceControlRpc(() => ({ state: "pending" })),
       },
     });
     await plugin(bb);
@@ -2405,14 +2387,20 @@ describe("bb tasks CLI", () => {
   });
 });
 
-function githubPrStatusRpc(lookup: (environmentId: string) => unknown) {
+// Source Control's `statusForThread` keyed read; `refreshThread` succeeds
+// without changing the rows.
+function sourceControlRpc(row: (threadId: string) => unknown) {
   return {
     async callRpc<TOutput>(args: {
+      pluginId: string;
+      method: string;
       input?: unknown;
       outputSchema: { parse(value: unknown): TOutput };
     }): Promise<TOutput> {
+      expect(args.pluginId).toBe("source-control");
+      if (args.method === "refreshThread") return args.outputSchema.parse({ ok: true });
       const { keys } = args.input as { keys: string[] };
-      return args.outputSchema.parse(Object.fromEntries(keys.map((key) => [key, lookup(key)])));
+      return args.outputSchema.parse(Object.fromEntries(keys.map((key) => [key, row(key)])));
     },
   };
 }

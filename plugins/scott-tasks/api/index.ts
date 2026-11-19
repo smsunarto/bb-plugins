@@ -4,7 +4,6 @@ import {
   type ExperimentalPluginRpcCaller,
   type PluginRpcHandlers,
 } from "@get-bb/plugin-sdk";
-import { z } from "zod";
 import {
   createTasksStore,
   type ParentNotification,
@@ -38,6 +37,14 @@ import {
   type CommentSource,
   type DisplayComment,
 } from "../shared/contract";
+import {
+  SOURCE_CONTROL_KEYS_PER_READ,
+  SOURCE_CONTROL_PLUGIN_ID,
+  refreshDue,
+  sourceControlContract,
+  threadPullRequest,
+  type ThreadPullRequest,
+} from "../shared/source-control";
 
 interface TaskLabelIdRow {
   task_id: string;
@@ -499,48 +506,28 @@ interface TaskPullRequestsResult {
   unavailableThreadIds: string[];
 }
 
-const GITHUB_PR_STATUS_PLUGIN_ID = "bb--github-pr-status";
-const PULL_REQUEST_KEYS_PER_READ = 200;
+const PULL_REQUEST_REFRESH_CONCURRENCY = 8;
+/** One refresh's deadline: a sleeping host gives up its slot after this. */
+const PULL_REQUEST_REFRESH_DEADLINE_MS = 8_000;
+/** No refresh starts after this; threads still queued keep their stored row. */
+const PULL_REQUEST_REFRESH_BUDGET_MS = 20_000;
 
-const environmentPullRequestsSchema = z.record(
-  z.string(),
-  z.discriminatedUnion("outcome", [
-    z.object({
-      outcome: z.literal("available"),
-      pullRequest: z.object({
-        url: z.string().url(),
-        number: z.number().int().positive(),
-        title: z.string(),
-        state: z.enum(["open", "draft", "merged", "closed"]),
-        updatedAt: z.string(),
-      }),
-    }),
-    z.object({ outcome: z.literal("absent") }),
-    z.object({ outcome: z.literal("unavailable"), message: z.string() }),
-  ]),
-);
-type EnvironmentPullRequests = z.infer<typeof environmentPullRequestsSchema>;
-
-// GitHub PR Status (bb--github-pr-status) owns pull request data; one keyed
-// read covers up to 200 environments. A failed or disabled lookup leaves its
-// environments out, which the caller reports as unavailable.
-async function readEnvironmentPullRequests(
+/** Each thread's stored `statusForThread` row; a failed read leaves its threads out. */
+async function readThreadRows(
   bb: BbPluginApi,
-  environmentIds: readonly string[],
-): Promise<EnvironmentPullRequests> {
-  const rows: EnvironmentPullRequests = {};
-  for (let start = 0; start < environmentIds.length; start += PULL_REQUEST_KEYS_PER_READ) {
-    const keys = environmentIds.slice(start, start + PULL_REQUEST_KEYS_PER_READ);
+  threadIds: readonly string[],
+): Promise<Map<string, unknown>> {
+  const rows = new Map<string, unknown>();
+  for (let start = 0; start < threadIds.length; start += SOURCE_CONTROL_KEYS_PER_READ) {
+    const keys = threadIds.slice(start, start + SOURCE_CONTROL_KEYS_PER_READ);
     try {
-      Object.assign(
-        rows,
-        await bb.sdk.plugins.callRpc({
-          pluginId: GITHUB_PR_STATUS_PLUGIN_ID,
-          method: "pullRequests",
-          input: { keys },
-          outputSchema: environmentPullRequestsSchema,
-        }),
-      );
+      const read = await bb.sdk.plugins.callRpc({
+        pluginId: SOURCE_CONTROL_PLUGIN_ID,
+        method: "statusForThread",
+        input: { keys },
+        outputSchema: sourceControlContract.statusForThread.output,
+      });
+      for (const threadId of keys) rows.set(threadId, read[threadId]);
     } catch (error) {
       bb.log.debug(`pull request lookup failed: ${errorMessage(error)}`);
     }
@@ -548,69 +535,71 @@ async function readEnvironmentPullRequests(
   return rows;
 }
 
+// Source Control (source-control) owns pull request data, keyed by thread.
+// It serves stored rows and keeps one current only while something watches
+// it, so a thread whose GitHub read is missing or over a minute old is read
+// again with `refreshThread` first. Each refresh has its own deadline, so a
+// sleeping host costs one slot, not the whole read. A failed, disabled, or
+// still-unread lookup leaves the thread out, which the caller reports as
+// unavailable.
+async function readThreadPullRequests(
+  bb: BbPluginApi,
+  threadIds: readonly string[],
+): Promise<Map<string, ThreadPullRequest>> {
+  const rows = await readThreadRows(bb, threadIds);
+  const startedAt = Date.now();
+  const stale = threadIds.filter(
+    (threadId) => rows.has(threadId) && refreshDue(rows.get(threadId), startedAt),
+  );
+  const queue = [...stale];
+  const refreshNext = async (): Promise<void> => {
+    const threadId = queue.shift();
+    if (threadId === undefined) return;
+    if (Date.now() - startedAt >= PULL_REQUEST_REFRESH_BUDGET_MS) return;
+    try {
+      await bb.sdk.plugins.callRpc({
+        pluginId: SOURCE_CONTROL_PLUGIN_ID,
+        method: "refreshThread",
+        input: { threadId },
+        outputSchema: sourceControlContract.refreshThread.output,
+        signal: AbortSignal.timeout(PULL_REQUEST_REFRESH_DEADLINE_MS),
+      });
+    } catch (error) {
+      bb.log.debug(`pull request refresh failed for ${threadId}: ${errorMessage(error)}`);
+    }
+    return refreshNext();
+  };
+  if (stale.length > 0) {
+    await Promise.all(Array.from({ length: PULL_REQUEST_REFRESH_CONCURRENCY }, refreshNext));
+    for (const [threadId, row] of await readThreadRows(bb, stale)) rows.set(threadId, row);
+  }
+  return new Map([...rows].map(([threadId, row]) => [threadId, threadPullRequest(row)]));
+}
+
 async function listTaskPullRequests(
   bb: BbPluginApi,
   store: TasksApiStore,
   taskId: string,
 ): Promise<TaskPullRequestsResult> {
-  const taskThreads = store.tasks.listTaskThreads(taskId);
+  const threadIds = store.tasks.listTaskThreads(taskId).map((taskThread) => taskThread.threadId);
+  const statuses = await readThreadPullRequests(bb, threadIds);
 
-  const unavailable = new Set<string>();
-  const threadIdsByEnvironment = new Map<string, string[]>();
-  await Promise.all(
-    taskThreads.map(async (taskThread) => {
-      try {
-        const thread = await bb.sdk.threads.get({
-          threadId: taskThread.threadId,
-        });
-        if (!thread.environmentId) return;
-        const group = threadIdsByEnvironment.get(thread.environmentId) ?? [];
-        group.push(taskThread.threadId);
-        threadIdsByEnvironment.set(thread.environmentId, group);
-      } catch {
-        unavailable.add(taskThread.threadId);
-      }
-    }),
-  );
-
+  // Task threads come in attach order, so each pull request lists its threads
+  // in that order and the pull requests follow their first thread.
   const byUrl = new Map<string, TaskPullRequest>();
-  const rows = await readEnvironmentPullRequests(bb, [...threadIdsByEnvironment.keys()]);
-  for (const [environmentId, threadIds] of threadIdsByEnvironment) {
-    const result = rows[environmentId];
-    if (result === undefined || result.outcome === "unavailable") {
-      for (const threadId of threadIds) unavailable.add(threadId);
+  const unavailableThreadIds: string[] = [];
+  for (const threadId of threadIds) {
+    const status = statuses.get(threadId);
+    if (status === undefined || status.kind === "unavailable" || status.kind === "pending") {
+      unavailableThreadIds.push(threadId);
       continue;
     }
-    if (result.outcome === "absent") continue;
-    const { pullRequest } = result;
-    const existing = byUrl.get(pullRequest.url);
-    if (!existing) {
-      byUrl.set(pullRequest.url, { ...pullRequest, threadIds: [...threadIds] });
-      continue;
-    }
-    const threadIdUnion = [...existing.threadIds, ...threadIds];
-    if (pullRequest.updatedAt.localeCompare(existing.updatedAt) > 0) {
-      byUrl.set(pullRequest.url, { ...pullRequest, threadIds: threadIdUnion });
-    } else {
-      existing.threadIds = threadIdUnion;
-    }
+    if (status.kind === "absent") continue;
+    const existing = byUrl.get(status.pullRequest.url);
+    if (existing) existing.threadIds.push(threadId);
+    else byUrl.set(status.pullRequest.url, { ...status.pullRequest, threadIds: [threadId] });
   }
-
-  const threadOrder = new Map(taskThreads.map((taskThread, index) => [taskThread.threadId, index]));
-  const orderByThread = (threadId: string) => threadOrder.get(threadId) ?? Number.MAX_SAFE_INTEGER;
-  const pullRequests = [...byUrl.values()].map((pullRequest) => ({
-    ...pullRequest,
-    threadIds: [...pullRequest.threadIds].sort(
-      (left, right) => orderByThread(left) - orderByThread(right),
-    ),
-  }));
-
-  return {
-    pullRequests: pullRequests.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)),
-    unavailableThreadIds: [...unavailable].sort(
-      (left, right) => orderByThread(left) - orderByThread(right),
-    ),
-  };
+  return { pullRequests: [...byUrl.values()], unavailableThreadIds };
 }
 
 export function registerHandlers(
