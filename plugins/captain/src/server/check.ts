@@ -202,7 +202,18 @@ async function sendInstructionChanges(
 ): Promise<void> {
   try {
     const served = deps.store.servedOf([captain.threadId, ...threads.map((thread) => thread.id)]);
-    for (const change of pendingChanges(deps.files, served)) await sendChange(deps, change, now);
+    const changes = pendingChanges(deps.files, served);
+    // Plain bb archival leaves the Captain row live, so ask bb, and only when there is news for it.
+    if (changes.some((change) => change.threadId === captain.threadId)) {
+      const thread = await deps.bb.sdk.threads.get({ threadId: captain.threadId });
+      if (thread.archivedAt !== null) {
+        changes.splice(
+          changes.findIndex((change) => change.threadId === captain.threadId),
+          1,
+        );
+      }
+    }
+    for (const change of changes) await sendChange(deps, change, now);
   } catch (error) {
     // A bad file or row must not cost this pass its stall wakes.
     deps.bb.log.warn(
@@ -212,12 +223,13 @@ async function sendInstructionChanges(
 }
 
 async function sendChange(deps: CheckDeps, change: InstructionChange, now: number): Promise<void> {
-  const claim = { ...change.to, servedAt: now };
-  if (!deps.store.swapServed(change.threadId, change.from.fingerprint, claim)) return;
+  // Rendered before the claim, so a broken template leaves the change unclaimed for the next pass.
   const text = deps.files.read("instructions-changed", {
     form: change.form === "diff" ? "diff from your original text to the new" : "full new text",
     change: change.change,
   });
+  const claim = { ...change.to, servedAt: now };
+  if (!deps.store.swapServed(change.threadId, change.from.fingerprint, claim)) return;
   try {
     await withDeadline(
       deps.bb.sdk.threads.send({

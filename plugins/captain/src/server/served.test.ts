@@ -1,5 +1,5 @@
 import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { unifiedDiff } from "./diff.ts";
 import { fingerprint } from "./served.ts";
 import { captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
@@ -169,6 +169,54 @@ describe("instruction change notices", () => {
     host.updateThread(thread.id, { archivedAt: 5_000 });
 
     expect(await pass(thread.id, captainId)).toEqual([]);
+  });
+
+  test("a Captain archived through bb is skipped, though its Captain row is still live", async () => {
+    const { host, captainId, captain, configure, crew, pass } = await setup();
+    await configure(captain);
+    const thread = await crew();
+    await configure(thread.context);
+    servedEarlier(host, captainId, dropLine("Captain")[0]);
+    servedEarlier(host, thread.id, dropLine("Role: Implement")[0]);
+    // Plain bb archival, not `bb captain archive`: the store's Captain row stays live.
+    host.updateThread(captainId, { archivedAt: 5_000 });
+    expect(host.server.store.liveCaptains().map((row) => row.threadId)).toContain(captainId);
+
+    const archived = await pass(captainId, thread.id);
+    host.updateThread(captainId, { archivedAt: null });
+    const unarchived = await pass(captainId, thread.id);
+
+    expect(archived.map((m) => m.threadId)).toEqual([thread.id]);
+    expect(unarchived.map((m) => m.threadId)).toEqual([captainId]);
+  });
+
+  test("a template that fails to render claims nothing, so the repaired template sends once", async () => {
+    const { host, captainId, captain, configure, pass } = await setup();
+    await configure(captain);
+    servedEarlier(host, captainId, dropLine("Captain")[0]);
+    const stale = host.server.store.servedOf([captainId])[0]?.fingerprint;
+    const files = host.server.files;
+    const read = files.read.bind(files);
+    // An unresolved placeholder: the template is filled without its `change` value.
+    const broken = vi
+      .spyOn(files, "read")
+      .mockImplementation((name, vars) =>
+        name === "instructions-changed" ? read(name, { form: "diff" }) : read(name, vars),
+      );
+
+    const failed = await pass(captainId);
+    const fingerprintAfterFailure = host.server.store.servedOf([captainId])[0]?.fingerprint;
+    broken.mockRestore();
+    const repaired = await pass(captainId);
+    const after = await pass(captainId);
+
+    expect(failed).toEqual([]);
+    expect(
+      host.logs().some((entry) => JSON.stringify(entry).includes("no value for {{change}}")),
+    ).toBe(true);
+    expect(fingerprintAfterFailure).toBe(stale);
+    expect(repaired).toHaveLength(1);
+    expect(after).toEqual([]);
   });
 
   test("a rewrite larger than its diff sends the full new text instead", async () => {

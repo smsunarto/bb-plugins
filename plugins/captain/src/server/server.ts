@@ -84,7 +84,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     (error: unknown) =>
       bb.log.warn(`Captains not marked person-facing: ${(error as Error).message}`),
   );
-  return { store, registry, drive, check, ready, fieldsReady, audienceReady };
+  return { store, registry, drive, files, check, ready, fieldsReady, audienceReady };
 }
 
 const CAPTAINS_FOLDER = "Captains";
