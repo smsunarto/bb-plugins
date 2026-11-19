@@ -623,11 +623,7 @@ const requiredRules: Array<{
   },
   {
     selector: ".dark .bg-popover > .shrink-0.border-b.px-1\\.5.py-1",
-    declarations: { "background-color": "var(--control-background)", "border-bottom-width": "0" },
-  },
-  {
-    selector: '.dark .bg-popover > .border-b input[aria-label="Search models"]',
-    declarations: { "background-color": "transparent" },
+    declarations: { "background-color": "transparent", "border-bottom-width": "0" },
   },
   {
     selector: ".dark [data-radix-popper-content-wrapper] > [data-side]",

@@ -47,6 +47,8 @@
 ## Palette-independent files
 
 - `app/ui-font-bridge.ts` writes `--bb-monokai-ui-font` on `<html>`. Only the theme's `--font-sans` reads it, so the UI font setting does nothing under another palette.
+- `app/panel-new-tab.ts`, run from the thread marker, makes a toggle-open of a thread's right panel land on a new tab, as bb's New thread screen does. Its `panel-new-tab` content script records clicks on bb's `button[aria-label^="Show right panel"]` and presses of the shortcut in its `aria-keyshortcuts`; only an open right after one is redirected, so controls that open a specific tab keep it. The hook selects an open new tab through the SDK, or asks the content script to press bb's `button[data-panel-new-tab]` inside `[id^="thread-detail-secondary-panel"]` (desktop) or `[data-testid="secondary-panel-shelf"]` (under 768px). These selectors are private contracts. `test/panel-new-tab.test.ts` covers the transitions, the shortcut matcher, and the press.
+- The `bb-dom-styles` content script appends one `<style>` that restyles bb's DOM under every palette: `app/search-fields.ts` draws bb's search fields as the shadcn Input (t3-composer's model search opts out by its `data-t3-model-search` marker), `app/new-tab-launcher.ts` centres the new tab's Actions as hairline cards and hides its Actions header, reorder handles, and Recent list, and `app/thread-marker.ts` hides the marker's header group. Each module's header comment maps the private bb DOM it selects; recheck them in a browser after bb upgrades.
 
 <!-- workaround:monokai/secondary-swipe-width-property begin -->
 

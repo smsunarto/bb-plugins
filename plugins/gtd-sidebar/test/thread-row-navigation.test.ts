@@ -240,8 +240,10 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   // The real hook, captured before the mock replaces the module. Like the
   // mocked lifecycle's `shelvesReady`, rows paint at mount unless a test asks
   // for the real load gate.
-  const { useMachineVisibility } = await import("../hooks/use-machine-visibility.ts");
+  const { useMachineVisibility, useComposerHostId } =
+    await import("../hooks/use-machine-visibility.ts");
   mock.module("../hooks/use-machine-visibility.ts", () => ({
+    useComposerHostId,
     useMachineVisibility: (machines: Parameters<typeof useMachineVisibility>[0]) => {
       const visibility = useMachineVisibility(machines);
       return useHost().awaitMachineVisibility ? visibility : { ...visibility, ready: true };
@@ -253,6 +255,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     "useRowDescribedBy",
   );
   const { ThreadInbox } = await import("../components/inbox/thread-inbox.tsx");
+  const { HeaderSettle } = await import("../components/header/header-settle.tsx");
   const { useCommittedEvent } = await import("../hooks/use-committed-event.ts");
   const { settleThread } = await import("../lib/sidebar-actions-bridge.ts");
   const { TOUCH_PRESS_FEEDBACK_MS } = await import("../hooks/use-ios-long-press.ts");
@@ -2253,6 +2256,52 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
       });
       view.updateInbox({ activeThreadId: null });
       assert.deepEqual(currentActions.open.mock.calls, [["root"]]);
+    });
+  });
+
+  describe("phone header New thread", () => {
+    function Header({ host }: { host: HostState }) {
+      return createElement(
+        HostContext.Provider,
+        { value: host },
+        createElement(HeaderSettle, { threadId: "a", projectId: "one", isCompactViewport: true }),
+      );
+    }
+
+    it("carries the sidebar's one visible machine into the composer, as the inbox does", async () => {
+      const host = hostState([]);
+      host.sidebar = {
+        ...host.sidebar,
+        experimental_hosts: [
+          { id: "host-a", name: "Studio" },
+          { id: "host-b", name: "Empty" },
+        ],
+      };
+      let hiddenMachineIds: string[] = [];
+      const slot = renderSlot(
+        { component: Header },
+        { host },
+        { rpc: { listMachineVisibility: () => ({ hiddenMachineIds }) } },
+      );
+      await act(async () => {});
+      fireEvent.click(slot.getByRole("button", { name: "New thread" }));
+      assert.deepEqual(host.actions.openNewThread.mock.calls[0], [
+        { projectId: "one", focusPrompt: true },
+      ]);
+      slot.lifecycle.unmount();
+
+      hiddenMachineIds = ["host-b"];
+      const scoped = renderSlot(
+        { component: Header },
+        { host },
+        { rpc: { listMachineVisibility: () => ({ hiddenMachineIds }) } },
+      );
+      await waitFor(() => {
+        fireEvent.click(scoped.getAllByRole("button", { name: "New thread" }).at(-1)!);
+        assert.deepEqual(host.actions.openNewThread.mock.calls.at(-1), [
+          { projectId: "one", focusPrompt: true, hostId: "host-a" },
+        ]);
+      });
     });
   });
 

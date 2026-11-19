@@ -1537,15 +1537,11 @@
   background-color: var(--border);
 }
 
-/* The model-search row is one field, including its inset around the input.
- * bb gives no other popover row this exact padding pair. */
+/* The model-search row holds a shadcn search field (app/search-fields.ts),
+ * so it drops its rule. bb gives no other popover row this exact padding pair. */
 .dark .bg-popover > .shrink-0.border-b.px-1\.5.py-1 {
-  background-color: var(--control-background);
-  border-bottom-width: 0;
-}
-
-.dark .bg-popover > .border-b input[aria-label="Search models"] {
   background-color: transparent;
+  border-bottom-width: 0;
 }
 
 /* Embedded frames need a crisp alpha edge. The plugin's light outer shadow

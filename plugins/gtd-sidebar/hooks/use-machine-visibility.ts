@@ -2,10 +2,11 @@ import { useMemo } from "react";
 import {
   experimental_useRpcMutation as useRpcMutation,
   experimental_useRpcQuery as useRpcQuery,
+  experimental_useSidebarThreads as useSidebarThreads,
 } from "@get-bb/plugin-sdk/app";
 import { toast } from "sonner";
 import { changeHiddenMachines, type MachineVisibilityChange } from "../lib/machine-visibility";
-import { machineVisibility, type SidebarMachine } from "../lib/machines";
+import { machineVisibility, sidebarMachines, type SidebarMachine } from "../lib/machines";
 import { gtdSidebarRpcContract } from "../lib/rpc-contract";
 import { useCommittedEvent } from "./use-committed-event";
 import { useOrderedWrites } from "./use-ordered-writes";
@@ -54,4 +55,24 @@ export function useMachineVisibility(machines: readonly SidebarMachine[]) {
     [machines, base, writes.unsettled],
   );
   return { ...visibility, ready, change };
+}
+
+/**
+ * The machine a New thread composer preselects, as the inbox's New thread
+ * passes it: the one machine left visible when the sidebar hides the others.
+ * Reads bb's cached sidebar threads and the saved machine choice; changes
+ * nothing.
+ */
+export function useComposerHostId(): string | undefined {
+  const { threads, experimental_hosts: hosts } = useSidebarThreads();
+  const { data } = useRpcQuery({
+    contract: gtdSidebarRpcContract,
+    method: "listMachineVisibility",
+    input: MACHINES_READ,
+  });
+  const hiddenIds = data?.hiddenMachineIds;
+  return useMemo(
+    () => machineVisibility(sidebarMachines(threads, hosts), hiddenIds ?? []).composerHostId,
+    [threads, hosts, hiddenIds],
+  );
 }

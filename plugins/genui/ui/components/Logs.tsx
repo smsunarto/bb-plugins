@@ -396,7 +396,7 @@ function LogView({ output, command, exit, id }: { output: LogOutput; command: st
             <LevelChips output={output} selected={levels} onToggle={toggleLevel} />
             <div className="flex min-w-0 flex-1 basis-56 items-center gap-1">
               <div className="relative flex min-w-0 flex-1 items-center">
-                <Icon name="Search" aria-hidden className="pointer-events-none absolute left-2 size-3.5 text-muted-foreground" />
+                <Icon name="Search" aria-hidden className="pointer-events-none absolute left-2.5 size-4 text-muted-foreground" />
                 <Input
                   type="search"
                   aria-label="Search the output"
@@ -407,7 +407,7 @@ function LogView({ output, command, exit, id }: { output: LogOutput; command: st
                     setCurrent(0);
                   }}
                   onKeyDown={onSearchKey}
-                  className="h-7 min-w-0 pl-7 pr-2 text-xs [&::-webkit-search-cancel-button]:hidden"
+                  className="min-w-0 pl-8 pointer-coarse:h-11 [&::-webkit-search-cancel-button]:hidden"
                 />
               </div>
               {query === "" ? null : (
