@@ -89,7 +89,7 @@ function checkout(
         value: title
           ? {
               number: 482,
-              url: "https://github.com/x",
+              url: "https://github.com/smsunarto/bb-plugins/pull/482",
               title,
               state: "open",
               isDraft: true,
@@ -480,6 +480,14 @@ test("stack cards draw each branch and its commits, and the base under them", as
   expect(slot.getByTestId("sc-behind").textContent).toBe("main has 2 new commits");
   expect(slot.getByTestId("sc-base").textContent).toContain("origin/main");
   expect(slot.getByTestId("sc-base").textContent).toContain("a41c9e2");
+});
+
+test("the branch's pull request pill opens its review beside the thread, not GitHub", async () => {
+  const { slot } = renderRow(stacked(), {}, { openTab: () => true });
+  fireEvent.click(await slot.findByRole("link", { name: "#482 Draft" }));
+  expect(slot.inspection.experimental_panelCalls).toMatchObject([
+    { method: "openTab", options: { params: { pr: "smsunarto/bb-plugins#482" } } },
+  ]);
 });
 
 test("Push names the head and target the reader saw", async () => {
@@ -1253,6 +1261,7 @@ function renderInfo(kind: "row" | "section", row: ThreadChange) {
     { threadId: "thread-a", projectId: "proj", environment: { id: "env" } } as never,
     {
       experimental_rpcContract: sourceControlContract,
+      experimental_panel: { openTab: () => true },
       rpc: { changeForThread: () => ({ "thread-a": row }) } as Rpc,
     },
   );
@@ -1270,6 +1279,10 @@ test("the Info tab's Pull request row shows a GitButler thread's pull request, a
   const slot = renderInfo("row", stacked());
   const link = await slot.findByRole("link", { name: /Pull request 482: Draft/ });
   expect(link.textContent).toContain("#482");
+  fireEvent.click(link);
+  expect(slot.inspection.experimental_panelCalls).toMatchObject([
+    { method: "openTab", options: { params: { pr: "smsunarto/bb-plugins#482" } } },
+  ]);
   cleanup();
   const plain = renderInfo("row", plainGit());
   await new Promise((settle) => setTimeout(settle, 30));

@@ -12,7 +12,7 @@ import {
   type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
 import { useMemo } from "react";
-import { parsePrReference, prKey, prLookup } from "../core/watch.ts";
+import { parsePrReference, prKey, prLookup, prUrl } from "../core/watch.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { Skeleton } from "./components/ui/skeleton.tsx";
@@ -34,7 +34,7 @@ export function pullRequestTarget(reference: string): Target | null {
     lookup: prLookup(ref),
     label: prKey(ref),
     head: null,
-    url: `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`,
+    url: prUrl(ref),
   };
 }
 

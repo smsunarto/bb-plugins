@@ -6,38 +6,38 @@
  * of a link to a pull request itself stops bb's own handler and opens the
  * pull request's review beside the thread in view.
  *
- * A content script has no side panel, so each thread composer lends it one:
- * `useLendPullRequestLinks` registers the opener of the thread the route
- * shows. With no thread in view (a plugin page, the New thread screen) no
- * opener is lent and the link goes to GitHub as before. Source Control's own
- * roots are left alone: their links route themselves, and their explicit
- * "Open on GitHub" actions must reach GitHub.
+ * A content script has no side panel, so each thread lends it one:
+ * `usePullRequestLinks`, the `useVisible` of a context segment that never
+ * shows, runs once per thread pane in bb's context row (with or without a
+ * composer plugin) and registers the opener of the thread the route shows.
+ * With no thread in view (a plugin page, the New thread screen) no opener is
+ * lent and the link goes to GitHub as before. Source Control's own roots are
+ * left alone: their links route themselves, and their explicit "Open on
+ * GitHub" actions must reach GitHub.
  */
-import { useBbContext } from "@get-bb/plugin-sdk/app";
+import { useBbContext, type ExperimentalThreadContextSegmentInput } from "@get-bb/plugin-sdk/app";
 import { useLayoutEffect } from "react";
 import { parsePrLink } from "../core/watch.ts";
-import { isPlainClick, useOpenPullRequest } from "./open-pull-request.ts";
+import { isPlainClick, useOpenPullRequest } from "./open-pull-request.tsx";
 
-type Opener = (href: string) => boolean;
-
-/** The opener of the thread in view, lent by its composer. */
-let lent: { threadId: string; open: Opener } | null = null;
+/** The opener of the thread in view, lent by that thread's pane. */
+let lent: ((href: string) => boolean) | null = null;
 
 /**
- * Lends this thread's opener while the route shows it. Called from a
- * component mounted once per thread composer.
+ * A context segment's `useVisible`: lends this thread's opener while the
+ * route shows the thread, and never shows the segment.
  */
-export function useLendPullRequestLinks(threadId: string): void {
+export function usePullRequestLinks({ threadId }: ExperimentalThreadContextSegmentInput): boolean {
   const open = useOpenPullRequest(threadId);
   const inView = useBbContext().threadId === threadId;
   useLayoutEffect(() => {
     if (!inView) return;
-    const loan = { threadId, open };
-    lent = loan;
+    lent = open;
     return () => {
-      if (lent === loan) lent = null;
+      if (lent === open) lent = null;
     };
-  }, [inView, threadId, open]);
+  }, [inView, open]);
+  return false;
 }
 
 const OURS = '[data-bb-plugin="source-control"]';
@@ -46,27 +46,16 @@ const OURS = '[data-bb-plugin="source-control"]';
 export function mountPullRequestLinks(document: Document, signal: AbortSignal): () => void {
   const view = document.defaultView;
   if (!view || signal.aborted) return () => {};
-  function onClick(event: MouseEvent): void {
-    if (!lent || !isPlainClick(event) || !(event.target instanceof view!.Element)) return;
-    const anchor = event.target.closest("a[href]");
-    if (!(anchor instanceof view!.HTMLAnchorElement) || anchor.closest(OURS)) return;
-    if (!parsePrLink(anchor.href)) return;
+  const onClick = (event: MouseEvent) => {
+    const target = event.target;
+    if (!lent || !isPlainClick(event) || !(target instanceof view.Element)) return;
+    const anchor = target.closest("a[href]");
+    if (!(anchor instanceof view.HTMLAnchorElement) || anchor.closest(OURS)) return;
+    if (!parsePrLink(anchor.href) || !lent(anchor.href)) return;
     // bb's Markdown link opens the URL without checking defaultPrevented: stop it reaching React.
     event.preventDefault();
     event.stopPropagation();
-    lent.open(anchor.href);
-  }
-  const controller = new AbortController();
-  const stop = () => controller.abort();
-  signal.addEventListener("abort", stop, { once: true });
-  document.addEventListener("click", onClick, { capture: true, signal: controller.signal });
-  return () => {
-    signal.removeEventListener("abort", stop);
-    controller.abort();
   };
-}
-
-/** Tests only: whether a thread has lent its opener, and which. */
-export function lentThread(): string | null {
-  return lent?.threadId ?? null;
+  document.addEventListener("click", onClick, { capture: true, signal });
+  return () => document.removeEventListener("click", onClick, { capture: true });
 }

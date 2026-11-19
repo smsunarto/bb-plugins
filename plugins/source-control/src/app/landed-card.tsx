@@ -19,13 +19,14 @@ import {
   type PluginThreadActionTarget,
 } from "@get-bb/plugin-sdk/app";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { usePullRequestClick } from "./open-pull-request.ts";
+import { PullRequestLink } from "./open-pull-request.tsx";
 import {
   canStillLand,
   commitKey,
   notLanded,
   parseLandedAttributes,
   prKey,
+  prUrl,
   sameCommit,
   sameRef,
   type CommitRef,
@@ -191,14 +192,11 @@ function PrRow({
   read?: Landed["prs"][number];
 }) {
   const label = read?.title ?? prKey(refValue);
-  const href =
-    read?.url ?? `https://github.com/${refValue.owner}/${refValue.repo}/pull/${refValue.number}`;
-  const openReview = usePullRequestClick(threadId, href);
   return (
     <li>
-      <UrlLink
-        href={href}
-        onClick={openReview}
+      <PullRequestLink
+        threadId={threadId}
+        href={read?.url ?? prUrl(refValue)}
         className="flex min-w-0 items-center gap-2 py-1 text-foreground no-underline"
       >
         <Icon
@@ -212,7 +210,7 @@ function PrRow({
         <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
           #{refValue.number}
         </span>
-      </UrlLink>
+      </PullRequestLink>
     </li>
   );
 }

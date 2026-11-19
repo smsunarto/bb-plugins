@@ -78,6 +78,10 @@ export function parsePrLink(href: string): PrRef | null {
 }
 const PR_LINK = new RegExp(`^https://(?:www\\.)?github\\.com/(${NAME})/(${NAME})/pull/(\\d+)/?$`);
 
+/** A pull request's own page on GitHub. */
+export const prUrl = (ref: PrRef) =>
+  `https://github.com/${ref.owner}/${ref.repo}/pull/${ref.number}`;
+
 /** The server's lookup key for a pull request's Change: `legacyChange` stores it by this. */
 export const prLookup = (ref: PrRef) => `pr:${prKey(ref).toLowerCase()}`;
 

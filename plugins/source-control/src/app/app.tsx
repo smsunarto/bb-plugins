@@ -14,7 +14,7 @@ import { StripAction, StripSummary, useStripVisible } from "./composer-strip.tsx
 import { ReviewPanel, ReviewSidebar, useReviewBadge, useReviewTitle } from "./review-entry.tsx";
 import { ReviewTab } from "./review-tab.tsx";
 import { mountHeaderIcon } from "./header-icon.ts";
-import { mountPullRequestLinks } from "./pr-links.ts";
+import { mountPullRequestLinks, usePullRequestLinks } from "./pr-links.ts";
 import {
   BranchesInfoSection,
   headerActionItem,
@@ -67,6 +67,15 @@ export default definePluginApp((app) => {
   app.contentScripts.register({
     id: "pr-links",
     mount: ({ signal }) => mountPullRequestLinks(document, signal),
+  });
+  // The script has no side panel. This segment never shows: its useVisible runs once per thread
+  // pane, in bb's context row, and lends the script the side panel of the thread in view.
+  app.slots.experimental_threadContextSegment({
+    id: "pr-links",
+    title: "Pull request links",
+    group: "9_pr-links",
+    summary: () => null,
+    useVisible: usePullRequestLinks,
   });
   // The Info tab's GitButler branches, before bb's Commits (10): they name what those are on.
   app.slots.experimental_threadInfoSection({

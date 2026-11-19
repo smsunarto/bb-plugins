@@ -1,34 +1,54 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, test } from "vitest";
-import { cleanup, fireEvent, waitFor } from "@testing-library/react";
-import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import { cleanup, fireEvent } from "@testing-library/react";
+import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import type { PluginContentScriptContext } from "@get-bb/plugin-sdk/app";
 import { changeKeySchema } from "../core/ids.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { resetKnownPullRequests } from "./open-pull-request.ts";
-import { lentThread, mountPullRequestLinks, useLendPullRequestLinks } from "./pr-links.ts";
+import { rememberChange, rememberMiss, resetKnownPullRequests } from "./open-pull-request.tsx";
+
+// The app's own registrations: the script that takes the click, and the segment that lends it a panel.
+const app = await loadPluginApp(() => import("./app.tsx"));
+const script = app.contentScripts.find((each) => each.id === "pr-links")!;
+const segment = app.threadContextSegments.find((each) => each.id === "pr-links")!;
 
 const PR = "https://github.com/acme/api/pull/12";
 const KEY = changeKeySchema.parse("gh:acme/api:scott:scott/route");
 
-let script: AbortController;
-/** What reached bb's own handler below the document: the clicks the script let through. */
+let stop: AbortController;
+/** The clicks the script let through to bb's own handler below the document. */
 let reachedBb: string[];
 
-beforeEach(() => {
-  script = new AbortController();
+beforeEach(async () => {
+  stop = new AbortController();
   reachedBb = [];
+  await script.mount({
+    pluginId: "source-control",
+    generation: 1,
+    signal: stop.signal,
+  } as PluginContentScriptContext);
 });
 
 afterEach(() => {
-  script.abort();
+  stop.abort();
   cleanup();
   document.body.replaceChildren();
   resetKnownPullRequests();
 });
 
-function Lender({ threadId }: { threadId: string }) {
-  useLendPullRequestLinks(threadId);
-  return null;
+function Pane({ threadId }: { threadId: string }) {
+  const visible = segment.useVisible!({ threadId, projectId: "p", environment: null });
+  return visible ? <span>shown</span> : null;
+}
+
+/** A thread pane, with the route on `routeThread`. */
+function pane(routeThread: string | null = "thr_a", openTab = () => true) {
+  return renderSlot({ component: Pane as never }, { threadId: "thr_a" } as never, {
+    experimental_rpcContract: sourceControlContract,
+    pluginId: "source-control",
+    context: { threadId: routeThread },
+    experimental_panel: { openTab },
+  });
 }
 
 /** A link as bb's Markdown draws one: its own click handler opens the URL and prevents the default. */
@@ -45,67 +65,87 @@ function markdownLink(href: string, inside?: HTMLElement): HTMLAnchorElement {
   return anchor;
 }
 
-function mount(routeThread: string | null = "thr_a") {
-  const slot = renderSlot({ component: Lender as never }, { threadId: "thr_a" } as never, {
-    experimental_rpcContract: sourceControlContract,
-    pluginId: "source-control",
-    context: { threadId: routeThread },
-    experimental_panel: { openTab: () => true },
-    rpc: { legacyChange: () => ({ "pr:acme/api#12": { key: KEY, problem: null } }) } as never,
-  });
-  mountPullRequestLinks(document, script.signal);
-  return slot;
-}
-
-test("a plain click on a pull request link in a message opens its review beside the thread, not bb's handler", async () => {
-  const slot = mount();
+test("a plain click on a message's pull request link opens a Review tab for it beside the thread", () => {
+  const slot = pane();
+  expect(slot.queryByText("shown")).toBeNull();
   fireEvent.click(markdownLink(PR));
   expect(reachedBb).toEqual([]);
-  await waitFor(() =>
-    expect(slot.inspection.experimental_panelCalls).toMatchObject([
-      { method: "openTab", options: { tab: { id: "review" }, params: { key: KEY } } },
-    ]),
-  );
+  expect(slot.inspection.experimental_panelCalls).toEqual([
+    {
+      method: "openTab",
+      options: {
+        tab: { id: "review", context: { kind: "thread" }, availability: "action" },
+        params: { pr: "acme/api#12" },
+        title: "Review · #12",
+      },
+    },
+  ]);
 });
 
-test("modified clicks, deep links and other links reach bb as before", async () => {
-  const slot = mount();
+test("a pull request this window has opened opens its Change's tab at once", () => {
+  rememberChange("pr:acme/api#12", KEY);
+  const slot = pane();
+  fireEvent.click(markdownLink(PR));
+  expect(slot.inspection.experimental_panelCalls).toMatchObject([
+    { method: "openTab", options: { params: { key: KEY } } },
+  ]);
+});
+
+test("a pull request Source Control just failed to show goes straight to GitHub", () => {
+  rememberMiss("pr:acme/api#12", "No access.");
+  const slot = pane();
+  fireEvent.click(markdownLink(PR));
+  expect(reachedBb).toEqual([PR]);
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("modified, middle and alt clicks, deep links and other links reach bb as before", () => {
+  const slot = pane();
   const link = markdownLink(PR);
   fireEvent.click(link, { metaKey: true });
   fireEvent.click(link, { ctrlKey: true });
+  fireEvent.click(link, { shiftKey: true });
+  fireEvent.click(link, { altKey: true });
+  fireEvent.click(link, { button: 1 });
   fireEvent.click(markdownLink(`${PR}/files`));
   fireEvent.click(markdownLink("https://github.com/acme/api/issues/12"));
-  expect(reachedBb).toEqual([PR, PR, `${PR}/files`, "https://github.com/acme/api/issues/12"]);
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(reachedBb).toHaveLength(7);
   expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });
 
 test("Source Control's own links are its own: an explicit Open on GitHub still reaches GitHub", () => {
-  mount();
+  const slot = pane();
   const root = document.createElement("div");
   root.dataset["bbPlugin"] = "source-control";
   document.body.append(root);
   fireEvent.click(markdownLink(PR, root));
   expect(reachedBb).toEqual([PR]);
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });
 
-test("with no thread in view, nothing is lent and the link goes to GitHub", () => {
-  mount(null);
-  expect(lentThread()).toBeNull();
+test("where the thread has no side panel, the link goes to GitHub", () => {
+  pane("thr_a", () => false);
   fireEvent.click(markdownLink(PR));
   expect(reachedBb).toEqual([PR]);
 });
 
-test("only the thread the route shows lends its opener, and only while mounted", () => {
-  const slot = mount("thr_a");
-  expect(lentThread()).toBe("thr_a");
-  slot.unmount();
-  expect(lentThread()).toBeNull();
+test("a pane whose thread the route does not show takes no click", () => {
+  const slot = pane("thr_other");
+  fireEvent.click(markdownLink(PR));
+  expect(reachedBb).toEqual([PR]);
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
+});
+
+test("once the thread's pane is gone, its links go to GitHub", () => {
+  pane().unmount();
+  fireEvent.click(markdownLink(PR));
+  expect(reachedBb).toEqual([PR]);
 });
 
 test("once the script stops, every click reaches bb", () => {
-  mount();
-  script.abort();
+  const slot = pane();
+  stop.abort();
   fireEvent.click(markdownLink(PR));
   expect(reachedBb).toEqual([PR]);
+  expect(slot.inspection.experimental_panelCalls).toEqual([]);
 });
