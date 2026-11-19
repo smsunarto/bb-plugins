@@ -19,6 +19,7 @@ import {
   type PluginThreadActionTarget,
 } from "@get-bb/plugin-sdk/app";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePullRequestClick } from "./open-pull-request.ts";
 import {
   canStillLand,
   commitKey,
@@ -141,6 +142,7 @@ function LandedCard({ target, threadId }: { target: LandedListed; threadId: stri
         {target.prs.map((ref) => (
           <PrRow
             key={prKey(ref)}
+            threadId={threadId}
             refValue={ref}
             read={data?.prs.find((pr) => sameRef(pr.ref, ref))}
           />
@@ -179,15 +181,24 @@ function counted(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
-function PrRow({ refValue, read }: { refValue: PrRef; read?: Landed["prs"][number] }) {
+function PrRow({
+  threadId,
+  refValue,
+  read,
+}: {
+  threadId: string;
+  refValue: PrRef;
+  read?: Landed["prs"][number];
+}) {
   const label = read?.title ?? prKey(refValue);
+  const href =
+    read?.url ?? `https://github.com/${refValue.owner}/${refValue.repo}/pull/${refValue.number}`;
+  const openReview = usePullRequestClick(threadId, href);
   return (
     <li>
       <UrlLink
-        href={
-          read?.url ??
-          `https://github.com/${refValue.owner}/${refValue.repo}/pull/${refValue.number}`
-        }
+        href={href}
+        onClick={openReview}
         className="flex min-w-0 items-center gap-2 py-1 text-foreground no-underline"
       >
         <Icon

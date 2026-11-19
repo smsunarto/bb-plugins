@@ -26,6 +26,7 @@ import { attentionChips, headerLabel, summarize } from "../core/status.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { GitHubMark, StateIcon } from "./page/icons.tsx";
 import { Hint } from "./ui.tsx";
+import { usePullRequestClick } from "./open-pull-request.ts";
 
 /** The thread's Source Control tab, as `openTab` names it. */
 export const SOURCE_CONTROL_TAB = {
@@ -131,6 +132,7 @@ export function PullRequestInfoRow({ threadId, environment }: ExperimentalThread
   const summary = summarize(row);
   const pr = summary?.pullRequest;
   const gitbutler = row?.state === "checkout" && row.local.read?.value.provider === "gitbutler";
+  const openReview = usePullRequestClick(threadId, pr?.url ?? "");
   if (!summary || !pr || !gitbutler) return null;
   const state = pr.state === "open" && pr.isDraft ? "draft" : pr.state;
   const next = pr.state === "open" ? attentionChips(summary)[0]?.label : undefined;
@@ -139,6 +141,7 @@ export function PullRequestInfoRow({ threadId, environment }: ExperimentalThread
       <span className="flex h-5 max-w-full min-w-0 items-center gap-2">
         <UrlLink
           href={pr.url}
+          onClick={openReview}
           aria-label={`Pull request ${pr.number}: ${PR_LABEL[state]}${next ? `, ${next}` : ""}`}
           title={pr.title}
           className="flex min-w-0 items-center gap-2 text-xs text-foreground no-underline transition-opacity hover:opacity-80 focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"

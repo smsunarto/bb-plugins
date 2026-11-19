@@ -67,6 +67,20 @@ export function parsePrReference(text: string): PrRef | null {
     : null;
 }
 
+/**
+ * A link to a pull request itself, `https://github.com/o/r/pull/12`, which
+ * the Review tab can show. A deep link (`/files`, `/commits/<sha>`, a comment's
+ * `#issuecomment-…`, a query) names a place only GitHub shows, so it is null.
+ */
+export function parsePrLink(href: string): PrRef | null {
+  const match = PR_LINK.exec(href.trim());
+  return match ? parsePrReference(`${match[1]}/${match[2]}#${match[3]}`) : null;
+}
+const PR_LINK = new RegExp(`^https://(?:www\\.)?github\\.com/(${NAME})/(${NAME})/pull/(\\d+)/?$`);
+
+/** The server's lookup key for a pull request's Change: `legacyChange` stores it by this. */
+export const prLookup = (ref: PrRef) => `pr:${prKey(ref).toLowerCase()}`;
+
 /** Reads `owner/repo@sha` or a github.com commit URL. Null for anything else. */
 export function parseCommitReference(text: string): CommitRef | null {
   const trimmed = text.trim();

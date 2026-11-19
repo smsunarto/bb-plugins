@@ -22,6 +22,7 @@ import type { ChangeKey } from "../core/ids.ts";
 import { BranchActions, type Dispatch, type Outcome } from "./branch-actions.tsx";
 import { MergeButton, repoOfKey, useThreadMerge } from "./merge.tsx";
 import { useOpenReview } from "./open-review.ts";
+import { usePullRequestClick } from "./open-pull-request.ts";
 import { CreatePullRequest } from "./publish.tsx";
 import {
   FileDiffCard,
@@ -503,7 +504,16 @@ function ChecksChip({ checks }: { checks: NonNullable<ForgeValue>["checks"] }) {
 }
 
 /** A branch's review: its state and checks from the forge for the thread's own branch. */
-function ReviewChips({ branch, forge }: { branch: Branch; forge: ForgeValue | undefined }) {
+function ReviewChips({
+  threadId,
+  branch,
+  forge,
+}: {
+  threadId: string;
+  branch: Branch;
+  forge: ForgeValue | undefined;
+}) {
+  const openReview = usePullRequestClick(threadId, forge?.url ?? "");
   if (forge) {
     const look = PR_LOOK[forge.state === "open" && forge.isDraft ? "draft" : forge.state];
     return (
@@ -513,6 +523,7 @@ function ReviewChips({ branch, forge }: { branch: Branch; forge: ForgeValue | un
           <span className="inline-flex shrink-0">
             <UrlLink
               href={forge.url}
+              onClick={openReview}
               className={cn(
                 badgeVariants({ variant: look.variant }),
                 PILL,
@@ -685,7 +696,7 @@ const BranchCard = memo(function BranchCard({
                 {look.label}
               </Badge>
             ) : null}
-            <ReviewChips branch={branch} forge={forge} />
+            <ReviewChips threadId={threadId} branch={branch} forge={forge} />
           </>
         }
       />
