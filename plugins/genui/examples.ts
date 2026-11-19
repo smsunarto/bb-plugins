@@ -7,7 +7,7 @@ import { instructionFiles } from "@bb-plugins/instructions";
 // pages in gallery/app/ (appLint.test.ts keeps them lint-clean).
 import { readFile } from "node:fs/promises";
 import { collectLoads, compile } from "./core";
-import { COMPONENTS, componentSignature, type ComponentName } from "./core/catalog";
+import { componentSignature, TAUGHT_COMPONENTS, type ComponentName } from "./core/catalog";
 import { listGallery, loadGalleryFile, packagePath, readGallerySpec } from "./data-source";
 
 const instructionText = instructionFiles(import.meta.url);
@@ -80,7 +80,7 @@ const NOTES: Partial<Record<ComponentName, string>> = {
 };
 
 export function isComponentName(name: string): name is ComponentName {
-  return Object.hasOwn(COMPONENTS, name);
+  return (TAUGHT_COMPONENTS as readonly string[]).includes(name);
 }
 
 /** Gallery specs that show `component`, the plain one first. */

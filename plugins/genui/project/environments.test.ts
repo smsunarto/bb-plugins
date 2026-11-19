@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import type { EnvironmentDetail } from "../core/environments";
-import type { ThreadChange } from "./checkout";
 import {
   checkoutFailure,
   checkoutStatus,
   createEnvironmentsSource,
-  environmentPull,
   environmentKind,
   environmentLife,
   mapLimit,
@@ -74,46 +72,27 @@ function workspace(branch: string, overrides: Partial<WorkspaceEntry> = {}): Wor
   };
 }
 
-// Source Control's own row schema, so these fixtures are rows it can really
-// send. Imported at run time: its sources typecheck under its own settings.
-const SOURCE_CONTROL_CHANGE = new URL("../../source-control/src/core/change.ts", import.meta.url).href;
-const { threadChangeSchema } = (await import(/* @vite-ignore */ SOURCE_CONTROL_CHANGE)) as {
-  threadChangeSchema: { parse(value: unknown): unknown };
-};
+/** A pull request as Source Control's `statusForThread` row carries it. */
+const PULL_REQUEST = { number: 424, title: "Offline search index", url: "https://github.com/acme/app/pull/424", state: "draft" } as const;
 
-/** A pull request as Source Control's forge read stores it. */
-const PULL_REQUEST = {
-  number: 424,
-  url: "https://github.com/acme/app/pull/424",
-  title: "Offline search index",
-  state: "open",
-  isDraft: true,
-  headRefOid: "82af8f087df1cb963097461359446d9a69b36dc9",
-  baseRef: "main",
-  reviewDecision: null,
-  approvals: 0,
-  mergeable: "mergeable",
-  additions: 12,
-  deletions: 3,
-  changedFiles: 2,
-  commits: 2,
-  checks: { passed: 3, failed: 1, pending: 0 },
-} as const;
-
-/** One thread's row from Source Control's `changeForThread`, checked against Source Control's schema. */
-function change(branch: string | null, forge: { read: { value: object | null; at: number } | null; problem: object | null }): ThreadChange {
-  return threadChangeSchema.parse({
-    state: "checkout",
-    placement: { hostId: "host_a", hostName: "laptop", path: "/work/env_wt01", environmentId: "env_wt01" },
-    readAsGit: false,
-    branch,
+/**
+ * One thread's row from Source Control's `statusForThread`, in the shape its
+ * contract documents (plugins/source-control/src/core/status.ts); `extra`
+ * adds fields such as BBP-32's `forge`.
+ */
+function status(branch: string | null, pullRequest: object | null, extra: Record<string, unknown> = {}): unknown {
+  return {
+    state: "change",
     key: null,
-    local: { read: null, problem: null },
-    forge,
-  }) as ThreadChange;
+    branch,
+    pullRequest,
+    line: pullRequest === null ? "Pushed" : "Checks failing",
+    chips: [],
+    tone: pullRequest === null ? "neutral" : "error",
+    sort: 0,
+    ...extra,
+  };
 }
-
-const READ = { read: { value: PULL_REQUEST, at: 1 }, problem: null };
 
 /**
  * `bb.sdk.plugins.callRpc` for Source Control, answering from
@@ -133,7 +112,7 @@ function pluginReads(reads: Record<string, (input: never) => unknown>) {
 function fakeBb(
   options: {
     status?: (environmentId: string, base: string | null) => unknown;
-    changes?: (threadId: string) => unknown;
+    statuses?: (threadId: string) => unknown;
   } = {},
 ) {
   const calls: { method: string; args: unknown }[] = [];
@@ -191,9 +170,9 @@ function fakeBb(
         const branch = environments[args.environmentId]?.branchName ?? "main";
         return { ok: true, value: workspace(branch) };
       },
-      "source-control.changeForThread": ({ keys }: { keys: string[] }) => {
-        calls.push({ method: "changeForThread", args: keys });
-        return Object.fromEntries(keys.map((key) => [key, options.changes?.(key) ?? change("wt/env_wt01", READ)]));
+      "source-control.statusForThread": ({ keys }: { keys: string[] }) => {
+        calls.push({ method: "statusForThread", args: keys });
+        return Object.fromEntries(keys.map((key) => [key, options.statuses?.(key) ?? status("wt/env_wt01", PULL_REQUEST)]));
       },
     }),
   };
@@ -257,8 +236,8 @@ describe("environments: the list", () => {
     expect(await source.environments("../etc", false)).toMatchObject({ ok: false, reason: "invalid" });
   });
 
-  it("reads the default view's details for the markdown fallback", async () => {
-    const { source } = fakeBb();
+  it("reads the default view's details for the markdown fallback, with one Source Control read and no thread list per environment", async () => {
+    const { source, calls } = fakeBb();
     const answer = await source.environments("thr_mine00", true);
     if (!answer.ok) throw new Error(answer.message);
     // The default view: environments with live threads (env_wt02 has none).
@@ -268,6 +247,10 @@ describe("environments: the list", () => {
       ["env_gone", true],
       ["env_wt02", false],
     ]);
+    expect(calls.filter((call) => call.method === "statusForThread").map((call) => call.args)).toEqual([["thr_wt0100", "thr_wt0101"]]);
+    expect(calls.filter((call) => call.method === "threads.list")).toHaveLength(1);
+    const worktree = answer.environments.find((entry) => entry.id === "env_wt01");
+    expect(worktree?.detail?.pull).toMatchObject({ ok: true, pullRequest: { number: 424 } });
   });
 });
 
@@ -296,28 +279,40 @@ describe("environments: one environment's detail", () => {
       behind: 1,
       uncommitted: { files: 2, additions: 12, deletions: 3, complete: true },
     });
-    expect(detail.pull).toMatchObject({ ok: true, pullRequest: { number: 424, state: "draft", checks: { state: "failing", failed: 1, passed: 3 } } });
+    expect(detail.pull).toEqual({ ok: true, pullRequest: PULL_REQUEST, line: "Checks failing", tone: "error", forge: { state: "unknown" } });
     expect(calls.find((call) => call.method === "checkoutStatus")?.args).toEqual({ environmentId: "env_wt01", base: "main" });
-    // Asked of Source Control, for the environment's own live threads.
-    expect(calls.find((call) => call.method === "changeForThread")?.args).toEqual(["thr_wt0100", "thr_wt0101"]);
+    // Asked of Source Control, for the environment's own threads; the app watches the same rows.
+    expect(calls.find((call) => call.method === "statusForThread")?.args).toEqual(["thr_wt0100", "thr_wt0101"]);
+    expect(detail.threadIds).toEqual(["thr_wt0100", "thr_wt0101"]);
   });
 
   it("says why a pull request couldn't be shown, never \"none\", when Source Control has no answer", async () => {
-    const pull = async (changes: (threadId: string) => unknown) => {
-      const { source } = fakeBb({ changes });
+    const pull = async (statuses: (threadId: string) => unknown) => {
+      const { source } = fakeBb({ statuses });
       return ((await source.environment("thr_mine00", "env_wt01")) as EnvironmentDetail).pull;
     };
-    expect(await pull(() => ({ state: "pending" }))).toEqual({ ok: false, message: "Source Control hasn't read this branch's pull request yet" });
-    expect(await pull(() => change("wt/env_wt01", { read: null, problem: { kind: "auth", site: "github.com", detail: "token expired" } }))).toEqual({
-      ok: false,
-      message: "GitHub isn't signed in for Source Control",
-    });
+    expect(await pull(() => ({ state: "pending" }))).toEqual({ ok: false, message: "Source Control hasn't read this environment's threads yet" });
+    // A row that doesn't parse is as good as none.
+    expect(await pull(() => ({ state: "change", branch: 7 }))).toEqual({ ok: false, message: "Source Control hasn't read this environment's threads yet" });
     // A row for another branch of the checkout says nothing about this one.
-    expect(await pull(() => change("main", READ))).toMatchObject({ ok: false });
-    expect(await pull(() => change("wt/env_wt01", { read: { value: null, at: 1 }, problem: null }))).toEqual({ ok: true, pullRequest: null });
+    expect(await pull(() => status("main", PULL_REQUEST))).toEqual({ ok: false, message: "Source Control has no thread on wt/env_wt01" });
     expect(await pull(() => { throw new Error("source-control is disabled"); })).toEqual({
       ok: false,
       message: "Source Control couldn't say: source-control is disabled",
+    });
+  });
+
+  it("takes the row with a pull request first, and keeps whether the pull request was read when the row says (BBP-32)", async () => {
+    const pull = async (statuses: (threadId: string) => unknown) => {
+      const { source } = fakeBb({ statuses });
+      return ((await source.environment("thr_mine00", "env_wt01")) as EnvironmentDetail).pull;
+    };
+    expect(await pull((id) => (id === "thr_wt0100" ? status("wt/env_wt01", null) : status("wt/env_wt01", PULL_REQUEST)))).toMatchObject({ ok: true, pullRequest: PULL_REQUEST });
+    // Today's row doesn't say whether a null pull request was read.
+    expect(await pull(() => status("wt/env_wt01", null))).toEqual({ ok: true, pullRequest: null, line: "Pushed", tone: "neutral", forge: { state: "unknown" } });
+    expect(await pull(() => status("wt/env_wt01", null, { forge: { state: "read", at: 5 }, source: "checkout" }))).toMatchObject({ forge: { state: "read", at: 5 } });
+    expect(await pull(() => status("wt/env_wt01", PULL_REQUEST, { forge: { state: "failed", at: 4, problem: { kind: "auth" } } }))).toMatchObject({
+      forge: { state: "failed", at: 4, problem: "GitHub isn't signed in for Source Control" },
     });
   });
 
@@ -325,7 +320,7 @@ describe("environments: one environment's detail", () => {
     const { source, calls } = fakeBb();
     const detail = (await source.environment("thr_mine00", "env_wt02")) as EnvironmentDetail;
     expect(detail.pull).toEqual({ ok: false, message: "No thread on this environment, so Source Control has no pull request for it" });
-    expect(calls.some((call) => call.method === "changeForThread")).toBe(false);
+    expect(calls.some((call) => call.method === "statusForThread")).toBe(false);
   });
 
   it("doesn't look for a pull request on the default branch", async () => {
@@ -333,7 +328,7 @@ describe("environments: one environment's detail", () => {
     const detail = (await source.environment("thr_mine00", "env_main")) as EnvironmentDetail;
     expect(detail.checkout).toMatchObject({ ok: true, onBase: true, ahead: null, behind: null });
     expect(detail.pull).toBeNull();
-    expect(calls.some((call) => call.method === "changeForThread")).toBe(false);
+    expect(calls.some((call) => call.method === "statusForThread")).toBe(false);
   });
 
   it("says a missing workspace folder honestly", async () => {
@@ -357,7 +352,7 @@ describe("environments: one environment's detail", () => {
     const detail = (await source.environment("thr_mine00", "env_wt01")) as EnvironmentDetail;
     expect(detail.checkout).toMatchObject({ ok: true, base: "main" });
     expect(calls.map((call) => call.args)).toEqual([{ environmentId: "env_wt01", base: null }]);
-    expect(detail.pull).toEqual({ ok: true, pullRequest: null });
+    expect(detail.pull).toEqual({ ok: true, pullRequest: null, line: "Pushed", tone: "neutral", forge: { state: "unknown" } });
   });
 });
 
@@ -377,8 +372,7 @@ function fakeBbWithoutBase() {
         calls.push({ method: "checkoutStatus", args });
         return { ok: true, value: workspace("wt/env_wt01") };
       },
-      "source-control.changeForThread": ({ keys }: { keys: string[] }) =>
-        Object.fromEntries(keys.map((key) => [key, change("wt/env_wt01", { read: { value: null, at: 1 }, problem: null })])),
+      "source-control.statusForThread": ({ keys }: { keys: string[] }) => Object.fromEntries(keys.map((key) => [key, status("wt/env_wt01", null)])),
     }),
   };
   return { source: createEnvironmentsSource(sdk as unknown as BbPluginApi["sdk"]), calls };
@@ -452,37 +446,5 @@ describe("environments: mapping BB's records", () => {
     expect(await all).toEqual([10, 20, 30, 40, 50]);
     expect(peak).toBe(2);
     expect(await mapLimit([], 3, async () => 1)).toEqual([]);
-  });
-});
-
-describe("environments: a pull request from Source Control", () => {
-  const pr = (overrides: Partial<Record<keyof typeof PULL_REQUEST, unknown>>) => {
-    const row = change("wt/x", { read: { value: { ...PULL_REQUEST, isDraft: false, ...overrides }, at: 1 }, problem: null });
-    const pull = environmentPull([row], "wt/x");
-    if (!pull.ok || pull.pullRequest === null) throw new Error("no pull request");
-    return pull.pullRequest;
-  };
-
-  it("reads state, checks, review and mergeability as Environments shows them", () => {
-    expect(pr({ isDraft: true })).toMatchObject({ state: "draft", mergeability: "draft", attention: "draft", headRef: "wt/x", baseRef: "main" });
-    expect(pr({})).toMatchObject({
-      state: "open",
-      checks: { state: "failing", passed: 3, failed: 1, pending: 0, total: 4 },
-      review: { state: "none", requests: 0 },
-      attention: "checks_failed",
-      updatedAt: null,
-    });
-  });
-
-  it("names what an open pull request waits on, most urgent first", () => {
-    const passing = { checks: { passed: 2, failed: 0, pending: 0 } };
-    expect(pr({ ...passing, mergeable: "conflicting" }).attention).toBe("conflicts");
-    expect(pr({ ...passing, reviewDecision: "changes-requested" }).attention).toBe("changes_requested");
-    expect(pr({ checks: { passed: 1, failed: 0, pending: 1 } }).attention).toBe("checks_pending");
-    expect(pr({ ...passing, reviewDecision: "review-required" }).attention).toBe("review_requested");
-    expect(pr({ ...passing, reviewDecision: "approved" }).attention).toBe("ready_to_merge");
-    expect(pr({ ...passing, mergeable: "unknown" }).attention).toBe("none");
-    expect(pr({ state: "merged" }).attention).toBe("merged");
-    expect(pr({ checks: { passed: 0, failed: 0, pending: 0 } }).checks.state).toBe("no_checks");
   });
 });

@@ -387,7 +387,9 @@ the instructions list it.
   with a Refresh. Threads also shows each thread's latest message, the
   question or approval it waits on, its model and reasoning level, and
   "Waiting on N running workers" for an idle parent. Pull requests are left
-  to Source Control's `::source-control{pr="owner/repo#123"}` card. Tests
+  to Source Control's `::source-control{pr="owner/repo#123"}` card; the
+  retired `PullRequest(refs)` renders only for old replies (catalog
+  `retired`), as links. Tests
   renders a list, a vitest/jest JSON report or a JUnit XML report (`Load`
   reads `.xml` as JUnit), Json any value as a collapsible tree.
 - Dev: the agent saves what a tool printed to `$BB_THREAD_STORAGE` and
@@ -416,8 +418,9 @@ the instructions list it.
   user approves in one message), Decision (a weighted matrix whose weights
   the user tunes), Estimate (three-point, P50/P80/P90), and Environments,
   which reads the project's checkouts and worktrees from BB: branch,
-  threads, uncommitted changes, ahead/behind and, from Source Control, the
-  pull request.
+  threads, uncommitted changes, ahead/behind and, from Source Control's
+  `statusForThread` rows for its threads (core/sourceControl.ts), the pull
+  request.
 - Evidence, drawn from the user's own BB history (claims without proof,
   visual parity disputes, wrong installed builds, speech errors):
   - Acceptance: criteria × conditions, each cell passed, failed, blocked,

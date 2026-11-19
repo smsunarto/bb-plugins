@@ -6,6 +6,7 @@ import {
   FORBIDDEN_PROPERTIES,
   FUNCTIONS,
   METHODS,
+  TAUGHT_COMPONENTS,
   type ComponentSpec,
   type FunctionName,
   type ParamKind,
@@ -19,6 +20,8 @@ import type { Value } from "./types";
 // Maps, not the catalog objects, so spec-controlled names like `constructor`
 // never hit Object.prototype.
 export const COMPONENT_SPECS: ReadonlyMap<string, ComponentSpec> = new Map(Object.entries(COMPONENTS));
+/** Local (bb-plugins): components kept only for old replies (catalog.ts `retired`). */
+const RETIRED: ReadonlySet<string> = new Set(Object.keys(COMPONENTS).filter((name) => !(TAUGHT_COMPONENTS as readonly string[]).includes(name)));
 export const ACTION_SPECS: ReadonlyMap<string, ComponentSpec> = new Map(Object.entries(ACTIONS));
 
 type MethodName = (typeof METHODS)[keyof typeof METHODS][number];
@@ -269,15 +272,6 @@ function radioOption(item: Expr): Expr | undefined {
   return { type: "object", entries, pos: item.pos };
 }
 
-/** Local (bb-plugins): a retired `PullRequest` ref as a markdown link: `owner/repo#1` or a github.com pull URL; other text as is. */
-function pullRequestLink(ref: string): string {
-  const match =
-    /^([\w.-]+)\/([\w.-]+)#(\d+)$/.exec(ref) ?? /^https?:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)\b/i.exec(ref);
-  if (match === null) return ref.replace(/[\\`*_[\]<>]/g, "\\$&");
-  const [, owner, repo, number] = match;
-  return `[${owner}/${repo}#${number}](https://github.com/${owner}/${repo}/pull/${number})`;
-}
-
 interface Ref {
   readonly name: string;
   readonly pos: Pos;
@@ -294,6 +288,36 @@ export function validate(statements: readonly Statement[], diagnostics: Diagnost
   return new Validator(diagnostics).run(statements);
 }
 
+/** Local (bb-plugins): an expression's direct sub-expressions. */
+function subExprs(expr: Expr): readonly Expr[] {
+  switch (expr.type) {
+    case "template":
+      return expr.parts;
+    case "list":
+      return expr.items;
+    case "object":
+      return expr.entries.map((entry) => entry.value);
+    case "unary":
+      return [expr.operand];
+    case "binary":
+      return [expr.left, expr.right];
+    case "conditional":
+      return [expr.test, expr.then, expr.else];
+    case "member":
+      return [expr.object];
+    case "index":
+      return [expr.object, expr.index];
+    case "call":
+      return [...expr.args, ...expr.named.map((arg) => arg.value)];
+    case "method":
+      return [expr.object, ...expr.args, ...expr.named.map((arg) => arg.value)];
+    case "arrow":
+      return [expr.body];
+    default:
+      return [];
+  }
+}
+
 class Validator {
   private readonly states = new Map<string, { readonly index: number; readonly decl: Decl }>();
   private readonly named = new Map<string, Decl>();
@@ -301,6 +325,10 @@ class Validator {
   private readonly stateDecls: Decl[] = [];
   /** Local (bb-plugins): config-object field names (`{name: "…"}`) and the states they bind. */
   private readonly fieldStates = new Map<string, string>();
+  /** Local (bb-plugins): states a rewrite declared; a field name never binds one. */
+  private readonly synthesized = new Set<string>();
+  /** Local (bb-plugins): each Decision question's Card and the Radio it asks, for unwrapping inside a Form. */
+  private readonly decisionQuestions = new Map<CallExpr, CallExpr>();
 
   constructor(private readonly diagnostics: DiagnosticList) {}
 
@@ -379,7 +407,38 @@ class Validator {
     for (const [name, decl] of this.named) {
       if (!used.has(name)) this.diagnostics.report(decl.pos, `\`${name}\` is never used`, "warning");
     }
+    this.unwrapDecisionsInForms(roots);
     return { states: this.stateDecls, named: this.named, roots };
+  }
+
+  /**
+   * Local (bb-plugins): a Decision question already inside a Form, directly
+   * or through a named value, is only its Radio: its own Card and Form would
+   * nest a second Form and send the pick twice.
+   */
+  private unwrapDecisionsInForms(roots: readonly Expr[]): void {
+    if (this.decisionQuestions.size === 0) return;
+    const seen = new Set<string>();
+    const visit = (expr: Expr, inForm: boolean): void => {
+      if (expr.type === "ident") {
+        const decl = this.named.get(expr.name);
+        const key = `${expr.name}\0${inForm}`;
+        if (decl !== undefined && !seen.has(key)) {
+          seen.add(key);
+          visit(decl.value, inForm);
+        }
+        return;
+      }
+      const radio = expr.type === "call" ? this.decisionQuestions.get(expr) : undefined;
+      if (radio !== undefined && inForm) {
+        // validate owns the parsed AST before it becomes the program (readonly is type-level).
+        Object.assign(expr as unknown as { name: string; args: Expr[]; named: NamedArg[] }, { name: radio.name, args: radio.args, named: radio.named });
+        return;
+      }
+      const nowInForm = inForm || (expr.type === "call" && expr.name === "Form");
+      for (const child of subExprs(expr)) visit(child, nowInForm);
+    };
+    for (const root of roots) visit(root, false);
   }
 
   private refs(expr: Expr): Refs {
@@ -617,7 +676,7 @@ class Validator {
       return `\`${name}\` is a value and cannot be called; only components, actions and functions can`;
     }
     const isFunctionLike = name[0] === name[0].toLowerCase();
-    const candidates = [...COMPONENT_SPECS.keys(), ...ACTION_SPECS.keys(), ...FUNCTION_ARITY.keys()];
+    const candidates = [...TAUGHT_COMPONENTS, ...ACTION_SPECS.keys(), ...FUNCTION_ARITY.keys()];
     // Local (bb-plugins): name the closest few, never the whole catalog; the
     // full list filled a phone screen and the reference already has it.
     const fallback = isFunctionLike
@@ -646,6 +705,10 @@ class Validator {
   /** Maps arguments onto catalog params and checks what is knowable before evaluation. */
   private catalogCall(expr: CallExpr, spec: ComponentSpec): void {
     const sig = signature(expr.name, spec);
+    if (RETIRED.has(expr.name)) {
+      // Local (bb-plugins): still rendered for replies written before it was retired; no prompt teaches it.
+      this.diagnostics.report(expr.pos, `\`${expr.name}\` was retired; its pull requests are shown as links. The Source Control card shows a pull request's status`, "warning");
+    }
     const slots: (Expr | undefined)[] = spec.params.map((_, index) => expr.args[index]);
     if (expr.args.length > spec.params.length) {
       this.diagnostics.report(expr.args[spec.params.length].pos, `too many arguments: ${sig}`);
@@ -835,6 +898,7 @@ class Validator {
     let n = 1;
     while (this.states.has(name) || this.named.has(name)) name = `${base}${++n}`;
     this.registerState(name, initial ?? this.initialFor(holds, pos), pos);
+    this.synthesized.add(name);
     return name;
   }
 
@@ -876,7 +940,7 @@ class Validator {
     const base = own ? slug : component.toLowerCase();
     // Only a field spelled exactly like a declared state binds it; a normalized one never lands on one.
     const taken = (name: string) =>
-      claimed.has(name) || this.named.has(name) || (!(valid && name === field) && this.states.has(name));
+      claimed.has(name) || this.named.has(name) || this.synthesized.has(name) || (!(valid && name === field) && this.states.has(name));
     let name = base;
     let n = 1;
     while (taken(name)) name = `${base}${++n}`;
@@ -946,10 +1010,6 @@ class Validator {
    */
   private coerceCallee(expr: CallExpr, params: readonly string[]): void {
     if (this.named.has(expr.name) || params.includes(expr.name) || FUNCTION_ARITY.has(expr.name)) return;
-    if (expr.name === "PullRequest" && !COMPONENT_SPECS.has(expr.name)) {
-      this.coercePullRequest(expr);
-      return;
-    }
     if (expr.name === "Decision") this.coerceDecisionQuestion(expr);
     if (!COMPONENT_SPECS.has(expr.name) && !ACTION_SPECS.has(expr.name)) {
       const target = COMPONENT_ALIASES.get(expr.name) ?? uniqueCaseInsensitive(expr.name);
@@ -979,48 +1039,14 @@ class Validator {
   }
 
   /**
-   * Local (bb-plugins): `PullRequest(["owner/repo#1", url])`, retired on
-   * 2026-11-15 in favour of Source Control's card. Replies written before
-   * then still name it; their refs become links in a Text (warning). A list
-   * that is not all literal text keeps its error.
-   */
-  private coercePullRequest(expr: CallExpr): void {
-    const refs = expr.args[0] ?? expr.named.find((arg) => arg.name === "refs")?.value;
-    if (expr.args.length + expr.named.length > 1) return;
-    const texts: string[] = [];
-    if (refs !== undefined) {
-      if (refs.type !== "list" || refs.items.length === 0) return;
-      for (const item of refs.items) {
-        if (item.type !== "literal" || typeof item.value !== "string") return;
-        texts.push(item.value.trim());
-      }
-    }
-    const links = texts.map(pullRequestLink);
-    const markdown =
-      links.length === 0
-        ? "**Pull request:** see this thread's Source Control card"
-        : links.length === 1
-          ? `**Pull request:** ${links[0]}`
-          : `**Pull requests**\n${links.map((link) => `- ${link}`).join("\n")}`;
-    const mutable = expr as unknown as { name: string; args: Expr[]; named: NamedArg[] };
-    mutable.name = "Text";
-    mutable.args = [{ type: "literal", value: markdown, pos: refs?.pos ?? expr.pos }];
-    mutable.named = [];
-    this.diagnostics.report(
-      expr.pos,
-      "`PullRequest` was retired; its pull requests are shown as links. The Source Control card shows a pull request's status",
-      "warning",
-    );
-  }
-
-  /**
    * Local (bb-plugins): `Decision("Question?", [{label, description}, …])`
    * or `Decision({question, options})`: a question, not the options-against-
    * criteria table `Decision(options, criteria)` draws. With no criteria
    * and every option a text or a {label, description} object, the call
    * becomes `Card(null, [Form([Radio($decision, [{value, detail}, …],
    * label: question)])])` (warning), so the pick reaches the user's message
-   * as "Question? answer". Anything else keeps its errors.
+   * as "Question? answer"; inside a Form it is only the Radio
+   * (unwrapDecisionsInForms). Anything else keeps its errors.
    */
   private coerceDecisionQuestion(expr: CallExpr): void {
     if (expr.named.length > 0) return;
@@ -1055,9 +1081,10 @@ class Validator {
     const mutable = expr as unknown as { name: string; args: Expr[] };
     mutable.name = "Card";
     mutable.args = [{ type: "literal", value: null, pos: expr.pos }, { type: "list", items: [form], pos: options.pos }];
+    this.decisionQuestions.set(expr, radio as CallExpr);
     this.diagnostics.report(
       expr.pos,
-      `\`Decision\` scores options against criteria; with none it is a question, so it became a Radio bound to \`$${name}\`. Write a question as \`Card(null, [Form([Radio($pick, [{value, detail}], label: "Question?")])])\``,
+      `\`Decision\` scores options against criteria; with none it is a question, so it became a Radio bound to \`$${name}\`. Write a question as \`Radio($pick, [{value, detail}], label: "Question?")\` in a Form`,
       "warning",
     );
   }

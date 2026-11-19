@@ -4,7 +4,8 @@
 // shapes the backend (project/environments.ts) answers with, which the
 // renderer and the markdown fallback both read, and the pure helpers they
 // share. Nothing here talks to BB.
-import type { PullRequestInfo, ThreadDisplayStatus } from "./project";
+import type { ThreadDisplayStatus } from "./project";
+import type { EnvironmentPull } from "./sourceControl";
 
 /** BB environment ids: `env_` and lowercase letters and digits. */
 export const ENVIRONMENT_ID = /^env_[a-z0-9]{4,40}$/;
@@ -105,17 +106,21 @@ export interface CheckoutStatus {
   };
 }
 
-/** The branch's pull request: null when it has none or none was looked for (on the base branch, detached). */
-export type EnvironmentPull =
-  | { readonly ok: true; readonly pullRequest: PullRequestInfo | null }
-  | { readonly ok: false; readonly message: string };
+export type { EnvironmentPull } from "./sourceControl";
 
 export interface EnvironmentDetail {
   readonly ok: true;
   readonly id: string;
   readonly checkout: CheckoutStatus | CheckoutFailure;
-  /** Null when not asked (no branch of its own, or the checkout couldn't be read). */
+  /**
+   * The branch's pull request from Source Control's rows for the environment's
+   * threads (`threadIds`); null when not asked (no branch of its own, or the
+   * checkout couldn't be read). The app watches the same rows, so a row read
+   * since shows without asking again.
+   */
   readonly pull: EnvironmentPull | null;
+  /** The threads whose Source Control rows `pull` comes from, newest first. */
+  readonly threadIds: readonly string[];
   readonly fetchedAt: number;
 }
 

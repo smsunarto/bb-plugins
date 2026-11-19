@@ -21,7 +21,6 @@ import {
   type ProjectFailure,
   type ProjectRequest,
   type ProjectResult,
-  type PullRequestInfo,
   type ThreadDisplayStatus,
   type ThreadInfo,
   type ThreadsResult,
@@ -38,7 +37,6 @@ import {
   type CheckoutHead,
   type CheckoutProblem,
   type CheckoutTarget,
-  type ForgePullRequest,
 } from "./checkout";
 import { createSnapshots, fitChanges, PATCH_BYTES, SNAPSHOT_BYTES, snapshotKey, type SnapshotStorage } from "./snapshots";
 
@@ -140,60 +138,6 @@ export function changedFile(file: CheckoutFile, inline: boolean): ChangedFile {
           ? "too-large"
           : "on-demand",
   };
-}
-
-/**
- * A pull request as Environments shows it, from Source Control's read of it.
- * Source Control reports no auto-merge, merge queue, review-request count or
- * update time, so those read as off, 0 and unknown; `head` is the branch the
- * checkout is on.
- */
-export function pullRequestInfo(pr: ForgePullRequest, head: string): PullRequestInfo {
-  const state = pr.state === "open" && pr.isDraft ? "draft" : pr.state;
-  const { passed, failed, pending } = pr.checks;
-  const total = passed + failed + pending;
-  const checks = failed > 0 ? "failing" : pending > 0 ? "pending" : total === 0 ? "no_checks" : "passing";
-  const review =
-    pr.reviewDecision === "approved"
-      ? "approved"
-      : pr.reviewDecision === "changes-requested"
-        ? "changes_requested"
-        : pr.reviewDecision === "review-required"
-          ? "review_required"
-          : "none";
-  const mergeability = state === "draft" ? "draft" : pr.mergeable === "conflicting" ? "conflicts" : pr.mergeable;
-  return {
-    number: pr.number,
-    title: pr.title,
-    url: pr.url,
-    state,
-    baseRef: pr.baseRef,
-    headRef: head,
-    checks: { state: checks, passed, failed, pending, total },
-    review: { state: review, requests: 0 },
-    mergeability,
-    attention: attentionOf(state, checks, review, mergeability),
-    autoMerge: false,
-    inMergeQueue: false,
-    updatedAt: null,
-  };
-}
-
-/** What the pull request is waiting on, most urgent first. */
-function attentionOf(
-  state: PullRequestInfo["state"],
-  checks: PullRequestInfo["checks"]["state"],
-  review: PullRequestInfo["review"]["state"],
-  mergeability: PullRequestInfo["mergeability"],
-): PullRequestInfo["attention"] {
-  if (state === "merged" || state === "closed" || state === "draft") return state;
-  if (mergeability === "conflicts") return "conflicts";
-  if (checks === "failing") return "checks_failed";
-  if (review === "changes_requested") return "changes_requested";
-  if (checks === "pending") return "checks_pending";
-  if (review === "review_required") return "review_requested";
-  if (mergeability === "mergeable" && (checks === "passing" || checks === "no_checks")) return "ready_to_merge";
-  return "none";
 }
 
 /** The thread and its environment, or why there is none. */

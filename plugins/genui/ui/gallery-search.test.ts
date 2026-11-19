@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { COMPONENTS, type ComponentName } from "../core/catalog";
+import { COMPONENTS, TAUGHT_COMPONENTS, type ComponentName } from "../core/catalog";
 import { GALLERY_ORDER, searchComponents } from "./gallery-search";
 
 const names = (query: string, variants?: ReadonlyMap<ComponentName, readonly string[]>) =>
@@ -7,7 +7,7 @@ const names = (query: string, variants?: ReadonlyMap<ComponentName, readonly str
 
 describe("gallery search", () => {
   it("lists every catalog component exactly once", () => {
-    expect([...GALLERY_ORDER].sort()).toEqual(Object.keys(COMPONENTS).sort());
+    expect([...GALLERY_ORDER].sort()).toEqual([...TAUGHT_COMPONENTS].sort());
   });
 
   it("puts names that start with the query first, then names that contain it, ignoring case", () => {

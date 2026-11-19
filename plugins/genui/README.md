@@ -15,18 +15,24 @@ scalar literal is an input's starting value, `TextInput` and wrong-case names
 are renamed, and `Form("Question?", [...])` is wrapped in a Card. Shapes agents
 wrote in BB threads also render: `Select("label", options)` and
 `Select("key", "label", options)` as a labelled Select, `Decision` with a
-question and no criteria as a Radio question, `source:` where no caption shows
-it is dropped, and the retired `PullRequest(refs)` shows its refs as links.
-Each is a warning, and `check_ui` lists warnings on a passing block. Unknown names
-suggest at most three components instead of the whole list, and the failure
-card scrolls past a fixed height. A local `Number(x)` function reads the
-number a text input holds. `inline-ui.md` tells agents to run `check_ui` before
+question and no criteria as a Radio question (only the Radio inside a Form),
+and `source:` where no caption shows it is dropped. The retired
+`PullRequest(refs)` still renders, outside every prompt and the gallery: its
+refs as links, with Source Control's state on the one that is the thread's own
+pull request. Each is a warning, and `check_ui` lists warnings on a passing
+block. Unknown names suggest at most three components instead of the whole
+list, and the failure card scrolls past a fixed height. A closed block that
+doesn't compile shows that card, never the part of it that compiles. A local
+`Number(x)` function reads the number a text input holds, and an `Input`
+bound to a state declared as a number keeps it a number while its text reads
+as one. The `check_ui` tool's thread snippet tells agents to run it before
 sending a block that needs it, since Claude Code defers the tool and its
 description. When a person's thread goes idle on a reply whose `ui` block
 fails to compile, the server asks the agent once, agent-only, to resend it
-fixed; the _Repair broken UI_ setting turns this off. Environments reads a worktree's pull
-request from Source Control (`changeForThread`, for a thread on that
-environment), not from bb's GitHub PR status plugin.
+fixed (not in `bb genui ask` trials); the _Repair broken UI_ setting turns
+this off. Environments reads a worktree's pull request from Source Control's
+`statusForThread` rows for the environment's threads, and watches them while
+the row shows; GenUI reads no other pull request data.
 Repository integration adds generated icons, a gallery story, and Apache license
 checks. Lint reports inherited upstream diagnostics as warnings; the local
 integration files retain the repository error levels. Formatter baselines retain

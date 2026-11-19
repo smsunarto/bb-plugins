@@ -6,7 +6,7 @@
 // each thread line its own thread. Read-only: nothing here changes a checkout.
 // It polls, with backoff, only while visible and while a thread runs.
 import { useCallback, useEffect, useMemo, useReducer, useRef, type ReactNode } from "react";
-import { UrlLink, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
+import { experimental_useRpcKeyedQuery as useRpcKeyedQuery, UrlLink, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import {
@@ -27,16 +27,15 @@ import {
   type EnvironmentsView,
 } from "../../core/environments";
 import {
-  checkCounts,
-  CHECKS_LABEL,
   PR_STATE_LABEL,
   relativeTime,
   RUNNING,
   threadStatusLabel,
-  type ChecksState,
   type EnvironmentsResult,
   type PullRequestState,
 } from "../../core/project";
+import { environmentPull, forgeReadAt, noPullLabel, parseThreadStatuses, SOURCE_CONTROL_PLUGIN_ID, type StatusTone } from "../../core/sourceControl";
+import { sourceControlContract } from "../../source-control-contract";
 import type { rpcContract } from "../../server";
 import { useUiRuntime } from "../runtime";
 import { propsKey, usePersistedState } from "../usePersistedState";
@@ -68,19 +67,18 @@ const THREAD_LINES = 3;
 // A pull request's state wears Source Control's colours (its PR_LOOK and state icons), so a
 // pull request looks the same in both plugins. Merged is the theme's --pr-merged purple.
 // Class strings stay literal so Tailwind finds them.
-const STATE_TEXT: Record<PullRequestState, string> = {
+export const STATE_TEXT: Record<PullRequestState, string> = {
   open: "text-success",
   draft: "text-[var(--tertiary-foreground)]",
   merged: "text-[var(--pr-merged,var(--color-timeline-accent,var(--primary)))]",
   closed: "text-destructive",
 };
-const STATE_ICON: Record<PullRequestState, string> = {
+export const STATE_ICON: Record<PullRequestState, string> = {
   open: "GitPullRequest",
   draft: "GitPullRequestDraft",
   merged: "GitMerge",
   closed: "GitPullRequestClosed",
 };
-const CHECKS_TONE: Record<ChecksState, Tone> = { passing: "good", failing: "bad", pending: "warn", no_checks: "neutral", unknown: "neutral" };
 
 const KIND_ICON: Record<EnvironmentKind, string> = {
   checkout: "FolderGit",
@@ -485,7 +483,7 @@ function Facts({ environment, detail }: { environment: EnvironmentInfo; detail: 
     <span className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] leading-5 text-muted-foreground">
       <Uncommitted status={checkout} />
       <Position status={checkout} environment={environment} />
-      {detail.pull === null ? null : <PullFact pull={detail.pull} />}
+      {detail.pull === null ? null : <PullFact pull={detail.pull} threadIds={detail.threadIds} branch={checkout.branch} />}
     </span>
   );
 }
@@ -537,41 +535,60 @@ function Position({ status, environment }: { status: CheckoutStatus; environment
   );
 }
 
-function PullFact({ pull }: { pull: EnvironmentPull }) {
-  if (!pull.ok) {
+const STATUS_TONE: Record<StatusTone, Tone> = { neutral: "neutral", warning: "warn", error: "bad", success: "good", merged: "neutral" };
+
+/**
+ * Local (bb-plugins): the branch's pull request as Source Control's rows for
+ * the environment's threads say. The rows are watched while the fact shows,
+ * so Source Control reads a thread it hasn't read lately, and a newer row
+ * replaces the one the detail carried. Says when the pull request was read,
+ * when the row tells.
+ */
+function PullFact({ pull, threadIds, branch }: { pull: EnvironmentPull; threadIds: readonly string[]; branch: string | null }) {
+  const rows = useRpcKeyedQuery({
+    pluginId: SOURCE_CONTROL_PLUGIN_ID,
+    contract: sourceControlContract,
+    method: "statusForThread",
+    keys: threadIds,
+    enabled: threadIds.length > 0 && branch !== null,
+  });
+  const now = useNow();
+  const shown = rows.data === undefined || branch === null ? pull : environmentPull(threadIds, parseThreadStatuses(rows.data), branch);
+  if (!shown.ok) {
     return (
-      <span className="flex items-center gap-1" title={pull.message}>
+      <span className="flex items-center gap-1" title={shown.message}>
         <Icon name="GitPullRequest" aria-hidden className="size-3.5" />
         PR unknown
       </span>
     );
   }
-  const pr = pull.pullRequest;
+  const read = forgeReadAt(shown.forge);
+  const readText = read === null ? "" : read.at === null ? "never read" : `read ${relativeTime(read.at, now)}`;
+  const failed = read?.failed ?? null;
+  const pr = shown.pullRequest;
   if (pr === null) {
     return (
-      <span className="flex items-center gap-1">
+      <span className="flex items-center gap-1" title={[failed === null ? "" : `Last read failed: ${failed}`, readText].filter((part) => part !== "").join("\n") || undefined}>
         <Icon name="GitPullRequest" aria-hidden className="size-3.5" />
-        no PR
+        {noPullLabel(shown.forge)}
       </span>
     );
   }
-  const counts = checkCounts(pr.checks);
-  const checksShown = pr.state === "open" || pr.state === "draft";
+  const tone = STATUS_TONE[shown.tone];
   return (
     <UrlLink
       href={pr.url}
-      title={`#${pr.number} ${pr.title}\n${PR_STATE_LABEL[pr.state]} · ${CHECKS_LABEL[pr.checks.state]}${counts === "" ? "" : ` (${counts})`}`}
+      title={[`#${pr.number} ${pr.title}`, `${PR_STATE_LABEL[pr.state]} · ${shown.line}`, readText, failed === null ? "" : `Last read failed: ${failed}`].filter((part) => part !== "").join("\n")}
       className={cn("flex min-w-0 items-center gap-1 rounded-sm text-muted-foreground no-underline hover:text-foreground hover:underline", FOCUS_RING)}
     >
       <Icon name={STATE_ICON[pr.state]} aria-hidden className={cn("size-3.5 shrink-0", STATE_TEXT[pr.state])} />
       <span className="tabular-nums text-foreground">#{pr.number}</span>
       <span>{PR_STATE_LABEL[pr.state]}</span>
-      {checksShown && pr.checks.state !== "no_checks" ? (
-        <span className="flex items-center gap-1">
-          <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[CHECKS_TONE[pr.checks.state]], pr.checks.state === "pending" && "animate-pulse motion-reduce:animate-none")} />
-          {CHECKS_LABEL[pr.checks.state].replace("Checks ", "checks ")}
-        </span>
-      ) : null}
+      <span className="flex min-w-0 items-center gap-1">
+        {tone === "neutral" ? null : <span aria-hidden className={cn("size-1.5 shrink-0 rounded-full", TONE_DOT[tone])} />}
+        <span className="min-w-0 truncate">{shown.line}</span>
+      </span>
+      {failed === null ? null : <Icon name="AlertCircle" aria-label="Last read failed" className={cn("size-3 shrink-0", TONE_TEXT.warn)} />}
     </UrlLink>
   );
 }

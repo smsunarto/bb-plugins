@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from "react";
 import type { Action, PropsOf, Value } from "../../core/types";
+import { toNumber } from "../../core/evaluate";
 import { Button as BaseButton } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Icon } from "@/components/ui/icon";
@@ -143,6 +144,11 @@ export function Input({ props }: { props: PropsOf<"Input"> }) {
   const binding = props.value;
   const label = props.label ?? null;
   const placeholder = props.placeholder ?? null;
+  // Local (bb-plugins): a state declared as a number stays a number while the
+  // text reads as one ("2,300" is 2300), so arithmetic on it keeps working;
+  // the field keeps the text as typed until the state changes elsewhere.
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft !== null && text(toNumber(draft) ?? draft) === text(binding.value) ? draft : text(binding.value);
   return (
     <div className="flex min-w-0 flex-col gap-1">
       {label === null ? null : (
@@ -153,10 +159,15 @@ export function Input({ props }: { props: PropsOf<"Input"> }) {
       <InputField
         id={id}
         type="text"
-        value={text(binding.value)}
+        value={shown}
         placeholder={placeholder ?? undefined}
         aria-label={label === null ? (placeholder ?? binding.name) : undefined}
-        onChange={(event) => setValue(binding.name, event.currentTarget.value)}
+        onChange={(event) => {
+          const typed = event.currentTarget.value;
+          if (binding.number !== true) return setValue(binding.name, typed);
+          setDraft(typed);
+          setValue(binding.name, toNumber(typed) ?? typed);
+        }}
         className="h-8 px-2 text-[13px] placeholder:text-subtle-foreground"
       />
     </div>

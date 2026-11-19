@@ -1,11 +1,12 @@
 // A thread environment's checkout and pull request, both read through Source
 // Control: the checkout through its plain-git reads (`checkoutStatus`,
 // `checkoutFiles`, `checkoutPatches`), so bb's bundled Git plugin can stay
-// disabled, and the pull request through `changeForThread`, as Source
-// Control last read it for a thread on that checkout. The schemas copy only
-// the fields this plugin reads; zod drops the rest.
+// disabled, and the pull request through `statusForThread`, as Source
+// Control last read it for the threads on that checkout. The schemas copy
+// only the fields this plugin reads; zod drops the rest.
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { MAX_STATUS_KEYS, parseThreadStatuses, type ThreadStatus } from "../core/sourceControl";
 
 type Sdk = BbPluginApi["sdk"];
 
@@ -92,38 +93,6 @@ const filesSchema = read(
 );
 const patchesSchema = read(z.object({ patches: z.array(patchSchema) }));
 
-/** A pull request as Source Control's forge read stores it. */
-const pullRequestSchema = z.object({
-  number: z.number(),
-  url: z.string(),
-  title: z.string(),
-  state: z.enum(["open", "closed", "merged"]),
-  isDraft: z.boolean(),
-  baseRef: z.string(),
-  reviewDecision: z.enum(["approved", "changes-requested", "review-required"]).nullable(),
-  mergeable: z.enum(["mergeable", "conflicting", "unknown"]),
-  checks: z.object({ passed: z.number(), failed: z.number(), pending: z.number() }),
-});
-
-/** A pull request as Source Control reports it. */
-export type ForgePullRequest = z.infer<typeof pullRequestSchema>;
-
-const threadChangeSchema = z.discriminatedUnion("state", [
-  z.object({ state: z.literal("pending") }),
-  z.object({ state: z.literal("none"), reason: z.string() }),
-  z.object({
-    state: z.literal("checkout"),
-    branch: z.string().nullable(),
-    forge: z.object({
-      read: z.object({ value: pullRequestSchema.nullable(), at: z.number() }).nullable(),
-      problem: problemSchema.nullable(),
-    }),
-  }),
-]);
-
-/** One thread's Change as Source Control last read it. */
-export type ThreadChange = z.infer<typeof threadChangeSchema>;
-
 /** The checkout measured against `base`; null measures against its default branch. */
 export function checkoutStatus(sdk: Sdk, environmentId: string, base: string | null) {
   return sdk.plugins.callRpc({
@@ -164,19 +133,22 @@ export function checkoutPatches(
   });
 }
 
-/** Most threads asked about per environment; Source Control takes 200. */
-export const MAX_CHANGE_THREADS = 5;
-
 /**
- * Each thread's Change as Source Control last read it, keyed by thread id.
- * Source Control serves these from its store, so asking never reads a host
- * or GitHub; a thread it hasn't read yet is `pending`.
+ * Each thread's row as Source Control's `statusForThread` gives it, keyed by
+ * thread id: its pull request, status line and tone, from Source Control's
+ * store, so asking never reads a host or GitHub. Rows that don't parse are
+ * left out.
  */
-export function threadChanges(sdk: Sdk, threadIds: readonly string[]) {
-  return sdk.plugins.callRpc({
+export async function threadStatuses(
+  sdk: Sdk,
+  threadIds: readonly string[],
+): Promise<Record<string, ThreadStatus>> {
+  if (threadIds.length === 0) return {};
+  const rows = await sdk.plugins.callRpc({
     pluginId: SOURCE_CONTROL,
-    method: "changeForThread",
-    input: { keys: [...threadIds] },
-    outputSchema: z.record(z.string(), threadChangeSchema),
+    method: "statusForThread",
+    input: { keys: [...new Set(threadIds)].slice(0, MAX_STATUS_KEYS) },
+    outputSchema: z.record(z.string(), z.unknown()),
   });
+  return parseThreadStatuses(rows);
 }

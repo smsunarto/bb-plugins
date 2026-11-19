@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, useSyncExternalStore } from "react";
+import { act, useSyncExternalStore, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
 import type * as PluginSdkApp from "@get-bb/plugin-sdk/app";
@@ -24,6 +24,9 @@ const settings = vi.hoisted(() => {
   };
 });
 
+/** Source Control's rows as `statusForThread` serves them to a keyed read, by thread id. */
+const sourceControl = vi.hoisted(() => ({ rows: {} as Record<string, unknown> }));
+
 // Only BB's runtime is replaced; compilation, Fence, AppBlock and diagnostics are real.
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => ({
   ...(await importOriginal<typeof PluginSdkApp>()),
@@ -34,6 +37,14 @@ vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => ({
   useSettings: () => useSyncExternalStore(settings.subscribe, settings.get),
   Markdown: ({ content }: { content: string }) => <p>{content}</p>,
   experimental_Icon: () => <span aria-hidden="true" />,
+  UrlLink: ({ href, className, children }: { href: string; className?: string; children: ReactNode }) => (
+    <a href={href} className={className}>
+      {children}
+    </a>
+  ),
+  experimental_useRpcKeyedQuery: ({ keys, enabled }: { keys: readonly string[]; enabled?: boolean }) => ({
+    data: enabled === false ? undefined : Object.fromEntries(keys.flatMap((key) => (key in sourceControl.rows ? [[key, sourceControl.rows[key]]] : []))),
+  }),
 }));
 vi.mock("./useSuperseded", () => ({ useSuperseded: () => false, useReplyIndex: () => null }));
 
@@ -92,6 +103,66 @@ describe("SlotFence completion", () => {
     render("ui", status, "$seats = (");
     expect(container.querySelector('[role="status"]')).toBeNull();
     expect(container.querySelector('[role="alert"]')).not.toBeNull();
+  });
+});
+
+/** A rendered block: no entrance to play, and jsdom's missing observers stubbed. */
+function renderedBlocks() {
+  beforeEach(() => {
+    settings.set({ animations: false });
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    Object.defineProperty(Element.prototype, "animate", { configurable: true, value: () => ({ cancel() {}, finished: Promise.resolve() }) });
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(Element.prototype, "animate");
+  });
+}
+
+describe("a block that doesn't compile", () => {
+  renderedBlocks();
+  // A Decision option with too few scores; before the fix the compiling start of it rendered as a question.
+  const DECISION = 'Decision("Which?", [{name: "A", scores: [4]}])';
+
+  it("says so once its fence closes, instead of rendering the part that compiles", () => {
+    render("ui", "closed", DECISION, "broken:assistant:1");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain("This UI couldn't be rendered");
+    expect(container.querySelector('[role="radiogroup"]')).toBeNull();
+  });
+
+  it("keeps the part that compiles when the reply ended before the fence closed", () => {
+    render("ui", "unclosed", 'Card("Plan", [Text("Kept")])\nCard("x", [Choice(', "cut:assistant:1");
+    expect(container.textContent).toContain("Kept");
+  });
+});
+
+describe("an Input bound to a number", () => {
+  renderedBlocks();
+  it("keeps the state a number while its text reads as one, so the arithmetic on it keeps working", async () => {
+    const { fireEvent } = await import("@testing-library/react");
+    render(
+      "ui",
+      "closed",
+      '$ee = 750\n$n = 2\nCard("Cost", [Input($ee, label: "Premium"), Metric("Total", "$" + fmt($ee * $n))])',
+      "number:assistant:1",
+    );
+    const input = container.querySelector("input") as HTMLInputElement;
+    act(() => fireEvent.change(input, { target: { value: "1,250" } }));
+    expect(input.value).toBe("1,250");
+    expect(container.textContent).toContain("$2,500");
+    expect(container.textContent).not.toContain("needs a number");
+  });
+});
+
+describe("the retired PullRequest", () => {
+  renderedBlocks();
+  it("shows Source Control's state on the ref that is this thread's pull request, and the rest as links", () => {
+    sourceControl.rows = {
+      orbit: { state: "change", key: "gh:1", branch: "b", pullRequest: { number: 7, title: "Fix", url: "https://github.com/acme/client/pull/7", state: "open" }, line: "Checks failing", chips: [], tone: "error", sort: 0 },
+    };
+    render("ui", "closed", 'PullRequest(["acme/client#7", "acme/client#8"])', "pr:assistant:1");
+    const items = [...container.querySelectorAll("li")].map((item) => item.textContent);
+    expect(items).toEqual(["acme/client#7Open · Checks failing", "acme/client#8"]);
+    sourceControl.rows = {};
   });
 });
 

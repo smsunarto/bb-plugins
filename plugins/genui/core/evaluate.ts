@@ -124,7 +124,7 @@ function checkLength<T extends readonly Value[]>(list: T, pos: Pos): T {
  * 0, and text that spells a number (spaces and thousands commas allowed) is
  * that number; anything else, empty text included, is null.
  */
-function toNumber(value: Value): number | null {
+export function toNumber(value: Value): number | null {
   if (typeof value === "number") return finite(value);
   if (typeof value === "boolean") return value ? 1 : 0;
   if (typeof value !== "string") return null;
@@ -215,6 +215,19 @@ class Interpreter {
     private readonly state: UiState,
     private readonly data: ReadonlyMap<string, LoadedData>,
   ) {}
+
+  /** Local (bb-plugins): states whose initial value is a number, read once per evaluation. */
+  private numberStates: ReadonlySet<string> | undefined;
+
+  /** Local (bb-plugins): whether `$name` was declared a number, so a text input keeps it one. */
+  private declaredNumber(name: string): boolean {
+    this.numberStates ??= new Set(
+      Object.entries(initialState(this.program, this.data))
+        .filter(([, value]) => typeof value === "number")
+        .map(([state]) => state),
+    );
+    return this.numberStates.has(name);
+  }
 
   /** Reports a failure (a load still in flight is none) and restores the evaluation context saved before it; rethrows anything else. */
   recover(error: unknown, depth: number, suffix: string): EvalFailure {
@@ -555,7 +568,10 @@ class Interpreter {
       const mismatch = stateMismatch(label, param, arg.name, kindOf(value), "holds");
       const coerced = mismatch === null ? value : coerceState(param.holds, value);
       if (coerced === undefined) throw new RuntimeError(arg.pos, mismatch!);
-      const binding: Binding = { kind: "binding", name: arg.name, value: coerced };
+      const binding: Binding =
+        param.holds === "text" && this.declaredNumber(arg.name)
+          ? { kind: "binding", name: arg.name, value: coerced, number: true }
+          : { kind: "binding", name: arg.name, value: coerced };
       return binding;
     }
     const value = param.kind === "function" ? this.value(arg, scope) : this.expr(arg, scope);

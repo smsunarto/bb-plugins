@@ -50,11 +50,25 @@ const BENCHMARK_SOURCE = `Card("Cold start", [Benchmark([{name: "boot", before: 
 
 const PULL_REQUESTS = `Card("Shipped", [PullRequest(["acme/client#2419", "https://github.com/acme/client/pull/2425", "acme/server#1336"])])`;
 
-const NUMBER = `$ee = 750
+// The whole audit block (thr_e3pxmiyjgp): Number() on the inputs, and arithmetic on them.
+const NUMBER = `$hc = 30
+$famPct = 40
+$ee = 750
 $fam = 2300
-Card("Annual cost", [
-  Row([Input($ee, label: "Employee-only / mo"), Input($fam, label: "Family / mo")]),
-  Metric("Gap", "$" + fmt(Number($fam) - Number($ee)))
+$depCover = 80
+eeOnly = $hc * (1 - $famPct / 100)
+famN = $hc * $famPct / 100
+current = (eeOnly * $ee + famN * $fam) * 12
+proposed = (eeOnly * $ee + famN * ($ee + ($fam - $ee) * $depCover / 100)) * 12
+Card("Annual employer cost", [
+  Row([Stepper($hc, 1, 500, label: "Employees"), Slider($famPct, 0, 100, label: "% on family tier")]),
+  Row([Input($ee, label: "Employee-only premium / mo"), Input($fam, label: "Family premium / mo")]),
+  Slider($depCover, 50, 100, step: 5, label: "% of dependent cost covered"),
+  Row([
+    Metric("Today", "$" + fmt(round(current, 0)), source: "illustrative"),
+    Metric("Proposed", "$" + fmt(round(proposed, 0)), source: "illustrative"),
+    Metric("Savings", "$" + fmt(round(current - proposed, 0)), note: "Each family employee pays $" + fmt(round((Number($fam) - Number($ee)) * (1 - $depCover / 100), 0)) + "/mo", tone: "good", source: "illustrative")
+  ])
 ])`;
 
 function compiled(source: string) {
@@ -123,6 +137,15 @@ describe("Select with a label where its $state goes", () => {
     );
   });
 
+  it("never binds a state another rewrite declared", () => {
+    const { roots, state } = render(
+      `Card("x", [Form([Select("Region", ["eu", "us"]), Select("select", "Plan", ["a", "b"]), Decision("Q?", ["yes", "no"]), Select("decision", "Tier", ["c", "d"])])])`,
+      { select: "us" },
+    );
+    expect(Object.keys(state).sort()).toEqual(["decision", "decision2", "select", "select2"]);
+    expect(answer(roots)).toBe("Region: us\nPlan: —\nQ? —\nTier: —");
+  });
+
   it("binds a declared state named by the key", () => {
     const { state } = render(`$push = "Show me the fixes first"\n${SELECT_KEYED}`);
     expect(state.push).toBe("Show me the fixes first");
@@ -163,6 +186,18 @@ describe("Decision written as a question", () => {
     const { roots } = render(DECISION_OBJECT, { decision: "Accept as is" });
     expect(find(roots[0]!, "Radio")).toHaveLength(1);
     expect(answer(roots)).toBe("How should we close the remaining gap? Accept as is");
+  });
+
+  it("is only its Radio inside a Form, so the pick is sent once", () => {
+    for (const source of [
+      `Card("x", [Form([Decision("Q?", ["yes", "no"]), Select("p", "Plan", ["a", "b"])])])`,
+      `q = Decision("Q?", ["yes", "no"])\nCard("x", [Form([q, Select("p", "Plan", ["a", "b"])])])`,
+    ]) {
+      const { roots } = render(source, { decision: "yes", p: "a" });
+      expect(find(roots[0]!, "Form")).toHaveLength(1);
+      expect(find(roots[0]!, "Radio")).toHaveLength(1);
+      expect(answer(roots)).toBe("Q? yes\nPlan: a");
+    }
   });
 
   it("leaves Decision(options, criteria) as the scored table", () => {
@@ -216,16 +251,36 @@ describe("the retired PullRequest", () => {
     );
   });
 
-  it("keeps an error for refs it can't read before rendering", () => {
-    const result = compile(`refs = ["acme/client#7"]\nPullRequest(refs)`);
-    expect(result.diagnostics.some((d) => d.severity === "error")).toBe(true);
+  it("shows refs a named value holds", () => {
+    expect(toMarkdown(render(`refs = ["acme/client#7"]\nPullRequest(refs)`).roots)).toBe(
+      "**Pull request:** [acme/client#7](https://github.com/acme/client/pull/7)",
+    );
   });
 });
 
 describe("Number()", () => {
   it("reads the number a text input holds", () => {
-    const { roots } = render(NUMBER, { ee: "800", fam: "2,300" });
-    expect(toMarkdown(roots)).toContain("$1,500");
+    const { roots } = render(NUMBER, { ee: 800, fam: 2300 });
+    expect(toMarkdown(roots)).toContain("$504,000");
+    expect(toMarkdown(roots)).toContain("Each family employee pays $300/mo");
+  });
+
+  it("marks an Input whose state was declared a number, so typing keeps it one", () => {
+    // Text that spells no number stays text, and the arithmetic says so.
+    const { program } = compiled(NUMBER);
+    const { roots, diagnostics } = evaluate(program, { ...initialState(program), ee: "8a" });
+    expect(diagnostics.map((d) => d.message).join("\n")).toContain("needs a number");
+    const inputs = find(roots[0]!, "Input").map((node) => (node.props as { value: unknown }).value);
+    expect(inputs).toEqual([
+      { kind: "binding", name: "ee", value: "8a", number: true },
+      { kind: "binding", name: "fam", value: "2300", number: true },
+    ]);
+    const text = render(`$name = "x"\nInput($name)`).roots[0]!;
+    expect((text.props as { value: unknown }).value).toEqual({
+      kind: "binding",
+      name: "name",
+      value: "x",
+    });
   });
 
   it("is null for text that spells no number", () => {

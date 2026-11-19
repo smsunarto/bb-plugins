@@ -1,7 +1,7 @@
 // What the gallery's header lists and finds: the catalog's components group by
 // group, and a query matched against their names, groups, summaries and
 // example variants, best match first. Pure; GalleryHeader renders it.
-import { COMPONENTS, type CatalogComponentSpec, type ComponentGroup, type ComponentName } from "../core/catalog";
+import { COMPONENTS, TAUGHT_COMPONENTS, type CatalogComponentSpec, type ComponentGroup, type ComponentName } from "../core/catalog";
 
 /** The order groups appear in the gallery. */
 export const GALLERY_GROUPS: readonly ComponentGroup[] = [
@@ -20,7 +20,7 @@ export const GALLERY_GROUPS: readonly ComponentGroup[] = [
 
 /** A group's components in catalog order. */
 export function componentsIn(group: ComponentGroup): ComponentName[] {
-  return (Object.keys(COMPONENTS) as ComponentName[]).filter((name) => COMPONENTS[name].group === group);
+  return TAUGHT_COMPONENTS.filter((name) => COMPONENTS[name].group === group);
 }
 
 /** Every component in gallery order: group by group, catalog order within each. */

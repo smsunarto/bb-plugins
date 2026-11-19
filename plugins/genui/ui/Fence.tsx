@@ -68,6 +68,7 @@ export const Fence = memo(function Fence({
   language,
   code,
   complete,
+  closed,
   stateKey,
   threadId,
   messageId,
@@ -78,6 +79,8 @@ export const Fence = memo(function Fence({
   code: string;
   /** UI input stopped (closed or unclosed); apps arrive here only closed or streaming. The overlay uses text settlement. */
   complete: boolean;
+  /** Local (bb-plugins): the block's closing fence arrived, so its source is all there is. */
+  closed: boolean;
   stateKey: string;
   threadId: string;
   /** The assistant message holding the block: BB's message id, which is also its timeline row id. */
@@ -92,6 +95,7 @@ export const Fence = memo(function Fence({
     <UiFence
       code={code}
       complete={complete}
+      closed={closed}
       stateKey={stateKey}
       threadId={threadId}
       messageId={messageId}
@@ -136,6 +140,7 @@ function AppFence({
 function UiFence({
   code,
   complete,
+  closed,
   stateKey,
   threadId,
   messageId,
@@ -144,6 +149,7 @@ function UiFence({
 }: {
   code: string;
   complete: boolean;
+  closed: boolean;
   stateKey: string;
   threadId: string;
   messageId: string;
@@ -166,7 +172,9 @@ function UiFence({
   const superseded = useSuperseded(threadId, messageId);
   const motion = useMotionScope();
 
-  if (shown?.program == null) {
+  // Local (bb-plugins): a closed block that doesn't compile shows why, never
+  // the part of it that does: the rest may change what that part means.
+  if (shown?.program == null || (closed && !result.complete)) {
     return complete ? (
       <RenderFailure source={code} diagnostics={result.diagnostics} />
     ) : (

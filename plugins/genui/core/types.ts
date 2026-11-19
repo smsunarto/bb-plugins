@@ -90,6 +90,8 @@ export interface Binding {
   readonly kind: "binding";
   readonly name: string;
   readonly value: Value;
+  /** Local (bb-plugins): the state was declared a number; a text input keeps it one while its text reads as a number. */
+  readonly number?: true;
 }
 
 /** Side effects a button can trigger. Evaluated at render time. */
