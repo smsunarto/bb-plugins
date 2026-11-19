@@ -29,6 +29,7 @@ import {
   CollapsibleTrigger,
 } from "./components/ui/collapsible.tsx";
 import { Hint, KEEP_COMPOSER_FOCUS } from "./ui.tsx";
+import { useLendPullRequestLinks } from "./pr-links.ts";
 
 const NO_WATCHES: PrWatchView[] = [];
 
@@ -95,6 +96,8 @@ export function PrWatchBanner() {
 }
 
 function PrWatchCard({ threadId }: { threadId: string }) {
+  // Mounted once per thread composer, so it lends the thread's side panel to links in the chat.
+  useLendPullRequestLinks(threadId);
   const keys = useMemo(() => [threadId], [threadId]);
   // Keyed, so switching back to a thread reads nothing until its watches change.
   const query = useRpcKeyedQuery({ contract: sourceControlContract, method: "prWatches", keys });
