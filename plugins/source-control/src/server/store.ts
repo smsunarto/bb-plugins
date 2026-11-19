@@ -40,6 +40,7 @@ import {
 } from "../core/items.ts";
 import { sourceRowsSchema, type SourceRows } from "../core/review.ts";
 import type { ReadAs } from "../contract/host.ts";
+import type { ForgeHost } from "./forge-sites.ts";
 
 /** Where a thread's Change comes from, or why it has none. */
 export type ThreadPlacement =
@@ -111,6 +112,10 @@ export const MIGRATIONS = [
   `UPDATE inbox_facet SET json = replace(json, ',"pinned":true', '') WHERE instr(json, ',"pinned":true') > 0`,
   // The last Change each thread was read on, kept after its checkout goes so its pull request still shows.
   `CREATE TABLE thread_change (thread_id TEXT PRIMARY KEY, change_key TEXT NOT NULL)`,
+  // The Change's host is kept with it, so its pull request is read where a gh login is. Rows a
+  // branch-only recovery wrote may name another repository's Change and cannot be told apart: they go.
+  `DROP TABLE thread_change`,
+  `CREATE TABLE thread_change (thread_id TEXT PRIMARY KEY, change_key TEXT NOT NULL, host_id TEXT NOT NULL, host_name TEXT NOT NULL)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -340,32 +345,38 @@ function askTables(db: Database) {
   };
 }
 
-/** The last Change each thread was read on, kept after its checkout goes. */
+/** The last Change each thread was read on, and the host it was read from, kept after its checkout goes. */
 function threadChangeTables(db: Database) {
-  const getLastChange = db.prepare<[string], { change_key: string }>(
-    `SELECT change_key FROM thread_change WHERE thread_id = ?`,
-  );
+  const getLastChange = db.prepare<
+    [string],
+    { change_key: string; host_id: string; host_name: string }
+  >(`SELECT change_key, host_id, host_name FROM thread_change WHERE thread_id = ?`);
   const putLastChange = db.prepare(
-    `INSERT INTO thread_change (thread_id, change_key) VALUES (?, ?)
-     ON CONFLICT (thread_id) DO UPDATE SET change_key = excluded.change_key`,
-  );
-  // A GitHub ChangeKey ends in `:<branch>`, and a branch name holds no colon.
-  const forgeKeysOnBranch = db.prepare<[string, string], { change_key: string }>(
-    `SELECT change_key FROM forge_facet WHERE change_key LIKE 'gh:%' AND substr(change_key, -length(?) - 1) = ':' || ?`,
+    `INSERT INTO thread_change (thread_id, change_key, host_id, host_name) VALUES (?, ?, ?, ?)
+     ON CONFLICT (thread_id) DO UPDATE SET change_key = excluded.change_key,
+       host_id = excluded.host_id, host_name = excluded.host_name`,
   );
   return {
-    /** The last GitHub Change the thread was read on, kept after its checkout goes. */
-    lastChange(threadId: string): ChangeKey | null {
-      return (getLastChange.get(threadId)?.change_key as ChangeKey | undefined) ?? null;
+    /** The last GitHub Change the thread was read on, and its checkout's host. */
+    lastChange(threadId: string): { key: ChangeKey; host: ForgeHost } | null {
+      const row = getLastChange.get(threadId);
+      return row
+        ? {
+            key: row.change_key as ChangeKey,
+            host: { hostId: row.host_id, hostName: row.host_name },
+          }
+        : null;
     },
-    rememberChange(threadId: string, key: ChangeKey): boolean {
-      if (getLastChange.get(threadId)?.change_key === key) return false;
-      putLastChange.run(threadId, key);
-      return true;
-    },
-    /** GitHub Changes on this branch whose pull request has been read, in any repository. */
-    forgeKeysOnBranch(branch: string): ChangeKey[] {
-      return forgeKeysOnBranch.all(branch, branch).map((row) => row.change_key as ChangeKey);
+    /** Returns whether the remembered Change moved; a new host name alone is stored quietly. */
+    rememberChange(threadId: string, key: ChangeKey, host: ForgeHost): boolean {
+      const before = getLastChange.get(threadId);
+      if (
+        before?.host_id !== host.hostId ||
+        before.host_name !== host.hostName ||
+        before.change_key !== key
+      )
+        putLastChange.run(threadId, key, host.hostId, host.hostName);
+      return before?.change_key !== key;
     },
   };
 }

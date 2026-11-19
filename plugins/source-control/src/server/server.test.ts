@@ -149,6 +149,8 @@ type World = {
       removed?: boolean;
       /** The branch bb recorded for the environment. */
       branchName?: string;
+      /** The environment's project; `proj-1` when unset. */
+      projectId?: string;
     }
   >;
   serverAccounts: string[];
@@ -567,6 +569,7 @@ function fakeSdk(world: World) {
             path: where.removed ? null : where.path,
             status: where.removed ? "destroyed" : "ready",
             branchName: where.branchName ?? null,
+            projectId: where.projectId ?? "proj-1",
           },
         };
       }) as never,
@@ -629,7 +632,16 @@ function fakeSdk(world: World) {
         return { ok: true };
       }) as never,
     },
-    projects: { list: (async () => world.projects ?? []) as never },
+    projects: {
+      list: (async () => world.projects ?? []) as never,
+      get: (async ({ projectId }: { projectId: string }) => {
+        const project = (world.projects as { id: string }[] | undefined)?.find(
+          (each) => each.id === projectId,
+        );
+        if (!project) throw new Error(`HTTP 404: no project ${projectId}`);
+        return project;
+      }) as never,
+    },
     environments: {
       get: (async ({ environmentId }: { environmentId: string }) => ({
         id: environmentId,
@@ -1504,9 +1516,12 @@ describe("a thread whose worktree is gone", () => {
     expect(world.ghCalls).toHaveLength(read);
   });
 
-  test("one never read on a checkout takes the Change of the branch bb recorded, when its pull request was read", async () => {
+  test("one never read on a checkout takes its project's Change on the branch bb recorded, when that pull request was read", async () => {
     const world = twoHosts();
     world.pullRequests["scott/route-gh"] = [PR];
+    world.projects = [
+      { id: "proj-1", gitRemoteUrl: "https://github.com/smsunarto/bb-plugins.git" },
+    ];
     world.threads["thread-c"] = {
       hostId: "host-a",
       path: "/Users/scott/gone",
@@ -1539,6 +1554,135 @@ describe("a thread whose worktree is gone", () => {
         >
       )["thread-c"],
     ).toMatchObject({ state: "none" });
+  });
+
+  test("another repository's pull request on the same branch name is never taken", async () => {
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [
+      {
+        ...PR,
+        number: 9,
+        url: "https://github.com/acme/api/pull/9",
+        headRepositoryOwner: { login: "acme" },
+      },
+    ];
+    // host-b's checkout is another repository with a branch of the same name.
+    world.hosts["host-b"]!.workspace = workspace("/home/scott/api", {
+      github: { repo: { owner: "acme", name: "api" }, headOwner: "acme" },
+    });
+    world.threads["thread-b"] = { hostId: "host-b", path: "/home/scott/api" };
+    world.projects = [
+      { id: "proj-1", gitRemoteUrl: "https://github.com/smsunarto/bb-plugins.git" },
+      { id: "proj-2", gitRemoteUrl: null },
+    ];
+    world.threads["thread-c"] = {
+      hostId: "host-a",
+      path: "/Users/scott/gone",
+      removed: true,
+      branchName: "scott/route-gh",
+    };
+    // A project with no remote: no repository to match, so nothing is taken.
+    world.threads["thread-e"] = {
+      hostId: "host-a",
+      path: "/Users/scott/gone-local",
+      removed: true,
+      branchName: "scott/route-gh",
+      projectId: "proj-2",
+    };
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    expect(await status(harness, "thread-b")).toMatchObject({
+      key: "gh:acme/api:acme:scott/route-gh",
+      pullRequest: { number: 9 },
+    });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-c" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-e" });
+    expect(await status(harness, "thread-c")).toEqual({ state: "none" });
+    expect(await status(harness, "thread-e")).toEqual({ state: "none" });
+  });
+
+  test("a pull request only the thread's host can read stays current after its checkout goes and the server restarts", async () => {
+    const world = twoHosts();
+    world.serverAccounts = [];
+    delete world.hosts["host-b"];
+    delete world.threads["thread-b"];
+    world.hosts["host-a"]!.ghAccounts = ["smsunarto"];
+    world.hosts["host-a"]!.forgeLive = true;
+    world.pullRequests["scott/route-gh"] = [PR];
+    const { harness, restart } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await status(harness, "thread-a")).toMatchObject({
+      pullRequest: { number: 482, state: "draft" },
+      forge: { state: "read" },
+    });
+    world.threads["thread-a"]!.removed = true;
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await status(harness, "thread-a")).toMatchObject({
+      source: "remembered",
+      forge: { state: "read" },
+    });
+    world.pullRequests["scott/route-gh"] = [{ ...PR, state: "MERGED", isDraft: false }];
+    const next = await restart();
+    await next.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await status(next, "thread-a")).toMatchObject({
+      pullRequest: { state: "merged" },
+      forge: { state: "read" },
+    });
+    expect(
+      next.inspection.experimental_hostRpcCalls.filter((call) => call.method === "forgeCall"),
+    ).not.toHaveLength(0);
+  });
+
+  test("a sleeping host elsewhere, even the one that read the repository last, does not hold up the read", async () => {
+    const world = twoHosts();
+    world.serverAccounts = [];
+    for (const id of ["host-a", "host-b"]) {
+      world.hosts[id]!.ghAccounts = ["smsunarto"];
+      world.hosts[id]!.forgeLive = true;
+    }
+    world.pullRequests["scott/route-gh"] = [PR];
+    const { harness, hostCalls } = await start(world);
+    // host-a, first by id among the checkouts, reads the repository first.
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    world.threads["thread-b"]!.removed = true;
+    world.hosts["host-a"]!.hung = true;
+    world.pullRequests["scott/route-gh"] = [{ ...PR, isDraft: false }];
+    const before = hostCalls().filter((call) => call.hostId === "host-a").length;
+
+    const started = performance.now();
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    expect(performance.now() - started).toBeLessThan(2_000);
+    expect(await status(harness, "thread-b")).toMatchObject({
+      source: "remembered",
+      pullRequest: { state: "open" },
+      forge: { state: "read" },
+    });
+    expect(hostCalls().filter((call) => call.hostId === "host-a")).toHaveLength(before);
+  });
+
+  test("when the thread's own host sleeps, its row keeps the last pull request and says the read failed", async () => {
+    vi.useFakeTimers();
+    const world = twoHosts();
+    world.serverAccounts = [];
+    world.hosts["host-a"]!.ghAccounts = ["smsunarto"];
+    world.hosts["host-a"]!.forgeLive = true;
+    world.pullRequests["scott/route-gh"] = [PR];
+    const { harness } = await start(world);
+    const first = harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await vi.advanceTimersByTimeAsync(100);
+    await first;
+    world.threads["thread-a"]!.removed = true;
+    world.hosts["host-a"]!.hung = true;
+    await vi.advanceTimersByTimeAsync(61_000);
+    const done = harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await vi.advanceTimersByTimeAsync(16_000);
+    await done;
+    expect(await status(harness, "thread-a")).toMatchObject({
+      source: "remembered",
+      pullRequest: { number: 482, state: "draft" },
+      forge: { state: "failed" },
+    });
   });
 });
 

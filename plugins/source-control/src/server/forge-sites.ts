@@ -130,7 +130,9 @@ function noImage(
 /** Where a call runs and as whom. `hostId` null: the bb server. */
 type Access = { hostId: string | null; site: string; account: { login: string; active: boolean } };
 type Probe = { accounts: string[]; at: number };
-type Placement = { hostId: string; hostName: string };
+/** A machine a forge read can run on: a checkout's host, with or without the checkout. */
+export type ForgeHost = { hostId: string; hostName: string };
+type Placement = ForgeHost;
 /** A signed-in account and the site it is signed in on. */
 export type SiteAccount = { login: string; active: boolean; hostId: string | null; site: string };
 
@@ -430,6 +432,8 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
     sources: readonly Effect.Effect<Access[]>[],
     run: (access: Access) => Effect.Effect<T, SiteRefused>,
     nowhere: Problem,
+    /** Whether the access that read the repository last may be tried first. */
+    mayTry: (access: Access) => boolean = () => true,
   ) =>
     Effect.gen(function* () {
       const tried: Access[] = [];
@@ -453,7 +457,7 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
         return null;
       });
       const last = seen.get(repo);
-      if (last) {
+      if (last && mayTry(last)) {
         const read = yield* attempt(last);
         if (read) return read.value;
       }
@@ -478,14 +482,27 @@ export function createForgeSites(deps: { serverExec: Exec; host: HostForge; now:
   const pullRequest = (query: PullRequestQuery, placement: Placement | null) =>
     pullRequestVia(query, placement ? [placement] : []);
 
-  /** As `pullRequest`, trying each host in `placements` after the server: the review page's reads by ChangeKey. */
-  const pullRequestVia = (query: PullRequestQuery, placements: readonly Placement[]) =>
+  /**
+   * As `pullRequest`, trying each host in `placements` after the server: the
+   * review page's reads by ChangeKey. `only` keeps the read to the server and
+   * those hosts, even when another host read the repository last, so a
+   * sleeping machine elsewhere cannot hold it up.
+   */
+  const pullRequestVia = (
+    query: PullRequestQuery,
+    placements: readonly Placement[],
+    scope: "any" | "only" = "any",
+  ) =>
     withinDeadline(
       firstThatSees(
         repoName(query),
         [serverAccesses, ...uniqueHosts(placements).map(hostAccesses)],
         (access) => readAt(access, query),
         { kind: "no-site", host: placements[0]?.hostName ?? SERVER_SITE_NAME },
+        (access) =>
+          scope === "any" ||
+          access.hostId === null ||
+          placements.some((each) => each.hostId === access.hostId),
       ),
     );
 

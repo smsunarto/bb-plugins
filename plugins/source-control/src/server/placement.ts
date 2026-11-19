@@ -6,7 +6,12 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { Effect } from "effect";
 import type { Placement } from "../core/change.ts";
+import { githubRepo, type Repo } from "../core/ids.ts";
+import type { ForgeHost } from "./forge-sites.ts";
 import { HOST_REMOVED, type Store, type ThreadPlacement } from "./store.ts";
+
+/** What bb keeps of a thread's environment after its worktree goes. */
+export type RecordedEnvironment = { branchName: string; hostId: string; projectId: string };
 
 export const checkoutId = (placement: { hostId: string; path: string }) =>
   `${placement.hostId}\0${placement.path}`;
@@ -68,7 +73,7 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
     return { state: "checkout", placement } as const;
   });
 
-  /** Where the thread's checkout is now, and the branch bb recorded for its environment. */
+  /** Where the thread's checkout is now, and what bb recorded of its environment. */
   const resolveThread = Effect.fn("resolvePlacement")(function* (threadId: string) {
     const thread = yield* Effect.tryPromise(() =>
       bb.sdk.threads.get({ threadId, include: "environment" }),
@@ -77,10 +82,17 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
     if (!environment)
       return {
         where: { state: "none", reason: "This thread has no project environment." } as const,
-        branchName: null,
+        environment: null,
       };
-    // bb keeps the branch after it removes the worktree.
-    return { where: yield* placementOf(environment), branchName: environment.branchName ?? null };
+    // bb keeps the branch, host and project after it removes the worktree.
+    const recorded: RecordedEnvironment | null = environment.branchName
+      ? {
+          branchName: environment.branchName,
+          hostId: environment.hostId,
+          projectId: environment.projectId,
+        }
+      : null;
+    return { where: yield* placementOf(environment), environment: recorded };
   });
 
   /** Where the thread's checkout is now. */
@@ -93,20 +105,42 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
     return yield* placementOf(environment);
   });
 
+  /** Each project's GitHub repository, from its remote; null for none. Remotes rarely move. */
+  const repos = new Map<string, Repo | null>();
+  const projectRepo = (projectId: string) =>
+    Effect.suspend(() => {
+      if (repos.has(projectId)) return Effect.succeed(repos.get(projectId) ?? null);
+      return Effect.tryPromise(() => bb.sdk.projects.get({ projectId })).pipe(
+        Effect.map((project) => githubRepo(project.gitRemoteUrl ?? null)),
+        Effect.tap((repo) => Effect.sync(() => repos.set(projectId, repo))),
+        // bb did not answer: no repository now, and ask again next time.
+        Effect.orElseSucceed(() => null),
+      );
+    });
+
   return {
     connected,
     resolve,
+    projectRepo,
+    /** A host as a forge read names it: bb's name for it, else its id. */
+    forgeHost: (hostId: string) =>
+      host(hostId).pipe(
+        Effect.map((record): ForgeHost => ({
+          hostId,
+          hostName: names.get(hostId) ?? record?.name ?? hostId,
+        })),
+      ),
     forEnvironment,
     /**
      * Resolve and store the thread's placement; `changed` when the stored one
-     * moved. `branchName` is the branch bb recorded for the thread's environment.
+     * moved. `environment` is what bb recorded of the thread's environment.
      */
     settle: Effect.fnUntraced(function* (threadId: string) {
       const resolved = yield* resolveThread(threadId);
       const where: ThreadPlacement = resolved.where;
       return {
         where,
-        branchName: resolved.branchName,
+        environment: resolved.environment,
         changed: store.setPlacement(threadId, where, deps.now()),
       };
     }),

@@ -170,9 +170,9 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
 
   /** Local and forge together; the forge again if the local read moved the Change. */
   const refreshNow = Effect.fn("refreshThread")(function* (threadId: string) {
-    const { where, changed, branchName } = yield* placements.settle(threadId);
+    const { where, changed, environment } = yield* placements.settle(threadId);
     if (changed) announce([threadId]);
-    if (where.state === "none") return yield* remembered.read(threadId, branchName);
+    if (where.state === "none") return yield* remembered.read(threadId, environment);
     const { placement } = where;
     // GitHub's answer does not wait for a slow or sleeping host.
     const forgeFirst = yield* Effect.forkChild(forge.readForge(threadId, placement));
@@ -218,6 +218,8 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     announce,
     forgeDue: review.forgeDue,
     readForge: review.readForge,
+    projectRepo: placements.projectRepo,
+    forgeHost: placements.forgeHost,
     now,
     glanceMs: GLANCE_MS,
   });
