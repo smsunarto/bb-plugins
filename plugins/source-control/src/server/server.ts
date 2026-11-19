@@ -448,7 +448,7 @@ async function shareTarget(
   const ref = parsePrReference(target.pullRequest);
   if (!ref) return `${target.pullRequest} is not a GitHub pull request.`;
   const lookup = prLookup(ref);
-  const found = (await moved.handlers.legacyChange({ keys: [lookup] }))[lookup];
+  const found = (await moved.handlers.legacyChange({ keys: [lookup], threadId }))[lookup];
   return found?.key
     ? { key: found.key, revision: null }
     : `${target.pullRequest}: ${found?.problem ?? "Source Control cannot find it."}`;
