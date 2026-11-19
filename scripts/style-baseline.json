@@ -1910,41 +1910,6 @@
     "source": "<ul className=\"divide-y divide-border\">"
   },
   {
-    "file": "plugins/scott-docs/app.tsx",
-    "rule": "universal-bucket",
-    "source": "<div className=\"mx-auto w-full max-w-3xl space-y-8 px-6 py-12\">"
-  },
-  {
-    "file": "plugins/scott-docs/app.tsx",
-    "rule": "universal-bucket",
-    "source": "<div className=\"space-y-3\">"
-  },
-  {
-    "file": "plugins/scott-docs/app.tsx",
-    "rule": "universal-bucket",
-    "source": "<div className=\"space-y-3\">"
-  },
-  {
-    "file": "plugins/scott-docs/app.tsx",
-    "rule": "universal-bucket",
-    "source": "<div className=\"space-y-3\">"
-  },
-  {
-    "file": "plugins/scott-docs/app.tsx",
-    "rule": "universal-bucket",
-    "source": "<div className=\"space-y-4 pt-2\">"
-  },
-  {
-    "file": "plugins/scott-docs/app.tsx",
-    "rule": "universal-bucket",
-    "source": "<div className=\"space-y-4\">"
-  },
-  {
-    "file": "plugins/scott-docs/editor.css",
-    "rule": "raw-color",
-    "source": "background: color-mix(in oklab, var(--primary) 14%, transparent);"
-  },
-  {
     "file": "plugins/scott-tasks/editor/tasks-editor.tsx",
     "rule": "raw-color",
     "source": ".bb-tasks-editor .bb-tasks-thread-mention:hover { background: color-mix(in oklab, var(--primary) 20%, transparent); }"

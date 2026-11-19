@@ -1,1 +1,1 @@
-Markdown editing and block preservation adapted from get-bb/bb plugins/docs (MIT), upstream 3bacfac9, via scott-docs revision d99dbd84b1ffac3131de8adabad013d676ae70ca. See LICENSE.
+Markdown editing and block preservation adapted from get-bb/bb plugins/docs (MIT), upstream 3bacfac9, via this repository's former Docs fork, present on main at commit 8a4e6ce9f. The bb copyright and MIT licence text are in THIRD_PARTY_NOTICES.md at the repository root.

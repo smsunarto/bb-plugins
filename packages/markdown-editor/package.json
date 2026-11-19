@@ -7,7 +7,6 @@
     ".": "./src/editor.tsx",
     "./engine": "./src/engine.ts",
     "./markdown-blocks": "./src/markdown-blocks.ts",
-    "./markdown-document": "./src/markdown-document.ts",
     "./raw-html": "./src/raw-html.ts",
     "./editor.css": "./src/editor.css"
   },

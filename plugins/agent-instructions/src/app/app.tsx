@@ -160,7 +160,7 @@ function EditorSwitcher({ section, className }: { section: Section; className: s
 function AgentInstructionsSidebar({ subPath }: PluginNavPanelProps) {
   const { section } = locate(subPath);
   const root = useRef<HTMLDivElement>(null);
-  // workaround:scott-docs/sidebar-fill (manual removal; see workarounds.json)
+  // workaround:agent-instructions/sidebar-fill (manual removal; see workarounds.json)
   // Only the projects file tree needs a fixed height; the other lists scroll with the sidebar.
   useSidebarColumnFill(root, section === "projects");
   return (

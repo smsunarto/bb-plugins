@@ -30,18 +30,6 @@
     "source": "void refresh();"
   },
   {
-    "filename": "plugins/scott-docs/app.tsx",
-    "code": "react(preserve-manual-memoization)",
-    "message": "Existing memoization could not be preserved",
-    "source": "[activeVaultId, isCurrentVault, navigate, navigateTo, vault],"
-  },
-  {
-    "filename": "plugins/scott-docs/app.tsx",
-    "code": "react(preserve-manual-memoization)",
-    "message": "Existing memoization could not be preserved",
-    "source": "const open = useCallback("
-  },
-  {
     "filename": "plugins/traces/src/app/app.tsx",
     "code": "react(refs)",
     "message": "Cannot access refs during render",

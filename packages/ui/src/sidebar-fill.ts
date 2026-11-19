@@ -1,7 +1,7 @@
 import { useEffect, type RefObject } from "react";
 
 /**
- * workaround:scott-docs/sidebar-fill (manual removal; see workarounds.json)
+ * workaround:agent-instructions/sidebar-fill (manual removal; see workarounds.json)
  *
  * bb mounts a navPanel's `experimental_sidebar` in an auto-height block inside
  * its scrolling `[data-sidebar="content"]` column and offers no fill layout, so

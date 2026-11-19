@@ -105,7 +105,7 @@ CI checks the fingerprint, re-exports, and each consumer's built CSS.
 
 Release Please tracks plugin paths. A shared UI change must include a change under
 every consuming plugin path and release those consumers together: agent-instructions,
-agentation, dotfiles, gtd-sidebar, scott-docs, and scott-tasks. Private plugins use the same rebuild
+agentation, dotfiles, gtd-sidebar, and scott-tasks. Private plugins use the same rebuild
 step when installed from source.
 
 ## Test another BB build

@@ -66,12 +66,6 @@
       }
     },
     {
-      "files": ["plugins/scott-docs/components/ui/**"],
-      "rules": {
-        "jsx-a11y/prefer-tag-over-role": "off"
-      }
-    },
-    {
       "files": ["plugins/scott-tasks/**"],
       "rules": {
         "no-control-regex": "off",
