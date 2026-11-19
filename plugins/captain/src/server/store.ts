@@ -104,6 +104,16 @@ export const MIGRATIONS: readonly string[] = [
     woke_at INTEGER,
     created_at INTEGER NOT NULL
   )`,
+  // The fixed plugin instructions a live Captain or crew session was built with,
+  // and the inputs that rendered them, so a later file edit can be told to it.
+  `CREATE TABLE served_instructions (
+    thread_id TEXT PRIMARY KEY CHECK (thread_id GLOB 'thr_*'),
+    captain_id TEXT NOT NULL,
+    spec TEXT NOT NULL,
+    text TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    served_at INTEGER NOT NULL
+  )`,
 ];
 
 /**
@@ -181,6 +191,17 @@ export type Fallback = {
   archived: boolean;
   wokeAt: number | null;
   createdAt: number;
+};
+
+/** The fixed instructions a thread's session holds, as `configure` rendered them. */
+export type Served = {
+  threadId: string;
+  captainId: string;
+  /** The rendering inputs, JSON; `instructions.ts` owns the shape. */
+  spec: string;
+  text: string;
+  fingerprint: string;
+  servedAt: number;
 };
 
 /** A rule `bb captain tell --rule` added to CREW.md; ids grow in the order rules were added. */
@@ -709,6 +730,67 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         `INSERT INTO role_ladders (role, rungs, updated_at) VALUES (?, ?, ?)
          ON CONFLICT (role) DO UPDATE SET rungs = excluded.rungs, updated_at = excluded.updated_at`,
       ).run(role, rungs, at);
+    },
+    /** Record a thread's first served instructions; a later call keeps the first. */
+    recordServed(served: Served): void {
+      db.prepare(
+        `INSERT INTO served_instructions
+           (thread_id, captain_id, spec, text, fingerprint, served_at)
+         VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (thread_id) DO NOTHING`,
+      ).run(
+        served.threadId,
+        served.captainId,
+        served.spec,
+        served.text,
+        served.fingerprint,
+        served.servedAt,
+      );
+    },
+    /** The served instructions of these threads; threads with none are left out. */
+    servedOf(threadIds: readonly string[]): Served[] {
+      if (threadIds.length === 0) return [];
+      return db
+        .prepare<
+          string[],
+          {
+            thread_id: string;
+            captain_id: string;
+            spec: string;
+            text: string;
+            fingerprint: string;
+            served_at: number;
+          }
+        >(
+          `SELECT * FROM served_instructions WHERE thread_id IN (${threadIds.map(() => "?").join(", ")})`,
+        )
+        .all(...threadIds)
+        .map((row) => ({
+          threadId: row.thread_id,
+          captainId: row.captain_id,
+          spec: row.spec,
+          text: row.text,
+          fingerprint: row.fingerprint,
+          servedAt: row.served_at,
+        }));
+    },
+    /**
+     * Move a thread's served text from `fromFingerprint` to `to`: true for the
+     * one caller whose fingerprint still matched, so two passes never send the
+     * same change twice. A failed send swaps back.
+     */
+    swapServed(
+      threadId: string,
+      fromFingerprint: string,
+      to: Pick<Served, "text" | "fingerprint" | "servedAt">,
+    ): boolean {
+      return (
+        db
+          .prepare(
+            `UPDATE served_instructions SET text = ?, fingerprint = ?, served_at = ?
+             WHERE thread_id = ? AND fingerprint = ?`,
+          )
+          .run(to.text, to.fingerprint, to.servedAt, threadId, fromFingerprint).changes === 1
+      );
     },
     fallback(failedThreadId: string): Fallback | null {
       const row = db

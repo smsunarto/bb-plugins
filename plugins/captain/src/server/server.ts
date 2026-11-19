@@ -49,7 +49,14 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
 
   bb.agents.configure((context) => {
     try {
-      return configure(context, { registry, store, drive, files });
+      return configure(context, {
+        registry,
+        store,
+        drive,
+        files,
+        now: deps.now,
+        warn: (line) => bb.log.warn(line),
+      });
     } catch (error) {
       bb.log.warn(`configure failed for ${context.thread.id}: ${(error as Error).message}`);
       return { tools: [], skills: [] };
