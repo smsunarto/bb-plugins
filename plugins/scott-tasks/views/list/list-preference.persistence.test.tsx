@@ -198,6 +198,82 @@ async function selectSort(slot: ReturnType<typeof renderProject>, label: string)
 }
 
 describe("list filter/sort preference persistence", () => {
+  // get-bb/bb#7056: one list instance serves All, Active, and every project.
+  it("shows cached lists across project, all, and active navigation", async () => {
+    const registration = app.navPanels[0]!;
+    const Component = registration.component;
+    const rpc = baseRpc();
+    let suspendReads = false;
+    const pendingForever = () => new Promise<never>(() => {});
+    const slot = renderSlot(
+      registration,
+      { subPath: "all" },
+      {
+        rpc: {
+          ...rpc,
+          listTasks: (raw: unknown) => (suspendReads ? pendingForever() : rpc.listTasks(raw)),
+          listActiveTaskThreads: () =>
+            suspendReads ? pendingForever() : rpc.listActiveTaskThreads(),
+        },
+      },
+    );
+    await slot.findByText("BET-1");
+    slot.lifecycle.rerender(<Component subPath="active" />);
+    await slot.findByText("ALP-9");
+    slot.lifecycle.rerender(<Component subPath={PROJECT_B} />);
+    await slot.findByText("BET-1");
+    slot.lifecycle.rerender(<Component subPath={PROJECT_A} />);
+    await slot.findByText("ALP-1");
+
+    // All keeps every task the shared collection holds, so it has no absent row here.
+    suspendReads = true;
+    for (const [subPath, visible, absent] of [
+      ["all", "BET-1", null],
+      ["active", "ALP-9", "ALP-1"],
+      ["all", "BET-1", null],
+      [PROJECT_B, "BET-1", "ALP-1"],
+      [PROJECT_A, "ALP-1", "BET-1"],
+    ] as const) {
+      slot.lifecycle.rerender(<Component subPath={subPath} />);
+      await slot.findByText(visible);
+      if (absent !== null) expect(slot.queryByText(absent)).toBeNull();
+    }
+  });
+
+  it.each(["resolve", "reject"] as const)(
+    "hides the old scope while a destination request is pending and can %s",
+    async (outcome) => {
+      const registration = app.navPanels[0]!;
+      const Component = registration.component;
+      let resolveThreads!: (value: { taskThreads: unknown[] }) => void;
+      let rejectThreads!: (error: Error) => void;
+      const pending = new Promise<{ taskThreads: unknown[] }>((resolve, reject) => {
+        resolveThreads = resolve;
+        rejectThreads = reject;
+      });
+      const rpc = baseRpc();
+      const slot = renderSlot(
+        registration,
+        { subPath: PROJECT_A },
+        { rpc: { ...rpc, listActiveTaskThreads: () => pending } },
+      );
+      await slot.findByText("ALP-1");
+      slot.lifecycle.rerender(<Component subPath="active" />);
+      await waitFor(() => expect(slot.queryByText("ALP-1")).toBeNull());
+      expect(slot.queryByText("ALP-9")).toBeNull();
+      expect(slot.queryByText("Couldn't load tasks")).toBeNull();
+
+      if (outcome === "resolve") {
+        resolveThreads({ taskThreads: [workingThread(activeTasks[0]!)] });
+        await slot.findByText("ALP-9");
+      } else {
+        rejectThreads(new Error("Destination request failed"));
+        await slot.findByText("Destination request failed");
+      }
+      expect(slot.queryByText("ALP-1")).toBeNull();
+    },
+  );
+
   it("restores sort and filters after unmount (navigation / remount)", async () => {
     const registration = app.navPanels[0]!;
     const slot = renderSlot(registration, { subPath: PROJECT_A }, { rpc: baseRpc() });

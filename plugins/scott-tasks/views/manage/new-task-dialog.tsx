@@ -15,6 +15,13 @@ import {
   useStagedAttachmentRetry,
   type StagedAttachment,
 } from "../../components/staged-attachments.js";
+import {
+  clearNewTaskDraft,
+  hasDraftContent,
+  loadNewTaskDraft,
+  storeNewTaskDraft,
+  type NewTaskDraft,
+} from "./new-task-draft.js";
 import { useLabels, useProjects, useTasksRpc } from "../../shell/data.js";
 import { useTasksNavigation } from "../../shell/routes.js";
 import { TasksEditor } from "../../editor/tasks-editor.js";
@@ -87,24 +94,64 @@ export function NewTaskDialog({
   const createMoreId = useId();
   const [pendingFiles, setPendingFiles] = useState<StagedAttachment[]>([]);
   const [createdTask, setCreatedTask] = useState<Task | null>(null);
+  // False until the fields hold the restored draft, so the first render after opening
+  // doesn't save blank fields over it.
+  const [draftRestored, setDraftRestored] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const resetFields = (draft: NewTaskDraft | null) => {
+    setSelectedProjectId(draft?.projectId ?? projectId);
+    setTitle(draft?.title ?? "");
+    setDescription(draft?.description ?? "");
+    setStatus(draft?.status ?? defaultStatus ?? "todo");
+    setPriority(draft?.priority ?? "none");
+    setLabelIds(draft?.labelIds ?? []);
+    setDueDate(draft?.dueDate ?? "");
+  };
+
   useEffect(() => {
+    setDraftRestored(open);
     if (!open) return;
-    setSelectedProjectId(projectId);
-    setTitle("");
-    setDescription("");
-    setStatus(defaultStatus ?? "todo");
-    setPriority("none");
-    setLabelIds([]);
-    setDueDate("");
+    resetFields(loadNewTaskDraft());
     setLabelQuery("");
     setPendingFiles([]);
     setCreatedTask(null);
     setError(null);
     // oxlint-disable-next-line react/exhaustive-deps
   }, [open]);
+
+  // A dismissal (outside click, Escape, reload) keeps what was typed.
+  useEffect(() => {
+    if (!open || !draftRestored || createdTask !== null) return;
+    storeNewTaskDraft({
+      projectId: selectedProjectId,
+      title,
+      description,
+      status,
+      priority,
+      labelIds,
+      dueDate,
+    });
+  }, [
+    open,
+    draftRestored,
+    createdTask,
+    selectedProjectId,
+    title,
+    description,
+    status,
+    priority,
+    labelIds,
+    dueDate,
+  ]);
+
+  const discardDraft = () => {
+    clearNewTaskDraft();
+    resetFields(null);
+    setPendingFiles([]);
+    titleRef.current?.focus();
+  };
 
   const projectList = projects.data ?? [];
   const effectiveProjectId = selectedProjectId ?? projectId ?? projectList[0]?.id ?? null;
@@ -200,6 +247,7 @@ export function NewTaskDialog({
         setError(result.error.message);
         return;
       }
+      clearNewTaskDraft();
       const staged = pendingFiles.filter((entry) => entry.status === "staged");
       const failed = await uploadStagedAttachments(staged, {
         kind: "task",
@@ -236,7 +284,7 @@ export function NewTaskDialog({
   return (
     <Dialog open={open} onOpenChange={requestClose}>
       <DialogContent
-        className="max-w-xl gap-0 p-0"
+        className="flex max-h-[85dvh] min-h-0 max-w-xl flex-col gap-0 p-0"
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
@@ -287,7 +335,7 @@ export function NewTaskDialog({
             </div>
           </div>
         ) : null}
-        <div className={cn("px-4 pt-2", createdTask && "hidden")}>
+        <div className={cn("flex min-h-0 flex-auto flex-col px-4 pt-2", createdTask && "hidden")}>
           <input
             ref={titleRef}
             autoFocus
@@ -310,11 +358,11 @@ export function NewTaskDialog({
             value={description}
             onChange={setDescription}
             placeholder="Description — rich text, round-trips as markdown for agents"
-            className="mt-2 min-h-16"
+            className="mt-2 min-h-16 flex-auto overflow-y-auto"
             onAttachFiles={stageMore}
           />
           {createdTask === null && pendingFiles.length > 0 ? (
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="mt-2 flex max-h-24 shrink-0 flex-wrap gap-2 overflow-y-auto">
               {pendingFiles.map((entry) => (
                 <AttachmentChip
                   key={entry.id}
@@ -332,7 +380,12 @@ export function NewTaskDialog({
             </p>
           ) : null}
         </div>
-        <div className={cn("flex flex-wrap items-center gap-2 px-4 pt-3", createdTask && "hidden")}>
+        <div
+          className={cn(
+            "flex shrink-0 flex-wrap items-center gap-2 px-4 pt-3",
+            createdTask && "hidden",
+          )}
+        >
           <Select value={effectiveProjectId ?? undefined} onValueChange={changeProject}>
             <SelectTrigger aria-label="Project" className={cn(CHIP_TRIGGER, "max-w-44")}>
               <SelectValue placeholder="Project" />
@@ -465,7 +518,7 @@ export function NewTaskDialog({
             {error}
           </p>
         ) : null}
-        <DialogFooter className="mt-4 flex-row items-center border-t border-border-hairline px-4 py-3 sm:justify-between">
+        <DialogFooter className="mt-4 shrink-0 flex-row items-center border-t border-border-hairline px-4 py-3 sm:justify-between">
           {createdTask ? (
             <>
               <span />
@@ -486,6 +539,17 @@ export function NewTaskDialog({
                 </Label>
               </div>
               <div className="flex items-center gap-2">
+                {hasDraftContent({ title, description }) ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={submitting}
+                    className="text-muted-foreground"
+                    onClick={discardDraft}
+                  >
+                    Discard draft
+                  </Button>
+                ) : null}
                 <Hint label="Attach files">
                   <Button
                     variant="ghost"

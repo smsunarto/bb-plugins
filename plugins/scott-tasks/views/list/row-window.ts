@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
+import { observeSharedResize } from "@/lib/shared-resize-observer";
 
 export const ROW_WINDOW_THRESHOLD = 120;
 const ROW_WINDOW_OVERSCAN_PX = 800;
@@ -50,6 +51,41 @@ interface Viewport {
   headerHeight: number;
 }
 
+interface MeasuredViewport {
+  scrollTop: number;
+  height: number;
+  rowHeight: number | null;
+  headerHeight: number | null;
+}
+
+function measureViewport(element: HTMLElement): MeasuredViewport {
+  const row = element.querySelector<HTMLElement>("[data-task-key]");
+  const header = element.querySelector<HTMLElement>("[data-status-group-header]");
+  return {
+    scrollTop:
+      Math.floor(element.scrollTop / ROW_WINDOW_SCROLL_STEP_PX) * ROW_WINDOW_SCROLL_STEP_PX,
+    height: element.clientHeight,
+    rowHeight: row?.offsetHeight ?? null,
+    headerHeight: header?.offsetHeight ?? null,
+  };
+}
+
+/** Keep the last row and header heights while none is rendered, and the same object when nothing moved. */
+function mergeViewport(current: Viewport, measured: MeasuredViewport): Viewport {
+  const next: Viewport = {
+    scrollTop: measured.scrollTop,
+    height: measured.height,
+    rowHeight: measured.rowHeight ?? current.rowHeight,
+    headerHeight: measured.headerHeight ?? current.headerHeight,
+  };
+  return next.scrollTop === current.scrollTop &&
+    next.height === current.height &&
+    next.rowHeight === current.rowHeight &&
+    next.headerHeight === current.headerHeight
+    ? current
+    : next;
+}
+
 export function useRowWindowViewport(
   scrollRef: RefObject<HTMLElement | null>,
   measureKey: unknown,
@@ -62,26 +98,21 @@ export function useRowWindowViewport(
   });
   const frame = useRef<number | null>(null);
 
+  const measure = useCallback((): MeasuredViewport | null => {
+    const element = scrollRef.current;
+    return element === null ? null : measureViewport(element);
+  }, [scrollRef]);
+
+  // A resize writes inside the observer's flushSync, so the new window paints in the resize frame.
+  const apply = useCallback((measured: MeasuredViewport | null) => {
+    if (measured !== null) setViewport((current) => mergeViewport(current, measured));
+  }, []);
+
   const read = useCallback(() => {
     const element = scrollRef.current;
     if (element === null) return;
-    const row = element.querySelector<HTMLElement>("[data-task-key]");
-    const header = element.querySelector<HTMLElement>("[data-status-group-header]");
-    setViewport((current) => {
-      const next: Viewport = {
-        scrollTop:
-          Math.floor(element.scrollTop / ROW_WINDOW_SCROLL_STEP_PX) * ROW_WINDOW_SCROLL_STEP_PX,
-        height: element.clientHeight,
-        rowHeight: row?.offsetHeight ?? current.rowHeight,
-        headerHeight: header?.offsetHeight ?? current.headerHeight,
-      };
-      return next.scrollTop === current.scrollTop &&
-        next.height === current.height &&
-        next.rowHeight === current.rowHeight &&
-        next.headerHeight === current.headerHeight
-        ? current
-        : next;
-    });
+    const measured = measureViewport(element);
+    setViewport((current) => mergeViewport(current, measured));
   }, [scrollRef]);
 
   useLayoutEffect(() => {
@@ -99,15 +130,17 @@ export function useRowWindowViewport(
       });
     };
     element.addEventListener("scroll", onScroll, { passive: true });
-    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(read) : null;
-    observer?.observe(element);
+    const unobserve =
+      typeof ResizeObserver === "function"
+        ? observeSharedResize(element, { read: measure, write: apply })
+        : null;
     return () => {
       element.removeEventListener("scroll", onScroll);
-      observer?.disconnect();
+      unobserve?.();
       if (frame.current !== null) cancelAnimationFrame(frame.current);
       frame.current = null;
     };
-  }, [scrollRef, read]);
+  }, [scrollRef, read, measure, apply]);
 
   return viewport;
 }

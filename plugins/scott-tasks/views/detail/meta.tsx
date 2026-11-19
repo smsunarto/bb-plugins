@@ -144,6 +144,11 @@ export const THREAD_STATUS_META: Record<
     dotClassName: "bg-destructive",
     textClassName: "text-destructive",
   },
+  archived: {
+    label: "Archived",
+    dotClassName: "bg-muted",
+    textClassName: "text-muted-foreground",
+  },
 };
 
 export const PR_STATE_META: Record<

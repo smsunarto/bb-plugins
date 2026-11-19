@@ -47,3 +47,12 @@ export async function deliverCommentToLatestAgent(
     return 0;
   }
 }
+
+export {
+  deliverParentNotification,
+  PARENT_NOTIFY_BACKOFF_MS,
+  PARENT_NOTIFY_MAX_ATTEMPTS,
+  redeliverDueParentNotifications,
+  registerParentNotifyRedelivery,
+  wakeLine,
+} from "./parent-notify";

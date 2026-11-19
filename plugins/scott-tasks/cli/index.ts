@@ -1,5 +1,6 @@
-import { isAbsolute, resolve } from "node:path";
 import {
+  experimental_getHostPathBasename as getHostPathBasename,
+  experimental_resolveHostPath as resolveHostPath,
   PluginCliError,
   cliCommand,
   defineCli,
@@ -13,14 +14,16 @@ import {
   createComment,
   publishProjectsChanged,
   registerHandlers,
+  type PostedComment,
   type TasksApiStore,
 } from "../api";
+import type { ParentNotification } from "../db";
 import {
   publishAttachmentChanged,
   readAttachmentContent,
   saveAttachmentFromBytes,
 } from "../attachments";
-import { delegationRpcContract } from "../delegate/contract";
+import { delegationRpcContract, PARENT_NOTIFICATIONS } from "../delegate/contract";
 import { handlers as delegationHandlers } from "../delegate";
 import {
   tasksRpcContract,
@@ -175,14 +178,20 @@ async function resolveClientMachine(
   );
 }
 
-/** Resolve a CLI path against the caller's cwd on the target machine, never the server's. */
+/**
+ * Resolve a CLI path against the caller's cwd on the target machine, never the
+ * server's, with the target's path rules (POSIX or Windows), not the server's.
+ */
 function clientPath(machine: ClientMachine, path: string): string {
-  if (isAbsolute(path)) return resolve(path);
-  if (machine.cwd !== undefined) return resolve(machine.cwd, path);
-  throw new CliError(`relative path needs a working directory on the target machine: ${path}`, {
-    code: "invalid_path",
-    hint: "pass an absolute path",
-  });
+  const resolved = resolveHostPath({ rootPath: machine.cwd ?? "", path });
+  if (resolved !== null) return resolved;
+  if (machine.cwd === undefined) {
+    throw new CliError(`relative path needs a working directory on the target machine: ${path}`, {
+      code: "invalid_path",
+      hint: "pass an absolute path",
+    });
+  }
+  throw new CliError(`invalid host path: ${path}`, { code: "invalid_path" });
 }
 
 function isMissingClientFileError(error: unknown): boolean {
@@ -235,7 +244,7 @@ async function writeClientFile(
 }
 
 function attachmentFileName(path: string): string {
-  return path.split(/[\\/]/).at(-1) || "attachment";
+  return getHostPathBasename(path) || "attachment";
 }
 
 async function readTextFile(
@@ -287,6 +296,83 @@ async function readCreateFiles(
       descriptionFile === undefined
         ? options.description
         : await readTextFile(bb, machine, descriptionFile),
+  };
+}
+
+/** Read `comment`'s --attach and --body-file inputs on the caller's machine. */
+async function readCommentFiles(
+  bb: BbPluginApi,
+  domain: TasksDomain,
+  ctx: PluginCliContext,
+  options: { attach: readonly string[]; bodyFile?: string; machine?: string },
+): Promise<{ attachSources: Array<{ path: string; bytes: Buffer }>; text?: string }> {
+  if (options.attach.length === 0 && options.bodyFile === undefined) {
+    if (options.machine !== undefined) {
+      throw new CliError("--machine requires --attach or --body-file");
+    }
+    return { attachSources: [] };
+  }
+  const machine = await resolveClientMachine(bb, domain, options.machine, ctx);
+  const attachSources: Array<{ path: string; bytes: Buffer }> = [];
+  for (const path of options.attach.map((entry) => clientPath(machine, entry))) {
+    attachSources.push({ path, bytes: await readAttachmentSource(bb, machine.hostId, path) });
+  }
+  return {
+    attachSources,
+    text:
+      options.bodyFile === undefined
+        ? undefined
+        : await readTextFile(bb, machine, options.bodyFile),
+  };
+}
+
+function parentNotificationLine(notification: ParentNotification): string {
+  switch (notification.state) {
+    case "delivered":
+      return `Woke parent ${notification.targetThreadId}`;
+    case "pending":
+      return `Parent wake pending${notification.lastError ? ` (${notification.lastError})` : ""}; Tasks retries it`;
+    case "undeliverable":
+      return `Parent wake undeliverable: ${notification.reason}`;
+  }
+}
+
+/** A comment's result lines; a failed attachment or an undeliverable wake exits 1 with the comment saved. */
+function commentResult(
+  task: Task,
+  posted: PostedComment,
+  options: { json: boolean; attachPaths: readonly string[] },
+): PluginCliResult {
+  const { comment, attachments, parentNotification } = posted;
+  const failed = posted.failedAttachments.map((entry) => ({
+    path: options.attachPaths[entry.index] ?? entry.fileName,
+    error: entry.error,
+  }));
+  const undeliverable = parentNotification?.state === "undeliverable";
+  const stdout = options.json
+    ? JSON.stringify({
+        comment,
+        ...(options.attachPaths.length > 0 ? { attachments, failedAttachments: failed } : {}),
+        ...(parentNotification === null ? {} : { parentNotification }),
+      })
+    : [
+        `Commented on ${task.key}  ${comment.id}`,
+        ...attachments.map((attachment) => `Attached ${attachment.fileName}  ${attachment.id}`),
+        ...failed.map((entry) => `Failed to attach ${entry.path}: ${entry.error}`),
+        ...failed.map(
+          (entry) => `Retry with: bb tasks attachment add ${comment.id} --file ${entry.path}`,
+        ),
+        ...(parentNotification === null ? [] : [parentNotificationLine(parentNotification)]),
+      ].join("\n");
+  if (failed.length === 0 && !undeliverable) return { exitCode: 0, stdout };
+  const problems = [
+    ...(failed.length === 0 ? [] : [`${failed.length} attachment(s) failed`]),
+    ...(undeliverable ? ["the parent wake is undeliverable"] : []),
+  ];
+  return {
+    exitCode: 1,
+    stdout,
+    stderr: `commented on ${task.key} as ${comment.id}, but ${problems.join(" and ")}; do not re-post the comment`,
   };
 }
 
@@ -1625,6 +1711,39 @@ export function registerTasksCli(
           },
         }),
 
+        move: cliCommand({
+          summary: "Move a task and its sub-tasks to another project",
+          description:
+            "Moved tasks get new keys in the target project; their old keys keep resolving. Labels are matched by name in the target project and created there when missing. A sub-task moved on its own is detached from its parent.",
+          positionals: [KEY_POSITIONAL],
+          options: {
+            project: REQUIRED_PROJECT_OPTION,
+            json: JSON_OPTION,
+          },
+          run(input, ctx) {
+            return guard(async () => {
+              const task = await resolveTask(domain, input.positionals["key-or-id"]);
+              const project = await requiredProject(domain, ctx, input.options.project);
+              const result = tasksRpcContract.moveTaskToProject.output.parse(
+                await domain.moveTaskToProject(
+                  tasksRpcContract.moveTaskToProject.input.parse({
+                    taskId: task.id,
+                    projectId: project.id,
+                    authorName: taskAuthor(ctx),
+                  }),
+                ),
+              );
+              const moved = unwrapTask(result);
+              if (input.options.json) {
+                return JSON.stringify({ task: moved, previousKey: task.key });
+              }
+              return moved.key === task.key
+                ? `${task.key} is already in ${project.prefix}`
+                : `Moved ${task.key} to ${moved.key}  ${moved.title}`;
+            });
+          },
+        }),
+
         comment: cliCommand({
           summary: "Add a markdown comment to a task",
           positionals: [KEY_POSITIONAL],
@@ -1633,8 +1752,9 @@ export function registerTasksCli(
               type: "string",
               placeholder: "markdown",
               aliases: ["message", "text", "content"],
+              stdin: true,
               description:
-                "Comment markdown; use --body-file for long text (exactly one of the two)",
+                "Comment markdown; --body-stdin reads one line, so use --body-file for long text",
             },
             "body-file": {
               type: "string",
@@ -1651,25 +1771,39 @@ export function registerTasksCli(
               description:
                 "Deliver the comment to the thread that wrote the task's latest agent reply",
             },
+            "notify-parent": {
+              type: "boolean",
+              description:
+                "Wake this thread's parent with the comment's first line, its thread and its attachments; retried until delivered",
+            },
+            attach: {
+              type: "string",
+              repeatable: true,
+              placeholder: "path",
+              aliases: ["file", "attachment"],
+              description:
+                "File to attach to this comment, repeatable; read from the invoking machine, at most 25 MB each",
+            },
             machine: MACHINE_OPTION,
             json: JSON_OPTION,
           },
-          constraints: [
-            { kind: "exactly-one", options: ["body", "body-file"] },
-            { kind: "requires", option: "machine", needs: ["body-file"] },
-          ],
+          constraints: [{ kind: "exactly-one", options: ["body", "body-file"] }],
           run(input, ctx) {
             return guard(async () => {
               const task = await resolveTask(domain, input.positionals["key-or-id"]);
-              const bodyFile = input.options["body-file"];
-              const body =
-                bodyFile === undefined
-                  ? input.options.body
-                  : await readTextFile(
-                      bb,
-                      await resolveClientMachine(bb, domain, input.options.machine, ctx),
-                      bodyFile,
-                    );
+              const notifyParent = input.options["notify-parent"];
+              if (notifyParent && !ctx.threadId) {
+                throw new CliError("--notify-parent needs an invoking bb thread", {
+                  code: "missing_thread",
+                  hint: "run it from the agent thread whose parent should be woken",
+                });
+              }
+              const { attachSources, text } = await readCommentFiles(bb, domain, ctx, {
+                attach: input.options.attach,
+                bodyFile: input.options["body-file"],
+                machine: input.options.machine,
+              });
+              const body = text ?? input.options.body;
               if (body === undefined) {
                 throw new CliError("missing required --body or --body-file", {
                   code: "missing_required",
@@ -1678,16 +1812,23 @@ export function registerTasksCli(
               if (!body.trim()) {
                 throw new CliError("comment body must not be blank");
               }
-              const comment = await createComment(bb, store, {
+              const posted = await createComment(bb, store, {
                 taskId: task.id,
                 source: ctx.threadId ? { kind: "agent", threadId: ctx.threadId } : { kind: "user" },
                 authorName: input.options.author ?? taskAuthor(ctx),
                 body,
                 notify: input.options.notify,
+                awaitDelivery: true,
+                attachments: attachSources.map((source) => ({
+                  fileName: attachmentFileName(source.path),
+                  bytes: source.bytes,
+                })),
+                notifyParent,
               });
-              return input.options.json
-                ? JSON.stringify({ comment })
-                : `Commented on ${task.key}  ${comment.id}`;
+              return commentResult(task, posted, {
+                json: input.options.json,
+                attachPaths: attachSources.map((source) => source.path),
+              });
             });
           },
         }),
@@ -2304,10 +2445,36 @@ export function registerTasksCli(
               aliases: ["extra-instructions"],
               description: "Extra instructions for this dispatch only",
             },
+            "parent-thread": {
+              type: "string",
+              placeholder: "thread-id",
+              description:
+                "Spawn the thread as this thread's child, so bb reports its turns there, as in --parent-thread $BB_THREAD_ID",
+            },
+            "parent-notifications": {
+              type: "enum",
+              values: PARENT_NOTIFICATIONS,
+              description:
+                "Which child turns bb reports to the parent: auto (every turn), stuck (only when it needs help) or off; needs --parent-thread",
+            },
+            "base-branch": {
+              type: "string",
+              placeholder: "branch",
+              description:
+                "Start a new worktree from this branch, overriding the preset's environment for this dispatch",
+            },
             json: JSON_OPTION,
           },
           run(input) {
             return guard(async () => {
+              if (
+                input.options["parent-notifications"] !== undefined &&
+                input.options["parent-thread"] === undefined
+              ) {
+                throw new CliError("--parent-notifications requires --parent-thread", {
+                  code: "missing_required",
+                });
+              }
               const task = await resolveTask(domain, input.positionals["key-or-id"]);
               const preset = resolvePreset(await listPresets(domain), input.options.preset);
               const result = delegationRpcContract.delegate.output.parse(
@@ -2316,6 +2483,9 @@ export function registerTasksCli(
                     taskId: task.id,
                     presetId: preset.id,
                     extraInstructions: input.options.instructions,
+                    parentThreadId: input.options["parent-thread"],
+                    parentNotifications: input.options["parent-notifications"],
+                    baseBranch: input.options["base-branch"],
                   }),
                 ),
               );

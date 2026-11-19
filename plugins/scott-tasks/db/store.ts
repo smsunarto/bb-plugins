@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { createCrewSnapshotReader } from "./crew-snapshot";
+import { createFieldStore } from "./fields";
+import { createParentNotificationStore } from "./parent-notifications";
 import { initializeTasksSchema } from "./schema";
 import {
   TASKS_PAGE_DEFAULT_LIMIT,
@@ -13,7 +16,6 @@ import {
   presetPermissionModeSchema,
   presetReasoningLevelSchema,
   presetServiceTierSchema,
-  ULID_PATTERN,
 } from "../shared/contract.js";
 import type {
   AgentComment,
@@ -32,6 +34,7 @@ import type {
   Label,
   ListTasksFilters,
   ListTasksPage,
+  MoveTaskToProjectResult,
   Preset,
   PresetEnvironmentKind,
   Project,
@@ -275,12 +278,6 @@ function createUlid(now = Date.now()): string {
 
 function nowIso(): string {
   return new Date().toISOString();
-}
-
-function createOrValidateUlid(id: string | undefined): string {
-  if (id === undefined) return createUlid();
-  if (!ULID_PATTERN.test(id)) throw new Error(`Invalid ULID: ${id}`);
-  return id;
 }
 
 function requireNonEmpty(value: string, field: string): string {
@@ -563,7 +560,7 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createFolder(input: CreateFolderInput): Folder {
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     const parentFolderId = input.parentFolderId ?? null;
     validateFolderParent(parentFolderId, id);
     db.prepare<[string, string, string | null, string]>(
@@ -629,7 +626,7 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createProject(input: CreateProjectInput): Project {
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     const folderId = input.folderId ?? null;
     if (folderId !== null) requireFolder(folderId);
     db.prepare<[string, string, string, string, string | null, string | null, string]>(
@@ -708,12 +705,20 @@ export function createTasksStore(db: PluginDatabase) {
     `${taskSelect} WHERE p.prefix = ? COLLATE NOCASE AND t.number = ?`,
   );
 
+  // A moved task keeps answering to its old keys. A live key always wins over an alias.
+  const getTaskByAliasRow = db.prepare<[string, number], TaskRow>(
+    `${taskSelect}
+     JOIN task_key_aliases a ON a.task_id = t.id
+     WHERE a.prefix = ? AND a.number = ?`,
+  );
+
   function getTaskByKey(key: string): Task | undefined {
     const match = /^([A-Za-z][A-Za-z0-9]{0,9})-(\d+)$/.exec(key.trim());
     if (!match) return undefined;
     const [, prefix, number] = match;
     if (prefix === undefined || number === undefined) return undefined;
-    const row = getTaskByKeyRow.get(prefix, Number(number));
+    const row =
+      getTaskByKeyRow.get(prefix, Number(number)) ?? getTaskByAliasRow.get(prefix, Number(number));
     return row ? taskFromRow(row) : undefined;
   }
 
@@ -751,7 +756,7 @@ export function createTasksStore(db: PluginDatabase) {
 
   const createTaskTransaction = db.transaction((input: CreateTaskInput): Task => {
     const project = requireProject(input.projectId);
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     const status = input.status ?? "backlog";
     const parentTaskId = input.parentTaskId ?? null;
     validateTaskParent(project.id, parentTaskId, id);
@@ -793,13 +798,14 @@ export function createTasksStore(db: PluginDatabase) {
         number,
         string,
         string,
+        string,
       ]
     >(
       `
       INSERT INTO tasks (
         id, project_id, number, title, description, status, priority, due_date,
-        parent_task_id, position, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        parent_task_id, position, created_at, updated_at, status_changed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     ).run(
       id,
@@ -812,6 +818,7 @@ export function createTasksStore(db: PluginDatabase) {
       validateDueDate(input.dueDate ?? null),
       parentTaskId,
       position,
+      createdAt,
       createdAt,
       createdAt,
     );
@@ -1087,6 +1094,7 @@ export function createTasksStore(db: PluginDatabase) {
           .get(current.projectId, status)?.position ?? POSITION_STEP;
     }
 
+    const updatedAt = nowIso();
     db.prepare<
       [
         string,
@@ -1097,13 +1105,16 @@ export function createTasksStore(db: PluginDatabase) {
         string | null,
         number,
         string,
+        Task["status"],
+        string,
         string,
       ]
     >(
       `
         UPDATE tasks SET
           title = ?, description = ?, status = ?, priority = ?, due_date = ?,
-          parent_task_id = ?, position = ?, updated_at = ?
+          parent_task_id = ?, position = ?, updated_at = ?,
+          status_changed_at = CASE WHEN status <> ? THEN ? ELSE status_changed_at END
         WHERE id = ?
       `,
     ).run(
@@ -1114,7 +1125,9 @@ export function createTasksStore(db: PluginDatabase) {
       input.dueDate === undefined ? current.dueDate : validateDueDate(input.dueDate),
       parentTaskId,
       position,
-      nowIso(),
+      updatedAt,
+      status,
+      updatedAt,
       id,
     );
     return requireTask(id);
@@ -1122,6 +1135,83 @@ export function createTasksStore(db: PluginDatabase) {
 
   function updateTask(id: string, input: UpdateTaskInput): Task {
     return updateTaskTransaction(id, input);
+  }
+
+  // Moves a task and its sub-tasks to another project. Each gets a fresh number there, lands at
+  // the end of its status column, keeps its old key as an alias, and has its labels remapped by
+  // name, creating any the target project lacks. A sub-task moved on its own leaves its parent,
+  // because a sub-task must share its parent's project.
+  const allocateTaskNumbers = db.prepare<[number, string, number]>(
+    `UPDATE projects SET next_task_number = next_task_number + ?
+     WHERE id = ? AND next_task_number = ?`,
+  );
+  const nextColumnPosition = db.prepare<[string, Task["status"]], { position: number }>(
+    `SELECT COALESCE(MAX(position), 0) + ${POSITION_STEP} AS position
+     FROM tasks WHERE project_id = ? AND status = ?`,
+  );
+  const recordKeyAlias = db.prepare<[string, number, string]>(
+    `INSERT INTO task_key_aliases (prefix, number, task_id) VALUES (?, ?, ?)
+     ON CONFLICT (prefix, number) DO UPDATE SET task_id = excluded.task_id`,
+  );
+  const dropKeyAlias = db.prepare<[string, number]>(
+    "DELETE FROM task_key_aliases WHERE prefix = ? AND number = ?",
+  );
+  const moveTaskRow = db.prepare<[string, number, number, string | null, string, string]>(
+    `UPDATE tasks SET project_id = ?, number = ?, position = ?, parent_task_id = ?, updated_at = ?
+     WHERE id = ?`,
+  );
+  const labelByProjectAndName = db.prepare<[string, string], LabelRow>(
+    "SELECT * FROM labels WHERE project_id = ? AND name = ? COLLATE NOCASE",
+  );
+  const clearTaskLabels = db.prepare<[string]>("DELETE FROM task_labels WHERE task_id = ?");
+  const linkTaskLabel = db.prepare<[string, string]>(
+    `INSERT INTO task_labels (task_id, label_id) VALUES (?, ?)
+     ON CONFLICT (task_id, label_id) DO NOTHING`,
+  );
+
+  const moveTaskToProjectTransaction = db.transaction(
+    (id: string, projectId: string): MoveTaskToProjectResult => {
+      const root = requireTask(id);
+      const target = requireProject(projectId);
+      if (root.projectId === target.id) return { task: root, moved: [] };
+      const source = requireProject(root.projectId);
+      const moving = [root, ...listSubtasks(root.id)];
+
+      const allocated = allocateTaskNumbers.run(moving.length, target.id, target.nextTaskNumber);
+      if (allocated.changes !== 1) {
+        throw new Error(`Could not allocate task numbers for ${target.id}`);
+      }
+
+      const updatedAt = nowIso();
+      const moved = moving.map((task, index) => {
+        const number = target.nextTaskNumber + index;
+        const sourceLabels = listLabelsForTask(task.id);
+        recordKeyAlias.run(source.prefix, task.number, task.id);
+        dropKeyAlias.run(target.prefix, number);
+        moveTaskRow.run(
+          target.id,
+          number,
+          nextColumnPosition.get(target.id, task.status)?.position ?? POSITION_STEP,
+          task.id === root.id ? null : root.id,
+          updatedAt,
+          task.id,
+        );
+        clearTaskLabels.run(task.id);
+        for (const label of sourceLabels) {
+          const row = labelByProjectAndName.get(target.id, label.name);
+          const targetLabel = row
+            ? labelFromRow(row)
+            : createLabel({ projectId: target.id, name: label.name, color: label.color });
+          linkTaskLabel.run(task.id, targetLabel.id);
+        }
+        return { previousKey: task.key, task: requireTask(task.id) };
+      });
+      return { task: requireTask(root.id), moved };
+    },
+  );
+
+  function moveTaskToProject(id: string, projectId: string): MoveTaskToProjectResult {
+    return moveTaskToProjectTransaction(id, projectId);
   }
 
   function renormalizeColumn(
@@ -1194,11 +1284,15 @@ export function createTasksStore(db: PluginDatabase) {
             .get(task.projectId, input.status, id)?.position ?? POSITION_STEP;
       }
 
-      db.prepare<[Task["status"], number, string, string]>(
+      const updatedAt = nowIso();
+      db.prepare<[Task["status"], number, string, Task["status"], string, string]>(
         `
-        UPDATE tasks SET status = ?, position = ?, updated_at = ? WHERE id = ?
+        UPDATE tasks SET
+          status = ?, position = ?, updated_at = ?,
+          status_changed_at = CASE WHEN status <> ? THEN ? ELSE status_changed_at END
+        WHERE id = ?
       `,
-      ).run(input.status, position, nowIso(), id);
+      ).run(input.status, position, updatedAt, input.status, updatedAt, id);
       return { task: requireTask(id), renumberedTaskIds };
     },
   );
@@ -1228,7 +1322,7 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createLabel(input: CreateLabelInput): Label {
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     requireProject(input.projectId);
     db.prepare<[string, string, string, string]>(
       `
@@ -1330,27 +1424,17 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createComment(input: CreateCommentInput): Comment {
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     requireTask(input.taskId);
     const columns = commentSourceColumns(input.source);
     db.prepare<
-      [
-        string,
-        string,
-        CommentSource["kind"],
-        string,
-        string | null,
-        string | null,
-        string,
-        number,
-        string,
-      ]
+      [string, string, CommentSource["kind"], string, string | null, string | null, string, string]
     >(
       `
       INSERT INTO comments (
         id, task_id, kind, author_name, preset_name, thread_id, body,
-        notified_count, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
     ).run(
       id,
@@ -1360,7 +1444,6 @@ export function createTasksStore(db: PluginDatabase) {
       columns.presetName,
       validateThreadId(columns.threadId),
       input.body,
-      input.notifiedCount ?? 0,
       nowIso(),
     );
     return requireComment(id);
@@ -1399,12 +1482,11 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function updateComment(id: string, input: UpdateCommentInput): Comment {
-    const current = requireComment(id);
-    db.prepare<[string, number, string]>(
-      `
-      UPDATE comments SET body = ?, notified_count = ? WHERE id = ?
-    `,
-    ).run(input.body ?? current.body, input.notifiedCount ?? current.notifiedCount, id);
+    requireComment(id);
+    db.prepare<[number, string]>("UPDATE comments SET notified_count = ? WHERE id = ?").run(
+      input.notifiedCount,
+      id,
+    );
     return requireComment(id);
   }
 
@@ -1425,7 +1507,7 @@ export function createTasksStore(db: PluginDatabase) {
     else requireComment(owner.commentId);
     const taskId = owner.kind === "task" ? owner.taskId : null;
     const commentId = owner.kind === "comment" ? owner.commentId : null;
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     db.prepare<
       [string, string | null, string | null, string, string, number, string, number, string]
     >(
@@ -1508,21 +1590,9 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function updateAttachment(id: string, input: UpdateAttachmentInput): Attachment {
-    const current = requireAttachment(id);
-    db.prepare<[string, string, number, string, number, string]>(
-      `
-      UPDATE attachments
-      SET file_name = ?, mime = ?, size_bytes = ?, blob_path = ?, is_image = ?
-      WHERE id = ?
-    `,
-    ).run(
-      input.fileName === undefined
-        ? current.fileName
-        : requireNonEmpty(input.fileName, "Attachment fileName"),
-      input.mime === undefined ? current.mime : requireNonEmpty(input.mime, "Attachment mime"),
-      input.sizeBytes ?? current.sizeBytes,
-      input.blobPath === undefined ? current.blobPath : validateBlobPath(input.blobPath),
-      (input.isImage ?? current.isImage) ? 1 : 0,
+    requireAttachment(id);
+    db.prepare<[string, string]>("UPDATE attachments SET blob_path = ? WHERE id = ?").run(
+      validateBlobPath(input.blobPath),
       id,
     );
     return requireAttachment(id);
@@ -1569,16 +1639,23 @@ export function createTasksStore(db: PluginDatabase) {
 
   function upsertTaskThread(input: UpsertTaskThreadInput): TaskThread {
     requireTask(input.taskId);
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     const timestamp = nowIso();
-    db.prepare<[string, string, string, string, string, TaskThreadLiveStatus, string, string]>(
+    db.prepare<
+      [string, string, string, string, string, TaskThreadLiveStatus, string, string, string]
+    >(
       `
       INSERT INTO task_threads (
-        id, task_id, thread_id, preset_name, title, live_status, attached_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        id, task_id, thread_id, preset_name, title, live_status, live_status_changed_at,
+        attached_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (task_id, thread_id) DO UPDATE SET
         preset_name = excluded.preset_name,
         title = excluded.title,
+        live_status_changed_at = CASE
+          WHEN task_threads.live_status <> excluded.live_status THEN excluded.updated_at
+          ELSE task_threads.live_status_changed_at
+        END,
         live_status = excluded.live_status,
         updated_at = excluded.updated_at
     `,
@@ -1589,6 +1666,7 @@ export function createTasksStore(db: PluginDatabase) {
       requireNonEmpty(input.presetName, "Task thread presetName"),
       requireNonEmpty(input.title, "Task thread title"),
       input.liveStatus,
+      timestamp,
       timestamp,
       timestamp,
     );
@@ -1617,7 +1695,7 @@ export function createTasksStore(db: PluginDatabase) {
         SELECT * FROM task_threads
         WHERE task_id = ?
         ORDER BY
-          CASE WHEN live_status IN ('completed', 'failed') THEN 1 ELSE 0 END,
+          CASE WHEN live_status IN ('completed', 'failed', 'archived') THEN 1 ELSE 0 END,
           attached_at DESC,
           id DESC
       `,
@@ -1627,14 +1705,18 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function updateTaskThreadStatus(id: string, liveStatus: TaskThreadLiveStatus): TaskThread {
-    const current = requireTaskThread(id);
+    requireTaskThread(id);
+    const updatedAt = nowIso();
     db.prepare<[string, string, TaskThreadLiveStatus, string, string]>(
       `
       UPDATE task_threads
-      SET preset_name = ?, title = ?, live_status = ?, updated_at = ?
+      SET
+        live_status_changed_at = CASE WHEN live_status <> ? THEN ? ELSE live_status_changed_at END,
+        live_status = ?,
+        updated_at = ?
       WHERE id = ?
     `,
-    ).run(current.presetName, current.title, liveStatus, nowIso(), id);
+    ).run(liveStatus, updatedAt, liveStatus, updatedAt, id);
     return requireTaskThread(id);
   }
 
@@ -1654,7 +1736,7 @@ export function createTasksStore(db: PluginDatabase) {
   }
 
   function createPreset(input: CreatePresetInput): Preset {
-    const id = createOrValidateUlid(input.id);
+    const id = createUlid();
     const environment = validatePresetEnvironment(input);
     db.prepare<
       [
@@ -1767,7 +1849,17 @@ export function createTasksStore(db: PluginDatabase) {
     return db.prepare<[string]>("DELETE FROM presets WHERE id = ?").run(id).changes > 0;
   }
 
+  const fields = createFieldStore(db, nowIso);
+  const parentNotifications = createParentNotificationStore(db, nowIso);
+  const crewSnapshot = createCrewSnapshotReader(db, {
+    listTaskFields: fields.listTaskFields,
+    getParentNotification: parentNotifications.getParentNotification,
+  });
+
   return {
+    ...fields,
+    ...parentNotifications,
+    crewSnapshot,
     createFolder,
     getFolder,
     listFolders,
@@ -1785,6 +1877,7 @@ export function createTasksStore(db: PluginDatabase) {
     listTasks,
     listSubtasks,
     updateTask,
+    moveTaskToProject,
     updatePosition,
     deleteTask,
     createLabel,

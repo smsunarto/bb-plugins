@@ -5,7 +5,10 @@ import { errorMessage } from "../../shared/errors.js";
 import { formatFileSize } from "../activity/time.js";
 import { ConfirmDialog } from "../../components/confirm-dialog.js";
 import { Hint } from "../../components/hint.js";
-import { experimental_ImageLightbox as ImageLightbox } from "@get-bb/plugin-sdk/app";
+import {
+  experimental_ImageLightbox as ImageLightbox,
+  experimental_saveFile,
+} from "@get-bb/plugin-sdk/app";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 
@@ -154,6 +157,13 @@ export function AttachmentsGrid({
       <a
         href={attachmentDownloadUrl(attachment.id)}
         download={attachment.fileName}
+        onClick={(event) => {
+          event.preventDefault();
+          void experimental_saveFile({
+            url: attachmentDownloadUrl(attachment.id),
+            fileName: attachment.fileName,
+          });
+        }}
         className="flex min-w-0 items-center gap-2 rounded-sm hover:bg-state-hover"
       >
         <span className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-secondary text-muted-foreground">

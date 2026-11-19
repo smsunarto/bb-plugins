@@ -271,6 +271,7 @@ async function renderComposerWithTask(options?: { body?: string; holdSend?: bool
         authorName: "You",
         body: request.body,
         notify: request.notify,
+        awaitDelivery: true,
       }),
     };
   });

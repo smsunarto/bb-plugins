@@ -94,6 +94,30 @@ function stdout(result: { exitCode: number; stdout: string; stderr: string }): s
 }
 
 describe("bb tasks CLI", () => {
+  it("moves a task to another project and still resolves its old key", async () => {
+    const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
+    await plugin(bb);
+
+    for (const [name, prefix] of [
+      ["Operations", "OPS"],
+      ["Home", "HOME"],
+    ] as const) {
+      stdout(await harness.runCli(["project", "create", "--name", name, "--prefix", prefix]));
+    }
+    stdout(await harness.runCli(["create", "--project", "OPS", "--title", "Wander"]));
+
+    expect(stdout(await harness.runCli(["move", "ops-1", "--project", "home"]))).toBe(
+      "Moved OPS-1 to HOME-1  Wander",
+    );
+    expect(JSON.parse(stdout(await harness.runCli(["show", "OPS-1", "--json"])))).toMatchObject({
+      task: { key: "HOME-1" },
+    });
+    expect(
+      JSON.parse(stdout(await harness.runCli(["move", "OPS-1", "--project", "HOME", "--json"]))),
+    ).toMatchObject({ task: { key: "HOME-1" }, previousKey: "HOME-1" });
+
+    await harness.dispose();
+  });
   it("lists seed-demo in help while retaining the explicit confirmation guard", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
     await plugin(bb);
@@ -1396,6 +1420,182 @@ describe("bb tasks CLI", () => {
     await harness.dispose();
   });
 
+  it("attaches comment files before waking the commenting thread's parent", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "bb-tasks-cli-"));
+    const reportPath = join(directory, "report.md");
+    const notesPath = join(directory, "notes.txt");
+    const pngPath = join(directory, "pixel.png");
+    await writeFile(reportPath, "Final: report attached\n\nAll checks pass.\n", "utf8");
+    await writeFile(notesPath, "notes\n", "utf8");
+    await writeFile(pngPath, new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        ...localMachineSdk(),
+        threads: {
+          get: async ({ threadId }: { threadId: string }) =>
+            makeThreadResponse(
+              threadId === LOCAL_THREAD.threadId
+                ? { id: threadId, environmentId: "env_local", parentThreadId: "thr_captain" }
+                : { id: threadId, status: "idle" },
+            ),
+          send: async () => undefined,
+        },
+      },
+    });
+    await plugin(bb);
+
+    try {
+      stdout(await harness.runCli(["project", "create", "--name", "Comments", "--prefix", "CMT"]));
+      stdout(await harness.runCli(["create", "--project", "CMT", "--title", "Report back"]));
+
+      const outsideThread = await harness.runCli([
+        "comment",
+        "CMT-1",
+        "--body",
+        "Final: done",
+        "--notify-parent",
+      ]);
+      expect(outsideThread).toMatchObject({ exitCode: 1 });
+      expect(outsideThread.stderr).toContain("--notify-parent needs an invoking bb thread");
+
+      const posted = JSON.parse(
+        stdout(
+          await harness.runCli(
+            [
+              "comment",
+              "cmt-1",
+              "--body-file",
+              reportPath,
+              "--attach",
+              notesPath,
+              "--attach",
+              pngPath,
+              "--notify-parent",
+              "--json",
+            ],
+            LOCAL_THREAD,
+          ),
+        ),
+      );
+      const [notes, pixel] = posted.attachments;
+      expect(posted.attachments).toEqual([
+        expect.objectContaining({
+          owner: { kind: "comment", commentId: posted.comment.id },
+          fileName: "notes.txt",
+        }),
+        expect.objectContaining({
+          owner: { kind: "comment", commentId: posted.comment.id },
+          fileName: "pixel.png",
+          isImage: true,
+        }),
+      ]);
+      expect(posted.parentNotification).toMatchObject({
+        state: "delivered",
+        targetThreadId: "thr_captain",
+      });
+      expect(harness.sdk.callsTo("threads.send")).toEqual([
+        [
+          {
+            threadId: "thr_captain",
+            input: [
+              {
+                type: "text",
+                text: `[tasks] CMT-1 Final: report attached · thr_local_worker · ${notes.id} notes.txt, ${pixel.id} pixel.png`,
+                mentions: [],
+              },
+            ],
+            mode: "steer-if-active",
+          },
+        ],
+      ]);
+      const shown = JSON.parse(stdout(await harness.runCli(["show", "CMT-1", "--json"])));
+      expect(shown.comments).toEqual([
+        expect.objectContaining({
+          body: "Final: report attached\n\nAll checks pass.\n",
+          attachments: [
+            expect.objectContaining({ id: notes.id }),
+            expect.objectContaining({ id: pixel.id }),
+          ],
+        }),
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+      await harness.dispose();
+    }
+  });
+
+  it("still wakes the parent when one comment file fails, and names the failed file", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "bb-tasks-cli-"));
+    const okPath = join(directory, "ok.txt");
+    const boomPath = join(directory, "boom.bin");
+    await writeFile(okPath, "fine\n", "utf8");
+    await writeFile(boomPath, "boom\n", "utf8");
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        ...localMachineSdk(),
+        threads: {
+          get: async ({ threadId }: { threadId: string }) =>
+            makeThreadResponse(
+              threadId === LOCAL_THREAD.threadId
+                ? { id: threadId, environmentId: "env_local", parentThreadId: "thr_captain" }
+                : { id: threadId, status: "idle" },
+            ),
+          send: async () => undefined,
+        },
+      },
+    });
+    await plugin(bb);
+
+    try {
+      stdout(await harness.runCli(["project", "create", "--name", "Partial", "--prefix", "PRT"]));
+      stdout(await harness.runCli(["create", "--project", "PRT", "--title", "Partial report"]));
+
+      const result = await harness.runCli(
+        [
+          "comment",
+          "PRT-1",
+          "--body",
+          "Final: partial",
+          "--attach",
+          okPath,
+          "--attach",
+          boomPath,
+          "--notify-parent",
+        ],
+        LOCAL_THREAD,
+      );
+
+      expect(result.exitCode).toBe(1);
+      const lines = result.stdout.trim().split("\n");
+      const commentId = lines[0]?.split(/\s+/).at(-1);
+      const okId = lines[1]?.split(/\s+/).at(-1);
+      expect(lines).toEqual([
+        `Commented on PRT-1  ${commentId}`,
+        `Attached ok.txt  ${okId}`,
+        `Failed to attach ${boomPath}: simulated blob write failure`,
+        `Retry with: bb tasks attachment add ${commentId} --file ${boomPath}`,
+        "Woke parent thr_captain",
+      ]);
+      expect(result.stderr).toContain("do not re-post the comment");
+      expect(harness.sdk.callsTo("threads.send")).toEqual([
+        [
+          expect.objectContaining({
+            input: [
+              expect.objectContaining({
+                text: `[tasks] PRT-1 Final: partial · thr_local_worker · ${okId} ok.txt`,
+              }),
+            ],
+          }),
+        ],
+      ]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+      await harness.dispose();
+    }
+  });
+
   it("adds and downloads an attachment with an exact file round-trip", async () => {
     const directory = await mkdtemp(join(tmpdir(), "bb-tasks-cli-"));
     const inputPath = join(directory, "input.txt");
@@ -1572,124 +1772,133 @@ describe("bb tasks CLI", () => {
     }
   });
 
-  it("routes file flags to the invoking thread's machine and honors --machine", async () => {
-    const remoteFiles = new Map<string, Buffer>([
-      ["/remote/notes.md", Buffer.from("remote description\n", "utf8")],
-      ["/remote/shot.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
-    ]);
-    const { bb, harness } = createFakePluginHost({
-      pluginId: "tasks",
-      sdk: {
-        threads: {
-          get: async ({ threadId }: { threadId: string }) =>
-            makeThreadResponse({ id: threadId, environmentId: "env-remote" }),
-        },
-        environments: {
-          get: async () => ({ hostId: "machine-remote" }),
-        },
-        hosts: {
-          list: async () => [{ id: "machine-remote", name: "Remote Laptop" }],
-        },
-        files: {
-          read: async ({ path }: { path: string }) => {
-            const contents = remoteFiles.get(path);
-            if (!contents) throw new Error(`Path does not exist: ${path}`);
-            const contentEncoding = isUtf8(contents) ? "utf8" : "base64";
-            return {
+  it.each([
+    ["/remote", "/remote", "/"],
+    ["C:", "C:", "\\"],
+    ["//server/share/remote", "\\\\server\\share\\remote", "\\"],
+  ])(
+    "routes file flags from %s to the invoking machine and honors --machine",
+    async (remoteDir, canonicalRoot, separator) => {
+      const remotePath = (...parts: string[]) =>
+        `${canonicalRoot}${separator}${parts.join(separator)}`;
+      const remoteFiles = new Map<string, Buffer>([
+        [remotePath("notes.md"), Buffer.from("remote description\n", "utf8")],
+        [remotePath("shot.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])],
+      ]);
+      const { bb, harness } = createFakePluginHost({
+        pluginId: "tasks",
+        sdk: {
+          threads: {
+            get: async ({ threadId }: { threadId: string }) =>
+              makeThreadResponse({ id: threadId, environmentId: "env-remote" }),
+          },
+          environments: {
+            get: async () => ({ hostId: "machine-remote" }),
+          },
+          hosts: {
+            list: async () => [{ id: "machine-remote", name: "Remote Laptop" }],
+          },
+          files: {
+            read: async ({ path }: { path: string }) => {
+              const contents = remoteFiles.get(path);
+              if (!contents) throw new Error(`Path does not exist: ${path}`);
+              const contentEncoding = isUtf8(contents) ? "utf8" : "base64";
+              return {
+                path,
+                content: contents.toString(contentEncoding),
+                contentEncoding,
+                sizeBytes: contents.byteLength,
+              };
+            },
+            write: async ({
               path,
-              content: contents.toString(contentEncoding),
+              content,
               contentEncoding,
-              sizeBytes: contents.byteLength,
-            };
-          },
-          write: async ({
-            path,
-            content,
-            contentEncoding,
-          }: {
-            path: string;
-            content: string;
-            contentEncoding?: "utf8" | "base64";
-          }) => {
-            remoteFiles.set(path, Buffer.from(content, contentEncoding));
-            return { outcome: "written", path };
+            }: {
+              path: string;
+              content: string;
+              contentEncoding?: "utf8" | "base64";
+            }) => {
+              remoteFiles.set(path, Buffer.from(content, contentEncoding));
+              return { outcome: "written", path };
+            },
           },
         },
-      },
-    });
-    await plugin(bb);
-    const threadCtx = { threadId: "thr_remote_worker", cwd: "/remote" };
+      });
+      await plugin(bb);
+      const threadCtx = { threadId: "thr_remote_worker", cwd: remoteDir };
 
-    stdout(await harness.runCli(["project", "create", "--name", "Remote", "--prefix", "REM"]));
-    const created = JSON.parse(
+      stdout(await harness.runCli(["project", "create", "--name", "Remote", "--prefix", "REM"]));
+      const created = JSON.parse(
+        stdout(
+          await harness.runCli(
+            [
+              "create",
+              "--project",
+              "REM",
+              "--title",
+              "Remote files",
+              "--description-file",
+              "notes.md",
+              "--attach",
+              "shot.png",
+              "--json",
+            ],
+            threadCtx,
+          ),
+        ),
+      );
+      expect(created.task).toMatchObject({
+        key: "REM-1",
+        description: "remote description\n",
+      });
+      expect(created.attachments).toEqual([
+        expect.objectContaining({ fileName: "shot.png", mime: "image/png" }),
+      ]);
+      for (const [args] of harness.sdk.callsTo("files.read")) {
+        expect(args).toMatchObject({ hostId: "machine-remote" });
+      }
+
       stdout(
         await harness.runCli(
-          [
-            "create",
-            "--project",
-            "REM",
-            "--title",
-            "Remote files",
-            "--description-file",
-            "notes.md",
-            "--attach",
-            "shot.png",
-            "--json",
-          ],
+          ["attachment", "get", created.attachments[0].id, "--out", "fetched/shot.png"],
           threadCtx,
         ),
-      ),
-    );
-    expect(created.task).toMatchObject({
-      key: "REM-1",
-      description: "remote description\n",
-    });
-    expect(created.attachments).toEqual([
-      expect.objectContaining({ fileName: "shot.png", mime: "image/png" }),
-    ]);
-    for (const [args] of harness.sdk.callsTo("files.read")) {
-      expect(args).toMatchObject({ hostId: "machine-remote" });
-    }
+      );
+      expect(harness.sdk.callsTo("files.write")).toEqual([
+        [
+          expect.objectContaining({
+            hostId: "machine-remote",
+            path: remotePath("fetched", "shot.png"),
+            contentEncoding: "base64",
+            createParents: true,
+          }),
+        ],
+      ]);
+      expect(remoteFiles.get(remotePath("fetched", "shot.png"))).toEqual(
+        remoteFiles.get(remotePath("shot.png")),
+      );
 
-    stdout(
-      await harness.runCli(
-        ["attachment", "get", created.attachments[0].id, "--out", "fetched/shot.png"],
-        threadCtx,
-      ),
-    );
-    expect(harness.sdk.callsTo("files.write")).toEqual([
-      [
-        expect.objectContaining({
-          hostId: "machine-remote",
-          path: "/remote/fetched/shot.png",
-          contentEncoding: "base64",
-          createParents: true,
-        }),
-      ],
-    ]);
-    expect(remoteFiles.get("/remote/fetched/shot.png")).toEqual(
-      remoteFiles.get("/remote/shot.png"),
-    );
+      stdout(
+        await harness.runCli([
+          "attachment",
+          "add",
+          "REM-1",
+          "--file",
+          remotePath("notes.md"),
+          "--machine",
+          "Remote Laptop",
+        ]),
+      );
+      const lastRead = harness.sdk.callsTo("files.read").at(-1)!;
+      expect(lastRead[0]).toMatchObject({
+        hostId: "machine-remote",
+        path: remotePath("notes.md"),
+      });
 
-    stdout(
-      await harness.runCli([
-        "attachment",
-        "add",
-        "REM-1",
-        "--file",
-        "/remote/notes.md",
-        "--machine",
-        "Remote Laptop",
-      ]),
-    );
-    const lastRead = harness.sdk.callsTo("files.read").at(-1)!;
-    expect(lastRead[0]).toMatchObject({
-      hostId: "machine-remote",
-      path: "/remote/notes.md",
-    });
-
-    await harness.dispose();
-  });
+      await harness.dispose();
+    },
+  );
 
   it("requires --machine for file paths outside a bb thread instead of using the server's disk", async () => {
     const { bb, harness } = createFakePluginHost({
@@ -1929,6 +2138,102 @@ describe("bb tasks CLI", () => {
     const aliased = await harness.runCli(["delegate", "UNL-1", "--preset", "CLI worker"]);
     expect(aliased.stderr).toBe('Task project "Unlinked CLI" is not linked to a bb project\n');
     expect(harness.sdk.callsTo("threads.spawn")).toEqual([]);
+
+    await harness.dispose();
+  });
+
+  it("dispatches as a child thread with a base branch", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        projects: {
+          get: async () => ({
+            id: "proj_crew",
+            name: "crew",
+            kind: "standard",
+            sources: [{ hostId: "host_primary", isDefault: true }],
+          }),
+        },
+        hosts: { list: async () => [{ id: "host_primary", name: "dev", status: "connected" }] },
+        threads: {
+          spawn: async () => ({ id: "thr_crew" }),
+          get: async () => makeThreadResponse({ id: "thr_crew", status: "starting" }),
+        },
+      },
+    });
+    await plugin(bb);
+    stdout(
+      await harness.runCli([
+        "project",
+        "create",
+        "--name",
+        "Crew",
+        "--prefix",
+        "CRW",
+        "--link-bb-project",
+        "proj_crew",
+      ]),
+    );
+    stdout(await harness.runCli(["create", "--project", "CRW", "--title", "Crew work"]));
+    stdout(
+      await harness.runCli([
+        "preset",
+        "create",
+        "--name",
+        "Crew worker",
+        "--provider",
+        "codex",
+        "--model",
+        "gpt-5.6-sol",
+        "--reasoning",
+        "high",
+        "--permission",
+        "full",
+      ]),
+    );
+
+    const missingParent = await harness.runCli([
+      "delegate",
+      "CRW-1",
+      "--preset",
+      "Crew worker",
+      "--parent-notifications",
+      "stuck",
+    ]);
+    expect(missingParent).toMatchObject({
+      exitCode: 1,
+      stderr: "--parent-notifications requires --parent-thread\n",
+    });
+
+    const result = await harness.runCli([
+      "delegate",
+      "CRW-1",
+      "--preset",
+      "Crew worker",
+      "--parent-thread",
+      "thr_captain",
+      "--parent-notifications",
+      "stuck",
+      "--base-branch",
+      "scott/captain",
+    ]);
+    expect(stdout(result)).toBe("thr_crew");
+    expect(harness.sdk.callsTo("threads.spawn")).toEqual([
+      [
+        expect.objectContaining({
+          parentThreadId: "thr_captain",
+          parentNotifications: "stuck",
+          environment: {
+            type: "host",
+            hostId: "host_primary",
+            workspace: {
+              type: "managed-worktree",
+              baseBranch: { kind: "named", name: "scott/captain" },
+            },
+          },
+        }),
+      ],
+    ]);
 
     await harness.dispose();
   });

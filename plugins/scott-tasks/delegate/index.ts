@@ -1,14 +1,6 @@
 import type { BbPluginApi, PluginRpcHandlers } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import type {
-  Attachment,
-  Comment,
-  Preset,
-  Project,
-  Task,
-  TasksStore,
-  TaskThreadLiveStatus,
-} from "../db";
+import type { Attachment, Comment, Preset, Project, Task, TasksStore } from "../db";
 import { publishCommentsChanged, publishTasksChanged, type TasksApiStore } from "../api";
 import {
   presetPermissionModeSchema,
@@ -17,8 +9,9 @@ import {
   type ThreadsChangedEvent,
 } from "../shared/contract";
 import { errorMessage } from "../shared/errors";
+import { liveStatusFromThread } from "../lifecycle/live-status";
 import { truncateToWidth } from "../shared/text-measure";
-import { delegationRpcContract } from "./contract";
+import { delegationRpcContract, type PARENT_NOTIFICATIONS } from "./contract";
 
 const MAX_DELEGATED_THREAD_TITLE_WIDTH = 120;
 const SYSTEM_AUTHOR_NAME = "Tasks";
@@ -54,6 +47,8 @@ interface SeedPromptInput {
   recentComments: readonly Comment[];
   presetInstructions: string;
   extraInstructions?: string;
+  reportContract?: string;
+  parentNotifications?: (typeof PARENT_NOTIFICATIONS)[number];
 }
 
 function markdownSection(title: string, body: string): string {
@@ -88,6 +83,14 @@ function formatComments(comments: readonly Comment[]): string {
     .join("\n\n");
 }
 
+/** A dispatch's own contract, else none under `stuck` (its parent sets one), else the built-in. */
+function reportContractBody(input: SeedPromptInput): string | null {
+  const override = input.reportContract?.trim();
+  if (override) return override;
+  if (input.parentNotifications === "stuck") return null;
+  return `You are working on task ${input.task.key}. Use the bb tasks CLI: comment substantive updates (bb tasks comment ${input.task.key} --body ...), attach result artifacts, set status when done (bb tasks update ${input.task.key} --status in_review) or explain blockage in a comment. Your thread is already attached to the task.`;
+}
+
 export function buildSeedPrompt(input: SeedPromptInput): string {
   const sections = [
     `# ${input.task.key} · ${input.task.title}`,
@@ -99,11 +102,11 @@ export function buildSeedPrompt(input: SeedPromptInput): string {
     markdownSection("Sub-tasks", formatSubtasks(input.subtasks)),
     markdownSection("Attachments", formatAttachments(input.attachments)),
     markdownSection("Recent comments", formatComments(input.recentComments)),
-    markdownSection(
-      "Report-back contract",
-      `You are working on task ${input.task.key}. Use the bb tasks CLI: comment substantive updates (bb tasks comment ${input.task.key} --body ...), attach result artifacts, set status when done (bb tasks update ${input.task.key} --status in_review) or explain blockage in a comment. Your thread is already attached to the task.`,
-    ),
   ];
+  const reportContract = reportContractBody(input);
+  if (reportContract !== null) {
+    sections.push(markdownSection("Report-back contract", reportContract));
+  }
 
   if (input.presetInstructions.trim()) {
     sections.push(markdownSection("Preset instructions", input.presetInstructions.trim()));
@@ -181,16 +184,22 @@ function managedWorktree(hostId: string, baseBranch: string | null): SpawnEnviro
  * `project-default` always targets the server's primary host, so off that host
  * the plugin applies core's rule itself: a worktree from the default base
  * branch, or the source folder when it is not a git checkout.
+ *
+ * A dispatch's `baseBranchOverride` always means a new worktree from that
+ * branch, on the preset's machine or where the project lives.
  */
 async function presetSpawnEnvironment(
   bb: BbPluginApi,
   preset: Preset,
   bbProjectId: string,
+  baseBranchOverride: string | undefined,
 ): Promise<SpawnEnvironment> {
-  if (preset.machineId !== null) return managedWorktree(preset.machineId, preset.baseBranch);
+  const baseBranch = baseBranchOverride ?? preset.baseBranch;
+  if (preset.machineId !== null) return managedWorktree(preset.machineId, baseBranch);
 
   const project = await bb.sdk.projects.get({ projectId: bbProjectId });
-  const projectDefault = preset.environmentKind === "project-default";
+  const projectDefault =
+    preset.environmentKind === "project-default" && baseBranchOverride === undefined;
   if (projectDefault && project.kind === "personal") return { type: "project-default" };
   const hosts = await bb.sdk.hosts.list();
   const connected = new Set(
@@ -209,7 +218,7 @@ async function presetSpawnEnvironment(
         : `bb project "${project.name}" has no source folder on a connected machine; it lives on ${offline.join(", ")}`,
     );
   }
-  if (!projectDefault) return managedWorktree(source.hostId, preset.baseBranch);
+  if (!projectDefault) return managedWorktree(source.hostId, baseBranch);
   if (source.hostId === (await bb.sdk.system.config()).primaryHostId) {
     return { type: "project-default" };
   }
@@ -295,7 +304,6 @@ export function createSystemComment(
     },
     authorName: SYSTEM_AUTHOR_NAME,
     body: input.body,
-    notifiedCount: 0,
   });
 }
 
@@ -304,30 +312,15 @@ export function publishThreadsChanged(bb: BbPluginApi, taskId: string): void {
   bb.realtime.publish("threads:changed", payload);
 }
 
-type SdkThread = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["get"]>>;
-
-function taskThreadLiveStatus(thread: SdkThread): TaskThreadLiveStatus {
-  if (thread.deletedAt != null) return "completed";
-  switch (thread.status) {
-    case "pending":
-    case "starting":
-      return "starting";
-    case "active":
-    case "stopping":
-      return "working";
-    case "idle":
-      return "idle";
-    case "error":
-      return "failed";
-  }
-}
-
 export function handlers(
   bb: BbPluginApi,
   store: TasksApiStore,
 ): PluginRpcHandlers<typeof delegationRpcContract> {
   return {
     async delegate(input) {
+      if (input.parentNotifications !== undefined && input.parentThreadId === undefined) {
+        throw new Error("parentNotifications needs a parentThreadId");
+      }
       const task = requireTask(store.tasks, input.taskId);
       const project = requireProject(store.tasks, task.projectId);
       const linkedBbProjectId = requireLinkedBbProject(project);
@@ -350,13 +343,24 @@ export function handlers(
         recentComments,
         presetInstructions: preset.instructions,
         extraInstructions: input.extraInstructions,
+        reportContract: input.reportContract,
+        parentNotifications: input.parentNotifications,
       });
 
-      const environment = await presetSpawnEnvironment(bb, preset, linkedBbProjectId);
+      const environment = await presetSpawnEnvironment(
+        bb,
+        preset,
+        linkedBbProjectId,
+        input.baseBranch,
+      );
       const thread = await bb.sdk.threads
         .spawn({
           projectId: linkedBbProjectId,
           environment,
+          ...(input.parentThreadId === undefined ? {} : { parentThreadId: input.parentThreadId }),
+          ...(input.parentNotifications === undefined
+            ? {}
+            : { parentNotifications: input.parentNotifications }),
           providerId: execution.providerId,
           model: execution.model,
           reasoningLevel: execution.reasoningLevel,
@@ -397,7 +401,7 @@ export function handlers(
 
       try {
         const currentThread = await bb.sdk.threads.get({ threadId: thread.id });
-        const currentLiveStatus = taskThreadLiveStatus(currentThread);
+        const currentLiveStatus = liveStatusFromThread(currentThread);
         if (currentLiveStatus !== taskThread.liveStatus) {
           store.tasks.updateTaskThreadStatus(taskThread.id, currentLiveStatus);
         }
@@ -424,9 +428,12 @@ export function handlers(
       store.tasks.upsertTaskThread({
         taskId: task.id,
         threadId: thread.id,
-        presetName: MANUAL_PRESET_NAME,
+        presetName:
+          input.presetName ??
+          store.tasks.getTaskThreadByThreadId(task.id, thread.id)?.presetName ??
+          MANUAL_PRESET_NAME,
         title,
-        liveStatus: taskThreadLiveStatus(thread),
+        liveStatus: liveStatusFromThread(thread),
       });
 
       publishThreadsChanged(bb, task.id);

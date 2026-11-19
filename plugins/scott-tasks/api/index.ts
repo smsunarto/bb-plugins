@@ -1,7 +1,13 @@
-import type { BbPluginApi, PluginRpcHandlers } from "@get-bb/plugin-sdk";
+import {
+  experimental_PluginRpcRefusal,
+  type BbPluginApi,
+  type ExperimentalPluginRpcCaller,
+  type PluginRpcHandlers,
+} from "@get-bb/plugin-sdk";
 import { z } from "zod";
 import {
   createTasksStore,
+  type ParentNotification,
   type Attachment as StoredAttachment,
   type Comment as StoredComment,
   type Task as StoredTask,
@@ -10,9 +16,11 @@ import {
 import {
   AttachmentReferencedError,
   deleteAttachmentById,
+  publishAttachmentChanged,
   removeAttachmentBlobs,
+  saveAttachmentFromBytes,
 } from "../attachments";
-import { deliverCommentToLatestAgent } from "../steer";
+import { deliverCommentToLatestAgent, deliverParentNotification } from "../steer";
 import { displayName } from "../shared/display-name";
 import { errorMessage } from "../shared/errors";
 import { isSideChatShapedThread } from "../shared/side-chat";
@@ -280,7 +288,6 @@ function writeSystemComments(
       source: { kind: "system", origin: null },
       authorName,
       body,
-      notifiedCount: 0,
     });
   }
 }
@@ -395,35 +402,96 @@ interface CreateCommentInput {
   authorName: string;
   body: string;
   notify: boolean;
+  /** Wait for agent delivery before returning. The CLI waits so it can report the notified count; the app returns the saved comment at once. */
+  awaitDelivery: boolean;
+  /** Files saved onto the comment before any notification is sent. */
+  attachments?: readonly { fileName: string; bytes: Uint8Array }[];
+  /** Wake the commenting agent thread's parent with a one-line summary, retried until delivered. */
+  notifyParent?: boolean;
+}
+
+export interface PostedComment {
+  comment: StoredComment;
+  attachments: StoredAttachment[];
+  /** `index` is the file's position in the input `attachments`. */
+  failedAttachments: { index: number; fileName: string; error: string }[];
+  /** The wake's delivery record; with `awaitDelivery`, after the first attempt. */
+  parentNotification: ParentNotification | null;
 }
 
 export async function createComment(
   bb: BbPluginApi,
   store: TasksApiStore,
   input: CreateCommentInput,
-): Promise<StoredComment> {
-  let comment = store.transaction(() =>
+): Promise<PostedComment> {
+  if (input.notifyParent && input.source.kind !== "agent") {
+    throw new Error("notifying a parent needs a comment from an agent thread");
+  }
+  const created = store.transaction(() =>
     store.tasks.createComment({
       taskId: input.taskId,
       source: input.source,
       authorName: input.authorName,
       body: input.body,
-      notifiedCount: 0,
     }),
   );
+  publishCommentsChanged(bb, input.taskId);
 
-  if (input.notify) {
-    const notifiedCount = await deliverCommentToLatestAgent(bb, store.tasks, {
-      taskId: comment.taskId,
-      commentId: comment.id,
-      body: comment.body,
-      authorName: comment.authorName,
-    });
-    comment = store.transaction(() => store.tasks.updateComment(comment.id, { notifiedCount }));
+  const attachments: StoredAttachment[] = [];
+  const failedAttachments: PostedComment["failedAttachments"] = [];
+  for (const [index, file] of (input.attachments ?? []).entries()) {
+    try {
+      const attachment = await saveAttachmentFromBytes(store.tasks, file.bytes, {
+        owner: { kind: "comment", commentId: created.id },
+        fileName: file.fileName,
+      });
+      publishAttachmentChanged(bb, store.tasks, attachment);
+      attachments.push(attachment);
+    } catch (error) {
+      failedAttachments.push({ index, fileName: file.fileName, error: errorMessage(error) });
+    }
   }
 
-  publishCommentsChanged(bb, input.taskId);
-  return comment;
+  // Recorded only once the attachments exist, so no attempt can send a wake
+  // line without them.
+  let parentNotification: ParentNotification | null = null;
+  if (input.notifyParent) {
+    parentNotification = store.tasks.startParentNotification(created.id, null);
+    const deliverParent = () => deliverParentNotification(bb, store.tasks, created.id);
+    if (input.awaitDelivery) parentNotification = (await deliverParent()) ?? parentNotification;
+    else
+      void deliverParent().catch((error: unknown) => {
+        bb.log.warn(`failed to wake the parent for comment ${created.id}: ${errorMessage(error)}`);
+      });
+  }
+
+  const posted = (comment: StoredComment): PostedComment => ({
+    comment,
+    attachments,
+    failedAttachments,
+    parentNotification,
+  });
+  if (!input.notify) return posted(created);
+
+  const deliver = async (): Promise<StoredComment> => {
+    const notifiedCount = await deliverCommentToLatestAgent(bb, store.tasks, {
+      taskId: created.taskId,
+      commentId: created.id,
+      body: created.body,
+      authorName: created.authorName,
+    });
+    const updated = store.transaction(() =>
+      store.tasks.updateComment(created.id, { notifiedCount }),
+    );
+    publishCommentsChanged(bb, input.taskId);
+    return updated;
+  };
+
+  if (input.awaitDelivery) return posted(await deliver());
+  void deliver().catch((error: unknown) => {
+    bb.log.warn(`failed to update comment notification ${created.id}: ${errorMessage(error)}`);
+  });
+  return posted(created);
 }
 
 interface TaskPullRequestsResult {
@@ -722,6 +790,26 @@ export function registerHandlers(
         throw error;
       }
     },
+    moveTaskToProject(input) {
+      const current = store.tasks.getTask(input.taskId);
+      if (!current) throw new Error(`Task not found: ${input.taskId}`);
+      const result = store.transaction(() => {
+        const outcome = store.tasks.moveTaskToProject(current.id, input.projectId);
+        for (const { previousKey, task } of outcome.moved) {
+          writeSystemComments(store, task.id, input.authorName, [
+            `Moved from ${previousKey} to ${task.key} by ${input.authorName}`,
+          ]);
+        }
+        return { task: apiTask(store, outcome.task), moved: outcome.moved };
+      });
+      for (const { task } of result.moved) {
+        publishTasksChanged(bb, task.id, current.projectId);
+        publishTasksChanged(bb, task.id, task.projectId);
+        publishCommentsChanged(bb, task.id);
+      }
+      if (result.moved.length > 0) publishProjectsChanged(bb, result.task.projectId);
+      return { ok: true, task: result.task };
+    },
     async deleteTask(input) {
       const task = store.tasks.getTask(input.taskId);
       const subtasks = task ? store.tasks.listSubtasks(task.id) : [];
@@ -802,12 +890,12 @@ export function registerHandlers(
       return { labels: store.tasks.listLabels(input.projectId) };
     },
     async createComment(input) {
-      const comment = await createComment(bb, store, {
+      const { comment } = await createComment(bb, store, {
         taskId: input.taskId,
-        source: { kind: "user" },
-        authorName: "You",
+        ...rpcCommentAuthor(input, { kind: "client" }),
         body: input.body,
         notify: input.notify,
+        awaitDelivery: false,
       });
       return { comment };
     },
@@ -958,6 +1046,44 @@ export function registerHandlers(
   };
 }
 
+type CreateCommentRpcInput = Parameters<ReturnType<typeof registerHandlers>["createComment"]>[0];
+
+/**
+ * Who an RPC comment reads as. Only a plugin caller may name an author or an
+ * agent or system source; the app, the CLI and agents write as "You".
+ */
+function rpcCommentAuthor(
+  input: CreateCommentRpcInput,
+  caller: ExperimentalPluginRpcCaller,
+): { source: CommentSource; authorName: string } {
+  const named = input.author !== undefined || input.source !== undefined;
+  if (named && caller.kind !== "plugin") {
+    throw new experimental_PluginRpcRefusal({
+      code: "forbidden",
+      message: "plugin_caller_required: only a plugin can set a comment's author or source",
+    });
+  }
+  const source: CommentSource =
+    input.source === "agent" && input.threadId !== undefined
+      ? { kind: "agent", threadId: input.threadId }
+      : input.source === "system"
+        ? { kind: "system", origin: null }
+        : { kind: "user" };
+  return { source, authorName: input.author ?? "You" };
+}
+
 export function registerTasksApi(bb: BbPluginApi, store: TasksApiStore): void {
-  bb.rpc.register(tasksRpcContract, registerHandlers(bb, store));
+  bb.rpc.register(tasksRpcContract, {
+    ...registerHandlers(bb, store),
+    async createComment(input, { experimental_caller }) {
+      const { comment } = await createComment(bb, store, {
+        taskId: input.taskId,
+        ...rpcCommentAuthor(input, experimental_caller),
+        body: input.body,
+        notify: input.notify,
+        awaitDelivery: false,
+      });
+      return { comment };
+    },
+  });
 }

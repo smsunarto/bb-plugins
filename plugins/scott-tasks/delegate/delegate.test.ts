@@ -301,6 +301,198 @@ describe("task delegation", () => {
     await harness.dispose();
   });
 
+  it("spawns as a child of the parent thread with a base branch for this dispatch only", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        threads: {
+          spawn: async () => ({ id: "thr_child" }),
+          get: async () => makeThreadResponse({ id: "thr_child", status: "starting" }),
+        },
+      },
+    });
+    const store = createStore(bb);
+    const project = store.tasks.createProject({
+      name: "Crew",
+      prefix: "CRW",
+      color: "blue",
+      linkedBbProjectId: "proj_demo",
+    });
+    const task = store.tasks.createTask({ projectId: project.id, title: "Crew task" });
+    registerDelegation(bb, store);
+    const preset = createTestPreset(store, {
+      environmentKind: "new-worktree",
+      baseBranch: "main",
+      machineId: "host_remote",
+    });
+
+    await expect(
+      harness.callRpc("delegate", {
+        taskId: task.id,
+        presetId: preset.id,
+        parentThreadId: "thr_captain",
+        parentNotifications: "stuck",
+        baseBranch: "feature/base",
+      }),
+    ).resolves.toEqual({ threadId: "thr_child" });
+
+    expect(harness.sdk.callsTo("threads.spawn")).toEqual([
+      [
+        expect.objectContaining({
+          parentThreadId: "thr_captain",
+          parentNotifications: "stuck",
+          environment: {
+            type: "host",
+            hostId: "host_remote",
+            workspace: {
+              type: "managed-worktree",
+              baseBranch: { kind: "named", name: "feature/base" },
+            },
+          },
+        }),
+      ],
+    ]);
+    expect(store.tasks.getPreset(preset.id)?.baseBranch).toBe("main");
+
+    await harness.dispose();
+  });
+
+  it.each([
+    {
+      name: "keeps the built-in report-back contract by default",
+      input: {},
+      contract: "set status when done (bb tasks update CRW-1 --status in_review)",
+    },
+    {
+      name: "replaces the report-back contract with the dispatch's own",
+      input: {
+        parentThreadId: "thr_captain",
+        parentNotifications: "stuck",
+        reportContract:
+          "Report with bb tasks comment CRW-1 --notify-parent; start with Final: or Blocked:.",
+      },
+      contract:
+        "Report with bb tasks comment CRW-1 --notify-parent; start with Final: or Blocked:.",
+    },
+    {
+      name: "omits the report-back contract for a stuck dispatch without one",
+      input: { parentThreadId: "thr_captain", parentNotifications: "stuck" },
+      contract: null,
+    },
+  ])("$name", async ({ input, contract }) => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        threads: {
+          spawn: async () => ({ id: "thr_child" }),
+          get: async () => makeThreadResponse({ id: "thr_child", status: "starting" }),
+        },
+      },
+    });
+    const store = createStore(bb);
+    const project = store.tasks.createProject({
+      name: "Crew",
+      prefix: "CRW",
+      color: "blue",
+      linkedBbProjectId: "proj_demo",
+    });
+    const task = store.tasks.createTask({ projectId: project.id, title: "Crew task" });
+    registerDelegation(bb, store);
+    const preset = createTestPreset(store, {
+      environmentKind: "new-worktree",
+      machineId: "host_a",
+    });
+
+    await harness.callRpc("delegate", {
+      taskId: task.id,
+      presetId: preset.id,
+      extraInstructions: "Follow crew.md.",
+      ...input,
+    });
+
+    const [[spawn]] = harness.sdk.callsTo("threads.spawn") as [[{ prompt: string }]];
+    const sections = spawn.prompt.split(/^## /mu).map((section) => section.trim());
+    const reportSections = sections.filter((section) => section.startsWith("Report-back contract"));
+    expect(reportSections).toEqual(contract === null ? [] : [expect.stringContaining(contract)]);
+    expect(sections.at(-1)).toBe("Additional instructions\n\nFollow crew.md.");
+
+    await harness.dispose();
+  });
+
+  it("records a preset name on attach and keeps it when re-attached without one", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        threads: {
+          get: async () => makeThreadResponse({ id: "thr_adopted", status: "idle" }),
+        },
+      },
+    });
+    const store = createStore(bb);
+    const project = store.tasks.createProject({ name: "Adopt", prefix: "ADP", color: "blue" });
+    const task = store.tasks.createTask({ projectId: project.id, title: "Adopt a thread" });
+    const plain = store.tasks.createTask({ projectId: project.id, title: "Plain attach" });
+    registerDelegation(bb, store);
+
+    await harness.callRpc("taskThreadsAttach", {
+      taskId: task.id,
+      threadId: "thr_adopted",
+      presetName: "Implement",
+    });
+    await harness.callRpc("taskThreadsAttach", { taskId: task.id, threadId: "thr_adopted" });
+    await harness.callRpc("taskThreadsAttach", { taskId: plain.id, threadId: "thr_adopted" });
+
+    expect(store.tasks.listTaskThreads(task.id)).toEqual([
+      expect.objectContaining({ threadId: "thr_adopted", presetName: "Implement" }),
+    ]);
+    expect(store.tasks.listTaskThreads(plain.id)).toEqual([
+      expect.objectContaining({ threadId: "thr_adopted", presetName: "Attached" }),
+    ]);
+    await harness.dispose();
+  });
+
+  it("leaves parent fields off the spawn when none are given", async () => {
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        threads: {
+          spawn: async () => ({ id: "thr_plain" }),
+          get: async () => makeThreadResponse({ id: "thr_plain", status: "starting" }),
+        },
+      },
+    });
+    const store = createStore(bb);
+    const project = store.tasks.createProject({
+      name: "Plain",
+      prefix: "PLN",
+      color: "blue",
+      linkedBbProjectId: "proj_demo",
+    });
+    const task = store.tasks.createTask({ projectId: project.id, title: "Plain task" });
+    registerDelegation(bb, store);
+    const preset = createTestPreset(store, {
+      environmentKind: "new-worktree",
+      machineId: "host_x",
+    });
+
+    await harness.callRpc("delegate", { taskId: task.id, presetId: preset.id });
+
+    const [[args]] = harness.sdk.callsTo("threads.spawn") as [[Record<string, unknown>]];
+    expect(args).not.toHaveProperty("parentThreadId");
+    expect(args).not.toHaveProperty("parentNotifications");
+
+    await expect(
+      harness.callRpc("delegate", {
+        taskId: task.id,
+        presetId: preset.id,
+        parentNotifications: "stuck",
+      }),
+    ).rejects.toMatchObject({ message: "parentNotifications needs a parentThreadId" });
+    expect(harness.sdk.callsTo("threads.spawn")).toHaveLength(1);
+
+    await harness.dispose();
+  });
+
   it("maps a rejected worktree target to a friendly typed delegation error", async () => {
     const spawnError = Object.assign(new Error("HTTP 404: Host not found"), {
       code: "host_not_found",
@@ -483,7 +675,8 @@ describe("delegation to a preset without a pinned machine", () => {
     const presetId = createTestPreset(store, preset).id;
     return {
       harness,
-      delegate: () => harness.callRpc("delegate", { taskId: task.id, presetId }),
+      delegate: (extra: Record<string, string> = {}) =>
+        harness.callRpc("delegate", { taskId: task.id, presetId, ...extra }),
       spawnedEnvironments: () =>
         harness.sdk
           .callsTo("threads.spawn")
@@ -584,6 +777,30 @@ describe("delegation to a preset without a pinned machine", () => {
     await expect(delegate()).resolves.toEqual({ threadId: "thr_routed" });
     expect(harness.sdk.callsTo("projects.get")).toEqual([[{ projectId: "proj_bb" }]]);
     expect(spawnedEnvironments()).toEqual([environment]);
+
+    await harness.dispose();
+  });
+
+  it("starts a worktree from a dispatch's base branch even when the preset uses the project folder", async () => {
+    const { harness, delegate, spawnedEnvironments } = setUp(
+      bbProject("bb-plugins", [{ hostId: "host_primary", isDefault: true }]),
+      { environmentKind: "project-default" },
+    );
+
+    await expect(delegate({ baseBranch: "scott/captain" })).resolves.toEqual({
+      threadId: "thr_routed",
+    });
+    expect(spawnedEnvironments()).toEqual([
+      {
+        type: "host",
+        hostId: "host_primary",
+        workspace: {
+          type: "managed-worktree",
+          baseBranch: { kind: "named", name: "scott/captain" },
+        },
+      },
+    ]);
+    expect(harness.sdk.callsTo("system.config")).toEqual([]);
 
     await harness.dispose();
   });

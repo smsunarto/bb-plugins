@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createTasksStore, type CreatePresetInput, TasksPageCursorError } from "./db";
 
 function setup() {
@@ -48,7 +48,7 @@ describe("tasks storage", () => {
       expect(
         db.prepare<[], { count: number }>("SELECT COUNT(*) AS count FROM schema_version").get()
           ?.count,
-      ).toBe(8);
+      ).toBe(13);
     } finally {
       await harness.dispose();
     }
@@ -764,6 +764,160 @@ describe("tasks storage", () => {
     }
   });
 
+  it("rebuilds task threads with the archived status and keeps their rows, indexes and triggers", async () => {
+    const { db, harness, store } = setup();
+    try {
+      const project = createProject(store, "ARC");
+      const task = store.createTask({ projectId: project.id, title: "Crew" });
+      // The version 12 shape: no archived status, no live-status change time.
+      db.pragma("foreign_keys = OFF");
+      db.exec(`
+        DROP TABLE task_threads;
+        CREATE TABLE task_threads (
+          id TEXT PRIMARY KEY,
+          task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          thread_id TEXT NOT NULL,
+          preset_name TEXT NOT NULL,
+          title TEXT NOT NULL,
+          live_status TEXT NOT NULL CHECK (live_status IN ('starting', 'working', 'idle', 'completed', 'failed')),
+          attached_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          UNIQUE (task_id, thread_id),
+          CHECK (thread_id GLOB 'thr_*')
+        );
+        DELETE FROM schema_version WHERE version = 13;
+      `);
+      db.prepare<[string]>(
+        `
+        INSERT INTO task_threads (id, task_id, thread_id, preset_name, title, live_status, attached_at, updated_at)
+        VALUES ('01H00000000000000000000031', ?, 'thr_old', 'Implement', 'Old', 'failed',
+          '2026-07-15T09:00:00.000Z', '2026-07-15T10:00:00.000Z')
+      `,
+      ).run(task.id);
+      db.pragma("foreign_keys = ON");
+
+      const migrated = createTasksStore(db);
+      const revision = () =>
+        db.prepare<[], { revision: number }>("SELECT revision FROM task_list_revision").get()
+          ?.revision;
+      const before = revision();
+      migrated.upsertTaskThread({
+        taskId: task.id,
+        threadId: "thr_new",
+        presetName: "Review",
+        title: "New",
+        liveStatus: "archived",
+      });
+
+      expect(migrated.crewSnapshot(["thr_old"], null)).toEqual([
+        expect.objectContaining({
+          threadId: "thr_old",
+          liveStatus: "failed",
+          liveStatusChangedAt: "2026-07-15T10:00:00.000Z",
+        }),
+      ]);
+      expect(revision()).toBe((before ?? 0) + 1);
+      expect(
+        db
+          .prepare<[], { name: string }>(
+            "SELECT name FROM sqlite_master WHERE tbl_name = 'task_threads' AND type IN ('index', 'trigger') AND sql IS NOT NULL ORDER BY name",
+          )
+          .all()
+          .map((row) => row.name),
+      ).toEqual([
+        "idx_task_threads_task_status",
+        "idx_task_threads_thread",
+        "task_list_revision_threads_delete",
+        "task_list_revision_threads_insert",
+        "task_list_revision_threads_update",
+      ]);
+      expect(db.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
+  it("records when a task's status changes through updates and board moves", async () => {
+    vi.useFakeTimers({ now: new Date("2026-11-16T10:00:00.000Z") });
+    const { db, harness, store } = setup();
+    try {
+      const project = createProject(store, "STA");
+      const task = store.createTask({ projectId: project.id, title: "Moves" });
+      const neighbor = store.createTask({ projectId: project.id, title: "Neighbor" });
+      const changedAt = () =>
+        db
+          .prepare<[string], { at: string }>(
+            "SELECT status_changed_at AS at FROM tasks WHERE id = ?",
+          )
+          .get(task.id)?.at;
+
+      vi.setSystemTime(new Date("2026-11-16T10:01:00.000Z"));
+      store.updateTask(task.id, { title: "Renamed" });
+      expect(changedAt()).toBe("2026-11-16T10:00:00.000Z");
+      store.updateTask(task.id, { status: "todo" });
+      expect(changedAt()).toBe("2026-11-16T10:01:00.000Z");
+
+      vi.setSystemTime(new Date("2026-11-16T10:02:00.000Z"));
+      store.updatePosition(task.id, { status: "in_progress" });
+      expect(changedAt()).toBe("2026-11-16T10:02:00.000Z");
+
+      vi.setSystemTime(new Date("2026-11-16T10:03:00.000Z"));
+      store.updatePosition(neighbor.id, { status: "in_progress" });
+      store.updatePosition(task.id, { status: "in_progress", afterTaskId: neighbor.id });
+      expect(changedAt()).toBe("2026-11-16T10:02:00.000Z");
+    } finally {
+      vi.useRealTimers();
+      await harness.dispose();
+    }
+  });
+
+  it("backfills when each task's status last changed from its status comments", async () => {
+    const { db, harness, store } = setup();
+    try {
+      const project = createProject(store, "STC");
+      const moved = store.createTask({ projectId: project.id, title: "Moved" });
+      const untouched = store.createTask({ projectId: project.id, title: "Untouched" });
+      db.prepare<[string]>(
+        "UPDATE tasks SET created_at = '2026-07-15T08:00:00.000Z' WHERE id = ?",
+      ).run(untouched.id);
+      for (const [body, at] of [
+        ["Status changed to Todo by You", "2026-07-15T09:00:00.000Z"],
+        ["Status changed to In Progress · dispatched to Implement", "2026-07-15T11:00:00.000Z"],
+        ["Labels changed to bug by You", "2026-07-15T12:00:00.000Z"],
+      ] as const) {
+        const comment = store.createComment({
+          taskId: moved.id,
+          source: { kind: "system", origin: null },
+          authorName: "You",
+          body,
+        });
+        db.prepare<[string, string]>("UPDATE comments SET created_at = ? WHERE id = ?").run(
+          at,
+          comment.id,
+        );
+      }
+      db.exec(`
+        ALTER TABLE tasks DROP COLUMN status_changed_at;
+        DELETE FROM schema_version WHERE version = 11;
+      `);
+
+      createTasksStore(db);
+
+      const changedAt = (id: string) =>
+        db
+          .prepare<[string], { at: string }>(
+            "SELECT status_changed_at AS at FROM tasks WHERE id = ?",
+          )
+          .get(id)?.at;
+      expect([changedAt(moved.id), changedAt(untouched.id)]).toEqual([
+        "2026-07-15T11:00:00.000Z",
+        "2026-07-15T08:00:00.000Z",
+      ]);
+    } finally {
+      await harness.dispose();
+    }
+  });
+
   it("lists live task threads before terminal ones, newest first", async () => {
     const { db, harness, store } = setup();
     try {
@@ -853,33 +1007,41 @@ describe("tasks storage", () => {
     try {
       const project = createProject(store, "TIE");
       const task = store.createTask({ projectId: project.id, title: "Task" });
-      const earlier = store.createComment({
-        id: "01H00000000000000000000002",
-        taskId: task.id,
-        source: { kind: "agent", threadId: "thr_earlier" },
-        authorName: "Earlier responder",
-        body: "Earlier reply",
-      });
-      const later = store.createComment({
-        id: "01H00000000000000000000001",
-        taskId: task.id,
-        source: { kind: "agent", threadId: "thr_later" },
-        authorName: "Later responder",
-        body: "Later reply",
-      });
+      // Ids that sort against insertion order, so only rowid can break the tie.
+      const earlierId = "01H00000000000000000000002";
+      const laterId = "01H00000000000000000000001";
+      const setId = db.prepare<[string, string]>("UPDATE comments SET id = ? WHERE id = ?");
+      setId.run(
+        earlierId,
+        store.createComment({
+          taskId: task.id,
+          source: { kind: "agent", threadId: "thr_earlier" },
+          authorName: "Earlier responder",
+          body: "Earlier reply",
+        }).id,
+      );
+      setId.run(
+        laterId,
+        store.createComment({
+          taskId: task.id,
+          source: { kind: "agent", threadId: "thr_later" },
+          authorName: "Later responder",
+          body: "Later reply",
+        }).id,
+      );
       const setCreatedAt = db.prepare<[string, string]>(
         "UPDATE comments SET created_at = ? WHERE id = ?",
       );
       const sharedTime = "2026-07-15T10:00:00.000Z";
-      setCreatedAt.run(sharedTime, earlier.id);
-      setCreatedAt.run(sharedTime, later.id);
+      setCreatedAt.run(sharedTime, earlierId);
+      setCreatedAt.run(sharedTime, laterId);
 
       expect(store.listComments(task.id).map((comment) => comment.id)).toEqual([
-        earlier.id,
-        later.id,
+        earlierId,
+        laterId,
       ]);
       expect(store.getLatestAgentComment(task.id, null)).toMatchObject({
-        id: later.id,
+        id: laterId,
         source: { threadId: "thr_later" },
       });
     } finally {

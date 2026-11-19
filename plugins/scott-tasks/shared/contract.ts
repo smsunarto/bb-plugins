@@ -19,6 +19,7 @@ export const TASK_THREAD_LIVE_STATUSES = [
   "idle",
   "completed",
   "failed",
+  "archived",
 ] as const;
 
 export const PRESET_ENVIRONMENT_KINDS = ["project-default", "new-worktree"] as const;
@@ -489,6 +490,16 @@ export const tasksRpcContract = defineRpcContract({
     input: updateTaskInputSchema,
     output: taskMutationResultSchema,
   },
+  moveTaskToProject: {
+    input: z
+      .object({
+        taskId: idSchema,
+        projectId: idSchema,
+        authorName: nonBlankStringSchema.default("You"),
+      })
+      .strict(),
+    output: taskMutationResultSchema,
+  },
   deleteTask: {
     input: z.object({ taskId: idSchema }).strict(),
     output: z.object({ deleted: z.boolean() }).strict(),
@@ -558,11 +569,20 @@ export const tasksRpcContract = defineRpcContract({
         body: z.string(),
         notify: z.boolean(),
         allowEmptyBody: z.boolean().default(false),
+        // Plugin callers only: who the comment reads as. Others always write as "You".
+        author: nonBlankStringSchema.optional(),
+        source: z.enum(["agent", "system"]).optional(),
+        /** The agent's thread; required with source agent. */
+        threadId: threadIdSchema.optional(),
       })
       .strict()
       .refine((input) => input.allowEmptyBody || input.body.trim().length > 0, {
         path: ["body"],
         message: "Comment body cannot be empty",
+      })
+      .refine((input) => (input.source === "agent") === (input.threadId !== undefined), {
+        path: ["threadId"],
+        message: "threadId is required with source agent and accepted only with it",
       }),
     output: z.object({ comment: commentSchema }).strict(),
   },

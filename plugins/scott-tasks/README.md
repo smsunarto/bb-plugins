@@ -11,10 +11,27 @@ it. Both claim the `bb tasks` command, so disable the built-in before enabling
 the fork.
 
 Forked from [`get-bb/bb/plugins/tasks`](https://github.com/get-bb/bb/tree/desktop-v0.44.0/plugins/tasks).
-Last synced with upstream `main` at `80a98370e98c4a1e58ee9eabd49c759eb842a99c` on 2026-09-30, except
-[#4464](https://github.com/get-bb/bb/pull/4464) (lifecycle without polling). That
-change drops the thread-status reconcile loop and relies on host changes newer
-than bb 0.44.0, so the fork keeps the loop until a bb release ships them.
+Last synced with upstream `main` at `48c3a78488667fde6883d13da7ef54f8175b4671`
+on 2026-11-18, whose latest Tasks change is
+[#7613](https://github.com/get-bb/bb/pull/7613). Every upstream Tasks change
+since the previous base (`80a9837`, 2026-09-30) is ported or covered, except
+these, which the fork holds on purpose:
+
+- [#4464](https://github.com/get-bb/bb/pull/4464) (lifecycle without polling):
+  the fork keeps its thread-status reconcile loop. The host fixes #4464
+  relied on shipped in bb 0.45, so porting it is now a choice, not a wait.
+- [#6419](https://github.com/get-bb/bb/pull/6419) (shared live reads) and
+  [#7610](https://github.com/get-bb/bb/pull/7610), which tunes its query hook:
+  the fork reads through its own TanStack Query and DB layer
+  (`shell/collections.ts`, `shell/sync.ts`). That layer already batches card
+  metadata, shares rows between views, and repaints a cached list scope at
+  once. #4600 and #5261's signal scheduler are superseded by the same layer.
+- [#5275](https://github.com/get-bb/bb/pull/5275): confirmations stay on the
+  fork's shadcn `AlertDialog` (`components/confirm-dialog.tsx`) instead of
+  bb's `ConfirmDeleteDialog`.
+- [#4606](https://github.com/get-bb/bb/pull/4606) is ported only in part. Its
+  blanked `is_image` migration already ran here. Fork tests still use
+  `displayWidth` and the description saver's `schedule` option.
 
 The fork also fixes three bugs from upstream's incremental loading
 ([#4442](https://github.com/get-bb/bb/pull/4442)):
@@ -23,12 +40,6 @@ The fork also fixes three bugs from upstream's incremental loading
 - A task signal after a failed initial load triggers a refetch.
 - `boardMove` publishes every card a column renumber touches, so the board
   keeps the server order.
-
-The Plugin SDK 0.6.75 migration also ported three later upstream changes:
-per-model preset reasoning levels and service tiers
-([#4689](https://github.com/get-bb/bb/pull/4689),
-[#5266](https://github.com/get-bb/bb/pull/5266)) and pull request reads through
-GitHub PR Status ([#6125](https://github.com/get-bb/bb/pull/6125)).
 
 ## Install
 
@@ -66,6 +77,11 @@ bb tasks preset list
 bb tasks delegate PROD-1 --preset "GPT-5.6 · high"
 ```
 
+An agent that dispatches its own crew adds `--parent-thread "$BB_THREAD_ID"`
+so bb reports the child's turns to it, `--parent-notifications stuck` to hear
+only when the child needs help, and `--base-branch <branch>` to start the
+child's worktree from a branch other than the preset's.
+
 When the CLI runs inside a linked bb project, `create` and `list` infer the
 tracker project, so `--project` can be omitted. Task keys are case-insensitive
 at the CLI boundary. You can also delegate from a task's **Delegate** menu,
@@ -81,6 +97,15 @@ says so explicitly. Agents and scripts can use the same behavior with
 When run from a thread, the CLI preserves that agent thread and any explicit
 `--author`; notification still targets the prior latest responder rather than
 the newly recorded agent comment itself.
+
+A child thread reports to its orchestrating parent with
+`bb tasks comment PROD-1 --notify-parent --attach ./report.md --body-file report.txt`.
+Tasks saves the comment and its files, then wakes the commenting thread's parent
+with one line: `[tasks] PROD-1 <first line> · <thread> <preset> · <attachment ids and names>`.
+A failed wake is retried after 1, 2, 5 and 15 minutes, then every 15 minutes, up
+to six attempts in all; the comment is then marked undeliverable. A parent that
+is missing, archived or deleted marks it undeliverable at once. Delivery state
+lives in the database, so retries survive a plugin reload.
 
 ## CLI reference
 
@@ -101,24 +126,25 @@ inside an agent thread that is the thread's machine. Outside a thread, pass
 unless only one machine is enrolled. `--machine` for a machine other than the
 thread's needs absolute paths.
 
-| Command                                        | Purpose                                                                                                                                    |
-| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bb tasks status`                              | Show the installed Tasks plugin name and version. Task workflow status lives on `bb tasks list --status` and `bb tasks update --status`.   |
-| `bb tasks project create\|list\|show\|update`  | Manage tracker projects, folders, colors, prefixes, and bb-project links.                                                                  |
-| `bb tasks folder create\|list\|update\|delete` | Organize tracker projects into nested folders. Deleting a folder moves its projects and subfolders to the top level; no tasks are deleted. |
-| `bb tasks create`                              | Create a task with description, priority, labels, due date, optional parent, and file attachments (repeatable `--attach <path>`).          |
-| `bb tasks list`                                | Page/filter tasks by project, status, priority, label, active agents, or search text; supports `--sort`, `--limit`, and `--cursor`.        |
-| `bb tasks show <key-or-id>`                    | Show the complete task record, including comments, attachments, subtasks, and attached threads.                                            |
-| `bb tasks update <key-or-id>`                  | Update status, priority, title, description, due date, or labels.                                                                          |
-| `bb tasks comment <key-or-id>`                 | Add a Markdown comment from inline text or a file; optionally notify the latest responding task agent.                                     |
-| `bb tasks attachment add\|get\|list\|remove`   | Add, fetch, list, or remove attachments. Referenced attachments require `remove --remove-references`.                                      |
-| `bb tasks preset list\|create\|update\|delete` | Manage reusable agent execution presets.                                                                                                   |
-| `bb tasks delegate <key>`                      | Start and attach a new agent thread using a preset.                                                                                        |
-| `bb tasks attach <key-or-id>`                  | Attach the current bb thread to a task when it was not delegated from Tasks.                                                               |
-| `bb tasks detach <key-or-id>`                  | Detach the current bb thread (or `--thread <id>`) from a task, for example a dead predecessor after a respawn.                             |
-| `bb tasks threads <key>`                       | List the bb threads attached to a task: live threads first, newest first.                                                                  |
-| `bb tasks label create\|list\|delete`          | Manage project-scoped labels.                                                                                                              |
-| `bb tasks seed-demo --yes`                     | Create sample folders, projects, labels, tasks, and comments for evaluation.                                                               |
+| Command                                        | Purpose                                                                                                                                                       |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bb tasks status`                              | Show the installed Tasks plugin name and version. Task workflow status lives on `bb tasks list --status` and `bb tasks update --status`.                      |
+| `bb tasks project create\|list\|show\|update`  | Manage tracker projects, folders, colors, prefixes, and bb-project links.                                                                                     |
+| `bb tasks folder create\|list\|update\|delete` | Organize tracker projects into nested folders. Deleting a folder moves its projects and subfolders to the top level; no tasks are deleted.                    |
+| `bb tasks create`                              | Create a task with description, priority, labels, due date, optional parent, and file attachments (repeatable `--attach <path>`).                             |
+| `bb tasks list`                                | Page/filter tasks by project, status, priority, label, active agents, or search text; supports `--sort`, `--limit`, and `--cursor`.                           |
+| `bb tasks show <key-or-id>`                    | Show the complete task record, including comments, attachments, subtasks, and attached threads.                                                               |
+| `bb tasks update <key-or-id>`                  | Update status, priority, title, description, due date, or labels.                                                                                             |
+| `bb tasks move <key-or-id>`                    | Move a task and its sub-tasks to `--project`. Moved tasks get new keys; old keys keep resolving, and labels are matched by name.                              |
+| `bb tasks comment <key-or-id>`                 | Add a Markdown comment from text or a file, with `--attach` files; `--notify` reaches the latest agent, `--notify-parent` wakes this thread's parent.         |
+| `bb tasks attachment add\|get\|list\|remove`   | Add, fetch, list, or remove attachments. Referenced attachments require `remove --remove-references`.                                                         |
+| `bb tasks preset list\|create\|update\|delete` | Manage reusable agent execution presets.                                                                                                                      |
+| `bb tasks delegate <key>`                      | Start and attach a new agent thread using a preset; `--parent-thread`, `--parent-notifications` and `--base-branch` make it a child thread on its own branch. |
+| `bb tasks attach <key-or-id>`                  | Attach the current bb thread to a task when it was not delegated from Tasks.                                                                                  |
+| `bb tasks detach <key-or-id>`                  | Detach the current bb thread (or `--thread <id>`) from a task, for example a dead predecessor after a respawn.                                                |
+| `bb tasks threads <key>`                       | List the bb threads attached to a task: live threads first, newest first.                                                                                     |
+| `bb tasks label create\|list\|delete`          | Manage project-scoped labels.                                                                                                                                 |
+| `bb tasks seed-demo --yes`                     | Create sample folders, projects, labels, tasks, and comments for evaluation.                                                                                  |
 
 Statuses are `backlog`, `todo`, `in_progress`, `in_review`, `done`, and
 `canceled`. Priorities are `urgent`, `high`, `medium`, `low`, and `none`.
@@ -144,7 +170,16 @@ thread to the task, and advances a `backlog` or `todo` task to `in_progress`.
 The worker receives the task description, subtasks, attachments, recent
 comments, preset instructions, and a report-back contract. Its installed Tasks
 skill tells it to inspect the task, leave substantive milestone comments,
-attach artifacts, and move completed work to `in_review`.
+attach artifacts, and move completed work to `in_review`. An orchestrating
+plugin can pass its own `reportContract` to the `delegate` RPC; a dispatch with
+`parentNotifications: "stuck"` and no contract gets none, because its parent
+defines how to report.
+
+Other plugins can also read and write through Tasks' plugin RPCs: owned fields
+(`defineField`, `setField`, written only by the plugin that defined the field),
+`crewSnapshot` (one read of the tasks, fields, live status and last notifying
+comment of a set of threads), a `presetName` on `taskThreadsAttach`, and an
+`author` and `agent` or `system` source on `createComment`.
 
 If work begins outside the Delegate action, the agent can associate its current
 thread with `bb tasks attach KEY`. The inverse is `bb tasks detach KEY

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { HugeiconsIcon } from "@hugeicons/react";
 import Cancel01Icon from "@hugeicons/core-free-icons/Cancel01Icon";
 import File01Icon from "@hugeicons/core-free-icons/File01Icon";
@@ -99,20 +99,20 @@ export function useStagedAttachmentRetry(
 }
 
 function ChipThumbnail({ file }: { file: File }) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!file.type.startsWith("image/") || typeof URL.createObjectURL !== "function") {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-  if (!previewUrl) return null;
+  // The object URL lives exactly as long as the <img> that shows it.
+  const attachPreview = useCallback(
+    (img: HTMLImageElement | null) => {
+      if (!img) return;
+      const url = URL.createObjectURL(file);
+      img.src = url;
+      return () => URL.revokeObjectURL(url);
+    },
+    [file],
+  );
+  if (!file.type.startsWith("image/") || typeof URL.createObjectURL !== "function") return null;
   return (
     <img
-      src={previewUrl}
+      ref={attachPreview}
       alt=""
       aria-hidden
       className="size-5 shrink-0 rounded-sm border border-border object-cover"

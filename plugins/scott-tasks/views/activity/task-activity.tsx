@@ -10,7 +10,7 @@ import { Toggle } from "@/components/ui/toggle";
 import { Hint } from "../../components/hint.js";
 import { cn } from "@/lib/utils";
 import { TasksEditor } from "../../editor/tasks-editor.js";
-import { useBbNavigate } from "@get-bb/plugin-sdk/app";
+import { experimental_saveFile, useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { useQuery } from "@tanstack/react-query";
 import { useMentionItems, useTasksRpc } from "../../shell/data.js";
 import { commentsQuery } from "../../shell/query.js";
@@ -69,6 +69,13 @@ function FileAttachmentCard({ attachment }: { attachment: Attachment }) {
     <a
       href={attachmentDownloadUrl(attachment.id)}
       download={attachment.fileName}
+      onClick={(event) => {
+        event.preventDefault();
+        void experimental_saveFile({
+          url: attachmentDownloadUrl(attachment.id),
+          fileName: attachment.fileName,
+        });
+      }}
       title={`${attachment.fileName} · ${formatFileSize(attachment.sizeBytes)}`}
       className="inline-flex min-w-0 max-w-60 items-center gap-2 rounded-md border border-border bg-card min-h-11 px-3 py-1 text-xs shadow-2xs hover:border-input hover:bg-state-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
     >

@@ -2,11 +2,13 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
 import { createStore, registerTasksApi } from "./api";
+import { registerCrewApi } from "./api/crew";
 import { registerAttachments } from "./attachments";
 import { registerTasksCli } from "./cli";
 import { registerDelegation } from "./delegate";
 import { registerLifecycle } from "./lifecycle";
 import { registerMentions } from "./mentions";
+import { registerParentNotifyRedelivery } from "./steer";
 
 const TASKS_PLUGIN_NAME = "Tasks";
 export const TASKS_PLUGIN_VERSION = "0.1.2";
@@ -27,10 +29,12 @@ export default async function plugin(bb: BbPluginApi) {
 
   const store = createStore(bb);
   registerTasksApi(bb, store);
+  registerCrewApi(bb, store);
   registerAttachments(bb, store.tasks);
   registerTasksCli(bb, store, statusPayload());
   registerDelegation(bb, store);
   registerMentions(bb, store);
+  registerParentNotifyRedelivery(bb, store.tasks);
   await registerLifecycle(bb, store);
 
   bb.rpc.register(tasksRpcContract, {
