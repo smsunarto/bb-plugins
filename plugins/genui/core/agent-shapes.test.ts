@@ -221,6 +221,27 @@ describe("Decision written as a question", () => {
     expect(answer(branch)).toBe("Q? yes");
   });
 
+  it("leaves a function parameter that shares the question's name alone", () => {
+    const { roots } = render(
+      `q = Decision("Q?", ["yes", "no"])\nCard("x", [q, Form(["ok"].map(q => Text(q)))])`,
+    );
+    const form = find(roots[0]!, "Form").find((node) => find(node, "Text").length > 0)!;
+    expect(find(form, "Text").map((node) => (node.props as { text: unknown }).text)).toEqual([
+      "ok",
+    ]);
+    expect(find(form, "Radio")).toHaveLength(0);
+  });
+
+  it("compiles and renders a long chain of named values that reach a question, quickly", () => {
+    const chain = Array.from({ length: 20 }, (_, i) => `a${i + 1} = $s ? a${i} : a${i}`).join("\n");
+    const source = `$s = true\na0 = Decision("Q?", ["yes", "no"])\n${chain}\nForm([a20])`;
+    const started = performance.now();
+    const { roots } = render(source, { decision: "yes" });
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(find(roots[0]!, "Form")).toHaveLength(1);
+    expect(answer(roots)).toBe("Q? yes");
+  });
+
   it("leaves Decision(options, criteria) as the scored table", () => {
     const source = `Decision([{name: "A", scores: [4, 2]}, {name: "B", scores: [3, 5]}], ["Speed", "Cost"])`;
     const { roots, warnings } = render(source);

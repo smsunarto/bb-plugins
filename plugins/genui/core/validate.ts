@@ -288,74 +288,6 @@ export function validate(statements: readonly Statement[], diagnostics: Diagnost
   return new Validator(diagnostics).run(statements);
 }
 
-/** Local (bb-plugins): an expression's direct sub-expressions. */
-function subExprs(expr: Expr): readonly Expr[] {
-  switch (expr.type) {
-    case "template":
-      return expr.parts;
-    case "list":
-      return expr.items;
-    case "object":
-      return expr.entries.map((entry) => entry.value);
-    case "unary":
-      return [expr.operand];
-    case "binary":
-      return [expr.left, expr.right];
-    case "conditional":
-      return [expr.test, expr.then, expr.else];
-    case "member":
-      return [expr.object];
-    case "index":
-      return [expr.object, expr.index];
-    case "call":
-      return [...expr.args, ...expr.named.map((arg) => arg.value)];
-    case "method":
-      return [expr.object, ...expr.args, ...expr.named.map((arg) => arg.value)];
-    case "arrow":
-      return [expr.body];
-    default:
-      return [];
-  }
-}
-
-/** Local (bb-plugins): a shallow copy of `expr` with each direct sub-expression mapped through `map`. */
-function withSubExprs<E extends Expr>(expr: E, map: (child: Expr) => Expr): E {
-  const named = (args: readonly NamedArg[]) => args.map((arg) => ({ ...arg, value: map(arg.value) }));
-  const copy = (() => {
-    switch (expr.type) {
-      case "template":
-        return { ...expr, parts: expr.parts.map(map) };
-      case "list":
-        return { ...expr, items: expr.items.map(map) };
-      case "object":
-        return { ...expr, entries: expr.entries.map((entry) => ({ ...entry, value: map(entry.value) })) };
-      case "unary":
-        return { ...expr, operand: map(expr.operand) };
-      case "binary":
-        return { ...expr, left: map(expr.left), right: map(expr.right) };
-      case "conditional": {
-        const copy = { ...expr, test: map(expr.test), else: map(expr.else) };
-        // `then` is the AST's branch, not a promise; set apart so no literal reads as a thenable.
-        Reflect.set(copy, "then", map(expr.then));
-        return copy;
-      }
-      case "member":
-        return { ...expr, object: map(expr.object) };
-      case "index":
-        return { ...expr, object: map(expr.object), index: map(expr.index) };
-      case "call":
-        return { ...expr, args: expr.args.map(map), named: named(expr.named) };
-      case "method":
-        return { ...expr, object: map(expr.object), args: expr.args.map(map), named: named(expr.named) };
-      case "arrow":
-        return { ...expr, body: map(expr.body) };
-      default:
-        return expr;
-    }
-  })();
-  return copy as E;
-}
-
 class Validator {
   private readonly states = new Map<string, { readonly index: number; readonly decl: Decl }>();
   private readonly named = new Map<string, Decl>();
@@ -365,8 +297,8 @@ class Validator {
   private readonly fieldStates = new Map<string, string>();
   /** Local (bb-plugins): states a rewrite declared; a field name never binds one. */
   private readonly synthesized = new Set<string>();
-  /** Local (bb-plugins): each Decision question's Card and the Radio it asks, for unwrapping inside a Form. */
-  private readonly decisionQuestions = new Map<CallExpr, CallExpr>();
+  /** Local (bb-plugins): the Cards Decision questions became; a Form takes their Radio as its own field (evaluate.ts). */
+  private readonly questions = new Set<Expr>();
 
   constructor(private readonly diagnostics: DiagnosticList) {}
 
@@ -445,58 +377,7 @@ class Validator {
     for (const [name, decl] of this.named) {
       if (!used.has(name)) this.diagnostics.report(decl.pos, `\`${name}\` is never used`, "warning");
     }
-    this.unwrapDecisionsInForms(roots);
-    return { states: this.stateDecls, named: this.named, roots };
-  }
-
-  /**
-   * Local (bb-plugins): a Decision question already inside a Form, directly
-   * or through a named value, is only its Radio: its own Card and Form would
-   * nest a second Form and send the pick twice. Only the occurrence inside
-   * the Form changes: a named value is copied there, so the same name used
-   * outside a Form keeps its Card.
-   */
-  private unwrapDecisionsInForms(roots: Expr[]): void {
-    if (this.decisionQuestions.size === 0) return;
-    const asks = new Map<string, boolean>();
-    /** Whether `expr`, through the named values it reads, holds a Decision question. */
-    const hasQuestion = (expr: Expr): boolean => {
-      if (expr.type === "call" && this.decisionQuestions.has(expr)) return true;
-      if (expr.type === "ident") {
-        const decl = this.named.get(expr.name);
-        if (decl === undefined || decl.value.type === "arrow") return false;
-        const known = asks.get(expr.name);
-        if (known !== undefined) return known;
-        asks.set(expr.name, false); // a cycle is reported elsewhere
-        const found = hasQuestion(decl.value);
-        asks.set(expr.name, found);
-        return found;
-      }
-      return subExprs(expr).some(hasQuestion);
-    };
-    /** `expr` as it reads inside a Form: unchanged without a question, else a copy whose questions are Radios. */
-    const inForm = (expr: Expr, inlined: ReadonlySet<string>): Expr => {
-      if (!hasQuestion(expr)) return expr;
-      const radio = expr.type === "call" ? this.decisionQuestions.get(expr) : undefined;
-      if (radio !== undefined) return radio;
-      if (expr.type === "ident") {
-        const decl = this.named.get(expr.name);
-        if (decl === undefined || inlined.has(expr.name)) return expr;
-        return inForm(decl.value, new Set([...inlined, expr.name]));
-      }
-      return withSubExprs(expr, (child) => inForm(child, inlined));
-    };
-    /** Rewrites, in place, the children of each Form reachable from `expr` outside a Form. */
-    const outside = (expr: Expr): void => {
-      if (expr.type === "call" && expr.name === "Form") {
-        // validate owns the parsed AST before it becomes the program (readonly is type-level).
-        Object.assign(expr as unknown as { args: Expr[]; named: NamedArg[] }, withSubExprs(expr, (child) => inForm(child, new Set())));
-        return;
-      }
-      for (const child of subExprs(expr)) outside(child);
-    };
-    roots.forEach(outside);
-    for (const decl of this.named.values()) outside(decl.value);
+    return { states: this.stateDecls, named: this.named, roots, questions: this.questions };
   }
 
   private refs(expr: Expr): Refs {
@@ -1103,8 +984,8 @@ class Validator {
    * and every option a text or a {label, description} object, the call
    * becomes `Card(null, [Form([Radio($decision, [{value, detail}, …],
    * label: question)])])` (warning), so the pick reaches the user's message
-   * as "Question? answer"; inside a Form it is only the Radio
-   * (unwrapDecisionsInForms). Anything else keeps its errors.
+   * as "Question? answer"; a Form it is inside takes the Radio as its own
+   * field when it evaluates. Anything else keeps its errors.
    */
   private coerceDecisionQuestion(expr: CallExpr): void {
     if (expr.named.length > 0) return;
@@ -1139,7 +1020,7 @@ class Validator {
     const mutable = expr as unknown as { name: string; args: Expr[] };
     mutable.name = "Card";
     mutable.args = [{ type: "literal", value: null, pos: expr.pos }, { type: "list", items: [form], pos: options.pos }];
-    this.decisionQuestions.set(expr, radio as CallExpr);
+    this.questions.add(expr);
     this.diagnostics.report(
       expr.pos,
       `\`Decision\` scores options against criteria; with none it is a question, so it became a Radio bound to \`$${name}\`. Write a question as \`Radio($pick, [{value, detail}], label: "Question?")\` in a Form`,
