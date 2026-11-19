@@ -62,8 +62,6 @@ describe("the stall wake", () => {
         threadId: expect.any(String),
         text: `[captain] stalled, no report since it fell due: BBPLUGINS-1 ${thread} Implement 15m · steer them with \`bb captain tell --stalled --message-file <path>\``,
         mode: "steer-if-active",
-        // A wake into the Captain thread itself names no sender.
-        senderThreadId: null,
       },
     ]);
     expect(later.woke).toEqual([]);

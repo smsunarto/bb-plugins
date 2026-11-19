@@ -450,6 +450,21 @@ describe("bb captain dispatch --thread", () => {
       reportDueSince: host.now(),
       contractSent: true,
     });
+    expect(adopted.stderr ?? "").toBe("");
+  });
+
+  test("adopting a thread outside full permission mode prints one warning line", async () => {
+    const { host, as } = await crewHost();
+    host.addThread({ id: "thr_auto", status: "idle" });
+    host.permissionModes.set("thr_auto", "auto");
+
+    const adopted = await as(["dispatch", "BBPLUGINS-1", "--role", "Plan", "--thread", "thr_auto"]);
+
+    expect(adopted.exitCode).toBe(0);
+    expect(adopted.stdout).toContain("adopted");
+    expect(adopted.stderr).toBe(
+      "warning: thr_auto runs in auto permission mode; Captain tells cannot approve escalations for it\n",
+    );
   });
 });
 
@@ -692,7 +707,6 @@ describe("bb captain ask", () => {
         threadId: captainId,
         text: '[captain] a1 answered "Studio" · BBPLUGINS-1 Pick an account',
         mode: "steer-if-active",
-        senderThreadId: null,
       },
     ]);
     expect(
