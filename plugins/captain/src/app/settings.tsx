@@ -53,7 +53,7 @@ export function CrewModelsSettings() {
 
   if (ladders.data === undefined) {
     return (
-      <div className="flex flex-col gap-3" data-bb-plugin="captain">
+      <div className="flex flex-col gap-3" data-bb-plugin="captain" data-bb-plugin-scope-captain="">
         {ladders.error === null ? (
           [0, 1, 2].map((index) => (
             <div key={index} className="h-24 animate-pulse rounded-md bg-muted" />
@@ -65,7 +65,7 @@ export function CrewModelsSettings() {
     );
   }
   return (
-    <div className="flex flex-col gap-5" data-bb-plugin="captain">
+    <div className="flex flex-col gap-5" data-bb-plugin="captain" data-bb-plugin-scope-captain="">
       <p className="text-sm text-muted-foreground">
         Crew start on the first rung whose provider has a ready Account Pooler account. A crew
         thread that hits a rate limit before it reports restarts on the next rung.

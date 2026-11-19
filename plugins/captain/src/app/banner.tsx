@@ -140,6 +140,7 @@ function Queue({
       aria-label={`Needs you, ${items.length} item${items.length === 1 ? "" : "s"}`}
       aria-keyshortcuts="1 2 3 4 5 6 7 8 9 Enter L S"
       data-bb-plugin="captain"
+      data-bb-plugin-scope-captain=""
       data-testid="captain-needs-you"
       onKeyDown={onKeyDown}
       onBlur={() => {
@@ -664,6 +665,7 @@ function SinceYouLeft({ captainId, since }: { captainId: string; since: Since })
     <section
       aria-label="Since you left"
       data-bb-plugin="captain"
+      data-bb-plugin-scope-captain=""
       data-testid="captain-since"
       className="flex min-w-0 flex-col gap-1 px-3 py-1.5 text-xs text-muted-foreground"
     >
