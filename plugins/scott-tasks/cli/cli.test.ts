@@ -1366,6 +1366,7 @@ describe("bb tasks CLI", () => {
         number: 12,
         title: "BB-15 Show PRs in tasks",
         state: "draft",
+        checks: [],
         threadIds: ["thr_pr_worker"],
       },
     ]);

@@ -219,6 +219,10 @@ const taskPullRequestSchema = z
     number: z.number().int().positive(),
     title: z.string(),
     state: z.enum(["open", "draft", "merged", "closed"]),
+    // Source Control's check chips: "2 Failed", "1 Running", "Passed".
+    checks: z.array(
+      z.object({ id: z.enum(["failed", "running", "passed"]), label: z.string() }).strict(),
+    ),
     threadIds: z.array(z.string().startsWith("thr_")).min(1),
   })
   .strict();

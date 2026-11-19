@@ -40,7 +40,7 @@ import {
 import {
   SOURCE_CONTROL_KEYS_PER_READ,
   SOURCE_CONTROL_PLUGIN_ID,
-  mayHaveMoved,
+  refreshDue,
   sourceControlContract,
   threadPullRequest,
   type ThreadPullRequest,
@@ -506,67 +506,74 @@ interface TaskPullRequestsResult {
   unavailableThreadIds: string[];
 }
 
-const PULL_REQUEST_REFRESH_CONCURRENCY = 4;
-const PULL_REQUEST_REFRESH_DEADLINE_MS = 15_000;
+const PULL_REQUEST_REFRESH_CONCURRENCY = 8;
+/** One refresh's deadline: a sleeping host gives up its slot after this. */
+const PULL_REQUEST_REFRESH_DEADLINE_MS = 8_000;
+/** No refresh starts after this; threads still queued keep their stored row. */
+const PULL_REQUEST_REFRESH_BUDGET_MS = 20_000;
 
-async function readThreadStatuses(
+/** Each thread's stored `statusForThread` row; a failed read leaves its threads out. */
+async function readThreadRows(
   bb: BbPluginApi,
   threadIds: readonly string[],
-): Promise<Map<string, ThreadPullRequest>> {
-  const statuses = new Map<string, ThreadPullRequest>();
+): Promise<Map<string, unknown>> {
+  const rows = new Map<string, unknown>();
   for (let start = 0; start < threadIds.length; start += SOURCE_CONTROL_KEYS_PER_READ) {
     const keys = threadIds.slice(start, start + SOURCE_CONTROL_KEYS_PER_READ);
     try {
-      const rows = await bb.sdk.plugins.callRpc({
+      const read = await bb.sdk.plugins.callRpc({
         pluginId: SOURCE_CONTROL_PLUGIN_ID,
         method: "statusForThread",
         input: { keys },
         outputSchema: sourceControlContract.statusForThread.output,
       });
-      for (const threadId of keys) statuses.set(threadId, threadPullRequest(rows[threadId]));
+      for (const threadId of keys) rows.set(threadId, read[threadId]);
     } catch (error) {
       bb.log.debug(`pull request lookup failed: ${errorMessage(error)}`);
     }
   }
-  return statuses;
+  return rows;
 }
 
 // Source Control (source-control) owns pull request data, keyed by thread.
 // It serves stored rows and keeps one current only while something watches
-// it, so threads it has never read, and threads whose pull request is still
-// open and may have moved on GitHub, are read again with `refreshThread`
-// first. A failed, disabled, or still-unread lookup leaves the thread out,
-// which the caller reports as unavailable.
+// it, so a thread whose GitHub read is missing or over a minute old is read
+// again with `refreshThread` first. Each refresh has its own deadline, so a
+// sleeping host costs one slot, not the whole read. A failed, disabled, or
+// still-unread lookup leaves the thread out, which the caller reports as
+// unavailable.
 async function readThreadPullRequests(
   bb: BbPluginApi,
   threadIds: readonly string[],
 ): Promise<Map<string, ThreadPullRequest>> {
-  const statuses = await readThreadStatuses(bb, threadIds);
-  const stale = threadIds.filter((threadId) => mayHaveMoved(statuses.get(threadId)));
-  if (stale.length === 0) return statuses;
-  const signal = AbortSignal.timeout(PULL_REQUEST_REFRESH_DEADLINE_MS);
+  const rows = await readThreadRows(bb, threadIds);
+  const startedAt = Date.now();
+  const stale = threadIds.filter(
+    (threadId) => rows.has(threadId) && refreshDue(rows.get(threadId), startedAt),
+  );
   const queue = [...stale];
   const refreshNext = async (): Promise<void> => {
     const threadId = queue.shift();
     if (threadId === undefined) return;
+    if (Date.now() - startedAt >= PULL_REQUEST_REFRESH_BUDGET_MS) return;
     try {
       await bb.sdk.plugins.callRpc({
         pluginId: SOURCE_CONTROL_PLUGIN_ID,
         method: "refreshThread",
         input: { threadId },
         outputSchema: sourceControlContract.refreshThread.output,
-        signal,
+        signal: AbortSignal.timeout(PULL_REQUEST_REFRESH_DEADLINE_MS),
       });
     } catch (error) {
       bb.log.debug(`pull request refresh failed for ${threadId}: ${errorMessage(error)}`);
     }
     return refreshNext();
   };
-  await Promise.all(Array.from({ length: PULL_REQUEST_REFRESH_CONCURRENCY }, refreshNext));
-  for (const [threadId, status] of await readThreadStatuses(bb, stale)) {
-    statuses.set(threadId, status);
+  if (stale.length > 0) {
+    await Promise.all(Array.from({ length: PULL_REQUEST_REFRESH_CONCURRENCY }, refreshNext));
+    for (const [threadId, row] of await readThreadRows(bb, stale)) rows.set(threadId, row);
   }
-  return statuses;
+  return new Map([...rows].map(([threadId, row]) => [threadId, threadPullRequest(row)]));
 }
 
 async function listTaskPullRequests(

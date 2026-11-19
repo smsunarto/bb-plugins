@@ -319,4 +319,29 @@ describe("task detail pull request pills", () => {
       ]);
     });
   });
+
+  it("shows the pull request's checks as Source Control words them", async () => {
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "task/TSK-5" },
+      {
+        rpc: detailRpc({
+          statusForThread: (input: unknown) =>
+            statusRows(input, () => ({
+              ...changeRow({ number: 12, title: "Ship the PR pill", state: "open" }),
+              chips: [
+                { id: "conflicts", label: "Conflicts", tone: "error", icon: "cross" },
+                { id: "failed", label: "2 Failed", tone: "error", icon: "cross" },
+                { id: "running", label: "1 Running", tone: "warning", icon: "dot" },
+              ],
+            })),
+        }),
+      },
+    );
+
+    const link = await slot.findByRole("link", {
+      name: "Pull request #12: Ship the PR pill (Open, checks: 2 Failed, 1 Running)",
+    });
+    expect(link.textContent).toBe("#12· 2 Failed· 1 Running");
+  });
 });

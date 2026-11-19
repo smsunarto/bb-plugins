@@ -14,6 +14,7 @@ import {
   sourceControlContract,
   threadPullRequest,
   type ThreadPullRequest,
+  type ThreadPullRequestInfo,
 } from "../../shared/source-control.js";
 import { errorMessage } from "../../shared/errors.js";
 import { PR_STATE_META, THREAD_STATUS_META, formatRelativeTime, isActiveThread } from "./meta.js";
@@ -33,18 +34,26 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 
+const CHECK_TONE: Record<ThreadPullRequestInfo["checks"][number]["id"], string> = {
+  failed: "text-destructive",
+  running: "text-warning",
+  passed: "text-success",
+};
+
 function ThreadPullRequestPill({ status }: { status: ThreadPullRequest }) {
   if (status.kind === "pullRequest") {
     const { pullRequest } = status;
     const meta = PR_STATE_META[pullRequest.state];
+    const checks = pullRequest.checks.map((check) => check.label).join(", ");
+    const summary = `${pullRequest.title} (${meta.label}${checks ? `, checks: ${checks}` : ""})`;
     return (
-      <Hint label={`${pullRequest.title} (${meta.label})`}>
+      <Hint label={summary}>
         <span className="flex shrink-0">
           <UrlLink
             href={pullRequest.url}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`Pull request #${pullRequest.number}: ${pullRequest.title} (${meta.label})`}
+            aria-label={`Pull request #${pullRequest.number}: ${summary}`}
             className={cn(
               badgeVariants({ variant: "outline" }),
               "gap-1 rounded-full hover:border-input",
@@ -52,6 +61,11 @@ function ThreadPullRequestPill({ status }: { status: ThreadPullRequest }) {
           >
             <Icon name={meta.icon} className={cn("size-3", meta.textClassName)} />#
             {pullRequest.number}
+            {pullRequest.checks.map((check) => (
+              <span key={check.id} className={cn("font-normal", CHECK_TONE[check.id])}>
+                · {check.label}
+              </span>
+            ))}
           </UrlLink>
         </span>
       </Hint>

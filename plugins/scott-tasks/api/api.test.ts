@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { registerAttachments } from "../attachments";
 import { attachmentDownloadUrl } from "../shared/attachments";
 import { tasksRpcContract } from "../shared/contract";
@@ -1378,7 +1378,14 @@ describe("Tasks RPC domain API", () => {
 
   it("shows each thread's pull request from Source Control, one entry per PR", async () => {
     const rows: Record<string, unknown> = {
-      thr_writer00: changeRow(prRow({ number: 12, state: "open" })),
+      thr_writer00: {
+        ...changeRow(prRow({ number: 12, state: "open" })),
+        chips: [
+          { id: "conflicts", label: "Conflicts", tone: "error", icon: "cross" },
+          { id: "failed", label: "2 Failed", tone: "error", icon: "cross" },
+          { id: "running", label: "1 Running", tone: "warning", icon: "dot" },
+        ],
+      },
       thr_reviewer0: changeRow(prRow({ number: 12, state: "open" })),
       thr_drafter00: changeRow(prRow({ number: 14, title: "Still a draft", state: "draft" })),
       thr_merger000: changeRow(prRow({ number: 9, title: "Older merged work", state: "merged" })),
@@ -1423,6 +1430,14 @@ describe("Tasks RPC domain API", () => {
       number: 12,
       title: "Fix the pill",
       state: "open",
+      // Only Source Control's check chips, as it words them; the first thread's row wins.
+      checks:
+        byNumber.get(12)!.threadIds[0] === "thr_writer00"
+          ? [
+              { id: "failed", label: "2 Failed" },
+              { id: "running", label: "1 Running" },
+            ]
+          : [],
       threadIds: inThreadOrder(["thr_writer00", "thr_reviewer0"]),
     });
     expect(byNumber.get(14)).toMatchObject({ state: "draft", threadIds: ["thr_drafter00"] });
@@ -1439,11 +1454,8 @@ describe("Tasks RPC domain API", () => {
     expect(result.unavailableThreadIds).toEqual(
       inThreadOrder(["thr_garbled00", "thr_gh_failed", "thr_missing00"]),
     );
-    // Open and draft pull requests are read again before they're reported.
-    expect(statusReads(harness)).toEqual([
-      [...threadOrder].sort(),
-      ["thr_drafter00", "thr_reviewer0", "thr_writer00"],
-    ]);
+    // Every row was read just now except the failed one, which is asked again.
+    expect(statusReads(harness)).toEqual([[...threadOrder].sort(), ["thr_gh_failed"]]);
 
     await harness.dispose();
   });
@@ -1471,16 +1483,22 @@ describe("Tasks RPC domain API", () => {
     await harness.dispose();
   });
 
-  it("asks Source Control to re-read unread threads and open pull requests, once each", async () => {
+  it("asks Source Control to re-read threads whose GitHub read is missing or old, once each", async () => {
+    const old = { state: "read", at: 1 };
     const rows: Record<string, unknown> = {
-      thr_known0000: changeRow(prRow({ number: 1, state: "merged" })),
-      thr_no_pr0000: changeRow(null),
-      thr_opened000: changeRow(prRow({ number: 3, state: "open" })),
-      thr_drafted00: changeRow(prRow({ number: 4, state: "draft" })),
+      // Merged is final; a fresh read needs nothing; no GitHub, nothing to find.
+      thr_merged000: changeRow(prRow({ number: 1, state: "merged" }), old),
+      thr_fresh0000: changeRow(prRow({ number: 4, state: "draft" })),
+      thr_no_github: changeRow(null, { state: "unsupported" }),
+      thr_no_repo00: { state: "none" },
+      // Read over a minute ago: no PR yet, closed, and open all ask again.
+      thr_no_pr_old: changeRow(null, old),
+      thr_closed000: changeRow(prRow({ number: 7, state: "closed" }), old),
+      thr_opened000: changeRow(prRow({ number: 3, state: "open" }), old),
+      // Never read: the thread, or only its GitHub pull request.
       thr_unread000: { state: "pending" },
-      thr_asleep000: { state: "pending" },
-      // The checkout is read, its GitHub pull request not yet.
       thr_no_forge0: changeRow(null, { state: "unread" }),
+      thr_asleep000: { state: "pending" },
       thr_broken000: { state: "pending" },
     };
     const refreshed: string[] = [];
@@ -1491,11 +1509,15 @@ describe("Tasks RPC domain API", () => {
           status: (threadId) => rows[threadId],
           refresh: (threadId) => {
             refreshed.push(threadId);
-            if (threadId === "thr_unread000") rows[threadId] = changeRow(prRow({ number: 2 }));
-            if (threadId === "thr_opened000") {
-              rows[threadId] = changeRow(prRow({ number: 3, state: "merged" }));
-            }
-            if (threadId === "thr_no_forge0") rows[threadId] = changeRow(null);
+            const now = { state: "read", at: Date.now() };
+            const reread: Record<string, unknown> = {
+              thr_no_pr_old: changeRow(prRow({ number: 8, title: "Opened since" }), now),
+              thr_closed000: changeRow(prRow({ number: 7, state: "open" }), now),
+              thr_opened000: changeRow(prRow({ number: 3, state: "merged" }), now),
+              thr_unread000: changeRow(prRow({ number: 2 }), now),
+              thr_no_forge0: changeRow(null, now),
+            };
+            if (threadId in reread) rows[threadId] = reread[threadId];
             if (threadId === "thr_broken000") throw new Error("host timed out");
             // thr_asleep000 stays pending: its host never answered.
           },
@@ -1513,25 +1535,117 @@ describe("Tasks RPC domain API", () => {
     const stale = [
       "thr_asleep000",
       "thr_broken000",
-      "thr_drafted00",
+      "thr_closed000",
       "thr_no_forge0",
+      "thr_no_pr_old",
       "thr_opened000",
       "thr_unread000",
     ];
     expect([...refreshed].sort()).toEqual(stale);
     expect(result.pullRequests.map((pr) => [pr.number, pr.state, pr.threadIds])).toEqual(
       expect.arrayContaining([
-        [1, "merged", ["thr_known0000"]],
+        [1, "merged", ["thr_merged000"]],
         [2, "open", ["thr_unread000"]],
         [3, "merged", ["thr_opened000"]],
-        [4, "draft", ["thr_drafted00"]],
+        [4, "draft", ["thr_fresh0000"]],
+        [7, "open", ["thr_closed000"]],
+        [8, "open", ["thr_no_pr_old"]],
       ]),
     );
-    expect(result.pullRequests).toHaveLength(4);
+    expect(result.pullRequests).toHaveLength(6);
     expect([...result.unavailableThreadIds].sort()).toEqual(["thr_asleep000", "thr_broken000"]);
     expect(statusReads(harness)).toEqual([Object.keys(rows).sort(), stale]);
 
     await harness.dispose();
+  });
+
+  it("refreshes a healthy thread while other hosts are still asleep", async () => {
+    const rows: Record<string, unknown> = Object.fromEntries(
+      // Attached first, so it is listed, and queued, last.
+      ["thr_healthy00", "thr_asleep_a0", "thr_asleep_b0", "thr_asleep_c0", "thr_asleep_d0"].map(
+        (threadId) => [threadId, { state: "pending" }],
+      ),
+    );
+    let healthyAnswered!: () => void;
+    const healthy = new Promise<void>((resolve) => (healthyAnswered = resolve));
+    const signals: AbortSignal[] = [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        plugins: {
+          async callRpc<TOutput>(args: {
+            method: string;
+            input?: unknown;
+            signal?: AbortSignal;
+            outputSchema: { parse(value: unknown): TOutput };
+          }): Promise<TOutput> {
+            if (args.method === "statusForThread") {
+              const { keys } = args.input as { keys: string[] };
+              return args.outputSchema.parse(Object.fromEntries(keys.map((k) => [k, rows[k]])));
+            }
+            const { threadId } = args.input as { threadId: string };
+            signals.push(args.signal!);
+            if (threadId === "thr_healthy00") {
+              rows[threadId] = changeRow(prRow({ number: 42 }));
+              healthyAnswered();
+              return args.outputSchema.parse({ ok: true });
+            }
+            // The sleeping hosts answer only once the healthy one has.
+            await healthy;
+            return args.outputSchema.parse({ ok: true });
+          },
+        },
+      },
+    });
+    const store = createStore(bb);
+    registerTasksApi(bb, store);
+    const task = taskWithThreads(store, Object.keys(rows));
+
+    const result = tasksRpcContract.listTaskPullRequests.output.parse(
+      await harness.callRpc("listTaskPullRequests", { taskId: task.id }),
+    );
+
+    expect(result.pullRequests.map((pr) => [pr.number, pr.threadIds])).toEqual([
+      [42, ["thr_healthy00"]],
+    ]);
+    // Each refresh has a deadline of its own, not one shared by the read.
+    expect(new Set(signals).size).toBe(5);
+    await harness.dispose();
+  }, 5_000);
+
+  it("starts no refresh after the read's time budget", async () => {
+    const threadIds = Array.from({ length: 10 }, (_, i) => `thr_late${String(i).padStart(5, "0")}`);
+    let clock = 1_000_000;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => clock);
+    const refreshed: string[] = [];
+    const { bb, harness } = createFakePluginHost({
+      pluginId: "tasks",
+      sdk: {
+        plugins: sourceControlRpc({
+          status: () => ({ state: "pending" }),
+          refresh: (threadId) => {
+            refreshed.push(threadId);
+            // Time passes while the host answers, after every free slot has started.
+            queueMicrotask(() => (clock += 21_000));
+          },
+        }),
+      },
+    });
+    const store = createStore(bb);
+    registerTasksApi(bb, store);
+    const task = taskWithThreads(store, threadIds);
+
+    try {
+      const result = tasksRpcContract.listTaskPullRequests.output.parse(
+        await harness.callRpc("listTaskPullRequests", { taskId: task.id }),
+      );
+      // Eight start at once; the two still queued once time is up never start.
+      expect(refreshed).toHaveLength(8);
+      expect(result.unavailableThreadIds).toHaveLength(10);
+    } finally {
+      now.mockRestore();
+      await harness.dispose();
+    }
   });
 
   it("reads Source Control in batches of 200 threads", async () => {
@@ -1800,9 +1914,10 @@ function statusReads(harness: { sdk: { callsTo(path: string): unknown[][] } }) {
 }
 
 /** A `statusForThread` row for a thread whose checkout Source Control has read. */
+/** A row read just now unless `forge` says otherwise. */
 function changeRow(
   pullRequest: ReturnType<typeof prRow> | null,
-  forge: Record<string, unknown> = { state: "read", at: 1 },
+  forge: Record<string, unknown> = { state: "read", at: Date.now() },
 ) {
   return {
     state: "change",
