@@ -485,38 +485,46 @@ class Interpreter {
 
   /** Local (bb-plugins): nodes made from a Decision question's Card (validate.ts), by identity. */
   private readonly questionCards = new WeakSet<UiNode>();
+  /** Local (bb-plugins): nodes whose props reach a question's Card outside a Form; only these are walked. */
+  private readonly holdsQuestion = new WeakSet<UiNode>();
+  /** Local (bb-plugins): each walked node as a Form holds it, so a node shared many times is walked once. */
+  private readonly lifted = new WeakMap<UiNode, readonly UiNode[]>();
 
-  /**
-   * Local (bb-plugins): a Form's children with each Decision question's Card,
-   * at any depth short of a nested Form, replaced by its own Form's fields
-   * (the Radio), so the Form asks the question once and sends the answer
-   * once. Nodes are values: a changed branch is copied, the rest is shared,
-   * so the same question shown outside a Form keeps its Card.
-   */
-  private liftQuestions(nodes: readonly UiNode[]): UiNode[] {
-    let changed = false;
-    const lifted = nodes.flatMap((node): UiNode[] => {
-      const next = this.liftIn(node);
-      if (next !== node) changed = true;
-      return Array.isArray(next) ? next : [next as UiNode];
-    });
-    return changed ? lifted : (nodes as UiNode[]);
+  /** Local (bb-plugins): whether `value` holds a question's Card, or a node that does, without looking inside nodes. */
+  private reachesQuestion(value: Value): boolean {
+    if (isUiNode(value)) return this.questionCards.has(value as UiNode) || this.holdsQuestion.has(value as UiNode);
+    if (Array.isArray(value)) return value.some((item) => this.reachesQuestion(item));
+    return isPlainObject(value) && Object.values(value).some((item) => this.reachesQuestion(item));
   }
 
-  private liftIn(node: UiNode): UiNode | UiNode[] {
+  /**
+   * Local (bb-plugins): `node` as a Form holds it. A Decision question's Card
+   * becomes its own Form's fields (the Radio), so the Form asks the question
+   * once and sends the answer once; a node that reaches one is copied with
+   * it lifted; everything else is returned as is. Each node is walked once.
+   */
+  private liftNode(node: UiNode): readonly UiNode[] {
     if (this.questionCards.has(node)) {
       const form = (node.props as { children?: readonly UiNode[] }).children?.[0];
-      return form?.type === "Form" ? [...((form.props as { children?: readonly UiNode[] }).children ?? [])] : node;
+      return form?.type === "Form" ? ((form.props as { children?: readonly UiNode[] }).children ?? []) : [node];
     }
-    if (node.kind !== "node" || node.type === "Form" || node.type === "Error" || node.type === "Loading") return node;
-    let changed = false;
+    if (!this.holdsQuestion.has(node)) return [node];
+    const known = this.lifted.get(node);
+    if (known !== undefined) return known;
     const props: Record<string, Value> = {};
-    for (const [name, value] of Object.entries(node.props as Record<string, Value>)) {
-      const next = Array.isArray(value) && value.some(isUiNode) ? this.liftQuestions(value as readonly UiNode[]) : value;
-      if (next !== value) changed = true;
-      props[name] = next;
-    }
-    return changed ? ({ ...node, props } as UiNode) : node;
+    for (const [name, value] of Object.entries(node.props as Record<string, Value>)) props[name] = this.liftValue(value);
+    const result = [{ ...node, props } as UiNode];
+    this.lifted.set(node, result);
+    return result;
+  }
+
+  /** Local (bb-plugins): a prop value with the questions it reaches lifted; arrays keep their nesting, data its values. */
+  private liftValue(value: Value): Value {
+    if (!this.reachesQuestion(value)) return value;
+    if (isUiNode(value)) return this.liftNode(value as UiNode)[0] ?? value;
+    if (Array.isArray(value)) return value.flatMap((item): Value[] => (isUiNode(item) ? [...this.liftNode(item as UiNode)] : [this.liftValue(item)]));
+    if (isPlainObject(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.liftValue(item)]));
+    return value;
   }
 
   /** Every node is made through here, so the count against LIMITS.nodes is complete. */
@@ -552,9 +560,11 @@ class Interpreter {
       // `param` normalized every argument to `spec`, the catalog entry for `type`, and the lines above added what
       // AddedProps lists, so `props` is PropsOf<type>: the one place the pairing of `type` and `props` is asserted.
       // Local (bb-plugins): a Form takes the Radio of a Decision question it holds as its own field.
-      if (type === "Form" && Array.isArray(props.children)) props.children = this.liftQuestions(props.children as readonly UiNode[]);
+      const asks = (this.program.questions?.size ?? 0) > 0;
+      if (asks && type === "Form") props.children = this.liftValue(props.children ?? []);
       const node = this.made({ kind: "node", type, key, props } as ComponentNode, call.pos);
-      if (this.program.questions?.has(call)) this.questionCards.add(node);
+      if (asks && this.program.questions?.has(call)) this.questionCards.add(node);
+      else if (asks && type !== "Form" && Object.values(props).some((value) => this.reachesQuestion(value))) this.holdsQuestion.add(node);
       return node;
     } catch (error) {
       if (!(error instanceof RuntimeError)) throw error;

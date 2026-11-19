@@ -242,6 +242,52 @@ describe("Decision written as a question", () => {
     expect(answer(roots)).toBe("Q? yes");
   });
 
+  it("leaves data a Form holds as it is, nodes and nulls in the same list included", () => {
+    const { roots } = render(
+      `q = Decision("Q?", ["yes", "no"])\nCard("x", [q, Form([Json([Text("ok"), null])])])`,
+    );
+    const json = find(roots[0]!, "Json")[0]!;
+    const value = (json.props as { value: unknown[] }).value;
+    expect(value).toHaveLength(2);
+    expect(value[1]).toBeNull();
+    expect((value[0] as { type: string }).type).toBe("Text");
+  });
+
+  it("takes the Radio of a question in a table cell, keeping the rows' shape", () => {
+    const { roots } = render(`Form([Table(["Q"], [[Decision("Q?", ["yes", "no"])]])])`, {
+      decision: "no",
+    });
+    expect(find(roots[0]!, "Form")).toHaveLength(1);
+    const rows = (find(roots[0]!, "Table")[0]!.props as { rows: unknown[][] }).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveLength(1);
+    expect((rows[0]![0] as { type: string }).type).toBe("Radio");
+  });
+
+  it("walks a node shared many times once, with or without a question below it", () => {
+    const chain = (bottom: string) =>
+      [
+        `a0 = ${bottom}`,
+        ...Array.from({ length: 24 }, (_, i) => `a${i + 1} = Row([a${i}, a${i}])`),
+        "Form([a24])",
+      ].join("\n");
+    let started = performance.now();
+    render(chain(`Text("leaf")`));
+    expect(performance.now() - started).toBeLessThan(250);
+    started = performance.now();
+    const { program } = compiled(chain(`Decision("Q?", ["yes", "no"])`));
+    const { roots } = evaluate(program, initialState(program));
+    expect(performance.now() - started).toBeLessThan(250);
+    // Follow one path down: the tree shares each level twice, so a full walk is 2^24 visits.
+    let node: UiNode | undefined = roots[0];
+    let depth = 0;
+    while (node !== undefined && node.type !== "Radio") {
+      node = (node.props as { children?: UiNode[] }).children?.[0];
+      depth++;
+    }
+    expect([roots[0]!.type, node?.type, depth]).toEqual(["Form", "Radio", 25]);
+  });
+
   it("leaves Decision(options, criteria) as the scored table", () => {
     const source = `Decision([{name: "A", scores: [4, 2]}, {name: "B", scores: [3, 5]}], ["Speed", "Cost"])`;
     const { roots, warnings } = render(source);
