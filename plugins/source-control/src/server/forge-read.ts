@@ -82,6 +82,8 @@ export function createForgeReads(deps: {
       const found = target(threadId, placement);
       if (!found) return Effect.succeed(null);
       const { key, query } = found;
+      // Kept after the checkout goes; a read on no branch leaves the last one, as a detached handoff does.
+      store.rememberChange(threadId, key, placement);
       return deps
         .share(
           `forge:${key}`,

@@ -28,9 +28,9 @@ import {
   type ParsedKey,
   type ReviewRevision,
 } from "../core/review.ts";
-import { changeState, shipPath, type ChangeSummary } from "../core/status.ts";
+import { changeState, publishedSummary, shipPath, type ChangeSummary } from "../core/status.ts";
 import { forgeInterval, FORGE_ACTIVE_MS, knownOpen } from "./forge-read.ts";
-import type { ForgeSites } from "./forge-sites.ts";
+import type { ForgeHost, ForgeSites } from "./forge-sites.ts";
 import { rowsOf } from "./review-sources.ts";
 import type { Share } from "./shared.ts";
 import type { Store } from "./store.ts";
@@ -116,16 +116,7 @@ function summaryOf(
   match: LocalMatch | null,
   pr: PullRequest | null | undefined,
 ): ChangeSummary {
-  if (!match)
-    return {
-      key,
-      branch: null,
-      onGitHub: true,
-      uncommitted: 0,
-      conflicted: false,
-      pullRequest: pr,
-      findings: 0,
-    };
+  if (!match) return publishedSummary(key, pr);
   const branch = findBranch(match.workspace, match.row.branch);
   const checkedOut =
     match.workspace.provider === "git"
@@ -226,8 +217,11 @@ export function createReviewChange(deps: {
   const { store } = deps;
   const attempts = new Map<ChangeKey, number>();
 
-  /** Read the Change's pull request by its key, from wherever an account can see it. */
-  const readForge = (key: ChangeKey) =>
+  /**
+   * Read the Change's pull request by its key, from wherever an account can
+   * see it; with `host`, on the server and that host only.
+   */
+  const readForge = (key: ChangeKey, host?: ForgeHost) =>
     deps.share(
       `forge:${key}`,
       Effect.gen(function* () {
@@ -237,9 +231,13 @@ export function createReviewChange(deps: {
         const { repo, headOwner, branch } = parsed;
         // The Change's own checkout first, then any checkout's host, so a server with no gh login still reads it.
         const own = localMatch(store, key)?.placement;
-        const placements = own ? [own, ...store.checkouts()] : store.checkouts();
+        const placements = host ? [host] : own ? [own, ...store.checkouts()] : store.checkouts();
         const answer = yield* deps.sites
-          .pullRequestVia({ repo, headOwner, branch, ...knownOpen(store.forge(key)) }, placements)
+          .pullRequestVia(
+            { repo, headOwner, branch, ...knownOpen(store.forge(key)) },
+            placements,
+            host ? "only" : "any",
+          )
           .pipe(Effect.result);
         const at = deps.now();
         const ok = answer._tag === "Success";
@@ -282,6 +280,8 @@ export function createReviewChange(deps: {
     },
     /** Read the Change's pull request now. */
     readForge,
+    /** Whether the Change's pull request is due another read. */
+    forgeDue: due,
     /** While the Change is open: its pull request when due, as often as the thread tab reads it. */
     watchChange: (key: ChangeKey) =>
       Effect.gen(function* () {
