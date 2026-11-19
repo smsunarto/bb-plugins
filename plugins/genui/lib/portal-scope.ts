@@ -6,6 +6,7 @@ export function usePortalScopeProps(): {
   "data-bb-portaled-overlay": "";
   "data-bb-plugin-root"?: "";
   "data-bb-plugin"?: string;
+  [scope: `data-bb-plugin-scope-${string}`]: "";
   "data-genui-motion"?: "off";
 } {
   const motion = useMotionScope();
@@ -14,7 +15,7 @@ export function usePortalScopeProps(): {
   return {
     "data-bb-portaled-overlay": "",
     "data-bb-plugin-root": "",
-    ...(pluginId !== undefined ? { "data-bb-plugin": pluginId } : {}),
+    ...(pluginId !== undefined ? { "data-bb-plugin": pluginId, [`data-bb-plugin-scope-${pluginId}`]: "" } : {}),
     ...motion,
   };
 }

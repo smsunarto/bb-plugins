@@ -140,6 +140,7 @@ test("a composer's context row shows the batch as a chip of the annotations stil
   expect(chip.closest("[data-composer-context-slot]")).not.toBeNull();
   // Plugin styles reach the portaled chip through its own root marker.
   expect(chip.closest(`[data-bb-plugin="${PLUGIN_ID}"]`)).not.toBeNull();
+  expect(chip.closest(`[data-bb-plugin-scope-${PLUGIN_ID}]`)).not.toBeNull();
   const cell = slot.container.querySelector("[data-plugin-composer-action]")!;
   expect(cell.querySelector('[data-composer-context-anchor="portaled"]')).not.toBeNull();
   expect(cell.querySelector("[data-agentation-staging-action]")).toBeNull();

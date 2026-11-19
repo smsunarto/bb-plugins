@@ -553,6 +553,7 @@ export function FullScreen({
     <div
       {...motion}
       data-bb-plugin={pluginId}
+      {...{ [`data-bb-plugin-scope-${pluginId}`]: "" }}
       data-bb-plugin-root=""
       data-bb-portaled-overlay=""
       data-bb-image-preview-ignore=""

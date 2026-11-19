@@ -153,7 +153,11 @@ function StagedAnnotations({ threadId }: { threadId: string | null }) {
         ? content
         : createPortal(
             // Plugin styles apply only under this plugin's root marker.
-            <span data-bb-plugin={pluginId} className="contents">
+            <span
+              data-bb-plugin={pluginId}
+              {...{ [`data-bb-plugin-scope-${pluginId}`]: "" }}
+              className="contents"
+            >
               {content}
             </span>,
             chipSlot,

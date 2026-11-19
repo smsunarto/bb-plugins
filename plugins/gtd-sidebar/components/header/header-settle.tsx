@@ -61,6 +61,7 @@ function NewThreadButton({ projectId }: { projectId: string }) {
   return (
     <Button
       data-bb-plugin="gtd-sidebar"
+      data-bb-plugin-scope-gtd-sidebar=""
       variant="ghost"
       aria-label="New thread"
       title="New thread"
@@ -109,6 +110,7 @@ function SettleButton({ thread }: { thread: PluginSidebarThread }) {
     <Button
       {...{ [HEADER_SETTLE_ATTRIBUTE]: "" }}
       data-bb-plugin="gtd-sidebar"
+      data-bb-plugin-scope-gtd-sidebar=""
       variant="ghost"
       aria-label="Settle"
       title="Settle"
