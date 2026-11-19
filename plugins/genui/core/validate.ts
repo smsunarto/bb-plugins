@@ -318,6 +318,44 @@ function subExprs(expr: Expr): readonly Expr[] {
   }
 }
 
+/** Local (bb-plugins): a shallow copy of `expr` with each direct sub-expression mapped through `map`. */
+function withSubExprs<E extends Expr>(expr: E, map: (child: Expr) => Expr): E {
+  const named = (args: readonly NamedArg[]) => args.map((arg) => ({ ...arg, value: map(arg.value) }));
+  const copy = (() => {
+    switch (expr.type) {
+      case "template":
+        return { ...expr, parts: expr.parts.map(map) };
+      case "list":
+        return { ...expr, items: expr.items.map(map) };
+      case "object":
+        return { ...expr, entries: expr.entries.map((entry) => ({ ...entry, value: map(entry.value) })) };
+      case "unary":
+        return { ...expr, operand: map(expr.operand) };
+      case "binary":
+        return { ...expr, left: map(expr.left), right: map(expr.right) };
+      case "conditional": {
+        const copy = { ...expr, test: map(expr.test), else: map(expr.else) };
+        // `then` is the AST's branch, not a promise; set apart so no literal reads as a thenable.
+        Reflect.set(copy, "then", map(expr.then));
+        return copy;
+      }
+      case "member":
+        return { ...expr, object: map(expr.object) };
+      case "index":
+        return { ...expr, object: map(expr.object), index: map(expr.index) };
+      case "call":
+        return { ...expr, args: expr.args.map(map), named: named(expr.named) };
+      case "method":
+        return { ...expr, object: map(expr.object), args: expr.args.map(map), named: named(expr.named) };
+      case "arrow":
+        return { ...expr, body: map(expr.body) };
+      default:
+        return expr;
+    }
+  })();
+  return copy as E;
+}
+
 class Validator {
   private readonly states = new Map<string, { readonly index: number; readonly decl: Decl }>();
   private readonly named = new Map<string, Decl>();
@@ -414,31 +452,51 @@ class Validator {
   /**
    * Local (bb-plugins): a Decision question already inside a Form, directly
    * or through a named value, is only its Radio: its own Card and Form would
-   * nest a second Form and send the pick twice.
+   * nest a second Form and send the pick twice. Only the occurrence inside
+   * the Form changes: a named value is copied there, so the same name used
+   * outside a Form keeps its Card.
    */
-  private unwrapDecisionsInForms(roots: readonly Expr[]): void {
+  private unwrapDecisionsInForms(roots: Expr[]): void {
     if (this.decisionQuestions.size === 0) return;
-    const seen = new Set<string>();
-    const visit = (expr: Expr, inForm: boolean): void => {
+    const asks = new Map<string, boolean>();
+    /** Whether `expr`, through the named values it reads, holds a Decision question. */
+    const hasQuestion = (expr: Expr): boolean => {
+      if (expr.type === "call" && this.decisionQuestions.has(expr)) return true;
       if (expr.type === "ident") {
         const decl = this.named.get(expr.name);
-        const key = `${expr.name}\0${inForm}`;
-        if (decl !== undefined && !seen.has(key)) {
-          seen.add(key);
-          visit(decl.value, inForm);
-        }
-        return;
+        if (decl === undefined || decl.value.type === "arrow") return false;
+        const known = asks.get(expr.name);
+        if (known !== undefined) return known;
+        asks.set(expr.name, false); // a cycle is reported elsewhere
+        const found = hasQuestion(decl.value);
+        asks.set(expr.name, found);
+        return found;
       }
-      const radio = expr.type === "call" ? this.decisionQuestions.get(expr) : undefined;
-      if (radio !== undefined && inForm) {
-        // validate owns the parsed AST before it becomes the program (readonly is type-level).
-        Object.assign(expr as unknown as { name: string; args: Expr[]; named: NamedArg[] }, { name: radio.name, args: radio.args, named: radio.named });
-        return;
-      }
-      const nowInForm = inForm || (expr.type === "call" && expr.name === "Form");
-      for (const child of subExprs(expr)) visit(child, nowInForm);
+      return subExprs(expr).some(hasQuestion);
     };
-    for (const root of roots) visit(root, false);
+    /** `expr` as it reads inside a Form: unchanged without a question, else a copy whose questions are Radios. */
+    const inForm = (expr: Expr, inlined: ReadonlySet<string>): Expr => {
+      if (!hasQuestion(expr)) return expr;
+      const radio = expr.type === "call" ? this.decisionQuestions.get(expr) : undefined;
+      if (radio !== undefined) return radio;
+      if (expr.type === "ident") {
+        const decl = this.named.get(expr.name);
+        if (decl === undefined || inlined.has(expr.name)) return expr;
+        return inForm(decl.value, new Set([...inlined, expr.name]));
+      }
+      return withSubExprs(expr, (child) => inForm(child, inlined));
+    };
+    /** Rewrites, in place, the children of each Form reachable from `expr` outside a Form. */
+    const outside = (expr: Expr): void => {
+      if (expr.type === "call" && expr.name === "Form") {
+        // validate owns the parsed AST before it becomes the program (readonly is type-level).
+        Object.assign(expr as unknown as { args: Expr[]; named: NamedArg[] }, withSubExprs(expr, (child) => inForm(child, new Set())));
+        return;
+      }
+      for (const child of subExprs(expr)) outside(child);
+    };
+    roots.forEach(outside);
+    for (const decl of this.named.values()) outside(decl.value);
   }
 
   private refs(expr: Expr): Refs {

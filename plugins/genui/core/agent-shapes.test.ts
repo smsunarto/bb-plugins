@@ -200,6 +200,26 @@ describe("Decision written as a question", () => {
     }
   });
 
+  it("changes only the occurrence inside the Form, so the same question used outside one keeps its Card", () => {
+    const source = `$advanced = false\nq = Decision("Q?", ["yes", "no"])\n$advanced ? Form([q]) : q`;
+    const outside = render(source).roots[0]!;
+    expect(outside.type).toBe("Card");
+    expect(find(outside, "Form")).toHaveLength(1);
+    expect(find(outside, "Radio")).toHaveLength(1);
+    const inside = render(source, { advanced: true }).roots[0]!;
+    expect(inside.type).toBe("Form");
+    expect(find(inside, "Form")).toHaveLength(1);
+    expect(find(inside, "Card")).toHaveLength(0);
+    expect(find(inside, "Radio")).toHaveLength(1);
+    // A question picked by a condition inside the Form is copied with it.
+    const branch = render(
+      `$a = true\nq = Decision("Q?", ["yes", "no"])\nForm([$a ? q : Text("none")])`,
+      { decision: "yes" },
+    ).roots;
+    expect(find(branch[0]!, "Form")).toHaveLength(1);
+    expect(answer(branch)).toBe("Q? yes");
+  });
+
   it("leaves Decision(options, criteria) as the scored table", () => {
     const source = `Decision([{name: "A", scores: [4, 2]}, {name: "B", scores: [3, 5]}], ["Speed", "Cost"])`;
     const { roots, warnings } = render(source);
