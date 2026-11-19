@@ -28,7 +28,7 @@ import {
   type ParsedKey,
   type ReviewRevision,
 } from "../core/review.ts";
-import { changeState, shipPath, type ChangeSummary } from "../core/status.ts";
+import { changeState, publishedSummary, shipPath, type ChangeSummary } from "../core/status.ts";
 import { forgeInterval, FORGE_ACTIVE_MS, knownOpen } from "./forge-read.ts";
 import type { ForgeSites } from "./forge-sites.ts";
 import { rowsOf } from "./review-sources.ts";
@@ -116,16 +116,7 @@ function summaryOf(
   match: LocalMatch | null,
   pr: PullRequest | null | undefined,
 ): ChangeSummary {
-  if (!match)
-    return {
-      key,
-      branch: null,
-      onGitHub: true,
-      uncommitted: 0,
-      conflicted: false,
-      pullRequest: pr,
-      findings: 0,
-    };
+  if (!match) return publishedSummary(key, pr);
   const branch = findBranch(match.workspace, match.row.branch);
   const checkedOut =
     match.workspace.provider === "git"
@@ -282,6 +273,8 @@ export function createReviewChange(deps: {
     },
     /** Read the Change's pull request now. */
     readForge,
+    /** Whether the Change's pull request is due another read. */
+    forgeDue: due,
     /** While the Change is open: its pull request when due, as often as the thread tab reads it. */
     watchChange: (key: ChangeKey) =>
       Effect.gen(function* () {

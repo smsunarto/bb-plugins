@@ -68,16 +68,24 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
     return { state: "checkout", placement } as const;
   });
 
-  /** Where the thread's checkout is now. */
-  const resolve = Effect.fn("resolvePlacement")(function* (threadId: string) {
+  /** Where the thread's checkout is now, and the branch bb recorded for its environment. */
+  const resolveThread = Effect.fn("resolvePlacement")(function* (threadId: string) {
     const thread = yield* Effect.tryPromise(() =>
       bb.sdk.threads.get({ threadId, include: "environment" }),
     );
     const environment = "environment" in thread ? thread.environment : undefined;
     if (!environment)
-      return { state: "none", reason: "This thread has no project environment." } as const;
-    return yield* placementOf(environment);
+      return {
+        where: { state: "none", reason: "This thread has no project environment." } as const,
+        branchName: null,
+      };
+    // bb keeps the branch after it removes the worktree.
+    return { where: yield* placementOf(environment), branchName: environment.branchName ?? null };
   });
+
+  /** Where the thread's checkout is now. */
+  const resolve = (threadId: string) =>
+    resolveThread(threadId).pipe(Effect.map((resolved) => resolved.where));
 
   /** Where an environment's checkout is now, by its id. */
   const forEnvironment = Effect.fn("environmentPlacement")(function* (environmentId: string) {
@@ -89,10 +97,18 @@ export function createPlacements(deps: { bb: BbPluginApi; store: Store; now: () 
     connected,
     resolve,
     forEnvironment,
-    /** Resolve and store the thread's placement; `changed` when the stored one moved. */
+    /**
+     * Resolve and store the thread's placement; `changed` when the stored one
+     * moved. `branchName` is the branch bb recorded for the thread's environment.
+     */
     settle: Effect.fnUntraced(function* (threadId: string) {
-      const where: ThreadPlacement = yield* resolve(threadId);
-      return { where, changed: store.setPlacement(threadId, where, deps.now()) };
+      const resolved = yield* resolveThread(threadId);
+      const where: ThreadPlacement = resolved.where;
+      return {
+        where,
+        branchName: resolved.branchName,
+        changed: store.setPlacement(threadId, where, deps.now()),
+      };
     }),
     /** Mark every thread on a checkout as having no Change, for `reason`; returns those that moved. */
     clear(threadIds: readonly string[], reason: string): string[] {

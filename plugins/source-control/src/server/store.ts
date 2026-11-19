@@ -109,6 +109,8 @@ export const MIGRATIONS = [
   // which no longer parse with it. JSON escapes quotes inside strings, so only the key matches.
   `DROP TABLE IF EXISTS pin`,
   `UPDATE inbox_facet SET json = replace(json, ',"pinned":true', '') WHERE instr(json, ',"pinned":true') > 0`,
+  // The last Change each thread was read on, kept after its checkout goes so its pull request still shows.
+  `CREATE TABLE thread_change (thread_id TEXT PRIMARY KEY, change_key TEXT NOT NULL)`,
 ];
 
 export type Store = ReturnType<typeof openStore>;
@@ -334,6 +336,36 @@ function askTables(db: Database) {
     askThread: (key: ChangeKey): string | null => getAsk.get(key)?.thread_id ?? null,
     setAskThread(key: ChangeKey, threadId: string, now: number): void {
       putAsk.run(key, threadId, now);
+    },
+  };
+}
+
+/** The last Change each thread was read on, kept after its checkout goes. */
+function threadChangeTables(db: Database) {
+  const getLastChange = db.prepare<[string], { change_key: string }>(
+    `SELECT change_key FROM thread_change WHERE thread_id = ?`,
+  );
+  const putLastChange = db.prepare(
+    `INSERT INTO thread_change (thread_id, change_key) VALUES (?, ?)
+     ON CONFLICT (thread_id) DO UPDATE SET change_key = excluded.change_key`,
+  );
+  // A GitHub ChangeKey ends in `:<branch>`, and a branch name holds no colon.
+  const forgeKeysOnBranch = db.prepare<[string, string], { change_key: string }>(
+    `SELECT change_key FROM forge_facet WHERE change_key LIKE 'gh:%' AND substr(change_key, -length(?) - 1) = ':' || ?`,
+  );
+  return {
+    /** The last GitHub Change the thread was read on, kept after its checkout goes. */
+    lastChange(threadId: string): ChangeKey | null {
+      return (getLastChange.get(threadId)?.change_key as ChangeKey | undefined) ?? null;
+    },
+    rememberChange(threadId: string, key: ChangeKey): boolean {
+      if (getLastChange.get(threadId)?.change_key === key) return false;
+      putLastChange.run(threadId, key);
+      return true;
+    },
+    /** GitHub Changes on this branch whose pull request has been read, in any repository. */
+    forgeKeysOnBranch(branch: string): ChangeKey[] {
+      return forgeKeysOnBranch.all(branch, branch).map((row) => row.change_key as ChangeKey);
     },
   };
 }
@@ -612,6 +644,7 @@ export function openStore(bb: BbPluginApi) {
   const guides = guideTables(db);
   const asks = askTables(db);
   const cutover = cutoverTables(db);
+  const threadChanges = threadChangeTables(db);
 
   const branch = (threadId: string): string | null => getBranch.get(threadId)?.branch ?? null;
   const readAs = (hostId: string, path: string): ReadAs =>
@@ -623,6 +656,7 @@ export function openStore(bb: BbPluginApi) {
     ...guides,
     ...asks,
     ...cutover,
+    ...threadChanges,
     /** One placement per checkout the placement table knows, by host: what the review page lists. */
     checkouts(): Placement[] {
       return placementRows.all().flatMap((row) => {

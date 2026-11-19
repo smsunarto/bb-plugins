@@ -6,6 +6,8 @@ import { MIGRATIONS, openStore } from "./store.ts";
 
 /** The migrations before pins left: what a database from that build has run. */
 const BEFORE_PINS_LEFT = MIGRATIONS.slice(0, MIGRATIONS.indexOf("DROP TABLE IF EXISTS pin"));
+/** The two statements that drop pins. */
+const PINS_LEFT = MIGRATIONS.slice(BEFORE_PINS_LEFT.length, BEFORE_PINS_LEFT.length + 2);
 
 const row = (number: number, pinned: boolean): ChangeRow & { pinned?: true } => ({
   key: `gh:acme/api:acme:b${number}` as ChangeKey,
@@ -75,7 +77,7 @@ test.each([
   });
   // Opening again runs nothing new; running the two statements again changes nothing.
   openStore(bb);
-  for (const statement of MIGRATIONS.slice(BEFORE_PINS_LEFT.length)) db.exec(statement);
+  for (const statement of PINS_LEFT) db.exec(statement);
   expect(store.inbox("scott").read?.rows.map((each) => each.number)).toEqual([1, 2]);
 });
 

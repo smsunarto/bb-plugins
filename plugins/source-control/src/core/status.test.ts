@@ -1,12 +1,17 @@
 import { describe, expect, test } from "vitest";
-import type { Branch, PullRequest } from "./change.ts";
+import { z } from "zod";
+import type { Branch, CheckoutChange, PullRequest, WorkspaceValue } from "./change.ts";
+import type { ChangeKey } from "./ids.ts";
 import {
   attentionChips,
   headerLabel,
   primaryAction,
+  rememberedStatus,
   shipPath,
   sortKey,
   statusLine,
+  threadStatus,
+  threadStatusSchema,
   type ChangeSummary,
 } from "./status.ts";
 
@@ -372,5 +377,123 @@ describe("sort key", () => {
     ];
     expect(ordered.map(sortKey)).toEqual([0, 0, 1, 1, 2, 2, 3, 5, 6, 9]);
     expect(sortKey(summary({ pullRequest: pr({ isDraft: false }) }))).toBe(4);
+  });
+});
+
+// ── Compact row contract ───────────────────────────────────────────────
+
+/** The row as Tasks reads it (plugins/scott-tasks/shared/source-control.ts): fields it does not know pass. */
+const tasksRowSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("pending") }),
+  z.object({ state: z.literal("none") }),
+  z.object({
+    state: z.literal("change"),
+    pullRequest: z
+      .object({
+        url: z.url(),
+        number: z.number().int().positive(),
+        title: z.string(),
+        state: z.enum(["open", "draft", "merged", "closed"]),
+      })
+      .nullable(),
+  }),
+]);
+
+const KEY = "gh:smsunarto/bb-plugins:smsunarto:scott/forge-host" as ChangeKey;
+const offline = { kind: "host-offline", host: "studio-mac" } as const;
+
+function checkoutRow(forge: CheckoutChange["forge"], name: string | null = "scott/forge-host") {
+  const only = branch();
+  const workspace: WorkspaceValue = {
+    provider: "git",
+    path: "/Users/scott/bb-plugins",
+    commonDir: "/Users/scott/bb-plugins/.git",
+    checkedOut: name,
+    github: { repo: { owner: "smsunarto", name: "bb-plugins" }, headOwner: "smsunarto" },
+    uncommitted: [],
+    moreUncommitted: 0,
+    conflicted: [],
+    stacks: [{ key: only.name, branches: [only], assigned: [] }],
+    target: { ref: "origin/main", head: "aaa111", behind: 0, base: null, lastFetched: null },
+  };
+  return {
+    state: "checkout",
+    placement: {
+      hostId: "host-a",
+      hostName: "studio-mac",
+      path: workspace.path,
+      environmentId: "e",
+    },
+    readAsGit: false,
+    branch: name,
+    key: name ? KEY : null,
+    local: { read: { value: workspace, at: 1 }, problem: null },
+    forge,
+  } satisfies CheckoutChange;
+}
+
+describe("compact row", () => {
+  test("says whether GitHub answered: read, not yet read, or failed with the last good answer", () => {
+    const read = threadStatus(checkoutRow({ read: { value: pr(), at: 5 }, problem: null }));
+    const unread = threadStatus(checkoutRow({ read: null, problem: null }));
+    const stale = threadStatus(checkoutRow({ read: { value: pr(), at: 5 }, problem: offline }));
+    const never = threadStatus(checkoutRow({ read: null, problem: offline }));
+    expect(read).toMatchObject({ source: "checkout", forge: { state: "read", at: 5 } });
+    expect(read).toMatchObject({ pullRequest: { number: 482, state: "draft" } });
+    // Not yet read and no pull request both carry a null pull request; the forge state tells them apart.
+    expect(unread).toMatchObject({ pullRequest: null, forge: { state: "unread" } });
+    expect(stale).toMatchObject({
+      pullRequest: { number: 482 },
+      forge: { state: "failed", at: 5, problem: offline },
+    });
+    expect(never).toMatchObject({
+      pullRequest: null,
+      forge: { state: "failed", at: null, problem: offline },
+    });
+  });
+
+  test("a thread on no branch has no pull request to read", () => {
+    const row = threadStatus(checkoutRow({ read: null, problem: null }, null));
+    expect(row).toMatchObject({ key: null, branch: null, forge: { state: "unsupported" } });
+  });
+
+  test("a remembered Change says only what GitHub said", () => {
+    const open = rememberedStatus(KEY, "scott/forge-host", {
+      read: { value: pr(), at: 5 },
+      problem: null,
+    });
+    expect(open).toMatchObject({
+      state: "change",
+      key: KEY,
+      branch: "scott/forge-host",
+      pullRequest: { number: 482, state: "draft" },
+      source: "remembered",
+      forge: { state: "read", at: 5 },
+    });
+    const none = rememberedStatus(KEY, "scott/forge-host", {
+      read: { value: null, at: 5 },
+      problem: null,
+    });
+    expect(none).toMatchObject({ pullRequest: null, line: "No pull request" });
+    const unread = rememberedStatus(KEY, "scott/forge-host", { read: null, problem: null });
+    expect(unread).toMatchObject({ line: "Not read yet", forge: { state: "unread" } });
+  });
+
+  test("every row parses as the contract says and as Tasks reads it", () => {
+    const rows = [
+      threadStatus(checkoutRow({ read: { value: pr(), at: 5 }, problem: offline })),
+      threadStatus(checkoutRow({ read: null, problem: null }, null)),
+      threadStatus({ state: "none", reason: "gone" }),
+      threadStatus({ state: "pending" }),
+      rememberedStatus(KEY, "scott/forge-host", {
+        read: { value: pr({ state: "merged", isDraft: false }), at: 5 },
+        problem: null,
+      }),
+    ];
+    for (const row of rows) {
+      expect(threadStatusSchema.parse(row)).toEqual(row);
+      expect(tasksRowSchema.safeParse(row).success).toBe(true);
+    }
+    expect(tasksRowSchema.parse(rows[4])).toMatchObject({ pullRequest: { state: "merged" } });
   });
 });

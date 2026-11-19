@@ -8,8 +8,11 @@
 import { z } from "zod";
 import {
   findBranch,
+  problemSchema,
   uncommittedCount,
   type Branch,
+  type Facet,
+  type ForgeValue,
   type PullRequest,
   type ThreadChange,
 } from "./change.ts";
@@ -43,6 +46,22 @@ export function summarize(row: ThreadChange | undefined, findings = 0): ChangeSu
     conflicted: workspace.conflicted.length > 0 || branch?.status === "conflicted",
     pullRequest: row.forge.read ? row.forge.read.value : undefined,
     findings,
+  };
+}
+
+/** A Change seen only through its pull request: no checkout of its branch is read. */
+export function publishedSummary(
+  key: ChangeKey,
+  pullRequest: PullRequest | null | undefined,
+): ChangeSummary {
+  return {
+    key,
+    branch: null,
+    onGitHub: true,
+    uncommitted: 0,
+    conflicted: false,
+    pullRequest,
+    findings: 0,
   };
 }
 
@@ -391,6 +410,30 @@ export const chipSchema = z
   .strict();
 
 /**
+ * Whether the row's pull request is GitHub's answer: `unread` before the
+ * first read, `read` when the last read succeeded, `failed` when it did not
+ * (`pullRequest` is then the last good read, from `at`, or null), and
+ * `unsupported` when there is nothing to read: no branch, or a repository
+ * with no GitHub remote. Only `read`, and `failed` with an `at`, make a null
+ * `pullRequest` mean the branch has none.
+ */
+export const forgeStateSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("unread") }).strict(),
+  z.object({ state: z.literal("read"), at: z.number() }).strict(),
+  z
+    .object({ state: z.literal("failed"), at: z.number().nullable(), problem: problemSchema })
+    .strict(),
+  z.object({ state: z.literal("unsupported") }).strict(),
+]);
+export type ForgeState = z.infer<typeof forgeStateSchema>;
+
+function forgeState(key: ChangeKey | null, facet: Facet<ForgeValue>): ForgeState {
+  if (!key?.startsWith("gh:")) return { state: "unsupported" };
+  if (facet.problem) return { state: "failed", at: facet.read?.at ?? null, problem: facet.problem };
+  return facet.read ? { state: "read", at: facet.read.at } : { state: "unread" };
+}
+
+/**
  * A thread's Change as other plugins draw it in a list row: small, and
  * already derived, so a row says what the tab and the strip say.
  */
@@ -412,6 +455,13 @@ export const threadStatusSchema = z.discriminatedUnion("state", [
         .strict()
         .nullable(),
       line: z.string(),
+      /**
+       * `checkout` when read from the thread's checkout; `remembered` when the
+       * checkout is gone and only the last Change it was on is known, read by
+       * its pull request.
+       */
+      source: z.enum(["checkout", "remembered"]),
+      forge: forgeStateSchema,
       chips: z.array(chipSchema),
       /** The most urgent chip's tone, for a single tint. */
       tone: z.enum(["neutral", "warning", "error", "success", "merged"]),
@@ -424,13 +474,45 @@ export type ThreadStatus = z.infer<typeof threadStatusSchema>;
 export function threadStatus(row: ThreadChange | undefined): ThreadStatus {
   if (!row || row.state === "pending") return { state: "pending" };
   const summary = summarize(row);
-  if (!summary) return row.state === "none" ? { state: "none" } : { state: "pending" };
+  if (row.state !== "checkout" || !summary)
+    return row.state === "none" ? { state: "none" } : { state: "pending" };
+  return changeStatus(summary, {
+    source: "checkout",
+    branch: summary.branch?.name ?? null,
+    forge: forgeState(row.key, row.forge),
+  });
+}
+
+/**
+ * The row of a thread whose checkout is gone, from the last Change it was
+ * read on (`branch` is its remote branch): what GitHub says of its pull request.
+ */
+export function rememberedStatus(
+  key: ChangeKey,
+  branch: string,
+  forge: Facet<ForgeValue>,
+): ThreadStatus {
+  const summary = publishedSummary(key, forge.read ? forge.read.value : undefined);
+  const status = changeStatus(summary, {
+    source: "remembered",
+    branch,
+    forge: forgeState(key, forge),
+  });
+  if (status.state !== "change" || summary.pullRequest) return status;
+  // With no checkout, how far the branch got is unknown: say only what GitHub said.
+  return { ...status, line: summary.pullRequest === null ? "No pull request" : "Not read yet" };
+}
+
+function changeStatus(
+  summary: ChangeSummary,
+  row: { source: "checkout" | "remembered"; branch: string | null; forge: ForgeState },
+): ThreadStatus {
   const pr = summary.pullRequest ?? null;
   const chips = attentionChips(summary);
   return {
     state: "change",
     key: summary.key,
-    branch: summary.branch?.name ?? null,
+    branch: row.branch,
     pullRequest: pr && {
       number: pr.number,
       title: pr.title,
@@ -438,6 +520,8 @@ export function threadStatus(row: ThreadChange | undefined): ThreadStatus {
       state: pr.state === "open" ? (pr.isDraft ? "draft" : "open") : pr.state,
     },
     line: statusLine(summary),
+    source: row.source,
+    forge: row.forge,
     chips,
     tone: chips.find((chip) => chip.tone !== "neutral")?.tone ?? "neutral",
     sort: sortKey(summary),

@@ -120,6 +120,9 @@ export function createReview(deps: {
     watchHost: sources.watchHost,
     forgetHost: sources.forgetHost,
     detail: change.detail,
+    /** Read the Change's pull request now, by its key alone: no checkout needed. */
+    readForge: change.readForge,
+    forgeDue: change.forgeDue,
     /**
      * Read the Change's checkout and pull request now, so a run starts at the
      * head they have rather than the last one stored. Failures keep the stored read.

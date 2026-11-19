@@ -21,6 +21,9 @@ import { createSourceControl } from "./server.ts";
 import { groupDirective } from "../core/directive.ts";
 import { changeKeySchema } from "../core/ids.ts";
 import { checkoutWorkKey, checkoutWorkTag } from "../core/checkout-work.ts";
+import type { ThreadStatus } from "../core/status.ts";
+
+type Harness = Awaited<ReturnType<typeof start>>["harness"];
 
 const PLUGIN = "source-control";
 
@@ -136,7 +139,18 @@ type Host = {
 
 type World = {
   hosts: Record<string, Host>;
-  threads: Record<string, { hostId: string; path: string; environmentId?: string }>;
+  threads: Record<
+    string,
+    {
+      hostId: string;
+      path: string;
+      environmentId?: string;
+      /** bb removed the worktree: the environment keeps its branch and loses its path. */
+      removed?: boolean;
+      /** The branch bb recorded for the environment. */
+      branchName?: string;
+    }
+  >;
   serverAccounts: string[];
   /** Pull requests by the head branch name GitHub was asked about. */
   pullRequests: Record<string, unknown[]>;
@@ -550,8 +564,9 @@ function fakeSdk(world: World) {
           environment: {
             id: where.environmentId ?? `env-${threadId}`,
             hostId: where.hostId,
-            path: where.path,
-            status: "ready",
+            path: where.removed ? null : where.path,
+            status: where.removed ? "destroyed" : "ready",
+            branchName: where.branchName ?? null,
           },
         };
       }) as never,
@@ -1383,6 +1398,147 @@ describe("status for other surfaces", () => {
     await vi.advanceTimersByTimeAsync(10);
     later();
     expect(hostCalls("workspace")).toHaveLength(2);
+  });
+});
+
+describe("a thread whose worktree is gone", () => {
+  const status = async (harness: Harness, threadId: string) =>
+    (
+      (await harness.behavior.callRpc("statusForThread", { keys: [threadId] })) as Record<
+        string,
+        ThreadStatus
+      >
+    )[threadId];
+  const KEY = "gh:smsunarto/bb-plugins:smsunarto:scott/route-gh";
+
+  test("keeps its last Change's pull request, read by branch with no checkout, until it merges", async () => {
+    // Only the clock is fake: GitHub and the hosts answer on real timers.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [PR];
+    const { harness, hostCalls, restart } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await status(harness, "thread-a")).toMatchObject({
+      source: "checkout",
+      pullRequest: { number: 482 },
+    });
+    // A handoff detaches HEAD: the last read before the worktree goes is on no branch.
+    world.hosts["host-a"]!.workspace = workspace("/Users/scott/bb-plugins", { checkedOut: null });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    world.threads["thread-a"]!.removed = true;
+    const workspaceReads = hostCalls("workspace").length;
+    const ghCalls = world.ghCalls.length;
+
+    vi.setSystemTime(Date.now() + 61_000);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await status(harness, "thread-a")).toMatchObject({
+      state: "change",
+      key: KEY,
+      branch: "scott/route-gh",
+      pullRequest: {
+        number: 482,
+        title: "Route gh through the checkout host",
+        url: "https://github.com/smsunarto/bb-plugins/pull/482",
+        state: "draft",
+      },
+      line: "Draft",
+      source: "remembered",
+      forge: { state: "read" },
+    });
+    // GitHub was asked; no host read a checkout.
+    expect(world.ghCalls.length).toBeGreaterThan(ghCalls);
+    expect(hostCalls("workspace")).toHaveLength(workspaceReads);
+
+    // It merges: the next due read says so.
+    world.pullRequests["scott/route-gh"] = [{ ...PR, state: "MERGED", isDraft: false }];
+    vi.setSystemTime(Date.now() + 61_000);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(await status(harness, "thread-a")).toMatchObject({
+      pullRequest: { number: 482, state: "merged" },
+      line: "Merged",
+      source: "remembered",
+    });
+    // A merged pull request is not read again.
+    const afterMerge = world.ghCalls.length;
+    vi.setSystemTime(Date.now() + 61_000);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    expect(world.ghCalls).toHaveLength(afterMerge);
+
+    // A restart keeps it.
+    const next = await restart();
+    expect(await status(next, "thread-a")).toMatchObject({
+      key: KEY,
+      pullRequest: { number: 482, state: "merged" },
+      source: "remembered",
+    });
+  });
+
+  test("a list row reads it once while fresh, and tells the row when GitHub answers", async () => {
+    // Only the clock is fake: GitHub and the hosts answer on real timers.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [PR];
+    const { harness, invalidations } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    world.threads["thread-a"]!.removed = true;
+    world.pullRequests["scott/route-gh"] = [{ ...PR, isDraft: false }];
+    // Past the five minutes a list row trusts a read for.
+    vi.setSystemTime(Date.now() + 6 * 60_000);
+    const before = world.ghCalls.length;
+    const told = invalidations().length;
+
+    const stop = harness.behavior.experimental_watchRpc("statusForThread", { key: "thread-a" });
+    await vi.waitFor(() => expect(invalidations().slice(told)).toContain("thread:thread-a"));
+    stop();
+    expect(world.ghCalls.length).toBeGreaterThan(before);
+    expect(await status(harness, "thread-a")).toMatchObject({
+      pullRequest: { state: "open" },
+      source: "remembered",
+    });
+
+    // Mounted again within five minutes: nothing more.
+    const read = world.ghCalls.length;
+    const again = harness.behavior.experimental_watchRpc("statusForThread", { key: "thread-a" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    again();
+    expect(world.ghCalls).toHaveLength(read);
+  });
+
+  test("one never read on a checkout takes the Change of the branch bb recorded, when its pull request was read", async () => {
+    const world = twoHosts();
+    world.pullRequests["scott/route-gh"] = [PR];
+    world.threads["thread-c"] = {
+      hostId: "host-a",
+      path: "/Users/scott/gone",
+      removed: true,
+      branchName: "scott/route-gh",
+    };
+    world.threads["thread-d"] = {
+      hostId: "host-a",
+      path: "/Users/scott/gone-too",
+      removed: true,
+      branchName: "scott/never-read",
+    };
+    const { harness } = await start(world);
+    // Another thread on the branch read its pull request.
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-c" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-d" });
+    expect(await status(harness, "thread-c")).toMatchObject({
+      key: KEY,
+      pullRequest: { number: 482 },
+      source: "remembered",
+    });
+    expect(await status(harness, "thread-d")).toEqual({ state: "none" });
+    // The tab still says the thread has no checkout.
+    expect(
+      (
+        (await harness.behavior.callRpc("changeForThread", { keys: ["thread-c"] })) as Record<
+          string,
+          ThreadChange
+        >
+      )["thread-c"],
+    ).toMatchObject({ state: "none" });
   });
 });
 

@@ -19,7 +19,7 @@ import {
   type ThreadChange,
 } from "../core/change.ts";
 import { threadTag, type ChangeKey } from "../core/ids.ts";
-import { threadStatus, type ThreadStatus } from "../core/status.ts";
+import type { ThreadStatus } from "../core/status.ts";
 import { createActions } from "./actions.ts";
 import { createCheckoutWork } from "./checkout-work.ts";
 import { createForgeReads } from "./forge-read.ts";
@@ -27,6 +27,7 @@ import type { ForgeSites } from "./forge-sites.ts";
 import { HOST_DEADLINE_MS, type HostCalls } from "./host-calls.ts";
 import { createLocalReads, type ThreadBranchLookup } from "./local-read.ts";
 import { createPlacements } from "./placement.ts";
+import { createRemembered } from "./remembered.ts";
 import { createReview } from "./review.ts";
 import { localMatch } from "./review-change.ts";
 import type { Share } from "./shared.ts";
@@ -90,6 +91,11 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
   const hostDeadlineMs = deps.hostDeadlineMs ?? HOST_DEADLINE_MS;
   /** The threads each ChangeKey was last shown for, so a pull request read reaches all of them. */
   const keyThreads = new Map<ChangeKey, Set<string>>();
+  /** Every thread showing the Change: on its checkout, or from memory with none. */
+  const showing = (key: ChangeKey): string[] => [
+    ...(keyThreads.get(key) ?? []),
+    ...remembered.threadsOf(key),
+  ];
 
   function announce(threadIds: Iterable<string>): void {
     if (deps.disposed()) return;
@@ -155,7 +161,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     store,
     sites: deps.sites,
     share,
-    threadsOf: (key) => keyThreads.get(key) ?? [],
+    threadsOf: showing,
     announce,
     invalidate,
     forgeRead: (key) => review.items.settleIfBehind(key),
@@ -164,9 +170,9 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
 
   /** Local and forge together; the forge again if the local read moved the Change. */
   const refreshNow = Effect.fn("refreshThread")(function* (threadId: string) {
-    const { where, changed } = yield* placements.settle(threadId);
+    const { where, changed, branchName } = yield* placements.settle(threadId);
     if (changed) announce([threadId]);
-    if (where.state === "none") return;
+    if (where.state === "none") return yield* remembered.read(threadId, branchName);
     const { placement } = where;
     // GitHub's answer does not wait for a slow or sleeping host.
     const forgeFirst = yield* Effect.forkChild(forge.readForge(threadId, placement));
@@ -199,7 +205,7 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     host: deps.host,
     share,
     invalidate,
-    forgeChanged: (key) => announce(keyThreads.get(key) ?? []),
+    forgeChanged: (key) => announce(showing(key)),
     fork: deps.fork,
     now,
     deadlineMs: hostDeadlineMs,
@@ -207,6 +213,14 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     worktreeHost: deps.worktreeHost,
   });
   checkoutRead = review.checkoutRead;
+  const remembered = createRemembered({
+    store,
+    announce,
+    forgeDue: review.forgeDue,
+    readForge: review.readForge,
+    now,
+    glanceMs: GLANCE_MS,
+  });
 
   const watch = createWatch({
     store,
@@ -251,18 +265,22 @@ export function createThreadChanges(deps: ThreadChangesDeps) {
     },
     /** Each thread's compact status, from the store only. */
     status(keys: readonly string[]): Record<string, ThreadStatus> {
-      return Object.fromEntries(keys.map((threadId) => [threadId, threadStatus(row(threadId))]));
+      return Object.fromEntries(
+        keys.map((threadId) => [threadId, remembered.status(threadId, row(threadId))]),
+      );
     },
     /**
      * A list row came into view: read the thread once if it has never been
-     * read or its last read is older than GLANCE_MS. No watch follows; the
+     * read or its last read is older than GLANCE_MS; a thread with no
+     * checkout, its last Change's pull request. No watch follows; the
      * thread's own tab keeps it live.
      */
     glance: (threadId: string) =>
       Effect.suspend(() => {
         if (watch.watched(threadId)) return Effect.void;
         const where = store.placement(threadId);
-        if (where?.state === "none") return Effect.void;
+        if (where?.state === "none")
+          return remembered.due(threadId) ? refresh(threadId) : Effect.void;
         const readAt =
           where?.state === "checkout"
             ? store.local(where.placement.hostId, where.placement.path).read?.at
