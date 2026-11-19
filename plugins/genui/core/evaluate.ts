@@ -490,11 +490,20 @@ class Interpreter {
   /** Local (bb-plugins): each walked node as a Form holds it, so a node shared many times is walked once. */
   private readonly lifted = new WeakMap<UiNode, readonly UiNode[]>();
 
+  /** Local (bb-plugins): each list or object's reachesQuestion answer, so shared data is walked once. */
+  private readonly reaches = new WeakMap<object, boolean>();
+  /** Local (bb-plugins): each list or object a Form lifted, so shared data stays shared. */
+  private readonly liftedValues = new WeakMap<object, Value>();
+
   /** Local (bb-plugins): whether `value` holds a question's Card, or a node that does, without looking inside nodes. */
   private reachesQuestion(value: Value): boolean {
     if (isUiNode(value)) return this.questionCards.has(value as UiNode) || this.holdsQuestion.has(value as UiNode);
-    if (Array.isArray(value)) return value.some((item) => this.reachesQuestion(item));
-    return isPlainObject(value) && Object.values(value).some((item) => this.reachesQuestion(item));
+    if (!Array.isArray(value) && !isPlainObject(value)) return false;
+    const known = this.reaches.get(value);
+    if (known !== undefined) return known;
+    const found = (Array.isArray(value) ? value : Object.values(value)).some((item) => this.reachesQuestion(item));
+    this.reaches.set(value, found);
+    return found;
   }
 
   /**
@@ -522,9 +531,14 @@ class Interpreter {
   private liftValue(value: Value): Value {
     if (!this.reachesQuestion(value)) return value;
     if (isUiNode(value)) return this.liftNode(value as UiNode)[0] ?? value;
-    if (Array.isArray(value)) return value.flatMap((item): Value[] => (isUiNode(item) ? [...this.liftNode(item as UiNode)] : [this.liftValue(item)]));
-    if (isPlainObject(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.liftValue(item)]));
-    return value;
+    if (!Array.isArray(value) && !isPlainObject(value)) return value;
+    const known = this.liftedValues.get(value);
+    if (known !== undefined) return known;
+    const lifted: Value = Array.isArray(value)
+      ? value.flatMap((item): Value[] => (isUiNode(item) ? [...this.liftNode(item as UiNode)] : [this.liftValue(item)]))
+      : Object.fromEntries(Object.entries(value).map(([key, item]) => [key, this.liftValue(item)]));
+    this.liftedValues.set(value, lifted);
+    return lifted;
   }
 
   /** Every node is made through here, so the count against LIMITS.nodes is complete. */

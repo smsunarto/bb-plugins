@@ -288,6 +288,21 @@ describe("Decision written as a question", () => {
     expect([roots[0]!.type, node?.type, depth]).toEqual(["Form", "Radio", 25]);
   });
 
+  it("checks shared data once for questions, and keeps it shared", () => {
+    const chain = [
+      `a0 = ["x"]`,
+      ...Array.from({ length: 24 }, (_, i) => `a${i + 1} = [a${i}, a${i}]`),
+    ].join("\n");
+    const source = `${chain}\nq = Decision("Q?", ["yes", "no"])\nCard("x", [q, Form([Json(a24)])])`;
+    const started = performance.now();
+    const { program } = compiled(source);
+    const { roots, diagnostics } = evaluate(program, initialState(program));
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(diagnostics).toEqual([]);
+    const value = (find(roots[0]!, "Json")[0]!.props as { value: unknown[] }).value;
+    expect(value[0]).toBe(value[1]);
+  });
+
   it("leaves Decision(options, criteria) as the scored table", () => {
     const source = `Decision([{name: "A", scores: [4, 2]}, {name: "B", scores: [3, 5]}], ["Speed", "Cost"])`;
     const { roots, warnings } = render(source);
