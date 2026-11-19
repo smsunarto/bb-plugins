@@ -13,7 +13,6 @@
  */
 import {
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
-  useBbNavigate,
   useRealtimeConnectionState,
   type PluginMessageDirectiveProps,
 } from "@get-bb/plugin-sdk/app";
@@ -21,11 +20,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import { describeProblem, readAgo, type CheckRow } from "../core/change.ts";
 import { parseDirective, parseGroup } from "../core/directive.ts";
 import type { ChangeKey } from "../core/ids.ts";
-import { reviewPath, type ChangeDetail, type RowState } from "../core/review.ts";
+import type { ChangeDetail, RowState } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
-import { FindingList, OpenReviewArrow, fixLabel } from "./findings-card.tsx";
+import { FindingList, fixLabel } from "./findings-card.tsx";
 import { cx, plural, shortId } from "./format.ts";
-import { PANEL_PATH, useNow } from "./page/hooks.ts";
+import { useNow } from "./page/hooks.ts";
+import { useOpenReview } from "./open-review.ts";
 import { StateBadge } from "./page/rail.tsx";
 import type { ChangeState } from "../core/status.ts";
 import { useChangeReview, useReviewActions } from "./review-data.ts";
@@ -256,7 +256,7 @@ function ReadyCard({
   thread: ThreadShip | null;
 }) {
   const key = detail.row.key;
-  const navigate = useBbNavigate();
+  const openReview = useOpenReview(threadId);
   const { stable } = useChangeReview(key, visible);
   const actions = useReviewActions(key);
   const fix = useFixSelected(key, stable, detail.head, threadId);
@@ -267,6 +267,7 @@ function ReadyCard({
       <CardHeader detail={detail} revision={revision} visible={visible} offline={offline} />
       {hasItems ? (
         <FindingList
+          threadId={threadId}
           changeKey={key}
           stable={stable}
           actions={actions}
@@ -286,11 +287,10 @@ function ReadyCard({
         <Button
           size="sm"
           variant="default"
-          onClick={() => navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key }) })}
+          onClick={() => openReview({ key })}
           className={cx(CARD_ACTION_CLASS, "gap-2 px-3")}
         >
           Open review
-          <OpenReviewArrow />
         </Button>
         {thread?.button}
         {!grouped && readyToMerge(detail) ? <CardMerge detail={detail} /> : null}

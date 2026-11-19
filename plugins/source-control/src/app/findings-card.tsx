@@ -5,13 +5,11 @@
  * `reviewForChange` entry. Five lines, then "Show all N". "Fix N selected"
  * sends the checked ones to the card's own thread.
  */
-import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { memo, useCallback, useMemo, useState } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import type { ReviewItem } from "../core/items.ts";
-import { reviewPath } from "../core/review.ts";
 import { cx } from "./format.ts";
-import { PANEL_PATH } from "./page/hooks.ts";
+import { useOpenReview } from "./open-review.ts";
 import { useChangeReview, useReviewActions, type ReviewActions } from "./review-data.ts";
 import {
   countLabel,
@@ -86,17 +84,20 @@ const FindingRow = memo(function FindingRow({
 
 /** The items in the rail's order: the first five, or all of them once asked. */
 export function FindingList({
+  threadId,
   changeKey,
   stable,
   actions,
   className,
 }: {
+  /** The thread whose side panel a finding's review opens in. */
+  threadId: string;
   changeKey: ChangeKey;
   stable: StableReview;
   actions: ReviewActions;
   className?: string;
 }) {
-  const navigate = useBbNavigate();
+  const openReview = useOpenReview(threadId);
   const [all, setAll] = useState(false);
   const items = useMemo(() => railOrder(stable.items), [stable.items]);
   const onToggle = useCallback(
@@ -105,15 +106,8 @@ export function FindingList({
   );
   const onOpen = useCallback(
     (item: ReviewItem) =>
-      navigate.toPluginPanel(PANEL_PATH, {
-        subPath: reviewPath({
-          key: changeKey,
-          tab: "files",
-          path: item.anchor.path,
-          line: item.anchor.line,
-        }),
-      }),
-    [navigate, changeKey],
+      openReview({ key: changeKey, tab: "files", path: item.anchor.path, line: item.anchor.line }),
+    [openReview, changeKey],
   );
   const shown = all ? items : items.slice(0, CARD_ROWS);
   return (
@@ -145,21 +139,6 @@ export function FindingList({
   );
 }
 
-export function OpenReviewArrow() {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden className="shrink-0">
-      <path
-        d="M3.5 8.5L8.5 3.5M4.5 3.5H8.5V7.5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 /** "Fix 2 selected"; drawn by each card in its own style. */
 export function fixLabel(fix: FixSelected): string {
   if (fix.pending) return "Sending…";
@@ -180,7 +159,7 @@ export const FindingsCard = memo(function FindingsCard({
 }) {
   const { stable } = useChangeReview(changeKey, visible);
   const actions = useReviewActions(changeKey);
-  const navigate = useBbNavigate();
+  const openReview = useOpenReview(threadId);
   const fix = useFixSelected(changeKey, stable, head, threadId);
   const items = stable.items;
   if (items.length === 0) return null;
@@ -220,6 +199,7 @@ export const FindingsCard = memo(function FindingsCard({
         ) : null}
       </div>
       <FindingList
+        threadId={threadId}
         changeKey={changeKey}
         stable={stable}
         actions={actions}
@@ -254,13 +234,10 @@ export const FindingsCard = memo(function FindingsCard({
         <Button
           size="sm"
           variant="outline"
-          onClick={() =>
-            navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath({ key: changeKey }) })
-          }
+          onClick={() => openReview({ key: changeKey })}
           className="h-7 gap-1 px-3 font-normal"
         >
           Open review
-          <OpenReviewArrow />
         </Button>
       </div>
     </section>

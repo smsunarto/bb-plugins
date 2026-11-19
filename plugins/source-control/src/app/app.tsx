@@ -12,6 +12,7 @@ import { PrWatchBanner } from "./pr-watch-banner.tsx";
 import { LEGACY_REVIEW_DIRECTIVE, LegacyReviewDirective } from "./legacy-card.tsx";
 import { StripAction, StripSummary, useStripVisible } from "./composer-strip.tsx";
 import { ReviewPanel, ReviewSidebar, useReviewBadge, useReviewTitle } from "./review-entry.tsx";
+import { ReviewTab } from "./review-tab.tsx";
 import { mountHeaderIcon } from "./header-icon.ts";
 import {
   BranchesInfoSection,
@@ -33,6 +34,16 @@ export default definePluginApp((app) => {
     component: ChangesTab,
     layout: "flush",
     useVisible: ({ environment }) => environment !== null,
+  });
+  // A Change's review beside the thread, one tab per Change, opened by its cards' Open review.
+  app.slots.experimental_tab({
+    context: { kind: "thread" },
+    availability: "action",
+    id: "review",
+    title: "Review",
+    icon: "GitPullRequest",
+    component: ReviewTab,
+    layout: "flush",
   });
   // The Change's status in the header of a thread that has a checkout, opening the tab; nothing otherwise.
   app.slots.experimental_threadAction({

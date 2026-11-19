@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test } from "vitest";
 import { act, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import type { ExperimentalPanelController } from "@get-bb/plugin-sdk/app";
 import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { changeKeySchema } from "../core/ids.ts";
-import type { ChangeRow } from "../core/review.ts";
+import { reviewPath, type ChangeRow } from "../core/review.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { OtherMachinesCard } from "./other-machines.tsx";
 
@@ -36,6 +37,7 @@ function row(branch: string, repo = "acme/api"): ChangeRow {
 function render(
   hostChanges: (keys: string[]) => unknown,
   checkoutChat?: (input: unknown) => unknown,
+  panel?: Partial<ExperimentalPanelController>,
 ) {
   const calls: string[][] = [];
   const slot = renderSlot(
@@ -44,6 +46,7 @@ function render(
     {
       experimental_rpcContract: sourceControlContract,
       pluginId: "source-control",
+      experimental_panel: panel,
       rpc: {
         checkoutHosts: () => ({
           hosts: [
@@ -186,4 +189,49 @@ test("Open checkout and New chat ask where on the click, and say why when there 
       options: { projectId: "proj_1", environmentId: "env_b", hostId: "host-b", focusPrompt: true },
     }),
   );
+});
+
+/** Opens the card and presses the other host's branch row. */
+async function pressBranch(panel?: Partial<ExperimentalPanelController>) {
+  const { slot } = render(
+    (keys) =>
+      Object.fromEntries(
+        keys.map((key) => [
+          key,
+          {
+            read: { rows: key === "host-b" ? [row("other")] : [], at: 1_000_000 },
+            problem: null,
+          },
+        ]),
+      ),
+    undefined,
+    panel,
+  );
+  await act(async () => slot.getByRole("button", { name: "Other machines" }).click());
+  fireEvent.click(await slot.findByRole("button", { name: /other/ }));
+  return slot;
+}
+
+test("a branch on another machine opens its review beside the thread", async () => {
+  const slot = await pressBranch({ openTab: () => true });
+  expect(slot.inspection.experimental_panelCalls).toEqual([
+    {
+      method: "openTab",
+      options: {
+        tab: { id: "review", context: { kind: "thread" }, availability: "action" },
+        params: { key: row("other").key },
+        title: "Review · other",
+      },
+    },
+  ]);
+  expect(slot.inspection.navigateCalls).toEqual([]);
+});
+
+test("with no side panel, a branch on another machine opens the review page", async () => {
+  const slot = await pressBranch();
+  expect(slot.inspection.navigateCalls.at(-1)).toMatchObject({
+    method: "toPluginPanel",
+    path: "source-control",
+    options: { subPath: reviewPath({ key: row("other").key }) },
+  });
 });

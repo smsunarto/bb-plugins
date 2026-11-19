@@ -2,6 +2,7 @@
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { useLayoutEffect, type ComponentType } from "react";
 import { afterEach, beforeEach, expect, test } from "vitest";
+import type { ExperimentalPanelController } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type { Branch, ThreadChange, WorkspaceValue } from "../core/change.ts";
 import { changeKeySchema } from "../core/ids.ts";
@@ -307,7 +308,11 @@ type Rpc = Parameters<typeof renderSlot<typeof sourceControlContract>>[2] extend
   : never;
 
 /** Renders the tab over `row`, with every write and read recorded. */
-function renderRow(row: ThreadChange, rpc: Partial<Rpc> = {}) {
+function renderRow(
+  row: ThreadChange,
+  rpc: Partial<Rpc> = {},
+  panel?: Partial<ExperimentalPanelController>,
+) {
   const calls: { method: string; input: unknown }[] = [];
   const record =
     <T,>(method: string, answer: (input: never) => T) =>
@@ -320,6 +325,7 @@ function renderRow(row: ThreadChange, rpc: Partial<Rpc> = {}) {
     { threadId: "thread-a", environment: { id: "env" } },
     {
       experimental_rpcContract: sourceControlContract,
+      experimental_panel: panel,
       rpc: {
         changeForThread: () => ({ "thread-a": row }),
         refreshThread: record("refreshThread", () => ({ ok: true as const })),
@@ -784,28 +790,54 @@ test("opening a commit reads that commit's files, and only then", async () => {
   ]);
 });
 
-test("a commit's open file jumps to the review page at that commit and file", async () => {
-  const { slot } = renderRow(stacked(), {
-    patches: () => ({
-      ok: true as const,
-      value: {
-        files: [
-          {
-            path: "src/server/router.ts",
-            kind: "modified" as const,
-            previousPath: null,
-            patch: "",
-            truncated: false,
-          },
-        ],
-      },
-    }),
-  });
+/** Opens the stacked row's first commit's file, then presses Open in Review. */
+async function jumpFromCommit(panel?: Partial<ExperimentalPanelController>) {
+  const { slot } = renderRow(
+    stacked(),
+    {
+      patches: () => ({
+        ok: true as const,
+        value: {
+          files: [
+            {
+              path: "src/server/router.ts",
+              kind: "modified" as const,
+              previousPath: null,
+              patch: "",
+              truncated: false,
+            },
+          ],
+        },
+      }),
+    },
+    panel,
+  );
   await act(async () =>
     (await slot.findByRole("button", { name: /Route server reads to the owning host/ })).click(),
   );
   await act(async () => (await slot.findByText("router.ts")).click());
   await act(async () => (await slot.findByTestId("sc-review-jump")).click());
+  return slot;
+}
+
+test("a commit's open file opens the review beside the thread at that commit and file", async () => {
+  const slot = await jumpFromCommit({ openTab: () => true });
+  const key = changeKeySchema.parse("gh:smsunarto/bb-plugins:smsunarto:scott/forge-host");
+  expect(slot.experimental_panelCalls).toEqual([
+    {
+      method: "openTab",
+      options: {
+        tab: { id: "review", context: { kind: "thread" }, availability: "action" },
+        params: { key },
+        title: "Review · scott/forge-host",
+      },
+    },
+  ]);
+  expect(slot.navigateCalls.filter((call) => call.method === "toPluginPanel")).toEqual([]);
+});
+
+test("with no side panel, a commit's open file jumps to the review page instead", async () => {
+  const slot = await jumpFromCommit();
   // The commit is on the thread's own branch, so the jump takes the row's key.
   expect(slot.navigateCalls.at(-1)).toMatchObject({
     method: "toPluginPanel",

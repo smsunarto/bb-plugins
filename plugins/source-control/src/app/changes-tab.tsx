@@ -374,6 +374,7 @@ function ReadyBody({
         ) : null}
         {workspace.github ? (
           <OtherMachinesCard
+            threadId={threadId}
             hostId={row.placement.hostId}
             repo={`${workspace.github.repo.owner}/${workspace.github.repo.name}`}
             changeKey={row.key}
