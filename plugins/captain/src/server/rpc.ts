@@ -1,5 +1,6 @@
 import { LADDER_ROLES, type LadderRole } from "../contract/ladder.ts";
 import { captainContract, crewTag, LADDERS_TAG } from "../contract/rpc.ts";
+import { adoptFromMenu, adoptOptions } from "./adopt.ts";
 import { resolveAsk } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { listChildren } from "./crew.ts";
@@ -66,6 +67,17 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
       const ids = [...new Set(keys)];
       const counts = await Promise.all(ids.map((id) => needsYouCount(deps, id)));
       return Object.fromEntries(ids.map((id, index) => [id, counts[index] ?? 0]));
+    },
+    adoptOptions: ({ threadId }) => adoptOptions(deps, threadId),
+    adopt: async (input) => {
+      try {
+        const result = await adoptFromMenu(deps, input);
+        if (result.ok) bb.rpc.experimental_invalidate([crewTag(input.captainId)]);
+        return result;
+      } catch (error) {
+        if (error instanceof Refusal) return { ok: false as const, blockers: error.blockers };
+        throw error;
+      }
     },
     newCaptain: async ({ name, repos }) => {
       try {

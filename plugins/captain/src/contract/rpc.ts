@@ -79,6 +79,9 @@ export const sinceTag = (captainId: string) => `since:${captainId}`;
 export const CAPTAINS_TAG = "captains";
 export const LADDERS_TAG = "ladders";
 
+/** The roles a thread can be adopted as: the dispatchable ones. */
+export const ADOPT_ROLES = ["plan", "implement", "review"] as const;
+
 /** Later and Skip may write only these `notices` keys; the check's own keys stay its own. */
 export const DEFERRABLE_KEY = /^(ask|blocked|health):[A-Za-z0-9_:.-]{1,200}$/u;
 
@@ -98,6 +101,80 @@ const roleLadderSchema = z
     defaults: z.array(rungSchema),
   })
   .strict();
+
+const taskKey = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z][A-Za-z0-9]{0,9}-\d+$/u);
+
+/** What the Adopt into Captain dialog picks from, read when it opens. */
+const adoptOptionsSchema = z
+  .object({
+    thread: z.object({ id: threadId, title: z.string(), projectId: z.string() }).strict(),
+    captains: z.array(
+      z
+        .object({
+          id: threadId,
+          name: z.string(),
+          repos: z.array(
+            z.object({ key: z.string(), name: z.string(), bbProjectId: z.string() }).strict(),
+          ),
+          /** Open tasks in its repos. */
+          tasks: z.array(
+            z.object({ key: z.string(), title: z.string(), status: z.string() }).strict(),
+          ),
+          /** Why this thread cannot join this Captain; empty when it can. */
+          blockers: z.array(blocker),
+        })
+        .strict(),
+    ),
+    roles: z.array(z.object({ value: z.enum(ADOPT_ROLES), label: z.string() }).strict()),
+    /** Tasks did not answer: tasks are missing, and only Captains and repos show. */
+    tasksError: z.string().nullable(),
+  })
+  .strict();
+
+const adoptInputSchema = z
+  .object({
+    captainId: threadId,
+    threadId,
+    role: z.enum(ADOPT_ROLES),
+    task: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("existing"), key: taskKey }).strict(),
+      z
+        .object({
+          kind: z.literal("new"),
+          projectKey: z.string().regex(/^[A-Z][A-Z0-9]{0,9}$/u),
+          title: z
+            .string()
+            .trim()
+            .min(1)
+            .max(200)
+            .regex(/^[^\r\n]+$/u),
+        })
+        .strict(),
+    ]),
+  })
+  .strict();
+
+const adoptResultSchema = z.discriminatedUnion("ok", [
+  z
+    .object({
+      ok: z.literal(true),
+      task: z.string(),
+      /** The task was created from the thread's title. */
+      created: z.boolean(),
+      /** `adopted`, or `exists` when another live thread already holds the task and role. */
+      state: z.string(),
+      adopted: z.boolean(),
+      detail: z.string(),
+      blockers: z.array(blocker),
+      /** What `dispatch --thread` prints as notes, such as a non-full permission mode. */
+      warnings: z.array(z.string()),
+    })
+    .strict(),
+  z.object({ ok: z.literal(false), blockers: z.array(blocker) }).strict(),
+]);
 
 export const captainContract = defineRpcContract({
   /** Each dispatched role's model ladder, as Captain settings edit it. */
@@ -213,7 +290,23 @@ export const captainContract = defineRpcContract({
       z.object({ ok: z.literal(false), blockers: z.array(blocker) }).strict(),
     ]),
   },
+  /** The Captains, open tasks and roles the Adopt into Captain dialog offers for one thread. */
+  adoptOptions: {
+    input: z.object({ threadId }).strict(),
+    output: adoptOptionsSchema,
+    tags: () => [CAPTAINS_TAG],
+  },
+  /** Adopt a thread into a Captain's crew as `bb captain dispatch <task> --role <role> --thread` does. */
+  adopt: {
+    experimental_description:
+      "Bring an existing thread into a Captain's crew on a task, as `bb captain dispatch <task> --role <role> --thread <id>` does; a new task is created from the given title first. Refusals list every blocker and change nothing.",
+    input: adoptInputSchema,
+    output: adoptResultSchema,
+  },
 });
 
 export type CaptainContract = typeof captainContract;
+export type AdoptOptions = z.infer<typeof adoptOptionsSchema>;
+export type AdoptInput = z.infer<typeof adoptInputSchema>;
+export type AdoptResult = z.infer<typeof adoptResultSchema>;
 export type ChangeRef = z.infer<typeof changeRef>;

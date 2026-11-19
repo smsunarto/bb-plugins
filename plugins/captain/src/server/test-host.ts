@@ -319,6 +319,29 @@ export async function captainHost(options: FakeOptions = {}) {
         const task = tasks.tasks.find((entry) => entry.key === input["taskKey"]);
         return { task: task === undefined ? null : snapshotTask(task) };
       }
+      case "listTasks": {
+        const project = tasks.projects.find((entry) => entry.id === input["projectId"]);
+        const statuses = input["statuses"] as string[] | undefined;
+        return {
+          tasks: tasks.tasks
+            .filter((task) => project !== undefined && task.key.startsWith(`${project.prefix}-`))
+            .filter((task) => statuses === undefined || statuses.includes(task.status))
+            .slice(0, Number(input["limit"] ?? 100))
+            .map(snapshotTask),
+          nextCursor: null,
+        };
+      }
+      case "createTask": {
+        const project = tasks.projects.find((entry) => entry.id === input["projectId"]);
+        if (project === undefined) return { ok: false, error: { message: "project not found" } };
+        const number =
+          tasks.tasks.filter((task) => task.key.startsWith(`${project.prefix}-`)).length + 1;
+        const task = addTask(`${project.prefix}-${number}`, {
+          title: String(input["title"]),
+          status: (input["status"] as string | undefined) ?? "backlog",
+        });
+        return { ok: true, task: snapshotTask(task) };
+      }
       case "updateTask": {
         const task = taskById(input["taskId"]);
         if (typeof input["status"] === "string") task.status = input["status"];
