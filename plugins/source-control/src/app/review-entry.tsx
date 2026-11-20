@@ -32,7 +32,6 @@ export function ReviewPanel({ subPath }: PanelProps) {
 export function ReviewSidebar({ subPath }: PanelProps) {
   const compact = useIsCompactViewport();
   const root = useRef<HTMLDivElement>(null);
-  // workaround:scott-docs/sidebar-fill (manual removal; see workarounds.json)
   useSidebarColumnFill(root, compact);
   return (
     <div ref={root} className="flex min-h-0 min-w-0 flex-col">
