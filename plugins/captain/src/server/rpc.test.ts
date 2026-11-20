@@ -356,3 +356,144 @@ describe("New Captain from the app", () => {
     expect(await rpc("captains", {})).toEqual({ ids: [] });
   });
 });
+
+describe("the Overview's routines", () => {
+  const SWEEP = {
+    name: "Stalled crew sweep",
+    instruction: "Nudge stalled crew.",
+    schedule: { cron: "0 9 * * 1-5", timezone: "UTC" },
+  };
+  async function routinesHost() {
+    const host = await captainHost();
+    const captainId = await newCaptain(host);
+    const rpc = (method: string, input: unknown) => host.harness.behavior.callRpc(method, input);
+    const list = async () =>
+      (
+        (await rpc("routines", { captainId })) as {
+          routines: { id: string; name: string; when: string; automation: unknown }[];
+          serverTimezone: string;
+        }
+      ).routines;
+    const save = (routine: unknown, routineId?: string) =>
+      rpc("saveRoutine", {
+        captainId,
+        routine,
+        ...(routineId === undefined ? {} : { routineId }),
+      }) as Promise<{ ok: boolean; routine?: { id: string }; blockers?: { reason: string }[] }>;
+    return { host, captainId, rpc, list, save };
+  }
+
+  test("saveRoutine creates, then lists it with its schedule in words and live state", async () => {
+    const { list, save, host } = await routinesHost();
+    const saved = await save(SWEEP);
+    expect(saved).toMatchObject({ ok: true, routine: { id: "r1", name: SWEEP.name } });
+    expect(await list()).toEqual([
+      expect.objectContaining({
+        id: "r1",
+        when: "Every weekday at 9:00 AM",
+        automation: expect.objectContaining({ enabled: true }),
+      }),
+    ]);
+    expect(host.automations.rows.size).toBe(1);
+  });
+
+  test("a refused save lists the reasons in words and stores nothing", async () => {
+    const { list, save } = await routinesHost();
+    await save(SWEEP);
+    const duplicate = await save({ ...SWEEP, name: "stalled crew SWEEP" });
+    expect(duplicate.ok).toBe(false);
+    expect(duplicate.blockers?.[0]?.reason).toMatch(/r1 is already named/);
+    const frequent = await save({
+      ...SWEEP,
+      name: "Too often",
+      schedule: { cron: "*/5 * * * *", timezone: "UTC" },
+    });
+    expect(frequent.blockers?.[0]?.reason).toMatch(/at most every 15 minutes/);
+    const zone = await save({
+      ...SWEEP,
+      name: "Bad zone",
+      schedule: { cron: "0 9 * * *", timezone: "Mars/Olympus" },
+    });
+    expect(zone.blockers?.[0]?.reason).toMatch(/unknown time zone/);
+    expect((await list()).map((routine) => routine.id)).toEqual(["r1"]);
+  });
+
+  test("an edit sends only what changed, so a spent one-shot stays renameable", async () => {
+    const { host, list, save } = await routinesHost();
+    const at = host.now() + 60_000;
+    await save({ ...SWEEP, schedule: { at } });
+    host.setNow(host.now() + 120_000);
+    const renamed = await save({ ...SWEEP, name: "Renamed", schedule: { at } }, "r1");
+    expect(renamed.ok).toBe(true);
+    expect((await list())[0]?.name).toBe("Renamed");
+    // A changed schedule in the past is still refused.
+    const past = await save({ ...SWEEP, schedule: { at: at - 1 } }, "r1");
+    expect(past.blockers?.[0]?.reason).toMatch(/time has passed/);
+  });
+
+  test("an update moves the cron and the time zone together", async () => {
+    const { host, save } = await routinesHost();
+    await save(SWEEP);
+    await save({ ...SWEEP, schedule: { cron: "0 16 * * 5", timezone: "Europe/Berlin" } }, "r1");
+    expect([...host.automations.rows.values()][0]?.trigger).toMatchObject({
+      cron: "0 16 * * 5",
+      timezone: "Europe/Berlin",
+    });
+  });
+
+  test("routineAction pauses, resumes, tests and deletes; routineRuns lists the test", async () => {
+    const { host, captainId, rpc, list, save } = await routinesHost();
+    await save(SWEEP);
+    await rpc("routineAction", { captainId, routineId: "r1", action: "pause" });
+    expect((await list())[0]?.automation).toMatchObject({ enabled: false });
+    await rpc("routineAction", { captainId, routineId: "r1", action: "resume" });
+    expect((await list())[0]?.automation).toMatchObject({ enabled: true });
+    const test = (await rpc("routineAction", { captainId, routineId: "r1", action: "run" })) as {
+      runId: string | null;
+    };
+    expect(test.runId).toMatch(/^arun_/);
+    await rpc("routineAction", { captainId, routineId: "r1", action: "delete" });
+    expect(await list()).toEqual([]);
+    expect(host.automations.rows.size).toBe(0);
+  });
+
+  test("a routine of another Captain is refused", async () => {
+    const { host, captainId, rpc, save } = await routinesHost();
+    await save(SWEEP);
+    const other = await newCaptain(host, ["--name", "Rampage", "--repo", "rampage"]);
+    await expect(
+      rpc("routineAction", { captainId: other, routineId: "r1", action: "delete" }),
+    ).rejects.toThrow(/has no routine r1/);
+    await expect(rpc("routineRuns", { captainId: other, routineId: "r1" })).rejects.toThrow(
+      /has no routine r1/,
+    );
+    expect(host.server.store.routinesOf(captainId)).toHaveLength(1);
+  });
+
+  test("with Automations down or slow, the list still comes from data.db", async () => {
+    const { host, list, save } = await routinesHost();
+    await save(SWEEP);
+    host.automations.down = true;
+    expect(await list()).toEqual([
+      expect.objectContaining({
+        name: SWEEP.name,
+        when: "Every weekday at 9:00 AM",
+        automation: null,
+        automationError: expect.stringMatching(/^Schedule unavailable/),
+      }),
+    ]);
+    host.automations.down = false;
+    let release = () => {};
+    host.automations.gate = { until: new Promise<void>((resolve) => (release = resolve)) };
+    const started = Date.now();
+    const rows = await list();
+    expect(Date.now() - started).toBeLessThan(4_000);
+    expect(rows[0]).toMatchObject({
+      name: SWEEP.name,
+      automation: null,
+      automationError: expect.stringMatching(/^Schedule unavailable/),
+    });
+    host.automations.gate = null;
+    release();
+  });
+});

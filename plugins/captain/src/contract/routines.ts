@@ -269,22 +269,28 @@ function pad(value: number): string {
 }
 
 /** A routine with its live schedule state; `automation` is null when Automations did not answer. */
-export type RoutineView = Routine & {
-  /** The schedule in words. */
-  when: string;
-  automation: {
-    enabled: boolean;
-    nextRunAt: number | null;
-    lastRunAt: number | null;
-  } | null;
-  /** Why `automation` is null. */
-  automationError: string | null;
-  /** A one-shot whose run for its current time reached the Captain, not armed again. */
-  done: boolean;
-  /** A one-shot that fired for its current time but was skipped or failed, not armed again. */
-  missed: boolean;
-  lastRun: RoutineRun | null;
-};
+export const routineViewSchema = routineSchema
+  .extend({
+    /** The schedule in words. */
+    when: z.string(),
+    automation: z
+      .object({
+        enabled: z.boolean(),
+        nextRunAt: z.number().nullable(),
+        lastRunAt: z.number().nullable(),
+      })
+      .strict()
+      .nullable(),
+    /** Why `automation` is null. */
+    automationError: z.string().nullable(),
+    /** A one-shot whose run for its current time reached the Captain, not armed again. */
+    done: z.boolean(),
+    /** A one-shot that fired for its current time but was skipped or failed, not armed again. */
+    missed: z.boolean(),
+    lastRun: routineRunSchema.nullable(),
+  })
+  .strict();
+export type RoutineView = z.infer<typeof routineViewSchema>;
 
 /** The RPC tag a Captain's routines are read under. */
 export const routinesTag = (captainId: string) => `routines:${captainId}`;

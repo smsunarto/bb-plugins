@@ -1,6 +1,6 @@
 /**
- * The Overview tab beside a Captain thread: what needs you, its tasks, and the
- * Drive, as stacked sections that collapse. Asks come from the banner's own
+ * The Overview tab beside a Captain thread: what needs you, its tasks, its
+ * routines and the Drive, as stacked sections that collapse. Asks come from the banner's own
  * read, so an answer in either place updates both. Reads run only while the
  * tab shows; bb keeps a hidden tab mounted.
  */
@@ -34,6 +34,7 @@ import { ActionButton, OtherAnswer, TAP, itemActions, useItemCommands, useNow } 
 import { Button } from "./components/ui/button.tsx";
 import { cn } from "./lib/utils.ts";
 import { Preview } from "./preview.tsx";
+import { NewRoutineButton, RoutinesBody } from "./routines.tsx";
 
 const NO_INPUT = {};
 
@@ -43,9 +44,9 @@ export function useOverviewVisible({ threadId }: ExperimentalThreadTabProps): bo
   return captains.data?.ids.includes(threadId) ?? false;
 }
 
-type SectionId = "needs" | "tasks" | "drive";
+type SectionId = "needs" | "tasks" | "routines" | "drive";
 type Collapsed = Record<SectionId, boolean>;
-const OPEN: Collapsed = { needs: false, tasks: false, drive: false };
+const OPEN: Collapsed = { needs: false, tasks: false, routines: false, drive: false };
 
 export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
   const visible = useTabVisible();
@@ -57,6 +58,12 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
     input,
     enabled: visible,
   });
+  const routines = useRpcQuery({
+    contract: captainContract,
+    method: "routines",
+    input,
+    enabled: visible,
+  });
   const drive = useRpcQuery({
     contract: captainContract,
     method: "drive",
@@ -64,6 +71,7 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
     enabled: visible,
   });
   const [collapsed, toggle] = useCollapsed(threadId);
+  const scheduled = routines.data;
   const now = useNow(asks.data?.items);
   // The banner's queue: its order, Later's hidden items left out, so both count alike.
   const asked = useMemo(
@@ -110,6 +118,30 @@ export function OverviewTab({ threadId }: ExperimentalThreadTabProps) {
         >
           <ReadState read={tasks} rows={3}>
             {listed === undefined ? null : <TasksBody listing={listed} />}
+          </ReadState>
+        </Section>
+        <Section
+          id="routines"
+          title="Routines"
+          count={scheduled?.routines.length}
+          collapsed={collapsed.routines}
+          onToggle={toggle}
+          action={
+            <NewRoutineButton
+              captainId={threadId}
+              onOpen={() => collapsed.routines && toggle("routines")}
+            />
+          }
+        >
+          <ReadState read={routines} rows={1}>
+            {scheduled === undefined ? null : (
+              <RoutinesBody
+                captainId={threadId}
+                listing={scheduled}
+                visible={visible}
+                onRetry={() => void routines.refetch()}
+              />
+            )}
           </ReadState>
         </Section>
         <Section
@@ -280,6 +312,7 @@ function readCollapsed(key: string): Collapsed {
       needs: stored.needs === true,
       // Tasks took the place of Threads: a collapsed Threads stays collapsed.
       tasks: stored.tasks === true || (stored as { threads?: unknown }).threads === true,
+      routines: stored.routines === true,
       drive: stored.drive === true,
     };
   } catch {
