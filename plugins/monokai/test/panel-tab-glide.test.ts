@@ -250,6 +250,17 @@ test("a circle and a chip of another size switch instantly, both ways", async ()
   dispose();
 });
 
+test("tabs of one width but another height switch instantly", async () => {
+  const { root, pins } = pager([112], -1);
+  place(pins[1]!.parentElement!, 52, 8, 44, 36);
+  const { dispose } = mount();
+  select(pins[0]!, pins[1]!);
+  await frame();
+  expect(root.querySelector(GLIDE)).toBeNull();
+  expect(animations).toHaveLength(0);
+  dispose();
+});
+
 test("a keyboard switch, reduced motion, or a closed tab stays instant", async () => {
   const keyboard = pager([112], -1);
   const first = mount({ pointer: false });
