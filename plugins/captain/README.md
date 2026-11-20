@@ -45,7 +45,7 @@ bb captain routine pause|resume|remove <id-or-name>
 bb captain routine run <id-or-name>      # a test run, now
 ```
 
-- `add` and `update` print the schedule in words and the next run. A new routine waits for its next time. A new `--in` or `--at` arms a one-shot again, paused or spent. `--timezone` defaults to the bb server's.
+- `add` and `update` print the schedule in words and the next run. A new routine waits for its next time. A new `--in` or `--at` arms a one-shot that already ran; a paused one stays paused. `--timezone` defaults to the bb server's.
 - Limits: 20 routines per Captain, names unique per Captain, instructions up to 4000 characters, a cron at most every 15 minutes.
 - A run sends the Captain `[captain] routine <id> "<name>" · scheduled` (or `· test`) and the text of `instructions/routine.md`, with `queue-if-active`: it waits behind a running turn instead of steering into it. While that message is still queued, or the queue cannot be read, the next run is skipped. Each run is recorded as `sent`, `queued`, `skipped` or `failed`, 20 per routine.
 - Only a Captain's own thread, for its own routines, or the user's terminal with `--captain` manages routines; crew and other threads are refused. The Captain sets one only when the user asks in its thread, following the `captain-routines` skill.

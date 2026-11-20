@@ -165,12 +165,15 @@ function zoneOf(view: RoutineView): string | undefined {
 /** A one-shot whose time came: Automations disables it after its run. */
 function state(view: RoutineView): string {
   if (view.done) return "done";
+  if (view.missed) return "missed";
   if (view.automation === null) return "unavailable";
   return view.automation.enabled ? "active" : "paused";
 }
 
 function next(view: RoutineView): string {
   if (view.done) return "ran once";
+  if (view.missed)
+    return `its one run was ${view.lastRun?.reason ?? "not delivered"}; give it a new time`;
   if (view.automation === null) return view.automationError ?? "schedule unavailable";
   if (!view.automation.enabled) return "paused";
   return view.automation.nextRunAt === null

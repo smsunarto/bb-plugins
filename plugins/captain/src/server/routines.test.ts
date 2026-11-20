@@ -538,6 +538,28 @@ describe("away pause", () => {
     expect(awayAsks()).toHaveLength(1);
   });
 
+  test("holds chosen before the user came back are still finished", async () => {
+    const { host, captainId, sweep, enabled, awayAsks, maintainAt } = await awayHost();
+    host.automations.failNext.add("automations_pause");
+    await maintainAt(1_000 + 8 * DAY);
+    expect(host.server.store.awayHolds({ captainId })).toMatchObject([{ paused: false }]);
+    // The user opens the Captain before the retry: the chosen pause still completes, with its ask.
+    host.server.store.setLastSeen(captainId, "web", 1_000 + 8 * DAY + 1);
+    expect((await maintainAt(1_000 + 8 * DAY + 60_000)).pending).toBe(false);
+    expect(enabled(sweep.automationId)).toBe(false);
+    expect(awayAsks()).toHaveLength(1);
+  });
+
+  test("an archived Captain's holds are released", async () => {
+    const { host, captainId, awayAsks, maintainAt } = await awayHost();
+    host.automations.failNext.add("automations_pause");
+    await maintainAt(1_000 + 8 * DAY);
+    host.server.store.archiveCaptain(captainId, 1_000 + 8 * DAY);
+    await maintainAt(1_000 + 8 * DAY + 60_000);
+    expect(host.server.store.awayHolds()).toEqual([]);
+    expect(awayAsks()).toEqual([]);
+  });
+
   test("no run since the user was last seen: nothing is paused", async () => {
     const { host, captainId, sweep, enabled, awayAsks, maintainAt } = await awayHost();
     host.server.store.setLastSeen(captainId, "web", 1_000 + 4 * DAY);

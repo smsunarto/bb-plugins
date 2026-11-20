@@ -3,7 +3,8 @@ import type { InstructionFiles } from "@bb-plugins/instructions";
 import type { z } from "zod";
 import {
   describeSchedule,
-  oneShotDone,
+  oneShotDelivered,
+  oneShotFired,
   routineFieldsSchema,
   routinesTag,
   type Routine,
@@ -195,10 +196,11 @@ export function createRoutines(deps: RoutinesDeps) {
       return {
         ...base,
         automation: null,
-        automationError: oneShotDone(routine)
+        automationError: oneShotFired(routine)
           ? null
           : "no schedule; update the routine to schedule it again",
-        done: oneShotDone(routine),
+        done: oneShotDelivered(routine),
+        missed: oneShotFired(routine) && !oneShotDelivered(routine),
       };
     }
     try {
@@ -211,7 +213,8 @@ export function createRoutines(deps: RoutinesDeps) {
           lastRunAt: status.lastRunAt,
         },
         automationError: null,
-        done: oneShotDone(routine) && !status.enabled,
+        done: !status.enabled && oneShotDelivered(routine),
+        missed: !status.enabled && oneShotFired(routine) && !oneShotDelivered(routine),
       };
     } catch (error) {
       return {
@@ -221,6 +224,7 @@ export function createRoutines(deps: RoutinesDeps) {
           ? "its automation was deleted; update the routine to schedule it again"
           : `Schedule unavailable: ${message(error)}`,
         done: false,
+        missed: false,
       };
     }
   }
@@ -280,7 +284,7 @@ export function createRoutines(deps: RoutinesDeps) {
       const owner = ownerOf(before);
       const nameChanged = fields.name !== before.name;
       const scheduleChanged = JSON.stringify(fields.schedule) !== JSON.stringify(before.schedule);
-      const rearm = scheduleChanged && oneShotDone(before);
+      const rearm = scheduleChanged && oneShotFired(before);
       // Reserve the name now: a concurrent rename to it fails here, before any remote write.
       if (nameChanged) store.updateRoutine(before.id, { name: fields.name }, before.updatedAt);
       let automationId = before.automationId;
@@ -642,13 +646,17 @@ export function createRoutines(deps: RoutinesDeps) {
   async function awayPass(captainId: string): Promise<void> {
     const now = deps.now();
     const row = store.captain(captainId);
-    if (row === null || row.archivedAt !== null) return;
+    if (row === null) return;
+    if (row.archivedAt !== null) {
+      // Archiving paused its routines and its asks cannot be answered: release the holds.
+      for (const hold of store.awayHolds({ captainId })) store.clearAway(hold.routineId);
+      return;
+    }
     const seen = store.lastSeen(captainId) ?? row.createdAt;
-    if (now - seen <= AWAY_PAUSE_AFTER_MS) return;
     const delivered = store.lastScheduledDelivery(captainId);
-    if (delivered === null || delivered <= seen) return;
+    const qualifies = now - seen > AWAY_PAUSE_AFTER_MS && delivered !== null && delivered > seen;
     const key = NOTICE.routinesAway(captainId, seen);
-    if (store.noticeSentAt(key) === null) {
+    if (qualifies && store.noticeSentAt(key) === null) {
       const running: string[] = [];
       for (const routine of store.routinesOf(captainId)) {
         const found = target(routine);
@@ -660,10 +668,12 @@ export function createRoutines(deps: RoutinesDeps) {
         });
         if (status?.enabled === true) running.push(routine.id);
       }
-      if (!store.startAway(key, captainId, seen, running, now)) return;
+      store.startAway(key, captainId, seen, running, now);
     }
-    const holds = store.awayHolds({ captainId, absence: seen });
-    for (const hold of holds.filter((entry) => !entry.paused)) {
+    // Finish every hold not yet in an ask, from this absence or an earlier
+    // one, even when the user has since been seen: it was chosen to pause.
+    const open = () => store.awayHolds({ captainId }).filter((hold) => hold.askId === null);
+    for (const hold of open().filter((entry) => !entry.paused)) {
       await serial(`routine:${hold.routineId}`, async () => {
         const routine = store.routine(hold.routineId);
         if (routine !== null) await pauseRunning(routine);
@@ -672,25 +682,25 @@ export function createRoutines(deps: RoutinesDeps) {
         bb.log.warn(`away pause of ${hold.routineId} retried next pass: ${message(error)}`),
       );
     }
-    const after = store.awayHolds({ captainId, absence: seen });
-    if (after.length === 0 || after.some((hold) => !hold.paused)) return;
-    if (after.every((hold) => hold.askId !== null)) return;
-    const names = after.map((hold) => {
+    const unasked = open();
+    if (unasked.length === 0 || unasked.some((hold) => !hold.paused)) return;
+    const names = unasked.map((hold) => {
       const routine = store.routine(hold.routineId);
       return routine === null
         ? hold.routineId
         : `${hold.routineId} ${JSON.stringify(routine.name)}`;
     });
+    const since = Math.min(...unasked.map((hold) => hold.absence));
     const askId = await deps.openAwayAsk(
       captainId,
       deps.files.read("routines-paused", {
         captain: row.name,
-        days: Math.floor((now - seen) / (24 * 60 * 60_000)),
+        days: Math.max(7, Math.floor((now - since) / (24 * 60 * 60_000))),
         routines: names.join(", "),
       }),
     );
     store.setAwayAsk(
-      after.map((hold) => hold.routineId),
+      unasked.map((hold) => hold.routineId),
       askId,
     );
     changed(captainId);
@@ -748,10 +758,18 @@ export function createRoutines(deps: RoutinesDeps) {
     await step("reconcile", reconcile);
     await step("cleanup", drainCleanup);
     await step("away pause", () =>
-      mapLimit(store.liveCaptains(), (captain) =>
-        withDeadline(awayPass(captain.threadId), MAINTENANCE_DEADLINE_MS).catch((error: unknown) =>
-          bb.log.warn(`away pause for ${captain.threadId} skipped: ${message(error)}`),
-        ),
+      // Live Captains, plus any whose holds still need finishing or releasing.
+      mapLimit(
+        [
+          ...new Set([
+            ...store.liveCaptains().map((captain) => captain.threadId),
+            ...store.awayHolds().map((hold) => hold.captainId),
+          ]),
+        ],
+        (captainId) =>
+          withDeadline(awayPass(captainId), MAINTENANCE_DEADLINE_MS).catch((error: unknown) =>
+            bb.log.warn(`away pause for ${captainId} skipped: ${message(error)}`),
+          ),
       ),
     );
     await step("away answers", async () => {

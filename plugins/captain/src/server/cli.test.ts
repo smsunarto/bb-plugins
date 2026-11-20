@@ -558,6 +558,25 @@ describe("bb captain routine", () => {
     );
   });
 
+  test("a one-shot whose only run was skipped reads missed, not done", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    await run(
+      host,
+      ["routine", "add", "--name", "Once", "--in", "1m", "--prompt-file", prompt],
+      captainId,
+    );
+    const automation = [...host.automations.rows.values()][0];
+    host.setNow(host.now() + 61_000);
+    host.queued.set(captainId, [
+      queuedRow("qm_r1", '[captain] routine r1 "Once" · test', { kind: "turn" }),
+    ]);
+    await run(host, ["routine", "fire", "r1", "--automation", automation?.id ?? ""]);
+    if (automation !== undefined) automation.enabled = false;
+    expect((await run(host, ["routine", "list"], captainId)).stdout).toMatch(
+      /^r1 {2}missed {2}"Once" .* its one run was previous run still queued; give it a new time\n$/u,
+    );
+  });
+
   test("a stale --automation is refused by fire", async () => {
     const { host, captainId, prompt } = await routineCli();
     await run(

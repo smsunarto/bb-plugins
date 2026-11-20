@@ -141,10 +141,19 @@ export const routineSchema = routineFieldsSchema
   .strict();
 export type Routine = z.infer<typeof routineSchema>;
 
-/** A one-shot whose time came and was fired: Automations disables it after that run. */
-export function oneShotDone(routine: Pick<Routine, "schedule" | "firedAt">): boolean {
+/** A one-shot whose time came and was fired, whatever the outcome: Automations disables it after that run. */
+export function oneShotFired(routine: Pick<Routine, "schedule" | "firedAt">): boolean {
   return (
     "at" in routine.schedule && routine.firedAt !== null && routine.firedAt >= routine.schedule.at
+  );
+}
+
+/** A one-shot whose run for its current time reached the Captain. */
+export function oneShotDelivered(routine: Pick<Routine, "schedule" | "deliveredAt">): boolean {
+  return (
+    "at" in routine.schedule &&
+    routine.deliveredAt !== null &&
+    routine.deliveredAt >= routine.schedule.at
   );
 }
 
@@ -270,8 +279,10 @@ export type RoutineView = Routine & {
   } | null;
   /** Why `automation` is null. */
   automationError: string | null;
-  /** A one-shot that has run for its current time and is not armed again. */
+  /** A one-shot whose run for its current time reached the Captain, not armed again. */
   done: boolean;
+  /** A one-shot that fired for its current time but was skipped or failed, not armed again. */
+  missed: boolean;
   lastRun: RoutineRun | null;
 };
 
