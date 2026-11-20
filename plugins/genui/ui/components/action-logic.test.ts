@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Action } from "../../core/types";
 import { ACTION_GLYPHS, actionIntent, sendEffect } from "./action-logic";
 
@@ -117,5 +117,41 @@ describe("actionIntent", () => {
 
   it("reserves exactly the glyphs it draws", () => {
     expect([...ACTION_GLYPHS].sort()).toEqual(["Copy", "ExternalLink", "Sent"]);
+  });
+});
+
+describe("a link to a pull request", () => {
+  const PR = "https://github.com/acme/api/pull/12";
+  it("says it opens in Review, with the pull request glyph, in a thread's block", () => {
+    expect(actionIntent([open(PR)], { review: true })).toEqual({ glyph: "GitPullRequest", hint: "Open acme/api#12 in Review" });
+  });
+  it("stays a web link outside a thread, for a deep link, or beside another web link", () => {
+    expect(actionIntent([open(PR)])).toEqual({ glyph: "ExternalLink", hint: `Open ${PR}` });
+    expect(actionIntent([open(`${PR}/files`)], { review: true }).glyph).toBe("ExternalLink");
+    const both = actionIntent([open(PR), open("https://example.com/")], { review: true });
+    expect(both.glyph).toBe("ExternalLink");
+    expect(both.hint).toBe("Open acme/api#12 in Review\nOpen https://example.com/");
+  });
+});
+
+describe("parsing a link", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  /** How many URLs `run` builds. */
+  function urlsBuilt(run: () => void): number {
+    const Real = URL;
+    let built = 0;
+    vi.stubGlobal("URL", class extends Real {
+      constructor(...args: ConstructorParameters<typeof URL>) {
+        super(...args);
+        built++;
+      }
+    });
+    run();
+    vi.unstubAllGlobals();
+    return built;
+  }
+  it("parses each link once for its glyph and its hint", () => {
+    expect(urlsBuilt(() => actionIntent([open("https://example.com/docs")], { review: true }))).toBe(1);
+    expect(urlsBuilt(() => actionIntent([open("https://github.com/acme/api/pull/12")], { review: true }))).toBe(1);
   });
 });

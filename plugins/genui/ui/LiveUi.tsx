@@ -1,7 +1,8 @@
 // Renders a compiled spec and re-evaluates it locally on every state change
 // (no model round trip). Shared by fenced ```ui blocks and stored ::ui UIs;
 // each caller supplies where answers go and how file links reach its thread.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { requestPullRequestReview } from "@bb-plugins/review-request";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import { useBbNavigate } from "@get-bb/plugin-sdk/app";
 import { collectLoads, dataKey, evaluate, initialState, type LoadedData, type Program } from "../core";
@@ -139,8 +140,16 @@ export function LiveUi({
     [initial],
   );
 
+  // Whether the press that runs an action held a modifier: Buttons run actions on any click, and
+  // a modified one keeps a link on GitHub. Each click or key press records its own, and `run`
+  // reads it before its first await, so a slow earlier action cannot change the answer.
+  const modifiedPress = useRef(false);
+  const notePress = useCallback((event: Pick<MouseEvent, "metaKey" | "ctrlKey" | "shiftKey" | "altKey">) => {
+    modifiedPress.current = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
+  }, []);
+
   const runAction = useCallback(
-    async (action: Action) => {
+    async (action: Action, plain: boolean) => {
       switch (action.type) {
         case "set":
           setValue(action.name, action.value);
@@ -152,6 +161,9 @@ export function LiveUi({
           // The same check as the hint's, so the hint never names a link this refuses.
           const url = openableLink(action.url);
           if (url === null) throw new Error(`Only http and https links can be opened: ${action.url}`);
+          // A pull request's own page opens as its Review beside the thread when Source Control
+          // takes it; a modified click, or no Source Control, opens GitHub.
+          if (threadId !== null && plain && requestPullRequestReview({ url: url.href, threadId, navigating: false })) return;
           if (!navigate.openUrl(url.href)) throw new Error(`Couldn't open ${url.href}`);
           return;
         }
@@ -161,7 +173,7 @@ export function LiveUi({
           return;
       }
     },
-    [navigate, setValue],
+    [navigate, setValue, threadId],
   );
 
   // Pictures still being read: the block keeps its remembered height until they arrive.
@@ -189,9 +201,11 @@ export function LiveUi({
       superseded: superseded === true,
       threadId,
       blockKey,
-      async run(actions) {
+      async run(actions, options) {
+        const plain = options?.plain ?? !modifiedPress.current;
+        modifiedPress.current = false;
         try {
-          for (const action of actions) await runAction(action);
+          for (const action of actions) await runAction(action, plain);
         } catch (cause) {
           toast.error(cause instanceof Error ? cause.message : String(cause));
         }
@@ -252,7 +266,7 @@ export function LiveUi({
           <HintProvider>
             <Frame source={source} diagnostics={[...compileDiagnostics, ...diagnostics]} files={files} gallery={gallery}>
               {/* Holds the height this block last settled at while what it reads arrives (reservedHeight.ts). */}
-              <div ref={blockRoot} style={minHeight === undefined ? undefined : { minHeight }}>
+              <div ref={blockRoot} onClickCapture={notePress} onKeyDownCapture={notePress} style={minHeight === undefined ? undefined : { minHeight }}>
                 <div ref={content} className="flex flex-col gap-3">
                   {tree}
                 </div>

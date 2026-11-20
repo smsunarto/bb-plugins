@@ -28,6 +28,7 @@ import { ACTION_GLYPHS, actionIntent, sendEffect } from "./action-logic";
 import { Radio } from "./fields";
 import { reducedMotion, useEntrance, type Entrance } from "./motion";
 import { keepTyping } from "../keepTyping";
+import { linkUrls, useReviewLinks } from "../reviewLinks";
 
 export const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring";
@@ -288,6 +289,7 @@ function ButtonView({ props }: { props: Props }) {
   const [running, setRunning] = useState(false);
   const label = text(props.label);
   const actions: readonly Action[] = props.action === undefined ? [] : list(props.action).filter(isAction);
+  const reviewLinks = useReviewLinks(linkUrls(actions));
   const answers = answerTexts(props);
   // A choice stages its answer; its other actions (a Set beside the Send) run when it is picked.
   const picks = choice != null && answers.length > 0;
@@ -308,14 +310,17 @@ function ButtonView({ props }: { props: Props }) {
   const { glyph, hint } = actionIntent(intended, {
     send: sendEffect(target, picks, pressed),
     shown: clipped ? undefined : label,
+    review: reviewLinks,
   });
   // The spec's icon says what the button is about, the glyph at its end what
   // pressing it does; a picked choice shows a check instead. An unknown name
   // draws nothing, and an action's glyph is never the spec's icon: it would
   // show twice, or promise another action.
   const named = props.icon === undefined ? null : resolveIconName(text(props.icon));
-  const icon = pressed ? "Check" : named === null || ACTION_GLYPHS.has(named) ? null : named;
+  const icon = pressed ? "Check" : named === null || ACTION_GLYPHS.has(named) || named === glyph ? null : named;
   const others = actions.filter((action) => action.type !== "send");
+  // A middle click on a button that opens a link opens it on the web, as it would on a link.
+  const webLink = others.find((action) => action.type === "openUrl");
   return (
     <ActionHint hint={hint}>
       <BaseButton
@@ -328,6 +333,15 @@ function ButtonView({ props }: { props: Props }) {
         onPointerEnter={measure}
         onFocus={measure}
         {...(picks ? keepTyping : undefined)}
+        onAuxClick={
+          webLink === undefined
+            ? undefined
+            : (event) => {
+                if (event.button !== 1) return;
+                event.preventDefault();
+                void run([webLink], { plain: false });
+              }
+        }
         onClick={async () => {
           setRunning(true);
           try {

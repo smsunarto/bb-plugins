@@ -5,6 +5,7 @@ import type { Root } from "react-dom/client";
 import type * as PluginSdkApp from "@get-bb/plugin-sdk/app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExperimentalCodeFenceRendererProps, PluginSettingsState } from "@get-bb/plugin-sdk/app";
+import { answerPullRequestReviewAvailability, takePullRequestReviews, type PullRequestReviewRequest } from "@bb-plugins/review-request";
 import { SlotFence } from "./SlotFence";
 
 /** The plugin's settings as BB serves them: a store its subscribers re-render from, like BB's query. */
@@ -26,17 +27,18 @@ const settings = vi.hoisted(() => {
 
 /** Source Control's rows as `statusForThread` serves them to a keyed read, by thread id. */
 const sourceControl = vi.hoisted(() => ({ rows: {} as Record<string, unknown> }));
+const openUrl = vi.hoisted(() => vi.fn((_url: string) => true));
 
 // Only BB's runtime is replaced; compilation, Fence, AppBlock and diagnostics are real.
 vi.mock("@get-bb/plugin-sdk/app", async (importOriginal) => ({
   ...(await importOriginal<typeof PluginSdkApp>()),
   useComposers: () => [],
   useSdk: () => ({}),
-  useBbNavigate: () => ({}),
+  useBbNavigate: () => ({ openUrl }),
   useRpc: () => ({ call: vi.fn() }),
   useSettings: () => useSyncExternalStore(settings.subscribe, settings.get),
   Markdown: ({ content }: { content: string }) => <p>{content}</p>,
-  experimental_Icon: () => <span aria-hidden="true" />,
+  experimental_Icon: ({ name }: { name?: string }) => <span aria-hidden="true" data-icon={name} />,
   UrlLink: ({ href, className, children }: { href: string; className?: string; children: ReactNode }) => (
     <a href={href} className={className}>
       {children}
@@ -201,5 +203,123 @@ describe("the Animations setting", () => {
     expect(container.querySelector('[data-genui-motion="off"]')).not.toBeNull();
     act(() => settings.set({ animations: true }));
     expect(container.querySelector("[data-genui-motion]")).toBeNull();
+  });
+});
+
+describe("a button opening a pull request", () => {
+  const PR = "https://github.com/acme/api/pull/12";
+  const code = `Button("Review it", OpenUrl("${PR}"))`;
+  let asks: PullRequestReviewRequest[];
+  let stop: AbortController;
+  /** Source Control's content script, answering `taken` to every ask. */
+  function sourceControl(taken: boolean) {
+    stop = new AbortController();
+    takePullRequestReviews((ask) => (asks.push(ask), taken), stop.signal);
+  }
+  beforeEach(() => {
+    asks = [];
+    openUrl.mockClear();
+    vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
+  });
+  afterEach(() => stop?.abort());
+  const click = (init?: MouseEventInit) =>
+    act(() => {
+      container.querySelector("button")!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, ...init }));
+    });
+
+  it("asks Source Control for its Review beside the block's thread, and opens nothing when it takes it", async () => {
+    sourceControl(true);
+    render("ui", "closed", code, "pr-taken:assistant:1");
+    click();
+    await act(async () => undefined);
+    expect(asks).toEqual([{ url: PR, threadId: "orbit", navigating: false }]);
+    expect(openUrl).not.toHaveBeenCalled();
+  });
+
+  it("opens GitHub when Source Control doesn't take it", async () => {
+    sourceControl(false);
+    render("ui", "closed", code, "pr-declined:assistant:1");
+    click();
+    await act(async () => undefined);
+    expect(asks).toHaveLength(1);
+    expect(openUrl).toHaveBeenCalledWith(PR);
+  });
+
+  it("keeps a modified click on GitHub when an awaited action runs before the link", async () => {
+    sourceControl(true);
+    // The clipboard write settles on a later task, after any timer the click set.
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText: () => new Promise<void>((done) => setTimeout(done, 5)) } });
+    render("ui", "closed", `Button("Copy and review", [Copy("x"), OpenUrl("${PR}")])`, "pr-awaited:assistant:1");
+    click({ ctrlKey: true });
+    await act(async () => new Promise((done) => setTimeout(done, 20)));
+    expect(asks).toEqual([]);
+    expect(openUrl).toHaveBeenCalledWith(PR);
+  });
+
+  it("opens GitHub on a middle click without asking", async () => {
+    sourceControl(true);
+    render("ui", "closed", code, "pr-middle:assistant:1");
+    act(() => {
+      container.querySelector("button")!.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
+    });
+    await act(async () => undefined);
+    expect(asks).toEqual([]);
+    expect(openUrl).toHaveBeenCalledWith(PR);
+  });
+
+  it("names the link, with the web link glyph, while Review is not available beside the thread", () => {
+    render("ui", "closed", code, "pr-unknown:assistant:1");
+    const button = container.querySelector("button")!;
+    expect(button.querySelector('[data-icon="ExternalLink"]')).not.toBeNull();
+    expect(button.querySelector('[data-icon="GitPullRequest"]')).toBeNull();
+  });
+
+  it("names the link for a pull request Source Control says it cannot show, while another opens in Review", () => {
+    const OTHER = "https://github.com/acme/api/pull/13";
+    answerPullRequestReviewAvailability((threadId, url) => threadId === "orbit" && url !== PR, (stop = new AbortController()).signal);
+    render("ui", "closed", `Stack([Button("Missed", OpenUrl("${PR}")), Button("Fine", OpenUrl("${OTHER}"))])`, "pr-missed:assistant:1");
+    const [missed, fine] = [...container.querySelectorAll("button")];
+    expect(missed!.querySelector('[data-icon="ExternalLink"]')).not.toBeNull();
+    expect(missed!.querySelector('[data-icon="GitPullRequest"]')).toBeNull();
+    expect(fine!.querySelector('[data-icon="GitPullRequest"]')).not.toBeNull();
+  });
+
+  it("reads a link as its parsed address, so an upper-case host still opens in Review", () => {
+    answerPullRequestReviewAvailability((threadId, url) => threadId === "orbit" && url === PR, (stop = new AbortController()).signal);
+    render("ui", "closed", `Button("Review it", OpenUrl("HTTPS://GITHUB.COM/acme/api/pull/12"))`, "pr-upper:assistant:1");
+    expect(container.querySelector('button [data-icon="GitPullRequest"]')).not.toBeNull();
+  });
+
+  it("asks about Review only from controls that hold a link to a pull request", () => {
+    let probes = 0;
+    const changed = answerPullRequestReviewAvailability(() => (probes++, true), (stop = new AbortController()).signal);
+    render("ui", "closed", `List([{title: "a"}, {title: "b"}, {title: "c", action: OpenUrl("https://example.com")}])`, "pr-rows:assistant:1");
+    act(() => changed());
+    expect(probes).toBe(0);
+    render("ui", "closed", code, "pr-asks:assistant:1");
+    expect(probes).toBeGreaterThan(0);
+  });
+
+  it("shows the pull request glyph, not the web link glyph, once Source Control says Review is available", () => {
+    let available = false;
+    const changed = answerPullRequestReviewAvailability((threadId) => available && threadId === "orbit", (stop = new AbortController()).signal);
+    render("ui", "closed", code, "pr-glyph:assistant:1");
+    expect(container.querySelector('button [data-icon="ExternalLink"]')).not.toBeNull();
+    act(() => {
+      available = true;
+      changed();
+    });
+    const button = container.querySelector("button")!;
+    expect(button.querySelector('[data-icon="GitPullRequest"]')).not.toBeNull();
+    expect(button.querySelector('[data-icon="ExternalLink"]')).toBeNull();
+  });
+
+  it("opens GitHub on a modified click without asking", async () => {
+    sourceControl(true);
+    render("ui", "closed", code, "pr-modified:assistant:1");
+    click({ metaKey: true });
+    await act(async () => undefined);
+    expect(asks).toEqual([]);
+    expect(openUrl).toHaveBeenCalledWith(PR);
   });
 });

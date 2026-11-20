@@ -340,6 +340,7 @@ function AppFrame({
         void answers.stage(QUESTION, message.text === null ? null : { text: message.text, selection: true });
         return;
       case "openLink":
+        // Always the browser, never Review: the app's own script chose this link, not BB.
         if (!navigate.openUrl(message.url)) toast.error(`Couldn't open ${message.url}`);
         return;
       case "escape":

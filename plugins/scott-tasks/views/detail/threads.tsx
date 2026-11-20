@@ -1,4 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+  REVIEW_REQUEST_ATTRIBUTE,
+  isPlainClick,
+  requestPullRequestReview,
+} from "@bb-plugins/review-request";
 import {
   UrlLink,
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
@@ -40,7 +46,20 @@ const CHECK_TONE: Record<ThreadPullRequestInfo["checks"][number]["id"], string> 
   passed: "text-success",
 };
 
-function ThreadPullRequestPill({ status }: { status: ThreadPullRequest }) {
+function ThreadPullRequestPill({
+  status,
+  reviewable,
+  openThread,
+  openOnGitHub,
+  threadId,
+}: {
+  status: ThreadPullRequest;
+  /** Whether the thread can show a Review: an archived thread is read-only. */
+  reviewable: boolean;
+  openThread: () => void;
+  openOnGitHub: (url: string) => void;
+  threadId: string;
+}) {
   if (status.kind === "pullRequest") {
     const { pullRequest } = status;
     const meta = PR_STATE_META[pullRequest.state];
@@ -53,6 +72,29 @@ function ThreadPullRequestPill({ status }: { status: ThreadPullRequest }) {
             href={pullRequest.url}
             target="_blank"
             rel="noopener noreferrer"
+            // A plain click opens the PR's Review beside its thread when Source Control takes
+            // the ask, and offers GitHub in a toast if that Review cannot open after all. A
+            // modified or middle click, an archived thread, and an ask nothing takes go to
+            // GitHub as a plain link.
+            {...{ [REVIEW_REQUEST_ATTRIBUTE]: "" }}
+            onClick={(event) => {
+              if (!reviewable || !isPlainClick(event)) return;
+              const { url, number } = pullRequest;
+              const taken = requestPullRequestReview({
+                url,
+                threadId,
+                navigating: true,
+                // After the click, a browser opens no window on its own: the toast's action
+                // click does. The thread stays in view.
+                fallback: () =>
+                  toast(`Couldn't open Review for #${number}`, {
+                    action: { label: "Open on GitHub", onClick: () => openOnGitHub(url) },
+                  }),
+              });
+              if (!taken) return;
+              event.preventDefault();
+              openThread();
+            }}
             aria-label={`Pull request #${pullRequest.number}: ${summary}`}
             className={cn(
               badgeVariants({ variant: "outline" }),
@@ -165,7 +207,13 @@ function ThreadCard({
           {thread.presetName} · attached {formatRelativeTime(thread.attachedAt)}
         </div>
       </div>
-      <ThreadPullRequestPill status={pullRequest} />
+      <ThreadPullRequestPill
+        status={pullRequest}
+        reviewable={thread.liveStatus !== "archived"}
+        openThread={() => navigate.toThread(thread.threadId)}
+        openOnGitHub={(url) => void navigate.openUrl(url)}
+        threadId={thread.threadId}
+      />
       <Button
         variant="link"
         size="sm"

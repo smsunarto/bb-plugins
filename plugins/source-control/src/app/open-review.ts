@@ -132,13 +132,16 @@ export function setPlace(threadId: string, target: ReviewTarget): void {
  * An entry point asks the thread's Review tab for `target`: it moves there,
  * and reveals it again when it is already there. The location keeps its
  * identity when unchanged, so only the reveal runs, nothing is rebuilt.
+ * Returns the undo, for an ask whose tab did not open: the tab keeps the
+ * place the reader last left it at.
  */
-export function requestPlace(threadId: string, target: ReviewTarget): void {
+export function requestPlace(threadId: string, target: ReviewTarget): () => void {
   const id = slot(threadId, target.key);
   const current = placeOf(id, target.key);
   const next = here(target);
   const moved = !same(current.location, next);
   put(id, { location: moved ? next : current.location, request: current.request + 1 }, moved);
+  return () => put(id, current, moved);
 }
 
 function subscribe(listener: () => void) {
@@ -159,11 +162,20 @@ export function resetPlaces({ reload = false } = {}): void {
 
 // ── Opening ────────────────────────────────────────────────────────────
 
+/** Where an Open review may go when the surface has no side panel. */
+export type OpenReviewOptions = {
+  /** Open the review page instead (the default). False: open nothing and return false. */
+  readonly page?: boolean;
+};
+
 /**
  * Opens a Change's review beside `threadId`, at the place named. Falls back
- * to the review page where the surface has no side panel. One stable function.
+ * to the review page where the surface has no side panel, unless `page` is
+ * false. Returns whether it opened anything. One stable function.
  */
-export function useOpenReview(threadId: string): (target: ReviewTarget) => void {
+export function useOpenReview(
+  threadId: string,
+): (target: ReviewTarget, options?: OpenReviewOptions) => boolean {
   const panel = useAppPanel();
   const navigate = useBbNavigate();
   const latest = useRef({ panel, navigate, threadId });
@@ -171,16 +183,23 @@ export function useOpenReview(threadId: string): (target: ReviewTarget) => void 
     latest.current = { panel, navigate, threadId };
   });
   return useMemo(
-    () => (target: ReviewTarget) => {
-      const { panel, navigate, threadId } = latest.current;
-      requestPlace(threadId, target);
-      const opened = panel.openTab({
-        tab: REVIEW_TAB,
-        params: { key: target.key },
-        title: reviewTabTitle(target.key),
-      });
-      if (!opened) navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath(target) });
-    },
+    () =>
+      (target: ReviewTarget, { page = true }: OpenReviewOptions = {}) => {
+        const { panel, navigate, threadId } = latest.current;
+        const undo = requestPlace(threadId, target);
+        const opened = panel.openTab({
+          tab: REVIEW_TAB,
+          params: { key: target.key },
+          title: reviewTabTitle(target.key),
+        });
+        if (opened) return true;
+        if (!page) {
+          undo();
+          return false;
+        }
+        navigate.toPluginPanel(PANEL_PATH, { subPath: reviewPath(target) });
+        return true;
+      },
     [],
   );
 }

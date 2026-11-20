@@ -24,33 +24,17 @@ import {
   type PluginRpcClient,
   type UrlLinkProps,
 } from "@get-bb/plugin-sdk/app";
-import { useLayoutEffect, useMemo, useRef, type MouseEvent } from "react";
+import { isPlainClick } from "@bb-plugins/review-request";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import type { ChangeKey } from "../core/ids.ts";
 import { parsePrLink, parsePrReference, prKey, prLookup, type PrRef } from "../core/watch.ts";
 import type { sourceControlContract } from "../contract/rpc.ts";
-import { REVIEW_TAB, useOpenReview } from "./open-review.ts";
+import { REVIEW_TAB, useOpenReview, type OpenReviewOptions } from "./open-review.ts";
 
 /** How long a Review tab looks for a pull request's Change before it offers GitHub. */
 export const RESOLVE_MS = 8_000;
 /** How long a pull request Source Control could not show goes straight to GitHub. */
 export const MISS_MS = 60_000;
-
-type Click = Pick<
-  MouseEvent,
-  "button" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "defaultPrevented"
->;
-
-/** A primary click with no modifier: the one a link may take over. */
-export function isPlainClick(event: Click): boolean {
-  return (
-    !event.defaultPrevented &&
-    event.button === 0 &&
-    !event.metaKey &&
-    !event.ctrlKey &&
-    !event.shiftKey &&
-    !event.altKey
-  );
-}
 
 // ── What this window knows about each pull request ─────────────────────
 
@@ -72,16 +56,35 @@ export function knownPullRequest(lookup: string, now = Date.now()): Resolution |
   return null;
 }
 
+const knownListeners = new Set<() => void>();
+const knownChanged = () => {
+  for (const listener of knownListeners) listener();
+};
+
+/** Calls `listener` whenever a pull request becomes, or stops being, a recent miss, until `signal` aborts. */
+export function onKnownPullRequestsChange(listener: () => void, signal: AbortSignal): void {
+  if (signal.aborted) return;
+  knownListeners.add(listener);
+  signal.addEventListener("abort", () => knownListeners.delete(listener), { once: true });
+}
+
 /** The Review tab confirmed the Change shows this pull request: open it directly from now on. */
 export function rememberChange(lookup: string, key: ChangeKey): void {
-  missed.delete(lookup);
+  const wasMiss = missed.delete(lookup);
   found.set(lookup, key);
+  if (wasMiss) knownChanged();
 }
 
 /** Source Control cannot show this pull request: send its links to GitHub for a while. */
 export function rememberMiss(lookup: string, problem: string, now = Date.now()): void {
   found.delete(lookup);
-  missed.set(lookup, { problem, until: now + MISS_MS });
+  const until = now + MISS_MS;
+  missed.set(lookup, { problem, until });
+  knownChanged();
+  // When the miss lapses, its links may open in Review again.
+  setTimeout(() => {
+    if (missed.get(lookup)?.until === until) knownChanged();
+  }, until - Date.now());
 }
 
 /**
@@ -134,9 +137,12 @@ export function pullRequestTabParams(params: unknown): { ref: PrRef } | null {
  * took the link: false for anything that is not a link to a pull request
  * itself, for one Source Control recently could not show, and where there
  * is no side panel, so the caller lets the link go to GitHub. Never waits.
- * One stable function.
+ * With `page: false` a known pull request also returns false where there is
+ * no side panel, instead of opening the review page. One stable function.
  */
-export function useOpenPullRequest(threadId: string): (href: string) => boolean {
+export function useOpenPullRequest(
+  threadId: string,
+): (href: string, options?: OpenReviewOptions) => boolean {
   const openReview = useOpenReview(threadId);
   const panel = useAppPanel();
   const latest = useRef(panel);
@@ -144,15 +150,12 @@ export function useOpenPullRequest(threadId: string): (href: string) => boolean 
     latest.current = panel;
   });
   return useMemo(
-    () => (href: string) => {
+    () => (href: string, options?: OpenReviewOptions) => {
       const ref = parsePrLink(href);
       if (!ref) return false;
       const known = knownPullRequest(prLookup(ref));
       if (known && "problem" in known) return false;
-      if (known) {
-        openReview({ key: known.key });
-        return true;
-      }
+      if (known) return openReview({ key: known.key }, options);
       return latest.current.openTab({
         tab: REVIEW_TAB,
         params: { pr: prKey(ref).toLowerCase() },

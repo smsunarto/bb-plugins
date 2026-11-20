@@ -26,6 +26,8 @@ test("the plugin imports only the public Plugin SDK, zod, Node, Pierre, sonner, 
       /^@bb-plugins\/effect-bridge$/,
       // The review prompts and the findings tool's text, read from instructions/ on the server.
       /^@bb-plugins\/instructions$/,
+      // Other plugins' asks to open a pull request's Review (pr-links.ts).
+      /^@bb-plugins\/review-request(\/pull-request-url)?$/,
       // GitButler's branch metadata, read on the host.
       /^smol-toml$/,
       // Review playbooks' frontmatter, read by `bb review playbook` on the server.

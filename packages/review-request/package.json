@@ -1,0 +1,20 @@
+{
+  "name": "@bb-plugins/review-request",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Ask Source Control, from another plugin, to open a pull request's Review tab.",
+  "type": "module",
+  "exports": {
+    ".": "./src/review-request.ts",
+    "./pull-request-url": "./src/pull-request-url.ts"
+  },
+  "devDependencies": {
+    "bun-types": "^1.4.0",
+    "typescript": "^6.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile ../../node_modules/.cache/tsc/packages-review-request.tsbuildinfo",
+    "test": "bun test src",
+    "lint": "oxlint"
+  }
+}

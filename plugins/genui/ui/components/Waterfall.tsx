@@ -19,6 +19,7 @@ import { WithTooltip } from "./iconButton";
 import { ActionHint, FOCUS_RING } from "./inputs";
 import { CHART_DRAW_MS, SMOOTH_HEIGHT_CLASS, useEntrance, useSmoothHeight, type Entrance } from "./motion";
 import { Frame, gridLines, Heading, Quiet, useOpenUrl } from "./perfKit";
+import { useReviewLinks } from "../reviewLinks";
 
 /** Rows shown before "Show N more", and how many each press adds. */
 const ROW_PAGE = 60;
@@ -386,6 +387,7 @@ function Detail({ data, span }: { data: WaterfallData; span: Span }) {
   const parents = ancestry(data.spans, span.index);
   const childTime = span.children.reduce((sum, child) => sum + (data.spans[child].end - data.spans[child].start), 0);
   const request = span.request;
+  const reviewLinks = useReviewLinks([request?.url]);
   const duration = span.end - span.start;
   return (
     <div className="flex min-w-0 flex-col gap-2 px-2 pb-3 pt-2 text-xs leading-5" style={{ paddingLeft: Math.min(span.depth, MAX_INDENT_LEVELS) * INDENT_PX + 28 }}>
@@ -394,7 +396,7 @@ function Detail({ data, span }: { data: WaterfallData; span: Span }) {
           <span className="shrink-0 font-mono text-[11px] font-medium text-muted-foreground">{request.method}</span>
           <span className="min-w-0 flex-1 break-all font-mono text-[11px] text-foreground">{request.url}</span>
           {/^https?:\/\//i.test(request.url) ? (
-            <ActionHint hint={actionIntent([{ kind: "action", type: "openUrl", url: request.url }]).hint}>
+            <ActionHint hint={actionIntent([{ kind: "action", type: "openUrl", url: request.url }], { review: reviewLinks }).hint}>
               <Button
                 type="button"
                 variant="link"

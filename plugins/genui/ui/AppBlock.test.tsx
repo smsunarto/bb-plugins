@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type * as PluginSdkApp from "@get-bb/plugin-sdk/app";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { takePullRequestReviews, type PullRequestReviewRequest } from "@bb-plugins/review-request";
 import { AppBlock } from "./AppBlock";
 import { APPS_STORAGE_BUDGET, parseAppMessage, parseStorageItems, readAppStorage, saveAppStorage } from "./appBridge";
 import { APP_STORAGE_CAP, appFileName, buildSrcdoc, resolveTheme, themeCss } from "./appDocument";
@@ -242,6 +243,23 @@ describe("an app on screen", () => {
     expect(container.textContent).toContain("alert()");
     post({ type: "openLink", url: "https://example.com/docs" });
     expect(openUrl).toHaveBeenCalledWith("https://example.com/docs");
+  });
+
+  it("opens an app's pull request link in the browser, never in Review, even inside the reader's click", () => {
+    const PR = "https://github.com/acme/api/pull/12";
+    const asks: PullRequestReviewRequest[] = [];
+    const stop = new AbortController();
+    takePullRequestReviews((ask) => (asks.push(ask), true), stop.signal);
+    vi.stubGlobal("navigator", { ...navigator, userActivation: { isActive: true } });
+    try {
+      openUrl.mockClear();
+      const post = mount({ kind: "thread", threadId: "thr_pr", messageId: "m", fence: 0, reply: 0, send: vi.fn() });
+      post({ type: "openLink", url: PR });
+      expect(asks).toEqual([]);
+      expect(openUrl).toHaveBeenCalledWith(PR);
+    } finally {
+      stop.abort();
+    }
   });
 
   it("keeps a reopened fence's new document under the preview until that document loads", () => {

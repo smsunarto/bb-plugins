@@ -50,6 +50,7 @@ import {
 } from "./references-model";
 import { ExpandButton, useViewer } from "./viewer";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useReviewLinks } from "../reviewLinks";
 
 // ---------------------------------------------------------------------------
 // Shared
@@ -173,6 +174,7 @@ export function Entity({ props }: { props: Props }) {
   const shownFacts = inlineFacts(facts, CARD_FACTS);
   const rawUrl = text(props.url).trim();
   const link = parseUrl(rawUrl, ["http", "https"]);
+  const reviewLinks = useReviewLinks([link?.href]);
   const picture = usePicture(text(props.image));
   const [decoded, setDecoded] = useState<{ readonly url: string; readonly ok: boolean } | null>(null);
   const [open, setOpen] = useState(false);
@@ -345,7 +347,7 @@ export function Entity({ props }: { props: Props }) {
               {facts.length === 0 ? null : <KeyValue props={{ pairs: props.facts ?? null }} />}
               {link === null ? null : (
                 <DialogFooter>
-                  <ActionHint hint={actionIntent([{ kind: "action", type: "openUrl", url: link.href }]).hint}>
+                  <ActionHint hint={actionIntent([{ kind: "action", type: "openUrl", url: link.href }], { review: reviewLinks }).hint}>
                     <BaseButton type="button" size="sm" onClick={() => openUrl(link.href)} className="min-w-0">
                       <span className="truncate">Open {domainOf(link)}</span>
                       <Icon name="ExternalLink" aria-hidden />

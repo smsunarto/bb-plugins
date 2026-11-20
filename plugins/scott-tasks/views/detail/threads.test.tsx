@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
+import {
+  REVIEW_REQUEST_ATTRIBUTE,
+  takePullRequestReviews,
+  type PullRequestReviewRequest,
+} from "@bb-plugins/review-request";
 import { makeTask, rpcInput } from "../../test-fixtures.js";
 
 if (!window.matchMedia) {
@@ -16,6 +21,10 @@ if (!window.matchMedia) {
     dispatchEvent: () => false,
   });
 }
+
+// bb's own toasts: the host provides sonner to plugin apps.
+const toast = vi.hoisted(() => vi.fn());
+vi.mock("sonner", () => ({ toast }));
 
 const app = await loadPluginApp(() => import("../../app"));
 
@@ -131,6 +140,102 @@ describe("task detail pull request pills", () => {
     expect(link.textContent).toContain("#12");
     fireEvent.click(link);
     expect(slot.navigateCalls).toEqual([]);
+  });
+
+  async function renderPill(liveStatus = "working") {
+    const slot = renderSlot(
+      app.navPanels[0]!,
+      { subPath: "task/TSK-5" },
+      {
+        openUrl: () => true,
+        rpc: detailRpc({
+          listTaskThreads: () => ({
+            taskThreads: [
+              { ...taskThreadRow(THREAD_ROW_ID, "thr_worker000", "Worker"), liveStatus },
+            ],
+          }),
+          statusForThread: (input: unknown) =>
+            statusRows(input, () =>
+              changeRow({ number: 12, title: "Ship the PR pill", state: "open" }),
+            ),
+        }),
+      },
+    );
+    const link = await slot.findByRole("link", { name: /^Pull request #12/ });
+    return { slot, link };
+  }
+
+  /** Source Control's side of the bridge: takes every ask while the test runs. */
+  function sourceControlTakes(answer: boolean) {
+    const asks: PullRequestReviewRequest[] = [];
+    const stop = new AbortController();
+    takePullRequestReviews((ask) => (asks.push(ask), answer), stop.signal);
+    return { asks, stop: () => stop.abort() };
+  }
+
+  it("asks Source Control to open the pull request's Review, then opens its thread", async () => {
+    const taker = sourceControlTakes(true);
+    try {
+      const { slot, link } = await renderPill();
+      expect(link.hasAttribute(REVIEW_REQUEST_ATTRIBUTE)).toBe(true);
+      expect(fireEvent.click(link)).toBe(false);
+      expect(taker.asks).toMatchObject([
+        { url: "https://github.com/acme/bb/pull/12", threadId: "thr_worker000", navigating: true },
+      ]);
+      expect(slot.navigateCalls).toEqual([{ method: "toThread", threadId: "thr_worker000" }]);
+      // Source Control could not open the Review after all, after the click: the pill offers
+      // GitHub in a toast, whose action click may open a window. It opens nothing itself.
+      toast.mockClear();
+      taker.asks[0]!.fallback!();
+      expect(slot.navigateCalls).toEqual([{ method: "toThread", threadId: "thr_worker000" }]);
+      expect(toast).toHaveBeenCalledTimes(1);
+      const [message, options] = toast.mock.calls[0] as [
+        string,
+        { action: { label: string; onClick: () => void } },
+      ];
+      expect(message).toBe("Couldn't open Review for #12");
+      expect(options.action.label).toBe("Open on GitHub");
+      options.action.onClick();
+      expect(slot.navigateCalls).toEqual([
+        { method: "toThread", threadId: "thr_worker000" },
+        { method: "openUrl", url: "https://github.com/acme/bb/pull/12" },
+      ]);
+    } finally {
+      taker.stop();
+    }
+  });
+
+  it("leaves an archived thread's pill to GitHub without asking", async () => {
+    const taker = sourceControlTakes(true);
+    try {
+      const { slot, link } = await renderPill("archived");
+      expect(fireEvent.click(link)).toBe(true);
+      expect(taker.asks).toEqual([]);
+      expect(slot.navigateCalls).toEqual([]);
+    } finally {
+      taker.stop();
+    }
+  });
+
+  it("leaves the link to GitHub when Source Control doesn't take the ask, and on modified clicks", async () => {
+    const taker = sourceControlTakes(false);
+    try {
+      const { slot, link } = await renderPill();
+      expect(fireEvent.click(link)).toBe(true);
+      expect(taker.asks).toHaveLength(1);
+      taker.stop();
+      const always = sourceControlTakes(true);
+      try {
+        expect(fireEvent.click(link, { metaKey: true })).toBe(true);
+        expect(fireEvent.click(link, { button: 1 })).toBe(true);
+        expect(always.asks).toEqual([]);
+      } finally {
+        always.stop();
+      }
+      expect(slot.navigateCalls).toEqual([]);
+    } finally {
+      taker.stop();
+    }
   });
 
   it("marks threads whose PR read failed and stays quiet for threads without one", async () => {

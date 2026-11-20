@@ -74,6 +74,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@bb-plugins/review-request": "workspace:*",
     "@bb-plugins/ui": "workspace:*",
     "@get-bb/plugin-sdk": "0.6.132",
     "@pierre/diffs": "^1.2.9",

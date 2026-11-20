@@ -50,9 +50,11 @@ export interface UiRuntime {
   /**
    * Runs Set, OpenUrl and Copy actions in order; failures are reported to
    * the user, never thrown. Send actions are answers: the control holding
-   * them stages them (useAnswers), so they are skipped here.
+   * them stages them (useAnswers), so they are skipped here. `plain: false`
+   * says the press was a modified or middle click, which keeps a link on the
+   * web; otherwise the block reads it from the click itself.
    */
-  run(actions: readonly Action[]): Promise<void>;
+  run(actions: readonly Action[], options?: { readonly plain?: boolean }): Promise<void>;
   /** Opens a workspace file, at `line` when given; null where the surface has no file viewer. */
   openFile: ((path: string, line?: number) => boolean | Promise<boolean>) | null;
   /**
