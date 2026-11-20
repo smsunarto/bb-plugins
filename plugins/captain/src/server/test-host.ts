@@ -82,7 +82,9 @@ export type DelegateMode =
   | "hang"
   /** Spawns, never attaches, never answers. */
   | "hang-unattached"
-  | "refuse";
+  | "refuse"
+  /** A Tasks from before `senderThreadId`: its strict schema refuses input that carries one. */
+  | "no-sender";
 
 const ULID = (n: number) => `01J${String(n).padStart(23, "0")}`;
 
@@ -230,6 +232,11 @@ export async function captainHost(options: FakeOptions = {}) {
     const preset = tasks.presets.find((entry) => entry.id === input["presetId"]);
     if (preset === undefined) throw new Error("preset not found");
     if (tasks.delegateMode === "refuse") throw new Error("spawn refused: model not available");
+    if (tasks.delegateMode === "no-sender" && "senderThreadId" in input) {
+      throw Object.assign(new Error("HTTP 400: rpc input validation failed"), {
+        code: "invalid_input",
+      });
+    }
     const number = ++serial;
     const thread = withListFields(
       makeThreadResponse({
