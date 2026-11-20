@@ -219,14 +219,15 @@ export const captainContract = defineRpcContract({
   },
   /**
    * Each live Captain's sidebar icon, for a thread list's rows: one batched
-   * read over the rows' thread ids. A thread that is not a live Captain has no
-   * entry, so a list keeps its own lead for it.
+   * read over the rows' thread ids. Every key gets an entry, null for a thread
+   * that is not a live Captain (an archived one, or any other), so the list
+   * keeps its own lead for that row. bb fails a keyed read that omits a key.
    */
   icons: {
     experimental_description:
-      "Read the sidebar icon of each thread id that is a live Captain: its default glyph, a bb icon name, or an image data URL; other threads have no entry.",
+      "Read the sidebar icon of each thread id: a live Captain's default glyph, bb icon name, or image data URL; null for any other thread.",
     input: z.object({ keys: z.array(z.string().min(1).max(200)).max(500) }).strict(),
-    output: z.record(z.string(), captainIconSchema),
+    output: z.record(z.string(), captainIconSchema.nullable()),
     keyTags: (captainId) => [iconTag(captainId)],
   },
   /** Every live Captain with its name and icon, for the icon setter in settings. */

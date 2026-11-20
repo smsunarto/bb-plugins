@@ -625,6 +625,9 @@ export async function captainHost(options: FakeOptions = {}) {
   let current = host;
   /** Every `bb.log` line of the current plugin instance. */
   const logs = () => current.harness.inspection.logEntries;
+  /** Call an RPC on the current plugin instance, the reloaded one after `reload`. */
+  const callRpc = (method: string, input: unknown) =>
+    current.harness.behavior.callRpc(method, input);
 
   /** Add a thread to the fake bb, such as a crew child of a Captain. */
   function addThread(overrides: Partial<Thread> & { id: string }): Thread {
@@ -709,6 +712,7 @@ export async function captainHost(options: FakeOptions = {}) {
     queued,
     released,
     logs,
+    callRpc,
     addThread,
     updateThread,
     addTask,

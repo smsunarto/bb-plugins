@@ -1,9 +1,9 @@
 /**
  * Captain icons: the glyph or picture each Captain shows in the sidebar, in
- * Captain's settings. An icon name is one of bb's built-in icons (bb ships a
- * fixed set and exposes no list of it, so the row previews the typed name); an
- * uploaded picture is
- * scaled down here so the stored image stays small. Every edit saves at once.
+ * Captain's settings. An icon name must be one of bb's built-in icons: bb
+ * gives plugins no list of them, so the row draws the typed name and reads
+ * back which icon bb drew. A picture, SVG included, is drawn onto a 96 px
+ * canvas here and stored as a small raster. Every edit saves at once.
  */
 import {
   experimental_Icon as Icon,
@@ -14,6 +14,7 @@ import { useRef, useState, type ChangeEvent, type SyntheticEvent } from "react";
 import {
   DEFAULT_ICON_GLYPH,
   ICON_IMAGE_MAX_BYTES,
+  ICON_IMAGE_SIDE,
   normalizeIconName,
   type CaptainIcon,
   type IconChoice,
@@ -24,13 +25,11 @@ import { Input } from "./components/ui/input.tsx";
 import { cn } from "./lib/utils.ts";
 
 const NO_INPUT = {};
-/** Uploaded pictures are drawn at this many pixels a side: twice a sidebar row's 2x size. */
-const IMAGE_SIDE = 96;
 /** A phone or touch screen gets 44px targets, Apple's minimum. */
 const TOUCH_ROW = "max-md:min-h-11 pointer-coarse:min-h-11";
-/** bb's own glyph for an icon name it does not have. */
-const UNKNOWN_ICON = "CircleQuestion";
 const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,image/svg+xml";
+/** bb's own glyph for a question, drawn for a name bb has no icon by. */
+const UNKNOWN_ICON = "CircleQuestion";
 
 export function CaptainIconSettings() {
   const list = useRpcQuery({ contract: captainContract, method: "captainIcons", input: NO_INPUT });
@@ -40,7 +39,17 @@ export function CaptainIconSettings() {
         {list.error === null ? (
           <div className="h-12 animate-pulse rounded-md bg-muted" />
         ) : (
-          <p className="text-sm text-destructive">Captains not loaded: {list.error.message}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm text-destructive">Captains not loaded: {list.error.message}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              className={TOUCH_ROW}
+              onClick={() => void list.refetch()}
+            >
+              Retry
+            </Button>
+          </div>
         )}
       </div>
     );
@@ -54,7 +63,7 @@ export function CaptainIconSettings() {
       {list.data.captains.length === 0 ? (
         <p className="text-sm text-muted-foreground">No live Captains yet.</p>
       ) : (
-        <ul className="@container flex flex-col rounded-md border">
+        <ul className="flex flex-col rounded-md border">
           {list.data.captains.map((captain) => (
             <CaptainIconRow key={captain.threadId} {...captain} />
           ))}
@@ -84,22 +93,36 @@ function CaptainIconRow({
       }));
     },
   });
-  const [typed, setTyped] = useState(icon.kind === "icon" ? icon.name : "");
+  // What the user is typing; null shows the stored name, so a change made
+  // elsewhere, such as `bb captain icon`, shows here and is never written back.
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? (icon.kind === "icon" ? icon.name : "");
   const [problem, setProblem] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const preview = useRef<HTMLSpanElement>(null);
   const write = (choice: IconChoice) => {
     setProblem(null);
+    setNote(null);
+    setDraft(null);
     save.mutate({ captainId: threadId, icon: choice }).catch(() => {});
   };
   const submit = (event: SyntheticEvent) => {
     event.preventDefault();
-    const iconName = normalizeIconName(typed);
+    const iconName = normalizeIconName(value);
     if (iconName === null) {
       setProblem("Type an icon name such as Star.");
       return;
     }
-    setTyped(iconName);
+    // bb marks the icon it drew with its name; the question mark means it has none by this one.
+    const drawn = preview.current?.querySelector("[data-icon]")?.getAttribute("data-icon");
+    if (typeof drawn === "string" && drawn !== iconName) {
+      setProblem(`Unknown icon: bb has no icon named ${iconName}.`);
+      return;
+    }
     write({ kind: "icon", name: iconName });
+    if (typeof drawn !== "string")
+      setNote(`${iconName} was saved without a check against bb's icon set.`);
   };
   const upload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -107,140 +130,190 @@ function CaptainIconRow({
     if (file === undefined) return;
     try {
       write({ kind: "image", src: await iconImage(file) });
-      setTyped("");
     } catch (error) {
       setProblem((error as Error).message);
     }
   };
   const error = problem ?? (save.error === null ? null : `Not saved: ${save.error.message}`);
+  const typedName = normalizeIconName(value);
 
   return (
     <li className="flex flex-col gap-1 border-t px-3 py-2 first:border-t-0">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="flex min-w-0 flex-1 basis-40 items-center gap-2">
-          <CaptainIconGlyph icon={icon} className="size-4 shrink-0" />
+        <span className="flex min-w-0 flex-1 basis-48 items-center gap-2" title={name}>
+          <StoredIcon icon={icon} />
           <span className="truncate text-sm font-medium">{name}</span>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {icon.kind === "default" ? "default" : icon.kind === "icon" ? icon.name : "image"}
-          </span>
+          <span className="shrink-0 text-xs text-muted-foreground">{iconLabel(icon)}</span>
         </span>
         <form className="flex min-w-0 flex-wrap items-center gap-2" onSubmit={submit}>
-          {/* What the typed name draws; bb's question mark when it has no icon by that name. */}
-          {typed.trim() === "" ? (
-            <span className="size-4 shrink-0" aria-hidden />
-          ) : (
-            <Icon
-              name={normalizeIconName(typed) ?? UNKNOWN_ICON}
-              fallback={UNKNOWN_ICON}
-              className="size-4 shrink-0 text-muted-foreground"
-              aria-hidden
+          <span className="flex min-w-0 items-center gap-2">
+            {/* The typed name as bb draws it, read back on save. */}
+            <span ref={preview} className="flex size-4 shrink-0" aria-hidden>
+              {value.trim() === "" ? null : (
+                <Icon
+                  name={typedName ?? UNKNOWN_ICON}
+                  fallback={UNKNOWN_ICON}
+                  className="size-4 text-muted-foreground"
+                  aria-hidden
+                />
+              )}
+            </span>
+            <Input
+              value={value}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Star"
+              aria-label={`Icon name for ${name}`}
+              className={cn("h-8 w-36 min-w-0", TOUCH_ROW)}
             />
-          )}
-          <Input
-            value={typed}
-            onChange={(event) => setTyped(event.target.value)}
-            placeholder="Star"
-            aria-label={`Icon name for ${name}`}
-            className={cn("h-8 w-36 min-w-0", TOUCH_ROW)}
-          />
-          <Button type="submit" variant="outline" size="sm" className={TOUCH_ROW}>
-            Set icon
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className={TOUCH_ROW}
-            onClick={() => fileInput.current?.click()}
-          >
-            <Icon name="FolderOpen" aria-hidden />
-            Upload image
-          </Button>
-          <input
-            ref={fileInput}
-            type="file"
-            accept={ACCEPT}
-            className="hidden"
-            aria-label={`Image for ${name}`}
-            onChange={(event) => void upload(event)}
-          />
-          {icon.kind === "default" ? null : (
+            <Button type="submit" variant="outline" size="sm" className={TOUCH_ROW}>
+              Set icon
+            </Button>
+          </span>
+          <span className="flex items-center gap-2">
             <Button
               type="button"
-              variant="ghost"
+              variant="outline"
               size="sm"
               className={TOUCH_ROW}
-              onClick={() => {
-                setTyped("");
-                write(null);
-              }}
+              onClick={() => fileInput.current?.click()}
             >
-              Use default
+              <Icon name="FolderOpen" aria-hidden />
+              Upload image
             </Button>
-          )}
+            <input
+              ref={fileInput}
+              type="file"
+              accept={ACCEPT}
+              className="hidden"
+              aria-label={`Image for ${name}`}
+              onChange={(event) => void upload(event)}
+            />
+            {icon.kind === "default" ? null : (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className={TOUCH_ROW}
+                onClick={() => write(null)}
+              >
+                Use default
+              </Button>
+            )}
+          </span>
         </form>
       </div>
       {error === null ? null : <p className="text-xs text-destructive">{error}</p>}
+      {note === null || error !== null ? null : (
+        <p className="text-xs text-muted-foreground">{note}</p>
+      )}
     </li>
   );
 }
 
-/** A Captain's icon as the sidebar draws it. */
-export function CaptainIconGlyph({ icon, className }: { icon: CaptainIcon; className?: string }) {
+function iconLabel(icon: CaptainIcon): string {
+  if (icon.kind === "icon") return icon.name;
+  return icon.kind;
+}
+
+/** The row's stored icon at settings size; a name bb lacks draws the default glyph, as in the sidebar. */
+function StoredIcon({ icon }: { icon: CaptainIcon }) {
   if (icon.kind === "image") {
     return (
-      <img src={icon.src} alt="" aria-hidden className={cn("rounded-sm object-cover", className)} />
+      <img src={icon.src} alt="" aria-hidden className="size-4 shrink-0 rounded-sm object-cover" />
     );
   }
   return (
     <Icon
       name={icon.kind === "icon" ? icon.name : DEFAULT_ICON_GLYPH}
       fallback={DEFAULT_ICON_GLYPH}
-      className={className}
+      className="size-4 shrink-0"
       aria-hidden
     />
   );
 }
 
 /**
- * The uploaded file as a data URL Captain accepts. An SVG is kept as drawn;
- * any other picture is cropped square and scaled to `IMAGE_SIDE` as a PNG.
+ * The uploaded file as a data URL Captain accepts: cropped to its centre
+ * square, drawn at `ICON_IMAGE_SIDE` px, and encoded as the smallest of PNG,
+ * WebP and JPEG that fits `ICON_IMAGE_MAX_BYTES`. An SVG is drawn the same
+ * way, so only a raster is stored.
  */
 async function iconImage(file: File): Promise<string> {
-  if (file.type === "image/svg+xml") {
-    if (file.size > ICON_IMAGE_MAX_BYTES) throw new Error("That SVG is over 128 KB.");
-    return readDataUrl(file);
-  }
-  let bitmap: ImageBitmap;
-  try {
-    bitmap = await createImageBitmap(file);
-  } catch {
-    throw new Error("That file is not an image this browser can read.");
-  }
-  const side = Math.min(bitmap.width, bitmap.height);
+  const picture = await loadPicture(file);
+  const width = picture.width || ICON_IMAGE_SIDE;
+  const height = picture.height || ICON_IMAGE_SIDE;
+  const side = Math.min(width, height);
   const canvas = document.createElement("canvas");
-  canvas.width = IMAGE_SIDE;
-  canvas.height = IMAGE_SIDE;
+  canvas.width = ICON_IMAGE_SIDE;
+  canvas.height = ICON_IMAGE_SIDE;
   const context = canvas.getContext("2d");
   if (context === null) throw new Error("This browser cannot scale the image.");
   context.drawImage(
-    bitmap,
-    (bitmap.width - side) / 2,
-    (bitmap.height - side) / 2,
+    picture.source,
+    (width - side) / 2,
+    (height - side) / 2,
     side,
     side,
     0,
     0,
-    IMAGE_SIDE,
-    IMAGE_SIDE,
+    ICON_IMAGE_SIDE,
+    ICON_IMAGE_SIDE,
   );
-  bitmap.close();
-  return canvas.toDataURL("image/png");
+  picture.release();
+  for (const [type, quality] of [
+    ["image/png", undefined],
+    ["image/webp", 0.9],
+    ["image/webp", 0.75],
+    ["image/jpeg", 0.8],
+  ] as const) {
+    const url = canvas.toDataURL(type, quality);
+    // A browser that can't encode a type returns PNG; the length check still holds.
+    if (url.startsWith(`data:${type};`) && dataUrlBytes(url) <= ICON_IMAGE_MAX_BYTES) return url;
+  }
+  throw new Error("That picture is too detailed to fit 16 KB at 96 px; try a simpler one.");
 }
 
-async function readDataUrl(file: File): Promise<string> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return `data:${file.type};base64,${btoa(binary)}`;
+type Picture = {
+  source: CanvasImageSource;
+  width: number;
+  height: number;
+  release: () => void;
+};
+
+/** Decode a raster with `createImageBitmap`, and an SVG through an `<img>`, which can draw one. */
+async function loadPicture(file: File): Promise<Picture> {
+  if (file.type !== "image/svg+xml") {
+    try {
+      const bitmap = await createImageBitmap(file);
+      return {
+        source: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        release: () => bitmap.close(),
+      };
+    } catch {
+      throw new Error("That file is not an image this browser can read.");
+    }
+  }
+  const url = URL.createObjectURL(file);
+  const image = new Image();
+  image.src = url;
+  try {
+    await image.decode();
+  } catch {
+    URL.revokeObjectURL(url);
+    throw new Error("That SVG could not be drawn.");
+  }
+  return {
+    source: image,
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+    release: () => URL.revokeObjectURL(url),
+  };
+}
+
+/** A base64 data URL's decoded size in bytes. */
+function dataUrlBytes(url: string): number {
+  const body = url.slice(url.indexOf(",") + 1);
+  return Math.floor((body.length * 3) / 4) - (body.endsWith("==") ? 2 : body.endsWith("=") ? 1 : 0);
 }

@@ -45,9 +45,12 @@ Rerunning `new` with a live Captain's name converges that Captain instead of sta
 
 ## Sidebar icon
 
-The thread is titled with the Captain's name alone; its sidebar icon marks it as a Captain. A Captain shows the declared `captain/captain` glyph until it gets its own icon: a name from bb's built-in icon set (Hugeicons-style names such as `Star`, `Target` or `Brain`; a name bb lacks draws the default glyph), or a PNG, JPEG, GIF, WebP or SVG of at most 128 KB. Set it with `bb captain icon` or in Captain settings (Captain icons), which scales an upload down to 96 px. `--clear`, or Use default, goes back to the glyph. It is stored in `data.db`, so it survives a reload and a restart.
+The thread is titled with the Captain's name alone; its sidebar icon marks it as a Captain. A Captain shows the declared `captain/captain` glyph until it gets its own icon: a name from bb's built-in icon set (Hugeicons-style names such as `Star`, `Target` or `Brain`), or a picture. Set it with `bb captain icon` or in Captain settings (Captain icons). `--clear`, or Use default, goes back to the glyph. It is stored in `data.db`, so it survives a reload and a restart; archiving a Captain deletes it.
 
-gtd-sidebar reads it through the keyed `icons` RPC, one batched read over the rows bb's Captain started, and draws it in place of the machine globe. A thread that is not a live Captain, such as crew, gets no entry and keeps its globe; so does every row while Captain is disabled or the read fails.
+- **Names:** bb gives plugins no list of its icons. Settings draws the typed name and refuses one bb has no icon for ("Unknown icon"). The CLI stores a name unchecked and says so; a name bb lacks draws the default glyph.
+- **Pictures:** only PNG, JPEG, GIF or WebP are stored, at most 96x96 px and 16 KB; the sidebar crops a non-square picture to its centre square. Settings crops and scales any upload, SVG included, to a 96 px raster. The CLI takes a file within those limits and refuses SVG, since a small hostile SVG can stall every client that draws it.
+
+gtd-sidebar reads it through the keyed `icons` RPC, one batched read over the rows the Captain plugin started. Every key gets an entry, null for a thread that is not a live Captain (an archived one), so that row keeps its globe. A row holds an empty lead while the read loads, and every row keeps its globe while Captain is disabled or the read fails.
 
 Captains started before this were titled "<name> Captain". On plugin start each one still titled exactly that is renamed to its name, once; a title the user changed is left alone.
 

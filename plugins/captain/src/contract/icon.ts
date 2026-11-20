@@ -8,19 +8,30 @@ import { z } from "zod";
 /** The glyph a Captain with no icon of its own shows: `bb.branding.experimental_icons.captain`. */
 export const DEFAULT_ICON_GLYPH = "captain/captain";
 
-/** An image's largest decoded size; the settings upload scales a picture down to fit. */
-export const ICON_IMAGE_MAX_BYTES = 128 * 1024;
+/**
+ * An image's largest side in pixels. The sidebar draws 12 px and settings
+ * 16 px, so 96 covers a 3x screen with room; settings scales an upload to it.
+ */
+export const ICON_IMAGE_SIDE = 96;
 
-/** The image types an `<img>` draws from a data URL, by the bytes that start each one. */
-export const ICON_IMAGE_TYPES = ["png", "jpeg", "gif", "webp", "svg+xml"] as const;
+/** An image's largest size in bytes: a 96 px picture fits, and every read stays small. */
+export const ICON_IMAGE_MAX_BYTES = 16 * 1024;
+
+/**
+ * The raster types Captain stores, by the bytes that start each one. No SVG:
+ * a small hostile SVG can stall every client that draws it, so settings
+ * rasterizes one and the CLI refuses it.
+ */
+const ICON_IMAGE_TYPES = ["png", "jpeg", "gif", "webp"] as const;
+export type IconImageType = (typeof ICON_IMAGE_TYPES)[number];
 
 /** A name from bb's built-in icon set, in its PascalCase: `Star`, `AiBrain01`. */
-export const iconNameSchema = z.string().regex(/^[A-Z][A-Za-z0-9]{0,63}$/u);
+const iconNameSchema = z.string().regex(/^[A-Z][A-Za-z0-9]{0,63}$/u);
 
 const imageSrcSchema = z
   .string()
-  .max(ICON_IMAGE_MAX_BYTES * 2)
-  .regex(/^data:image\/(png|jpeg|gif|webp|svg\+xml);base64,[A-Za-z0-9+/]+={0,2}$/u);
+  .max(Math.ceil(ICON_IMAGE_MAX_BYTES / 3) * 4 + 32)
+  .regex(/^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/u);
 
 export const captainIconSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("default") }).strict(),
@@ -40,13 +51,16 @@ export type IconChoice = z.infer<typeof iconChoiceSchema>;
 
 /**
  * Read a typed icon name in bb's PascalCase: `ai-brain-01`, `ai_brain_01` and
- * `aiBrain01` all give `AiBrain01`. Null when it cannot be one.
+ * `aiBrain01` all give `AiBrain01`, and `SHIP-WHEEL` gives `ShipWheel`. Null
+ * when it cannot be one.
  */
 export function normalizeIconName(raw: string): string | null {
   const words = raw
     .trim()
     .split(/[-_\s]+/u)
-    .filter(Boolean);
+    .filter(Boolean)
+    // An all-capitals word is shouting, not PascalCase.
+    .map((word) => (word.length > 1 && word === word.toUpperCase() ? word.toLowerCase() : word));
   const name = words.map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join("");
   return iconNameSchema.safeParse(name).success ? name : null;
 }

@@ -1,13 +1,10 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
+import { isNotFound } from "./audience.ts";
 import { NOTICE, type Store } from "./store.ts";
 
 /** The title Captains were started with before their sidebar icon marked them. */
-export function suffixedTitle(name: string): string {
+function suffixedTitle(name: string): string {
   return `${name} Captain`;
-}
-
-function isNotFound(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "status" in error && error.status === 404;
 }
 
 /**

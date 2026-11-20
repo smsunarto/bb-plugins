@@ -58,8 +58,9 @@ export function FadingText({ text, className }: { text: string; className?: stri
  * group header above the row, never on the title line.
  *
  * A live Captain leads with its own icon instead, local or remote, read from
- * the Captain plugin. Until that read lands, or when Captain is disabled or the
- * read fails, the row keeps its globe.
+ * the Captain plugin. While that read loads the row holds an empty lead; when
+ * Captain is disabled, the read fails, or the thread is not a live Captain
+ * (such as an archived one), the row keeps its globe.
  */
 export function HostLead({
   thread,
@@ -81,10 +82,14 @@ function GlobeLead({ host }: { host: PluginSidebarThread["host"] }) {
 }
 
 function CaptainLead({ thread }: { thread: Pick<PluginSidebarThread, "id" | "host"> }) {
-  const icon = useCaptainIcon(thread.id);
+  const lead = useCaptainIcon(thread.id);
   const remote = useRemoteMachine(thread.host);
   const colorOf = useMachineColors();
-  if (icon === null) return <GlobeLead host={thread.host} />;
+  // Hold the lead's box while the read loads, so the title doesn't move when it lands.
+  if (lead.state === "loading")
+    return <span className="gtd-host-lead" aria-hidden="true" data-captain-icon="loading" />;
+  if (lead.state === "none") return <GlobeLead host={thread.host} />;
+  const { icon } = lead;
   const host = remote ? thread.host : null;
   return (
     <span

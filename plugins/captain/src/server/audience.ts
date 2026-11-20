@@ -20,7 +20,8 @@ function warning(threadId: string, error: unknown): string {
   return `${threadId} not marked person-facing for GenUI: ${(error as Error).message}`;
 }
 
-function isNotFound(error: unknown): boolean {
+/** A bb SDK error for a thread that no longer exists. */
+export function isNotFound(error: unknown): boolean {
   return typeof error === "object" && error !== null && "status" in error && error.status === 404;
 }
 

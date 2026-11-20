@@ -8,12 +8,12 @@ import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
 const VALUE = {
   name: "icon",
   description:
-    "A name from bb's icon set such as Star or ai-brain-01, or the path of a PNG, JPEG, GIF, WebP or SVG image on this machine",
+    "A name from bb's icon set such as Star or ai-brain-01, or the path of a PNG, JPEG, GIF or WebP of at most 96x96 px and 16 KB on this machine",
 } as const;
 
-/** bb publishes no list of its icon names, so a name is stored as typed. */
-const UNKNOWN_NAME_NOTE =
-  "note: a name bb's icon set lacks shows the default Captain icon; Captain settings previews a name as you type it";
+/** bb publishes no list of its icon names to plugins, so a name is stored unchecked. */
+const UNCHECKED_NAME_NOTE =
+  "note: the name was not checked against bb's icon set; a name bb lacks shows the default Captain icon. Captain settings checks a name before it saves it";
 
 /** A path, not an icon name: it has a separator, starts with a dot, or ends in a file extension. */
 const PATH_LIKE = /[/\\]|^\.|\.[A-Za-z0-9]{2,5}$/u;
@@ -56,7 +56,7 @@ export function iconCommand(deps: CommandDeps) {
         return render(
           [iconItem(captain.threadId, "set", setCaptainIcon(deps, captain.threadId, choice))],
           json,
-          choice?.kind === "icon" ? [UNKNOWN_NAME_NOTE] : [],
+          choice?.kind === "icon" ? [UNCHECKED_NAME_NOTE] : [],
         );
       });
     },
@@ -68,7 +68,13 @@ async function choiceFor(
   ctx: PluginCliContext,
   value: string,
 ): Promise<IconChoice> {
-  if (!PATH_LIKE.test(value)) {
+  // A bare word is a name unless the working directory holds a file by it.
+  const file = PATH_LIKE.test(value)
+    ? await readCallerBytes(deps.bb, ctx, value)
+    : ctx.cwd === undefined
+      ? null
+      : await readCallerBytes(deps.bb, ctx, value).catch(() => null);
+  if (file === null) {
     const name = normalizeIconName(value);
     if (name === null) {
       throw new Refusal([
@@ -80,7 +86,6 @@ async function choiceFor(
     }
     return { kind: "icon", name };
   }
-  const file = await readCallerBytes(deps.bb, ctx, value);
   try {
     return { kind: "image", src: imageDataUrl(file.bytes) };
   } catch (error) {
@@ -88,7 +93,7 @@ async function choiceFor(
     throw new Refusal([
       {
         reason: `${file.path}: ${error.message}`,
-        fix: "pass a smaller PNG, JPEG, GIF, WebP or SVG",
+        fix: "pass a PNG, JPEG, GIF or WebP of at most 96x96 px and 16 KB, or upload the picture in Captain settings, which scales it",
       },
     ]);
   }

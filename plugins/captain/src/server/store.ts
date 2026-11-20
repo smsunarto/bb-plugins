@@ -315,6 +315,9 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
   const selectCaptain = db.prepare<[string], CaptainRecord>(
     "SELECT * FROM captains WHERE thread_id = ?",
   );
+  const selectIcon = db.prepare<[string], { kind: "icon" | "image"; value: string }>(
+    "SELECT kind, value FROM captain_icons WHERE thread_id = ?",
+  );
   const selectCrewRole = db.prepare<[string], CrewRoleRecord>(
     "SELECT * FROM crew_roles WHERE thread_id = ?",
   );
@@ -397,10 +400,14 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         for (const repo of captain.repos) putRepo(captain.threadId, repo);
       })();
     },
+    /** Archive a Captain; its icon goes with it, since only live Captains draw one. */
     archiveCaptain(threadId: string, at: number): void {
-      db.prepare(
-        "UPDATE captains SET archived_at = ? WHERE thread_id = ? AND archived_at IS NULL",
-      ).run(at, threadId);
+      db.transaction(() => {
+        db.prepare(
+          "UPDATE captains SET archived_at = ? WHERE thread_id = ? AND archived_at IS NULL",
+        ).run(at, threadId);
+        db.prepare("DELETE FROM captain_icons WHERE thread_id = ?").run(threadId);
+      })();
     },
     putRepo(captainId: string, repo: Repo): void {
       putRepo(captainId, repo);
@@ -862,11 +869,7 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
     },
     /** The Captain's own icon; the default glyph when it has none. */
     captainIcon(threadId: string): CaptainIcon {
-      const row = db
-        .prepare<[string], { kind: "icon" | "image"; value: string }>(
-          "SELECT kind, value FROM captain_icons WHERE thread_id = ?",
-        )
-        .get(threadId);
+      const row = selectIcon.get(threadId);
       if (row === undefined) return { kind: "default" };
       return row.kind === "icon"
         ? { kind: "icon", name: row.value }

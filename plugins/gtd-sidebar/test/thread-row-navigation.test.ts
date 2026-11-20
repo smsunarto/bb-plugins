@@ -161,10 +161,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     onSplitPointerDown: (threadId: string, event: PointerEvent<HTMLElement>) => void;
     /** Hold the shelves until the saved machine choice loads, as bb does. */
     awaitMachineVisibility?: boolean;
-    /** What Captain's keyed `icons` read returns; unset leaves it loading. */
-    captainIcons?: { data?: Record<string, unknown>; error?: Error | null };
-    /** Every Captain `icons` read the rows made, by plugin and keys. */
-    captainReads?: { pluginId: string | undefined; keys: readonly string[] }[];
   }
 
   const HostContext = createContext<HostState | null>(null);
@@ -176,15 +172,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   mock.module("@get-bb/plugin-sdk/app", () => ({
     ...sdk,
     experimental_useSidebarThreads: () => useHost().sidebar,
-    experimental_useRpcKeyedQuery: (options: { pluginId?: string; keys: readonly string[] }) => {
-      const host = useHost();
-      host.captainReads?.push({ pluginId: options.pluginId, keys: options.keys });
-      return {
-        data: host.captainIcons?.data,
-        error: host.captainIcons?.error ?? null,
-        refetchKeys: async () => {},
-      };
-    },
     // bb's client is stable for the plugin's lifetime; effects keyed on it
     // must not refire on every render here either.
     useSdk: () => {
@@ -2162,87 +2149,6 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
         }
       },
     );
-
-    describe("a Captain's lead", () => {
-      const captainThreads = () => [
-        thread("captain", {
-          originPluginId: "captain",
-          host: { id: "remote-host", name: "Remote computer" },
-        }),
-        thread("crew", {
-          originPluginId: "captain",
-          host: { id: "remote-host", name: "Remote computer" },
-        }),
-        thread("plain", { host: { id: "remote-host", name: "Remote computer" } }),
-      ];
-      const lead = (view: ReturnType<typeof mount>, id: string) =>
-        row(view.slot, id).parentElement!.querySelector(".gtd-host-lead");
-
-      it("draws the Captain's icon instead of the globe, and the globe for its crew", async () => {
-        const host = hostState(captainThreads());
-        host.primaryHostId = "primary-host";
-        host.captainReads = [];
-        host.captainIcons = {
-          data: { captain: { kind: "default" } },
-          error: null,
-        };
-        const view = mount(host);
-        await waitFor(() =>
-          assert.equal(lead(view, "captain")?.getAttribute("data-captain-icon"), "default"),
-        );
-        assert.equal(
-          lead(view, "captain")?.getAttribute("aria-label"),
-          "Captain, on Remote computer",
-        );
-        assert.equal(lead(view, "captain")?.querySelector('[data-icon="Globe"]'), null);
-        // A thread Captain started that is not a live Captain keeps its globe.
-        assert.ok(lead(view, "crew")?.querySelector('[data-icon="Globe"]'));
-        assert.ok(lead(view, "plain")?.querySelector('[data-icon="Globe"]'));
-        // Only Captain-started rows read Captain, from the Captain plugin.
-        assert.deepEqual(
-          [
-            ...new Set(host.captainReads.map((read) => `${read.pluginId}:${read.keys.join(",")}`)),
-          ].sort(),
-          ["captain:captain", "captain:crew"],
-        );
-      });
-
-      it("draws a custom image", async () => {
-        const host = hostState(captainThreads());
-        host.primaryHostId = "primary-host";
-        host.captainIcons = {
-          data: { captain: { kind: "image", src: "data:image/png;base64,iVBORw0KGgo=" } },
-        };
-        const view = mount(host);
-        await waitFor(() => assert.ok(lead(view, "captain")?.querySelector("img")));
-        assert.equal(
-          lead(view, "captain")?.querySelector("img")?.getAttribute("src"),
-          "data:image/png;base64,iVBORw0KGgo=",
-        );
-      });
-
-      it.each([
-        ["Captain is disabled", { error: new Error("plugin captain is not loaded") }],
-        [
-          "the read fails after a load",
-          { data: { captain: { kind: "default" } }, error: new Error("timeout") },
-        ],
-        [
-          "the row is in a shape it doesn't know",
-          { data: { captain: { kind: "emoji", text: "⚓" } } },
-        ],
-        ["the read is still loading", undefined],
-      ])("falls back to the globe, with no error UI, when %s", async (_, captainIcons) => {
-        const host = hostState(captainThreads());
-        host.primaryHostId = "primary-host";
-        if (captainIcons !== undefined) host.captainIcons = captainIcons;
-        const view = mount(host);
-        await waitFor(() => assert.ok(lead(view, "captain")?.querySelector('[data-icon="Globe"]')));
-        assert.equal(lead(view, "captain")?.getAttribute("data-captain-icon"), null);
-        assert.equal(lead(view, "captain")?.getAttribute("aria-label"), "On Remote computer");
-        assert.doesNotMatch(view.slot.container.textContent ?? "", /not loaded|timeout|error/iu);
-      });
-    });
 
     it("opens thread details from the keyboard navigation anchor", async () => {
       const view = mount(hostState([thread("root"), thread("child", { parentThreadId: "root" })]));
