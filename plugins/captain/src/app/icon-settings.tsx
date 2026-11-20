@@ -39,7 +39,9 @@ export function CaptainIconSettings() {
           <div className="h-12 animate-pulse rounded-md bg-muted" />
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm text-destructive">Captains not loaded: {list.error.message}</p>
+            <p className="text-sm wrap-anywhere text-destructive">
+              Captains not loaded: {list.error.message}
+            </p>
             <Button
               variant="outline"
               size="sm"
@@ -57,7 +59,7 @@ export function CaptainIconSettings() {
     <div className="flex flex-col gap-3" data-bb-plugin="captain" data-bb-plugin-scope-captain="">
       <p className="text-sm text-muted-foreground">
         Type a name from bb's icon set, such as Star, Target or Brain; a question mark means bb has
-        no icon by that name. Or upload a picture. Also <code>bb captain icon</code>.
+        no icon by that name. Or upload a picture; <code>bb captain icon</code> sets names only.
       </p>
       {list.data.captains.length === 0 ? (
         <p className="text-sm text-muted-foreground">No live Captains yet.</p>
