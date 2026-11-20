@@ -1,13 +1,5 @@
 import { SlidingDisclosure } from "./sliding-disclosure";
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -103,10 +95,6 @@ const SIDEBAR_LIFECYCLES = ["active", "archived"] as const;
 
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const GITBUTLER_REFRESH_MS = 30_000;
-const MOBILE_SCROLL_FADE_STYLE: CSSProperties = {
-  maskImage: "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
-  WebkitMaskImage: "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
-};
 
 export function ThreadInbox(props: PluginThreadListProps) {
   const sdk = useSdk();
@@ -127,6 +115,23 @@ export function ThreadInbox(props: PluginThreadListProps) {
       </TooltipProvider>
     </CompactViewportOverrideProvider>
   );
+}
+
+function observeThreadScrollEnd(end: HTMLDivElement | null) {
+  const scroller = end?.parentElement;
+  if (!end || !scroller) return;
+  // A shelf fold or virtualized row can move the end without a scroll event.
+  const observer = new IntersectionObserver(
+    ([entry]) => {
+      if (entry) scroller.toggleAttribute("data-gtd-thread-more-below", !entry.isIntersecting);
+    },
+    { root: scroller },
+  );
+  observer.observe(end);
+  return () => {
+    observer.disconnect();
+    scroller.removeAttribute("data-gtd-thread-more-below");
+  };
 }
 
 function InboxList({
@@ -568,13 +573,8 @@ function InboxList({
             resolveTarget={resolveMenuTarget}
             isCompactViewport={isCompactViewport}
             ref={scrollRef}
-            className={cn(
-              "min-h-0 flex-1 overflow-y-auto px-2",
-              isCompactViewport ? "pb-8" : "pb-2",
-            )}
-            // bb's compact footer overlays the list edge. Fade content into that
-            // surface, while the matching padding lets the final row scroll clear.
-            style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
+            data-gtd-thread-scroll={isCompactViewport ? "compact" : "desktop"}
+            className={cn("min-h-0 flex-1 px-2", !isCompactViewport && "overflow-y-auto pb-2")}
             onFocus={focusedRow.onFocus}
             onBlur={focusedRow.onBlur}
           >
@@ -606,6 +606,9 @@ function InboxList({
                 ) : null,
               )}
             </InboxContent>
+            {isCompactViewport ? (
+              <div ref={observeThreadScrollEnd} data-gtd-thread-scroll-end="" aria-hidden />
+            ) : null}
           </RowMenuArea>
         </div>
         {/* The ghost rides the pointer from document.body, clear of the list's

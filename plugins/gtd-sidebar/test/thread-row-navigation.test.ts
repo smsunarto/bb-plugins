@@ -111,7 +111,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   Object.defineProperty(dom.window.HTMLElement.prototype, "offsetHeight", {
     configurable: true,
     get(this: HTMLElement) {
-      return this.classList.contains("overflow-y-auto") ? layout.viewport : 0;
+      return this.hasAttribute("data-gtd-thread-scroll") ? layout.viewport : 0;
     },
   });
   const jsdomRect = dom.window.Element.prototype.getBoundingClientRect;
@@ -637,6 +637,60 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   afterAll(() => {
     rowBodyRender.mockRestore();
     dom.window.close();
+  });
+
+  it("fades the compact list only while its end is out of view", () => {
+    const OriginalObserver = globalThis.IntersectionObserver;
+    let showEnd: ((visible: boolean) => void) | undefined;
+    globalThis.IntersectionObserver = class extends OriginalObserver {
+      constructor(
+        private readonly notify: IntersectionObserverCallback,
+        private readonly options?: IntersectionObserverInit,
+      ) {
+        super(notify, options);
+      }
+
+      override observe(target: Element) {
+        if (!target.hasAttribute("data-gtd-thread-scroll-end")) return;
+        assert.equal(this.options?.root, target.parentElement);
+        showEnd = (visible) => {
+          const rect = target.getBoundingClientRect();
+          this.notify(
+            [
+              {
+                target,
+                isIntersecting: visible,
+                intersectionRatio: visible ? 1 : 0,
+                boundingClientRect: rect,
+                intersectionRect: rect,
+                rootBounds: rect,
+                time: 0,
+              },
+            ],
+            this,
+          );
+        };
+      }
+    };
+    try {
+      const view = mount(hostState([thread("a")]), { isCompactViewport: true });
+      const list = view.slot.container.querySelector("[data-gtd-thread-scroll]");
+      assert.ok(list && showEnd);
+      const hasFade = () => list.hasAttribute("data-gtd-thread-more-below");
+      showEnd(true);
+      assert.equal(hasFade(), false, "the list fits");
+      showEnd(false);
+      assert.equal(hasFade(), true, "the list extends past the viewport");
+      showEnd(true);
+      assert.equal(hasFade(), false, "the list reaches the end");
+      showEnd(false);
+      assert.equal(hasFade(), true, "scrolling up brings the fade back");
+      view.updateInbox({ isCompactViewport: false });
+      assert.equal(hasFade(), false, "desktop clears the compact fade");
+    } finally {
+      cleanup();
+      globalThis.IntersectionObserver = OriginalObserver;
+    }
   });
 
   describe("unread activity in the status slot", () => {
@@ -3409,7 +3463,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     }
 
     function scrollList(slot: RenderedSlot, top: number) {
-      const scroller = slot.container.querySelector<HTMLElement>(".overflow-y-auto")!;
+      const scroller = slot.container.querySelector<HTMLElement>("[data-gtd-thread-scroll]")!;
       Object.defineProperty(scroller, "scrollTop", { configurable: true, value: top });
       fireEvent.scroll(scroller);
     }
