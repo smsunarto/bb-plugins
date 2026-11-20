@@ -14,7 +14,6 @@ import type { Store } from "./store.ts";
 
 /** Rung 1 is the role's preset as `bb captain new` creates it; rung 2 is Codex. */
 export const DEFAULT_LADDERS: Readonly<Record<LadderRole, readonly Rung[]>> = {
-  plan: defaultLadder("plan", "xhigh"),
   implement: defaultLadder("implement", "high"),
   review: defaultLadder("review", "high"),
 };

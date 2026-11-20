@@ -3,7 +3,7 @@
  * threads get. Every role fact lives here, so adding a role is one entry.
  */
 
-export const ROLES = ["plan", "implement", "review", "merge", "dream"] as const;
+export const ROLES = ["implement", "review", "merge", "dream"] as const;
 export type Role = (typeof ROLES)[number];
 
 /** Roles Captain spawns itself and marks with `pluginMetadata { role }`. */
@@ -33,20 +33,6 @@ const CLAUDE_CODE = "claude-code";
 // Model ids are unverified against the live claude-code catalog; Tasks accepts any
 // string, so a wrong id surfaces only at dispatch (build step 3a).
 export const ROLE_SPECS: Readonly<Record<Role, RoleSpec>> = {
-  plan: {
-    label: "Plan",
-    contract: "roles/plan",
-    skills: [],
-    // Shared checkout; read-only by contract, since presets have no read-only mode.
-    preset: {
-      name: "Plan",
-      providerId: CLAUDE_CODE,
-      modelId: "claude-fable-5-2",
-      reasoningLevel: "xhigh",
-      permissionMode: "full",
-      environmentKind: "project-default",
-    },
-  },
   implement: {
     label: "Implement",
     contract: "roles/implement",

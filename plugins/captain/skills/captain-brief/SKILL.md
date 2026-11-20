@@ -13,7 +13,8 @@ A brief is the task's description. Every role dispatched on the task reads the s
    - **If you need the target branch or the checkout:** `bb tasks project show <KEY>` names the repo's bb project, and `bb project show <id>` its checkout path. Without a branch from the user, the target is the repo's default branch.
 2. Fill every section, including the `Target branch:` and `Remote:` lines. Each done-means item must be something you can check yourself from the commits, tests, PR or a run.
 3. Create the task: `bb tasks create --project <KEY> --title "<title>" --description-file <Drive>/briefs/<slug>.md`. It prints the new key.
-4. Dispatch it: `bb captain dispatch <key> --role Implement`, or `--role Plan` when the work needs splitting first.
+4. Dispatch it: `bb captain dispatch <key> --role Implement`. Implement plans its own work before it builds.
+   - **If the task is research or design only:** still dispatch Implement. Say "no code" in the brief, and name in its Report section where the result goes, such as a file attached to the final comment.
 
 The brief is done when every section is filled and each done-means item names a check.
 

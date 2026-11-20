@@ -423,6 +423,10 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
       const row = selectCrewRole.get(threadId);
       return row === undefined ? null : toCrewRole(row);
     },
+    /** Whether the thread has a crew row, even one whose role no longer parses (a retired role). */
+    hasCrewRow(threadId: string): boolean {
+      return selectCrewRole.get(threadId) !== undefined;
+    },
     /** Every crew row this Captain ever recorded, archived crew included. */
     crewRolesOf(captainId: string): CrewRole[] {
       return db

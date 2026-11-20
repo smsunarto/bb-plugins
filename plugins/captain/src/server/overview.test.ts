@@ -79,7 +79,7 @@ describe("crewThreads", () => {
     host.addTask("BBPLUGINS-2", { title: "Fix the sidebar" });
     host.addTask("BBPLUGINS-3", { title: "Old work" });
     const idle = await dispatch(as, "BBPLUGINS-1");
-    const busy = await dispatch(as, "BBPLUGINS-2", "Plan");
+    const busy = await dispatch(as, "BBPLUGINS-2", "Implement");
     const gone = await dispatch(as, "BBPLUGINS-3");
     host.updateThread(idle, { status: "idle", updatedAt: 9_000 });
     host.updateThread(busy, { status: "active", updatedAt: 2_000 });
@@ -91,7 +91,7 @@ describe("crewThreads", () => {
         status: "active",
         model: "Claude Opus 5.5",
         task: "BBPLUGINS-2",
-        role: "Plan",
+        role: "Implement",
       }),
       expect.objectContaining({ id: idle, status: "idle", task: "BBPLUGINS-1", role: "Implement" }),
     ]);

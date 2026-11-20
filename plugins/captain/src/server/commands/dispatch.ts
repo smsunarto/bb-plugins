@@ -76,8 +76,7 @@ export function dispatchCommand(deps: CommandDeps) {
         repeatable: true,
         split: ",",
         placeholder: "role",
-        description:
-          "Plan, Implement or Review; comma-separate roles that do not depend on each other",
+        description: "Implement or Review; comma-separate roles that do not depend on each other",
       },
       "base-branch": {
         type: "string",
@@ -224,13 +223,19 @@ async function validate(
   const roles: Role[] = [];
   for (const name of roleNames) {
     const role = parseRole(name);
-    if (role === null || !isDispatchable(role)) {
+    if (name.trim().toLowerCase() === "plan") {
+      // Plan was retired: Implement plans its own work before building.
+      blockers.push({
+        reason: "the Plan role is gone; Implement plans before it builds",
+        fix: 'pass --role Implement; for research or design only, say "no code" in the brief',
+      });
+    } else if (role === null || !isDispatchable(role)) {
       blockers.push({
         reason:
           role === null
             ? `no role ${JSON.stringify(name.trim())}`
             : `${ROLE_SPECS[role].label} is not started through dispatch in this version`,
-        fix: "pass --role Plan, Implement or Review",
+        fix: "pass --role Implement or Review",
       });
     } else if (!roles.includes(role)) roles.push(role);
   }
@@ -383,7 +388,7 @@ function rungDetail(choice: RungChoice): string {
  * A role's `requires`. Review needs the task's Implement thread on its own
  * worktree, whose branch becomes Review's base: a shared checkout's branch is
  * `main` or the workspace branch, not the task's. `--base-branch` overrides it.
- * The `bug` triage gate on Plan and Implement arrives with Triage in Phase 5.
+ * The `bug` triage gate on Implement arrives with Triage in Phase 5.
  */
 function requires(
   task: TasksTask,

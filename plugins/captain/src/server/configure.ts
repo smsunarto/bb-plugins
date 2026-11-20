@@ -15,7 +15,7 @@ export type Identity =
 
 export type ConfigureDeps = {
   registry: Registry;
-  store: Pick<Store, "crewRole" | "recordServed">;
+  store: Pick<Store, "crewRole" | "hasCrewRow" | "recordServed">;
   drive: Drive;
   files: InstructionFiles;
   now: () => number;
@@ -43,8 +43,11 @@ export function identify(
     return { kind: "crew", captain: parent, role: metaRole };
   }
   if (parent === null) return { kind: "none" };
+  const recorded = deps.store.crewRole(context.thread.id);
+  // A row whose role was retired keeps its thread off a pending dispatch's role.
   const role =
-    deps.store.crewRole(context.thread.id)?.role ?? deps.registry.pendingRole(parent.threadId);
+    recorded?.role ??
+    (deps.store.hasCrewRow(context.thread.id) ? null : deps.registry.pendingRole(parent.threadId));
   return { kind: "crew", captain: parent, role };
 }
 
