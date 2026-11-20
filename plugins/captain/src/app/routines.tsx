@@ -172,6 +172,9 @@ function draftWords(draft: Draft, now: number): { text: string; problem: boolean
   if ("at" in schedule) {
     if (Number.isNaN(schedule.at)) return { text: "Pick a date and time", problem: true };
     const text = describeSchedule(schedule);
+    // Its own stored time: renaming a one-shot that ran keeps it as it is.
+    if (schedule.at === draft.atMs && schedule.at <= now)
+      return { text: `${text} · already due; pick a new time to run it again`, problem: false };
     return schedule.at <= now
       ? { text: `${text} · that time has passed`, problem: true }
       : { text, problem: false };
@@ -216,7 +219,9 @@ function rowState(routine: RoutineView): {
   problem: boolean;
   enabled: boolean | null;
 } {
-  if (routine.done) return { line: `Ran once · ${whenOf(routine)}`, problem: false, enabled: null };
+  // A one-shot's words start "Once, …"; one that ran reads "Ran once, …".
+  if (routine.done)
+    return { line: whenOf(routine).replace(/^Once/u, "Ran once"), problem: false, enabled: null };
   if (routine.missed)
     return { line: "Missed its one run · give it a new time", problem: true, enabled: null };
   const automation = routine.automation;
