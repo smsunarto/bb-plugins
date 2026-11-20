@@ -21,8 +21,9 @@ async function adoptHost() {
     })) as AdoptResult;
   const options = async (threadId = "thr_side") =>
     (await rpc("adoptOptions", { threadId, open: 1 })) as AdoptOptions;
-  const status = () => host.harness.behavior.runCli(["status", "--all"], { threadId: captainId });
-  return { host, captainId, rpc, adopt, options, status };
+  const cli = (args: string[]) => host.harness.behavior.runCli(args, { threadId: captainId });
+  const status = () => cli(["status", "--all"]);
+  return { host, captainId, rpc, adopt, options, status, cli };
 }
 
 const NEW = { kind: "new", projectKey: "BBPLUGINS", title: "Fix the sidebar flicker" };
@@ -84,6 +85,27 @@ describe("adoptOptions", () => {
     ]);
   });
 
+  for (const preset of ["Implement", "Hotfix"]) {
+    test(`a Captain's child live on a task with no role record is refused onto another task (${preset} preset)`, async () => {
+      const { host, captainId, rpc, adopt, options } = await adoptHost();
+      host.tasks.tasks[1]!.status = "todo";
+      host.updateThread("thr_side", { parentThreadId: captainId });
+      host.attach(host.tasks.tasks[0]!.id, "thr_side", preset);
+      const crew = "thr_side is already crew of the Plugins Captain";
+      expect(await rpc("crewOf", { keys: ["thr_side"] })).toEqual({ thr_side: captainId });
+      expect((await options()).captains[0]?.blockers).toEqual([
+        expect.objectContaining({ reason: crew }),
+      ]);
+      const result = await adopt({
+        role: "review",
+        task: { kind: "existing", key: "BBPLUGINS-2" },
+      });
+      expect(reasons(result)).toEqual([crew]);
+      expect(host.tasks.taskThreads).toHaveLength(1);
+      expect(host.server.store.crewRole("thr_side")).toBeNull();
+    });
+  }
+
   test("a fork's refusal names no placeholder task or role", async () => {
     const { host, options } = await adoptHost();
     host.addThread({ id: "thr_fork", originKind: "fork" });
@@ -102,6 +124,30 @@ describe("crewOf", () => {
       thr_other: null,
       [captainId]: null,
     });
+  });
+  test("a read at the parent-change event of dispatch --thread already names the Captain", async () => {
+    const { host, captainId, rpc } = await adoptHost();
+    // bb's only event for this adopt is the parent change, made before Tasks'
+    // attach: emit it there and read as the menu's refetch would.
+    const calls = host.tasks.calls;
+    const push = calls.push.bind(calls);
+    let read: Promise<unknown> = Promise.resolve();
+    calls.push = (...entries) => {
+      if (entries.some((entry) => entry.method === "taskThreadsAttach")) {
+        read = host.harness.behavior
+          .emitThreadEvent("experimental_thread.parentChanged", {
+            thread: { ...(host.threads.get("thr_side") as object) },
+          } as never)
+          .then(() => rpc("crewOf", { keys: ["thr_side"] }));
+      }
+      return push(...entries);
+    };
+    const result = await host.harness.behavior.runCli(
+      ["dispatch", "BBPLUGINS-1", "--role", "Implement", "--thread", "thr_side"],
+      { threadId: captainId },
+    );
+    expect(result.exitCode).toBe(0);
+    expect(await read).toEqual({ thr_side: captainId });
   });
 });
 
@@ -204,6 +250,24 @@ describe("adopt", () => {
 });
 
 // Review findings 1 and 2 on 8f210e0, from its repro tests.
+describe("adopts onto one task and role", () => {
+  test("two threads at once: one is adopted, the other refused, as is a third later", async () => {
+    const { host, adopt, status } = await adoptHost();
+    host.addThread({ id: "thr_two", status: "idle", title: "Another" });
+    host.addThread({ id: "thr_three", status: "idle", title: "A third" });
+    const [one, two] = await Promise.all([
+      adopt({ task: EXISTING }),
+      adopt({ threadId: "thr_two", task: EXISTING }),
+    ]);
+    expect(one.ok).toBe(true);
+    expect(reasons(two)).toEqual(["BBPLUGINS-1 already has a live Implement thread, thr_side"]);
+    expect(reasons(await adopt({ threadId: "thr_three", task: EXISTING }))).toEqual([
+      "BBPLUGINS-1 already has a live Implement thread, thr_side",
+    ]);
+    expect((await status()).stdout).not.toMatch(/thr_two|thr_three/u);
+  });
+});
+
 describe("a refused or retried adopt with a new task makes no extra task", () => {
   test("a refused thread creates no task and changes nothing", async () => {
     const { host, adopt } = await adoptHost();
@@ -265,6 +329,72 @@ describe("a refused or retried adopt with a new task makes no extra task", () =>
   });
 });
 
+describe("a new task reuses only the task its own failed attempt left", () => {
+  test("after a finished adopt and a detach, another title gets its own task", async () => {
+    const { host, adopt } = await adoptHost();
+    expect(await adopt({ task: NEW })).toMatchObject({ ok: true, created: true });
+    host.updateThread("thr_side", { parentThreadId: null });
+    const second = await adopt({ role: "review", task: { ...NEW, title: "Different work" } });
+    expect(second).toMatchObject({ ok: true, task: "BBPLUGINS-4", created: true });
+    expect(creates(host)).toHaveLength(2);
+  });
+
+  test("after a finished adopt and a detach, the same title gets its own task", async () => {
+    const { host, adopt } = await adoptHost();
+    expect(await adopt({ task: NEW })).toMatchObject({ ok: true, task: "BBPLUGINS-3" });
+    host.updateThread("thr_side", { parentThreadId: null });
+    expect(await adopt({ role: "review", task: NEW })).toMatchObject({
+      ok: true,
+      task: "BBPLUGINS-4",
+      created: true,
+    });
+  });
+
+  test("a retry with an edited title gets a task with that title", async () => {
+    const { host, adopt } = await adoptHost();
+    const disarm = failTasksMethod(host, "taskThreadsAttach");
+    expect((await adopt({ task: NEW })).ok).toBe(false);
+    disarm();
+    const second = await adopt({ task: { ...NEW, title: "Retitled before retry" } });
+    expect(second).toMatchObject({ ok: true, created: true });
+    const made = host.tasks.tasks.find((task) => task.key === (second.ok ? second.task : ""));
+    expect(made?.title).toBe("Retitled before retry");
+  });
+
+  test("a failed attempt's task the Captain has since dispatched is not reused", async () => {
+    const { host, adopt, cli } = await adoptHost();
+    const disarm = failTasksMethod(host, "taskThreadsAttach");
+    expect((await adopt({ task: NEW })).ok).toBe(false);
+    disarm();
+    expect((await cli(["dispatch", "BBPLUGINS-3", "--role", "Implement"])).exitCode).toBe(0);
+    expect(await adopt({ task: NEW })).toMatchObject({
+      ok: true,
+      task: "BBPLUGINS-4",
+      created: true,
+    });
+  });
+
+  for (const position of [1, 2, 3, 4, 5, 6]) {
+    test(`a thread read that fails at read ${position}: a retry ends adopted on one task`, async () => {
+      const { host, captainId, adopt } = await adoptHost();
+      const get = host.threads.get.bind(host.threads);
+      let reads = 0;
+      let failing = true;
+      host.threads.get = (id: string) => {
+        if (id === "thr_side" && failing && ++reads === position) return undefined;
+        return get(id);
+      };
+      const first = await adopt({ task: NEW }).catch(() => null);
+      failing = false;
+      // A read late enough fails after the adopt finished; the retry then finds it crew.
+      if (first?.ok !== true) expect((await adopt({ task: NEW })).ok).toBe(true);
+      expect(host.server.store.crewRole("thr_side")).toMatchObject({ captainId });
+      expect(creates(host)).toHaveLength(1);
+      expect(host.tasks.taskThreads).toHaveLength(1);
+    });
+  }
+});
+
 describe("a half-finished adopt can be finished from the dialog", () => {
   test("attach fails after the parent is set; Adopt again converges", async () => {
     const { host, captainId, adopt, options, status } = await adoptHost();
@@ -294,5 +424,45 @@ describe("a half-finished adopt can be finished from the dialog", () => {
     expect(await adopt({ task: NEW })).toMatchObject({ ok: true, task: "BBPLUGINS-3" });
     expect(creates(host)).toHaveLength(1);
     expect(host.tasks.taskThreads.map((row) => row.threadId)).toEqual(["thr_side"]);
+  });
+
+  test("an attach that landed but reported failure: Adopt again records the role", async () => {
+    const { host, captainId, adopt, cli } = await adoptHost();
+    const disarm = failTasksMethod(host, "taskThreadsAttach");
+    expect((await adopt({ task: EXISTING })).ok).toBe(false);
+    disarm();
+    // Tasks did attach it: a timeout after the work was done.
+    host.attach(host.tasks.tasks[0]!.id, "thr_side", "Implement");
+    const retry = await adopt({ task: EXISTING });
+    expect(retry).toMatchObject({ ok: true, task: "BBPLUGINS-1", created: false });
+    expect(retry.ok && retry.detail).toContain("contract on first tell");
+    expect(host.server.store.crewRole("thr_side")).toMatchObject({
+      captainId,
+      role: "implement",
+      contractSent: false,
+    });
+    expect(host.tasks.taskThreads).toHaveLength(1);
+    expect((await cli(["status", "--all"])).stdout).toMatch(
+      /BBPLUGINS-1\s+\S+\s+thr_side\s+Implement/u,
+    );
+  });
+
+  test("an attach to a new task that landed but reported failure: Adopt again resumes that task", async () => {
+    const { host, adopt } = await adoptHost();
+    const disarm = failTasksMethod(host, "taskThreadsAttach");
+    expect((await adopt({ task: NEW })).ok).toBe(false);
+    disarm();
+    host.attach(
+      host.tasks.tasks.find((task) => task.key === "BBPLUGINS-3")!.id,
+      "thr_side",
+      "Implement",
+    );
+    expect(await adopt({ task: NEW })).toMatchObject({
+      ok: true,
+      task: "BBPLUGINS-3",
+      created: false,
+    });
+    expect(creates(host)).toHaveLength(1);
+    expect(host.tasks.taskThreads).toHaveLength(1);
   });
 });

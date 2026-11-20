@@ -16,18 +16,23 @@ import { TasksError, type TasksProject, type TasksTask } from "./tasks-client.ts
 /** How many open tasks each repo offers in the dialog. */
 export const ADOPT_TASKS_PER_REPO = 100;
 
-/** The threads Tasks has attached live to any task. While Tasks does not answer, none. */
-async function liveOnTask(deps: CommandDeps, threadIds: readonly string[]): Promise<Set<string>> {
-  if (threadIds.length === 0) return new Set();
+/** The keys of the tasks Tasks has each thread attached live to. While Tasks does not answer, none. */
+async function liveTasks(
+  deps: CommandDeps,
+  threadIds: readonly string[],
+): Promise<Map<string, Set<string>>> {
+  const live = new Map<string, Set<string>>();
+  if (threadIds.length === 0) return live;
   try {
-    const rows = await deps.tasks.crewSnapshot(threadIds);
-    return new Set(
-      rows.filter((row) => LIVE_STATUSES.has(row.liveStatus)).map((row) => row.threadId),
-    );
+    for (const row of await deps.tasks.crewSnapshot(threadIds)) {
+      if (!LIVE_STATUSES.has(row.liveStatus)) continue;
+      const keys = live.get(row.threadId) ?? new Set();
+      live.set(row.threadId, keys.add(row.task.key.toUpperCase()));
+    }
   } catch (error) {
     if (!(error instanceof TasksError)) throw error;
-    return new Set();
   }
+  return live;
 }
 
 /**
@@ -48,9 +53,9 @@ export async function crewOf(
     crew[id] = captain?.threadId ?? null;
     if (captain === null) unrecorded.push(id);
   }
-  const attached = await liveOnTask(deps, unrecorded);
+  const attached = await liveTasks(deps, unrecorded);
   await Promise.all(
-    [...attached].map(async (id) => {
+    [...attached.keys()].map(async (id) => {
       const parent = await deps.bb.sdk.threads
         .get({ threadId: id })
         .then((thread) => thread.parentThreadId ?? null)
@@ -61,19 +66,29 @@ export async function crewOf(
   return crew;
 }
 
-/** Why the menu leaves a thread out: it is a Captain, or its parent Captain's live crew on a task. */
+/**
+ * Why the menu leaves a thread out: it is a Captain, or its parent Captain's
+ * live crew on a task. A thread live only on `retryOnto`'s task with no role
+ * record is an adopt whose attach landed but reported failure, so a retry
+ * onto that task finishes it.
+ */
 async function menuBlocker(
   deps: CommandDeps,
   threadId: string,
   parentId: string | null,
+  retryOnto: () => Promise<string | null> = async () => null,
 ): Promise<Blocker | null> {
   if (deps.registry.get(threadId) !== null) {
     return { reason: `${threadId} is a Captain`, fix: "pick a thread that is not a Captain" };
   }
   const parent = deps.registry.get(parentId);
   if (parent === null) return null;
-  const recorded = deps.store.crewRole(threadId)?.captainId === parent.threadId;
-  if (!recorded && !(await liveOnTask(deps, [threadId])).has(threadId)) return null;
+  if (deps.store.crewRole(threadId)?.captainId !== parent.threadId) {
+    const live = (await liveTasks(deps, [threadId])).get(threadId);
+    if (live === undefined) return null;
+    const target = await retryOnto();
+    if (target !== null && [...live].every((key) => key === target.toUpperCase())) return null;
+  }
   return {
     reason: `${threadId} is already crew of the ${parent.name} Captain`,
     fix: "nothing to do; the Captain's status lists it",
@@ -164,23 +179,24 @@ export async function adoptFromMenu(
   }
   return await deps.taskGuard(`adopt:${input.threadId}`, async () => {
     const thread = await readAdoptee(deps, input.threadId);
-    const menu = await menuBlocker(deps, thread.id, thread.parentThreadId ?? null);
+    const { task } = input;
+    const marked = memo(async () => {
+      if (task.kind !== "new") throw new Error("only a new task has a marked task");
+      return await markedTask(deps, captain, task.projectKey, task.title, thread.id);
+    });
+    const menu = await menuBlocker(deps, thread.id, thread.parentThreadId ?? null, async () =>
+      task.kind === "existing" ? task.key : ((await marked()).earlier?.key ?? null),
+    );
     if (menu !== null) throw new Refusal([menu]);
     const role = ROLE_SPECS[input.role].label;
     let key: string;
     let created = false;
-    if (input.task.kind === "existing") {
-      key = input.task.key;
+    if (task.kind === "existing") {
+      key = task.key;
     } else {
       const blockers = await checkAdoption(deps, captain, role, thread.id);
       if (blockers.length > 0) throw new Refusal(dedupe(blockers));
-      ({ key, created } = await taskFromTitle(
-        deps,
-        captain,
-        input.task.projectKey,
-        input.task.title,
-        thread.id,
-      ));
+      ({ key, created } = await taskFromTitle(deps, await marked(), task.title, thread.id));
     }
     // One start per task at a time, with dispatch: a second adopt onto the
     // same task and role then sees the first one's thread and is refused.
@@ -221,18 +237,20 @@ export async function adoptFromMenu(
 /** What a task made from a thread's title carries, so a retry finds it instead of making another. */
 const adoptMarker = (threadId: string) => `captain-adopt:${threadId}`;
 
+type Marked = { project: TasksProject; earlier: TasksTask | null };
+
 /**
- * The task for "New task": the one a failed attempt to adopt this thread with
- * this title left behind, when it is still open and no live thread has it;
- * otherwise a new one. `created` says which.
+ * The project for "New task", and the task a failed attempt to adopt this
+ * thread with this title left behind, when it is still open and no live thread
+ * has it. A Tasks failure is a `Refusal`.
  */
-async function taskFromTitle(
+async function markedTask(
   deps: CommandDeps,
   captain: Captain,
   projectKey: string,
   title: string,
   threadId: string,
-): Promise<{ key: string; created: boolean }> {
+): Promise<Marked> {
   if (!captain.repos.some((repo) => repo.tasksProjectKey === projectKey)) {
     throw new Refusal([
       {
@@ -241,43 +259,65 @@ async function taskFromTitle(
       },
     ]);
   }
-  try {
+  return await tasksRefusal(async () => {
     const project = (await deps.tasks.listProjects()).find((each) => each.prefix === projectKey);
     if (project === undefined) {
       throw new Refusal([{ reason: `Tasks has no ${projectKey} project`, fix: "bb tasks list" }]);
     }
-    const marker = adoptMarker(threadId);
-    const earlier = await resumable(deps, project.id, marker, title);
-    if (earlier !== null) return { key: earlier.key, created: false };
-    const task = await deps.tasks.createTask({
+    const marked = await deps.tasks.listOpenTasks(
+      project.id,
+      RESUME_CANDIDATES,
+      adoptMarker(threadId),
+    );
+    // This thread's own row counts only once its role is recorded: an attach
+    // that landed but reported failure leaves a row and no record.
+    const unrecorded = deps.store.crewRole(threadId) === null;
+    for (const task of marked.filter((each) => each.title.trim() === title)) {
+      const threads = await deps.tasks.taskThreads(task.id);
+      const taken = threads.some(
+        (row) => !(unrecorded && row.threadId === threadId) && LIVE_STATUSES.has(row.liveStatus),
+      );
+      if (!taken) return { project, earlier: task };
+    }
+    return { project, earlier: null };
+  });
+}
+
+/** The task for "New task": the earlier attempt's, else a new one. `created` says which. */
+async function taskFromTitle(
+  deps: CommandDeps,
+  { project, earlier }: Marked,
+  title: string,
+  threadId: string,
+): Promise<{ key: string; created: boolean }> {
+  if (earlier !== null) return { key: earlier.key, created: false };
+  const task = await tasksRefusal(() =>
+    deps.tasks.createTask({
       projectId: project.id,
       title,
-      description: `Brought in from thread ${threadId} through Adopt into Captain.\n\n<!-- ${marker} -->`,
+      description: `Brought in from thread ${threadId} through Adopt into Captain.\n\n<!-- ${adoptMarker(threadId)} -->`,
       status: "todo",
-    });
-    return { key: task.key, created: true };
+    }),
+  );
+  return { key: task.key, created: true };
+}
+
+/** How many marked tasks a retry looks through for the one its failed attempt left. */
+const RESUME_CANDIDATES = 10;
+
+async function tasksRefusal<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
   } catch (error) {
     if (error instanceof TasksError) throw new Refusal([tasksBlocker(error)]);
     throw error;
   }
 }
 
-/** How many marked tasks a retry looks through for the one its failed attempt left. */
-const RESUME_CANDIDATES = 10;
-
-/** An open marked task with the same title and no live thread: the failed attempt to resume. */
-async function resumable(
-  deps: CommandDeps,
-  projectId: string,
-  marker: string,
-  title: string,
-): Promise<TasksTask | null> {
-  const marked = await deps.tasks.listOpenTasks(projectId, RESUME_CANDIDATES, marker);
-  for (const task of marked.filter((each) => each.title.trim() === title)) {
-    const threads = await deps.tasks.taskThreads(task.id);
-    if (!threads.some((row) => LIVE_STATUSES.has(row.liveStatus))) return task;
-  }
-  return null;
+/** One run of `read`, however often it is called. */
+function memo<T>(read: () => Promise<T>): () => Promise<T> {
+  let once: Promise<T> | undefined;
+  return () => (once ??= read());
 }
 
 function dedupe(blockers: readonly Blocker[]): Blocker[] {
