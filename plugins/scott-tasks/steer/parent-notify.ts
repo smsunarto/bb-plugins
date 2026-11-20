@@ -14,6 +14,8 @@ const ATTEMPT_DEADLINE_MS = 30_000;
 const DUE_BATCH = 50;
 const FIRST_LINE_MAX_LENGTH = 200;
 
+type Thread = Awaited<ReturnType<BbPluginApi["sdk"]["threads"]["get"]>>;
+
 function retryDelayMs(attempt: number): number {
   const index = Math.min(attempt, PARENT_NOTIFY_BACKOFF_MS.length) - 1;
   return PARENT_NOTIFY_BACKOFF_MS[index] ?? PARENT_NOTIFY_IDLE_MS;
@@ -84,6 +86,54 @@ function ownsAttempt(
   return current?.state === "pending" && current.attempts === attempt;
 }
 
+/**
+ * The commenting thread when bb would accept it as the wake's sender, so the
+ * parent reads the wake as that agent's message. Null when the reporter is the
+ * parent itself, or is deleted or gone: the wake still goes, without a sender.
+ */
+async function wakeSender(
+  bb: BbPluginApi,
+  commenter: string,
+  target: string,
+  known: Thread | undefined,
+): Promise<string | null> {
+  if (commenter === target) return null;
+  try {
+    const thread = known ?? (await bb.sdk.threads.get({ threadId: commenter }));
+    return thread.deletedAt === null ? commenter : null;
+  } catch (error) {
+    if (sdkErrorCode(error) === "thread_not_found") return null;
+    throw error;
+  }
+}
+
+/**
+ * Send the wake line as `sender`. bb rejects a sender deleted since the read
+ * before it sends anything, so resending without one cannot deliver twice.
+ */
+async function sendWake(
+  bb: BbPluginApi,
+  target: string,
+  text: string,
+  sender: string | null,
+): Promise<void> {
+  const args = {
+    threadId: target,
+    input: [{ type: "text" as const, text, mentions: [] }],
+    mode: "steer-if-active" as const,
+  };
+  if (sender === null) {
+    await bb.sdk.threads.send(args);
+    return;
+  }
+  try {
+    await bb.sdk.threads.send({ ...args, senderThreadId: sender });
+  } catch (error) {
+    if (sdkErrorCode(error) !== "parent_thread_invalid") throw error;
+    await bb.sdk.threads.send(args);
+  }
+}
+
 const SUPERSEDED: AttemptOutcome = { kind: "failed", error: "attempt expired before sending" };
 
 async function attemptDelivery(
@@ -101,13 +151,14 @@ async function attemptDelivery(
   }
   const commenter = comment.source.threadId;
   let target = knownTargetThreadId;
+  let commenterThread: Thread | undefined;
   try {
     if (target === null) {
-      const thread = await bb.sdk.threads.get({ threadId: commenter });
-      if (thread.parentThreadId === null) {
+      commenterThread = await bb.sdk.threads.get({ threadId: commenter });
+      if (commenterThread.parentThreadId === null) {
         return { kind: "undeliverable", reason: `thread ${commenter} has no parent thread` };
       }
-      target = thread.parentThreadId;
+      target = commenterThread.parentThreadId;
       if (!ownsAttempt(store, commentId, attempt, signal)) return SUPERSEDED;
       store.setParentNotificationTarget(commentId, target);
     }
@@ -125,13 +176,10 @@ async function attemptDelivery(
       presetName: store.getTaskThreadByThreadId(task.id, commenter)?.presetName ?? null,
       attachments: store.listAttachmentsForComment(comment.id),
     });
+    const sender = await wakeSender(bb, commenter, target, commenterThread);
     // A read can outlive the deadline; a retry may have claimed or delivered since.
     if (!ownsAttempt(store, commentId, attempt, signal)) return SUPERSEDED;
-    await bb.sdk.threads.send({
-      threadId: target,
-      input: [{ type: "text", text, mentions: [] }],
-      mode: "steer-if-active",
-    });
+    await sendWake(bb, target, text, sender);
     return { kind: "delivered", targetThreadId: target };
   } catch (error) {
     if (sdkErrorCode(error) === "thread_not_found") {

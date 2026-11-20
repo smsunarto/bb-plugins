@@ -14,7 +14,7 @@ function notFound(threadId: string): Error {
 
 interface SetupOptions {
   threads?: Thread[];
-  send?: () => Promise<void>;
+  send?: (args: { senderThreadId?: string }) => Promise<void>;
 }
 
 function setup(options: SetupOptions = {}) {
@@ -32,9 +32,19 @@ function setup(options: SetupOptions = {}) {
           if (!thread) throw notFound(threadId);
           return thread;
         },
-        send: async () => {
+        send: async (args) => {
           sends.push(new Date().toISOString());
-          await options.send?.();
+          // bb refuses a missing or deleted sender before it sends anything.
+          const sender = args.senderThreadId;
+          if (sender !== undefined && sender !== args.threadId) {
+            const thread = threads.get(sender);
+            if (thread === undefined || thread.deletedAt !== null) {
+              throw Object.assign(new Error("Sender thread is invalid"), {
+                code: "parent_thread_invalid",
+              });
+            }
+          }
+          await options.send?.(args);
         },
       },
     },
@@ -97,6 +107,7 @@ describe("parent wake lines", () => {
             },
           ],
           mode: "steer-if-active",
+          senderThreadId: "thr_crew",
         },
       ],
     ]);
@@ -297,6 +308,104 @@ describe("parent wake lines", () => {
     service.controller.abort();
     await service.done;
     await reloaded.harness.dispose();
+  });
+});
+
+describe("wake senders", () => {
+  /** A notifying comment from `threadId` whose wake already targets `target`. */
+  function pending(
+    store: ReturnType<typeof setup>["store"],
+    taskId: string,
+    threadId: string,
+    target: string | null,
+  ): string {
+    const comment = store.tasks.createComment({
+      taskId,
+      source: { kind: "agent", threadId },
+      authorName: threadId,
+      body: "Final: done",
+    });
+    store.tasks.startParentNotification(comment.id, target);
+    return comment.id;
+  }
+
+  function sentArgs(harness: ReturnType<typeof setup>["harness"]) {
+    return harness.sdk.callsTo("threads.send").map(([args]) => args as Record<string, unknown>);
+  }
+
+  it("delivers without a sender when the reporter is deleted, missing, or the parent itself", async () => {
+    const { bb, harness, store, task } = setup({
+      threads: [
+        makeThreadResponse({
+          id: "thr_deleted",
+          parentThreadId: "thr_captain",
+          deletedAt: Date.now(),
+        }),
+        CAPTAIN,
+      ],
+    });
+    const ids = [
+      // First attempt: the target comes from the deleted reporter's own record.
+      pending(store, task.id, "thr_deleted", null),
+      // A retry after the reporter was purged: only the recorded target is left.
+      pending(store, task.id, "thr_gone", "thr_captain"),
+      // bb refuses a sender that is the target, so the wake goes without one.
+      pending(store, task.id, "thr_captain", "thr_captain"),
+    ];
+
+    for (const id of ids) await deliverParentNotification(bb, store.tasks, id);
+
+    expect(ids.map((id) => store.tasks.getParentNotification(id)?.state)).toEqual([
+      "delivered",
+      "delivered",
+      "delivered",
+    ]);
+    // One send each: none was refused for its sender and resent.
+    const sends = sentArgs(harness);
+    expect(sends.map((args) => args["threadId"])).toEqual([
+      "thr_captain",
+      "thr_captain",
+      "thr_captain",
+    ]);
+    for (const args of sends) expect(args).not.toHaveProperty("senderThreadId");
+    await harness.dispose();
+  });
+
+  it("resends without the sender when bb rejects it as deleted since the read", async () => {
+    const { bb, harness, store, task } = setup({
+      send: async (args) => {
+        if (args.senderThreadId === undefined) return;
+        throw Object.assign(new Error("Sender thread is invalid"), {
+          code: "parent_thread_invalid",
+        });
+      },
+    });
+    const id = pending(store, task.id, "thr_crew", "thr_captain");
+
+    await deliverParentNotification(bb, store.tasks, id);
+
+    expect(store.tasks.getParentNotification(id)).toMatchObject({
+      state: "delivered",
+      attempts: 1,
+    });
+    const sends = sentArgs(harness);
+    expect(sends.map((args) => args["senderThreadId"])).toEqual(["thr_crew", undefined]);
+    expect(sends[1]).not.toHaveProperty("senderThreadId");
+    await harness.dispose();
+  });
+
+  it("does not resend without the sender after an unrelated send failure", async () => {
+    const { bb, harness, store, task } = setup({ send: failingSend });
+    const id = pending(store, task.id, "thr_crew", "thr_captain");
+
+    await deliverParentNotification(bb, store.tasks, id);
+
+    expect(store.tasks.getParentNotification(id)).toMatchObject({
+      state: "pending",
+      lastError: "server busy",
+    });
+    expect(sentArgs(harness)).toHaveLength(1);
+    await harness.dispose();
   });
 });
 
