@@ -111,6 +111,28 @@ describe("update and actions", () => {
     expect(updated.instruction).toBe("New words");
   });
 
+  test("a spent one-shot keeps its name editable, and a new time arms it again", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, {
+      ...SWEEP,
+      schedule: { at: host.now() + 60_000 },
+    });
+    const row = host.automations.rows.get(created.automationId as string);
+    // The run came and went: Automations disables a once automation after it.
+    host.setNow(host.now() + 120_000);
+    if (row !== undefined) row.enabled = false;
+
+    const renamed = await routines.update(created, { name: "Renamed" });
+    expect(renamed.name).toBe("Renamed");
+    expect(row?.enabled).toBe(false);
+
+    const at = host.now() + 60_000;
+    const rearmed = await routines.update(renamed, { schedule: { at } });
+    expect(row).toMatchObject({ enabled: true, trigger: { triggerType: "once", runAt: at } });
+    expect(rearmed.automation?.enabled).toBe(true);
+    expect(host.automations.rows.size).toBe(1);
+  });
+
   test("pause, resume and delete pass through", async () => {
     const { host, owner, routines } = await routineHost();
     const created = await routines.create(owner, SWEEP);

@@ -109,8 +109,17 @@ export function createRoutines(deps: RoutinesDeps) {
           },
         ]);
 
-  /** Parse fields the way the CLI and the app share; a one-shot must be in the future. */
-  function parseFields(input: z.input<typeof routineFieldsSchema>): RoutineFields {
+  const spent = (schedule: Schedule) => "at" in schedule && schedule.at <= deps.now();
+
+  /**
+   * Parse fields the way the CLI and the app share. A new one-shot must be in
+   * the future; `newSchedule: false` keeps a spent one-shot editable by name
+   * or instruction.
+   */
+  function parseFields(
+    input: z.input<typeof routineFieldsSchema>,
+    newSchedule = true,
+  ): RoutineFields {
     const parsed = routineFieldsSchema.safeParse(input);
     if (!parsed.success) {
       throw new Refusal(
@@ -120,8 +129,7 @@ export function createRoutines(deps: RoutinesDeps) {
         })),
       );
     }
-    const { schedule } = parsed.data;
-    if ("at" in schedule && schedule.at <= deps.now()) {
+    if (newSchedule && spent(parsed.data.schedule)) {
       throw new Refusal([
         { reason: "a one-shot's time has passed", fix: "pass a later --at or --in" },
       ]);
@@ -210,11 +218,16 @@ export function createRoutines(deps: RoutinesDeps) {
   ): Promise<RoutineView> {
     return serial(`routine:${routine.id}`, async () => {
       const current = store.routine(routine.id) ?? routine;
-      const fields = parseFields({
-        name: patch.name ?? current.name,
-        instruction: patch.instruction ?? current.instruction,
-        schedule: patch.schedule ?? current.schedule,
-      });
+      const fields = parseFields(
+        {
+          name: patch.name ?? current.name,
+          instruction: patch.instruction ?? current.instruction,
+          schedule: patch.schedule ?? current.schedule,
+        },
+        patch.schedule !== undefined,
+      );
+      // Automations disables a one-shot after its run, so a new one-shot time arms it again.
+      const rearm = patch.schedule !== undefined && "at" in fields.schedule;
       const owner = ownerOf(current);
       const taken = store.findRoutine(owner.threadId, fields.name);
       if (taken !== null && taken.id !== current.id) {
@@ -231,7 +244,9 @@ export function createRoutines(deps: RoutinesDeps) {
         JSON.stringify(fields.schedule) !== JSON.stringify(current.schedule);
       try {
         const found = target(current);
-        if (found === null) {
+        if (found === null && spent(fields.schedule)) {
+          // A spent one-shot with no automation: only its words change.
+        } else if (found === null) {
           automationId = (
             await automations.create(
               owner.homeProjectId,
@@ -245,6 +260,7 @@ export function createRoutines(deps: RoutinesDeps) {
             // Only the instruction changed: still confirm the schedule exists.
             if (scheduleChanged) await automations.update(found, owner.name, fields);
             else await automations.get(found);
+            if (rearm) await automations.resume(found);
           } catch (error) {
             if (!isMissing(error)) throw error;
             automationId = (
