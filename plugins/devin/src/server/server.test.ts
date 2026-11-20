@@ -1,8 +1,13 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { PluginAgentConfigurationContext } from "@get-bb/plugin-sdk";
 import plugin from "./server.ts";
+
+const hosts: { lifecycle: { dispose(): Promise<void> } }[] = [];
+after(async () => {
+  for (const harness of hosts.splice(0)) await harness.lifecycle.dispose();
+});
 
 const configuration = (
   threadId: string,
@@ -34,6 +39,8 @@ const configuration = (
 
 async function loaded() {
   const host = createFakePluginHost({ pluginId: "devin" });
+  // Disposed after the file's tests; disposing removes the fake host's storage dir.
+  hosts.push(host.harness);
   await plugin(host.bb);
   const [provider] = host.harness.inspection.registrations.providerRegistrations;
   assert.ok(provider);

@@ -1,5 +1,5 @@
 // The per-project orientation default: what `defaults` stores and what `start` does with it.
-import { expect, test } from "bun:test";
+import { expect, onTestFinished, test } from "bun:test";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 
 import { MIGRATIONS, createDefaultsStore } from "../src/server/core.ts";
@@ -16,6 +16,8 @@ function cli() {
     pluginId: "sauce",
     agentSkillIds: ["sauce-live"],
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   registerSauce(bb, fake.deps);
   const json = async (argv: string[], ctx: { threadId?: string; projectId?: string } = GAME) => {
     const result = await harness.runCli([...argv, "--json"], ctx);
@@ -121,7 +123,9 @@ test("a device that will not turn is a note on a session that still started", as
 });
 
 test("project defaults live in plugin storage, one row per project that has one", () => {
-  const { bb } = createFakePluginHost({ pluginId: "sauce" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "sauce" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   bb.storage.migrate(bb.storage.database(), MIGRATIONS);
   const store = createDefaultsStore(bb);
   expect(store.read("proj_game")).toEqual({ orientation: null });

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, onTestFinished, test } from "bun:test";
 import { createFakePluginHost, makeHostResponse } from "@get-bb/plugin-sdk/testing";
 
 import plugin from "../src/server/server.ts";
@@ -33,6 +33,8 @@ async function load(cursorHosts: Set<string>) {
       },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   await plugin(bb);
   const readHosts = () =>
     harness.sdk.callsTo("files.read").map(([args]) => (args as { hostId: string }).hostId);

@@ -1,5 +1,5 @@
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import type { InstalledPluginRecord } from "./installed-catalog";
 import plugin, { SDK_READ_TIMEOUT_MS } from "./server";
 
@@ -48,6 +48,8 @@ async function setup(plugins = [installed()]) {
       plugins: { list: async () => ({ plugins }) },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   plugin(bb);
   const provider = harness.inspection.registrations.mentionProviders[0];
   if (!provider) throw new Error("Missing provider");

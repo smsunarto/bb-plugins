@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, onTestFinished, test } from "bun:test";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,6 +13,8 @@ const skillsRoot = join(root, "skills");
 
 test("the plugin loads against the fake host and registers every mention provider", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   await plugin(bb);
 
   expect(harness.registrations.rpcMethods).toEqual([
@@ -64,6 +66,8 @@ test("each skill directory carries a SKILL.md whose frontmatter name matches the
 
 test("publishes completion signals only when a thread becomes idle", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   await plugin(bb);
   const thread = makeThreadResponse({ id: "thread-9" });
 
@@ -85,6 +89,8 @@ test("publishes completion signals only when a thread becomes idle", async () =>
 
 test("subthread completion carries its parent ID so the browser can keep it silent", async () => {
   const { bb, harness } = createFakePluginHost({ pluginId: "kitchen-sink" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   await plugin(bb);
   const thread = makeThreadResponse({ id: "child", parentThreadId: "parent" });
   await harness.emitThreadEvent("thread.idle", { thread, lastAssistantText: null });

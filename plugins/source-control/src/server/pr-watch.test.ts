@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import type { WatchRead } from "../core/watch.ts";
 import { createPrWatcher } from "./pr-watch.ts";
@@ -17,7 +17,9 @@ const READ: WatchRead = {
 };
 
 test("each change to a thread's watches tells its banner, and Unwatch ends the watch", async () => {
-  const { bb } = createFakePluginHost({ pluginId: "source-control" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "source-control" });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   const changed: string[] = [];
   const watcher = createPrWatcher({
     bb,

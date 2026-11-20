@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import plugin from "../../server";
 import { INLINE_PROMPT_PROVIDER_ID } from "./contract";
 import { parseInlinePrompt } from "./server";
@@ -47,6 +47,8 @@ afterEach(async () => {
 
 async function host() {
   const { bb, harness } = createFakePluginHost({ pluginId: "t3-composer", dataDir });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   await plugin(bb);
   const provider = harness.registrations.mentionProviders.find(
     (record) => record.id === INLINE_PROMPT_PROVIDER_ID,

@@ -1,7 +1,7 @@
 import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { registerAttachments } from "../attachments";
 import { attachmentDownloadUrl } from "../shared/attachments";
 import { tasksRpcContract } from "../shared/contract";
@@ -1161,6 +1161,8 @@ describe("Tasks RPC domain API", () => {
 
   it("resolves task keys case-insensitively and degrades bad keys to null", async () => {
     const { bb, harness } = createFakePluginHost({ pluginId: "tasks" });
+    // The only test here without a closing dispose; disposing removes the fake host's storage dir.
+    onTestFinished(() => harness.dispose());
     const store = createStore(bb);
     registerTasksApi(bb, store);
     const project = store.tasks.createProject({

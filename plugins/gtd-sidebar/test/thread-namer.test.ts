@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, test } from "bun:test";
+import { describe, onTestFinished, test } from "bun:test";
 import { createFakePluginHost, makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { createThreadNamer } from "../thread-namer.ts";
 
@@ -134,6 +134,8 @@ function createHost(
       },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => host.harness.lifecycle.dispose());
   const namer = createThreadNamer(host.bb, {
     inference: {
       async complete(input) {

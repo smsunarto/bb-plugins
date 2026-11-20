@@ -1,10 +1,17 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
 import { CLOUD_INTENT_TTL_MS, createTargetStore, TARGET_MIGRATIONS } from "./targets.ts";
 
+const hosts: { lifecycle: { dispose(): Promise<void> } }[] = [];
+after(async () => {
+  for (const harness of hosts.splice(0)) await harness.lifecycle.dispose();
+});
+
 function store() {
-  const { bb } = createFakePluginHost({ pluginId: "devin" });
+  const { bb, harness } = createFakePluginHost({ pluginId: "devin" });
+  // Disposed after the file's tests; disposing removes the fake host's storage dir.
+  hosts.push(harness);
   const db = bb.storage.database();
   bb.storage.migrate(db, TARGET_MIGRATIONS);
   const clock = { now: 1_000_000 };

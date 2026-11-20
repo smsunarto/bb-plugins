@@ -66,10 +66,13 @@ test("the host reads it for a checkout, and refuses a path that is not one", asy
     });
     expect(answer).toMatchObject({ ok: true, value: { hasMore: true } });
     const outside = await mkdtemp(join(tmpdir(), "source-control-not-git-"));
-    expect(
-      await host.experimental_call("baseHistory", { path: outside, from: head, limit: 1 }),
-    ).toMatchObject({ ok: false });
-    await rm(outside, { recursive: true, force: true });
+    try {
+      expect(
+        await host.experimental_call("baseHistory", { path: outside, from: head, limit: 1 }),
+      ).toMatchObject({ ok: false });
+    } finally {
+      await rm(outside, { recursive: true, force: true });
+    }
   } finally {
     await host.experimental_dispose();
   }

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import {
   createFakePluginHost,
   makeHostResponse,
@@ -692,6 +692,9 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
       throw new Error(`unexpected ${method} ${JSON.stringify(input)}`);
     },
   });
+  /** The instance a restart made current; disposing it removes the fake host's storage dir. */
+  let current = harness;
+  onTestFinished(() => current.lifecycle.dispose());
   const plugin = createSourceControl({
     serverExec: serverGh(world),
     now: () => Date.now(),
@@ -720,7 +723,8 @@ async function start(world: World, options: { hostDeadlineMs?: number } = {}) {
     harness.inspection.experimental_rpcInvalidations.flatMap((tags) => tags ?? []);
   /** Stop this plugin instance and load another on the same database, as a server restart. */
   const restart = async () => {
-    const next = (await harness.lifecycle.reload(plugin)).harness;
+    const next = (await current.lifecycle.reload(plugin)).harness;
+    current = next;
     next.runService("activation");
     return next;
   };
@@ -859,7 +863,8 @@ describe("offline", () => {
     expect((await checkout("thread-a")).forge.read?.value).toMatchObject({
       title: "Seen while the host hangs",
     });
-    void done;
+    // Still waiting on the hung host; disposing the fake host after the test rejects it.
+    done.catch(() => undefined);
   });
 });
 

@@ -1,4 +1,4 @@
-import { test } from "bun:test";
+import { onTestFinished, test } from "bun:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost, makeHostResponse } from "@get-bb/plugin-sdk/testing";
 import {
@@ -50,6 +50,8 @@ function setup() {
       },
     },
   });
+  // Disposing removes the fake host's storage dir.
+  onTestFinished(() => harness.lifecycle.dispose());
   const calls: HostCall[] = [];
   const host = {
     call: async (method: string, input: unknown, options: unknown) => {
