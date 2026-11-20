@@ -1,7 +1,3 @@
-// Sidebar navigation in Capy's list style: 28px rows of a 14px icon and a
-// 13px medium label above the thread list, 44px on phones. bb owns the items,
-// their order, their visibility, and what each one does; this file only draws
-// them.
 import { memo, useRef, type MouseEvent } from "react";
 import {
   experimental_ShortcutHint as ShortcutHint,
@@ -14,6 +10,8 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { cn } from "../../lib/utils";
 import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { usePointerCoarse } from "../ui/hooks/use-pointer-coarse";
 import {
   ContextMenu,
   ContextMenuGroup,
@@ -32,25 +30,8 @@ import { Icon } from "../ui/icon";
 import { MenuSurface } from "../inbox/menu-surface";
 import { markScrolled, revealFocusedRow, useNavScroll } from "./nav-scroll";
 
-/**
- * On phones the 44px rows could push the thread list off screen, so the rows
- * scroll inside about 40% of the drawer while More stays pinned below them.
- * The cap ends half way through a row, which shows there is more to scroll:
- * 74px is the nav's 8px padding, More's 44px row, and half a row; 22px adds
- * the half row back. Once scrolled, the top edge fades.
- */
-const SCROLL_CLASS = cn(
-  "relative flex min-h-0 flex-col",
-  // Never below one row, however short the screen.
-  "max-md:pointer-coarse:max-h-[max(44px,calc(round(down,40dvh_-_74px,44px)_+_22px))]",
-  "max-md:pointer-coarse:overflow-y-auto max-md:pointer-coarse:overscroll-contain",
-  "data-[gtd-nav-scrolled]:[mask-image:linear-gradient(to_bottom,transparent,currentColor_24px)]",
-);
-
 const ROW_CLASS = cn(
   "flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-[6px] px-2",
-  // 44px rows on phones, the minimum touch target.
-  "max-md:pointer-coarse:h-11",
   "text-left text-[13px] leading-none font-medium tracking-[-0.01em] text-sidebar-foreground",
   "outline-none select-none transition-colors duration-100",
   "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -67,30 +48,45 @@ function activationTarget(event: MouseEvent): "current" | "tab" {
 export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigationProps) {
   const navigation = useSidebarNavigation();
   const { items, activeItemId, isShortcutModifierHeld, actions } = navigation;
+  const isCoarsePointer = usePointerCoarse();
+  const isPhone = isCompactViewport && isCoarsePointer;
+  const search = isPhone
+    ? items.find((item) => item.isVisible && item.action.kind === "search-threads")
+    : undefined;
   const hidden = items.filter((item) => !item.isVisible);
-  const scroller = useNavScroll(activeItemId, isCompactViewport);
+  const visible = items.filter((item) => item.isVisible);
+  const scroller = useNavScroll(activeItemId, isPhone, visible.length);
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
-        <nav aria-label="Navigation" className="flex shrink-0 flex-col px-2 py-1">
+        <nav
+          aria-label="Navigation"
+          data-gtd-phone-nav={isPhone || undefined}
+          className="flex shrink-0 flex-col px-2 py-1"
+        >
+          {isPhone ? (
+            <div className="gtd-phone-nav-header">
+              <span className="gtd-phone-wordmark">bb</span>
+              {search ? <NavigationShortcut item={search} actions={actions} /> : null}
+            </div>
+          ) : null}
           <div
             ref={scroller}
-            className={SCROLL_CLASS}
+            className="relative flex min-h-0 flex-col"
+            data-gtd-nav-scroll=""
             onScroll={markScrolled}
             onFocus={revealFocusedRow}
           >
-            {items.map((item) =>
-              item.isVisible ? (
-                <NavigationRow
-                  key={item.id}
-                  item={item}
-                  isActive={item.id === activeItemId}
-                  showShortcut={isShortcutModifierHeld}
-                  actions={actions}
-                />
-              ) : null,
-            )}
+            {visible.map((item) => (
+              <NavigationRow
+                key={item.id}
+                item={item}
+                isActive={item.id === activeItemId}
+                showShortcut={isShortcutModifierHeld}
+                actions={actions}
+              />
+            ))}
           </div>
           {hidden.length > 0 ? <MoreRow hidden={hidden} actions={actions} /> : null}
         </nav>
@@ -138,7 +134,7 @@ const NavigationRow = memo(function NavigationRow({
         if (event.button === 1) actions.activate(item.id, { target: "tab" });
       }}
     >
-      <NavigationIcon icon={item.icon} className="size-3.5 shrink-0" />
+      <NavigationIcon icon={item.icon} className="gtd-nav-icon size-3.5 shrink-0" />
       <span className="min-w-0 flex-1 truncate">{item.label}</span>
       {showShortcut && item.shortcut !== null ? (
         <ShortcutHint
@@ -149,13 +145,39 @@ const NavigationRow = memo(function NavigationRow({
           className="shrink-0"
         />
       ) : badge !== null ? (
-        <Badge variant="count" aria-hidden className="ml-auto min-w-4 justify-center">
+        <Badge variant="count" aria-hidden className="gtd-nav-badge ml-auto min-w-4 justify-center">
           {badge.count === undefined ? (badge.text ?? "•") : badge.count > 99 ? "99+" : badge.count}
         </Badge>
       ) : null}
     </button>
   );
 });
+
+/** Phone shortcuts use the same host actions as the ordered, customizable rows. */
+function NavigationShortcut({
+  item,
+  actions,
+}: {
+  item: NavigationItem;
+  actions: NavigationActions;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      className="gtd-phone-nav-shortcut"
+      data-gtd-shortcut="search"
+      disabled={item.isDisabled}
+      aria-busy={item.isLoading || undefined}
+      aria-label={item.label}
+      onClick={(event) => actions.activate(item.id, { target: activationTarget(event) })}
+      onAuxClick={(event) => {
+        if (event.button === 1) actions.activate(item.id, { target: "tab" });
+      }}
+    >
+      <NavigationIcon icon={item.icon} className="size-5 shrink-0" />
+    </Button>
+  );
+}
 
 /** Items the user hid stay reachable here, with the editor that unhides them. */
 function MoreRow({ hidden, actions }: { hidden: NavigationItem[]; actions: NavigationActions }) {
@@ -171,7 +193,7 @@ function MoreRow({ hidden, actions }: { hidden: NavigationItem[]; actions: Navig
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button type="button" data-sidebar-navigation-more="" className={ROW_CLASS}>
-          <Icon name="MoreHorizontal" className="size-3.5 shrink-0" aria-hidden />
+          <Icon name="MoreHorizontal" className="gtd-nav-icon size-3.5 shrink-0" aria-hidden />
           <span className="min-w-0 flex-1 truncate">More</span>
         </button>
       </DropdownMenuTrigger>

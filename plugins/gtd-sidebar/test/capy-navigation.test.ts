@@ -10,6 +10,7 @@ installTestPluginRuntime();
 const { CapyNavigation } = await import("../components/nav/capy-navigation.tsx");
 
 const SEARCH = "__bb__/search-threads";
+const originalMatchMedia = window.matchMedia;
 
 const item = (
   id: string,
@@ -47,7 +48,18 @@ function mount(
   list = items(),
   options: { isShortcutModifierHeld?: boolean; activeItemId?: string | null } = {},
   isCompactViewport = false,
+  coarsePointer = isCompactViewport,
 ): ReturnType<typeof renderSlot> {
+  window.matchMedia = (query) => ({
+    media: query,
+    matches: coarsePointer && query === "(pointer: coarse)",
+    onchange: null,
+    addListener() {},
+    removeListener() {},
+    addEventListener() {},
+    removeEventListener() {},
+    dispatchEvent: () => true,
+  });
   return renderSlot(
     { component: CapyNavigation },
     { isCompactViewport, placement: "list", experimental_Original: () => null },
@@ -62,6 +74,7 @@ const rowIds = (slot: ReturnType<typeof mount>) =>
 
 afterEach(() => {
   cleanup();
+  window.matchMedia = originalMatchMedia;
 });
 
 describe("CapyNavigation", () => {
@@ -93,25 +106,35 @@ describe("CapyNavigation", () => {
     assert.equal(mount().queryByRole("button", { name: "More" }), null);
   });
 
-  it("scrolls the rows on phones while More stays put", () => {
-    const slot = mount(items({}, { isVisible: false }));
-    const more = slot.getByRole("button", { name: "More" });
+  it("keeps More outside the phone rows' scroll region", () => {
+    const slot = mount(items({}, { isVisible: false }), {}, true);
     const nav = slot.getByRole("navigation");
-    // jsdom lays nothing out, so find what scrolls by its overflow utility:
-    // More moves with a scroll exactly when one of its ancestors scrolls.
-    const scrolls = (element: Element) =>
-      /(^|\s|:)overflow-(y-)?(auto|scroll)\b/.test(element.className);
-    const scrollers = [nav, ...nav.querySelectorAll("*")].filter(scrolls);
-    assert.equal(scrollers.length, 1, "one element scrolls");
-    const [scroller] = scrollers;
-    assert.ok(
-      scroller!.contains(slot.getByRole("button", { name: "Search threads" })),
-      "the rows scroll",
-    );
-    for (let node: Element | null = more; node !== null; node = node.parentElement) {
-      assert.equal(scrolls(node), false, "nothing that scrolls holds More");
-      if (node === nav) break;
-    }
+    const scroller = nav.querySelector("[data-gtd-nav-scroll]");
+    assert.ok(scroller);
+    assert.ok(scroller.querySelector(`[data-sidebar-navigation-item="${SEARCH}"]`));
+    assert.equal(scroller.nextElementSibling, slot.getByRole("button", { name: "More" }));
+  });
+
+  it("leaves the header out of compact mouse navigation", () => {
+    const slot = mount(items(), {}, true, false);
+    assert.equal(slot.getByRole("navigation").hasAttribute("data-gtd-phone-nav"), false);
+    assert.equal(slot.getAllByRole("button", { name: "Search threads" }).length, 1);
+  });
+
+  it("keeps the phone search shortcut bound to its host action without moving their rows", () => {
+    const slot = mount(items(), {}, true);
+    assert.deepEqual(rowIds(slot), ["__bb__/new-thread", SEARCH, "__bb__/extensions"]);
+    const search = slot.container.querySelector('[data-gtd-shortcut="search"]');
+    assert.ok(search);
+    fireEvent.click(search);
+    assert.deepEqual(slot.inspection.sidebarNavigationCalls, [
+      { method: "activate", itemId: SEARCH, target: "current" },
+    ]);
+    cleanup();
+
+    const hidden = mount(items({ isVisible: false }), {}, true);
+    assert.equal(hidden.container.querySelector('[data-gtd-shortcut="search"]'), null);
+    assert.ok(hidden.getByRole("button", { name: "More" }));
   });
 
   it("shows Search's shortcut while the modifier is held", () => {
@@ -145,7 +168,7 @@ describe("CapyNavigation", () => {
 
     function layout(slot: ReturnType<typeof mount>) {
       height = 50;
-      const region = slot.getByRole("button", { name: "Search threads" }).parentElement!;
+      const region = slot.container.querySelector<HTMLElement>("[data-gtd-nav-scroll]")!;
       let top = 0;
       Object.defineProperty(region, "scrollTop", {
         get: () => top,
@@ -154,6 +177,7 @@ describe("CapyNavigation", () => {
         },
       });
       Object.defineProperty(region, "clientHeight", { get: () => height });
+      Object.defineProperty(region, "scrollHeight", { get: () => region.children.length * 44 });
       for (const [index, row] of [...region.children].entries()) {
         Object.defineProperty(row, "offsetTop", { value: index * 44 });
         Object.defineProperty(row, "offsetHeight", { value: 44 });
@@ -226,6 +250,15 @@ describe("CapyNavigation", () => {
       region.scrollTop = 30;
       await frame();
       assert.equal(region.scrollTop, 30);
+    });
+
+    it("marks rows below initially and clears the fade flag at the end", async () => {
+      const region = layout(mount(items(), {}, true));
+      await frame();
+      assert.equal(region.hasAttribute("data-gtd-nav-more-below"), true);
+      region.scrollTop = region.scrollHeight - region.clientHeight;
+      fireEvent.scroll(region);
+      assert.equal(region.hasAttribute("data-gtd-nav-more-below"), false);
     });
 
     it("scrolls a focused row into view and marks a scrolled region", () => {
