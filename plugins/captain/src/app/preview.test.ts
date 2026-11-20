@@ -13,3 +13,8 @@ test("inline code and autolinks keep their text; marks, links and tags keep only
     "Bold docs shot tag 1 < 2",
   ]);
 });
+
+test("inline code inside a link's label keeps its text, and the link only its label", () => {
+  expect(text("See [`getUser`](https://example.com/api).")).toEqual(["See getUser."]);
+  expect(text("Call [`a<b>`](x) then ![`img`](y.png)")).toEqual(["Call a<b> then img"]);
+});

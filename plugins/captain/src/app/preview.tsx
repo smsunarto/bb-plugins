@@ -68,21 +68,25 @@ function tableRow(line: string): string {
 
 /** A code span: a run of backticks, its text, and the same run again. */
 const CODE_SPAN = /(`+)(.+?)\1/gu;
+/** Stands in for code span N while the text around it is parsed. */
+const CODE_MARK = /\uE000(\d+)\uE001/gu;
 
 /**
  * Inline Markdown as its text. Code spans keep their text verbatim, `<` and
- * all; outside them, images and links keep their label, autolinks their
- * target, and marks and HTML tags go.
+ * all, even inside a link's label; around them, images and links keep their
+ * label, autolinks their target, and marks and HTML tags go. Each code span
+ * is set aside as a private-use mark first, so the link and tag patterns see
+ * neither its text nor its backticks.
  */
 function inline(text: string): string {
-  let out = "";
-  let last = 0;
-  for (const match of text.matchAll(CODE_SPAN)) {
-    out += prose(text.slice(last, match.index));
-    out += match[2] ?? "";
-    last = match.index + match[0].length;
-  }
-  return (out + prose(text.slice(last))).trim();
+  const code: string[] = [];
+  const marked = text.replace(CODE_SPAN, (_, _ticks: string, body: string) => {
+    code.push(body);
+    return `\uE000${code.length - 1}\uE001`;
+  });
+  return prose(marked)
+    .replace(CODE_MARK, (_, index: string) => code[Number(index)] ?? "")
+    .trim();
 }
 
 function prose(text: string): string {
