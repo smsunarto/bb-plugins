@@ -80,24 +80,36 @@ export const NEW_TAB_LAUNCHER_CSS = `
   font-weight: 500;
   line-height: 1;
 }
-/* Drop bb's "Start" prefix. The labels are bb's text, so the original is
- * hidden and the short label drawn in its place; the button's title and
- * accessible name keep bb's wording. Keyed on bb's action ids. */
+/* Keep bb's wording in the accessible name and shorten only the painted
+ * label. Both layers inherit visibility from the launcher so a closed
+ * mobile shelf hides them together. Keyed on bb's action ids. */
 #file-search-result-start-terminal > span:nth-child(2),
 button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2) {
   position: relative;
-  visibility: hidden;
+  -webkit-text-fill-color: transparent;
 }
 #file-search-result-start-terminal > span:nth-child(2)::after,
 button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2)::after {
   position: absolute;
   inset-inline-start: 0;
-  visibility: visible;
+  -webkit-text-fill-color: currentColor;
 }
 #file-search-result-start-terminal > span:nth-child(2)::after {
-  content: "Terminal";
+  content: "Terminal" / "";
 }
 button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2)::after {
-  content: "Side chat";
+  content: "Side chat" / "";
+}
+/* Forced colors can paint the transparent source text. Show bb's original
+ * label alone in the system text color. */
+@media (forced-colors: active) {
+  #file-search-result-start-terminal > span:nth-child(2),
+  button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2) {
+    -webkit-text-fill-color: ButtonText;
+  }
+  #file-search-result-start-terminal > span:nth-child(2)::after,
+  button[id="plugin-action:side-chat:side-chat"] > span:nth-child(2)::after {
+    content: none;
+  }
 }
 `;

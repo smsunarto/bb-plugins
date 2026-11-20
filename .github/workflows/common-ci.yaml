@@ -41,6 +41,9 @@ jobs:
         with:
           bb-cli: "true"
 
+      - name: Install Chromium for browser regression tests
+        run: bunx playwright install --with-deps --only-shell chromium
+
       - name: Test
         run: bun run test
 
