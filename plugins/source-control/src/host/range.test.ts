@@ -7,7 +7,7 @@ import { isolate } from "../../test/isolate.ts";
 import { git } from "../../test/repos.ts";
 import { parseRawBlobs, rangeCommits, rangeFiles, rangePatches, resolveBase } from "./range.ts";
 
-await isolate("source-control-range");
+const env = await isolate("source-control-range");
 const signal = new AbortController().signal;
 let repo = "",
   base = "",
@@ -31,7 +31,10 @@ beforeAll(async () => {
   git(repo, "commit", "--quiet", "-m", "Rename and grow");
   head = git(repo, "rev-parse", "HEAD").trim();
 });
-afterAll(() => rm(repo, { recursive: true, force: true }));
+afterAll(async () => {
+  await rm(repo, { recursive: true, force: true });
+  await env.cleanup();
+});
 
 test("files say their kind, old path, size and head blob; a binary counts nothing", async () => {
   const files = await rangeFiles(repo, base, head, signal);

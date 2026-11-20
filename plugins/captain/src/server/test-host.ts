@@ -8,10 +8,11 @@ import {
   makeHostResponse,
   makeThreadResponse,
 } from "@get-bb/plugin-sdk/testing";
-import { mkdtempSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { afterAll } from "vitest";
 import type { z } from "zod";
 import { start } from "./server.ts";
 
@@ -121,8 +122,23 @@ export type FakePool = {
   }[];
 } | null;
 
+/**
+ * Every host this test file built. After its last test each one is disposed,
+ * which removes the SDK harness's storage, and its root is removed, so no
+ * temp directory outlives the run.
+ */
+const built: { root: string; dispose(): Promise<void> }[] = [];
+afterAll(async () => {
+  for (const { root, dispose } of built.splice(0)) {
+    await dispose().catch(() => undefined);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 export async function captainHost(options: FakeOptions = {}) {
   const root = mkdtempSync(join(tmpdir(), "captain-test-"));
+  // Async, so a host that failed before `current` exists still has its root removed.
+  built.push({ root, dispose: async () => current.harness.lifecycle.dispose() });
   const storageRoot = join(root, "thread-storage");
   const captainsDir = join(root, "Captains");
   const bbProjects = options.bbProjects ?? [
