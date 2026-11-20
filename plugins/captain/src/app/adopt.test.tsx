@@ -67,7 +67,6 @@ const base: AdoptOptions = {
   thread: { id: "thr_side", title: "Fix the sidebar flicker", projectId: "proj_plugins" },
   captains: [captain(CAPTAIN, "Plugins")],
   roles: [
-    { value: "plan", label: "Plan" },
     { value: "implement", label: "Implement" },
     { value: "review", label: "Review" },
   ],

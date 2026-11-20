@@ -133,7 +133,7 @@ describe("bb captain dispatch", () => {
       "BBPLUGINS-9",
       "RAMP-3",
       "--role",
-      "Plan",
+      "Implement",
       "--json",
     ]);
 
@@ -313,7 +313,7 @@ describe("bb captain dispatch", () => {
       firstSessions.push(resolved.instructions);
     };
 
-    await dispatched(as, "BBPLUGINS-1", "Plan");
+    await dispatched(as, "BBPLUGINS-1", "Implement");
     const stranger = await host.harness.behavior.resolveAgentConfiguration(
       makePluginAgentConfigurationContext({
         thread: { id: "thr_other", parentThreadId: captainId },
@@ -321,8 +321,39 @@ describe("bb captain dispatch", () => {
     );
 
     expect(firstSessions).toHaveLength(1);
-    expect(firstSessions[0]).toContain("# Role: Plan");
+    expect(firstSessions[0]).toContain("# Role: Implement");
     expect(stranger.instructions).not.toContain("# Role:");
+  });
+
+  test("overlapping Review dispatches on two tasks: the first child keeps its contract and lenses", async () => {
+    const { host, captainId, as } = await crewHost();
+    await dispatched(as, "BBPLUGINS-1", "Implement");
+    await dispatched(as, "BBPLUGINS-2", "Implement");
+    let first: string | null = null;
+    const pending: { second?: ReturnType<typeof as> } = {};
+    const firstSessions: { skills: unknown; instructions: string | null | undefined }[] = [];
+    host.tasks.onSpawn = async (threadId) => {
+      if (first === null) {
+        // Review A's child exists, A's delegate has not returned: start Review B now.
+        first = threadId;
+        pending.second = as(["dispatch", "BBPLUGINS-2", "--role", "Review"]);
+        await pending.second;
+        return;
+      }
+      // Inside B's spawn, both dispatches are pending: rebuild A's session.
+      const resolved = await host.harness.behavior.resolveAgentConfiguration(
+        makePluginAgentConfigurationContext({ thread: { id: first, parentThreadId: captainId } }),
+      );
+      firstSessions.push({ skills: resolved.skills, instructions: resolved.instructions });
+    };
+
+    const a = await as(["dispatch", "BBPLUGINS-1", "--role", "Review"]);
+
+    expect(a.exitCode).toBe(0);
+    expect((await pending.second)?.exitCode).toBe(0);
+    expect(firstSessions).toHaveLength(1);
+    expect(firstSessions[0]?.instructions).toContain("# Role: Review");
+    expect(firstSessions[0]?.skills).toEqual(["captain-review-lenses"]);
   });
 
   test("--dry-run prints the rung, preset, machine and branch and spawns nothing", async () => {
@@ -489,7 +520,14 @@ describe("bb captain dispatch --thread", () => {
     host.addThread({ id: "thr_auto", status: "idle" });
     host.permissionModes.set("thr_auto", "auto");
 
-    const adopted = await as(["dispatch", "BBPLUGINS-1", "--role", "Plan", "--thread", "thr_auto"]);
+    const adopted = await as([
+      "dispatch",
+      "BBPLUGINS-1",
+      "--role",
+      "Implement",
+      "--thread",
+      "thr_auto",
+    ]);
 
     expect(adopted.exitCode).toBe(0);
     expect(adopted.stdout).toContain("adopted");
@@ -924,8 +962,8 @@ describe("bb captain tell", () => {
 
   test("--rule appends to CREW.md once, steers only active crew, queues it for idle crew, and owes no report", async () => {
     const { host, captainId, as } = await crewHost();
-    const active = await dispatched(as, "BBPLUGINS-1", "Plan");
-    const idle = await dispatched(as, "BBPLUGINS-2", "Plan");
+    const active = await dispatched(as, "BBPLUGINS-1", "Implement");
+    const idle = await dispatched(as, "BBPLUGINS-2", "Implement");
     host.updateThread(active, { status: "active" });
     host.updateThread(idle, { status: "idle" });
     const crewFile = join(host.storageRoot, captainId, "CREW.md");
@@ -938,8 +976,8 @@ describe("bb captain tell", () => {
     expect(first.stdout).toBe(
       [
         "CREW.md  appended  Never push to main.",
-        `${active}  told  BBPLUGINS-1  Plan`,
-        `${idle}  queued  BBPLUGINS-2  Plan  idle; gets it with its next message`,
+        `${active}  told  BBPLUGINS-1  Implement`,
+        `${idle}  queued  BBPLUGINS-2  Implement  idle; gets it with its next message`,
         "",
       ].join("\n"),
     );
@@ -947,8 +985,8 @@ describe("bb captain tell", () => {
     expect(again.stdout).toBe(
       [
         "CREW.md  kept  rule already there",
-        `${active}  kept  BBPLUGINS-1  Plan  already has this rule`,
-        `${idle}  queued  BBPLUGINS-2  Plan  idle; gets it with its next message`,
+        `${active}  kept  BBPLUGINS-1  Implement  already has this rule`,
+        `${idle}  queued  BBPLUGINS-2  Implement  idle; gets it with its next message`,
         "",
       ].join("\n"),
     );
@@ -1156,7 +1194,7 @@ describe("bb captain status", () => {
     const { host, as, working } = await busyCaptain();
     const reviewer = await dispatched(as, "BBPLUGINS-1", "Review");
     host.updateThread(reviewer, { status: "active" });
-    const done = await dispatched(as, "BBPLUGINS-2", "Plan");
+    const done = await dispatched(as, "BBPLUGINS-2", "Review");
     host.updateThread(done, { archivedAt: host.now() });
 
     const plain = await as(["status"]);
@@ -1166,7 +1204,7 @@ describe("bb captain status", () => {
     const line = (stdout: string, thread: string) =>
       stdout.split("\n").find((entry) => entry.includes(thread)) ?? "";
     expect(line(all.stdout, done)).toMatch(
-      new RegExp(`^BBPLUGINS-2  archived  ${done}  Plan  `, "u"),
+      new RegExp(`^BBPLUGINS-2  archived  ${done}  Review  `, "u"),
     );
     expect(line(all.stdout, working)).toContain("review running");
     expect(line(all.stdout, reviewer)).not.toContain("review running");

@@ -8,7 +8,7 @@
 import { z } from "zod";
 
 /** The roles Captain dispatches through Tasks, each with its own ladder. */
-export const LADDER_ROLES = ["plan", "implement", "review"] as const;
+export const LADDER_ROLES = ["implement", "review"] as const;
 export type LadderRole = (typeof LADDER_ROLES)[number];
 
 /** More rungs than this is a mistake, not a fallback plan. */

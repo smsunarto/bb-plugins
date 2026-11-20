@@ -63,7 +63,7 @@ describe("adoptOptions", () => {
         blockers: [],
       },
     ]);
-    expect(read.roles.map((role) => role.label)).toEqual(["Plan", "Implement", "Review"]);
+    expect(read.roles.map((role) => role.label)).toEqual(["Implement", "Review"]);
     expect(read.tasksError).toBeNull();
   });
 
@@ -206,13 +206,13 @@ describe("adopt", () => {
 
   test("creates a task from the thread's title, then adopts onto it", async () => {
     const { host, adopt } = await adoptHost();
-    const result = await adopt({ role: "plan", task: NEW });
+    const result = await adopt({ role: "implement", task: NEW });
     expect(result).toMatchObject({ ok: true, task: "BBPLUGINS-3", created: true });
     expect(creates(host)[0]?.input).toMatchObject({
       title: "Fix the sidebar flicker",
       status: "todo",
     });
-    expect(host.server.store.crewRole("thr_side")).toMatchObject({ role: "plan" });
+    expect(host.server.store.crewRole("thr_side")).toMatchObject({ role: "implement" });
   });
 
   test("a task another live thread holds in that role is refused with no CLI-only fix", async () => {

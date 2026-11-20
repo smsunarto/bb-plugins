@@ -66,10 +66,7 @@ describe("bb captain new", () => {
     ]);
     // An existing preset is matched case-insensitively and left alone.
     const created = host.tasks.calls.filter((call) => call.method === "createPreset");
-    expect(created.map((call) => (call.input as { name: string }).name)).toEqual([
-      "Plan",
-      "Review",
-    ]);
+    expect(created.map((call) => (call.input as { name: string }).name)).toEqual(["Review"]);
     // Crew run unattended like their Captain, so their presets skip auto mode's classifier.
     for (const call of created) {
       expect(call.input).toMatchObject({ permissionMode: "full" });

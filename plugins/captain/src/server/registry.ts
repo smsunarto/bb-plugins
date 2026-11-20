@@ -21,8 +21,8 @@ export function createRegistry(store: Store) {
   const captains = new Map<string, Captain>(
     store.liveCaptains().map((row) => [row.threadId, withoutArchived(row)]),
   );
-  /** Captain id → task key → role. */
-  const pending = new Map<string, Map<string, Role>>();
+  /** Captain id → task key → role, and the Captain's children before that dispatch. */
+  const pending = new Map<string, Map<string, { role: Role; known: ReadonlySet<string> }>>();
   let storageRoot: string | null = null;
   /**
    * Each scanned Drive's signature as of its last refresh to every watcher:
@@ -71,9 +71,14 @@ export function createRegistry(store: Store) {
       storageRoot = root;
     },
 
-    setPending(captainId: string, taskKey: string, role: Role): void {
-      const roles = pending.get(captainId) ?? new Map<string, Role>();
-      roles.set(taskKey.toUpperCase(), role);
+    setPending(
+      captainId: string,
+      taskKey: string,
+      role: Role,
+      known: ReadonlySet<string> = new Set(),
+    ): void {
+      const roles = pending.get(captainId) ?? new Map();
+      roles.set(taskKey.toUpperCase(), { role, known });
       pending.set(captainId, roles);
     },
     clearPending(captainId: string, taskKey: string): void {
@@ -84,10 +89,15 @@ export function createRegistry(store: Store) {
     /**
      * The role an unknown child of this Captain gets: the pending role when
      * every pending entry names the same one, otherwise none, because
-     * `configure` cannot tell which child is which.
+     * `configure` cannot tell which child is which. A dispatch that already
+     * knew the child before it started is not its candidate, so a crew thread
+     * of a retired role, which every dispatch knew, gets none.
      */
-    pendingRole(captainId: string): Role | null {
-      const roles = new Set(pending.get(captainId)?.values());
+    pendingRole(captainId: string, threadId: string): Role | null {
+      const candidates = [...(pending.get(captainId)?.values() ?? [])].filter(
+        (entry) => !entry.known.has(threadId),
+      );
+      const roles = new Set(candidates.map((entry) => entry.role));
       const [only] = roles;
       return roles.size === 1 && only !== undefined ? only : null;
     },

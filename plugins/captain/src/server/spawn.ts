@@ -129,7 +129,7 @@ export async function spawnCrew(
 ): Promise<{ threadId: string; notes: string[] }> {
   // Read before the spawn: the new session's CREW.md holds at least these rules.
   const rulesInCrewMd = deps.store.latestRuleId(captain.threadId);
-  deps.registry.setPending(captain.threadId, start.taskKey, start.role);
+  deps.registry.setPending(captain.threadId, start.taskKey, start.role, start.known);
   try {
     let threadId: string;
     const notes: string[] = [];

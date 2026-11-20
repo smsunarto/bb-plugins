@@ -90,7 +90,7 @@ export function tellCommand(deps: CommandDeps) {
           if (role === null) {
             blockers.push({
               reason: `no role ${JSON.stringify(input.options.role)}`,
-              fix: "pass --role Plan, Implement or Review",
+              fix: "pass --role Implement or Review",
             });
           }
         }
