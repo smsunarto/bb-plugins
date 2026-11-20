@@ -47,7 +47,9 @@ export function identify(
   // A row whose role was retired keeps its thread off a pending dispatch's role.
   const role =
     recorded?.role ??
-    (deps.store.hasCrewRow(context.thread.id) ? null : deps.registry.pendingRole(parent.threadId));
+    (deps.store.hasCrewRow(context.thread.id)
+      ? null
+      : deps.registry.pendingRole(parent.threadId, context.thread.id));
   return { kind: "crew", captain: parent, role };
 }
 

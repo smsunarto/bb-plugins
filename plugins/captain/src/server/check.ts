@@ -160,7 +160,7 @@ async function checkCaptain(
   const needRows = threads.filter(
     (thread) =>
       (thread.status === "idle" && !thread.hasPendingInteraction) ||
-      deps.store.crewRole(thread.id) === null,
+      !deps.store.hasCrewRow(thread.id),
   );
   const rows =
     needRows.length === 0 ? [] : await deps.tasks.crewSnapshot(needRows.map((t) => t.id));
@@ -259,7 +259,8 @@ function backfillRoles(
   rows: readonly CrewRow[],
 ): void {
   for (const thread of threads) {
-    if (deps.store.crewRole(thread.id) !== null) continue;
+    // A row whose role was retired is kept as it is, not backfilled again.
+    if (deps.store.hasCrewRow(thread.id)) continue;
     const preset = rows
       .filter((row) => row.threadId === thread.id)
       .sort((a, b) => b.attachedAt.localeCompare(a.attachedAt))[0]?.presetName;

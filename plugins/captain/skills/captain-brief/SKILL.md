@@ -14,7 +14,7 @@ A brief is the task's description. Every role dispatched on the task reads the s
 2. Fill every section, including the `Target branch:` and `Remote:` lines. Each done-means item must be something you can check yourself from the commits, tests, PR or a run.
 3. Create the task: `bb tasks create --project <KEY> --title "<title>" --description-file <Drive>/briefs/<slug>.md`. It prints the new key.
 4. Dispatch it: `bb captain dispatch <key> --role Implement`. Implement plans its own work before it builds.
-   - **If the task is research or design only:** still dispatch Implement. Say "no code" in the brief, and name in its Report section where the result goes, such as a file attached to the final comment.
+   - **If the task is research or design only:** still dispatch Implement, and say "no code" in the brief. Implement then attaches its result to its `Final:` report, with no commit, push or PR. Write done-means you can check from that attachment, read it when the report arrives, and record `bb captain verdict <key> review skipped --reason "no code"`.
 
 The brief is done when every section is filled and each done-means item names a check.
 

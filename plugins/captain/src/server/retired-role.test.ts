@@ -91,8 +91,8 @@ describe("a retired Plan role in stored data", () => {
 
     const before = host.sent.length;
     host.setNow(host.now() + 60 * 60_000);
-    await host.server.check.pass();
-    await host.server.check.pass();
+    const passes = [await host.server.check.pass(), await host.server.check.pass()];
+    expect(passes.map((pass) => pass.skipped)).toEqual([[], []]);
     // No stall wake, no instruction-change message, no fallback restart; and no row backfilled.
     expect(host.sent.slice(before)).toEqual([]);
     expect(host.server.store.crewRole(planned)).toBeNull();
@@ -128,6 +128,47 @@ describe("a retired Plan role in stored data", () => {
     expect(dispatched.exitCode).toBe(0);
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).not.toContain("# Role:");
+  });
+
+  test("an old Plan child with no crew row, only its Plan attachment, gets no Implement contract", async () => {
+    const ctx = await retiredHost();
+    const { host, captainId, as, db } = ctx;
+    const planned = await planThread(ctx, "BBPLUGINS-2", "Plan");
+    db().prepare("DELETE FROM crew_roles WHERE thread_id = ?").run(planned);
+    const sessions: (string | null | undefined)[] = [];
+    host.tasks.onSpawn = async () => {
+      const resolved = await host.harness.behavior.resolveAgentConfiguration(
+        makePluginAgentConfigurationContext({
+          thread: { id: planned, parentThreadId: captainId },
+        }),
+      );
+      sessions.push(resolved.instructions);
+    };
+
+    const dispatched = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement"]);
+
+    expect(dispatched.exitCode).toBe(0);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).not.toContain("# Role:");
+  });
+
+  test("an active child with a stored Plan row is not read again for a backfill", async () => {
+    const ctx = await retiredHost();
+    const { host } = ctx;
+    const planned = await planThread(ctx, "BBPLUGINS-2", "Plan");
+    host.updateThread(planned, { status: "active" });
+    const snapshots = () =>
+      host.tasks.calls.filter(
+        (call) => call.method === "crewSnapshot" && JSON.stringify(call.input).includes(planned),
+      ).length;
+    const before = snapshots();
+
+    const passes = [await host.server.check.pass(), await host.server.check.pass()];
+
+    expect(passes.map((pass) => pass.skipped)).toEqual([[], []]);
+    expect(snapshots()).toBe(before);
+    expect(host.server.store.hasCrewRow(planned)).toBe(true);
+    expect(host.server.store.crewRole(planned)).toBeNull();
   });
 
   test("a saved Plan ladder is ignored by the ladders read and leaves the others editable", async () => {
