@@ -104,6 +104,8 @@ export const ColumnContext = createContext<Column | null>(null);
 
 /** Whether diffs wrap long lines: on a phone, where scrolling sideways hides the end of each line. */
 export const WrapContext = createContext(false);
+/** What a card says of a diff too large to draw, where the surface offers its own way to read it. */
+export const TooLargeContext = createContext<string | null>(null);
 
 /** Cards drawn before the observer reports: about a screen of them. */
 export const EAGER_CARDS = 8;
@@ -439,9 +441,12 @@ function useLineAnnotations({
 }
 
 /** Why a ready file has no diff to draw. */
-function emptyText(patch: FilePatch | null, file: ChangeFile): string {
+function emptyText(patch: FilePatch | null, file: ChangeFile, tooLarge: string | null): string {
   if (patch?.truncated)
-    return "This diff is too large to show. Open the file on GitHub or in your editor to read it.";
+    return (
+      tooLarge ??
+      "This diff is too large to show. Open the file on GitHub or in your editor to read it."
+    );
   if (file.kind === "renamed" && file.previousPath) return `Renamed from ${file.previousPath}.`;
   return "No text to show. The file is binary or its contents did not change.";
 }
@@ -482,6 +487,7 @@ function PatchBody({
   const { mode, name } = useCodeTheme();
   const commenting = actions !== null;
   const wrap = useContext(WrapContext);
+  const tooLarge = useContext(TooLargeContext);
   const options = useMemo(
     () => ({
       disableFileHeader: true,
@@ -527,7 +533,7 @@ function PatchBody({
           data-testid="sc-patch-empty"
           className="m-0 border-t border-solid border-border-hairline bg-surface-recessed px-3 py-2 text-[11px] leading-4 text-muted-foreground"
         >
-          {emptyText(patch, file)}
+          {emptyText(patch, file, tooLarge)}
         </p>
       </>
     );

@@ -37,10 +37,12 @@ import {
   DiffColumn,
   EAGER_CARDS,
   FileCard,
+  TooLargeContext,
   useColumn,
   WrapContext,
 } from "./page/files-view.tsx";
 import { PatchStore } from "./page/patches.ts";
+import { Hint } from "./ui.tsx";
 
 /** Larger files show as text: reading them whole into the page would cost more than it shows. */
 export const MAX_PATCH_BYTES = 8 * 1024 * 1024;
@@ -100,16 +102,61 @@ export async function readCapped(response: Response, max: number): Promise<strin
 
 type Loaded =
   | { state: "loading" }
-  | { state: "diff"; read: PatchFile }
+  /** `failed` says why the last re-read failed; the diff shown is the last copy read. */
+  | { state: "diff"; read: PatchFile; failed: string | null }
   /** BB's preview, with the line saying why; a null reason lets the preview speak (a failed read). */
   | { state: "text"; reason: string | null };
 
 const TOO_LARGE = `This file is over ${MAX_PATCH_BYTES / 1024 / 1024} MB, too large for the diff view.`;
+/** A read running longer than this no longer holds off the next one: a hung request can't stall re-reads. */
+const READ_DEADLINE_MS = 30_000;
+
+/** Why a re-read failed, after "Couldn't re-read:". */
+function failure(response: Response | null): string {
+  if (response === null) return "the request didn't reach BB.";
+  if (response.status === 404) return "the file is no longer there.";
+  return `BB answered ${response.status}.`;
+}
+
+type Known = { url: string; text: string | null; etag: string | null; modified: string | null };
+
+const validators = (response: Response) => ({
+  etag: response.headers.get("etag"),
+  modified: response.headers.get("last-modified"),
+});
+
+/** A conditional request when the last read left a validator to send. */
+function conditional(known: Known | null): Record<string, string> {
+  if (known?.etag) return { "If-None-Match": known.etag };
+  if (known?.modified) return { "If-Modified-Since": known.modified };
+  return {};
+}
+
+/** What shows after a failed read, and whether to keep trying; null keeps what shows. */
+function afterFailure(
+  current: Loaded | null,
+  why: string,
+): { value: Loaded | null; retry: boolean } {
+  if (current?.state === "diff") return { value: { ...current, failed: why }, retry: true };
+  if (current?.state === "text" && current.reason !== null) return { value: null, retry: true };
+  // Nothing read yet: BB's preview says what went wrong, and offers its own Refresh.
+  return { value: { state: "text", reason: null }, retry: false };
+}
+
+/** What a newly read file shows. */
+function shownFor(text: string | null): Loaded {
+  if (text === null) return { state: "text", reason: TOO_LARGE };
+  const read = readPatchFile(text);
+  return read.ok
+    ? { state: "diff", read: read.read, failed: null }
+    : { state: "text", reason: read.reason };
+}
 
 /**
  * The file read and parsed, read again when it may have changed: on Refresh,
  * when its tab shows again, when the window regains focus, and every few
- * seconds while showing when the server answers a conditional request.
+ * seconds while showing when the server answers a conditional request. A
+ * failed re-read keeps the diff on screen, says why, and tries again.
  */
 function usePatchFile(url: string | null) {
   const visible = useTabVisible();
@@ -117,79 +164,86 @@ function usePatchFile(url: string | null) {
     url,
     value: { state: "loading" },
   });
+  const shown = useRef(loaded);
   const [refreshing, setRefreshing] = useState(false);
-  const last = useRef<{
-    url: string;
-    text: string | null;
-    etag: string | null;
-    modified: string | null;
-  }>(null);
-  const inflight = useRef<AbortController | null>(null);
+  const last = useRef<Known | null>(null);
+  /** A re-read failed while something drew: keep asking until one succeeds. */
+  const retrying = useRef(false);
+  const inflight = useRef<{ controller: AbortController; started: number } | null>(null);
 
-  const load = useCallback(async () => {
-    if (url === null) return;
-    inflight.current?.abort();
-    const controller = new AbortController();
-    inflight.current = controller;
-    const known = last.current?.url === url ? last.current : null;
-    const headers: Record<string, string> = {};
-    if (known?.etag) headers["If-None-Match"] = known.etag;
-    else if (known?.modified) headers["If-Modified-Since"] = known.modified;
-    const settle = (value: Loaded, text: string | null, response: Response | null) => {
-      if (controller.signal.aborted) return;
-      last.current = {
-        url,
-        text,
-        etag: response?.headers.get("etag") ?? null,
-        modified: response?.headers.get("last-modified") ?? null,
+  const load = useCallback(
+    async (force: boolean) => {
+      if (url === null) return;
+      const running = inflight.current;
+      // A poll or focus waits for the read already running, unless it is past its deadline.
+      if (running && !force && Date.now() - running.started < READ_DEADLINE_MS) return;
+      running?.controller.abort();
+      const controller = new AbortController();
+      inflight.current = { controller, started: Date.now() };
+      const known = last.current?.url === url ? last.current : null;
+      const current = () => (shown.current.url === url ? shown.current.value : null);
+      const put = (value: Loaded) => {
+        shown.current = { url, value };
+        setLoaded(shown.current);
       };
-      setLoaded({ url, value });
-    };
-    try {
-      const response = await fetch(url, {
-        credentials: "same-origin",
-        cache: "no-cache",
-        headers,
-        signal: controller.signal,
-      });
-      if (response.status === 304) return;
-      if (!response.ok) return settle({ state: "text", reason: null }, null, response);
-      const text = await readCapped(response, MAX_PATCH_BYTES);
-      // Unchanged text keeps the drawn diff, its open cards and its scroll.
-      if (text !== null && known?.text === text) return;
-      if (text === null) return settle({ state: "text", reason: TOO_LARGE }, null, response);
-      const read = readPatchFile(text);
-      settle(
-        read.ok ? { state: "diff", read: read.read } : { state: "text", reason: read.reason },
-        text,
-        response,
-      );
-    } catch {
-      if (!controller.signal.aborted) settle({ state: "text", reason: null }, null, null);
-    } finally {
-      if (inflight.current === controller) {
-        inflight.current = null;
-        setRefreshing(false);
+      const succeed = () => {
+        retrying.current = false;
+        const value = current();
+        if (value?.state === "diff" && value.failed) put({ ...value, failed: null });
+      };
+      const fail = (why: string) => {
+        const next = afterFailure(current(), why);
+        retrying.current = next.retry;
+        if (next.value) put(next.value);
+      };
+      try {
+        const response = await fetch(url, {
+          credentials: "same-origin",
+          cache: "no-cache",
+          headers: conditional(known),
+          signal: controller.signal,
+        });
+        if (response.status === 304) return succeed();
+        if (!response.ok) {
+          void response.body?.cancel();
+          return fail(failure(response));
+        }
+        const text = await readCapped(response, MAX_PATCH_BYTES);
+        if (controller.signal.aborted) return;
+        last.current = { url, text, ...validators(response) };
+        // Unchanged text keeps the drawn diff, its open cards and its scroll.
+        if (text !== null && known?.text === text && current()) return succeed();
+        retrying.current = false;
+        put(shownFor(text));
+      } catch {
+        if (!controller.signal.aborted) fail(failure(null));
+      } finally {
+        if (inflight.current?.controller === controller) {
+          inflight.current = null;
+          setRefreshing(false);
+        }
       }
-    }
-  }, [url]);
+    },
+    [url],
+  );
 
   useEffect(() => {
-    void load();
-    return () => inflight.current?.abort();
+    void load(true);
+    return () => inflight.current?.controller.abort();
   }, [load]);
 
   // Read again as the tab shows again, as the window regains focus, and on a poll while showing.
   const wasVisible = useRef(visible);
   useEffect(() => {
-    if (visible && !wasVisible.current) void load();
+    if (visible && !wasVisible.current) void load(false);
     wasVisible.current = visible;
     if (!visible) return;
-    const onFocus = () => void load();
+    const onFocus = () => void load(false);
     window.addEventListener("focus", onFocus);
     const poll = setInterval(() => {
       const known = last.current;
-      if (document.visibilityState === "visible" && (known?.etag || known?.modified)) void load();
+      const cheap = Boolean(known?.etag || known?.modified);
+      if (document.visibilityState === "visible" && (cheap || retrying.current)) void load(false);
     }, POLL_MS);
     return () => {
       window.removeEventListener("focus", onFocus);
@@ -199,8 +253,9 @@ function usePatchFile(url: string | null) {
 
   const refresh = useCallback(() => {
     setRefreshing(true);
-    last.current = null;
-    void load();
+    // Ask for the whole file; the same text still keeps the cards as they are.
+    if (last.current) last.current = { ...last.current, etag: null, modified: null };
+    void load(true);
   }, [load]);
 
   const value: Loaded =
@@ -229,6 +284,7 @@ function storeOf(read: PatchFile): PatchStore {
 }
 
 const NOOP = () => {};
+const TOO_LARGE_FILE = "This file's diff is too large to draw. Open as text to read it.";
 
 function CommitHeader({ commit }: { commit: PatchFileCommit }) {
   const meta = [commit.id ? shortId(commit.id) : null, commit.authorName, commit.date]
@@ -275,16 +331,22 @@ function TextButton({ label, onClick }: { label: string; onClick: () => void }) 
 
 function RefreshButton({ refreshing, onRefresh }: { refreshing: boolean; onRefresh: () => void }) {
   return (
-    <Button
-      size="sm"
-      variant="ghost"
-      aria-label={refreshing ? "Refreshing file" : "Refresh file"}
-      disabled={refreshing}
-      className={`${TOOL} w-7 max-md:pointer-coarse:min-w-11`}
-      onClick={onRefresh}
-    >
-      <Icon name="RotateCcw" className="size-3.5" aria-hidden />
-    </Button>
+    <Hint label="Read the file again">
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-label="Refresh file"
+        aria-busy={refreshing}
+        className={`${TOOL} w-7 max-md:pointer-coarse:min-w-11`}
+        onClick={onRefresh}
+      >
+        <Icon
+          name="RotateCcw"
+          className={`size-3.5 ${refreshing ? "opacity-50" : ""}`}
+          aria-hidden
+        />
+      </Button>
+    </Hint>
   );
 }
 
@@ -404,8 +466,9 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
     return loaded.reason === null ? (
       <Original />
     ) : (
+      // BB's preview below has its own Refresh, and the poll brings the diff back once the file reads.
       <div className="flex h-full min-h-0 flex-col" data-testid="sc-patch-file-text">
-        <Toolbar actions={<RefreshButton refreshing={refreshing} onRefresh={refresh} />}>
+        <Toolbar>
           <span data-testid="sc-patch-file-notice">Shown as text. {loaded.reason}</span>
         </Toolbar>
         <div className="min-h-0 flex-1">
@@ -424,7 +487,7 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
       <Toolbar
         actions={
           <>
-            <RefreshButton refreshing={refreshing} onRefresh={refresh} />
+            {asText ? null : <RefreshButton refreshing={refreshing} onRefresh={refresh} />}
             <TextButton
               label={asText ? "Show diff" : "Open as text"}
               onClick={() => setAsText(!asText)}
@@ -433,6 +496,11 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
         }
       >
         {asText ? "Showing the patch as text" : read ? summary(read) : "Reading the patch…"}
+        {loaded.state === "diff" && loaded.failed ? (
+          <span className="block text-warning" data-testid="sc-patch-file-stale">
+            Couldn't re-read: {loaded.failed} Showing the last copy read.
+          </span>
+        ) : null}
       </Toolbar>
       <div className="relative min-h-0 flex-1">
         {read ? (
@@ -442,7 +510,9 @@ export function PatchFileOpener({ path, source, Original }: PluginFileOpenerProp
             inert={asText}
           >
             <WrapContext.Provider value={wrap}>
-              <PatchColumn read={read} scroller={scroller} onOpenAsText={() => setAsText(true)} />
+              <TooLargeContext.Provider value={TOO_LARGE_FILE}>
+                <PatchColumn read={read} scroller={scroller} onOpenAsText={() => setAsText(true)} />
+              </TooLargeContext.Provider>
             </WrapContext.Provider>
           </div>
         ) : (

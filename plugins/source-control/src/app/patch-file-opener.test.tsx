@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import type { PluginFileOpenerSource } from "@get-bb/plugin-sdk/app";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { MAX_PATCH_BYTES, patchFileUrl, readCapped } from "./patch-file-opener.tsx";
@@ -162,4 +162,159 @@ test.each([
   expect(screen.queryByTestId("sc-patch-file-notice")?.textContent ?? null).toBe(
     reason === null ? null : `Shown as text. ${reason}`,
   );
+});
+
+describe("re-reading the file", () => {
+  const file = (name: string) => `--- a/${name}\n+++ b/${name}\n@@ -1 +1 @@\n-a\n+b\n`;
+  const paths = () =>
+    screen.queryAllByTestId("sc-file-card").map((card) => card.getAttribute("data-path"));
+  const opens = () =>
+    screen.queryAllByTestId("sc-file-card").map((card) => card.getAttribute("data-open"));
+  const tick = async (ms: number) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+  const sentTag = (init: RequestInit) => (init.headers as Record<string, string>)["If-None-Match"];
+  const render = () => renderSlot(opener, { path: "work/change.patch", source: STORAGE, Original });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("the same text under a new ETag is downloaded once, then answered 304", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let etag = '"1"';
+    const log: number[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        const status = sentTag(init) === etag ? 304 : 200;
+        log.push(status);
+        return new Response(status === 304 ? null : file("x.txt"), { status, headers: { etag } });
+      }),
+    );
+    render();
+    await waitFor(() => expect(paths()).toEqual(["x.txt"]));
+    etag = '"2"'; // touched, or saved again with the same bytes
+    const from = log.length;
+    for (let index = 0; index < 4; index++) await tick(5000);
+    expect(log.slice(from)).toEqual([200, 304, 304, 304]);
+  });
+
+  test("a failed re-read keeps the diff, says why, and recovers on the next poll", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let down = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        if (down) throw new TypeError("Failed to fetch");
+        if (sentTag(init) === '"1"') return new Response(null, { status: 304 });
+        return new Response(file("x.txt"), { headers: { etag: '"1"' } });
+      }),
+    );
+    render();
+    await waitFor(() => expect(paths()).toEqual(["x.txt"]));
+    const root = screen.getByTestId("sc-patch-file");
+    down = true;
+    await tick(5000);
+    expect(paths()).toEqual(["x.txt"]);
+    expect(screen.getByTestId("sc-patch-file-stale").textContent).toBe(
+      "Couldn't re-read: the request didn't reach BB. Showing the last copy read.",
+    );
+    expect(screen.getByRole("button", { name: "Refresh file" })).toBeTruthy();
+    expect(screen.queryByTestId("bb-original")).toBeNull();
+    down = false;
+    await tick(5000);
+    expect(screen.queryByTestId("sc-patch-file-stale")).toBeNull();
+    // The same root throughout, so its width observer still follows the panel.
+    expect(screen.getByTestId("sc-patch-file")).toBe(root);
+  });
+
+  test("a file gone on re-read says so, and the diff stays", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let gone = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        gone
+          ? new Response("missing", { status: 404 })
+          : new Response(file("x.txt"), { headers: { etag: '"1"' } }),
+      ),
+    );
+    render();
+    await waitFor(() => expect(paths()).toEqual(["x.txt"]));
+    gone = true;
+    await tick(5000);
+    expect(screen.getByTestId("sc-patch-file-stale").textContent).toContain(
+      "the file is no longer there.",
+    );
+    expect(paths()).toEqual(["x.txt"]);
+  });
+
+  test("a collapsed card stays collapsed on its file when a file is added above it", async () => {
+    let body = file("x.txt") + file("y.txt");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(body)),
+    );
+    render();
+    await waitFor(() => expect(paths()).toEqual(["x.txt", "y.txt"]));
+    fireEvent.click(screen.getAllByRole("button", { expanded: true })[0]!);
+    body = file("w.txt") + body;
+    fireEvent.click(screen.getByRole("button", { name: "Refresh file" }));
+    await waitFor(() => expect(paths()).toEqual(["w.txt", "x.txt", "y.txt"]));
+    expect(opens()).toEqual(["true", "false", "true"]);
+  });
+
+  test("a re-read slower than the poll is left to finish", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let etag = '"1"';
+    let body = file("x.txt");
+    let started = 0;
+    let aborted = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) => {
+        const sent = sentTag(init);
+        if (sent === etag) return Promise.resolve(new Response(null, { status: 304 }));
+        if (sent === undefined) return Promise.resolve(new Response(body, { headers: { etag } }));
+        started++;
+        // A changed file over a slow link: the body takes 7 s.
+        return new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => resolve(new Response(body, { headers: { etag } })), 7000);
+          init.signal!.addEventListener("abort", () => {
+            clearTimeout(timer);
+            aborted++;
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        });
+      }),
+    );
+    render();
+    await waitFor(() => expect(paths()).toEqual(["x.txt"]));
+    body += file("y.txt");
+    etag = '"2"';
+    for (let index = 0; index < 4; index++) await tick(5000);
+    expect(paths()).toEqual(["x.txt", "y.txt"]);
+    expect({ started, aborted }).toEqual({ started: 1, aborted: 0 });
+  });
+
+  test("a 200 KB quoted path draws", async () => {
+    const name = "a".repeat(200_000);
+    open(`diff --git a/x b/y\nsimilarity index 100%\nrename from "${name}"\nrename to y\n`);
+    await waitFor(() => expect(paths()).toEqual(["y"]));
+  });
+});
+
+test("Shown as text has one Refresh: BB's preview's own", async () => {
+  open(readFileSync(join(FIXTURES, "malformed/undercount.patch"), "utf8"));
+  await screen.findByTestId("sc-patch-file-notice");
+  expect(screen.queryByRole("button", { name: "Refresh file" })).toBeNull();
+});
+
+test("a file's diff too large to draw points to Open as text", async () => {
+  open(`--- a/m.js\n+++ b/m.js\n@@ -1 +1 @@\n-${"x".repeat(1_600_000)}\n+y\n`);
+  const empty = await screen.findByTestId("sc-patch-empty");
+  expect(empty.textContent).toBe("This file's diff is too large to draw. Open as text to read it.");
 });

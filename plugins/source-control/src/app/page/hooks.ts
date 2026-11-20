@@ -79,16 +79,28 @@ export function useWidth(ref: RefObject<HTMLElement | null>, measured = false): 
   const [width, setWidth] = useState<number | null>(() =>
     measured && typeof ResizeObserver !== "undefined" ? null : windowWidth(),
   );
+  // The element may be replaced while the hook's component stays: check after every render.
+  const watched = useRef<{ element: HTMLElement; observer: ResizeObserver } | null>(null);
   useEffect(() => {
     const element = ref.current;
+    if (watched.current?.element === element) return;
+    watched.current?.observer.disconnect();
+    watched.current = null;
     if (!element || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver((entries) => {
       const entry = entries.at(-1);
       if (entry) setWidth(Math.round(entry.contentRect.width));
     });
     observer.observe(element);
-    return () => observer.disconnect();
-  }, [ref]);
+    watched.current = { element, observer };
+  });
+  useEffect(
+    () => () => {
+      watched.current?.observer.disconnect();
+      watched.current = null;
+    },
+    [],
+  );
   return width;
 }
 
