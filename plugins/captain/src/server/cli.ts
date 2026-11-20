@@ -7,6 +7,17 @@ import { iconCommand } from "./commands/icon.ts";
 import { newCommand } from "./commands/new.ts";
 import { dispatchCommand } from "./commands/dispatch.ts";
 import { repoAddCommand, repoRemoveCommand } from "./commands/repo.ts";
+import {
+  routineAddCommand,
+  routineFireCommand,
+  routineListCommand,
+  routinePauseCommand,
+  routineRemoveCommand,
+  routineResumeCommand,
+  routineRunCommand,
+  routineShowCommand,
+  routineUpdateCommand,
+} from "./commands/routine.ts";
 import { statusCommand } from "./commands/status.ts";
 import { tellCommand } from "./commands/tell.ts";
 import { verdictCommand } from "./commands/verdict.ts";
@@ -29,6 +40,15 @@ export function captainCli(deps: CommandDeps) {
       ask: askCommand(deps),
       "ask resolve": askResolveCommand(deps),
       status: statusCommand(deps),
+      "routine add": routineAddCommand(deps),
+      "routine list": routineListCommand(deps),
+      "routine show": routineShowCommand(deps),
+      "routine update": routineUpdateCommand(deps),
+      "routine pause": routinePauseCommand(deps),
+      "routine resume": routineResumeCommand(deps),
+      "routine run": routineRunCommand(deps),
+      "routine remove": routineRemoveCommand(deps),
+      "routine fire": routineFireCommand(deps),
       icon: iconCommand(deps),
     },
   });

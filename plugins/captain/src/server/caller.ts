@@ -3,6 +3,7 @@ import { isAbsolute, resolve } from "node:path";
 import { DRIVE_FILE_MAX_BYTES } from "./drive.ts";
 import { Refusal } from "./output.ts";
 import type { Captain, Registry } from "./registry.ts";
+import type { Store } from "./store.ts";
 
 /**
  * The Captain a command acts for: `--captain <id-or-name>` when given, else the
@@ -102,4 +103,83 @@ export async function readCallerFile(
     ]);
   }
   return file.content;
+}
+
+/**
+ * The Captain a routine command acts for. Routines are the user's to set, so a
+ * call bound to a thread is allowed only from a Captain's own thread, for its
+ * own routines; `--captain` cannot point it elsewhere. A call with no thread
+ * (the user's terminal) names its Captain with `--captain`.
+ */
+export async function routineCaptain(
+  bb: Pick<BbPluginApi, "sdk">,
+  registry: Registry,
+  store: Pick<Store, "captain" | "crewRole">,
+  ctx: PluginCliContext,
+  captainOption: string | undefined,
+): Promise<Captain> {
+  if (ctx.threadId === undefined) {
+    return callerCaptain(bb, registry, ctx, { captain: captainOption });
+  }
+  const own = await threadCaptain(bb, registry, store, ctx.threadId);
+  if (captainOption !== undefined) {
+    const named = registry.get(captainOption.trim()) ?? registry.byName(captainOption);
+    if (named === null || named.threadId !== own.threadId) {
+      throw new Refusal([
+        {
+          reason: `${own.name} Captain manages only its own routines, not ${JSON.stringify(captainOption)}'s`,
+          fix: "drop --captain, or run it from your terminal",
+        },
+      ]);
+    }
+  }
+  return own;
+}
+
+/** Refuse a thread-bound call for a routine of another Captain; a call with no thread passes. */
+export async function routineThreadAllowed(
+  bb: Pick<BbPluginApi, "sdk">,
+  registry: Registry,
+  store: Pick<Store, "captain" | "crewRole">,
+  ctx: PluginCliContext,
+  captainId: string,
+): Promise<void> {
+  if (ctx.threadId === undefined) return;
+  const own = await threadCaptain(bb, registry, store, ctx.threadId);
+  if (own.threadId === captainId) return;
+  throw new Refusal([
+    {
+      reason: `${own.name} Captain manages only its own routines`,
+      fix: "run it in the routine's Captain thread, or from your terminal",
+    },
+  ]);
+}
+
+/** The calling thread as a live Captain; crew and every other thread are refused. */
+async function threadCaptain(
+  bb: Pick<BbPluginApi, "sdk">,
+  registry: Registry,
+  store: Pick<Store, "captain" | "crewRole">,
+  threadId: string,
+): Promise<Captain> {
+  const own = registry.get(threadId);
+  if (own !== null) return own;
+  const role = store.crewRole(threadId);
+  const parentId =
+    role?.captainId ?? (await bb.sdk.threads.get({ threadId })).parentThreadId ?? null;
+  const parent = parentId === null ? null : (registry.get(parentId) ?? store.captain(parentId));
+  if (parent !== null) {
+    throw new Refusal([
+      {
+        reason: `${threadId} is crew of the ${parent.name} Captain; crew cannot manage routines`,
+        fix: `report the need to the ${parent.name} Captain (${parent.threadId}); only it or the user sets routines`,
+      },
+    ]);
+  }
+  throw new Refusal([
+    {
+      reason: `${threadId} is not a Captain; only a Captain's own thread or the user's terminal manages routines`,
+      fix: "run it in the Captain thread, or from your terminal with --captain <thread-id>",
+    },
+  ]);
 }

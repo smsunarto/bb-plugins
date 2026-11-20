@@ -2,7 +2,17 @@ import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing"
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { captainHost, MAC_HOST, newCaptain, SERVER_HOST, type CaptainHost } from "./test-host.ts";
+import { captainCli } from "./cli.ts";
+import type { CommandDeps } from "./commands/deps.ts";
+import { parseDuration } from "./commands/routine.ts";
+import {
+  captainHost,
+  MAC_HOST,
+  newCaptain,
+  queuedRow,
+  SERVER_HOST,
+  type CaptainHost,
+} from "./test-host.ts";
 
 const run = (host: CaptainHost, argv: string[], threadId?: string, cwd?: string) =>
   host.harness.behavior.runCli(argv, {
@@ -118,7 +128,7 @@ describe("bb captain new", () => {
     const host = await captainHost();
     const captainId = await newCaptain(host);
     host.metadata.delete(`${captainId} genui`);
-    host.queued.set(captainId, [{ id: "qm_later", text: "later", waitingOn: { kind: "time" } }]);
+    host.queued.set(captainId, [queuedRow("qm_later", "later", { kind: "time" })]);
 
     await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
 
@@ -436,5 +446,300 @@ describe("bb captain drive", () => {
 
     expect(result.exitCode).toBe(1);
     expect(result.stderr).toContain("thr_stranger is not a Captain or one of its crew");
+  });
+});
+
+describe("bb captain routine", () => {
+  async function routineCli() {
+    const host = await captainHost();
+    const captainId = await newCaptain(host);
+    const prompt = join(host.root, "sweep.md");
+    writeFileSync(prompt, "Run bb captain status --all and nudge stalled crew.");
+    return { host, captainId, prompt };
+  }
+
+  test("add prints the schedule in words and the next run", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    const args = ["routine", "add", "--name", "Sweep", "--cron", "0 9 * * 1-5"];
+    const result = await run(
+      host,
+      [...args, "--timezone", "UTC", "--prompt-file", prompt],
+      captainId,
+    );
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toMatch(
+      /^r1 {2}added {2}"Sweep" {2}Every weekday at 9:00 AM \(UTC\) {2}next \w{3}, \w{3} \d+, \d+:\d\d (AM|PM) UTC\n$/u,
+    );
+    const listed = json((await run(host, ["routine", "list", "--json"], captainId)).stdout);
+    expect(listed.results).toMatchObject([
+      { id: "r1", state: "active", name: "Sweep", when: "Every weekday at 9:00 AM", enabled: true },
+    ]);
+  });
+
+  test("add --in makes a one-shot; update, pause, resume, show and remove act by id or name", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    await run(
+      host,
+      ["routine", "add", "--name", "Check deploy", "--in", "2h", "--prompt-file", prompt],
+      captainId,
+    );
+    const automation = [...host.automations.rows.values()][0];
+    expect(automation?.trigger).toEqual({ triggerType: "once", runAt: host.now() + 2 * 3_600_000 });
+
+    const updated = await run(
+      host,
+      ["routine", "update", "check deploy", "--cron", "0 10 * * 1", "--timezone", "Europe/Berlin"],
+      captainId,
+    );
+    expect(updated.stdout).toContain(
+      'r1  updated  "Check deploy"  Every Monday at 10:00 AM (Europe/Berlin)',
+    );
+    expect((await run(host, ["routine", "pause", "r1"], captainId)).stdout).toMatch(
+      /^r1 {2}paused/u,
+    );
+    expect(automation?.enabled).toBe(false);
+    expect((await run(host, ["routine", "resume", "r1"], captainId)).stdout).toMatch(
+      /^r1 {2}active/u,
+    );
+
+    const shown = await run(host, ["routine", "show", "r1", "--runs"], captainId);
+    expect(shown.stdout).toContain("When to run: Every Monday at 10:00 AM (Europe/Berlin)");
+    expect(shown.stdout).toContain("Run bb captain status --all");
+    expect(shown.stdout).toContain("Runs:\nnone yet");
+
+    expect((await run(host, ["routine", "remove", "Check deploy"], captainId)).stdout).toMatch(
+      /^r1 {2}removed/u,
+    );
+    expect(host.automations.rows.size).toBe(0);
+  });
+
+  test("run wakes the Captain at once and records a test run", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    await run(
+      host,
+      ["routine", "add", "--name", "Sweep", "--cron", "0 9 * * *", "--prompt-file", prompt],
+      captainId,
+    );
+    // The stored script: the fired automation calls the hidden command, with no thread.
+    host.automations.onRun = async (row, runId) => {
+      await run(host, [
+        "routine",
+        "fire",
+        row.execution.env?.["BB_CAPTAIN_ROUTINE_ID"] ?? "",
+        "--automation",
+        row.id,
+        "--run",
+        runId,
+      ]);
+    };
+    const result = await run(host, ["routine", "run", "r1"], captainId);
+    expect(result.stdout).toMatch(/^r1 {2}running {2}"Sweep" {2}test run arun_\d+ started/u);
+    await expect
+      .poll(() => host.sent.filter((send) => send.text.startsWith("[captain] routine r1")).length)
+      .toBe(1);
+    expect(host.server.store.routineRuns("r1")).toMatchObject([
+      { trigger: "test", status: "sent" },
+    ]);
+  });
+
+  test("a one-shot that ran reads done", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    await run(
+      host,
+      ["routine", "add", "--name", "Once", "--in", "1m", "--prompt-file", prompt],
+      captainId,
+    );
+    const automation = [...host.automations.rows.values()][0];
+    host.setNow(host.now() + 61_000);
+    await run(host, ["routine", "fire", "r1", "--automation", automation?.id ?? ""]);
+    if (automation !== undefined) automation.enabled = false;
+    expect((await run(host, ["routine", "list"], captainId)).stdout).toMatch(
+      /^r1 {2}done {2}"Once" {2}Once, .* {2}ran once\n$/u,
+    );
+  });
+
+  test("a one-shot whose only run was skipped reads missed, not done", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    await run(
+      host,
+      ["routine", "add", "--name", "Once", "--in", "1m", "--prompt-file", prompt],
+      captainId,
+    );
+    const automation = [...host.automations.rows.values()][0];
+    host.setNow(host.now() + 61_000);
+    host.queued.set(captainId, [
+      queuedRow("qm_r1", '[captain] routine r1 "Once" · test', { kind: "turn" }),
+    ]);
+    await run(host, ["routine", "fire", "r1", "--automation", automation?.id ?? ""]);
+    if (automation !== undefined) automation.enabled = false;
+    expect((await run(host, ["routine", "list"], captainId)).stdout).toMatch(
+      /^r1 {2}missed {2}"Once" .* its one run was previous run still queued; give it a new time\n$/u,
+    );
+  });
+
+  test("a stale --automation is refused by fire", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    await run(
+      host,
+      ["routine", "add", "--name", "Sweep", "--cron", "0 9 * * *", "--prompt-file", prompt],
+      captainId,
+    );
+    const result = await run(host, ["routine", "fire", "r1", "--automation", "auto_gone"]);
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("automation auto_gone no longer schedules r1");
+  });
+
+  test("a crew thread is refused, with or without --captain, and told which Captain to ask", async () => {
+    const { host, captainId } = await routineCli();
+    host.addThread({ id: "thr_crew1", parentThreadId: captainId });
+    for (const extra of [[], ["--captain", captainId]]) {
+      const result = await run(host, ["routine", "list", ...extra], "thr_crew1");
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("thr_crew1 is crew of the Plugins Captain");
+      expect(result.stderr).toContain(captainId);
+    }
+    const fired = await run(host, ["routine", "fire", "r1", "--automation", "auto_1"], "thr_crew1");
+    expect(fired.stderr).toContain("crew cannot manage routines");
+  });
+
+  test("the user's shell reaches a routine with --captain, or by id alone", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    await run(host, [
+      "routine",
+      "add",
+      "--name",
+      "Sweep",
+      "--cron",
+      "0 9 * * *",
+      "--prompt-file",
+      prompt,
+      "--captain",
+      captainId,
+    ]);
+    expect((await run(host, ["routine", "pause", "r1"])).exitCode).toBe(0);
+    expect((await run(host, ["routine", "list", "--captain", "Plugins"])).stdout).toMatch(
+      /^r1 {2}paused/u,
+    );
+  });
+
+  test("a thread manages only its own Captain's routines (finding 6)", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    const add = [
+      "routine",
+      "add",
+      "--name",
+      "Sweep",
+      "--cron",
+      "0 9 * * *",
+      "--prompt-file",
+      prompt,
+    ];
+    expect((await run(host, add, captainId)).exitCode).toBe(0);
+    const other = await newCaptain(host, ["--name", "Other", "--repo", "rampage"]);
+    host.addThread({ id: "thr_plain" });
+
+    const fromOther = await run(host, ["routine", "pause", "r1", "--captain", captainId], other);
+    expect(fromOther.exitCode).toBe(1);
+    expect(fromOther.stderr).toContain("Other Captain manages only its own routines");
+    expect((await run(host, ["routine", "pause", "r1"], other)).stderr).toContain("has no routine");
+    const plain = await run(host, ["routine", "list", "--captain", captainId], "thr_plain");
+    expect(plain.stderr).toContain("thr_plain is not a Captain");
+    const fire = await run(host, ["routine", "fire", "r1", "--automation", "auto_1"], other);
+    expect(fire.stderr).toContain("manages only its own routines");
+    // The user's terminal still works with --captain.
+    expect((await run(host, ["routine", "pause", "r1", "--captain", captainId])).exitCode).toBe(0);
+  });
+
+  test("fire takes --captain and refuses another Captain's (finding 18)", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    const add = [
+      "routine",
+      "add",
+      "--name",
+      "Sweep",
+      "--cron",
+      "0 9 * * *",
+      "--prompt-file",
+      prompt,
+    ];
+    await run(host, add, captainId);
+    const automation = [...host.automations.rows.values()][0]?.id ?? "";
+    const wrong = await run(host, [
+      "routine",
+      "fire",
+      "r1",
+      "--automation",
+      automation,
+      "--captain",
+      "Nope",
+    ]);
+    expect(wrong.stderr).toContain("belongs to Plugins Captain");
+    const right = await run(host, [
+      "routine",
+      "fire",
+      "r1",
+      "--automation",
+      automation,
+      "--captain",
+      "Plugins",
+    ]);
+    expect(right.stdout).toMatch(/^r1 {2}sent/u);
+  });
+
+  test("a re-armed, paused one-shot does not read done (finding 14)", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    await run(
+      host,
+      ["routine", "add", "--name", "Once", "--in", "1m", "--prompt-file", prompt],
+      captainId,
+    );
+    const automation = [...host.automations.rows.values()][0];
+    host.setNow(host.now() + 61_000);
+    await run(host, ["routine", "fire", "r1", "--automation", automation?.id ?? ""]);
+    if (automation !== undefined) automation.enabled = false;
+    await run(host, ["routine", "update", "r1", "--in", "1h"], captainId);
+    await run(host, ["routine", "pause", "r1"], captainId);
+    expect((await run(host, ["routine", "list"], captainId)).stdout).toMatch(/^r1 {2}paused /u);
+  });
+
+  test("bad schedules are refused with the fix", async () => {
+    const { host, captainId, prompt } = await routineCli();
+    const add = (...extra: string[]) =>
+      run(
+        host,
+        ["routine", "add", "--name", "Sweep", "--prompt-file", prompt, ...extra],
+        captainId,
+      );
+    expect((await add("--cron", "*/5 * * * *")).stderr).toContain("at most every 15 minutes");
+    expect((await add("--cron", "0 9 * * *", "--timezone", "Nowhere/Land")).stderr).toContain(
+      "unknown time zone",
+    );
+    expect((await add("--in", "soon")).stderr).toContain("cannot read --in soon");
+    expect((await add("--in", "1h", "--cron", "0 9 * * *")).stderr).toContain("pass one of them");
+    expect((await add()).stderr).toContain("a routine needs a schedule");
+  });
+
+  test("fire is hidden from help", async () => {
+    const names = (captainCli({} as CommandDeps).commands ?? []).map((command) => command.name);
+    expect(names).toContain("routine-run");
+    expect(names.some((name) => name.includes("fire"))).toBe(false);
+    const host = await captainHost();
+    const help = await run(host, ["routine", "--help"]);
+    expect(`${help.stdout ?? ""}${help.stderr ?? ""}`).toContain("routine run");
+    expect(`${help.stdout ?? ""}${help.stderr ?? ""}`).not.toContain("fire");
+  });
+});
+
+describe("parseDuration", () => {
+  test.each([
+    ["1m", 60_000],
+    ["90m", 5_400_000],
+    ["1h30m", 5_400_000],
+    ["2d", 172_800_000],
+    ["", null],
+    ["0m", null],
+    ["2 hours", null],
+  ])("%s", (text, ms) => {
+    expect(parseDuration(text)).toBe(ms);
   });
 });

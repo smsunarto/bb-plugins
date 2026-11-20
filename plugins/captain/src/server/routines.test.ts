@@ -1,0 +1,702 @@
+import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
+import { describe, expect, test } from "vitest";
+import { ROUTINE_ENV, ROUTINE_SCRIPT } from "./automations-client.ts";
+import { Refusal } from "./output.ts";
+import type { RoutineOwner } from "./routines.ts";
+import { captainHost, newCaptain, type CaptainHost } from "./test-host.ts";
+
+const SWEEP = {
+  name: "Stalled crew sweep",
+  instruction: "Run bb captain status --all and nudge stalled crew.",
+  schedule: { cron: "0 9 * * 1-5", timezone: "UTC" },
+};
+
+async function routineHost() {
+  return ownerOf(await captainHost());
+}
+
+async function ownerOf(host: CaptainHost) {
+  const captainId = await newCaptain(host);
+  const row = host.server.store.captain(captainId);
+  if (row === null) throw new Error("no Captain row");
+  const owner: RoutineOwner = {
+    threadId: row.threadId,
+    name: row.name,
+    homeProjectId: row.homeProjectId,
+  };
+  return { host, captainId, owner, routines: host.server.routines };
+}
+
+const routineSends = (host: CaptainHost, captainId: string) =>
+  host.sent.filter(
+    (send) => send.threadId === captainId && send.text.startsWith("[captain] routine"),
+  );
+
+describe("create", () => {
+  test("makes one script automation in the Captains project that calls fire", async () => {
+    const { host, owner, routines } = await routineHost();
+    const view = await routines.create(owner, SWEEP);
+
+    const rows = [...host.automations.rows.values()];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      projectId: "proj_captains",
+      name: "Captain Plugins · Stalled crew sweep",
+      enabled: true,
+      trigger: { triggerType: "schedule", cron: "0 9 * * 1-5", timezone: "UTC" },
+      execution: { mode: "script", script: ROUTINE_SCRIPT, env: { [ROUTINE_ENV]: view.id } },
+    });
+    expect(ROUTINE_SCRIPT).toContain('captain routine fire "$BB_CAPTAIN_ROUTINE_ID" --automation');
+    expect(view).toMatchObject({
+      id: "r1",
+      automationId: rows[0]?.id,
+      when: "Every weekday at 9:00 AM",
+      automation: { enabled: true },
+    });
+  });
+
+  test("a one-shot schedules a once trigger; --paused creates it paused", async () => {
+    const { host, owner, routines } = await routineHost();
+    const at = host.now() + 60_000;
+    await routines.create(owner, { ...SWEEP, schedule: { at } }, { paused: true });
+    expect([...host.automations.rows.values()][0]).toMatchObject({
+      enabled: false,
+      trigger: { triggerType: "once", runAt: at },
+    });
+  });
+
+  test("when Automations refuses or is down, nothing is stored", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    host.automations.refuseCreate = "cron is invalid";
+    await expect(routines.create(owner, SWEEP)).rejects.toThrow(/cron is invalid/);
+    host.automations.refuseCreate = null;
+    host.automations.down = true;
+    await expect(routines.create(owner, SWEEP)).rejects.toBeInstanceOf(Refusal);
+    expect(host.server.store.routinesOf(captainId)).toEqual([]);
+    expect(host.automations.rows.size).toBe(0);
+  });
+
+  test("a past one-shot and a too-frequent cron are refused before Automations", async () => {
+    const { host, owner, routines } = await routineHost();
+    await expect(
+      routines.create(owner, { ...SWEEP, schedule: { at: host.now() - 1 } }),
+    ).rejects.toThrow(/passed/);
+    await expect(
+      routines.create(owner, { ...SWEEP, schedule: { cron: "*/5 * * * *", timezone: "UTC" } }),
+    ).rejects.toThrow(/every 15 minutes/);
+    expect(host.automations.calls).toEqual([]);
+  });
+});
+
+describe("update and actions", () => {
+  test("a new schedule updates the one automation in place", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const updated = await routines.update(created, {
+      name: "Sweep",
+      schedule: { cron: "0 10 * * 1", timezone: "Europe/Berlin" },
+    });
+    expect(host.automations.rows.size).toBe(1);
+    expect(host.automations.rows.get(created.automationId as string)).toMatchObject({
+      name: "Captain Plugins · Sweep",
+      trigger: { cron: "0 10 * * 1", timezone: "Europe/Berlin" },
+    });
+    expect(updated).toMatchObject({ name: "Sweep", when: "Every Monday at 10:00 AM" });
+  });
+
+  test("an automation deleted outside Captain is made again, never doubled", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.automations.rows.clear();
+    const updated = await routines.update(created, { instruction: "New words" });
+    expect(host.automations.rows.size).toBe(1);
+    expect(updated.automationId).not.toBe(created.automationId);
+    expect(updated.instruction).toBe("New words");
+  });
+
+  test("a spent one-shot keeps its name editable, and a new time arms it again", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, {
+      ...SWEEP,
+      schedule: { at: host.now() + 60_000 },
+    });
+    const row = host.automations.rows.get(created.automationId as string);
+    // The run came and went: Automations disables a once automation after it.
+    host.setNow(host.now() + 120_000);
+    await routines.fire(created.id, { automationId: created.automationId as string, runId: null });
+    if (row !== undefined) row.enabled = false;
+    expect((await routines.view(host.server.store.routine(created.id) as never)).done).toBe(true);
+
+    const renamed = await routines.update(created, { name: "Renamed" });
+    expect(renamed.name).toBe("Renamed");
+    expect(row?.enabled).toBe(false);
+
+    const at = host.now() + 60_000;
+    const rearmed = await routines.update(renamed, { schedule: { at } });
+    expect(row).toMatchObject({ enabled: true, trigger: { triggerType: "once", runAt: at } });
+    expect(rearmed.automation?.enabled).toBe(true);
+    expect(rearmed.done).toBe(false);
+    expect(host.automations.rows.size).toBe(1);
+    // The rename sent only the name: the spent trigger would have been refused.
+    const rename = host.automations.calls.find((call) => call.method === "automations_update");
+    expect(rename?.input).not.toHaveProperty("trigger");
+  });
+
+  test("moving a paused one-shot's time keeps it paused (finding 4)", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(
+      owner,
+      { ...SWEEP, schedule: { at: host.now() + 60_000 } },
+      { paused: true },
+    );
+    const moved = await routines.update(created, { schedule: { at: host.now() + 120_000 } });
+    expect(moved.automation?.enabled).toBe(false);
+    expect(host.automations.rows.get(created.automationId as string)?.enabled).toBe(false);
+  });
+
+  test("an update queued behind a delete is refused and makes nothing (finding 10)", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const removing = routines.act(created, "delete");
+    const updating = routines.update(created, {
+      schedule: { cron: "0 10 * * *", timezone: "UTC" },
+    });
+    await removing;
+    await expect(updating).rejects.toThrow(/was removed/);
+    expect(host.automations.rows.size).toBe(0);
+  });
+
+  test("two renames to one name: the loser's schedule is untouched (finding 11)", async () => {
+    const { host, owner, routines } = await routineHost();
+    const a = await routines.create(owner, SWEEP);
+    const b = await routines.create(owner, { ...SWEEP, name: "Digest" });
+    const next = { cron: "0 11 * * *", timezone: "UTC" };
+    const results = await Promise.allSettled([
+      routines.update(a, { name: "Same", schedule: next }),
+      routines.update(b, { name: "Same", schedule: next }),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    const loser = results[0]?.status === "rejected" ? a : b;
+    const stored = host.server.store.routine(loser.id);
+    expect(stored?.schedule).toEqual(SWEEP.schedule);
+    expect(host.automations.rows.get(loser.automationId as string)?.trigger).toMatchObject({
+      cron: "0 9 * * 1-5",
+    });
+  });
+
+  test("pause, resume and delete pass through", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const id = created.automationId as string;
+    expect((await routines.act(created, "pause")).view?.automation?.enabled).toBe(false);
+    expect(host.automations.rows.get(id)?.enabled).toBe(false);
+    expect((await routines.act(created, "resume")).view?.automation?.enabled).toBe(true);
+    await routines.act(created, "delete");
+    expect(host.automations.rows.size).toBe(0);
+    expect(host.server.store.routine(created.id)).toBeNull();
+  });
+
+  test("archiving a Captain pauses its automations; deleting it removes them", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const one = await routines.create(owner, SWEEP);
+    const two = await routines.create(owner, { ...SWEEP, name: "Digest" });
+    const thread = makeThreadResponse({ id: captainId, archivedAt: 5_000 });
+    await host.harness.behavior.emitThreadEvent("thread.archived", { thread });
+    await waitFor(() =>
+      [one, two].every(
+        (r) => host.automations.rows.get(r.automationId as string)?.enabled === false,
+      ),
+    );
+    await host.harness.behavior.emitThreadEvent("thread.deleted", { thread });
+    await waitFor(() => host.automations.rows.size === 0);
+    expect(host.server.store.routinesOf(captainId)).toEqual([]);
+  });
+});
+
+describe("fire", () => {
+  test("sends the rendered routine with queue-if-active and records the run", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const result = await routines.fire(created.id, {
+      automationId: created.automationId as string,
+      runId: "arun_x",
+    });
+    expect(result.state).toBe("sent");
+    const [send] = routineSends(host, captainId);
+    expect(send?.mode).toBe("queue-if-active");
+    expect(send?.text.split("\n")[0]).toBe('[captain] routine r1 "Stalled crew sweep" · scheduled');
+    expect(send?.text).toContain(SWEEP.instruction);
+    expect(send?.text).toContain("the user did not type it");
+    expect(host.server.store.routineRuns(created.id)).toMatchObject([
+      { trigger: "schedule", status: "sent", reason: null },
+    ]);
+  });
+
+  test("refuses an automation that no longer schedules the routine", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    await expect(
+      routines.fire(created.id, { automationId: "auto_old", runId: null }),
+    ).rejects.toThrow(/no longer schedules r1/);
+    await expect(routines.fire(created.id, { automationId: "", runId: null })).rejects.toThrow(
+      Refusal,
+    );
+    expect(routineSends(host, captainId)).toEqual([]);
+    expect(host.server.store.routineRuns(created.id)).toEqual([]);
+  });
+
+  test("refuses an archived Captain and pauses its routines", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const one = await routines.create(owner, SWEEP);
+    const two = await routines.create(owner, { ...SWEEP, name: "Digest" });
+    host.updateThread(captainId, { archivedAt: 9_000 });
+    await expect(
+      routines.fire(one.id, { automationId: one.automationId as string, runId: null }),
+    ).rejects.toThrow(/archived/);
+    await waitFor(() =>
+      [one, two].every(
+        (r) => host.automations.rows.get(r.automationId as string)?.enabled === false,
+      ),
+    );
+    expect(routineSends(host, captainId)).toEqual([]);
+    expect(host.server.store.routineRuns(one.id)).toMatchObject([
+      { status: "failed", reason: "Captain archived" },
+    ]);
+  });
+
+  test("three fires against a busy Captain send two messages and record one skip", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const call = { automationId: created.automationId as string, runId: null };
+    host.busy.add(captainId);
+
+    expect((await routines.fire(created.id, call)).state).toBe("queued");
+    // The running turn ends; the queued run starts the next one, and the Captain is busy again.
+    host.drainQueue(captainId);
+    expect((await routines.fire(created.id, call)).state).toBe("queued");
+    // That run is still waiting behind the turn: this one is skipped.
+    expect((await routines.fire(created.id, call)).state).toBe("skipped");
+
+    expect(routineSends(host, captainId)).toHaveLength(2);
+    expect(host.server.store.routineRuns(created.id).map((run) => run.status)).toEqual([
+      "skipped",
+      "queued",
+      "queued",
+    ]);
+    expect(host.server.store.routineRuns(created.id)[0]?.reason).toBe("previous run still queued");
+  });
+
+  test("another routine's queued message, or a failed row, does not skip this one", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.queued.set(captainId, [
+      { ...queued('[captain] routine r10 "Other" · scheduled'), state: "queued" },
+      {
+        ...queued('[captain] routine r1 "Stalled crew sweep" · scheduled'),
+        state: "failed_exhausted",
+      },
+    ]);
+    const result = await routines.fire(created.id, {
+      automationId: created.automationId as string,
+      runId: null,
+    });
+    expect(result.state).toBe("sent");
+  });
+
+  test("a Test run started through Captain records trigger test", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.automations.onRun = async (row, runId) => {
+      await routines.fire(row.execution.env?.[ROUTINE_ENV] as string, {
+        automationId: row.id,
+        runId,
+      });
+    };
+    const { runId } = await routines.act(created, "run");
+    expect(runId).toMatch(/^arun_/);
+    await waitFor(() => routineSends(host, captainId).length === 1);
+    expect(routineSends(host, captainId)[0]?.text.split("\n")[0]).toContain("· test");
+    expect(host.server.store.routineRuns(created.id)).toMatchObject([{ trigger: "test" }]);
+  });
+});
+
+describe("reconcile", () => {
+  test("reschedules a routine whose automation is gone and deletes an orphan", async () => {
+    const { host, owner, routines } = await routineHost();
+    const kept = await routines.create(owner, SWEEP);
+    const lost = await routines.create(owner, { ...SWEEP, name: "Digest" });
+    const past = await routines.create(owner, {
+      ...SWEEP,
+      name: "Once",
+      schedule: { at: host.now() + 1_000 },
+    });
+    host.automations.rows.delete(lost.automationId as string);
+    host.automations.rows.delete(past.automationId as string);
+    host.automations.rows.set("auto_orphan", {
+      id: "auto_orphan",
+      projectId: "proj_captains",
+      name: "Captain Plugins · gone",
+      enabled: true,
+      trigger: { triggerType: "schedule", cron: "0 9 * * *", timezone: "UTC" },
+      execution: { mode: "script", script: ROUTINE_SCRIPT, env: { [ROUTINE_ENV]: "r99" } },
+      runs: [],
+    });
+    // Copied config with the same env key but its own script: not Captain's to delete.
+    host.automations.rows.set("auto_foreign", {
+      id: "auto_foreign",
+      projectId: "proj_captains",
+      name: "Someone else",
+      enabled: true,
+      trigger: { triggerType: "schedule", cron: "0 9 * * *", timezone: "UTC" },
+      execution: { mode: "script", script: "echo hi", env: { [ROUTINE_ENV]: "r98" } },
+      runs: [],
+    });
+    host.setNow(host.now() + 5_000);
+
+    expect(await routines.reconcile()).toBe(true);
+
+    const store = host.server.store;
+    expect(host.automations.rows.has("auto_orphan")).toBe(false);
+    expect(host.automations.rows.has("auto_foreign")).toBe(true);
+    expect(host.automations.rows.has(kept.automationId as string)).toBe(true);
+    const relost = store.routine(lost.id);
+    expect(relost?.automationId).not.toBe(lost.automationId);
+    expect(host.automations.rows.has(relost?.automationId as string)).toBe(true);
+    // The one-shot's time passed while its automation was gone: it is not made again.
+    expect(store.routine(past.id)?.automationId).toBeNull();
+    expect(host.automations.rows.size).toBe(3);
+  });
+
+  test("retries until Automations answers, then runs once", async () => {
+    const { host, owner, routines } = await routineHost();
+    await routines.create(owner, SWEEP);
+    host.automations.down = true;
+    expect(await routines.reconcile()).toBe(false);
+    host.automations.down = false;
+    expect(await routines.reconcile()).toBe(true);
+    const calls = host.automations.calls.length;
+    expect(await routines.reconcile()).toBe(true);
+    expect(host.automations.calls.length).toBe(calls);
+  });
+});
+
+describe("durability", () => {
+  test("an unreadable queue skips the run and sends nothing (finding 3)", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.harness.sdk.stub("threads.queuedMessages.list", async () => {
+      throw new Error("queue read timed out");
+    });
+    const result = await routines.fire(created.id, {
+      automationId: created.automationId as string,
+      runId: null,
+    });
+    expect(result).toMatchObject({ state: "skipped", run: { reason: "queue unreadable" } });
+    expect(routineSends(host, captainId)).toEqual([]);
+  });
+
+  test("a test run stays a test run across a reload (finding 13)", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const { runId } = await routines.act(created, "run");
+    await host.reload();
+    await host.server.routines.fire(created.id, {
+      automationId: created.automationId as string,
+      runId,
+    });
+    expect(routineSends(host, captainId)[0]?.text.split("\n")[0]).toContain("· test");
+    expect(host.server.store.routineRuns(created.id)).toMatchObject([{ trigger: "test" }]);
+    expect(host.server.store.routine(created.id)?.deliveredAt).toBeNull();
+  });
+
+  test("a failed repair stays pending and is retried (finding 8)", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.automations.rows.delete(created.automationId as string);
+    host.automations.refuseCreate = "Automations busy";
+    expect((await routines.maintain()).pending).toBe(true);
+    expect(host.server.store.cleanups()).toMatchObject([{ kind: "repair", routineId: created.id }]);
+    expect(host.automations.rows.size).toBe(0);
+
+    host.automations.refuseCreate = null;
+    expect((await routines.maintain()).pending).toBe(false);
+    expect(host.server.store.cleanups()).toEqual([]);
+    expect(host.automations.rows.size).toBe(1);
+  });
+
+  test("a failed delete of a deleted Captain's automation is retried (finding 9)", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.automations.down = true;
+    await routines.removeCaptain(captainId);
+    expect(host.server.store.routinesOf(captainId)).toEqual([]);
+    expect(host.server.store.cleanups()).toMatchObject([
+      { kind: "delete", automationId: created.automationId },
+    ]);
+    host.automations.down = false;
+    await routines.maintain();
+    expect(host.automations.rows.size).toBe(0);
+    expect(host.server.store.cleanups()).toEqual([]);
+  });
+
+  test("the crew check makes no Automations calls (finding 15)", async () => {
+    const { host, owner, routines } = await routineHost();
+    await routines.create(owner, SWEEP);
+    const before = host.automations.calls.length;
+    await host.server.check.pass();
+    expect(host.automations.calls.length).toBe(before);
+  });
+});
+
+describe("deletes, names and maintenance limits", () => {
+  const gate = (host: CaptainHost, methods: string[]) => {
+    let release = () => {};
+    const until = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    host.automations.gate = { until, methods: new Set(methods) };
+    return () => {
+      host.automations.gate = null;
+      release();
+    };
+  };
+  const creates = (host: CaptainHost) =>
+    host.automations.calls.filter((call) => call.method === "automations_create").length;
+
+  test("a delete while Automations is down retires the routine and keeps the delete", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    host.automations.down = true;
+    await routines.act(created, "delete");
+    expect(host.server.store.routine(created.id)).toBeNull();
+    expect(host.server.store.cleanups()).toMatchObject([
+      { kind: "delete", automationId: created.automationId, routineId: created.id },
+    ]);
+
+    host.automations.down = false;
+    const before = creates(host);
+    await routines.maintain();
+    expect(host.automations.rows.size).toBe(0);
+    expect(host.server.store.cleanups()).toEqual([]);
+    expect(creates(host)).toBe(before);
+  });
+
+  test("a delete retires the routine locally before Automations answers", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const open = gate(host, ["automations_delete"]);
+    const deleting = routines.act(created, "delete");
+    await waitFor(() => host.automations.inFlight === 1);
+    // An interruption here leaves no routine to remake, only the delete to retry.
+    expect(host.server.store.routine(created.id)).toBeNull();
+    expect(host.server.store.cleanups()).toMatchObject([
+      { kind: "delete", automationId: created.automationId, routineId: created.id },
+    ]);
+    open();
+    await deleting;
+    expect(host.server.store.cleanups()).toEqual([]);
+    expect(host.automations.rows.size).toBe(0);
+  });
+
+  test("a pending delete of a routine's automation stops repair from remaking it", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const automationId = created.automationId as string;
+    host.server.store.addCleanup(
+      { kind: "delete", projectId: owner.homeProjectId, automationId, routineId: created.id },
+      "pending",
+      1,
+    );
+    host.automations.rows.delete(automationId);
+    const before = creates(host);
+    await routines.maintain();
+    expect(creates(host)).toBe(before);
+  });
+
+  test("a delete retry keeps an automation whose script changed since", async () => {
+    const { host, owner, routines } = await routineHost();
+    const created = await routines.create(owner, SWEEP);
+    const row = host.automations.rows.get(created.automationId as string);
+    if (row === undefined) throw new Error("no automation");
+    host.automations.down = true;
+    await routines.act(created, "delete");
+    host.automations.down = false;
+    row.execution = { ...row.execution, script: "echo someone else's job\n" };
+    await routines.maintain();
+    expect(host.automations.rows.has(row.id)).toBe(true);
+    expect(host.server.store.cleanups()).toEqual([]);
+  });
+
+  test("a rename that fails never refuses a create of the same name", async () => {
+    const { host, owner, routines } = await routineHost();
+    const first = await routines.create(owner, SWEEP);
+    const open = gate(host, ["automations_update"]);
+    const renaming = routines.update(first, { name: "Digest" });
+    await waitFor(() => host.automations.inFlight === 1);
+    host.automations.failNext.add("automations_update");
+    // Waits for the rename: its reservation must not refuse this create.
+    const creating = routines.create(owner, { ...SWEEP, name: "Digest" });
+    open();
+    await expect(renaming).rejects.toThrow();
+    expect((await creating).name).toBe("Digest");
+    expect(host.server.store.routine(first.id)?.name).toBe(SWEEP.name);
+  });
+
+  test("a create of a name being renamed away waits, so a failed rename restores it", async () => {
+    const { host, owner, routines } = await routineHost();
+    const first = await routines.create(owner, SWEEP);
+    const open = gate(host, ["automations_update"]);
+    const renaming = routines.update(first, { name: "Digest" });
+    await waitFor(() => host.automations.inFlight === 1);
+    host.automations.failNext.add("automations_update");
+    const creating = routines.create(owner, SWEEP);
+    open();
+    await expect(renaming).rejects.toThrow();
+    await expect(creating).rejects.toThrow();
+    expect(host.server.store.routine(first.id)?.name).toBe(SWEEP.name);
+    expect(host.automations.rows.get(first.automationId as string)?.name).toContain(SWEEP.name);
+  });
+
+  test("a send past fire's deadline keeps its guard and records its outcome", async () => {
+    const host = await captainHost({ threadDeadlineMs: 20 });
+    const { captainId, owner, routines } = await ownerOf(host);
+    const created = await routines.create(owner, SWEEP);
+    const call = { automationId: created.automationId as string, runId: null };
+    host.busy.add(captainId);
+    let release = () => {};
+    host.threadHolds.send = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await expect(routines.fire(created.id, call)).rejects.toThrow(/no answer yet/);
+    // The queue is still empty: only the guard stops a second message.
+    expect((await routines.fire(created.id, call)).state).toBe("skipped");
+    host.threadHolds.send = null;
+    release();
+    await waitFor(() => host.server.store.routineRuns(created.id).length === 2);
+    expect(routineSends(host, captainId)).toHaveLength(1);
+    expect(host.queued.get(captainId)).toHaveLength(1);
+    expect(
+      host.server.store.routineRuns(created.id).map((run) => [run.status, run.reason]),
+    ).toEqual([
+      ["queued", null],
+      ["skipped", "previous delivery in flight"],
+    ]);
+  });
+
+  test("a Captain lookup that times out is recorded, so a spent one-shot shows missed", async () => {
+    const host = await captainHost({ threadDeadlineMs: 20 });
+    const { owner, routines } = await ownerOf(host);
+    const created = await routines.create(owner, {
+      ...SWEEP,
+      schedule: { at: host.now() + 60_000 },
+    });
+    host.setNow(host.now() + 120_000);
+    let release = () => {};
+    host.threadHolds.get = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await expect(
+      routines.fire(created.id, { automationId: created.automationId as string, runId: null }),
+    ).rejects.toThrow(/did not answer/);
+    host.threadHolds.get = null;
+    release();
+    // Automations disables a once automation after its run.
+    const row = host.automations.rows.get(created.automationId as string);
+    if (row !== undefined) row.enabled = false;
+    expect(host.server.store.routineRuns(created.id)[0]).toMatchObject({
+      status: "failed",
+      reason: expect.stringMatching(/did not answer reading the Captain/),
+    });
+    const stored = host.server.store.routine(created.id);
+    const view = await routines.view(stored as never);
+    expect(view.missed).toBe(true);
+    expect(view.lastRun?.reason).toMatch(/did not answer/);
+  });
+
+  test("a create queued behind a Captain's deletion is refused", async () => {
+    const { host, captainId, owner, routines } = await routineHost();
+    const open = gate(host, ["automations_create"]);
+    const first = routines.create(owner, SWEEP);
+    await waitFor(() => host.automations.inFlight === 1);
+    const second = routines.create(owner, { ...SWEEP, name: "Digest" });
+    const removing = routines.removeCaptain(captainId);
+    open();
+    await first;
+    await expect(second).rejects.toThrow(/no longer live/);
+    await removing;
+    expect(host.server.store.routinesOf(captainId)).toEqual([]);
+    expect(host.automations.rows.size).toBe(0);
+  });
+
+  test("a stopped reconcile reads no further project", async () => {
+    const { host, owner, routines } = await routineHost();
+    await routines.create(owner, SWEEP);
+    host.server.store.addCleanup(
+      { kind: "delete", projectId: "proj_rampage", automationId: "auto_x", routineId: "r9" },
+      "pending",
+      1,
+    );
+    const open = gate(host, ["automations_list"]);
+    const stopping = new AbortController();
+    const pass = routines.maintain(stopping.signal);
+    await waitFor(() => host.automations.inFlight === 1);
+    stopping.abort();
+    open();
+    await pass;
+    const lists = host.automations.calls.filter((c) => c.method === "automations_list");
+    expect(lists).toHaveLength(1);
+  });
+
+  test("a slow maintenance item keeps its worker slot past the deadline", async () => {
+    const host = await captainHost({ maintenanceDeadlineMs: 5 });
+    const { owner, routines } = await ownerOf(host);
+    for (let i = 0; i < 6; i++) await routines.create(owner, { ...SWEEP, name: `R${i}` });
+    host.automations.rows.clear();
+    const open = gate(host, ["automations_create"]);
+    const pass = routines.maintain();
+    await waitFor(() => host.automations.inFlight === 4);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(host.automations.inFlight).toBe(4);
+    open();
+    await pass;
+    expect(host.automations.rows.size).toBe(6);
+  });
+
+  test("a stopped maintenance pass starts no new work", async () => {
+    const { host, owner, routines } = await routineHost();
+    for (let i = 0; i < 6; i++) await routines.create(owner, { ...SWEEP, name: `R${i}` });
+    const stopped = new AbortController();
+    stopped.abort();
+    const before = host.automations.calls.length;
+    await routines.maintain(stopped.signal);
+    expect(host.automations.calls.length).toBe(before);
+
+    host.automations.rows.clear();
+    const open = gate(host, ["automations_create"]);
+    const stopping = new AbortController();
+    const pass = routines.maintain(stopping.signal);
+    await waitFor(() => host.automations.inFlight === 4);
+    stopping.abort();
+    open();
+    expect((await pass).pending).toBe(true);
+    expect(host.automations.rows.size).toBe(4);
+  });
+});
+
+function queued(text: string) {
+  return {
+    id: `qm_${text.length}`,
+    text,
+    state: "queued",
+    content: [{ type: "text" as const, text, mentions: [] as [] }],
+    waitingOn: { kind: "turn" },
+  };
+}
+
+async function waitFor(check: () => boolean, ms = 1_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error("condition not met in time");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}

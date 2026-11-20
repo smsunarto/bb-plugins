@@ -1,6 +1,15 @@
 import type { BbPluginApi } from "@get-bb/plugin-sdk";
 import { captainIconSchema, type CaptainIcon, type IconChoice } from "../contract/icon.ts";
 import { ASK_KINDS, type AskKind } from "../contract/queue.ts";
+import {
+  ROUTINE_RUNS_KEPT,
+  ROUTINES_PER_CAPTAIN,
+  type Routine,
+  type RoutineFields,
+  type RoutineRun,
+  type Schedule,
+} from "../contract/routines.ts";
+import { Refusal, type Blocker } from "./output.ts";
 import { parseRole, type Role } from "./roles.ts";
 
 type Database = ReturnType<BbPluginApi["storage"]["database"]>;
@@ -122,6 +131,52 @@ export const MIGRATIONS: readonly string[] = [
     kind TEXT NOT NULL CHECK (kind IN ('icon', 'image')),
     value TEXT NOT NULL,
     updated_at INTEGER NOT NULL
+  )`,
+  // A scheduled message to one Captain; bb Automations holds the schedule's
+  // state. `seq` never reuses a number, so a deleted routine's id is not given
+  // to a new one. `fired_at` is the newest scheduled fire of any outcome, and
+  // `delivered_at` the newest scheduled one that reached the Captain: both
+  // outlive the trimmed run history.
+  `CREATE TABLE routines (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE,
+    captain_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    instruction TEXT NOT NULL,
+    schedule TEXT NOT NULL,
+    automation_id TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    fired_at INTEGER,
+    delivered_at INTEGER,
+    UNIQUE (captain_id, name COLLATE NOCASE)
+  )`,
+  // Each delivery of a routine; trimmed to ROUTINE_RUNS_KEPT per routine.
+  `CREATE TABLE routine_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    routine_id TEXT NOT NULL,
+    trigger TEXT NOT NULL CHECK (trigger IN ('schedule', 'test')),
+    status TEXT NOT NULL CHECK (status IN ('sent', 'queued', 'skipped', 'failed')),
+    reason TEXT,
+    at INTEGER NOT NULL
+  )`,
+  "CREATE INDEX routine_runs_by_routine ON routine_runs (routine_id, id)",
+  // Automations runs Captain started as tests, until their fire arrives.
+  `CREATE TABLE routine_tests (
+    run_id TEXT PRIMARY KEY,
+    routine_id TEXT NOT NULL,
+    at INTEGER NOT NULL
+  )`,
+  // Automations work that failed and is retried each maintenance pass: an
+  // automation to delete, or a routine whose automation must be made again.
+  `CREATE TABLE routine_cleanup (
+    key TEXT PRIMARY KEY,
+    kind TEXT NOT NULL CHECK (kind IN ('delete', 'repair')),
+    project_id TEXT,
+    automation_id TEXT,
+    routine_id TEXT,
+    last_error TEXT,
+    created_at INTEGER NOT NULL
   )`,
 ];
 
@@ -292,6 +347,50 @@ type FallbackRecord = {
   created_at: number;
 };
 
+type RoutineRecord = {
+  seq: number;
+  id: string;
+  captain_id: string;
+  name: string;
+  instruction: string;
+  schedule: string;
+  automation_id: string | null;
+  created_at: number;
+  updated_at: number;
+  fired_at: number | null;
+  delivered_at: number | null;
+};
+type CleanupRecord = {
+  key: string;
+  kind: "delete" | "repair";
+  project_id: string | null;
+  automation_id: string | null;
+  routine_id: string | null;
+  last_error: string | null;
+  created_at: number;
+};
+
+/** Automations work retried each maintenance pass. */
+export type Cleanup =
+  | {
+      key: string;
+      kind: "delete";
+      projectId: string;
+      automationId: string;
+      /** The routine Captain made it for: a retry deletes it only while it still runs Captain's script for this id. */
+      routineId: string | null;
+      lastError: string | null;
+    }
+  | { key: string; kind: "repair"; routineId: string; lastError: string | null };
+type RoutineRunRecord = {
+  id: number;
+  routine_id: string;
+  trigger: RoutineRun["trigger"];
+  status: RoutineRun["status"];
+  reason: string | null;
+  at: number;
+};
+
 export type Store = ReturnType<typeof openStore>;
 
 export function openStore(bb: Pick<BbPluginApi, "storage">) {
@@ -355,6 +454,43 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
       createdAt: row.created_at,
     };
   };
+  const selectRoutine = db.prepare<[string], RoutineRecord>("SELECT * FROM routines WHERE id = ?");
+  const toRoutine = (row: RoutineRecord): Routine => ({
+    id: row.id,
+    captainId: row.captain_id,
+    name: row.name,
+    instruction: row.instruction,
+    schedule: JSON.parse(row.schedule) as Schedule,
+    automationId: row.automation_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    firedAt: row.fired_at,
+    deliveredAt: row.delivered_at,
+  });
+  const toCleanup = (row: CleanupRecord): Cleanup =>
+    row.kind === "delete"
+      ? {
+          key: row.key,
+          kind: "delete",
+          projectId: row.project_id ?? "",
+          automationId: row.automation_id ?? "",
+          routineId: row.routine_id,
+          lastError: row.last_error,
+        }
+      : {
+          key: row.key,
+          kind: "repair",
+          routineId: row.routine_id ?? "",
+          lastError: row.last_error,
+        };
+  const toRoutineRun = (row: RoutineRunRecord): RoutineRun => ({
+    id: row.id,
+    routineId: row.routine_id,
+    trigger: row.trigger,
+    status: row.status,
+    reason: row.reason,
+    at: row.at,
+  });
   const selectAsk = db.prepare<[string], AskRecord>("SELECT * FROM asks WHERE id = ?");
   const toAsk = (row: AskRecord): Ask => ({
     id: row.id,
@@ -867,6 +1003,243 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
         failedThreadId,
       );
     },
+
+    routine(id: string): Routine | null {
+      const row = selectRoutine.get(id.trim().toLowerCase());
+      return row === undefined ? null : toRoutine(row);
+    },
+    /** A Captain's routine by id or by name, case-insensitive. */
+    findRoutine(captainId: string, address: string): Routine | null {
+      const wanted = address.trim();
+      const row =
+        db
+          .prepare<[string, string], RoutineRecord>(
+            "SELECT * FROM routines WHERE captain_id = ? AND id = ?",
+          )
+          .get(captainId, wanted.toLowerCase()) ??
+        db
+          .prepare<[string, string], RoutineRecord>(
+            "SELECT * FROM routines WHERE captain_id = ? AND name = ? COLLATE NOCASE",
+          )
+          .get(captainId, wanted);
+      return row === undefined ? null : toRoutine(row);
+    },
+    /** A Captain's routines in the order they were made. */
+    routinesOf(captainId: string): Routine[] {
+      return db
+        .prepare<[string], RoutineRecord>(
+          "SELECT * FROM routines WHERE captain_id = ? ORDER BY seq",
+        )
+        .all(captainId)
+        .map(toRoutine);
+    },
+    allRoutines(): Routine[] {
+      return db
+        .prepare<[], RoutineRecord>("SELECT * FROM routines ORDER BY seq")
+        .all()
+        .map(toRoutine);
+    },
+    /**
+     * Insert a routine under the next id, `r1`, `r2`, …, with no automation
+     * yet. Refuses past `ROUTINES_PER_CAPTAIN` or on a name the Captain uses.
+     */
+    createRoutine(fields: RoutineFields & { captainId: string; at: number }): Routine {
+      return db.transaction(() => {
+        const blockers: Blocker[] = [];
+        const { count } = db
+          .prepare<[string], { count: number }>(
+            "SELECT COUNT(*) AS count FROM routines WHERE captain_id = ?",
+          )
+          .get(fields.captainId) ?? { count: 0 };
+        if (count >= ROUTINES_PER_CAPTAIN) {
+          blockers.push({
+            reason: `a Captain has at most ${ROUTINES_PER_CAPTAIN} routines`,
+            fix: "bb captain routine remove <id> first",
+          });
+        }
+        nameBlocker(fields.captainId, fields.name, null, blockers);
+        if (blockers.length > 0) throw new Refusal(blockers);
+        const { seq } = db
+          .prepare<[], { seq: number | null }>(
+            "SELECT seq FROM sqlite_sequence WHERE name = 'routines'",
+          )
+          .get() ?? { seq: null };
+        const next = (seq ?? 0) + 1;
+        const id = `r${next}`;
+        db.prepare(
+          `INSERT INTO routines
+             (seq, id, captain_id, name, instruction, schedule, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          next,
+          id,
+          fields.captainId,
+          fields.name,
+          fields.instruction,
+          JSON.stringify(fields.schedule),
+          fields.at,
+          fields.at,
+        );
+        return toRoutine(selectRoutine.get(id) as RoutineRecord);
+      })();
+    },
+    /** Change a routine's fields or automation; refuses a name another routine uses. */
+    updateRoutine(
+      id: string,
+      patch: Partial<RoutineFields> & { automationId?: string | null },
+      at: number,
+    ): Routine {
+      return db.transaction(() => {
+        const row = selectRoutine.get(id);
+        if (row === undefined)
+          throw new Refusal([{ reason: `no routine ${id}`, fix: "bb captain routine list" }]);
+        const current = toRoutine(row);
+        if (patch.name !== undefined) {
+          const blockers: Blocker[] = [];
+          nameBlocker(current.captainId, patch.name, id, blockers);
+          if (blockers.length > 0) throw new Refusal(blockers);
+        }
+        const next = { ...current, ...patch };
+        db.prepare(
+          `UPDATE routines SET name = ?, instruction = ?, schedule = ?, automation_id = ?,
+             updated_at = ? WHERE id = ?`,
+        ).run(
+          next.name,
+          next.instruction,
+          JSON.stringify(next.schedule),
+          next.automationId,
+          at,
+          id,
+        );
+        return toRoutine(selectRoutine.get(id) as RoutineRecord);
+      })();
+    },
+    /** Delete a routine and its runs. */
+    deleteRoutine(id: string): void {
+      db.transaction(() => {
+        db.prepare("DELETE FROM routine_runs WHERE routine_id = ?").run(id);
+        db.prepare("DELETE FROM routine_tests WHERE routine_id = ?").run(id);
+        db.prepare("DELETE FROM routine_cleanup WHERE kind = 'repair' AND routine_id = ?").run(id);
+        db.prepare("DELETE FROM routines WHERE id = ?").run(id);
+      })();
+    },
+    /** Record one delivery, keeping the newest `ROUTINE_RUNS_KEPT` per routine. */
+    recordRoutineRun(run: Omit<RoutineRun, "id">): RoutineRun {
+      return db.transaction(() => {
+        const { lastInsertRowid } = db
+          .prepare(
+            "INSERT INTO routine_runs (routine_id, trigger, status, reason, at) VALUES (?, ?, ?, ?, ?)",
+          )
+          .run(run.routineId, run.trigger, run.status, run.reason, run.at);
+        if (run.trigger === "schedule") {
+          const delivered = run.status === "sent" || run.status === "queued";
+          db.prepare(
+            `UPDATE routines SET fired_at = MAX(COALESCE(fired_at, 0), ?),
+               delivered_at = CASE WHEN ? THEN MAX(COALESCE(delivered_at, 0), ?) ELSE delivered_at END
+             WHERE id = ?`,
+          ).run(run.at, delivered ? 1 : 0, run.at, run.routineId);
+        }
+        db.prepare(
+          `DELETE FROM routine_runs WHERE routine_id = ? AND id NOT IN (
+             SELECT id FROM routine_runs WHERE routine_id = ? ORDER BY id DESC LIMIT ?)`,
+        ).run(run.routineId, run.routineId, ROUTINE_RUNS_KEPT);
+        return { ...run, id: Number(lastInsertRowid) };
+      })();
+    },
+    /** A routine's runs, newest first. */
+    routineRuns(routineId: string, limit: number = ROUTINE_RUNS_KEPT): RoutineRun[] {
+      return db
+        .prepare<[string, number], RoutineRunRecord>(
+          "SELECT * FROM routine_runs WHERE routine_id = ? ORDER BY id DESC LIMIT ?",
+        )
+        .all(routineId, limit)
+        .map(toRoutineRun);
+    },
+
+    /** A test run Captain started, so its fire is told apart from a scheduled one. */
+    addTestRun(runId: string, routineId: string, at: number): void {
+      db.prepare(
+        "INSERT INTO routine_tests (run_id, routine_id, at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
+      ).run(runId, routineId, at);
+    },
+    /** Claim a test run once; also drops claims older than `staleBefore`. */
+    takeTestRun(runId: string, staleBefore: number): boolean {
+      return db.transaction(() => {
+        const taken = db.prepare("DELETE FROM routine_tests WHERE run_id = ?").run(runId).changes;
+        db.prepare("DELETE FROM routine_tests WHERE at < ?").run(staleBefore);
+        return taken === 1;
+      })();
+    },
+
+    /** Queue Automations work to retry; a second add of the same key keeps one row. */
+    addCleanup(
+      cleanup:
+        | { kind: "delete"; projectId: string; automationId: string; routineId: string }
+        | { kind: "repair"; routineId: string },
+      error: string,
+      at: number,
+    ): string {
+      const key =
+        cleanup.kind === "delete"
+          ? `delete:${cleanup.automationId}`
+          : `repair:${cleanup.routineId}`;
+      db.prepare(
+        `INSERT INTO routine_cleanup (key, kind, project_id, automation_id, routine_id, last_error, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (key) DO UPDATE SET last_error = excluded.last_error`,
+      ).run(
+        key,
+        cleanup.kind,
+        cleanup.kind === "delete" ? cleanup.projectId : null,
+        cleanup.kind === "delete" ? cleanup.automationId : null,
+        cleanup.routineId,
+        error,
+        at,
+      );
+      return key;
+    },
+    /**
+     * Retire a routine: record the intent to delete its automation and delete
+     * the routine in one transaction, so an interruption leaves either both
+     * or neither. Returns the cleanup key, or null with no automation.
+     */
+    retireRoutine(
+      routineId: string,
+      deletion: { projectId: string; automationId: string } | null,
+      at: number,
+    ): string | null {
+      return db.transaction(() => {
+        const key =
+          deletion === null
+            ? null
+            : this.addCleanup({ kind: "delete", ...deletion, routineId }, "pending", at);
+        this.deleteRoutine(routineId);
+        return key;
+      })();
+    },
+    /** Whether a delete of this routine's automation is pending: no repair may remake it. */
+    /** Whether a delete of this routine's automation is still queued; repair must not undo it. */
+    deletePending(routineId: string, automationId: string): boolean {
+      return (
+        db
+          .prepare<[string, string], { n: number }>(
+            "SELECT COUNT(*) AS n FROM routine_cleanup WHERE kind = 'delete' AND routine_id = ? AND automation_id = ?",
+          )
+          .get(routineId, automationId)?.n !== 0
+      );
+    },
+    cleanups(): Cleanup[] {
+      return db
+        .prepare<[], CleanupRecord>("SELECT * FROM routine_cleanup ORDER BY created_at, key")
+        .all()
+        .map(toCleanup);
+    },
+    removeCleanup(key: string): void {
+      db.prepare("DELETE FROM routine_cleanup WHERE key = ?").run(key);
+    },
+    setCleanupError(key: string, error: string): void {
+      db.prepare("UPDATE routine_cleanup SET last_error = ? WHERE key = ?").run(error, key);
+    },
     /** The Captain's own icon; the default glyph when it has none. */
     captainIcon(threadId: string): CaptainIcon {
       const row = selectIcon.get(threadId);
@@ -890,6 +1263,25 @@ export function openStore(bb: Pick<BbPluginApi, "storage">) {
       ).run(threadId, icon.kind, icon.kind === "icon" ? icon.name : icon.src, at);
     },
   };
+
+  function nameBlocker(
+    captainId: string,
+    name: string,
+    exceptId: string | null,
+    blockers: Blocker[],
+  ): void {
+    const taken = db
+      .prepare<[string, string], { id: string }>(
+        "SELECT id FROM routines WHERE captain_id = ? AND name = ? COLLATE NOCASE",
+      )
+      .get(captainId, name);
+    if (taken !== undefined && taken.id !== exceptId) {
+      blockers.push({
+        reason: `routine ${taken.id} is already named ${JSON.stringify(name)}`,
+        fix: "pick another --name, or update that routine",
+      });
+    }
+  }
 
   function putRepo(captainId: string, repo: Repo): void {
     db.prepare(

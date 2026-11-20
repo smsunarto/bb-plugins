@@ -3,6 +3,7 @@ import { instructionFiles } from "@bb-plugins/instructions";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { markCaptainsPersonFacing } from "./audience.ts";
+import { createAutomationsClient } from "./automations-client.ts";
 import { createCheck } from "./check.ts";
 import { captainCli } from "./cli.ts";
 import { ensureStorageRoot, type CommandDeps } from "./commands/deps.ts";
@@ -10,6 +11,7 @@ import { configure } from "./configure.ts";
 import { createDrive } from "./drive.ts";
 import { createFields } from "./fields.ts";
 import { createRegistry } from "./registry.ts";
+import { createRoutines } from "./routines.ts";
 import { registerRpc } from "./rpc.ts";
 import { createTaskGuard } from "./spawn.ts";
 import { openStore } from "./store.ts";
@@ -21,6 +23,10 @@ export type StartOptions = {
   now?: () => number;
   /** How long a Tasks call may take; tests shorten it. */
   tasksDeadlineMs?: number;
+  /** How long one routine maintenance item runs before Captain warns; tests shorten it. */
+  maintenanceDeadlineMs?: number;
+  /** How long a routine fire waits on one bb thread call; tests shorten it. */
+  threadDeadlineMs?: number;
   /** How often a watched banner rechecks the crew; tests shorten it. */
   crewPollMs?: number;
   /** How often a watched Drive is scanned; tests shorten it. */
@@ -35,6 +41,21 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
   const files = instructionFiles(import.meta.url);
   const tasks = createTasksClient(bb, options.tasksDeadlineMs);
   const fields = createFields(tasks);
+  const now = options.now ?? Date.now;
+  const routines = createRoutines({
+    bb,
+    store,
+    files,
+    now,
+    automations: createAutomationsClient(bb),
+    ...(options.maintenanceDeadlineMs === undefined
+      ? {}
+      : { maintenanceDeadlineMs: options.maintenanceDeadlineMs }),
+    ...(options.threadDeadlineMs === undefined
+      ? {}
+      : { threadDeadlineMs: options.threadDeadlineMs }),
+    defaultTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
   const deps: CommandDeps = {
     bb,
     registry,
@@ -43,10 +64,11 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     tasks,
     fields,
     files,
-    now: options.now ?? Date.now,
+    now,
     captainsDir: options.captainsDir ?? join(homedir(), CAPTAINS_FOLDER),
     wakeCheck: () => check.poke(),
     taskGuard: createTaskGuard(),
+    routines,
   };
   const check = createCheck(deps);
 
@@ -68,6 +90,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
   bb.cli.register(captainCli(deps));
   registerRpc(deps, options.crewPollMs, options.driveScanMs);
   check.register(bb);
+  routines.register(bb);
 
   // `configure` is synchronous, so the Drive root is read once here and cached.
   const ready = ensureStorageRoot(deps).then(
@@ -92,7 +115,18 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     (warnings) => void warnings.forEach((warning) => bb.log.warn(warning)),
     (error: unknown) => bb.log.warn(`Captain titles not checked: ${(error as Error).message}`),
   );
-  return { store, registry, drive, files, check, ready, fieldsReady, audienceReady, titlesReady };
+  return {
+    store,
+    registry,
+    drive,
+    files,
+    check,
+    routines,
+    ready,
+    fieldsReady,
+    audienceReady,
+    titlesReady,
+  };
 }
 
 const CAPTAINS_FOLDER = "Captains";

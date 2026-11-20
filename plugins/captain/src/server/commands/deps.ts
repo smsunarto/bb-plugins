@@ -3,6 +3,7 @@ import type { InstructionFiles } from "@bb-plugins/instructions";
 import type { Drive } from "../drive.ts";
 import type { Fields } from "../fields.ts";
 import type { Registry } from "../registry.ts";
+import type { Routines } from "../routines.ts";
 import type { TaskGuard } from "../spawn.ts";
 import type { Store } from "../store.ts";
 import type { TasksClient } from "../tasks-client.ts";
@@ -23,6 +24,8 @@ export type CommandDeps = {
   wakeCheck: () => void;
   /** Serializes starts on one task across `dispatch` and the rate-limit fallback. */
   taskGuard: TaskGuard;
+  /** Scheduled messages to a Captain, scheduled by bb Automations. */
+  routines: Routines;
 };
 
 export const JSON_OPTION = {

@@ -47,6 +47,7 @@ describe("configure", () => {
     expect(resolved.skills.sort()).toEqual([
       "captain-brief",
       "captain-review-loop",
+      "captain-routines",
       "captain-ship",
     ]);
     expect(resolved.instructions).toContain('You are the "Plugins" Captain');

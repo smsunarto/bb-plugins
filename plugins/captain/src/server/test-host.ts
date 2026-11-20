@@ -112,6 +112,10 @@ export type FakeOptions = {
   tasksDeadlineMs?: number;
   /** How often a watched banner rechecks the crew. */
   crewPollMs?: number;
+  /** How long one routine maintenance item runs before Captain warns. */
+  maintenanceDeadlineMs?: number;
+  /** How long a routine fire waits on one bb thread call. */
+  threadDeadlineMs?: number;
   /** How often a watched Drive is scanned. */
   driveScanMs?: number;
 };
@@ -126,6 +130,145 @@ export type FakePool = {
     familyWeekly?: Record<string, { utilization: number; resetAt: number; status: string } | null>;
   }[];
 } | null;
+
+/** A queued row as bb lists it, with the fields Captain reads. */
+type QueuedRow = {
+  id: string;
+  text: string;
+  state: string;
+  content: { type: "text"; text: string; mentions: [] }[];
+  waitingOn: { kind: string; pluginId?: string; reason?: string };
+};
+export const queuedRow = (
+  id: string,
+  text: string,
+  waitingOn: QueuedRow["waitingOn"],
+): QueuedRow => ({
+  id,
+  text,
+  state: waitingOn.kind === "time" ? "scheduled" : "queued",
+  content: [{ type: "text", text, mentions: [] }],
+  waitingOn,
+});
+
+export type FakeAutomation = {
+  id: string;
+  projectId: string;
+  name: string;
+  enabled: boolean;
+  trigger: { triggerType: string; cron?: string; timezone?: string; runAt?: number };
+  execution: { mode: string; script?: string; env?: Record<string, string> };
+  runs: { id: string; trigger: "schedule" | "manual" }[];
+};
+
+/** bb Automations as Captain calls it: create, update, get, pause, resume, run, delete, list. */
+export function fakeAutomations(now: () => number = Date.now) {
+  const rows = new Map<string, FakeAutomation>();
+  let next = 0;
+  let runs = 0;
+  const state = {
+    rows,
+    down: false,
+    /** Refuse creates with this message. */
+    refuseCreate: null as string | null,
+    /** Called after a manual run is recorded, as the stored script would run. */
+    onRun: null as null | ((row: FakeAutomation, runId: string) => Promise<void> | void),
+    calls: [] as { method: string; input: unknown }[],
+    /** Methods whose next call fails once. */
+    failNext: new Set<string>(),
+    /** While set, calls to `methods` (every call when absent) wait for `until`, as a slow Automations would. */
+    gate: null as { until: Promise<void>; methods?: ReadonlySet<string> } | null,
+    /** Calls started and not yet answered. */
+    inFlight: 0,
+  };
+  const status = (row: FakeAutomation) => ({
+    id: row.id,
+    enabled: row.enabled,
+    nextRunAt: row.enabled ? (row.trigger.runAt ?? 1_900_000_000_000) : null,
+    lastRunAt: null,
+    lastRunStatus: null,
+    lastError: null,
+  });
+  const find = (input: Record<string, unknown>) => {
+    const row = rows.get(String(input["automationId"]));
+    if (row === undefined || row.projectId !== input["projectId"])
+      throw new Error("Automation not found");
+    return row;
+  };
+  /** As the real plugin validates every trigger it is given. */
+  const checkTrigger = (trigger: unknown) => {
+    const runAt = (trigger as { runAt?: number } | undefined)?.runAt;
+    if (runAt !== undefined && runAt <= now())
+      throw new Error("One-shot run time must be in the future");
+  };
+  async function call(method: string, input: Record<string, unknown>): Promise<unknown> {
+    state.calls.push({ method, input });
+    if (state.gate !== null && (state.gate.methods?.has(method) ?? true)) {
+      state.inFlight++;
+      try {
+        await state.gate.until;
+      } finally {
+        state.inFlight--;
+      }
+    }
+    if (state.down) throw new Error("plugin automations is not running");
+    if (state.failNext.has(method)) {
+      state.failNext.delete(method);
+      throw new Error(`${method} failed once`);
+    }
+    if (input["trigger"] !== undefined) checkTrigger(input["trigger"]);
+    switch (method) {
+      case "automations_create": {
+        if (state.refuseCreate !== null) throw new Error(state.refuseCreate);
+        const row: FakeAutomation = {
+          id: `auto_${++next}`,
+          projectId: String(input["projectId"]),
+          name: String(input["name"]),
+          enabled: input["enabled"] !== false,
+          trigger: input["trigger"] as FakeAutomation["trigger"],
+          execution: input["execution"] as FakeAutomation["execution"],
+          runs: [],
+        };
+        rows.set(row.id, row);
+        return status(row);
+      }
+      case "automations_update": {
+        const row = find(input);
+        if (input["name"] !== undefined) row.name = String(input["name"]);
+        if (input["trigger"] !== undefined)
+          row.trigger = input["trigger"] as FakeAutomation["trigger"];
+        return status(row);
+      }
+      case "automations_get":
+        return Object.assign(status(find(input)), { execution: find(input).execution });
+      case "automations_pause":
+        find(input).enabled = false;
+        return status(find(input));
+      case "automations_resume":
+        find(input).enabled = true;
+        return status(find(input));
+      case "automations_delete":
+        find(input);
+        rows.delete(String(input["automationId"]));
+        return { ok: true };
+      case "automations_run": {
+        const row = find(input);
+        const run = { id: `arun_${++runs}`, trigger: "manual" as const };
+        row.runs.push(run);
+        // Like the real plugin: the script starts after the run is returned.
+        setTimeout(() => void state.onRun?.(row, run.id), 0);
+        return { run: { ...run, status: "running", startedAt: 1 } };
+      }
+      case "automations_list":
+        return [...rows.values()]
+          .filter((row) => row.projectId === input["projectId"])
+          .map((row) => Object.assign(status(row), { execution: row.execution }));
+      default:
+        throw new Error(`unexpected Automations method ${method}`);
+    }
+  }
+  return Object.assign(state, { call });
+}
 
 /**
  * Every host this test file built. After its last test each one is disposed,
@@ -194,10 +337,15 @@ export async function captainHost(options: FakeOptions = {}) {
   /** Thread metadata by `<threadId> <pluginId>`, as other plugins read it. */
   const metadata = new Map<string, Record<string, unknown>>();
   /** Messages held by a spawn's `sendAt`, until sent now. */
-  const queued = new Map<
-    string,
-    { id: string; text: string; waitingOn: { kind: string; pluginId?: string; reason?: string } }[]
-  >();
+  const queued = new Map<string, QueuedRow[]>();
+  /** Threads with a turn running: a `queue-if-active` send to one is queued. */
+  const busy = new Set<string>();
+  /** While set, `threads.get` or `threads.send` waits for it, as a slow bb would. */
+  const threadHolds: { get: Promise<void> | null; send: Promise<void> | null } = {
+    get: null,
+    send: null,
+  };
+  const automations = fakeAutomations(() => clock);
   /** Each send-now, with whether the thread was marked and registered by then. */
   const released: { threadId: string; marked: boolean; registered: boolean }[] = [];
   let serial = 0;
@@ -541,7 +689,7 @@ export async function captainHost(options: FakeOptions = {}) {
               options.pluginHold === true
                 ? { kind: "plugin", pluginId: "concurrency-limit", reason: "at its cap" }
                 : { kind: "time" };
-            queued.set(thread.id, [{ id: `qm_${++serial}`, text: args.prompt ?? "", waitingOn }]);
+            queued.set(thread.id, [queuedRow(`qm_${++serial}`, args.prompt ?? "", waitingOn)]);
           }
           return thread as never;
         },
@@ -565,20 +713,29 @@ export async function captainHost(options: FakeOptions = {}) {
           },
         },
         get: async ({ threadId }) => {
+          await threadHolds.get;
           const thread = threads.get(threadId);
           if (thread === undefined) throw new Error(`thread ${threadId} not found`);
           return thread as never;
         },
         send: async (args) => {
+          // Held before the write, as a slow bb is: the message lands when released.
+          await threadHolds.send;
           if (sendFails.has(args.threadId)) throw new Error(`thread ${args.threadId} is busy`);
           const [part] = args.input;
+          const text = part !== undefined && part.type === "text" ? part.text : "";
           sent.push({
             threadId: args.threadId,
-            text: part !== undefined && part.type === "text" ? part.text : "",
+            text,
             mode: args.mode,
             senderThreadId: args.senderThreadId,
           });
-          return {} as never;
+          if (args.mode === "queue-if-active" && busy.has(args.threadId)) {
+            const row = queuedRow(`qm_${++serial}`, text, { kind: "turn" });
+            queued.set(args.threadId, [...(queued.get(args.threadId) ?? []), row]);
+            return { ok: true, delivery: "queued", queuedMessage: row } as never;
+          }
+          return { ok: true, delivery: "sent" } as never;
         },
         interactions: {
           list: async ({ threadId }) => {
@@ -660,6 +817,8 @@ export async function captainHost(options: FakeOptions = {}) {
           signal?: AbortSignal;
         }) => {
           const input = (args.input ?? {}) as Record<string, unknown>;
+          if (args.pluginId === "automations")
+            return args.outputSchema.parse(await automations.call(args.method, input));
           if (args.pluginId === "scott-tasks")
             return args.outputSchema.parse(await tasksRpc(args.method, input, args.signal));
           if (args.pluginId === "account-pool") {
@@ -691,6 +850,12 @@ export async function captainHost(options: FakeOptions = {}) {
     captainsDir,
     now: () => clock,
     tasksDeadlineMs: options.tasksDeadlineMs ?? 500,
+    ...(options.maintenanceDeadlineMs === undefined
+      ? {}
+      : { maintenanceDeadlineMs: options.maintenanceDeadlineMs }),
+    ...(options.threadDeadlineMs === undefined
+      ? {}
+      : { threadDeadlineMs: options.threadDeadlineMs }),
     crewPollMs: options.crewPollMs ?? 20,
     driveScanMs: options.driveScanMs ?? 40,
   };
@@ -802,6 +967,14 @@ export async function captainHost(options: FakeOptions = {}) {
     interactionReads,
     metadata,
     queued,
+    busy,
+    threadHolds,
+    automations,
+    /** The Captain's turn ends: its first queued message starts the next turn. */
+    drainQueue(threadId: string) {
+      const [, ...rest] = queued.get(threadId) ?? [];
+      queued.set(threadId, rest);
+    },
     released,
     logs,
     callRpc,
