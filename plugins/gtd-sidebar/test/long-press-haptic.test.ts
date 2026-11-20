@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { installDom } from "@bb-plugins/testing";
 
 installDom();
-const { act, fireEvent, render } = await import("@testing-library/react");
+const { act, cleanup, fireEvent, render } = await import("@testing-library/react");
 const { IOS_LONG_PRESS_MS, useIosLongPress } = await import("../hooks/use-ios-long-press.ts");
 
 /** A list of two rows under one recognizer; only `row` takes a long press. */
@@ -22,6 +22,9 @@ function List({ onLongPress, enabled }: { onLongPress: (id: string) => void; ena
 }
 
 afterEach(() => {
+  // Testing Library registers its own cleanup only in the first file that
+  // imports it, so unmount here whatever order bun loads the files in.
+  cleanup();
   delete (window as { bb?: unknown }).bb;
 });
 
