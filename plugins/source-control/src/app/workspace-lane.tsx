@@ -4,7 +4,7 @@
  * colour and dot shape say where each commit lives, and file rows ending in a
  * change-kind glyph. Ported from `plugins/gitbutler/src/app/workspace-lane.tsx`.
  */
-import { experimental_Icon as Icon, UrlLink } from "@get-bb/plugin-sdk/app";
+import { experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   describeProblem,
@@ -22,6 +22,7 @@ import type { ChangeKey } from "../core/ids.ts";
 import { BranchActions, type Dispatch, type Outcome } from "./branch-actions.tsx";
 import { MergeButton, repoOfKey, useThreadMerge } from "./merge.tsx";
 import { useOpenReview } from "./open-review.ts";
+import { PullRequestLink } from "./open-pull-request.tsx";
 import { CreatePullRequest } from "./publish.tsx";
 import {
   FileDiffCard,
@@ -503,15 +504,24 @@ function ChecksChip({ checks }: { checks: NonNullable<ForgeValue>["checks"] }) {
 }
 
 /** A branch's review: its state and checks from the forge for the thread's own branch. */
-function ReviewChips({ branch, forge }: { branch: Branch; forge: ForgeValue | undefined }) {
+function ReviewChips({
+  threadId,
+  branch,
+  forge,
+}: {
+  threadId: string;
+  branch: Branch;
+  forge: ForgeValue | undefined;
+}) {
   if (forge) {
     const look = PR_LOOK[forge.state === "open" && forge.isDraft ? "draft" : forge.state];
     return (
       <>
         <Hint label={`Open PR #${forge.number}`}>
-          {/* UrlLink takes no ref: the tooltip anchors on this span. */}
+          {/* The link takes no ref: the tooltip anchors on this span. */}
           <span className="inline-flex shrink-0">
-            <UrlLink
+            <PullRequestLink
+              threadId={threadId}
               href={forge.url}
               className={cn(
                 badgeVariants({ variant: look.variant }),
@@ -521,7 +531,7 @@ function ReviewChips({ branch, forge }: { branch: Branch; forge: ForgeValue | un
               )}
             >
               #{forge.number} {look.label}
-            </UrlLink>
+            </PullRequestLink>
           </span>
         </Hint>
         {forge.state === "open" ? <ChecksChip checks={forge.checks} /> : null}
@@ -685,7 +695,7 @@ const BranchCard = memo(function BranchCard({
                 {look.label}
               </Badge>
             ) : null}
-            <ReviewChips branch={branch} forge={forge} />
+            <ReviewChips threadId={threadId} branch={branch} forge={forge} />
           </>
         }
       />

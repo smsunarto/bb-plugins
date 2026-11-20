@@ -57,6 +57,7 @@ describe("bb captain dispatch", () => {
         taskId: host.tasks.tasks[0]?.id,
         presetId: implement?.id,
         parentThreadId: captainId,
+        senderThreadId: captainId,
         parentNotifications: "stuck",
         reportContract: expect.stringContaining("--notify-parent"),
         extraInstructions: expect.stringContaining("# Role: Implement"),
@@ -74,6 +75,36 @@ describe("bb captain dispatch", () => {
     expect(host.pushes).toEqual([
       { method: "threadNotifications.set", input: { threadId, level: "input-only" } },
     ]);
+  });
+
+  test("a Tasks that refuses senderThreadId still starts the thread: one retry without it", async () => {
+    const { host, captainId, as } = await crewHost();
+    host.tasks.delegateMode = "no-sender";
+
+    const result = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--json"]);
+
+    expect(result.exitCode).toBe(0);
+    expect(json(result.stdout).results[0]).toMatchObject({
+      state: "started",
+      thread: lastSpawned(host),
+    });
+    const [first, retry] = delegates(host);
+    expect(delegates(host)).toHaveLength(2);
+    expect(first).toMatchObject({ parentThreadId: captainId, senderThreadId: captainId });
+    expect(retry).toEqual({ ...(first as object), senderThreadId: undefined });
+    expect(retry).not.toHaveProperty("senderThreadId");
+    expect([...host.threads.keys()].filter((id) => id.startsWith("thr_crew"))).toHaveLength(1);
+  });
+
+  test("any other Tasks refusal is not retried", async () => {
+    const { host, as } = await crewHost();
+    host.tasks.delegateMode = "refuse";
+
+    const result = await as(["dispatch", "BBPLUGINS-1", "--role", "Implement", "--json"]);
+
+    expect(result.exitCode).toBe(1);
+    expect(json(result.stdout).results[0]).toMatchObject({ state: "failed" });
+    expect(delegates(host)).toHaveLength(1);
   });
 
   test("crew stay agent-facing: neither dispatch nor a reload marks them for GenUI", async () => {

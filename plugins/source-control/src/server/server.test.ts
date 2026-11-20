@@ -3721,3 +3721,25 @@ describe("create PR", () => {
     expect(world.spawned).toHaveLength(2);
   });
 });
+
+describe("pull request links", () => {
+  test("a cold read of a linked pull request asks the clicking thread's host first", async () => {
+    const world = twoHosts();
+    world.serverAccounts = [];
+    for (const id of ["host-a", "host-b"]) {
+      world.hosts[id]!.ghAccounts = ["smsunarto"];
+      world.hosts[id]!.forgeLive = true;
+    }
+    const { harness } = await start(world);
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-a" });
+    await harness.behavior.callRpc("refreshThread", { threadId: "thread-b" });
+    // A repository no account has read yet, so no remembered account answers first.
+    const firstHost = async (key: string, threadId?: string) => {
+      world.hostForge = [];
+      await harness.behavior.callRpc("legacyChange", { keys: [key], threadId });
+      return world.hostForge.find((each) => each.endsWith(":prHead"));
+    };
+    expect(await firstHost("pr:acme/api#7")).toBe("host-a:prHead");
+    expect(await firstHost("pr:acme/web#8", "thread-b")).toBe("host-b:prHead");
+  });
+});

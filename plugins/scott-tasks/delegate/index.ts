@@ -361,6 +361,7 @@ export function handlers(
           ...(input.parentNotifications === undefined
             ? {}
             : { parentNotifications: input.parentNotifications }),
+          ...(input.senderThreadId === undefined ? {} : { senderThreadId: input.senderThreadId }),
           providerId: execution.providerId,
           model: execution.model,
           reasoningLevel: execution.reasoningLevel,

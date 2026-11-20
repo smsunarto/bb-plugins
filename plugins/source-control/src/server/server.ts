@@ -15,7 +15,7 @@ import {
 import { sourceControlContract } from "../contract/rpc.ts";
 import type { ChangeKey } from "../core/ids.ts";
 import { createShipGroup, createShipThread } from "./ship-group.ts";
-import { parsePrReference, prKey } from "../core/watch.ts";
+import { parsePrReference, prLookup } from "../core/watch.ts";
 import { groupDirective, MAX_GROUP, shareDirective, type GroupEntry } from "../core/directive.ts";
 import { execGh } from "../forge/exec-gh.ts";
 import type { Exec } from "../forge/github.ts";
@@ -447,8 +447,8 @@ async function shareTarget(
   }
   const ref = parsePrReference(target.pullRequest);
   if (!ref) return `${target.pullRequest} is not a GitHub pull request.`;
-  const lookup = `pr:${prKey(ref).toLowerCase()}`;
-  const found = (await moved.handlers.legacyChange({ keys: [lookup] }))[lookup];
+  const lookup = prLookup(ref);
+  const found = (await moved.handlers.legacyChange({ keys: [lookup], threadId }))[lookup];
   return found?.key
     ? { key: found.key, revision: null }
     : `${target.pullRequest}: ${found?.problem ?? "Source Control cannot find it."}`;

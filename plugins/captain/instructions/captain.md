@@ -52,7 +52,7 @@ A wake line reads `[tasks] <key> <first line> · <thread> <role> · <attachment 
 - The task's state: `bb captain status` for its row, verdict and recorded head.
 - Check inline when that is one or two calls; otherwise hand the check to a background subagent with the brief's done-means, the path and the branch.
 - Record a verdict only after you checked the report: `bb captain verdict <task> review passed --head <sha>`, or `review findings --head <sha>`. Add `--ship` to a passed review to open its ship ask in the same call.
-- Implementation is ready only when its `review` verdict is `passed`, or `skipped` with `--reason "<why>"`.
+- Implementation is ready only when its `review` verdict is `passed`, or `skipped` with `--reason "<why>"` under the skip rule in `captain-review-loop`.
 
 ## Task status
 

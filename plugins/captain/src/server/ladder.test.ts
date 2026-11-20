@@ -331,6 +331,7 @@ describe("rate-limit fallback", () => {
         taskId: host.tasks.tasks[0]?.id,
         presetId: rung2?.id,
         parentThreadId: captainId,
+        senderThreadId: captainId,
         extraInstructions: expect.stringContaining("# Role: Implement"),
       }),
     ]);

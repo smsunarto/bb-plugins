@@ -1,9 +1,13 @@
-import { definePluginApp } from "@get-bb/plugin-sdk/app";
+import { definePluginApp, experimental_THREAD_ACTION_GROUPS } from "@get-bb/plugin-sdk/app";
+import { ADOPT_ICON, ADOPT_LABEL, AdoptOverlay, adoptItem, useAdoptData } from "./adopt.tsx";
 import { NeedsYouBanner } from "./banner.tsx";
 import { CaptainIconSettings } from "./icon-settings.tsx";
 import { CrewModelsSettings } from "./settings.tsx";
 
-/** Registers the Needs you banner, and the crew model ladders and Captain icons in Captain's settings. */
+/**
+ * Registers the Needs you banner, the crew model ladders and Captain icons in
+ * Captain's settings, and Adopt into Captain in every thread menu.
+ */
 export default definePluginApp((app) => {
   app.slots.settingsSection({
     id: "crew-models",
@@ -24,4 +28,17 @@ export default definePluginApp((app) => {
     scopes: ["thread"],
     banners: [{ id: "needs-you", chrome: "card", component: NeedsYouBanner }],
   });
+  // Every thread menu, the sidebar's right-click menu included: adopt the
+  // thread into a Captain's crew. One shared `captains` read decides each row.
+  app.slots.experimental_threadAction({
+    id: "adopt",
+    title: ADOPT_LABEL,
+    icon: ADOPT_ICON,
+    group: experimental_THREAD_ACTION_GROUPS.organize,
+    order: 90,
+    useData: useAdoptData,
+    item: adoptItem,
+  });
+  // The dialog that action opens; it outlives the menu and reads nothing until opened.
+  app.slots.experimental_appOverlay({ id: "adopt", component: AdoptOverlay });
 });

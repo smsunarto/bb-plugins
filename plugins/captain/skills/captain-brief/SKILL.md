@@ -51,4 +51,5 @@ Remote: <yes: push the branch and open a draft PR | none: commit on your branch 
 
 - Add a `Lenses:` line to the brief to add or drop lenses, such as `Lenses: +visual -performance`, or to name a Drive lens.
 - Without it, the Review thread picks lenses from the diff.
+- Drop lenses that cannot apply to the diff, such as `-visual` for a server-only diff.
 - The implementer's report stays out of the brief: post nothing from it into the description, so the lenses stay blind.

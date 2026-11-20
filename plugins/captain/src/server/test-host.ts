@@ -53,6 +53,7 @@ export type FakeTask = {
   title: string;
   status: string;
   updatedAt: string;
+  description?: string;
   fields: Map<string, { value: string; head: string | null; writtenAt: string }>;
 };
 export type FakeTaskThread = {
@@ -82,7 +83,9 @@ export type DelegateMode =
   | "hang"
   /** Spawns, never attaches, never answers. */
   | "hang-unattached"
-  | "refuse";
+  | "refuse"
+  /** A Tasks from before `senderThreadId`: its strict schema refuses input that carries one. */
+  | "no-sender";
 
 const ULID = (n: number) => `01J${String(n).padStart(23, "0")}`;
 
@@ -230,6 +233,11 @@ export async function captainHost(options: FakeOptions = {}) {
     const preset = tasks.presets.find((entry) => entry.id === input["presetId"]);
     if (preset === undefined) throw new Error("preset not found");
     if (tasks.delegateMode === "refuse") throw new Error("spawn refused: model not available");
+    if (tasks.delegateMode === "no-sender" && "senderThreadId" in input) {
+      throw Object.assign(new Error("HTTP 400: rpc input validation failed"), {
+        code: "invalid_input",
+      });
+    }
     const number = ++serial;
     const thread = withListFields(
       makeThreadResponse({
@@ -311,6 +319,41 @@ export async function captainHost(options: FakeOptions = {}) {
       case "getTaskByKey": {
         const task = tasks.tasks.find((entry) => entry.key === input["taskKey"]);
         return { task: task === undefined ? null : snapshotTask(task) };
+      }
+      case "listTasks": {
+        const project = tasks.projects.find((entry) => entry.id === input["projectId"]);
+        const statuses = input["statuses"] as string[] | undefined;
+        const search = input["search"] as string | undefined;
+        return {
+          tasks: tasks.tasks
+            .filter((task) => project !== undefined && task.key.startsWith(`${project.prefix}-`))
+            .filter((task) => statuses === undefined || statuses.includes(task.status))
+            .filter(
+              (task) =>
+                search === undefined || `${task.title}\n${task.description ?? ""}`.includes(search),
+            )
+            .slice(0, Number(input["limit"] ?? 100))
+            .map(snapshotTask),
+          nextCursor: null,
+        };
+      }
+      case "listTaskThreads":
+        return {
+          taskThreads: tasks.taskThreads
+            .filter((row) => row.taskId === input["taskId"])
+            .map(({ threadId, liveStatus }) => ({ threadId, liveStatus })),
+        };
+      case "createTask": {
+        const project = tasks.projects.find((entry) => entry.id === input["projectId"]);
+        if (project === undefined) return { ok: false, error: { message: "project not found" } };
+        const number =
+          tasks.tasks.filter((task) => task.key.startsWith(`${project.prefix}-`)).length + 1;
+        const task = addTask(`${project.prefix}-${number}`, {
+          title: String(input["title"]),
+          description: String(input["description"] ?? ""),
+          status: (input["status"] as string | undefined) ?? "backlog",
+        });
+        return { ok: true, task: snapshotTask(task) };
       }
       case "updateTask": {
         const task = taskById(input["taskId"]);

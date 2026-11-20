@@ -25,7 +25,11 @@ import { PANEL_PATH } from "./page/hooks.ts";
 export type ReviewTarget = Partial<ReviewLocation> & { key: ChangeKey };
 type Here = ReviewLocation & { key: ChangeKey };
 
-const REVIEW_TAB = { id: "review", context: { kind: "thread" }, availability: "action" } as const;
+export const REVIEW_TAB = {
+  id: "review",
+  context: { kind: "thread" },
+  availability: "action",
+} as const;
 
 /** The tab's params: the Change it shows, and nothing else, so bb keeps one tab per Change. */
 export function reviewTabParams(params: unknown): { key: ChangeKey } | null {

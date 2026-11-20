@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, test } from "vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, fireEvent } from "@testing-library/react";
 import { renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { LandedDirective } from "./landed-card.tsx";
@@ -86,6 +86,7 @@ test("the landed card lists what landed as GitHub reports it", async () => {
       experimental_rpcContract: sourceControlContract,
       pluginId: "source-control",
       sdk: { threads: { get: async () => ({ id: "thread-a", archivedAt: null }) } } as never,
+      experimental_panel: { openTab: () => true },
       rpc: {
         landedCard: () => ({
           ok: true,
@@ -115,6 +116,11 @@ test("the landed card lists what landed as GitHub reports it", async () => {
   expect(await slot.findByText("1 of 2 landed")).toBeTruthy();
   expect(slot.getByText("Route gh")).toBeTruthy();
   expect(slot.getByText("Fix the build")).toBeTruthy();
+  // A plain click on the pull request opens its review beside the thread.
+  fireEvent.click(slot.getByText("Route gh"));
+  expect(slot.inspection.experimental_panelCalls).toMatchObject([
+    { method: "openTab", options: { params: { pr: "acme/api#42" } } },
+  ]);
 });
 
 test("a landed card written by hand, with no account, is read as its thread's host can", async () => {

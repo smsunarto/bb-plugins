@@ -14,6 +14,7 @@ import { StripAction, StripSummary, useStripVisible } from "./composer-strip.tsx
 import { ReviewPanel, ReviewSidebar, useReviewBadge, useReviewTitle } from "./review-entry.tsx";
 import { ReviewTab } from "./review-tab.tsx";
 import { mountHeaderIcon } from "./header-icon.ts";
+import { mountPullRequestLinks } from "./pr-links.ts";
 import {
   BranchesInfoSection,
   headerActionItem,
@@ -60,6 +61,12 @@ export default definePluginApp((app) => {
   app.contentScripts.register({
     id: "header-icon",
     mount: ({ signal }) => mountHeaderIcon(document, signal, isHeaderLabel),
+  });
+  // bb has no hook for a link click in a message or another plugin's UI: this takes a plain click
+  // on a pull request link and opens its review beside the thread in view.
+  app.contentScripts.register({
+    id: "pr-links",
+    mount: ({ signal }) => mountPullRequestLinks(document, signal),
   });
   // The Info tab's GitButler branches, before bb's Commits (10): they name what those are on.
   app.slots.experimental_threadInfoSection({

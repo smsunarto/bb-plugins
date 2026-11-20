@@ -14,7 +14,6 @@ import {
   experimental_InfoSection as InfoSection,
   experimental_useAppPanel as useAppPanel,
   experimental_useRpcKeyedQuery as useRpcKeyedQuery,
-  UrlLink,
   type ExperimentalThreadInfoProps,
   type PluginThreadAction,
   type PluginThreadActionDataInput,
@@ -26,6 +25,7 @@ import { attentionChips, headerLabel, summarize } from "../core/status.ts";
 import { sourceControlContract } from "../contract/rpc.ts";
 import { GitHubMark, StateIcon } from "./page/icons.tsx";
 import { Hint } from "./ui.tsx";
+import { PullRequestLink } from "./open-pull-request.tsx";
 
 /** The thread's Source Control tab, as `openTab` names it. */
 export const SOURCE_CONTROL_TAB = {
@@ -137,7 +137,8 @@ export function PullRequestInfoRow({ threadId, environment }: ExperimentalThread
   return (
     <DetailRow icon="GitPullRequestArrow" label="Pull request">
       <span className="flex h-5 max-w-full min-w-0 items-center gap-2">
-        <UrlLink
+        <PullRequestLink
+          threadId={threadId}
           href={pr.url}
           aria-label={`Pull request ${pr.number}: ${PR_LABEL[state]}${next ? `, ${next}` : ""}`}
           title={pr.title}
@@ -150,7 +151,7 @@ export function PullRequestInfoRow({ threadId, environment }: ExperimentalThread
             <span>{PR_LABEL[state]}</span>
           </span>
           {next ? <span className="min-w-0 truncate text-muted-foreground">{next}</span> : null}
-        </UrlLink>
+        </PullRequestLink>
       </span>
     </DetailRow>
   );
