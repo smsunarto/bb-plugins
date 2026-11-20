@@ -157,6 +157,39 @@
   background: var(--sidebar);
 }
 
+[data-gtd-thread-scroll="compact"] {
+  /* Keep the fade and the final row clear of the footer, including any
+     bottom inset the theme lets this scroller extend into. */
+  --gtd-thread-fade-length: 2rem;
+  --gtd-thread-bottom-inset: var(--sidebar-list-bottom-inset, 0px);
+  --gtd-thread-end-padding: calc(var(--gtd-thread-fade-length) + var(--gtd-thread-bottom-inset));
+  overflow-y: auto;
+}
+
+[data-gtd-thread-scroll-clearance] {
+  position: relative;
+  height: var(--gtd-thread-end-padding);
+  overflow-anchor: none;
+  pointer-events: none;
+}
+
+/* Measure the clipped part of a strip ending at the last row plus the
+   footer inset. The strip takes no space from the rows or clearance. */
+[data-gtd-thread-scroll-end] {
+  position: absolute;
+  bottom: calc(100% - var(--gtd-thread-bottom-inset));
+  width: 1px;
+  height: var(--gtd-thread-fade-length);
+}
+
+[data-gtd-thread-more-below] {
+  mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--gtd-thread-bottom-inset) - var(--gtd-thread-fade-depth)),
+    transparent calc(100% - var(--gtd-thread-bottom-inset))
+  );
+}
+
 .gtd-thread-row {
   min-height: 32px;
   /* Content starts 28px in: 10px past the disclosure's 12px chevron glyph,
@@ -623,6 +656,12 @@
   overscroll-behavior: contain;
   scrollbar-width: none;
   scroll-snap-type: y mandatory;
+}
+
+[data-gtd-phone-nav] [data-gtd-nav-scroll][data-gtd-nav-scrolled],
+[data-gtd-phone-nav] [data-gtd-nav-scroll][data-gtd-nav-more-below] {
+  /* The mask softens a clipped row. The two edge tints make overflow visible
+     even through transparent row padding, tapering to the sidebar on all sides. */
   mask-image: linear-gradient(
     to bottom,
     transparent,
@@ -630,16 +669,24 @@
     black calc(100% - var(--gtd-nav-fade-bottom, 0px)),
     transparent
   );
+  background-image:
+    radial-gradient(ellipse 50% 100% at 50% 0%, var(--sidebar-accent), transparent),
+    radial-gradient(ellipse 50% 100% at 50% 100%, var(--sidebar-accent), transparent);
+  background-size:
+    100% var(--gtd-nav-tint-top, 0px),
+    100% var(--gtd-nav-tint-bottom, 0px);
+  background-position: top, bottom;
+  background-repeat: no-repeat;
 }
 
 [data-gtd-phone-nav] [data-gtd-nav-scrolled] {
   --gtd-nav-fade-top: 10px;
+  --gtd-nav-tint-top: 18px;
 }
 
 [data-gtd-phone-nav] [data-gtd-nav-more-below] {
   --gtd-nav-fade-bottom: 10px;
-  /* The hint needs to show even on transparent rows. */
-  background-image: linear-gradient(to top, var(--sidebar-accent), transparent 16px);
+  --gtd-nav-tint-bottom: 18px;
 }
 
 [data-gtd-phone-nav] [data-sidebar-navigation-item] {

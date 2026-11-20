@@ -1,13 +1,5 @@
 import { SlidingDisclosure } from "./sliding-disclosure";
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { DndContext, DragOverlay } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
@@ -103,10 +95,6 @@ const SIDEBAR_LIFECYCLES = ["active", "archived"] as const;
 
 const EMPTY_STATE_CLASS = "px-2 py-6 text-center text-xs text-muted-foreground";
 const GITBUTLER_REFRESH_MS = 30_000;
-const MOBILE_SCROLL_FADE_STYLE: CSSProperties = {
-  maskImage: "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
-  WebkitMaskImage: "linear-gradient(to bottom, black 0, black calc(100% - 2rem), transparent 100%)",
-};
 
 export function ThreadInbox(props: PluginThreadListProps) {
   const sdk = useSdk();
@@ -127,6 +115,33 @@ export function ThreadInbox(props: PluginThreadListProps) {
       </TooltipProvider>
     </CompactViewportOverrideProvider>
   );
+}
+
+// A half-pixel step across the usual 32px strip. The observer only reports
+// while the strip crosses the edge or layout moves it.
+const threadFadeThresholds = Array.from({ length: 65 }, (_, index) => index / 64);
+
+function observeThreadScrollFade(end: HTMLDivElement | null) {
+  const scroller = end?.closest<HTMLElement>('[data-gtd-thread-scroll="compact"]');
+  if (!end || !scroller) return;
+  const observer = new IntersectionObserver(
+    (entries) => {
+      const entry = entries.at(-1);
+      if (!entry?.rootBounds) return;
+      const { bottom, height } = entry.boundingClientRect;
+      const clipped = Math.max(0, bottom - entry.rootBounds.bottom);
+      scroller.style.setProperty("--gtd-thread-fade-depth", `${Math.min(clipped, height)}px`);
+      scroller.toggleAttribute("data-gtd-thread-more-below", clipped > 0);
+    },
+    { root: scroller, threshold: threadFadeThresholds },
+  );
+  observer.observe(end);
+  return () => {
+    observer.disconnect();
+    observer.takeRecords();
+    scroller.style.removeProperty("--gtd-thread-fade-depth");
+    scroller.removeAttribute("data-gtd-thread-more-below");
+  };
 }
 
 function InboxList({
@@ -568,13 +583,8 @@ function InboxList({
             resolveTarget={resolveMenuTarget}
             isCompactViewport={isCompactViewport}
             ref={scrollRef}
-            className={cn(
-              "min-h-0 flex-1 overflow-y-auto px-2",
-              isCompactViewport ? "pb-8" : "pb-2",
-            )}
-            // bb's compact footer overlays the list edge. Fade content into that
-            // surface, while the matching padding lets the final row scroll clear.
-            style={isCompactViewport ? MOBILE_SCROLL_FADE_STYLE : undefined}
+            data-gtd-thread-scroll={isCompactViewport ? "compact" : "desktop"}
+            className={cn("min-h-0 flex-1 px-2", !isCompactViewport && "overflow-y-auto pb-2")}
             onFocus={focusedRow.onFocus}
             onBlur={focusedRow.onBlur}
           >
@@ -606,6 +616,11 @@ function InboxList({
                 ) : null,
               )}
             </InboxContent>
+            {isCompactViewport ? (
+              <div data-gtd-thread-scroll-clearance="" aria-hidden>
+                <div ref={observeThreadScrollFade} data-gtd-thread-scroll-end="" />
+              </div>
+            ) : null}
           </RowMenuArea>
         </div>
         {/* The ghost rides the pointer from document.body, clear of the list's

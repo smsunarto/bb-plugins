@@ -111,7 +111,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   Object.defineProperty(dom.window.HTMLElement.prototype, "offsetHeight", {
     configurable: true,
     get(this: HTMLElement) {
-      return this.classList.contains("overflow-y-auto") ? layout.viewport : 0;
+      return this.hasAttribute("data-gtd-thread-scroll") ? layout.viewport : 0;
     },
   });
   const jsdomRect = dom.window.Element.prototype.getBoundingClientRect;
@@ -637,6 +637,73 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
   afterAll(() => {
     rowBodyRender.mockRestore();
     dom.window.close();
+  });
+
+  it("tapers the compact scroll fade to the amount of content clipped at the edge", () => {
+    const OriginalObserver = globalThis.IntersectionObserver;
+    let placeContentEnd: ((bottom: number) => void) | undefined;
+    globalThis.IntersectionObserver = class extends OriginalObserver {
+      constructor(
+        private readonly notify: IntersectionObserverCallback,
+        private readonly options?: IntersectionObserverInit,
+      ) {
+        super(notify, options);
+      }
+
+      override observe(target: Element) {
+        if (!target.hasAttribute("data-gtd-thread-scroll-end")) return;
+        const clearance = target.parentElement;
+        assert.ok(clearance && clearance.hasAttribute("data-gtd-thread-scroll-clearance"));
+        assert.equal(this.options?.root, clearance.parentElement);
+        const viewport = new DOMRect(0, 0, 320, 200);
+        placeContentEnd = (bottom) => {
+          const rect = new DOMRect(0, bottom - 32, 1, 32);
+          const intersectionHeight = Math.max(0, Math.min(rect.height, viewport.bottom - rect.top));
+          this.notify(
+            [
+              {
+                target,
+                isIntersecting: rect.top <= viewport.bottom,
+                intersectionRatio: intersectionHeight / rect.height,
+                boundingClientRect: rect,
+                intersectionRect: new DOMRect(0, rect.top, 1, intersectionHeight),
+                rootBounds: viewport,
+                time: 0,
+              },
+            ],
+            this,
+          );
+        };
+      }
+    };
+    try {
+      const view = mount(hostState([thread("a")]), { isCompactViewport: true });
+      const list = view.slot.container.querySelector<HTMLElement>("[data-gtd-thread-scroll]");
+      assert.ok(list && placeContentEnd);
+      const hasFade = () => list.hasAttribute("data-gtd-thread-more-below");
+      const depth = () => list.style.getPropertyValue("--gtd-thread-fade-depth");
+      placeContentEnd(190);
+      assert.equal(hasFade(), false, "the rows fit before the footer clearance");
+      placeContentEnd(245);
+      assert.equal(depth(), "32px", "a long list uses the full fade");
+      placeContentEnd(216);
+      assert.equal(depth(), "16px", "the fade shrinks as the last row comes into view");
+      placeContentEnd(201);
+      assert.equal(hasFade(), true, "the list extends past the viewport");
+      assert.equal(depth(), "1px", "one clipped pixel fades only that pixel");
+      placeContentEnd(200);
+      assert.equal(hasFade(), false, "the fade clears when the last row reaches the edge");
+      placeContentEnd(196);
+      assert.equal(hasFade(), false, "the last row fits four pixels above the edge");
+      placeContentEnd(201);
+      assert.equal(hasFade(), true, "scrolling up brings the fade back");
+      view.updateInbox({ isCompactViewport: false });
+      assert.equal(hasFade(), false, "desktop clears the compact fade");
+      assert.equal(depth(), "", "desktop clears the compact depth");
+    } finally {
+      cleanup();
+      globalThis.IntersectionObserver = OriginalObserver;
+    }
   });
 
   describe("unread activity in the status slot", () => {
@@ -3409,7 +3476,7 @@ if (process.env.GTD_ROW_NAVIGATION_TEST_CHILD !== "1") {
     }
 
     function scrollList(slot: RenderedSlot, top: number) {
-      const scroller = slot.container.querySelector<HTMLElement>(".overflow-y-auto")!;
+      const scroller = slot.container.querySelector<HTMLElement>("[data-gtd-thread-scroll]")!;
       Object.defineProperty(scroller, "scrollTop", { configurable: true, value: top });
       fireEvent.scroll(scroller);
     }
