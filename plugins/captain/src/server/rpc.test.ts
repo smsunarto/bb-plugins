@@ -330,7 +330,7 @@ describe("New Captain from the app", () => {
     };
     expect(started).toMatchObject({ ok: true, state: "started", warnings: [] });
     expect(await rpc("captains", {})).toEqual({ ids: [started.threadId] });
-    expect(host.threads.get(started.threadId)?.title).toBe("Plugins Captain");
+    expect(host.threads.get(started.threadId)?.title).toBe("Plugins");
     // The same name converges on the live Captain rather than starting a second.
     expect(await rpc("newCaptain", { name: "plugins", repos: ["rampage"] })).toMatchObject({
       ok: true,

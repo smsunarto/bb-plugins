@@ -6,7 +6,7 @@ import { markPersonFacing } from "../audience.ts";
 import { readCallerFile } from "../caller.ts";
 import { DRIVE_FILES } from "../drive.ts";
 import { guard, refuse, Refusal, render, type Blocker, type Item } from "../output.ts";
-import type { Repo } from "../store.ts";
+import { NOTICE, type Repo } from "../store.ts";
 import {
   applyLink,
   isBlocker,
@@ -19,6 +19,7 @@ import { setPushLevel } from "../push.ts";
 import { V1_PRESETS } from "../roles.ts";
 import { TasksError, type TasksPreset, type TasksProject } from "../tasks-client.ts";
 import { ensureStorageRoot, JSON_OPTION, type CommandDeps } from "./deps.ts";
+import { refreshIcon } from "../icon.ts";
 
 export const CAPTAINS_PROJECT_NAME = "Captains";
 
@@ -248,7 +249,10 @@ async function apply(deps: CommandDeps, plan: Plan): Promise<StartedCaptain> {
     createdAt: existing?.createdAt ?? deps.now(),
     repos: [...repos.values()],
   });
+  // Started with its name as its title: nothing for the suffix rename to do.
+  if (existing === null) deps.store.markNoticeSent(NOTICE.titleSuffix(threadId), deps.now());
   bb.rpc.experimental_invalidate([CAPTAINS_TAG]);
+  refreshIcon(deps, threadId);
   const pushWarning = await setPushLevel(bb, threadId);
   if (pushWarning !== null) warnings.push(pushWarning);
   // Also on a rerun, so `new` converges a Captain started before the mark.
@@ -289,7 +293,8 @@ async function spawnCaptain(deps: CommandDeps, plan: Plan, projectId: string): P
     // The user's call: Captains run unattended, and auto mode's classifier
     // refused their own `bb tasks show`.
     permissionMode: "full",
-    title: `${plan.name} Captain`,
+    // The sidebar icon marks it as a Captain, so the title is the name alone.
+    title: plan.name,
     prompt: plan.prompt,
     pinned: true,
     pluginMetadata: { captain: { name: plan.name } },

@@ -3,6 +3,7 @@ import { archiveCommand } from "./commands/archive.ts";
 import { askCommand, askResolveCommand } from "./commands/ask.ts";
 import type { CommandDeps } from "./commands/deps.ts";
 import { driveReadCommand, driveWriteCommand } from "./commands/drive.ts";
+import { iconCommand } from "./commands/icon.ts";
 import { newCommand } from "./commands/new.ts";
 import { dispatchCommand } from "./commands/dispatch.ts";
 import { repoAddCommand, repoRemoveCommand } from "./commands/repo.ts";
@@ -48,6 +49,7 @@ export function captainCli(deps: CommandDeps) {
       "routine run": routineRunCommand(deps),
       "routine remove": routineRemoveCommand(deps),
       "routine fire": routineFireCommand(deps),
+      icon: iconCommand(deps),
     },
   });
 }

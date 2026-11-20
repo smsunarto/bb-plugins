@@ -8,6 +8,7 @@ import { DEFAULT_LADDERS, roleLadder } from "./ladder.ts";
 import { ROLE_SPECS } from "./roles.ts";
 import { Refusal } from "./output.ts";
 import { startCaptain } from "./commands/new.ts";
+import { captainIcons, setCaptainIcon } from "./icon.ts";
 import { askItems, crewItems, deferItem, markSeen, needsYouCount, sinceYouLeft } from "./queue.ts";
 
 /** How often a watched banner rechecks the crew for a new or answered interaction. */
@@ -91,6 +92,16 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
         throw error;
       }
     },
+    icons: ({ keys }) => captainIcons(deps, keys),
+    captainIcons: () => ({
+      captains: deps.store.liveCaptains().map((captain) => ({
+        threadId: captain.threadId,
+        name: captain.name,
+        icon: deps.store.captainIcon(captain.threadId),
+      })),
+    }),
+    // An image refusal's message names why, such as its size; settings shows it as is.
+    setIcon: ({ captainId, icon }) => setCaptainIcon(deps, captainId, icon),
   });
 
   // A watched banner: bb's thread events cover run states; a new or answered

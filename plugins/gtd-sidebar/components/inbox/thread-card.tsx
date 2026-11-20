@@ -192,7 +192,7 @@ const ThreadCardBody = memo(function ThreadCardBody({
   // starts straight after the disclosure column.
   const title = (
     <>
-      <HostLead host={thread.host} />
+      <HostLead thread={thread} />
       <ThreadTitle
         editor={rename.editor}
         title={titleText}

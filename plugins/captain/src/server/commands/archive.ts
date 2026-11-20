@@ -3,6 +3,7 @@ import { CAPTAINS_TAG } from "../../contract/rpc.ts";
 import { callerCaptain } from "../caller.ts";
 import { guard, render, type Item } from "../output.ts";
 import { CAPTAIN_OPTION, JSON_OPTION, type CommandDeps } from "./deps.ts";
+import { refreshIcon } from "../icon.ts";
 
 /** A page of crew per list call; the loop runs until a list comes back empty. */
 const CREW_PAGE = 200;
@@ -38,6 +39,7 @@ export function archiveCommand(deps: CommandDeps) {
           await deps.bb.sdk.threads.archive({ threadId: captain.threadId });
         deps.registry.archive(captain.threadId, deps.now());
         deps.bb.rpc.experimental_invalidate([CAPTAINS_TAG]);
+        refreshIcon(deps, captain.threadId);
         items.push({ id: captain.threadId, ok: true, state: "archived", detail: captain.name });
         return render(items, json);
       });

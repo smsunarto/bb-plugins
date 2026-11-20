@@ -8,6 +8,7 @@
  */
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+import { captainIconSchema, iconChoiceSchema } from "./icon.ts";
 import { LADDER_ROLES, ladderSchema, rungSchema } from "./ladder.ts";
 import { ASK_KINDS } from "./queue.ts";
 
@@ -77,6 +78,9 @@ export const asksTag = (captainId: string) => `asks:${captainId}`;
 export const crewTag = (captainId: string) => `crew:${captainId}`;
 export const sinceTag = (captainId: string) => `since:${captainId}`;
 export const CAPTAINS_TAG = "captains";
+export const iconTag = (captainId: string) => `icon:${captainId}`;
+/** Any Captain's icon changed: the settings list reads every one. */
+export const ICONS_TAG = "icons";
 export const LADDERS_TAG = "ladders";
 
 /** The longest title a task made from a thread's title may have. */
@@ -321,6 +325,38 @@ export const captainContract = defineRpcContract({
       "Bring an existing thread into a Captain's crew on a task, as `bb captain dispatch <task> --role <role> --thread <id>` does; a new task is created from the given title first. Refusals list every blocker and change nothing.",
     input: adoptInputSchema,
     output: adoptResultSchema,
+  },
+  /**
+   * Each live Captain's sidebar icon, for a thread list's rows: one batched
+   * read over the rows' thread ids. Every key gets an entry, null for a thread
+   * that is not a live Captain (an archived one, or any other), so the list
+   * keeps its own lead for that row. bb fails a keyed read that omits a key.
+   */
+  icons: {
+    experimental_description:
+      "Read the sidebar icon of each thread id: a live Captain's default glyph, bb icon name, or image data URL; null for any other thread.",
+    input: z.object({ keys: z.array(z.string().min(1).max(200)).max(500) }).strict(),
+    output: z.record(z.string(), captainIconSchema.nullable()),
+    keyTags: (captainId) => [iconTag(captainId)],
+  },
+  /** Every live Captain with its name and icon, for the icon setter in settings. */
+  captainIcons: {
+    input: z.object({}).strict(),
+    output: z
+      .object({
+        captains: z.array(
+          z.object({ threadId, name: z.string(), icon: captainIconSchema }).strict(),
+        ),
+      })
+      .strict(),
+    tags: () => [CAPTAINS_TAG, ICONS_TAG],
+  },
+  /** Set a Captain's sidebar icon, as `bb captain icon` does; null goes back to the default. */
+  setIcon: {
+    experimental_description:
+      "Set a live Captain's sidebar icon to a bb icon name or an image data URL; null restores the default Captain glyph.",
+    input: z.object({ captainId: threadId, icon: iconChoiceSchema }).strict(),
+    output: captainIconSchema,
   },
 });
 
