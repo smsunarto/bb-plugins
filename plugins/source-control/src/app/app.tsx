@@ -14,6 +14,7 @@ import { StripAction, StripSummary, useStripVisible } from "./composer-strip.tsx
 import { ReviewPanel, ReviewSidebar, useReviewBadge, useReviewTitle } from "./review-entry.tsx";
 import { ReviewTab } from "./review-tab.tsx";
 import { mountHeaderIcon } from "./header-icon.ts";
+import { PatchFileOpener } from "./patch-file-opener.tsx";
 import { mountPullRequestLinks } from "./pr-links.ts";
 import {
   BranchesInfoSection,
@@ -119,5 +120,12 @@ export default definePluginApp((app) => {
     experimental_sidebar: ReviewSidebar,
     experimental_useBadge: useReviewBadge,
     experimental_usePageTitle: useReviewTitle,
+  });
+  // .patch and .diff files open as the Files view draws a Change.
+  app.slots.fileOpener({
+    id: "patch",
+    title: "Diff view",
+    extensions: ["patch", "diff"],
+    component: PatchFileOpener,
   });
 });
