@@ -589,3 +589,96 @@
     transition: none;
   }
 }
+
+/* Phone navigation is selected by the SDK's compact viewport prop. */
+[data-gtd-phone-nav] {
+  padding: 0 18px 4px;
+  color: var(--foreground);
+}
+
+.gtd-phone-nav-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 4px 12px;
+}
+
+.gtd-phone-wordmark {
+  font-size: 30px;
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: -0.06em;
+}
+
+[data-gtd-phone-nav] [data-gtd-nav-scroll] {
+  /* Leave half a destination visible when the cap cuts the list short. */
+  max-height: max(56px, calc(round(down, 38dvh - 72px, 56px) + 28px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+[data-gtd-phone-nav] [data-gtd-nav-scroll]:focus-within {
+  mask-image: none;
+}
+
+[data-gtd-phone-nav] [data-sidebar-navigation-item],
+[data-gtd-phone-nav] [data-sidebar-navigation-more] {
+  height: 56px;
+  gap: 14px;
+  padding-inline: 4px 8px;
+  border-radius: 12px;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+[data-gtd-phone-nav] [data-sidebar-navigation-item][aria-current="page"] {
+  background: transparent;
+  font-weight: 650;
+}
+
+[data-gtd-phone-nav] [data-sidebar-navigation-more] {
+  height: 44px;
+  color: var(--muted-foreground);
+}
+
+[data-gtd-phone-nav] .gtd-nav-icon {
+  width: 24px;
+  height: 24px;
+}
+
+[data-gtd-phone-nav] .gtd-nav-badge {
+  min-width: 0;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  background: var(--info, var(--ring));
+  font-size: 0;
+}
+
+.gtd-phone-nav-shortcut {
+  display: flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 9999px;
+  padding-inline: 12px;
+  background: var(--sidebar-accent);
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+.gtd-phone-nav-shortcut:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.gtd-phone-nav-shortcut:focus-visible {
+  outline: 2px solid var(--sidebar-ring);
+  outline-offset: -2px;
+}

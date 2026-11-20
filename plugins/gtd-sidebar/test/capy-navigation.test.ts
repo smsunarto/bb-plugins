@@ -114,6 +114,22 @@ describe("CapyNavigation", () => {
     }
   });
 
+  it("keeps the phone search shortcut bound to its host action without moving their rows", () => {
+    const slot = mount(items(), {}, true);
+    assert.deepEqual(rowIds(slot), ["__bb__/new-thread", SEARCH, "__bb__/extensions"]);
+    const search = slot.container.querySelector('[data-gtd-shortcut="search"]');
+    assert.ok(search);
+    fireEvent.click(search);
+    assert.deepEqual(slot.inspection.sidebarNavigationCalls, [
+      { method: "activate", itemId: SEARCH, target: "current" },
+    ]);
+    cleanup();
+
+    const hidden = mount(items({ isVisible: false }), {}, true);
+    assert.equal(hidden.container.querySelector('[data-gtd-shortcut="search"]'), null);
+    assert.ok(hidden.getByRole("button", { name: "More" }));
+  });
+
   it("shows Search's shortcut while the modifier is held", () => {
     const search = { shortcut: { label: "Ctrl K", ariaKeyShortcuts: "Control+K" } };
     const row = (held: boolean) => {
@@ -145,7 +161,7 @@ describe("CapyNavigation", () => {
 
     function layout(slot: ReturnType<typeof mount>) {
       height = 50;
-      const region = slot.getByRole("button", { name: "Search threads" }).parentElement!;
+      const region = slot.container.querySelector<HTMLElement>("[data-gtd-nav-scroll]")!;
       let top = 0;
       Object.defineProperty(region, "scrollTop", {
         get: () => top,

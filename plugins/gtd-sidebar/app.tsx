@@ -14,6 +14,7 @@ import {
 } from "./components/header/header-settle";
 import { mountHeaderSettleStyle } from "./components/header/header-settle-style";
 import { mountPhoneDrawer } from "./lib/phone-drawer";
+import { mountPhoneDrawerStyle } from "./lib/phone-drawer-style";
 
 export default definePluginApp((app) => {
   // Versions up to 0.4.x cached the shelves and provider marks in web storage,
@@ -66,6 +67,13 @@ export default definePluginApp((app) => {
   // haptic once fully open.
   app.contentScripts.register({
     id: "phone-drawer",
-    mount: ({ signal }) => mountPhoneDrawer(document, signal),
+    mount: ({ signal }) => {
+      const disposeEffects = mountPhoneDrawer(document, signal);
+      const disposeStyle = mountPhoneDrawerStyle(document, signal);
+      return () => {
+        disposeEffects();
+        disposeStyle();
+      };
+    },
   });
 });
