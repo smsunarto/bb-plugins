@@ -1,7 +1,10 @@
+import { execFileSync } from "node:child_process";
 import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   utimesSync,
@@ -12,7 +15,7 @@ import { join } from "node:path";
 import { makeThreadResponse } from "@get-bb/plugin-sdk/testing";
 import { describe, expect, test } from "vitest";
 import { captainContract, crewTag, DRIVE_EXCERPT_BYTES, driveTag } from "../contract/rpc.ts";
-import { createDrive } from "./drive.ts";
+import { readInside } from "./drive.ts";
 import { DRIVE_WALK_MAX, listDrive, watchDrive } from "./overview.ts";
 import { captainHost, newCaptain, SERVER_HOST } from "./test-host.ts";
 
@@ -57,6 +60,7 @@ async function dispatch(
 }
 
 const settle = (ms = 80) => new Promise((resolve) => setTimeout(resolve, ms));
+const SCAN_MS = 40;
 
 describe("crewThreads", () => {
   test("lists the unarchived crew, active first, with model name, task and role", async () => {
@@ -134,22 +138,6 @@ describe("drive", () => {
     const result = await as(["drive", "write", "briefs/BBPLUGINS-1.md", "--content", "# Brief"]);
     expect(result.exitCode).toBe(0);
     expect(invalidations().slice(before)).toContain(driveTag(captainId));
-  });
-
-  test("while watched, a direct file edit refreshes the Drive read; unwatched, nothing does", async () => {
-    const { host, captainId, driveDir, invalidations } = await overviewHost();
-    const stop = host.harness.behavior.experimental_watchRpc("drive", { input: { captainId } });
-    await settle();
-    const before = invalidations().length;
-    writeFileSync(join(driveDir, "NOTES.md"), "# Notes\n\nEdited by hand");
-    await settle(600);
-    expect(invalidations().slice(before)).toContain(driveTag(captainId));
-    stop();
-    await settle();
-    const after = invalidations().length;
-    writeFileSync(join(driveDir, "NOTES.md"), "# Notes\n\nAgain");
-    await settle(600);
-    expect(invalidations().slice(after)).not.toContain(driveTag(captainId));
   });
 });
 
@@ -250,32 +238,37 @@ describe("Drive bounds", () => {
     expect(card?.excerpt?.endsWith("\uFFFD")).toBe(false);
   });
 
-  test("head caps a wide cached read and never splits a character", () => {
-    const dir = mkdtempSync(join(tmpdir(), "captain-drive-"));
+  test("an excerpt is at most the cap and never splits a character, keeping a literal U+FFFD", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "captain-drive-")));
     const file = join(dir, "x.md");
     writeFileSync(file, "ab".repeat(30_000) + "é".repeat(1_000));
-    const store = createDrive();
-    store.read(file);
-    expect(store.head(file, 1_200)).toBe("ab".repeat(600));
+    expect(readInside(dir, file, 1_200)).toBe("ab".repeat(600));
     writeFileSync(file, `a${"é".repeat(2_000)}`);
-    const head = store.head(file, 1_200) ?? "";
+    const head = readInside(dir, file, 1_200) ?? "";
     expect(Buffer.byteLength(head)).toBeLessThanOrEqual(1_200);
     expect(head).toBe(`a${"é".repeat(599)}`);
+    // 1,196 + 3 bytes of U+FFFD fill 1,199; the 4-byte emoji does not fit.
+    writeFileSync(file, `${"a".repeat(1_196)}\uFFFD🙂 and more`);
+    expect(readInside(dir, file, 1_200)).toBe(`${"a".repeat(1_196)}\uFFFD`);
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test("a cold read and a warm one cut at the same whole character, keeping a literal U+FFFD", () => {
-    const dir = mkdtempSync(join(tmpdir(), "captain-drive-"));
-    const file = join(dir, "x.md");
-    const text = `${"a".repeat(1_196)}\uFFFD🙂 and more`;
-    writeFileSync(file, text);
-    // 1,196 + 3 bytes of U+FFFD fill 1,199; the 4-byte emoji does not fit.
-    const expected = `${"a".repeat(1_196)}\uFFFD`;
-    expect(createDrive().head(file, 1_200)).toBe(expected);
-    const warm = createDrive();
-    warm.read(file);
-    expect(warm.head(file, 1_200)).toBe(expected);
-    rmSync(dir, { recursive: true, force: true });
+  test("an excerpt reads only a regular file inside the Drive: no final link, no outside folder, no FIFO", () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "captain-drive-")));
+    const drive = join(root, "drive");
+    const outside = join(root, "outside");
+    mkdirSync(drive);
+    mkdirSync(outside);
+    writeFileSync(join(outside, "SECRET.md"), "# secret");
+    writeFileSync(join(drive, "NOTES.md"), "# notes");
+    symlinkSync(join(outside, "SECRET.md"), join(drive, "link.md"));
+    symlinkSync(outside, join(drive, "out"));
+    execFileSync("mkfifo", [join(drive, "pipe.md")]);
+    expect(readInside(drive, join(drive, "NOTES.md"), 1_200)).toBe("# notes");
+    expect(readInside(drive, join(drive, "link.md"), 1_200)).toBeNull();
+    expect(readInside(drive, join(drive, "out", "SECRET.md"), 1_200)).toBeNull();
+    expect(readInside(drive, join(drive, "pipe.md"), 1_200)).toBeNull();
+    rmSync(root, { recursive: true, force: true });
   });
 
   test("a Drive that is itself a symlink out of thread storage lists nothing and offers no folder", async () => {
@@ -298,7 +291,7 @@ describe("Drive bounds", () => {
     symlinkSync(join(outside, "secret.md"), join(dir, "linked.md"));
     symlinkSync(".", join(dir, "a"));
     symlinkSync(".", join(dir, "b"));
-    expect(listDrive(dir)).toEqual({
+    expect(listDrive(dir)).toMatchObject({
       files: [expect.objectContaining({ path: "NOTES.md" })],
       truncated: false,
     });
@@ -328,132 +321,112 @@ describe("Drive bounds", () => {
   });
 });
 
-describe("Drive watch", () => {
-  const watched = (dir: () => string | null) => {
-    const changes: number[] = [];
-    const live: boolean[] = [];
+describe("Drive scan", () => {
+  /** A scan of one folder, with a client that reads again on each change. */
+  const scanned = (dir: string) => {
+    let served = listDrive(dir).signature;
+    let changes = 0;
     const abort = new AbortController();
     const done = watchDrive({
-      resolveDir: async () => dir(),
+      scan: async () => listDrive(dir).signature,
+      served: () => served,
       signal: abort.signal,
-      onChange: () => changes.push(Date.now()),
-      onLive: (state) => live.push(state),
-      warn: () => undefined,
-      retryMs: 40,
-      settleMs: 30,
+      onChange: () => {
+        changes += 1;
+        served = listDrive(dir).signature;
+      },
+      scanMs: SCAN_MS,
     });
     return {
-      changes,
-      live,
+      changes: () => changes,
       stop: async () => {
         abort.abort();
         await done;
       },
     };
   };
+  /** One scan period and a margin. */
+  const oneScan = () => settle(SCAN_MS + 30);
 
-  test("a watch whose folder is missing at start, or is deleted and recreated, starts again", async () => {
-    const root = mkdtempSync(join(tmpdir(), "captain-watch-"));
-    const dir = join(root, "drive");
-    let known: string | null = null;
-    const watch = watched(() => known);
-    // No storage root yet, then no folder yet.
-    await settle(100);
-    known = dir;
-    await settle(100);
-    mkdirSync(dir);
-    await settle(150);
-    const started = watch.changes.length;
-    expect(watch.live).toContain(true);
+  test("a file edit is picked up within one scan, and nothing else is pushed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "captain-scan-"));
     writeFileSync(join(dir, "NOTES.md"), "one");
-    await settle(150);
-    expect(watch.changes.length).toBeGreaterThan(started);
-
-    rmSync(dir, { recursive: true, force: true });
-    await settle(100);
-    mkdirSync(dir);
-    await settle(150);
-    const recreated = watch.changes.length;
-    writeFileSync(join(dir, "NOTES.md"), "two");
-    await settle(150);
-    expect(watch.changes.length).toBeGreaterThan(recreated);
-    await watch.stop();
-    expect(watch.live.at(-1)).toBe(false);
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  test("losing access to the Drive's parent, at start or while watching, retries rather than ends", async () => {
-    const root = mkdtempSync(join(tmpdir(), "captain-watch-"));
-    const parent = join(root, "storage");
-    const dir = join(parent, "drive");
-    mkdirSync(dir, { recursive: true });
-    chmodSync(parent, 0o000);
-    const watch = watched(() => dir);
-    await settle(100);
-    expect(watch.live).not.toContain(true);
-    chmodSync(parent, 0o755);
-    await settle(150);
-    expect(watch.live.at(-1)).toBe(true);
-
-    // A change whose refresh runs after access is gone.
-    writeFileSync(join(dir, "NOTES.md"), "one");
-    chmodSync(parent, 0o000);
-    await settle(100);
-    expect(watch.live.at(-1)).toBe(false);
-    chmodSync(parent, 0o755);
-    await settle(200);
-    expect(watch.live.at(-1)).toBe(true);
-    await watch.stop();
-    rmSync(root, { recursive: true, force: true });
-  });
-
-  test("a change in a nested folder, existing or made while watching, refreshes the read", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "captain-watch-"));
-    mkdirSync(join(dir, "briefs", "old"), { recursive: true });
-    const watch = watched(() => dir);
-    await settle(60);
-    writeFileSync(join(dir, "briefs", "old", "A.md"), "a");
-    await settle(120);
-    const existing = watch.changes.length;
-    expect(existing).toBeGreaterThan(0);
-    mkdirSync(join(dir, "repos", "new"), { recursive: true });
-    await settle(120);
-    const created = watch.changes.length;
-    writeFileSync(join(dir, "repos", "new", "B.md"), "b");
-    await settle(120);
-    expect(watch.changes.length).toBeGreaterThan(created);
-    await watch.stop();
+    const scan = scanned(dir);
+    await oneScan();
+    expect(scan.changes()).toBe(0);
+    writeFileSync(join(dir, "NOTES.md"), "one, edited");
+    await oneScan();
+    expect(scan.changes()).toBe(1);
+    await oneScan();
+    expect(scan.changes()).toBe(1);
+    await scan.stop();
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test("a steady stream of writes keeps refreshing rather than waiting for a pause", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "captain-watch-"));
-    const watch = watched(() => dir);
-    await settle(60);
-    for (let index = 0; index < 10; index += 1) {
-      writeFileSync(join(dir, "NOTES.md"), String(index));
-      await settle(25);
+  test("a folder replaced at the same path is picked up within one scan, and so are later edits in it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "captain-scan-"));
+    mkdirSync(join(dir, "briefs"));
+    writeFileSync(join(dir, "briefs", "a.md"), "a");
+    const scan = scanned(dir);
+    renameSync(join(dir, "briefs"), join(dir, ".old-briefs"));
+    mkdirSync(join(dir, "briefs"));
+    writeFileSync(join(dir, "briefs", "a.md"), "a");
+    await oneScan();
+    expect(scan.changes()).toBe(1);
+    writeFileSync(join(dir, "briefs", "b.md"), "b");
+    await oneScan();
+    expect(scan.changes()).toBe(2);
+    await scan.stop();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("an edit in the last of 280 folders is picked up within one scan", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "captain-scan-"));
+    for (let index = 0; index < 280; index += 1) {
+      mkdirSync(join(dir, `f${String(index).padStart(3, "0")}`));
     }
-    expect(watch.changes.length).toBeGreaterThanOrEqual(3);
-    await watch.stop();
+    const last = listDrive(dir);
+    expect(last.truncated).toBe(false);
+    writeFileSync(join(dir, "f279", "deep.md"), "one");
+    const scan = scanned(dir);
+    writeFileSync(join(dir, "f279", "deep.md"), "one, edited");
+    await oneScan();
+    expect(scan.changes()).toBe(1);
+    await scan.stop();
     rmSync(dir, { recursive: true, force: true });
   });
 
-  test("a CLI write refreshes once: by itself when unwatched, by the watch when watched", async () => {
-    const { host, as, captainId, invalidations } = await overviewHost();
+  test("a CLI write refreshes at once, and the scan after the refreshed read pushes nothing", async () => {
+    const { host, as, captainId, drive, invalidations } = await overviewHost();
     const writes = () => invalidations().filter((tag) => tag === driveTag(captainId)).length;
-    let before = writes();
-    await as(["drive", "write", "briefs/A.md", "--content", "# A"]);
-    await settle(400);
-    expect(writes() - before).toBe(1);
-
     const stop = host.harness.behavior.experimental_watchRpc("drive", { input: { captainId } });
+    await drive();
     await settle();
-    before = writes();
+    const before = writes();
     await as(["drive", "write", "briefs/B.md", "--content", "# B"]);
-    await settle(600);
+    expect(writes() - before).toBe(1);
+    // The client reads again, as bb does on a refresh.
+    await drive();
+    await settle(200);
     expect(writes() - before).toBe(1);
     stop();
+  });
+
+  test("while watched, a direct edit refreshes the Drive read; unwatched, nothing does", async () => {
+    const { host, captainId, driveDir, drive, invalidations } = await overviewHost();
+    const stop = host.harness.behavior.experimental_watchRpc("drive", { input: { captainId } });
+    await drive();
+    const before = invalidations().length;
+    writeFileSync(join(driveDir, "NOTES.md"), "# Notes\n\nEdited by hand");
+    await settle(200);
+    expect(invalidations().slice(before)).toContain(driveTag(captainId));
+    stop();
+    await drive();
+    await settle();
+    const after = invalidations().length;
+    writeFileSync(join(driveDir, "NOTES.md"), "# Notes\n\nAgain");
+    await settle(200);
+    expect(invalidations().slice(after)).not.toContain(driveTag(captainId));
   });
 });
 

@@ -23,6 +23,8 @@ export type StartOptions = {
   tasksDeadlineMs?: number;
   /** How often a watched banner rechecks the crew; tests shorten it. */
   crewPollMs?: number;
+  /** How often a watched Drive is scanned; tests shorten it. */
+  driveScanMs?: number;
 };
 
 /** Wires the plugin; holds no logic of its own. Returns the parts tests drive. */
@@ -64,7 +66,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     }
   });
   bb.cli.register(captainCli(deps));
-  registerRpc(deps, options.crewPollMs);
+  registerRpc(deps, options.crewPollMs, options.driveScanMs);
   check.register(bb);
 
   // `configure` is synchronous, so the Drive root is read once here and cached.

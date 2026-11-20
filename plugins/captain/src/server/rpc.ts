@@ -14,7 +14,7 @@ import {
   createPrimaryHost,
   crewThreads,
   driveFiles,
-  validDriveDir,
+  driveSignature,
   watchDrive,
 } from "./overview.ts";
 import {
@@ -34,7 +34,11 @@ export const CREW_POLL_MS = 10_000;
  * The banner's RPCs. Logic lives in `queue.ts` and `asks.ts`, shared with the
  * CLI; this file maps it onto the contract and keeps the reads fresh.
  */
-export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS): void {
+export function registerRpc(
+  deps: CommandDeps,
+  crewPollMs: number = CREW_POLL_MS,
+  driveScanMs?: number,
+): void {
   const { bb } = deps;
   const live = (captainId: string) => {
     if (deps.registry.get(captainId) === null)
@@ -133,37 +137,52 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
     setIcon: ({ captainId, icon }) => setCaptainIcon(deps, captainId, icon),
   });
 
-  // A watched banner or Overview: bb's thread events cover run states; a new or
-  // answered interaction has no event, so the crew list is rechecked while
-  // watched. Both reads share one loop per Captain.
   const captainOf = (read: object) => captainOfRead(deps.registry, read);
-  const crewWatch = createCrewWatch(deps, crewPollMs, crewReads.changed);
-  for (const method of ["crew", "crewThreads"] as const) {
-    bb.rpc.experimental_whileWatched(method, (read, signal) => {
-      const captainId = captainOf(read);
-      return captainId === null ? Promise.resolve() : crewWatch(captainId, signal);
-    });
-  }
-
-  // A watched Drive refreshes on the filesystem's own change notifications.
-  bb.rpc.experimental_whileWatched("drive", (read, signal) => {
-    const captainId = captainOf(read);
-    if (captainId === null) return Promise.resolve();
-    return watchDrive({
-      // The storage root may not be read yet when the watch starts; a Drive
-      // that is not a real folder inside it is not watched.
-      resolveDir: () => validDriveDir(deps, captainId),
-      signal,
-      onChange: () => bb.rpc.experimental_invalidate([driveTag(captainId)]),
-      onLive: (live) => deps.registry.setDriveWatched(captainId, live),
-      warn: (line) => bb.log.warn(line),
-    });
-  });
+  registerCrewWatch(deps, captainOf, createCrewWatch(deps, crewPollMs, crewReads.changed));
+  registerDriveScan(deps, captainOf, driveScanMs);
 
   registerEvents(deps, crewReads.changed);
 }
 
 /** The live Captain a watched read names, or null. */
+/**
+ * A watched banner or Overview: bb's thread events cover run states; a new or
+ * answered interaction has no event, so the crew list is rechecked while
+ * watched. Both reads share one loop per Captain.
+ */
+function registerCrewWatch(
+  deps: CommandDeps,
+  captainOf: (read: object) => string | null,
+  crewWatch: (captainId: string, signal: AbortSignal) => Promise<void>,
+): void {
+  for (const method of ["crew", "crewThreads"] as const) {
+    deps.bb.rpc.experimental_whileWatched(method, (read, signal) => {
+      const captainId = captainOf(read);
+      return captainId === null ? Promise.resolve() : crewWatch(captainId, signal);
+    });
+  }
+}
+
+/** While a `drive` read is watched, scan its Drive and refresh it when it changed. */
+function registerDriveScan(
+  deps: CommandDeps,
+  captainOf: (read: object) => string | null,
+  driveScanMs: number | undefined,
+): void {
+  const { bb } = deps;
+  bb.rpc.experimental_whileWatched("drive", (read, signal) => {
+    const captainId = captainOf(read);
+    if (captainId === null) return Promise.resolve();
+    return watchDrive({
+      scan: () => driveSignature(deps, captainId),
+      served: () => deps.registry.servedDrive(captainId),
+      signal,
+      onChange: () => bb.rpc.experimental_invalidate([driveTag(captainId)]),
+      ...(driveScanMs === undefined ? {} : { scanMs: driveScanMs }),
+    });
+  });
+}
+
 function captainOfRead(registry: CommandDeps["registry"], read: object): string | null {
   if (!("input" in read)) return null;
   const captainId = (read.input as { captainId?: unknown } | null)?.captainId;

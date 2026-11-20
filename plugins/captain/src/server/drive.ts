@@ -1,15 +1,20 @@
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readdirSync,
+  readlinkSync,
   readSync,
   realpathSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
+  type Stats,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 
@@ -108,18 +113,6 @@ export function createDrive() {
 
   return {
     read,
-    /**
-     * At most `maxBytes` of a file's head, or null when it is missing. The
-     * cache may hold more of it, from a wider read; this never returns more.
-     */
-    head(path: string, maxBytes: number): string | null {
-      const text = read(path, maxBytes);
-      if (text === null || text.length <= maxBytes / 4) return text;
-      // At most maxBytes characters already cover maxBytes bytes.
-      const bytes = Buffer.from(text.slice(0, maxBytes), "utf8");
-      if (bytes.byteLength <= maxBytes) return text.slice(0, maxBytes);
-      return completePrefix(bytes.subarray(0, maxBytes));
-    },
     /** Size in bytes, or null when missing. */
     size(path: string): number | null {
       const stat = statSync(path, { throwIfNoEntry: false });
@@ -175,6 +168,60 @@ export function createDrive() {
         .slice(0, SKILLS_INDEX_MAX);
     },
   };
+}
+
+/**
+ * At most `maxBytes` of a regular file's head, or null when the file is gone,
+ * is not a regular file, or is not inside `root` (a real path). The checks and
+ * the read use one descriptor: opened without following a final link (and
+ * without blocking on a FIFO), checked by `fstat`, located through
+ * `/proc/self/fd`, then read. A path swapped after the open cannot change what
+ * is read. Where `/proc` is missing (macOS), the location is the path's own
+ * real path, accepted only while it is still the same file as the descriptor:
+ * a narrower race, not none.
+ */
+export function readInside(root: string, path: string, maxBytes: number): string | null {
+  let fd: number;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch {
+    return null;
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return null;
+    const located = locate(fd, path, stat);
+    if (located === null || !isInside(root, located)) return null;
+    const length = readInto(fd, Buffer.alloc(Math.min(stat.size, maxBytes)));
+    return stat.size > maxBytes ? completePrefix(length) : length.toString("utf8");
+  } catch {
+    return null;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/** Where an open file is: the kernel's own path for it, or the path's real path while it is the same file. */
+function locate(fd: number, path: string, stat: Stats): string | null {
+  try {
+    return readlinkSync(`/proc/self/fd/${fd}`);
+  } catch {
+    // No /proc: fall through.
+  }
+  const real = realpathSync(path);
+  const now = lstatSync(real, { throwIfNoEntry: false });
+  return now !== undefined && now.dev === stat.dev && now.ino === stat.ino ? real : null;
+}
+
+/** Fills `buffer` from the descriptor's start, or as much as the file holds. */
+function readInto(fd: number, buffer: Buffer): Buffer {
+  let length = 0;
+  while (length < buffer.byteLength) {
+    const read = readSync(fd, buffer, length, buffer.byteLength - length, length);
+    if (read === 0) break;
+    length += read;
+  }
+  return buffer.subarray(0, length);
 }
 
 /**

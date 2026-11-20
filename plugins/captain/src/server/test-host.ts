@@ -109,6 +109,8 @@ export type FakeOptions = {
   tasksDeadlineMs?: number;
   /** How often a watched banner rechecks the crew. */
   crewPollMs?: number;
+  /** How often a watched Drive is scanned. */
+  driveScanMs?: number;
 };
 
 /** The Account Pooler's `status.get` fields Captain reads; null when the pool is not loaded. */
@@ -664,6 +666,7 @@ export async function captainHost(options: FakeOptions = {}) {
     now: () => clock,
     tasksDeadlineMs: options.tasksDeadlineMs ?? 500,
     crewPollMs: options.crewPollMs ?? 20,
+    driveScanMs: options.driveScanMs ?? 40,
   };
   let server = await start(host.bb, startOptions);
   await server.ready;

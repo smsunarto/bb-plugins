@@ -24,8 +24,8 @@ export function createRegistry(store: Store) {
   /** Captain id → task key → role. */
   const pending = new Map<string, Map<string, Role>>();
   let storageRoot: string | null = null;
-  /** Captains whose Drive a running filesystem watch refreshes. */
-  const watchedDrives = new Set<string>();
+  /** Each Captain's Drive signature as its last `drive` read served it. */
+  const servedDrives = new Map<string, string>();
 
   return {
     get(threadId: string | null): Captain | null {
@@ -58,11 +58,10 @@ export function createRegistry(store: Store) {
       return join(storageRoot, captainId);
     },
     storageRoot: () => storageRoot,
-    /** Whether a running watch already refreshes this Captain's Drive read. */
-    driveWatched: (captainId: string) => watchedDrives.has(captainId),
-    setDriveWatched(captainId: string, live: boolean): void {
-      if (live) watchedDrives.add(captainId);
-      else watchedDrives.delete(captainId);
+    /** The Drive signature the last `drive` read served, which a scan compares against. */
+    servedDrive: (captainId: string) => servedDrives.get(captainId),
+    setServedDrive(captainId: string, signature: string): void {
+      servedDrives.set(captainId, signature);
     },
     setStorageRoot(root: string | null): void {
       storageRoot = root;
