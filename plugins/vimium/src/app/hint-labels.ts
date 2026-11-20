@@ -67,7 +67,7 @@ export const RESERVED_CONTROLS = [
   },
   {
     selector:
-      '[data-sidebar-navigation-item="__bb__/search-threads"] > button, button[aria-label="Search threads"], button[aria-label^="Search threads ("]',
+      '[data-sidebar-navigation-item="__bb__/search-threads"] > button, button[data-sidebar-navigation-item="__bb__/search-threads"], button[aria-label="Search threads"], button[aria-label^="Search threads ("]',
     id: "search",
     char: "s",
   },

@@ -65,7 +65,7 @@ These stay Vimium's own keys rather than bb commands:
 
 In hint mode `[`, `]`, `e`, `j`, `k`, and `a` keep their hint meanings below.
 
-`n` and `s` use BB's accessible button names and list-row ids. When New thread has no label, `n` matches its text inside the sidebar header. Home works with the navigation rail; More works with both navigation layouts; Settings works with both rail buttons and list links. `s` activates BB's visible Search threads button when there is one. With a custom sidebar such as GTD that omits it, Vimium opens the Quick palette using `Cmd+K` on Mac or `Ctrl+K` elsewhere, then selects Search threads. That bridge depends on the palette shortcut and action label. If either changes, update the bridge. In hint mode, `f` only labels a visible Search threads button.
+`n` and `s` use BB's accessible button names and list-row ids. When New thread has no label, `n` matches its text inside the sidebar header. Home works with the navigation rail; More works with both navigation layouts; Settings works with both rail buttons and list links. `s` activates BB's visible Search threads button or row, including GTD Sidebar's Search row. When none is visible, such as with the sidebar collapsed, Vimium opens the Quick palette using `Cmd+K` on Mac or `Ctrl+K` elsewhere, then selects Search threads. That bridge depends on the palette shortcut and action label. If either changes, update the bridge. In hint mode, `f` only labels a visible Search threads button or row.
 
 ## BB shortcuts
 

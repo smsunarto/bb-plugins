@@ -1,19 +1,17 @@
 // Sidebar navigation in Capy's list style: 28px rows of a 14px icon and a
-// 13px medium label above the thread list, and Search as an icon in the
-// sidebar header. bb owns the items, their order, and what each one does;
-// this file only draws them.
+// 13px medium label above the thread list, 44px on phones. bb owns the items,
+// their order, their visibility, and what each one does; this file only draws
+// them.
 import { memo, useRef, type MouseEvent } from "react";
 import {
   experimental_ShortcutHint as ShortcutHint,
   experimental_SidebarNavigationIcon as NavigationIcon,
   experimental_useSidebarNavigation as useSidebarNavigation,
   experimental_useSidebarNavigationSplit as useSidebarNavigationSplit,
-  type ExperimentalSidebarHeaderProps,
   type ExperimentalSidebarNavigationActions as NavigationActions,
   type ExperimentalSidebarNavigationItem as NavigationItem,
   type ExperimentalSidebarNavigationProps,
 } from "@get-bb/plugin-sdk/app";
-import { Button } from "@bb-plugins/ui/button";
 import { cn } from "../../lib/utils";
 import { Badge } from "../ui/badge";
 import {
@@ -31,13 +29,28 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Icon } from "../ui/icon";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
 import { MenuSurface } from "../inbox/menu-surface";
+import { markScrolled, revealFocusedRow, useNavScroll } from "./nav-scroll";
 
-const SEARCH_ID = "__bb__/search-threads";
+/**
+ * On phones the 44px rows could push the thread list off screen, so the rows
+ * scroll inside about 40% of the drawer while More stays pinned below them.
+ * The cap ends half way through a row, which shows there is more to scroll:
+ * 74px is the nav's 8px padding, More's 44px row, and half a row; 22px adds
+ * the half row back. Once scrolled, the top edge fades.
+ */
+const SCROLL_CLASS = cn(
+  "relative flex min-h-0 flex-col",
+  // Never below one row, however short the screen.
+  "max-md:pointer-coarse:max-h-[max(44px,calc(round(down,40dvh_-_74px,44px)_+_22px))]",
+  "max-md:pointer-coarse:overflow-y-auto max-md:pointer-coarse:overscroll-contain",
+  "data-[gtd-nav-scrolled]:[mask-image:linear-gradient(to_bottom,transparent,currentColor_24px)]",
+);
 
 const ROW_CLASS = cn(
   "flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-[6px] px-2",
+  // 44px rows on phones, the minimum touch target.
+  "max-md:pointer-coarse:h-11",
   "text-left text-[13px] leading-none font-medium tracking-[-0.01em] text-sidebar-foreground",
   "outline-none select-none transition-colors duration-100",
   "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -51,26 +64,34 @@ function activationTarget(event: MouseEvent): "current" | "tab" {
   return event.metaKey || event.ctrlKey || event.button === 1 ? "tab" : "current";
 }
 
-export function CapyNavigation(_props: ExperimentalSidebarNavigationProps) {
+export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigationProps) {
   const navigation = useSidebarNavigation();
   const { items, activeItemId, isShortcutModifierHeld, actions } = navigation;
   const hidden = items.filter((item) => !item.isVisible);
+  const scroller = useNavScroll(activeItemId, isCompactViewport);
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <nav aria-label="Navigation" className="flex shrink-0 flex-col px-2 py-1">
-          {items.map((item) =>
-            item.isVisible && item.id !== SEARCH_ID ? (
-              <NavigationRow
-                key={item.id}
-                item={item}
-                isActive={item.id === activeItemId}
-                showShortcut={isShortcutModifierHeld}
-                actions={actions}
-              />
-            ) : null,
-          )}
+          <div
+            ref={scroller}
+            className={SCROLL_CLASS}
+            onScroll={markScrolled}
+            onFocus={revealFocusedRow}
+          >
+            {items.map((item) =>
+              item.isVisible ? (
+                <NavigationRow
+                  key={item.id}
+                  item={item}
+                  isActive={item.id === activeItemId}
+                  showShortcut={isShortcutModifierHeld}
+                  actions={actions}
+                />
+              ) : null,
+            )}
+          </div>
           {hidden.length > 0 ? <MoreRow hidden={hidden} actions={actions} /> : null}
         </nav>
       </ContextMenuTrigger>
@@ -179,37 +200,5 @@ function MoreRow({ hidden, actions }: { hidden: NavigationItem[]; actions: Navig
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
-}
-
-/** Capy keeps Search out of the list, as an icon at the right of the sidebar header. */
-export function CapyNavigationHeader({ width, controlSize }: ExperimentalSidebarHeaderProps) {
-  const { items, actions } = useSidebarNavigation();
-  const search = items.find((item) => item.id === SEARCH_ID);
-  if (search === undefined || width < controlSize) return <div className="flex-1" />;
-  return (
-    <div className="flex min-w-0 flex-1 items-center justify-end">
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={search.label}
-              aria-keyshortcuts={search.shortcut?.ariaKeyShortcuts}
-              disabled={search.isDisabled}
-              onClick={(event) => actions.activate(search.id, { target: activationTarget(event) })}
-              style={{ width: controlSize, height: controlSize }}
-              className="shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-1 focus-visible:ring-sidebar-ring focus-visible:ring-inset"
-            >
-              <NavigationIcon icon={search.icon} className="size-3.5" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>
-            {search.shortcut === null ? search.label : `${search.label} (${search.shortcut.label})`}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </div>
   );
 }
