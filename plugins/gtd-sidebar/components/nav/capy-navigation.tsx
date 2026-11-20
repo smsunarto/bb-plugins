@@ -10,6 +10,8 @@ import {
 } from "@get-bb/plugin-sdk/app";
 import { cn } from "../../lib/utils";
 import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { usePointerCoarse } from "../ui/hooks/use-pointer-coarse";
 import {
   ContextMenu,
   ContextMenuGroup,
@@ -27,12 +29,6 @@ import {
 import { Icon } from "../ui/icon";
 import { MenuSurface } from "../inbox/menu-surface";
 import { markScrolled, revealFocusedRow, useNavScroll } from "./nav-scroll";
-
-const SCROLL_CLASS = cn(
-  "relative flex min-h-0 flex-col",
-  "max-md:pointer-coarse:overflow-y-auto max-md:pointer-coarse:overscroll-contain",
-  "data-[gtd-nav-scrolled]:[mask-image:linear-gradient(to_bottom,transparent,currentColor_24px)]",
-);
 
 const ROW_CLASS = cn(
   "flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-[6px] px-2",
@@ -52,21 +48,24 @@ function activationTarget(event: MouseEvent): "current" | "tab" {
 export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigationProps) {
   const navigation = useSidebarNavigation();
   const { items, activeItemId, isShortcutModifierHeld, actions } = navigation;
-  const search = isCompactViewport
+  const isCoarsePointer = usePointerCoarse();
+  const isPhone = isCompactViewport && isCoarsePointer;
+  const search = isPhone
     ? items.find((item) => item.isVisible && item.action.kind === "search-threads")
     : undefined;
   const hidden = items.filter((item) => !item.isVisible);
-  const scroller = useNavScroll(activeItemId, isCompactViewport);
+  const visible = items.filter((item) => item.isVisible);
+  const scroller = useNavScroll(activeItemId, isPhone, visible.length);
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <nav
           aria-label="Navigation"
-          data-gtd-phone-nav={isCompactViewport || undefined}
+          data-gtd-phone-nav={isPhone || undefined}
           className="flex shrink-0 flex-col px-2 py-1"
         >
-          {isCompactViewport ? (
+          {isPhone ? (
             <div className="gtd-phone-nav-header">
               <span className="gtd-phone-wordmark">bb</span>
               {search ? <NavigationShortcut item={search} actions={actions} /> : null}
@@ -74,22 +73,20 @@ export function CapyNavigation({ isCompactViewport }: ExperimentalSidebarNavigat
           ) : null}
           <div
             ref={scroller}
-            className={SCROLL_CLASS}
+            className="relative flex min-h-0 flex-col"
             data-gtd-nav-scroll=""
             onScroll={markScrolled}
             onFocus={revealFocusedRow}
           >
-            {items.map((item) =>
-              item.isVisible ? (
-                <NavigationRow
-                  key={item.id}
-                  item={item}
-                  isActive={item.id === activeItemId}
-                  showShortcut={isShortcutModifierHeld}
-                  actions={actions}
-                />
-              ) : null,
-            )}
+            {visible.map((item) => (
+              <NavigationRow
+                key={item.id}
+                item={item}
+                isActive={item.id === activeItemId}
+                showShortcut={isShortcutModifierHeld}
+                actions={actions}
+              />
+            ))}
           </div>
           {hidden.length > 0 ? <MoreRow hidden={hidden} actions={actions} /> : null}
         </nav>
@@ -165,8 +162,8 @@ function NavigationShortcut({
   actions: NavigationActions;
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
       className="gtd-phone-nav-shortcut"
       data-gtd-shortcut="search"
       disabled={item.isDisabled}
@@ -178,7 +175,7 @@ function NavigationShortcut({
       }}
     >
       <NavigationIcon icon={item.icon} className="size-5 shrink-0" />
-    </button>
+    </Button>
   );
 }
 

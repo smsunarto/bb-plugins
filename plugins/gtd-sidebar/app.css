@@ -590,8 +590,9 @@
   }
 }
 
-/* Phone navigation is selected by the SDK's compact viewport prop. */
+/* Compact navigation for touch devices. */
 [data-gtd-phone-nav] {
+  --gtd-nav-row-height: 56px;
   padding: 0 18px 4px;
   color: var(--foreground);
 }
@@ -612,20 +613,42 @@
 }
 
 [data-gtd-phone-nav] [data-gtd-nav-scroll] {
-  /* Leave half a destination visible when the cap cuts the list short. */
-  max-height: max(56px, calc(round(down, 38dvh - 72px, 56px) + 28px));
+  /* Use up to 42% of the viewport, minus the 58px header, 44px More row
+     and 4px bottom padding. Round down so the region ends between rows. */
+  max-height: max(
+    var(--gtd-nav-row-height),
+    round(down, calc(42dvh - 106px), var(--gtd-nav-row-height))
+  );
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
+  scroll-snap-type: y mandatory;
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--gtd-nav-fade-top, 0px),
+    black calc(100% - var(--gtd-nav-fade-bottom, 0px)),
+    transparent
+  );
 }
 
-[data-gtd-phone-nav] [data-gtd-nav-scroll]:focus-within {
-  mask-image: none;
+[data-gtd-phone-nav] [data-gtd-nav-scrolled] {
+  --gtd-nav-fade-top: 10px;
+}
+
+[data-gtd-phone-nav] [data-gtd-nav-more-below] {
+  --gtd-nav-fade-bottom: 10px;
+  /* The hint needs to show even on transparent rows. */
+  background-image: linear-gradient(to top, var(--sidebar-accent), transparent 16px);
+}
+
+[data-gtd-phone-nav] [data-sidebar-navigation-item] {
+  scroll-snap-align: start;
 }
 
 [data-gtd-phone-nav] [data-sidebar-navigation-item],
 [data-gtd-phone-nav] [data-sidebar-navigation-more] {
-  height: 56px;
+  height: var(--gtd-nav-row-height);
   gap: 14px;
   padding-inline: 4px 8px;
   border-radius: 12px;
@@ -660,25 +683,10 @@
 }
 
 .gtd-phone-nav-shortcut {
-  display: flex;
-  min-width: 44px;
-  min-height: 44px;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border-radius: 9999px;
-  padding-inline: 12px;
   background: var(--sidebar-accent);
   color: var(--foreground);
-  cursor: pointer;
-}
-
-.gtd-phone-nav-shortcut:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.gtd-phone-nav-shortcut:focus-visible {
-  outline: 2px solid var(--sidebar-ring);
-  outline-offset: -2px;
 }
