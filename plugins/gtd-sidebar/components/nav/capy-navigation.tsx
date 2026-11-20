@@ -30,8 +30,18 @@ import {
 import { Icon } from "../ui/icon";
 import { MenuSurface } from "../inbox/menu-surface";
 
+/**
+ * Search always gets a row, even when the user's navigation settings hide it:
+ * this navigation has no other Search control.
+ */
+const SEARCH_ID = "__bb__/search-threads";
+
+const isRow = (item: NavigationItem) => item.isVisible || item.id === SEARCH_ID;
+
 const ROW_CLASS = cn(
   "flex h-7 w-full min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-[6px] px-2",
+  // 44px rows on phones, the minimum touch target.
+  "max-md:pointer-coarse:h-11",
   "text-left text-[13px] leading-none font-medium tracking-[-0.01em] text-sidebar-foreground",
   "outline-none select-none transition-colors duration-100",
   "hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -48,14 +58,14 @@ function activationTarget(event: MouseEvent): "current" | "tab" {
 export function CapyNavigation(_props: ExperimentalSidebarNavigationProps) {
   const navigation = useSidebarNavigation();
   const { items, activeItemId, isShortcutModifierHeld, actions } = navigation;
-  const hidden = items.filter((item) => !item.isVisible);
+  const hidden = items.filter((item) => !isRow(item));
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <nav aria-label="Navigation" className="flex shrink-0 flex-col px-2 py-1">
           {items.map((item) =>
-            item.isVisible ? (
+            isRow(item) ? (
               <NavigationRow
                 key={item.id}
                 item={item}

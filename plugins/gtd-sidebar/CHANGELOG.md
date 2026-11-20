@@ -4,8 +4,10 @@
 
 ### Patch Changes
 
-- Search is a navigation row again, in the order bb gives it, instead of an
-  icon in the sidebar header.
+- GTD Sidebar now draws bb's navigation as a list above the thread list:
+  28px rows of an icon and a label, 44px on phones, in the order bb gives
+  them, with hidden items under More. Search is always one of the rows, even
+  when navigation settings hide it.
 
 - Background agents no longer rename threads. Codex's memory-consolidation
   agent renamed threads to "Consolidate agent memories" after their turn
