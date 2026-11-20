@@ -5,6 +5,7 @@
  * an unrecognised value degrades to a neutral one instead of failing the read.
  */
 import { MAX_OPLOG, type OplogEntry } from "../core/oplog.ts";
+import { QUOTED_ESCAPES, quotedPath as headerPath } from "../core/quoted-path.ts";
 import type { Branch, BranchStatus, FileChange, FilePatch } from "../core/change.ts";
 
 export type ChangeKind = FileChange["kind"];
@@ -393,16 +394,6 @@ export function uncommittedKinds(statusPayload: unknown): Map<string, ChangeKind
   return new Map(changes.map((change) => [change.path, change.kind]));
 }
 
-const QUOTED_ESCAPES: Readonly<Record<string, string>> = {
-  a: "\x07",
-  b: "\b",
-  t: "\t",
-  n: "\n",
-  v: "\v",
-  f: "\f",
-  r: "\r",
-};
-
 /** git's escape for one character of a quoted path. */
 function escapeChar(char: string): string {
   if (char === '"' || char === "\\") return `\\${char}`;
@@ -518,28 +509,6 @@ function groupByPath(payload: unknown, kinds?: ReadonlyMap<string, ChangeKind>):
     });
   }
   return [...groups.values()];
-}
-
-/**
- * A path as a patch header writes it. `core.quotePath=false` keeps non-ASCII
- * names bare, but a name with a quote, a backslash, or a control character is
- * still C-quoted, with octal escapes for the bytes of anything unprintable.
- */
-function headerPath(text: string): string {
-  if (!/^".*"$/s.test(text)) return text;
-  const encoder = new TextEncoder();
-  const bytes: number[] = [];
-  for (const [, octal, escaped, raw] of text
-    .slice(1, -1)
-    .matchAll(/\\([0-7]{3})|\\(.)|([^\\]+)/gs)) {
-    if (octal !== undefined) bytes.push(Number.parseInt(octal, 8));
-    else
-      bytes.push(
-        ...encoder.encode(escaped === undefined ? raw : (QUOTED_ESCAPES[escaped] ?? escaped)),
-      );
-  }
-  // A name may start with U+FEFF, which the default decoder drops as a BOM.
-  return new TextDecoder("utf-8", { ignoreBOM: true }).decode(Uint8Array.from(bytes));
 }
 
 /** The path a `---`/`+++` line names, without its side prefix, or none for /dev/null. */
