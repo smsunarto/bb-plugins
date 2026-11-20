@@ -552,7 +552,7 @@ function RoutineDetails({
               })
             }
           >
-            <Icon name="Pencil" aria-hidden className="size-4" />
+            <Icon name="Edit" aria-hidden className="size-4" />
             Edit
           </Button>
           <Button
