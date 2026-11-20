@@ -1,5 +1,5 @@
 import { LADDER_ROLES, type LadderRole } from "../contract/ladder.ts";
-import { captainContract, crewOfTag, crewTag, LADDERS_TAG } from "../contract/rpc.ts";
+import { captainContract, crewOfTag, crewTag, driveTag, LADDERS_TAG } from "../contract/rpc.ts";
 import { adoptFromMenu, adoptOptions, crewOf } from "./adopt.ts";
 import { resolveAsk } from "./asks.ts";
 import type { CommandDeps } from "./commands/deps.ts";
@@ -9,6 +9,13 @@ import { ROLE_SPECS } from "./roles.ts";
 import { Refusal } from "./output.ts";
 import { startCaptain } from "./commands/new.ts";
 import { captainIcons, setCaptainIcon } from "./icon.ts";
+import {
+  createModelNames,
+  createPrimaryHost,
+  crewThreads,
+  driveFiles,
+  watchDrive,
+} from "./overview.ts";
 import { askItems, crewItems, deferItem, markSeen, needsYouCount, sinceYouLeft } from "./queue.ts";
 
 /** How often a watched banner rechecks the crew for a new or answered interaction. */
@@ -24,6 +31,8 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
     if (deps.registry.get(captainId) === null)
       throw new Error(`${captainId} is not a live Captain`);
   };
+  const modelNames = createModelNames(deps);
+  const primaryHost = createPrimaryHost(deps);
   const ladderOf = (role: LadderRole) => ({
     role,
     label: ROLE_SPECS[role].label,
@@ -42,6 +51,14 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
     crew: async ({ captainId }) => {
       live(captainId);
       return { items: await crewItems(deps, captainId) };
+    },
+    crewThreads: async ({ captainId }) => {
+      live(captainId);
+      return { threads: await crewThreads(deps, modelNames, captainId) };
+    },
+    drive: ({ captainId }) => {
+      live(captainId);
+      return driveFiles(deps, primaryHost, captainId);
     },
     sinceYouLeft: ({ captainId }) => {
       live(captainId);
@@ -104,12 +121,51 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
     setIcon: ({ captainId, icon }) => setCaptainIcon(deps, captainId, icon),
   });
 
-  // A watched banner: bb's thread events cover run states; a new or answered
-  // interaction has no event, so the crew list is rechecked while watched.
-  bb.rpc.experimental_whileWatched("crew", async (read, signal) => {
-    if (!("input" in read)) return;
-    const captainId = (read.input as { captainId?: unknown }).captainId;
-    if (typeof captainId !== "string" || deps.registry.get(captainId) === null) return;
+  // A watched banner or Overview: bb's thread events cover run states; a new or
+  // answered interaction has no event, so the crew list is rechecked while
+  // watched. Both reads share one loop per Captain.
+  const captainOf = (read: object) => captainOfRead(deps.registry, read);
+  const crewWatch = createCrewWatch(deps, crewPollMs);
+  for (const method of ["crew", "crewThreads"] as const) {
+    bb.rpc.experimental_whileWatched(method, (read, signal) => {
+      const captainId = captainOf(read);
+      return captainId === null ? Promise.resolve() : crewWatch(captainId, signal);
+    });
+  }
+
+  // A watched Drive refreshes on the filesystem's own change notifications.
+  bb.rpc.experimental_whileWatched("drive", (read, signal) => {
+    const captainId = captainOf(read);
+    const dir = captainId === null ? null : deps.registry.driveDir(captainId);
+    if (captainId === null || dir === null) return Promise.resolve();
+    return watchDrive(
+      dir,
+      signal,
+      () => bb.rpc.experimental_invalidate([driveTag(captainId)]),
+      (line) => bb.log.warn(line),
+    );
+  });
+
+  registerEvents(deps);
+}
+
+/** The live Captain a watched read names, or null. */
+function captainOfRead(registry: CommandDeps["registry"], read: object): string | null {
+  if (!("input" in read)) return null;
+  const captainId = (read.input as { captainId?: unknown } | null)?.captainId;
+  return typeof captainId === "string" && registry.get(captainId) !== null ? captainId : null;
+}
+
+/**
+ * One crew poll per Captain however many of its reads are watched: the first
+ * watcher starts it, the last one to leave stops it. Resolves for each
+ * watcher when its own `signal` aborts.
+ */
+function createCrewWatch(deps: CommandDeps, crewPollMs: number) {
+  const { bb } = deps;
+  const loops = new Map<string, { watchers: number; stop: AbortController }>();
+
+  async function poll(captainId: string, signal: AbortSignal): Promise<void> {
     let last: string | null = null;
     while (!signal.aborted) {
       try {
@@ -121,13 +177,36 @@ export function registerRpc(deps: CommandDeps, crewPollMs: number = CREW_POLL_MS
         last = shape;
       } catch (error) {
         if (signal.aborted) return;
-        bb.log.warn(`banner crew watch for ${captainId}: ${(error as Error).message}`);
+        bb.log.warn(`crew watch for ${captainId}: ${(error as Error).message}`);
       }
       await sleep(crewPollMs, signal);
     }
-  });
+  }
 
-  registerEvents(deps);
+  return (captainId: string, signal: AbortSignal): Promise<void> =>
+    new Promise((resolve) => {
+      if (signal.aborted) return resolve();
+      let loop = loops.get(captainId);
+      if (loop === undefined) {
+        loop = { watchers: 0, stop: new AbortController() };
+        loops.set(captainId, loop);
+        void poll(captainId, loop.stop.signal);
+      }
+      loop.watchers += 1;
+      const own = loop;
+      signal.addEventListener(
+        "abort",
+        () => {
+          own.watchers -= 1;
+          if (own.watchers === 0) {
+            own.stop.abort();
+            if (loops.get(captainId) === own) loops.delete(captainId);
+          }
+          resolve();
+        },
+        { once: true },
+      );
+    });
 }
 
 /**

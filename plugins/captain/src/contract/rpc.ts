@@ -77,6 +77,7 @@ const changeRef = z
 export const asksTag = (captainId: string) => `asks:${captainId}`;
 export const crewTag = (captainId: string) => `crew:${captainId}`;
 export const sinceTag = (captainId: string) => `since:${captainId}`;
+export const driveTag = (captainId: string) => `drive:${captainId}`;
 export const CAPTAINS_TAG = "captains";
 export const iconTag = (captainId: string) => `icon:${captainId}`;
 /** Any Captain's icon changed: the settings list reads every one. */
@@ -94,6 +95,36 @@ export const DEFERRABLE_KEY = /^(ask|blocked|health):[A-Za-z0-9_:.-]{1,200}$/u;
 
 /** A Captain's name: one line of at most this many characters. */
 export const CAPTAIN_NAME_MAX = 80;
+
+/** One crew thread as the Overview's Threads section lists it. */
+const crewThread = z
+  .object({
+    id: threadId,
+    title: z.string(),
+    status: z.string(),
+    providerId: z.string(),
+    /** The model's display name, else its id; null when bb did not say. */
+    model: z.string().nullable(),
+    task: z.string().nullable(),
+    role: z.string().nullable(),
+    hasPendingInteraction: z.boolean(),
+    updatedAt: z.number(),
+  })
+  .strict();
+
+/** One Drive file as an Overview card shows it. */
+const driveFile = z
+  .object({
+    /** Drive-relative, `/`-separated. */
+    path: z.string(),
+    name: z.string(),
+    /** The folder it sits in, Drive-relative; null at the top level. */
+    folder: z.string().nullable(),
+    modifiedAt: z.number(),
+    /** The file's head, for a Markdown or text preview; null for other files. */
+    excerpt: z.string().nullable(),
+  })
+  .strict();
 
 /** Why `new` refused, and the command or step that clears it. */
 const blocker = z.object({ reason: z.string(), fix: z.string() }).strict();
@@ -219,6 +250,26 @@ export const captainContract = defineRpcContract({
     input: z.object({ captainId: threadId }).strict(),
     output: z.object({ items: z.array(z.union([blockedItem, healthItem])) }).strict(),
     tags: ({ captainId }) => [crewTag(captainId)],
+  },
+  /** The Overview's Threads: the Captain's unarchived crew, read live from bb and Tasks. */
+  crewThreads: {
+    input: z.object({ captainId: threadId }).strict(),
+    output: z.object({ threads: z.array(crewThread) }).strict(),
+    tags: ({ captainId }) => [crewTag(captainId)],
+  },
+  /** The Overview's Drive: its top-level files first, then the most recently changed. */
+  drive: {
+    input: z.object({ captainId: threadId }).strict(),
+    output: z
+      .object({
+        /** Every file in the Drive, of which `files` is the first slice. */
+        total: z.number().int().nonnegative(),
+        files: z.array(driveFile),
+        /** Where the Drive folder is, for opening it; null until the storage root is known. */
+        folder: z.object({ hostId: z.string(), path: z.string() }).strict().nullable(),
+      })
+      .strict(),
+    tags: ({ captainId }) => [driveTag(captainId)],
   },
   /** What changed since the stored last-seen time: transitions after it, not current state. */
   sinceYouLeft: {
@@ -365,3 +416,5 @@ export type AdoptOptions = z.infer<typeof adoptOptionsSchema>;
 export type AdoptInput = z.infer<typeof adoptInputSchema>;
 export type AdoptResult = z.infer<typeof adoptResultSchema>;
 export type ChangeRef = z.infer<typeof changeRef>;
+export type CrewThreadItem = z.infer<typeof crewThread>;
+export type DriveFileItem = z.infer<typeof driveFile>;

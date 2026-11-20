@@ -46,7 +46,7 @@ const NO_ITEMS: QueueItem[] = [];
 const TICK_MS = 30_000;
 const FAR = Number.MAX_SAFE_INTEGER;
 /** Every control a phone user taps gets a 44px target. */
-const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
+export const TAP = "pointer-coarse:min-h-11 pointer-coarse:min-w-11";
 /** Later and Skip: a short pair that sits in the title's first line. */
 const DEFER = "h-6 px-2 text-muted-foreground";
 
@@ -60,7 +60,7 @@ function CaptainGate({ threadId }: { threadId: string }) {
   return captains.data?.ids.includes(threadId) ? <Banner captainId={threadId} /> : null;
 }
 
-type Action = { label: string; run: () => void; primary?: boolean; recommended?: boolean };
+export type Action = { label: string; run: () => void; primary?: boolean; recommended?: boolean };
 
 function Banner({ captainId }: { captainId: string }) {
   const input = useMemo(() => ({ captainId }), [captainId]);
@@ -209,7 +209,7 @@ function useItemUi(key: string) {
  * Answer, Later and Skip for the item on show. Each keeps keyboard focus on
  * the banner when the clicked button unmounts, and reports a failure inline.
  */
-function useItemCommands(
+export function useItemCommands(
   captainId: string,
   key: string,
   root: HTMLElement | null,
@@ -379,7 +379,7 @@ function Heading({
  * One answer; the recommended one says so. A long answer wraps inside the
  * card (the server caps it at 80 characters) and keeps "Recommended" whole.
  */
-function ActionButton({ action, index }: { action: Action; index: number }) {
+export function ActionButton({ action, index }: { action: Action; index: number }) {
   return (
     <Button
       type="button"
@@ -550,7 +550,7 @@ function title(item: QueueItem): string {
   return item.kind === "ask" ? item.text : item.title;
 }
 
-function itemActions(
+export function itemActions(
   item: QueueItem,
   ctx: {
     answer: (askId: string, text: string) => void;
@@ -604,7 +604,7 @@ function healthActions(item: HealthItem, ctx: Parameters<typeof itemActions>[1])
   }
 }
 
-function OtherAnswer({
+export function OtherAnswer({
   value,
   onChange,
   onCancel,
@@ -795,7 +795,7 @@ function useLastSeen(captainId: string): void {
 }
 
 /** The clock for ages and Later: a coarse tick, plus a wake when the next Later ends. */
-function useNow(...lists: (readonly QueueItem[] | undefined)[]): number {
+export function useNow(...lists: (readonly QueueItem[] | undefined)[]): number {
   const [now, setNow] = useState(Date.now);
   const wake = nextWake(
     lists.flatMap((list) => list ?? []),
