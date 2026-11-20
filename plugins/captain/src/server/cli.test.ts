@@ -2,7 +2,14 @@ import { makePluginAgentConfigurationContext } from "@get-bb/plugin-sdk/testing"
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { captainHost, MAC_HOST, newCaptain, SERVER_HOST, type CaptainHost } from "./test-host.ts";
+import {
+  captainHost,
+  MAC_HOST,
+  newCaptain,
+  queuedRow,
+  SERVER_HOST,
+  type CaptainHost,
+} from "./test-host.ts";
 
 const run = (host: CaptainHost, argv: string[], threadId?: string, cwd?: string) =>
   host.harness.behavior.runCli(argv, {
@@ -118,7 +125,7 @@ describe("bb captain new", () => {
     const host = await captainHost();
     const captainId = await newCaptain(host);
     host.metadata.delete(`${captainId} genui`);
-    host.queued.set(captainId, [{ id: "qm_later", text: "later", waitingOn: { kind: "time" } }]);
+    host.queued.set(captainId, [queuedRow("qm_later", "later", { kind: "time" })]);
 
     await run(host, ["new", "--name", "Plugins", "--repo", "bb-plugins"]);
 

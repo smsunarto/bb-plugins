@@ -39,7 +39,7 @@ const SEND_DEADLINE_MS = 20_000;
 
 export type CheckDeps = Pick<
   CommandDeps,
-  "bb" | "store" | "registry" | "tasks" | "files" | "now" | "taskGuard"
+  "bb" | "store" | "registry" | "tasks" | "files" | "now" | "taskGuard" | "routines"
 >;
 
 export type PassResult = {
@@ -71,6 +71,11 @@ export function createCheck(deps: CheckDeps) {
   }
 
   async function runPass(signal: AbortSignal | undefined): Promise<PassResult> {
+    // Automations may load after Captain: until reconcile has run once, every pass retries it.
+    const reconciled = await deps.routines.reconcile().catch((error: unknown) => {
+      deps.bb.log.warn(`routine reconcile failed: ${(error as Error).message}`);
+      return false;
+    });
     const captains = deps.store
       .liveCaptains()
       .map(({ archivedAt: _archived, ...captain }) => captain);
@@ -86,6 +91,7 @@ export function createCheck(deps: CheckDeps) {
     });
     await retryAnswers(deps);
     const busy =
+      !reconciled ||
       skipped.length > 0 ||
       outcomes.some((outcome) => outcome.crew > 0) ||
       deps.store.undeliveredAnswers(ANSWER_MAX_ATTEMPTS).length > 0;

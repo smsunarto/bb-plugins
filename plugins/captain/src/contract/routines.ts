@@ -243,3 +243,20 @@ function calendarWords(fields: readonly string[]): string | null {
 function pad(value: number): string {
   return String(value).padStart(2, "0");
 }
+
+/** A routine with its live schedule state; `automation` is null when Automations did not answer. */
+export type RoutineView = Routine & {
+  /** The schedule in words. */
+  when: string;
+  automation: {
+    enabled: boolean;
+    nextRunAt: number | null;
+    lastRunAt: number | null;
+  } | null;
+  /** Why `automation` is null. */
+  automationError: string | null;
+  lastRun: RoutineRun | null;
+};
+
+/** The RPC tag a Captain's routines are read under. */
+export const routinesTag = (captainId: string) => `routines:${captainId}`;

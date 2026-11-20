@@ -3,6 +3,7 @@ import { instructionFiles } from "@bb-plugins/instructions";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { markCaptainsPersonFacing } from "./audience.ts";
+import { createAutomationsClient } from "./automations-client.ts";
 import { createCheck } from "./check.ts";
 import { captainCli } from "./cli.ts";
 import { ensureStorageRoot, type CommandDeps } from "./commands/deps.ts";
@@ -10,6 +11,7 @@ import { configure } from "./configure.ts";
 import { createDrive } from "./drive.ts";
 import { createFields } from "./fields.ts";
 import { createRegistry } from "./registry.ts";
+import { createRoutines } from "./routines.ts";
 import { registerRpc } from "./rpc.ts";
 import { createTaskGuard } from "./spawn.ts";
 import { openStore } from "./store.ts";
@@ -32,6 +34,15 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
   const files = instructionFiles(import.meta.url);
   const tasks = createTasksClient(bb, options.tasksDeadlineMs);
   const fields = createFields(tasks);
+  const now = options.now ?? Date.now;
+  const routines = createRoutines({
+    bb,
+    store,
+    files,
+    now,
+    automations: createAutomationsClient(bb),
+    defaultTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
   const deps: CommandDeps = {
     bb,
     registry,
@@ -40,10 +51,11 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     tasks,
     fields,
     files,
-    now: options.now ?? Date.now,
+    now,
     captainsDir: options.captainsDir ?? join(homedir(), CAPTAINS_FOLDER),
     wakeCheck: () => check.poke(),
     taskGuard: createTaskGuard(),
+    routines,
   };
   const check = createCheck(deps);
 
@@ -65,6 +77,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
   bb.cli.register(captainCli(deps));
   registerRpc(deps, options.crewPollMs);
   check.register(bb);
+  routines.register(bb.events);
 
   // `configure` is synchronous, so the Drive root is read once here and cached.
   const ready = ensureStorageRoot(deps).then(
@@ -84,7 +97,7 @@ export async function start(bb: BbPluginApi, options: StartOptions = {}) {
     (error: unknown) =>
       bb.log.warn(`Captains not marked person-facing: ${(error as Error).message}`),
   );
-  return { store, registry, drive, files, check, ready, fieldsReady, audienceReady };
+  return { store, registry, drive, files, check, routines, ready, fieldsReady, audienceReady };
 }
 
 const CAPTAINS_FOLDER = "Captains";
