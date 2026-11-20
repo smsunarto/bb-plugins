@@ -143,8 +143,10 @@ export async function captainHost(options: FakeOptions = {}) {
     down: options.tasksDown === true,
   };
   const pushes: { method: string; input: unknown }[] = [];
-  /** Messages sent into threads, in order. */
-  const sent: { threadId: string; text: string; mode: string }[] = [];
+  /** Messages sent into threads, in order, with the sender exactly as the send passed it. */
+  const sent: { threadId: string; text: string; mode: string; senderThreadId?: string }[] = [];
+  /** Permission mode per thread, as `threads.defaultExecutionOptions` reports it; `full` when unset. */
+  const permissionModes = new Map<string, "accept-edits" | "auto" | "full">();
   /** Threads whose sends fail. */
   const sendFails = new Set<string>();
   const interactions = new Map<string, unknown[]>();
@@ -486,12 +488,21 @@ export async function captainHost(options: FakeOptions = {}) {
             threadId: args.threadId,
             text: part !== undefined && part.type === "text" ? part.text : "",
             mode: args.mode,
+            senderThreadId: args.senderThreadId,
           });
           return {} as never;
         },
         interactions: {
           list: async ({ threadId }) => (interactions.get(threadId) ?? []) as never,
         },
+        defaultExecutionOptions: async ({ threadId }) =>
+          ({
+            model: "claude-opus-5-5",
+            permissionMode: permissionModes.get(threadId) ?? "full",
+            reasoningLevel: "high",
+            serviceTier: "default",
+            source: "client/thread/start",
+          }) as never,
         list: async (args = {}) =>
           [...threads.values()].filter(
             (thread) =>
@@ -679,6 +690,7 @@ export async function captainHost(options: FakeOptions = {}) {
     pushes,
     sent,
     sendFails,
+    permissionModes,
     interactions,
     pool,
     retryDecisions,

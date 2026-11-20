@@ -185,8 +185,8 @@ describe("the stall wake", () => {
 });
 
 describe("bb captain tell --stalled", () => {
-  test("steers only the stalled crew and moves their report-due marks", async () => {
-    const { host, as, idleCrew } = await checkHost();
+  test("steers only the stalled crew from the Captain and moves their report-due marks", async () => {
+    const { host, captainId, as, idleCrew } = await checkHost();
     const stalled = await idleCrew("BBPLUGINS-1");
     const working = await idleCrew("BBPLUGINS-2");
     host.updateThread(working, { status: "active" });
@@ -204,6 +204,7 @@ describe("bb captain tell --stalled", () => {
 
     expect(told.stdout).toBe(`${stalled}  told  BBPLUGINS-1  Implement\n`);
     expect(host.sent.map((message) => message.threadId)).toEqual([stalled]);
+    expect(host.sent[0]?.senderThreadId).toBe(captainId);
     expect(host.server.store.crewRole(stalled)?.reportDueSince).toBe(9_000);
     expect(host.server.store.crewRole(working)?.reportDueSince).toBe(1_000);
     expect(mixed.exitCode).toBe(1);

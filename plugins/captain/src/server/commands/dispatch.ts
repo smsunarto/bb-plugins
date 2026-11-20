@@ -139,7 +139,8 @@ export function dispatchCommand(deps: CommandDeps) {
         if (flags.thread !== undefined) {
           const [unit] = plan.units;
           if (unit === undefined) throw new Error("adoption without a unit");
-          return render([await adopt(deps, plan, unit, flags.thread, flags)], json);
+          const adopted = await adopt(deps, plan, unit, flags.thread, flags);
+          return render([adopted.item], json, adopted.notes);
         }
         // One preset per role and rung, before the tasks start in parallel: two
         // starts creating the same preset would collide on Tasks' unique names.
@@ -566,7 +567,7 @@ async function adopt(
   unit: Unit,
   threadId: string,
   flags: Flags,
-): Promise<Item> {
+): Promise<{ item: Item; notes: string[] }> {
   const { captain } = plan;
   let thread;
   try {
@@ -601,16 +602,18 @@ async function adopt(
     (member) => member.thread.id !== threadId,
   );
   if (other !== undefined && !flags.again) {
-    return unitItem(unit, "exists", {
+    const item = unitItem(unit, "exists", {
       thread: other.thread.id,
       detail: `already has a live ${ROLE_SPECS[unit.role].label} thread; pass --again to add ${threadId}`,
     });
+    return { item, notes: [] };
   }
   if (flags.dryRun) {
-    return unitItem(unit, "planned", {
+    const item = unitItem(unit, "planned", {
       thread: threadId,
       detail: "bring in: parent, stuck, attach",
     });
+    return { item, notes: [] };
   }
 
   if (thread.parentThreadId !== captain.threadId || thread.parentNotifications !== "stuck") {
@@ -624,7 +627,7 @@ async function adopt(
     await deps.tasks.attachThread({ taskId: unit.task.id, threadId, presetName: unit.preset.name });
   } catch (error) {
     if (!(error instanceof TasksError)) throw error;
-    return unitItem(unit, "failed", {
+    const item = unitItem(unit, "failed", {
       thread: threadId,
       detail: error.message,
       blockers: [
@@ -634,6 +637,7 @@ async function adopt(
         },
       ],
     });
+    return { item, notes: [] };
   }
   const prior = deps.store.crewRole(threadId);
   if (prior === null || prior.captainId !== captain.threadId || prior.role !== unit.role) {
@@ -672,5 +676,29 @@ async function adopt(
     thread: threadId,
     detail: [`contract ${contract}`, ...notes].join("; "),
   });
-  return { ...item, data: { ...item.data, contractSent: contract === "sent" } };
+  return {
+    item: { ...item, data: { ...item.data, contractSent: contract === "sent" } },
+    notes: await permissionWarnings(deps, threadId),
+  };
+}
+
+/**
+ * A Captain send names the Captain as sender, so bb treats it as an agent's
+ * message and denies the turn's escalations instead of asking; only `full`
+ * has none. One warning line for an adopted thread outside `full`; an
+ * unreadable mode warns about nothing.
+ */
+async function permissionWarnings(
+  deps: Pick<CommandDeps, "bb">,
+  threadId: string,
+): Promise<string[]> {
+  const mode = await deps.bb.sdk.threads
+    .defaultExecutionOptions({ threadId })
+    .then((options) => options?.permissionMode ?? null)
+    .catch(() => null);
+  return mode === null || mode === "full"
+    ? []
+    : [
+        `warning: ${threadId} runs in ${mode} permission mode; Captain tells cannot approve escalations for it`,
+      ];
 }
