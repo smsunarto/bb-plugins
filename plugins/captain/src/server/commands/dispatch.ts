@@ -1,4 +1,4 @@
-import { cliCommand, type PluginCliContext } from "@get-bb/plugin-sdk";
+import { cliCommand } from "@get-bb/plugin-sdk";
 import { callerCaptain } from "../caller.ts";
 import {
   crewOnTask,
@@ -117,7 +117,27 @@ export function dispatchCommand(deps: CommandDeps) {
           thread: input.options.thread?.trim() || undefined,
           rung: parseRungFlag(input.options.rung),
         };
-        const plan = await validate(deps, ctx, input.positionals.task, input.options, flags);
+        const captain = await callerCaptain(deps.bb, deps.registry, ctx, {
+          captain: input.options.captain,
+        });
+        if (flags.thread !== undefined) {
+          const adopted = await adoptThread(
+            deps,
+            captain,
+            input.positionals.task,
+            input.options.role,
+            flags.thread,
+            flags,
+          );
+          return render([adopted.item], json, adopted.notes);
+        }
+        const plan = await validate(
+          deps,
+          captain,
+          input.positionals.task,
+          input.options.role,
+          flags,
+        );
         if ("blockers" in plan) return refuse("captain dispatch", plan.blockers, json);
         const notes: string[] = [];
         const refused = plan.units.filter((unit) => unit.blockers.length > 0);
@@ -136,12 +156,6 @@ export function dispatchCommand(deps: CommandDeps) {
           );
         }
         if (plan.poolUnread) notes.push(POOL_UNREAD);
-        if (flags.thread !== undefined) {
-          const [unit] = plan.units;
-          if (unit === undefined) throw new Error("adoption without a unit");
-          const adopted = await adopt(deps, plan, unit, flags.thread, flags);
-          return render([adopted.item], json, adopted.notes);
-        }
         // One preset per role and rung, before the tasks start in parallel: two
         // starts creating the same preset would collide on Tasks' unique names.
         const rungPresets = flags.dryRun ? new Map() : await resolveRungPresets(deps, plan);
@@ -184,15 +198,19 @@ export function dispatchCommand(deps: CommandDeps) {
   });
 }
 
-/** Read and check everything before spawning anything; collect every blocker. */
+/**
+ * Read and check everything before spawning anything; collect every blocker.
+ * With `pendingTask`, `--thread` takes no key: the task does not exist yet,
+ * and every other check runs as it would once it does.
+ */
 async function validate(
   deps: CommandDeps,
-  ctx: PluginCliContext,
+  captain: Captain,
   keys: readonly string[],
-  options: { role: string[]; captain?: string | undefined },
+  roleNames: readonly string[],
   flags: Flags,
+  pendingTask = false,
 ): Promise<(Plan & { poolUnread: boolean }) | { blockers: Blocker[] }> {
-  const captain = await callerCaptain(deps.bb, deps.registry, ctx, { captain: options.captain });
   const blockers: Blocker[] = [];
   if (flags.rung === null) {
     blockers.push({ reason: "--rung takes a whole number from 1", fix: "pass --rung 1, 2, ..." });
@@ -204,7 +222,7 @@ async function validate(
     });
   }
   const roles: Role[] = [];
-  for (const name of options.role) {
+  for (const name of roleNames) {
     const role = parseRole(name);
     if (role === null || !isDispatchable(role)) {
       blockers.push({
@@ -223,7 +241,8 @@ async function validate(
     });
   }
   const uniqueKeys = [...new Set(keys.map((key) => key.trim().toUpperCase()))];
-  if (flags.thread !== undefined && (uniqueKeys.length !== 1 || roles.length > 1)) {
+  const taskCount = pendingTask ? 0 : 1;
+  if (flags.thread !== undefined && (uniqueKeys.length !== taskCount || roles.length > 1)) {
     blockers.push({
       reason: "--thread brings one thread in for one task and one role",
       fix: "pass one task key and one --role with --thread",
@@ -555,33 +574,39 @@ export function adoptionContract(
   });
 }
 
-/**
- * Bring an existing thread into the crew: parent and `stuck`, attached to the
- * task with the role's preset, its role recorded. An active thread gets the
- * contract now; an idle one gets it with its first `tell`, so adopting never
- * starts a turn. Every step converges on a rerun.
- */
-async function adopt(
-  deps: CommandDeps,
-  plan: Plan,
-  unit: Unit,
-  threadId: string,
-  flags: Flags,
-): Promise<{ item: Item; notes: string[] }> {
-  const { captain } = plan;
-  let thread;
+type Adoptee = Awaited<ReturnType<CommandDeps["bb"]["sdk"]["threads"]["get"]>>;
+
+/** The thread to bring in, or a refusal naming it when bb has none. */
+export async function readAdoptee(deps: CommandDeps, threadId: string): Promise<Adoptee> {
   try {
-    thread = await deps.bb.sdk.threads.get({ threadId });
+    return await deps.bb.sdk.threads.get({ threadId });
   } catch (error) {
     throw new Refusal([
       { reason: `no thread ${threadId}: ${(error as Error).message}`, fix: "bb thread list" },
     ]);
   }
+}
+
+/**
+ * Why this thread cannot join this Captain's crew: a fork, archived, a Captain
+ * itself, or another Captain's crew. Read before anything is written, so a
+ * caller that creates a task first can refuse without leaving one behind.
+ */
+export function adoptionBlockers(
+  deps: CommandDeps,
+  captain: Captain,
+  thread: Pick<Adoptee, "id" | "originKind" | "archivedAt" | "parentThreadId">,
+  retry: { task: string; role: string } | null,
+): Blocker[] {
+  const threadId = thread.id;
   const blockers: Blocker[] = [];
   if (thread.originKind !== null) {
     blockers.push({
       reason: `${threadId} is a fork, and bb never tells a fork's parent about its turns`,
-      fix: `bb captain dispatch ${unit.task.key} --role ${ROLE_SPECS[unit.role].label} to start a new thread`,
+      fix:
+        retry === null
+          ? "start a new crew thread for this work instead"
+          : `bb captain dispatch ${retry.task} --role ${retry.role} to start a new thread`,
     });
   }
   if (thread.archivedAt !== null) {
@@ -597,6 +622,74 @@ async function adopt(
       fix: `bb thread update ${threadId} --clear-parent-thread first`,
     });
   }
+  return blockers;
+}
+
+/**
+ * `bb captain dispatch <task> --role <role> --thread <id>`: validate as
+ * dispatch does, then bring the thread in. The CLI and the sidebar's Adopt
+ * dialog both call this, so both set parent, notifications, the Tasks
+ * attachment, the role record and the contract the same way. A refusal
+ * throws `Refusal`, which each caller's guard turns into its own output.
+ */
+export async function adoptThread(
+  deps: CommandDeps,
+  captain: Captain,
+  keys: readonly string[],
+  roleNames: readonly string[],
+  threadId: string,
+  flags: Omit<Flags, "thread">,
+): Promise<{ item: Item; notes: string[] }> {
+  const withThread: Flags = { ...flags, thread: threadId };
+  const plan = await validate(deps, captain, keys, roleNames, withThread);
+  if ("blockers" in plan) throw new Refusal(plan.blockers);
+  const [unit] = plan.units;
+  if (unit === undefined) throw new Error("adoption without a unit");
+  return await adopt(deps, plan, unit, threadId, withThread);
+}
+
+/**
+ * Every refusal `adoptThread` would raise for one role, run before its task
+ * exists: `validate` without a key, then the thread's own checks. A caller
+ * that creates the task first runs this so a refusal creates nothing.
+ */
+export async function checkAdoption(
+  deps: CommandDeps,
+  captain: Captain,
+  roleName: string,
+  threadId: string,
+): Promise<Blocker[]> {
+  const flags: Flags = {
+    again: false,
+    dryRun: false,
+    baseBranch: undefined,
+    thread: threadId,
+    rung: undefined,
+  };
+  const plan = await validate(deps, captain, [], [roleName], flags, true);
+  if ("blockers" in plan) return plan.blockers;
+  return adoptionBlockers(deps, captain, await readAdoptee(deps, threadId), null);
+}
+
+/**
+ * Bring an existing thread into the crew: parent and `stuck`, attached to the
+ * task with the role's preset, its role recorded. An active thread gets the
+ * contract now; an idle one gets it with its first `tell`, so adopting never
+ * starts a turn. Every step converges on a rerun.
+ */
+async function adopt(
+  deps: CommandDeps,
+  plan: Plan,
+  unit: Unit,
+  threadId: string,
+  flags: Flags,
+): Promise<{ item: Item; notes: string[] }> {
+  const { captain } = plan;
+  const thread = await readAdoptee(deps, threadId);
+  const blockers = adoptionBlockers(deps, captain, thread, {
+    task: unit.task.key,
+    role: ROLE_SPECS[unit.role].label,
+  });
   if (blockers.length > 0) throw new Refusal(blockers);
   const other = crewOnTask(plan.crew, unit.task.key, unit.role).find(
     (member) => member.thread.id !== threadId,

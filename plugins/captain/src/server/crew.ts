@@ -94,7 +94,7 @@ export async function readCrew(
 }
 
 /** Tasks' live statuses of a thread still at work on its task. */
-const LIVE_STATUSES: ReadonlySet<string> = new Set(["starting", "working", "idle"]);
+export const LIVE_STATUSES: ReadonlySet<string> = new Set(["starting", "working", "idle"]);
 
 /** Live crew threads on a task, optionally with one role, latest attached first. */
 export function crewOnTask(

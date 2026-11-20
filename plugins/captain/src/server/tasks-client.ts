@@ -85,6 +85,9 @@ const crewRowSchema = z.object({
 });
 export type CrewRow = z.infer<typeof crewRowSchema>;
 
+/** The statuses of a task still open to work: not done or canceled. */
+const OPEN_STATUSES = ["backlog", "todo", "in_progress", "in_review"];
+
 /** Tasks' own cap on `crewSnapshot` thread ids per call. */
 const SNAPSHOT_MAX_THREADS = 500;
 
@@ -204,6 +207,41 @@ export function createTasksClient(
     async getTaskByKey(taskKey: string): Promise<TasksTask | null> {
       return (await call("getTaskByKey", { taskKey }, z.object({ task: taskSchema.nullable() })))
         .task;
+    },
+    /** One project's open tasks (not done or canceled), at most `limit`, in Tasks' board order; `search` matches title or description. */
+    async listOpenTasks(projectId: string, limit: number, search?: string): Promise<TasksTask[]> {
+      return (
+        await call(
+          "listTasks",
+          {
+            projectId,
+            statuses: OPEN_STATUSES,
+            limit,
+            ...(search === undefined ? {} : { search }),
+          },
+          z.object({ tasks: z.array(taskSchema) }),
+        )
+      ).tasks;
+    },
+    /** The threads attached to one task, with their live status. */
+    async taskThreads(taskId: string): Promise<{ threadId: string; liveStatus: string }[]> {
+      return (
+        await call(
+          "listTaskThreads",
+          { taskId },
+          z.object({
+            taskThreads: z.array(z.object({ threadId: z.string(), liveStatus: z.string() })),
+          }),
+        )
+      ).taskThreads;
+    },
+    async createTask(input: {
+      projectId: string;
+      title: string;
+      description: string;
+      status: string;
+    }): Promise<TasksTask> {
+      return await mutate("createTask", input);
     },
     async updateTaskStatus(taskId: string, status: string, authorName: string): Promise<TasksTask> {
       return await mutate("updateTask", { taskId, status, authorName });
